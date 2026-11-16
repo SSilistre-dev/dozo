@@ -1,9 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Download, Page } from "@playwright/test";
-import { expect, test as base } from "@playwright/test";
+import { test as base, expect } from "@playwright/test";
 import type { CoverageRecord, Leak, Scan } from "./scan";
+import {
+  installProbes,
+  mergeScans,
+  outDir,
+  scanDownload,
+  scanPage,
+  scanStrings,
+  writeCoverage,
+} from "./scan";
 import { gotoStable } from "./ui";
-import { installProbes, mergeScans, outDir, scanDownload, scanPage, scanStrings, writeCoverage } from "./scan";
 
 export { expect } from "@playwright/test";
 
@@ -23,7 +31,8 @@ export const authFile = () => `${outDir()}/auth.json`;
 export const worldFile = () => `${outDir()}/world.json`;
 
 export function readWorld(): World {
-  if (!existsSync(worldFile())) throw new Error(`${worldFile()} missing: the setup project did not run`);
+  if (!existsSync(worldFile()))
+    throw new Error(`${worldFile()} missing: the setup project did not run`);
   return JSON.parse(readFileSync(worldFile(), "utf8")) as World;
 }
 
@@ -45,7 +54,8 @@ export const test = base.extend<{ theme: Theme }>({
     await installProbes(context);
     await context.addInitScript(
       ([key, value]) => {
-        if (localStorage.getItem(key as string) === null) localStorage.setItem(key as string, value as string);
+        if (localStorage.getItem(key as string) === null)
+          localStorage.setItem(key as string, value as string);
       },
       [APPEARANCE_KEY, theme],
     );
@@ -89,7 +99,9 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   const serverErrors: string[] = [];
   page.on("response", (response) => {
     if (response.status() >= 500) {
-      serverErrors.push(`${response.status()} ${response.request().method()} ${new URL(response.url()).pathname}`);
+      serverErrors.push(
+        `${response.status()} ${response.request().method()} ${new URL(response.url()).pathname}`,
+      );
     }
   });
   const label = (suffix: string) => `${surface.name}${suffix ? ` > ${suffix}` : ""} (${theme})`;
@@ -132,7 +144,10 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   let failure: unknown;
   try {
     await surface.reach(ctx);
-    await expect(page.locator('[data-rakazo-app-state="failed"]'), "the app's last-resort error screen is showing").toHaveCount(0);
+    await expect(
+      page.locator('[data-rakazo-app-state="failed"]'),
+      "the app's last-resort error screen is showing",
+    ).toHaveCount(0);
     await ctx.scan("");
     record.visited = true;
   } catch (error) {
@@ -149,7 +164,13 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   record.hosts = merged.hosts;
   record.urls = merged.urls;
   record.serverErrors = [...new Set(serverErrors)];
-  record.note = [...notes, ...expected.map((line) => `expected: ${line}: ${allowed.find((a) => a.pattern.test(line))?.reason}`)].join("; ") || undefined;
+  record.note =
+    [
+      ...notes,
+      ...expected.map(
+        (line) => `expected: ${line}: ${allowed.find((a) => a.pattern.test(line))?.reason}`,
+      ),
+    ].join("; ") || undefined;
   writeCoverage(record);
   if (failure) throw failure;
   expect(unexpected, `server errors on "${surface.name}"`).toEqual([]);

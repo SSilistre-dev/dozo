@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { Surface } from "../fixtures";
 import { expect } from "../fixtures";
-import { openAccountMenu, openBot, openCommandPalette, openCreateMenu, dismiss } from "../ui";
+import { dismiss, openAccountMenu, openBot, openCommandPalette, openCreateMenu } from "../ui";
 
 async function chiefChat(page: Page, id: string) {
   await openBot(page, id, "Chief");
@@ -56,7 +56,9 @@ export const shell: Surface[] = [
       await dismiss(page);
       await bubble.hover();
       await page.getByRole("button", { name: "Reply" }).first().click({ force: true });
-      await expect(page.getByTestId("reply-chip").or(page.getByTestId("reply-parent-preview")).first()).toBeVisible();
+      await expect(
+        page.getByTestId("reply-chip").or(page.getByTestId("reply-parent-preview")).first(),
+      ).toBeVisible();
     },
   },
   {
@@ -141,7 +143,11 @@ export const shell: Surface[] = [
       await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible();
       await scan("space actions");
       await dismiss(page);
-      await page.getByTestId("bots-sidebar").getByRole("button", { name: /^Chief/ }).first().click({ button: "right" });
+      await page
+        .getByTestId("bots-sidebar")
+        .getByRole("button", { name: /^Chief/ })
+        .first()
+        .click({ button: "right" });
       await scan("bot context menu");
       await dismiss(page);
       await page.getByRole("button", { name: "Collapse Personal" }).click();

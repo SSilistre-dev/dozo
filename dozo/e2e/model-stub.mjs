@@ -52,7 +52,9 @@ createServer(async (request, response) => {
           object: "chat.completion",
           created,
           model: MODEL,
-          choices: [{ index: 0, message: { role: "assistant", content: REPLY }, finish_reason: "stop" }],
+          choices: [
+            { index: 0, message: { role: "assistant", content: REPLY }, finish_reason: "stop" },
+          ],
           usage,
         }),
       );

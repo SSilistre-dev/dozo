@@ -25,7 +25,9 @@ export const onboarding: Surface[] = [
       await provider.click();
       await expect(page.getByRole("option").first()).toBeVisible();
       await scan("provider list");
-      const names = (await page.getByRole("option").allInnerTexts()).map((name) => name.trim()).filter(Boolean);
+      const names = (await page.getByRole("option").allInnerTexts())
+        .map((name) => name.trim())
+        .filter(Boolean);
       expect(names.length, "providers listed").toBeGreaterThan(5);
       await page.keyboard.press("Escape");
       for (const name of names) {

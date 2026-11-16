@@ -17,7 +17,11 @@ export async function openEmailForm(page: Page) {
 }
 
 /** Fails with a clear message when the stack's auth limit (10 credential calls per 15 min per address) is hit. */
-export function expectNotRateLimited(status: number, headers: Record<string, string>, what: string) {
+export function expectNotRateLimited(
+  status: number,
+  headers: Record<string, string>,
+  what: string,
+) {
   if (status === 429) {
     throw new Error(
       `${what} rate limited (429, retry-after ${headers["retry-after"] ?? "?"}s): too many credential calls in 15 minutes`,
@@ -42,7 +46,9 @@ export async function signUpThroughForm(page: Page, user = throwawayUser()) {
   const verify = page.getByRole("heading", { name: "Check your email" });
   await Promise.race([landed, verify.waitFor({ timeout: 30_000 })]);
   if (await verify.isVisible().catch(() => false)) {
-    throw new Error("sign-up needs mail confirmation; this stack cannot create an account without it");
+    throw new Error(
+      "sign-up needs mail confirmation; this stack cannot create an account without it",
+    );
   }
   return user;
 }
@@ -50,7 +56,10 @@ export async function signUpThroughForm(page: Page, user = throwawayUser()) {
 /** The OpenAI-compatible address of the model stub, as the api container reaches it. */
 export function modelUrl() {
   const url = process.env.DOZO_E2E_MODEL_URL;
-  if (!url) throw new Error("DOZO_E2E_MODEL_URL is not set; run the suite with e2e/run.sh, which starts the model stub");
+  if (!url)
+    throw new Error(
+      "DOZO_E2E_MODEL_URL is not set; run the suite with e2e/run.sh, which starts the model stub",
+    );
   return url;
 }
 

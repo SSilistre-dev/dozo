@@ -18,7 +18,11 @@ test("every route, settings section and overlay of the web app is crawled or ski
     `surfaces.ts names keys the web app no longer has:\n  ${stale.join("\n  ")}\nRemove them (or fix the spelling).`,
   ).toEqual([]);
   const both = skipped.filter((key) => covered.has(key));
-  expect(both, `these are both visited and in SKIPS; drop the skip:\n  ${both.join("\n  ")}`).toEqual([]);
-  for (const [key, reason] of Object.entries(SKIPS)) expect(reason.length, `SKIPS["${key}"] needs a reason`).toBeGreaterThan(10);
+  expect(
+    both,
+    `these are both visited and in SKIPS; drop the skip:\n  ${both.join("\n  ")}`,
+  ).toEqual([]);
+  for (const [key, reason] of Object.entries(SKIPS))
+    expect(reason.length, `SKIPS["${key}"] needs a reason`).toBeGreaterThan(10);
   expect(inventory.keys.length, "inventory found suspiciously little").toBeGreaterThan(20);
 });

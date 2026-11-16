@@ -4,7 +4,10 @@ import { openBot, openUserSettings } from "./ui";
 const PANEL = "Run on this computer";
 
 // Both the onboarding model step and account Models settings, now reachable with the offline model.
-test("no local-model panel while the published list is empty, upstream form still works", async ({ page, theme }) => {
+test("no local-model panel while the published list is empty, upstream form still works", async ({
+  page,
+  theme,
+}) => {
   test.skip(theme !== "light", "the panel does not depend on the theme");
   await page.goto("/onboarding/model", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();

@@ -7,7 +7,9 @@ async function asAdmin(page: import("@playwright/test").Page) {
   const admin = async (route: import("@playwright/test").Route) => {
     const response = await route.fetch();
     const body = (await response.json()) as { json?: Record<string, unknown> };
-    const me = route.request().url().endsWith("/me") ? body.json : (body.json?.me as Record<string, unknown> | undefined);
+    const me = route.request().url().endsWith("/me")
+      ? body.json
+      : (body.json?.me as Record<string, unknown> | undefined);
     if (me) me.isAdmin = true;
     await route.fulfill({ response, json: body });
   };
@@ -52,7 +54,11 @@ export const routes: Surface[] = [
   {
     name: "integration setup, OAuth and Slack callbacks (no code given)",
     group: "routes",
-    covers: ["route:/integrations/setup", "route:/mcp/oauth/callback", "route:/messaging/slack/callback"],
+    covers: [
+      "route:/integrations/setup",
+      "route:/mcp/oauth/callback",
+      "route:/messaging/slack/callback",
+    ],
     async reach({ page, goto, scan }) {
       await goto("/integrations/setup");
       await expect(page.getByText("Add MCP server")).toBeVisible();
@@ -76,7 +82,9 @@ export const routes: Surface[] = [
       await scan("plugin submissions");
       await goto("/admin/access");
       await expect(page.getByText("Free access")).toBeVisible();
-      note("admin flag is faked client-side; the api answers 403, so only the page's own copy is scanned");
+      note(
+        "admin flag is faked client-side; the api answers 403, so only the page's own copy is scanned",
+      );
     },
   },
   {

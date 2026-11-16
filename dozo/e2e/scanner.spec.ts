@@ -19,7 +19,9 @@ test("the scanner finds a planted name everywhere a person can read one", async 
       <p id="allowed">a fork of Rakazo, Based on Rakazo, forked from Rakazo</p>
       <a href="rakazo://open" aria-label="@rakazo/ui RAKAZO_URL x-rakazo-id">identifiers</a>
     </body>`;
-  await page.route("http://scanner.test/", (route) => route.fulfill({ contentType: "text/html", body: html }));
+  await page.route("http://scanner.test/", (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
   await page.goto("http://scanner.test/");
   await page.evaluate(() => {
     const toast = document.createElement("div");
@@ -33,13 +35,31 @@ test("the scanner finds a planted name everywhere a person can read one", async 
   const scan = await scanPage(page, "planted");
   const found = scan.leaks.map((leak) => leak.where);
   for (const where of [
-    "title", "body.innerText", "body.textContent(hidden text included)", "[alt]", "[aria-label]", "[title]",
-    "[placeholder]", "input.value", "a[href]", "meta[description]", "transient (toast, dialog, menu, tooltip)", "clipboard", "window.open",
+    "title",
+    "body.innerText",
+    "body.textContent(hidden text included)",
+    "[alt]",
+    "[aria-label]",
+    "[title]",
+    "[placeholder]",
+    "input.value",
+    "a[href]",
+    "meta[description]",
+    "transient (toast, dialog, menu, tooltip)",
+    "clipboard",
+    "window.open",
   ]) {
-    expect(found, `a planted name in "${where}" was not found; found in: ${[...new Set(found)].join(", ")}`).toContain(where);
+    expect(
+      found,
+      `a planted name in "${where}" was not found; found in: ${[...new Set(found)].join(", ")}`,
+    ).toContain(where);
   }
   const texts = scan.leaks.map((leak) => leak.text).join("\n");
   expect(texts).not.toMatch(/fork of Rakazo|Based on Rakazo|forked from Rakazo/);
-  expect(texts, "deliberate identifiers are not leaks").not.toMatch(/@rakazo\/ui|RAKAZO_URL|x-rakazo-id|rakazo:\/\/open/);
-  expect(scan.hosts).toEqual(expect.arrayContaining(["github.com", "discord.gg", "www.getrakazo.com"]));
+  expect(texts, "deliberate identifiers are not leaks").not.toMatch(
+    /@rakazo\/ui|RAKAZO_URL|x-rakazo-id|rakazo:\/\/open/,
+  );
+  expect(scan.hosts).toEqual(
+    expect.arrayContaining(["github.com", "discord.gg", "www.getrakazo.com"]),
+  );
 });

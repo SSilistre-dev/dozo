@@ -15,7 +15,14 @@ export default defineConfig<{ theme: "light" | "dark" }>({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   reporter: [["list"], ["json", { outputFile: `${out}/results.json` }], ["./coverage-reporter.ts"]],
-  use: { baseURL, actionTimeout: 15_000, navigationTimeout: 30_000, trace: "retain-on-failure", screenshot: "only-on-failure", video: "retain-on-failure" },
+  use: {
+    baseURL,
+    actionTimeout: 15_000,
+    navigationTimeout: 30_000,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+  },
   projects: [
     // Signs up once and connects the offline model; every signed-in project reuses that session.
     { name: "setup", testMatch: "auth.setup.ts", use: desktop, teardown: "roundtrip" },
@@ -23,8 +30,18 @@ export default defineConfig<{ theme: "light" | "dark" }>({
     { name: "roundtrip", testMatch: "roundtrip.spec.ts", use: desktop },
     { name: "inventory", testMatch: "inventory.spec.ts" },
     { name: "scanner", testMatch: "scanner.spec.ts", use: desktop },
-    { name: "crawl-light", testMatch: ["crawl.spec.ts", "local-models.spec.ts"], dependencies: ["setup"], use: { ...desktop, theme: "light", storageState: `${out}/auth.json` } },
-    { name: "crawl-dark", testMatch: ["crawl.spec.ts", "local-models.spec.ts"], dependencies: ["setup"], use: { ...desktop, theme: "dark", storageState: `${out}/auth.json` } },
+    {
+      name: "crawl-light",
+      testMatch: ["crawl.spec.ts", "local-models.spec.ts"],
+      dependencies: ["setup"],
+      use: { ...desktop, theme: "light", storageState: `${out}/auth.json` },
+    },
+    {
+      name: "crawl-dark",
+      testMatch: ["crawl.spec.ts", "local-models.spec.ts"],
+      dependencies: ["setup"],
+      use: { ...desktop, theme: "dark", storageState: `${out}/auth.json` },
+    },
     { name: "web-manifest", testMatch: "manifest.spec.ts", use: desktop },
   ],
 });

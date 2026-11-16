@@ -11,7 +11,8 @@ import { dismiss, ensureComputerAwake, openBot, openBotPanel } from "../ui";
  */
 const FIRST_START_FAILS = {
   pattern: /500 POST \/rpc\/computer\/boot/,
-  reason: "supervisor: computer home is not usable by uid 1000 (first start of a new team computer)",
+  reason:
+    "supervisor: computer home is not usable by uid 1000 (first start of a new team computer)",
   mustOccur: true,
 };
 
@@ -28,7 +29,9 @@ export const computer: Surface[] = [
       await page.getByTestId("computer-preview-open").click();
       await expect(page.getByText("Internal server error")).toBeVisible({ timeout: 60_000 });
       await scan("failed start (visible error)");
-      note("first start: POST /rpc/computer/boot 500, the card shows 'Internal server error' and 'Retry screen'");
+      note(
+        "first start: POST /rpc/computer/boot 500, the card shows 'Internal server error' and 'Retry screen'",
+      );
     },
   },
   {
@@ -42,7 +45,9 @@ export const computer: Surface[] = [
       await ensureComputerAwake(page);
       await scan("awake in the panel");
       await page.getByTestId("computer-preview-open").click();
-      await expect(page.getByRole("button", { name: "Take control" })).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole("button", { name: "Take control" })).toBeVisible({
+        timeout: 60_000,
+      });
       await scan("full window");
       await page.getByRole("button", { name: "Teach a task" }).click();
       await scan("teach a task");

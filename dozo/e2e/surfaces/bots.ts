@@ -1,6 +1,6 @@
 import type { Surface } from "../fixtures";
 import { expect } from "../fixtures";
-import { expandAll, openBot, openBotPanel, openBotSettings, dismiss } from "../ui";
+import { dismiss, expandAll, openBot, openBotPanel, openBotSettings } from "../ui";
 
 export const bots: Surface[] = [
   {
@@ -27,7 +27,9 @@ export const bots: Surface[] = [
       await openBotPanel(page);
       await page.getByRole("button", { name: "More actions" }).click();
       await page.getByRole("menuitem", { name: "Clear conversation" }).click();
-      await expect(page.getByTestId("confirm-dialog").or(page.getByRole("alertdialog")).first()).toBeVisible();
+      await expect(
+        page.getByTestId("confirm-dialog").or(page.getByRole("alertdialog")).first(),
+      ).toBeVisible();
       await scan("clear conversation confirm");
       await dismiss(page);
     },
@@ -41,7 +43,9 @@ export const bots: Surface[] = [
       await page.getByTestId("avatar-studio-trigger").click();
       await expect(page.getByTestId("avatar-studio")).toBeVisible();
       await scan("bot tab");
-      const upload = page.getByRole("tab", { name: "Upload" }).or(page.getByRole("button", { name: "Upload" }));
+      const upload = page
+        .getByRole("tab", { name: "Upload" })
+        .or(page.getByRole("button", { name: "Upload" }));
       if (await upload.first().isVisible()) {
         await upload.first().click();
         await scan("upload tab");
@@ -55,7 +59,9 @@ export const bots: Surface[] = [
       await openBot(page, world.chiefId, "Chief");
       await openBotPanel(page);
       await page.getByRole("button", { name: "Edit name" }).click();
-      await expect(page.getByTestId("bot-profile-header").getByRole("textbox").first()).toBeVisible();
+      await expect(
+        page.getByTestId("bot-profile-header").getByRole("textbox").first(),
+      ).toBeVisible();
     },
   },
   {

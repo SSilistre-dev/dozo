@@ -7,7 +7,9 @@ import { NOT_REACHABLE, SKIPS } from "./surfaces";
 const out = process.env.DOZO_E2E_OUT ?? ".out";
 
 function pad(text: string, width: number) {
-  return text.length >= width ? `${text.slice(0, width - 1)}~` : text + " ".repeat(width - text.length);
+  return text.length >= width
+    ? `${text.slice(0, width - 1)}~`
+    : text + " ".repeat(width - text.length);
 }
 
 /** Prints what the crawl visited: per surface, per inventory key, and the totals. */
@@ -15,18 +17,24 @@ export default class CoverageReporter implements Reporter {
   onEnd() {
     const dir = `${out}/coverage`;
     const records: CoverageRecord[] = existsSync(dir)
-      ? readdirSync(dir).map((file) => JSON.parse(readFileSync(`${dir}/${file}`, "utf8")) as CoverageRecord)
+      ? readdirSync(dir).map(
+          (file) => JSON.parse(readFileSync(`${dir}/${file}`, "utf8")) as CoverageRecord,
+        )
       : [];
     if (records.length === 0) {
       console.log("\nCOVERAGE: no surface was crawled in this run.");
       return;
     }
     const names = [...new Set(records.map((r) => r.surface))];
-    const find = (name: string, theme: string) => records.find((r) => r.surface === name && r.theme === theme);
-    const mark = (r?: CoverageRecord) => (!r ? "-" : r.visited ? (r.leaks.length ? "LEAK" : "yes") : "NO");
+    const find = (name: string, theme: string) =>
+      records.find((r) => r.surface === name && r.theme === theme);
+    const mark = (r?: CoverageRecord) =>
+      !r ? "-" : r.visited ? (r.leaks.length ? "LEAK" : "yes") : "NO";
     const lines: string[] = [];
     lines.push("", "COVERAGE (surface: visited in light/dark, strings scanned, brand hits)");
-    lines.push(`${pad("surface", 46)} ${pad("group", 14)} ${pad("light", 5)} ${pad("dark", 5)} ${pad("scanned", 8)} hits`);
+    lines.push(
+      `${pad("surface", 46)} ${pad("group", 14)} ${pad("light", 5)} ${pad("dark", 5)} ${pad("scanned", 8)} hits`,
+    );
     let scanned = 0;
     let hits = 0;
     for (const name of names) {
@@ -49,7 +57,10 @@ export default class CoverageReporter implements Reporter {
     try {
       const inventory = readInventory();
       const visitedKeys = new Set(records.filter((r) => r.visited).flatMap((r) => r.covers));
-      lines.push("", "INVENTORY (read from the web app source: routes, settings sections, overlays, onboarding steps)");
+      lines.push(
+        "",
+        "INVENTORY (read from the web app source: routes, settings sections, overlays, onboarding steps)",
+      );
       let yes = 0;
       let skipped = 0;
       let missing = 0;
@@ -58,11 +69,17 @@ export default class CoverageReporter implements Reporter {
         if (state === "visited") yes++;
         else if (state === "SKIPPED") skipped++;
         else missing++;
-        const why = state === "SKIPPED" ? `  - ${SKIPS[key]}` : state === "MISSING" ? "  - not visited in this run" : "";
+        const why =
+          state === "SKIPPED"
+            ? `  - ${SKIPS[key]}`
+            : state === "MISSING"
+              ? "  - not visited in this run"
+              : "";
         lines.push(`  ${pad(state, 8)} ${key}${why}`);
       }
       const count = (prefix: string) => inventory.keys.filter((k) => k.startsWith(prefix));
-      const share = (prefix: string) => `${count(prefix).filter((k) => visitedKeys.has(k)).length}/${count(prefix).length}`;
+      const share = (prefix: string) =>
+        `${count(prefix).filter((k) => visitedKeys.has(k)).length}/${count(prefix).length}`;
       lines.push(
         `inventory: routes ${share("route:")}, settings sections ${share("settings:")}, overlays ${share("overlay:")}, onboarding steps ${share("onboarding:")}; ` +
           `${yes} visited, ${skipped} skipped with a reason, ${missing} missing, of ${inventory.keys.length}`,
@@ -83,15 +100,30 @@ export default class CoverageReporter implements Reporter {
         }
       }
     }
-    const errors = [...new Set(records.flatMap((r) => r.serverErrors.map((e) => `${e}  (on "${r.surface}")`)))];
+    const errors = [
+      ...new Set(records.flatMap((r) => r.serverErrors.map((e) => `${e}  (on "${r.surface}")`))),
+    ];
     if (errors.length) lines.push("", "SERVER ERRORS SEEN", ...errors.map((e) => `  ${e}`));
     const notes = [...new Set(records.filter((r) => r.note).map((r) => `${r.surface}: ${r.note}`))];
     if (notes.length) lines.push("", "NOTES", ...notes.map((n) => `  ${n}`));
     const urls = [...new Set(records.flatMap((r) => r.urls ?? []))].sort();
     const byHost = new Map<string, string[]>();
-    for (const url of urls) byHost.set(url.split("/")[0] as string, [...(byHost.get(url.split("/")[0] as string) ?? []), url]);
-    lines.push("", "OUTGOING LINKS (hosts that links, images and opened windows point at, with up to 4 example paths)");
-    for (const [host, list] of byHost) lines.push(`  ${host} (${list.length}): ${list.slice(0, 4).map((u) => u.slice(host.length) || "/").join("  ")}`);
+    for (const url of urls)
+      byHost.set(url.split("/")[0] as string, [
+        ...(byHost.get(url.split("/")[0] as string) ?? []),
+        url,
+      ]);
+    lines.push(
+      "",
+      "OUTGOING LINKS (hosts that links, images and opened windows point at, with up to 4 example paths)",
+    );
+    for (const [host, list] of byHost)
+      lines.push(
+        `  ${host} (${list.length}): ${list
+          .slice(0, 4)
+          .map((u) => u.slice(host.length) || "/")
+          .join("  ")}`,
+      );
     if (NOT_REACHABLE.length) {
       lines.push("", "NOT REACHABLE (and why)");
       for (const item of NOT_REACHABLE) lines.push(`  ${item.what}: ${item.reason}`);

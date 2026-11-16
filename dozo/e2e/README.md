@@ -7,7 +7,7 @@ Upstream's own web e2e (`apps/web/e2e`) is left to CI and is not touched or run 
 
 ## Run
 ```
-make up        # stack must answer 200 at DOZO_E2E_BASE_URL (default http://127.0.0.1:5173)
+make up        # stack must answer 200 at DOZO_E2E_BASE_URL (default http://127.0.0.1:$DOZO_WEB_PORT, else 5173)
 make e2e       # exit 0 pass, 2 on any failure, unreachable stack or zero tests run
 ```
 Needs only Docker and curl; nothing is installed on the host. `run.sh`:

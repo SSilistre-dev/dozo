@@ -67,10 +67,16 @@ export const languages: Surface[] = [
     once: true,
     slow: 300_000,
     async reach({ page, goto, scan }) {
-      expect(existsSync(LOCALES_FILE()), "the signed-in language sweep must run first (it records the language codes)").toBe(true);
+      expect(
+        existsSync(LOCALES_FILE()),
+        "the signed-in language sweep must run first (it records the language codes)",
+      ).toBe(true);
       const codes = JSON.parse(readFileSync(LOCALES_FILE(), "utf8")) as string[];
       for (const code of codes.filter((c) => c !== "en" && !c.startsWith("option-"))) {
-        await page.addInitScript(([key, value]) => localStorage.setItem(key as string, value as string), [LOCALE_KEY, code]);
+        await page.addInitScript(
+          ([key, value]) => localStorage.setItem(key as string, value as string),
+          [LOCALE_KEY, code],
+        );
         for (const path of ["/sign-in", "/sign-up", "/forgot-password"]) {
           await goto(path);
           await scan(`${path} in ${code}`);

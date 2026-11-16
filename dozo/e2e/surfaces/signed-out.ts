@@ -1,6 +1,6 @@
 import type { Surface } from "../fixtures";
 import { expect } from "../fixtures";
-import { PASSWORD, openEmailForm } from "../support";
+import { openEmailForm, PASSWORD } from "../support";
 
 export const signedOut: Surface[] = [
   {
@@ -43,7 +43,12 @@ export const signedOut: Surface[] = [
       await page.getByPlaceholder("Your email address").fill("nobody-e2e@example.test");
       await page.getByPlaceholder("Password").fill(`${PASSWORD}-wrong`);
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
-      await expect(page.getByRole("alert").or(page.getByText(/invalid|incorrect|wrong|not found|try again/i)).first()).toBeVisible();
+      await expect(
+        page
+          .getByRole("alert")
+          .or(page.getByText(/invalid|incorrect|wrong|not found|try again/i))
+          .first(),
+      ).toBeVisible();
     },
   },
   {
@@ -58,7 +63,9 @@ export const signedOut: Surface[] = [
       // This stack has no mail server, so the form answers at once and sends nothing.
       await page.getByLabel("Email", { exact: true }).fill("nobody-e2e@example.test");
       await page.getByRole("button", { name: "Send reset link" }).click();
-      await expect(page.getByText("Password recovery is not configured for this server")).toBeVisible();
+      await expect(
+        page.getByText("Password recovery is not configured for this server"),
+      ).toBeVisible();
     },
   },
   {
@@ -118,7 +125,17 @@ export const signedOut: Surface[] = [
     group: "signed out",
     signedOut: true,
     async reach({ page, goto }) {
-      for (const path of ["/app", "/onboarding", "/app/artifacts", "/invite/e2e-token", "/admin/access", "/admin/plugins", "/integrations/setup", "/mcp/oauth/callback", "/messaging/slack/callback"]) {
+      for (const path of [
+        "/app",
+        "/onboarding",
+        "/app/artifacts",
+        "/invite/e2e-token",
+        "/admin/access",
+        "/admin/plugins",
+        "/integrations/setup",
+        "/mcp/oauth/callback",
+        "/messaging/slack/callback",
+      ]) {
         await goto(path);
         await expect(page).toHaveURL(/\/sign-in/);
       }

@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 SUITE="${DOZO_E2E_SUITE:-$HERE}"
 OUT="$HERE/.out"
-BASE="${DOZO_E2E_BASE_URL:-http://127.0.0.1:5173}"
+BASE="${DOZO_E2E_BASE_URL:-http://127.0.0.1:${DOZO_WEB_PORT:-5173}}"
 NAME="dozo-pw-e2e"
 MODEL="dozo-e2e-model"
 

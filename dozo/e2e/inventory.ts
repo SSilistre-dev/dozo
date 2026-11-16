@@ -24,7 +24,9 @@ export function webSourceDir() {
 function read(root: string, relative: string) {
   const file = join(root, relative);
   if (!existsSync(file)) {
-    throw new Error(`inventory: ${relative} is gone from the web app source; update e2e/inventory.ts`);
+    throw new Error(
+      `inventory: ${relative} is gone from the web app source; update e2e/inventory.ts`,
+    );
   }
   return readFileSync(file, "utf8");
 }
@@ -45,7 +47,10 @@ export function readInventory(root = webSourceDir()): Inventory {
   }
   const resolve = (name: string) => {
     const value = constants[name];
-    if (!value) throw new Error(`inventory: route constant ${name} is not exported as a string; update e2e/inventory.ts`);
+    if (!value)
+      throw new Error(
+        `inventory: route constant ${name} is not exported as a string; update e2e/inventory.ts`,
+      );
     return value;
   };
   for (const match of app.matchAll(/\bpath=(?:"([^"]+)"|\{([A-Z][A-Z0-9_]*)\})/g)) {
@@ -58,13 +63,18 @@ export function readInventory(root = webSourceDir()): Inventory {
     keys.add(`route:${match[1] ?? resolve(match[2] as string)}`);
   }
   if (![...keys].some((key) => key === "route:/app" || key === "route:/sign-in")) {
-    throw new Error("inventory: found no /app or /sign-in route in App.tsx; the router changed shape, update e2e/inventory.ts");
+    throw new Error(
+      "inventory: found no /app or /sign-in route in App.tsx; the router changed shape, update e2e/inventory.ts",
+    );
   }
 
   // Settings sections and the flag each optional one waits on.
   const overlay = read(root, "pages/shell-overlay.ts");
   const sections = /const SETTINGS_SECTIONS = \[([^\]]+)\]/.exec(overlay);
-  if (!sections) throw new Error("inventory: SETTINGS_SECTIONS not found in shell-overlay.ts; update e2e/inventory.ts");
+  if (!sections)
+    throw new Error(
+      "inventory: SETTINGS_SECTIONS not found in shell-overlay.ts; update e2e/inventory.ts",
+    );
   for (const id of (sections[1] as string).matchAll(/"(\w+)"/g)) keys.add(`settings:${id[1]}`);
   const nav = read(root, "pages/settings-nav.ts");
   for (const match of nav.matchAll(/available\.(\w+)\s*\?\s*\[\s*\{\s*id:\s*"(\w+)"/g)) {
@@ -73,9 +83,13 @@ export function readInventory(root = webSourceDir()): Inventory {
 
   // Overlays opened by a URL parameter other than settings.
   const params = /const OVERLAY_KEYS = \[([^\]]+)\]/.exec(overlay);
-  if (!params) throw new Error("inventory: OVERLAY_KEYS not found in shell-overlay.ts; update e2e/inventory.ts");
+  if (!params)
+    throw new Error(
+      "inventory: OVERLAY_KEYS not found in shell-overlay.ts; update e2e/inventory.ts",
+    );
   for (const id of (params[1] as string).matchAll(/"(\w+)"/g)) {
-    if (id[1] !== "settings" && id[1] !== "space" && id[1] !== "messaging") keys.add(`overlay:${id[1]}`);
+    if (id[1] !== "settings" && id[1] !== "space" && id[1] !== "messaging")
+      keys.add(`overlay:${id[1]}`);
   }
 
   // Onboarding steps.

@@ -27,15 +27,18 @@ export const NOT_REACHABLE: { what: string; reason: string }[] = [
   },
   {
     what: "Find in chat, window chrome, desktop update",
-    reason: "desktop app only (the shortcuts dialog lists Find in chat only for the Electron host); the desktop app is out of scope here",
+    reason:
+      "desktop app only (the shortcuts dialog lists Find in chat only for the Electron host); the desktop app is out of scope here",
   },
   {
     what: "tool-call cards (ask, approval, secret ask, sub-agent, tool activity), artifact viewer, shared pages",
-    reason: "the offline model answers with text only, so no bot ever calls a tool or makes a file; /app/artifacts/:id and /p/:slug are scanned with unknown ids only",
+    reason:
+      "the offline model answers with text only, so no bot ever calls a tool or makes a file; /app/artifacts/:id and /p/:slug are scanned with unknown ids only",
   },
   {
     what: "voice calls and dictation",
-    reason: "no voice provider is configured; the Voice settings page is scanned, a call is not started",
+    reason:
+      "no voice provider is configured; the Voice settings page is scanned, a call is not started",
   },
   {
     what: "connecting a real integration, messaging app or OAuth provider",
@@ -43,11 +46,13 @@ export const NOT_REACHABLE: { what: string; reason: string }[] = [
   },
   {
     what: "accepting an invite as a second person, passkeys, social sign-in buttons",
-    reason: "a second account would spend more of the 10 credential calls per 15 minutes; WebAuthn and social providers need devices or accounts that are not on this stack",
+    reason:
+      "a second account would spend more of the 10 credential calls per 15 minutes; WebAuthn and social providers need devices or accounts that are not on this stack",
   },
   {
     what: "admin pages with real data, billing, paywall, wallet, messaging and computer provider settings",
-    reason: "RAKAZO_ADMIN_EMAILS and the billing, wallet and messaging providers are not configured; the pages are opened with those flags faked in the browser, so only their own copy is scanned",
+    reason:
+      "RAKAZO_ADMIN_EMAILS and the billing, wallet and messaging providers are not configured; the pages are opened with those flags faked in the browser, so only their own copy is scanned",
   },
   { what: "mobile app", reason: "out of scope (Expo app)" },
 ];

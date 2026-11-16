@@ -19,9 +19,17 @@ test("sign up once, connect the offline model, seed a few bots", async ({ page }
   await connectModelThroughOnboarding(page);
   const chiefId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1) as string;
   // The stub answered the greeting, so the model works end to end through the worker.
-  await expect(page.getByText("Hello from the offline Dozo test model.").first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("Hello from the offline Dozo test model.").first()).toBeVisible({
+    timeout: 60_000,
+  });
   const make = (name: string) =>
-    rpc<{ id: string }>(page, "bots/create", { name, title: "", description: "", notifyOnFinish: true, computerMode: "team" });
+    rpc<{ id: string }>(page, "bots/create", {
+      name,
+      title: "",
+      description: "",
+      notifyOnFinish: true,
+      computerMode: "team",
+    });
   const scout = await make("Scout");
   const writer = await make("Writer");
   const world: World = { user, chiefId, scoutId: scout.id, writerId: writer.id };

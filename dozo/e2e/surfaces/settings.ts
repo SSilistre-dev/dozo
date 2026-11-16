@@ -12,7 +12,12 @@ const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
     const download = page.waitForEvent("download", { timeout: 30_000 });
     await settings.getByRole("button", { name: "Export data" }).click();
     const identity = page.getByRole("dialog").filter({ hasText: "Confirm it's you" });
-    if (await identity.waitFor({ timeout: 5_000 }).then(() => true, () => false)) {
+    if (
+      await identity.waitFor({ timeout: 5_000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
       await scan("confirm identity dialog");
       await identity.getByLabel("Password", { exact: true }).fill(world.user.password);
       await identity.getByRole("button", { name: "Continue" }).click();
@@ -28,7 +33,10 @@ const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
     const main = page.getByTestId("model-role-main");
     await expect(main.getByTestId("model-role-row-1")).toContainText("dozo-e2e-model");
     await scan("model roles");
-    await main.getByRole("button", { name: /^Change / }).first().click();
+    await main
+      .getByRole("button", { name: /^Change / })
+      .first()
+      .click();
     await expect(page.getByRole("listbox", { name: "Model options" })).toBeVisible();
     await scan("model picker");
     await dismiss(page);
@@ -36,7 +44,9 @@ const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
     const add = page.getByRole("button", { name: "Add provider", exact: true });
     await add.click();
     await scan("add provider list");
-    const providers = (await page.getByRole("option").allInnerTexts()).map((name) => name.trim()).filter(Boolean);
+    const providers = (await page.getByRole("option").allInnerTexts())
+      .map((name) => name.trim())
+      .filter(Boolean);
     await dismiss(page);
     expect(providers.length, "providers listed in Settings").toBeGreaterThan(5);
     for (const name of providers) {
@@ -48,7 +58,10 @@ const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
       await connection.getByRole("button", { name: "Close", exact: true }).click();
       await expect(connection).toBeHidden();
     }
-    await main.getByTestId("model-role-row-1").getByRole("button", { name: / options$/ }).click();
+    await main
+      .getByTestId("model-role-row-1")
+      .getByRole("button", { name: / options$/ })
+      .click();
     await scan("model row menu");
     await page.getByRole("menuitem", { name: "Manage model", exact: true }).click();
     await expect(page.getByTestId("model-settings-page")).toBeVisible();
@@ -76,7 +89,17 @@ const extras: Partial<Record<SettingsId, (ctx: Ctx) => Promise<void>>> = {
   },
 };
 
-const SETTINGS: SettingsId[] = ["general", "models", "confirmations", "vault", "memory", "voice", "labs", "usage", "organization"];
+const SETTINGS: SettingsId[] = [
+  "general",
+  "models",
+  "confirmations",
+  "vault",
+  "memory",
+  "voice",
+  "labs",
+  "usage",
+  "organization",
+];
 
 export const settings: Surface[] = SETTINGS.map((id) => ({
   name: `settings / ${id}`,
@@ -104,25 +127,40 @@ export const hiddenSections: Surface = {
   group: "settings",
   covers: ["settings:wallet", "settings:messaging", "settings:computer", "settings:billing"],
   async reach({ page, world, scan, note }) {
-    const patch = (change: (body: { json?: Record<string, unknown> }) => void) => async (route: import("@playwright/test").Route) => {
-      const response = await route.fetch();
-      const body = (await response.json()) as { json?: Record<string, unknown> };
-      change(body);
-      await route.fulfill({ response, json: body });
-    };
+    const patch =
+      (change: (body: { json?: Record<string, unknown> }) => void) =>
+      async (route: import("@playwright/test").Route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as { json?: Record<string, unknown> };
+        change(body);
+        await route.fulfill({ response, json: body });
+      };
     await page.route(
       "**/rpc/bootstrap",
       patch((body) => {
         const me = body.json?.me as Record<string, unknown> | undefined;
-        if (me) Object.assign(me, { billingEnabled: true, paymentWalletProvider: { id: "e2e", name: "E2E wallet" }, computerSettingsEnabled: true, isAdmin: true });
+        if (me)
+          Object.assign(me, {
+            billingEnabled: true,
+            paymentWalletProvider: { id: "e2e", name: "E2E wallet" },
+            computerSettingsEnabled: true,
+            isAdmin: true,
+          });
       }),
     );
-    await page.route("**/rpc/messaging/status", patch((body) => void (body.json && (body.json.enabled = true))));
+    await page.route(
+      "**/rpc/messaging/status",
+      patch((body) => {
+        if (body.json) body.json.enabled = true;
+      }),
+    );
     await openBot(page, world.chiefId, "Chief");
     for (const id of ["wallet", "messaging", "computer", "billing"] as const) {
       await openUserSettings(page, id);
       await scan(`section ${id}`);
     }
-    note("flags faked client-side (billing, wallet, messaging, computer, admin); the api refuses the data calls with 4xx, so only the pages' own copy is scanned");
+    note(
+      "flags faked client-side (billing, wallet, messaging, computer, admin); the api refuses the data calls with 4xx, so only the pages' own copy is scanned",
+    );
   },
 };

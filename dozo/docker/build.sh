@@ -7,6 +7,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 # DOZO_STAGE_DIR (absolute path) moves the whole stage area, e.g. to a scratch dir for experiments.
 STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
+# Docker reads a relative -v source as a named volume: make it absolute once, here.
+case "$STAGE" in /*) ;; *) STAGE="$PWD/${STAGE#./}" ;; esac
 SRC="$STAGE/src"
 ENVF="$STAGE/dozo.env"
 PROJECT=dozo

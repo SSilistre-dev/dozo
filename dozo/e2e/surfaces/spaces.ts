@@ -51,7 +51,9 @@ export const spaces: Surface[] = [
       await settings.getByRole("button", { name: "Invite" }).click();
       await expect(page.getByText("Invite link copied")).toBeVisible();
       await scan("after Invite (toast, clipboard)");
-      const link = await page.evaluate(() => (window as unknown as { __dozo: { clipboard: string[] } }).__dozo.clipboard.at(-1));
+      const link = await page.evaluate(() =>
+        (window as unknown as { __dozo: { clipboard: string[] } }).__dozo.clipboard.at(-1),
+      );
       expect(link, "the invite link was not copied").toMatch(/\/invite\//);
       expect(new URL(link as string).host, "invite link host").toBe(new URL(page.url()).host);
       await settings.getByRole("button", { name: "Customize Models" }).click();

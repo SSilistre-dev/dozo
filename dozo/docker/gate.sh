@@ -6,9 +6,14 @@
 set -uo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SELF")/../.." && pwd)"
+PWD0="$PWD"
 cd "$ROOT"
 NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
 STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
+# Docker reads a relative -v source as a named volume: make it absolute once (against the caller's
+# directory) and pass it on to build.sh.
+case "$STAGE" in /*) ;; *) STAGE="$PWD0/${STAGE#./}" ;; esac
+export DOZO_STAGE_DIR="$STAGE"
 LOGS="$STAGE/logs"
 FAILS=()
 # Fork-owned tests live inside upstream dirs as dozo-*.test.ts(x). Fewer than this after the

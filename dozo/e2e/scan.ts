@@ -13,7 +13,12 @@ export const LEAK = /rakazo|getrakazo|elie222|RWwKa2Sn7h|id6801531099/i;
  * Deliberately unchanged technical identifiers, allowed ONLY inside attribute and link values
  * (never in visible text): `@rakazo/*`, `RAKAZO_*`, `x-rakazo-*` and the `rakazo://` scheme.
  */
-const KNOWN_IDENTIFIERS = [/@rakazo\/[\w.-]+/gi, /RAKAZO_\w+/g, /x-rakazo-[\w-]+/gi, /rakazo:\/\//gi];
+const KNOWN_IDENTIFIERS = [
+  /@rakazo\/[\w.-]+/gi,
+  /RAKAZO_\w+/g,
+  /x-rakazo-[\w-]+/gi,
+  /rakazo:\/\//gi,
+];
 
 /** The documented attribution phrases (`brand.json` "keep", NOTICE): the one place the name may show. */
 const ATTRIBUTION = [/fork of Rakazo/gi, /Based on Rakazo/gi, /forked from Rakazo/gi];
@@ -42,7 +47,9 @@ const PROBES = () => {
   };
   new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      remember(mutation.target instanceof Element ? mutation.target : mutation.target.parentElement);
+      remember(
+        mutation.target instanceof Element ? mutation.target : mutation.target.parentElement,
+      );
       for (const node of mutation.addedNodes) {
         if (!(node instanceof Element)) continue;
         remember(node);
@@ -117,24 +124,43 @@ export async function scanPage(page: Page, surface: string): Promise<Scan> {
     if (document.body) {
       const clone = document.body.cloneNode(true) as HTMLElement;
       for (const el of clone.querySelectorAll("script,style,noscript,template")) el.remove();
-      items.push({ where: "body.textContent(hidden text included)", text: clone.textContent ?? "" });
+      items.push({
+        where: "body.textContent(hidden text included)",
+        text: clone.textContent ?? "",
+      });
     }
-    for (const attr of ["alt", "title", "aria-label", "aria-description", "placeholder", "aria-placeholder"]) {
+    for (const attr of [
+      "alt",
+      "title",
+      "aria-label",
+      "aria-description",
+      "placeholder",
+      "aria-placeholder",
+    ]) {
       for (const el of document.querySelectorAll(`[${attr}]`)) {
         items.push({ where: `[${attr}]`, text: el.getAttribute(attr) ?? "" });
       }
     }
     for (const el of document.querySelectorAll("input,textarea")) {
       const value = (el as HTMLInputElement).value;
-      if (value && (el as HTMLInputElement).type !== "password") items.push({ where: "input.value", text: value });
+      if (value && (el as HTMLInputElement).type !== "password")
+        items.push({ where: "input.value", text: value });
     }
     for (const meta of document.querySelectorAll("meta[content]")) {
-      items.push({ where: `meta[${meta.getAttribute("name") ?? meta.getAttribute("property")}]`, text: meta.getAttribute("content") ?? "" });
+      items.push({
+        where: `meta[${meta.getAttribute("name") ?? meta.getAttribute("property")}]`,
+        text: meta.getAttribute("content") ?? "",
+      });
     }
     for (const el of document.querySelectorAll("[href],[src],[action]")) {
-      const raw = el.getAttribute("href") ?? el.getAttribute("src") ?? el.getAttribute("action") ?? "";
-      if (!raw || raw.startsWith("#") || raw.startsWith("data:") || raw.startsWith("blob:")) continue;
-      items.push({ where: `${el.tagName.toLowerCase()}[${el.hasAttribute("href") ? "href" : el.hasAttribute("src") ? "src" : "action"}]`, text: raw });
+      const raw =
+        el.getAttribute("href") ?? el.getAttribute("src") ?? el.getAttribute("action") ?? "";
+      if (!raw || raw.startsWith("#") || raw.startsWith("data:") || raw.startsWith("blob:"))
+        continue;
+      items.push({
+        where: `${el.tagName.toLowerCase()}[${el.hasAttribute("href") ? "href" : el.hasAttribute("src") ? "src" : "action"}]`,
+        text: raw,
+      });
       try {
         const url = new URL(raw, location.href);
         if (/^https?:$/.test(url.protocol) && url.host !== location.host) {
@@ -146,8 +172,13 @@ export async function scanPage(page: Page, surface: string): Promise<Scan> {
         // not a URL
       }
     }
-    const store = (window as unknown as { __dozo?: { transient: string[]; clipboard: string[]; opened: string[] } }).__dozo;
-    for (const text of store?.transient ?? []) items.push({ where: "transient (toast, dialog, menu, tooltip)", text });
+    const store = (
+      window as unknown as {
+        __dozo?: { transient: string[]; clipboard: string[]; opened: string[] };
+      }
+    ).__dozo;
+    for (const text of store?.transient ?? [])
+      items.push({ where: "transient (toast, dialog, menu, tooltip)", text });
     for (const text of store?.clipboard ?? []) items.push({ where: "clipboard", text });
     for (const url of store?.opened ?? []) {
       items.push({ where: "window.open", text: url });
@@ -161,7 +192,12 @@ export async function scanPage(page: Page, surface: string): Promise<Scan> {
     }
     return { items, hosts: [...hosts], urls: [...urls] };
   });
-  return { elements: found.items.length, leaks: scanText(surface, found.items), hosts: found.hosts, urls: found.urls };
+  return {
+    elements: found.items.length,
+    leaks: scanText(surface, found.items),
+    hosts: found.hosts,
+    urls: found.urls,
+  };
 }
 
 /** A downloaded file: its name and, for text or archives, the bytes a person would open. */
@@ -172,7 +208,8 @@ export async function scanDownload(surface: string, download: Download): Promise
   if (path) {
     const { readFileSync, statSync } = await import("node:fs");
     // Zip entry names are stored uncompressed, so a latin1 view of the archive shows them.
-    if (statSync(path).size < 20 * 1024 * 1024) items.push({ where: "download.content", text: readFileSync(path).toString("latin1") });
+    if (statSync(path).size < 20 * 1024 * 1024)
+      items.push({ where: "download.content", text: readFileSync(path).toString("latin1") });
   }
   return { elements: items.length, leaks: scanText(surface, items), hosts: [], urls: [] };
 }

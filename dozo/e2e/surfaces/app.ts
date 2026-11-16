@@ -8,4 +8,13 @@ import { hiddenSections } from "./settings";
 import { shell } from "./shell";
 import { spaces } from "./spaces";
 
-export const appSurfaces: Surface[] = [...shell, ...bots, ...spaces, ...overlays, ...routes, ...onboarding, ...computer, hiddenSections];
+export const appSurfaces: Surface[] = [
+  ...shell,
+  ...bots,
+  ...spaces,
+  ...overlays,
+  ...routes,
+  ...onboarding,
+  ...computer,
+  hiddenSections,
+];

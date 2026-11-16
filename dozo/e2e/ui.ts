@@ -13,7 +13,10 @@ export async function gotoStable(page: Page, path: string) {
     try {
       await page.goto(path, { waitUntil: "domcontentloaded", timeout: 20_000 });
       await page.waitForFunction(
-        () => document.querySelector('[data-testid="page-loading"],[data-rakazo-app-state="session-pending"]') === null,
+        () =>
+          document.querySelector(
+            '[data-testid="page-loading"],[data-rakazo-app-state="session-pending"]',
+          ) === null,
         undefined,
         { timeout: 15_000 },
       );
@@ -61,8 +64,20 @@ export async function openBotSettings(page: Page) {
 }
 
 export type SettingsId =
-  | "general" | "models" | "confirmations" | "vault" | "memory" | "voice" | "labs" | "usage" | "organization"
-  | "wallet" | "messaging" | "computer" | "billing" | "updates";
+  | "general"
+  | "models"
+  | "confirmations"
+  | "vault"
+  | "memory"
+  | "voice"
+  | "labs"
+  | "usage"
+  | "organization"
+  | "wallet"
+  | "messaging"
+  | "computer"
+  | "billing"
+  | "updates";
 
 /** Opens account Settings from the account menu, and one of its sections. */
 export async function openUserSettings(page: Page, section: SettingsId = "general") {
@@ -150,7 +165,12 @@ export async function ensureComputerAwake(page: Page) {
 }
 
 /** Opens every menu, picker and dropdown trigger inside `scope` once, so each one's options are scanned. */
-export async function openEachPopup(page: Page, scope: Locator, scan: (label: string) => Promise<void>, label: string) {
+export async function openEachPopup(
+  page: Page,
+  scope: Locator,
+  scan: (label: string) => Promise<void>,
+  label: string,
+) {
   const triggers = scope.locator('button[aria-haspopup], [role="combobox"]:not(select)');
   const count = await triggers.count();
   for (let i = 0; i < count; i++) {
@@ -160,7 +180,11 @@ export async function openEachPopup(page: Page, scope: Locator, scan: (label: st
         if (!(await trigger.isVisible().catch(() => false))) break;
         await trigger.scrollIntoViewIfNeeded();
         await trigger.click();
-        const popup = page.locator('[role="listbox"],[role="menu"],[data-slot="popover-content"],[data-slot="select-content"]').last();
+        const popup = page
+          .locator(
+            '[role="listbox"],[role="menu"],[data-slot="popover-content"],[data-slot="select-content"]',
+          )
+          .last();
         if (await popup.isVisible().catch(() => false)) {
           await scan(`${label}, popup ${i + 1}`);
           await page.keyboard.press("Escape");
