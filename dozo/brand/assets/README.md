@@ -1,50 +1,48 @@
 # Dozo brand assets
 
-Logo concept 02 "Visor" (`design/d/logos.html`): blue pill, two eye cut-outs, lowercase `dozo`.
-Masters are hand-written SVG (no fonts, no raster); PNG/ICO are generated, do not edit by hand.
+Approved logo: variant H1 (soft robot head, tilted dark visor, two eyes, thin red headband).
+Masters are hand-written SVG (no fonts, no raster, no strokes: the wordmark is outlined fills);
+PNG/ICO are generated, do not edit by hand.
 
 ## Files
 | File | Purpose |
 |---|---|
-| `mark.svg` | Mark alone, blue `#2b74ea`, true cut-out eyes, transparent |
-| `mark-mono-light.svg` / `mark-mono-dark.svg` | One colour (`#141414` / `#f2f2f0`) for light / dark backgrounds |
-| `logo-dark.svg` / `logo-light.svg` | Mark + `dozo` wordmark (paths) for dark / light backgrounds |
-| `app-icon.svg` | Mark on rounded dark tile (`#1f1f1f`), safe-zone padding |
-| `app-icon-fullbleed.svg` | Same, square corners: source of the opaque PWA/touch icons |
-| `favicon.svg` | Small-size mark (32 grid, bigger eyes): source of favicons |
-| `og-image.svg` / `og-image.png` | 1200x630 social card, tagline converted to paths (Inter Regular) |
+| `mark.svg` | Full mark, head ink `currentColor`, band fixed `#C8372D`. viewBox is the tight bounds |
+| `mark-small.svg` | Reduced variant for 16-24 px: flat band, tails dropped |
+| `mark-mono-dark.svg` / `mark-mono-light.svg` | One ink (`#f4f3f0` / `#0d0d0d`), band in the same ink |
+| `logo-dark.svg` / `logo-light.svg` | Mark + outlined `dozo` wordmark, explicit colours |
+| `app-icon.svg` | Mark on a dark rounded tile (`#161616`), 12/128 margin |
+| `app-icon-fullbleed.svg` | Same, square corners, mark at 125%: source of the opaque PWA/touch icons (inside the maskable safe circle) |
+| `favicon.svg` | Reduced variant, ink `#0d0d0d` / `#f4f3f0` via `prefers-color-scheme` |
+| `favicon-tile.svg`, `favicon-tile-large.svg` | Dark rounded tile + mark: sources of the 16/32 px and 48/128 px PNGs (PNG/ICO cannot switch ink, the tile keeps them legible on any tab strip) |
+| `og-image.svg` / `og-image.png` | 1200x630 card: lockup + tagline (tagline is a path, Inter Regular, kept in `og-image.svg`) |
 | `web/*` | Drop-in replacements for `apps/web/public/*` |
+| `build.sh`, `render.mjs`, `raster.json`, `make-og.py`, `make-ico.py` | The pipeline |
 
-## Web map (upstream file -> our file, all pixel sizes verified equal)
-| Upstream (`apps/web/public/`) | Ours (`dozo/brand/assets/web/`) | Size | Use |
+## Web map (all pixel sizes equal upstream's)
+| Upstream (`apps/web/public/`) | Ours | Size | Source |
 |---|---|---|---|
-| `favicon.ico` | `favicon.ico` | 16+32+48 (PNG-embedded) | `<link rel=icon sizes=any>` |
-| `favicon.png` | `favicon.png` | 128x128 | `<link rel=icon type=png>` |
-| `favicon-16x16.png` | `favicon-16x16.png` | 16x16 | legacy tab icon |
-| `favicon-32x32.png` | `favicon-32x32.png` | 32x32 | legacy tab icon |
-| `apple-touch-icon.png` | `apple-touch-icon.png` | 180x180 | iOS home screen |
-| `icon-192.png` | `icon-192.png` | 192x192 | PWA, purpose any + maskable |
-| `icon-512.png` | `icon-512.png` | 512x512 | PWA, purpose any + maskable |
+| `favicon.ico` | `web/favicon.ico` | 16+32+48 (PNG-embedded) | tiles |
+| `favicon.png` | `web/favicon.png` | 128x128 | `favicon-tile-large.svg` |
+| `favicon-16x16.png`, `favicon-32x32.png` | `web/` | 16, 32 | `favicon-tile.svg` (reduced variant) |
+| `apple-touch-icon.png` | `web/apple-touch-icon.png` | 180x180 | `app-icon-fullbleed.svg` |
+| `icon-192.png`, `icon-512.png` | `web/` | 192, 512 | `app-icon-fullbleed.svg` (any + maskable) |
+| (new) `favicon.svg` | `favicon.svg` | vector | linked by an anchored rule in `apps/web/index.html` |
 
-Not in upstream, new: `og-image.png` (no upstream equivalent in `public/`; `index.html` has no og tags).
-Upstream has no `favicon.svg` or separate maskable files; `plugin.ts` reuses the 192/512 for both purposes.
-Icons are full-bleed dark with the mark at about 56% width, inside the maskable safe zone.
+`og-image.png` has no upstream equivalent in `public/`; it is not mapped.
 
-## Rasterise
-`dozo/brand/assets/build.sh` (needs Docker, runs everything in a throwaway `python:3.12-slim`,
-installs `librsvg2-bin imagemagick fonts-inter` + `fonttools`, host stays clean). Core commands:
-
-    rsvg-convert -w N -h N <src>.svg -o out.png ; convert out.png PNG32:out.png   # RGBA like upstream
-    python make-ico.py favicon.ico favicon-16x16.png favicon-32x32.png f48.png   # PNG-embedded ICO
-    python make-og.py && rsvg-convert -w 1200 -h 630 og-image.svg -o og-image.png
-
-`make-og.py` turns the tagline into SVG paths with fonttools, so the SVG needs no font.
+## Rebuild
+`dozo/brand/assets/build.sh` runs on the host: headless Brave (`$E2E_BROWSER_PATH` or the macOS
+default) draws each SVG on a canvas of the exact pixel size over CDP (`render.mjs`, Node built-ins),
+`make-ico.py` packs the ICO, `make-og.py` recomposes `og-image.svg`. Nothing is installed, no Docker.
+Brave needs to run outside restrictive sandboxes (it fails to start inside one).
 
 ## Colours
-Blue `#2b74ea` (mark, accent) | dark `#141414` | tile `#1f1f1f` | text on dark `#f2f2f0`
-| light bg `#f5f5f3` | tagline grey `#8a8a86`.
+Band red `#C8372D` | ink on dark `#f4f3f0` | ink on light `#0d0d0d` | tile `#161616` | OG background
+`#141414` | tagline grey `#8a8a86`.
 
-## Open decision
-Concept 02 was chosen without the owner's final sign-off. To swap: replace `MARK` path in the masters
-(`mark*.svg`, `logo-*.svg`, `app-icon*.svg`, `favicon.svg`; wordmark paths in `logo-*.svg`),
-then run `build.sh`. File names and sizes stay the same, so the brand tool's map does not change.
+## Wordmark outlines
+The source drew `dozo` as 6.4-wide round-capped strokes. Each stroke is now a filled outline computed
+exactly: letters `o`, `d` bowl = ring (outer r 16, inner r 9.6), `d` stem = stadium, `z` = three
+stadiums (round joins equal the union of capsules). Rendered at 5x it differs from the stroked source
+by at most 0.06 units on curved edges (the browser's stroker approximates arcs).

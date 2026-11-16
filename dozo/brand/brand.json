@@ -248,6 +248,12 @@
   ],
   "anchored": [
     {
+      "file": "apps/web/index.html",
+      "find": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />",
+      "replace": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />\n    <link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\" />",
+      "reason": "the Dozo mark switches ink with the browser colour scheme; upstream has no SVG favicon, so link the mapped favicon.svg (the PNG/ICO stay as fallbacks)"
+    },
+    {
       "file": "packages/auth/src/email.tsx",
       "find": "                rakazo\n              </Text>",
       "replace": "                dozo\n              </Text>",
@@ -481,6 +487,7 @@
   "assets": {
     "apps/web/public/favicon.ico": "web/favicon.ico",
     "apps/web/public/favicon.png": "web/favicon.png",
+    "apps/web/public/favicon.svg": "favicon.svg",
     "apps/web/public/favicon-16x16.png": "web/favicon-16x16.png",
     "apps/web/public/favicon-32x32.png": "web/favicon-32x32.png",
     "apps/web/public/apple-touch-icon.png": "web/apple-touch-icon.png",

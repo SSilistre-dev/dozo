@@ -58,7 +58,7 @@ case-sensitive whole words, e.g. the upstream founder's name), `anchored`, `asse
   the mascot art (`packages/core/src/logo-avatar-art.ts` paths and eyes) and rename visible
   lowercase uses. An anchored rule works on files outside `include`.
 - Add an asset: `"assets": { "apps/web/public/favicon.png": "favicon.png" }` copies
-  `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons are mapped.
+  `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons and `favicon.svg` are mapped (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule).
 
 ## Leak gate
 
@@ -115,3 +115,15 @@ files outside `include`.
 - Tests, `apps/web/e2e` and `packages/testkit` are not rewritten; run them on the pristine tree.
 - The bot docs URLs (`dozo.example/docs/*.md`) must exist or the built-in skill has nothing to fetch.
 - The welcome mail has no hero image (the anchored rule drops it) until Dozo makes one.
+
+## Logo
+
+- Approved mark: H1, a soft robot head with a tilted dark visor wearing a thin red headband. Artwork,
+  files and rebuild steps: `assets/README.md`.
+- Red: `#C8372D` (band only, fixed in every file). Ink: `#f4f3f0` on dark, `#0d0d0d` on light.
+- One-ink fallback: where one colour is all there is (stamp, emboss, single-colour print, forced
+  colours), use `mark-mono-dark.svg` / `mark-mono-light.svg`: band in the head's ink, never red alone.
+- Minimum size: full mark and lockup 32 px high; below that use `mark-small.svg` (16-31 px).
+- Clear space: 1/4 of the mark's height (11 units in the lockup viewBox) on every side; the SVG viewBoxes
+  are tight, so the margin is the placer's job.
+- Later: the mockups show a small red seal dot beside the wordmark; the red band replaces it, so the dot is dropped.

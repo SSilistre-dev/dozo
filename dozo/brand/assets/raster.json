@@ -1,0 +1,10 @@
+[
+  {"svg": "app-icon-fullbleed.svg", "w": 192, "h": 192, "out": "web/icon-192.png"},
+  {"svg": "app-icon-fullbleed.svg", "w": 512, "h": 512, "out": "web/icon-512.png"},
+  {"svg": "app-icon-fullbleed.svg", "w": 180, "h": 180, "out": "web/apple-touch-icon.png"},
+  {"svg": "favicon-tile-large.svg", "w": 128, "h": 128, "out": "web/favicon.png"},
+  {"svg": "favicon-tile.svg", "w": 32, "h": 32, "out": "web/favicon-32x32.png"},
+  {"svg": "favicon-tile.svg", "w": 16, "h": 16, "out": "web/favicon-16x16.png"},
+  {"svg": "favicon-tile-large.svg", "w": 48, "h": 48, "out": ".tmp/favicon-48.png"},
+  {"svg": "og-image.svg", "w": 1200, "h": 630, "out": "og-image.png"}
+]

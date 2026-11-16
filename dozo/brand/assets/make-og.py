@@ -1,26 +1,17 @@
-# Builds og-image.svg: lockup + tagline converted to paths (no font needed at render time).
-# Needs fonttools and Inter (fonts-inter). Run via build.sh.
+# Rebuilds og-image.svg: the dark lockup (logo-dark.svg) over the tagline.
+# The tagline is already converted to a path (Inter Regular, 30 px, #8a8a86; no font needed) and
+# lives in og-image.svg as <path id="tagline" transform="translate(x 414)" d=...>: it is read back
+# from there, so this script needs only the standard library. Rasterise with build.sh.
 import re
-from fontTools.ttLib import TTFont
-from fontTools.pens.svgPathPen import SVGPathPen
-from fontTools.pens.transformPen import TransformPen
-
-TEXT, SIZE, FILL = "AI bots with their own computer", 30, "#8a8a86"
-f = TTFont("/usr/share/fonts/opentype/inter/Inter-Regular.otf")
-gs, cmap, upm = f.getGlyphSet(), f.getBestCmap(), f["head"].unitsPerEm
-s = SIZE / upm
-x, parts = 0.0, []
-for ch in TEXT:
-    g = cmap[ord(ch)]
-    if ch != " ":
-        pen = SVGPathPen(gs, ntos=lambda v: ("%.2f" % v).rstrip("0").rstrip("."))
-        gs[g].draw(TransformPen(pen, (s, 0, 0, -s, x, 0)))
-        parts.append(pen.getCommands())
-    x += gs[g].width * s
-w = x
-lk = open("logo-dark.svg").read()
-inner = re.search(r'<svg[^>]*>(.*)</svg>', lk, re.S).group(1).strip()
-# lockup content spans x 0..338, y 0..100; scale 2 -> 676x200, centred horizontally
-out = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#141414"/><g transform="translate(262 195) scale(2)">{inner}</g><path fill="{FILL}" transform="translate({600 - w/2:.2f} 440)" d="{' '.join(parts)}"/></svg>
-'''
+S, W, H, TOP, BASE = 3, 1200, 630, 216, 414
+lock = open("logo-dark.svg").read()
+vb = [float(v) for v in re.search(r'viewBox="([^"]+)"', lock).group(1).split()]
+inner = re.search(r"</title>(.*)</svg>", lock, re.S).group(1)
+old = open("og-image.svg").read()
+tx, d = re.search(r'<path id="tagline"[^>]*translate\(([\d.]+) \d+\)" d="([^"]+)"', old).groups()
+x = (W - vb[2] * S) / 2
+out = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}"><title>Dozo</title>'
+       f'<rect width="{W}" height="{H}" fill="#141414"/>'
+       f'<g transform="translate({x:.2f} {TOP}) scale({S}) translate({-vb[0]:g} {-vb[1]:g})">{inner}</g>'
+       f'<path id="tagline" fill="#8a8a86" transform="translate({tx} {BASE})" d="{d}"/></svg>\n')
 open("og-image.svg", "w").write(out)
