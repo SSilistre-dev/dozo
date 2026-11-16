@@ -37,7 +37,7 @@ export type LocalModelEntry = {
 };
 
 export type HardwareProfile = {
-  kind: "unified" | "gpu" | "cpu";
+  kind: "unified" | "gpu";
   usableMemoryGB: number;
   bandwidthGBps: number;
   source: "detected" | "chosen";
@@ -56,7 +56,7 @@ export const LOCAL_MODEL_CONTEXT_TOKENS = 32768;
 
 // Share of the chosen memory a model may take. Unified memory is also the
 // operating system's and the browser's; a discrete card's memory is not.
-const USABLE_MEMORY_SHARE = { unified: 0.75, gpu: 0.9, cpu: 0.75 } as const;
+const USABLE_MEMORY_SHARE = { unified: 0.75, gpu: 0.9 } as const;
 
 // Memory the runtime itself needs on top of weights and the KV cache.
 const RUNTIME_OVERHEAD_GB = 1;
@@ -66,7 +66,7 @@ const RUNTIME_OVERHEAD_GB = 1;
 const FIT_HEADROOM_GB = 1;
 
 // Prudence factor for mixture-of-experts models (entries with `activeParamsB`).
-// There is no calibration row behind it: the llama.cpp measurements above are
+// There is no calibration row behind it: the llama.cpp measurements below are
 // all dense models, so the active-weights estimate is unchecked for these and
 // came out high (about 105 tok/s for one entry). 0.75 is a conservative cut,
 // not a measured figure.
@@ -154,11 +154,6 @@ function fitModel(profile: HardwareProfile, model: LocalModelEntry): LocalModelF
   // never given a speed.
   if (memoryGB + FIT_HEADROOM_GB > profile.usableMemoryGB) {
     return { model, tier: "no-fit", tokensPerSecond: 0, memoryGB };
-  }
-  // No bandwidth data exists for processors without a GPU, so nothing is
-  // promised for them.
-  if (profile.kind === "cpu") {
-    return { model, tier: "slow", tokensPerSecond: 0, memoryGB };
   }
   const tokensPerSecond = roundDownToStep(
     rawTokensPerSecond(profile.kind, profile.bandwidthGBps, model) * SAFETY_FACTOR,

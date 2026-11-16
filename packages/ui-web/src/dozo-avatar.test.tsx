@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +26,8 @@ function mount(node: ReactNode) {
     container.remove();
   };
   mounted.push(unmount);
-  return { container, unmount };
+  const rerender = (next: ReactNode) => act(() => root.render(next));
+  return { container, unmount, rerender };
 }
 
 function pointerMoveAdds(spy: { mock: { calls: unknown[][] } }) {
@@ -212,6 +213,16 @@ describe("DozoAvatar timers", () => {
     });
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the pointer in one object instead of allocating one per move", () => {
+    const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
+    const handler = source.slice(
+      source.indexOf("function onPointerMove"),
+      source.indexOf("function onPointerAway"),
+    );
+    expect(handler).toContain("pointer.x =");
+    expect(handler).not.toMatch(/pointer\s*=\s*\{/);
   });
 
   it("uses no raw timer in the component", () => {
@@ -614,10 +625,14 @@ describe("DozoAvatar visibility", () => {
   it("keeps an off-screen avatar unmeasured when its tracker is rebuilt", () => {
     const io = fakeObserver();
     vi.stubGlobal("IntersectionObserver", io.Observer);
-    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const { container, rerender } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
     const root = container.querySelector<HTMLElement>(".dozo-avatar");
     act(() => io.instances[0]?.callback([{ target: root, isIntersecting: false }]));
-    const view = mount(<DozoAvatar seed="kumo" size={72} />);
+
+    // A new character rebuilds the tracker on the same, still off-screen, root.
+    rerender(<DozoAvatar seed="kumo" size={72} state="waiting" />);
+    expect(container.querySelector(".dozo-avatar")).toBe(root);
+    expect(root?.getAttribute("data-character")).toBe("kumo");
     const rect = rectSpy(container);
     pointerAt(10);
     act(() => {
@@ -625,7 +640,62 @@ describe("DozoAvatar visibility", () => {
     });
     advance(100);
     expect(rect).not.toHaveBeenCalled();
-    view.unmount();
+
+    act(() => io.instances[0]?.callback([{ target: root, isIntersecting: true }]));
+    advance(100);
+    expect(rect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DozoAvatar tracker rebuild", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  const idle = (props: { seed?: string; interactive?: boolean } = {}) => (
+    <DozoAvatar
+      seed={props.seed ?? "sora"}
+      size={72}
+      state="idle"
+      interactive={props.interactive}
+    />
+  );
+
+  it.each([
+    ["the character changes", { seed: "kumo" }],
+    ["it stops being interactive", { interactive: false }],
+  ])("leaves no awake mark or inline eye transform when %s", (_name, next) => {
+    const { container, rerender } = mount(idle());
+    const root = container.querySelector(".dozo-avatar");
+    const eyes = eyesOf(container);
+    pointerAt(400);
+    hover(container, true);
+    advance(200);
+    expect(root?.hasAttribute("data-awake")).toBe(true);
+    expect(eyes.style.transform).not.toBe("");
+
+    rerender(idle(next));
+    expect(root?.hasAttribute("data-awake")).toBe(false);
+    expect(eyes.style.transform).toBe("");
+  });
+
+  it("works after React StrictMode mounts, unmounts and mounts its effects again", () => {
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { container, unmount } = mount(<StrictMode>{idle()}</StrictMode>);
+    const root = container.querySelector(".dozo-avatar");
+    expect(pointerMoveAdds(add) - pointerMoveAdds(remove)).toBe(1);
+    expect(root?.hasAttribute("data-awake")).toBe(false);
+
+    pointerAt(400);
+    hover(container, true);
+    advance(1000);
+    expect(root?.hasAttribute("data-awake")).toBe(true);
+    expect(eyeState(eyesOf(container)).x).toBeCloseTo(2.56, 1);
+
+    unmount();
+    expect(pointerMoveAdds(add) - pointerMoveAdds(remove)).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -696,6 +766,55 @@ describe("DozoAvatar hover", () => {
     vi.useFakeTimers();
   });
 
+  it("aims at the avatar's new centre after a layout shift that fired no scroll or resize", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const root = container.querySelector<HTMLElement>(".dozo-avatar");
+    const at = (left: number) => () => ({ left, top: 0, width: 0, height: 0 }) as DOMRect;
+    if (root) root.getBoundingClientRect = at(0);
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).x).toBeCloseTo(3.2, 1);
+
+    // A sidebar toggle moves the avatar under the pointer without any event this module hears.
+    if (root) root.getBoundingClientRect = at(400);
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).x).toBeCloseTo(3.2, 1);
+
+    hover(container, true);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).x).toBeCloseTo(0, 1);
+  });
+
+  it("clears a hop that its animation never ended, so the next hover hops again", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} />);
+    const svg = container.querySelector("svg");
+    hover(container, true);
+    expect(svg?.classList.contains("is-hop")).toBe(true);
+    act(() => {
+      svg?.dispatchEvent(new Event("animationcancel"));
+    });
+    expect(svg?.classList.contains("is-hop")).toBe(false);
+    hover(container, true);
+    expect(svg?.classList.contains("is-hop")).toBe(true);
+  });
+
+  it("clears a hop when the avatar goes off-screen, where its animation is paused", () => {
+    const io = fakeObserver();
+    vi.stubGlobal("IntersectionObserver", io.Observer);
+    const { container } = mount(<DozoAvatar seed="sora" size={72} />);
+    const root = container.querySelector(".dozo-avatar");
+    const svg = container.querySelector("svg");
+    hover(container, true);
+    expect(svg?.classList.contains("is-hop")).toBe(true);
+
+    act(() => io.instances[0]?.callback([{ target: root, isIntersecting: false }]));
+    expect(svg?.classList.contains("is-hop")).toBe(false);
+    act(() => io.instances[0]?.callback([{ target: root, isIntersecting: true }]));
+    hover(container, true);
+    expect(svg?.classList.contains("is-hop")).toBe(true);
+  });
+
   it("hops on hover, and clears the hop only when the svg's own animation ends", () => {
     const { container } = mount(<DozoAvatar seed="sora" size={72} />);
     const svg = container.querySelector("svg");
@@ -741,5 +860,11 @@ describe("dozo-avatar.css", () => {
     const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
     expect(reduced).toContain(".da-blink");
     expect(reduced).toContain("animation: none");
+  });
+
+  it("runs no blink on a still avatar and no breathing on a sleeping one", () => {
+    expect(css).toMatch(/\[data-motion="still"\] \.da-blink[^{]*\{\s*animation: none/);
+    const breathe = css.match(/([^}]*)\{[^}]*dozo-breathe[^}]*\}/)?.[1] ?? "";
+    expect(breathe).toContain("[data-awake]");
   });
 });

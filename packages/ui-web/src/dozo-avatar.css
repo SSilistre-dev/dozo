@@ -63,6 +63,9 @@
   animation: dozo-blink var(--dozo-blink-period, 5s) var(--dozo-blink-delay, 0s) ease-in-out
     infinite;
 }
+.dozo-avatar[data-motion="still"] .da-blink {
+  animation: none;
+}
 .dozo-avatar[data-motion="full"][data-state="idle"]:not([data-awake]) .da-blink {
   animation: none;
 }
@@ -78,7 +81,9 @@
 .dozo-avatar[data-motion="full"][data-state="waiting"] .da-feature {
   animation: dozo-attn 4.5s ease-in-out infinite;
 }
-.dozo-avatar[data-motion="full"][data-state="idle"] .da-head {
+/* Breathing animates an SVG transform, which the compositor cannot take, so it runs on the main
+   thread. Only an awake (hovered) avatar breathes; a list of sleepers costs no frames. */
+.dozo-avatar[data-motion="full"][data-state="idle"][data-awake] .da-head {
   transform-origin: 50% 100%;
   animation: dozo-breathe 5.5s ease-in-out infinite;
   animation-delay: var(--dozo-delay, 0s);

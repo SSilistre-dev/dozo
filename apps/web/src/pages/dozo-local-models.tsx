@@ -131,8 +131,9 @@ function LocalModelsBody({
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  const [detected] = useState(() => (renderer === undefined ? readGpuRenderer() : renderer));
-  const [matched] = useState(() => matchHardware(detected, hardware));
+  const [matched] = useState(() =>
+    matchHardware(renderer === undefined ? readGpuRenderer() : renderer, hardware),
+  );
   const [hardwareId, setHardwareId] = useState<string | null>(matched?.id ?? null);
   const [memoryChoice, setMemoryChoice] = useState<number | null>(null);
   const [baseUrl, setBaseUrl] = useState(LOCAL_RUNTIME.baseUrl);

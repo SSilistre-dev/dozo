@@ -14,8 +14,8 @@ const fixtures = vi.hoisted(() => {
       label: "Mac A",
       kind: "unified",
       match: /Apple M9/,
-      bandwidthGBps: 100,
-      memoryGB: [16, 32, 64],
+      bandwidthGBps: 1000,
+      memoryGB: [12, 24, 48],
       source: "fixture",
     },
     {
@@ -23,7 +23,7 @@ const fixtures = vi.hoisted(() => {
       label: "PC B",
       kind: "gpu",
       match: /RTX/,
-      bandwidthGBps: 200,
+      bandwidthGBps: 800,
       memoryGB: [8, 24],
       source: "fixture",
     },
@@ -90,43 +90,17 @@ vi.mock("../lib/dozo-local-model-catalog", () => ({
     }),
   },
 }));
-// Tiers follow memory alone: weights x1.3 within half the memory is comfortable, within three
-// quarters usable, within all of it slow. Bigger models come first inside a tier.
-vi.mock("../lib/dozo-local-model-fit", () => ({
-  LOCAL_MODEL_CONTEXT_TOKENS: 32768,
-  matchHardware: (renderer: string | null, table: { match: RegExp }[]) =>
-    (renderer && table.find((entry) => entry.match.test(renderer))) || null,
-  hardwareProfile: (entry: { bandwidthGBps: number }, memoryGB: number, source: string) => ({
-    kind: "unified",
-    usableMemoryGB: memoryGB,
-    bandwidthGBps: entry.bandwidthGBps,
-    source,
-  }),
-  rankLocalModels: (
-    profile: { usableMemoryGB: number; bandwidthGBps: number },
-    catalog: { weightsGB: number }[],
-  ) => {
-    fixtures.ranked();
-    const order = ["comfortable", "usable", "slow", "no-fit"];
-    const tier = (weightsGB: number) => {
-      const need = weightsGB * 1.3;
-      if (need <= profile.usableMemoryGB * 0.5) return "comfortable";
-      if (need <= profile.usableMemoryGB * 0.75) return "usable";
-      return need <= profile.usableMemoryGB ? "slow" : "no-fit";
-    };
-    return catalog
-      .map((model) => ({
-        model,
-        tier: tier(model.weightsGB),
-        tokensPerSecond: profile.bandwidthGBps / model.weightsGB,
-        memoryGB: model.weightsGB * 1.3,
-      }))
-      .sort(
-        (a, b) =>
-          order.indexOf(a.tier) - order.indexOf(b.tier) || b.model.weightsGB - a.model.weightsGB,
-      );
-  },
-}));
+// The real ranker, wrapped so a test can count how often it runs.
+vi.mock("../lib/dozo-local-model-fit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/dozo-local-model-fit")>();
+  return {
+    ...actual,
+    rankLocalModels: (...args: Parameters<typeof actual.rankLocalModels>) => {
+      fixtures.ranked();
+      return actual.rankLocalModels(...args);
+    },
+  };
+});
 vi.mock("@rakazo/ui-web", () => {
   const SelectContext = createContext<{
     value: string | null;
@@ -288,7 +262,7 @@ it("preselects the matched hardware and its lowest memory", async () => {
   await open();
 
   expect(select("Hardware")?.value).toBe("mac-a");
-  expect(select("Memory")?.value).toBe("16");
+  expect(select("Memory")?.value).toBe("12");
   expect(rowLabels()).toEqual(["Model m3", "Model m2", "Model m1"]);
 });
 
@@ -305,7 +279,7 @@ it("shows only the pickers until hardware is chosen", async () => {
 
   expect(select("Memory")?.value).toBe("8");
   expect(container.textContent).not.toContain("Nothing fits");
-  expect(rowLabels()).toEqual(["Model m1", "Model m2"]);
+  expect(rowLabels()).toEqual(["Model m2", "Model m1"]);
 });
 
 it("renders nothing at all while the catalog is empty", async () => {
@@ -324,19 +298,35 @@ it("says Nothing fits only once hardware and memory are chosen and no row qualif
   expect(container.querySelector("input")).toBeNull();
 });
 
-it("lists at most three rows, never slow or no-fit ones, and follows memory", async () => {
+it("lists at most three rows, never no-fit ones, and follows memory", async () => {
   await render({ renderer: "Apple M9" });
   await open();
 
-  // m4 is usable at 16 GB but past the cap; m5 does not fit comfortably.
+  // m4 and m5 do not fit in 12 GB (75 percent of it, with headroom).
   expect(rowLabels()).toEqual(["Model m3", "Model m2", "Model m1"]);
 
-  await change(select("Memory"), "32");
+  await change(select("Memory"), "24");
   expect(rowLabels()).toEqual(["Model m5", "Model m4", "Model m3"]);
 
   await change(select("Hardware"), "pc-b");
   expect(select("Memory")?.value).toBe("8");
-  expect(rowLabels()).toEqual(["Model m1", "Model m2"]);
+  expect(rowLabels()).toEqual(["Model m2", "Model m1"]);
+});
+
+it("never lists a slow model", async () => {
+  const slow = {
+    ...hardware[0],
+    id: "slow-c",
+    label: "Slow C",
+    bandwidthGBps: 50,
+  } as HardwareEntry;
+  await render({ renderer: null, hardware: [slow] });
+  await open();
+  await change(select("Hardware"), "slow-c");
+
+  // Everything fits in 12 GB, but at 50 GB/s nothing reaches 25 tokens a second.
+  expect(rowLabels()).toEqual([]);
+  expect(container.textContent).toContain("Nothing fits");
 });
 
 it("shows speed, size and copies the runtime command", async () => {
@@ -344,7 +334,7 @@ it("shows speed, size and copies the runtime command", async () => {
   await open();
 
   const row = container.querySelector("li");
-  expect(row?.textContent).toContain("17 tok/s");
+  expect(row?.textContent).toContain("85 tok/s");
   expect(row?.textContent).toContain("6 GB");
 
   await act(async () => row?.querySelector<HTMLButtonElement>("button")?.click());
@@ -469,8 +459,49 @@ it("ranks again only when the hardware or memory changes, not while typing the a
   await change(container.querySelector("input"), "http://192.168.1.6:11434/v1");
   expect(fixtures.ranked).toHaveBeenCalledTimes(ranked);
 
-  await change(select("Memory"), "32");
+  await change(select("Memory"), "24");
   expect(fixtures.ranked.mock.calls.length).toBeGreaterThan(ranked);
+});
+
+it("clears a shown refusal when the memory changes", async () => {
+  fixtures.connect.mockRejectedValue(new Error("No."));
+  await render({ renderer: "Apple M9" });
+  await open();
+  await act(async () => connectButton(0)?.click());
+  await vi.waitFor(() => expect(container.querySelector("li [role='alert']")).not.toBeNull());
+
+  // The refused model is still listed at 24 GB, so only the reset can clear the message.
+  await change(select("Memory"), "24");
+  expect(rowLabels()).toContain("Model m3");
+  expect(container.querySelector("[role='alert']")).toBeNull();
+});
+
+it("clears a shown refusal when the hardware changes", async () => {
+  fixtures.connect.mockRejectedValue(new Error("No."));
+  await render({ renderer: "Apple M9" });
+  await open();
+  // The second row, Model m2, is also listed for the other hardware.
+  await act(async () => connectButton(1)?.click());
+  await vi.waitFor(() => expect(container.querySelector("li [role='alert']")).not.toBeNull());
+
+  await change(select("Hardware"), "pc-b");
+  expect(rowLabels()).toContain("Model m2");
+  expect(container.querySelector("[role='alert']")).toBeNull();
+});
+
+it("keeps a connected row locked after the hardware changes", async () => {
+  fixtures.connect.mockResolvedValue(undefined);
+  await render({ renderer: "Apple M9" });
+  await open();
+  await act(async () => connectButton(1)?.click());
+  await vi.waitFor(() => expect(connectButton(1)?.textContent).toBe("Connected"));
+
+  // A connection is a server and a model, not a machine, so the lock follows the model.
+  await change(select("Hardware"), "pc-b");
+  expect(rowLabels()).toEqual(["Model m2", "Model m1"]);
+  expect(connectButton(0)?.textContent).toBe("Connected");
+  expect(connectButton(0)?.hasAttribute("disabled")).toBe(true);
+  expect(connectButton(1)?.textContent).toBe("Connect");
 });
 
 it("does not mark a row connected when connecting is refused", async () => {

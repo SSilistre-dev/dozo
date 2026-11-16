@@ -206,7 +206,8 @@ const SETTLED_SHIFT = 0.005;
 const SETTLED_OPEN = 0.0005;
 
 const trackers = new Map<HTMLElement, Tracker>();
-let pointer: { x: number; y: number } | null = null;
+/** One object mutated in place, so a pointer move allocates nothing. */
+const pointer = { x: 0, y: 0, active: false };
 let frame = 0;
 let lastTime = 0;
 let stale = true;
@@ -227,11 +228,13 @@ function wake() {
 
 function onPointerMove(event: PointerEvent) {
   if (reduced) return;
-  pointer = { x: event.clientX, y: event.clientY };
+  pointer.x = event.clientX;
+  pointer.y = event.clientY;
+  pointer.active = true;
   wake();
 }
 function onPointerAway() {
-  pointer = null;
+  pointer.active = false;
   wake();
 }
 function markStale() {
@@ -240,13 +243,15 @@ function markStale() {
 }
 function onReducedMotionChange(event: MediaQueryListEvent) {
   reduced = event.matches;
-  if (reduced) pointer = null;
+  if (reduced) pointer.active = false;
   wake();
 }
 
 function onVisibilityChange(entries: IntersectionObserverEntry[]) {
   for (const { target, isIntersecting } of entries) {
     target.toggleAttribute("data-offscreen", !isIntersecting);
+    // A paused hop never reaches animationend, which would leave it set and block the next hover.
+    if (!isIntersecting) target.querySelector(".da-svg")?.classList.remove("is-hop");
     const tracker = trackers.get(target as HTMLElement);
     if (!tracker) continue;
     tracker.visible = isIntersecting;
@@ -295,7 +300,7 @@ function connectSharedSources(): () => void {
     window.removeEventListener("resize", markStale);
     window.removeEventListener("scroll", markStale, true);
     document.documentElement.removeEventListener("pointerleave", onPointerAway);
-    pointer = null;
+    pointer.active = false;
   };
 }
 
@@ -316,7 +321,7 @@ function tick(now: number) {
   const follow = 1 - Math.exp(-dt * 10);
   const wakeRate = 1 - Math.exp(-dt * 5);
   // With no pointer nothing can move toward it, so positions stay stale until one appears.
-  if (stale && pointer) measure();
+  if (stale && pointer.active) measure();
   let moving = false;
   for (const t of trackers.values()) {
     if (!t.visible) continue;
@@ -326,8 +331,8 @@ function tick(now: number) {
       t.root.toggleAttribute("data-awake", t.awake);
     }
     const gain = sleeping ? SLEEP_GAIN : GAIN[t.live.state];
-    const tx = pointer ? clamp((pointer.x - t.cx) / RANGE, 1) * t.limit[0] * gain : 0;
-    const ty = pointer ? clamp((pointer.y - t.cy) / RANGE, 1) * t.limit[1] * gain : 0;
+    const tx = pointer.active ? clamp((pointer.x - t.cx) / RANGE, 1) * t.limit[0] * gain : 0;
+    const ty = pointer.active ? clamp((pointer.y - t.cy) / RANGE, 1) * t.limit[1] * gain : 0;
     const open = sleeping ? SLEEP_OPEN : 1;
     t.x += (tx - t.x) * follow;
     t.y += (ty - t.y) * follow;
@@ -367,6 +372,9 @@ function track(tracker: Tracker): () => void {
   resizeObserver?.observe(tracker.root);
   markStale();
   return () => {
+    // A rebuilt tracker starts asleep and unwritten, so leave neither mark of this one behind.
+    tracker.root.removeAttribute("data-awake");
+    tracker.eyes.style.removeProperty("transform");
     trackers.delete(tracker.root);
     resizeObserver?.unobserve(tracker.root);
     if (trackers.size > 0) return;
@@ -457,7 +465,8 @@ export const DozoAvatar = memo(function DozoAvatar({
 
   const onEnter = () => {
     live.current.awakeUntil = Infinity;
-    wake();
+    // The layout may have shifted without a scroll or resize; measure again before aiming.
+    markStale();
     if (!reduced) svgRef.current?.classList.add("is-hop");
   };
   const onLeave = () => {
@@ -467,6 +476,13 @@ export const DozoAvatar = memo(function DozoAvatar({
   const onAnimationEnd = (event: AnimationEvent<SVGSVGElement>) => {
     if (event.target === event.currentTarget) event.currentTarget.classList.remove("is-hop");
   };
+  // React has no prop for animationcancel, which ends a hop that animationend never reports.
+  useEffect(() => {
+    const svg = svgRef.current;
+    const clear = () => svg?.classList.remove("is-hop");
+    svg?.addEventListener("animationcancel", clear);
+    return () => svg?.removeEventListener("animationcancel", clear);
+  }, []);
 
   return (
     <span

@@ -221,15 +221,6 @@ describe("tiers", () => {
     expect(below?.tokensPerSecond).toBe(45);
     expect(below?.tier).toBe("usable");
   });
-
-  it("never rates a cpu as usable or comfortable", () => {
-    const cpu = profile({ kind: "cpu", bandwidthGBps: 100000 });
-    const fits = rankLocalModels(cpu, [model({ weightsGB: 1 })]);
-    expect(fits[0]?.tier).toBe("slow");
-    expect(fits[0]?.tokensPerSecond).toBe(0);
-    const none = rankLocalModels(profile({ kind: "cpu", usableMemoryGB: 4 }), [model()]);
-    expect(none[0]?.tier).toBe("no-fit");
-  });
 });
 
 describe("order", () => {

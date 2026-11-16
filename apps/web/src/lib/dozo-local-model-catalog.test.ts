@@ -89,12 +89,61 @@ describe("LOCAL_HARDWARE", () => {
     // Ultra chips overshoot the estimate, so they are left out on purpose.
     expect(matchHardware(apple("M1 Ultra"), LOCAL_HARDWARE)).toBeNull();
     expect(matchHardware(apple("M5 Ultra"), LOCAL_HARDWARE)).toBeNull();
-    // Notebook cards have less bandwidth and memory than the desktop card.
-    expect(
-      matchHardware(direct3d("NVIDIA", "NVIDIA GeForce RTX 4090 Laptop GPU"), LOCAL_HARDWARE),
-    ).toBeNull();
     expect(matchHardware("Apple GPU", LOCAL_HARDWARE)).toBeNull();
     expect(matchHardware(null, LOCAL_HARDWARE)).toBeNull();
+  });
+
+  // A name that begins another product's name must not take that product's figures.
+  const NO_ENTRY: [string, string][] = [
+    // Notebook cards have less bandwidth and memory than the desktop card.
+    ["4090 Laptop", direct3d("NVIDIA", "NVIDIA GeForce RTX 4090 Laptop GPU")],
+    ["5070 Ti Laptop", direct3d("NVIDIA", "NVIDIA GeForce RTX 5070 Ti Laptop GPU")],
+    ["5070 Laptop", direct3d("NVIDIA", "NVIDIA GeForce RTX 5070 Laptop GPU")],
+    ["3080 Ti Laptop", direct3d("NVIDIA", "NVIDIA GeForce RTX 3080 Ti Laptop GPU")],
+    ["4060 Ti Laptop", direct3d("NVIDIA", "NVIDIA GeForce RTX 4060 Ti Laptop GPU")],
+    ["4080 Max-Q", direct3d("NVIDIA", "NVIDIA GeForce RTX 4080 Max-Q")],
+    ["7900 XTX Mobile", direct3d("AMD", "AMD Radeon RX 7900 XTX Mobile")],
+    ["Arc B580 Laptop", direct3d("Intel", "Intel(R) Arc(TM) B580 Laptop Graphics")],
+    // Ti and SUPER cards without a row of their own.
+    ["3080 Ti", direct3d("NVIDIA", "NVIDIA GeForce RTX 3080 Ti")],
+    ["3090 Ti", direct3d("NVIDIA", "NVIDIA GeForce RTX 3090 Ti")],
+    ["4070 SUPER", direct3d("NVIDIA", "NVIDIA GeForce RTX 4070 SUPER")],
+    ["4070 Ti", direct3d("NVIDIA", "NVIDIA GeForce RTX 4070 Ti")],
+    ["4070 Ti SUPER", direct3d("NVIDIA", "NVIDIA GeForce RTX 4070 Ti SUPER")],
+    ["4080 SUPER", direct3d("NVIDIA", "NVIDIA GeForce RTX 4080 SUPER")],
+    ["5080 SUPER", direct3d("NVIDIA", "NVIDIA GeForce RTX 5080 SUPER")],
+    ["5060 Ti SUPER", direct3d("NVIDIA", "NVIDIA GeForce RTX 5060 Ti SUPER")],
+    // Longer model numbers and cards of the same family without a row.
+    ["5090D", direct3d("NVIDIA", "NVIDIA GeForce RTX 5090D")],
+    ["50700", direct3d("NVIDIA", "NVIDIA GeForce RTX 50700")],
+    ["5060", direct3d("NVIDIA", "NVIDIA GeForce RTX 5060")],
+    ["RX 7900 XT", direct3d("AMD", "AMD Radeon RX 7900 XT")],
+    ["RX 9070", direct3d("AMD", "AMD Radeon RX 9070")],
+    ["Arc B5800", direct3d("Intel", "Intel(R) Arc(TM) B5800 Graphics")],
+    ["Arc A580", direct3d("Intel", "Intel(R) Arc(TM) A580 Graphics")],
+    // Apple chips whose Pro, Max or Ultra sibling has no row.
+    ["M6 Pro", apple("M6 Pro")],
+    ["M6 Max", apple("M6 Max")],
+    ["M2 Pro", apple("M2 Pro")],
+    ["M2 Max", apple("M2 Max")],
+    ["M4 Ultra", apple("M4 Ultra")],
+    ["M10", apple("M10")],
+    ["M3", apple("M3")],
+  ];
+
+  it.each(NO_ENTRY)("matches nothing for %s", (_name, renderer) => {
+    expect(matchHardware(renderer, LOCAL_HARDWARE)).toBeNull();
+  });
+
+  const OWN_ENTRY: [string, string, string][] = [
+    ["RTX 5070 Ti", "NVIDIA GeForce RTX 5070 Ti", "nvidia-rtx-5070-ti"],
+    ["RTX 5070", "NVIDIA GeForce RTX 5070", "nvidia-rtx-5070"],
+    ["RTX 4060 Ti", "NVIDIA GeForce RTX 4060 Ti", "nvidia-rtx-4060-ti"],
+    ["RTX 3080", "NVIDIA GeForce RTX 3080", "nvidia-rtx-3080"],
+  ];
+
+  it.each(OWN_ENTRY)("still matches the desktop %s", (_name, card, id) => {
+    expect(matchHardware(direct3d("NVIDIA", card), LOCAL_HARDWARE)?.id).toBe(id);
   });
 });
 
@@ -166,20 +215,21 @@ describe("LOCAL_MODEL_CANDIDATES", () => {
     expect(new Set(names).size).toBe(names.length);
     for (const name of names) expect(name).toMatch(/^[a-z0-9][a-z0-9.-]*-32k$/);
   });
-
-  it("leaves the tool calling check for a person", () => {
-    expect(LOCAL_MODEL_CANDIDATES.every((model) => model.toolCallCheckedOn === "")).toBe(true);
-  });
 });
 
 describe("LOCAL_MODELS", () => {
-  it("holds only entries whose tool calling was checked", () => {
-    expect(LOCAL_MODELS.every((model) => model.toolCallCheckedOn !== "")).toBe(true);
+  it("holds only candidates a person has checked, each with a real date", () => {
     for (const model of LOCAL_MODELS) {
       expect(LOCAL_MODEL_CANDIDATES).toContain(model);
+      expect(model.toolCallCheckedOn).toMatch(ISO_DATE);
+      expect(Number.isNaN(Date.parse(model.toolCallCheckedOn))).toBe(false);
     }
-    const checked = LOCAL_MODEL_CANDIDATES.filter((model) => model.toolCallCheckedOn !== "");
-    expect(LOCAL_MODELS).toEqual(checked);
+  });
+
+  it("leaves out every candidate whose check is empty", () => {
+    const unchecked = LOCAL_MODEL_CANDIDATES.filter((model) => model.toolCallCheckedOn === "");
+    for (const model of unchecked) expect(LOCAL_MODELS).not.toContain(model);
+    expect(LOCAL_MODELS.length + unchecked.length).toBe(LOCAL_MODEL_CANDIDATES.length);
   });
 });
 

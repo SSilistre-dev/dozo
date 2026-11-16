@@ -26,14 +26,33 @@ const INTEL_ARC = "https://en.wikipedia.org/wiki/Intel_Arc";
 // Ultra chips are left out on purpose. In the llama.cpp measurements they
 // reach only about 0.35 to 0.45 of bandwidth over file size, so the estimate
 // would overstate their speed by more than the tolerance allows.
-const NOT_MOBILE = "(?! (?:Laptop|Max-Q))";
+//
+// A pattern must match exactly the product it names. A name that is a prefix
+// of a sibling (RTX 3080 and RTX 3080 Ti, M6 and M6 Pro) would otherwise take
+// the sibling's figures, so each pattern comes from one of the builders below,
+// which stop at the end of the name and refuse the siblings and notebook cards.
+const NOT_MOBILE = "(?!.*\\b(?:Laptop|Max-Q|Mobile)\\b)";
+
+// An Apple chip: the plain name refuses its Pro, Max and Ultra siblings.
+function appleChip(generation: number, tier?: "Pro" | "Max"): RegExp {
+  return tier
+    ? new RegExp(`\\bM${generation} ${tier}\\b`)
+    : new RegExp(`\\bM${generation}\\b(?! (?:Pro|Max|Ultra))`);
+}
+
+// A GeForce card: the plain name refuses its Ti and SUPER siblings, the Ti
+// name refuses its SUPER sibling.
+function geforce(model: number, ti = false): RegExp {
+  const name = ti ? `RTX ${model} Ti\\b(?! SUPER)` : `RTX ${model}\\b(?! (?:Ti|SUPER))`;
+  return new RegExp(`\\b${name}${NOT_MOBILE}`);
+}
 
 export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
   {
     id: "apple-m1",
     label: "Apple M1",
     kind: "unified",
-    match: /\bM1\b(?! Ultra)/,
+    match: appleChip(1),
     bandwidthGBps: 68,
     memoryGB: [8, 16],
     source: APPLE_M1,
@@ -42,7 +61,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m1-pro",
     label: "Apple M1 Pro",
     kind: "unified",
-    match: /\bM1 Pro\b/,
+    match: appleChip(1, "Pro"),
     bandwidthGBps: 200,
     memoryGB: [16, 32],
     source: APPLE_M1,
@@ -51,7 +70,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m1-max",
     label: "Apple M1 Max",
     kind: "unified",
-    match: /\bM1 Max\b/,
+    match: appleChip(1, "Max"),
     bandwidthGBps: 400,
     memoryGB: [32, 64],
     source: APPLE_M1,
@@ -60,7 +79,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m2",
     label: "Apple M2",
     kind: "unified",
-    match: /\bM2\b(?! (?:Pro|Max|Ultra))/,
+    match: appleChip(2),
     bandwidthGBps: 100,
     memoryGB: [8, 16, 24],
     source: APPLE_M2,
@@ -70,7 +89,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m4",
     label: "Apple M4",
     kind: "unified",
-    match: /\bM4\b(?! Ultra)/,
+    match: appleChip(4),
     bandwidthGBps: 120,
     memoryGB: [16, 24, 32],
     source: APPLE_M4,
@@ -79,7 +98,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m4-pro",
     label: "Apple M4 Pro",
     kind: "unified",
-    match: /\bM4 Pro\b/,
+    match: appleChip(4, "Pro"),
     bandwidthGBps: 273,
     memoryGB: [24, 48, 64],
     source: APPLE_M4,
@@ -89,7 +108,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m4-max",
     label: "Apple M4 Max",
     kind: "unified",
-    match: /\bM4 Max\b/,
+    match: appleChip(4, "Max"),
     bandwidthGBps: 410,
     memoryGB: [36, 48, 64, 128],
     source: APPLE_M4,
@@ -98,7 +117,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m5",
     label: "Apple M5",
     kind: "unified",
-    match: /\bM5\b(?! Ultra)/,
+    match: appleChip(5),
     bandwidthGBps: 153,
     memoryGB: [16, 24, 32],
     source: APPLE_AIR_SPECS,
@@ -107,7 +126,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m5-pro",
     label: "Apple M5 Pro",
     kind: "unified",
-    match: /\bM5 Pro\b/,
+    match: appleChip(5, "Pro"),
     bandwidthGBps: 307,
     memoryGB: [24, 48, 64],
     source: APPLE_PRO_SPECS,
@@ -117,7 +136,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m5-max",
     label: "Apple M5 Max",
     kind: "unified",
-    match: /\bM5 Max\b/,
+    match: appleChip(5, "Max"),
     bandwidthGBps: 460,
     memoryGB: [36, 48, 64, 128],
     source: APPLE_PRO_SPECS,
@@ -127,7 +146,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "apple-m6",
     label: "Apple M6",
     kind: "unified",
-    match: /\bM6\b(?! Ultra)/,
+    match: appleChip(6),
     bandwidthGBps: 153,
     memoryGB: [16, 24, 32],
     source: APPLE_PRO_SPECS,
@@ -136,7 +155,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-5090",
     label: "NVIDIA GeForce RTX 5090",
     kind: "gpu",
-    match: new RegExp(`RTX 5090${NOT_MOBILE}`),
+    match: geforce(5090),
     bandwidthGBps: 1792,
     memoryGB: [32],
     source: NVIDIA_50,
@@ -145,7 +164,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-5080",
     label: "NVIDIA GeForce RTX 5080",
     kind: "gpu",
-    match: new RegExp(`RTX 5080${NOT_MOBILE}`),
+    match: geforce(5080),
     bandwidthGBps: 960,
     memoryGB: [16],
     source: NVIDIA_50,
@@ -154,7 +173,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-5070-ti",
     label: "NVIDIA GeForce RTX 5070 Ti",
     kind: "gpu",
-    match: new RegExp(`RTX 5070 Ti${NOT_MOBILE}`),
+    match: geforce(5070, true),
     bandwidthGBps: 896,
     memoryGB: [16],
     source: NVIDIA_50,
@@ -163,7 +182,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-5070",
     label: "NVIDIA GeForce RTX 5070",
     kind: "gpu",
-    match: new RegExp(`RTX 5070${NOT_MOBILE}`),
+    match: geforce(5070),
     bandwidthGBps: 672,
     memoryGB: [12],
     source: NVIDIA_50,
@@ -172,7 +191,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-5060-ti",
     label: "NVIDIA GeForce RTX 5060 Ti",
     kind: "gpu",
-    match: new RegExp(`RTX 5060 Ti${NOT_MOBILE}`),
+    match: geforce(5060, true),
     bandwidthGBps: 448,
     memoryGB: [8, 16],
     source: NVIDIA_50,
@@ -181,7 +200,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-4090",
     label: "NVIDIA GeForce RTX 4090",
     kind: "gpu",
-    match: new RegExp(`RTX 4090${NOT_MOBILE}`),
+    match: geforce(4090),
     bandwidthGBps: 1008,
     memoryGB: [24],
     source: NVIDIA_40,
@@ -190,7 +209,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-4080",
     label: "NVIDIA GeForce RTX 4080",
     kind: "gpu",
-    match: new RegExp(`RTX 4080${NOT_MOBILE}`),
+    match: geforce(4080),
     bandwidthGBps: 716.8,
     memoryGB: [16],
     source: NVIDIA_40,
@@ -199,7 +218,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-4070",
     label: "NVIDIA GeForce RTX 4070",
     kind: "gpu",
-    match: new RegExp(`RTX 4070${NOT_MOBILE}`),
+    match: geforce(4070),
     bandwidthGBps: 504,
     memoryGB: [12],
     source: NVIDIA_40,
@@ -208,7 +227,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-4060-ti",
     label: "NVIDIA GeForce RTX 4060 Ti",
     kind: "gpu",
-    match: new RegExp(`RTX 4060 Ti${NOT_MOBILE}`),
+    match: geforce(4060, true),
     bandwidthGBps: 288,
     memoryGB: [8, 16],
     source: NVIDIA_40,
@@ -217,7 +236,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-3090",
     label: "NVIDIA GeForce RTX 3090",
     kind: "gpu",
-    match: new RegExp(`RTX 3090${NOT_MOBILE}`),
+    match: geforce(3090),
     bandwidthGBps: 936,
     memoryGB: [24],
     source: NVIDIA_30,
@@ -227,7 +246,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "nvidia-rtx-3080",
     label: "NVIDIA GeForce RTX 3080",
     kind: "gpu",
-    match: new RegExp(`RTX 3080${NOT_MOBILE}`),
+    match: geforce(3080),
     bandwidthGBps: 760,
     memoryGB: [10, 12],
     source: NVIDIA_30,
@@ -236,7 +255,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "amd-rx-7900-xtx",
     label: "AMD Radeon RX 7900 XTX",
     kind: "gpu",
-    match: /RX 7900 XTX/,
+    match: new RegExp(`\\bRX 7900 XTX\\b${NOT_MOBILE}`),
     bandwidthGBps: 960,
     memoryGB: [24],
     source: AMD_7900_XTX,
@@ -245,7 +264,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "amd-rx-9070-xt",
     label: "AMD Radeon RX 9070 XT",
     kind: "gpu",
-    match: /RX 9070 XT/,
+    match: new RegExp(`\\bRX 9070 XT\\b${NOT_MOBILE}`),
     bandwidthGBps: 640,
     memoryGB: [16],
     source: AMD_9070_XT,
@@ -254,7 +273,7 @@ export const LOCAL_HARDWARE: readonly HardwareEntry[] = [
     id: "intel-arc-b580",
     label: "Intel Arc B580",
     kind: "gpu",
-    match: /Arc(?:\(TM\))? B580/,
+    match: new RegExp(`\\bArc(?:\\(TM\\))? B580\\b${NOT_MOBILE}`),
     bandwidthGBps: 456,
     memoryGB: [12],
     source: INTEL_ARC,
