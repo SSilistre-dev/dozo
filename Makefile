@@ -12,3 +12,7 @@ up:
 	@dozo/docker/build.sh all
 down:
 	@dozo/docker/build.sh down
+.PHONY: e2e
+# Dozo's own end-to-end suite against the running stack (make up first). Exit 0 pass, 2 failure.
+e2e:
+	@dozo/e2e/run.sh

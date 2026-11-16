@@ -142,12 +142,12 @@ describe("memory", () => {
     expect(border?.tier).toBe("no-fit");
   });
 
-  it("counts the cache of a longer context", () => {
+  it("counts the cache of the fixed context", () => {
     const m = model({ kvGBPer8k: 1 });
-    const [short] = rankLocalModels(profile(), [m], { contextTokens: 8192 });
-    const [long] = rankLocalModels(profile(), [m], { contextTokens: 65536 });
-    expect(short?.memoryGB).toBeCloseTo(12, 9);
-    expect(long?.memoryGB).toBeCloseTo(19, 9);
+    const [fit] = rankLocalModels(profile(), [m]);
+    expect(fit?.memoryGB).toBeCloseTo(memoryNeededGB(m, LOCAL_MODEL_CONTEXT_TOKENS), 9);
+    // 10 weights + 1 per 8k tokens of context + 1 runtime.
+    expect(fit?.memoryGB).toBeCloseTo(10 + LOCAL_MODEL_CONTEXT_TOKENS / 8192 + 1, 9);
   });
 });
 
@@ -220,16 +220,6 @@ describe("tiers", () => {
     const below = rankLocalModels(gpu(199.9), [m])[0];
     expect(below?.tokensPerSecond).toBe(45);
     expect(below?.tier).toBe("usable");
-  });
-
-  it("honours custom thresholds", () => {
-    const fit = rankLocalModels(gpu(100), [m], {
-      minTps: 30,
-      comfortableTps: 25,
-    })[0];
-    expect(fit?.tier).toBe("comfortable");
-    const slow = rankLocalModels(gpu(100), [m], { minTps: 30 })[0];
-    expect(slow?.tier).toBe("slow");
   });
 
   it("never rates a cpu as usable or comfortable", () => {

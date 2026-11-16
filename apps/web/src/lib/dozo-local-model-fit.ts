@@ -86,16 +86,11 @@ const SAFETY_FACTOR = 0.8;
 
 const SPEED_STEP = 5;
 
-const DEFAULT_MIN_TPS = 25;
-const DEFAULT_COMFORTABLE_TPS = 50;
+// Speed tiers: at least this many tokens per second is usable, and comfortable above the next.
+const MIN_TPS = 25;
+const COMFORTABLE_TPS = 50;
 
 const TIER_ORDER: readonly FitTier[] = ["comfortable", "usable", "slow", "no-fit"];
-
-export type RankOptions = {
-  minTps?: number;
-  comfortableTps?: number;
-  contextTokens?: number;
-};
 
 export function matchHardware(
   renderer: string | null,
@@ -153,14 +148,8 @@ function roundDownToStep(value: number): number {
   return Math.floor(value / SPEED_STEP + 1e-9) * SPEED_STEP;
 }
 
-function fitModel(
-  profile: HardwareProfile,
-  model: LocalModelEntry,
-  minTps: number,
-  comfortableTps: number,
-  contextTokens: number,
-): LocalModelFit {
-  const memoryGB = memoryNeededGB(model, contextTokens);
+function fitModel(profile: HardwareProfile, model: LocalModelEntry): LocalModelFit {
+  const memoryGB = memoryNeededGB(model, LOCAL_MODEL_CONTEXT_TOKENS);
   // Partial offload collapses speed, so a model that does not fit whole is
   // never given a speed.
   if (memoryGB + FIT_HEADROOM_GB > profile.usableMemoryGB) {
@@ -175,9 +164,9 @@ function fitModel(
     rawTokensPerSecond(profile.kind, profile.bandwidthGBps, model) * SAFETY_FACTOR,
   );
   const tier: FitTier =
-    tokensPerSecond >= comfortableTps
+    tokensPerSecond >= COMFORTABLE_TPS
       ? "comfortable"
-      : tokensPerSecond >= minTps
+      : tokensPerSecond >= MIN_TPS
         ? "usable"
         : "slow";
   return { model, tier, tokensPerSecond, memoryGB };
@@ -186,13 +175,9 @@ function fitModel(
 export function rankLocalModels(
   profile: HardwareProfile,
   catalog: readonly LocalModelEntry[],
-  options: RankOptions = {},
 ): LocalModelFit[] {
-  const minTps = options.minTps ?? DEFAULT_MIN_TPS;
-  const comfortableTps = options.comfortableTps ?? DEFAULT_COMFORTABLE_TPS;
-  const contextTokens = options.contextTokens ?? LOCAL_MODEL_CONTEXT_TOKENS;
   return catalog
-    .map((model) => fitModel(profile, model, minTps, comfortableTps, contextTokens))
+    .map((model) => fitModel(profile, model))
     .sort(
       (a, b) =>
         TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) ||

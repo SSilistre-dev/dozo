@@ -188,9 +188,7 @@ describe("catalog with the estimator", () => {
     const entry = LOCAL_HARDWARE.find((hw) => hw.id === "apple-m4-max");
     expect(entry).toBeDefined();
     if (!entry) return;
-    const ranked = rankLocalModels(hardwareProfile(entry, 64, "chosen"), LOCAL_MODEL_CANDIDATES, {
-      contextTokens: LOCAL_MODEL_CONTEXT_TOKENS,
-    });
+    const ranked = rankLocalModels(hardwareProfile(entry, 64, "chosen"), LOCAL_MODEL_CANDIDATES);
     expect(ranked).toHaveLength(LOCAL_MODEL_CANDIDATES.length);
     // 64 GB of unified memory holds every candidate at a 32k context.
     expect(ranked.every((fit) => fit.tier !== "no-fit")).toBe(true);

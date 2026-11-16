@@ -679,3 +679,101 @@ describe("shipped anchored rules", () => {
     assert.equal(read(root, rule.file), once);
   });
 });
+
+describe("command line entry", () => {
+  const bare = (script, ...argv) =>
+    spawnSync(process.execPath, [path.join(here, script), ...argv], { encoding: "utf8" });
+
+  for (const script of ["apply.mjs", "check.mjs"]) {
+    it(`${script} asks for --root and rejects a root that is not a directory`, () => {
+      const missing = bare(script);
+      assert.equal(missing.status, 2);
+      assert.match(missing.stderr, new RegExp(`usage: ${script.replace(".", "\\.")} --root`));
+
+      const file = path.join(tempDir(), "plain.txt");
+      fs.writeFileSync(file, "x");
+      for (const root of [file, path.join(tempDir(), "nope")]) {
+        const res = bare(script, "--root", root);
+        assert.equal(res.status, 2);
+        assert.match(res.stderr, /is not a directory/);
+      }
+    });
+  }
+
+  it("falls back to the shipped brand.json when --config is not given", () => {
+    const root = tree({ "src/a.ts": "x" });
+    const applied = bare("apply.mjs", "--root", root);
+    assert.equal(applied.status, 2);
+    assert.match(applied.stderr, /rule failure/);
+    const checked = bare("check.mjs", "--root", root);
+    assert.equal(checked.status, 2);
+    assert.match(checked.stderr, /mapped asset missing from the tree/);
+  });
+});
+
+describe("apply rejects incomplete anchored rules", () => {
+  const complete = { file: "src/a.ts", find: "A", replace: "B", reason: "test" };
+  for (const missing of ["file", "find", "replace", "reason"]) {
+    it(`exit 2 and nothing written when a rule has no ${missing}`, () => {
+      const root = tree({ "src/a.ts": "A Rakazo" });
+      const { [missing]: _dropped, ...rule } = complete;
+      const res = apply(root, configFile({ anchored: [rule] }));
+      assert.equal(res.status, 2);
+      assert.match(res.stderr, /anchored rule needs file, find, replace and reason/);
+      assert.equal(read(root, "src/a.ts"), "A Rakazo");
+    });
+  }
+
+  it("fails when a rule targets a binary file", () => {
+    const root = tree({});
+    fs.mkdirSync(path.join(root, "src"));
+    fs.writeFileSync(path.join(root, "src/img.bin"), Buffer.from([65, 0, 1]));
+    const res = apply(root, configFile({ anchored: [{ ...complete, file: "src/img.bin" }] }));
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /src\/img\.bin is binary/);
+  });
+});
+
+describe("leak gate with a minimal config", () => {
+  const minimal = () => {
+    const file = path.join(tempDir(), "brand.json");
+    fs.writeFileSync(file, JSON.stringify({ from: "Rakazo", to: "Dozo", include: ["src/**"] }));
+    return file;
+  };
+
+  it("reports the launch checks as on when clean, and the old name when not", () => {
+    const config = minimal();
+    const clean = run("check.mjs", tree({ "src/a.ts": "Dozo" }), config, "--launch");
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /launch checks on/);
+    assert.doesNotMatch(check(tree({ "src/a.ts": "Dozo" }), config).stdout, /launch checks on/);
+
+    const dirty = run("check.mjs", tree({ "src/a.ts": "Rakazo\ndozo.example" }), config, "--launch");
+    assert.equal(dirty.status, 2);
+    assert.match(dirty.stderr, /src\/a\.ts:1: Rakazo/);
+    assert.match(dirty.stderr, /src\/a\.ts:2: dozo\.example \(launch placeholder\)/);
+  });
+
+  it("flags a mapped asset that is missing from the tree, and one whose source is gone", () => {
+    const dir = tempDir();
+    fs.mkdirSync(path.join(dir, "assets"));
+    fs.writeFileSync(path.join(dir, "assets/ours.txt"), "ours");
+    const config = path.join(dir, "brand.json");
+    const write = (assets) =>
+      fs.writeFileSync(config, JSON.stringify({ from: "Rakazo", to: "Dozo", include: ["src/**"], assets }));
+    const root = tree({ "src/a.ts": "Dozo" });
+
+    write({ "src/logo.txt": "ours.txt" });
+    const missing = check(root, config);
+    assert.equal(missing.status, 2);
+    assert.match(missing.stderr, /src\/logo\.txt: mapped asset missing from the tree/);
+
+    fs.writeFileSync(path.join(root, "src/logo.txt"), "ours");
+    assert.equal(check(root, config).status, 0);
+
+    write({ "src/logo.txt": "gone.txt" });
+    const gone = check(root, config);
+    assert.equal(gone.status, 2);
+    assert.match(gone.stderr, /src\/logo\.txt: differs from dozo\/brand\/assets\/gone\.txt/);
+  });
+});

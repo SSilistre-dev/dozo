@@ -3,4 +3,6 @@
 
 # Upstream ignores `design/` everywhere; the approved mockups in dozo/design are tracked.
 !design/
-.plumb-tmp/
+
+# e2e run output (traces, screenshots, results); deleted by run.sh after each run
+e2e/.out/

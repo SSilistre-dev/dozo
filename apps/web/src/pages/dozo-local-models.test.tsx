@@ -42,7 +42,14 @@ const fixtures = vi.hoisted(() => {
     toolCallCheckedOn: "2026-01-01",
   });
   const models = [model("m1", 2), model("m2", 4), model("m3", 6), model("m4", 8), model("m5", 10)];
-  return { hardware, models, connect: vi.fn(), me: vi.fn(), copy: vi.fn(async () => true) };
+  return {
+    hardware,
+    models,
+    connect: vi.fn(),
+    me: vi.fn(),
+    ranked: vi.fn(),
+    copy: vi.fn(async () => true),
+  };
 });
 
 vi.mock("@lingui/react/macro", () => ({
@@ -99,6 +106,7 @@ vi.mock("../lib/dozo-local-model-fit", () => ({
     profile: { usableMemoryGB: number; bandwidthGBps: number },
     catalog: { weightsGB: number }[],
   ) => {
+    fixtures.ranked();
     const order = ["comfortable", "usable", "slow", "no-fit"];
     const tier = (weightsGB: number) => {
       const need = weightsGB * 1.3;
@@ -214,6 +222,7 @@ beforeEach(() => {
   fixtures.connect.mockReset();
   fixtures.me.mockReset();
   fixtures.copy.mockClear();
+  fixtures.ranked.mockClear();
 });
 afterEach(() => {
   act(() => root?.unmount());
@@ -434,6 +443,36 @@ it("holds a connected row, names it, and leaves the other rows usable", async ()
   expect(fixtures.connect.mock.calls[1]?.[0].modelId).toBe("derived-tag-m2:latest");
 });
 
+it("locks a connection by server and model, so another address is connectable again", async () => {
+  fixtures.connect.mockResolvedValue(undefined);
+  await render({ renderer: "Apple M9" });
+  await open();
+
+  await act(async () => connectButton(0)?.click());
+  await vi.waitFor(() => expect(connectButton(0)?.textContent).toBe("Connected"));
+
+  await change(container.querySelector("input"), "http://192.168.1.5:11434/v1");
+  expect(connectButton(0)?.textContent).toBe("Connect");
+  expect(connectButton(0)?.hasAttribute("disabled")).toBe(false);
+
+  await change(container.querySelector("input"), "http://localhost:11434/v1");
+  expect(connectButton(0)?.textContent).toBe("Connected");
+  expect(connectButton(0)?.hasAttribute("disabled")).toBe(true);
+});
+
+it("ranks again only when the hardware or memory changes, not while typing the address", async () => {
+  await render({ renderer: "Apple M9" });
+  await open();
+  const ranked = fixtures.ranked.mock.calls.length;
+
+  await change(container.querySelector("input"), "http://192.168.1.5:11434/v1");
+  await change(container.querySelector("input"), "http://192.168.1.6:11434/v1");
+  expect(fixtures.ranked).toHaveBeenCalledTimes(ranked);
+
+  await change(select("Memory"), "32");
+  expect(fixtures.ranked.mock.calls.length).toBeGreaterThan(ranked);
+});
+
 it("does not mark a row connected when connecting is refused", async () => {
   fixtures.connect.mockRejectedValue(new Error("No."));
   await render({ renderer: "Apple M9" });
@@ -500,6 +539,13 @@ it("releases the graphics context when the browser will not name the renderer", 
   const loseContext = fakeGl(null);
   expect(readGpuRenderer()).toBeNull();
   expect(loseContext).toHaveBeenCalledOnce();
+});
+
+it("reports no renderer when the browser refuses a graphics context", () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
+    throw new Error("no webgl");
+  });
+  expect(readGpuRenderer()).toBeNull();
 });
 
 async function renderSettings(props: { embedded?: boolean; scope: "account" | "space" }) {

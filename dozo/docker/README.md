@@ -19,14 +19,34 @@ copy, so merging upstream never conflicts with branding and the working tree is 
 
 5. `unit` (qa only, between `brand` and `build`): `dozo/docker/gate.sh unit` runs every
    `dozo-*.test.ts(x)` under `apps/` and `packages/` of the branded staged tree with Vitest in a
-   `node:24-slim` container (tree copied inside, `pnpm install --frozen-lockfile` there, pnpm store
-   in the Docker volume `dozo-qa-pnpm-store`; nothing is written to the host). Exit 2 when a test
-   fails or fewer than `DOZO_MIN_FORK_TESTS` (default 3) files are found. `make olc` never installs.
+   `node:24-slim` container, with V8 coverage limited to the fork's own `dozo-*.ts(x)` files and a
+   per-file floor of 90% for lines, branches and functions (`DOZO_COVERAGE_MIN` overrides). The
+   coverage provider is installed inside the container only. Dependencies live in the Docker volume
+   `dozo-qa-deps-<lockfile checksum>` (pnpm store, corepack download, `node_modules`): a cold run
+   takes about 80 s, a run with an unchanged lockfile about 5 s. Nothing is written to the host.
+   Exit 2 when a test fails, a file is under the floor (the file and number are printed), or fewer
+   than `DOZO_MIN_FORK_TESTS` (default 3) files are found. `make olc` never installs; it runs
+   `node --check` and the brand tests (same 90% floor, Node's built-in coverage) in the same image
+   and fails, never skips, when the image is missing: in CI (`CI` set) it pulls it, locally it says
+   `docker pull node:24-slim`.
 
 ## Commands
 `dozo/docker/build.sh [stage|brand|build|up|smoke|down|all]` (`all` = stage, brand, build, up).
 `make olc` fast gate (<30 s, offline), `make qa` full gate, `make stage|up|down`.
-Exit codes: 0 ok, 2 gate failure, other non-zero for errors; the failing step is printed.
+Exit codes: 0 ok, 2 any failure (the failing step is printed), 64 usage error.
+
+## qa, unattended
+`make qa` runs olc, stage, brand, unit, build, up, smoke, down. The terminal gets a start and an end
+line per step with elapsed seconds, the last 40 log lines of a failed step, and a final
+`QA: PASS in <s>s` or `QA: FAIL (<steps>) in <s>s`. The full output of each step is in
+`dozo/.stage/logs/<step>.log` (git-ignored). Each step has a timeout, `DOZO_TIMEOUT_<STEP>` seconds
+(build 2400, unit 900, others 600), after which it is killed and fails. If project `dozo` was already
+running when qa started, qa rebuilds and updates it but does not take it down. `up` and `down` use
+`DOZO_STOP_TIMEOUT` (qa sets 60) as the container stop timeout, because upstream gives the worker a
+50 minute grace period: recreating or stopping a worker that is still draining jobs would otherwise
+hold the step for up to 50 minutes. Called directly, `build.sh` keeps the compose value unless that
+variable is set. `DOZO_QA_STEPS="olc stage brand unit"` runs a subset (nothing is taken down if
+`up` is not in it); `DOZO_STAGE_DIR=<absolute path>` moves the whole stage area (src, env, logs).
 
 ## Generated files
 - `dozo/.stage/dozo.env`: random secrets (`openssl rand -hex`), mode 600, ignored by git. Created
@@ -34,7 +54,10 @@ Exit codes: 0 ok, 2 gate failure, other non-zero for errors; the failing step is
   `MCP_ALLOW_PRIVATE_ENDPOINT=true` (added to existing files too, secrets untouched): our stack
   binds to 127.0.0.1 on the user's own machine, so a local OpenAI-compatible model endpoint is
   allowed. Upstream's compose passes it to `api` and `worker` through `x-app-environment`. Never commit it.
-- `dozo/.stage/src/data` (compose bind mount `../../data`) is preserved across restages.
+- `dozo/.stage/src/data` (compose bind mount `../../data`) is preserved across restages: `stage`
+  builds the new tree in `dozo/.stage/src.new` and replaces the contents of `src` except `data`,
+  which is never moved, so a failed stage cannot lose it. Upstream's `data-init` service creates
+  `data` as root; on Linux `rm -rf dozo/.stage` may need `sudo` for that directory.
 - `compose.ports.yml`: needed because upstream hard-codes web port 5173 (only the bind address is
   configurable) and api port 3100. It moves web to `DOZO_WEB_PORT` (first free port from 5173,
   printed by the script) and stops publishing the api. Nothing else is overridden.

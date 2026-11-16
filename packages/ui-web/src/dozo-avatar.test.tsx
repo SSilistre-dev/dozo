@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -179,22 +181,14 @@ describe("DozoAvatar pointer tracking", () => {
 });
 
 describe("DozoAvatar timers", () => {
-  it("blinks on its own and clears every timer on unmount", () => {
+  it("keeps no timer for a small avatar, so blinking costs nothing per instance", () => {
     vi.useFakeTimers();
-    const { container, unmount } = mount(<DozoAvatar seed="sora" size={28} />);
-    expect(vi.getTimerCount()).toBeGreaterThan(0);
-    const blink = container.querySelector(".da-blink");
-    let blinked = false;
-    for (let t = 0; t < 7000 && !blinked; t += 50) {
-      act(() => vi.advanceTimersByTime(50));
-      blinked = blink?.classList.contains("is-blinking") ?? false;
-    }
-    expect(blinked).toBe(true);
-    unmount();
+    const { unmount } = mount(<DozoAvatar seed="sora" size={28} />);
     expect(vi.getTimerCount()).toBe(0);
+    unmount();
   });
 
-  it("clears the wake-up timer when a hovered avatar unmounts", () => {
+  it("leaves no timer or frame behind when a hovered avatar unmounts", () => {
     vi.useFakeTimers();
     const { container, unmount } = mount(<DozoAvatar seed="taro" size={72} state="idle" />);
     const root = container.querySelector(".dozo-avatar");
@@ -204,5 +198,511 @@ describe("DozoAvatar timers", () => {
     });
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("uses no raw timer in the component", () => {
+    const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
+    expect(source).not.toMatch(/\bset(?:Timeout|Interval)\s*\(/);
+  });
+});
+
+// jsdom exposes the Webkit-prefixed animation style property, so React listens for the prefixed name.
+const ANIMATION_END = "webkitAnimationEnd";
+const REDUCED = "(prefers-reduced-motion: reduce)";
+
+type MediaListener = (event: { matches: boolean }) => void;
+
+/** A reduced-motion media query the test can flip, with the change listeners it was given. */
+function preferReducedMotion(reduce: boolean) {
+  const listeners = new Set<MediaListener>();
+  const query = {
+    matches: reduce,
+    addEventListener: (_type: string, listener: MediaListener) => listeners.add(listener),
+    removeEventListener: (_type: string, listener: MediaListener) => listeners.delete(listener),
+  };
+  vi.stubGlobal("matchMedia", (text: string) => (text === REDUCED ? query : { matches: false }));
+  return {
+    listeners,
+    set(next: boolean) {
+      query.matches = next;
+      act(() => {
+        for (const listener of listeners) listener({ matches: next });
+      });
+    },
+  };
+}
+
+/** Stands in for IntersectionObserver or ResizeObserver and lets a test deliver entries. */
+function fakeObserver() {
+  const instances: Observer[] = [];
+  class Observer {
+    observed = new Set<Element>();
+    constructor(public callback: (entries: unknown[]) => void) {
+      instances.push(this);
+    }
+    observe(element: Element) {
+      this.observed.add(element);
+    }
+    unobserve(element: Element) {
+      this.observed.delete(element);
+    }
+    disconnect() {
+      this.observed.clear();
+    }
+  }
+  return { Observer, instances };
+}
+
+function eyesOf(container: HTMLElement) {
+  const eyes = container.querySelector<SVGGElement>(".da-eyes");
+  if (!eyes) throw new Error("no eyes");
+  return eyes;
+}
+
+function eyeState(eyes: SVGGElement) {
+  const match = eyes.style.transform.match(
+    /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scaleY\(([\d.]+)\)/,
+  );
+  if (!match) throw new Error(`unexpected transform "${eyes.style.transform}"`);
+  return { x: Number(match[1]), y: Number(match[2]), open: Number(match[3]) };
+}
+
+function advance(ms: number) {
+  act(() => vi.advanceTimersByTime(ms));
+}
+
+function pointerAt(clientX: number, clientY = 0) {
+  act(() => {
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX, clientY }));
+  });
+}
+
+function hover(container: HTMLElement, entering: boolean) {
+  const root = container.querySelector(".dozo-avatar");
+  act(() => {
+    root?.dispatchEvent(new MouseEvent(entering ? "pointerover" : "pointerout", { bubbles: true }));
+  });
+}
+
+describe("DozoAvatar characters", () => {
+  it("draws a different face for each character", () => {
+    const markup = DOZO_CHARACTERS.map((name) => renderToString(<DozoAvatar seed={name} />));
+    const faces = markup.map((html) => html.slice(html.indexOf("<svg")));
+    expect(new Set(faces).size).toBe(DOZO_CHARACTERS.length);
+    for (const html of markup) expect(html).toContain('class="da-eyes"');
+    expect(markup[DOZO_CHARACTERS.indexOf("yuki")]).toContain('d="M33.5 35q3.5-3.4 7 0"');
+    expect(markup[DOZO_CHARACTERS.indexOf("mochi")]).toContain('transform="rotate(28 41 13)"');
+  });
+});
+
+describe("DozoAvatar eye motion", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it.each([
+    ["working", 2.56],
+    ["waiting", 3.2],
+  ] as const)("a %s avatar follows the pointer with its own gain", (state, shift) => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state={state} />);
+    pointerAt(400);
+    advance(1000);
+    const eyes = eyeState(eyesOf(container));
+    expect(eyes.x).toBeCloseTo(shift, 1);
+    expect(eyes.y).toBeCloseTo(0, 5);
+    expect(eyes.open).toBe(1);
+  });
+
+  it("keeps the eyes centred while there is no pointer, and stops touching them once settled", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    advance(500);
+    const eyes = eyesOf(container);
+    expect(eyeState(eyes)).toEqual({ x: 0, y: 0, open: 1 });
+    const writes = vi.spyOn(eyes.style, "transform", "set");
+    advance(500);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("a sleeping idle avatar barely moves and keeps its eyes half shut", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    pointerAt(400);
+    advance(1000);
+    const eyes = eyeState(eyesOf(container));
+    expect(eyes.x).toBeCloseTo(0.48, 1);
+    expect(eyes.open).toBeCloseTo(0.3, 2);
+  });
+
+  it("hovering wakes an idle avatar and leaving lets it fall asleep again after a pause", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    pointerAt(400);
+    hover(container, true);
+    advance(1000);
+    const awake = eyeState(eyesOf(container));
+    expect(awake.x).toBeCloseTo(2.56, 1);
+    expect(awake.open).toBeCloseTo(1, 1);
+
+    hover(container, false);
+    advance(800);
+    expect(eyeState(eyesOf(container)).open).toBeCloseTo(1, 1);
+    advance(1500);
+    const asleep = eyeState(eyesOf(container));
+    expect(asleep.open).toBeCloseTo(0.3, 1);
+    expect(asleep.x).toBeCloseTo(0.48, 1);
+  });
+
+  it("hovering again before the pause ends keeps it awake", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    pointerAt(400);
+    hover(container, true);
+    hover(container, false);
+    advance(500);
+    hover(container, true);
+    advance(2500);
+    expect(eyeState(eyesOf(container)).open).toBeCloseTo(1, 1);
+  });
+
+  it.each([
+    ["the window loses focus", () => window.dispatchEvent(new Event("blur"))],
+    [
+      "the pointer leaves the page",
+      () => document.documentElement.dispatchEvent(new Event("pointerleave")),
+    ],
+  ])("the eyes return to centre when %s", (_name, away) => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).x).toBeGreaterThan(3);
+    act(away);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).x).toBeCloseTo(0, 1);
+  });
+
+  it.each([
+    ["resize", () => window.dispatchEvent(new Event("resize"))],
+    ["scroll", () => window.dispatchEvent(new Event("scroll"))],
+  ])("measures the avatar again after a %s", (_name, event) => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const root = container.querySelector<HTMLElement>(".dozo-avatar");
+    const rect = (left: number) => () => ({ left, top: 0, width: 0, height: 0 }) as DOMRect;
+    if (root) root.getBoundingClientRect = rect(0);
+    advance(50);
+    if (root) root.getBoundingClientRect = rect(400);
+    pointerAt(400);
+    act(event);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).x).toBeCloseTo(0, 1);
+  });
+});
+
+describe("DozoAvatar reduced motion", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("does not track the pointer when the user prefers reduced motion", () => {
+    preferReducedMotion(true);
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(container))).toEqual({ x: 0, y: 0, open: 1 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("follows a change of the preference while mounted, through one shared listener", () => {
+    const media = preferReducedMotion(false);
+    const first = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    mount(<DozoAvatar seed="kumo" size={72} state="waiting" />);
+    expect(media.listeners.size).toBe(1);
+
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(first.container)).x).toBeGreaterThan(3);
+
+    media.set(true);
+    advance(1000);
+    expect(eyeState(eyesOf(first.container)).x).toBe(0);
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(first.container)).x).toBe(0);
+
+    media.set(false);
+    pointerAt(400);
+    advance(1000);
+    expect(eyeState(eyesOf(first.container)).x).toBeGreaterThan(3);
+  });
+
+  it("drops the shared preference listener with the last avatar", () => {
+    const media = preferReducedMotion(false);
+    const only = mount(<DozoAvatar seed="sora" size={72} />);
+    expect(media.listeners.size).toBe(1);
+    only.unmount();
+    expect(media.listeners.size).toBe(0);
+  });
+
+  it("does not hop on hover when the preference is on", () => {
+    preferReducedMotion(true);
+    const { container } = mount(<DozoAvatar seed="sora" size={72} />);
+    hover(container, true);
+    expect(container.querySelector("svg")?.classList.contains("is-hop")).toBe(false);
+  });
+});
+
+describe("DozoAvatar frame loop", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("stops requesting frames once every eye has settled, and restarts on a pointer move", () => {
+    mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    expect(vi.getTimerCount()).toBe(1);
+    advance(100);
+    expect(vi.getTimerCount()).toBe(0);
+
+    pointerAt(400);
+    expect(vi.getTimerCount()).toBe(1);
+    advance(2000);
+    expect(vi.getTimerCount()).toBe(0);
+    advance(2000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("wakes again for a scroll and a resize", () => {
+    mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    advance(100);
+    for (const event of ["scroll", "resize"]) {
+      act(() => {
+        window.dispatchEvent(new Event(event));
+      });
+      expect(vi.getTimerCount()).toBe(1);
+      advance(100);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  });
+
+  it("keeps running until a left idle avatar has fallen asleep, then stops", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    advance(100);
+    hover(container, true);
+    advance(3000);
+    expect(vi.getTimerCount()).toBe(0);
+    hover(container, false);
+    advance(500);
+    expect(vi.getTimerCount()).toBe(1);
+    advance(3000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(eyeState(eyesOf(container)).open).toBeCloseTo(0.3, 3);
+  });
+
+  it("marks only an awake idle avatar so CSS lets it blink", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    const root = container.querySelector(".dozo-avatar");
+    advance(100);
+    expect(root?.hasAttribute("data-awake")).toBe(false);
+    hover(container, true);
+    advance(100);
+    expect(root?.hasAttribute("data-awake")).toBe(true);
+    hover(container, false);
+    advance(3000);
+    expect(root?.hasAttribute("data-awake")).toBe(false);
+  });
+});
+
+function rectSpy(container: HTMLElement) {
+  const root = container.querySelector<HTMLElement>(".dozo-avatar");
+  if (!root) throw new Error("no root");
+  return vi.spyOn(root, "getBoundingClientRect");
+}
+
+describe("DozoAvatar visibility", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("shares one observer, measures only visible avatars and pauses the others", () => {
+    const io = fakeObserver();
+    vi.stubGlobal("IntersectionObserver", io.Observer);
+    const hidden = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const shown = mount(<DozoAvatar seed="kumo" size={72} state="waiting" />);
+    const small = mount(<DozoAvatar seed="hana" size={28} />);
+    expect(io.instances).toHaveLength(1);
+    expect(io.instances[0]?.observed.size).toBe(3);
+
+    const hiddenRoot = hidden.container.querySelector(".dozo-avatar");
+    const smallRoot = small.container.querySelector(".dozo-avatar");
+    act(() =>
+      io.instances[0]?.callback([
+        { target: hiddenRoot, isIntersecting: false },
+        { target: smallRoot, isIntersecting: false },
+      ]),
+    );
+    expect(hiddenRoot?.hasAttribute("data-offscreen")).toBe(true);
+    expect(smallRoot?.hasAttribute("data-offscreen")).toBe(true);
+
+    const hiddenRect = rectSpy(hidden.container);
+    const shownRect = rectSpy(shown.container);
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    advance(100);
+    expect(hiddenRect).not.toHaveBeenCalled();
+    expect(shownRect).toHaveBeenCalledTimes(1);
+
+    act(() => io.instances[0]?.callback([{ target: hiddenRoot, isIntersecting: true }]));
+    advance(100);
+    expect(hiddenRoot?.hasAttribute("data-offscreen")).toBe(false);
+    expect(hiddenRect).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets go of the observer when the last avatar unmounts", () => {
+    const io = fakeObserver();
+    vi.stubGlobal("IntersectionObserver", io.Observer);
+    const one = mount(<DozoAvatar seed="sora" size={72} />);
+    const two = mount(<DozoAvatar seed="kumo" size={72} />);
+    one.unmount();
+    expect(io.instances[0]?.observed.size).toBe(1);
+    two.unmount();
+    expect(io.instances[0]?.observed.size).toBe(0);
+  });
+
+  it("treats every avatar as visible where IntersectionObserver is missing", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const rect = rectSpy(container);
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    advance(100);
+    expect(rect).toHaveBeenCalled();
+    expect(container.querySelector(".dozo-avatar")?.hasAttribute("data-offscreen")).toBe(false);
+  });
+
+  it("keeps an off-screen avatar unmeasured when its tracker is rebuilt", () => {
+    const io = fakeObserver();
+    vi.stubGlobal("IntersectionObserver", io.Observer);
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const root = container.querySelector<HTMLElement>(".dozo-avatar");
+    act(() => io.instances[0]?.callback([{ target: root, isIntersecting: false }]));
+    const view = mount(<DozoAvatar seed="kumo" size={72} />);
+    const rect = rectSpy(container);
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    advance(100);
+    expect(rect).not.toHaveBeenCalled();
+    view.unmount();
+  });
+});
+
+describe("DozoAvatar own size", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("measures again on the next frame after its own box changes, using one shared observer", () => {
+    const ro = fakeObserver();
+    vi.stubGlobal("ResizeObserver", ro.Observer);
+    const first = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    mount(<DozoAvatar seed="kumo" size={72} state="waiting" />);
+    expect(ro.instances).toHaveLength(1);
+    expect(ro.instances[0]?.observed.size).toBe(2);
+
+    const rect = rectSpy(first.container);
+    advance(100);
+    expect(rect).toHaveBeenCalledTimes(1);
+    act(() => ro.instances[0]?.callback([]));
+    expect(rect).toHaveBeenCalledTimes(1);
+    advance(20);
+    expect(rect).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops observing when the avatar unmounts", () => {
+    const ro = fakeObserver();
+    vi.stubGlobal("ResizeObserver", ro.Observer);
+    const one = mount(<DozoAvatar seed="sora" size={72} />);
+    expect(ro.instances[0]?.observed.size).toBe(1);
+    one.unmount();
+    expect(ro.instances[0]?.observed.size).toBe(0);
+  });
+});
+
+describe("DozoAvatar blinking", () => {
+  const cssVar = (html: string, name: string) =>
+    html.match(new RegExp(`${name}:(-?[\\d.]+)s`))?.[1];
+  const render = (seed: string) => renderToString(<DozoAvatar seed={seed} />);
+
+  it("derives each avatar's blink rhythm from its seed", () => {
+    expect(render("bot-1")).toBe(render("bot-1"));
+    const rhythms = new Set(
+      Array.from({ length: 40 }, (_, i) => {
+        const html = render(`bot-${i}`);
+        return `${cssVar(html, "--dozo-blink-period")}/${cssVar(html, "--dozo-blink-delay")}`;
+      }),
+    );
+    expect(rhythms.size).toBeGreaterThan(30);
+  });
+
+  it("keeps every period between four and six seconds and the phase inside it", () => {
+    for (let i = 0; i < 60; i++) {
+      const html = render(`bot-${i}`);
+      const period = Number(cssVar(html, "--dozo-blink-period"));
+      const delay = Number(cssVar(html, "--dozo-blink-delay"));
+      expect(period).toBeGreaterThanOrEqual(4);
+      expect(period).toBeLessThan(6);
+      expect(delay).toBeLessThanOrEqual(0);
+      expect(delay).toBeGreaterThan(-period);
+    }
+  });
+});
+
+describe("DozoAvatar hover", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("hops on hover, and clears the hop only when the svg's own animation ends", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} />);
+    const svg = container.querySelector("svg");
+    hover(container, true);
+    expect(svg?.classList.contains("is-hop")).toBe(true);
+
+    act(() => {
+      svg?.querySelector("rect")?.dispatchEvent(new Event(ANIMATION_END, { bubbles: true }));
+    });
+    expect(svg?.classList.contains("is-hop")).toBe(true);
+    act(() => {
+      svg?.dispatchEvent(new Event(ANIMATION_END, { bubbles: true }));
+    });
+    expect(svg?.classList.contains("is-hop")).toBe(false);
+  });
+});
+
+describe("dozo-avatar.css", () => {
+  const css = readFileSync(join(import.meta.dirname, "dozo-avatar.css"), "utf8");
+  const PALETTE_START = "/* Bot identity palette";
+  const PALETTE_END = "/* End of the bot identity palette. */";
+
+  it("has hex colours only inside the bot identity palette block", () => {
+    const start = css.indexOf(PALETTE_START);
+    const end = css.indexOf(PALETTE_END);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const outside = css.slice(0, start) + css.slice(end + PALETTE_END.length);
+    expect(outside.match(/#[0-9a-f]{3,8}\b/gi)).toBeNull();
+    const palette = css.slice(start, end);
+    for (const name of ["sora", "kumo", "hana", "taro", "yuki", "mochi"]) {
+      expect(palette.match(new RegExp(`--dozo-${name}:`, "g"))).toHaveLength(1);
+      expect(palette.match(new RegExp(`--dozo-${name}-glow:`, "g"))).toHaveLength(1);
+    }
+  });
+
+  it("takes the head and visor from semantic tokens", () => {
+    expect(css).toMatch(/--dozo-body:[^;]*var\(--(?:background|foreground)\)/);
+    expect(css).toMatch(/--dozo-visor:[^;]*var\(--(?:background|foreground)\)/);
+  });
+
+  it("pauses animations off-screen and removes the blink under reduced motion", () => {
+    expect(css).toMatch(/\[data-offscreen\][^{]*\{\s*animation-play-state: paused/);
+    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(reduced).toContain(".da-blink");
+    expect(reduced).toContain("animation: none");
   });
 });

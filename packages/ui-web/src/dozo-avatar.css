@@ -1,17 +1,29 @@
 /* Dozo bot avatars. Every selector sits under .dozo-avatar so nothing here leaks into the app. */
 
+/* Bot identity palette: the only hex values in this file. Each character owns a tile colour and
+   an eye glow that no UI token covers ("bots carry the only identity color"). light-dark() picks
+   the first value on a light page and the second on a dark one, following the theme's color-scheme. */
 .dozo-avatar {
-  /* Tile colours, tuned for the dark page. Light values follow below. */
-  --dozo-sora: #4f8fd8;
-  --dozo-kumo: #a07ed8;
-  --dozo-hana: #4fa37a;
-  --dozo-taro: #d19a45;
-  --dozo-yuki: #dc7a6a;
-  --dozo-mochi: #3fa3a8;
-  /* The robot head, its visor, and the default eye glow. */
-  --dozo-body: #eef0f4;
-  --dozo-visor: #14161c;
-  --dozo-glow: #bfe0ff;
+  --dozo-sora: light-dark(#3f7fcb, #4f8fd8);
+  --dozo-kumo: light-dark(#8f6bcb, #a07ed8);
+  --dozo-hana: light-dark(#3f9468, #4fa37a);
+  --dozo-taro: light-dark(#c4872f, #d19a45);
+  --dozo-yuki: light-dark(#d26a59, #dc7a6a);
+  --dozo-mochi: light-dark(#2f9297, #3fa3a8);
+  --dozo-sora-glow: #bfe0ff;
+  --dozo-kumo-glow: #e2d6ff;
+  --dozo-hana-glow: #c4f2d9;
+  --dozo-taro-glow: #ffe2ae;
+  --dozo-yuki-glow: #ffd0c6;
+  --dozo-mochi-glow: #b8f0f0;
+}
+/* End of the bot identity palette. */
+
+.dozo-avatar {
+  /* The head stays light and the visor dark on both themes, so each takes the semantic token that
+     is light (or dark) on that theme. */
+  --dozo-body: light-dark(var(--background), var(--foreground));
+  --dozo-visor: light-dark(var(--foreground), var(--background));
 
   display: inline-block;
   flex: none;
@@ -19,42 +31,31 @@
   user-select: none;
 }
 
-/* Deeper tiles keep the white head readable on a light page. */
-[data-theme="light"] .dozo-avatar {
-  --dozo-sora: #3f7fcb;
-  --dozo-kumo: #8f6bcb;
-  --dozo-hana: #3f9468;
-  --dozo-taro: #c4872f;
-  --dozo-yuki: #d26a59;
-  --dozo-mochi: #2f9297;
-  --dozo-body: #f7f8fa;
-}
-
 /* One tile colour and one eye glow per character. An inline --dozo-tile (explicit colour) wins. */
 .dozo-avatar[data-character="sora"] {
   --dozo-tile: var(--dozo-sora);
-  --dozo-glow: #bfe0ff;
+  --dozo-glow: var(--dozo-sora-glow);
 }
 .dozo-avatar[data-character="kumo"] {
   --dozo-tile: var(--dozo-kumo);
-  --dozo-glow: #e2d6ff;
+  --dozo-glow: var(--dozo-kumo-glow);
   --dozo-pulse: 1;
 }
 .dozo-avatar[data-character="hana"] {
   --dozo-tile: var(--dozo-hana);
-  --dozo-glow: #c4f2d9;
+  --dozo-glow: var(--dozo-hana-glow);
 }
 .dozo-avatar[data-character="taro"] {
   --dozo-tile: var(--dozo-taro);
-  --dozo-glow: #ffe2ae;
+  --dozo-glow: var(--dozo-taro-glow);
 }
 .dozo-avatar[data-character="yuki"] {
   --dozo-tile: var(--dozo-yuki);
-  --dozo-glow: #ffd0c6;
+  --dozo-glow: var(--dozo-yuki-glow);
 }
 .dozo-avatar[data-character="mochi"] {
   --dozo-tile: var(--dozo-mochi);
-  --dozo-glow: #b8f0f0;
+  --dozo-glow: var(--dozo-mochi-glow);
 }
 
 .dozo-avatar .da-svg {
@@ -96,8 +97,14 @@
   transform: scaleY(0.3);
 }
 
-.dozo-avatar .da-blink.is-blinking {
-  animation: dozo-blink var(--dozo-blink, 120ms) ease-in-out;
+/* Blinking is pure CSS: each avatar's period and phase come from its seed (set inline), so there
+   is no timer per avatar. A sleeper keeps its eyes shut until something wakes it (data-awake). */
+.dozo-avatar .da-blink {
+  animation: dozo-blink var(--dozo-blink-period, 5s) var(--dozo-blink-delay, 0s) ease-in-out
+    infinite;
+}
+.dozo-avatar[data-motion="full"][data-state="idle"]:not([data-awake]) .da-blink {
+  animation: none;
 }
 
 /* Idle motion is skipped below 32 px (data-motion="still"): unreadable, and wasted frames. */
@@ -121,7 +128,12 @@
 }
 
 @keyframes dozo-blink {
-  50% {
+  0%,
+  97%,
+  100% {
+    transform: none;
+  }
+  98.5% {
     transform: scaleY(0.1);
   }
 }
@@ -163,14 +175,19 @@
   }
 }
 
-/* No bob, pulse or hop; the blink stays, only slower. */
+/* Off-screen avatars sit still. The extra attribute selectors out-rank the animation shorthands
+   above (which reset play-state), so no !important is needed. */
+.dozo-avatar[data-offscreen][data-motion][data-state]
+  :is(.da-svg, .da-head, .da-feature, .da-blink) {
+  animation-play-state: paused;
+}
+
+/* Reduced motion: no bob, pulse, hop or blink. Same specificity as the motion rules above, and
+   later, so it wins without !important. */
 @media (prefers-reduced-motion: reduce) {
-  .dozo-avatar {
-    --dozo-blink: 220ms;
-  }
-  /* Same specificity as the motion rules above, and later, so it wins without !important. */
   .dozo-avatar[data-motion][data-state] .da-head,
   .dozo-avatar[data-motion][data-state] .da-feature,
+  .dozo-avatar .da-blink,
   .dozo-avatar .da-svg.is-hop {
     animation: none;
   }

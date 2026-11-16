@@ -2,7 +2,6 @@ import { useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import {
-  Button,
   Disclosure,
   Input,
   Select,
@@ -10,10 +9,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  useCopyText,
 } from "@rakazo/ui-web";
-import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LOCAL_HARDWARE, LOCAL_MODELS, LOCAL_RUNTIME } from "../lib/dozo-local-model-catalog";
 import type { HardwareEntry, LocalModelEntry } from "../lib/dozo-local-model-fit";
 import {
@@ -23,7 +20,7 @@ import {
   rankLocalModels,
 } from "../lib/dozo-local-model-fit";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
+import { connectionKey, LocalModelRows } from "./dozo-local-model-rows";
 
 const MAX_ROWS = 3;
 
@@ -47,22 +44,73 @@ export function readGpuRenderer(): string | null {
 }
 
 const lowest = (values: readonly number[]) => Math.min(...values);
-const oneDecimal = (value: number) => Number(value.toFixed(1));
 
-function CopyCommand({ text, label }: { text: string; label: string }) {
+/** The chosen memory when this hardware offers it, else its smallest option. */
+function pickMemory(entry: HardwareEntry | null, choice: number | null): number | null {
+  if (!entry) return null;
+  if (choice !== null && entry.memoryGB.includes(choice)) return choice;
+  return lowest(entry.memoryGB);
+}
+
+function HardwarePickers({
+  hardware,
+  hardwareId,
+  entry,
+  memoryGB,
+  onHardware,
+  onMemory,
+}: {
+  hardware: readonly HardwareEntry[];
+  hardwareId: string | null;
+  entry: HardwareEntry | null;
+  memoryGB: number | null;
+  onHardware: (id: string) => void;
+  onMemory: (gb: number) => void;
+}) {
   const { t } = useLingui();
-  const [copied, copy] = useCopyText();
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="rounded-full"
-      aria-label={`${t`Copy`} ${label}`}
-      onClick={() => void copy(text)}
-    >
-      {copied ? <Check /> : <Copy />}
-      {t`Copy`}
-    </Button>
+    <div className="flex flex-wrap gap-2">
+      <Select
+        value={hardwareId}
+        onValueChange={(value) => {
+          if (typeof value !== "string" || !value) return;
+          onHardware(value);
+        }}
+        items={hardware.map((item) => ({ value: item.id, label: item.label }))}
+      >
+        <SelectTrigger aria-label={t`Hardware`} className="rounded-full">
+          <SelectValue placeholder={t`Hardware`} />
+        </SelectTrigger>
+        <SelectContent>
+          {hardware.map((item) => (
+            <SelectItem key={item.id} value={item.id}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {entry && memoryGB !== null ? (
+        <Select
+          value={String(memoryGB)}
+          onValueChange={(value) => {
+            if (typeof value !== "string" || !value) return;
+            onMemory(Number(value));
+          }}
+          items={entry.memoryGB.map((gb) => ({ value: String(gb), label: t`${gb} GB` }))}
+        >
+          <SelectTrigger aria-label={t`Memory`} className="rounded-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {entry.memoryGB.map((gb) => (
+              <SelectItem key={gb} value={String(gb)}>
+                {t`${gb} GB`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+    </div>
   );
 }
 
@@ -88,8 +136,9 @@ function LocalModelsBody({
   const [hardwareId, setHardwareId] = useState<string | null>(matched?.id ?? null);
   const [memoryChoice, setMemoryChoice] = useState<number | null>(null);
   const [baseUrl, setBaseUrl] = useState(LOCAL_RUNTIME.baseUrl);
-  // Models connected from this panel, so a second click cannot add the same connection again.
-  const [connectedIds, setConnectedIds] = useState<readonly string[]>([]);
+  // Server and model pairs connected from this panel, so a second click cannot add the same
+  // connection again while the same model on another address stays connectable.
+  const [connectedKeys, setConnectedKeys] = useState<readonly string[]>([]);
 
   const save = useSave({
     save: (input: { modelId: string; baseUrl: string }, rpc) =>
@@ -110,129 +159,67 @@ function LocalModelsBody({
       queries.me.queryKey(),
     ],
     onSaved: (_saved, input) => {
-      setConnectedIds((ids) => [...ids, input.modelId]);
+      setConnectedKeys((keys) => [...keys, connectionKey(input.baseUrl, input.modelId)]);
       onConnected?.();
     },
   });
 
   const entry = hardware.find((item) => item.id === hardwareId) ?? null;
-  const memoryGB =
-    entry && memoryChoice !== null && entry.memoryGB.includes(memoryChoice)
-      ? memoryChoice
-      : entry
-        ? lowest(entry.memoryGB)
-        : null;
-  const rows =
-    entry && memoryGB !== null
-      ? rankLocalModels(
-          hardwareProfile(entry, memoryGB, entry === matched ? "detected" : "chosen"),
-          models,
-        )
-          .filter((fit) => fit.tier === "comfortable" || fit.tier === "usable")
-          .slice(0, MAX_ROWS)
-      : [];
+  const memoryGB = pickMemory(entry, memoryChoice);
+  const rows = useMemo(() => {
+    if (!entry || memoryGB === null) return [];
+    const profile = hardwareProfile(entry, memoryGB, entry === matched ? "detected" : "chosen");
+    return rankLocalModels(profile, models)
+      .filter((fit) => fit.tier === "comfortable" || fit.tier === "usable")
+      .slice(0, MAX_ROWS);
+  }, [entry, memoryGB, matched, models]);
+
+  let suggestions = null;
+  if (rows.length > 0) {
+    suggestions = (
+      <>
+        <LocalModelRows
+          rows={rows}
+          baseUrl={baseUrl}
+          connectedKeys={connectedKeys}
+          pending={save.pending}
+          error={save.error}
+          errorModelId={save.input?.modelId}
+          onConnect={(modelId) => save.run({ modelId, baseUrl: baseUrl.trim() })}
+        />
+        <Input
+          aria-label={t`Address`}
+          className="rounded-full"
+          value={baseUrl}
+          onChange={(event) => {
+            setBaseUrl(event.target.value);
+            save.reset();
+          }}
+        />
+      </>
+    );
+  } else if (entry && memoryGB !== null) {
+    suggestions = <p className="text-body text-muted-foreground">{t`Nothing fits`}</p>;
+  }
 
   return (
     <div className="mt-3 flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        <Select
-          value={hardwareId}
-          onValueChange={(value) => {
-            if (typeof value !== "string" || !value) return;
-            setHardwareId(value);
-            setMemoryChoice(null);
-            save.reset();
-          }}
-          items={hardware.map((item) => ({ value: item.id, label: item.label }))}
-        >
-          <SelectTrigger aria-label={t`Hardware`} className="rounded-full">
-            <SelectValue placeholder={t`Hardware`} />
-          </SelectTrigger>
-          <SelectContent>
-            {hardware.map((item) => (
-              <SelectItem key={item.id} value={item.id}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {entry && memoryGB !== null ? (
-          <Select
-            value={String(memoryGB)}
-            onValueChange={(value) => {
-              if (typeof value !== "string" || !value) return;
-              setMemoryChoice(Number(value));
-              save.reset();
-            }}
-            items={entry.memoryGB.map((gb) => ({ value: String(gb), label: t`${gb} GB` }))}
-          >
-            <SelectTrigger aria-label={t`Memory`} className="rounded-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {entry.memoryGB.map((gb) => (
-                <SelectItem key={gb} value={String(gb)}>
-                  {t`${gb} GB`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : null}
-      </div>
-      {entry && memoryGB !== null && rows.length === 0 ? (
-        <p className="text-body text-muted-foreground">{t`Nothing fits`}</p>
-      ) : rows.length > 0 ? (
-        <>
-          <ul className="flex flex-col gap-2">
-            {rows.map(({ model, tokensPerSecond }) => {
-              const { command, modelId } = LOCAL_RUNTIME.prepare(
-                model.tag,
-                LOCAL_MODEL_CONTEXT_TOKENS,
-              );
-              const connected = connectedIds.includes(modelId);
-              return (
-                <li key={model.id} className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-body text-foreground">{model.label}</span>
-                    <span className="text-body text-muted-foreground">
-                      {t`${Math.round(tokensPerSecond)} tok/s`}
-                    </span>
-                    <span className="text-body text-muted-foreground">
-                      {t`${oneDecimal(model.weightsGB)} GB`}
-                    </span>
-                    <span className="ml-auto flex gap-2">
-                      <CopyCommand text={command} label={model.label} />
-                      <Button
-                        size="sm"
-                        className="rounded-full"
-                        aria-label={`${connected ? t`Connected` : t`Connect`} ${model.label}`}
-                        disabled={connected || save.pending || !baseUrl.trim()}
-                        onClick={() => save.run({ modelId, baseUrl: baseUrl.trim() })}
-                      >
-                        {connected ? t`Connected` : t`Connect`}
-                      </Button>
-                    </span>
-                  </div>
-                  {save.error && save.input?.modelId === modelId ? (
-                    <p className="text-body text-destructive" role="alert">
-                      {errorText(save.error, t`Could not connect this provider`)}
-                    </p>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-          <Input
-            aria-label={t`Address`}
-            className="rounded-full"
-            value={baseUrl}
-            onChange={(event) => {
-              setBaseUrl(event.target.value);
-              save.reset();
-            }}
-          />
-        </>
-      ) : null}
+      <HardwarePickers
+        hardware={hardware}
+        hardwareId={hardwareId}
+        entry={entry}
+        memoryGB={memoryGB}
+        onHardware={(id) => {
+          setHardwareId(id);
+          setMemoryChoice(null);
+          save.reset();
+        }}
+        onMemory={(gb) => {
+          setMemoryChoice(gb);
+          save.reset();
+        }}
+      />
+      {suggestions}
     </div>
   );
 }
@@ -251,6 +238,7 @@ export function DozoLocalModels({
   scope?: SettingsScope;
   /** False keeps the current main model; omitted, the connected model becomes it. */
   makeDefault?: boolean;
+  /** `renderer`, `hardware` and `models` are the seam for tests and screenshots; the app passes none. */
   renderer?: string | null;
   hardware?: readonly HardwareEntry[];
   models?: readonly LocalModelEntry[];

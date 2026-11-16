@@ -34,6 +34,8 @@ jobs:
             echo "::warning::origin has no upstream-main branch; the fork-health count in make olc will be wrong"
           fi
 
+      # On a runner without the Node image, olc pulls it and fails if it cannot (CI is set), so a
+      # PASS always means node --check and the brand tests ran.
       - name: make olc
         run: make olc
 

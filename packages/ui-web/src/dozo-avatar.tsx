@@ -12,11 +12,6 @@ const MIN_MOTION_SIZE = 32;
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
-/** Call from effects and event handlers only: it reads window. */
-function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(REDUCED_MOTION).matches;
-}
-
 function hashSeed(seed: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
@@ -31,8 +26,7 @@ export function dozoCharacterForSeed(seed: string): DozoCharacter {
   const key = seed.trim().toLowerCase();
   return (
     DOZO_CHARACTERS.find((name) => name === key) ??
-    DOZO_CHARACTERS[hashSeed(key) % DOZO_CHARACTERS.length] ??
-    "sora"
+    (DOZO_CHARACTERS[hashSeed(key) % DOZO_CHARACTERS.length] as DozoCharacter)
   );
 }
 
@@ -146,12 +140,14 @@ function Art({ character }: { character: DozoCharacter }) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// One pointer listener and one animation-frame loop shared by every mounted avatar.
+// One set of listeners, two observers and one animation-frame loop shared by every mounted avatar.
+// The loop only runs while something moves; any event that can change a target wakes it again.
 
 /** Per-instance state both the component and the shared loop read. */
 interface Live {
   state: DozoAvatarState;
-  awake: boolean;
+  /** Time (rAF clock) until which a hovered idle avatar stays awake; Infinity while hovered. */
+  awakeUntil: number;
 }
 
 interface Tracker {
@@ -166,6 +162,10 @@ interface Tracker {
   cx: number;
   cy: number;
   applied: string;
+  /** Mirrors data-awake on the root, which CSS reads to stop a sleeper blinking. */
+  awake: boolean;
+  /** Off-screen avatars are neither measured nor moved. */
+  visible: boolean;
 }
 
 const EYE_LIMIT: Record<DozoCharacter, readonly [number, number]> = {
@@ -180,30 +180,109 @@ const GAIN: Record<DozoAvatarState, number> = { working: 0.8, waiting: 1, idle: 
 const SLEEP_OPEN = 0.3;
 const SLEEP_GAIN = 0.15;
 const RANGE = 240;
+const WAKE_HOLD_MS = 900;
+/** Below these the eyes are visually at their target (the transform is written to 0.01 / 0.001). */
+const SETTLED_SHIFT = 0.005;
+const SETTLED_OPEN = 0.0005;
 
-const trackers = new Set<Tracker>();
+const trackers = new Map<HTMLElement, Tracker>();
 let pointer: { x: number; y: number } | null = null;
 let frame = 0;
 let lastTime = 0;
 let stale = true;
-let slow = false;
+let reduced = false;
+let resizeObserver: ResizeObserver | undefined;
+let visibilityObserver: IntersectionObserver | undefined;
+const watchedForVisibility = new Set<HTMLElement>();
 
 const clamp = (value: number, max: number) => Math.max(-max, Math.min(max, value));
-const isSleeping = (live: Live) => live.state === "idle" && !live.awake;
+const isSleeping = (live: Live, now: number) => live.state === "idle" && now >= live.awakeUntil;
+
+/** Starts a frame unless one is already queued or nothing is mounted. */
+function wake() {
+  if (frame || trackers.size === 0) return;
+  lastTime = 0;
+  frame = requestAnimationFrame(tick);
+}
 
 function onPointerMove(event: PointerEvent) {
+  if (reduced) return;
   pointer = { x: event.clientX, y: event.clientY };
+  wake();
 }
 function onPointerAway() {
   pointer = null;
+  wake();
 }
 function markStale() {
   stale = true;
+  wake();
+}
+function onReducedMotionChange(event: MediaQueryListEvent) {
+  reduced = event.matches;
+  if (reduced) pointer = null;
+  wake();
+}
+
+function onVisibilityChange(entries: IntersectionObserverEntry[]) {
+  for (const { target, isIntersecting } of entries) {
+    target.toggleAttribute("data-offscreen", !isIntersecting);
+    const tracker = trackers.get(target as HTMLElement);
+    if (!tracker) continue;
+    tracker.visible = isIntersecting;
+    if (isIntersecting) markStale();
+  }
+}
+
+/**
+ * Pauses an avatar's CSS animations while it is off-screen. Without IntersectionObserver every
+ * avatar counts as visible.
+ */
+function watchVisibility(root: HTMLElement): () => void {
+  if (typeof IntersectionObserver !== "function") return () => undefined;
+  visibilityObserver ??= new IntersectionObserver(onVisibilityChange);
+  visibilityObserver.observe(root);
+  watchedForVisibility.add(root);
+  return () => {
+    visibilityObserver?.unobserve(root);
+    watchedForVisibility.delete(root);
+    if (watchedForVisibility.size === 0) {
+      visibilityObserver?.disconnect();
+      visibilityObserver = undefined;
+    }
+  };
+}
+
+/**
+ * The window and document subscriptions every avatar needs, attached once. This is a module-level
+ * subscription and not a per-avatar hook because N avatars would otherwise attach N copies of the
+ * same five listeners; the first tracked avatar connects it and the last one disconnects it.
+ */
+function connectSharedSources(): () => void {
+  const query =
+    typeof window.matchMedia === "function" ? window.matchMedia(REDUCED_MOTION) : undefined;
+  reduced = query?.matches ?? false;
+  query?.addEventListener?.("change", onReducedMotionChange);
+  window.addEventListener("pointermove", onPointerMove, { passive: true });
+  window.addEventListener("blur", onPointerAway);
+  window.addEventListener("resize", markStale);
+  window.addEventListener("scroll", markStale, true);
+  document.documentElement.addEventListener("pointerleave", onPointerAway);
+  return () => {
+    query?.removeEventListener?.("change", onReducedMotionChange);
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("blur", onPointerAway);
+    window.removeEventListener("resize", markStale);
+    window.removeEventListener("scroll", markStale, true);
+    document.documentElement.removeEventListener("pointerleave", onPointerAway);
+    pointer = null;
+  };
 }
 
 function measure() {
   stale = false;
-  for (const tracker of trackers) {
+  for (const tracker of trackers.values()) {
+    if (!tracker.visible) continue;
     const rect = tracker.root.getBoundingClientRect();
     tracker.cx = rect.left + rect.width / 2;
     tracker.cy = rect.top + rect.height / 2;
@@ -211,60 +290,73 @@ function measure() {
 }
 
 function tick(now: number) {
+  frame = 0;
   const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.05) : 0.016;
   lastTime = now;
-  const follow = 1 - Math.exp(-dt * (slow ? 3 : 10));
-  const wake = 1 - Math.exp(-dt * 5);
+  const follow = 1 - Math.exp(-dt * 10);
+  const wakeRate = 1 - Math.exp(-dt * 5);
   if (stale) measure();
-  for (const t of trackers) {
-    const sleeping = isSleeping(t.live);
+  let moving = false;
+  for (const t of trackers.values()) {
+    if (!t.visible) continue;
+    const sleeping = isSleeping(t.live, now);
+    if (!sleeping !== t.awake) {
+      t.awake = !sleeping;
+      t.root.toggleAttribute("data-awake", t.awake);
+    }
     const gain = sleeping ? SLEEP_GAIN : GAIN[t.live.state];
     const tx = pointer ? clamp((pointer.x - t.cx) / RANGE, 1) * t.limit[0] * gain : 0;
     const ty = pointer ? clamp((pointer.y - t.cy) / RANGE, 1) * t.limit[1] * gain : 0;
+    const open = sleeping ? SLEEP_OPEN : 1;
     t.x += (tx - t.x) * follow;
     t.y += (ty - t.y) * follow;
-    t.open += ((sleeping ? SLEEP_OPEN : 1) - t.open) * wake;
+    t.open += (open - t.open) * wakeRate;
+    if (
+      Math.abs(tx - t.x) < SETTLED_SHIFT &&
+      Math.abs(ty - t.y) < SETTLED_SHIFT &&
+      Math.abs(open - t.open) < SETTLED_OPEN
+    ) {
+      t.x = tx;
+      t.y = ty;
+      t.open = open;
+    } else {
+      moving = true;
+    }
+    // A hovered idle avatar that has just been left falls asleep on a deadline, not on an event.
+    if (t.live.state === "idle" && t.live.awakeUntil > now && t.live.awakeUntil !== Infinity) {
+      moving = true;
+    }
     const transform = `translate(${t.x.toFixed(2)}px,${t.y.toFixed(2)}px) scaleY(${t.open.toFixed(3)})`;
     if (transform !== t.applied) {
       t.eyes.style.transform = transform;
       t.applied = transform;
     }
   }
-  frame = requestAnimationFrame(tick);
+  if (moving) frame = requestAnimationFrame(tick);
 }
 
-function startLoop() {
-  slow = prefersReducedMotion();
-  window.addEventListener("pointermove", onPointerMove, { passive: true });
-  window.addEventListener("blur", onPointerAway);
-  window.addEventListener("resize", markStale);
-  window.addEventListener("scroll", markStale, true);
-  document.documentElement.addEventListener("pointerleave", onPointerAway);
-  lastTime = 0;
-  frame = requestAnimationFrame(tick);
-}
-
-function stopLoop() {
-  cancelAnimationFrame(frame);
-  window.removeEventListener("pointermove", onPointerMove);
-  window.removeEventListener("blur", onPointerAway);
-  window.removeEventListener("resize", markStale);
-  window.removeEventListener("scroll", markStale, true);
-  document.documentElement.removeEventListener("pointerleave", onPointerAway);
-  pointer = null;
-}
+let disconnectSources: (() => void) | undefined;
 
 function track(tracker: Tracker): () => void {
-  if (trackers.size === 0) startLoop();
-  trackers.add(tracker);
-  stale = true;
+  if (trackers.size === 0) {
+    disconnectSources = connectSharedSources();
+    if (typeof ResizeObserver === "function") resizeObserver = new ResizeObserver(markStale);
+  }
+  trackers.set(tracker.root, tracker);
+  resizeObserver?.observe(tracker.root);
+  markStale();
   return () => {
-    trackers.delete(tracker);
-    if (trackers.size === 0) stopLoop();
+    trackers.delete(tracker.root);
+    resizeObserver?.unobserve(tracker.root);
+    if (trackers.size > 0) return;
+    cancelAnimationFrame(frame);
+    frame = 0;
+    resizeObserver?.disconnect();
+    resizeObserver = undefined;
+    disconnectSources?.();
+    disconnectSources = undefined;
   };
 }
-
-// ---------------------------------------------------------------------------------------------
 
 export interface DozoAvatarProps {
   /** Stable identity (bot id or name). Picks the character, and the tile colour unless `color` is set. */
@@ -291,22 +383,32 @@ export const DozoAvatar = memo(function DozoAvatar({
 }: DozoAvatarProps) {
   const rootRef = useRef<HTMLSpanElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const live = useRef<Live>({ state, awake: false });
-  const wakeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const live = useRef<Live>({ state, awakeUntil: 0 });
 
   const character = dozoCharacterForSeed(seed);
   const full = size >= MIN_MOTION_SIZE;
   const tracking = interactive && full;
+  const hash = hashSeed(seed);
+  // Each avatar blinks on its own period and phase, so a list never blinks in unison.
+  const blinkPeriod = 4 + ((hash >>> 8) % 20) / 10;
   const style = {
     width: size,
     height: size,
-    "--dozo-delay": `${-((hashSeed(seed) % 30) / 10)}s`,
+    "--dozo-delay": `${-((hash % 30) / 10)}s`,
+    "--dozo-blink-period": `${blinkPeriod}s`,
+    "--dozo-blink-delay": `${-(((hash >>> 16) % 100) / 100) * blinkPeriod}s`,
     ...(color && HEX_COLOR.test(color) ? { "--dozo-tile": color } : {}),
   } as CSSProperties;
 
   useEffect(() => {
     live.current.state = state;
+    wake();
   }, [state]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    return root ? watchVisibility(root) : undefined;
+  }, []);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -324,46 +426,19 @@ export const DozoAvatar = memo(function DozoAvatar({
       cx: 0,
       cy: 0,
       applied: "",
+      awake: false,
+      visible: !root.hasAttribute("data-offscreen"),
     });
   }, [tracking, character]);
 
-  // Blinking runs for every size; it is cheap and the only motion a tiny avatar keeps.
-  useEffect(() => {
-    const blink = rootRef.current?.querySelector(".da-blink");
-    if (!blink) return;
-    const duration = prefersReducedMotion() ? 220 : 120;
-    const gap = () => (Math.random() < 0.2 ? 260 : 2500 + Math.random() * 3500);
-    let timer: ReturnType<typeof setTimeout>;
-    const wait = (ms: number) => {
-      timer = setTimeout(fire, ms);
-    };
-    const fire = () => {
-      if (full && isSleeping(live.current)) return wait(gap());
-      blink.classList.add("is-blinking");
-      timer = setTimeout(() => {
-        blink.classList.remove("is-blinking");
-        wait(gap());
-      }, duration);
-    };
-    wait(800 + Math.random() * 3200);
-    return () => {
-      clearTimeout(timer);
-      blink.classList.remove("is-blinking");
-    };
-  }, [full]);
-
-  useEffect(() => () => clearTimeout(wakeTimer.current), []);
-
   const onEnter = () => {
-    clearTimeout(wakeTimer.current);
-    live.current.awake = true;
-    if (!prefersReducedMotion()) svgRef.current?.classList.add("is-hop");
+    live.current.awakeUntil = Infinity;
+    wake();
+    if (!reduced) svgRef.current?.classList.add("is-hop");
   };
   const onLeave = () => {
-    clearTimeout(wakeTimer.current);
-    wakeTimer.current = setTimeout(() => {
-      live.current.awake = false;
-    }, 900);
+    live.current.awakeUntil = performance.now() + WAKE_HOLD_MS;
+    wake();
   };
   const onAnimationEnd = (event: AnimationEvent<SVGSVGElement>) => {
     if (event.target === event.currentTarget) event.currentTarget.classList.remove("is-hop");

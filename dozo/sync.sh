@@ -150,17 +150,26 @@ fi
 
 git switch --quiet -c "$BR" "$MAIN"
 say "created $BR from $MAIN; merging $UP_BRANCH"
-if ! git merge --no-ff --no-edit -m "Merge upstream $UP_REMOTE/main ($RANGE) into Dozo" "$UP_BRANCH" >/dev/null 2>&1; then
+# Keep git's own words (a conflict is reported on stdout, other failures on stderr) and decide by
+# the index, not by the exit code: only unmerged paths make it a conflict.
+MERGE_LOG=$(mktemp "${TMPDIR:-/tmp}/dozo-sync-merge-XXXXXX")
+if ! git merge --no-ff --no-edit -m "Merge upstream $UP_REMOTE/main ($RANGE) into Dozo" "$UP_BRANCH" >"$MERGE_LOG" 2>&1; then
   CONFLICTED=$(git diff --name-only --diff-filter=U)
   git merge --abort 2>/dev/null || true
   git switch --quiet "${ORIG_SW[@]}"
   git branch -q -D "$BR"
-  echo "[sync] MERGE CONFLICT in:" >&2
-  printf '[sync]   %s\n' $CONFLICTED >&2
-  echo "[sync] rule: $CONFLICT_RULE" >&2
-  echo "[sync] merge aborted, $BR removed, back on $ORIG. $UP_BRANCH stays at $SHORT." >&2
-  exit 2
+  sed 's/^/[sync] git: /' "$MERGE_LOG" >&2; rm -f "$MERGE_LOG"
+  if [ -n "$CONFLICTED" ]; then
+    echo "[sync] MERGE CONFLICT in:" >&2
+    printf '%s\n' "$CONFLICTED" | sed 's/^/[sync]   /' >&2
+    echo "[sync] rule: $CONFLICT_RULE" >&2
+    echo "[sync] merge aborted, $BR removed, back on $ORIG. $UP_BRANCH stays at $SHORT." >&2
+    exit 2
+  fi
+  echo "[sync] MERGE FAILED without conflicts (git's message above); $BR removed, back on $ORIG. $UP_BRANCH stays at $SHORT." >&2
+  exit 1
 fi
+rm -f "$MERGE_LOG"
 say "merge clean on $BR"
 
 # Gates, if the colleague's Makefile targets exist.

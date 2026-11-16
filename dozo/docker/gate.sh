@@ -1,69 +1,181 @@
 #!/usr/bin/env bash
-# Gates: olc (fast, offline, <30s) and qa (full). Usage: gate.sh olc|qa|unit
-# `unit` is the qa step that runs the fork's own dozo-*.test.ts(x) on the branded staged tree.
+# Gates: olc (fast, offline once the Node image is local, <30s) and qa (full).
+# Usage: gate.sh olc|qa|unit. Any failed gate exits 2.
+# `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
+# `qa` runs olc, stage, brand, unit, build, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "$SELF")/../.." && pwd)"
 cd "$ROOT"
 NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
+STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
+LOGS="$STAGE/logs"
 FAILS=()
 # Fork-owned tests live inside upstream dirs as dozo-*.test.ts(x). Fewer than this after the
 # local-model feature (fit, catalog, page) means tests went missing: a silent pass is a failure.
 MIN_FORK_TESTS="${DOZO_MIN_FORK_TESTS:-3}"
+# Coverage floor (percent) for lines, branches and functions of the fork's own code.
+COV_MIN="${DOZO_COVERAGE_MIN:-90}"
 fail() { FAILS+=("$1"); echo "[gate] FAIL: $1"; }
+now() { date +%s; }
+
+# A skipped check must never end in PASS: CI pulls the image and fails if it cannot, a local run
+# fails with the one command that fixes it (olc stays offline and fast once the image is cached).
+node_image() {
+  docker image inspect "$NODE_IMAGE" >/dev/null 2>&1 && return 0
+  if [ -n "${CI:-}" ]; then
+    echo "[gate] CI: pulling $NODE_IMAGE"
+    docker pull -q "$NODE_IMAGE" >/dev/null && return 0
+    fail "cannot pull $NODE_IMAGE"; return 1
+  fi
+  fail "$NODE_IMAGE not present locally; run: docker pull $NODE_IMAGE"; return 1
+}
+
+# Print the coverage rows (and Vitest's own threshold errors) that are below the floor.
+coverage_misses() { # stdin = tool output
+  awk -F'|' -v min="$COV_MIN" '
+    /does not meet|threshold/ { print; next }
+    NF >= 4 { for (i = 2; i < NF; i++) if ($i ~ /[0-9]/ && $i + 0 < min) { print; break } }'
+}
 
 olc() {
-  for s in dozo/docker/*.sh; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done
-  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' -not -path 'dozo/.plumb-tmp/*' 2>/dev/null)
-  if [ "${#mjs[@]}" -eq 0 ]; then echo "[olc] no .mjs files, node --check skipped"
-  elif docker image inspect "$NODE_IMAGE" >/dev/null 2>&1; then
+  local s
+  for s in dozo/docker/*.sh dozo/sync.sh; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done
+  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' 2>/dev/null)
+  if [ "${#mjs[@]}" -eq 0 ]; then echo "[olc] no .mjs files, nothing to check with node"
+  elif node_image; then
     docker run --rm -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
       && echo "[olc] node --check ${#mjs[@]} files ok" || fail "node --check"
     if [ -d dozo/brand ] && find dozo/brand -name '*.test.*' | grep -q .; then
-      docker run --rm -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/brand/ >/dev/null 2>&1 \
-        && echo "[olc] brand unit tests ok" || fail "brand unit tests"
+      # Quiet on success; on failure the whole output is the reason. Node's thresholds are global,
+      # so coverage_misses also names the files under the floor.
+      local out
+      out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test --experimental-test-coverage \
+        --test-coverage-lines="$COV_MIN" --test-coverage-branches="$COV_MIN" --test-coverage-functions="$COV_MIN" dozo/brand/ 2>&1) \
+        && echo "[olc] brand unit tests ok, coverage >= $COV_MIN%" \
+        || { printf '%s\n' "$out"; printf '%s\n' "$out" | coverage_misses | sed 's/^/[olc] below floor: /'; fail "brand unit tests or coverage"; }
     else echo "[olc] no brand tests, skipped"; fi
-  else echo "[olc] $NODE_IMAGE not present locally: node checks and brand tests SKIPPED"; fi
+  fi
   local files mod forkfiles
-  files=$(find dozo -type f -not -path 'dozo/.stage/*' -not -path 'dozo/.plumb-tmp/*' | wc -l | tr -d ' ')
+  files=$(find dozo -type f -not -path 'dozo/.stage/*' | wc -l | tr -d ' ')
   mod=$(git diff --name-only --diff-filter=M upstream-main -- . ':!dozo' ':!Makefile' | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
   echo "[olc] rules: dozo files=$files, upstream-tracked files modified vs upstream-main=$mod, dozo-* fork files inside upstream dirs=$forkfiles"
 }
 
-# Fork tests on the branded staged tree, in a container: the tree is copied inside it, dependencies
-# are installed there, and nothing is written to the host (pnpm store lives in a volume we own).
+# Fork tests on the branded staged tree, in a container; nothing is written to the host.
+# Cost: a cold run installs everything (~40 s) and adds the coverage provider (~35 s). The volume
+# dozo-qa-deps-<lockfile checksum> keeps the pnpm store, the corepack download and the installed
+# node_modules, so an unchanged lockfile skips all of it. It runs as root because it writes only
+# to that volume; the staged tree is mounted read-only.
 unit_tests() {
-  local src="${DOZO_UNIT_SRC:-$ROOT/dozo/.stage/src}" tests n
+  local src="${DOZO_UNIT_SRC:-$STAGE/src}" tests n vol out
   [ -d "$src/apps" ] || { fail "unit: no staged tree, run dozo/docker/build.sh stage and brand first"; return 1; }
   tests=$(cd "$src" && find apps packages \( -name node_modules -prune \) -o -type f \( -name 'dozo-*.test.ts' -o -name 'dozo-*.test.tsx' \) -print | sort)
   n=$(printf '%s' "$tests" | grep -c . || true)
   echo "[unit] fork test files found: $n (minimum $MIN_FORK_TESTS)"
   if [ "$n" -lt "$MIN_FORK_TESTS" ]; then fail "unit: $n fork test files, expected at least $MIN_FORK_TESTS"; return 1; fi
+  node_image || return 1
+  vol="dozo-qa-deps-$(cksum < "$src/pnpm-lock.yaml" | tr -d '\n' | tr ' ' -)"
+  out=$(mktemp "${TMPDIR:-/tmp}/dozo-unit-XXXXXX")
+  # The coverage provider is not a project dependency: it is added inside the container only, at
+  # the version of the staged tree's vitest, so the working tree's package.json is never touched.
   # shellcheck disable=SC2086
-  docker run --rm -v "$src:/src:ro" -v dozo-qa-pnpm-store:/pnpm-store -e npm_config_store_dir=/pnpm-store -e CI=1 \
-    "$NODE_IMAGE" sh -c 'set -e; mkdir /w; tar -C /src --exclude=./data -cf - . | tar -C /w -xf -; cd /w
-      corepack enable; pnpm install --frozen-lockfile >/dev/null; pnpm exec vitest run "$@"' _ $tests \
-    && echo "[unit] fork tests ok" || { fail "unit: fork tests (vitest)"; return 1; }
+  docker run --rm -v "$src:/src:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
+    -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
+      mkdir -p /cache/w /cache/store; cd /cache/w
+      want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
+      # New sources in, files that no longer exist out, every node_modules kept.
+      find /cache/w -name node_modules -prune -o \( -type f -o -type l \) -exec rm -f {} +
+      tar -C /src --exclude=./data -cf - . | tar -C /cache/w -xf -
+      corepack enable
+      if [ "$(cat node_modules/.dozo-deps 2>/dev/null)" != "$want" ]; then
+        echo "[unit] deps: cold cache or lockfile changed, installing"
+        rm -f node_modules/.dozo-deps
+        pnpm install --frozen-lockfile --store-dir /cache/store --loglevel=warn
+        v=$(node -p "require(\"./node_modules/vitest/package.json\").version")
+        pnpm add -Dw "@vitest/coverage-v8@$v" --store-dir /cache/store --loglevel=warn
+        echo "$want" > node_modules/.dozo-deps
+      else echo "[unit] deps: cached"; fi
+      m=${DOZO_COVERAGE_MIN:-90}
+      pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
+        --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
+        --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
+        --coverage.exclude="**/*.test.*" --coverage.thresholds.perFile \
+        --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
+    _ $tests 2>&1 | tee "$out"
+  if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
+  else coverage_misses < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: fork tests or coverage (vitest)"; return 1; fi
 }
 
+# --- qa: logged, timed steps ---
+# The last full run lasted more than 45 minutes with no log: every step now writes its whole output
+# to $LOGS/<step>.log, the terminal gets one start line and one end line per step (plus the last 40
+# log lines on failure), and no step can run past its timeout.
+TIMEOUT_BIN="${DOZO_TIMEOUT_BIN-$(command -v timeout || command -v gtimeout || true)}"
+
+step_timeout() { # DOZO_TIMEOUT_<STEP> overrides, seconds
+  local v d=600
+  v="DOZO_TIMEOUT_$(printf '%s' "$1" | tr a-z A-Z)"
+  case "$1" in build) d=2400 ;; unit) d=900 ;; esac
+  echo "${!v:-$d}"
+}
+
+kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done; kill -TERM "$1" 2>/dev/null; return 0; }
+
+# Exit 124 on timeout, like timeout(1). Without it (macOS has none) a background watchdog does it.
+with_timeout() { # seconds cmd...
+  local limit="$1" pid wd flag rc; shift
+  if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" -k 10 "$limit" "$@"; return; fi
+  flag=$(mktemp "${TMPDIR:-/tmp}/dozo-timeout-XXXXXX"); rm -f "$flag"
+  "$@" & pid=$!
+  ( sleep "$limit"; : > "$flag"; kill_tree "$pid"; sleep 10; kill -KILL "$pid" 2>/dev/null ) & wd=$!
+  wait "$pid"; rc=$?
+  kill_tree "$wd"; wait "$wd" 2>/dev/null
+  if [ -e "$flag" ]; then rm -f "$flag"; return 124; fi
+  return "$rc"
+}
+
+run_step() { # name cmd...
+  local name="$1" log limit s rc el; shift
+  log="$LOGS/$name.log"; limit=$(step_timeout "$name"); s=$(now)
+  echo "[qa] >> $name (timeout ${limit}s, log ${log#"$ROOT"/})"
+  with_timeout "$limit" "$@" >"$log" 2>&1; rc=$?
+  el=$(( $(now) - s ))
+  if [ "$rc" -eq 0 ]; then echo "[qa] << $name ok ${el}s"; return 0; fi
+  if [ "$rc" -eq 124 ]; then echo "[qa] << $name TIMEOUT after ${limit}s (raise DOZO_TIMEOUT_$(printf '%s' "$name" | tr a-z A-Z) if it is legitimate)"
+  else echo "[qa] << $name FAIL exit $rc ${el}s"; fi
+  echo "[qa] last 40 lines of $name:"; tail -n 40 "$log" | sed 's/^/[qa]   /'
+  return "$rc"
+}
+
+# A stack already running under the project name is left running: a recreate-in-place by `up` is
+# fine, but taking down what qa did not start is not. DOZO_STOP_TIMEOUT caps the stop wait of
+# up/down: upstream gives the worker a 50 minute grace period, and a qa step that stops it blocks
+# for that long unless the worker exits at once.
 qa() {
-  olc_run || return
-  local b=dozo/docker/build.sh
-  for st in stage brand unit build up smoke; do
-    if [ "$st" = unit ]; then unit_tests || break
-    else "$b" "$st" || { fail "$st (exit $?)"; break; }
-    fi
+  local t0 st was_up=0 reached_up=0 b="$ROOT/dozo/docker/build.sh"
+  t0=$(now); mkdir -p "$LOGS"
+  [ -z "$(docker ps -q --filter label=com.docker.compose.project=dozo --filter status=running 2>/dev/null)" ] || was_up=1
+  export DOZO_STOP_TIMEOUT="${DOZO_STOP_TIMEOUT:-60}"
+  [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
+  for st in ${DOZO_QA_STEPS:-olc stage brand unit build up smoke}; do
+    [ "$st" != up ] || reached_up=1
+    case "$st" in
+      olc|unit) run_step "$st" "$SELF" "$st" ;;
+      *) run_step "$st" "$b" "$st" ;;
+    esac || { fail "$st"; break; }
   done
-  "$b" down || fail "down"
+  if [ "$reached_up" -eq 1 ] && [ "$was_up" -eq 0 ]; then run_step down "$b" down || fail down; fi
+  QA_SECS=$(( $(now) - t0 ))
 }
-
-olc_run() { olc; [ ${#FAILS[@]} -eq 0 ] || { echo "QA: FAIL (olc: ${FAILS[*]})"; exit 2; }; }
 
 case "${1:-}" in
-  olc) olc ;;
+  olc) T0=$(now); olc; V=OLC ;;
   qa) qa; V=QA ;;
-  unit) unit_tests; V=UNIT ;;
+  unit) T0=$(now); unit_tests; V=UNIT ;;
   *) echo "usage: $0 olc|qa|unit" >&2; exit 64 ;;
 esac
-V="${V:-OLC}"
-if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS"; else echo "$V: FAIL (${FAILS[*]})"; exit 2; fi
+SECS="${QA_SECS:-$(( $(now) - T0 ))}"
+if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS in ${SECS}s"
+else echo "$V: FAIL ($(IFS=,; echo "${FAILS[*]}")) in ${SECS}s"; exit 2; fi

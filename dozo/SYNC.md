@@ -32,9 +32,11 @@
 
 ## When it fails
 
-Exit code 2 means refused or conflict; exit 1 means a gate failed (branch left for inspection).
+Exit code 2 means refused or conflict; exit 1 means a gate failed (branch left for inspection) or
+the merge failed for a reason other than a conflict (git's message is printed, branch removed).
 
-**Merge conflict.** The script aborts the merge, removes the sync branch and lists the files.
+**Merge conflict.** Reported only when git left unmerged paths. The script prints git's output,
+aborts the merge, removes the sync branch and lists the files.
 Conflicts are only expected in files we own. If an upstream file conflicts, someone committed an
 edit to it. Do not resolve it on the sync branch: find the edit (`git log main -- <file>`), move
 the change into a new file or into the codemod, revert the edit on `main`, run the sync again.

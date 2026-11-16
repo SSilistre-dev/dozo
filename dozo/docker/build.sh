@@ -5,7 +5,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-STAGE="$ROOT/dozo/.stage"
+# DOZO_STAGE_DIR (absolute path) moves the whole stage area, e.g. to a scratch dir for experiments.
+STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
 SRC="$STAGE/src"
 ENVF="$STAGE/dozo.env"
 PROJECT=dozo
@@ -14,34 +15,50 @@ COMPOSE_REL=infra/compose/docker-compose.yml
 STEP=init
 
 say() { echo "[dozo] $*"; }
-die() { local c="${2:-1}"; DIED=1; echo "[dozo] FAILED at step '$STEP': $1" >&2; exit "$c"; }
-trap 'rc=$?; [ $rc -ne 0 ] && [ "${DIED:-}" != 1 ] && echo "[dozo] FAILED at step '"'"'$STEP'"'"' (exit $rc)" >&2; exit $rc' EXIT
+# A failed gate exits 2 (dozo/AGENTS.md); only a usage error is 64.
+die() { local c="${2:-2}"; DIED=1; echo "[dozo] FAILED at step '$STEP': $1" >&2; exit "$c"; }
+# Any other failure (a docker or git command under set -e) is also a gate failure: report it as 2.
+trap 'rc=$?; [ $rc -ne 0 ] && [ "${DIED:-}" != 1 ] && echo "[dozo] FAILED at step '"'"'$STEP'"'"' (exit $rc)" >&2; [ $rc -eq 0 ] || [ $rc -eq 64 ] || rc=2; exit $rc' EXIT
 
-# Run node in a container: repo dozo/ read-only at /dozo, staged tree at /w.
-node_run() { docker run --rm -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
+# Run node in a container: repo dozo/ read-only at /dozo, staged tree at /w. It writes into the bind
+# mount, so it runs as the invoking user: root-owned files would make a later rm -rf fail on Linux.
+node_run() { docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
 
 dc() { # docker compose from inside the staged copy, upstream compose file untouched
   (cd "$SRC" && docker compose -p "$PROJECT" --env-file "$ENVF" \
     -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" "$@")
 }
 
-need_stage() { [ -f "$SRC/$COMPOSE_REL" ] || die "no staged tree at dozo/.stage/src; run: dozo/docker/build.sh stage"; }
+need_stage() { [ -f "$SRC/$COMPOSE_REL" ] || die "no staged tree at $SRC; run: dozo/docker/build.sh stage"; }
+
+# Overlay uncommitted and untracked-but-not-ignored files onto $1. A tracked file deleted in the
+# working tree is the one benign case (rsync would exit 23 on it), so it is dropped from the list
+# up front and any rsync failure is real.
+overlay_worktree() {
+  (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
+    | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; fi; done \
+    | rsync -a --from0 --files-from=- ./ "$1/") || die "worktree overlay failed"
+}
 
 stage() {
   STEP=stage
-  local ref="${DOZO_STAGE_REF:-HEAD}" keep=""
-  say "stage: exporting $ref${DOZO_STAGE_WORKTREE:+ + working tree} -> dozo/.stage/src"
-  if [ -d "$SRC/data" ]; then keep="$STAGE/data-keep"; rm -rf "$keep"; mv "$SRC/data" "$keep"; fi
-  rm -rf "$SRC"; mkdir -p "$SRC"
-  (cd "$ROOT" && git archive "$ref") | tar -x -C "$SRC"
-  if [ "${DOZO_STAGE_WORKTREE:-}" = 1 ]; then
-    # Overlay tracked-modified and untracked-but-not-ignored files (deleted files are skipped).
-    (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
-      | rsync -a --from0 --files-from=- ./ "$SRC/") 2>/dev/null || [ $? -eq 23 ] || die "worktree overlay failed"
-  fi
-  [ -z "$keep" ] || mv "$keep" "$SRC/data"   # keep bind-mounted app data across restages
-  rm -rf "$SRC/.git"
-  [ -f "$SRC/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
+  local ref="${DOZO_STAGE_REF:-HEAD}" new="$STAGE/src.new"
+  say "stage: exporting $ref${DOZO_STAGE_WORKTREE:+ + working tree} -> $SRC"
+  mkdir -p "$STAGE"
+  # Older versions parked the app data in data-keep and lost it when a stage failed midway.
+  if [ -d "$STAGE/data-keep" ] && [ ! -e "$SRC/data" ]; then mkdir -p "$SRC"; mv "$STAGE/data-keep" "$SRC/data"; fi
+  # Build the new tree on the side: a failure up to here leaves the old tree and its data untouched.
+  rm -rf "$new"; mkdir -p "$new"
+  (cd "$ROOT" && git archive "$ref") | tar -x -C "$new"
+  [ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || overlay_worktree "$new"
+  rm -rf "$new/.git"
+  [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
+  # Swap in by contents, never moving data/ (the compose bind mount holding the app data).
+  mkdir -p "$SRC"
+  [ ! -e "$SRC/data" ] || rm -rf "$new/data"
+  find "$SRC" -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
+  find "$new" -mindepth 1 -maxdepth 1 -exec mv {} "$SRC/" \;
+  rmdir "$new"
   say "stage: ok ($(find "$SRC" -type f | wc -l | tr -d ' ') files, no .git)"
 }
 
@@ -110,7 +127,9 @@ build() {
 up() {
   STEP=up; need_stage; genenv
   say "up: starting project '$PROJECT'"
-  dc up -d
+  # DOZO_STOP_TIMEOUT (seconds) caps how long recreating a running service may wait; upstream's
+  # worker grace is 50 min. Unset keeps the compose value. gate.sh qa sets it.
+  dc up -d ${DOZO_STOP_TIMEOUT:+--timeout "$DOZO_STOP_TIMEOUT"}
   say "up: waiting for web on 127.0.0.1:$PORT"
   local i; for i in $(seq 1 120); do
     [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 200 ] && { say "up: web answers at http://127.0.0.1:$PORT/"; return 0; }
@@ -137,7 +156,7 @@ smoke() {
 down() {
   STEP=down; need_stage
   say "down: project '$PROJECT'${VOLUMES:+ (with volumes)}"
-  dc down ${VOLUMES:+--volumes}
+  dc down ${DOZO_STOP_TIMEOUT:+--timeout "$DOZO_STOP_TIMEOUT"} ${VOLUMES:+--volumes}
 }
 
 CMD="${1:-all}"; VOLUMES=""; [ "${2:-}" = "--volumes" ] && VOLUMES=1
