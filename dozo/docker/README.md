@@ -27,7 +27,7 @@ copy, so merging upstream never conflicts with branding and the working tree is 
    about 5 s. Remove it with `docker volume rm dozo-qa-deps` to start cold. Nothing is written to the host.
    Exit 2 when a test fails, a file is under the floor (the file and number are printed), or fewer
    than `DOZO_MIN_FORK_TESTS` (default 3) files are found. `make olc` never installs; it runs
-   `node --check` and the brand tests (same 90% floor, Node's built-in coverage) in the same image
+   `node --check` and the brand tests (same 90% floor, global, with Node's built-in coverage), then checks every anchored brand rule against the repository tree (`apply.mjs --check`, writes nothing) and that no upstream file but `README.md` differs from `upstream-main` in the same image
    and fails, never skips, when the image is missing: in CI (`CI` set) it pulls it, locally it says
    `docker pull node:24-slim`.
 
@@ -42,13 +42,13 @@ Exit codes: 0 ok, 2 any failure (the failing step is printed), 64 usage error.
 line per step with elapsed seconds, the last 40 log lines of a failed step, and a final
 `QA: PASS in <s>s` or `QA: FAIL (<steps>) in <s>s`. The full output of each step is in
 `dozo/.stage/logs/<step>.log` (git-ignored). Each step has a timeout, `DOZO_TIMEOUT_<STEP>` seconds
-(build 2400, unit 900, others 600), after which it is killed and fails. If project `dozo` was already
+(build 2400, unit 900, others 600; `up` waits `DOZO_UP_TIMEOUT`, default 240), after which it is killed and fails. If project `dozo` was already
 running when qa started, qa rebuilds and updates it but does not take it down. `up` and `down` use
 `DOZO_STOP_TIMEOUT` (qa sets 60) as the container stop timeout, because upstream gives the worker a
 50 minute grace period: recreating or stopping a worker that is still draining jobs would otherwise
 hold the step for up to 50 minutes. Called directly, `build.sh` keeps the compose value unless that
 variable is set. `DOZO_QA_STEPS="olc stage brand unit"` runs a subset (nothing is taken down if
-`up` is not in it); `DOZO_STAGE_DIR=<absolute path>` moves the whole stage area (src, env, logs).
+`up` is not in it); `DOZO_STAGE_DIR=<path>` (absolute, or relative to the directory you run from) moves the whole stage area (src, env, logs).
 
 ## Generated files
 - `dozo/.stage/dozo.env`: random secrets (`openssl rand -hex`), mode 600, ignored by git. Created

@@ -97,14 +97,18 @@ export function globToRegExp(glob) {
   return new RegExp(`^${source}$`);
 }
 
-/** Regular files under root as posix relative paths; never descends into .git or node_modules. */
+// Runtime state, never source: the stack's bind-mounted data/ (root-owned on Linux, unreadable) at the
+// top of a staged tree, and a staged copy sitting inside a repository root.
+const RUNTIME_DIRS = new Set(["data", "dozo/.stage"]);
+
+/** Regular files under root as posix relative paths; never descends into .git, node_modules or RUNTIME_DIRS. */
 export function listFiles(root) {
   const out = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
       if (entry.name === ".git" || entry.name === "node_modules") continue;
       const rel = dir ? `${dir}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) walk(rel);
+      if (entry.isDirectory()) { if (!RUNTIME_DIRS.has(rel)) walk(rel); }
       else if (entry.isFile()) out.push(rel);
     }
   };
@@ -177,6 +181,17 @@ const standalone = (word) =>
 const LOWER = standalone("rakazo");
 const UPPER = standalone("RAKAZO");
 
+// The name glued into a PascalCase identifier inside a sentence (`Ask RakazoBot to help`). It must
+// follow a plain word, so type annotations (`desktop: RakazoDesktop`), object keys
+// (`rakazoUserId:`) and calls (`RakazoPage.mount(`) stay code.
+const GLUED = /(?<=^|[A-Za-z][ \t])[Rr]akazo[A-Z]\w*(?![\w(:=/-]|\.\w)/g;
+const proseBrand = (text) => firstOf(LOWER, text) ?? firstOf(GLUED, text);
+// `Welcome to rakazo, {name}`: the {expressions} are code, the words around them are text.
+const stripExpressions = (text) => {
+  for (let prev = ""; prev !== text; ) { prev = text; text = text.replace(/\{[^{}]*\}/g, " "); }
+  return text;
+};
+
 const WORDS_ONLY = /^(?!(?:import|export|const|let|var|return|from|type|case|function|class|interface|if|else|await|async|yield|new|throw|default|echo|ENV|RUN|COPY|ARG)\b)[A-Za-z][^=;{}<>]*$/;
 const STRING_RE = /"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\\n]|\\.)*)`/g;
 const ATTR_RE = /\b(?:alt|aria-label|aria-description|aria-placeholder|title|placeholder|label|tooltip)=\{?["'`]([^"'`]*)/g;
@@ -243,9 +258,9 @@ export const VISIBLE_PATTERNS = [
   {
     // alt="rakazo logo", aria-label="Open rakazo menu", title=, placeholder=, label=.
     name: "visible attribute",
-    gate: /rakazo/,
+    gate: /rakazo/i,
     find: (line) => {
-      for (const m of line.matchAll(ATTR_RE)) if (firstOf(LOWER, m[1])) return m[0];
+      for (const m of line.matchAll(ATTR_RE)) if (proseBrand(m[1])) return m[0];
       return null;
     },
     lower: true,
@@ -253,9 +268,9 @@ export const VISIBLE_PATTERNS = [
   {
     // <p>Welcome to rakazo</p>: standalone word between tag brackets on one line.
     name: "text between tags",
-    gate: /rakazo/,
+    gate: /rakazo/i,
     find: (line) => {
-      for (const m of noComment(line).matchAll(/>([^<>{}]*)</g)) if (firstOf(LOWER, m[1])) return m[0];
+      for (const m of noComment(line).matchAll(/>([^<>]*)</g)) if (proseBrand(stripExpressions(m[1]))) return m[0];
       return null;
     },
     lower: true,
@@ -264,11 +279,11 @@ export const VISIBLE_PATTERNS = [
     // "Thanks for trying rakazo, the team": a string with spaces and the standalone word.
     // One word (`"rakazo"`) is the quoted-name check; `rakazo-${id}`-style names have no standalone word.
     name: "prose in string",
-    gate: /rakazo/,
+    gate: /rakazo/i,
     find: (line) => {
       for (const m of noComment(line).matchAll(STRING_RE)) {
         const inner = m[1] ?? m[2] ?? m[3];
-        if (/\s/.test(inner) && firstOf(LOWER, inner)) return m[0];
+        if (/\s/.test(inner) && proseBrand(inner)) return m[0];
       }
       return null;
     },
@@ -277,11 +292,11 @@ export const VISIBLE_PATTERNS = [
   {
     // A line of plain words (JSX text on its own line, a template-literal prompt): no code punctuation.
     name: "prose line",
-    gate: /rakazo/,
+    gate: /rakazo/i,
     find: (line) => {
       if (COMMENT_LINE.test(line) || /^\s*#/.test(line)) return null;
       const text = noComment(line).trim();
-      return /\s/.test(text) && WORDS_ONLY.test(text) && !/\w[(]/.test(text) ? firstOf(LOWER, text) : null;
+      return /\s/.test(text) && WORDS_ONLY.test(text) && !/\w[(]/.test(text) ? proseBrand(text) : null;
     },
     lower: true,
   },

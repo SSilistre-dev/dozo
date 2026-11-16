@@ -21,6 +21,8 @@ FAILS=()
 MIN_FORK_TESTS="${DOZO_MIN_FORK_TESTS:-3}"
 # Coverage floor (percent) for lines, branches and functions of the fork's own code.
 COV_MIN="${DOZO_COVERAGE_MIN:-90}"
+# Upstream files the fork may edit (one path per line): the marked block at the top of the README.
+ALLOWED_UPSTREAM_EDITS="README.md"
 fail() { FAILS+=("$1"); echo "[gate] FAIL: $1"; }
 now() { date +%s; }
 
@@ -44,7 +46,7 @@ coverage_misses() { # stdin = tool output
 }
 
 olc() {
-  local s
+  local s out
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs.
@@ -58,18 +60,46 @@ olc() {
     if [ -d dozo/brand ] && find dozo/brand -name '*.test.*' | grep -q .; then
       # Quiet on success; on failure the whole output is the reason. Node's thresholds are global,
       # so coverage_misses also names the files under the floor.
-      local out
       out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test --experimental-test-coverage \
         --test-coverage-lines="$COV_MIN" --test-coverage-branches="$COV_MIN" --test-coverage-functions="$COV_MIN" dozo/brand/ 2>&1) \
         && echo "[olc] brand unit tests ok, coverage >= $COV_MIN%" \
         || { printf '%s\n' "$out"; printf '%s\n' "$out" | coverage_misses | sed 's/^/[olc] below floor: /'; fail "brand unit tests or coverage"; }
     else echo "[olc] no brand tests, skipped"; fi
+    # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
+    # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
+    # renamed wrapper fails here and not only at `make qa`.
+    if [ -f dozo/brand/apply.mjs ]; then
+      out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --root /r 2>&1) \
+        && echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')" \
+        || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
+    fi
   fi
-  local files mod forkfiles
+  local files forkfiles bad
   files=$(find dozo -type f -not -path 'dozo/.stage/*' | wc -l | tr -d ' ')
-  mod=$(git diff --name-only --diff-filter=M upstream-main -- . ':!dozo' ':!Makefile' | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
-  echo "[olc] rules: dozo files=$files, upstream-tracked files modified vs upstream-main=$mod, dozo-* fork files inside upstream dirs=$forkfiles"
+  echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles"
+  # dozo/AGENTS.md: the fork edits no upstream file but the marked block of the root README.md. A
+  # file upstream has that differs here (edited, deleted, retyped) is a failure; added files are ours.
+  if git rev-parse --verify -q 'upstream-main^{commit}' >/dev/null; then
+    bad=$(git diff --name-only --no-renames --diff-filter=MDT upstream-main -- . ':!dozo' ':!Makefile' | grep -vxF "$ALLOWED_UPSTREAM_EDITS" || true)
+    if [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($(echo $ALLOWED_UPSTREAM_EDITS)): 0"
+    else printf '%s\n' "$bad" | sed 's/^/[olc] upstream file differs from upstream-main: /'; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
+  else
+    echo "[olc] upstream-main ref missing: the upstream-edit check was NOT run (create it: git branch upstream-main upstream/main)"
+  fi
+  selftest
+}
+
+# Pure shell logic that needs no Docker: the coverage-miss parser, against a fixture of a Vitest
+# table. Not covered: the stage swap and the worktree overlay (they need a scratch git repository),
+# the unit volume sync, the compose steps and with_timeout (they need a Docker daemon).
+selftest() {
+  local got want
+  # A here-string, not a heredoc inside $( ): bash 3.2 mis-parses a ")" there.
+  got=$(COV_MIN=90 coverage_misses <<< $' File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s\n All files |   96.00 |    92.00 |     100 |     100 |\n ok.ts     |     100 |      100 |     100 |     100 | 12-30\n low.ts    |     100 |    80.50 |     100 |     100 |\nERROR: Coverage for lines (85%) does not meet global threshold (90%)')
+  want=$' low.ts    |     100 |    80.50 |     100 |     100 |\nERROR: Coverage for lines (85%) does not meet global threshold (90%)'
+  if [ "$got" = "$want" ]; then echo "[olc] selftest: coverage_misses ok"
+  else fail "selftest coverage_misses"; printf '%s\n' "$got" | sed 's/^/[olc] got: /'; fi
 }
 
 # Fork tests on the branded staged tree, in a container; nothing is written to the host.
@@ -95,9 +125,17 @@ unit_tests() {
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p /cache/w /cache/store; cd /cache/w
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
-      # New sources in, files that no longer exist out, every node_modules kept.
-      find /cache/w -name node_modules -prune -o \( -type f -o -type l \) -exec rm -f {} +
-      tar -C /src --exclude=./data -cf - . | tar -C /cache/w -xf -
+      # Sync incrementally (no rsync in the image): a manifest of path, size and mtime in seconds per
+      # file on both sides. Files only in the volume go; files new or different in the stage are
+      # copied (tar keeps the mtime); the rest is left alone. Every node_modules and data/ are kept.
+      export LC_ALL=C
+      manifest() { (cd "$1" && find . -name node_modules -prune -o -path ./data -prune -o \( -type f -o -type l \) -printf "%p\t%s\t%Ts\0" | sort -z); }
+      manifest /src > /tmp/src.m; manifest /cache/w > /tmp/vol.m
+      cut -z -f1 /tmp/src.m > /tmp/src.p; cut -z -f1 /tmp/vol.m > /tmp/vol.p
+      comm -z -13 /tmp/src.p /tmp/vol.p | xargs -0 -r rm -f
+      comm -z -23 /tmp/src.m /tmp/vol.m | cut -z -f1 > /tmp/changed
+      if [ -s /tmp/changed ]; then tar -C /src --null -T /tmp/changed -cf - | tar -C /cache/w -xf -; fi
+      echo "[unit] sync: $(tr -cd "\0" < /tmp/changed | wc -c) file(s) copied, $(comm -z -13 /tmp/src.p /tmp/vol.p | tr -cd "\0" | wc -c) removed"
       corepack enable
       if [ "$(cat node_modules/.dozo-deps 2>/dev/null)" != "$want" ]; then
         echo "[unit] deps: cold cache or lockfile changed, installing"
@@ -156,7 +194,7 @@ with_timeout() { # seconds cmd...
   flag=$(mktemp "${TMPDIR:-/tmp}/dozo-timeout-XXXXXX"); rm -f "$flag"
   "$@" & pid=$!; WT_PID=$pid
   ( sleep "$limit"; : > "$flag"; kill_tree "$pid"; sleep 10; kill -KILL "$pid" 2>/dev/null ) & WT_WD=$!
-  wait "$pid"; rc=$?
+  wait "$pid"; rc=$?; WT_PID=""   # reaped: wt_stop must not signal a pid the system may reuse
   wt_stop
   if [ -e "$flag" ]; then rm -f "$flag"; return 124; fi
   return "$rc"

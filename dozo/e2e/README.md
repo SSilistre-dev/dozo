@@ -15,16 +15,19 @@ Needs only Docker and curl; nothing is installed on the host. `run.sh`:
 2. runs the official Playwright image (tag = the version pinned in `apps/web/package.json`),
    installs `@playwright/test` inside the container, mounts the suite and the web app's source
    read-only;
-3. deletes `dozo/e2e/.out/` and removes both containers when it ends, pass or fail.
+3. deletes `dozo/e2e/.out/` and removes both containers when it ends, pass or fail. npm's download
+   cache is kept in the Docker volume `dozo-e2e-npm` (nothing on the host); drop it with
+   `docker volume rm dozo-e2e-npm`.
 
-Options: `DOZO_E2E_BASE_URL`, `DOZO_E2E_KEEP=1` (keep traces, screenshots and the coverage JSON in
+Options: `DOZO_E2E_BASE_URL` (default: `DOZO_WEB_PORT`, else the port in the stage's `dozo.env`, else
+5173), `DOZO_STAGE_DIR` (the stage the stack was built from; without its `src` the run stops, exit 2), `DOZO_E2E_KEEP=1` (keep traces, screenshots and the coverage JSON in
 `.out/`), `DOZO_E2E_ARGS="--project=crawl-light"` (Playwright arguments),
 `DOZO_E2E_SUITE=<dir>` (another suite dir), `DOZO_E2E_REUSE_DIR=<dir with auth.json and world.json>`
 (development: skip the sign-up with a saved session).
 
 The app only accepts its configured origin (`127.0.0.1:<port>`), so the browser must see that name.
 Linux: `--network host`. Docker Desktop (macOS): a TCP forwarder inside the container relays
-`127.0.0.1:<port>` to `host.docker.internal`. Through it a document request occasionally stalls, so
+`127.0.0.1:<port>` to the stack's `web:5173`. Through it a document request occasionally stalls, so
 navigations retry (`gotoStable` in `ui.ts`).
 
 ## The model

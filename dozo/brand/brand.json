@@ -26,18 +26,6 @@
       "reason": "installed dependencies"
     },
     {
-      "glob": "**/dist/**",
-      "reason": "build output"
-    },
-    {
-      "glob": "**/build/**",
-      "reason": "build output"
-    },
-    {
-      "glob": "**/coverage/**",
-      "reason": "build output"
-    },
-    {
       "glob": "**/.turbo/**",
       "reason": "build cache"
     },

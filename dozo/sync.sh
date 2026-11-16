@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pull upstream (Rakazo) into a review branch of the Dozo fork. Never pushes, never touches main.
-# See dozo/SYNC.md. Exit codes: 0 ok / up to date, 1 error or gate failure, 2 refused (non-fast-forward
-# upstream-main) or merge conflict.
+# See dozo/SYNC.md. Exit codes: 0 ok / up to date, 1 error, 2 refused (non-fast-forward
+# upstream-main), merge conflict or a failed gate.
 set -euo pipefail
 
 UP_REMOTE=upstream
@@ -24,7 +24,7 @@ never rebase). Then runs `make olc` and `make qa` when those targets exist.
   --help     this text
 
 Never pushes. The maintainer reviews the sync branch and merges it into main.
-Exit 2: upstream-main is not a fast-forward, or the merge conflicts.
+Exit 2: upstream-main is not a fast-forward, the merge conflicts, or a gate fails.
 EOF
 }
 
@@ -214,6 +214,6 @@ fi
 report HEAD "$UP_BRANCH"
 if [ "$GATE_FAIL" = 1 ]; then
   echo "[sync] gates failed; $BR left in place for inspection (not pushed)" >&2
-  exit 1
+  exit 2
 fi
 say "done on branch $BR. Review it, then merge into $MAIN yourself. Nothing was pushed."

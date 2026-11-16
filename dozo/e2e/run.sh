@@ -8,7 +8,16 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 SUITE="${DOZO_E2E_SUITE:-$HERE}"
 OUT="$HERE/.out"
-BASE="${DOZO_E2E_BASE_URL:-http://127.0.0.1:${DOZO_WEB_PORT:-5173}}"
+# The stage the stack was built from (as gate.sh resolves it): its dozo.env holds the web port the
+# stack actually got, which is not 5173 when that one was busy.
+STAGE="${DOZO_STAGE_DIR:-$REPO/dozo/.stage}"
+case "$STAGE" in /*) ;; *) STAGE="$PWD/${STAGE#./}" ;; esac
+WEBPORT="${DOZO_WEB_PORT:-}"
+if [ -z "$WEBPORT" ] && [ -f "$STAGE/dozo.env" ]; then # only this key: the file also holds secrets
+  WEBPORT="$(grep -m1 '^DOZO_WEB_PORT=' "$STAGE/dozo.env" | cut -d= -f2)"
+fi
+case "$WEBPORT" in ''|*[!0-9]*) WEBPORT=5173 ;; esac
+BASE="${DOZO_E2E_BASE_URL:-http://127.0.0.1:$WEBPORT}"
 NAME="dozo-pw-e2e"
 MODEL="dozo-e2e-model"
 
@@ -28,6 +37,11 @@ trap 'exit 2' INT TERM
 VERSION="$(sed -n 's/.*"@playwright\/test": "\([0-9.]*\)".*/\1/p' "$REPO/apps/web/package.json" | head -1)"
 [ -n "$VERSION" ] || { say "cannot read the pinned Playwright version"; exit 2; }
 IMAGE="mcr.microsoft.com/playwright:v${VERSION}-noble"
+
+# The inventory check reads the web app's router and settings source: mount the branded tree the
+# stack was built from. The committed apps/web/src is unbranded, so there is no fallback to it.
+WEBSRC="$STAGE/src/apps/web/src"
+[ -f "$WEBSRC/App.tsx" ] || { say "no staged tree at $STAGE/src (apps/web/src/App.tsx missing); start the stack with: make up"; exit 2; }
 
 command -v docker >/dev/null || { say "docker not found"; exit 2; }
 code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$BASE/" || true)"
@@ -54,10 +68,13 @@ docker exec dozo-api-1 node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=
   || { say "the api container cannot reach the model stub at $MODEL_IP:8787"; exit 2; }
 say "offline model: http://$MODEL_IP:8787/v1 on network $NETWORK"
 
-# The inventory check reads the web app's router and settings source; mount what the stack was built from.
-WEBSRC="$REPO/dozo/.stage/src/apps/web/src"
-[ -f "$WEBSRC/App.tsx" ] || WEBSRC="$REPO/apps/web/src"
-[ -f "$WEBSRC/App.tsx" ] || { say "cannot find apps/web/src/App.tsx for the inventory check"; exit 2; }
+# npm's download cache lives in a named Docker volume (nothing on the host); the container runs as
+# the invoking user, so a new volume is opened for writing once. If that fails, run without a cache.
+CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
+if ! docker volume inspect dozo-e2e-npm >/dev/null 2>&1; then
+  docker volume create dozo-e2e-npm >/dev/null 2>&1 \
+    && docker run --rm -v dozo-e2e-npm:/npm node:24-slim chmod 777 /npm >/dev/null 2>&1 || CACHE=()
+fi
 REUSE=()
 if [ -n "${DOZO_E2E_REUSE_DIR:-}" ]; then REUSE=(-v "$DOZO_E2E_REUSE_DIR:/reuse:ro" -e DOZO_E2E_REUSE_DIR=/reuse); fi
 
@@ -77,12 +94,12 @@ docker run --rm --name "$NAME" --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}"
   -e HOME=/tmp -e DOZO_E2E_BASE_URL="$BASE" -e DOZO_E2E_OUT=/out \
   -e DOZO_E2E_ARGS="${DOZO_E2E_ARGS:-}" -e FORWARD="$FORWARD" -e PORT="${PORT:-80}" -e VERSION="$VERSION" \
   -e DOZO_E2E_MODEL_URL="http://$MODEL_IP:8787/v1" -e DOZO_E2E_SRC=/webapp-src \
-  -v "$SUITE:/suite:ro" -v "$OUT:/out" -v "$WEBSRC:/webapp-src:ro" ${REUSE[@]+"${REUSE[@]}"} \
+  -v "$SUITE:/suite:ro" -v "$OUT:/out" -v "$WEBSRC:/webapp-src:ro" ${REUSE[@]+"${REUSE[@]}"} ${CACHE[@]+"${CACHE[@]}"} \
   "$IMAGE" bash -c '
     set -e
     mkdir /tmp/work && cd /tmp/work
     tar --warning=no-file-changed -C /suite --exclude=.out --exclude=node_modules -cf - . | tar -xf -
-    npm install --no-save --no-audit --no-fund --no-package-lock --loglevel=error "@playwright/test@$VERSION" >/dev/null
+    npm install --prefer-offline --no-save --no-audit --no-fund --no-package-lock --loglevel=error "@playwright/test@$VERSION" >/dev/null
     if [ "$FORWARD" = 1 ]; then
       node -e "const net=require(\"net\");net.createServer(c=>{const u=net.connect(5173,\"web\");c.pipe(u);u.pipe(c);const e=()=>{c.destroy();u.destroy()};c.on(\"error\",e);u.on(\"error\",e);c.on(\"close\",e);u.on(\"close\",e)}).listen(+process.env.PORT,\"127.0.0.1\")" &
       sleep 1

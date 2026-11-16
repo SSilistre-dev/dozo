@@ -7,7 +7,8 @@
 - `sync/upstream-<sha>`: short-lived branch where `upstream-main` is merged into `main` for review.
 - Committed: only new files (`dozo/**`, `Makefile`, `.github/workflows/dozo-*.yml`, our UI files).
   No upstream file is edited. Fork health = number of upstream files that differ from
-  `upstream-main` outside our paths; it should stay 0 (see `dozo/sync.sh`).
+  `upstream-main` outside our paths and outside the one allowed edit (the marked block of the root
+  `README.md`); `make olc` fails when it is not 0.
 - Fork-only files inside upstream directories are named `dozo-*` (under `apps/` and `packages/`).
   They count as ours: `sync.sh` leaves them out of fork health, lists how many there are in its
   summary, and refuses to run (exit 2) if upstream ever ships a `dozo-*` file of its own. An
@@ -32,8 +33,8 @@
 
 ## When it fails
 
-Exit code 2 means refused or conflict; exit 1 means a gate failed (branch left for inspection) or
-the merge failed for a reason other than a conflict (git's message is printed, branch removed).
+Exit code 2 means refused, conflict or a failed gate (the branch is left for inspection); exit 1
+means the merge failed for a reason other than a conflict (git's message is printed, branch removed).
 
 **Merge conflict.** Reported only when git left unmerged paths. The script prints git's output,
 aborts the merge, removes the sync branch and lists the files.

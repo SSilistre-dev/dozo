@@ -5,7 +5,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-# DOZO_STAGE_DIR (absolute path) moves the whole stage area, e.g. to a scratch dir for experiments.
+# DOZO_STAGE_DIR (absolute, or relative to the current directory) moves the whole stage area, e.g. to
+# a scratch dir for experiments.
 STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
 # Docker reads a relative -v source as a named volume: make it absolute once, here.
 case "$STAGE" in /*) ;; *) STAGE="$PWD/${STAGE#./}" ;; esac
@@ -108,8 +109,10 @@ genenv() {
   # OpenAI-compatible server) are allowed. Reaches api and worker through upstream's x-app-environment.
   setenv MCP_ALLOW_PRIVATE_ENDPOINT true
   # Keep the port if our own web container is running; otherwise pick a free one.
-  local cur; cur="$(grep '^DOZO_WEB_PORT=' "$ENVF" | cut -d= -f2 || true)"
-  if [ -z "$cur" ] || { ! dc ps --status running --services 2>/dev/null | grep -qx web && nc -z 127.0.0.1 "$cur" 2>/dev/null; }; then
+  # The service list is captured first: `dc ps | grep -q` under pipefail can fail on SIGPIPE.
+  local cur running; cur="$(grep '^DOZO_WEB_PORT=' "$ENVF" | cut -d= -f2 || true)"
+  running="$(dc ps --status running --services 2>/dev/null || true)"
+  if [ -z "$cur" ] || { [[ $'\n'"$running"$'\n' != *$'\nweb\n'* ]] && nc -z 127.0.0.1 "$cur" 2>/dev/null; }; then
     cur="$(free_port "${DOZO_WEB_PORT:-5173}")"
   fi
   setenv DOZO_WEB_PORT "$cur"
@@ -136,11 +139,13 @@ up() {
   # worker grace is 50 min. Unset keeps the compose value. gate.sh qa sets it.
   dc up -d ${DOZO_STOP_TIMEOUT:+--timeout "$DOZO_STOP_TIMEOUT"}
   say "up: waiting for web on 127.0.0.1:$PORT"
-  local i; for i in $(seq 1 120); do
+  # A wall-clock limit (DOZO_UP_TIMEOUT seconds), so the message is true however long each probe takes.
+  local limit="${DOZO_UP_TIMEOUT:-240}" end; end=$(( $(date +%s) + limit ))
+  while [ "$(date +%s)" -lt "$end" ]; do
     [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 200 ] && { say "up: web answers at http://127.0.0.1:$PORT/"; return 0; }
     sleep 2
   done
-  dc ps || true; die "web did not answer 200 within 240s"
+  dc ps || true; die "web did not answer 200 within ${limit}s (DOZO_UP_TIMEOUT)"
 }
 
 smoke() {

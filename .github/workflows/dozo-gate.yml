@@ -32,7 +32,7 @@ jobs:
           if git ls-remote --exit-code --heads origin upstream-main >/dev/null; then
             git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main
           else
-            echo "::warning::origin has no upstream-main branch; the fork-health count in make olc will be wrong"
+            echo "::warning::origin has no upstream-main branch; make olc will skip its upstream-edit check"
           fi
 
       # On a runner without the Node image, olc pulls it and fails if it cannot (CI is set), so a

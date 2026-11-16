@@ -36,8 +36,9 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 
 - `make olc`: run after every change. Must finish in under 30 seconds. A missing Node image is a
   failure, never a skip.
-- `make qa`: run before merge. Per-step logs in `dozo/.stage/logs/`; per-file coverage of the fork's
-  own `dozo-*` code and of `dozo/brand` must stay at 90% or more.
+- `make qa`: run before merge. Per-step logs in `dozo/.stage/logs/`. Coverage must stay at 90% or
+  more: per file for the fork's own `dozo-*` code (Vitest, `perFile`), but one global figure for
+  `dozo/brand` (Node's test runner has no per-file floor; the gate lists files under it).
 - `dozo/sync.sh`: merge upstream. Read `dozo/SYNC.md` first.
 - Docker build and run: `dozo/docker/README.md`.
 

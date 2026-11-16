@@ -295,6 +295,18 @@ describe("safety", () => {
     assert.match(res.stdout, /would change: 1/);
     assert.equal(read(root, "src/a.ts"), "Rakazo");
   });
+  it("--check --allow-git on a repository root fails on a broken anchor or a missing file and writes nothing", () => {
+    const root = tree({ ".git/HEAD": "ref: x", "src/a.ts": "Rakazo A", "src/b.ts": "B" });
+    const good = { file: "src/a.ts", find: "A", replace: "Y", reason: "t" };
+    const dry = (anchored) => apply(root, configFile({ anchored }), "--check", "--allow-git");
+    assert.equal(dry([good]).status, 0);
+    for (const rule of [{ ...good, find: "NOPE", replace: "Q" }, { ...good, file: "src/gone.ts" }]) {
+      const res = dry([good, rule]);
+      assert.equal(res.status, 2, res.stderr);
+      assert.match(res.stderr, /need exactly 1|does not exist/);
+    }
+    assert.equal(read(root, "src/a.ts"), "Rakazo A");
+  });
 });
 
 describe("assets", () => {
@@ -514,6 +526,10 @@ describe("readable old brand the codemod leaves alone", () => {
     "title": ["src/a.tsx", "<a title='About rakazo' />"],
     "placeholder": ["src/a.tsx", '<input placeholder="Ask rakazo anything" />'],
     "JSX text": ["src/a.tsx", "<p>Welcome to rakazo</p>"],
+    "JSX text with a brace expression": ["src/a.tsx", "<p>Welcome to rakazo, {name}</p>"],
+    "brand glued into an identifier in JSX text": ["src/a.tsx", "<p>Ask RakazoBot for help</p>"],
+    "brand glued into an identifier in a prose string": ["src/a.ts", 'const m = "Ask RakazoBot to help you";'],
+    "brand glued into an identifier on a prose line": ["src/a.tsx", "<p>\n  Ask RakazoBot to help you\n</p>"],
     "JSX text on its own line": ["src/a.tsx", "<p>\n  Welcome to rakazo, friend.\n</p>"],
     "prose in a string": ["src/a.ts", 'const m = "Thanks for trying rakazo, the team";'],
     "prose in a template": ["src/a.ts", "const m = `the rakazo team (${n})`;"],
@@ -562,6 +578,10 @@ describe("readable old brand the codemod leaves alone", () => {
     "const p = `${base}\\rakazo\\.runs`;",
     ".rakazo-logo { animation: rakazo-pulse 1s; }",
     '<a href="https://github.com/elie222/rakazo-docs-lookalike" />'.replace("elie222/", "other/"),
+    "<p className=\"rakazo-x\">{rakazo} {rakazoName}</p>",
+    "  desktop: RakazoDesktop | undefined,",
+    "  rakazoUserId: input.userId,",
+    "`<body><script>RakazoPage.mount(${boot})</script></body>`",
     "// the rakazo container reuses this file",
     "/* rakazo is a name here */",
   ];
@@ -590,6 +610,25 @@ describe("readable old brand the codemod leaves alone", () => {
       allow: { files: [], phrases: [{ text: 'update("rakazo rls bypass")', reason: "hash input" }] },
     });
     assert.equal(check(tree({ "src/a.ts": 'h.update("rakazo rls bypass");' }), config).status, 0);
+  });
+});
+
+describe("runtime directories", () => {
+  it("never walks the top-level data/ of the stage or a nested dozo/.stage", () => {
+    const root = tree({
+      "data/a.txt": "Rakazo",
+      "dozo/.stage/src/a.txt": "Rakazo",
+      "src/a.txt": "Rakazo",
+      "src/data/b.txt": "Rakazo",
+    });
+    fs.chmodSync(path.join(root, "data"), 0o000); // root-owned on Linux: unreadable, must not crash
+    const res = apply(root, configFile({ include: ["**"] }));
+    fs.chmodSync(path.join(root, "data"), 0o755);
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(read(root, "data/a.txt"), "Rakazo");
+    assert.equal(read(root, "dozo/.stage/src/a.txt"), "Rakazo");
+    assert.equal(read(root, "src/a.txt"), "Dozo");
+    assert.equal(read(root, "src/data/b.txt"), "Dozo");
   });
 });
 

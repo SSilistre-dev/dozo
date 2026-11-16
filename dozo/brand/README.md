@@ -37,7 +37,8 @@ All commands take `--config <file>` (default `dozo/brand/brand.json`). Failures 
    Phrases in `keep` are skipped. `.po` and `translations-*.json` get the same rewrite in msgid and
    msgstr, matching the rewritten source strings. Assets are copied last.
 
-Binary files (NUL byte), lockfiles, `node_modules`, build output and `.git` are skipped.
+Binary files (NUL byte), lockfiles, `node_modules`, the `.turbo` cache and `.git` are skipped. The staged tree is `git archive` output, so
+there is no build output to exclude: a source directory named `build`, `dist` or `coverage` is branded and gated.
 
 ## Config (`brand.json`)
 
