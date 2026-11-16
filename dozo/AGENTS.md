@@ -23,7 +23,9 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   upstream tooling (Vitest, Biome, tsc) covers them. `make qa` runs `dozo-*.test.ts(x)`.
 - Reach an upstream file only through an anchored rule, preferably one import redirect to a
   `dozo-*` wrapper that re-exports the same name. List the wrapper in the rule's `requires`.
-- Rules are idempotent (a re-run is a no-op) and fail loudly: exit 2, naming rule and file.
+- Rules fail loudly: exit 2, naming rule and file. Without `--strict` a re-run on a rewritten tree is
+  a no-op; `build.sh` and `make olc` pass `--strict` on fresh trees, where an already-applied rule
+  is an error (upstream drift).
 - Deviation: the local-model catalog (model names, runtime, hardware) lives in
   `apps/web/src/lib/dozo-local-model-catalog.ts`, not in `packages/core/src`. It has a single
   consumer and core placement would need an extra anchor. Move it to core when a second surface

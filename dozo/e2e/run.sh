@@ -107,7 +107,17 @@ docker run --rm --name "$NAME" --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}"
     set -e
     mkdir /tmp/work && cd /tmp/work
     tar --warning=no-file-changed -C /suite --exclude=.out --exclude=node_modules -cf - . | tar -xf -
-    npm install --prefer-offline --no-save --no-audit --no-fund --no-package-lock --loglevel=error "@playwright/test@$VERSION" >/dev/null
+    # The installed modules live in the cache volume, keyed by a hash of the package spec, so a
+    # changed spec installs into a new directory and other keys are removed. Without the volume
+    # (/npm absent) they are installed per run into the container, as before.
+    spec="@playwright/test@$VERSION"
+    base=/npm/mods; [ -d /npm ] || base=/tmp/mods
+    mods="$base/$(printf %s "$spec" | sha256sum | cut -c1-16)"
+    if [ ! -d "$mods/node_modules/@playwright/test" ]; then
+      mkdir -p "$base"; find "$base" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+      mkdir "$mods.tmp" && (cd "$mods.tmp" && npm install --prefer-offline --no-save --no-audit --no-fund --no-package-lock --loglevel=error "$spec" >/dev/null) && mv "$mods.tmp" "$mods"
+    fi
+    ln -s "$mods/node_modules" node_modules
     if [ "$FORWARD" = 1 ]; then
       node -e "const net=require(\"net\");net.createServer(c=>{const u=net.connect(5173,\"web\");c.pipe(u);u.pipe(c);const e=()=>{c.destroy();u.destroy()};c.on(\"error\",e);u.on(\"error\",e);c.on(\"close\",e);u.on(\"close\",e)}).listen(+process.env.PORT,\"127.0.0.1\")" &
       sleep 1

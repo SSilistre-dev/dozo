@@ -4,7 +4,7 @@ Five auditors examined the branded build (compose project `dozo`): **source** (s
 `brand.json`), **bundle** (built web/api/worker artefacts and the computer image), **runtime** (a
 browser driven over the running web app, three languages), **server** (e-mails, model prompts, tool
 definitions, vendor-facing strings, billing, update paths) and **images** (every raster/vector file
-plus inline art). about 50 raw findings merged into 28 distinct ones. Rules live in `brand.json`; the gate
+plus inline art). about 50 raw findings merged into 29 distinct ones. Rules live in `brand.json`; the gate
 is `check.mjs` (new checks listed in README "Leak gate").
 
 ## Findings and resolution
@@ -39,7 +39,7 @@ is `check.mjs` (new checks listed in README "Leak gate").
 | 26 | OG image has no upstream equivalent | Rejected: no leak, nothing to map. `assets/og-image.png` (H1 lockup, 1200x630) is ready for the site |
 | 27 | Lowercase `rakazo` inside `.po` entries | Gate: `.po` msgid/msgstr scan (headers excluded) |
 | 28 | Operator logs, DB/role names, labels, headers, storage keys | Rejected: deliberate identifiers |
-| 29 | Serenity memory provenance label `rakazo space:<id> bot:<id>` (`serenity-memory-provider.ts`), found while tightening the gate | OPEN LEAK, probably visible in the user's Serenity dashboard. Allow-listed by phrase in `brand.json` only so the gate stays usable; needs an anchored rule (not done here, apply output was frozen) |
+| 29 | Serenity memory provenance label `rakazo space:<id> bot:<id>` (`serenity-memory-provider.ts`), found while tightening the gate | Fixed: anchored rule, label is `dozo space:<id> bot:<id>` (free text sent to the memory provider, nothing reads it back; the entity ids `rakazo-space/...` are identifiers and stay). The allow-list phrase is gone, so the gate sees the line again |
 
 ## Persisted identifiers changed by the overlay
 

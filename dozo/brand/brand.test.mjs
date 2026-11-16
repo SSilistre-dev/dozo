@@ -255,37 +255,44 @@ describe("anchored rules", () => {
     assert.match(strict.stderr, /already applied/);
   });
 
-  it("is a no-op the second time when replace contains find", () => {
-    const root = tree({ "src/a.ts": "A B" });
-    const config = configFile({ anchored: [rule("B", "B+Dozo")] });
-    const first = apply(root, config);
-    assert.equal(first.status, 0, first.stderr);
-    assert.equal(read(root, "src/a.ts"), "A B+Dozo");
-    assert.match(first.stdout, /anchored 1 applied, 0 already applied/);
-    for (let i = 0; i < 2; i++) {
-      const again = apply(root, config);
-      assert.equal(again.status, 0, again.stderr);
-      assert.equal(read(root, "src/a.ts"), "A B+Dozo", "no second application");
-      assert.match(again.stdout, /anchored 0 applied, 1 already applied/);
+  it("rejects at load a rule whose replace contains find, or is empty", () => {
+    for (const bad of [rule("B", "B+Dozo"), rule("B", "")]) {
+      const root = tree({ "src/a.ts": "A B" });
+      const res = apply(root, configFile({ anchored: [bad] }));
+      assert.equal(res.status, 2, JSON.stringify(bad));
+      assert.match(res.stderr, /anchored rule needs|contains find|empty replace/);
+      assert.equal(read(root, "src/a.ts"), "A B", "nothing is written on failure");
     }
+  });
+
+  it("applies when find is once, even though replace already occurs elsewhere in the file", () => {
+    const root = tree({ "src/a.ts": "x = undefined, B" });
+    const config = configFile({ anchored: [rule("B", "undefined,")] });
+    const first = apply(root, config, "--strict");
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(read(root, "src/a.ts"), "x = undefined, undefined,");
+    assert.match(first.stdout, /anchored 1 applied, 0 already applied/);
   });
 
   it("fails loudly, naming rule and file, when the file has neither find nor replace", () => {
     const root = tree({ "src/a.ts": "A C" });
-    const res = apply(root, configFile({ anchored: [{ ...rule("B", "B+Dozo"), reason: "my-rule" }] }));
+    const res = apply(root, configFile({ anchored: [{ ...rule("B", "Z"), reason: "my-rule" }] }));
     assert.equal(res.status, 2, res.stderr);
     assert.match(res.stderr, /my-rule/);
     assert.match(res.stderr, /src\/a\.ts/);
     assert.equal(read(root, "src/a.ts"), "A C");
   });
 
-  it("fails when replace is present but an un-replaced find is left, or find is twice", () => {
-    for (const text of ["B B+Dozo", "B B"]) {
+  it("states the real count when find is twice, or absent with no replace either", () => {
+    for (const [text, count] of [["B B", "2"], ["A C", "0"], ["B B Z", "2"]]) {
       const root = tree({ "src/a.ts": text });
-      const res = apply(root, configFile({ anchored: [rule("B", "B+Dozo")] }));
-      assert.equal(res.status, 2, text);
-      assert.match(res.stderr, /need exactly 1/);
-      assert.equal(read(root, "src/a.ts"), text);
+      const res = apply(root, configFile({ anchored: [rule("B", "Z")] }));
+      if (text === "B B Z" || count === "2" || text === "A C") {
+        assert.equal(res.status, 2, text);
+        assert.match(res.stderr, new RegExp(`has ${count} matches`));
+        assert.match(res.stderr, /need exactly 1/);
+        assert.equal(read(root, "src/a.ts"), text);
+      }
     }
   });
 

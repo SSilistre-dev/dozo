@@ -137,10 +137,6 @@
         "permanent": true
       },
       {
-        "text": "`rakazo space:${context.spaceId} bot:${request.botId}`",
-        "reason": "OPEN LEAK, allow-listed only so the gate stays usable: provenance label sent to the user's Serenity memory provider (visible in its dashboard). Fixing it needs an anchored rule, which is outside the gate task; see AUDIT.md finding 29"
-      },
-      {
         "text": "PUBLISHED_IMAGE_REPO = \"elie222/rakazo\"",
         "reason": "image repository used by compose self-update; same reason as the ghcr image"
       }
@@ -239,7 +235,7 @@
     {
       "file": "apps/web/index.html",
       "find": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />",
-      "replace": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />\n    <link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\" />",
+      "replace": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\"/>\n    <link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\" />",
       "reason": "the Dozo mark switches ink with the browser colour scheme; upstream has no SVG favicon, so link the mapped favicon.svg (the PNG/ICO stay as fallbacks)"
     },
     {
@@ -439,6 +435,12 @@
       "find": "this.clientOptions.name ?? \"rakazo\"",
       "replace": "this.clientOptions.name ?? \"dozo\"",
       "reason": "default MCP client name"
+    },
+    {
+      "file": "packages/adapters/src/serenity-memory-provider.ts",
+      "find": "const provenance = `rakazo space:${context.spaceId} bot:${request.botId}`;",
+      "replace": "const provenance = `dozo space:${context.spaceId} bot:${request.botId}`;",
+      "reason": "provenance label stored with each fact in the user's memory provider, visible in its dashboard; free text, nothing reads it back"
     },
     {
       "file": "packages/adapters/src/serenity-client.ts",

@@ -139,7 +139,7 @@ unit_tests() {
   if [ "$n" -lt "$MIN_FORK_TESTS" ]; then fail "unit: $n fork test files, expected at least $MIN_FORK_TESTS"; return 1; fi
   node_image || return 1
   vol=dozo-qa-deps
-  out=$(mktemp "${TMPDIR:-/tmp}/dozo-unit-XXXXXX")
+  out=$(mktemp "${TMPDIR:-/tmp}/dozo-unit-XXXXXX"); UNIT_OUT=$out  # removed by the EXIT trap if interrupted
   # The coverage provider is not a project dependency: it is added inside the container only, at
   # the version of the staged tree's vitest, so the working tree's package.json is never touched.
   # shellcheck disable=SC2086
@@ -274,7 +274,9 @@ qa() {
   QA_SECS=$(( $(now) - t0 ))
 }
 
-trap 'on_signal 130' INT; trap 'on_signal 143' TERM; trap wt_stop EXIT
+UNIT_OUT=""
+on_exit() { wt_stop; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
+trap 'on_signal 130' INT; trap 'on_signal 143' TERM; trap on_exit EXIT
 case "${1:-}" in
   olc) T0=$(now); olc; V=OLC ;;
   qa) qa; V=QA ;;

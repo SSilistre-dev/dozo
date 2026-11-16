@@ -92,6 +92,13 @@ health() { # $1 = tree-ish holding our result, $2 = upstream ref to compare with
   HEALTH=$([ -n "$HEALTH_FILES" ] && printf '%s\n' "$HEALTH_FILES" | wc -l | tr -d ' ' || echo 0)
 }
 
+# Moves the pristine upstream-main to the fetched tip. On that very branch update-ref would leave
+# index and worktree behind (a dirty-looking tree), so fast-forward it with merge instead.
+ff_upstream() {
+  if [ "$(git rev-parse --abbrev-ref HEAD)" = "$UP_BRANCH" ]; then git merge --ff-only --quiet "$NEW_SHA"
+  else git update-ref -m "dozo/sync: ff $UP_BRANCH" "refs/heads/$UP_BRANCH" "$NEW_SHA" "$OLD_UP"; fi
+}
+
 report() { # $1 = tree-ish of the merge result, $2 = upstream ref
   health "$1" "$2"
   say "range merged:        $RANGE"
@@ -101,13 +108,13 @@ report() { # $1 = tree-ish of the merge result, $2 = upstream ref
   say "fork health:         $HEALTH upstream-tracked file(s) differ from upstream outside our paths"
   if [ "$HEALTH" -gt 1 ]; then
     echo "[sync] WARNING: fork health above 1. Someone edited upstream files; these will conflict later:" >&2
-    printf '[sync]   %s\n' $HEALTH_FILES >&2
+    printf '%s\n' "$HEALTH_FILES" | sed 's/^/[sync]   /' >&2
   fi
 }
 
 if git merge-base --is-ancestor "$NEW_SHA" "$MAIN"; then
   say "main already contains upstream $SHORT; nothing to merge"
-  [ "$DRY" = 1 ] || { [ "$OLD_UP" = "$NEW_SHA" ] || git update-ref -m "dozo/sync: ff $UP_BRANCH" "refs/heads/$UP_BRANCH" "$NEW_SHA" "$OLD_UP"; }
+  [ "$DRY" = 1 ] || { [ "$OLD_UP" = "$NEW_SHA" ] || ff_upstream; }
   COMMITS=0; FILES=0; RANGE="$SHORT..$SHORT"
   report "$MAIN" "$NEW_SHA"
   exit 0
@@ -145,8 +152,7 @@ BR="sync/upstream-$SHORT"
 git rev-parse --verify -q "refs/heads/$BR" >/dev/null && die "branch $BR already exists; delete it or merge it first"
 
 if [ "$OLD_UP" != "$NEW_SHA" ]; then
-  if [ "$ORIG" = "$UP_BRANCH" ]; then git merge --ff-only --quiet "$NEW_SHA"
-  else git update-ref -m "dozo/sync: ff $UP_BRANCH" "refs/heads/$UP_BRANCH" "$NEW_SHA" "$OLD_UP"; fi
+  ff_upstream
   say "$UP_BRANCH fast-forwarded to $SHORT"
 fi
 

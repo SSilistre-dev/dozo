@@ -146,6 +146,11 @@ build() {
   say "build: all images, one at a time (Docker VM memory is limited)"
   COMPOSE_PARALLEL_LIMIT=1 dc build
   say "build: ok"
+  # Rebuilds leave the previous layers untagged. `image prune` without -a touches dangling images
+  # only, and the label limits it to what compose built for this project (the base images and other
+  # projects' images do not carry it), so nothing else on the machine is removed.
+  docker image prune -f --filter "label=com.docker.compose.project=$PROJECT" | sed -n 's/^Total reclaimed space/[dozo] build: pruned dangling images, reclaimed/p' \
+    || say "build: image prune skipped (docker refused it)"
   dc config --images | sort -u | sed 's/^/[dozo] image: /'
 }
 

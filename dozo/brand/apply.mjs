@@ -6,7 +6,8 @@
  *
  * --strict is for a tree no rule has touched yet (a fresh stage, the committed tree): a rule that
  * counts as "already applied" there is upstream drift hiding behind a short `replace`, so it fails.
- * Without it a re-run on an already rewritten tree is a no-op.
+ * Without it a re-run on an already rewritten tree is a no-op (a rule whose find is gone and whose
+ * replace is present counts as already applied).
  *
  * Exit 0 on success, 2 on any failure (anchored rule not matching exactly once (or already applied),
  * a rule whose `requires` file is missing, missing asset,
@@ -45,8 +46,16 @@ let anchoredAlready = 0;
 
 const anchoredByFile = new Map();
 for (const rule of config.anchored) {
-  if (!rule.file || !rule.find || rule.replace === undefined || !rule.reason) {
+  if (!rule.file || !rule.find || typeof rule.replace !== "string" || !rule.reason) {
     errors.push(`anchored rule needs file, find, replace and reason: ${JSON.stringify(rule)}`);
+    continue;
+  }
+  // An empty replace is "present" in every file, so a missing find could never be told from an
+  // applied rule; a replace holding find would match again on a re-run. Neither is a rule.
+  if (rule.replace === "" || rule.replace.includes(rule.find)) {
+    errors.push(
+      `anchored rule (${rule.reason}): ${rule.replace === "" ? "empty replace" : "replace contains find"}, so a re-run could not tell applied from not applied: ${JSON.stringify(rule.find)}`,
+    );
     continue;
   }
   anchoredByFile.set(rule.file, [...(anchoredByFile.get(rule.file) ?? []), rule]);
@@ -95,21 +104,19 @@ for (const rel of files) {
   let text = original;
   for (const rule of rules) {
     const hits = text.split(rule.find).length - 1;
-    // Already applied: replace is there and no find is left outside it (replace may contain find).
-    const leftover = text.split(rule.replace).join("").split(rule.find).length - 1;
-    if (text.includes(rule.replace) && leftover === 0) {
+    if (hits === 1) {
+      text = text.replace(rule.find, () => rule.replace);
+      anchoredApplied++;
+    } else if (hits === 0 && text.includes(rule.replace)) {
       if (args.strict) {
         errors.push(
           `anchored rule (${rule.reason}): ${rel} already applied (find is gone, replace is present) on a tree that should be fresh: upstream drifted, or the tree was branded before (re-stage)`,
         );
       }
       anchoredAlready++;
-    } else if (hits === 1 && !text.includes(rule.replace)) {
-      text = text.replace(rule.find, () => rule.replace);
-      anchoredApplied++;
     } else {
       errors.push(
-        `anchored rule (${rule.reason}): ${rel} has ${hits} matches of ${JSON.stringify(rule.find)}, need exactly 1`,
+        `anchored rule (${rule.reason}): ${rel} has ${hits} matches of ${JSON.stringify(rule.find)}, need exactly 1${hits === 0 ? " (replace is not there either)" : ""}`,
       );
     }
   }
