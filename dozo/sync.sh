@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Pull upstream (Rakazo) into a review branch of the Dozo fork. Never pushes, never touches main.
-# See dozo/SYNC.md. Exit codes: 0 ok / up to date, 1 error, 2 refused (non-fast-forward
-# upstream-main), merge conflict or a failed gate.
+# See dozo/SYNC.md. Exit codes: 0 ok / up to date; 1 error (usage, missing remote or branch, dirty
+# tree, merge failed without a conflict); 2 refused (non-fast-forward upstream-main, a dozo-* file
+# shipped by upstream), predicted or real merge conflict, or a failed gate; 129/130/143 on a signal.
+# The full table is in dozo/SYNC.md.
 set -euo pipefail
 
 UP_REMOTE=upstream
@@ -16,15 +18,17 @@ Usage: dozo/sync.sh [--dry-run] [--fast] [--help]
 
 Fetches upstream/main, fast-forwards the pristine upstream-main branch, creates
 sync/upstream-<short-sha> from main and merges upstream-main into it (merge commit,
-never rebase). Then runs `make olc` and `make qa` when those targets exist.
+never rebase). Then runs `make qa` (its first step is `make olc`) when that target exists.
 
   --dry-run  fetch and report what would be merged and predicted conflicts
-             (git merge-tree). Changes no branch, index or file.
+             (git merge-tree). Changes no branch, index or file; the fetch updates
+             the remote-tracking ref refs/remotes/upstream/main.
   --fast     run only `make olc`, skip `make qa`
   --help     this text
 
 Never pushes. The maintainer reviews the sync branch and merges it into main.
-Exit 2: upstream-main is not a fast-forward, the merge conflicts, or a gate fails.
+Exit 2: upstream-main is not a fast-forward, the merge conflicts (also predicted, with
+--dry-run), or a gate fails. Exit 1: any other error. See dozo/SYNC.md.
 EOF
 }
 

@@ -3,8 +3,9 @@ name: dozo-gate
 # Dozo fork gate. A pull request into main (including the upstream sync PR) must pass the fast
 # local checks, the brand leak path (stage the tree, apply the codemod, fail on any user-visible
 # "Rakazo" string) and the fork's unit tests with their coverage floor. Needs only Docker, which
-# stock GitHub runners have. A required status check matches the job name below: when it changes,
-# update the branch protection rule too.
+# stock GitHub runners have. It runs olc, stage, brand and unit only, never build, up, smoke or the
+# e2e suite (see dozo/README.md, Status and known limits). A required status check matches the job
+# name below: when it changes, update the branch protection rule too.
 # Action versions are pinned by the same full commit SHAs the upstream workflows already use.
 on:
   pull_request:

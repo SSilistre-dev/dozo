@@ -87,6 +87,8 @@ export type Surface = {
   slow?: number;
   /** Needs no session: the test starts signed out. */
   signedOut?: boolean;
+  /** Renders nothing by design, with the reason: the minimum-content check skips it. */
+  blankByDesign?: string;
   /** Server errors this surface is expected to meet, each with the reason (reported, never hidden). */
   expect5xx?: { pattern: RegExp; reason: string; mustOccur?: boolean }[];
   reach(ctx: Ctx): Promise<void>;
@@ -98,12 +100,6 @@ export type Surface = {
  * screens (the integration callback, the 404) are well above it.
  */
 const MIN_VISIBLE_TEXT = 10;
-
-/** Surfaces that render nothing by design, each with the reason; the content floor skips them. */
-const BLANK_BY_DESIGN: Record<string, string> = {
-  "sso callback":
-    "SsoCallbackPage renders null: it relays the result to the opener and closes the window",
-};
 
 export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   const world = surface.signedOut ? (undefined as unknown as World) : readWorld();
@@ -162,7 +158,7 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
       "the app's last-resort error screen is showing",
     ).toHaveCount(0);
     await ctx.scan("");
-    if (!(surface.name in BLANK_BY_DESIGN)) {
+    if (surface.blankByDesign === undefined) {
       const read = () => page.evaluate(() => document.body?.innerText.trim().length ?? 0);
       // The app may still be drawing: give it a few seconds before calling the page empty.
       await expect

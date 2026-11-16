@@ -1,170 +1,211 @@
 # Dozo brand overlay
 
 The committed tree stays "upstream Rakazo + new files under `dozo/`" so upstream merges stay
-clean. The brand is applied to a throwaway staged copy right before the Docker build:
+clean. The brand is applied to a throwaway staged copy right before the Docker build. This is the
+one home for how the codemod, the config and the leak gate work, and for which identifiers are kept
+or renamed. What `build.sh` and the gates run around it: `dozo/docker/README.md`.
 
 ```
 git archive HEAD | tar -x -C "$STAGE"
-node dozo/brand/apply.mjs --root "$STAGE"     # codemod, in place
-node dozo/brand/check.mjs --root "$STAGE"     # leak gate, must exit 0
+node dozo/brand/apply.mjs --root "$STAGE" --strict   # codemod, in place
+node dozo/brand/check.mjs --root "$STAGE"            # leak gate, must exit 0
 ```
 
-Dependency-free Node (built-ins only). Run it in Docker, not on the host.
+Dependency-free Node (built-ins only). Run it in Docker (`node:24-slim`), not on the host; that is what
+`build.sh brand` does.
 
 ## CLI
 
 All commands take `--config <file>` (default `dozo/brand/brand.json`). Failures exit 2. An unknown or
-repeated option, a missing value and a stray argument exit 2 too.
+repeated option, a missing value and a stray argument exit 2 too, as does any unexpected error (never
+a stack trace).
 
-- `apply.mjs --root <dir>` rewrites `<dir>` in place. Idempotent. Prints files changed,
-  replacements per rule and hooks (`anchored X of N applied`, assets). Exit 2 if an anchored rule
-  does not match exactly once, an asset is missing, a file is not UTF-8 or is binary in a type that
-  is not a known binary, nothing is in scope, or `<dir>` has a `.git` and `--allow-git` is not given.
-- `apply.mjs --root <dir> --check` same validation and summary, writes nothing (no asset either).
-- `apply.mjs ... --strict` for a tree no rule has touched (a fresh stage; `make olc` and the gate on
-  the committed tree): a rule that counts as already applied fails (there it can only be upstream
-  drift hiding behind a short `replace`), every anchored rule must have applied, and an entry that
-  matches nothing in the tree fails as dead: a `urls` key, a `variants` or `literals` entry, a
-  `keep`, `allow.phrases` or `allow.text` entry, an `allow.paths` or `allow.images` glob. Delete it.
-  `build.sh brand` and `make olc` pass `--strict`. Without it a re-run on a rewritten tree is a
-  no-op; that lenient path is only for running `apply.mjs` by hand twice.
-- `check.mjs --root <dir> [--launch]` leak gate. Exit 0 clean; exit 2 with `path:line: match` (first 50
-  plus a total), and when no file was scanned. `--launch` also fails on the placeholders (the
-  targets of `urls`, such as `dozo.example` and `github.com/OWNER/dozo`) and on the `allow.phrases`
-  entries not marked `"permanent": true` (upstream image names; a permanent one, such as an HMAC
-  input, is never flagged).
+- `apply.mjs --root <dir>` rewrites `<dir>` in place. Prints `files scanned`, `changed`, the
+  replacements per rule, and `hooks: anchored X of N applied, A already applied; assets K copied`
+  (`X` anchored rules applied by this run out of the `N` in the config). Exit 2 when an anchored rule
+  does not match exactly once or targets a symlink or a binary, a `requires` file is missing from the
+  tree, an asset is missing or its source is outside `assets/`, a file is not valid UTF-8, a file has a NUL byte but is not a known
+  binary type, nothing is in scope, or `<dir>` has a `.git` and `--allow-git` is not given.
+- `apply.mjs --root <dir> --check` runs the same validation and prints the same summary ("would
+  change"), and writes nothing, assets included.
+- `apply.mjs ... --strict` is for a tree no rule has touched (a fresh stage; `make olc` on the committed
+  tree). A rule that counts as already applied fails there: it can only be upstream drift hiding
+  behind a short `replace`. Every anchored rule must have applied, and an entry that matches nothing
+  in the tree fails as dead: a `urls` key, a `variants` or `literals` entry, a `keep`, `allow.phrases`
+  or `allow.text` entry, an `allow.paths` or `allow.images` glob. Delete it. `build.sh brand` and
+  `make olc` pass `--strict`. Without it a re-run on a rewritten tree is a no-op (idempotent); that
+  lenient path is only for running `apply.mjs` by hand twice.
+- `check.mjs --root <dir> [--launch]` is the leak gate. Exit 0 prints `leak gate clean: N files
+  scanned`. Exit 2 prints `path:line: match` (the first 50, then a total) and also fails when no file
+  was scanned. `--launch` also fails on the placeholders (every target of `urls`, such as
+  `dozo.example` and `github.com/OWNER/dozo`) and on the `allow.phrases` entries not marked
+  `"permanent": true` (upstream image names; a permanent one, such as an HMAC input, is never flagged).
+  No gate passes `--launch`: it is run by hand before launch (`dozo/LAUNCH-CHECKLIST.md`).
 - Tests: `node --test dozo/brand/` (`index.js` makes the directory form work on Node 24).
 
-What is guaranteed. Config, rules, assets, every file's encoding and the dead-entry check are all
-validated before the first write, so a rule failure writes nothing. The write phase then replaces
-each file through a temp file and a rename (the mode is kept), one file at a time; if it fails
-half way (disk full, permissions) apply exits 2 with "stage is partial, re-stage", and the files
-already replaced stay replaced. The stage is throwaway: re-stage, do not repair. Any other
-unexpected error exits 2 as well, never with a stack trace.
+What is guaranteed. Config, rules, assets, the encoding of every file read and the dead-entry check
+are all validated before the first write, so a rule failure writes nothing. The write phase then
+writes the assets and replaces each rewritten file through a temp file
+(`<name>.dozo-tmp-<pid>`) and a rename, keeping the mode, one file at a time. If it fails half way (disk
+full, permissions) apply exits 2 with "the stage is partial, re-stage it", the files already replaced
+stay replaced, and a temp file may remain. The stage is throwaway: re-stage, do not repair.
+
+Encoding: a file in scope that is not valid UTF-8 stops apply and check (exit 2, naming the file;
+convert it or exclude it with a reason), so a rewrite never corrupts it. A NUL byte marks a file as
+binary. In a known binary type (`BINARY_EXT` in `lib.mjs`: images, fonts, media, pdf) it is skipped by
+apply and handled by the gate (see Leak gate); in any other type (UTF-16 text) it is an error in apply
+and a finding in the gate.
 
 ## What apply does (in order, per file under `include` minus `exclude`)
 
-1. Anchored rules (exact once; "already applied" counts as success on re-runs). They also work on
-   files outside `include`, which then get no blanket rename.
+1. Anchored rules (`find` exactly once; a file that already holds `replace` counts as applied on a
+   re-run without `--strict`). They also work on files outside `include`, which then get no blanket
+   rename.
 2. `literals`: plain substring replace in every in-scope file, or only in the globs of `files`.
    For lowercase technical names that must change everywhere together (`/home/rakazo`).
-   `urls`: longest key first, any capitalisation. A key is a whole host: no word character, dot
-   or hyphen before it (`getrakazo.com` and `status.rakazo.com` are other hosts; list a subdomain
-   of ours as a key of its own), and no word character, `&` or `=` after it (`rakazo.com` leaves
-   `rakazo.computerOwner` alone, a store link with more query parameters is left for the gate).
+   `urls`: longest key first, any capitalisation, the target written exactly. A key is a whole host:
+   no word character, dot or hyphen before it (`getrakazo.com` and `status.rakazo.com` are other
+   hosts; list a subdomain of ours as a key of its own), and no word character, `&` or `=` after it
+   (`rakazo.com` leaves `rakazo.computerOwner` alone, a store link with more query parameters is not
+   the key and is left for the gate).
 3. Blanket: `\bRakazo\b` -> `Dozo`, plus `variants` (German genitive `Rakazos`). Whole-word
    matching leaves `RakazoDesktop`, `@rakazo/*`, `RAKAZO_*`, `rakazo_app` and lowercase `rakazo`.
-   Phrases in `keep` are skipped, in their `files` only. `.po` and `translations-*.json` get the
-   same rewrite in msgid and msgstr, matching the rewritten source strings. Assets are copied last.
+   Phrases in `keep` are skipped, in their `files` only. The `.po` catalogs and `translations-*.json`
+   under `include` are ordinary text and get the same rewrite.
+4. Assets (`assets`) are written before the rewritten files.
 
-Binary files (NUL byte) in a known binary type, lockfiles, `node_modules`, the `.turbo` cache and
-`.git` are skipped. The staged tree is `git archive` output, so there is no build output to
-exclude: a source directory named `build`, `dist` or `coverage` is branded and gated. Names of
-files and directories are never renamed.
+Never read or rewritten: `.git`, `node_modules`, `data/` at the top of the tree (the stack's app
+data) and `dozo/.stage`. Files matching `exclude` get no rewrite. The staged tree is `git archive`
+output, so there is no build output to exclude: a source directory named `build`, `dist` or `coverage`
+is branded and gated. Names of files and directories are never renamed.
 
 ## Config (`brand.json`)
 
-`from`, `to`, `variants`, `urls`, `literals`, `include` (globs), `exclude`, `keep` and `allow.*`
-(each entry has a mandatory one-line `reason`), `leak` (extra substrings), `leakWords` (extra
-case-sensitive whole words, e.g. the upstream founder's name), `anchored`, `assets`. The file is
-validated when it loads: an unknown key, a wrong type, an empty `text`, `glob` or url key, a
-`to`, url target, variant or literal `replace` that contains what it replaces, or a missing
-`reason` or `files` exits 2 with a message.
+Scope: `include` (globs: `apps/web`, `apps/api`, `apps/worker`, `packages`, `infra/sandboxes`) minus
+`exclude`. Everything else (`apps/www`, `apps/desktop`, `apps/mobile`, `docs/`, the root files) is out
+of scope: neither branded nor gated.
 
-- Add an exclusion: append `{ "glob": "path/**", "reason": "why" }` to `exclude`.
+Keys: `from`, `to`, `variants`, `urls`, `literals`, `include`, `exclude`, `keep`, `allow`,
+`leak` (extra substrings), `leakWords` (extra case-sensitive whole words, e.g. the upstream founder's
+first name), `anchored`, `assets`. Every entry of `exclude`, `keep`, `allow.*`, `literals` and
+`anchored` has a mandatory one-line `reason`. The file is validated when it loads and exits 2 on: an
+unknown key, a wrong type, an empty `text`, `glob`, `file` or url key, a missing or empty `reason`, a
+missing or empty `files` list where one is required (`keep`, `allow.phrases`), an empty `include`, a
+`to`, url target, variant or literal `replace` that contains what it replaces, or an anchored rule with
+an empty `replace` or one that contains its `find`.
+
+- Add an exclusion: append `{ "glob": "path/**", "reason": "why" }` to `exclude`. The entries and
+  their reasons are in `brand.json`: dependencies and caches, lockfiles, licence, notice and changelog
+  files, tests, specs and snapshots (they run on the pristine tree and assert on upstream strings),
+  `apps/web/e2e`, `packages/testkit`, two offline emulator files in `packages/adapters`, and the
+  Prisma schema and migrations (checksummed and persisted).
 - Keep a phrase that code compares or persists: add `{ "text": "...", "files": ["path"],
   "reason": "..." }` to `keep` (apply leaves it, the gate ignores it). `keep` and `allow.phrases`
   match as a whole (not glued to a word or hyphen) and only in their `files`.
 - Anchored rule: `{ "file": "apps/web/x.ts", "find": "exact text", "replace": "new",
   "reason": "why" }`. `find` must occur exactly once in the file at the time apply runs
-  (`replace` occurring elsewhere does not matter). A re-run counts as already applied when `find`
-  is gone and the file holds `replace`; a file with neither, or with `find` more than once, fails
-  with exit 2, naming rule, file and the real count (a `\n` in `find` on a CRLF file says so).
-  `replace` must be non-empty and must not contain `find`: the rule is rejected at load, because
-  a re-run could not tell it applied. An optional `"requires": ["path"]` lists fork files the rule
-  redirects to: apply fails ("dangling redirect") when one is missing from the tree, so a build
-  never ships a dangling import. Use it for edits a regex cannot express, and later to wire visual
-  hooks. Anchored rules also swap the mascot art (`packages/core/src/logo-avatar-art.ts` paths and
-  eyes) and rename visible lowercase uses.
-- Add an asset: `"assets": { "apps/web/public/favicon.png": "favicon.png" }` copies
-  `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons and `favicon.svg` are mapped (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule).
+  (`replace` occurring elsewhere does not matter); otherwise apply exits 2, naming rule, file and the
+  real count (a `\n` in `find` on a CRLF file says so). An optional `"requires": ["path"]` lists fork
+  files the rule redirects to: apply fails ("dangling redirect") when one is missing from the tree,
+  so a build never ships a dangling import. Use it for edits a regex cannot express, and for
+  redirects to `dozo-*` wrappers.
+- Add an asset: `"assets": { "apps/web/public/favicon.png": "web/favicon.png" }` copies
+  `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons and `favicon.svg` are mapped
+  (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule).
+
+## Identifiers
+
+Kept (never renamed): a technical identifier that code, stored data or tooling refers to. The finite
+list is the `SHAPES` table in `lib.mjs`, one row per shape with its reason: the `@rakazo/*` scope,
+`RAKAZO_*` names, `x-rakazo-*` headers, `data-rakazo-*` attributes, `rakazo_*` and camelCase names
+(`RakazoDesktop`), `rakazo.key` and `rakazo:key` keys (and the `rakazo://` scheme), CSS names of the
+avatars, computer-image executables and paths (`rakazo-browser`, `/tmp/rakazo`, `~/rakazo-home`),
+service and package names, persisted keys and key-derivation contexts, the `rakazo/computer` image
+name, and so on. Also kept: the `Rakazo.icon` directory, vendor-facing client names, cookies and storage
+keys. Do not rename one by hand. If upstream adds a real identifier, add a shape row (below).
+
+Renamed on purpose (each is a rule in `brand.json`):
+
+- Bot computer user and home directory: `/home/rakazo` -> `/home/dozo` (literal), plus the
+  `useradd`/`USER` anchored rules and `rakazo-runtime` -> `dozo-runtime` for arbitrary uids.
+- Shared workspace and peer ids: `rakazo-shared` -> `dozo-shared` (literal) and the default memory
+  workspace id `rakazo-<space>` -> `dozo-<space>` (anchored rules in the Honcho provider and settings).
+- Compaction prefix: `Rakazo-owned compacted context` -> `Dozo-owned compacted context` in new
+  summaries; the reader still accepts the old prefix (`keep`).
+- The memory-provider provenance label `rakazo space:<id> bot:<id>` -> `dozo space:<id> bot:<id>`
+  (free text sent to the provider; nothing reads it back; the entity ids `rakazo-space/...` stay).
+
+This is consistent for a fresh Dozo installation built entirely from the staged tree. It is not
+compatible with data or volumes created by an upstream Rakazo installation (home directories, memory
+workspaces and peers), nor with the prebuilt upstream computer image
+`ghcr.io/elie222/rakazo/computer`, which still uses `/home/rakazo`. Dozo must always run its own
+computer image built from the staged tree; rebuild it after changing these rules.
 
 ## Leak gate
 
 Rule: **every case-insensitive occurrence of the old name in the applied tree is a leak**, unless it
-sits inside one of the technical-identifier shapes in the `SHAPES` table (`lib.mjs`, one row per
-shape with its reason: `@rakazo/*` scope, `RAKAZO_*` names, `x-rakazo-*` headers, `rakazo_*`
-snake names, `RakazoDesktop`-style identifiers, `rakazo.key` and `rakazo:key` keys, CSS classes,
-computer-image binaries and paths, service names, key-derivation contexts, ...) or a reviewed
-phrase. The shapes are finite on purpose: `rakazo-powered`, `#rakazo`, `rakazo.`, `- Ask rakazo`
-and `You are rakazo, ${x}` are leaks wherever they stand. A new upstream identifier that is
-really technical fails the gate once; add its shape (narrowly, with a reason and a positive and
-a negative sample in `brand.test.mjs`), never loosen a row.
+sits inside one of the technical-identifier shapes in `SHAPES` (`lib.mjs`) or a reviewed text. Only the
+shape table lets an identifier through: it is finite on purpose, so `rakazo-powered`, `#rakazo`,
+`rakazo.`, `- Ask rakazo` and `You are rakazo, ${x}` are leaks wherever they stand. Each row is
+`{ name, re, reason }`: a case-sensitive (except `header`) global regex that matches the whole token
+that holds the old name, as the tree contains it, and masks it. To add one when a new upstream
+identifier is really technical and fails the gate: add a narrow row with its reason, with a positive
+and a negative sample in `brand.test.mjs`; never loosen an existing row.
 
-Reviewed text, all with a reason, all scoped, none per file as a whole:
+Reviewed text, each with a `reason`, each scoped, matched as a whole phrase:
 
-- `keep` and `allow.phrases`: `{text, files}`, matched as a whole phrase in those files only.
-- `allow.text`: `{file, text}`, one file, one text (the persisted enum values, vendor headers,
-  `"rakazo"` client names that are not shown). The rest of the file is still checked.
+- `keep` and `allow.phrases`: `{text, files}` (`files` required), in those files only.
+  `allow.phrases` may carry `"permanent": true` (see `--launch`).
+- `allow.text`: `{file, text}`, one file, one text (persisted enum values, vendor headers, `"rakazo"`
+  client names that are not shown). The rest of the file is still checked.
 - `allow.paths`: globs of file and directory names that carry the old name on purpose.
-- `allow.images`: images that are reviewed but not mapped.
+- `allow.images`: files of a binary type that are reviewed but not mapped.
 
 Also checked:
 
-- `urls` keys, every `leak` substring (`rakazo.com`, `elie222/rakazo`, and the bare ids of the store
-  and Discord links, which catch their other forms) and the old name with any public TLD
-  (`rakazo.ai`, `.app`, `.io`, `hello@rakazo.ai`), case-insensitive. The new name followed by a
-  public TLD (`Dozo.com`) unless a `urls` target owns it.
-- a PascalCase brand identifier standing between plain words (`Ask RakazoBot to help`), and a
-  string that is exactly one such name (`"RakazoIntrospection"`, a client or operation name).
+- `urls` keys, every `leak` substring (`rakazo.com`, `elie222/rakazo`, `elie222`, `com.rakazo.app`, and
+  the bare Discord invite code and App Store id, which catch their other forms) and the old name with
+  a public TLD from a fixed list (`TLDS` in `lib.mjs`: `rakazo.ai`, `.app`, `.io`, `hello@rakazo.ai`),
+  case-insensitive. The new name followed by one of those TLDs (`Dozo.com`), unless a `urls` target
+  owns it.
+- a PascalCase brand identifier standing between plain words (`Ask RakazoBot to help`), and a string
+  that is exactly one such name (`"RakazoIntrospection"`, a client or operation name).
 - a URL target glued to a word (`dozo.exampleputerOwner`): a rewrite ate part of another token.
 - `literals`: a `find` still present means the rule did not run.
 - file and directory names with the old name, once per path, unless in `allow.paths`.
-- images: every image in scope (any type in `BINARY_EXT`) must be in `assets` or reviewed in
-  `allow.images`; an `.svg` is scanned as text as well; a mapped asset must equal our file byte for
-  byte. A NUL byte in a file that is not a known binary type (UTF-16 text) is reported.
+- binary types (`BINARY_EXT`, images included): each must be in `assets` or reviewed in
+  `allow.images`; an `.svg` is also scanned as text; a mapped asset must equal our file byte for byte
+  and must exist in the tree.
+- a NUL byte in a file that is not a known binary type (UTF-16 text) is reported, not skipped.
 - symlinks whose target is outside the tree or cannot be resolved.
 - a tree with no file in scope fails.
 
 Findings are de-duplicated (a finding inside the span of an earlier, longer one is the same leak).
 
-Still not caught: images that were reviewed in `allow.images`; text generated at runtime; text
-assembled from fragments (`"rak" + "azo"`, `` `${name}` ``); an identifier-shaped token that is really
-prose (`rakazo.something` after a space, `RakazoBot` standing alone); `rakazo.<tld>` with a TLD
-that is not in the list; any other Discord invite code or social host (the bare id of the known
-invite is checked); build output, `.map` files and files outside `include`.
-
-## Values to fill before launch
-
-- `dozo.example` (and `app.`, `www.` subdomains): the product domain; docs, privacy, plugin pages,
-  `/api/download`, email images all point there.
-- `github.com/OWNER/dozo`: the fork repository (self-update, star prompt, releases, user agent).
-- `https://dozo.example/discord`, `/get/ios`, `/get/android`: Discord invite and store links.
-- `ghcr.io/elie222/rakazo/computer` and `PUBLISHED_IMAGE_REPO`: still pull upstream images
-  (allow-listed in the gate); switch when Dozo publishes its own.
+Still not caught: images reviewed in `allow.images`; text generated at runtime; text assembled from
+fragments (`"rak" + "azo"`, `` `${name}` ``); an identifier-shaped token that is really prose
+(`rakazo.something` after a space, `RakazoBot` standing alone); `rakazo.<tld>` with a TLD not in the
+list; any other Discord invite code or social host; build output, `.map` files and files outside
+`include`.
 
 ## Known gaps
 
-- Lowercase and technical names stay Rakazo by design: `Rakazo.icon`, headers, cookies, storage
-  keys, `rakazo://`, binary names in the computer image (`rakazo-browser`), `/tmp/rakazo`,
-  `~/rakazo-home`, vendor-facing `originator` values. The bot computer user and home are `dozo`
-  (anchored rules plus the `/home/rakazo` literal); the image must be rebuilt for it.
-- The stored prefix `Rakazo-owned compacted context` is only accepted when reading; new
-  summaries say `Dozo-owned`.
-- Details of every audit decision: `AUDIT.md`.
-- Out of scope: `apps/www`, `apps/desktop`, `apps/mobile`, `docs/`, root README files.
 - Tests, `apps/web/e2e` and `packages/testkit` are not rewritten; run them on the pristine tree.
 - The bot docs URLs (`dozo.example/docs/*.md`) must exist or the built-in skill has nothing to fetch.
-- The welcome mail has no hero image (the anchored rule drops it) until Dozo makes one.
+- The welcome mail has no hero image (an anchored rule drops it) until Dozo makes one.
+- Owner actions and the values to fill before launch: `dozo/LAUNCH-CHECKLIST.md`.
+- Details of every audit decision: `AUDIT.md`.
 
 ## Logo
 
-- Approved mark: H1, a soft robot head with a tilted dark visor wearing a thin red headband. Artwork,
-  files and rebuild steps: `assets/README.md`.
-- Red: `#C8372D` (band only, fixed in every file). Ink: `#f4f3f0` on dark, `#0d0d0d` on light.
+- Approved mark: H1, a soft robot head with a tilted dark visor wearing a thin red headband. Applied
+  to the web icons. Artwork, files and rebuild steps: `assets/README.md`.
+- Red: `#C8372D` (band only, fixed in every file except the one-ink files). Ink: `#f4f3f0` on dark,
+  `#0d0d0d` on light.
 - One-ink fallback: where one colour is all there is (stamp, emboss, single-colour print, forced
   colours), use `mark-mono-dark.svg` / `mark-mono-light.svg`: band in the head's ink, never red alone.
-- Minimum size: full mark and lockup 32 px high; below that use `mark-small.svg` (16-31 px).
+- Minimum size: full mark and lockup 32 px high; from 16 to 32 px use the reduced variant
+  (`mark-small.svg`; the 16 and 32 px favicon tiles are drawn with it).
 - Clear space: 1/4 of the mark's height (11 units in the lockup viewBox) on every side; the SVG viewBoxes
   are tight, so the margin is the placer's job.
 - Later: the mockups show a small red seal dot beside the wordmark; the red band replaces it, so the dot is dropped.

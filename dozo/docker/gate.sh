@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Gates: olc (fast, offline once the Node image is local, <30s) and qa (full).
-# Usage: gate.sh olc|qa|unit. Any failed gate exits 2. `upstream-edits <base> [tree]` prints the
-# upstream files that differ from <base> (shared with sync.sh); it is not a gate.
+# Usage: gate.sh olc|qa|unit. Exit 0 pass, 2 any failed gate, 64 usage, 130/143 interrupted.
+# `upstream-edits <base> [tree]` prints the upstream files that differ from <base> (shared with
+# sync.sh); it is not a gate. What each gate runs and every variable: dozo/docker/README.md.
 # `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
 # `qa` runs olc, stage, brand, unit, build, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail

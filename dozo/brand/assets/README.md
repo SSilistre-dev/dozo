@@ -8,7 +8,7 @@ PNG/ICO are generated, do not edit by hand.
 | File | Purpose |
 |---|---|
 | `mark.svg` | Full mark, head ink `currentColor`, band fixed `#C8372D`. viewBox is the tight bounds |
-| `mark-small.svg` | Reduced variant for 16-24 px: flat band, tails dropped |
+| `mark-small.svg` | Reduced variant for 16 to 32 px (the 16 and 32 px favicon tiles use this artwork). No script reads this file |
 | `mark-mono-dark.svg` / `mark-mono-light.svg` | One ink (`#f4f3f0` / `#0d0d0d`), band in the same ink |
 | `logo-dark.svg` / `logo-light.svg` | Mark + outlined `dozo` wordmark, explicit colours |
 | `app-icon.svg` | Mark on a dark rounded tile (`#161616`), 12/128 margin |
@@ -32,10 +32,13 @@ PNG/ICO are generated, do not edit by hand.
 `og-image.png` has no upstream equivalent in `public/`; it is not mapped.
 
 ## Rebuild
-`dozo/brand/assets/build.sh` runs on the host: headless Brave (`$E2E_BROWSER_PATH` or the macOS
-default) draws each SVG on a canvas of the exact pixel size over CDP (`render.mjs`, Node built-ins),
-`make-ico.py` packs the ICO, `make-og.py` recomposes `og-image.svg`. Nothing is installed, no Docker.
-Brave needs to run outside restrictive sandboxes (it fails to start inside one).
+`dozo/brand/assets/build.sh` runs on the host, not in Docker: host `node` (`render.mjs`, built-ins
+only) drives headless Brave (`$E2E_BROWSER_PATH` or the macOS default path) over CDP to draw each SVG
+on a canvas of the exact pixel size, and host `python3` (standard library) runs `make-og.py`
+(recomposes `og-image.svg`) and `make-ico.py` (packs the ICO). Nothing is installed. This is the
+owner-accepted exception to the Docker-only rule in `dozo/AGENTS.md`. Brave needs to run outside
+restrictive sandboxes (it fails to start inside one). Run it only when the masters change: the
+outputs are committed.
 
 ## Colours
 Band red `#C8372D` | ink on dark `#f4f3f0` | ink on light `#0d0d0d` | tile `#161616` | OG background

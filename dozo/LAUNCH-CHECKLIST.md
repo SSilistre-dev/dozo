@@ -1,14 +1,28 @@
 # Launch checklist
 
-What the owner must decide or supply before going public. "Blocks launch" means do not open to the
-public without it. "Can follow" means it can ship after.
+What the owner must decide or supply before going public. This is the one list of owner actions and
+placeholders. "Blocks launch" means do not open to the public without it. "Can follow" means it can
+ship after.
+
+To find every placeholder and upstream image name still in the branded tree, run the leak gate with
+`--launch` on a stage (`dozo/brand/README.md`, CLI). It is not part of any gate and fails until the
+placeholders are replaced.
 
 - [ ] **Domain** (blocks launch). Replace the `dozo.example` placeholders in `dozo/brand/brand.json`
-      with the real domain, including app and docs subdomains.
+      (`urls`) with the real domain, including the app and docs subdomains. This also covers the
+      links `/discord`, `/get/ios` and `/get/android`.
 - [ ] **GitHub owner and repo** (blocks launch). Replace `github.com/OWNER/dozo` in
       `dozo/brand/brand.json` and in the fork notice in `README.md`.
-- [ ] **Final logo** (blocks launch). Supply the logo assets. Wire them through `dozo/brand/brand.json`
-      and `dozo/theme/`. Do not reuse upstream's logo or mascot.
+- [ ] **Publish and enable CI** (blocks launch). Nothing is pushed yet and neither dozo workflow has
+      run. Disable upstream's workflows before the first push, create `upstream-main` on origin, set
+      the secret `DOZO_SYNC_TOKEN` and the required status check: `dozo/SYNC.md`.
+- [ ] **Logo, remaining parts** (blocks launch for desktop and mobile only). The logo is approved and
+      applied to the web icons (`dozo/brand/README.md`, Logo). Still open: the desktop and mobile
+      icons, splash and widget images (listed in `dozo/brand/AUDIT.md`), which are outside the codemod's
+      scope and still upstream's; and whether the in-app bot avatars should be redrawn from the approved
+      mark. Do not reuse upstream's logo or mascot.
+- [ ] **Welcome-mail hero image** (can follow). The codemod drops upstream's hero. Make a 1040x546
+      image and wire it with an anchored rule.
 - [ ] **Privacy policy and terms pages** (blocks launch). Upstream links to its own privacy page from
       `packages/contracts/src/ai-consent.ts` (`AI_PRIVACY_URL`), and also to a terms page. Publish our own
       pages and point the rules in `dozo/brand/brand.json` at them before any user signs up.
@@ -27,19 +41,24 @@ public without it. "Can follow" means it can ship after.
 - [ ] **Support and contact email** (blocks launch). Supply the address. Set it in
       `dozo/brand/brand.json`, and in `SECURITY.md` terms if we need our own disclosure contact
       (`SECURITY.md` is an upstream file, so handle it via a build-time rule).
-- [ ] **Disable upstream GitHub workflows** (blocks launch). Many publish, deploy and release using
-      upstream's secrets and targets (`.github/workflows/`). Disable them in our repo as described in
-      `dozo/SYNC.md`. Do not edit them.
-- [ ] **Image registry** (blocks launch for published images). Choose the registry and image names
-      for published images. Set them in `dozo/docker/` and in the compose files you ship.
+- [ ] **Image registry** (blocks launch for published images). Choose the registry and image names,
+      publish the server and computer images, then replace `PUBLISHED_IMAGE_REPO` and the
+      `ghcr.io/elie222/rakazo` image names (allowed in the gate until then; `--launch` fails on them).
+      Until then disable self-update.
 - [ ] **Trademark check for "Dozo"** (blocks launch; not done). Search the relevant registries and
       markets before public use. If it fails, the name lives in `dozo/brand/brand.json`, so a rename
       is a rule change.
-- [ ] **Billing and Stripe product names** (blocks launch if billing is on). Create our Stripe
-      products, prices and names. Upstream billing code is `apps/api/src/billing.ts`. Use env
-      configuration, never code edits.
-- [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids and signing are out of
-      phase 1. The `apps/desktop` and `apps/mobile` release workflows must stay disabled until then.
+- [ ] **Billing, OAuth and listing names** (blocks launch if the feature is on). Create our Stripe
+      products, prices and names (upstream billing code is `apps/api/src/billing.ts`; use env
+      configuration, never code edits). Set our names in OAuth consent screens, the Slack, Discord and
+      Telegram apps and the OpenRouter listing.
+- [ ] **Android build name** (blocks launch if the Android build is offered). Publish the APK as
+      `dozo.apk` under the release tag the download URL names.
+- [ ] **Third-party catalog branding** (decision). The xAI/Grok plugin catalog and import text name
+      other vendors, not Rakazo. Decide whether to keep them.
+- [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids (`com.rakazo.app` is
+      upstream's) and signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
+      workflows must stay disabled until then.
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope.
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's
       README text. Decide whether to keep them below our fork notice.

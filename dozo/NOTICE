@@ -14,16 +14,18 @@ licensed under the Apache License, Version 2.0.
 Notice of changes (Apache License 2.0, section 4(b))
 
 The git tree of this repository is the unmodified upstream source plus new
-files under dozo/ and two UI files in packages/ui-web/src (dozo.css and
-dozo-avatar.tsx), plus a fork notice at the top of the root README.md.
+files under dozo/, a root Makefile, .github/workflows/dozo-*.yml, new dozo-*
+source files inside apps/ and packages/, and a fork notice at the top of the
+root README.md.
 
 Distributed builds of Dozo (for example the published container images) are
 produced by applying the brand overlay in dozo/brand/ to a copy of that source
 immediately before the build. The overlay modifies user-visible strings, links
 and assets in the files that its tool lists (run dozo/brand/apply.mjs and see
-its output), and it changes no technical identifiers. Files modified this way
-carry this notice of change through this file. The unmodified source is the git
-tree.
+its output). It also renames a few persisted identifiers, listed in
+dozo/brand/README.md; every other technical identifier keeps its upstream
+name. Files modified this way carry this notice of change through this file.
+The unmodified source is the git tree.
 
 Dozo is not affiliated with or endorsed by the Rakazo project. No right to use
 the Rakazo name or marks is claimed.

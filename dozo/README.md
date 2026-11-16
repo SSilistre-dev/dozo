@@ -20,40 +20,53 @@ Branded output is never committed.
 
 | Path | What it is |
 | --- | --- |
-| `dozo/brand/` | The brand overlay: `brand.json` (rules, names, placeholders), `apply.mjs` (codemod), `check.mjs` (leak gate) |
-| `dozo/docker/` | Staging and image build, the compose ports override, the gate. See `dozo/docker/README.md` |
-| `dozo/theme/` | Theme tokens and assets for the Dozo look |
+| `dozo/brand/` | The brand overlay: `brand.json` (rules, names, placeholders), `apply.mjs` (codemod), `check.mjs` (leak gate). See `dozo/brand/README.md` |
+| `dozo/docker/` | Staging and image build, the compose ports override, the gates. See `dozo/docker/README.md` |
+| `dozo/e2e/` | Browser suite against the running stack. See `dozo/e2e/README.md` |
+| `dozo/theme/` | Theme tokens for the Dozo look |
 | `dozo/design/` | Design reference: the source of truth for how Dozo should look |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
 | `dozo/NOTICE` | Licence addendum and notice of changes |
 | `dozo/AGENTS.md` | Rules for agents and contributors in this fork |
 | `dozo/LAUNCH-CHECKLIST.md` | What the owner must decide or supply before going public |
-| `packages/ui-web/src/dozo.css` | Dozo styles, an in-package new file |
-| `packages/ui-web/src/dozo-avatar.tsx` | Dozo bot avatar component, an in-package new file |
-
-These two UI files live in `packages/ui-web/src/` because they must resolve inside that package. They
-are new files, so they do not conflict with upstream.
+| `dozo-*` files in `apps/` and `packages/` | Fork-only source (local models, the bot avatar). They sit inside upstream packages so they resolve there; they are new files, so they do not conflict with upstream |
 
 ## Build and run
 
-Nothing is installed on the host. Everything runs in Docker.
+Nothing is installed on the host (one exception: `dozo/AGENTS.md`). Node tooling runs in Docker.
 
-- Build and run the stack: see `dozo/docker/README.md`.
-- `make olc`: fast check, under 30 seconds. Run after every change.
-- `make qa`: full gate. Run before merging.
-- The gates exit with code 2 on failure.
+- `make up` builds and starts the stack; `make olc` is the fast check (run after every change);
+  `make qa` is the full gate (run before merging). Commands, variables, exit codes:
+  `dozo/docker/README.md`.
+- Gates exit with code 2 on failure.
+- `make olc` needs a local `upstream-main` branch; the first-time commands are in `dozo/SYNC.md`.
 
 ## Syncing with upstream
 
 Run `dozo/sync.sh` and follow `dozo/SYNC.md`. Branch `upstream-main` is pristine upstream and `main` is
-ours. Upstream's GitHub workflows are disabled in our repository; see `dozo/SYNC.md`.
+ours.
 
-## Deliberately not renamed
+## Identifiers
 
-Technical identifiers keep their upstream names so that merges and tooling keep working: the
-`@rakazo/*` packages, `RAKAZO_*` environment variables, database names, HTTP headers, storage keys,
-cookie names and the `rakazo://` URL scheme. Only user-visible strings, links and assets change, and
-only at build time.
+Technical identifiers keep their upstream names so that merges and tooling keep working; a few
+persisted ones are renamed on purpose. The list of both is in `dozo/brand/README.md` (Identifiers).
+
+## Status and known limits
+
+Accepted by the owner for now, stated here once:
+
+- Nothing is pushed to GitHub yet and upstream's workflows are not disabled (`dozo/SYNC.md`). Neither
+  `dozo-gate.yml` nor `dozo-sync.yml` has ever run on GitHub Actions.
+- `dozo-gate` runs only `make olc`, `stage`, `brand` and `unit`, never `build`, `up`, `smoke` or the
+  e2e suite. Its required status check is named after its job, `olc, brand leak gate and fork unit
+  tests` (it was `olc and brand leak gate`): branch protection must name the new one.
+- Interrupt handling (SIGINT, SIGTERM and cleanup in the scripts) is implemented but not rehearsed
+  against a real long run.
+- A local `make qa` stages uncommitted files while CI stages HEAD only (`dozo/docker/README.md`).
+- Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
+  500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
+  succeeds. It is upstream's ownership check. The e2e suite marks it as expected and fails the day it
+  stops happening.
 
 ## Licence and attribution
 

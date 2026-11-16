@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Stage -> brand -> build -> up -> down for the Dozo fork. Never modifies the working tree.
 # Usage: dozo/docker/build.sh [stage|brand|build|up|smoke|down|all] [--volumes]   (--volumes: down only)
-# Exit 0 ok, 2 failed (also a missing host tool), 64 usage.
+# No argument = all (stage, brand, build, up). Exit 0 ok, 2 failed (also a missing host tool and an
+# interrupt), 64 usage. Commands, variables and Docker objects: dozo/docker/README.md.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

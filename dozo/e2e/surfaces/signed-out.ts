@@ -105,6 +105,8 @@ export const signedOut: Surface[] = [
     name: "sso callback",
     group: "signed out",
     signedOut: true,
+    blankByDesign:
+      "SsoCallbackPage renders null: it relays the result to the opener and closes the window",
     covers: ["route:/sso/callback"],
     async reach({ page }) {
       await page.goto("/sso/callback", { waitUntil: "domcontentloaded" });

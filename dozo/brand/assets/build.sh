@@ -1,6 +1,7 @@
 #!/bin/sh
-# Regenerates every PNG/ICO from the SVG masters on the host: headless Brave (render.mjs, Node
-# built-ins only) + the Python 3 standard library. Nothing is installed; no Docker.
+# Regenerates every PNG/ICO from the SVG masters on the host: host node (render.mjs, built-ins only)
+# driving headless Brave, plus host python3 (standard library). Nothing is installed; no Docker.
+# This is the owner-accepted exception to the Docker-only rule in dozo/AGENTS.md.
 # Usage: dozo/brand/assets/build.sh   (set E2E_BROWSER_PATH for another Chromium-based browser)
 set -eu
 cd "$(dirname "$0")"
