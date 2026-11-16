@@ -206,7 +206,8 @@ run_gate() {
     say "NOTICE: make target '$1' not available (no Makefile or no such target), skipped"
   fi
 }
-run_gate olc
+# make qa starts with olc, so olc runs alone only for --fast or when there is no qa target.
+if [ "$FAST" = 1 ] || ! have_target qa; then run_gate olc; fi
 if [ "$GATE_FAIL" = 0 ]; then
   if [ "$FAST" = 1 ]; then say "--fast: make qa skipped"; else run_gate qa; fi
 fi

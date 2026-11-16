@@ -6,7 +6,7 @@
  *
  * Exit 0 when clean, 2 with a `path:line: match` list (first 50) plus a total otherwise.
  * `--launch` adds the checks that only matter before real users: placeholder domains and
- * repository owners, and the allow-listed upstream image names.
+ * repository owners, and the `allow.phrases` entries not marked `permanent: true` (upstream image names).
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -43,6 +43,12 @@ const needleRe = (() => {
   ];
   return parts.length ? new RegExp(parts.join("|"), "gi") : null;
 })();
+// The new brand followed by a public TLD is a domain the fork may not own (`Rakazo.com` renamed by
+// the blanket rule). Only the URL map's targets are ours; the placeholder `.example` is no public TLD.
+const TLDS = "com|net|org|io|ai|app|dev|co|xyz|me|cloud|info";
+const domainRe = new RegExp(`\\b${escapeRe(config.to)}\\.(?:${TLDS})\\b`, "gi");
+const ownDomains = Object.values(config.urls).map(escapeRe);
+const ownDomainRe = ownDomains.length ? new RegExp(ownDomains.join("|"), "gi") : null;
 // Phrases the gate ignores: what apply keeps on purpose plus the gate-only allow-list.
 const allowed = [...config.keep, ...config.allow.phrases].map((entry) => escapeRe(entry.text));
 const allowedRe = allowed.length ? new RegExp(allowed.join("|"), "g") : null;
@@ -63,7 +69,8 @@ const poRe = /\brakazo\b/g;
 
 // Placeholders and upstream images, checked with --launch only.
 const launchRe = /\bdozo\.example\b|\bOWNER\/dozo\b/g;
-const launchPhrases = config.allow.phrases.map((entry) => escapeRe(entry.text));
+// A `permanent` phrase (an HMAC input that can never be renamed) is never a launch blocker.
+const launchPhrases = config.allow.phrases.filter((entry) => !entry.permanent).map((entry) => escapeRe(entry.text));
 const launchPhraseRe = launchPhrases.length ? new RegExp(launchPhrases.join("|"), "g") : null;
 
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|avif|bmp|ico|icns|svg|woff2?|ttf|otf|mp4|webm|lottie|riv)$/i;
@@ -96,6 +103,8 @@ for (const rel of listFiles(root)) {
     for (const re of checks) {
       for (const match of re ? line.matchAll(re) : []) found.push(`${rel}:${i + 1}: ${match[0]}`);
     }
+    const own = ownDomainRe ? line.replace(ownDomainRe, (m) => " ".repeat(m.length)) : line;
+    for (const match of own.matchAll(domainRe)) found.push(`${rel}:${i + 1}: ${match[0]} (brand domain)`);
     // Readable lowercase/all-caps brand and social profile links (see VISIBLE_PATTERNS in lib.mjs).
     // One finding per line is enough; the first (most specific) pattern names it.
     for (const hit of visibleLeaks(line, { lowercaseOk: lowercaseAllowed }).slice(0, 1)) {

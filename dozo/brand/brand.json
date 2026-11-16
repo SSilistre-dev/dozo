@@ -133,7 +133,8 @@
       },
       {
         "text": ".update(\"rakazo rls bypass\")",
-        "reason": "HMAC input that derives the database row-security bypass key; never shown, changing it breaks the stored digest"
+        "reason": "HMAC input that derives the database row-security bypass key; never shown, changing it breaks the stored digest",
+        "permanent": true
       },
       {
         "text": "`rakazo space:${context.spaceId} bot:${request.botId}`",

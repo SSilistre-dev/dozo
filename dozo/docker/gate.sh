@@ -21,8 +21,10 @@ FAILS=()
 MIN_FORK_TESTS="${DOZO_MIN_FORK_TESTS:-3}"
 # Coverage floor (percent) for lines, branches and functions of the fork's own code.
 COV_MIN="${DOZO_COVERAGE_MIN:-90}"
-# Upstream files the fork may edit (one path per line): the marked block at the top of the README.
-ALLOWED_UPSTREAM_EDITS="README.md"
+# The one upstream file the fork may edit, and only inside the marked block at its top.
+README_FILE="README.md"
+README_START="<!-- dozo:fork-notice:start -->"
+README_END="<!-- dozo:fork-notice:end -->"
 fail() { FAILS+=("$1"); echo "[gate] FAIL: $1"; }
 now() { date +%s; }
 
@@ -45,6 +47,19 @@ coverage_misses() { # stdin = tool output
     NF >= 4 { for (i = 2; i < NF; i++) if ($i ~ /[0-9]/ && $i + 0 < min) { print; break } }'
 }
 
+# True when the root README, with the marked fork-notice block and the one blank line after it
+# removed, equals upstream's README at the merge base ($1). A missing end marker strips the rest of
+# the file, so it differs; a README that upstream does not have is ours.
+readme_outside_block() {
+  git cat-file -e "$1:$README_FILE" 2>/dev/null || return 0
+  awk -v s="$README_START" -v e="$README_END" '
+    $0 == s { skip = 1; next }
+    $0 == e { skip = 0; blank = 1; next }
+    skip { next }
+    blank && $0 == "" { blank = 0; next }
+    { blank = 0; print }' "$README_FILE" 2>/dev/null | cmp -s - <(git show "$1:$README_FILE")
+}
+
 olc() {
   local s out
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
@@ -53,7 +68,7 @@ olc() {
   while IFS= read -r s; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done \
     < <(find dozo -name '*.sh' -not -path 'dozo/.stage/*' -not -path '*/node_modules/*' | sort)
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' 2>/dev/null)
-  if [ "${#mjs[@]}" -eq 0 ]; then echo "[olc] no .mjs files, nothing to check with node"
+  if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
     docker run --rm -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
       && echo "[olc] node --check ${#mjs[@]} files ok" || fail "node --check"
@@ -64,7 +79,7 @@ olc() {
         --test-coverage-lines="$COV_MIN" --test-coverage-branches="$COV_MIN" --test-coverage-functions="$COV_MIN" dozo/brand/ 2>&1) \
         && echo "[olc] brand unit tests ok, coverage >= $COV_MIN%" \
         || { printf '%s\n' "$out"; printf '%s\n' "$out" | coverage_misses | sed 's/^/[olc] below floor: /'; fail "brand unit tests or coverage"; }
-    else echo "[olc] no brand tests, skipped"; fi
+    else fail "no brand tests under dozo/brand (a check that cannot run is a failure)"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`.
@@ -72,18 +87,23 @@ olc() {
       out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --root /r 2>&1) \
         && echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')" \
         || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
-    fi
+    else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
   fi
-  local files forkfiles bad
+  local files forkfiles bad base
   files=$(find dozo -type f -not -path 'dozo/.stage/*' | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
   echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles"
   # dozo/AGENTS.md: the fork edits no upstream file but the marked block of the root README.md. A
   # file upstream has that differs here (edited, deleted, retyped) is a failure; added files are ours.
+  # Compared with the merge base, not the tip of upstream-main: after an aborted sync or a daily
+  # sync on origin the ref is ahead, and everything upstream changed since would look like our edit.
   if git rev-parse --verify -q 'upstream-main^{commit}' >/dev/null; then
-    bad=$(git diff --name-only --no-renames --diff-filter=MDT upstream-main -- . ':!dozo' ':!Makefile' | grep -vxF "$ALLOWED_UPSTREAM_EDITS" || true)
-    if [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($(echo $ALLOWED_UPSTREAM_EDITS)): 0"
-    else printf '%s\n' "$bad" | sed 's/^/[olc] upstream file differs from upstream-main: /'; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
+    if base=$(git merge-base HEAD upstream-main 2>/dev/null) && [ -n "$base" ]; then
+      bad=$(git diff --name-only --no-renames --diff-filter=MDT "$base" -- . ':!dozo' ':!Makefile' | grep -vxF "$README_FILE" || true)
+      readme_outside_block "$base" || bad=$(printf '%s\n%s' "$bad" "$README_FILE (outside the fork-notice block)" | sed '/^$/d')
+      if [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE, notice block only): 0"
+      else printf '%s\n' "$bad" | sed 's/^/[olc] upstream file differs from the merge base with upstream-main: /'; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
+    else fail "no merge base between HEAD and upstream-main: the upstream-edit check cannot run"; fi
   else
     echo "[olc] upstream-main ref missing: the upstream-edit check was NOT run (create it: git branch upstream-main upstream/main)"
   fi

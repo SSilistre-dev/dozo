@@ -1,5 +1,6 @@
 # Dozo fork gates. Upstream has no root Makefile; this file is ours.
-# Until dozo/ is committed, staging overlays the working tree (override: DOZO_STAGE_WORKTREE=).
+# Staging overlays the uncommitted and untracked working tree on HEAD (override: DOZO_STAGE_WORKTREE=).
+# So a local `make qa` can pass where CI, which stages HEAD only, fails: commit before trusting it.
 export DOZO_STAGE_WORKTREE ?= 1
 .PHONY: olc qa up down stage
 olc:

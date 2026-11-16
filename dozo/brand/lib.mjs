@@ -136,7 +136,8 @@ export const urlRe = (key, flags = "g") =>
   new RegExp(escapeRe(key) + (/\w$/.test(key) ? "(?!\\w)" : ""), flags);
 
 /**
- * Rewrites one file's text: literals, URL map (longest key first), then the whole-word name.
+ * Rewrites one file's text: literals, URL map (longest key first, any capitalisation, the mapped
+ * target written exactly), then the whole-word name.
  * `rel` selects the literals that are limited to some files.
  */
 export function rewrite(text, config, counts, rel = "") {
@@ -153,7 +154,7 @@ export function rewrite(text, config, counts, rel = "") {
   }
   for (const key of Object.keys(config.urls).sort((a, b) => b.length - a.length)) {
     let n = 0;
-    text = text.replace(urlRe(key), () => (n++, config.urls[key]));
+    text = text.replace(urlRe(key, "gi"), () => (n++, config.urls[key]));
     bump(`url ${key}`, n);
   }
   const words = { [config.from]: config.to, ...config.variants };

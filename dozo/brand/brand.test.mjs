@@ -183,6 +183,30 @@ describe("url map", () => {
   });
 });
 
+describe("url map case", () => {
+  it("replaces a differently capitalised URL with the mapped target exactly", () => {
+    const root = tree({ "src/u.ts": '"https://Rakazo.com/x" "APP.RAKAZO.COM/y" "www.Rakazo.com"' });
+    const config = configFile();
+    assert.equal(apply(root, config).status, 0);
+    assert.equal(
+      read(root, "src/u.ts"),
+      '"https://dozo.example/x" "console.dozo.example/y" "www.dozo.example"',
+    );
+    assert.equal(check(root, config).status, 0);
+  });
+
+  it("the gate reports the new brand followed by a public TLD that no URL target owns", () => {
+    const config = configFile();
+    for (const text of ['u = "https://Dozo.com/x"', 'u = "app.dozo.io"', "see dozo.AI"]) {
+      const res = check(tree({ "src/a.ts": text }), config);
+      assert.equal(res.status, 2, text);
+      assert.match(res.stderr, /src\/a\.ts:1: .*\(brand domain\)/, text);
+    }
+    const clean = tree({ "src/a.ts": 'u = "dozo.example"; v = "console.dozo.example/x"; w = "Dozo.computer"' });
+    assert.equal(check(clean, config).status, 0);
+  });
+});
+
 describe("anchored rules", () => {
   const rule = (find, replace = "Y") => ({ file: "src/a.ts", find, replace, reason: "test" });
 
@@ -586,15 +610,11 @@ describe("readable old brand the codemod leaves alone", () => {
     "/* rakazo is a name here */",
   ];
   it("leaves deliberate identifiers alone", () => {
+    // The gate judges line by line and names the line, so one file holds them all.
     const root = tree({ "src/a.tsx": identifiers.join("\n") });
     const res = check(root, configFile());
     assert.equal(res.status, 0, res.stderr);
   });
-  for (const [i, line] of identifiers.entries()) {
-    it(`identifier ${i} is not flagged alone`, () => {
-      assert.equal(check(tree({ "src/a.tsx": line }), configFile()).status, 0, line);
-    });
-  }
 
   it("lowercase patterns skip files reviewed in allow.lowercase; all-caps and links do not", () => {
     const config = configFile({
@@ -683,6 +703,69 @@ describe("launch gate", () => {
     const res = run("check.mjs", root, config, "--launch");
     assert.equal(res.status, 2);
     assert.match(res.stderr, /launch placeholder/);
+  });
+});
+
+describe("launch gate permanent phrases", () => {
+  it("--launch skips an allow.phrases entry marked permanent and flags the rest", () => {
+    const allow = {
+      files: [],
+      phrases: [
+        { text: "ghcr.io/elie222/rakazo", reason: "image" },
+        { text: 'update("rakazo rls bypass")', reason: "hash input", permanent: true },
+      ],
+    };
+    const config = configFile({ allow });
+    const root = tree({ "src/a.ts": 'h.update("rakazo rls bypass");' });
+    assert.equal(run("check.mjs", root, config, "--launch").status, 0);
+    const res = run("check.mjs", tree({ "src/b.ts": "i = ghcr.io/elie222/rakazo" }), config, "--launch");
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /src\/b\.ts:1: ghcr\.io\/elie222\/rakazo \(launch placeholder\)/);
+  });
+});
+
+describe("loadConfig validation", () => {
+  const bad = (raw) => {
+    const file = path.join(tempDir(), "brand.json");
+    fs.writeFileSync(file, typeof raw === "string" ? raw : JSON.stringify(raw));
+    return check(tree({ "src/a.ts": "x" }), file);
+  };
+  const base = { from: "Rakazo", to: "Dozo", include: ["src/**"] };
+  const rejects = (raw, pattern) => {
+    const res = bad(raw);
+    assert.equal(res.status, 2, res.stdout);
+    assert.match(res.stderr, pattern);
+  };
+
+  it("rejects unreadable or malformed JSON, a missing from or to, and an empty include", () => {
+    rejects("{not json", /cannot read config/);
+    rejects({ ...base, from: undefined }, /needs `from` and `to`/);
+    rejects({ ...base, to: undefined }, /needs `from` and `to`/);
+    rejects({ ...base, include: [] }, /`include` is empty/);
+    rejects({ from: "Rakazo", to: "Dozo" }, /`include` is empty/);
+  });
+
+  const entry = { glob: "x/**" };
+  const lists = {
+    exclude: { exclude: [entry] },
+    keep: { keep: [{ text: "x" }] },
+    "allow.files": { allow: { files: [entry] } },
+    "allow.phrases": { allow: { phrases: [{ text: "x" }] } },
+    "allow.lowercase": { allow: { lowercase: [entry] } },
+    "allow.images": { allow: { images: [entry] } },
+    literals: { literals: [{ find: "a", replace: "b" }] },
+  };
+  for (const [name, extra] of Object.entries(lists)) {
+    it(`rejects a ${name} entry without a reason`, () => {
+      rejects({ ...base, ...extra }, new RegExp(`every ${name.replace(".", "\\.")} entry needs a reason`));
+    });
+  }
+
+  it("rejects a literal without find or replace, and accepts an empty replace", () => {
+    rejects({ ...base, literals: [{ find: "a", reason: "r" }] }, /literal needs find and replace/);
+    rejects({ ...base, literals: [{ replace: "b", reason: "r" }] }, /literal needs find and replace/);
+    const ok = bad({ ...base, literals: [{ find: "a", replace: "", reason: "r" }] });
+    assert.equal(ok.status, 0, ok.stderr);
   });
 });
 

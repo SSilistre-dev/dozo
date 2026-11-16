@@ -5,8 +5,9 @@ copy, so merging upstream never conflicts with branding and the working tree is 
 
 ## Flow
 1. `stage`: `git archive HEAD` (no `.git`) into `dozo/.stage/src`. `DOZO_STAGE_WORKTREE=1` also
-   overlays uncommitted and untracked-but-not-ignored files (needed until `dozo/` is committed;
-   the Makefile sets it by default). `DOZO_STAGE_REF=<ref>` picks another ref.
+   overlays uncommitted and untracked-but-not-ignored files (the Makefile sets it by default so
+   orchestration can test uncommitted work). Because of that overlay a local `make qa` can pass where CI, which
+   stages HEAD only, fails: commit before trusting a local pass. `DOZO_STAGE_REF=<ref>` picks another ref.
 2. `brand`: in `node:24-slim`, `dozo/brand/apply.mjs --root <stage>` then the leak gate
    `dozo/brand/check.mjs`. Exit 2 on either failure. If the tool is missing the step fails with
    "brand tool missing"; `DOZO_SKIP_BRAND=1` skips it (unbranded, pipeline testing only).
@@ -27,7 +28,7 @@ copy, so merging upstream never conflicts with branding and the working tree is 
    about 5 s. Remove it with `docker volume rm dozo-qa-deps` to start cold. Nothing is written to the host.
    Exit 2 when a test fails, a file is under the floor (the file and number are printed), or fewer
    than `DOZO_MIN_FORK_TESTS` (default 3) files are found. `make olc` never installs; it runs
-   `node --check` and the brand tests (same 90% floor, global, with Node's built-in coverage), then checks every anchored brand rule against the repository tree (`apply.mjs --check`, writes nothing) and that no upstream file but `README.md` differs from `upstream-main` in the same image
+   `node --check` and the brand tests (same 90% floor, global, with Node's built-in coverage), then checks every anchored brand rule against the repository tree (`apply.mjs --check`, writes nothing) and that no upstream file differs from the merge base with `upstream-main` (not its tip, which may be ahead after a sync) except the marked notice block of `README.md`, in the same image. A step that cannot run (no `.mjs` files, no brand tests, no `apply.mjs`, no merge base) fails; it is never skipped
    and fails, never skips, when the image is missing: in CI (`CI` set) it pulls it, locally it says
    `docker pull node:24-slim`.
 

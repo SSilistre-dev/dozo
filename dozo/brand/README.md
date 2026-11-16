@@ -21,7 +21,7 @@ All commands take `--config <file>` (default `dozo/brand/brand.json`). Failures 
   On failure nothing is written.
 - `apply.mjs --root <dir> --check` same validation and summary, writes nothing.
 - `check.mjs --root <dir> [--launch]` leak gate; `--launch` also fails on placeholders
-  (`dozo.example`, `OWNER/dozo`) and the allow-listed upstream image names. Exit 0 clean; exit 2 with `path:line: match` (first 50 plus
+  (`dozo.example`, `OWNER/dozo`) and the `allow.phrases` entries not marked `"permanent": true` (upstream image names; a permanent one, such as an HMAC input, is never flagged). Exit 0 clean; exit 2 with `path:line: match` (first 50 plus
   a total).
 - Tests: `node --test dozo/brand/` (`index.js` makes the directory form work on Node 24).
 
@@ -64,7 +64,9 @@ case-sensitive whole words, e.g. the upstream founder's name), `anchored`, `asse
 ## Leak gate
 
 In the same file set as apply, it flags `\bRakazo\b` (and variants), every `urls` key and every
-`leak` substring (`rakazo.com`, `elie222/rakazo`, case-insensitive). It ignores `keep` and
+`leak` substring (`rakazo.com`, `elie222/rakazo`, case-insensitive); `urls` keys are also replaced
+case-insensitively. It reports the new name followed by a public TLD (`Dozo.com`) unless a `urls`
+target owns it. It ignores `keep` and
 `allow.phrases` text and `allow.files` globs. Strict by default: an unknown occurrence fails, which
 catches new upstream strings after each sync. Fix by extending the rules, never by loosening the gate.
 

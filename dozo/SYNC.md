@@ -7,7 +7,7 @@
 - `sync/upstream-<sha>`: short-lived branch where `upstream-main` is merged into `main` for review.
 - Committed: only new files (`dozo/**`, `Makefile`, `.github/workflows/dozo-*.yml`, our UI files).
   No upstream file is edited. Fork health = number of upstream files that differ from
-  `upstream-main` outside our paths and outside the one allowed edit (the marked block of the root
+  the merge base with `upstream-main` outside our paths and outside the one allowed edit (the marked block of the root
   `README.md`); `make olc` fails when it is not 0.
 - Fork-only files inside upstream directories are named `dozo-*` (under `apps/` and `packages/`).
   They count as ours: `sync.sh` leaves them out of fork health, lists how many there are in its
@@ -24,7 +24,7 @@
 1. `dozo/sync.sh --dry-run` shows range, commit count, predicted conflicts, fork health. Changes nothing.
 2. `dozo/sync.sh` (clean tree required; `--fast` runs only `make olc`). It fast-forwards
    `upstream-main`, creates `sync/upstream-<sha>` from `main`, merges with a merge commit, runs
-   `make olc` then `make qa`. It never pushes and never touches `main`.
+   `make qa` (its first step is `make olc`). It never pushes and never touches `main`.
 3. Review the branch, push it, open a PR into `main` (`dozo-gate` runs on it), merge with a merge
    commit. Never squash or rebase: that would re-apply upstream's commits as new ones.
 4. CI does the same daily: `.github/workflows/dozo-sync.yml`. It needs the secret `DOZO_SYNC_TOKEN`
