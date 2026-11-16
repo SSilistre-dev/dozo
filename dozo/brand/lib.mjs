@@ -101,8 +101,11 @@ export function globToRegExp(glob) {
 // top of a staged tree, and a staged copy sitting inside a repository root.
 const RUNTIME_DIRS = new Set(["data", "dozo/.stage"]);
 
-/** Regular files under root as posix relative paths; never descends into .git, node_modules or RUNTIME_DIRS. */
-export function listFiles(root) {
+/**
+ * Regular files under root as posix relative paths; never descends into .git, node_modules or
+ * RUNTIME_DIRS. Symlinks are neither read nor rewritten: pass `links` to collect their paths.
+ */
+export function listFiles(root, links = []) {
   const out = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
@@ -110,6 +113,7 @@ export function listFiles(root) {
       const rel = dir ? `${dir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) { if (!RUNTIME_DIRS.has(rel)) walk(rel); }
       else if (entry.isFile()) out.push(rel);
+      else if (entry.isSymbolicLink()) links.push(rel);
     }
   };
   walk("");

@@ -2,7 +2,11 @@
 /**
  * Applies the Dozo brand to a staged copy of the source tree.
  *
- *   node dozo/brand/apply.mjs --root <dir> [--check] [--allow-git] [--config <file>]
+ *   node dozo/brand/apply.mjs --root <dir> [--check] [--allow-git] [--strict] [--config <file>]
+ *
+ * --strict is for a tree no rule has touched yet (a fresh stage, the committed tree): a rule that
+ * counts as "already applied" there is upstream drift hiding behind a short `replace`, so it fails.
+ * Without it a re-run on an already rewritten tree is a no-op.
  *
  * Exit 0 on success, 2 on any failure (anchored rule not matching exactly once (or already applied),
  * a rule whose `requires` file is missing, missing asset,
@@ -21,8 +25,8 @@ import {
   rewrite,
 } from "./lib.mjs";
 
-const args = parseArgs(process.argv.slice(2), ["check", "allow-git"]);
-if (!args.root) fail("usage: apply.mjs --root <dir> [--check] [--allow-git] [--config <file>]");
+const args = parseArgs(process.argv.slice(2), ["check", "allow-git", "strict"]);
+if (!args.root) fail("usage: apply.mjs --root <dir> [--check] [--allow-git] [--strict] [--config <file>]");
 const root = path.resolve(args.root);
 if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail(`${root} is not a directory`);
 if (fs.existsSync(path.join(root, ".git")) && !args["allow-git"]) {
@@ -94,6 +98,11 @@ for (const rel of files) {
     // Already applied: replace is there and no find is left outside it (replace may contain find).
     const leftover = text.split(rule.replace).join("").split(rule.find).length - 1;
     if (text.includes(rule.replace) && leftover === 0) {
+      if (args.strict) {
+        errors.push(
+          `anchored rule (${rule.reason}): ${rel} already applied (find is gone, replace is present) on a tree that should be fresh: upstream drifted, or the tree was branded before (re-stage)`,
+        );
+      }
       anchoredAlready++;
     } else if (hits === 1 && !text.includes(rule.replace)) {
       text = text.replace(rule.find, () => rule.replace);

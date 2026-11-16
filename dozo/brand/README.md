@@ -20,7 +20,12 @@ All commands take `--config <file>` (default `dozo/brand/brand.json`). Failures 
   match exactly once, an asset is missing, or `<dir>` has a `.git` and `--allow-git` is not given.
   On failure nothing is written.
 - `apply.mjs --root <dir> --check` same validation and summary, writes nothing.
-- `check.mjs --root <dir> [--launch]` leak gate; `--launch` also fails on placeholders
+- `apply.mjs ... --strict` for a tree no rule has touched (a fresh stage; `make olc` on the committed
+  tree): a rule that counts as already applied fails, because there it can only be upstream drift
+  hiding behind a short `replace`. `build.sh brand` and `make olc` pass it. Without it a re-run on a
+  rewritten tree is a no-op; that lenient path is only for running `apply.mjs` by hand twice.
+- `check.mjs --root <dir> [--launch]` leak gate (it also fails on a symlink whose target is outside
+  the tree or cannot be resolved, which would go unscanned); `--launch` also fails on placeholders
   (`dozo.example`, `OWNER/dozo`) and the `allow.phrases` entries not marked `"permanent": true` (upstream image names; a permanent one, such as an HMAC input, is never flagged). Exit 0 clean; exit 2 with `path:line: match` (first 50 plus
   a total).
 - Tests: `node --test dozo/brand/` (`index.js` makes the directory form work on Node 24).

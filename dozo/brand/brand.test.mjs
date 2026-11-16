@@ -233,6 +233,28 @@ describe("anchored rules", () => {
     assert.match(second.stdout, /anchored 0 applied, 1 already applied/);
   });
 
+  it("--strict fails on an already applied rule; a fresh tree passes", () => {
+    const config = configFile({ anchored: [rule("B", "Dozo mark")] });
+    const fresh = tree({ "src/a.ts": "A B" });
+    const first = apply(fresh, config, "--strict");
+    assert.equal(first.status, 0, first.stderr);
+    assert.match(first.stdout, /anchored 1 applied, 0 already applied/);
+    const again = apply(fresh, config, "--strict");
+    assert.equal(again.status, 2, again.stderr);
+    assert.match(again.stderr, /already applied/);
+    assert.equal(read(fresh, "src/a.ts"), "A Dozo mark", "nothing is written on failure");
+  });
+
+  it("a short replace elsewhere in the file hides drift without --strict, not with it", () => {
+    const config = configFile({ anchored: [{ ...rule("B", "undefined,"), reason: "drift" }] });
+    const drifted = tree({ "src/a.ts": "x = undefined, y" });
+    assert.equal(apply(drifted, config).status, 0, "lenient: counted as already applied");
+    const strict = apply(drifted, config, "--strict");
+    assert.equal(strict.status, 2);
+    assert.match(strict.stderr, /drift/);
+    assert.match(strict.stderr, /already applied/);
+  });
+
   it("is a no-op the second time when replace contains find", () => {
     const root = tree({ "src/a.ts": "A B" });
     const config = configFile({ anchored: [rule("B", "B+Dozo")] });
@@ -781,7 +803,7 @@ describe("shipped anchored rules", () => {
     const config = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));
     for (const rule of config.anchored.filter((r) => r.requires)) {
       const file = path.join(repo, rule.file);
-      if (!fs.existsSync(file)) continue; // dozo/ checked out without upstream
+      assert.ok(fs.existsSync(file), `${rule.file}: the file of a shipped redirect rule is missing`);
       assert.equal(read(repo, rule.file).split(rule.find).length - 1, 1, rule.file);
     }
   });
@@ -829,7 +851,10 @@ describe("command line entry", () => {
     assert.match(applied.stderr, /rule failure/);
     const checked = bare("check.mjs", "--root", root);
     assert.equal(checked.status, 2);
-    assert.match(checked.stderr, /mapped asset missing from the tree/);
+    const shipped = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));
+    const [dest] = Object.keys(shipped.assets);
+    assert.ok(dest, "the shipped config maps at least one asset");
+    assert.ok(checked.stderr.includes(`${dest}: mapped asset missing from the tree`), checked.stderr);
   });
 });
 
@@ -853,6 +878,26 @@ describe("apply rejects incomplete anchored rules", () => {
     const res = apply(root, configFile({ anchored: [{ ...complete, file: "src/img.bin" }] }));
     assert.equal(res.status, 2);
     assert.match(res.stderr, /src\/img\.bin is binary/);
+  });
+});
+
+describe("leak gate and symlinks", () => {
+  const config = () => configFile();
+  it("passes a symlink whose target is inside the tree", () => {
+    const root = tree({ "src/a.ts": "Dozo" });
+    fs.symlinkSync("a.ts", path.join(root, "src/b.ts"));
+    const res = check(root, config());
+    assert.equal(res.status, 0, res.stderr);
+  });
+  it("fails on a symlink pointing outside the tree, and on a dangling one", () => {
+    const outside = tree({ "secret.ts": "Rakazo" });
+    const root = tree({ "src/a.ts": "Dozo" });
+    fs.symlinkSync(path.join(outside, "secret.ts"), path.join(root, "src/out.ts"));
+    fs.symlinkSync("nowhere.ts", path.join(root, "src/dangling.ts"));
+    const res = check(root, config());
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /src\/out\.ts: symlink/);
+    assert.match(res.stderr, /src\/dangling\.ts: symlink/);
   });
 });
 

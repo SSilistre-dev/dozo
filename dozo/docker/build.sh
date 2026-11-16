@@ -34,15 +34,20 @@ dc() { # docker compose from inside the staged copy, upstream compose file untou
 
 need_stage() { [ -f "$SRC/$COMPOSE_REL" ] || die "no staged tree at $SRC; run: dozo/docker/build.sh stage"; }
 
-# Overlay uncommitted and untracked-but-not-ignored files onto $1. A tracked file deleted in the
-# working tree is the one benign case (rsync would exit 23 on it), so it is dropped from the list
-# up front and any rsync failure is real. git archive already put those files in the copy, so they
-# are removed again: the gate must test the tree as it is, not files the working tree no longer has.
+# Overlay uncommitted and untracked-but-not-ignored files onto $1 (the copy of ref $2). A tracked
+# file deleted in the working tree is the one benign case (rsync would exit 23 on it), so it is
+# dropped from the list up front and any rsync failure is real. git archive already put those files
+# in the copy, so they are removed again: the gate must test the tree as it is, not files the
+# working tree no longer has. The deleted paths come from a diff of the ref against the working
+# tree: unlike `git ls-files --deleted` (index entries missing on disk) it also names a staged
+# deletion or rename, and --no-renames turns a rename into delete + add, so the old path goes and
+# the new one (in the index, hence copied above) stays. A path that exists on disk is never removed.
 overlay_worktree() {
   (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
     | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; fi; done \
     | rsync -a --from0 --files-from=- ./ "$1/") || die "worktree overlay failed"
-  (cd "$ROOT" && git ls-files -z --deleted | while IFS= read -r -d '' f; do rm -f "$1/$f"; done) \
+  (cd "$ROOT" && git diff --name-only --no-renames --diff-filter=D -z "$2" -- \
+    | while IFS= read -r -d '' f; do if [ ! -e "$f" ] && [ ! -L "$f" ]; then rm -f "$1/$f"; fi; done) \
     || die "removing deleted files from the staged copy failed"
 }
 
@@ -56,7 +61,7 @@ stage() {
   # Build the new tree on the side: a failure up to here leaves the old tree and its data untouched.
   rm -rf "$new"; mkdir -p "$new"
   (cd "$ROOT" && git archive "$ref") | tar -x -C "$new"
-  [ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || overlay_worktree "$new"
+  [ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || overlay_worktree "$new" "$ref"
   rm -rf "$new/.git"
   [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
   # Swap in by contents, never moving data/ (the compose bind mount holding the app data).
@@ -75,7 +80,7 @@ brand() {
     [ -f "$ROOT/dozo/brand/$f.mjs" ] || die "brand tool missing (dozo/brand/$f.mjs); set DOZO_SKIP_BRAND=1 to run unbranded for pipeline testing" 2
   done
   say "brand: apply.mjs"
-  node_run /dozo/brand/apply.mjs --root /w || die "apply.mjs failed (rule failure or error)" 2
+  node_run /dozo/brand/apply.mjs --root /w --strict || die "apply.mjs failed (rule failure or error)" 2
   say "brand: leak gate check.mjs"
   node_run /dozo/brand/check.mjs --root /w || die "leak gate found leaks" 2
   say "brand: ok, leak gate clean"
@@ -90,20 +95,32 @@ setenv() { # setenv KEY VALUE (replace or append, no value echoed)
   else echo "$1=$2" >> "$ENVF"; fi
 }
 
+SECRET_KEYS="POSTGRES_PASSWORD POSTGRES_APP_PASSWORD BETTER_AUTH_SECRET ENCRYPTION_KEY SCREEN_PROXY_SECRET SANDBOX_SUPERVISOR_TOKEN"
+
+# rand_hex BYTES VAR: a random hex string into VAR. A command substitution inside echo would hide an
+# openssl failure from set -e and leave an empty secret, so it is assigned and checked here.
+rand_hex() {
+  local v; v="$(openssl rand -hex "$1" 2>/dev/null)" || v=""
+  [ -n "$v" ] || die "cannot generate a random secret: 'openssl rand' is missing or failed; install openssl and run again (no env file was written)" 2
+  printf -v "$2" '%s' "$v"
+}
+
 genenv() {
   mkdir -p "$STAGE"
   if [ ! -f "$ENVF" ]; then
     say "env: generating dozo/.stage/dozo.env (random secrets, not printed)"
+    local pg pga ba ek sp st
+    rand_hex 16 pg; rand_hex 16 pga; rand_hex 32 ba; rand_hex 32 ek; rand_hex 32 sp; rand_hex 32 st
+    # Written whole into a temp file and moved in, so an interrupted run leaves no half-written file.
     ( umask 077
-      {
-        echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
-        echo "POSTGRES_APP_PASSWORD=$(openssl rand -hex 16)"
-        echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)"
-        echo "ENCRYPTION_KEY=$(openssl rand -hex 32)"
-        echo "SCREEN_PROXY_SECRET=$(openssl rand -hex 32)"
-        echo "SANDBOX_SUPERVISOR_TOKEN=$(openssl rand -hex 32)"
-        echo "RAKAZO_WEB_BIND=127.0.0.1"
-      } > "$ENVF" )
+      printf '%s\n' "POSTGRES_PASSWORD=$pg" "POSTGRES_APP_PASSWORD=$pga" "BETTER_AUTH_SECRET=$ba" \
+        "ENCRYPTION_KEY=$ek" "SCREEN_PROXY_SECRET=$sp" "SANDBOX_SUPERVISOR_TOKEN=$st" \
+        "RAKAZO_WEB_BIND=127.0.0.1" > "$ENVF.new" && mv "$ENVF.new" "$ENVF" ) || die "cannot write $ENVF"
+  else
+    # By key only: the value is tested for being non-empty and never read out.
+    local k bad=""
+    for k in $SECRET_KEYS; do grep -q "^$k=." "$ENVF" || bad="$bad $k"; done
+    [ -z "$bad" ] || die "$ENVF has an empty or missing secret:$bad. An older run without openssl wrote it. If the database volume is new or disposable: build.sh down --volumes && rm that file, then run again; otherwise set those keys by hand" 2
   fi
   # Our stack binds to 127.0.0.1 on the user's own machine, so private model endpoints (a local
   # OpenAI-compatible server) are allowed. Reaches api and worker through upstream's x-app-environment.
@@ -124,9 +141,9 @@ genenv() {
 
 build() {
   STEP=build; need_stage; genenv
-  say "build: computer sandbox image (from compose service 'computer', same as sandbox:build)"
-  COMPOSE_PARALLEL_LIMIT=1 dc build computer
-  say "build: app images, one at a time (Docker VM memory is limited)"
+  # 'computer' (the sandbox image, what sandbox:build builds) is a compose service like the rest: a
+  # separate first pass only repeated it as a cache hit.
+  say "build: all images, one at a time (Docker VM memory is limited)"
   COMPOSE_PARALLEL_LIMIT=1 dc build
   say "build: ok"
   dc config --images | sort -u | sed 's/^/[dozo] image: /'

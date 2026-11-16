@@ -9,6 +9,7 @@ Upstream's own web e2e (`apps/web/e2e`) is left to CI and is not touched or run 
 ```
 make up        # stack must answer 200 at DOZO_E2E_BASE_URL (default http://127.0.0.1:$DOZO_WEB_PORT, else 5173)
 make e2e       # exit 0 pass, 2 on any failure, unreachable stack or zero tests run
+               # a second run while one is in progress is refused (exit 2)
 ```
 Needs only Docker and curl; nothing is installed on the host. `run.sh`:
 1. starts `model-stub.mjs` (below) in a throwaway `node:24-slim` container on the stack's network;
@@ -50,7 +51,8 @@ literal (the app refuses a hostname that resolves to a private address).
   (inventory keys) and `reach(ctx)`; `ctx.scan(label)` scans the current state. `once` runs it in
   the light theme only (it creates data). `expect5xx` lists server errors a surface is expected to
   meet, each with its reason; `mustOccur` fails the surface the day the defect is gone.
-- `scan.ts`: what is scanned for `rakazo|getrakazo|elie222` and the upstream store and chat links:
+- `scan.ts`: what is scanned for `rakazo`, `getrakazo`, `elie222` and the upstream store and chat
+  identifiers `RWwKa2Sn7h` and `id6801531099` (any capitalisation):
   document title, visible text, hidden text, `alt`, `title`, `aria-label`, `placeholder`, `href`,
   `src`, meta tags, input values, and text recorded while the test ran: toasts, dialogs, menus,
   tooltips, strings written to the clipboard, URLs passed to `window.open`, and downloaded files

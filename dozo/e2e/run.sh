@@ -20,8 +20,17 @@ case "$WEBPORT" in ''|*[!0-9]*) WEBPORT=5173 ;; esac
 BASE="${DOZO_E2E_BASE_URL:-http://127.0.0.1:$WEBPORT}"
 NAME="dozo-pw-e2e"
 MODEL="dozo-e2e-model"
+NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
 
 say() { printf 'e2e: %s\n' "$*" >&2; }
+
+command -v docker >/dev/null || { say "docker not found"; exit 2; }
+# The container names, the output directory and the saved session are shared: a second run would
+# kill the first one's model stub, so refuse instead. Checked before the cleanup trap exists, which
+# would otherwise remove the running one's containers on this early exit.
+if [ -n "$(docker ps -q --filter "name=^${NAME}$" --filter "name=^${MODEL}$" 2>/dev/null)" ]; then
+  say "another e2e run is in progress (container $NAME or $MODEL is running); wait for it to finish"; exit 2
+fi
 
 cleanup() {
   docker rm -f "$NAME" "$MODEL" >/dev/null 2>&1 || true
@@ -43,7 +52,6 @@ IMAGE="mcr.microsoft.com/playwright:v${VERSION}-noble"
 WEBSRC="$STAGE/src/apps/web/src"
 [ -f "$WEBSRC/App.tsx" ] || { say "no staged tree at $STAGE/src (apps/web/src/App.tsx missing); start the stack with: make up"; exit 2; }
 
-command -v docker >/dev/null || { say "docker not found"; exit 2; }
 code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$BASE/" || true)"
 [ "$code" = 200 ] || { say "stack not reachable at $BASE (HTTP ${code:-none}); start it with: make up"; exit 2; }
 
@@ -57,8 +65,8 @@ find "$OUT" -mindepth 1 -delete
 NETWORK="$(docker inspect dozo-api-1 --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' 2>/dev/null | awk '{print $1}')"
 [ -n "$NETWORK" ] || { say "container dozo-api-1 not found; start the stack with: make up"; exit 2; }
 docker rm -f "$MODEL" >/dev/null 2>&1 || true
-docker run -d --name "$MODEL" --network "$NETWORK" -e PORT=8787 -v "$HERE:/stub:ro" node:24-slim node /stub/model-stub.mjs >/dev/null \
-  || { say "could not start the model stub (is node:24-slim pulled? docker pull node:24-slim)"; exit 2; }
+docker run -d --name "$MODEL" --network "$NETWORK" -e PORT=8787 -v "$HERE:/stub:ro" "$NODE_IMAGE" node /stub/model-stub.mjs >/dev/null \
+  || { say "could not start the model stub (is $NODE_IMAGE pulled? docker pull $NODE_IMAGE)"; exit 2; }
 MODEL_IP="$(docker inspect "$MODEL" --format "{{(index .NetworkSettings.Networks \"$NETWORK\").IPAddress}}")"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   docker exec dozo-api-1 node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" 2>/dev/null && break
@@ -73,7 +81,7 @@ say "offline model: http://$MODEL_IP:8787/v1 on network $NETWORK"
 CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
 if ! docker volume inspect dozo-e2e-npm >/dev/null 2>&1; then
   docker volume create dozo-e2e-npm >/dev/null 2>&1 \
-    && docker run --rm -v dozo-e2e-npm:/npm node:24-slim chmod 777 /npm >/dev/null 2>&1 || CACHE=()
+    && docker run --rm -v dozo-e2e-npm:/npm "$NODE_IMAGE" chmod 777 /npm >/dev/null 2>&1 || CACHE=()
 fi
 REUSE=()
 if [ -n "${DOZO_E2E_REUSE_DIR:-}" ]; then REUSE=(-v "$DOZO_E2E_REUSE_DIR:/reuse:ro" -e DOZO_E2E_REUSE_DIR=/reuse); fi

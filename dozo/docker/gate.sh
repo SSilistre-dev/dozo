@@ -16,6 +16,7 @@ case "$STAGE" in /*) ;; *) STAGE="$PWD0/${STAGE#./}" ;; esac
 export DOZO_STAGE_DIR="$STAGE"
 LOGS="$STAGE/logs"
 FAILS=()
+PARTIAL=""
 # Fork-owned tests live inside upstream dirs as dozo-*.test.ts(x). Fewer than this after the
 # local-model feature (fit, catalog, page) means tests went missing: a silent pass is a failure.
 MIN_FORK_TESTS="${DOZO_MIN_FORK_TESTS:-3}"
@@ -67,7 +68,7 @@ olc() {
   # is not in the image): Playwright compiles them when `make e2e` runs.
   while IFS= read -r s; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done \
     < <(find dozo -name '*.sh' -not -path 'dozo/.stage/*' -not -path '*/node_modules/*' | sort)
-  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' 2>/dev/null)
+  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' -not -path '*/node_modules/*' 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
     docker run --rm -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
@@ -82,9 +83,10 @@ olc() {
     else fail "no brand tests under dozo/brand (a check that cannot run is a failure)"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
-    # renamed wrapper fails here and not only at `make qa`.
+    # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
+    # unbranded, so no rule can already be applied (that would be drift hidden by a short replace).
     if [ -f dozo/brand/apply.mjs ]; then
-      out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --root /r 2>&1) \
+      out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --strict --root /r 2>&1) \
         && echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')" \
         || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
@@ -257,7 +259,11 @@ qa() {
   [ -z "$(docker ps -q --filter label=com.docker.compose.project=dozo --filter status=running 2>/dev/null)" ] || was_up=1
   export DOZO_STOP_TIMEOUT="${DOZO_STOP_TIMEOUT:-60}"
   [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
-  for st in ${DOZO_QA_STEPS:-olc stage brand unit build up smoke}; do
+  # A subset of the steps, or an unbranded build, is not the full gate: the verdict line says so.
+  local all="olc stage brand unit build up smoke" steps="${DOZO_QA_STEPS:-olc stage brand unit build up smoke}"
+  [ "$(echo $steps)" = "$all" ] || PARTIAL="steps: $(echo $steps)"
+  [ "${DOZO_SKIP_BRAND:-}" != 1 ] || PARTIAL="${PARTIAL:+$PARTIAL; }brand skipped (DOZO_SKIP_BRAND=1)"
+  for st in $steps; do
     if [ "$st" = up ]; then reached_up=1; [ "$was_up" -eq 1 ] || QA_OWNS_STACK=1; fi
     case "$st" in
       olc|unit) run_step "$st" "$SELF" "$st" ;;
@@ -276,5 +282,5 @@ case "${1:-}" in
   *) echo "usage: $0 olc|qa|unit" >&2; exit 64 ;;
 esac
 SECS="${QA_SECS:-$(( $(now) - T0 ))}"
-if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS in ${SECS}s"
+if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS${PARTIAL:+ (partial: $PARTIAL)} in ${SECS}s"
 else echo "$V: FAIL ($(IFS=,; echo "${FAILS[*]}")) in ${SECS}s"; exit 2; fi
