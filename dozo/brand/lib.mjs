@@ -47,7 +47,7 @@ const ENTRY_FIELDS = {
   "allow.phrases": ["text", "files"],
   "allow.text": ["file", "text"],
   "allow.paths": ["glob"],
-  "allow.images": ["glob"],
+  "allow.binary": ["glob"],
   literals: ["find", "replace"],
 };
 const ANCHORED_FIELDS = "anchored rule needs file, find, replace and reason";
@@ -67,6 +67,7 @@ export function loadConfig(file = DEFAULT_CONFIG) {
   need(!raw.to.includes(raw.from), "`to` must not contain `from`, a re-run would rename again");
   const allow = raw.allow ?? {};
   need(isObject(allow), "`allow` must be an object");
+  need(allow.images === undefined, "`allow.images` was renamed `allow.binary` (it covers fonts, media and documents as well as images): rename the key");
   for (const key of Object.keys(allow)) need(Object.keys(ENTRY_FIELDS).includes(`allow.${key}`), `unknown key allow.${key}`);
 
   const maps = {};
@@ -98,6 +99,8 @@ export function loadConfig(file = DEFAULT_CONFIG) {
         else if (field === "replace") need(typeof entry.replace === "string", `literal needs find and replace: ${JSON.stringify(entry)}`);
         else need(isText(entry[field]), `${name} entry needs ${field}: ${JSON.stringify(entry)}`);
       }
+      if (name === "allow.paths") need(!/[*?]/.test(entry.glob), `allow.paths lists exact names, not globs (a wildcard would pass a future file): ${JSON.stringify(entry.glob)}`);
+      if (name === "allow.text") need(entry.count === undefined || (Number.isInteger(entry.count) && entry.count >= 1), `allow.text count must be a whole number of 1 or more: ${JSON.stringify(entry)}`);
     }
     lists[name] = value;
   }
@@ -126,14 +129,14 @@ export function loadConfig(file = DEFAULT_CONFIG) {
     anchored: raw.anchored ?? [],
     exclude: lists.exclude,
     keep: lists.keep,
-    allow: { phrases: lists["allow.phrases"], text: lists["allow.text"], paths: lists["allow.paths"], images: lists["allow.images"] },
+    allow: { phrases: lists["allow.phrases"], text: lists["allow.text"], paths: lists["allow.paths"], binary: lists["allow.binary"] },
     literals: lists.literals,
     dir: path.dirname(path.resolve(file)),
   };
   config.includeRe = config.include.map(globToRegExp);
   config.excludeRe = globs(config.exclude);
   config.allowPathsRe = globs(config.allow.paths);
-  config.allowImagesRe = globs(config.allow.images);
+  config.allowBinaryRe = globs(config.allow.binary);
   for (const entry of [...config.keep, ...config.allow.phrases]) entry.filesRe = entry.files.map(globToRegExp);
   for (const literal of config.literals) literal.filesRe = (literal.files ?? []).map(globToRegExp);
   return config;
@@ -189,9 +192,10 @@ export const inScope = (config, rel) =>
   config.includeRe.some((re) => re.test(rel)) && !config.excludeRe.some((re) => re.test(rel));
 
 // Binary types the gate knows how to treat: images (mapped in `assets` or reviewed in
-// `allow.images`), fonts, media and documents. A NUL byte in any other in-scope file (UTF-16 text)
-// is reported, never skipped.
+// `allow.binary`), fonts, media and documents. Only `.svg` is also text. A NUL byte in any other
+// in-scope file (UTF-16 text) is reported, never skipped.
 export const BINARY_EXT = /\.(?:png|jpe?g|gif|webp|avif|bmp|ico|icns|svg|tiff?|heic|jfif|jp2|apng|pdf|woff2?|ttf|otf|eot|mp4|webm|lottie|riv)$/i;
+export const isSvg = (rel) => /\.svg$/i.test(rel);
 
 // ponytail: NUL-byte sniff on the first 8 KB.
 export const isBinary = (buffer) => buffer.subarray(0, 8192).includes(0);
@@ -199,7 +203,7 @@ export const isBinary = (buffer) => buffer.subarray(0, 8192).includes(0);
 // ignoreBOM keeps a leading BOM in the string so a rewrite does not drop it.
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
-/** `{ binary: true }` or `{ text }`; exits 2 naming the file when it cannot be read or is not UTF-8. */
+/** `{ binary: true }` or `{ text }`; exits 2 naming the file when it cannot be read or is not UTF-8. A known binary type (not `.svg`) is never decoded. */
 export function readFile(root, rel) {
   let buffer;
   try {
@@ -207,11 +211,23 @@ export function readFile(root, rel) {
   } catch (error) {
     fail(`cannot read ${rel}: ${error.message}`);
   }
-  if (isBinary(buffer)) return { binary: true, buffer };
+  if ((BINARY_EXT.test(rel) && !isSvg(rel)) || isBinary(buffer)) return { binary: true, buffer };
   try {
     return { text: utf8.decode(buffer) };
   } catch {
     return fail(`${rel} is not valid UTF-8 (convert it, or exclude it with a reason): it would be corrupted by a rewrite`);
+  }
+}
+
+/** Replace the file in one step, keeping its mode: a reader sees the old or the new content, never half. A failed write removes its temp file. */
+export function writeAtomic(file, data) {
+  const tmp = `${file}.dozo-tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(tmp, data, { mode: fs.existsSync(file) ? fs.statSync(file).mode & 0o777 : 0o644 });
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    fs.rmSync(tmp, { force: true });
+    throw error;
   }
 }
 
@@ -224,6 +240,12 @@ export const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A literal applies to every file in scope, or only to the globs in its `files`. */
 export const literalApplies = (literal, rel) =>
   literal.filesRe.length === 0 || literal.filesRe.some((re) => re.test(rel));
+
+/** How often a reviewed `allow.text` entry's text occurs in `text` (whole phrases only). */
+export const countText = (entry, text) => (text.match(phraseRe(entry.text)) ?? []).length;
+
+/** The number of occurrences an `allow.text` entry stands for; a new one in the file is a new leak. */
+export const expectedCount = (entry) => entry.count ?? 1;
 
 /** `keep` and `allow.phrases` entries are limited to their `files`. */
 export const entryApplies = (entry, rel) => entry.filesRe.some((re) => re.test(rel));
@@ -295,37 +317,154 @@ const TLDS = "com|net|org|io|ai|app|dev|co|xyz|me|cloud|info|tech|tools|so|sh|ly
  * Technical identifier shapes: the whole token that holds the old name, as the tree contains it.
  * Case-sensitive; the brand is never matched as a word of its own here (`rakazo.`, `rakazo-powered`,
  * `#rakazo` match nothing). Add a row only for a shape upstream really uses, with its reason.
- * Positive and negative samples for every row live in brand.test.mjs.
+ * A row that lists `stems` is a closed list: each stem is one name the tree really uses, and
+ * `apply --strict` fails on a row or a stem that matches nothing. `ok(line, match)` narrows a row to
+ * the code-like places where its token stands. Samples for every row live in brand.test.mjs.
  */
-export const SHAPES = [
-  { name: "package-scope", re: /@rakazo\//g, reason: "workspace package scope @rakazo/*: imports and package names" },
-  { name: "env-name", re: /(?<![A-Za-z0-9])RAKAZO(?=_)/g, reason: "RAKAZO_* environment variables, macros and __RAKAZO_X__ globals" },
-  { name: "snake-name", re: /(?<![A-Za-z0-9/@])rakazo_/g, reason: "snake_case names: metadata keys, secret-store keys, C symbols (rakazo_xcapture_*); not after / or @, where it is a profile handle" },
-  { name: "camel-name", re: /(?<![A-Za-z0-9/@])[a-z_]*[Rr]akazo(?=[A-Z])/g, reason: "camelCase and PascalCase identifiers (RakazoDesktop, rakazoScreen, isRakazoContainer); not after / or @, where it is a profile handle" },
-  { name: "template-name", re: /(?<![A-Za-z0-9])rakazo-(?=\$)/g, reason: "generated names such as `rakazo-${randomUUID()}` for containers and temp files" },
-  { name: "namespaced-key", re: /(?<![A-Za-z0-9])rakazo:(?=[\w$/])/g, reason: "storage and id namespaces (rakazo:thread:1) and the rakazo:// URL scheme" },
-  { name: "dotted-key", re: /(?<![A-Za-z0-9])rakazo\.(?=[a-z])/g, reason: "dotted attribute, metadata and storage keys (rakazo.botId); a public TLD is caught before this" },
-  { name: "header", re: /(?<![\w-])x-rakazo-/gi, reason: "x-rakazo-* HTTP headers" },
-  { name: "data-attribute", re: /(?<![\w-])data-rakazo-/g, reason: "data-rakazo-* DOM attributes" },
-  { name: "css-name", re: /(?<![\w-])(?:--|\.)?rakazo-(?:organic|(?:bot|logo|group)-avatar|avatar-(?:breathe|spin)|app-boot--)[\w-]*/g, reason: "CSS classes, keyframes and custom properties of the avatars and the boot screen" },
-  { name: "dom-event", re: /(?<![\w-])rakazo-(?:app|page|mention|mcp-signin|save):/g, reason: "postMessage and DOM event types between the page frame and the host" },
-  { name: "binary-name", re: /(?<![\w-])(?:lib)?rakazo-(?:browser|page-browser|focus-or-launch|computer|local-bin|proxy|terminal|xcapture|home)(?![A-Za-z0-9])/g, reason: "executables, libraries and directories installed in the computer image" },
-  { name: "service-name", re: /(?<![\w-])rakazo-(?:api|api-jobs|worker|web|realtime|updater|sandboxes|sandbox-supervisor|desktop|emulator|third-party-emulator|wuying|prod|exec)(?![A-Za-z0-9])/g, reason: "compose services, queues, packages, runtimes and the .po catalog project id" },
-  { name: "persisted-key", re: /(?<![\w-])rakazo-(?:instance-theme|home-storage|history|build-id|content-encryption|content-security-policy|pwa-manifest|pwa-service-worker|storage-migration|export-list|account-export|turn(?:-document)?|oauth|mcp-oauth|mcp-packages|sso-oauth|plugin-connect|app-connect|slack-install|bot-id)(?![A-Za-z0-9])/g, reason: "stored keys, window and channel names, cache names and format ids that persisted data refers to" },
-  { name: "name-prefix", re: /(?<![\w-])rakazo-(?:account-import(?:-archive)?|claude-code-request|migrations|say|shell|snapshot|teardown|workspace(?:-archive)?|balance|bot|ab|mcp)-(?=["'`$[{])/g, reason: "prefixes of temp directories and generated ids: followed by a quote or a generated part" },
-  { name: "process-marker", re: /(?<![\w-])rakazo-(?:coding-agent-probe|background-(?:idle|launch|probe)|cancel-run-work|write|egress-probe|c|cprobe)(?![A-Za-z0-9])/g, reason: "argv markers matched by pkill, probe names and the docker bridge prefix rakazo-c" },
-  { name: "memory-entity", re: /(?<![\w-])rakazo-(?:bot|space)\/(?=\$)/g, reason: "entity ids sent to the memory provider (rakazo-space/<id>)" },
-  { name: "image-name", re: /(?<![\w/.-])rakazo\\?\/computer(?![\w-])/g, reason: "local computer image name rakazo/computer, also as an escaped regex" },
-  { name: "kdf-context", re: /(?<![\w/-])rakazo\/(?:content(?:-master-key)?|search|space-key)\/v1/g, reason: "key-derivation and AAD context strings: changing them breaks decryption of stored data" },
-  { name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" },
-  { name: "fs-path", re: /(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo/g, reason: "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*)" },
-  { name: "shell-path", re: /(?:\$\w+|~|\.{1,3})\/\.?rakazo-/g, reason: "relative shell paths ($dir/rakazo-proxy.json, ~/rakazo-home)" },
-  { name: "windows-path", re: /(?<=\\)rakazo(?=\\)/g, reason: "profile directory on a Windows computer" },
-  { name: "dev-database", re: /\/\/rakazo:rakazo@[\w.:]+\/rakazo/g, reason: "local development database URL" },
-];
+export const SHAPES = [];
 
-/** A PascalCase brand identifier standing between two plain words is prose (`Ask RakazoBot to help`), whatever SHAPES say. */
-const PROSE_GLUED = /(?<=[A-Za-z][ \t])[Rr]akazo[A-Z]\w*(?=[,.!?]?[ \t]+[a-z]|[,.!?]?[ \t]*$)/g;
+/** A row from a closed list of stems; every stem is a capture group, in `stems` order, so a match says which stem it was. */
+function addStems(name, reason, stems, make, ok) {
+  const ordered = [...new Set(stems)].sort((a, b) => b.length - a.length || a.localeCompare(b));
+  const group = `(?:${ordered.map((stem) => `(${escapeRe(stem)})`).join("|")})`;
+  SHAPES.push({ name, reason, stems: ordered, re: new RegExp(make(group), "g"), ok });
+}
+
+// Prose is a plain word, spaces, the token, spaces, a lowercase word: `Try the rakazo-browser app`.
+const inProse = (line, m) => /[A-Za-z][ \t]+$/.test(line.slice(0, m.index)) && /^[ \t]+[a-z]/.test(line.slice(m.index + m[0].length));
+const notProse = (line, m) => !inProse(line, m);
+
+const KEYWORD_BEFORE = /\b(?:new|class|type|interface|function|const|let|var|typeof)[ \t]+$/;
+
+/**
+ * A PascalCase or camelCase token that starts with the brand is an identifier only where code puts
+ * one: after `.`, after a declaring keyword, as a JSX tag or type argument (`<`), alone in a string,
+ * before `(` or `.name`, or in a slot (object key, parameter, type annotation, import list) that
+ * follows no word and is followed by `: = ? | & , ; ) ] } >`. Between plain words, in JSX text and
+ * inside a string with spaces it is a leak. Limit: a parenthesised or colon-ended name in prose
+ * (`(RakazoPro)`, `RakazoBot: hi`) reads as a slot.
+ */
+function camelInCode(line, m) {
+  const before = line.slice(0, m.index);
+  const after = line.slice(m.index + m[0].length);
+  if (/[\w)\]?]\.$/.test(before) || KEYWORD_BEFORE.test(before) || before.endsWith("<")) return true;
+  if (/^(?:\(|\.[A-Za-z_$])/.test(after)) return true;
+  const quote = before.at(-1);
+  if (quote && "\"'`".includes(quote) && after[0] === quote) return true;
+  const lead = before.trimEnd();
+  const afterText = /\w[ \t]+$/.test(before) || (/[>"'`]$/.test(lead) && !lead.endsWith("=>"));
+  return !afterText && /^[ \t]*[:=?|&,;)\]}>]/.test(after);
+}
+
+/** A dotted key stands in code: inside quotes, in a URL or path, or as the name of an `=` assignment. */
+const dottedInCode = (line, m) => /["'`/]$/.test(line.slice(0, m.index)) || /^[\w.-]*=/.test(line.slice(m.index + m[0].length));
+
+SHAPES.push({ name: "package-scope", re: /@rakazo\//g, reason: "workspace package scope @rakazo/*: imports and package names" });
+SHAPES.push({ name: "env-name", re: /(?<![A-Za-z0-9])RAKAZO(?=_)/g, reason: "RAKAZO_* environment variables, macros and __RAKAZO_X__ globals" });
+SHAPES.push({ name: "snake-name", re: /(?<![A-Za-z0-9/@])rakazo_/g, reason: "snake_case names: metadata keys, secret-store keys, C symbols (rakazo_xcapture_*); not after / or @, where it is a profile handle" });
+SHAPES.push({ name: "camel-name", re: /(?<![A-Za-z0-9_/@])[a-z_]*[Rr]akazo(?=[A-Z])\w*/g, ok: camelInCode, reason: "camelCase and PascalCase identifiers (RakazoDesktop, rakazoScreen, isRakazoContainer) in a code position; not after / or @, where it is a profile handle" });
+SHAPES.push({ name: "template-name", re: /(?<![A-Za-z0-9])rakazo-(?=\$)/g, reason: "generated names such as `rakazo-${randomUUID()}` for containers and temp files" });
+SHAPES.push({ name: "namespaced-key", re: /(?<![A-Za-z0-9])rakazo:(?=[\w$/])/g, reason: "storage and id namespaces (rakazo:thread:1) and the rakazo:// URL scheme" });
+addStems(
+  "dotted-key",
+  "dotted attribute, label, metadata and storage keys (rakazo.botId) from a closed list, inside quotes, a URL or path, or before `=`; a public TLD is caught before this",
+  ["activity", "agent", "bot", "botId", "botsSidebarDensity", "clientIp", "composerBindings", "composerDraft", "composerEnterToSend", "composerNonce", "composerSend", "computerOwner", "control", "egressProbe", "githubStarPrompt", "invalid", "json", "loadRemoteImages", "logOutFailed", "managed", "mountSources", "passkey", "pi", "responseStreaming", "routine", "run", "showToolActivity", "signed", "signedInUser", "spaceId", "test", "uiAppearance", "uiLocale", "workspaceId"],
+  (alt) => String.raw`(?<![A-Za-z0-9])rakazo\.${alt}(?![A-Za-z0-9_])`,
+  dottedInCode,
+);
+SHAPES.push({ name: "header", re: /(?<![\w-])x-rakazo-/gi, reason: "x-rakazo-* HTTP headers" });
+SHAPES.push({ name: "data-attribute", re: /(?<![\w-])data-rakazo-/g, reason: "data-rakazo-* DOM attributes" });
+addStems(
+  "css-name",
+  "CSS classes, keyframes and custom properties of the avatars and the boot screen",
+  ["organic", "bot-avatar", "logo-avatar", "group-avatar", "avatar-breathe", "avatar-spin", "app-boot--"],
+  (alt) => String.raw`(?<![\w-])(?:--|\.)?rakazo-${alt}[\w-]*`,
+  notProse,
+);
+addStems(
+  "dom-event",
+  "postMessage and DOM event types between the page frame and the host",
+  ["app", "page", "mention", "mcp-signin", "save"],
+  (alt) => String.raw`(?<![\w-])rakazo-${alt}:`,
+);
+addStems(
+  "binary-name",
+  "executables, libraries and directories installed in the computer image",
+  ["browser", "page-browser", "focus-or-launch", "computer", "local-bin", "proxy", "terminal", "xcapture", "home"],
+  (alt) => String.raw`(?<![\w-])(?:lib)?rakazo-${alt}(?![\w-])`,
+  notProse,
+);
+addStems(
+  "service-name",
+  "compose services, queues, packages, runtimes and the .po catalog project id",
+  ["api", "api-jobs", "worker", "web", "realtime", "updater", "sandboxes", "sandbox-supervisor", "desktop", "desktop-stack", "emulator", "third-party-emulator", "wuying", "prod", "exec"],
+  (alt) => String.raw`(?<![\w-])rakazo-${alt}(?![\w-])`,
+  notProse,
+);
+addStems(
+  "persisted-key",
+  "stored keys, window and channel names, cache names and format ids that persisted data refers to",
+  ["instance-theme", "home-storage", "history", "build-id", "content-encryption", "content-security-policy", "pwa-manifest", "pwa-service-worker", "storage-migration", "export-list", "account-export", "turn", "turn-document", "oauth", "mcp-oauth", "mcp-packages", "sso-oauth", "plugin-connect", "app-connect", "slack-install", "bot-id"],
+  (alt) => String.raw`(?<![\w-])rakazo-${alt}(?![\w-])`,
+  notProse,
+);
+addStems(
+  "name-prefix",
+  "prefixes of temp directories and generated ids: followed by a quote or a generated part",
+  ["account-import", "account-import-archive", "claude-code-request", "computer", "migrations", "say", "shell", "snapshot", "teardown", "turn", "workspace", "workspace-archive", "balance", "bot", "ab", "mcp"],
+  (alt) => String.raw`(?<![\w-])rakazo-${alt}-(?=["'\`$[{])`,
+);
+addStems(
+  "process-marker",
+  "argv markers matched by pkill, probe names and the docker bridge prefix rakazo-c",
+  ["coding-agent-probe", "background-idle", "background-launch", "background-probe", "cancel-run-work", "write", "egress-probe", "c", "cprobe"],
+  (alt) => String.raw`(?<![\w-])rakazo-${alt}(?![\w-])`,
+  notProse,
+);
+addStems(
+  "memory-entity",
+  "entity ids sent to the memory provider (rakazo-space/<id>)",
+  ["bot", "space"],
+  (alt) => String.raw`(?<![\w-])rakazo-${alt}/(?=\$)`,
+);
+SHAPES.push({ name: "image-name", re: /(?<![\w/.-])rakazo\\?\/computer(?![\w-])/g, reason: "local computer image name rakazo/computer, also as an escaped regex" });
+addStems(
+  "kdf-context",
+  "key-derivation and AAD context strings: changing them breaks decryption of stored data",
+  ["content", "content-master-key", "search", "space-key"],
+  (alt) => String.raw`(?<![\w/-])rakazo/${alt}/v1`,
+);
+SHAPES.push({ name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" });
+SHAPES.push({ name: "fs-path", re: /(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo/g, reason: "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*)" });
+SHAPES.push({ name: "shell-path", re: /(?:\$\w+|~|\.{1,3})\/\.?rakazo-/g, reason: "relative shell paths ($dir/rakazo-proxy.json, ~/rakazo-home)" });
+SHAPES.push({ name: "windows-path", re: /(?<=\\)rakazo(?=\\)/g, reason: "profile directory on a Windows computer" });
+SHAPES.push({ name: "dev-database", re: /\/\/rakazo:rakazo@[\w.:]+\/rakazo/g, reason: "local development database URL" });
+
+/** The matches of one row in one line that stand where the row allows them. */
+export const shapeMatches = (shape, line) => [...line.matchAll(shape.re)].filter((m) => !shape.ok || shape.ok(line, m));
+
+/** The rows, and the stems of the closed rows, that match nothing in `texts` (the staged tree's text): `[{ shape, stem? }]`. */
+export function deadShapes(texts) {
+  const rows = new Set();
+  const stems = new Set();
+  for (const text of texts) {
+    for (const line of text.split("\n")) {
+      if (!/rakazo/i.test(line)) continue;
+      for (const shape of SHAPES) {
+        for (const m of shapeMatches(shape, line)) {
+          rows.add(shape.name);
+          if (shape.stems) stems.add(`${shape.name}\0${shape.stems[m.slice(1).findIndex((group) => group !== undefined)]}`);
+        }
+      }
+    }
+  }
+  const dead = [];
+  for (const shape of SHAPES) {
+    if (!rows.has(shape.name)) dead.push({ shape: shape.name });
+    else for (const stem of shape.stems ?? []) if (!stems.has(`${shape.name}\0${stem}`)) dead.push({ shape: shape.name, stem });
+  }
+  return dead;
+}
 
 /** A string that is exactly one PascalCase brand name is a client or operation name sent to a third party. */
 const QUOTED_NAME = /(["'`])Rakazo[A-Z][A-Za-z0-9]*\1/g;
@@ -367,7 +506,6 @@ export function buildScanner(config) {
     };
     push(needles);
     push(wordRe);
-    push(PROSE_GLUED, "glued into prose");
     push(QUOTED_NAME, "name sent outward");
     push(gluedRe, "url target glued to a word");
     for (const literal of config.literals) {
@@ -376,7 +514,7 @@ export function buildScanner(config) {
     }
     const own = ownRe ? blank(text, ownRe) : text;
     for (const m of own.matchAll(domainRe)) found.push({ start: m.index, text: m[0], label: "brand domain" });
-    const masks = SHAPES.flatMap((shape) => [...text.matchAll(shape.re)]);
+    const masks = SHAPES.flatMap((shape) => shapeMatches(shape, text));
     let rest = text;
     for (const m of masks) rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(m.index + m[0].length);
     for (const m of rest.matchAll(brandRe)) found.push({ start: m.index, text: m[0] });

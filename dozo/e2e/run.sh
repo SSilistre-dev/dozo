@@ -25,7 +25,7 @@ BASE="${DOZO_E2E_BASE_URL:-http://127.0.0.1:$WEBPORT}"
 RUN_ID="e2e-$$"
 NAME="dozo-pw-e2e-$$"
 MODEL="dozo-e2e-model-$$"
-LOCK="/tmp/dozo-e2e-$(id -u).lock"
+LOCK="${TMPDIR:-/tmp}/dozo-e2e-$(id -u).lock"   # a directory holding `owner`: "<pid> <start time>"
 NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
 
 say() { printf 'e2e: %s\n' "$*" >&2; }
@@ -34,28 +34,61 @@ for tool in docker curl; do command -v "$tool" >/dev/null || { say "$tool not fo
 
 # Every container: --init (so TERM reaches PID 1), a unique name, the run's label. $1 = the name.
 drun() { local n="$1"; shift; docker run --init --rm --name "$n" --label "dozo.run=$RUN_ID" "$@"; }
-# Wait until $1 is gone, however many trapped signals cut a `wait` short (status in WAIT_RC).
+# Wait until $1 is gone, however many trapped signals cut a `wait` short (status in WAIT_RC). `wait`
+# runs at least once, so a child that failed and was reaped before the first check keeps its status;
+# the extra wait after a status above 128 is explained at wait_gone in dozo/docker/gate.sh.
 WAIT_RC=0
-wait_gone() { WAIT_RC=0; while kill -0 "$1" 2>/dev/null; do wait "$1"; WAIT_RC=$?; done; }
+wait_gone() {
+  local rc again
+  while :; do wait "$1"; rc=$?; kill -0 "$1" 2>/dev/null || break; done
+  if [ "$rc" -gt 128 ]; then wait "$1"; again=$?; [ "$again" -eq 127 ] || rc=$again; fi
+  WAIT_RC=$rc
+}
 
 # The output directory and the saved session are shared by every run: a second run would wipe the
-# first one's files, so refuse instead. The lock is a symlink to the owner's pid (created atomically);
-# a dead owner's lock is taken over. Taken before the cleanup trap exists, which would otherwise
-# release the running one's lock on this early exit.
-if ! ln -s "$$" "$LOCK" 2>/dev/null; then
-  owner="$(readlink "$LOCK" 2>/dev/null || true)"
-  if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
-    say "another e2e run is in progress (pid $owner); wait for it to finish"; exit 2
-  fi
-  rm -f "$LOCK"; ln -s "$$" "$LOCK" 2>/dev/null || { say "another e2e run just started; wait for it to finish"; exit 2; }
-fi
+# first one's files, so refuse instead. The lock is a directory made with mkdir (atomic) that holds
+# the owner's pid and start time, so a reused pid is not taken for the owner. A stale lock is taken
+# over under a second mkdir mutex named for the dead owner (one racer wins; it re-reads the owner
+# under the mutex, so it can never remove a lock another run made meanwhile). Taken before the
+# cleanup trap exists, which would otherwise release the running one's lock on this early exit.
+SELF_START="$(ps -o lstart= -p $$ 2>/dev/null | sed 's/^ *//')"
+ME="$$ ${SELF_START:--}"
+owner_alive() { # $1 = "<pid> <start>" as written by the owner
+  local pid="${1%% *}" start="${1#* }"
+  kill -0 "$pid" 2>/dev/null && { [ "$start" = - ] || [ "$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//')" = "$start" ]; }
+}
+acquire_lock() {
+  local n seen key
+  for n in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if mkdir "$LOCK" 2>/dev/null; then
+      printf '%s\n' "$ME" > "$LOCK/.owner" && mv "$LOCK/.owner" "$LOCK/owner" && return 0
+      say "cannot write the lock $LOCK"; return 1
+    fi
+    [ -e "$LOCK" ] || continue
+    [ -d "$LOCK" ] && [ -O "$LOCK" ] || { say "$LOCK is not a directory of this user; remove it or set TMPDIR"; return 1; }
+    seen="$(cat "$LOCK/owner" 2>/dev/null || true)"
+    if [ -n "$seen" ] && owner_alive "$seen"; then
+      say "another e2e run is in progress (pid ${seen%% *}); wait for it to finish"; return 1
+    fi
+    # No owner file yet: a lock being made. Give it 2 s; after that its maker died.
+    if [ -z "$seen" ] && [ "$n" -lt 10 ]; then sleep 0.2; continue; fi
+    key="$LOCK.takeover.${seen%% *}"
+    if mkdir "$key" 2>/dev/null; then
+      [ "$(cat "$LOCK/owner" 2>/dev/null || true)" != "$seen" ] || rm -rf "$LOCK"
+      rmdir "$key"
+    else sleep 0.2
+    fi
+  done
+  say "cannot take the lock $LOCK (another run is taking it over, or $LOCK.takeover.* is left over: remove it)"; return 1
+}
+acquire_lock || exit 2
 
 cleanup() {
   local ids
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
   ids="$(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)" || ids=""
   [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
-  [ "$(readlink "$LOCK" 2>/dev/null)" != "$$" ] || rm -f "$LOCK"
+  [ "$(cat "$LOCK/owner" 2>/dev/null)" != "$ME" ] || rm -rf "$LOCK"
   if [ "${DOZO_E2E_KEEP:-}" = 1 ]; then say "kept $OUT (DOZO_E2E_KEEP=1)"; return; fi
   [ -d "$OUT" ] && find "$OUT" -mindepth 1 -delete 2>/dev/null
   rm -rf "$HERE/node_modules"

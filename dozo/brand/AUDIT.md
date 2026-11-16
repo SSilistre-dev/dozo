@@ -31,7 +31,7 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 16 | Placeholder domains/owner `dozo.example`, `OWNER/dozo` | Owner action (`LAUNCH-CHECKLIST.md`). Gate: `check.mjs --launch` fails on them |
 | 17 | Self-update/compute image defaults pull `ghcr.io/elie222/rakazo/*` | Owner action: publish images. `--launch` fails while the allow-listed names exist. Until then disable self-update |
 | 18 | Mobile-only strings in web `messages-*.js` catalogs | Rejected for now: `apps/mobile` is out of scope, extracted at build, not shown on web. Gate cannot see build output |
-| 19 | `orange-bot.png` mascot source | Reviewed in `allow.images`: export-script source, never shipped |
+| 19 | `orange-bot.png` mascot source | Reviewed in `allow.binary`: export-script source, never shipped |
 | 20 | Vendor `originator`/`x-opencode-client`/`X-Keenable-Title` `rakazo` | Rejected: vendor-validated or operator-only; `allow.text` entries (`{file, text, reason}`) |
 | 21 | Third-party catalogs and imports naming "Grok Bot", xAI | Rejected as leak (other vendor, not Rakazo); product decision, owner action if unwanted |
 | 22 | `~/rakazo-home`, `/tmp/rakazo`, `rakazo-browser` binaries, `.rakazo-command-env` | Rejected: internal paths (out of scope per brief); `~/rakazo-home` is the most visible, revisit later |
@@ -71,7 +71,7 @@ OAuth names, the Android APK name, third-party catalog branding, logo parts stil
 
 Under `include` (the stack: web, api, worker, packages, infra/sandboxes) the only images are the 7
 `apps/web/public` icons, mapped, and `packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png`,
-reviewed in `allow.images`; `favicon.svg` is new and mapped.
+reviewed in `allow.binary`; `favicon.svg` is new and mapped.
 
 Phase 3, outside `include` (desktop and mobile are neither branded nor gated; still the orange mascot):
 

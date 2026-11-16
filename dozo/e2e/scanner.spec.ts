@@ -119,3 +119,25 @@ test("an identifier in text a person reads is a leak", async ({ context }) => {
   );
   expect(scan.leaks.map((leak) => leak.where)).toContain("input.value");
 });
+
+test("a deliberate identifier in a URL passed to window.open is allowed, a real link not", async ({
+  context,
+}) => {
+  await installProbes(context);
+  // Nothing else on the page: any report would be the exemption failing.
+  const page = "<!doctype html><title>Dozo</title><p>hello there</p>";
+  const allowed = await scanHtml(context, page, (opener) =>
+    opener.evaluate(() => {
+      window.open("rakazo://open?key=RAKAZO_URL&scope=@rakazo/ui&h=x-rakazo-id");
+    }),
+  );
+  expect(allowed.scan.leaks).toEqual([]);
+  expect(allowed.scan.urls.length, "the opened URL is still listed").toBeGreaterThan(0);
+  // A link to the upstream site passed the same way is still a leak, found under "window.open".
+  const real = await scanHtml(context, page, (opener) =>
+    opener.evaluate(() => {
+      window.open("https://app.rakazo.com/open");
+    }),
+  );
+  expect(real.scan.leaks.map((leak) => leak.where)).toContain("window.open");
+});

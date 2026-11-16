@@ -86,6 +86,13 @@ jobs:
           # Exit 2 = conflict or non-fast-forward upstream-main: the job must fail visibly.
           exit "$rc"
 
+      - name: Publish upstream-main when main already has the upstream tip
+        # sync.sh made no sync branch (nothing to merge) but may have fast-forwarded upstream-main:
+        # origin's copy must follow, or merge-base checks against it misfire. No --force: a ref that
+        # is not a fast-forward is refused. A no-op when origin is already there.
+        if: success() && steps.sync.outputs.branch == ''
+        run: git push origin refs/heads/upstream-main:refs/heads/upstream-main
+
       - name: Publish branches and open or replace the pull request
         if: steps.sync.outputs.branch != ''
         env:

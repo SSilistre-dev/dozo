@@ -143,7 +143,7 @@
       { "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "packages/contracts/src/bot-avatar.ts", "text": "[\"organic\", \"rakazo\"]", "reason": "stored avatar-set enum values" },
       { "file": "packages/contracts/src/bot-avatar.ts", "text": "value === \"rakazo\" ? \"rakazo\"", "reason": "stored avatar-set enum value" },
-      { "file": "packages/core/src/bot-look.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/bot-look.ts", "text": "avatarSet === \"rakazo\"", "count": 2, "reason": "stored avatar-set enum value" },
       { "file": "packages/core/src/logo-avatar-activity.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/core/src/notification-avatar.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
       { "file": "packages/db/src/bot-avatar-choice.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
@@ -153,7 +153,7 @@
       { "file": "packages/contracts/src/bot-email.ts", "text": "startsWith(\"rakazo\")", "reason": "reserved bot e-mail names: a guard, not displayed" },
       { "file": "packages/db/src/content-keys.ts", "text": "Buffer.from(\"rakazo\")", "reason": "key-derivation salt; changing it breaks decryption" },
       { "file": "packages/logging/src/logger.ts", "text": "service: \"rakazo\"", "reason": "operator log service name" },
-      { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "table inet rakazo", "reason": "nftables table name inside the sandbox, not shown" },
+      { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "table inet rakazo", "count": 3, "reason": "nftables table name inside the sandbox, not shown" },
       { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "\"inet\", \"rakazo\"", "reason": "nftables table name inside the sandbox, not shown" },
       { "file": "packages/adapters/src/boat-sandbox.ts", "text": "replace(\"rakazo\", \"[r]akazo\")", "reason": "process-match marker, internal" },
       { "file": "packages/adapters/src/chat-sdk-surface.ts", "text": "?? \"rakazo\"", "reason": "bot user name on the internal chat bridge, not displayed" },
@@ -169,20 +169,44 @@
       { "file": "packages/adapters/src/plan-limits.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
       { "file": "packages/adapters/src/pi-runtime-stream.ts", "text": "\"x-opencode-client\": \"rakazo\"", "reason": "x-opencode-client vendor header; operator-visible only (AUDIT 20)" },
       { "file": "packages/adapters/src/pi-telemetry-otel.ts", "text": "startsWith(\"rakazo.\")", "reason": "attribute-key prefix of the dotted keys, not shown" },
-      { "file": "packages/adapters/src/secret-store-fake.ts", "text": "\"/rakazo\"", "reason": "folder of the offline secret-store emulator, never shown" },
-      { "file": "packages/ui-tokens/scripts/export-brand.ts", "text": "apps/www/public/brand/rakazo-mark.png", "reason": "output path of the icon export script in apps/www, outside the stack" }
+      { "file": "packages/adapters/src/secret-store-fake.ts", "text": "\"/rakazo\"", "count": 2, "reason": "folder of the offline secret-store emulator, never shown" },
+      { "file": "packages/ui-tokens/scripts/export-brand.ts", "text": "apps/www/public/brand/rakazo-mark.png", "reason": "output path of the icon export script in apps/www, outside the stack" },
+      { "file": "apps/web/src/lib/computer-screen.ts", "text": "rakazoScreen as ScreenFrameState", "reason": "message key of the screen frame, a cast in code; the word after it makes it look like prose" },
+      { "file": "infra/sandboxes/computer/rakazo-focus-or-launch", "text": "browser rakazo-browser starts", "reason": "docstring naming the installed executable; internal" },
+      { "file": "infra/sandboxes/computer/rakazo-focus-or-launch", "text": "Profile rakazo-browser would use", "reason": "docstring naming the installed executable; internal" },
+      { "file": "infra/sandboxes/computer/start.sh", "text": "failed to register rakazo-browser for $mime", "reason": "error line naming the installed executable, operator-visible only" },
+      { "file": "infra/sandboxes/computer/test_page_browser.py", "text": "\"__rakazoTyping = \"", "reason": "probe text of the page-browser script, a code identifier inside a string" },
+      { "file": "infra/sandboxes/supervisor/src/identity.ts", "text": "COMPUTER_IMAGE + rakazo.workspaceId (same rule as isRakazoContainer).", "reason": "developer comment naming a label key and a function" },
+      { "file": "infra/sandboxes/supervisor/src/identity.ts", "text": "inspect with the same managed rule as isRakazoContainer.", "reason": "developer comment naming a function" },
+      { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute", "reason": "second class of a className list; the avatar CSS names stay" }
     ],
     "paths": [
       {
-        "glob": "infra/sandboxes/computer/rakazo-*",
-        "reason": "executables and helper files installed by name into the computer image (/usr/local/bin/rakazo-*); the image build and the supervisor refer to these names"
+        "glob": "infra/sandboxes/computer/rakazo-browser",
+        "reason": "installed by name into the computer image (/usr/local/bin or an application entry); the image build and the supervisor refer to this name"
+      },
+      {
+        "glob": "infra/sandboxes/computer/rakazo-browser.desktop",
+        "reason": "installed by name into the computer image (/usr/local/bin or an application entry); the image build and the supervisor refer to this name"
+      },
+      {
+        "glob": "infra/sandboxes/computer/rakazo-focus-or-launch",
+        "reason": "installed by name into the computer image (/usr/local/bin or an application entry); the image build and the supervisor refer to this name"
+      },
+      {
+        "glob": "infra/sandboxes/computer/rakazo-local-bin.sh",
+        "reason": "installed by name into the computer image (/usr/local/bin or an application entry); the image build and the supervisor refer to this name"
+      },
+      {
+        "glob": "infra/sandboxes/computer/rakazo-page-browser",
+        "reason": "installed by name into the computer image (/usr/local/bin or an application entry); the image build and the supervisor refer to this name"
       },
       {
         "glob": "packages/ui-tokens/assets/Rakazo.icon",
         "reason": "icon bundle directory read by export-brand.ts and desktop packaging; see the Rakazo.icon keep entry"
       }
     ],
-    "images": [
+    "binary": [
       {
         "glob": "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png",
         "reason": "source image of the icon export script and desktop packaging; never copied into the web, API, worker or computer images"

@@ -30,10 +30,11 @@ Docker with the Compose v2 plugin, 2.24.4 or newer (`compose.ports.yml` uses `!o
 - `brand`: `docker`.
 - `build`, `up`, `smoke` generate the env file first: `nc` (a missing one would call a busy port
   free), `openssl`, and the Compose version. `up` and `smoke` also need `curl`.
-- `down`: the Compose version.
+- `down`: the Compose version, and the staged compose file and `dozo.env` (not a complete stage).
 
-`gate.sh` needs `bash`, `git`, `docker`, and the usual `find`, `awk`, `sed`, `grep`, `cmp`. It uses
-GNU `timeout` or `gtimeout` when present and a built-in watchdog otherwise. Node tooling runs in the
+`gate.sh` needs `bash`, `git`, `docker`, and the usual `find`, `awk`, `sed`, `grep`, `cmp`, plus
+`pgrep` (qa uses it to stop a step's child processes; without it only the step itself is stopped).
+It uses GNU `timeout` or `gtimeout` when present and a built-in watchdog otherwise. Node tooling runs in the
 `node:24-slim` image (`DOZO_NODE_IMAGE`); there is no host node or pnpm. The one exception is
 `dozo/brand/assets/build.sh` (see `dozo/AGENTS.md`).
 
@@ -68,7 +69,9 @@ with `down`.
 5. `smoke`: the web root answers 200, has a `<title>`, and (unless `DOZO_SKIP_BRAND=1`) the title
    contains "dozo" and does not contain "rakazo".
 6. `down`: `compose down`. Containers go; the named volumes (`postgres`, `pgdata`, `webassets`,
-   prefixed `dozo_`) stay unless `--volumes`. Needs a complete stage, because Compose runs from it.
+   prefixed `dozo_`) stay unless `--volumes`. Compose runs from the staged copy, so it needs the
+   staged compose file and `dozo.env`; a whole tree is not required, so a stage cut short that still
+   has both can be taken down. Without them it exits 2: stage again first.
 
 `all` is steps 1 to 4. Bot computer containers are started by the supervisor outside the compose
 project; `down` does not remove them.
@@ -92,17 +95,22 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   lines, branches and functions, per file and overall. A source module that no test imports never
   appears in the coverage table and fails too. The pinned module list is every `dozo/brand/*.mjs`
   that is not a test; the count is printed.
-- The e2e model-stub tests (`dozo/e2e/model-stub.test.mjs`).
+- The e2e helper tests: every `dozo/e2e/*.test.mjs` with Node's test runner (the offline model
+  stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
+  exist.
 - Every anchored brand rule against the repository tree: `apply.mjs --check --allow-git --strict`
   (writes nothing; prints the `hooks:` line).
-- A file-count line (informational).
+- A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
+  inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
+  `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.
 - The upstream-edit check: no upstream file may differ from the merge base of `HEAD` and
   `upstream-main` (not its tip, which may be ahead after a sync), except the marked notice block at
   the top of the root `README.md`. A non-zero count lists the files and fails.
   **A missing `upstream-main` ref fails the gate, locally and in CI; there is no opt-out.** Create
   it once: `git fetch upstream main && git branch upstream-main upstream/main` (the `upstream`
   remote: `dozo/SYNC.md`, Prerequisites). `DOZO_UPSTREAM_REF` names another ref and exists for tests.
-- A self-test of the coverage-table parsers.
+- A self-test of `wait_gone` (the exit status of a step that failed at once, of a step cut short by
+  a signal, of one that passed) and of the coverage-table parsers.
 
 A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no
 merge base, a missing Node image (in CI, where `CI` is set, it pulls the image; locally the message
@@ -196,7 +204,7 @@ The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.compl
   the stack binds to 127.0.0.1 on your own machine, so a local OpenAI-compatible endpoint is
   allowed. Never commit it.
 - The web port: `DOZO_WEB_PORT` in your shell only seeds the first generation (the first free port
-  from it, printed by the script). Afterwards the env file is the single source: the port is kept
+  from it; `up` prints the address it ends up answering at). Afterwards the env file is the single source: the port is kept
   while our web container runs, a busy port is replaced by the next free one, and every key the file
   holds is removed from the environment before Compose runs, so an exported value of it is ignored.
   The origin keys follow the port on each run. `dozo/e2e/run.sh` reads the port from this file too.
@@ -213,7 +221,9 @@ The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.compl
   not delete `dozo/.stage/src` by hand: the app data lives inside it as `src/data`, so deleting it
   destroys that data.
 - Full reset (new secrets, empty database, empty app data): `dozo/docker/build.sh down --volumes &&
-  rm -rf dozo/.stage`.
+  rm -rf dozo/.stage`. `down` needs only the staged compose file and `dozo.env`, so it also works
+  after an interrupted stage that left both. If it exits 2 because one is gone, run `make stage`
+  first (it needs no running stack), then reset.
 
 ## Known limits
 

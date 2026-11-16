@@ -13,8 +13,8 @@ make up        # the stack must answer 200 at the base URL (below)
 make e2e       # exit 0 pass, 2 on anything else
 ```
 
-Host: `bash`, Docker, `curl` and the standard shell tools (`sed`, `awk`, `grep`, `find`, `readlink`,
-`ln`). No Node or Playwright on the host; nothing is installed. The stack must be up with its
+Host: `bash`, Docker, `curl` and the standard shell tools (`sed`, `awk`, `grep`, `find`, `ps`,
+`mkdir`). No Node or Playwright on the host; nothing is installed. The stack must be up with its
 container `dozo-api-1` (the script reads its network and probes the model stub from it), and the
 stage it was built from must be complete (`stage.complete` and `src/apps/web/src/App.tsx`), because
 the inventory check reads the branded web source from it.
@@ -24,9 +24,13 @@ unreachable stack, no `dozo-api-1`, the model stub not starting or not reachable
 failed `npm install`, zero tests run, a failed test, a declared key nobody visited, or an interrupt.
 
 `run.sh`:
-1. takes the lock `/tmp/dozo-e2e-<uid>.lock` on the host: a symlink to the owner's pid, created
-   atomically. A second run while the owner is alive is refused (exit 2); a dead owner's lock is taken
-   over. It is removed when the run ends.
+1. takes the lock `${TMPDIR:-/tmp}/dozo-e2e-<uid>.lock` on the host: a directory made with `mkdir`
+   (atomic) that holds `owner`, the pid and start time of the run. A second run while the owner is
+   alive is refused (exit 2). A lock whose owner is gone, or whose pid now belongs to another
+   process (the start time differs), is taken over; two runs that find the same stale lock still
+   start exactly one. A directory of another user at that path is refused. It is removed when the
+   run ends, also on INT and TERM. A `.takeover.*` directory next to it is left only if a run died
+   in the middle of a takeover: remove it.
 2. starts `model-stub.mjs` (below) in a throwaway `node:24-slim` container (`DOZO_NODE_IMAGE`) on the
    stack's network;
 3. runs the official Playwright image `mcr.microsoft.com/playwright:v<version>-noble`, where
@@ -114,15 +118,27 @@ that resolves to a private address).
   `OVERLAY_KEYS` and the onboarding steps from the app source and FAIL when one is neither covered
   by a surface nor in `SKIPS` (`surfaces.ts`) with a reason, or when `surfaces.ts` names one the
   app no longer has. That is what keeps "everywhere" true after an upstream merge.
-- `fixtures.ts`: what makes a visit count. After `reach`, the app's last-resort error screen must not
-  be showing; the screen must show at least 10 characters of text (it waits up to 5 s for the app to
+- `fixtures.ts`: what makes a visit count. After `reach`, every `route:<path>` key the surface
+  declares must have been shown: some URL the page had during `reach` matches the route pattern
+  (`:param` is one segment, `:param?` optional, `*` anything; `matchesRoute` in `logic.ts`). A
+  surface whose route redirects names where it ends with `landsOn: { "route:/": { path, reason } }`
+  (the pattern is accepted in addition to the key's own; used for the signed-out root and the app
+  root). Settings sections and overlays are not checked by the runner: their `reach` already
+  asserts a marker (`data-settings-section` in `openUserSettings`, the overlay's close button), but
+  the surfaces end in other states, so one generic check would be wrong. The app's last-resort
+  error screen must not be showing; the screen must show at least 10 characters of text (it waits up to 5 s for the app to
   draw before failing with the count); the title must contain "Dozo"; no server error (5xx) may occur
   except those a surface expects; and the scan must find no leak.
 - `coverage-reporter.ts`: prints the coverage table at the end of every run: per surface (visited in
   light and dark, strings scanned, brand hits), per inventory key, totals, brand leaks, server
   errors seen, outgoing hosts, and what cannot be reached and why (`NOT_REACHABLE`). A key that a
   surface declares in `covers` but that no surface visited FAILS the run; this is only checked when
-  every surface ran, so a filtered run (`DOZO_E2E_ARGS`) is not judged on it.
+  every surface ran, so a filtered run (`DOZO_E2E_ARGS`) is not judged on it. The decision itself
+  is `declaredKeysVerdict` in `logic.ts`.
+- `logic.ts` + `logic.test.mjs`: the pure decisions above (route matching, the missed-route check,
+  the coverage verdict), with no imports. Node's test runner checks them offline; `make olc` runs
+  every `dozo/e2e/*.test.mjs`. The reporter and the runner themselves need Playwright and run only
+  in `make e2e`.
 
 ## Rate limit
 

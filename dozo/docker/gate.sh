@@ -47,8 +47,18 @@ rm_run_containers() {
 }
 # Wait until $1 is gone, however many trapped signals cut a `wait` short; the exit status is in
 # WAIT_RC. A second Ctrl-C during cleanup must not leave the child running while we report failure.
+# `wait` runs at least once: a child that already exited and was reaped has no process left for
+# `kill -0` to find, and a loop that tests first would report 0 for a step that failed. A status
+# above 128 may be a signal that cut the wait short after the child ended: ask once more (a status
+# already collected answers 127, or the same status again on bash 3.2, so it never overwrites).
+# The same function is in dozo/e2e/run.sh.
 WAIT_RC=0
-wait_gone() { WAIT_RC=0; while kill -0 "$1" 2>/dev/null; do wait "$1"; WAIT_RC=$?; done; }
+wait_gone() {
+  local rc again
+  while :; do wait "$1"; rc=$?; kill -0 "$1" 2>/dev/null || break; done
+  if [ "$rc" -gt 128 ]; then wait "$1"; again=$?; [ "$again" -eq 127 ] || rc=$again; fi
+  WAIT_RC=$rc
+}
 
 # A skipped check must never end in PASS: CI pulls the image and fails if it cannot, a local run
 # fails with the one command that fixes it (olc stays offline and fast once the image is cached).
@@ -117,7 +127,7 @@ syntax_check() { # $1 = script
 }
 
 olc() {
-  local s out f tests report low missing brand_src rc
+  local s out f tests report low missing brand_src rc e2e_tests
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs.
@@ -148,10 +158,12 @@ olc() {
         fail "brand unit tests or coverage"
       fi
     else fail "no brand tests under dozo/brand (a check that cannot run is a failure)"; fi
-    # The offline model server the e2e suite connects to: Node's own test runner, about a second.
+    # The e2e helpers that need no browser (the offline model server, route matching, the coverage
+    # verdict): Node's own test runner on every dozo/e2e/*.test.mjs, about a second.
     if [ -f dozo/e2e/model-stub.test.mjs ]; then
-      out=$(drun stub-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/e2e/model-stub.test.mjs 2>&1) \
-        && echo "[olc] e2e model stub tests ok" || { printf '%s\n' "$out"; fail "e2e model stub tests"; }
+      e2e_tests=(dozo/e2e/*.test.mjs)
+      out=$(drun e2e-helper-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test "${e2e_tests[@]}" 2>&1) \
+        && echo "[olc] e2e helper tests ok (${#e2e_tests[@]} files)" || { printf '%s\n' "$out"; fail "e2e helper tests"; }
     else fail "dozo/e2e/model-stub.test.mjs missing: the e2e model stub is not tested"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
@@ -163,10 +175,12 @@ olc() {
         || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
   fi
-  local files forkfiles bad base
+  local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage \) -prune -o -type f -print | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
-  echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles"
+  # Upstream's workflows arrive enabled after a sync (dozo/SYNC.md): a changed count is the cue to look.
+  upwf=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) ! -name 'dozo-*' 2>/dev/null | wc -l | tr -d ' ')
+  echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles, upstream workflows=$upwf"
   # Compared with the merge base, not the tip of $UP_REF: after an aborted sync or a daily sync on
   # origin the ref is ahead, and everything upstream changed since would look like our edit. A check
   # that cannot run fails: without the ref, nothing says what upstream's files are.
@@ -180,7 +194,7 @@ olc() {
   selftest
 }
 
-# Pure shell logic that needs no Docker: the coverage parsers, against fixtures of a Vitest table and
+# Pure shell logic that needs no Docker: wait_gone and the coverage parsers, against fixtures of a Vitest table and
 # of Node's test-runner table (a tree: directory rows, indented names, empty number fields). Each
 # case pins one way the parser could go wrong; see the comments. Not covered: the stage swap and the
 # worktree overlay (they need a scratch git repository), the unit volume sync, the compose steps and
@@ -202,14 +216,32 @@ selftest() {
   expect_misses "just under the floor" 90 "$edge" "$edge" || ok=0
   expect_misses "exactly the floor" 90 $'x.mjs | 90.00 | 100 | 100 | ' "" || ok=0
   # Files a test never imports are absent from the table: names listed, a substring is not a listing.
-  got=$(coverage_unlisted a.mjs b.mjs c.mjs <<< $'ℹ dozo | | | | \nℹ  brand | | | | \nℹ   a.mjs | 100.00 | 100.00 | 100.00 | \nℹ   xb.mjs | 100.00 | 100.00 | 100.00 | \nℹ   c.mjs | 100.00 | 100.00 | 100.00 | 4')
-  [ "$got" = "b.mjs" ] || { ok=0; echo "[olc] coverage_unlisted: got '$got', want 'b.mjs'"; }
-  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers ok" || fail "selftest coverage parsers"
+  # d.mjs has a row with empty number fields only (a directory-style row): that is not a listing.
+  got=$(coverage_unlisted a.mjs b.mjs c.mjs d.mjs <<< $'ℹ dozo | | | | \nℹ  brand | | | | \nℹ   a.mjs | 100.00 | 100.00 | 100.00 | \nℹ   xb.mjs | 100.00 | 100.00 | 100.00 | \nℹ   c.mjs | 100.00 | 100.00 | 100.00 | 4\nℹ   d.mjs | | | | ')
+  [ "$got" = $'b.mjs\nd.mjs' ] || { ok=0; echo "[olc] coverage_unlisted: got '$got', want 'b.mjs, d.mjs'"; }
+  # wait_gone keeps the child's own status. An instant failure already reaped before the first wait
+  # (the old loop tested `kill -0` first and reported 0); a code above 128; a trapped signal that cuts
+  # the first wait short while the child still runs; a success.
+  trap ':' USR1
+  ( sleep 0.1; kill -USR1 $$ ) &
+  check_wait "interrupted wait" 4 0 'sleep 0.4; exit 4' || ok=0
+  trap - USR1
+  check_wait "instant failure, reaped before the wait" 3 0.2 'exit 3' || ok=0
+  check_wait "status above 128" 130 0.2 'exit 130' || ok=0
+  check_wait "success" 0 0.2 'exit 0' || ok=0
+  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers and wait_gone ok" || fail "selftest coverage parsers or wait_gone"
 }
 expect_misses() { # name min fixture want
   local got; got=$(coverage_misses "$2" <<< "$3")
   [ "$got" = "$4" ] && return 0
   echo "[olc] selftest $1: got:"; printf '%s\n' "$got" | sed 's/^/[olc]   /'; return 1
+}
+
+check_wait() { # name want delay body: run body in the background, wait_gone it after delay seconds
+  local p; ( eval "$4" ) & p=$!
+  sleep "$3"; wait_gone "$p"
+  [ "$WAIT_RC" = "$2" ] && return 0
+  echo "[olc] selftest wait_gone $1: got $WAIT_RC, want $2"; return 1
 }
 
 upstream_ref_ok() { git rev-parse --verify -q "$UP_REF^{commit}" >/dev/null; }

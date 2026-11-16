@@ -8,6 +8,7 @@ export const signedOut: Surface[] = [
     group: "signed out",
     signedOut: true,
     covers: ["route:/sign-in", "route:/sign-in/email", "route:/"],
+    landsOn: { "route:/": { path: "/sign-in", reason: "signed out, the root is sent to sign-in" } },
     async reach({ page, goto, scan }) {
       await goto("/");
       await expect(page).toHaveURL(/\/(sign-in|sign-up)/);

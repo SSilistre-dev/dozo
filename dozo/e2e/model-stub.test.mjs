@@ -103,3 +103,20 @@ test("a completions path under another prefix works; an unknown path is 404", as
   assert.equal((await fetch(`${base}/nope`)).status, 404);
   assert.equal((await fetch(`${base}/v1/chat/completions`)).status, 404); // GET is not served
 });
+
+test("a query string does not change the route", async () => {
+  // Clients append one (an api-version, a cache buster); the path alone decides.
+  const models = await fetch(`${base}/v1/models?api-version=1`);
+  assert.equal(models.status, 200);
+  assert.equal((await models.json()).data[0].id, "dozo-e2e-model");
+  assert.equal((await fetch(`${base}/health?x=1`)).status, 200);
+  assert.equal((await post(JSON.stringify({}), "/v1/chat/completions?api-version=1")).status, 200);
+});
+
+test("only a literal stream:true streams; false, missing, a string answer JSON", async () => {
+  for (const body of [{ stream: false }, {}, { stream: "true" }, { stream: 1 }]) {
+    const response = await post(JSON.stringify(body));
+    assert.match(response.headers.get("content-type"), /application\/json/, JSON.stringify(body));
+    assert.equal((await response.json()).object, "chat.completion");
+  }
+});

@@ -7,7 +7,7 @@
  * Every case-insensitive occurrence of the old name is a leak unless it sits in a technical
  * identifier shape (SHAPES in lib.mjs) or a reviewed phrase (`keep`, `allow.phrases`, `allow.text`
  * in brand.json). Also: url keys, `leak` needles, public domains of either brand, file and
- * directory names, images, symlinks and mapped assets.
+ * directory names, binary files, symlinks and mapped assets.
  *
  * Exit 0 when clean, 2 with a `path:line: match` list (first 50) plus a total otherwise, and 2
  * when no file was scanned. `--launch` adds the placeholders in the `urls` targets and the
@@ -20,10 +20,13 @@ import {
   BINARY_EXT,
   DEFAULT_CONFIG,
   buildScanner,
+  countText,
   escapeRe,
+  expectedCount,
   fail,
   guard,
   inScope,
+  isSvg,
   listFiles,
   loadConfig,
   parseArgs,
@@ -63,6 +66,7 @@ for (const rel of links) {
 }
 
 const reportedPaths = new Set();
+const textSeen = new Map(); // allow.text entry -> occurrences in its file
 for (const rel of tracked) {
   if (!inScope(config, rel)) continue;
   // Names are not rewritten: a file or directory that carries the old name is listed or reviewed in allow.paths.
@@ -72,16 +76,17 @@ for (const rel of tracked) {
   }
   const read = readFile(root, rel);
   if (BINARY_EXT.test(rel) && !config.assets[rel]) {
-    // Images are not text: anything not replaced through the asset map must be reviewed once.
-    if (!config.allow.images.some((_, i) => config.allowImagesRe[i].test(rel))) {
-      found.push(`${rel}: image neither mapped in "assets" nor reviewed in "allow.images"`);
+    // Images, fonts, media and documents are not text: anything not replaced through the asset map must be reviewed once.
+    if (!config.allow.binary.some((_, i) => config.allowBinaryRe[i].test(rel))) {
+      found.push(`${rel}: binary file neither mapped in "assets" nor reviewed in "allow.binary"`);
     }
-    if (read.binary || !rel.endsWith(".svg")) continue;
+    if (read.binary || !isSvg(rel)) continue;
   } else if (read.binary) {
     if (!BINARY_EXT.test(rel)) found.push(`${rel}: binary content (NUL byte) in a file type that is not a known binary: UTF-16 text? it was not scanned`);
     continue;
   }
   scanned++;
+  for (const entry of config.allow.text) if (entry.file === rel) textSeen.set(entry, countText(entry, read.text));
   const lines = read.text.split("\n");
   const launch = args.launch
     ? [placeholders, ...upstream.filter((entry) => entry.filesRe.some((re) => re.test(rel))).map((entry) => phraseRe(entry.text))].filter(Boolean)
@@ -94,6 +99,12 @@ for (const rel of tracked) {
       for (const match of lines[i].matchAll(re)) found.push(`${rel}:${i + 1}: ${match[0]} (launch placeholder)`);
     }
   }
+}
+
+// A reviewed text stands for exactly the occurrences counted in brand.json: a new one is a new leak.
+for (const entry of config.allow.text) {
+  const n = textSeen.get(entry) ?? 0;
+  if (n !== expectedCount(entry)) found.push(`${entry.file}: allow.text ${entry.text} occurs ${n} times, expected ${expectedCount(entry)} (review a new occurrence, then set count)`);
 }
 
 // Mapped assets must be our files, byte for byte.

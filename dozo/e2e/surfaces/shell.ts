@@ -12,6 +12,9 @@ export const shell: Surface[] = [
     name: "home (the app root)",
     group: "shell",
     covers: ["route:/app"],
+    landsOn: {
+      "route:/app": { path: "/app/:botId", reason: "the app root opens the last bot's chat" },
+    },
     async reach({ page, goto }) {
       await goto("/app");
       await expect(page).toHaveURL(/\/app\/[^/]+$/);

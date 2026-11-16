@@ -13,9 +13,9 @@ placeholders are replaced.
       links `/discord`, `/get/ios` and `/get/android`.
 - [ ] **GitHub owner and repo** (blocks launch). Replace `github.com/OWNER/dozo` in
       `dozo/brand/brand.json` and in the fork notice in `README.md`.
-- [ ] **Publish and enable CI** (blocks launch). Nothing is pushed yet and neither dozo workflow has
-      run. Disable upstream's workflows before the first push, create `upstream-main` on origin, set
-      the secret `DOZO_SYNC_TOKEN` and the required status check: `dozo/SYNC.md`.
+- [ ] **Publish and enable CI** (blocks launch; what is published so far: `dozo/README.md`, Status
+      and known limits). Disable upstream's workflows before the first push, create `upstream-main`
+      on origin, set the secret `DOZO_SYNC_TOKEN` and the required status check: `dozo/SYNC.md`.
 - [ ] **Logo, remaining parts** (blocks launch for desktop and mobile only). The logo is approved and
       applied to the web icons (`dozo/brand/README.md`, Logo). Still open: the desktop and mobile
       icons, splash and widget images (listed in `dozo/brand/AUDIT.md`), which are outside the codemod's

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { Reporter } from "@playwright/test/reporter";
 import { readInventory } from "./inventory";
+import { declaredKeysVerdict } from "./logic";
 import type { CoverageRecord } from "./scan";
 import { NOT_REACHABLE, SKIPS, SURFACES } from "./surfaces";
 
@@ -87,16 +88,19 @@ export default class CoverageReporter implements Reporter {
       const share = (prefix: string) =>
         `${count(prefix).filter((k) => visitedKeys.has(k)).length}/${count(prefix).length}`;
       const ranAll = SURFACES.every((s) => records.some((r) => r.surface === s.name));
-      const declared = new Set(SURFACES.flatMap((s) => s.covers ?? []));
-      const unvisited = [...declared].filter((key) => !visitedKeys.has(key)).sort();
-      if (!ranAll) {
+      const verdict = declaredKeysVerdict(
+        ranAll,
+        SURFACES.flatMap((s) => s.covers ?? []),
+        visitedKeys,
+      );
+      if (!verdict.checked) {
         lines.push("", "DECLARED KEYS: not checked, not every surface ran (filtered run)");
-      } else if (unvisited.length) {
+      } else if (verdict.unvisited.length) {
         lines.push(
           "",
           "DECLARED BUT NOT VISITED (a surface lists the key in `covers`, none reached it)",
         );
-        for (const key of unvisited) lines.push(`  ${key}`);
+        for (const key of verdict.unvisited) lines.push(`  ${key}`);
         failure = { status: "failed" };
       }
       lines.push(

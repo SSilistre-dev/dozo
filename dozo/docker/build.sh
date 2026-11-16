@@ -31,8 +31,12 @@ cleanup() {
   [ $rc -eq 0 ] || [ $rc -eq 64 ] || [ "${DIED:-}" = 1 ] || echo "[dozo] FAILED at step '$STEP' (exit $rc)" >&2
   [ -z "${ENV_TMP:-}" ] || rm -f "$ENV_TMP"
   rm -f "$ENVF.new"
-  ids=$(docker ps -aq --filter "label=dozo.run=build-$$" 2>/dev/null) || ids=""
-  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+  # Only a step that started a container (node_run) has any to remove: stage and the compose steps
+  # leave Docker alone here, so a host without Docker can still stage.
+  if [ "${STARTED_CONTAINER:-}" = 1 ]; then
+    ids=$(docker ps -aq --filter "label=dozo.run=build-$$" 2>/dev/null) || ids=""
+    [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+  fi
   [ $rc -eq 0 ] || [ $rc -eq 64 ] || rc=2
   exit $rc
 }
@@ -53,7 +57,7 @@ need_compose() {
 # Run node in a container: repo dozo/ read-only at /dozo, staged tree at /w. It writes into the bind
 # mount, so it runs as the invoking user: root-owned files would make a later rm -rf fail on Linux.
 # --init, a name unique to this run and a label: the EXIT/INT/TERM handler removes it if we are killed.
-node_run() { docker run --init --rm --name "dozo-node-$$" --label "dozo.run=build-$$" --user "$(id -u):$(id -g)" -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
+node_run() { STARTED_CONTAINER=1; docker run --init --rm --name "dozo-node-$$" --label "dozo.run=build-$$" --user "$(id -u):$(id -g)" -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
 
 # docker compose from inside the staged copy, upstream compose file untouched. The env file is the
 # one source of truth: compose lets an exported variable beat --env-file, so every key the file holds
@@ -229,8 +233,13 @@ smoke() {
   say "smoke: ok"
 }
 
+# Taking a stack down needs only the compose file and the env file, not a whole tree: a stage cut
+# short that still has both can be reset. Without them nothing can be addressed: stage again first.
 down() {
-  STEP=down; need_stage; need_compose
+  STEP=down
+  [ -f "$SRC/$COMPOSE_REL" ] && [ -f "$ENVF" ] \
+    || die "cannot take the stack down: $SRC/$COMPOSE_REL or $ENVF is missing; run: dozo/docker/build.sh stage (then down)"
+  need_compose
   say "down: project '$PROJECT'${VOLUMES:+ (with volumes)}"
   dc down ${DOZO_STOP_TIMEOUT:+--timeout "$DOZO_STOP_TIMEOUT"} ${VOLUMES:+--volumes}
 }

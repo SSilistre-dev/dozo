@@ -32,8 +32,9 @@ a stack trace).
   tree). A rule that counts as already applied fails there: it can only be upstream drift hiding
   behind a short `replace`. Every anchored rule must have applied, and an entry that matches nothing
   in the tree fails as dead: a `urls` key, a `variants` or `literals` entry, a `keep`, `allow.phrases`
-  or `allow.text` entry, an `allow.paths` or `allow.images` glob. Delete it. `build.sh brand` and
-  `make olc` pass `--strict`. Without it a re-run on a rewritten tree is a no-op (idempotent); that
+  or `allow.text` entry, an `allow.paths` name or `allow.binary` glob, and, with the shipped config, a
+  `SHAPES` row or stem (see Leak gate). An `allow.text` entry also fails when its file holds more or
+  fewer occurrences than its `count`. Delete or fix it. `build.sh brand` and `make olc` pass `--strict`. Without it a re-run on a rewritten tree is a no-op (idempotent); that
   lenient path is only for running `apply.mjs` by hand twice.
 - `check.mjs --root <dir> [--launch]` is the leak gate. Exit 0 prints `leak gate clean: N files
   scanned`. Exit 2 prints `path:line: match` (the first 50, then a total) and also fails when no file
@@ -47,14 +48,16 @@ What is guaranteed. Config, rules, assets, the encoding of every file read and t
 are all validated before the first write, so a rule failure writes nothing. The write phase then
 writes the assets and replaces each rewritten file through a temp file
 (`<name>.dozo-tmp-<pid>`) and a rename, keeping the mode, one file at a time. If it fails half way (disk
-full, permissions) apply exits 2 with "the stage is partial, re-stage it", the files already replaced
-stay replaced, and a temp file may remain. The stage is throwaway: re-stage, do not repair.
+full, permissions) apply exits 2 with "the stage is partial, re-stage it" and the files already
+replaced stay replaced. A write that fails removes its own temp file; one that is killed outright can
+leave it behind, and the gate would then scan it as content. The stage is throwaway: re-stage, do not
+repair.
 
 Encoding: a file in scope that is not valid UTF-8 stops apply and check (exit 2, naming the file;
-convert it or exclude it with a reason), so a rewrite never corrupts it. A NUL byte marks a file as
-binary. In a known binary type (`BINARY_EXT` in `lib.mjs`: images, fonts, media, pdf) it is skipped by
-apply and handled by the gate (see Leak gate); in any other type (UTF-16 text) it is an error in apply
-and a finding in the gate.
+convert it or exclude it with a reason), so a rewrite never corrupts it. A file of a known binary type
+(`BINARY_EXT` in `lib.mjs`: images, fonts, media, pdf) is never decoded, whatever its bytes: apply skips
+it and the gate handles it (see Leak gate). Only `.svg` is also text, so an `.svg` must be valid UTF-8.
+A NUL byte in any other type (UTF-16 text) is an error in apply and a finding in the gate.
 
 ## What apply does (in order, per file under `include` minus `exclude`)
 
@@ -90,7 +93,9 @@ Keys: `from`, `to`, `variants`, `urls`, `literals`, `include`, `exclude`, `keep`
 first name), `anchored`, `assets`. Every entry of `exclude`, `keep`, `allow.*`, `literals` and
 `anchored` has a mandatory one-line `reason`. The file is validated when it loads and exits 2 on: an
 unknown key, a wrong type, an empty `text`, `glob`, `file` or url key, a missing or empty `reason`, a
-missing or empty `files` list where one is required (`keep`, `allow.phrases`), an empty `include`, a
+missing or empty `files` list where one is required (`keep`, `allow.phrases`), a wildcard (`*`, `?`) in
+`allow.paths` (it lists exact names), an `allow.text` `count` that is not a whole number of 1 or more,
+the old key `allow.images` (renamed `allow.binary`), an empty `include`, a
 `to`, url target, variant or literal `replace` that contains what it replaces, or an anchored rule with
 an empty `replace` or one that contains its `find`.
 
@@ -148,18 +153,39 @@ sits inside one of the technical-identifier shapes in `SHAPES` (`lib.mjs`) or a 
 shape table lets an identifier through: it is finite on purpose, so `rakazo-powered`, `#rakazo`,
 `rakazo.`, `- Ask rakazo` and `You are rakazo, ${x}` are leaks wherever they stand. Each row is
 `{ name, re, reason }`: a case-sensitive (except `header`) global regex that matches the whole token
-that holds the old name, as the tree contains it, and masks it. To add one when a new upstream
-identifier is really technical and fails the gate: add a narrow row with its reason, with a positive
-and a negative sample in `brand.test.mjs`; never loosen an existing row.
+that holds the old name, as the tree contains it, and masks it. Rows that are lists of names (`dotted-key`,
+`css-name`, `dom-event`, `binary-name`, `service-name`, `persisted-key`, `name-prefix`, `process-marker`,
+`memory-entity`, `kdf-context`) are closed: each stem is one name the tree uses, a name that continues
+with a letter, digit, `_` or `-` is another name, and `apply --strict` (with the shipped config) fails on a
+row or a stem that matches nothing in the tree. Some rows also look at the neighbourhood:
+
+- `camel-name` (`RakazoDesktop`, `rakazoScreen`, `isRakazoContainer`) is code only after `.`, after
+  `new class type interface function const let var typeof`, after `<` (a JSX tag or type argument),
+  alone in a string, before `(` or `.name`, or in a slot (object key, parameter, type annotation, import
+  list) that follows no word and is followed by `: = ? | & , ; ) ] } >`. Between plain words
+  (`Welcome to RakazoAI Pro`), in JSX text (`<b>RakazoPro</b>`) and in a string with spaces it is a leak.
+- `dotted-key` (`rakazo.botId`) needs quotes, a URL or path before it, or `=` after it.
+- The hyphen rows are prose, hence a leak, between a plain word and a lowercase word
+  (`Try the rakazo-browser app`).
+
+Limits of the neighbourhood: a parenthesised or colon-ended name (`(RakazoPro)`, `RakazoBot: hi`) reads
+as a slot; a hyphen name at the start of a line or before `-`, `.` or a quote is not prose; a class
+list is prose-like (`ring rakazo-bot-avatar-ring-working absolute` is one reviewed `allow.text`). The
+gate cannot tell these from code without parsing, so a new one is reviewed, not guessed. To add a row or
+stem when a new upstream identifier is really technical and fails the gate: add it narrowly with its
+reason, with a positive and a negative sample in `brand.test.mjs`; never loosen an existing row.
 
 Reviewed text, each with a `reason`, each scoped, matched as a whole phrase:
 
 - `keep` and `allow.phrases`: `{text, files}` (`files` required), in those files only.
   `allow.phrases` may carry `"permanent": true` (see `--launch`).
-- `allow.text`: `{file, text}`, one file, one text (persisted enum values, vendor headers, `"rakazo"`
-  client names that are not shown). The rest of the file is still checked.
-- `allow.paths`: globs of file and directory names that carry the old name on purpose.
-- `allow.images`: files of a binary type that are reviewed but not mapped.
+- `allow.text`: `{file, text, count}`, one file, one text (persisted enum values, vendor headers,
+  `"rakazo"` client names that are not shown, a code name that sits in a sentence). The rest of the
+  file is still checked. `count` (default 1) is how many occurrences the entry stands for: the gate
+  fails on more (a new occurrence is a new leak) and on fewer.
+- `allow.paths`: the exact names of files and directories that carry the old name on purpose. A glob is
+  a config error: a wildcard would pass any future file.
+- `allow.binary`: files of a binary type (images, fonts, media, pdf) that are reviewed but not mapped.
 
 Also checked:
 
@@ -167,26 +193,27 @@ Also checked:
   the bare Discord invite code and App Store id, which catch their other forms) and the old name with
   a public TLD from a fixed list (`TLDS` in `lib.mjs`: `rakazo.ai`, `.app`, `.io`, `hello@rakazo.ai`),
   case-insensitive. The new name followed by one of those TLDs (`Dozo.com`), unless a `urls` target
-  owns it.
-- a PascalCase brand identifier standing between plain words (`Ask RakazoBot to help`), and a string
-  that is exactly one such name (`"RakazoIntrospection"`, a client or operation name).
+  owns it. Any other `rakazo.<word>` that is not a listed dotted key (`rakazo.fun`) is a leak too.
+- a string that is exactly one PascalCase brand name (`"RakazoIntrospection"`, a client or operation
+  name); a PascalCase name between plain words (`Ask RakazoBot to help`) is a leak by the `camel-name` rule.
 - a URL target glued to a word (`dozo.exampleputerOwner`): a rewrite ate part of another token.
 - `literals`: a `find` still present means the rule did not run.
 - file and directory names with the old name, once per path, unless in `allow.paths`.
-- binary types (`BINARY_EXT`, images included): each must be in `assets` or reviewed in
-  `allow.images`; an `.svg` is also scanned as text; a mapped asset must equal our file byte for byte
-  and must exist in the tree.
+- binary types (`BINARY_EXT`: images, fonts, media, pdf): each must be in `assets` or reviewed in
+  `allow.binary` ("binary file neither mapped nor reviewed"); an `.svg` is also scanned as text; a
+  mapped asset must equal our file byte for byte and must exist in the tree.
+- an `allow.text` entry whose file holds more or fewer occurrences than its `count`.
 - a NUL byte in a file that is not a known binary type (UTF-16 text) is reported, not skipped.
 - symlinks whose target is outside the tree or cannot be resolved.
 - a tree with no file in scope fails.
 
 Findings are de-duplicated (a finding inside the span of an earlier, longer one is the same leak).
 
-Still not caught: images reviewed in `allow.images`; text generated at runtime; text assembled from
-fragments (`"rak" + "azo"`, `` `${name}` ``); an identifier-shaped token that is really prose
-(`rakazo.something` after a space, `RakazoBot` standing alone); `rakazo.<tld>` with a TLD not in the
-list; any other Discord invite code or social host; build output, `.map` files and files outside
-`include`.
+Still not caught: binary files reviewed in `allow.binary`; text generated at runtime; text assembled
+from fragments (`"rak" + "azo"`, `` `${name}` ``); an identifier-shaped token that is really prose
+within the limits of the neighbourhood rules above; any other Discord invite code or social host; build
+output, `.map` files and files outside `include`. A stem that occurs only inside a reviewed `keep` or
+`allow.text` phrase still counts as alive for the dead-stem check.
 
 ## Known gaps
 

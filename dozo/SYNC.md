@@ -42,14 +42,16 @@ without the `upstream` remote and the branch. For CI, origin also needs `upstrea
    `refs/remotes/upstream/main`. It exits 2 when it predicts conflicts.
 2. `dozo/sync.sh` (clean tree required). It fetches, fast-forwards `upstream-main`, creates
    `sync/upstream-<sha>` from `main`, merges with a merge commit, then runs `make qa` (its first step is
-   `make olc`). `--fast` runs only `make olc`. A gate whose make target does not exist is skipped with
-   a notice. It never pushes and never touches `main`. On success you are left on the sync branch.
+   `make olc`). `--fast` runs only `make olc`. With a Makefile, a missing `make` or a missing target (`qa`, or
+   `olc` with `--fast`) fails the sync (exit 2); a tree without any Makefile has no gates and gets a
+   notice. It never pushes and never touches `main`. On success you are left on the sync branch.
 3. Review the branch, push it, open a PR into `main` (`dozo-gate` runs on it), merge with a merge
    commit. Never squash or rebase: that would re-apply upstream's commits as new ones.
 4. CI does the same daily: `.github/workflows/dozo-sync.yml` runs at 05:37 UTC and on manual dispatch
    (input `fast`, default true). The scheduled run always passes `--fast`, so it runs `make olc` only;
    only a manual dispatch with `fast` off runs the full `make qa` on the runner. It then force-pushes the sync branch, fast-forwards
-   `upstream-main` on origin, creates the label `upstream-sync` if missing, closes older open PRs with
+   `upstream-main` on origin (also when `main` already had upstream's tip and there is no sync
+   branch: a separate step pushes it, without `--force`), creates the label `upstream-sync` if missing, closes older open PRs with
    that label (deleting their branches) and opens or updates the PR. If `sync.sh` fails, nothing is
    published and the job fails. It needs:
    - the secret `DOZO_SYNC_TOKEN` (workflows scope; upstream changes `.github/workflows`);
@@ -65,7 +67,7 @@ without the `upstream` remote and the branch. For CI, origin also needs `upstrea
 | --- | --- |
 | 0 | `--help`; main already contains upstream (nothing to merge; `upstream-main` is fast-forwarded unless `--dry-run`); a clean `--dry-run`; a clean merge whose gates pass |
 | 1 | unknown flag; not in a git repository; no `upstream` remote; no `main` or `upstream-main` branch; dirty tree (real run); `main` and upstream share no history; fork health cannot be computed; `sync/upstream-<sha>` already exists; `git merge-tree` failed (dry run); the merge failed without conflicts (git's message is printed, branch removed). A failing `git fetch` ends the script with git's own status (128) |
-| 2 | `upstream-main` is not an ancestor of `upstream/main` (upstream rewrote history; stop and investigate); upstream ships a `dozo-*` file; `--dry-run` predicts conflicts; a real merge conflicts (merge aborted, branch removed, you are back on your branch); a gate fails (**branch kept** for inspection, not pushed) |
+| 2 | `upstream-main` is not an ancestor of `upstream/main` (upstream rewrote history; stop and investigate); upstream ships a `dozo-*` file; `--dry-run` predicts conflicts; a real merge conflicts (merge aborted, branch removed, you are back on your branch); a gate fails or cannot run: no `make`, no `qa`/`olc` target (**branch kept** for inspection, not pushed) |
 | 129, 130, 143 | SIGHUP, SIGINT, SIGTERM. Before the merge commit exists the half-made branch is removed and you are back on the original branch ("stopped early"). During the gates the branch stays |
 
 In every case after the fast-forward, `upstream-main` stays at the new tip, including after a conflict.
@@ -88,14 +90,18 @@ branch, re-run `make olc` and the gate, then merge.
 
 ## Upstream's GitHub workflows
 
-Status: not done. Nothing is pushed yet, and upstream's workflows are present and enabled in the tree.
-Do this before anything runs on GitHub: turn Actions off for the new repository (Settings > Actions >
+Status: not done (what is published: `dozo/README.md`, Status and known limits). Upstream's
+workflows are present and enabled in the tree. Do this before anything runs on GitHub: turn Actions off for the new repository (Settings > Actions >
 General) before the first push, disable the workflows below in Settings > Actions (or
 `gh workflow disable <file>`), then turn Actions back on. Do not delete the files: deleting upstream
 files causes modify/delete conflicts on every sync. Disabled workflows keep merging cleanly. Keep
 `dozo-gate.yml` and `dozo-sync.yml` enabled.
 
-Upstream ships 23 workflows.
+Upstream ships 23 workflows. Re-check after every sync: a new upstream workflow arrives enabled
+and would run on the first push. `make olc` prints `upstream workflows=<n>` (the files under
+`.github/workflows` not named `dozo-*`) in its rules line; a different number means one was added or
+removed. List them (`ls .github/workflows`), sort the new one into the groups below and disable it
+the same way before the sync branch is pushed. The line informs, it does not fail the gate.
 
 Safe to leave on (no secrets, no publishing):
 - `computer-replay.yml`: path-filtered runtime tests on a stock runner.

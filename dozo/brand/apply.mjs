@@ -7,8 +7,10 @@
  * --strict is for a tree no rule has touched yet (a fresh stage, the committed tree): a rule that
  * counts as "already applied" there is upstream drift hiding behind a short `replace`, every
  * anchored rule must have applied, and every url key, literal, variant, keep and allow entry must
- * match something (an entry that matches nothing is dead and is deleted from brand.json). Without
- * it a re-run on an already rewritten tree is a no-op.
+ * match something (an entry that matches nothing is dead and is deleted from brand.json); an
+ * `allow.text` entry must also occur exactly `count` times, and with the shipped config every
+ * SHAPES row and stem must match something. Without it a re-run on an already rewritten tree is a
+ * no-op.
  *
  * Exit 0 on success, 2 on any failure. Everything is validated before the first write, so a rule
  * failure writes nothing; the write phase replaces each file through a temp file and a rename, and
@@ -19,7 +21,10 @@ import path from "node:path";
 import {
   BINARY_EXT,
   DEFAULT_CONFIG,
+  countText,
+  deadShapes,
   entryApplies,
+  expectedCount,
   fail,
   guard,
   inScope,
@@ -29,6 +34,7 @@ import {
   phraseRe,
   readFile,
   rewrite,
+  writeAtomic,
 } from "./lib.mjs";
 
 guard();
@@ -40,7 +46,8 @@ if (fs.existsSync(path.join(root, ".git")) && !args["allow-git"]) {
   fail(`${root} contains .git: refusing to brand a real working tree (use --allow-git to override)`);
 }
 
-const config = loadConfig(args.config ?? DEFAULT_CONFIG);
+const configFile = path.resolve(args.config ?? DEFAULT_CONFIG);
+const config = loadConfig(configFile);
 const errors = [];
 const counts = {};
 const planned = new Map();
@@ -124,8 +131,13 @@ for (const rel of files) {
 }
 if (scanned === 0) errors.push("no file is in scope (check `include`, `exclude` and --root): nothing was branded");
 
+const dead = (kind, name) => errors.push(`dead ${kind} entry (matches nothing in the tree, delete it): ${name}`);
+// The shape table is the shipped brand's own: only the shipped config is held to it, and whatever else fails.
+if (args.strict && configFile === DEFAULT_CONFIG) {
+  for (const { shape, stem } of deadShapes(finalText.values())) dead(stem === undefined ? "shapes" : "shapes.stems", stem === undefined ? shape : `${shape}: ${stem}`);
+}
+
 if (args.strict && errors.length === 0) {
-  const dead = (kind, name) => errors.push(`dead ${kind} entry (matches nothing in the tree, delete it): ${name}`);
   for (const key of Object.keys(config.urls)) if (!counts[`url ${key}`]) dead("urls", key);
   for (const key of Object.keys(config.variants)) if (!counts[`variant ${key}`]) dead("variants", key);
   for (const literal of config.literals) if (!counts[`literal ${literal.find}`]) dead("literals", literal.find);
@@ -133,9 +145,13 @@ if (args.strict && errors.length === 0) {
     [...finalText].some(([rel, text]) => test(rel) && phraseRe(entry.text).test(text));
   for (const entry of config.keep) if (!found(entry, (rel) => entryApplies(entry, rel))) dead("keep", entry.text);
   for (const entry of config.allow.phrases) if (!found(entry, (rel) => entryApplies(entry, rel))) dead("allow.phrases", entry.text);
-  for (const entry of config.allow.text) if (!found(entry, (rel) => rel === entry.file)) dead("allow.text", `${entry.file}: ${entry.text}`);
+  for (const entry of config.allow.text) {
+    const n = countText(entry, finalText.get(entry.file) ?? "");
+    if (n === 0) dead("allow.text", `${entry.file}: ${entry.text}`);
+    else if (n !== expectedCount(entry)) errors.push(`allow.text ${entry.file}: ${entry.text} occurs ${n} times, expected ${expectedCount(entry)} (review the new occurrence, then set count)`);
+  }
   const paths = new Set(files.flatMap((rel) => rel.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
-  for (const [name, list, res] of [["allow.paths", config.allow.paths, config.allowPathsRe], ["allow.images", config.allow.images, config.allowImagesRe]]) {
+  for (const [name, list, res] of [["allow.paths", config.allow.paths, config.allowPathsRe], ["allow.binary", config.allow.binary, config.allowBinaryRe]]) {
     list.forEach((entry, i) => {
       if (![...paths].some((p) => res[i].test(p))) dead(name, entry.glob);
     });
@@ -156,13 +172,6 @@ if (errors.length) {
   console.error(`dozo-brand: ${errors.length} rule failure(s), nothing written:`);
   for (const error of errors) console.error(`  ${error}`);
   process.exit(2);
-}
-
-/** Replace the file in one step, keeping its mode: a reader sees the old or the new content, never half. */
-function writeAtomic(file, data) {
-  const tmp = `${file}.dozo-tmp-${process.pid}`;
-  fs.writeFileSync(tmp, data, { mode: fs.existsSync(file) ? fs.statSync(file).mode & 0o777 : 0o644 });
-  fs.renameSync(tmp, file);
 }
 
 if (!args.check) {

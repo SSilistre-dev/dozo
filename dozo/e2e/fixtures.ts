@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Download, Page } from "@playwright/test";
 import { test as base, expect } from "@playwright/test";
+import type { LandsOn } from "./logic";
+import { routeKeysMissed } from "./logic";
 import type { CoverageRecord, Leak, Scan } from "./scan";
 import {
   installProbes,
@@ -89,6 +91,12 @@ export type Surface = {
   signedOut?: boolean;
   /** Renders nothing by design, with the reason: the minimum-content check skips it. */
   blankByDesign?: string;
+  /**
+   * Where a `route:` key really ends up when that is not its own pattern (a redirect), with the
+   * reason. After `reach`, every `route:` key in `covers` must have been shown: some URL the page
+   * had during `reach` matches the key's pattern, or the pattern named here for that key.
+   */
+  landsOn?: LandsOn;
   /** Server errors this surface is expected to meet, each with the reason (reported, never hidden). */
   expect5xx?: { pattern: RegExp; reason: string; mustOccur?: boolean }[];
   reach(ctx: Ctx): Promise<void>;
@@ -106,6 +114,12 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   const scans: Scan[] = [];
   const notes: string[] = [];
   const serverErrors: string[] = [];
+  // Every URL the page had, so a surface that visits several routes (or is redirected) is judged on
+  // all of them: reach must have shown each route it declares.
+  const urls: string[] = [];
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) urls.push(frame.url());
+  });
   page.on("response", (response) => {
     if (response.status() >= 500) {
       serverErrors.push(
@@ -153,6 +167,13 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   let failure: unknown;
   try {
     await surface.reach(ctx);
+    urls.push(page.url());
+    const missed = routeKeysMissed(surface.covers ?? [], urls, surface.landsOn);
+    if (missed.length) {
+      throw new Error(
+        `"${surface.name}" declares ${missed.join(", ")} but the page never showed it (URLs seen: ${[...new Set(urls)].join(", ")}): it was not really visited`,
+      );
+    }
     await expect(
       page.locator('[data-rakazo-app-state="failed"]'),
       "the app's last-resort error screen is showing",

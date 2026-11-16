@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { BINARY_EXT, SHAPES, buildScanner, escapeRe, globToRegExp, loadConfig, phraseRe, rewrite, urlRe } from "./lib.mjs";
+import { BINARY_EXT, SHAPES, buildScanner, deadShapes, escapeRe, globToRegExp, inScope, isSvg, listFiles, loadConfig, phraseRe, rewrite, urlRe, writeAtomic } from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temps = [];
@@ -30,6 +30,8 @@ function tree(files) {
 
 const read = (root, rel) => fs.readFileSync(path.join(root, rel), "utf8");
 const shipped = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));
+/** The shipped rules for a tree of a few files: no anchored rules or assets, and no allow.text entry (it counts occurrences in its own file). */
+const withoutFiles = { ...shipped, anchored: [], assets: {}, allow: { ...shipped.allow, text: [] } };
 
 const URLS = {
   "rakazo.com": "dozo.example",
@@ -305,7 +307,9 @@ describe("url map", () => {
       assert.deepEqual(texts(scan(`u = "https://www.rakazo.${tld}/x"`)), [`rakazo.${tld}`], tld);
     }
     assert.deepEqual(texts(scan("write to hello@rakazo.ai or HELLO@RAKAZO.AI")), ["rakazo.ai", "RAKAZO.AI"]);
-    assert.deepEqual(scan("rakazo.botId rakazo.managed rakazo.test"), []);
+    assert.deepEqual(scan('"rakazo.botId" "rakazo.managed" "http://rakazo.test"'), []);
+    // the dotted keys are a closed list: a TLD that is not in it is a leak too
+    for (const tld of ["fun", "studio", "page", "xyz2"]) assert.ok(scan(`u = "https://rakazo.${tld}/x"`).length >= 1, tld);
   });
 
   it("the gate reports the new brand followed by a public TLD that no URL target owns", () => {
@@ -643,7 +647,7 @@ describe("apply safety", () => {
     assert.ok(fs.readFileSync(path.join(root, "src/notes.txt")).equals(utf16));
     fs.rmSync(path.join(root, "src/notes.txt"));
     fs.writeFileSync(path.join(root, "src/font.woff2"), utf16);
-    assert.equal(apply(root, configFile({ allow: { images: [{ glob: "src/font.woff2", reason: "r" }] } })).status, 0);
+    assert.equal(apply(root, configFile({ allow: { binary: [{ glob: "src/font.woff2", reason: "r" }] } })).status, 0);
   });
 
   it("zero files in scope is a failure, in apply and in the gate", () => {
@@ -906,7 +910,7 @@ describe("every occurrence of the old name is a leak", () => {
     for (const prose of ["Ask RakazoBot to help", "ask rakazoBot to help", "Hello RakazoBot, welcome", "Ask RakazoBot", "Ask RakazoBot.", "say\tRakazoBot to"]) {
       assert.equal(scan(prose).length, 1, prose);
     }
-    assert.match(scan("Ask RakazoBot to help")[0].label, /glued into prose/);
+    assert.deepEqual(texts(scan("Ask RakazoBot to help")), ["Rakazo"]);
   });
 });
 
@@ -929,9 +933,25 @@ const SHAPE_CASES = {
     no2: ["https://github.com/rakazo_hq", "@rakazo_hq"],
   },
   "camel-name": {
-    yes: ["RakazoDesktop", "rakazoScreen", "isRakazoContainer", "window.__rakazoApp", "rakazoUserId: 1"],
-    no: ["Rakazo Desktop", "rakazo desktop", "Rakazos", "https://github.com/rakazoHQ", "follow @RakazoHQ"],
-    left: ["RakazoDesktop", "rakazoScreen"],
+    yes: [
+      "export type RakazoDesktop = {", "  desktop: RakazoDesktop | undefined,", "const rakazoScreen = 1;", "if (isRakazoContainer(a)) return;", "window.__rakazoApp = 1", "rakazoUserId: 1",
+      "new RakazoClient(a)", "class RakazoThing {", "export interface RakazoUpdate {", "x = typeof rakazoScreen", "import type { RakazoDesktop, X } from './y';", "<RakazoLogo />",
+      "Promise<RakazoDesktopDevice | null>", "RakazoPage.mount(x)", "host?.rakazoDesktop", '"rakazoDesktop"', "see `rakazoDesktop` here", "(rakazoScreen, detail) => 1",
+      // each declaring keyword on its own: a word follows, so no slot would let it through
+      "x = new RakazoThing instanceof Y", "class RakazoThing extends Base {", "interface RakazoThing extends Base {", "type RakazoThing<T> = T;", "function rakazoThing () {",
+      "for (const rakazoItem of list) {", "let rakazoItem in x", "var rakazoItem as y", "typeof rakazoScreen as string",
+      // each closing character of a slot
+      "(rakazoA = 1) => 1", "Foo & RakazoDesktop & Bar", "{ RakazoDesktop, X }", "x: RakazoDesktop;", "(event: RakazoDesktopSpeechEvent)", "[RakazoDesktop]", "{ RakazoDesktop }", "Array<Foo | RakazoDesktop>", "(x) => rakazoX,",
+    ],
+    no: [
+      "Rakazo Desktop", "rakazo desktop", "Rakazos", "https://github.com/rakazoHQ", "follow @RakazoHQ",
+      "Welcome to RakazoAI Pro", "<b>RakazoPro</b>", "Get RakazoPlus Now", "Open RakazoDesktop Settings", "<h1> RakazoPro </h1>", 'label="Try RakazoPro now"', 'msg = "RakazoPro is here"',
+      "RakazoPro", "Hello RakazoBot, Friends", "Ask RakazoBot", 'x = "__rakazoTyping = "', "const f = () => <span>RakazoPro</span>",
+      "Rakazoapp(1)", "x = Rakazoapp", "isRakazoapp(x)", "Rakazoapp.run", "Rakazoapp: 1",
+      "<p>RakazoPro;</p>", 'msg = "RakazoPro, here"', "\"rakazoDesktop'", "Get RakazoPro, Now",
+      "Get A_rakazoPro, now",
+    ],
+    left: ["RakazoPage.mount(x)", "rakazoScreen: 1"],
   },
   "template-name": {
     yes: ["`rakazo-${randomUUID()}`", 'rm -rf "rakazo-$dir"'],
@@ -944,9 +964,10 @@ const SHAPE_CASES = {
     left: ["rakazo:thread:1"],
   },
   "dotted-key": {
-    yes: ['localStorage.getItem("rakazo.uiAppearance")', "rakazo.botId", "span.setAttribute('rakazo.run.id', id)"],
-    no: ["Welcome to rakazo. Next", "rakazo.", "rakazo.9"],
-    left: ["rakazo.botId"],
+    yes: ['localStorage.getItem("rakazo.uiAppearance")', '"rakazo.botId"', "span.setAttribute('rakazo.run.id', id)", "`rakazo.botId=${botId}`", 'LABEL rakazo.control.aimedScroll="1"', "// Do not filter by rakazo.managed=true: legacy", 'new URL(p, "http://rakazo.invalid")', "https://rakazo.test/api"],
+    no: [
+      "Welcome to rakazo. Next", "rakazo.", "rakazo.9", "rakazo.botId", "Say rakazo.key now", "Use rakazo.run today", '"rakazo.unknownKey"', '"rakazo.botIdX"', '"Qrakazo.botId"', '"rakazo.fun"', '"https://rakazo.studio/x"',
+    ],
   },
   "header": {
     yes: ['"x-rakazo-space-id"', "X-Rakazo-Space-Id: 1", 'startsWith("x-rakazo-")'],
@@ -958,7 +979,7 @@ const SHAPE_CASES = {
   },
   "css-name": {
     yes: [".rakazo-logo-avatar { }", "rakazo-organic-avatar-body-idle", "--rakazo-organic-path: 1", "animation: rakazo-avatar-spin 1s", "rakazo-group-avatar", "rakazo-bot-avatar-ring"],
-    no: ["rakazo-logo-powered", "rakazo-avatar-glow", "rakazo-bot-powered"],
+    no: ["rakazo-logo-powered", "rakazo-avatar-glow", "rakazo-bot-powered", "Use the rakazo-logo-avatar class"],
     left: ["rakazo-logo-avatar", "rakazo-organic-float"],
   },
   "dom-event": {
@@ -967,20 +988,20 @@ const SHAPE_CASES = {
     left: ["rakazo-page:copy"],
   },
   "binary-name": {
-    yes: ["exec rakazo-browser --flag", "rakazo-page-browser", "rakazo-focus-or-launch", "rakazo-computer-control", "rakazo-local-bin.sh", "ld librakazo-xcapture.so", "rakazo-terminal.py"],
-    no: ["rakazo-browsers", "rakazo-computers", "rakazo-homes", "xrakazo-browser"],
+    yes: ["exec rakazo-browser --flag", "rakazo-page-browser", "rakazo-focus-or-launch", "rakazo-local-bin.sh", "ld librakazo-xcapture.so", "rakazo-terminal.py"],
+    no: ["rakazo-browsers", "rakazo-computers", "rakazo-homes", "xrakazo-browser", "Try the rakazo-browser app", "rakazo-computer-control", "rakazo-browser-evil"],
     left: ["rakazo-browser", "rakazo-proxy"],
     right: ["rakazo-browser", "rakazo-home", "rakazo-xcapture"],
   },
   "service-name": {
     yes: ['serviceName: "rakazo-api"', "rakazo-api-jobs", '"rakazo-worker"', "Project-Id-Version: rakazo-web\\n", "rakazo-sandbox-supervisor", "rakazo-prod"],
-    no: ["rakazo-apis", "rakazo-weblog", "rakazo-workers"],
+    no: ["rakazo-apis", "rakazo-weblog", "rakazo-workers", "rakazo-api-evil", "rakazo-web-labs", "Use rakazo-web today"],
     left: ["rakazo-api"],
     right: ["rakazo-api", "rakazo-worker"],
   },
   "persisted-key": {
     yes: ['name: "rakazo-instance-theme"', '"rakazo-account-export"', "rakazo-turn-document", '"rakazo-slack-install"', 'user.rakazo-bot-id'],
-    no: ["rakazo-instance-themes", "rakazo-historyx", "rakazo-accounts"],
+    no: ["rakazo-instance-themes", "rakazo-historyx", "rakazo-accounts", "Open the rakazo-history page now"],
     left: ["rakazo-oauth"],
     right: ["rakazo-oauth", "rakazo-history"],
   },
@@ -991,7 +1012,7 @@ const SHAPE_CASES = {
   },
   "process-marker": {
     yes: ['"rakazo-background-launch $id"', "-i rakazo-c+", "rakazo-cprobe", '"rakazo-write"', "rakazo-coding-agent-probe", "rakazo-cancel-run-work", "rakazo-egress-probe", "rakazo-background-idle"],
-    no: ["rakazo-cat", "rakazo-writes", "rakazo-background-launcher", "rakazo-cprobes"],
+    no: ["rakazo-cat", "rakazo-writes", "rakazo-background-launcher", "rakazo-cprobes", "rakazo-c-x", "Run rakazo-write now"],
     left: ["rakazo-write", "rakazo-c"],
     right: ["rakazo-write", "rakazo-c", "rakazo-cprobe"],
   },
@@ -1019,7 +1040,7 @@ const SHAPE_CASES = {
     no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo"],
   },
   "shell-path": {
-    yes: ['cat "$dir/rakazo-proxy.json"', "~/rakazo-home", "./rakazo-browser", "$directory/.rakazo-write.XXXXXX", "# --user-data-dir=.../rakazo-browser"],
+    yes: ['cat "$dir/rakazo-proxy.json"', "~/rakazo-home", "~/rakazo-chrome", "./rakazo-browser", "$directory/.rakazo-write.XXXXXX", "# --user-data-dir=.../rakazo-browser"],
     no: ["github.com/rakazo-labs", "a/rakazo-x"],
   },
   "windows-path": {
@@ -1091,7 +1112,7 @@ describe("reviewed phrases", () => {
 
   it("phraseRe: boundaries only next to word characters, and only when the phrase ends or starts with one", () => {
     const ends = phraseRe("a.b");
-    assert.ok(ends.test("x a.b y") && (ends.lastIndex = 0, !ends.test("a.bc")) && (ends.lastIndex = 0, !ends.test("a.b-c")) && (ends.lastIndex = 0, !ends.test("xa.b")));
+    assert.ok(ends.test("x a.b y") && (ends.lastIndex = 0, !ends.test("a.bc")) && (ends.lastIndex = 0, !ends.test("a.b-c")) && (ends.lastIndex = 0, !ends.test("xa.b")) && (ends.lastIndex = 0, !ends.test("x-a.b")));
     const dotted = phraseRe(".update(x)");
     assert.ok(dotted.test("h.update(x)") && (dotted.lastIndex = 0, dotted.test(".update(x)y")), "no boundary at a non-word edge");
   });
@@ -1129,7 +1150,7 @@ describe("file and directory names", () => {
     assert.equal(res.stderr.match(/Rakazo\.icon:/g).length, 1, "the directory once, not once per file");
     assert.doesNotMatch(res.stderr, /docs\/rakazo\.md/, "outside the file set");
     assert.match(res.stderr, /^2 leak\(s\)/m);
-    const allow = { paths: [{ glob: "src/rakazo-*", reason: "bin" }, { glob: "src/Rakazo.icon", reason: "icon bundle" }] };
+    const allow = { paths: [{ glob: "src/rakazo-x.ts", reason: "bin" }, { glob: "src/Rakazo.icon", reason: "icon bundle" }] };
     assert.equal(check(root, configFile({ allow })).status, 0);
     const onlyDir = check(root, configFile({ allow: { paths: [{ glob: "src/Rakazo.icon", reason: "icon bundle" }] } }));
     assert.match(onlyDir.stderr, /src\/rakazo-x\.ts/);
@@ -1168,7 +1189,7 @@ describe("images and binaries in the gate", () => {
     assert.equal(check(root, file).status, 0);
   });
 
-  it("an unmapped image fails the gate until it is reviewed in allow.images, for every image type", () => {
+  it("an unmapped binary file fails the gate until it is reviewed in allow.binary, for every binary type", () => {
     const { file } = mk();
     const types = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "icns", "tif", "tiff", "heic", "jfif", "jp2", "apng", "pdf", "woff", "woff2", "ttf", "otf", "eot", "mp4", "webm", "lottie", "riv", "PNG"];
     for (const ext of types) {
@@ -1178,8 +1199,8 @@ describe("images and binaries in the gate", () => {
       put(root, `apps/web/public/new.${ext}`, Buffer.from([7, 0]));
       const res = check(root, file);
       assert.equal(res.status, 2, ext);
-      assert.match(res.stderr, new RegExp(`new\\.${ext}: image neither mapped`), ext);
-      fs.writeFileSync(file, JSON.stringify({ ...base, allow: { images: [{ glob: `apps/web/public/new.${ext}`, reason: "r" }] } }));
+      assert.match(res.stderr, new RegExp(`new\\.${ext}: binary file neither mapped`), ext);
+      fs.writeFileSync(file, JSON.stringify({ ...base, allow: { binary: [{ glob: `apps/web/public/new.${ext}`, reason: "r" }] } }));
       assert.equal(check(root, file).status, 0, ext);
     }
     assert.ok(BINARY_EXT.test("a.TIFF"));
@@ -1188,7 +1209,7 @@ describe("images and binaries in the gate", () => {
 
   it("scans the text of an svg that is reviewed but not mapped", () => {
     const { file } = mk();
-    fs.writeFileSync(file, JSON.stringify({ ...base, allow: { images: [{ glob: "apps/web/public/logo.svg", reason: "r" }] } }));
+    fs.writeFileSync(file, JSON.stringify({ ...base, allow: { binary: [{ glob: "apps/web/public/logo.svg", reason: "r" }] } }));
     const root = tree({});
     put(root, "apps/web/public/i.png", Buffer.from([1, 0, 2, 3]));
     put(root, "apps/web/public/logo.svg", "<svg><title>Rakazo</title></svg>");
@@ -1328,8 +1349,8 @@ describe("dead entries (apply --strict)", () => {
     allow: {
       phrases: [{ text: "ghcr.io/elie222/rakazo", files: ["src/a.ts"], reason: "r" }],
       text: [{ file: "src/a.ts", text: 'rakazo: "computer"', reason: "r" }],
-      paths: [{ glob: "src/rakazo-*", reason: "r" }],
-      images: [{ glob: "src/Rakazo.icon/i.png", reason: "r" }],
+      paths: [{ glob: "src/rakazo-x.ts", reason: "r" }],
+      binary: [{ glob: "src/Rakazo.icon/i.png", reason: "r" }],
     },
     literals: [{ find: "/home/rakazo", replace: "/home/dozo", reason: "r" }],
     leak: [],
@@ -1345,8 +1366,8 @@ describe("dead entries (apply --strict)", () => {
     "keep, right file": { keep: [{ text: "Rakazo.icon", files: ["src/other.ts"], reason: "r" }] },
     "allow.phrases": { allow: { ...live.allow, phrases: [...live.allow.phrases, { text: "gone", files: ["src/a.ts"], reason: "r" }] } },
     "allow.text": { allow: { ...live.allow, text: [{ file: "src/b.ts", text: 'rakazo: "computer"', reason: "r" }] } },
-    "allow.paths": { allow: { ...live.allow, paths: [...live.allow.paths, { glob: "src/gone-*", reason: "r" }] } },
-    "allow.images": { allow: { ...live.allow, images: [{ glob: "src/gone.png", reason: "r" }] } },
+    "allow.paths": { allow: { ...live.allow, paths: [...live.allow.paths, { glob: "src/gone.ts", reason: "r" }] } },
+    "allow.binary": { allow: { ...live.allow, binary: [{ glob: "src/gone.png", reason: "r" }] } },
     literals: { literals: [...live.literals, { find: "/gone", replace: "/x", reason: "r" }] },
   };
   for (const [name, extra] of Object.entries(dead)) {
@@ -1405,7 +1426,7 @@ describe("config validation", () => {
     "allow.phrases": (x) => ({ allow: { phrases: x } }),
     "allow.text": (x) => ({ allow: { text: x } }),
     "allow.paths": (x) => ({ allow: { paths: x } }),
-    "allow.images": (x) => ({ allow: { images: x } }),
+    "allow.binary": (x) => ({ allow: { binary: x } }),
     literals: (x) => ({ literals: x }),
   };
   const good = {
@@ -1414,7 +1435,7 @@ describe("config validation", () => {
     "allow.phrases": { text: "a", files: ["x"], reason: "r" },
     "allow.text": { file: "x", text: "a", reason: "r" },
     "allow.paths": { glob: "x", reason: "r" },
-    "allow.images": { glob: "x", reason: "r" },
+    "allow.binary": { glob: "x", reason: "r" },
     literals: { find: "a", replace: "b", reason: "r" },
   };
   for (const [name, wrap] of Object.entries(lists)) {
@@ -1460,6 +1481,21 @@ describe("config validation", () => {
     rejects({ ...base, anchored: ["x"] }, /anchored rule needs file, find, replace and reason/);
     rejects({ ...base, anchored: [{ file: "a", find: "b", replace: "c", reason: "r", requires: "x" }] }, /requires must be a list of paths/);
     rejects({ ...base, to: "Rakazo2" }, /`to` must not contain `from`/);
+  });
+
+  it("allow.paths lists exact names: a wildcard is a config error, and the old allow.images key says what it became", () => {
+    for (const glob of ["src/rakazo-*", "src/rakazo-?", "**/rakazo-x", "src/*"]) {
+      rejects({ ...base, allow: { paths: [{ glob, reason: "r" }] } }, /allow\.paths lists exact names, not globs/);
+    }
+    rejects({ ...base, allow: { images: [{ glob: "x.png", reason: "r" }] } }, /`allow\.images` was renamed `allow\.binary`/);
+  });
+
+  it("allow.text count is a whole number of 1 or more", () => {
+    const text = (count) => ({ ...base, allow: { text: [{ file: "src/a.ts", text: "x", reason: "r", count }] } });
+    for (const count of [0, -1, 1.5, "2", null, []]) rejects(text(count), /allow\.text count must be a whole number of 1 or more/);
+    const file = path.join(tempDir(), "brand.json");
+    fs.writeFileSync(file, JSON.stringify(text(2)));
+    assert.equal(loadConfig(file).allow.text[0].count, 2);
   });
 
   it("accepts an empty replace in a literal, and an absent optional section", () => {
@@ -1531,7 +1567,7 @@ describe("command line", () => {
 describe("shipped brand.json", () => {
   it("is valid, every entry has a reason, and its keys are unique", () => {
     loadConfig();
-    for (const entry of [...shipped.exclude, ...shipped.keep, ...shipped.allow.phrases, ...shipped.allow.text, ...shipped.allow.paths, ...shipped.allow.images, ...shipped.literals, ...shipped.anchored]) {
+    for (const entry of [...shipped.exclude, ...shipped.keep, ...shipped.allow.phrases, ...shipped.allow.text, ...shipped.allow.paths, ...shipped.allow.binary, ...shipped.literals, ...shipped.anchored]) {
       assert.ok(entry.reason, JSON.stringify(entry));
     }
     const anchored = shipped.anchored.map((rule) => `${rule.file}\0${rule.find}`);
@@ -1544,7 +1580,7 @@ describe("shipped brand.json", () => {
   /** A tree with one file holding `text`, branded with the shipped rules (no anchors, assets) and gated. */
   const brandAndGate = (rel, text) => {
     const file = path.join(tempDir(), "brand.json");
-    fs.writeFileSync(file, JSON.stringify({ ...shipped, anchored: [], assets: {} }));
+    fs.writeFileSync(file, JSON.stringify(withoutFiles));
     const root = tree({ [rel]: text });
     const applied = apply(root, file);
     assert.equal(applied.status, 0, applied.stderr);
@@ -1613,14 +1649,14 @@ describe("shipped brand.json", () => {
 
   it("the gate has a scope for every shipped exclusion and image review", () => {
     assert.ok(shipped.exclude.every((e) => typeof e.glob === "string"));
-    assert.ok(shipped.allow.images.length >= 1 && shipped.allow.paths.length >= 1);
+    assert.ok(shipped.allow.binary.length >= 1 && shipped.allow.paths.length >= 1);
   });
 });
 
 describe("the shipped rules reach the tree through a mini stage", () => {
   it("a branded sample with every kind of text is gate-clean, and leaves identifiers alone", () => {
     const file = path.join(tempDir(), "brand.json");
-    fs.writeFileSync(file, JSON.stringify({ ...shipped, anchored: [], assets: {} }));
+    fs.writeFileSync(file, JSON.stringify(withoutFiles));
     const root = tree({
       "apps/web/src/a.ts": 'x = "Rakazo"; y = RakazoDesktop; z = "https://rakazo.com/privacy/"; w = "@rakazo/core"; q = "RAKAZO_HOST"',
     });
@@ -1628,5 +1664,266 @@ describe("the shipped rules reach the tree through a mini stage", () => {
     assert.equal(res.status, 0, res.stderr);
     assert.equal(read(root, "apps/web/src/a.ts"), 'x = "Dozo"; y = RakazoDesktop; z = "https://dozo.example/privacy/"; w = "@rakazo/core"; q = "RAKAZO_HOST"');
     assert.equal(check(root, file).status, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Closure checks of the leak gate
+
+/** One line per stem of a closed row, as the tree holds it; `tail` is glued right after the stem. */
+const STEM_SAMPLES = {
+  "dotted-key": (stem, tail = "") => `"rakazo.${stem}${tail}"`,
+  "css-name": (stem, tail = "") => `.rakazo-${stem}${tail} { }`,
+  "dom-event": (stem, tail = "") => `type === "rakazo-${stem}${tail}:x"`,
+  "binary-name": (stem, tail = "") => `exec rakazo-${stem}${tail} --x`,
+  "service-name": (stem, tail = "") => `name: "rakazo-${stem}${tail}"`,
+  "persisted-key": (stem, tail = "") => `"rakazo-${stem}${tail}"`,
+  "name-prefix": (stem, tail = "") => `"rakazo-${stem}${tail}-"`,
+  "process-marker": (stem, tail = "") => `pkill -f rakazo-${stem}${tail}`,
+  "memory-entity": (stem, tail = "") => "`rakazo-" + stem + tail + "/${id}`",
+  "kdf-context": (stem, tail = "") => `"rakazo/${stem}${tail}/v1"`,
+};
+const allSamples = () => [
+  ...Object.values(SHAPE_CASES).flatMap((row) => row.yes),
+  ...SHAPES.filter((shape) => shape.stems).flatMap((shape) => shape.stems.map((stem) => STEM_SAMPLES[shape.name](stem))),
+];
+
+describe("closed shape rows", () => {
+  it("every stem of a closed row has a sample that passes, and is a leak when a letter is glued after it", () => {
+    const { scan } = scanner();
+    const closed = SHAPES.filter((shape) => shape.stems);
+    assert.deepEqual(closed.map((shape) => shape.name).sort(), Object.keys(STEM_SAMPLES).sort());
+    for (const shape of closed) {
+      for (const stem of shape.stems) {
+        assert.deepEqual(scan(STEM_SAMPLES[shape.name](stem)), [], `${shape.name}: ${stem}`);
+        // a css name carries on with [\w-]*, so a glued letter is still the same class name
+        if (shape.name !== "css-name") assert.ok(scan(STEM_SAMPLES[shape.name](stem, "x")).length >= 1, `${shape.name}: ${stem}x`);
+      }
+    }
+  });
+
+  it("the dotted keys are a closed list and need a code-like neighbourhood", () => {
+    const { scan } = scanner();
+    assert.deepEqual(SHAPES.find((shape) => shape.name === "dotted-key").stems.includes("key"), false);
+    for (const line of ['"rakazo.fun"', "see rakazo.run now", "Use rakazo.managed today", "rakazo.botId", "x = rakazo.test;"]) assert.ok(scan(line).length >= 1, line);
+    for (const line of ['x = "rakazo.run"', "`rakazo.run`", "http://rakazo.test", "managed/rakazo.json", "rakazo.managed=true", "rakazo.control.aimedScroll=1"]) assert.deepEqual(scan(line), [], line);
+  });
+
+  it("an identifier between plain words is prose, in code it is not", () => {
+    const { scan } = scanner();
+    for (const line of ["Try the rakazo-browser app", "Use rakazo-web today", "Say rakazo-write now", "the rakazo-history key is", "the rakazo-logo-avatar class is"]) assert.ok(scan(line).length >= 1, line);
+    for (const line of ["exec rakazo-browser --flag", "pkill -f rakazo-write", 'if (name === "rakazo-web") x()', "see rakazo-browser, then", "cp rakazo-browser /usr/local/bin/x", "run rakazo-browser", "rakazo-browser starts"]) assert.deepEqual(scan(line), [], line);
+  });
+
+  it("deadShapes names a row or a stem the tree never uses", () => {
+    const lines = allSamples();
+    assert.deepEqual(deadShapes([lines.join("\n")]), []);
+    assert.deepEqual(deadShapes([lines.filter((line) => !line.includes("api-jobs")).join("\n")]), [{ shape: "service-name", stem: "api-jobs" }]);
+    assert.deepEqual(deadShapes([lines.filter((line) => !line.includes("\\\\")).join("\n")]), [{ shape: "windows-path" }]);
+    assert.equal(deadShapes(["const x = 1"]).length, SHAPES.length);
+  });
+
+  it("apply --strict with the shipped config fails on a row or stem the tree never uses, and a custom config is not held to the table", () => {
+    const lines = allSamples();
+    const run = (kept) => bareRun("apply.mjs", "--root", tree({ "apps/web/src/samples.ts": kept.join("\n") }), "--strict");
+    assert.doesNotMatch(run(lines).stderr, /dead shapes/);
+    const noStem = run(lines.filter((line) => !line.includes("api-jobs")));
+    assert.equal(noStem.status, 2);
+    assert.match(noStem.stderr, /dead shapes\.stems entry \(matches nothing in the tree, delete it\): service-name: api-jobs/);
+    const noRow = run(lines.filter((line) => !line.includes("\\\\")));
+    assert.match(noRow.stderr, /dead shapes entry \(matches nothing in the tree, delete it\): windows-path/);
+    assert.doesNotMatch(apply(tree({ "src/a.ts": "Rakazo" }), bare(), "--strict").stderr, /dead shapes/);
+  });
+});
+
+describe("allow.text counts its occurrences", () => {
+  const entry = (extra = {}) => ({ file: "src/a.ts", text: '"rakazo"', reason: "enum", ...extra });
+  const one = 'const a = { label: "rakazo" };';
+  const two = `${one}\nconst b = { label: "rakazo", };`;
+
+  it("the gate fails on a second occurrence, on a missing one, and `count` says how many there are", () => {
+    const config = (extra) => configFile({ allow: { text: [entry(extra)] } });
+    assert.equal(check(tree({ "src/a.ts": one }), config()).status, 0);
+    const more = check(tree({ "src/a.ts": two }), config());
+    assert.equal(more.status, 2);
+    assert.match(more.stderr, /^src\/a\.ts: allow\.text "rakazo" occurs 2 times, expected 1/m);
+    assert.equal(check(tree({ "src/a.ts": two }), config({ count: 2 })).status, 0);
+    assert.match(check(tree({ "src/a.ts": one }), config({ count: 2 })).stderr, /occurs 1 times, expected 2/);
+    assert.match(check(tree({ "src/a.ts": "const x = 1;" }), config()).stderr, /occurs 0 times, expected 1/);
+  });
+
+  it("apply --strict fails on more or fewer than `count`, and on none at all", () => {
+    const config = (extra) => bare({ allow: { text: [entry(extra)] } });
+    assert.equal(apply(tree({ "src/a.ts": one }), config(), "--strict").status, 0);
+    const more = apply(tree({ "src/a.ts": two }), config(), "--strict");
+    assert.equal(more.status, 2);
+    assert.match(more.stderr, /allow\.text src\/a\.ts: "rakazo" occurs 2 times, expected 1/);
+    assert.equal(apply(tree({ "src/a.ts": two }), config({ count: 2 }), "--strict").status, 0);
+    assert.match(apply(tree({ "src/a.ts": one }), config({ count: 2 }), "--strict").stderr, /occurs 1 times, expected 2/);
+    assert.match(apply(tree({ "src/a.ts": "const x = 1;" }), config(), "--strict").stderr, /dead allow\.text entry/);
+  });
+});
+
+describe("binary types are never decoded", () => {
+  const notUtf8 = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]); // a PDF header: high bytes, no NUL
+  const types = ["pdf", "woff2", "ttf", "mp4", "png", "jpg", "ico", "riv", "PDF"];
+
+  it("a file of a known binary type with no NUL byte and no valid UTF-8 is skipped by apply and reviewed by the gate", () => {
+    for (const ext of types) {
+      const root = tree({ "src/a.ts": "const a = 1;" });
+      fs.writeFileSync(path.join(root, `src/f.${ext}`), notUtf8);
+      const applied = apply(root, configFile());
+      assert.equal(applied.status, 0, `${ext}: ${applied.stderr}`);
+      assert.ok(fs.readFileSync(path.join(root, `src/f.${ext}`)).equals(notUtf8), `${ext} is left as it is`);
+      const gate = check(root, configFile());
+      assert.equal(gate.status, 2, ext);
+      assert.match(gate.stderr, new RegExp(`src/f\\.${ext}: binary file neither mapped in "assets" nor reviewed in "allow.binary"`));
+      assert.doesNotMatch(gate.stderr, /not valid UTF-8/);
+      assert.equal(check(root, configFile({ allow: { binary: [{ glob: `src/f.${ext}`, reason: "r" }] } })).status, 0, ext);
+    }
+  });
+
+  it("an svg is text: invalid UTF-8 stops apply and the gate, and an upper-case extension is scanned too", () => {
+    const root = tree({ "src/a.ts": "const a = 1;" });
+    fs.writeFileSync(path.join(root, "src/logo.svg"), notUtf8);
+    const reviewed = configFile({ allow: { binary: [{ glob: "src/logo.svg", reason: "r" }] } });
+    for (const script of [apply, check]) {
+      const res = script(root, reviewed);
+      assert.equal(res.status, 2, script.name);
+      assert.match(res.stderr, /src\/logo\.svg is not valid UTF-8/);
+    }
+    const upper = tree({ "src/a.ts": "const a = 1;", "src/LOGO.SVG": "<svg><title>Rakazo</title></svg>" });
+    const res = check(upper, configFile({ allow: { binary: [{ glob: "src/LOGO.SVG", reason: "r" }] } }));
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /LOGO\.SVG:1: Rakazo/);
+    assert.ok(isSvg("a.SVG") && isSvg("a.svg") && !isSvg("a.svg.png") && !isSvg("svg"));
+  });
+});
+
+describe("a failed atomic write", () => {
+  it("removes its temp file; a good write leaves none either", () => {
+    const dir = tempDir();
+    fs.mkdirSync(path.join(dir, "target/sub"), { recursive: true });
+    assert.throws(() => writeAtomic(path.join(dir, "target"), "x"), "a file cannot replace a directory");
+    assert.deepEqual(fs.readdirSync(dir), ["target"], "no temp file next to the target");
+    writeAtomic(path.join(dir, "ok.txt"), "x");
+    assert.deepEqual(fs.readdirSync(dir).sort(), ["ok.txt", "target"]);
+    assert.equal(fs.readFileSync(path.join(dir, "ok.txt"), "utf8"), "x");
+  });
+});
+
+describe("what the gate must not let through", () => {
+  it("a URL target on a public TLD is ours, another TLD with the fork's name is not", () => {
+    const config = configFile({ urls: { "rakazo.com": "dozo.com" } });
+    assert.equal(check(tree({ "src/a.ts": 'u = "https://dozo.com/x"' }), config).status, 0);
+    const other = check(tree({ "src/a.ts": 'u = "https://dozo.net/x"' }), config);
+    assert.equal(other.status, 2);
+    assert.match(other.stderr, /src\/a\.ts:1: dozo\.net \(brand domain\)/);
+  });
+
+  it("a keep phrase present only outside its files is dead", () => {
+    const root = tree({ "src/a.ts": "Rakazo.icon", "src/b.ts": "Rakazo" });
+    const keep = [{ text: "Rakazo.icon", files: ["src/a.ts"], reason: "r" }, { text: "Rakazo.icon", files: ["src/b.ts"], reason: "r" }];
+    const res = apply(root, bare({ keep }), "--strict");
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /dead keep entry.*Rakazo\.icon/);
+    assert.equal((res.stderr.match(/dead keep entry/g) ?? []).length, 1, "only the entry for src/b.ts");
+  });
+
+  it("an unreadable directory exits 2 with a message, in apply and in the gate", { skip: process.getuid?.() === 0 && "root can read any directory, permissions cannot be enforced" }, () => {
+    const root = tree({ "src/a.ts": "Dozo", "src/locked/b.ts": "x" });
+    fs.chmodSync(path.join(root, "src/locked"), 0o000);
+    try {
+      for (const script of [apply, check]) {
+        const res = script(root, configFile());
+        assert.equal(res.status, 2, `${script.name}: ${res.stderr}`);
+        assert.match(res.stderr, /^dozo-brand: unexpected error: /);
+        assert.doesNotMatch(res.stderr, /\n\s+at /);
+      }
+    } finally {
+      fs.chmodSync(path.join(root, "src/locked"), 0o755);
+    }
+  });
+
+  it("a name that only the quote back-reference ties together is not a whole string", () => {
+    const { scan } = scanner();
+    assert.deepEqual(texts(scan('x = "RakazoName"')), ['"RakazoName"']);
+    assert.deepEqual(texts(scan("x = `RakazoName`")), ["`RakazoName`"]);
+    assert.deepEqual(texts(scan("x = \"RakazoName'")), ["Rakazo"]);
+  });
+
+  it("a URL target that ends in a non-word character has nothing glued to it", () => {
+    const config = configFile({ urls: { "rakazo.com": "dozo.example/" } });
+    assert.equal(check(tree({ "src/a.ts": 'u = "dozo.example/x"' }), config).status, 0);
+    assert.equal(check(tree({ "src/a.ts": 'u = "dozo.example/"' }), config).status, 0);
+  });
+
+  it("listFiles never descends into .git or node_modules, at any depth", () => {
+    const root = tree({ "src/a.ts": "x", ".git/HEAD": "x", "node_modules/p/i.js": "x", "src/node_modules/q.js": "x", "src/.git/c": "x", "src/ok/b.ts": "x" });
+    assert.deepEqual(listFiles(root), ["src/a.ts", "src/ok/b.ts"]);
+  });
+});
+
+describe("the shipped config, in literal values", () => {
+  const config = loadConfig();
+
+  it("names the brand, its variants and every URL as the fork ships them", () => {
+    assert.equal(config.from, "Rakazo");
+    assert.equal(config.to, "Dozo");
+    assert.deepEqual(config.variants, { Rakazos: "Dozos" });
+    assert.deepEqual(config.urls, {
+      "rakazo.com": "dozo.example",
+      "github.com/elie222/rakazo": "github.com/OWNER/dozo",
+      "https://discord.gg/RWwKa2Sn7h": "https://dozo.example/discord",
+      "https://apps.apple.com/app/rakazo/id6801531099": "https://dozo.example/get/ios",
+      "https://play.google.com/store/apps/details?id=com.rakazo.app": "https://dozo.example/get/android",
+    });
+    const counts = {};
+    const sample = "Rakazo Rakazos RAKAZO rakazo Rakazo's RakazoPro Rakazo.icon";
+    assert.equal(rewrite(sample, config, counts, "apps/web/src/x.ts"), "Dozo Dozos RAKAZO rakazo Dozo's RakazoPro Dozo.icon");
+    for (const [from, to] of [["rakazo.com", "dozo.example"], ["https://discord.gg/RWwKa2Sn7h", "https://dozo.example/discord"], ["https://apps.apple.com/app/rakazo/id6801531099", "https://dozo.example/get/ios"]]) {
+      assert.equal(rewrite(`u = "${from}"`, config, {}, "apps/web/src/x.ts"), `u = "${to}"`);
+    }
+  });
+
+  it("puts the scope where it is expected", () => {
+    for (const rel of ["apps/web/e2e/a.ts", "packages/testkit/index.ts", "packages/core/src/x.test.ts", "packages/core/pnpm-lock.yaml", "packages/db/prisma/schema.prisma", "apps/web/node_modules/p/i.js", "packages/adapters/src/composio-fake.ts", "apps/web/LICENSE"]) {
+      assert.equal(inScope(config, rel), false, `${rel} is excluded`);
+    }
+    for (const rel of ["apps/web/src/App.tsx", "apps/api/src/index.ts", "apps/worker/src/main.ts", "packages/core/src/index.ts", "infra/sandboxes/computer/Dockerfile"]) {
+      assert.equal(inScope(config, rel), true, `${rel} is in scope`);
+    }
+    for (const rel of ["apps/www/src/a.astro", "apps/desktop/src/main.ts", "apps/mobile/app/a.tsx", "docs/a.md", "README.md"]) {
+      assert.equal(inScope(config, rel), false, `${rel} is outside include`);
+    }
+  });
+
+  it("flags the same leak words", () => {
+    assert.deepEqual(config.leak, ["rakazo.com", "elie222/rakazo", "elie222", "id6801531099", "RWwKa2Sn7h", "com.rakazo.app"]);
+    assert.deepEqual(config.leakWords, ["Elie"]);
+  });
+
+  it("lists the names allow.paths and allow.binary cover, and the allow.text entries that stand for more than one occurrence", () => {
+    assert.deepEqual(config.allow.paths.map((entry) => entry.glob), [
+      "infra/sandboxes/computer/rakazo-browser",
+      "infra/sandboxes/computer/rakazo-browser.desktop",
+      "infra/sandboxes/computer/rakazo-focus-or-launch",
+      "infra/sandboxes/computer/rakazo-local-bin.sh",
+      "infra/sandboxes/computer/rakazo-page-browser",
+      "packages/ui-tokens/assets/Rakazo.icon",
+    ]);
+    assert.deepEqual(config.allow.binary.map((entry) => entry.glob), ["packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png"]);
+    assert.deepEqual(
+      config.allow.text.filter((entry) => entry.count !== undefined).map((entry) => [entry.file, entry.text, entry.count]),
+      [
+        ["packages/core/src/bot-look.ts", 'avatarSet === "rakazo"', 2],
+        ["packages/adapters/src/apple-container-sandbox.ts", "table inet rakazo", 3],
+        ["packages/adapters/src/secret-store-fake.ts", '"/rakazo"', 2],
+      ],
+    );
+    const { scanPath } = buildScanner(config);
+    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-local-bin.sh"), []);
+    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-evil"), ["infra/sandboxes/computer/rakazo-evil"]);
+    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-browser.desktop.bak"), ["infra/sandboxes/computer/rakazo-browser.desktop.bak"]);
   });
 });

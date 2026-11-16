@@ -18,7 +18,8 @@ Usage: dozo/sync.sh [--dry-run] [--fast] [--help]
 
 Fetches upstream/main, fast-forwards the pristine upstream-main branch, creates
 sync/upstream-<short-sha> from main and merges upstream-main into it (merge commit,
-never rebase). Then runs `make qa` (its first step is `make olc`) when that target exists.
+never rebase). Then runs `make qa` (its first step is `make olc`). With a Makefile, a
+missing `make` or target is a failure (exit 2).
 
   --dry-run  fetch and report what would be merged and predicted conflicts
              (git merge-tree). Changes no branch, index or file; the fetch updates
@@ -206,23 +207,26 @@ rm -f "$MERGE_LOG"
 SYNC_PENDING=0
 say "merge clean on $BR"
 
-# Gates, if the colleague's Makefile targets exist.
-have_target() { [ -f Makefile ] && make -n "$1" >/dev/null 2>&1; }
+# Gates. With a Makefile, `make` and the target must exist: a gate that cannot run is a failure,
+# never a skip. Only a tree without any Makefile has no gates to run (a notice).
 GATE_FAIL=0
-run_gate() {
-  if have_target "$1"; then
-    say "running make $1"
-    # Without the variables that make a run partial: a "QA: PASS (partial: ...)" must not count here.
-    env -u DOZO_QA_STEPS -u DOZO_SKIP_BRAND -u DOZO_UPSTREAM_REF make "$1" || { echo "[sync] make $1 FAILED" >&2; GATE_FAIL=1; }
-  else
-    say "NOTICE: make target '$1' not available (no Makefile or no such target), skipped"
+run_gate() { # $1 = make target
+  local out
+  if [ ! -f Makefile ]; then say "NOTICE: no Makefile, make $1 skipped"; return 0; fi
+  if ! command -v make >/dev/null 2>&1; then
+    echo "[sync] ERROR: Makefile exists but make is not installed; cannot run make $1" >&2; GATE_FAIL=1; return 0
   fi
+  if ! out=$(LC_ALL=C make -n "$1" 2>&1); then
+    echo "[sync] ERROR: make target '$1' is missing or the Makefile is broken (make -n $1 failed):" >&2
+    printf '%s\n' "$out" | head -n 5 | sed 's/^/[sync]   /' >&2
+    GATE_FAIL=1; return 0
+  fi
+  say "running make $1"
+  # Without the variables that make a run partial: a "QA: PASS (partial: ...)" must not count here.
+  env -u DOZO_QA_STEPS -u DOZO_SKIP_BRAND -u DOZO_UPSTREAM_REF make "$1" || { echo "[sync] make $1 FAILED" >&2; GATE_FAIL=1; }
 }
-# make qa starts with olc, so olc runs alone only for --fast or when there is no qa target.
-if [ "$FAST" = 1 ] || ! have_target qa; then run_gate olc; fi
-if [ "$GATE_FAIL" = 0 ]; then
-  if [ "$FAST" = 1 ]; then say "--fast: make qa skipped"; else run_gate qa; fi
-fi
+# make qa starts with olc, so --fast runs olc alone and the full run runs qa alone.
+if [ "$FAST" = 1 ]; then run_gate olc; say "--fast: make qa skipped"; else run_gate qa; fi
 
 report HEAD "$UP_BRANCH"
 if [ "$GATE_FAIL" = 1 ]; then
