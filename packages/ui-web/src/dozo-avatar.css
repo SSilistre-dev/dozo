@@ -57,39 +57,43 @@
   transform: scaleY(0.3);
 }
 
-/* Blinking is pure CSS: each avatar's period and phase come from its seed (set inline), so there
-   is no timer per avatar. A sleeper keeps its eyes shut until something wakes it (data-awake). */
-.dozo-avatar .da-blink {
-  animation: dozo-blink var(--dozo-blink-period, 5s) var(--dozo-blink-delay, 0s) ease-in-out
-    infinite;
-}
-.dozo-avatar[data-motion="still"] .da-blink {
-  animation: none;
-}
-.dozo-avatar[data-motion="full"][data-state="idle"]:not([data-awake]) .da-blink {
-  animation: none;
-}
-
-/* Idle motion is skipped below 32 px (data-motion="still"): unreadable, and wasted frames. */
-.dozo-avatar[data-motion="full"][data-state="working"] .da-head {
-  animation: dozo-bob 3.2s ease-in-out infinite;
-  animation-delay: var(--dozo-delay, 0s);
-}
-.dozo-avatar[data-motion="full"][data-state="working"] .da-feature {
-  animation: dozo-glow 2.4s ease-in-out infinite;
-}
-.dozo-avatar[data-motion="full"][data-state="waiting"] .da-feature {
-  animation: dozo-attn 4.5s ease-in-out infinite;
-}
-/* Breathing animates an SVG transform, which the compositor cannot take, so it runs on the main
-   thread. Only an awake (hovered) avatar breathes; a list of sleepers costs no frames. */
-.dozo-avatar[data-motion="full"][data-state="idle"][data-awake] .da-head {
-  transform-origin: 50% 100%;
-  animation: dozo-breathe 5.5s ease-in-out infinite;
-  animation-delay: var(--dozo-delay, 0s);
-}
-.dozo-avatar .da-svg.is-hop {
-  animation: dozo-hop 0.25s ease-out;
+/* Every animation lives inside this one block, so a user who prefers reduced motion (or whose
+   browser cannot say) gets none, whatever the selectors' specificity. Add no animation or
+   transition outside it: dozo-avatar.test.tsx fails when one appears.
+   Blinking is pure CSS: each avatar's period and phase come from its seed (set inline), so there is
+   no timer per avatar. A sleeper keeps its eyes shut until something wakes it (data-awake).
+   Idle motion is skipped below 32 px (data-motion="still"): unreadable, and wasted frames. */
+@media (prefers-reduced-motion: no-preference) {
+  .dozo-avatar .da-blink {
+    animation: dozo-blink var(--dozo-blink-period, 5s) var(--dozo-blink-delay, 0s) ease-in-out
+      infinite;
+  }
+  .dozo-avatar[data-motion="still"] .da-blink {
+    animation: none;
+  }
+  .dozo-avatar[data-motion="full"][data-state="idle"]:not([data-awake]) .da-blink {
+    animation: none;
+  }
+  .dozo-avatar[data-motion="full"][data-state="working"] .da-head {
+    animation: dozo-bob 3.2s ease-in-out infinite;
+    animation-delay: var(--dozo-delay, 0s);
+  }
+  .dozo-avatar[data-motion="full"][data-state="working"] .da-feature {
+    animation: dozo-glow 2.4s ease-in-out infinite;
+  }
+  .dozo-avatar[data-motion="full"][data-state="waiting"] .da-feature {
+    animation: dozo-attn 4.5s ease-in-out infinite;
+  }
+  /* Breathing animates an SVG transform, which the compositor cannot take, so it runs on the main
+     thread. Only an awake (hovered) avatar breathes; a list of sleepers costs no frames. */
+  .dozo-avatar[data-motion="full"][data-state="idle"][data-awake] .da-head {
+    transform-origin: 50% 100%;
+    animation: dozo-breathe 5.5s ease-in-out infinite;
+    animation-delay: var(--dozo-delay, 0s);
+  }
+  .dozo-avatar .da-svg.is-hop {
+    animation: dozo-hop 0.25s ease-out;
+  }
 }
 
 @keyframes dozo-blink {
@@ -145,15 +149,4 @@
 .dozo-avatar[data-offscreen][data-motion][data-state]
   :is(.da-svg, .da-head, .da-feature, .da-blink) {
   animation-play-state: paused;
-}
-
-/* Reduced motion: no bob, pulse, hop or blink. Same specificity as the motion rules above, and
-   later, so it wins without !important. */
-@media (prefers-reduced-motion: reduce) {
-  .dozo-avatar[data-motion][data-state] .da-head,
-  .dozo-avatar[data-motion][data-state] .da-feature,
-  .dozo-avatar .da-blink,
-  .dozo-avatar .da-svg.is-hop {
-    animation: none;
-  }
 }

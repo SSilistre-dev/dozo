@@ -304,13 +304,16 @@ function connectSharedSources(): () => void {
   };
 }
 
+function measureOne(tracker: Tracker) {
+  const rect = tracker.root.getBoundingClientRect();
+  tracker.cx = rect.left + rect.width / 2;
+  tracker.cy = rect.top + rect.height / 2;
+}
+
 function measure() {
   stale = false;
   for (const tracker of trackers.values()) {
-    if (!tracker.visible) continue;
-    const rect = tracker.root.getBoundingClientRect();
-    tracker.cx = rect.left + rect.width / 2;
-    tracker.cy = rect.top + rect.height / 2;
+    if (tracker.visible) measureOne(tracker);
   }
 }
 
@@ -445,7 +448,11 @@ export const DozoAvatar = memo(function DozoAvatar({
   useEffect(() => {
     const root = rootRef.current;
     const eyes = root?.querySelector<SVGGElement>(".da-eyes");
-    if (!tracking || !root || !eyes) return;
+    if (!tracking || !root || !eyes) {
+      // The hover handlers are gone, so no leave will come: a hold set by an earlier hover ends here.
+      live.current.awakeUntil = 0;
+      return;
+    }
     const open = live.current.state === "idle" ? SLEEP_OPEN : 1;
     return track({
       live: live.current,
@@ -465,8 +472,10 @@ export const DozoAvatar = memo(function DozoAvatar({
 
   const onEnter = () => {
     live.current.awakeUntil = Infinity;
-    // The layout may have shifted without a scroll or resize; measure again before aiming.
-    markStale();
+    // The layout may have shifted without a scroll or resize; measure this avatar again before aiming.
+    const tracker = rootRef.current && trackers.get(rootRef.current);
+    if (tracker) measureOne(tracker);
+    wake();
     if (!reduced) svgRef.current?.classList.add("is-hop");
   };
   const onLeave = () => {

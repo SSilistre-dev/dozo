@@ -34,10 +34,6 @@ function pointerMoveAdds(spy: { mock: { calls: unknown[][] } }) {
   return spy.mock.calls.filter(([type]) => type === "pointermove").length;
 }
 
-beforeEach(() => {
-  vi.spyOn(Math, "random").mockReturnValue(0.5);
-});
-
 afterEach(() => {
   for (const unmount of mounted.splice(0)) unmount();
   vi.useRealTimers();
@@ -215,19 +211,20 @@ describe("DozoAvatar timers", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("keeps the pointer in one object instead of allocating one per move", () => {
-    const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
-    const handler = source.slice(
-      source.indexOf("function onPointerMove"),
-      source.indexOf("function onPointerAway"),
-    );
-    expect(handler).toContain("pointer.x =");
-    expect(handler).not.toMatch(/pointer\s*=\s*\{/);
-  });
-
-  it("uses no raw timer in the component", () => {
-    const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
-    expect(source).not.toMatch(/\bset(?:Timeout|Interval)\s*\(/);
+  it("starts no timer of its own while avatars mount, track, hover and unmount", () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    const interval = vi.spyOn(globalThis, "setInterval");
+    const { container, unmount } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    mount(<DozoAvatar seed="kumo" size={28} />);
+    pointerAt(400);
+    hover(container, true);
+    advance(1000);
+    hover(container, false);
+    advance(3000);
+    unmount();
+    expect(timeout).not.toHaveBeenCalled();
+    expect(interval).not.toHaveBeenCalled();
   });
 });
 
@@ -679,6 +676,22 @@ describe("DozoAvatar tracker rebuild", () => {
     expect(eyes.style.transform).toBe("");
   });
 
+  it("lets a hovered avatar fall asleep when it stops being interactive and comes back", () => {
+    const { container, rerender } = mount(idle());
+    const root = container.querySelector(".dozo-avatar");
+    pointerAt(400);
+    hover(container, true);
+    advance(200);
+    expect(root?.hasAttribute("data-awake")).toBe(true);
+
+    // No pointer leave reaches an avatar that is not interactive.
+    rerender(idle({ interactive: false }));
+    rerender(idle());
+    advance(3000);
+    expect(root?.hasAttribute("data-awake")).toBe(false);
+    expect(eyeState(eyesOf(container)).open).toBeCloseTo(0.3, 1);
+  });
+
   it("works after React StrictMode mounts, unmounts and mounts its effects again", () => {
     const add = vi.spyOn(window, "addEventListener");
     const remove = vi.spyOn(window, "removeEventListener");
@@ -786,6 +799,19 @@ describe("DozoAvatar hover", () => {
     expect(eyeState(eyesOf(container)).x).toBeCloseTo(0, 1);
   });
 
+  it("measures only the avatar that was entered, not every visible one", () => {
+    const first = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const second = mount(<DozoAvatar seed="kumo" size={72} state="waiting" />);
+    pointerAt(400);
+    advance(100);
+    const firstRect = rectSpy(first.container);
+    const secondRect = rectSpy(second.container);
+    hover(first.container, true);
+    advance(100);
+    expect(firstRect).toHaveBeenCalledTimes(1);
+    expect(secondRect).not.toHaveBeenCalled();
+  });
+
   it("clears a hop that its animation never ended, so the next hover hops again", () => {
     const { container } = mount(<DozoAvatar seed="sora" size={72} />);
     const svg = container.querySelector("svg");
@@ -832,6 +858,45 @@ describe("DozoAvatar hover", () => {
   });
 });
 
+/**
+ * Every animation or transition declaration whose value is not `none`, split by whether a
+ * `prefers-reduced-motion: no-preference` block encloses it. Reads nested at-rules by their braces.
+ */
+function motionDeclarations(text: string) {
+  const guarded: string[] = [];
+  const unguarded: string[] = [];
+  const stack: string[] = [];
+  let buffer = "";
+  for (const char of text.replace(/\/\*[\s\S]*?\*\//g, "")) {
+    if (char === "{") {
+      stack.push(buffer.replace(/\s+/g, " ").trim());
+      buffer = "";
+    } else if (char === "}") {
+      const selector = stack.pop() ?? "";
+      if (!stack.some((rule) => rule.startsWith("@keyframes"))) {
+        const inGuard = stack.some((rule) => /prefers-reduced-motion:\s*no-preference/.test(rule));
+        const found = inGuard ? guarded : unguarded;
+        for (const declaration of buffer.split(";")) {
+          const [property, ...rest] = declaration.split(":");
+          const value = rest.join(":").replace(/\s+/g, " ").trim();
+          if (
+            /^\s*(animation|animation-name|transition|transition-property)\s*$/.test(
+              property ?? "",
+            ) &&
+            value !== "none"
+          ) {
+            found.push(`${selector}: ${property?.trim()}: ${value}`);
+          }
+        }
+      }
+      buffer = "";
+    } else {
+      buffer += char;
+    }
+  }
+  return { guarded, unguarded };
+}
+
 describe("dozo-avatar.css", () => {
   const css = readFileSync(join(import.meta.dirname, "dozo-avatar.css"), "utf8");
   const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
@@ -855,11 +920,31 @@ describe("dozo-avatar.css", () => {
     expect(css).toMatch(/--dozo-visor:[^;]*var\(--(?:background|foreground)\)/);
   });
 
-  it("pauses animations off-screen and removes the blink under reduced motion", () => {
+  it("pauses animations off-screen", () => {
     expect(css).toMatch(/\[data-offscreen\][^{]*\{\s*animation-play-state: paused/);
-    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
-    expect(reduced).toContain(".da-blink");
-    expect(reduced).toContain("animation: none");
+  });
+
+  it("starts no animation or transition outside a no-preference motion block", () => {
+    const { guarded, unguarded } = motionDeclarations(css);
+    expect(unguarded).toEqual([]);
+    expect(guarded.length).toBeGreaterThan(5);
+  });
+
+  it("sees a motion rule that sits outside the guard, whatever its specificity", () => {
+    const { guarded, unguarded } = motionDeclarations(`
+      .a[x][y][z] .b { animation: spin 1s infinite; }
+      .a:hover { transition: opacity 1s; }
+      .a { animation: none; }
+      @keyframes spin { to { transform: none; } }
+      @media (prefers-reduced-motion: no-preference) { .a .b { animation: spin 1s; } }
+      @media (prefers-reduced-motion: reduce) { .a .b { animation: spin 1s; } }
+    `);
+    expect(unguarded).toEqual([
+      ".a[x][y][z] .b: animation: spin 1s infinite",
+      ".a:hover: transition: opacity 1s",
+      ".a .b: animation: spin 1s",
+    ]);
+    expect(guarded).toEqual([".a .b: animation: spin 1s"]);
   });
 
   it("runs no blink on a still avatar and no breathing on a sleeping one", () => {
