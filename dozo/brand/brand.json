@@ -13,20 +13,62 @@
     "https://apps.apple.com/app/rakazo/id6801531099": "https://dozo.example/get/ios",
     "https://play.google.com/store/apps/details?id=com.rakazo.app": "https://dozo.example/get/android"
   },
-  "include": ["apps/web/**", "apps/api/**", "apps/worker/**", "packages/**", "infra/sandboxes/**"],
+  "include": [
+    "apps/web/**",
+    "apps/api/**",
+    "apps/worker/**",
+    "packages/**",
+    "infra/sandboxes/**"
+  ],
   "exclude": [
-    { "glob": "**/node_modules/**", "reason": "installed dependencies" },
-    { "glob": "**/dist/**", "reason": "build output" },
-    { "glob": "**/build/**", "reason": "build output" },
-    { "glob": "**/coverage/**", "reason": "build output" },
-    { "glob": "**/.turbo/**", "reason": "build cache" },
-    { "glob": "**/pnpm-lock.yaml", "reason": "lockfile" },
-    { "glob": "**/package-lock.json", "reason": "lockfile" },
-    { "glob": "**/yarn.lock", "reason": "lockfile" },
-    { "glob": "**/LICENSE*", "reason": "license text is never rewritten" },
-    { "glob": "**/NOTICE*", "reason": "third-party and attribution notices are never rewritten" },
-    { "glob": "**/THIRD_PARTY*", "reason": "third-party notices are never rewritten" },
-    { "glob": "**/CHANGELOG*", "reason": "upstream history is never rewritten" },
+    {
+      "glob": "**/node_modules/**",
+      "reason": "installed dependencies"
+    },
+    {
+      "glob": "**/dist/**",
+      "reason": "build output"
+    },
+    {
+      "glob": "**/build/**",
+      "reason": "build output"
+    },
+    {
+      "glob": "**/coverage/**",
+      "reason": "build output"
+    },
+    {
+      "glob": "**/.turbo/**",
+      "reason": "build cache"
+    },
+    {
+      "glob": "**/pnpm-lock.yaml",
+      "reason": "lockfile"
+    },
+    {
+      "glob": "**/package-lock.json",
+      "reason": "lockfile"
+    },
+    {
+      "glob": "**/yarn.lock",
+      "reason": "lockfile"
+    },
+    {
+      "glob": "**/LICENSE*",
+      "reason": "license text is never rewritten"
+    },
+    {
+      "glob": "**/NOTICE*",
+      "reason": "third-party and attribution notices are never rewritten"
+    },
+    {
+      "glob": "**/THIRD_PARTY*",
+      "reason": "third-party notices are never rewritten"
+    },
+    {
+      "glob": "**/CHANGELOG*",
+      "reason": "upstream history is never rewritten"
+    },
     {
       "glob": "**/*.test.*",
       "reason": "tests run on the pristine tree and assert on upstream strings"
@@ -35,9 +77,18 @@
       "glob": "**/*.spec.*",
       "reason": "tests run on the pristine tree and assert on upstream strings"
     },
-    { "glob": "**/*.test-support.*", "reason": "test helpers, pristine tree only" },
-    { "glob": "**/__snapshots__/**", "reason": "test snapshots, pristine tree only" },
-    { "glob": "apps/web/e2e/**", "reason": "browser tests and fixtures run on the pristine tree" },
+    {
+      "glob": "**/*.test-support.*",
+      "reason": "test helpers, pristine tree only"
+    },
+    {
+      "glob": "**/__snapshots__/**",
+      "reason": "test snapshots, pristine tree only"
+    },
+    {
+      "glob": "apps/web/e2e/**",
+      "reason": "browser tests and fixtures run on the pristine tree"
+    },
     {
       "glob": "packages/testkit/**",
       "reason": "dev and eval tooling (looks up Rakazo.app, evals prompt text); never shipped"
@@ -60,15 +111,30 @@
       "text": "Rakazo.icon",
       "reason": "directory name of packages/ui-tokens/assets/Rakazo.icon, referenced by export-brand.ts and desktop packaging"
     },
-    { "text": "Rakazo.app", "reason": "macOS bundle file name looked up by path" },
-    { "text": "Rakazo.exe", "reason": "Windows executable name matched by process lookup" },
+    {
+      "text": "Rakazo.app",
+      "reason": "macOS bundle file name looked up by path"
+    },
+    {
+      "text": "Rakazo.exe",
+      "reason": "Windows executable name matched by process lookup"
+    },
     {
       "text": "Rakazo-owned compacted context",
       "reason": "prefix stored in thread history and detected with startsWith in runtime-context.ts; changing it breaks old summaries"
     },
-    { "text": "fork of Rakazo", "reason": "attribution phrase" },
-    { "text": "Based on Rakazo", "reason": "attribution phrase" },
-    { "text": "forked from Rakazo", "reason": "attribution phrase" }
+    {
+      "text": "fork of Rakazo",
+      "reason": "attribution phrase"
+    },
+    {
+      "text": "Based on Rakazo",
+      "reason": "attribution phrase"
+    },
+    {
+      "text": "forked from Rakazo",
+      "reason": "attribution phrase"
+    }
   ],
   "allow": {
     "files": [],
@@ -78,12 +144,372 @@
         "reason": "published container image name pulled at runtime; stays until Dozo publishes its own images"
       },
       {
+        "text": ".update(\"rakazo rls bypass\")",
+        "reason": "HMAC input that derives the database row-security bypass key; never shown, changing it breaks the stored digest"
+      },
+      {
+        "text": "`rakazo space:${context.spaceId} bot:${request.botId}`",
+        "reason": "OPEN LEAK, allow-listed only so the gate stays usable: provenance label sent to the user's Serenity memory provider (visible in its dashboard). Fixing it needs an anchored rule, which is outside the gate task; see AUDIT.md finding 29"
+      },
+      {
         "text": "PUBLISHED_IMAGE_REPO = \"elie222/rakazo\"",
         "reason": "image repository used by compose self-update; same reason as the ghcr image"
       }
+    ],
+    "lowercase": [
+      {
+        "glob": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+        "reason": "stored avatar-set enum value, never displayed"
+      },
+      {
+        "glob": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
+        "reason": "stored avatar-set enum value, never displayed"
+      },
+      {
+        "glob": "packages/contracts/src/bot-avatar.ts",
+        "reason": "stored avatar-set enum value"
+      },
+      {
+        "glob": "packages/core/src/bot-look.ts",
+        "reason": "stored avatar-set enum value"
+      },
+      {
+        "glob": "packages/core/src/logo-avatar-activity.ts",
+        "reason": "stored avatar-set enum value"
+      },
+      {
+        "glob": "packages/core/src/notification-avatar.ts",
+        "reason": "stored avatar-set enum value"
+      },
+      {
+        "glob": "packages/ui-web/src/bot-avatar.tsx",
+        "reason": "stored avatar-set enum value"
+      },
+      {
+        "glob": "packages/db/src/bot-avatar-choice.ts",
+        "reason": "stored avatar-set enum value"
+      },
+      {
+        "glob": "packages/contracts/src/bot-email.ts",
+        "reason": "reserved bot e-mail names: a guard list, not displayed"
+      },
+      {
+        "glob": "packages/db/src/content-keys.ts",
+        "reason": "key-derivation context string; changing it breaks decryption"
+      },
+      {
+        "glob": "packages/logging/src/logger.ts",
+        "reason": "operator log service name"
+      },
+      {
+        "glob": "packages/adapters/src/apple-container-sandbox.ts",
+        "reason": "nftables table name inside the sandbox, not shown"
+      },
+      {
+        "glob": "packages/adapters/src/boat-sandbox.ts",
+        "reason": "process-match marker, internal"
+      },
+      {
+        "glob": "packages/adapters/src/chat-sdk-surface.ts",
+        "reason": "bot user name on the internal chat bridge, not displayed"
+      },
+      {
+        "glob": "packages/adapters/src/desktop-process-tree.ts",
+        "reason": "Windows job-object type names (code identifiers), not displayed"
+      },
+      {
+        "glob": "packages/adapters/src/keenable-web.ts",
+        "reason": "X-Keenable-Title header to a vendor; operator-visible only, vendor may key on it"
+      },
+      {
+        "glob": "packages/adapters/src/pi-codex-catalog.ts",
+        "reason": "originator value validated by the Codex backend; changing it can break sign-in"
+      },
+      {
+        "glob": "packages/adapters/src/plan-limits.ts",
+        "reason": "originator value validated by the Codex backend; changing it can break sign-in"
+      },
+      {
+        "glob": "packages/adapters/src/pi-runtime-stream.ts",
+        "reason": "x-opencode-client vendor header; operator-visible only"
+      }
+    ],
+    "images": [
+      {
+        "glob": "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png",
+        "reason": "source image of the icon export script and desktop packaging; never copied into the web, API, worker or computer images"
+      }
     ]
   },
-  "leak": ["rakazo.com", "elie222/rakazo"],
-  "anchored": [],
-  "assets": {}
+  "leak": [
+    "rakazo.com",
+    "elie222/rakazo",
+    "elie222"
+  ],
+  "anchored": [
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "                rakazo\n              </Text>",
+      "replace": "                dozo\n              </Text>",
+      "reason": "lowercase text wordmark in every mail header without a hero image"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "<Text>Elie</Text>",
+      "replace": "<Text>Dozo</Text>",
+      "reason": "mail signed with upstream's founder name"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "{ src: \"https://rakazo.com/email/welcome.jpg\", alt: \"Rakazo\" },",
+      "replace": "undefined,",
+      "reason": "hero image carries upstream's mascot and wordmark and no Dozo image exists; the mail falls back to the text header"
+    },
+    {
+      "file": "packages/auth/src/referral-email.tsx",
+      "find": "<Text>Elie</Text>",
+      "replace": "<Text>Dozo</Text>",
+      "reason": "mail signed with upstream's founder name"
+    },
+    {
+      "file": "apps/api/src/account-export.ts",
+      "find": "`rakazo-export-${now",
+      "replace": "`dozo-export-${now",
+      "reason": "download file name; the manifest format id inside the archive stays (import checks it)"
+    },
+    {
+      "file": "apps/api/src/audit-export.ts",
+      "find": "filename=\"rakazo-audit-log-",
+      "replace": "filename=\"dozo-audit-log-",
+      "reason": "download file name"
+    },
+    {
+      "file": "packages/contracts/src/client-build.ts",
+      "find": "/download/android/rakazo.apk",
+      "replace": "/download/android/dozo.apk",
+      "reason": "APK file name offered for download; the Dozo release must publish this name"
+    },
+    {
+      "file": "packages/adapters/src/history-compaction.prompt.ts",
+      "find": "return `Rakazo-owned compacted context through",
+      "replace": "return `Dozo-owned compacted context through",
+      "reason": "text inserted into the model's history: emit the Dozo prefix"
+    },
+    {
+      "file": "packages/adapters/src/runtime-context.ts",
+      "find": "(text(message).startsWith(\"Rakazo-owned compacted context through message sequence \") ||",
+      "replace": "(text(message).startsWith(\"Dozo-owned compacted context through message sequence \") ||\n          text(message).startsWith(\"Rakazo-owned compacted context through message sequence \") ||",
+      "reason": "detect both the new and the stored old prefix (the keep entry protects the old one)"
+    },
+    {
+      "file": "packages/adapters/src/hindsight-memory-provider.ts",
+      "find": "\"Bank names starting with rakazo- are reserved.\"",
+      "replace": "\"Names of Dozo's own memory banks are reserved.\"",
+      "reason": "error text shown to the model and user; the reserved prefix regex stays"
+    },
+    {
+      "file": "packages/adapters/src/honcho-memory-provider.ts",
+      "find": "`rakazo-${spaceId}`",
+      "replace": "`dozo-${spaceId}`",
+      "reason": "default Honcho workspace id, shown in the settings placeholder and the user's Honcho dashboard; fresh deployment has no data"
+    },
+    {
+      "file": "packages/adapters/src/honcho-memory-settings.ts",
+      "find": "placeholder: \"rakazo-<space>\",",
+      "replace": "placeholder: \"dozo-<space>\",",
+      "reason": "placeholder text for the default workspace id"
+    },
+    {
+      "file": "packages/core/src/logo-avatar-traits.ts",
+      "find": "originalOrange: colorDef.id === \"orange\",",
+      "replace": "originalOrange: false,",
+      "reason": "the orange palette is upstream's mascot paint; orange is an ordinary colour now"
+    },
+    {
+      "file": "packages/core/src/logo-avatar-art.ts",
+      "find": "  \"M-1.759 76.330C0.959 69.782 7.117 63.647 10.602 56.566C14.086 49.486 14.898 41.460 17.063 33.747C19.227 26.034 22.744 18.634 28.465 13.175C34.186 7.716 42.110 4.197 50.032 4.183C57.954 4.169 65.874 7.660 71.581 13.121C77.288 18.582 80.783 26.014 82.945 33.732C85.107 41.449 85.935 49.451 89.402 56.543C92.869 63.634 98.975 69.814 101.767 76.305L108 108H-8Z\";",
+      "replace": "  \"M40 14H60A30 30 0 0 1 60 74H40A30 30 0 0 1 40 14Z\";",
+      "reason": "upstream's ghost silhouette replaced by the Dozo pill; same export, callers unchanged"
+    },
+    {
+      "file": "packages/core/src/logo-avatar-art.ts",
+      "find": "\"M-2 74C7 68 22 75 26 83C31 93 26 102 19 107H-2Z\"",
+      "replace": "\"M16 60C16 56 20 54 24 55C28 56 30 60 29 64C28 68 22 70 18 68C16 66 16 63 16 60Z\"",
+      "reason": "hand shape inside the pill"
+    },
+    {
+      "file": "packages/core/src/logo-avatar-art.ts",
+      "find": "\"M102 73C92 68 78 75 74 83C69 93 74 102 81 107H102Z\"",
+      "replace": "\"M84 60C84 56 80 54 76 55C72 56 70 60 71 64C72 68 78 70 82 68C84 66 84 63 84 60Z\"",
+      "reason": "hand shape inside the pill"
+    },
+    {
+      "file": "packages/core/src/logo-avatar-art.ts",
+      "find": "  width: 10.4,\n  height: 16,\n  leftCx: 40.5,\n  rightCx: 59.5,\n  cy: 40,",
+      "replace": "  width: 12,\n  height: 15,\n  leftCx: 36,\n  rightCx: 64,\n  cy: 44,",
+      "reason": "eyes placed for the Dozo pill"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "color.id === \"orange\")?.hex}",
+      "replace": "color.id === \"blue\")?.hex}",
+      "reason": "sign-in logo was upstream's orange mascot; Dozo is blue"
+    },
+    {
+      "file": "infra/sandboxes/computer/Dockerfile",
+      "find": "groupadd --gid 1000 rakazo",
+      "replace": "groupadd --gid 1000 dozo",
+      "reason": "shell user visible through whoami and the prompt; /home path is renamed by the literal rule"
+    },
+    {
+      "file": "infra/sandboxes/computer/Dockerfile",
+      "find": "useradd --uid 1000 --gid rakazo --create-home --shell /bin/bash rakazo",
+      "replace": "useradd --uid 1000 --gid dozo --create-home --shell /bin/bash dozo",
+      "reason": "shell user"
+    },
+    {
+      "file": "infra/sandboxes/desktop/Dockerfile",
+      "find": "useradd -m -s /bin/bash rakazo",
+      "replace": "useradd -m -s /bin/bash dozo",
+      "reason": "shell user, matches /home/dozo"
+    },
+    {
+      "file": "infra/sandboxes/desktop/Dockerfile",
+      "find": "USER rakazo",
+      "replace": "USER dozo",
+      "reason": "shell user"
+    },
+    {
+      "file": "packages/core/src/node/terminal-server.ts",
+      "find": "env = dict(env, USER=\"rakazo\", LOGNAME=\"rakazo\")",
+      "replace": "env = dict(env, USER=\"dozo\", LOGNAME=\"dozo\")",
+      "reason": "login name for the in-app terminal when the host uid has no passwd entry"
+    },
+    {
+      "file": "packages/core/src/node/terminal-server.ts",
+      "find": "passwd += \"rakazo:x:%d:%d:Rakazo:",
+      "replace": "passwd += \"dozo:x:%d:%d:Dozo:",
+      "reason": "passwd entry shown by whoami"
+    },
+    {
+      "file": "packages/core/src/node/terminal-server.ts",
+      "find": "group += \"rakazo:x:%d:",
+      "replace": "group += \"dozo:x:%d:",
+      "reason": "group entry"
+    },
+    {
+      "file": "packages/adapters/src/desktop-guard-words.ts",
+      "find": "LOGNAME: \"rakazo\",",
+      "replace": "LOGNAME: \"dozo\",",
+      "reason": "must match the image user"
+    },
+    {
+      "file": "packages/adapters/src/desktop-guard-words.ts",
+      "find": "USER: \"rakazo\",",
+      "replace": "USER: \"dozo\",",
+      "reason": "must match the image user"
+    },
+    {
+      "file": "packages/adapters/src/computer-support.ts",
+      "find": "[\\\\/]home[\\\\/]rakazo",
+      "replace": "[\\\\/]home[\\\\/]dozo",
+      "reason": "regex twin of the /home literal rule"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/stream.ts",
+      "find": "const TOOL_SERVER = \"rakazo\";",
+      "replace": "const TOOL_SERVER = \"dozo\";",
+      "reason": "tool names the model sees (mcp__<server>__<tool>); every user of it goes through the constant"
+    },
+    {
+      "file": "packages/page-kit/src/components.ts",
+      "find": "PAGE_KIT_MODULE = \"rakazo/page\"",
+      "replace": "PAGE_KIT_MODULE = \"dozo/page\"",
+      "reason": "import specifier the model writes in pages; validate.ts and runtime.tsx use the constant"
+    },
+    {
+      "file": "packages/page-kit/src/guide.ts",
+      "find": "\"rakazo/page\"",
+      "replace": "\"dozo/page\"",
+      "reason": "the guide shown to the model names the same specifier"
+    },
+    {
+      "file": "packages/adapters/src/remote-mcp.ts",
+      "find": "{ name: \"rakazo\", version: \"0.1.0\" }",
+      "replace": "{ name: \"dozo\", version: \"0.1.0\" }",
+      "reason": "client name announced to third-party MCP servers"
+    },
+    {
+      "file": "packages/adapters/src/mcp-transport.ts",
+      "find": "this.clientOptions.name ?? \"rakazo\"",
+      "replace": "this.clientOptions.name ?? \"dozo\"",
+      "reason": "default MCP client name"
+    },
+    {
+      "file": "packages/adapters/src/serenity-client.ts",
+      "find": "createMcpClient({ name: \"rakazo\"",
+      "replace": "createMcpClient({ name: \"dozo\"",
+      "reason": "MCP client name"
+    },
+    {
+      "file": "packages/adapters/src/cua-host-screen.ts",
+      "find": "new Client({ name: \"rakazo\"",
+      "replace": "new Client({ name: \"dozo\"",
+      "reason": "MCP client name"
+    },
+    {
+      "file": "packages/core/src/mcp-app.ts",
+      "find": "hostInfo: { name: \"rakazo\"",
+      "replace": "hostInfo: { name: \"dozo\"",
+      "reason": "host name MCP App iframes see in ui/initialize"
+    }
+  ],
+  "assets": {
+    "apps/web/public/favicon.ico": "web/favicon.ico",
+    "apps/web/public/favicon.png": "web/favicon.png",
+    "apps/web/public/favicon-16x16.png": "web/favicon-16x16.png",
+    "apps/web/public/favicon-32x32.png": "web/favicon-32x32.png",
+    "apps/web/public/apple-touch-icon.png": "web/apple-touch-icon.png",
+    "apps/web/public/icon-192.png": "web/icon-192.png",
+    "apps/web/public/icon-512.png": "web/icon-512.png"
+  },
+  "literals": [
+    {
+      "find": "/home/rakazo",
+      "replace": "/home/dozo",
+      "reason": "home directory of the bot computer: shell prompt, the model's system prompt, supervisor, image; every in-scope use is renamed together"
+    },
+    {
+      "find": "rakazo-shared",
+      "replace": "dozo-shared",
+      "reason": "reserved Honcho peer id, quoted in the settings validation text and its translations; code and message change together (fresh deployment)"
+    },
+    {
+      "find": "rakazo-runtime:x:",
+      "replace": "dozo-runtime:x:",
+      "files": [
+        "infra/sandboxes/computer/user-env.sh"
+      ],
+      "reason": "passwd and group name for arbitrary host uids; whoami shows it"
+    },
+    {
+      "find": "RakazoIntrospection",
+      "replace": "DozoIntrospection",
+      "files": [
+        "packages/adapters/src/graphql-connectors.ts"
+      ],
+      "reason": "GraphQL operation name sent to servers users connect; only a label"
+    },
+    {
+      "find": "`rakazo-${server.slug}`",
+      "replace": "`dozo-${server.slug}`",
+      "files": [
+        "packages/adapters/src/mcp-connector.ts"
+      ],
+      "reason": "MCP client name announced to third-party servers"
+    }
+  ],
+  "leakWords": [
+    "Elie"
+  ]
 }

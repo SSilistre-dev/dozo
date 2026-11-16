@@ -95,7 +95,7 @@ for (const rel of files) {
   }
   if (scoped) {
     scanned++;
-    text = rewrite(text, config, counts);
+    text = rewrite(text, config, counts, rel);
   }
   if (text !== original) planned.set(rel, text);
 }

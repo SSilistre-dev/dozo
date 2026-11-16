@@ -353,9 +353,14 @@ describe("shipped brand.json", () => {
     const root = tree({
       "apps/web/src/a.ts": 'x = "Rakazo"; y = "RakazoDesktop"; z = "https://rakazo.com/privacy/"',
     });
-    const res = spawnSync(process.execPath, [path.join(here, "apply.mjs"), "--root", root], {
-      encoding: "utf8",
-    });
+    // anchored rules and assets need the real tree; this fixture only has one file
+    const light = path.join(tempDir(), "brand.json");
+    fs.writeFileSync(light, JSON.stringify({ ...config, anchored: [], assets: {} }));
+    const res = spawnSync(
+      process.execPath,
+      [path.join(here, "apply.mjs"), "--root", root, "--config", light],
+      { encoding: "utf8" },
+    );
     assert.equal(res.status, 0, res.stderr);
     assert.equal(
       read(root, "apps/web/src/a.ts"),
@@ -371,5 +376,249 @@ describe("globToRegExp", () => {
     assert.ok(!globToRegExp("src/*.ts").test("src/a/b.ts"));
     assert.ok(globToRegExp("apps/web/**").test("apps/web/src/a.ts"));
     assert.ok(!globToRegExp("apps/web/**").test("apps/webx/a.ts"));
+  });
+});
+
+describe("literals", () => {
+  const literals = [
+    { find: "/home/rakazo", replace: "/home/dozo", reason: "path" },
+    { find: "rakazo-runtime:x:", replace: "dozo-runtime:x:", files: ["src/u.sh"], reason: "one file" },
+  ];
+  it("renames everywhere, or only in the listed files", () => {
+    const root = tree({
+      "src/a.ts": 'cwd = "/home/rakazo"; n = "rakazo-runtime:x:"',
+      "src/u.sh": "printf 'rakazo-runtime:x:1' /home/rakazo",
+    });
+    const res = apply(root, configFile({ literals }));
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(read(root, "src/a.ts"), 'cwd = "/home/dozo"; n = "rakazo-runtime:x:"');
+    assert.equal(read(root, "src/u.sh"), "printf 'dozo-runtime:x:1' /home/dozo");
+    assert.equal(apply(root, configFile({ literals })).status, 0);
+  });
+  it("gate flags a literal that was not applied", () => {
+    const root = tree({ "src/a.ts": 'cwd = "/home/rakazo"' });
+    const res = check(root, configFile({ literals }));
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /literal rule not applied/);
+  });
+});
+
+describe("url keys respect word boundaries", () => {
+  it("does not eat the start of rakazo.computerOwner, and the gate ignores it", () => {
+    const root = tree({
+      "src/a.ts": 'l = "rakazo.computerOwner"; k = "rakazo.composerDraft."; u = "https://rakazo.com/x"; v = "rakazo.com"',
+    });
+    const config = configFile();
+    assert.equal(apply(root, config).status, 0);
+    assert.equal(
+      read(root, "src/a.ts"),
+      'l = "rakazo.computerOwner"; k = "rakazo.composerDraft."; u = "https://dozo.example/x"; v = "dozo.example"',
+    );
+    assert.equal(check(root, config).status, 0);
+  });
+  it("gate flags a URL target glued to the next word", () => {
+    const root = tree({ "src/a.ts": 'l = "dozo.exampleputerOwner"' });
+    assert.equal(check(root, configFile({ urls: { "rakazo.com": "dozo.example" } })).status, 2);
+  });
+});
+
+describe("lowercase visible text", () => {
+  const bad = {
+    "text node": "src/a.tsx|<Text>\n  rakazo\n</Text>",
+    "inline text node": "src/a.tsx|<b>rakazo</b>",
+    "download name": "src/a.ts|`rakazo-export-${d}.zip`",
+    "quoted client name": 'src/a.ts|{ name: "rakazo" }',
+    "quoted PascalCase string": 'src/a.ts|operationName: "RakazoIntrospection"',
+    "po entry": 'src/a.po|msgid "rakazo-shared is reserved"',
+  };
+  for (const [name, spec] of Object.entries(bad)) {
+    it(`gate flags a ${name}`, () => {
+      const [file, text] = spec.split("|");
+      const root = tree({ [file]: text });
+      assert.equal(check(root, configFile({ include: ["src/**"] })).status, 2);
+    });
+  }
+  it("leaves identifiers, .po headers and reviewed files alone", () => {
+    const root = tree({
+      "src/a.ts": 'x = "rakazo-browser.json"; y = "@rakazo/core"; z = "rakazo_app"',
+      "src/p.po": '"Project-Id-Version: rakazo-web\\n"',
+      "src/enum.ts": 'type S = "rakazo"',
+    });
+    const config = configFile({
+      include: ["src/**"],
+      allow: { files: [], phrases: [], lowercase: [{ glob: "src/enum.ts", reason: "enum" }] },
+    });
+    assert.equal(check(root, config).status, 0);
+  });
+  it("gate flags the founder's first name as a whole word", () => {
+    const root = tree({ "src/a.tsx": "<Text>Elie</Text>" });
+    assert.equal(check(root, configFile({ leakWords: ["Elie"] })).status, 2);
+  });
+});
+
+describe("readable old brand the codemod leaves alone", () => {
+  const leaks = {
+    "all-caps in JSX text": ["src/a.tsx", "<p>Welcome to RAKAZO</p>"],
+    "all-caps sentence": ["src/a.ts", 'const m = "RAKAZO IS UPDATING";'],
+    "all-caps bare word": ["src/a.ts", "// RAKAZO"],
+    "alt": ["src/a.tsx", '<img alt="rakazo logo" src={x} />'],
+    "aria-label": ["src/a.tsx", '<button aria-label="Open rakazo menu" />'],
+    "title": ["src/a.tsx", "<a title='About rakazo' />"],
+    "placeholder": ["src/a.tsx", '<input placeholder="Ask rakazo anything" />'],
+    "JSX text": ["src/a.tsx", "<p>Welcome to rakazo</p>"],
+    "JSX text on its own line": ["src/a.tsx", "<p>\n  Welcome to rakazo, friend.\n</p>"],
+    "prose in a string": ["src/a.ts", 'const m = "Thanks for trying rakazo, the team";'],
+    "prose in a template": ["src/a.ts", "const m = `the rakazo team (${n})`;"],
+    "prose followed by a period": ["src/a.ts", 'const m = "This is rakazo.";'],
+    ".po msgid and msgstr": ["src/a.po", 'msgid "About rakazo"\nmsgstr "About rakazo"'],
+    "x.com profile": ["src/a.tsx", '<a href="https://x.com/rakazo">X</a>'],
+    "twitter.com profile": ["src/a.tsx", 'const t = "https://twitter.com/rakazo";'],
+    "github profile": ["src/a.ts", 'const g = "https://github.com/rakazo";'],
+    "linkedin company": ["src/a.ts", 'const l = "https://www.linkedin.com/company/rakazo";'],
+    "youtube handle": ["src/a.ts", 'const y = "https://youtube.com/@rakazo";'],
+    "instagram": ["src/a.ts", 'const i = "https://instagram.com/rakazo";'],
+    "facebook": ["src/a.ts", 'const f = "https://facebook.com/rakazo";'],
+    "t.me": ["src/a.ts", 'const t = "https://t.me/rakazo";'],
+    "@handle": ["src/a.tsx", "<p>Follow @rakazo for news</p>"],
+  };
+  for (const [name, [file, text]] of Object.entries(leaks)) {
+    it(`gate flags ${name} with path:line`, () => {
+      const res = check(tree({ [file]: text }), configFile());
+      assert.equal(res.status, 2, res.stderr);
+      assert.match(res.stderr, new RegExp(`${file.replace(".", "\\.")}:\\d+: `));
+    });
+  }
+
+  it("flags the right line of a longer file", () => {
+    const res = check(tree({ "src/a.tsx": "const a = 1;\nconst b = 2;\n<p>Hi rakazo</p>\n" }), configFile());
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /src\/a\.tsx:3: /);
+  });
+
+  const identifiers = [
+    "const home = process.env.RAKAZO_HOST;",
+    "const d = __RAKAZO_VERSION__;",
+    'import x from "@rakazo/core";',
+    'import { y } from "@rakazo/ui-web/button";',
+    'localStorage.getItem("rakazo.uiAppearance");',
+    'const k = "rakazo:thread:1";',
+    'const k = "rakazo-session";',
+    'const h = "x-rakazo-space-id";',
+    '<div className="rakazo-logo-avatar" data-rakazo="1" id="rakazo-root" />',
+    'const u = "rakazo://open";',
+    "const rakazoScreen = 1; const RakazoDesktop = 2; const isRakazoContainer = 3;",
+    'const image = "rakazo/computer:local";',
+    "const rakazo_app = 1;",
+    'const u = "http://rakazo.invalid";',
+    "const w = `rakazo-${randomUUID()}`;",
+    "const p = `${base}\\rakazo\\.runs`;",
+    ".rakazo-logo { animation: rakazo-pulse 1s; }",
+    '<a href="https://github.com/elie222/rakazo-docs-lookalike" />'.replace("elie222/", "other/"),
+    "// the rakazo container reuses this file",
+    "/* rakazo is a name here */",
+  ];
+  it("leaves deliberate identifiers alone", () => {
+    const root = tree({ "src/a.tsx": identifiers.join("\n") });
+    const res = check(root, configFile());
+    assert.equal(res.status, 0, res.stderr);
+  });
+  for (const [i, line] of identifiers.entries()) {
+    it(`identifier ${i} is not flagged alone`, () => {
+      assert.equal(check(tree({ "src/a.tsx": line }), configFile()).status, 0, line);
+    });
+  }
+
+  it("lowercase patterns skip files reviewed in allow.lowercase; all-caps and links do not", () => {
+    const config = configFile({
+      allow: { files: [], phrases: [], lowercase: [{ glob: "src/a.tsx", reason: "enum" }] },
+    });
+    assert.equal(check(tree({ "src/a.tsx": "<p>Welcome to rakazo</p>" }), config).status, 0);
+    assert.equal(check(tree({ "src/a.tsx": "<p>Welcome to RAKAZO</p>" }), config).status, 2);
+    assert.equal(check(tree({ "src/a.tsx": 'x = "https://x.com/rakazo"' }), config).status, 2);
+  });
+
+  it("allow.phrases silences one reviewed occurrence", () => {
+    const config = configFile({
+      allow: { files: [], phrases: [{ text: 'update("rakazo rls bypass")', reason: "hash input" }] },
+    });
+    assert.equal(check(tree({ "src/a.ts": 'h.update("rakazo rls bypass");' }), config).status, 0);
+  });
+});
+
+describe("assets and images", () => {
+  const mk = () => {
+    const dir = tempDir();
+    fs.mkdirSync(path.join(dir, "assets"));
+    fs.writeFileSync(path.join(dir, "assets", "ours.png"), Buffer.from([1, 0, 2, 3]));
+    const file = path.join(dir, "brand.json");
+    return { dir, file };
+  };
+  const base = {
+    from: "Rakazo",
+    to: "Dozo",
+    include: ["apps/**"],
+    assets: { "apps/web/public/i.png": "ours.png" },
+  };
+  it("apply copies the asset and the gate accepts it; an upstream file fails the gate", () => {
+    const { file } = mk();
+    fs.writeFileSync(file, JSON.stringify(base));
+    const root = tree({});
+    fs.mkdirSync(path.join(root, "apps/web/public"), { recursive: true });
+    fs.writeFileSync(path.join(root, "apps/web/public/i.png"), Buffer.from([9, 0, 9]));
+    assert.equal(check(root, file).status, 2);
+    assert.equal(apply(root, file).status, 0);
+    assert.deepEqual(fs.readFileSync(path.join(root, "apps/web/public/i.png")), Buffer.from([1, 0, 2, 3]));
+    assert.equal(check(root, file).status, 0);
+  });
+  it("gate fails on an unmapped image until it is reviewed in allow.images", () => {
+    const { file } = mk();
+    fs.writeFileSync(file, JSON.stringify(base));
+    const root = tree({});
+    fs.mkdirSync(path.join(root, "apps/web/public"), { recursive: true });
+    fs.writeFileSync(path.join(root, "apps/web/public/i.png"), Buffer.from([1, 0, 2, 3]));
+    fs.writeFileSync(path.join(root, "apps/web/public/new.png"), Buffer.from([7, 0]));
+    const res = check(root, file);
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /new\.png: image neither mapped/);
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ ...base, allow: { images: [{ glob: "apps/web/public/new.png", reason: "r" }] } }),
+    );
+    assert.equal(check(root, file).status, 0);
+  });
+});
+
+describe("launch gate", () => {
+  it("flags placeholders and upstream image names only with --launch", () => {
+    const root = tree({ "src/a.ts": 'u = "https://dozo.example/x"; r = "github.com/OWNER/dozo"; i = "ghcr.io/elie222/rakazo/app"' });
+    const config = configFile();
+    assert.equal(check(root, config).status, 0);
+    const res = run("check.mjs", root, config, "--launch");
+    assert.equal(res.status, 2);
+    assert.match(res.stderr, /launch placeholder/);
+  });
+});
+
+describe("shipped anchored rules", () => {
+  it("every anchored rule and literal has a reason and anchored finds are unique per file", () => {
+    const config = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));
+    for (const rule of [...config.anchored, ...config.literals]) assert.ok(rule.reason, JSON.stringify(rule));
+    const keys = config.anchored.map((rule) => `${rule.file}\0${rule.find}`);
+    assert.equal(new Set(keys).size, keys.length);
+  });
+  it("the compaction detector accepts both prefixes and apply is idempotent on it", () => {
+    const config = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));
+    const rule = config.anchored.find((r) => r.file.endsWith("runtime-context.ts"));
+    const root = tree({ [rule.file]: rule.find });
+    const only = configFile({
+      include: ["packages/**"],
+      keep: config.keep,
+      anchored: [rule],
+    });
+    assert.equal(apply(root, only).status, 0);
+    const once = read(root, rule.file);
+    assert.match(once, /Dozo-owned[\s\S]*Rakazo-owned/);
+    assert.equal(apply(root, only).status, 0);
+    assert.equal(read(root, rule.file), once);
   });
 });
