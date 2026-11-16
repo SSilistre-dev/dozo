@@ -17,6 +17,12 @@ copy, so merging upstream never conflicts with branding and the working tree is 
    `<title>` is branded (not checked with `DOZO_SKIP_BRAND=1`). `down [--volumes]`: removes
    containers; volumes (Postgres) are kept unless `--volumes`.
 
+5. `unit` (qa only, between `brand` and `build`): `dozo/docker/gate.sh unit` runs every
+   `dozo-*.test.ts(x)` under `apps/` and `packages/` of the branded staged tree with Vitest in a
+   `node:24-slim` container (tree copied inside, `pnpm install --frozen-lockfile` there, pnpm store
+   in the Docker volume `dozo-qa-pnpm-store`; nothing is written to the host). Exit 2 when a test
+   fails or fewer than `DOZO_MIN_FORK_TESTS` (default 3) files are found. `make olc` never installs.
+
 ## Commands
 `dozo/docker/build.sh [stage|brand|build|up|smoke|down|all]` (`all` = stage, brand, build, up).
 `make olc` fast gate (<30 s, offline), `make qa` full gate, `make stage|up|down`.
@@ -24,7 +30,10 @@ Exit codes: 0 ok, 2 gate failure, other non-zero for errors; the failing step is
 
 ## Generated files
 - `dozo/.stage/dozo.env`: random secrets (`openssl rand -hex`), mode 600, ignored by git. Created
-  once and kept across restages. Also holds `DOZO_WEB_PORT` and the origin variables. Never commit it.
+  once and kept across restages. Also holds `DOZO_WEB_PORT`, the origin variables and
+  `MCP_ALLOW_PRIVATE_ENDPOINT=true` (added to existing files too, secrets untouched): our stack
+  binds to 127.0.0.1 on the user's own machine, so a local OpenAI-compatible model endpoint is
+  allowed. Upstream's compose passes it to `api` and `worker` through `x-app-environment`. Never commit it.
 - `dozo/.stage/src/data` (compose bind mount `../../data`) is preserved across restages.
 - `compose.ports.yml`: needed because upstream hard-codes web port 5173 (only the bind address is
   configurable) and api port 3100. It moves web to `DOZO_WEB_PORT` (first free port from 5173,

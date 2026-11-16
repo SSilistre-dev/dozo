@@ -82,6 +82,9 @@ genenv() {
         echo "RAKAZO_WEB_BIND=127.0.0.1"
       } > "$ENVF" )
   fi
+  # Our stack binds to 127.0.0.1 on the user's own machine, so private model endpoints (a local
+  # OpenAI-compatible server) are allowed. Reaches api and worker through upstream's x-app-environment.
+  setenv MCP_ALLOW_PRIVATE_ENDPOINT true
   # Keep the port if our own web container is running; otherwise pick a free one.
   local cur; cur="$(grep '^DOZO_WEB_PORT=' "$ENVF" | cut -d= -f2 || true)"
   if [ -z "$cur" ] || { ! dc ps --status running --services 2>/dev/null | grep -qx web && nc -z 127.0.0.1 "$cur" 2>/dev/null; }; then

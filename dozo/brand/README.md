@@ -49,7 +49,11 @@ case-sensitive whole words, e.g. the upstream founder's name), `anchored`, `asse
 - Keep a phrase that code compares or persists: add `{ "text": "...", "reason": "..." }` to `keep`
   (apply leaves it, the gate ignores it).
 - Add an anchored rule: `{ "file": "apps/web/x.ts", "find": "exact text", "replace": "new",
-  "reason": "why" }`. `find` must occur exactly once in the file at the time apply runs. Use it for
+  "reason": "why" }`. `find` must occur exactly once in the file at the time apply runs. A re-run
+  counts as already applied when the file holds `replace` and no un-replaced `find` (so `replace`
+  may contain `find`); a file with neither fails with exit 2, naming rule and file. An optional
+  `"requires": ["path"]` lists fork files the rule redirects to: apply fails ("dangling redirect")
+  when one is missing from the tree, so a build never ships a dangling import. Use it for
   edits a regex cannot express, and later to wire visual hooks. Anchored rules also swap
   the mascot art (`packages/core/src/logo-avatar-art.ts` paths and eyes) and rename visible
   lowercase uses. An anchored rule works on files outside `include`.

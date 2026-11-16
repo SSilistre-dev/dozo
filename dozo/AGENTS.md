@@ -7,8 +7,7 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 
 - Never edit upstream files. The only upstream file the fork edits is the marked block at the top of
   the root `README.md`.
-- Put work in `dozo/`, or in the two in-package UI files `packages/ui-web/src/dozo.css` and
-  `packages/ui-web/src/dozo-avatar.tsx`.
+- Put work in `dozo/`, or in new `dozo-*` files inside upstream directories (see below).
 - To change upstream behaviour or wording, add an anchored rule in `dozo/brand/brand.json`. It is
   applied to a staged copy at build time. Do not patch the source.
 - Never rename technical identifiers: `@rakazo/*` packages, `RAKAZO_*` env vars, DB names, headers,
@@ -17,6 +16,18 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - Never commit branded output or `dozo/.stage/`.
 - Keep `NOTICE` and `LICENSE` untouched. Attribution additions go in `dozo/NOTICE`.
 - Never claim endorsement by or affiliation with Rakazo. Never reuse upstream's logo or mascot.
+
+## Fork features inside upstream directories
+
+- Fork-only source files live inside upstream directories with a `dozo-` filename prefix, so
+  upstream tooling (Vitest, Biome, tsc) covers them. `make qa` runs `dozo-*.test.ts(x)`.
+- Reach an upstream file only through an anchored rule, preferably one import redirect to a
+  `dozo-*` wrapper that re-exports the same name. List the wrapper in the rule's `requires`.
+- Rules are idempotent (a re-run is a no-op) and fail loudly: exit 2, naming rule and file.
+- Deviation: the local-model catalog (model names, runtime, hardware) lives in
+  `apps/web/src/lib/dozo-local-model-catalog.ts`, not in `packages/core/src`. It has a single
+  consumer and core placement would need an extra anchor. Move it to core when a second surface
+  needs it.
 
 ## Commands
 

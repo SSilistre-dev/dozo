@@ -8,6 +8,11 @@
 - Committed: only new files (`dozo/**`, `Makefile`, `.github/workflows/dozo-*.yml`, our UI files).
   No upstream file is edited. Fork health = number of upstream files that differ from
   `upstream-main` outside our paths; it should stay 0 (see `dozo/sync.sh`).
+- Fork-only files inside upstream directories are named `dozo-*` (under `apps/` and `packages/`).
+  They count as ours: `sync.sh` leaves them out of fork health, lists how many there are in its
+  summary, and refuses to run (exit 2) if upstream ever ships a `dozo-*` file of its own. An
+  upstream merge cannot delete or overwrite them because upstream does not have them. The few
+  upstream files they hook into are reached only by anchored rules in `dozo/brand/brand.json`.
 - Applied at build time, never committed: the Rakazo-to-Dozo rename. `dozo/docker/build.sh stage`
   copies the tree to `dozo/.stage/src`, `brand` runs `dozo/brand/apply.mjs` then the leak gate
   `check.mjs`. Technical identifiers (`@rakazo/*`, `RAKAZO_*`, DB names, headers, cookies, the

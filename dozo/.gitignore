@@ -3,3 +3,4 @@
 
 # Upstream ignores `design/` everywhere; the approved mockups in dozo/design are tracked.
 !design/
+.plumb-tmp/

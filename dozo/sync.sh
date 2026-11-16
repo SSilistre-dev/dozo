@@ -74,8 +74,16 @@ FILES=$(git diff --name-only "$BASE" "$NEW_SHA" | wc -l | tr -d ' ')
 RANGE="$(git rev-parse --short=9 "$BASE")..$SHORT"
 
 # Pathspec for "files that should be identical to upstream" (everything outside our own paths).
+# Fork files named dozo-* inside apps/ and packages/ are ours too (see dozo/AGENTS.md).
 OWN=(. ':!dozo' ':!Makefile' ':!.github/workflows/dozo-*.yml'
-     ':!packages/ui-web/src/dozo.css' ':!packages/ui-web/src/dozo-avatar.tsx')
+     ':!packages/ui-web/src/dozo.css'
+     ':(exclude,glob)apps/**/dozo-*' ':(exclude,glob)packages/**/dozo-*')
+
+fork_files() { git ls-tree -r --name-only "$1" -- apps packages | grep '/dozo-[^/]*$' || true; }  # $1 = tree-ish
+
+# Upstream must never ship a dozo-* file of its own: it would overwrite or conflict with ours.
+CLASH=$(fork_files "$NEW_SHA")
+[ -z "$CLASH" ] || die "upstream ships dozo-* file(s) that clash with the fork's own naming; rename ours first: $(printf '%s' "$CLASH" | tr '\n' ' ')" 2
 
 health() { # $1 = tree-ish holding our result, $2 = upstream ref to compare with
   HEALTH_FILES=$(git diff --name-only "$2" "$1" -- "${OWN[@]}")
@@ -87,6 +95,7 @@ report() { # $1 = tree-ish of the merge result, $2 = upstream ref
   say "range merged:        $RANGE"
   say "upstream commits:    $COMMITS"
   say "files changed:       $FILES"
+  say "fork files:          $(fork_files "$1" | grep -c . || true) dozo-* file(s) inside apps/ and packages/, kept as ours"
   say "fork health:         $HEALTH upstream-tracked file(s) differ from upstream outside our paths"
   if [ "$HEALTH" -gt 1 ]; then
     echo "[sync] WARNING: fork health above 1. Someone edited upstream files; these will conflict later:" >&2

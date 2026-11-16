@@ -4,7 +4,8 @@
  *
  *   node dozo/brand/apply.mjs --root <dir> [--check] [--allow-git] [--config <file>]
  *
- * Exit 0 on success, 2 on any failure (anchored rule not matching exactly once, missing asset,
+ * Exit 0 on success, 2 on any failure (anchored rule not matching exactly once (or already applied),
+ * a rule whose `requires` file is missing, missing asset,
  * a `.git` inside <dir> without --allow-git). On failure nothing is written.
  */
 import fs from "node:fs";
@@ -68,6 +69,14 @@ const fileSet = new Set(files);
 for (const file of anchoredByFile.keys()) {
   if (!fileSet.has(file)) errors.push(`anchored rule: ${file} does not exist`);
 }
+// A rule that redirects to a fork file lists it in `requires`: never ship a dangling import.
+for (const rule of config.anchored) {
+  for (const need of rule.requires ?? []) {
+    if (!fileSet.has(need)) {
+      errors.push(`anchored rule (${rule.reason}): dangling redirect, ${need} does not exist in the tree`);
+    }
+  }
+}
 
 for (const rel of files) {
   const rules = anchoredByFile.get(rel) ?? [];
@@ -82,11 +91,13 @@ for (const rel of files) {
   let text = original;
   for (const rule of rules) {
     const hits = text.split(rule.find).length - 1;
-    if (hits === 1) {
+    // Already applied: replace is there and no find is left outside it (replace may contain find).
+    const leftover = text.split(rule.replace).join("").split(rule.find).length - 1;
+    if (text.includes(rule.replace) && leftover === 0) {
+      anchoredAlready++;
+    } else if (hits === 1 && !text.includes(rule.replace)) {
       text = text.replace(rule.find, () => rule.replace);
       anchoredApplied++;
-    } else if (hits === 0 && text.includes(rule.replace)) {
-      anchoredAlready++;
     } else {
       errors.push(
         `anchored rule (${rule.reason}): ${rel} has ${hits} matches of ${JSON.stringify(rule.find)}, need exactly 1`,

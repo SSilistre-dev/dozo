@@ -209,6 +209,54 @@ describe("anchored rules", () => {
     assert.match(second.stdout, /anchored 0 applied, 1 already applied/);
   });
 
+  it("is a no-op the second time when replace contains find", () => {
+    const root = tree({ "src/a.ts": "A B" });
+    const config = configFile({ anchored: [rule("B", "B+Dozo")] });
+    const first = apply(root, config);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(read(root, "src/a.ts"), "A B+Dozo");
+    assert.match(first.stdout, /anchored 1 applied, 0 already applied/);
+    for (let i = 0; i < 2; i++) {
+      const again = apply(root, config);
+      assert.equal(again.status, 0, again.stderr);
+      assert.equal(read(root, "src/a.ts"), "A B+Dozo", "no second application");
+      assert.match(again.stdout, /anchored 0 applied, 1 already applied/);
+    }
+  });
+
+  it("fails loudly, naming rule and file, when the file has neither find nor replace", () => {
+    const root = tree({ "src/a.ts": "A C" });
+    const res = apply(root, configFile({ anchored: [{ ...rule("B", "B+Dozo"), reason: "my-rule" }] }));
+    assert.equal(res.status, 2, res.stderr);
+    assert.match(res.stderr, /my-rule/);
+    assert.match(res.stderr, /src\/a\.ts/);
+    assert.equal(read(root, "src/a.ts"), "A C");
+  });
+
+  it("fails when replace is present but an un-replaced find is left, or find is twice", () => {
+    for (const text of ["B B+Dozo", "B B"]) {
+      const root = tree({ "src/a.ts": text });
+      const res = apply(root, configFile({ anchored: [rule("B", "B+Dozo")] }));
+      assert.equal(res.status, 2, text);
+      assert.match(res.stderr, /need exactly 1/);
+      assert.equal(read(root, "src/a.ts"), text);
+    }
+  });
+
+  it("fails when a rule redirects to a file the staged tree does not have", () => {
+    const config = (requires) => configFile({ anchored: [{ ...rule("B", "Z"), requires }] });
+    const root = tree({ "src/a.ts": "A B" });
+    const res = apply(root, config(["src/dozo-wrapper.ts"]));
+    assert.equal(res.status, 2, res.stderr);
+    assert.match(res.stderr, /dangling/);
+    assert.match(res.stderr, /src\/dozo-wrapper\.ts/);
+    assert.equal(read(root, "src/a.ts"), "A B", "nothing is written on failure");
+    fs.writeFileSync(path.join(root, "src/dozo-wrapper.ts"), "export {};");
+    const ok = apply(root, config(["src/dozo-wrapper.ts"]));
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(read(root, "src/a.ts"), "A Z");
+  });
+
   it("fails when the file is missing", () => {
     const root = tree({ "src/x.ts": "" });
     const res = apply(root, configFile({ anchored: [rule("A")] }));
@@ -605,6 +653,15 @@ describe("shipped anchored rules", () => {
     for (const rule of [...config.anchored, ...config.literals]) assert.ok(rule.reason, JSON.stringify(rule));
     const keys = config.anchored.map((rule) => `${rule.file}\0${rule.find}`);
     assert.equal(new Set(keys).size, keys.length);
+  });
+  it("import-redirect anchors match the upstream files exactly once", () => {
+    const repo = path.resolve(here, "../..");
+    const config = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));
+    for (const rule of config.anchored.filter((r) => r.requires)) {
+      const file = path.join(repo, rule.file);
+      if (!fs.existsSync(file)) continue; // dozo/ checked out without upstream
+      assert.equal(read(repo, rule.file).split(rule.find).length - 1, 1, rule.file);
+    }
   });
   it("the compaction detector accepts both prefixes and apply is idempotent on it", () => {
     const config = JSON.parse(fs.readFileSync(path.join(here, "brand.json"), "utf8"));

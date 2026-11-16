@@ -462,6 +462,20 @@
       "find": "hostInfo: { name: \"rakazo\"",
       "replace": "hostInfo: { name: \"dozo\"",
       "reason": "host name MCP App iframes see in ui/initialize"
+    },
+    {
+      "file": "apps/web/src/pages/SettingsOverlay.tsx",
+      "find": "import { ModelSettingsOverlay } from \"./ModelSettingsOverlay\";",
+      "replace": "import { ModelSettingsOverlay } from \"./dozo-model-settings\";",
+      "requires": ["apps/web/src/pages/dozo-model-settings.tsx"],
+      "reason": "fork feature: the model settings tab is a wrapper that adds the local-models panel to upstream's overlay and re-exports the same name"
+    },
+    {
+      "file": "apps/web/src/pages/Onboarding.tsx",
+      "find": "import { ModelStep } from \"./onboarding/model-step\";",
+      "replace": "import { ModelStep } from \"./onboarding/dozo-model-step\";",
+      "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
+      "reason": "fork feature: the onboarding model step is a wrapper that offers local models next to upstream's step and re-exports the same name"
     }
   ],
   "assets": {
