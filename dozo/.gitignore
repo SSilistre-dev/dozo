@@ -1,0 +1,5 @@
+# Throwaway staged copy and generated env (secrets) from docker/build.sh
+.stage/
+
+# Upstream ignores `design/` everywhere; the approved mockups in dozo/design are tracked.
+!design/

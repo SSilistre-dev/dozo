@@ -1,0 +1,45 @@
+name: dozo-gate
+
+# Dozo fork gate. A pull request into main (including the upstream sync PR) must pass the fast
+# local checks and the brand leak path: stage the tree, apply the codemod, fail on any
+# user-visible "Rakazo" string. Needs only Docker, which stock GitHub runners have.
+# Action versions are pinned by the same full commit SHAs the upstream workflows already use.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: olc and brand leak gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      # dozo/docker/gate.sh compares against the pristine upstream-main branch.
+      - name: Fetch upstream-main
+        run: |
+          if git ls-remote --exit-code --heads origin upstream-main >/dev/null; then
+            git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main
+          else
+            echo "::warning::origin has no upstream-main branch; the fork-health count in make olc will be wrong"
+          fi
+
+      - name: make olc
+        run: make olc
+
+      # Not DOZO_STAGE_WORKTREE: the PR checkout is committed content, stage exports HEAD.
+      - name: Stage tree
+        run: dozo/docker/build.sh stage
+
+      - name: Apply brand and run leak gate
+        run: dozo/docker/build.sh brand

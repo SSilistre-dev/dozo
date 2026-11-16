@@ -1,0 +1,10 @@
+# Why this exists: upstream hard-codes the published ports (web 5173, api 3100); only the web
+# bind ADDRESS is configurable (RAKAZO_WEB_BIND). A busy 5173 therefore cannot be avoided by
+# configuration alone. This override moves the web port to DOZO_WEB_PORT and does not publish
+# the api (the web proxy reaches it on the compose network). Nothing else is changed.
+services:
+  web:
+    ports: !override
+      - "${RAKAZO_WEB_BIND:-127.0.0.1}:${DOZO_WEB_PORT:-5173}:5173"
+  api:
+    ports: !reset []

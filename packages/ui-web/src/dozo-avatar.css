@@ -1,0 +1,177 @@
+/* Dozo bot avatars. Every selector sits under .dozo-avatar so nothing here leaks into the app. */
+
+.dozo-avatar {
+  /* Tile colours, tuned for the dark page. Light values follow below. */
+  --dozo-sora: #4f8fd8;
+  --dozo-kumo: #a07ed8;
+  --dozo-hana: #4fa37a;
+  --dozo-taro: #d19a45;
+  --dozo-yuki: #dc7a6a;
+  --dozo-mochi: #3fa3a8;
+  /* The robot head, its visor, and the default eye glow. */
+  --dozo-body: #eef0f4;
+  --dozo-visor: #14161c;
+  --dozo-glow: #bfe0ff;
+
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  user-select: none;
+}
+
+/* Deeper tiles keep the white head readable on a light page. */
+[data-theme="light"] .dozo-avatar {
+  --dozo-sora: #3f7fcb;
+  --dozo-kumo: #8f6bcb;
+  --dozo-hana: #3f9468;
+  --dozo-taro: #c4872f;
+  --dozo-yuki: #d26a59;
+  --dozo-mochi: #2f9297;
+  --dozo-body: #f7f8fa;
+}
+
+/* One tile colour and one eye glow per character. An inline --dozo-tile (explicit colour) wins. */
+.dozo-avatar[data-character="sora"] {
+  --dozo-tile: var(--dozo-sora);
+  --dozo-glow: #bfe0ff;
+}
+.dozo-avatar[data-character="kumo"] {
+  --dozo-tile: var(--dozo-kumo);
+  --dozo-glow: #e2d6ff;
+  --dozo-pulse: 1;
+}
+.dozo-avatar[data-character="hana"] {
+  --dozo-tile: var(--dozo-hana);
+  --dozo-glow: #c4f2d9;
+}
+.dozo-avatar[data-character="taro"] {
+  --dozo-tile: var(--dozo-taro);
+  --dozo-glow: #ffe2ae;
+}
+.dozo-avatar[data-character="yuki"] {
+  --dozo-tile: var(--dozo-yuki);
+  --dozo-glow: #ffd0c6;
+}
+.dozo-avatar[data-character="mochi"] {
+  --dozo-tile: var(--dozo-mochi);
+  --dozo-glow: #b8f0f0;
+}
+
+.dozo-avatar .da-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  stroke: none;
+}
+.dozo-avatar .da-tile,
+.dozo-avatar .da-band {
+  fill: var(--dozo-tile);
+}
+.dozo-avatar .da-body {
+  fill: var(--dozo-body);
+}
+.dozo-avatar .da-visor {
+  fill: var(--dozo-visor);
+}
+.dozo-avatar .da-glow {
+  fill: var(--dozo-glow);
+}
+.dozo-avatar .da-glow-line {
+  fill: none;
+  stroke: var(--dozo-glow);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.dozo-avatar .da-head,
+.dozo-avatar .da-feature,
+.dozo-avatar .da-eyes,
+.dozo-avatar .da-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Idle bots sleep: half-closed eyes. A tracked avatar overrides this inline and wakes on hover. */
+.dozo-avatar[data-state="idle"] .da-eyes {
+  transform: scaleY(0.3);
+}
+
+.dozo-avatar .da-blink.is-blinking {
+  animation: dozo-blink var(--dozo-blink, 120ms) ease-in-out;
+}
+
+/* Idle motion is skipped below 32 px (data-motion="still"): unreadable, and wasted frames. */
+.dozo-avatar[data-motion="full"][data-state="working"] .da-head {
+  animation: dozo-bob 3.2s ease-in-out infinite;
+  animation-delay: var(--dozo-delay, 0s);
+}
+.dozo-avatar[data-motion="full"][data-state="working"] .da-feature {
+  animation: dozo-glow 2.4s ease-in-out infinite;
+}
+.dozo-avatar[data-motion="full"][data-state="waiting"] .da-feature {
+  animation: dozo-attn 4.5s ease-in-out infinite;
+}
+.dozo-avatar[data-motion="full"][data-state="idle"] .da-head {
+  transform-origin: 50% 100%;
+  animation: dozo-breathe 5.5s ease-in-out infinite;
+  animation-delay: var(--dozo-delay, 0s);
+}
+.dozo-avatar .da-svg.is-hop {
+  animation: dozo-hop 0.25s ease-out;
+}
+
+@keyframes dozo-blink {
+  50% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes dozo-bob {
+  50% {
+    transform: translateY(-2.2px);
+  }
+}
+@keyframes dozo-glow {
+  50% {
+    opacity: 0.45;
+    transform: scale(var(--dozo-pulse, 1.2));
+  }
+}
+@keyframes dozo-attn {
+  0%,
+  68%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1.5);
+    opacity: 0.55;
+  }
+  92% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes dozo-breathe {
+  50% {
+    transform: scale(1.03);
+  }
+}
+@keyframes dozo-hop {
+  40% {
+    transform: translateY(-8%) rotate(-5deg);
+  }
+}
+
+/* No bob, pulse or hop; the blink stays, only slower. */
+@media (prefers-reduced-motion: reduce) {
+  .dozo-avatar {
+    --dozo-blink: 220ms;
+  }
+  /* Same specificity as the motion rules above, and later, so it wins without !important. */
+  .dozo-avatar[data-motion][data-state] .da-head,
+  .dozo-avatar[data-motion][data-state] .da-feature,
+  .dozo-avatar .da-svg.is-hop {
+    animation: none;
+  }
+}

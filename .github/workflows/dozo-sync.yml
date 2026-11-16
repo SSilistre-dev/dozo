@@ -1,0 +1,120 @@
+name: dozo-sync
+
+# Daily upstream sync: runs dozo/sync.sh and opens (or replaces) a pull request from
+# sync/upstream-<sha> into main. Review and merge the PR yourself; nothing merges automatically.
+#
+# DOZO_SYNC_TOKEN (repository secret) is required. Upstream changes files under
+# .github/workflows, and GitHub rejects a branch push that modifies workflow files unless the
+# token has the `workflows` scope (classic PAT: repo + workflow; fine-grained: Contents write,
+# Pull requests write, Workflows write). The built-in GITHUB_TOKEN can never have that scope.
+# Using the same token to open the PR also makes the dozo-gate workflow run on it; pull requests
+# created with GITHUB_TOKEN do not trigger other workflows.
+#
+# Prerequisite: origin must have the pristine `upstream-main` branch (see dozo/SYNC.md).
+# Action versions are pinned by the same full commit SHAs the upstream workflows already use.
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+    inputs:
+      fast:
+        description: Run only make olc (skip make qa)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: ${{ vars.DOZO_UPSTREAM_URL || 'https://github.com/elie222/rakazo.git' }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Require DOZO_SYNC_TOKEN
+        env:
+          TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error title=DOZO_SYNC_TOKEN missing::Create a token with the workflows scope (upstream changes .github/workflows) and store it as the repository secret DOZO_SYNC_TOKEN. See dozo/SYNC.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.DOZO_SYNC_TOKEN }}
+
+      - name: Prepare branches and remote
+        run: |
+          git config user.name "dozo-sync"
+          git config user.email "dozo-sync@users.noreply.github.com"
+          git checkout --detach
+          git fetch origin +refs/heads/main:refs/heads/main
+          if ! git ls-remote --exit-code --heads origin upstream-main >/dev/null; then
+            echo "::error title=upstream-main missing::origin has no upstream-main branch. Push the pristine branch once (see dozo/SYNC.md)."
+            exit 1
+          fi
+          git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main
+          git remote add upstream "$UPSTREAM_URL"
+
+      - name: Run dozo/sync.sh
+        id: sync
+        env:
+          FAST: ${{ github.event_name == 'schedule' && 'true' || inputs.fast }}
+        run: |
+          args=""
+          [ "$FAST" = "true" ] && args="--fast"
+          set +e
+          dozo/sync.sh $args 2>&1 | tee "$RUNNER_TEMP/sync.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          case "$branch" in sync/*) echo "branch=$branch" >> "$GITHUB_OUTPUT" ;; esac
+          {
+            echo '```'
+            sed 's/^\[sync\] //' "$RUNNER_TEMP/sync.log" | tail -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Exit 2 = conflict or non-fast-forward upstream-main: the job must fail visibly.
+          exit "$rc"
+
+      - name: Publish branches and open or replace the pull request
+        if: steps.sync.outputs.branch != ''
+        env:
+          GH_TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
+          BRANCH: ${{ steps.sync.outputs.branch }}
+        run: |
+          # upstream-main fast-forwards only; sync branch is rebuilt from main each day.
+          git push origin refs/heads/upstream-main:refs/heads/upstream-main
+          # Plain --force: the sync branch is disposable and rebuilt from main; a lease would fail
+          # on re-runs because this job never fetches origin's copy of the branch.
+          git push --force origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+          gh label create upstream-sync --color 0e8a16 --description "Automated upstream merge" --force >/dev/null
+          {
+            echo "Automated merge of upstream into Dozo, built by dozo/sync.sh."
+            echo
+            echo '```'
+            sed 's/^\[sync\] //' "$RUNNER_TEMP/sync.log" | grep -E 'range merged|upstream commits|files changed|fork health|make ' || true
+            echo '```'
+            echo
+            echo "Review, wait for dozo-gate, then merge with a merge commit (not squash, not rebase)."
+          } > "$RUNNER_TEMP/body.md"
+          title="Sync upstream ($BRANCH)"
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+            exit 0
+          fi
+          # Replace older open sync PRs: the newest upstream tip supersedes them.
+          for n in $(gh pr list --label upstream-sync --state open --json number --jq '.[].number'); do
+            gh pr close "$n" --delete-branch --comment "Superseded by $BRANCH."
+          done
+          gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md" --label upstream-sync

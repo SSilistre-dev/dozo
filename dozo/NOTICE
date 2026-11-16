@@ -1,0 +1,29 @@
+Dozo NOTICE addendum
+
+This file adds to, and does not replace, the NOTICE file at the repository root.
+The root NOTICE is upstream's and stays unmodified.
+
+Dozo is an independent fork of Rakazo, https://github.com/elie222/rakazo.
+The original work is copyright its authors and is licensed under the Apache
+License, Version 2.0 (see LICENSE at the repository root). Third-party notices
+for code included in Rakazo are in the root NOTICE.
+
+Modifications made in this fork are copyright 2026 the Dozo authors and are
+licensed under the Apache License, Version 2.0.
+
+Notice of changes (Apache License 2.0, section 4(b))
+
+The git tree of this repository is the unmodified upstream source plus new
+files under dozo/ and two UI files in packages/ui-web/src (dozo.css and
+dozo-avatar.tsx), plus a fork notice at the top of the root README.md.
+
+Distributed builds of Dozo (for example the published container images) are
+produced by applying the brand overlay in dozo/brand/ to a copy of that source
+immediately before the build. The overlay modifies user-visible strings, links
+and assets in the files that its tool lists (run dozo/brand/apply.mjs and see
+its output), and it changes no technical identifiers. Files modified this way
+carry this notice of change through this file. The unmodified source is the git
+tree.
+
+Dozo is not affiliated with or endorsed by the Rakazo project. No right to use
+the Rakazo name or marks is claimed.

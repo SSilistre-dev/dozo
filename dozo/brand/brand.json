@@ -1,0 +1,89 @@
+{
+  "from": "Rakazo",
+  "to": "Dozo",
+  "variants": {
+    "Rakazos": "Dozos"
+  },
+  "urls": {
+    "app.rakazo.com": "app.dozo.example",
+    "www.rakazo.com": "www.dozo.example",
+    "rakazo.com": "dozo.example",
+    "github.com/elie222/rakazo": "github.com/OWNER/dozo",
+    "https://discord.gg/RWwKa2Sn7h": "https://dozo.example/discord",
+    "https://apps.apple.com/app/rakazo/id6801531099": "https://dozo.example/get/ios",
+    "https://play.google.com/store/apps/details?id=com.rakazo.app": "https://dozo.example/get/android"
+  },
+  "include": ["apps/web/**", "apps/api/**", "apps/worker/**", "packages/**", "infra/sandboxes/**"],
+  "exclude": [
+    { "glob": "**/node_modules/**", "reason": "installed dependencies" },
+    { "glob": "**/dist/**", "reason": "build output" },
+    { "glob": "**/build/**", "reason": "build output" },
+    { "glob": "**/coverage/**", "reason": "build output" },
+    { "glob": "**/.turbo/**", "reason": "build cache" },
+    { "glob": "**/pnpm-lock.yaml", "reason": "lockfile" },
+    { "glob": "**/package-lock.json", "reason": "lockfile" },
+    { "glob": "**/yarn.lock", "reason": "lockfile" },
+    { "glob": "**/LICENSE*", "reason": "license text is never rewritten" },
+    { "glob": "**/NOTICE*", "reason": "third-party and attribution notices are never rewritten" },
+    { "glob": "**/THIRD_PARTY*", "reason": "third-party notices are never rewritten" },
+    { "glob": "**/CHANGELOG*", "reason": "upstream history is never rewritten" },
+    {
+      "glob": "**/*.test.*",
+      "reason": "tests run on the pristine tree and assert on upstream strings"
+    },
+    {
+      "glob": "**/*.spec.*",
+      "reason": "tests run on the pristine tree and assert on upstream strings"
+    },
+    { "glob": "**/*.test-support.*", "reason": "test helpers, pristine tree only" },
+    { "glob": "**/__snapshots__/**", "reason": "test snapshots, pristine tree only" },
+    { "glob": "apps/web/e2e/**", "reason": "browser tests and fixtures run on the pristine tree" },
+    {
+      "glob": "packages/testkit/**",
+      "reason": "dev and eval tooling (looks up Rakazo.app, evals prompt text); never shipped"
+    },
+    {
+      "glob": "packages/adapters/src/composio-fake.ts",
+      "reason": "offline emulator keyed on owner/repo elie222/rakazo; not user-visible"
+    },
+    {
+      "glob": "packages/adapters/src/release-watch.ts",
+      "reason": "seeded emulated releases matched by owner/repo; not user-visible"
+    },
+    {
+      "glob": "packages/db/prisma/**",
+      "reason": "schema and migrations are checksummed and persisted; only doc comments mention the brand"
+    }
+  ],
+  "keep": [
+    {
+      "text": "Rakazo.icon",
+      "reason": "directory name of packages/ui-tokens/assets/Rakazo.icon, referenced by export-brand.ts and desktop packaging"
+    },
+    { "text": "Rakazo.app", "reason": "macOS bundle file name looked up by path" },
+    { "text": "Rakazo.exe", "reason": "Windows executable name matched by process lookup" },
+    {
+      "text": "Rakazo-owned compacted context",
+      "reason": "prefix stored in thread history and detected with startsWith in runtime-context.ts; changing it breaks old summaries"
+    },
+    { "text": "fork of Rakazo", "reason": "attribution phrase" },
+    { "text": "Based on Rakazo", "reason": "attribution phrase" },
+    { "text": "forked from Rakazo", "reason": "attribution phrase" }
+  ],
+  "allow": {
+    "files": [],
+    "phrases": [
+      {
+        "text": "ghcr.io/elie222/rakazo",
+        "reason": "published container image name pulled at runtime; stays until Dozo publishes its own images"
+      },
+      {
+        "text": "PUBLISHED_IMAGE_REPO = \"elie222/rakazo\"",
+        "reason": "image repository used by compose self-update; same reason as the ghcr image"
+      }
+    ]
+  },
+  "leak": ["rakazo.com", "elie222/rakazo"],
+  "anchored": [],
+  "assets": {}
+}
