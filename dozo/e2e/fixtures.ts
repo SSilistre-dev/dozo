@@ -92,6 +92,19 @@ export type Surface = {
   reach(ctx: Ctx): Promise<void>;
 };
 
+/**
+ * A reached screen shows at least this much text: an empty page that is merely titled "Dozo" (the
+ * shell without its content, a blank route) is not a visit. Short on purpose: the smallest real
+ * screens (the integration callback, the 404) are well above it.
+ */
+const MIN_VISIBLE_TEXT = 10;
+
+/** Surfaces that render nothing by design, each with the reason; the content floor skips them. */
+const BLANK_BY_DESIGN: Record<string, string> = {
+  "sso callback":
+    "SsoCallbackPage renders null: it relays the result to the opener and closes the window",
+};
+
 export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   const world = surface.signedOut ? (undefined as unknown as World) : readWorld();
   const scans: Scan[] = [];
@@ -149,6 +162,20 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
       "the app's last-resort error screen is showing",
     ).toHaveCount(0);
     await ctx.scan("");
+    if (!(surface.name in BLANK_BY_DESIGN)) {
+      const read = () => page.evaluate(() => document.body?.innerText.trim().length ?? 0);
+      // The app may still be drawing: give it a few seconds before calling the page empty.
+      await expect
+        .poll(read, { timeout: 5_000 })
+        .toBeGreaterThanOrEqual(MIN_VISIBLE_TEXT)
+        .catch(() => undefined);
+      const visible = await read();
+      if (visible < MIN_VISIBLE_TEXT) {
+        throw new Error(
+          `"${surface.name}" shows ${visible} characters of text (minimum ${MIN_VISIBLE_TEXT}): the page is empty or still loading, so it was not really visited`,
+        );
+      }
+    }
     record.visited = true;
   } catch (error) {
     failure = error;

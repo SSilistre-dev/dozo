@@ -1,4 +1,5 @@
-// Shared by apply.mjs and check.mjs: config loading, file selection, the text rewrite.
+// Shared by apply.mjs and check.mjs: config loading, file selection, the text rewrite, and the
+// line scanner behind the leak gate.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,19 +11,46 @@ export function fail(message) {
   process.exit(2);
 }
 
+/** An unexpected error (unreadable file, a directory where a file is expected) is a failed run, exit 2, not a stack trace. */
+export const guard = () => process.on("uncaughtException", (error) => fail(`unexpected error: ${error.message}`));
+
+/** `flags` are boolean options; `--root` and `--config` take a value. Anything else, a repeat, or a missing value exits 2. */
 export function parseArgs(argv, flags) {
-  const out = { _: [] };
+  const out = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith("--")) fail(`unexpected argument ${arg}`);
     const name = arg.slice(2);
+    if (name in out) fail(`${arg} given twice`);
     if (flags.includes(name)) out[name] = true;
-    else if (["root", "config"].includes(name))
-      out[name] = argv[++i] ?? fail(`--${name} needs a value`);
-    else fail(`unknown option ${arg}`);
+    else if (["root", "config"].includes(name)) {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("--")) fail(`--${name} needs a value`);
+      out[name] = value;
+    } else fail(`unknown option ${arg}`);
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------------------------
+
+const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+const isText = (value) => typeof value === "string" && value !== "";
+const isTextList = (value) => Array.isArray(value) && value.length > 0 && value.every(isText);
+
+// Entry lists: name -> required text fields. Every entry also needs a `reason`.
+const ENTRY_FIELDS = {
+  exclude: ["glob"],
+  keep: ["text", "files"],
+  "allow.phrases": ["text", "files"],
+  "allow.text": ["file", "text"],
+  "allow.paths": ["glob"],
+  "allow.images": ["glob"],
+  literals: ["find", "replace"],
+};
+const ANCHORED_FIELDS = "anchored rule needs file, find, replace and reason";
 
 export function loadConfig(file = DEFAULT_CONFIG) {
   let raw;
@@ -31,50 +59,83 @@ export function loadConfig(file = DEFAULT_CONFIG) {
   } catch (error) {
     fail(`cannot read config ${file}: ${error.message}`);
   }
-  if (!raw.from || !raw.to) fail("config needs `from` and `to`");
-  const list = (value) => value ?? [];
+  const need = (ok, message) => ok || fail(`config: ${message}`);
+  need(isObject(raw), "must be a JSON object");
+  const KEYS = ["from", "to", "variants", "urls", "include", "exclude", "keep", "allow", "literals", "leak", "leakWords", "anchored", "assets"];
+  for (const key of Object.keys(raw)) need(KEYS.includes(key), `unknown key ${key}`);
+  need(isText(raw.from) && isText(raw.to), "needs `from` and `to` (non-empty strings)");
+  need(!raw.to.includes(raw.from), "`to` must not contain `from`, a re-run would rename again");
+  const allow = raw.allow ?? {};
+  need(isObject(allow), "`allow` must be an object");
+  for (const key of Object.keys(allow)) need(Object.keys(ENTRY_FIELDS).includes(`allow.${key}`), `unknown key allow.${key}`);
+
+  const maps = {};
+  for (const name of ["variants", "urls", "assets"]) {
+    const value = raw[name] ?? {};
+    need(isObject(value), `\`${name}\` must be an object`);
+    for (const [key, target] of Object.entries(value)) {
+      need(isText(key) && isText(target), `${name} entries need a non-empty key and a non-empty string value: ${JSON.stringify(key)}`);
+      // A target holding its own key would be rewritten again on a re-run.
+      if (name !== "assets") need(!target.toLowerCase().includes(key.toLowerCase()), `${name} target contains its key: ${key}`);
+    }
+    maps[name] = value;
+  }
+  for (const name of ["include", "leak", "leakWords"]) {
+    need(raw[name] === undefined || (Array.isArray(raw[name]) && raw[name].every(isText)), `\`${name}\` must be a list of non-empty strings`);
+  }
+  need(raw.include?.length > 0, "`include` is empty");
+
+  const lists = {};
+  for (const [name, fields] of Object.entries(ENTRY_FIELDS)) {
+    const [group, sub] = name.split(".");
+    const value = (sub ? allow[sub] : raw[group]) ?? [];
+    need(Array.isArray(value), `\`${name}\` must be a list`);
+    for (const entry of value) {
+      need(isObject(entry), `every ${name} entry must be an object`);
+      need(isText(entry.reason), `every ${name} entry needs a reason`);
+      for (const field of fields) {
+        if (field === "files") need(isTextList(entry.files), `${name} entry needs a non-empty \`files\` list of globs: ${JSON.stringify(entry)}`);
+        else if (field === "replace") need(typeof entry.replace === "string", `literal needs find and replace: ${JSON.stringify(entry)}`);
+        else need(isText(entry[field]), `${name} entry needs ${field}: ${JSON.stringify(entry)}`);
+      }
+    }
+    lists[name] = value;
+  }
+  for (const literal of lists.literals) {
+    need(!literal.replace.includes(literal.find), `literal replace contains find, a re-run would rewrite again: ${JSON.stringify(literal.find)}`);
+    need(literal.files === undefined || isTextList(literal.files), `literal files must be a non-empty list of globs: ${JSON.stringify(literal.find)}`);
+  }
+
+  need(Array.isArray(raw.anchored ?? []), "`anchored` must be a list");
+  for (const rule of raw.anchored ?? []) {
+    need(isObject(rule) && isText(rule.file) && isText(rule.find) && typeof rule.replace === "string" && isText(rule.reason), `${ANCHORED_FIELDS}: ${JSON.stringify(rule)}`);
+    // An empty replace is "present" in every file, so a missing find could never be told from an
+    // applied rule; a replace holding find would match again on a re-run. Neither is a rule.
+    need(rule.replace !== "" && !rule.replace.includes(rule.find), `anchored rule (${rule.reason}): empty replace or replace contains find, so a re-run could not tell applied from not applied: ${JSON.stringify(rule.find)}`);
+    need(rule.requires === undefined || (Array.isArray(rule.requires) && rule.requires.every(isText)), `anchored rule (${rule.reason}): requires must be a list of paths`);
+  }
+
+  const globs = (list) => list.map((entry) => globToRegExp(entry.glob));
   const config = {
     from: raw.from,
     to: raw.to,
-    variants: raw.variants ?? {},
-    urls: raw.urls ?? {},
-    include: list(raw.include),
-    exclude: list(raw.exclude),
-    keep: list(raw.keep),
-    allow: {
-      files: list(raw.allow?.files),
-      phrases: list(raw.allow?.phrases),
-      lowercase: list(raw.allow?.lowercase),
-      images: list(raw.allow?.images),
-    },
-    literals: list(raw.literals),
-    leak: list(raw.leak),
-    leakWords: list(raw.leakWords),
-    anchored: list(raw.anchored),
-    assets: raw.assets ?? {},
+    ...maps,
+    include: raw.include,
+    leak: raw.leak ?? [],
+    leakWords: raw.leakWords ?? [],
+    anchored: raw.anchored ?? [],
+    exclude: lists.exclude,
+    keep: lists.keep,
+    allow: { phrases: lists["allow.phrases"], text: lists["allow.text"], paths: lists["allow.paths"], images: lists["allow.images"] },
+    literals: lists.literals,
     dir: path.dirname(path.resolve(file)),
   };
-  if (config.include.length === 0) fail("config `include` is empty");
-  for (const [name, entries] of [
-    ["exclude", config.exclude],
-    ["keep", config.keep],
-    ["allow.files", config.allow.files],
-    ["allow.phrases", config.allow.phrases],
-    ["allow.lowercase", config.allow.lowercase],
-    ["allow.images", config.allow.images],
-    ["literals", config.literals],
-  ]) {
-    if (entries.some((entry) => !entry.reason)) fail(`every ${name} entry needs a reason`);
-  }
   config.includeRe = config.include.map(globToRegExp);
-  config.excludeRe = config.exclude.map((entry) => globToRegExp(entry.glob));
-  config.allowFilesRe = config.allow.files.map((entry) => globToRegExp(entry.glob));
-  config.allowLowercaseRe = config.allow.lowercase.map((entry) => globToRegExp(entry.glob));
-  config.allowImagesRe = config.allow.images.map((entry) => globToRegExp(entry.glob));
-  for (const literal of config.literals) {
-    if (!literal.find || literal.replace === undefined) fail(`literal needs find and replace: ${JSON.stringify(literal)}`);
-    literal.filesRe = (literal.files ?? []).map(globToRegExp);
-  }
+  config.excludeRe = globs(config.exclude);
+  config.allowPathsRe = globs(config.allow.paths);
+  config.allowImagesRe = globs(config.allow.images);
+  for (const entry of [...config.keep, ...config.allow.phrases]) entry.filesRe = entry.files.map(globToRegExp);
+  for (const literal of config.literals) literal.filesRe = (literal.files ?? []).map(globToRegExp);
   return config;
 }
 
@@ -96,6 +157,10 @@ export function globToRegExp(glob) {
   }
   return new RegExp(`^${source}$`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------------------------
 
 // Runtime state, never source: the stack's bind-mounted data/ (root-owned on Linux, unreadable) at the
 // top of a staged tree, and a staged copy sitting inside a repository root.
@@ -123,8 +188,36 @@ export function listFiles(root, links = []) {
 export const inScope = (config, rel) =>
   config.includeRe.some((re) => re.test(rel)) && !config.excludeRe.some((re) => re.test(rel));
 
-// ponytail: NUL-byte sniff on the first 8 KB; a UTF-16 text file would count as binary and be skipped.
+// Binary types the gate knows how to treat: images (mapped in `assets` or reviewed in
+// `allow.images`), fonts, media and documents. A NUL byte in any other in-scope file (UTF-16 text)
+// is reported, never skipped.
+export const BINARY_EXT = /\.(?:png|jpe?g|gif|webp|avif|bmp|ico|icns|svg|tiff?|heic|jfif|jp2|apng|pdf|woff2?|ttf|otf|eot|mp4|webm|lottie|riv)$/i;
+
+// ponytail: NUL-byte sniff on the first 8 KB.
 export const isBinary = (buffer) => buffer.subarray(0, 8192).includes(0);
+
+// ignoreBOM keeps a leading BOM in the string so a rewrite does not drop it.
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/** `{ binary: true }` or `{ text }`; exits 2 naming the file when it cannot be read or is not UTF-8. */
+export function readFile(root, rel) {
+  let buffer;
+  try {
+    buffer = fs.readFileSync(path.join(root, rel));
+  } catch (error) {
+    fail(`cannot read ${rel}: ${error.message}`);
+  }
+  if (isBinary(buffer)) return { binary: true, buffer };
+  try {
+    return { text: utf8.decode(buffer) };
+  } catch {
+    return fail(`${rel} is not valid UTF-8 (convert it, or exclude it with a reason): it would be corrupted by a rewrite`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rewrite
+// ---------------------------------------------------------------------------------------------
 
 export const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -132,17 +225,35 @@ export const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const literalApplies = (literal, rel) =>
   literal.filesRe.length === 0 || literal.filesRe.some((re) => re.test(rel));
 
+/** `keep` and `allow.phrases` entries are limited to their `files`. */
+export const entryApplies = (entry, rel) => entry.filesRe.some((re) => re.test(rel));
+
 /**
- * URL keys match only when no word character follows: `rakazo.com` must not eat the start of
- * `rakazo.computerOwner`. Shared by apply and the leak gate.
+ * A reviewed phrase matches as a whole: not glued to a word or hyphen on either side, so
+ * `Rakazo.icon` does not cover `Rakazo.icons` and an image name does not cover `…rakazo-evil/img`.
+ */
+export const phraseRe = (text, flags = "g") =>
+  new RegExp(
+    (/^\w/.test(text) ? "(?<![\\w-])" : "") + escapeRe(text) + (/\w$/.test(text) ? "(?![\\w-])" : ""),
+    flags,
+  );
+
+/**
+ * URL keys match as a whole: no word character, dot or hyphen before (`getrakazo.com`,
+ * `status.rakazo.com` are other hosts) and none after (`rakazo.com` must not eat the start of
+ * `rakazo.computerOwner`), nor `&` or `=` (a store link with more query parameters is not the key).
+ * Subdomains that are ours are listed as keys of their own. Shared by apply and the leak gate.
  */
 export const urlRe = (key, flags = "g") =>
-  new RegExp(escapeRe(key) + (/\w$/.test(key) ? "(?!\\w)" : ""), flags);
+  new RegExp(
+    (/^\w/.test(key) ? "(?<![\\w.-])" : "") + escapeRe(key) + (/\w$/.test(key) ? "(?![\\w&=-])" : ""),
+    flags,
+  );
 
 /**
  * Rewrites one file's text: literals, URL map (longest key first, any capitalisation, the mapped
- * target written exactly), then the whole-word name.
- * `rel` selects the literals that are limited to some files.
+ * target written exactly), then the whole-word name. `rel` selects the literals and the `keep`
+ * phrases that are limited to some files.
  */
 export function rewrite(text, config, counts, rel = "") {
   const bump = (key, n) => {
@@ -163,7 +274,7 @@ export function rewrite(text, config, counts, rel = "") {
   }
   const words = { [config.from]: config.to, ...config.variants };
   const names = Object.keys(words).sort((a, b) => b.length - a.length);
-  const kept = config.keep.map((entry) => escapeRe(entry.text));
+  const kept = config.keep.filter((entry) => entryApplies(entry, rel)).map((entry) => phraseRe(entry.text).source);
   const re = new RegExp([...kept, `\\b(?:${names.map(escapeRe).join("|")})\\b`].join("|"), "g");
   return text.replace(re, (match) => {
     if (!(match in words)) return match;
@@ -173,147 +284,127 @@ export function rewrite(text, config, counts, rel = "") {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Gate-side only (check.mjs): where the old brand shows up as READABLE text that apply leaves
-// alone (`rakazo`, `RAKAZO`, social handles), as opposed to identifiers that stay on purpose.
+// Leak gate scanner (check.mjs). Rule: every case-insensitive occurrence of the old brand word in
+// an applied tree is a leak, unless it sits inside one of the SHAPES below (a technical identifier
+// that stays on purpose) or inside a reviewed phrase (`keep`, `allow.phrases`, `allow.text`).
 // ---------------------------------------------------------------------------------------------
 
-// A brand word is an identifier when glued to one of these on the left (`x-rakazo`, `.rakazo`,
-// `@rakazo/`, `$rakazo`, `{rakazo`, `\rakazo` Windows path, `/rakazo` path) or on the right
-// (`rakazo_app`, `rakazo/x`, `rakazo=`, `rakazo.key`, `rakazo:key`, `rakazo-x`, `rakazo-${id}`).
-// Standing alone (spaces, quotes, tag brackets, sentence punctuation) it is a word a person reads.
-const standalone = (word) =>
-  new RegExp(`(?<![\\w.:/@$#{\\\\=\\-])${word}(?![\\w/@$=]|[.:\\-][\\w/$])`, "g");
-const LOWER = standalone("rakazo");
-const UPPER = standalone("RAKAZO");
-
-// The name glued into a PascalCase identifier inside a sentence (`Ask RakazoBot to help`). It must
-// follow a plain word, so type annotations (`desktop: RakazoDesktop`), object keys
-// (`rakazoUserId:`) and calls (`RakazoPage.mount(`) stay code.
-const GLUED = /(?<=^|[A-Za-z][ \t])[Rr]akazo[A-Z]\w*(?![\w(:=/-]|\.\w)/g;
-const proseBrand = (text) => firstOf(LOWER, text) ?? firstOf(GLUED, text);
-// `Welcome to rakazo, {name}`: the {expressions} are code, the words around them are text.
-const stripExpressions = (text) => {
-  for (let prev = ""; prev !== text; ) { prev = text; text = text.replace(/\{[^{}]*\}/g, " "); }
-  return text;
-};
-
-const WORDS_ONLY = /^(?!(?:import|export|const|let|var|return|from|type|case|function|class|interface|if|else|await|async|yield|new|throw|default|echo|ENV|RUN|COPY|ARG)\b)[A-Za-z][^=;{}<>]*$/;
-const STRING_RE = /"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\\n]|\\.)*)`/g;
-const ATTR_RE = /\b(?:alt|aria-label|aria-description|aria-placeholder|title|placeholder|label|tooltip)=\{?["'`]([^"'`]*)/g;
-const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*|\{\/\*|<!--)/;
-const noComment = (line) => line.replace(/\s\/\/\s.*$/, "");
-
-// Profile links: <host><path prefix>rakazo..., any case. Prefix entries end in `/` or `@`.
-const SOCIAL_RE = new RegExp(
-  "(?<![\\w.-])(?:(?:www|mobile|m)\\.)?(?:" +
-    [
-      "x\\.com/",
-      "twitter\\.com/",
-      "github\\.com/",
-      "facebook\\.com/",
-      "fb\\.com/",
-      "instagram\\.com/",
-      "t\\.me/",
-      "tiktok\\.com/@",
-      "threads\\.net/@",
-      "bsky\\.app/profile/",
-      "linkedin\\.com/(?:company|in|showcase)/",
-      "youtube\\.com/(?:@|c/|user/|channel/)",
-      "medium\\.com/@?",
-      "reddit\\.com/(?:r|user|u)/",
-      "discord\\.gg/",
-      "discord\\.com/invite/",
-    ].join("|") +
-    ")rakazo",
-  "gi",
-);
-
-const firstOf = (re, text) => {
-  re.lastIndex = 0;
-  const m = re.exec(text);
-  re.lastIndex = 0;
-  return m ? m[0] : null;
-};
+const TLDS = "com|net|org|io|ai|app|dev|co|xyz|me|cloud|info|tech|tools|so|sh|ly|gg|chat|site|online|store";
 
 /**
- * Ordered detectors for readable old-brand text. `gate` is the cheap "is there anything to
- * examine" test (used for the examined/flagged counts); `find(line)` returns the offending text
- * or null. `lower` patterns are skipped in files reviewed in `allow.lowercase`.
+ * Technical identifier shapes: the whole token that holds the old name, as the tree contains it.
+ * Case-sensitive; the brand is never matched as a word of its own here (`rakazo.`, `rakazo-powered`,
+ * `#rakazo` match nothing). Add a row only for a shape upstream really uses, with its reason.
+ * Positive and negative samples for every row live in brand.test.mjs.
  */
-export const VISIBLE_PATTERNS = [
-  {
-    // RAKAZO is only ever an identifier as RAKAZO_*/__RAKAZO_X__; standing alone it is text.
-    name: "all-caps word",
-    gate: /RAKAZO/,
-    find: (line) => firstOf(UPPER, line),
-  },
-  {
-    // x.com/rakazo, github.com/rakazo, linkedin.com/company/rakazo ...: profile links apply does not map.
-    name: "social profile link",
-    gate: /rakazo/i,
-    find: (line) => firstOf(SOCIAL_RE, line),
-  },
-  {
-    // "Follow @rakazo": a handle, unlike the package scope `@rakazo/core`.
-    name: "@handle",
-    gate: /@rakazo/,
-    find: (line) => firstOf(/(?<![\w@.])@rakazo(?![\w/-])/g, line),
-    lower: true,
-  },
-  {
-    // alt="rakazo logo", aria-label="Open rakazo menu", title=, placeholder=, label=.
-    name: "visible attribute",
-    gate: /rakazo/i,
-    find: (line) => {
-      for (const m of line.matchAll(ATTR_RE)) if (proseBrand(m[1])) return m[0];
-      return null;
-    },
-    lower: true,
-  },
-  {
-    // <p>Welcome to rakazo</p>: standalone word between tag brackets on one line.
-    name: "text between tags",
-    gate: /rakazo/i,
-    find: (line) => {
-      for (const m of noComment(line).matchAll(/>([^<>]*)</g)) if (proseBrand(stripExpressions(m[1]))) return m[0];
-      return null;
-    },
-    lower: true,
-  },
-  {
-    // "Thanks for trying rakazo, the team": a string with spaces and the standalone word.
-    // One word (`"rakazo"`) is the quoted-name check; `rakazo-${id}`-style names have no standalone word.
-    name: "prose in string",
-    gate: /rakazo/i,
-    find: (line) => {
-      for (const m of noComment(line).matchAll(STRING_RE)) {
-        const inner = m[1] ?? m[2] ?? m[3];
-        if (/\s/.test(inner) && proseBrand(inner)) return m[0];
-      }
-      return null;
-    },
-    lower: true,
-  },
-  {
-    // A line of plain words (JSX text on its own line, a template-literal prompt): no code punctuation.
-    name: "prose line",
-    gate: /rakazo/i,
-    find: (line) => {
-      if (COMMENT_LINE.test(line) || /^\s*#/.test(line)) return null;
-      const text = noComment(line).trim();
-      return /\s/.test(text) && WORDS_ONLY.test(text) && !/\w[(]/.test(text) ? proseBrand(text) : null;
-    },
-    lower: true,
-  },
+export const SHAPES = [
+  { name: "package-scope", re: /@rakazo\//g, reason: "workspace package scope @rakazo/*: imports and package names" },
+  { name: "env-name", re: /(?<![A-Za-z0-9])RAKAZO(?=_)/g, reason: "RAKAZO_* environment variables, macros and __RAKAZO_X__ globals" },
+  { name: "snake-name", re: /(?<![A-Za-z0-9/@])rakazo_/g, reason: "snake_case names: metadata keys, secret-store keys, C symbols (rakazo_xcapture_*); not after / or @, where it is a profile handle" },
+  { name: "camel-name", re: /(?<![A-Za-z0-9/@])[a-z_]*[Rr]akazo(?=[A-Z])/g, reason: "camelCase and PascalCase identifiers (RakazoDesktop, rakazoScreen, isRakazoContainer); not after / or @, where it is a profile handle" },
+  { name: "template-name", re: /(?<![A-Za-z0-9])rakazo-(?=\$)/g, reason: "generated names such as `rakazo-${randomUUID()}` for containers and temp files" },
+  { name: "namespaced-key", re: /(?<![A-Za-z0-9])rakazo:(?=[\w$/])/g, reason: "storage and id namespaces (rakazo:thread:1) and the rakazo:// URL scheme" },
+  { name: "dotted-key", re: /(?<![A-Za-z0-9])rakazo\.(?=[a-z])/g, reason: "dotted attribute, metadata and storage keys (rakazo.botId); a public TLD is caught before this" },
+  { name: "header", re: /(?<![\w-])x-rakazo-/gi, reason: "x-rakazo-* HTTP headers" },
+  { name: "data-attribute", re: /(?<![\w-])data-rakazo-/g, reason: "data-rakazo-* DOM attributes" },
+  { name: "css-name", re: /(?<![\w-])(?:--|\.)?rakazo-(?:organic|(?:bot|logo|group)-avatar|avatar-(?:breathe|spin)|app-boot--)[\w-]*/g, reason: "CSS classes, keyframes and custom properties of the avatars and the boot screen" },
+  { name: "dom-event", re: /(?<![\w-])rakazo-(?:app|page|mention|mcp-signin|save):/g, reason: "postMessage and DOM event types between the page frame and the host" },
+  { name: "binary-name", re: /(?<![\w-])(?:lib)?rakazo-(?:browser|page-browser|focus-or-launch|computer|local-bin|proxy|terminal|xcapture|home)(?![A-Za-z0-9])/g, reason: "executables, libraries and directories installed in the computer image" },
+  { name: "service-name", re: /(?<![\w-])rakazo-(?:api|api-jobs|worker|web|realtime|updater|sandboxes|sandbox-supervisor|desktop|emulator|third-party-emulator|wuying|prod|exec)(?![A-Za-z0-9])/g, reason: "compose services, queues, packages, runtimes and the .po catalog project id" },
+  { name: "persisted-key", re: /(?<![\w-])rakazo-(?:instance-theme|home-storage|history|build-id|content-encryption|content-security-policy|pwa-manifest|pwa-service-worker|storage-migration|export-list|account-export|turn(?:-document)?|oauth|mcp-oauth|mcp-packages|sso-oauth|plugin-connect|app-connect|slack-install|bot-id)(?![A-Za-z0-9])/g, reason: "stored keys, window and channel names, cache names and format ids that persisted data refers to" },
+  { name: "name-prefix", re: /(?<![\w-])rakazo-(?:account-import(?:-archive)?|claude-code-request|migrations|say|shell|snapshot|teardown|workspace(?:-archive)?|balance|bot|ab|mcp)-(?=["'`$[{])/g, reason: "prefixes of temp directories and generated ids: followed by a quote or a generated part" },
+  { name: "process-marker", re: /(?<![\w-])rakazo-(?:coding-agent-probe|background-(?:idle|launch|probe)|cancel-run-work|write|egress-probe|c|cprobe)(?![A-Za-z0-9])/g, reason: "argv markers matched by pkill, probe names and the docker bridge prefix rakazo-c" },
+  { name: "memory-entity", re: /(?<![\w-])rakazo-(?:bot|space)\/(?=\$)/g, reason: "entity ids sent to the memory provider (rakazo-space/<id>)" },
+  { name: "image-name", re: /(?<![\w/.-])rakazo\\?\/computer(?![\w-])/g, reason: "local computer image name rakazo/computer, also as an escaped regex" },
+  { name: "kdf-context", re: /(?<![\w/-])rakazo\/(?:content(?:-master-key)?|search|space-key)\/v1/g, reason: "key-derivation and AAD context strings: changing them breaks decryption of stored data" },
+  { name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" },
+  { name: "fs-path", re: /(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo/g, reason: "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*)" },
+  { name: "shell-path", re: /(?:\$\w+|~|\.{1,3})\/\.?rakazo-/g, reason: "relative shell paths ($dir/rakazo-proxy.json, ~/rakazo-home)" },
+  { name: "windows-path", re: /(?<=\\)rakazo(?=\\)/g, reason: "profile directory on a Windows computer" },
+  { name: "dev-database", re: /\/\/rakazo:rakazo@[\w.:]+\/rakazo/g, reason: "local development database URL" },
 ];
 
-/** `[{ pattern, text }]` for one line; `lowercaseOk` drops the lowercase-only patterns (reviewed files). */
-export function visibleLeaks(line, { lowercaseOk = false } = {}) {
+/** A PascalCase brand identifier standing between two plain words is prose (`Ask RakazoBot to help`), whatever SHAPES say. */
+const PROSE_GLUED = /(?<=[A-Za-z][ \t])[Rr]akazo[A-Z]\w*(?=[,.!?]?[ \t]+[a-z]|[,.!?]?[ \t]*$)/g;
+
+/** A string that is exactly one PascalCase brand name is a client or operation name sent to a third party. */
+const QUOTED_NAME = /(["'`])Rakazo[A-Z][A-Za-z0-9]*\1/g;
+
+const blank = (text, re) => text.replace(re, (match) => " ".repeat(match.length));
+
+/**
+ * `scan(rel, line)` returns `[{ text, label?, start }]` for one line of file `rel`, de-duplicated
+ * (a finding that overlaps an earlier, longer one is dropped), in line order. `scanPath(rel)`
+ * lists the path segments that carry the old name.
+ */
+export function buildScanner(config) {
+  const alt = (list, flags = "gi") => (list.length ? new RegExp(list.join("|"), flags) : null);
+  const phrases = [...config.keep, ...config.allow.phrases].map((entry) => ({ re: phraseRe(entry.text), entry }));
+  const reviewed = config.allow.text.map((entry) => ({ re: phraseRe(entry.text), entry }));
+  const needles = alt([
+    ...config.leak.map((text) => escapeRe(text) + (/\w$/.test(text) ? "(?!\\w)" : "")),
+    ...Object.keys(config.urls).map((text) => urlRe(text, "").source),
+    `rakazo\\.(?:${TLDS})(?![\\w-])`,
+  ]);
+  const wordRe = alt([...config.leakWords, ...Object.keys(config.variants)].map((word) => `\\b${escapeRe(word)}\\b`), "g");
+  const brandRe = new RegExp(escapeRe(config.from), "gi");
+  const inName = new RegExp(escapeRe(config.from), "i");
+  // The new brand followed by a public TLD is a domain the fork may not own (`Rakazo.com` renamed
+  // by the blanket rule); the URL map's targets are ours, and the placeholder `.example` is no TLD.
+  const domainRe = new RegExp(`\\b${escapeRe(config.to)}\\.(?:${TLDS})\\b`, "gi");
+  const ownRe = alt(Object.values(config.urls).map(escapeRe));
+  // A URL target glued to the next word means a rewrite ate part of another token
+  // (`dozo.exampleputerOwner`), which the old-brand needles cannot see any more.
+  const gluedRe = alt(Object.values(config.urls).filter((value) => /\w$/.test(value)).map((value) => `${escapeRe(value)}\\w`));
+
+  function scan(rel, line) {
+    const found = [];
+    let text = line;
+    for (const { re, entry } of phrases) if (entryApplies(entry, rel)) text = blank(text, re);
+    for (const { re, entry } of reviewed) if (entry.file === rel) text = blank(text, re);
+    const push = (re, label) => {
+      for (const m of re ? text.matchAll(re) : []) found.push({ start: m.index, text: m[0], label });
+    };
+    push(needles);
+    push(wordRe);
+    push(PROSE_GLUED, "glued into prose");
+    push(QUOTED_NAME, "name sent outward");
+    push(gluedRe, "url target glued to a word");
+    for (const literal of config.literals) {
+      const at = literalApplies(literal, rel) ? text.indexOf(literal.find) : -1;
+      if (at >= 0) found.push({ start: at, text: literal.find, label: "literal rule not applied" });
+    }
+    const own = ownRe ? blank(text, ownRe) : text;
+    for (const m of own.matchAll(domainRe)) found.push({ start: m.index, text: m[0], label: "brand domain" });
+    const masks = SHAPES.flatMap((shape) => [...text.matchAll(shape.re)]);
+    let rest = text;
+    for (const m of masks) rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(m.index + m[0].length);
+    for (const m of rest.matchAll(brandRe)) found.push({ start: m.index, text: m[0] });
+    return dedupe(found);
+  }
+
+  function scanPath(rel) {
+    const out = [];
+    const parts = rel.split("/");
+    for (let i = 0; i < parts.length; i++) {
+      const prefix = parts.slice(0, i + 1).join("/");
+      if (inName.test(parts[i]) && !config.allowPathsRe.some((re) => re.test(prefix))) out.push(prefix);
+    }
+    return out;
+  }
+
+  return { scan, scanPath };
+}
+
+/** Longest first at the same start; a finding inside the span of an earlier one is the same leak. */
+function dedupe(found) {
+  found.sort((a, b) => a.start - b.start || b.text.length - a.text.length);
   const out = [];
-  for (const p of VISIBLE_PATTERNS) {
-    if (p.lower && lowercaseOk) continue;
-    const text = p.gate.test(line) ? p.find(line) : null;
-    if (text) out.push({ pattern: p.name, text });
+  let end = -1;
+  for (const f of found) {
+    if (f.start < end) continue;
+    out.push(f);
+    end = f.start + f.text.length;
   }
   return out;
 }

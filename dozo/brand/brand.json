@@ -5,8 +5,6 @@
     "Rakazos": "Dozos"
   },
   "urls": {
-    "app.rakazo.com": "app.dozo.example",
-    "www.rakazo.com": "www.dozo.example",
     "rakazo.com": "dozo.example",
     "github.com/elie222/rakazo": "github.com/OWNER/dozo",
     "https://discord.gg/RWwKa2Sn7h": "https://dozo.example/discord",
@@ -97,126 +95,91 @@
   "keep": [
     {
       "text": "Rakazo.icon",
+      "files": [
+        "packages/ui-tokens/scripts/export-brand.ts",
+        "packages/ui-tokens/assets/README.md"
+      ],
       "reason": "directory name of packages/ui-tokens/assets/Rakazo.icon, referenced by export-brand.ts and desktop packaging"
     },
     {
-      "text": "Rakazo.app",
-      "reason": "macOS bundle file name looked up by path"
-    },
-    {
-      "text": "Rakazo.exe",
-      "reason": "Windows executable name matched by process lookup"
-    },
-    {
       "text": "Rakazo-owned compacted context",
+      "files": [
+        "packages/adapters/src/runtime-context.ts"
+      ],
       "reason": "prefix stored in thread history and detected with startsWith in runtime-context.ts; changing it breaks old summaries"
-    },
-    {
-      "text": "fork of Rakazo",
-      "reason": "attribution phrase"
-    },
-    {
-      "text": "Based on Rakazo",
-      "reason": "attribution phrase"
-    },
-    {
-      "text": "forked from Rakazo",
-      "reason": "attribution phrase"
     }
   ],
   "allow": {
-    "files": [],
     "phrases": [
       {
         "text": "ghcr.io/elie222/rakazo",
+        "files": [
+          "packages/adapters/src/kubernetes-sandbox.ts",
+          "packages/adapters/src/incus-sandbox.ts",
+          "packages/adapters/src/apple-container-sandbox.ts"
+        ],
         "reason": "published container image name pulled at runtime; stays until Dozo publishes its own images"
       },
       {
         "text": ".update(\"rakazo rls bypass\")",
+        "files": [
+          "packages/db/src/row-security.ts"
+        ],
         "reason": "HMAC input that derives the database row-security bypass key; never shown, changing it breaks the stored digest",
         "permanent": true
       },
       {
         "text": "PUBLISHED_IMAGE_REPO = \"elie222/rakazo\"",
+        "files": [
+          "packages/core/src/compose-update.ts"
+        ],
         "reason": "image repository used by compose self-update; same reason as the ghcr image"
       }
     ],
-    "lowercase": [
+    "text": [
+      { "file": "apps/api/src/app-association.ts", "text": "\"com.rakazo.app\"", "reason": "Android package id of the published app; the store listing owns it (AUDIT 24)" },
+      { "file": "packages/adapters/src/apns-voip-config.ts", "text": "\"com.rakazo.app\"", "reason": "iOS bundle id of the published app; the push topic is derived from it (AUDIT 24)" },
+      { "file": "apps/web/src/pages/AccountSettingsOverlay.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx", "text": "value=\"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "packages/contracts/src/bot-avatar.ts", "text": "[\"organic\", \"rakazo\"]", "reason": "stored avatar-set enum values" },
+      { "file": "packages/contracts/src/bot-avatar.ts", "text": "value === \"rakazo\" ? \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/bot-look.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/logo-avatar-activity.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/core/src/notification-avatar.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/db/src/bot-avatar-choice.ts", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "avatarSet === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "packages/contracts/src/bot-email.ts", "text": "\"rakazo\",", "reason": "reserved bot e-mail names: a guard list, not displayed" },
+      { "file": "packages/contracts/src/bot-email.ts", "text": "anything rakazo*", "reason": "developer comment on the reserved-name guard below it" },
+      { "file": "packages/contracts/src/bot-email.ts", "text": "startsWith(\"rakazo\")", "reason": "reserved bot e-mail names: a guard, not displayed" },
+      { "file": "packages/db/src/content-keys.ts", "text": "Buffer.from(\"rakazo\")", "reason": "key-derivation salt; changing it breaks decryption" },
+      { "file": "packages/logging/src/logger.ts", "text": "service: \"rakazo\"", "reason": "operator log service name" },
+      { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "table inet rakazo", "reason": "nftables table name inside the sandbox, not shown" },
+      { "file": "packages/adapters/src/apple-container-sandbox.ts", "text": "\"inet\", \"rakazo\"", "reason": "nftables table name inside the sandbox, not shown" },
+      { "file": "packages/adapters/src/boat-sandbox.ts", "text": "replace(\"rakazo\", \"[r]akazo\")", "reason": "process-match marker, internal" },
+      { "file": "packages/adapters/src/chat-sdk-surface.ts", "text": "?? \"rakazo\"", "reason": "bot user name on the internal chat bridge, not displayed" },
+      { "file": "packages/adapters/src/daytona-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "label key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
+      { "file": "packages/adapters/src/remote-desktop-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "metadata key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
+      { "file": "packages/adapters/src/hindsight-memory-provider.ts", "text": "/^rakazo-/i", "reason": "reserved bank prefix regex over stored namespaces (AUDIT 6)" },
+      { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
+      { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobIoCounters\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
+      { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobExtendedLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
+      { "file": "packages/adapters/src/infisical-secret-store.ts", "text": "/rakazo_start_check", "reason": "key of the secret-store health probe, never displayed" },
+      { "file": "packages/adapters/src/keenable-web.ts", "text": "\"X-Keenable-Title\": \"rakazo\"", "reason": "X-Keenable-Title header to a vendor; operator-visible only, vendor may key on it (AUDIT 20)" },
+      { "file": "packages/adapters/src/pi-codex-catalog.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
+      { "file": "packages/adapters/src/plan-limits.ts", "text": "originator: \"rakazo\"", "reason": "originator value validated by the Codex backend; changing it can break sign-in (AUDIT 20)" },
+      { "file": "packages/adapters/src/pi-runtime-stream.ts", "text": "\"x-opencode-client\": \"rakazo\"", "reason": "x-opencode-client vendor header; operator-visible only (AUDIT 20)" },
+      { "file": "packages/adapters/src/pi-telemetry-otel.ts", "text": "startsWith(\"rakazo.\")", "reason": "attribute-key prefix of the dotted keys, not shown" },
+      { "file": "packages/adapters/src/secret-store-fake.ts", "text": "\"/rakazo\"", "reason": "folder of the offline secret-store emulator, never shown" },
+      { "file": "packages/ui-tokens/scripts/export-brand.ts", "text": "apps/www/public/brand/rakazo-mark.png", "reason": "output path of the icon export script in apps/www, outside the stack" }
+    ],
+    "paths": [
       {
-        "glob": "apps/web/src/pages/AccountSettingsOverlay.tsx",
-        "reason": "stored avatar-set enum value, never displayed"
+        "glob": "infra/sandboxes/computer/rakazo-*",
+        "reason": "executables and helper files installed by name into the computer image (/usr/local/bin/rakazo-*); the image build and the supervisor refer to these names"
       },
       {
-        "glob": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
-        "reason": "stored avatar-set enum value, never displayed"
-      },
-      {
-        "glob": "packages/contracts/src/bot-avatar.ts",
-        "reason": "stored avatar-set enum value"
-      },
-      {
-        "glob": "packages/core/src/bot-look.ts",
-        "reason": "stored avatar-set enum value"
-      },
-      {
-        "glob": "packages/core/src/logo-avatar-activity.ts",
-        "reason": "stored avatar-set enum value"
-      },
-      {
-        "glob": "packages/core/src/notification-avatar.ts",
-        "reason": "stored avatar-set enum value"
-      },
-      {
-        "glob": "packages/ui-web/src/bot-avatar.tsx",
-        "reason": "stored avatar-set enum value"
-      },
-      {
-        "glob": "packages/db/src/bot-avatar-choice.ts",
-        "reason": "stored avatar-set enum value"
-      },
-      {
-        "glob": "packages/contracts/src/bot-email.ts",
-        "reason": "reserved bot e-mail names: a guard list, not displayed"
-      },
-      {
-        "glob": "packages/db/src/content-keys.ts",
-        "reason": "key-derivation context string; changing it breaks decryption"
-      },
-      {
-        "glob": "packages/logging/src/logger.ts",
-        "reason": "operator log service name"
-      },
-      {
-        "glob": "packages/adapters/src/apple-container-sandbox.ts",
-        "reason": "nftables table name inside the sandbox, not shown"
-      },
-      {
-        "glob": "packages/adapters/src/boat-sandbox.ts",
-        "reason": "process-match marker, internal"
-      },
-      {
-        "glob": "packages/adapters/src/chat-sdk-surface.ts",
-        "reason": "bot user name on the internal chat bridge, not displayed"
-      },
-      {
-        "glob": "packages/adapters/src/desktop-process-tree.ts",
-        "reason": "Windows job-object type names (code identifiers), not displayed"
-      },
-      {
-        "glob": "packages/adapters/src/keenable-web.ts",
-        "reason": "X-Keenable-Title header to a vendor; operator-visible only, vendor may key on it"
-      },
-      {
-        "glob": "packages/adapters/src/pi-codex-catalog.ts",
-        "reason": "originator value validated by the Codex backend; changing it can break sign-in"
-      },
-      {
-        "glob": "packages/adapters/src/plan-limits.ts",
-        "reason": "originator value validated by the Codex backend; changing it can break sign-in"
-      },
-      {
-        "glob": "packages/adapters/src/pi-runtime-stream.ts",
-        "reason": "x-opencode-client vendor header; operator-visible only"
+        "glob": "packages/ui-tokens/assets/Rakazo.icon",
+        "reason": "icon bundle directory read by export-brand.ts and desktop packaging; see the Rakazo.icon keep entry"
       }
     ],
     "images": [
@@ -229,7 +192,10 @@
   "leak": [
     "rakazo.com",
     "elie222/rakazo",
-    "elie222"
+    "elie222",
+    "id6801531099",
+    "RWwKa2Sn7h",
+    "com.rakazo.app"
   ],
   "anchored": [
     {
@@ -500,7 +466,8 @@
       "find": "rakazo-runtime:x:",
       "replace": "dozo-runtime:x:",
       "files": [
-        "infra/sandboxes/computer/user-env.sh"
+        "infra/sandboxes/computer/user-env.sh",
+        "infra/sandboxes/computer/test_focus_or_launch.py"
       ],
       "reason": "passwd and group name for arbitrary host uids; whoami shows it"
     },

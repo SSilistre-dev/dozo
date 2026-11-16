@@ -40,7 +40,10 @@ done
 say() { echo "[sync] $*"; }
 die() { echo "[sync] ERROR: $1" >&2; exit "${2:-1}"; }
 
-cd "$(git rev-parse --show-toplevel)"
+# `cd ""` succeeds silently, so a failed rev-parse must stop here.
+TOP=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository (run dozo/sync.sh from the Dozo checkout)"
+cd "$TOP"
+GATE="$TOP/dozo/docker/gate.sh"
 
 git remote get-url "$UP_REMOTE" >/dev/null 2>&1 || die "remote '$UP_REMOTE' not found. Add it: git remote add upstream https://github.com/elie222/rakazo.git"
 git rev-parse --verify -q "refs/heads/$MAIN" >/dev/null || die "branch '$MAIN' not found"
@@ -75,20 +78,16 @@ COMMITS=$(git rev-list --count "$MAIN..$NEW_SHA")
 FILES=$(git diff --name-only "$BASE" "$NEW_SHA" | wc -l | tr -d ' ')
 RANGE="$(git rev-parse --short=9 "$BASE")..$SHORT"
 
-# Pathspec for "files that should be identical to upstream" (everything outside our own paths).
-# Fork files named dozo-* inside apps/ and packages/ are ours too (see dozo/AGENTS.md).
-OWN=(. ':!dozo' ':!Makefile' ':!.github/workflows/dozo-*.yml'
-     ':!packages/ui-web/src/dozo.css'
-     ':(exclude,glob)apps/**/dozo-*' ':(exclude,glob)packages/**/dozo-*')
-
 fork_files() { git ls-tree -r --name-only "$1" -- apps packages | grep '/dozo-[^/]*$' || true; }  # $1 = tree-ish
 
 # Upstream must never ship a dozo-* file of its own: it would overwrite or conflict with ours.
 CLASH=$(fork_files "$NEW_SHA")
 [ -z "$CLASH" ] || die "upstream ships dozo-* file(s) that clash with the fork's own naming; rename ours first: $(printf '%s' "$CLASH" | tr '\n' ' ')" 2
 
-health() { # $1 = tree-ish holding our result, $2 = upstream ref to compare with
-  HEALTH_FILES=$(git diff --name-only "$2" "$1" -- "${OWN[@]}")
+# The same computation as `make olc` (gate.sh upstream-edits): upstream's files that our result
+# edited, deleted or retyped, compared with the upstream commit $2 that the result contains.
+health() { # $1 = tree-ish holding our result, $2 = upstream commit to compare with
+  HEALTH_FILES=$("$GATE" upstream-edits "$2" "$1") || die "cannot compute the fork health (gate.sh upstream-edits failed)"
   HEALTH=$([ -n "$HEALTH_FILES" ] && printf '%s\n' "$HEALTH_FILES" | wc -l | tr -d ' ' || echo 0)
 }
 
@@ -106,8 +105,8 @@ report() { # $1 = tree-ish of the merge result, $2 = upstream ref
   say "files changed:       $FILES"
   say "fork files:          $(fork_files "$1" | grep -c . || true) dozo-* file(s) inside apps/ and packages/, kept as ours"
   say "fork health:         $HEALTH upstream-tracked file(s) differ from upstream outside our paths"
-  if [ "$HEALTH" -gt 1 ]; then
-    echo "[sync] WARNING: fork health above 1. Someone edited upstream files; these will conflict later:" >&2
+  if [ "$HEALTH" -gt 0 ]; then
+    echo "[sync] WARNING: fork health above 0. Someone edited upstream files; these will conflict later:" >&2
     printf '%s\n' "$HEALTH_FILES" | sed 's/^/[sync]   /' >&2
   fi
 }
@@ -161,9 +160,11 @@ fi
 # below already do that themselves; the trap is then a no-op because $BR is gone. SIGKILL cannot be
 # trapped. Cleared once the merge is clean: a gate failure keeps $BR for inspection by design.
 SYNC_PENDING=1
+MERGE_LOG=""
 cleanup_sync() {
   local rc=$?
   trap - EXIT INT TERM HUP
+  [ -z "$MERGE_LOG" ] || rm -f "$MERGE_LOG"
   if [ "$SYNC_PENDING" = 1 ] && git rev-parse --verify -q "refs/heads/$BR" >/dev/null; then
     if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$BR" ]; then
       git merge --abort 2>/dev/null || git reset -q --hard 2>/dev/null || true
@@ -207,7 +208,8 @@ GATE_FAIL=0
 run_gate() {
   if have_target "$1"; then
     say "running make $1"
-    make "$1" || { echo "[sync] make $1 FAILED" >&2; GATE_FAIL=1; }
+    # Without the variables that make a run partial: a "QA: PASS (partial: ...)" must not count here.
+    env -u DOZO_QA_STEPS -u DOZO_SKIP_BRAND -u DOZO_UPSTREAM_REF make "$1" || { echo "[sync] make $1 FAILED" >&2; GATE_FAIL=1; }
   else
     say "NOTICE: make target '$1' not available (no Makefile or no such target), skipped"
   fi

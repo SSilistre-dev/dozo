@@ -12,6 +12,7 @@ export const LEAK = /rakazo|getrakazo|elie222|RWwKa2Sn7h|id6801531099/i;
 /**
  * Deliberately unchanged technical identifiers, allowed ONLY inside attribute and link values
  * (never in visible text): `@rakazo/*`, `RAKAZO_*`, `x-rakazo-*` and the `rakazo://` scheme.
+ * Global on purpose: every occurrence in a value is exempt, not just the first.
  */
 const KNOWN_IDENTIFIERS = [
   /@rakazo\/[\w.-]+/gi,
@@ -20,7 +21,7 @@ const KNOWN_IDENTIFIERS = [
   /rakazo:\/\//gi,
 ];
 
-/** The documented attribution phrases (`brand.json` "keep", NOTICE): the one place the name may show. */
+/** The documented attribution phrases (the NOTICE file): the one place the name may show. */
 const ATTRIBUTION = [/fork of Rakazo/gi, /Based on Rakazo/gi, /forked from Rakazo/gi];
 
 export type Leak = { surface: string; where: string; text: string };
@@ -92,12 +93,20 @@ export async function installProbes(context: BrowserContext) {
 
 type Item = { where: string; text: string };
 
+/**
+ * Only attribute and link values (`[alt]`, `a[href]`, `meta[description]`, a URL passed to
+ * `window.open`) may carry an identifier. Anything a person reads or copies (title, body text,
+ * input values, toasts, clipboard, downloads, text passed to `scanStrings`) may not.
+ */
+const isAttributeOrLink = (where: string) =>
+  /^[\w-]*\[[^\]]+\]$/.test(where) || where === "window.open";
+
 function scanText(surface: string, items: Item[]): Scan["leaks"] {
   const leaks: Leak[] = [];
   const seen = new Set<string>();
   for (const item of items) {
     let text = item.text;
-    if (!/^(body|transient|download|clipboard)/.test(item.where) && item.where !== "title") {
+    if (isAttributeOrLink(item.where)) {
       for (const known of KNOWN_IDENTIFIERS) text = text.replace(known, "");
     }
     for (const phrase of ATTRIBUTION) text = text.replace(phrase, "");

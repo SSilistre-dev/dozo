@@ -3,7 +3,8 @@ name: dozo-gate
 # Dozo fork gate. A pull request into main (including the upstream sync PR) must pass the fast
 # local checks, the brand leak path (stage the tree, apply the codemod, fail on any user-visible
 # "Rakazo" string) and the fork's unit tests with their coverage floor. Needs only Docker, which
-# stock GitHub runners have. The job name is unchanged on purpose: a required check may match it.
+# stock GitHub runners have. A required status check matches the job name below: when it changes,
+# update the branch protection rule too.
 # Action versions are pinned by the same full commit SHAs the upstream workflows already use.
 on:
   pull_request:
@@ -18,7 +19,7 @@ concurrency:
 
 jobs:
   gate:
-    name: olc and brand leak gate
+    name: olc, brand leak gate and fork unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -26,14 +27,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      # dozo/docker/gate.sh compares against the pristine upstream-main branch.
+      # dozo/docker/gate.sh compares against the pristine upstream-main branch, and a check that
+      # cannot run fails. ls-remote --exit-code answers 2 for "no such ref" and 128 for a network or
+      # auth error: only the first means the branch is absent, and neither one is a pass.
       - name: Fetch upstream-main
         run: |
-          if git ls-remote --exit-code --heads origin upstream-main >/dev/null; then
-            git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main
-          else
-            echo "::warning::origin has no upstream-main branch; make olc will skip its upstream-edit check"
-          fi
+          rc=0
+          git ls-remote --exit-code --heads origin upstream-main >/dev/null || rc=$?
+          case "$rc" in
+            0) git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main ;;
+            2)
+              echo "::error::origin has no upstream-main branch, so the upstream-edit check cannot run. Create it once from the upstream remote: git fetch upstream main, then publish upstream/main to origin as refs/heads/upstream-main"
+              exit 2
+              ;;
+            *)
+              echo "::error::could not ask origin for upstream-main (git ls-remote exit $rc): a network or permission problem, not an absent branch"
+              exit 2
+              ;;
+          esac
 
       # On a runner without the Node image, olc pulls it and fails if it cannot (CI is set), so a
       # PASS always means node --check and the brand tests ran.

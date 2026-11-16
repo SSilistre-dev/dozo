@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { Reporter } from "@playwright/test/reporter";
 import { readInventory } from "./inventory";
 import type { CoverageRecord } from "./scan";
-import { NOT_REACHABLE, SKIPS } from "./surfaces";
+import { NOT_REACHABLE, SKIPS, SURFACES } from "./surfaces";
 
 const out = process.env.DOZO_E2E_OUT ?? ".out";
 
@@ -12,9 +12,15 @@ function pad(text: string, width: number) {
     : text + " ".repeat(width - text.length);
 }
 
-/** Prints what the crawl visited: per surface, per inventory key, and the totals. */
+/**
+ * Prints what the crawl visited: per surface, per inventory key, and the totals. A key that a
+ * surface declares in `covers` but that no surface visited FAILS the run (a printed MISSING nobody
+ * reads is not a gate). Only checked when every surface ran: a filtered run (DOZO_E2E_ARGS) cannot
+ * have visited the rest.
+ */
 export default class CoverageReporter implements Reporter {
-  onEnd() {
+  onEnd(): { status: "failed" } | undefined {
+    let failure: { status: "failed" } | undefined;
     const dir = `${out}/coverage`;
     const records: CoverageRecord[] = existsSync(dir)
       ? readdirSync(dir).map(
@@ -23,7 +29,7 @@ export default class CoverageReporter implements Reporter {
       : [];
     if (records.length === 0) {
       console.log("\nCOVERAGE: no surface was crawled in this run.");
-      return;
+      return undefined;
     }
     const names = [...new Set(records.map((r) => r.surface))];
     const find = (name: string, theme: string) =>
@@ -80,6 +86,19 @@ export default class CoverageReporter implements Reporter {
       const count = (prefix: string) => inventory.keys.filter((k) => k.startsWith(prefix));
       const share = (prefix: string) =>
         `${count(prefix).filter((k) => visitedKeys.has(k)).length}/${count(prefix).length}`;
+      const ranAll = SURFACES.every((s) => records.some((r) => r.surface === s.name));
+      const declared = new Set(SURFACES.flatMap((s) => s.covers ?? []));
+      const unvisited = [...declared].filter((key) => !visitedKeys.has(key)).sort();
+      if (!ranAll) {
+        lines.push("", "DECLARED KEYS: not checked, not every surface ran (filtered run)");
+      } else if (unvisited.length) {
+        lines.push(
+          "",
+          "DECLARED BUT NOT VISITED (a surface lists the key in `covers`, none reached it)",
+        );
+        for (const key of unvisited) lines.push(`  ${key}`);
+        failure = { status: "failed" };
+      }
       lines.push(
         `inventory: routes ${share("route:")}, settings sections ${share("settings:")}, overlays ${share("overlay:")}, onboarding steps ${share("onboarding:")}; ` +
           `${yes} visited, ${skipped} skipped with a reason, ${missing} missing, of ${inventory.keys.length}`,
@@ -129,5 +148,6 @@ export default class CoverageReporter implements Reporter {
       for (const item of NOT_REACHABLE) lines.push(`  ${item.what}: ${item.reason}`);
     }
     console.log(lines.join("\n"));
+    return failure;
   }
 }

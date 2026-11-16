@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stage -> brand -> build -> up -> down for the Dozo fork. Never modifies the working tree.
-# Usage: dozo/docker/build.sh [stage|brand|build|up|smoke|down|all] [--volumes]
+# Usage: dozo/docker/build.sh [stage|brand|build|up|smoke|down|all] [--volumes]   (--volumes: down only)
+# Exit 0 ok, 2 failed (also a missing host tool), 64 usage.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,24 +16,57 @@ ENVF="$STAGE/dozo.env"
 PROJECT=dozo
 NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
 COMPOSE_REL=infra/compose/docker-compose.yml
+STAGED="$STAGE/stage.complete"   # written last by `stage`, removed first: a swap cut short has none
 STEP=init
 
 say() { echo "[dozo] $*"; }
 # A failed gate exits 2 (dozo/AGENTS.md); only a usage error is 64.
 die() { local c="${2:-2}"; DIED=1; echo "[dozo] FAILED at step '$STEP': $1" >&2; exit "$c"; }
 # Any other failure (a docker or git command under set -e) is also a gate failure: report it as 2.
-trap 'rc=$?; [ $rc -ne 0 ] && [ "${DIED:-}" != 1 ] && echo "[dozo] FAILED at step '"'"'$STEP'"'"' (exit $rc)" >&2; [ $rc -eq 0 ] || [ $rc -eq 64 ] || rc=2; exit $rc' EXIT
+# One handler for exit, INT and TERM: it also removes the temp files and the containers of this run.
+cleanup() {
+  local rc=$? ids
+  trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
+  [ $rc -eq 0 ] || [ $rc -eq 64 ] || [ "${DIED:-}" = 1 ] || echo "[dozo] FAILED at step '$STEP' (exit $rc)" >&2
+  [ -z "${ENV_TMP:-}" ] || rm -f "$ENV_TMP"
+  rm -f "$ENVF.new"
+  ids=$(docker ps -aq --filter "label=dozo.run=build-$$" 2>/dev/null) || ids=""
+  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+  [ $rc -eq 0 ] || [ $rc -eq 64 ] || rc=2
+  exit $rc
+}
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
+
+# Host tools the steps use. A missing one is a clear exit 2, not a silent wrong answer (without nc
+# the free-port probe would call a busy port free).
+need() { local t; for t in "$@"; do command -v "$t" >/dev/null 2>&1 || die "'$t' not found on PATH; it is needed on the host for this step (nothing is installed for you)" 2; done; }
+# compose.ports.yml uses `!override` and `!reset`, which need Compose 2.24.4 or newer.
+need_compose() {
+  local v; need docker
+  v="$(docker compose version --short 2>/dev/null | sed 's/^v//')" || v=""
+  case "$v" in [0-9]*.[0-9]*.[0-9]*) ;; *) die "docker compose (v2 plugin) not found or unreadable version '$v'; Compose 2.24.4+ is required" 2 ;; esac
+  printf '%s' "$v" | awk -F'[.-]' '{ split("2.24.4", m, "."); for (i = 1; i <= 3; i++) { if ($i + 0 > m[i] + 0) exit 0; if ($i + 0 < m[i] + 0) exit 1 } exit 0 }' \
+    || die "docker compose $v is too old: compose.ports.yml needs 2.24.4 or newer (!override, !reset)" 2
+}
 
 # Run node in a container: repo dozo/ read-only at /dozo, staged tree at /w. It writes into the bind
 # mount, so it runs as the invoking user: root-owned files would make a later rm -rf fail on Linux.
-node_run() { docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
+# --init, a name unique to this run and a label: the EXIT/INT/TERM handler removes it if we are killed.
+node_run() { docker run --init --rm --name "dozo-node-$$" --label "dozo.run=build-$$" --user "$(id -u):$(id -g)" -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
 
-dc() { # docker compose from inside the staged copy, upstream compose file untouched
-  (cd "$SRC" && docker compose -p "$PROJECT" --env-file "$ENVF" \
+# docker compose from inside the staged copy, upstream compose file untouched. The env file is the
+# one source of truth: compose lets an exported variable beat --env-file, so every key the file holds
+# is removed from the environment first (names only, values are never read out). DOZO_WEB_PORT in
+# the caller's shell only seeds the generation of the file (genenv).
+dc() {
+  local k clean=()
+  if [ -f "$ENVF" ]; then while IFS='=' read -r k _; do [ -z "$k" ] || clean+=(-u "$k"); done < "$ENVF"; fi
+  (cd "$SRC" && env ${clean[@]+"${clean[@]}"} docker compose -p "$PROJECT" --env-file "$ENVF" \
     -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" "$@")
 }
 
-need_stage() { [ -f "$SRC/$COMPOSE_REL" ] || die "no staged tree at $SRC; run: dozo/docker/build.sh stage"; }
+# A swap cut short leaves a partial tree that still has the compose file: only the marker says it is whole.
+need_stage() { [ -f "$STAGED" ] && [ -f "$SRC/$COMPOSE_REL" ] || die "no complete staged tree at $SRC; run: dozo/docker/build.sh stage"; }
 
 # Overlay uncommitted and untracked-but-not-ignored files onto $1 (the copy of ref $2). A tracked
 # file deleted in the working tree is the one benign case (rsync would exit 23 on it), so it is
@@ -54,7 +88,8 @@ overlay_worktree() {
 stage() {
   STEP=stage
   local ref="${DOZO_STAGE_REF:-HEAD}" new="$STAGE/src.new"
-  say "stage: exporting $ref${DOZO_STAGE_WORKTREE:+ + working tree} -> $SRC"
+  need git tar; [ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || need rsync
+  say "stage: exporting $ref$([ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || echo ' + working tree') -> $SRC"
   mkdir -p "$STAGE"
   # Older versions parked the app data in data-keep and lost it when a stage failed midway.
   if [ -d "$STAGE/data-keep" ] && [ ! -e "$SRC/data" ]; then mkdir -p "$SRC"; mv "$STAGE/data-keep" "$SRC/data"; fi
@@ -64,17 +99,20 @@ stage() {
   [ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || overlay_worktree "$new" "$ref"
   rm -rf "$new/.git"
   [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
-  # Swap in by contents, never moving data/ (the compose bind mount holding the app data).
+  # Swap in by contents, never moving data/ (the compose bind mount holding the app data). The
+  # marker goes first and comes back last, so an interrupted swap is never taken for a whole tree.
+  rm -f "$STAGED"
   mkdir -p "$SRC"
   [ ! -e "$SRC/data" ] || rm -rf "$new/data"
   find "$SRC" -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
   find "$new" -mindepth 1 -maxdepth 1 -exec mv {} "$SRC/" \;
   rmdir "$new"
+  : > "$STAGED"
   say "stage: ok ($(find "$SRC" -type f | wc -l | tr -d ' ') files, no .git)"
 }
 
 brand() {
-  STEP=brand; need_stage
+  STEP=brand; need_stage; need docker
   if [ "${DOZO_SKIP_BRAND:-}" = 1 ]; then say "brand: SKIPPED (DOZO_SKIP_BRAND=1), build will be UNBRANDED"; return 0; fi
   for f in apply check; do
     [ -f "$ROOT/dozo/brand/$f.mjs" ] || die "brand tool missing (dozo/brand/$f.mjs); set DOZO_SKIP_BRAND=1 to run unbranded for pipeline testing" 2
@@ -90,8 +128,11 @@ free_port() { local p="${1:-5173}"; while nc -z 127.0.0.1 "$p" 2>/dev/null; do p
 
 setenv() { # setenv KEY VALUE (replace or append, no value echoed)
   if grep -q "^$1=" "$ENVF"; then
-    local t; t="$(mktemp "${TMPDIR:-/tmp}/dozo-env-XXXXXX")"
-    grep -v "^$1=" "$ENVF" > "$t"; echo "$1=$2" >> "$t"; cat "$t" > "$ENVF"; rm -f "$t"
+    # In the same directory, so the mv is an atomic rename; the EXIT handler removes it if we die
+    # first. The env file itself is never truncated in place.
+    ENV_TMP="$(mktemp "$ENVF.XXXXXX")"
+    { grep -v "^$1=" "$ENVF" || true; echo "$1=$2"; } > "$ENV_TMP"
+    mv "$ENV_TMP" "$ENVF"; ENV_TMP=""
   else echo "$1=$2" >> "$ENVF"; fi
 }
 
@@ -106,6 +147,7 @@ rand_hex() {
 }
 
 genenv() {
+  need nc openssl; need_compose
   mkdir -p "$STAGE"
   if [ ! -f "$ENVF" ]; then
     say "env: generating dozo/.stage/dozo.env (random secrets, not printed)"
@@ -125,7 +167,8 @@ genenv() {
   # Our stack binds to 127.0.0.1 on the user's own machine, so private model endpoints (a local
   # OpenAI-compatible server) are allowed. Reaches api and worker through upstream's x-app-environment.
   setenv MCP_ALLOW_PRIVATE_ENDPOINT true
-  # Keep the port if our own web container is running; otherwise pick a free one.
+  # Keep the port if our own web container is running; otherwise pick a free one, starting from
+  # DOZO_WEB_PORT of the caller (a seed only: once the file has the port, the file decides).
   # The service list is captured first: `dc ps | grep -q` under pipefail can fail on SIGPIPE.
   local cur running; cur="$(grep '^DOZO_WEB_PORT=' "$ENVF" | cut -d= -f2 || true)"
   running="$(dc ps --status running --services 2>/dev/null || true)"
@@ -155,7 +198,7 @@ build() {
 }
 
 up() {
-  STEP=up; need_stage; genenv
+  STEP=up; need_stage; need curl; genenv
   say "up: starting project '$PROJECT'"
   # DOZO_STOP_TIMEOUT (seconds) caps how long recreating a running service may wait; upstream's
   # worker grace is 50 min. Unset keeps the compose value. gate.sh qa sets it.
@@ -171,7 +214,7 @@ up() {
 }
 
 smoke() {
-  STEP=smoke; genenv
+  STEP=smoke; need curl; genenv
   local url="http://127.0.0.1:$PORT/" code title
   code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$url" || true)"
   title="$(curl -s --max-time 10 "$url" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
@@ -186,14 +229,20 @@ smoke() {
 }
 
 down() {
-  STEP=down; need_stage
+  STEP=down; need_stage; need_compose
   say "down: project '$PROJECT'${VOLUMES:+ (with volumes)}"
   dc down ${DOZO_STOP_TIMEOUT:+--timeout "$DOZO_STOP_TIMEOUT"} ${VOLUMES:+--volumes}
 }
 
-CMD="${1:-all}"; VOLUMES=""; [ "${2:-}" = "--volumes" ] && VOLUMES=1
+usage() { echo "usage: $0 [stage|brand|build|up|smoke|down|all] [--volumes (down only)]" >&2; exit 64; }
+CMD="${1:-all}"; VOLUMES=""
+[ $# -eq 0 ] || shift
+# Anything but the one documented flag is refused: `down --volume` (typo) must not run a plain down.
+for a in "$@"; do
+  [ "$a" = "--volumes" ] && [ "$CMD" = down ] && VOLUMES=1 || usage
+done
 case "$CMD" in
   stage) stage ;; brand) brand ;; build) build ;; up) up ;; smoke) smoke ;; down) down ;;
   all) stage; brand; build; up ;;
-  *) echo "usage: $0 [stage|brand|build|up|smoke|down|all] [--volumes]" >&2; exit 64 ;;
+  *) usage ;;
 esac

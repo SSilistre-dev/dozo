@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Gates: olc (fast, offline once the Node image is local, <30s) and qa (full).
-# Usage: gate.sh olc|qa|unit. Any failed gate exits 2.
+# Usage: gate.sh olc|qa|unit. Any failed gate exits 2. `upstream-edits <base> [tree]` prints the
+# upstream files that differ from <base> (shared with sync.sh); it is not a gate.
 # `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
 # `qa` runs olc, stage, brand, unit, build, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail
@@ -22,12 +23,31 @@ PARTIAL=""
 MIN_FORK_TESTS="${DOZO_MIN_FORK_TESTS:-3}"
 # Coverage floor (percent) for lines, branches and functions of the fork's own code.
 COV_MIN="${DOZO_COVERAGE_MIN:-90}"
+# The brand codemod's own floor (percent), per file and overall. Just under what it measures today
+# (100 lines, 98.9 branches, 100 functions); a separate variable so the web unit floor is unaffected.
+BRAND_COV_MIN="${DOZO_BRAND_COVERAGE_MIN:-97}"
+# The pristine upstream branch the upstream-edit check compares with (override for tests only).
+UP_REF="${DOZO_UPSTREAM_REF:-upstream-main}"
 # The one upstream file the fork may edit, and only inside the marked block at its top.
 README_FILE="README.md"
 README_START="<!-- dozo:fork-notice:start -->"
 README_END="<!-- dozo:fork-notice:end -->"
 fail() { FAILS+=("$1"); echo "[gate] FAIL: $1"; }
 now() { date +%s; }
+
+# Every container this run starts has --init (so TERM reaches PID 1), a name unique to the run and a
+# label, and on_exit/on_signal remove whatever carries the label: a killed `docker run` client
+# leaves its container running otherwise. The label, not a variable, so a call inside $( ) counts.
+RUN_ID="gate-$$"
+drun() { local kind="$1"; shift; docker run --init --rm --name "dozo-$kind-$$" --label "dozo.run=$RUN_ID" "$@"; }
+rm_run_containers() {
+  local ids; ids=$(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null) || return 0
+  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+}
+# Wait until $1 is gone, however many trapped signals cut a `wait` short; the exit status is in
+# WAIT_RC. A second Ctrl-C during cleanup must not leave the child running while we report failure.
+WAIT_RC=0
+wait_gone() { WAIT_RC=0; while kill -0 "$1" 2>/dev/null; do wait "$1"; WAIT_RC=$?; done; }
 
 # A skipped check must never end in PASS: CI pulls the image and fails if it cannot, a local run
 # fails with the one command that fixes it (olc stays offline and fast once the image is cached).
@@ -41,88 +61,157 @@ node_image() {
   fail "$NODE_IMAGE not present locally; run: docker pull $NODE_IMAGE"; return 1
 }
 
-# Print the coverage rows (and Vitest's own threshold errors) that are below the floor.
+# Print the coverage rows (and the tool's own threshold errors) that are below the floor ($1,
+# default the web unit floor). Field 1 is the file name and the last field the uncovered lines, so
+# only fields 2..NF-1 are numbers to compare; directory rows have empty number fields.
 coverage_misses() { # stdin = tool output
-  awk -F'|' -v min="$COV_MIN" '
+  awk -F'|' -v min="${1:-$COV_MIN}" '
     /does not meet|threshold/ { print; next }
     NF >= 4 { for (i = 2; i < NF; i++) if ($i ~ /[0-9]/ && $i + 0 < min) { print; break } }'
 }
 
-# True when the root README, with the marked fork-notice block and the one blank line after it
-# removed, equals upstream's README at the merge base ($1). A missing end marker strips the rest of
-# the file, so it differs; a README that upstream does not have is ours.
+# Names ($@) that no row of the coverage table on stdin lists: a source file that no test imports
+# never appears in the report, so a global threshold cannot see it.
+coverage_unlisted() {
+  awk -F'|' -v names="$*" '
+    BEGIN { n = split(names, want, " ") }
+    NF >= 4 && $2 ~ /[0-9]/ { f = $1; sub(/[ \t]+$/, "", f); sub(/.*[ \t]/, "", f); seen[f] = 1 }
+    END { for (i = 1; i <= n; i++) if (!(want[i] in seen)) print want[i] }'
+}
+
+# True when the root README (of tree-ish $2, default the working tree), with the marked fork-notice
+# block and the one blank line after it removed, equals upstream's README at the merge base ($1). A
+# missing end marker strips the rest of the file, so it differs; a README that upstream does not
+# have is ours.
 readme_outside_block() {
   git cat-file -e "$1:$README_FILE" 2>/dev/null || return 0
-  awk -v s="$README_START" -v e="$README_END" '
+  { if [ -n "${2:-}" ]; then git show "$2:$README_FILE" 2>/dev/null; else cat "$README_FILE" 2>/dev/null; fi; } \
+    | awk -v s="$README_START" -v e="$README_END" '
     $0 == s { skip = 1; next }
     $0 == e { skip = 0; blank = 1; next }
     skip { next }
     blank && $0 == "" { blank = 0; next }
-    { blank = 0; print }' "$README_FILE" 2>/dev/null | cmp -s - <(git show "$1:$README_FILE")
+    { blank = 0; print }' | cmp -s - <(git show "$1:$README_FILE")
+}
+
+# dozo/AGENTS.md: the fork edits no upstream file but the marked block of the root README.md. Prints
+# the files that differ from upstream's commit $1 (edited, deleted, retyped; added files are ours),
+# one per line, in tree-ish $2 or, without it, in the working tree. The one computation behind both
+# `make olc` and sync.sh's fork-health count (`gate.sh upstream-edits <base> [tree]`). Exit 2 when
+# git cannot compute it.
+upstream_edits() {
+  local base="${1:-}" tree="${2:-}" bad
+  [ -n "$base" ] || { echo "usage: $0 upstream-edits <base-commit> [tree-ish]" >&2; return 64; }
+  bad=$(git diff --name-only --no-renames --diff-filter=MDT "$base" ${tree:+"$tree"} -- . ':!dozo' ':!Makefile') || return 2
+  bad=$(printf '%s\n' "$bad" | grep -vxF "$README_FILE" || true)
+  readme_outside_block "$base" "$tree" || bad=$(printf '%s\n%s' "$bad" "$README_FILE (outside the fork-notice block)")
+  printf '%s\n' "$bad" | sed '/^$/d'
+}
+
+# Each shell script is syntax-checked by its own interpreter (a #!/bin/sh script is not bash).
+syntax_check() { # $1 = script
+  local sh=bash
+  case "$(head -n 1 "$1")" in '#!/bin/sh'*|'#!/usr/bin/env sh'*) sh=sh ;; esac
+  "$sh" -n "$1" && echo "[olc] $sh -n $1 ok" || fail "syntax $1"
 }
 
 olc() {
-  local s out
+  local s out f tests report low missing brand_src rc
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs.
-  while IFS= read -r s; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done \
-    < <(find dozo -name '*.sh' -not -path 'dozo/.stage/*' -not -path '*/node_modules/*' | sort)
-  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' -not -path '*/node_modules/*' 2>/dev/null)
+  while IFS= read -r s; do syntax_check "$s"; done \
+    < <(find dozo \( -path dozo/.stage -o -name node_modules \) -prune -o -type f -name '*.sh' -print | sort)
+  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
-    docker run --rm -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
+    drun node-check -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
       && echo "[olc] node --check ${#mjs[@]} files ok" || fail "node --check"
-    if [ -d dozo/brand ] && find dozo/brand -name '*.test.*' | grep -q .; then
-      # Quiet on success; on failure the whole output is the reason. Node's thresholds are global,
-      # so coverage_misses also names the files under the floor.
-      out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test --experimental-test-coverage \
-        --test-coverage-lines="$COV_MIN" --test-coverage-branches="$COV_MIN" --test-coverage-functions="$COV_MIN" dozo/brand/ 2>&1) \
-        && echo "[olc] brand unit tests ok, coverage >= $COV_MIN%" \
-        || { printf '%s\n' "$out"; printf '%s\n' "$out" | coverage_misses | sed 's/^/[olc] below floor: /'; fail "brand unit tests or coverage"; }
+    tests=$(find dozo/brand -type f -name '*.test.*' -print -quit 2>/dev/null)  # captured: `find | grep -q` can SIGPIPE under pipefail
+    if [ -n "$tests" ]; then
+      # Quiet on success; on failure the whole output is the reason. Node's thresholds are global, so
+      # the table is also read per file: a file under the floor, and a source file that no test
+      # imports (it never appears in the table), fail even when the totals are fine.
+      brand_src=$(find dozo/brand -maxdepth 1 -type f -name '*.mjs' ! -name '*.test.mjs' -exec basename {} \; | sort | tr '\n' ' ')
+      out=$(drun brand-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test --experimental-test-coverage \
+        --test-coverage-lines="$BRAND_COV_MIN" --test-coverage-branches="$BRAND_COV_MIN" --test-coverage-functions="$BRAND_COV_MIN" dozo/brand/ 2>&1); rc=$?
+      report=$(printf '%s\n' "$out" | sed -n '/start of coverage report/,/end of coverage report/p')
+      low=$(printf '%s\n' "$report" | coverage_misses "$BRAND_COV_MIN")
+      # shellcheck disable=SC2086
+      missing=$(printf '%s\n' "$report" | coverage_unlisted $brand_src)
+      if [ "$rc" -eq 0 ] && [ -z "$low" ] && [ -z "$missing" ]; then echo "[olc] brand unit tests ok, coverage >= $BRAND_COV_MIN% in every file ($(echo $brand_src | wc -w | tr -d ' ') modules)"
+      else
+        printf '%s\n' "$out"
+        [ -z "$low" ] || printf '%s\n' "$low" | sed 's/^/[olc] below floor: /'
+        [ -z "$missing" ] || printf '%s\n' "$missing" | sed 's/^/[olc] not in the coverage report (no test imports it): dozo\/brand\//'
+        fail "brand unit tests or coverage"
+      fi
     else fail "no brand tests under dozo/brand (a check that cannot run is a failure)"; fi
+    # The offline model server the e2e suite connects to: Node's own test runner, about a second.
+    if [ -f dozo/e2e/model-stub.test.mjs ]; then
+      out=$(drun stub-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/e2e/model-stub.test.mjs 2>&1) \
+        && echo "[olc] e2e model stub tests ok" || { printf '%s\n' "$out"; fail "e2e model stub tests"; }
+    else fail "dozo/e2e/model-stub.test.mjs missing: the e2e model stub is not tested"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
     # unbranded, so no rule can already be applied (that would be drift hidden by a short replace).
     if [ -f dozo/brand/apply.mjs ]; then
-      out=$(docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --strict --root /r 2>&1) \
+      out=$(drun brand-rules --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --strict --root /r 2>&1) \
         && echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')" \
         || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
   fi
   local files forkfiles bad base
-  files=$(find dozo -type f -not -path 'dozo/.stage/*' | wc -l | tr -d ' ')
+  files=$(find dozo \( -path dozo/.stage \) -prune -o -type f -print | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
   echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles"
-  # dozo/AGENTS.md: the fork edits no upstream file but the marked block of the root README.md. A
-  # file upstream has that differs here (edited, deleted, retyped) is a failure; added files are ours.
-  # Compared with the merge base, not the tip of upstream-main: after an aborted sync or a daily
-  # sync on origin the ref is ahead, and everything upstream changed since would look like our edit.
-  if git rev-parse --verify -q 'upstream-main^{commit}' >/dev/null; then
-    if base=$(git merge-base HEAD upstream-main 2>/dev/null) && [ -n "$base" ]; then
-      bad=$(git diff --name-only --no-renames --diff-filter=MDT "$base" -- . ':!dozo' ':!Makefile' | grep -vxF "$README_FILE" || true)
-      readme_outside_block "$base" || bad=$(printf '%s\n%s' "$bad" "$README_FILE (outside the fork-notice block)" | sed '/^$/d')
-      if [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE, notice block only): 0"
-      else printf '%s\n' "$bad" | sed 's/^/[olc] upstream file differs from the merge base with upstream-main: /'; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
-    else fail "no merge base between HEAD and upstream-main: the upstream-edit check cannot run"; fi
-  else
-    echo "[olc] upstream-main ref missing: the upstream-edit check was NOT run (create it: git branch upstream-main upstream/main)"
-  fi
+  # Compared with the merge base, not the tip of $UP_REF: after an aborted sync or a daily sync on
+  # origin the ref is ahead, and everything upstream changed since would look like our edit. A check
+  # that cannot run fails: without the ref, nothing says what upstream's files are.
+  if upstream_ref_ok; then
+    if base=$(git merge-base HEAD "$UP_REF" 2>/dev/null) && [ -n "$base" ]; then
+      if ! bad=$(upstream_edits "$base"); then fail "upstream-edit check: git diff against the merge base failed"
+      elif [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE, notice block only): 0"
+      else printf '%s\n' "$bad" | sed "s/^/[olc] upstream file differs from the merge base with $UP_REF: /"; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
+    else fail "no merge base between HEAD and $UP_REF: the upstream-edit check cannot run"; fi
+  else fail "$UP_REF ref missing: the upstream-edit check cannot run. Create it: git fetch upstream main && git branch $UP_REF upstream/main"; fi
   selftest
 }
 
-# Pure shell logic that needs no Docker: the coverage-miss parser, against a fixture of a Vitest
-# table. Not covered: the stage swap and the worktree overlay (they need a scratch git repository),
-# the unit volume sync, the compose steps and with_timeout (they need a Docker daemon).
+# Pure shell logic that needs no Docker: the coverage parsers, against fixtures of a Vitest table and
+# of Node's test-runner table (a tree: directory rows, indented names, empty number fields). Each
+# case pins one way the parser could go wrong; see the comments. Not covered: the stage swap and the
+# worktree overlay (they need a scratch git repository), the unit volume sync, the compose steps and
+# with_timeout (they need a Docker daemon).
 selftest() {
-  local got want
-  # A here-string, not a heredoc inside $( ): bash 3.2 mis-parses a ")" there.
-  got=$(COV_MIN=90 coverage_misses <<< $' File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s\n All files |   96.00 |    92.00 |     100 |     100 |\n ok.ts     |     100 |      100 |     100 |     100 | 12-30\n low.ts    |     100 |    80.50 |     100 |     100 |\nERROR: Coverage for lines (85%) does not meet global threshold (90%)')
-  want=$' low.ts    |     100 |    80.50 |     100 |     100 |\nERROR: Coverage for lines (85%) does not meet global threshold (90%)'
-  if [ "$got" = "$want" ]; then echo "[olc] selftest: coverage_misses ok"
-  else fail "selftest coverage_misses"; printf '%s\n' "$got" | sed 's/^/[olc] got: /'; fi
+  local got ok=1 vitest node edge
+  # Here-strings, not heredocs inside $( ): bash 3.2 mis-parses a ")" there.
+  vitest=$' File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s\n All files |   96.00 |    92.00 |     100 |     100 |\n ok.ts     |     100 |      100 |     100 |     100 | 12-30\n low.ts    |     100 |    80.50 |     100 |     100 |\nERROR: Coverage for lines (85%) does not meet global threshold (90%)'
+  expect_misses "vitest table" 90 "$vitest" $' low.ts    |     100 |    80.50 |     100 |     100 |\nERROR: Coverage for lines (85%) does not meet global threshold (90%)' || ok=0
+  # Node's table: v2.mjs has a digit in its name (the name field is never compared); dir rows are
+  # empty; fine.mjs lists uncovered lines "1-2" in the last field (never compared); edge.mjs sits
+  # exactly on the floor (not a miss); lib.mjs is just under it; two.mjs has two low columns (one
+  # row printed once); only.mjs has only the first column low; short.mjs has no uncovered column.
+  node=$'ℹ file        | line % | branch % | funcs % | uncovered lines\nℹ ------------------------------\nℹ dozo        |        |          |         | \nℹ  brand      |        |          |         | \nℹ   v2.mjs    | 100.00 |   100.00 |  100.00 | \nℹ   fine.mjs  | 100.00 |   100.00 |  100.00 | 1-2\nℹ   edge.mjs  | 100.00 |    97.00 |  100.00 | \nℹ   lib.mjs   | 100.00 |    96.99 |  100.00 | 3-4\nℹ   two.mjs   |  80.00 |    70.00 |  100.00 | \nℹ   only.mjs  |  50.00 |   100.00 |  100.00 | \nℹ   short.mjs |  50.00 |   100.00 |  100.00\nℹ all files   | 100.00 |    98.89 |  100.00 | '
+  expect_misses "node table" 97 "$node" $'ℹ   lib.mjs   | 100.00 |    96.99 |  100.00 | 3-4\nℹ   two.mjs   |  80.00 |    70.00 |  100.00 | \nℹ   only.mjs  |  50.00 |   100.00 |  100.00 | \nℹ   short.mjs |  50.00 |   100.00 |  100.00' || ok=0
+  # Each of the tool's own messages is printed on its own; a log line with a few pipes is not a row.
+  expect_misses "threshold messages" 90 $'a does not meet it\nb threshold missed\nnote | 5 | x\nplain line' $'a does not meet it\nb threshold missed' || ok=0
+  edge=$'x.mjs | 89.99 | 100 | 100 | '
+  expect_misses "just under the floor" 90 "$edge" "$edge" || ok=0
+  expect_misses "exactly the floor" 90 $'x.mjs | 90.00 | 100 | 100 | ' "" || ok=0
+  # Files a test never imports are absent from the table: names listed, a substring is not a listing.
+  got=$(coverage_unlisted a.mjs b.mjs c.mjs <<< $'ℹ dozo | | | | \nℹ  brand | | | | \nℹ   a.mjs | 100.00 | 100.00 | 100.00 | \nℹ   xb.mjs | 100.00 | 100.00 | 100.00 | \nℹ   c.mjs | 100.00 | 100.00 | 100.00 | 4')
+  [ "$got" = "b.mjs" ] || { ok=0; echo "[olc] coverage_unlisted: got '$got', want 'b.mjs'"; }
+  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers ok" || fail "selftest coverage parsers"
 }
+expect_misses() { # name min fixture want
+  local got; got=$(coverage_misses "$2" <<< "$3")
+  [ "$got" = "$4" ] && return 0
+  echo "[olc] selftest $1: got:"; printf '%s\n' "$got" | sed 's/^/[olc]   /'; return 1
+}
+
+upstream_ref_ok() { git rev-parse --verify -q "$UP_REF^{commit}" >/dev/null; }
 
 # Fork tests on the branded staged tree, in a container; nothing is written to the host.
 # Cost: a cold run installs everything (~40 s) and adds the coverage provider (~35 s). The volume
@@ -133,6 +222,8 @@ selftest() {
 unit_tests() {
   local src="${DOZO_UNIT_SRC:-$STAGE/src}" tests n vol out
   [ -d "$src/apps" ] || { fail "unit: no staged tree, run dozo/docker/build.sh stage and brand first"; return 1; }
+  # A stage swap cut short leaves a partial tree and no completion marker (build.sh writes it last).
+  [ -n "${DOZO_UNIT_SRC:-}" ] || [ -f "$STAGE/stage.complete" ] || { fail "unit: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
   tests=$(cd "$src" && find apps packages \( -name node_modules -prune \) -o -type f \( -name 'dozo-*.test.ts' -o -name 'dozo-*.test.tsx' \) -print | sort)
   n=$(printf '%s' "$tests" | grep -c . || true)
   echo "[unit] fork test files found: $n (minimum $MIN_FORK_TESTS)"
@@ -142,8 +233,10 @@ unit_tests() {
   out=$(mktemp "${TMPDIR:-/tmp}/dozo-unit-XXXXXX"); UNIT_OUT=$out  # removed by the EXIT trap if interrupted
   # The coverage provider is not a project dependency: it is added inside the container only, at
   # the version of the staged tree's vitest, so the working tree's package.json is never touched.
+  # In the background and waited for, so a TERM to this script is handled at once (a foreground
+  # pipeline would hold the trap until the run ends) and removes the named container.
   # shellcheck disable=SC2086
-  docker run --rm -v "$src:/src:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p /cache/w /cache/store; cd /cache/w
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
@@ -173,9 +266,10 @@ unit_tests() {
         --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
         --coverage.exclude="**/*.test.*" --coverage.thresholds.perFile \
         --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
-    _ $tests 2>&1 | tee "$out"
-  if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
-  else coverage_misses < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: fork tests or coverage (vitest)"; return 1; fi
+    _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
+  wait_gone $!
+  if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
+  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: fork tests or coverage (vitest)"; return 1; fi
 }
 
 # --- qa: logged, timed steps ---
@@ -197,26 +291,27 @@ kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c";
 # step is reaped: a later cleanup must never signal a pid the system has since reused.
 WT_PID=""; WT_WD=""
 wt_stop() { # idempotent; the watchdog goes first so it cannot fire at a step that is already gone
-  [ -z "$WT_WD" ] || { kill_tree "$WT_WD"; wait "$WT_WD" 2>/dev/null; }
+  [ -z "$WT_WD" ] || { kill_tree "$WT_WD"; wait_gone "$WT_WD"; }
   [ -z "$WT_PID" ] || kill_tree "$WT_PID"
   WT_PID=""; WT_WD=""
 }
 
 # Exit 124 on timeout, like timeout(1). Without it (macOS has none) a background watchdog does it.
-# The step always runs in the background and is waited for: a foreground wait would hold a trapped
-# signal until the step ends. Without job control the step shares our process group, so "its group"
+# The step always runs in the background and is waited for (wait_gone: a second signal during
+# cleanup cuts one `wait` short, not the cleanup): a foreground wait would hold a trapped signal until
+# the step ends. Without job control the step shares our process group, so "its group"
 # is its process tree (kill_tree), never a group kill that would take this script with it.
 with_timeout() { # seconds cmd...
   local limit="$1" pid flag rc; shift
   if [ -n "$TIMEOUT_BIN" ]; then
     "$TIMEOUT_BIN" -k 10 "$limit" "$@" & WT_PID=$!
-    wait "$WT_PID"; rc=$?; WT_PID=""
+    wait_gone "$WT_PID"; rc=$WAIT_RC; WT_PID=""
     return "$rc"
   fi
   flag=$(mktemp "${TMPDIR:-/tmp}/dozo-timeout-XXXXXX"); rm -f "$flag"
   "$@" & pid=$!; WT_PID=$pid
   ( sleep "$limit"; : > "$flag"; kill_tree "$pid"; sleep 10; kill -KILL "$pid" 2>/dev/null ) & WT_WD=$!
-  wait "$pid"; rc=$?; WT_PID=""   # reaped: wt_stop must not signal a pid the system may reuse
+  wait_gone "$pid"; rc=$WAIT_RC; WT_PID=""   # reaped: wt_stop must not signal a pid the system may reuse
   wt_stop
   if [ -e "$flag" ]; then rm -f "$flag"; return 124; fi
   return "$rc"
@@ -275,13 +370,15 @@ qa() {
 }
 
 UNIT_OUT=""
-on_exit() { wt_stop; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
+on_exit() { wt_stop; rm_run_containers; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
+# Not a gate: no traps, no verdict, no Docker (sync.sh calls it for its fork-health count).
+if [ "${1:-}" = upstream-edits ]; then shift; upstream_edits "$@"; exit $?; fi
 trap 'on_signal 130' INT; trap 'on_signal 143' TERM; trap on_exit EXIT
 case "${1:-}" in
   olc) T0=$(now); olc; V=OLC ;;
   qa) qa; V=QA ;;
   unit) T0=$(now); unit_tests; V=UNIT ;;
-  *) echo "usage: $0 olc|qa|unit" >&2; exit 64 ;;
+  *) echo "usage: $0 olc|qa|unit|upstream-edits <base-commit> [tree-ish]" >&2; exit 64 ;;
 esac
 SECS="${QA_SECS:-$(( $(now) - T0 ))}"
 if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS${PARTIAL:+ (partial: $PARTIAL)} in ${SECS}s"
