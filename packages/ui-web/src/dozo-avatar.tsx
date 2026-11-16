@@ -30,8 +30,28 @@ export function dozoCharacterForSeed(seed: string): DozoCharacter {
   );
 }
 
+/**
+ * The Dozo bot identity palette, the only place the avatar's identity colours are written down:
+ * a tile colour (light page, dark page) and an eye glow per character. Upstream's `botColors` and
+ * `botEyeColor` in `@rakazo/ui-tokens` could not be used: they are TypeScript-only values, hold
+ * seven colours (#3EC5A8 #F5A03C #6A6BF5 #9B5CF6 #3B82F6 #F2622A #D9508A) instead of six with other
+ * hues (indigo, pink and orange where ours are green, amber and coral), and the eye ink is one dark
+ * #101014, while these eyes glow light on a dark visor. The component sets them inline on its root.
+ */
+const DOZO_BOT_PALETTE: Record<
+  DozoCharacter,
+  { readonly tile: readonly [light: string, dark: string]; readonly glow: string }
+> = {
+  sora: { tile: ["#3f7fcb", "#4f8fd8"], glow: "#bfe0ff" },
+  kumo: { tile: ["#8f6bcb", "#a07ed8"], glow: "#e2d6ff" },
+  hana: { tile: ["#3f9468", "#4fa37a"], glow: "#c4f2d9" },
+  taro: { tile: ["#c4872f", "#d19a45"], glow: "#ffe2ae" },
+  yuki: { tile: ["#d26a59", "#dc7a6a"], glow: "#ffd0c6" },
+  mochi: { tile: ["#2f9297", "#3fa3a8"], glow: "#b8f0f0" },
+};
+
 // ---------------------------------------------------------------------------------------------
-// Drawings, ported from design/d/dozo.js. Colours live in dozo-avatar.css, not here.
+// Drawings, ported from design/d/dozo.js. Colours live in DOZO_BOT_PALETTE above, not here.
 
 function Eyes({ children }: { children: ReactNode }) {
   return (
@@ -295,7 +315,8 @@ function tick(now: number) {
   lastTime = now;
   const follow = 1 - Math.exp(-dt * 10);
   const wakeRate = 1 - Math.exp(-dt * 5);
-  if (stale) measure();
+  // With no pointer nothing can move toward it, so positions stay stale until one appears.
+  if (stale && pointer) measure();
   let moving = false;
   for (const t of trackers.values()) {
     if (!t.visible) continue;
@@ -391,13 +412,16 @@ export const DozoAvatar = memo(function DozoAvatar({
   const hash = hashSeed(seed);
   // Each avatar blinks on its own period and phase, so a list never blinks in unison.
   const blinkPeriod = 4 + ((hash >>> 8) % 20) / 10;
+  const [tileLight, tileDark] = DOZO_BOT_PALETTE[character].tile;
   const style = {
     width: size,
     height: size,
     "--dozo-delay": `${-((hash % 30) / 10)}s`,
     "--dozo-blink-period": `${blinkPeriod}s`,
     "--dozo-blink-delay": `${-(((hash >>> 16) % 100) / 100) * blinkPeriod}s`,
-    ...(color && HEX_COLOR.test(color) ? { "--dozo-tile": color } : {}),
+    // light-dark() follows the theme's color-scheme; an explicit hex colour wins over the tile.
+    "--dozo-tile": color && HEX_COLOR.test(color) ? color : `light-dark(${tileLight}, ${tileDark})`,
+    "--dozo-glow": DOZO_BOT_PALETTE[character].glow,
   } as CSSProperties;
 
   useEffect(() => {

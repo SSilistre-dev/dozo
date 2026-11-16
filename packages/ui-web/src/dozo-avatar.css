@@ -1,24 +1,5 @@
 /* Dozo bot avatars. Every selector sits under .dozo-avatar so nothing here leaks into the app. */
 
-/* Bot identity palette: the only hex values in this file. Each character owns a tile colour and
-   an eye glow that no UI token covers ("bots carry the only identity color"). light-dark() picks
-   the first value on a light page and the second on a dark one, following the theme's color-scheme. */
-.dozo-avatar {
-  --dozo-sora: light-dark(#3f7fcb, #4f8fd8);
-  --dozo-kumo: light-dark(#8f6bcb, #a07ed8);
-  --dozo-hana: light-dark(#3f9468, #4fa37a);
-  --dozo-taro: light-dark(#c4872f, #d19a45);
-  --dozo-yuki: light-dark(#d26a59, #dc7a6a);
-  --dozo-mochi: light-dark(#2f9297, #3fa3a8);
-  --dozo-sora-glow: #bfe0ff;
-  --dozo-kumo-glow: #e2d6ff;
-  --dozo-hana-glow: #c4f2d9;
-  --dozo-taro-glow: #ffe2ae;
-  --dozo-yuki-glow: #ffd0c6;
-  --dozo-mochi-glow: #b8f0f0;
-}
-/* End of the bot identity palette. */
-
 .dozo-avatar {
   /* The head stays light and the visor dark on both themes, so each takes the semantic token that
      is light (or dark) on that theme. */
@@ -31,31 +12,10 @@
   user-select: none;
 }
 
-/* One tile colour and one eye glow per character. An inline --dozo-tile (explicit colour) wins. */
-.dozo-avatar[data-character="sora"] {
-  --dozo-tile: var(--dozo-sora);
-  --dozo-glow: var(--dozo-sora-glow);
-}
+/* The tile colour (--dozo-tile) and eye glow (--dozo-glow) are set inline by the component from its
+   bot identity palette, so no colour value is written in this file. */
 .dozo-avatar[data-character="kumo"] {
-  --dozo-tile: var(--dozo-kumo);
-  --dozo-glow: var(--dozo-kumo-glow);
   --dozo-pulse: 1;
-}
-.dozo-avatar[data-character="hana"] {
-  --dozo-tile: var(--dozo-hana);
-  --dozo-glow: var(--dozo-hana-glow);
-}
-.dozo-avatar[data-character="taro"] {
-  --dozo-tile: var(--dozo-taro);
-  --dozo-glow: var(--dozo-taro-glow);
-}
-.dozo-avatar[data-character="yuki"] {
-  --dozo-tile: var(--dozo-yuki);
-  --dozo-glow: var(--dozo-yuki-glow);
-}
-.dozo-avatar[data-character="mochi"] {
-  --dozo-tile: var(--dozo-mochi);
-  --dozo-glow: var(--dozo-mochi-glow);
 }
 
 .dozo-avatar .da-svg {

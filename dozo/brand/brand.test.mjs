@@ -14,7 +14,7 @@ after(() => {
 });
 
 function tempDir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dozo-wp1-test-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dozo-brand-test-"));
   temps.push(dir);
   return dir;
 }

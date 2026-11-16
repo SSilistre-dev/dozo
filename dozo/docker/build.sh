@@ -33,11 +33,14 @@ need_stage() { [ -f "$SRC/$COMPOSE_REL" ] || die "no staged tree at $SRC; run: d
 
 # Overlay uncommitted and untracked-but-not-ignored files onto $1. A tracked file deleted in the
 # working tree is the one benign case (rsync would exit 23 on it), so it is dropped from the list
-# up front and any rsync failure is real.
+# up front and any rsync failure is real. git archive already put those files in the copy, so they
+# are removed again: the gate must test the tree as it is, not files the working tree no longer has.
 overlay_worktree() {
   (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
     | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; fi; done \
     | rsync -a --from0 --files-from=- ./ "$1/") || die "worktree overlay failed"
+  (cd "$ROOT" && git ls-files -z --deleted | while IFS= read -r -d '' f; do rm -f "$1/$f"; done) \
+    || die "removing deleted files from the staged copy failed"
 }
 
 stage() {
@@ -79,7 +82,7 @@ free_port() { local p="${1:-5173}"; while nc -z 127.0.0.1 "$p" 2>/dev/null; do p
 
 setenv() { # setenv KEY VALUE (replace or append, no value echoed)
   if grep -q "^$1=" "$ENVF"; then
-    local t; t="$(mktemp "${TMPDIR:-/tmp}/dozo-wp2-XXXXXX")"
+    local t; t="$(mktemp "${TMPDIR:-/tmp}/dozo-env-XXXXXX")"
     grep -v "^$1=" "$ENVF" > "$t"; echo "$1=$2" >> "$t"; cat "$t" > "$ENVF"; rm -f "$t"
   else echo "$1=$2" >> "$ENVF"; fi
 }
@@ -132,7 +135,7 @@ up() {
   dc up -d ${DOZO_STOP_TIMEOUT:+--timeout "$DOZO_STOP_TIMEOUT"}
   say "up: waiting for web on 127.0.0.1:$PORT"
   local i; for i in $(seq 1 120); do
-    [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 200 ] && { say "up: web answers at http://127.0.0.1:$PORT/"; return 0; }
+    [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 200 ] && { say "up: web answers at http://127.0.0.1:$PORT/"; return 0; }
     sleep 2
   done
   dc ps || true; die "web did not answer 200 within 240s"
@@ -141,8 +144,8 @@ up() {
 smoke() {
   STEP=smoke; genenv
   local url="http://127.0.0.1:$PORT/" code title
-  code="$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)"
-  title="$(curl -s "$url" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
+  code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$url" || true)"
+  title="$(curl -s --max-time 10 "$url" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
   say "smoke: http=$code title='$title' url=$url"
   [ "$code" = 200 ] || die "web returned $code" 2
   [ -n "$title" ] || die "no <title> in HTML" 2

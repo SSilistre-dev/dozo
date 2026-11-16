@@ -22,8 +22,9 @@ copy, so merging upstream never conflicts with branding and the working tree is 
    `node:24-slim` container, with V8 coverage limited to the fork's own `dozo-*.ts(x)` files and a
    per-file floor of 90% for lines, branches and functions (`DOZO_COVERAGE_MIN` overrides). The
    coverage provider is installed inside the container only. Dependencies live in the Docker volume
-   `dozo-qa-deps-<lockfile checksum>` (pnpm store, corepack download, `node_modules`): a cold run
-   takes about 80 s, a run with an unchanged lockfile about 5 s. Nothing is written to the host.
+   `dozo-qa-deps` (pnpm store, corepack download, `node_modules`; one fixed volume, reinstalled in
+   place when the lockfile changes): a cold run takes about 80 s, a run with an unchanged lockfile
+   about 5 s. Remove it with `docker volume rm dozo-qa-deps` to start cold. Nothing is written to the host.
    Exit 2 when a test fails, a file is under the floor (the file and number are printed), or fewer
    than `DOZO_MIN_FORK_TESTS` (default 3) files are found. `make olc` never installs; it runs
    `node --check` and the brand tests (same 90% floor, Node's built-in coverage) in the same image
@@ -32,7 +33,8 @@ copy, so merging upstream never conflicts with branding and the working tree is 
 
 ## Commands
 `dozo/docker/build.sh [stage|brand|build|up|smoke|down|all]` (`all` = stage, brand, build, up).
-`make olc` fast gate (<30 s, offline), `make qa` full gate, `make stage|up|down`.
+`make olc` fast gate (<30 s, offline; `bash -n` on every `dozo/**/*.sh`; the e2e `.ts` files have
+no cheap check and are compiled by `make e2e`), `make qa` full gate, `make stage|up|down`.
 Exit codes: 0 ok, 2 any failure (the failing step is printed), 64 usage error.
 
 ## qa, unattended

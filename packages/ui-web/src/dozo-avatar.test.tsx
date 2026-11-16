@@ -67,10 +67,21 @@ describe("DozoAvatar identity", () => {
     expect(seen.size).toBe(6);
   });
 
-  it("uses the character's own tile colour unless an explicit colour is given", () => {
-    const html = renderToString(<DozoAvatar seed="kumo" />);
-    expect(html).toContain('data-character="kumo"');
-    expect(html).not.toContain("--dozo-tile");
+  it("gives each character its own tile colour for both themes and its own eye glow", () => {
+    const tiles = new Set<string | undefined>();
+    const glows = new Set<string | undefined>();
+    for (const seed of MOCKUP_SEEDS) {
+      const html = renderToString(<DozoAvatar seed={seed} />);
+      expect(html).toContain(`data-character="${seed}"`);
+      const tile = html.match(/--dozo-tile:(light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\))/i)?.[1];
+      const glow = html.match(/--dozo-glow:(#[0-9a-f]{6})/i)?.[1];
+      expect(tile).toBeDefined();
+      expect(glow).toBeDefined();
+      tiles.add(tile);
+      glows.add(glow);
+    }
+    expect(tiles.size).toBe(6);
+    expect(glows.size).toBe(6);
   });
 
   it("respects an explicit colour and keeps the seed-based character", () => {
@@ -80,11 +91,14 @@ describe("DozoAvatar identity", () => {
     expect(plain).toContain(`data-character="${character}"`);
     expect(painted).toContain(`data-character="${character}"`);
     expect(painted).toContain("--dozo-tile:#ff00aa");
+    expect(painted).not.toContain("light-dark");
+    expect(painted).toContain("--dozo-glow:");
   });
 
   it("ignores a colour that is not a hex value", () => {
     const html = renderToString(<DozoAvatar seed="bot-7" color="red; background:url(x)" />);
-    expect(html).not.toContain("--dozo-tile");
+    expect(html).not.toContain("red");
+    expect(html).toContain("--dozo-tile:light-dark(");
   });
 });
 
@@ -479,6 +493,26 @@ describe("DozoAvatar frame loop", () => {
     }
   });
 
+  it("does not measure while there is no pointer, and measures once when one appears", () => {
+    const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
+    const rect = rectSpy(container);
+    advance(100);
+    for (let i = 0; i < 3; i++) {
+      act(() => {
+        window.dispatchEvent(new Event("scroll"));
+      });
+      advance(100);
+    }
+    expect(rect).not.toHaveBeenCalled();
+
+    pointerAt(400);
+    advance(2000);
+    expect(rect).toHaveBeenCalledTimes(1);
+    pointerAt(410);
+    advance(2000);
+    expect(rect).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps running until a left idle avatar has fallen asleep, then stops", () => {
     const { container } = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
     advance(100);
@@ -540,6 +574,7 @@ describe("DozoAvatar visibility", () => {
 
     const hiddenRect = rectSpy(hidden.container);
     const shownRect = rectSpy(shown.container);
+    pointerAt(10);
     act(() => {
       window.dispatchEvent(new Event("scroll"));
     });
@@ -567,6 +602,7 @@ describe("DozoAvatar visibility", () => {
   it("treats every avatar as visible where IntersectionObserver is missing", () => {
     const { container } = mount(<DozoAvatar seed="sora" size={72} state="waiting" />);
     const rect = rectSpy(container);
+    pointerAt(10);
     act(() => {
       window.dispatchEvent(new Event("scroll"));
     });
@@ -583,6 +619,7 @@ describe("DozoAvatar visibility", () => {
     act(() => io.instances[0]?.callback([{ target: root, isIntersecting: false }]));
     const view = mount(<DozoAvatar seed="kumo" size={72} />);
     const rect = rectSpy(container);
+    pointerAt(10);
     act(() => {
       window.dispatchEvent(new Event("resize"));
     });
@@ -606,6 +643,7 @@ describe("DozoAvatar own size", () => {
     expect(ro.instances[0]?.observed.size).toBe(2);
 
     const rect = rectSpy(first.container);
+    pointerAt(10);
     advance(100);
     expect(rect).toHaveBeenCalledTimes(1);
     act(() => ro.instances[0]?.callback([]));
@@ -677,21 +715,20 @@ describe("DozoAvatar hover", () => {
 
 describe("dozo-avatar.css", () => {
   const css = readFileSync(join(import.meta.dirname, "dozo-avatar.css"), "utf8");
-  const PALETTE_START = "/* Bot identity palette";
-  const PALETTE_END = "/* End of the bot identity palette. */";
+  const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
+  const HEX = /#[0-9a-f]{3,8}\b/gi;
 
-  it("has hex colours only inside the bot identity palette block", () => {
-    const start = css.indexOf(PALETTE_START);
-    const end = css.indexOf(PALETTE_END);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const outside = css.slice(0, start) + css.slice(end + PALETTE_END.length);
-    expect(outside.match(/#[0-9a-f]{3,8}\b/gi)).toBeNull();
-    const palette = css.slice(start, end);
-    for (const name of ["sora", "kumo", "hana", "taro", "yuki", "mochi"]) {
-      expect(palette.match(new RegExp(`--dozo-${name}:`, "g"))).toHaveLength(1);
-      expect(palette.match(new RegExp(`--dozo-${name}-glow:`, "g"))).toHaveLength(1);
-    }
+  it("holds no hex colour; the six-character identity palette lives once in the component", () => {
+    expect(css.match(HEX)).toBeNull();
+    const palette = source.slice(
+      source.indexOf("const DOZO_BOT_PALETTE"),
+      source.indexOf("// Drawings, ported"),
+    );
+    expect(source.match(/const DOZO_BOT_PALETTE/g)).toHaveLength(1);
+    expect(palette.match(HEX)).toHaveLength(18);
+    const outside = source.replace(palette, "");
+    // Outside the palette only upstream's colours quoted in its comment may remain.
+    expect(outside.replace(/\/\*\*[\s\S]*?\*\//g, "").match(HEX)).toBeNull();
   });
 
   it("takes the head and visor from semantic tokens", () => {

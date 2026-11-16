@@ -51,7 +51,9 @@ if [ "$DRY" = 0 ] && [ -n "$(git status --porcelain)" ]; then
 fi
 
 say "fetching $UP_REMOTE main"
-git fetch --quiet "$UP_REMOTE" main
+# No curl here: the only network call is this fetch. Give up on a link slower than 1 kB/s for 60 s
+# instead of hanging (applies to http(s) remotes; ssh remotes use their own keepalive).
+git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 fetch --quiet "$UP_REMOTE" main
 NEW_SHA=$(git rev-parse "refs/remotes/$UP_REMOTE/main")
 SHORT=$(git rev-parse --short=9 "$NEW_SHA")
 
@@ -148,6 +150,26 @@ if [ "$OLD_UP" != "$NEW_SHA" ]; then
   say "$UP_BRANCH fast-forwarded to $SHORT"
 fi
 
+# From here until the merge commit exists, any unexpected exit (set -e, INT, TERM, HUP) puts us back
+# on the original branch and removes the half-made sync branch. The conflict and failed-merge paths
+# below already do that themselves; the trap is then a no-op because $BR is gone. SIGKILL cannot be
+# trapped. Cleared once the merge is clean: a gate failure keeps $BR for inspection by design.
+SYNC_PENDING=1
+cleanup_sync() {
+  local rc=$?
+  trap - EXIT INT TERM HUP
+  if [ "$SYNC_PENDING" = 1 ] && git rev-parse --verify -q "refs/heads/$BR" >/dev/null; then
+    if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$BR" ]; then
+      git merge --abort 2>/dev/null || git reset -q --hard 2>/dev/null || true
+    fi
+    git switch --quiet "${ORIG_SW[@]}" 2>/dev/null || true
+    git branch -q -D "$BR" 2>/dev/null || true
+    echo "[sync] stopped early (exit $rc): back on $ORIG, $BR removed" >&2
+  fi
+  exit "$rc"
+}
+trap cleanup_sync EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 git switch --quiet -c "$BR" "$MAIN"
 say "created $BR from $MAIN; merging $UP_BRANCH"
 # Keep git's own words (a conflict is reported on stdout, other failures on stderr) and decide by
@@ -170,6 +192,7 @@ if ! git merge --no-ff --no-edit -m "Merge upstream $UP_REMOTE/main ($RANGE) int
   exit 1
 fi
 rm -f "$MERGE_LOG"
+SYNC_PENDING=0
 say "merge clean on $BR"
 
 # Gates, if the colleague's Makefile targets exist.

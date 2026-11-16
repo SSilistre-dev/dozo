@@ -86,12 +86,13 @@ for (const rel of listFiles(root)) {
   const isPo = rel.endsWith(".po");
   const lowercaseAllowed = config.allowLowercaseRe.some((re) => re.test(rel));
   const lines = buffer.toString("utf8").split("\n");
+  // Same for every line of the file, so built once per file (order matters for the first-hit report).
+  const fileChecks = [wordRe, needleRe, gluedRe, bareRe, fileNameRe];
+  if (!lowercaseAllowed) fileChecks.push(quotedRe);
   for (let i = 0; i < lines.length; i++) {
     const line = allowedRe ? lines[i].replace(allowedRe, (m) => " ".repeat(m.length)) : lines[i];
-    const checks = [wordRe, needleRe, gluedRe, bareRe, fileNameRe];
-    if (!lowercaseAllowed) checks.push(quotedRe);
     // .po headers ("Project-Id-Version: ...") are metadata; entries are what the UI shows.
-    if (isPo && /^(?:msgid|msgstr|")/.test(line) && !/^"[A-Z][\w-]*: /.test(line)) checks.push(poRe);
+    const checks = isPo && /^(?:msgid|msgstr|")/.test(line) && !/^"[A-Z][\w-]*: /.test(line) ? [...fileChecks, poRe] : fileChecks;
     for (const re of checks) {
       for (const match of re ? line.matchAll(re) : []) found.push(`${rel}:${i + 1}: ${match[0]}`);
     }

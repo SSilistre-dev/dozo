@@ -40,7 +40,11 @@ coverage_misses() { # stdin = tool output
 
 olc() {
   local s
-  for s in dozo/docker/*.sh dozo/sync.sh; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done
+  # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
+  # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
+  # is not in the image): Playwright compiles them when `make e2e` runs.
+  while IFS= read -r s; do bash -n "$s" && echo "[olc] bash -n $s ok" || fail "syntax $s"; done \
+    < <(find dozo -name '*.sh' -not -path 'dozo/.stage/*' -not -path '*/node_modules/*' | sort)
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo -name '*.mjs' -not -path 'dozo/.stage/*' 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then echo "[olc] no .mjs files, nothing to check with node"
   elif node_image; then
@@ -65,8 +69,9 @@ olc() {
 
 # Fork tests on the branded staged tree, in a container; nothing is written to the host.
 # Cost: a cold run installs everything (~40 s) and adds the coverage provider (~35 s). The volume
-# dozo-qa-deps-<lockfile checksum> keeps the pnpm store, the corepack download and the installed
-# node_modules, so an unchanged lockfile skips all of it. It runs as root because it writes only
+# dozo-qa-deps keeps the pnpm store, the corepack download and the installed node_modules, so an
+# unchanged lockfile skips all of it. One fixed volume: the in-volume marker below notices a changed
+# lockfile and reinstalls into it, so old lockfiles never pile up as one full node_modules each. It runs as root because it writes only
 # to that volume; the staged tree is mounted read-only.
 unit_tests() {
   local src="${DOZO_UNIT_SRC:-$STAGE/src}" tests n vol out
@@ -76,7 +81,7 @@ unit_tests() {
   echo "[unit] fork test files found: $n (minimum $MIN_FORK_TESTS)"
   if [ "$n" -lt "$MIN_FORK_TESTS" ]; then fail "unit: $n fork test files, expected at least $MIN_FORK_TESTS"; return 1; fi
   node_image || return 1
-  vol="dozo-qa-deps-$(cksum < "$src/pnpm-lock.yaml" | tr -d '\n' | tr ' ' -)"
+  vol=dozo-qa-deps
   out=$(mktemp "${TMPDIR:-/tmp}/dozo-unit-XXXXXX")
   # The coverage provider is not a project dependency: it is added inside the container only, at
   # the version of the staged tree's vitest, so the working tree's package.json is never touched.
@@ -123,17 +128,47 @@ step_timeout() { # DOZO_TIMEOUT_<STEP> overrides, seconds
 
 kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done; kill -TERM "$1" 2>/dev/null; return 0; }
 
+# The running step and its watchdog, so a signal can clean both up. They are cleared as soon as the
+# step is reaped: a later cleanup must never signal a pid the system has since reused.
+WT_PID=""; WT_WD=""
+wt_stop() { # idempotent; the watchdog goes first so it cannot fire at a step that is already gone
+  [ -z "$WT_WD" ] || { kill_tree "$WT_WD"; wait "$WT_WD" 2>/dev/null; }
+  [ -z "$WT_PID" ] || kill_tree "$WT_PID"
+  WT_PID=""; WT_WD=""
+}
+
 # Exit 124 on timeout, like timeout(1). Without it (macOS has none) a background watchdog does it.
+# The step always runs in the background and is waited for: a foreground wait would hold a trapped
+# signal until the step ends. Without job control the step shares our process group, so "its group"
+# is its process tree (kill_tree), never a group kill that would take this script with it.
 with_timeout() { # seconds cmd...
-  local limit="$1" pid wd flag rc; shift
-  if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" -k 10 "$limit" "$@"; return; fi
+  local limit="$1" pid flag rc; shift
+  if [ -n "$TIMEOUT_BIN" ]; then
+    "$TIMEOUT_BIN" -k 10 "$limit" "$@" & WT_PID=$!
+    wait "$WT_PID"; rc=$?; WT_PID=""
+    return "$rc"
+  fi
   flag=$(mktemp "${TMPDIR:-/tmp}/dozo-timeout-XXXXXX"); rm -f "$flag"
-  "$@" & pid=$!
-  ( sleep "$limit"; : > "$flag"; kill_tree "$pid"; sleep 10; kill -KILL "$pid" 2>/dev/null ) & wd=$!
+  "$@" & pid=$!; WT_PID=$pid
+  ( sleep "$limit"; : > "$flag"; kill_tree "$pid"; sleep 10; kill -KILL "$pid" 2>/dev/null ) & WT_WD=$!
   wait "$pid"; rc=$?
-  kill_tree "$wd"; wait "$wd" 2>/dev/null
+  wt_stop
   if [ -e "$flag" ]; then rm -f "$flag"; return 124; fi
   return "$rc"
+}
+
+# Set while qa owns a stack it started (never one that was already running).
+QA_OWNS_STACK=0
+on_signal() { # $1 = exit code (128 + signal number)
+  trap ':' INT TERM   # a second signal must not cut the cleanup short; ':' is not inherited by children
+  echo "[gate] interrupted"
+  wt_stop
+  if [ "$QA_OWNS_STACK" -eq 1 ]; then
+    QA_OWNS_STACK=0
+    echo "[qa] taking down the stack qa started"
+    with_timeout 300 "$ROOT/dozo/docker/build.sh" down >>"$LOGS/down.log" 2>&1 || echo "[qa] down failed; run: dozo/docker/build.sh down"
+  fi
+  exit "$1"
 }
 
 run_step() { # name cmd...
@@ -160,16 +195,17 @@ qa() {
   export DOZO_STOP_TIMEOUT="${DOZO_STOP_TIMEOUT:-60}"
   [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
   for st in ${DOZO_QA_STEPS:-olc stage brand unit build up smoke}; do
-    [ "$st" != up ] || reached_up=1
+    if [ "$st" = up ]; then reached_up=1; [ "$was_up" -eq 1 ] || QA_OWNS_STACK=1; fi
     case "$st" in
       olc|unit) run_step "$st" "$SELF" "$st" ;;
       *) run_step "$st" "$b" "$st" ;;
     esac || { fail "$st"; break; }
   done
-  if [ "$reached_up" -eq 1 ] && [ "$was_up" -eq 0 ]; then run_step down "$b" down || fail down; fi
+  if [ "$reached_up" -eq 1 ] && [ "$was_up" -eq 0 ]; then run_step down "$b" down || fail down; QA_OWNS_STACK=0; fi
   QA_SECS=$(( $(now) - t0 ))
 }
 
+trap 'on_signal 130' INT; trap 'on_signal 143' TERM; trap wt_stop EXIT
 case "${1:-}" in
   olc) T0=$(now); olc; V=OLC ;;
   qa) qa; V=QA ;;
