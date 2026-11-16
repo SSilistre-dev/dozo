@@ -28,6 +28,14 @@
       "reason": "build cache"
     },
     {
+      "glob": "**/.DS_Store",
+      "reason": "macOS Finder metadata (binary, git-ignored, never shipped)"
+    },
+    {
+      "glob": "**/Thumbs.db",
+      "reason": "Windows Explorer thumbnail cache (binary, git-ignored, never shipped)"
+    },
+    {
       "glob": "**/pnpm-lock.yaml",
       "reason": "lockfile"
     },

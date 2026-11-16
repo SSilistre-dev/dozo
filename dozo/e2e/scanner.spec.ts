@@ -90,18 +90,38 @@ test("the documented attribution phrases are not leaks, however often they appea
   expect(scan.leaks).toEqual([]);
 });
 
-test("deliberate identifiers are allowed in attributes and links only, every occurrence", async ({
+test("deliberate identifiers are allowed in links and meta tags only, every occurrence", async ({
   context,
 }) => {
   await installProbes(context);
   const { scan } = await scanHtml(
     context,
     `<!doctype html><title>Dozo</title>
-     <a href="rakazo://open?next=rakazo://again" aria-label="@rakazo/ui @rakazo/core">x</a>
-     <button title="RAKAZO_URL RAKAZO_KEY x-rakazo-id x-rakazo-other">y</button>`,
+     <meta name="x-app" content="RAKAZO_URL x-rakazo-id">
+     <a href="rakazo://open?next=rakazo://again&k=@rakazo/ui @rakazo/core">x</a>
+     <form action="/x?RAKAZO_URL=1 RAKAZO_KEY=2"></form>`,
   );
   // Needs the global flag: a replace that stops at the first match leaves the second occurrence.
   expect(scan.leaks).toEqual([]);
+});
+
+test("an identifier in an attribute a person reads is a leak", async ({ context }) => {
+  await installProbes(context);
+  const cases: [string, string][] = [
+    ['<button title="Set RAKAZO_API_URL">x</button>', "[title]"],
+    ['<input placeholder="Set RAKAZO_KEY">', "[placeholder]"],
+    ['<button aria-label="x-rakazo-id">x</button>', "[aria-label]"],
+    ['<button aria-description="@rakazo/ui">x</button>', "[aria-description]"],
+    ['<input aria-placeholder="rakazo://open">', "[aria-placeholder]"],
+    ['<img alt="RAKAZO_URL" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">', "[alt]"],
+  ];
+  for (const [markup, where] of cases) {
+    const { scan } = await scanHtml(context, `<!doctype html><title>Dozo</title>${markup}`);
+    expect(
+      scan.leaks.map((leak) => leak.where),
+      `an identifier in ${where} must be a leak`,
+    ).toContain(where);
+  }
 });
 
 test("an identifier in text a person reads is a leak", async ({ context }) => {

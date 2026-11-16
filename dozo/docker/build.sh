@@ -15,7 +15,7 @@ case "$STAGE" in /*) ;; *) STAGE="$PWD/${STAGE#./}" ;; esac
 SRC="$STAGE/src"
 ENVF="$STAGE/dozo.env"
 PROJECT=dozo
-NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
+NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 COMPOSE_REL=infra/compose/docker-compose.yml
 STAGED="$STAGE/stage.complete"   # written last by `stage`, removed first: a swap cut short has none
 STEP=init
@@ -103,6 +103,13 @@ stage() {
   (cd "$ROOT" && git archive "$ref") | tar -x -C "$new"
   [ "${DOZO_STAGE_WORKTREE:-}" != 1 ] || overlay_worktree "$new" "$ref"
   rm -rf "$new/.git"
+  # Fork tooling never reaches the build context: upstream's Dockerfile runs `COPY . .` before the
+  # app builds, so an edit to dozo/ (docs, tests, scripts) or the Makefile would rebuild every app,
+  # and dozo/ would ship in the runtime image. Nothing later reads them from the stage (node_run
+  # mounts the real dozo/ at /dozo). dozo/NOTICE stays: it is the licence addendum, and the image
+  # carries the source it is about. The fork-only dozo-* source files live in apps/ and packages/.
+  rm -f "$new/Makefile"
+  [ ! -d "$new/dozo" ] || find "$new/dozo" -mindepth 1 -maxdepth 1 ! -name NOTICE -exec rm -rf {} +
   [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
   # Swap in by contents, never moving data/ (the compose bind mount holding the app data). The
   # marker goes first and comes back last, so an interrupted swap is never taken for a whole tree.
@@ -220,11 +227,14 @@ up() {
 
 smoke() {
   STEP=smoke; need curl; genenv
-  local url="http://127.0.0.1:$PORT/" code title
+  local url="http://127.0.0.1:$PORT/" code html title
   code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$url" || true)"
-  title="$(curl -s --max-time 10 "$url" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
+  # A failed fetch (nothing listening) must not abort the pipeline silently: it leaves an empty page,
+  # the line below says so, and the checks after it exit 2.
+  html="$(curl -s --max-time 10 "$url")" || html=""
+  title="$(printf '%s' "$html" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
   say "smoke: http=$code title='$title' url=$url"
-  [ "$code" = 200 ] || die "web returned $code" 2
+  [ "$code" = 200 ] || die "web returned $code (000: nothing answered at $url)" 2
   [ -n "$title" ] || die "no <title> in HTML" 2
   if [ "${DOZO_SKIP_BRAND:-}" != 1 ]; then
     echo "$title" | grep -qi dozo || die "title not branded: '$title'" 2

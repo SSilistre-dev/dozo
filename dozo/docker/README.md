@@ -35,7 +35,7 @@ Docker with the Compose v2 plugin, 2.24.4 or newer (`compose.ports.yml` uses `!o
 `gate.sh` needs `bash`, `git`, `docker`, and the usual `find`, `awk`, `sed`, `grep`, `cmp`, plus
 `pgrep` (qa uses it to stop a step's child processes; without it only the step itself is stopped).
 It uses GNU `timeout` or `gtimeout` when present and a built-in watchdog otherwise. Node tooling runs in the
-`node:24-slim` image (`DOZO_NODE_IMAGE`); there is no host node or pnpm. The one exception is
+`node:24.22-slim` image (`DOZO_NODE_IMAGE`); there is no host node or pnpm. The one exception is
 `dozo/brand/assets/build.sh` (see `dozo/AGENTS.md`).
 
 ## build.sh steps
@@ -50,10 +50,14 @@ with `down`.
    marker `stage.complete` is removed first and written last: a stage cut short has none, and
    later steps refuse it ("run stage"). A stage made before the marker existed needs one
    re-stage.
+   - The staged tree has no `.git`, no root `Makefile` and nothing of `dozo/` but `NOTICE` (the licence
+     addendum): upstream's Dockerfile copies the whole tree before it builds the apps, so an edit to
+     fork tooling would otherwise rebuild everything and ship it in the image. The stage tools read
+     the real `dozo/` (mounted at `/dozo`), not the stage.
    - Local versus CI: the Makefile turns the overlay on, so a local `make qa` tests uncommitted
      files and can pass where CI fails. CI stages HEAD only (it calls `build.sh stage` without the
      overlay). Commit before trusting a local pass.
-2. `brand`: in `node:24-slim`, as the invoking user, `apply.mjs --root /w --strict`, then the leak
+2. `brand`: in `node:24.22-slim`, as the invoking user, `apply.mjs --root /w --strict`, then the leak
    gate `check.mjs --root /w` (never `--launch`). Either failing exits 2. `--strict` makes a rule
    that already looks applied an error (upstream drift), so a second `brand` on the same stage
    fails: stage again first. Semantics: `dozo/brand/README.md`. A missing tool fails with "brand tool
@@ -94,7 +98,7 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
 - The brand tests with Node's coverage, floor `DOZO_BRAND_COVERAGE_MIN` (default 97 percent) for
   lines, branches and functions, per file and overall. A source module that no test imports never
   appears in the coverage table and fails too. The pinned module list is every `dozo/brand/*.mjs`
-  that is not a test; the count is printed.
+  that is not a test or a `*.test-support.mjs` fixture; the count is printed.
 - The e2e helper tests: every `dozo/e2e/*.test.mjs` with Node's test runner (the offline model
   stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
   exist.
@@ -110,17 +114,18 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   it once: `git fetch upstream main && git branch upstream-main upstream/main` (the `upstream`
   remote: `dozo/SYNC.md`, Prerequisites). `DOZO_UPSTREAM_REF` names another ref and exists for tests.
 - A self-test of `wait_gone` (the exit status of a step that failed at once, of a step cut short by
-  a signal, of one that passed) and of the coverage-table parsers.
+  a signal, of one that passed), of the coverage-table parsers and of `timed_out` (which exit codes
+  count as a timeout).
 
 A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no
 merge base, a missing Node image (in CI, where `CI` is set, it pulls the image; locally the message
-is `docker pull node:24-slim`). Nothing is skipped silently.
+is `docker pull node:24.22-slim`). Nothing is skipped silently.
 
 ### unit
 
 Runs every `dozo-*.test.ts(x)` under `apps/` and `packages/` of the branded staged tree
 (`DOZO_UNIT_SRC` names another tree and skips the `stage.complete` check) with Vitest in
-`node:24-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, with a per-file floor
+`node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, with a per-file floor
 `DOZO_COVERAGE_MIN` (default 90 percent) for lines, branches and functions. Fewer than
 `DOZO_MIN_FORK_TESTS` (default 3) test files fails. The coverage provider is installed inside the
 container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm store, corepack, one
@@ -137,7 +142,8 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 
 - Timeout per step: `DOZO_TIMEOUT_<STEP>` seconds (`<STEP>` upper case: `OLC`, `STAGE`, `BRAND`,
   `UNIT`, `BUILD`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
-  its limit is killed and fails (exit 124 inside, shown as TIMEOUT). `up` itself waits
+  its limit is killed and fails (exit 124, or 137 once past the limit when the step ignored TERM and was
+  killed; both shown as TIMEOUT). `up` itself waits
   `DOZO_UP_TIMEOUT` (default 240).
 - If project `dozo` was already running, qa updates it but does not take it down. Otherwise `down`
   runs after the steps, also after a failure, and on an interrupt.
@@ -154,7 +160,7 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 | `DOZO_STAGE_REF` | `HEAD` | Ref `stage` exports |
 | `DOZO_STAGE_WORKTREE` | `1` from make, off from the script | Overlay uncommitted and untracked files on the export |
 | `DOZO_SKIP_BRAND` | off | `1` skips `brand` and the title check; the build is unbranded and a `qa` verdict says partial |
-| `DOZO_NODE_IMAGE` | `node:24-slim` | Image for every Node step, including the e2e model stub |
+| `DOZO_NODE_IMAGE` | `node:24.22-slim` | Image for every Node step, including the e2e model stub |
 | `DOZO_WEB_PORT` | `5173` | First port tried when the env file has none. A seed only (see Generated files) |
 | `DOZO_UP_TIMEOUT` | `240` | Seconds `up` waits for the web app |
 | `DOZO_STOP_TIMEOUT` | unset; qa sets `60` | Seconds for `up` and `down` to stop containers |

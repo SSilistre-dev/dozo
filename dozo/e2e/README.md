@@ -31,7 +31,7 @@ failed `npm install`, zero tests run, a failed test, a declared key nobody visit
    start exactly one. A directory of another user at that path is refused. It is removed when the
    run ends, also on INT and TERM. A `.takeover.*` directory next to it is left only if a run died
    in the middle of a takeover: remove it.
-2. starts `model-stub.mjs` (below) in a throwaway `node:24-slim` container (`DOZO_NODE_IMAGE`) on the
+2. starts `model-stub.mjs` (below) in a throwaway `node:24.22-slim` container (`DOZO_NODE_IMAGE`) on the
    stack's network;
 3. runs the official Playwright image `mcr.microsoft.com/playwright:v<version>-noble`, where
    `<version>` is the first `@playwright/test` version in `apps/web/package.json` (upstream's pin; the
@@ -52,7 +52,7 @@ Options:
 | --- | --- | --- |
 | `DOZO_E2E_BASE_URL` | `http://127.0.0.1:<port>` | Where the stack answers. `<port>` is, in order: `DOZO_WEB_PORT` in the stage's `dozo.env`, then `DOZO_WEB_PORT` in your shell, then 5173 (the env file wins, as for the build) |
 | `DOZO_STAGE_DIR` | `dozo/.stage` | The stage the stack was built from |
-| `DOZO_NODE_IMAGE` | `node:24-slim` | Image of the model stub |
+| `DOZO_NODE_IMAGE` | `node:24.22-slim` | Image of the model stub |
 | `DOZO_E2E_KEEP` | off | `1` keeps `.out/` (traces, screenshots, `results.json`, the coverage JSON) |
 | `DOZO_E2E_ARGS` | empty | Playwright arguments, for example `--project=crawl-light` |
 | `DOZO_E2E_SUITE` | this directory | Another suite directory |
@@ -112,8 +112,9 @@ that resolves to a private address).
   - the documented attribution phrases ("fork of Rakazo", "Based on Rakazo", "forked from Rakazo"),
     anywhere;
   - the deliberate identifiers (`@rakazo/*`, `RAKAZO_*`, `x-rakazo-*`, `rakazo://`), only inside
-    attribute and link values (`[alt]`, `a[href]`, `meta[...]`, a URL passed to `window.open`). Never
-    in the title, visible or hidden text, input values, toasts, the clipboard or downloads.
+    carriers a person does not read (`href`, `src`, `action`, `meta[...]`, a URL passed to
+    `window.open`). Never in the title, visible or hidden text, input values, `alt`, `title`,
+    `placeholder` or `aria-*` attributes, toasts, the clipboard or downloads.
 - `inventory.ts` + `inventory.spec.ts`: read the router (`App.tsx`), `SETTINGS_SECTIONS`,
   `OVERLAY_KEYS` and the onboarding steps from the app source and FAIL when one is neither covered
   by a surface nor in `SKIPS` (`surfaces.ts`) with a reason, or when `surfaces.ts` names one the

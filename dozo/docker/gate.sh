@@ -10,7 +10,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 ROOT="$(cd "$(dirname "$SELF")/../.." && pwd)"
 PWD0="$PWD"
 cd "$ROOT"
-NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
+NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
 # Docker reads a relative -v source as a named volume: make it absolute once (against the caller's
 # directory) and pass it on to build.sh.
@@ -142,10 +142,13 @@ olc() {
     if [ -n "$tests" ]; then
       # Quiet on success; on failure the whole output is the reason. Node's thresholds are global, so
       # the table is also read per file: a file under the floor, and a source file that no test
-      # imports (it never appears in the table), fail even when the totals are fine.
-      brand_src=$(find dozo/brand -maxdepth 1 -type f -name '*.mjs' ! -name '*.test.mjs' -exec basename {} \; | sort | tr '\n' ' ')
+      # imports (it never appears in the table), fail even when the totals are fine. The test files
+      # are split by topic (Node runs one process per file); `*.test-support.mjs` holds their shared
+      # fixtures and is neither a pinned module nor in the coverage report.
+      brand_src=$(find dozo/brand -maxdepth 1 -type f -name '*.mjs' ! -name '*.test.mjs' ! -name '*.test-support.mjs' -exec basename {} \; | sort | tr '\n' ' ')
       out=$(drun brand-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test --experimental-test-coverage \
-        --test-coverage-lines="$BRAND_COV_MIN" --test-coverage-branches="$BRAND_COV_MIN" --test-coverage-functions="$BRAND_COV_MIN" dozo/brand/ 2>&1); rc=$?
+        --test-coverage-exclude='dozo/brand/*.test-support.mjs' \
+        --test-coverage-lines="$BRAND_COV_MIN" --test-coverage-branches="$BRAND_COV_MIN" --test-coverage-functions="$BRAND_COV_MIN" 'dozo/brand/*.test.mjs' 2>&1); rc=$?
       report=$(printf '%s\n' "$out" | sed -n '/start of coverage report/,/end of coverage report/p')
       low=$(printf '%s\n' "$report" | coverage_misses "$BRAND_COV_MIN")
       # shellcheck disable=SC2086
@@ -229,7 +232,10 @@ selftest() {
   check_wait "instant failure, reaped before the wait" 3 0.2 'exit 3' || ok=0
   check_wait "status above 128" 130 0.2 'exit 130' || ok=0
   check_wait "success" 0 0.2 'exit 0' || ok=0
-  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers and wait_gone ok" || fail "selftest coverage parsers or wait_gone"
+  # timed_out: TERM was enough (124), KILL after the limit (137), the step's own kill before it, a plain failure.
+  timed_out 124 5 600 && timed_out 137 600 600 && timed_out 137 610 600 \
+    && ! timed_out 137 599 600 && ! timed_out 2 700 600 && ! timed_out 0 700 600 || { ok=0; echo "[olc] selftest timed_out: wrong verdict"; }
+  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers, wait_gone and timed_out ok" || fail "selftest coverage parsers, wait_gone or timed_out"
 }
 expect_misses() { # name min fixture want
   local got; got=$(coverage_misses "$2" <<< "$3")
@@ -254,6 +260,8 @@ upstream_ref_ok() { git rev-parse --verify -q "$UP_REF^{commit}" >/dev/null; }
 # to that volume; the staged tree is mounted read-only.
 unit_tests() {
   local src="${DOZO_UNIT_SRC:-$STAGE/src}" tests n vol out
+  # Docker reads a relative -v source as a named volume: make it absolute, as STAGE is.
+  case "$src" in /*) ;; *) src="$PWD0/${src#./}" ;; esac
   [ -d "$src/apps" ] || { fail "unit: no staged tree, run dozo/docker/build.sh stage and brand first"; return 1; }
   # A stage swap cut short leaves a partial tree and no completion marker (build.sh writes it last).
   [ -n "${DOZO_UNIT_SRC:-}" ] || [ -f "$STAGE/stage.complete" ] || { fail "unit: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
@@ -364,6 +372,12 @@ on_signal() { # $1 = exit code (128 + signal number)
   exit "$1"
 }
 
+# True for a step the timeout ended: exit 124 (TERM was enough), or 137 after the limit (timeout -k
+# had to KILL a step that ignored TERM). A 137 before the limit is the step's own kill, not a timeout.
+timed_out() { # rc elapsed limit
+  [ "$1" -eq 124 ] || { [ "$1" -eq 137 ] && [ "$2" -ge "$3" ]; }
+}
+
 run_step() { # name cmd...
   local name="$1" log limit s rc el; shift
   log="$LOGS/$name.log"; limit=$(step_timeout "$name"); s=$(now)
@@ -371,7 +385,7 @@ run_step() { # name cmd...
   with_timeout "$limit" "$@" >"$log" 2>&1; rc=$?
   el=$(( $(now) - s ))
   if [ "$rc" -eq 0 ]; then echo "[qa] << $name ok ${el}s"; return 0; fi
-  if [ "$rc" -eq 124 ]; then echo "[qa] << $name TIMEOUT after ${limit}s (raise DOZO_TIMEOUT_$(printf '%s' "$name" | tr a-z A-Z) if it is legitimate)"
+  if timed_out "$rc" "$el" "$limit"; then echo "[qa] << $name TIMEOUT after ${limit}s (raise DOZO_TIMEOUT_$(printf '%s' "$name" | tr a-z A-Z) if it is legitimate)"
   else echo "[qa] << $name FAIL exit $rc ${el}s"; fi
   echo "[qa] last 40 lines of $name:"; tail -n 40 "$log" | sed 's/^/[qa]   /'
   return "$rc"

@@ -53,7 +53,7 @@ let scanned = 0;
 const sha = (data) => crypto.createHash("sha256").update(data).digest("hex");
 
 // A symlink is never read here: its target would go unchecked unless it is a file in this tree
-// (which is scanned under its own path), so any other symlink fails loudly.
+// that is in scope (so it is scanned under its own path), so any other symlink fails loudly.
 const links = [];
 const tracked = listFiles(root, links);
 const realRoot = fs.realpathSync(root);
@@ -62,6 +62,11 @@ for (const rel of links) {
   try { real = fs.realpathSync(path.join(root, rel)); } catch {}
   if (real === null || !real.startsWith(realRoot + path.sep)) {
     found.push(`${rel}: symlink whose target is outside the tree or cannot be resolved (not scanned)`);
+  } else if (inScope(config, rel)) {
+    const target = real.slice(realRoot.length + 1).split(path.sep).join("/");
+    if (!inScope(config, fs.statSync(real).isDirectory() ? `${target}/` : target)) {
+      found.push(`${rel}: symlink whose target ${target} is in the tree but outside the scanned paths (not scanned)`);
+    }
   }
 }
 

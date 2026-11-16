@@ -26,7 +26,7 @@ RUN_ID="e2e-$$"
 NAME="dozo-pw-e2e-$$"
 MODEL="dozo-e2e-model-$$"
 LOCK="${TMPDIR:-/tmp}/dozo-e2e-$(id -u).lock"   # a directory holding `owner`: "<pid> <start time>"
-NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24-slim}"
+NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 
 say() { printf 'e2e: %s\n' "$*" >&2; }
 

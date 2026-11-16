@@ -21,7 +21,7 @@ export function parseArgs(argv, flags) {
     const arg = argv[i];
     if (!arg.startsWith("--")) fail(`unexpected argument ${arg}`);
     const name = arg.slice(2);
-    if (name in out) fail(`${arg} given twice`);
+    if (Object.hasOwn(out, name)) fail(`${arg} given twice`);
     if (flags.includes(name)) out[name] = true;
     else if (["root", "config"].includes(name)) {
       const value = argv[++i];
@@ -319,7 +319,7 @@ const TLDS = "com|net|org|io|ai|app|dev|co|xyz|me|cloud|info|tech|tools|so|sh|ly
  * `#rakazo` match nothing). Add a row only for a shape upstream really uses, with its reason.
  * A row that lists `stems` is a closed list: each stem is one name the tree really uses, and
  * `apply --strict` fails on a row or a stem that matches nothing. `ok(line, match)` narrows a row to
- * the code-like places where its token stands. Samples for every row live in brand.test.mjs.
+ * the code-like places where its token stands. Samples for every row live in brand.gate.test.mjs.
  */
 export const SHAPES = [];
 

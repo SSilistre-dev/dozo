@@ -11,7 +11,7 @@ node dozo/brand/apply.mjs --root "$STAGE" --strict   # codemod, in place
 node dozo/brand/check.mjs --root "$STAGE"            # leak gate, must exit 0
 ```
 
-Dependency-free Node (built-ins only). Run it in Docker (`node:24-slim`), not on the host; that is what
+Dependency-free Node (built-ins only). Run it in Docker (`node:24.22-slim`), not on the host; that is what
 `build.sh brand` does.
 
 ## CLI
@@ -28,8 +28,8 @@ a stack trace).
   binary type, nothing is in scope, or `<dir>` has a `.git` and `--allow-git` is not given.
 - `apply.mjs --root <dir> --check` runs the same validation and prints the same summary ("would
   change"), and writes nothing, assets included.
-- `apply.mjs ... --strict` is for a tree no rule has touched (a fresh stage; `make olc` on the committed
-  tree). A rule that counts as already applied fails there: it can only be upstream drift hiding
+- `apply.mjs ... --strict` is for a tree no rule has touched (a fresh stage; `make olc` on the working
+  tree, git-ignored files included). A rule that counts as already applied fails there: it can only be upstream drift hiding
   behind a short `replace`. Every anchored rule must have applied, and an entry that matches nothing
   in the tree fails as dead: a `urls` key, a `variants` or `literals` entry, a `keep`, `allow.phrases`
   or `allow.text` entry, an `allow.paths` name or `allow.binary` glob, and, with the shipped config, a
@@ -42,7 +42,8 @@ a stack trace).
   `dozo.example` and `github.com/OWNER/dozo`) and on the `allow.phrases` entries not marked
   `"permanent": true` (upstream image names; a permanent one, such as an HMAC input, is never flagged).
   No gate passes `--launch`: it is run by hand before launch (`dozo/LAUNCH-CHECKLIST.md`).
-- Tests: `node --test dozo/brand/` (`index.js` makes the directory form work on Node 24).
+- Tests: `node --test "dozo/brand/*.test.mjs"`: one file per topic (`brand.apply`, `brand.gate`, `brand.config`), so
+  Node runs them in parallel; the shared fixtures are in `brand.test-support.mjs`.
 
 What is guaranteed. Config, rules, assets, the encoding of every file read and the dead-entry check
 are all validated before the first write, so a rule failure writes nothing. The write phase then
@@ -173,7 +174,7 @@ as a slot; a hyphen name at the start of a line or before `-`, `.` or a quote is
 list is prose-like (`ring rakazo-bot-avatar-ring-working absolute` is one reviewed `allow.text`). The
 gate cannot tell these from code without parsing, so a new one is reviewed, not guessed. To add a row or
 stem when a new upstream identifier is really technical and fails the gate: add it narrowly with its
-reason, with a positive and a negative sample in `brand.test.mjs`; never loosen an existing row.
+reason, with a positive and a negative sample in `brand.gate.test.mjs`; never loosen an existing row.
 
 Reviewed text, each with a `reason`, each scoped, matched as a whole phrase:
 

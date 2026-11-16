@@ -94,12 +94,15 @@ export async function installProbes(context: BrowserContext) {
 type Item = { where: string; text: string };
 
 /**
- * Only attribute and link values (`[alt]`, `a[href]`, `meta[description]`, a URL passed to
- * `window.open`) may carry an identifier. Anything a person reads or copies (title, body text,
- * input values, toasts, clipboard, downloads, text passed to `scanStrings`) may not.
+ * Only carriers a person does not read (`href`, `src`, `action`, `meta[...]`, a URL passed to
+ * `window.open`) may hold an identifier. Anything a person reads, hears or copies (title, body
+ * text, input values, `alt`, `title`, `placeholder` and `aria-*` attributes, toasts, clipboard,
+ * downloads, text passed to `scanStrings`) may not.
  */
 const isAttributeOrLink = (where: string) =>
-  /^[\w-]*\[[^\]]+\]$/.test(where) || where === "window.open";
+  /^[\w-]*\[(href|src|action)\]$/.test(where) ||
+  /^meta\[[^\]]+\]$/.test(where) ||
+  where === "window.open";
 
 function scanText(surface: string, items: Item[]): Scan["leaks"] {
   const leaks: Leak[] = [];
