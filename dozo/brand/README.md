@@ -85,9 +85,12 @@ is branded and gated. Names of files and directories are never renamed.
 
 ## Config (`brand.json`)
 
-Scope: `include` (globs: `apps/web`, `apps/api`, `apps/worker`, `packages`, `infra/sandboxes`) minus
-`exclude`. Everything else (`apps/www`, `apps/desktop`, `apps/mobile`, `docs/`, the root files) is out
-of scope: neither branded nor gated.
+Scope: `include` (globs: `apps/web`, `apps/api`, `apps/worker`, `packages`, `infra/sandboxes`, plus the
+image files of `apps/desktop` and `apps/mobile`) minus `exclude`. A glob may use `{a,b}` (one level) for
+alternatives; the two image globs list the extensions of `BINARY_EXT` that are pictures. Everything else
+(`apps/www`, the text, bundle ids and store entries of `apps/desktop` and `apps/mobile`, `docs/`, the root
+files) is out of scope: neither branded nor gated. So an upstream picture added under desktop or mobile
+fails the gate until it is mapped or reviewed, while their source text stays phase 3.
 
 Keys: `from`, `to`, `variants`, `urls`, `literals`, `include`, `exclude`, `keep`, `allow`,
 `leak` (extra substrings), `leakWords` (extra case-sensitive whole words, e.g. the upstream founder's
@@ -116,8 +119,10 @@ an empty `replace` or one that contains its `find`.
   so a build never ships a dangling import. Use it for edits a regex cannot express, and for
   redirects to `dozo-*` wrappers.
 - Add an asset: `"assets": { "apps/web/public/favicon.png": "web/favicon.png" }` copies
-  `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons and `favicon.svg` are mapped
-  (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule).
+  `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons, `favicon.svg`, the desktop and
+  mobile icon, splash and widget images, the Icon Composer layer and the welcome-mail hero are mapped
+  (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule; the table is in
+  `assets/README.md`). One source may feed several targets (the mobile favicon is the web one).
 
 ## Identifiers
 
@@ -233,14 +238,21 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
 
 - Tests, `apps/web/e2e` and `packages/testkit` are not rewritten; run them on the pristine tree.
 - The bot docs URLs (`dozo.example/docs/*.md`) must exist or the built-in skill has nothing to fetch.
-- The welcome mail has no hero image (an anchored rule drops it) until Dozo makes one.
+- The welcome mail hero is `assets/mail/welcome.png`, served by the web app at `/email/welcome.png`
+  (mapped to `apps/web/public/email/`); the mail links it under the `urls` domain, so that domain must
+  reach the web app (`dozo/LAUNCH-CHECKLIST.md`). Mail clients may block remote images; the alt text is
+  "Dozo".
+- Desktop and mobile: only their pictures are branded. Packaging text, bundle ids, store listings and the
+  `.icns`/`Assets.car` build (needs Xcode, not run here) are untouched; `Rakazo.icon/icon.json` keeps
+  `system-dark` as the plate and is moved from 90 points low to centred by an anchored rule.
 - Owner actions and the values to fill before launch: `dozo/LAUNCH-CHECKLIST.md`.
 - Details of every audit decision: `AUDIT.md`.
 
 ## Logo
 
 - Approved mark: H1, a soft robot head with a tilted dark visor wearing a thin red headband. Applied
-  to the web icons. Artwork, files and rebuild steps: `assets/README.md`.
+  to the web icons, the desktop (Electron) and mobile (Expo) icons, splash and widget image, and the
+  welcome-mail hero. Artwork, files and rebuild steps: `assets/README.md`.
 - Red: `#C8372D` (band only, fixed in every file except the one-ink files). Ink: `#f4f3f0` on dark,
   `#0d0d0d` on light.
 - One-ink fallback: where one colour is all there is (stamp, emboss, single-colour print, forced

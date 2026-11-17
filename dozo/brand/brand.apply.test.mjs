@@ -145,6 +145,13 @@ describe("escaping", () => {
     assert.ok(!m("src/a.ts", "xsrc/a.ts") && !m("src/a.ts", "src/a.tsx"), "anchored at both ends");
   });
 
+  it("globToRegExp: {a,b} is one alternation; a lone or unclosed brace and a comma outside braces are literal", () => {
+    const m = (glob, text) => globToRegExp(glob).test(text);
+    assert.ok(m("a/**/*.{png,ico}", "a/b/c.png") && m("a/**/*.{png,ico}", "a/c.ico") && !m("a/**/*.{png,ico}", "a/c.jpg"));
+    assert.ok(!m("a.{png,ico}", "a.png,ico") && !m("a.{png,ico}", "a.{png,ico}"), "braces are not literal");
+    assert.ok(m("a,b", "a,b") && !m("a,b", "a") && m("a{b", "a{b") && m("a}b", "a}b"));
+  });
+
   it("every shipped url key rewrites to its target, and only that exact key", () => {
     const config = loadConfig();
     for (const [key, target] of Object.entries(config.urls)) {

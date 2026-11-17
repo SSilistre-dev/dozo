@@ -27,7 +27,7 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 12 | Model tool prefix `mcp__rakazo__` (Claude Code CLI provider) | Fixed: `TOOL_SERVER` constant, all uses go through it |
 | 13 | Page-kit import specifier `rakazo/page` in the model's guide | Fixed: `PAGE_KIT_MODULE` and guide text to `dozo/page` (validate/runtime use the constant) |
 | 14 | E-mails signed "Elie" (welcome, referral) | Fixed: anchored rules to "Dozo". Gate: `leakWords: ["Elie"]` |
-| 15 | Welcome mail hero image (upstream art, then broken `dozo.example` URL) | Fixed: hero dropped, text header used. Owner action: Dozo hero image |
+| 15 | Welcome mail hero image (upstream art, then broken `dozo.example` URL) | Fixed: the hero is `assets/mail/welcome.png` (lockup and the six avatar heads, 1040x546), mapped to `apps/web/public/email/` and linked by an anchored rule. Owner action: the mail links it under the `urls` domain, which must reach the web app |
 | 16 | Placeholder domains/owner `dozo.example`, `OWNER/dozo` | Owner action (`LAUNCH-CHECKLIST.md`). Gate: `check.mjs --launch` fails on them |
 | 17 | Self-update/compute image defaults pull `ghcr.io/elie222/rakazo/*` | Owner action: publish images. `--launch` fails while the allow-listed names exist. Until then disable self-update |
 | 18 | Mobile-only strings in web `messages-*.js` catalogs | Rejected for now: `apps/mobile` is out of scope, extracted at build, not shown on web. Gate cannot see build output |
@@ -63,17 +63,26 @@ OAuth names, the Android APK name, third-party catalog branding, logo parts stil
 - Inline-SVG avatars were never rasterised; the new pill and eye placement are unchecked visually.
 - Settings Model picker, Notifications sub-pages, Upload tab, share dialog, OAuth/social sign-in,
   install and notification prompts, billing, admin pages with data.
-- `.map` files were not read; infra and scripts hits not read one by one; `apps/www`,
-  `apps/desktop`, `apps/mobile`, `docs/` out of scope.
+- `.map` files were not read; infra and scripts hits not read one by one; `apps/www`, `docs/` and the
+  text of `apps/desktop` and `apps/mobile` out of scope (only their images are gated).
 - Locale text other than en/tr/ja was checked by grep only.
 
 ## Images and mascots not covered by the asset map (logo pass)
 
-Under `include` (the stack: web, api, worker, packages, infra/sandboxes) the only images are the 7
-`apps/web/public` icons, mapped, and `packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png`,
-reviewed in `allow.binary`; `favicon.svg` is new and mapped.
+Under `include` (the stack: web, api, worker, packages, infra/sandboxes) the only images were the 7
+`apps/web/public` icons, mapped, and `packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png`;
+`favicon.svg` is new and mapped. The audit reviewed the orange bot as "export-script source, never
+shipped" (`allow.binary`); that was wrong: it is the layer of the Icon Composer bundle that builds the
+iOS and macOS icons.
 
-Phase 3, outside `include` (desktop and mobile are neither branded nor gated; still the orange mascot):
+Closed in the desktop, mobile and mail pass: `include` now also lists the image files of `apps/desktop`
+and `apps/mobile` (their text, bundle ids and store entries stay out of scope), and every row of the
+table below is mapped to the approved mark (`assets/README.md`, map), as are the Icon Composer layer
+(`allow.binary` is empty) and the welcome-mail hero. Not looked at on a device: the `.icns` and
+`Assets.car` that packaging makes, the Android launcher masks, the iOS widget and the DMG window; the
+files were checked as images only.
+
+The table, as the files were before the pass (all of them the orange mascot):
 
 | Path | Size | Used by |
 |---|---|---|
@@ -87,8 +96,8 @@ Phase 3, outside `include` (desktop and mobile are neither branded nor gated; st
 
 Out of `include`, not shipped by the stack: `apps/www/public/**` (marketing site: favicons, `og-image.png`
 1200x630, `email/welcome.jpg` 1040x546, `brand/kit/*`, `avatars/*.svg`, `og/*.png`) and
-`packages/testkit/src/evals/fixtures/example-*.png` (eval fixtures). The welcome mail hero is dropped by an
-anchored rule (`packages/auth/src/welcome-email.tsx:87` points at `www/email/welcome.jpg`).
+`packages/testkit/src/evals/fixtures/example-*.png` (eval fixtures). The welcome mail no longer points at
+`www/email/welcome.jpg`: an anchored rule links `email/welcome.png`, served by the web app.
 
 Inline SVG mascots and wordmarks (cannot be replaced by the asset map; a later anchored rule plus a
 `dozo-` prefixed component should replace them, not changed here). The ones fed by

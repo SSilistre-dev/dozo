@@ -268,7 +268,7 @@ describe("shipped brand.json", () => {
 
   it("the gate has a scope for every shipped exclusion and image review", () => {
     assert.ok(shipped.exclude.every((e) => typeof e.glob === "string"));
-    assert.ok(shipped.allow.binary.length >= 1 && shipped.allow.paths.length >= 1);
+    assert.ok(shipped.allow.paths.length >= 1);
   });
 });
 
@@ -323,8 +323,12 @@ describe("the shipped config, in literal values", () => {
     for (const rel of ["apps/web/src/App.tsx", "apps/api/src/index.ts", "apps/worker/src/main.ts", "packages/core/src/index.ts", "infra/sandboxes/computer/Dockerfile"]) {
       assert.equal(inScope(config, rel), true, `${rel} is in scope`);
     }
-    for (const rel of ["apps/www/src/a.astro", "apps/desktop/src/main.ts", "apps/mobile/app/a.tsx", "docs/a.md", "README.md"]) {
+    for (const rel of ["apps/www/src/a.astro", "apps/desktop/src/main.ts", "apps/desktop/assets/es.lproj/InfoPlist.strings", "apps/desktop/assets/README.md", "apps/mobile/app/a.tsx", "apps/mobile/app.json", "apps/mobile/ios-widgets/RakazoWidgets.swift", "docs/a.md", "README.md"]) {
       assert.equal(inScope(config, rel), false, `${rel} is outside include`);
+    }
+    // Desktop and mobile: images only; their source text, bundle ids and store entries stay out of phase 1.
+    for (const rel of ["apps/desktop/assets/icon.png", "apps/desktop/assets/icon.ico", "apps/desktop/assets/new.icns", "apps/mobile/assets/splash-icon.png", "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png", "apps/mobile/src/img/a.svg"]) {
+      assert.equal(inScope(config, rel), true, `${rel} is in scope`);
     }
   });
 
@@ -342,7 +346,7 @@ describe("the shipped config, in literal values", () => {
       "infra/sandboxes/computer/rakazo-page-browser",
       "packages/ui-tokens/assets/Rakazo.icon",
     ]);
-    assert.deepEqual(config.allow.binary.map((entry) => entry.glob), ["packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png"]);
+    assert.deepEqual(config.allow.binary, [], "every shipped image is mapped, none is only reviewed");
     assert.deepEqual(
       config.allow.text.filter((entry) => entry.count !== undefined).map((entry) => [entry.file, entry.text, entry.count]),
       [
