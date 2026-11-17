@@ -59,6 +59,7 @@ placeholders are replaced.
 - [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids (`com.rakazo.app` is
       upstream's) and signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
       workflows must stay disabled until then.
-- [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope.
+- [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
+      `dozo/landing/`; replace its placeholder links and publish it once the domain exists.
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's
       README text. Decide whether to keep them below our fork notice.

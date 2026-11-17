@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dozo: bots with their own computer</title>
+<meta name="description" content="Dozo is an open-source workspace of always-on AI bots. Each bot works on its own computer and asks before anything that matters.">
+<meta name="color-scheme" content="dark light">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Dozo: bots with their own computer">
+<meta property="og:description" content="Always-on AI bots that work on their own computer and ask before anything that matters.">
+<meta property="og:url" content="https://dozo.example/">
+<meta property="og:image" content="https://dozo.example/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="landing.css">
+<script src="landing.js"></script>
+</head>
+<body>
+<svg id="sym" style="position:absolute;width:0;height:0" aria-hidden="true"></svg>
+<div class="wave" aria-hidden="true"><svg height="560" style="width:calc(100% + 40px)"><defs><pattern id="sg" width="40" height="20" patternUnits="userSpaceOnUse"><g fill="var(--bg)" stroke="var(--dozo-motif)" stroke-opacity="var(--motif-a)" stroke-width="1"><g transform="translate(20 -10)"><circle r="20"/><circle r="14"/><circle r="8"/></g><g><circle r="20"/><circle r="14"/><circle r="8"/></g><g transform="translate(40 0)"><circle r="20"/><circle r="14"/><circle r="8"/></g><g transform="translate(20 10)"><circle r="20"/><circle r="14"/><circle r="8"/></g><g transform="translate(0 20)"><circle r="20"/><circle r="14"/><circle r="8"/></g><g transform="translate(40 20)"><circle r="20"/><circle r="14"/><circle r="8"/></g><g transform="translate(20 30)"><circle r="20"/><circle r="14"/><circle r="8"/></g></g></pattern></defs><rect width="100%" height="100%" fill="url(#sg)"/></svg></div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header><div class="wrap top">
+  <a class="lock" href="#main" aria-label="Dozo"><svg class="dlogo" viewBox="-2 4 219 56" width="109.5" height="28" aria-hidden="true"><g class="m"><g class="mark"><path class="ink" fill-rule="evenodd" d="M35 10L45 10C52.35 10 57 14.65 57 22L57 26C57 44.82 47.82 54 29 54L19 54C11.65 54 7 49.35 7 42L7 38C7 19.18 16.18 10 35 10ZM21.6 25.22L42.04 22.71C45.93 22.23 48.7 24.39 49.17 28.28L49.37 29.87C49.97 34.73 47.27 38.19 42.4 38.78L21.96 41.29C18.07 41.77 15.3 39.61 14.83 35.72L14.63 34.13C14.03 29.27 16.73 25.81 21.6 25.22Z"/><g class="eyes"><circle cx="25.95" cy="32.74" r="3.2" class="ink"/><circle cx="38.05" cy="31.26" r="3.2" class="ink"/></g></g><g class="band"><g class="tl tl1"><path fill="#C8372D" d="M6.94 22.82C6.89 23.09 6.71 23.9 6.6 24.44C6.5 24.97 6.39 25.51 6.29 26.05C6.19 26.59 6.09 27.13 6 27.68C5.91 28.22 5.82 28.76 5.74 29.3C5.65 29.85 5.57 30.39 5.5 30.94C5.42 31.48 5.35 32.03 5.28 32.57C5.21 33.12 5.15 33.66 5.09 34.21C5.03 34.76 4.95 35.58 4.92 35.86L6.22 34.74L7.2 36.14C7.24 35.88 7.37 35.08 7.46 34.55C7.55 34.01 7.65 33.48 7.75 32.96C7.85 32.43 7.95 31.9 8.06 31.37C8.16 30.85 8.28 30.32 8.39 29.8C8.51 29.27 8.62 28.75 8.75 28.23C8.87 27.71 8.99 27.19 9.12 26.67C9.25 26.15 9.39 25.63 9.53 25.12C9.66 24.6 9.88 23.83 9.95 23.57Z"/></g><g class="tl tl2"><path fill="#C8372D" d="M7.24 22.39C7.13 22.57 6.8 23.11 6.58 23.47C6.37 23.84 6.15 24.2 5.94 24.57C5.73 24.94 5.52 25.31 5.31 25.68C5.1 26.05 4.9 26.42 4.7 26.79C4.5 27.16 4.3 27.54 4.1 27.91C3.91 28.29 3.72 28.67 3.53 29.05C3.34 29.43 3.15 29.81 2.96 30.19C2.78 30.57 2.51 31.15 2.42 31.34L3.88 30.8L4.29 32.3C4.39 32.12 4.7 31.58 4.91 31.22C5.11 30.87 5.33 30.51 5.54 30.16C5.75 29.81 5.97 29.45 6.19 29.1C6.41 28.75 6.63 28.41 6.85 28.06C7.07 27.72 7.3 27.37 7.53 27.03C7.76 26.69 7.99 26.35 8.22 26.01C8.45 25.67 8.69 25.34 8.93 25C9.17 24.67 9.53 24.17 9.65 24.01Z"/></g><path fill="#C8372D" d="M10.82 21C25.73 17.96 40.65 16.19 55.57 15.71C55.67 15.62 56.38 17.23 56.73 19.08C40.84 19.52 24.94 21.42 9.05 24.77C7.78 28.03 8.96 24.17 10.82 21Z"/><path fill="#C8372D" d="M8.01 20.29L9.38 20.41C10.68 20.53 11.46 21.46 11.35 22.76L11.23 24.13C11.12 25.43 10.18 26.21 8.88 26.1L7.52 25.98C6.21 25.87 5.43 24.93 5.54 23.63L5.66 22.27C5.78 20.96 6.71 20.18 8.01 20.29Z"/></g></g><g class="word"><path class="ink" d="M76.2 32A16 16 0 1 0 108.2 32A16 16 0 1 0 76.2 32ZM82.6 32A9.6 9.6 0 1 1 101.8 32A9.6 9.6 0 1 1 82.6 32ZM105 10H105A3.2 3.2 0 0 0 101.8 13.2V43.2A3.2 3.2 0 0 0 105 46.4H105A3.2 3.2 0 0 0 108.2 43.2V13.2A3.2 3.2 0 0 0 105 10Z"/><path class="ink" d="M112.68 32A16 16 0 1 0 144.68 32A16 16 0 1 0 112.68 32ZM119.08 32A9.6 9.6 0 1 1 138.28 32A9.6 9.6 0 1 1 119.08 32Z"/><path class="ink" d="M153.32 16.64L175.08 16.64A3.2 3.2 0 0 1 175.08 23.04L153.32 23.04A3.2 3.2 0 0 1 153.32 16.64ZM177.465 21.974L155.705 46.294A3.2 3.2 0 0 1 150.935 42.026L172.695 17.706A3.2 3.2 0 0 1 177.465 21.974ZM153.32 40.96L175.08 40.96A3.2 3.2 0 0 1 175.08 47.36L153.32 47.36A3.2 3.2 0 0 1 153.32 40.96Z"/><path class="ink" d="M183.4 32A16 16 0 1 0 215.4 32A16 16 0 1 0 183.4 32ZM189.8 32A9.6 9.6 0 1 1 209 32A9.6 9.6 0 1 1 189.8 32Z"/></g></svg></a>
+  <nav class="nav" aria-label="Main">
+    <a class="link" href="https://dozo.example/docs">Docs</a>
+    <a class="link" href="https://github.com/OWNER/dozo">GitHub</a>
+    <button class="tgl" id="theme" type="button" aria-label="Switch theme"><svg class="moon" viewBox="0 0 16 16"><path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1Z"/></svg><svg class="sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></svg></button>
+    <a class="pill w" href="https://dozo.example/signup">Get started</a>
+  </nav>
+</div></header>
+
+<main id="main">
+<section class="hero wrap" aria-labelledby="h1">
+  <div class="crew" role="img" aria-label="Six Dozo bots">
+    <span class="bot av xl" data-bot="sora" data-state="working"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span>
+    <span class="bot av xl" data-bot="kumo" data-state="working"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span>
+    <span class="bot av xl" data-bot="hana" data-state="waiting"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span>
+    <span class="bot av xl" data-bot="taro" data-state="working"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span>
+    <span class="bot av xl" data-bot="yuki" data-state="working"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span>
+    <span class="bot av xl" data-bot="mochi" data-state="idle"><svg viewBox="0 0 64 64" aria-hidden="true"></svg></span>
+  </div>
+  <h1 id="h1">Bots with their own computer.</h1>
+  <p class="lede">Always-on bots that do real work on their own machine, and ask before anything that matters.</p>
+  <div class="cta"><a class="pill w lg" href="https://dozo.example/signup">Get started</a><a class="pill lg" href="https://dozo.example/docs/self-host">Self-host</a></div>
+
+  <div class="frame-app" id="hero" aria-hidden="true" inert>
+    <div class="ft"><h2><span class="bot av hd" data-bot="sora" data-state="working"><svg viewBox="0 0 64 64"></svg></span>Sora<span class="status"><span class="dot" id="hd"></span><span id="ht">Working</span></span></h2></div>
+    <div class="conv">
+      <div class="user s">Email the 14 people on the March signup list about the new pricing. Keep it short and friendly.</div>
+      <div class="slot"><div class="think"><i></i><i></i></div><p class="s">I will draft one short email and send it once you approve. Plan:</p></div>
+      <ul class="plan"><li class="s">1. Pull the 14 contacts from signups.csv</li><li class="s">2. Write the email in your tone</li><li class="s">3. Send after your approval</li></ul>
+      <div class="draft s"><p>Subject: New pricing from April 1</p><p id="body" data-full="Hi Ana, a quick note: our plans get simpler on April 1. Details are on the pricing page. Reply here if anything looks off.">Hi Ana, a quick note: our plans get simpler on April 1. Details are on the pricing page. Reply here if anything looks off.</p><p>Maya</p></div>
+      <div class="decide">
+        <div class="ask s"><p>Send this email to 14 recipients?</p><div class="acts"><span class="pill w">Approve</span><span class="pill">Edit</span><span class="link">Deny</span></div></div>
+        <div class="sent"><svg viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></svg>Sent to 14 recipients.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ideas wrap" aria-label="How it works">
+  <div class="pair">
+    <article class="idea">
+      <h2 class="ih">Each bot has its own computer.</h2>
+      <p>A sandboxed machine with a browser, files and a terminal. You can watch its screen.</p>
+      <div class="vg" id="comp" aria-hidden="true" inert>
+        <div class="ph"><span>Sora's computer</span><span class="status"><span class="dot"></span>Working</span></div>
+        <div class="tabs"><span class="on">Screen</span><span>Files</span><span>Terminal</span></div>
+        <div class="fr">
+          <div class="win p-screen"><div class="url"><i></i><i></i><i></i><span>mail.acme.co/lists/march-signups</span></div><div class="pg"><b>March signups</b><table><tr><td>Ana Ruiz</td><td>Pro</td></tr><tr><td>Ben Okafor</td><td>Free</td></tr><tr><td>Clara Weiss</td><td>Pro</td></tr><tr><td>Dev Patel</td><td>Team</td></tr></table><i class="hlbar"></i><svg class="cur" viewBox="0 0 16 16"><path d="M3 2l9 4.2-3.8 1.3L6.6 11.3z"/></svg></div></div>
+          <div class="term p-term"><div><u>$</u> open signups.csv</div><div><u>$</u> read 14 rows</div><div><u>$</u> write draft.txt</div></div>
+        </div>
+      </div>
+    </article>
+    <article class="idea">
+      <h2 class="ih">It asks before it acts.</h2>
+      <p>Anything consequential waits for you. Approve, edit or deny.</p>
+      <div class="vg" id="asks" aria-hidden="true" inert><div class="list">
+        <div class="li s"><span class="bot av" data-bot="hana" data-state="waiting"><svg viewBox="0 0 64 64"></svg></span><b>Hana</b><span class="d">Wants to sign in to the supplier portal</span><span class="pill sm">Review</span></div>
+        <div class="li s"><span class="bot av" data-bot="kumo" data-state="working"><svg viewBox="0 0 64 64"></svg></span><b>Kumo</b><span class="d">Wants to send the March invoices</span><span class="pill sm">Review</span></div>
+        <div class="li s"><span class="bot av" data-bot="taro" data-state="working"><svg viewBox="0 0 64 64"></svg></span><b>Taro</b><span class="d">Wants to renew the domain name</span><span class="pill sm">Review</span></div>
+      </div></div>
+    </article>
+  </div>
+  <article class="strip">
+    <div><h2 class="ih">Yours to run.</h2><p>Open source and self-hostable. Bring any compatible model API, or a model on your own machine.</p></div>
+      </article>
+</section>
+
+<section class="local wrap" aria-labelledby="local">
+  <h2 class="big" id="local">Run on this computer.</h2>
+  <p class="lede">Dozo reads your hardware and recommends open models that run on it. No paid AI account needed, and your data can stay on your machine.</p>
+  <div class="panel" id="panel">
+    <div class="sels">
+      <div><label for="hw">Computer</label><div class="sel"><select id="hw"><option value="air" selected>Laptop, unified memory</option><option value="max">Workstation, unified memory</option><option value="tower">Desktop, discrete GPU</option><option value="laptop">Laptop, no GPU</option></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6.5 4 4 4-4"/></svg></div></div>
+      <div><label for="mem">Memory</label><div class="sel"><select id="mem"><option value="8">8 GB</option><option value="16" selected>16 GB</option><option value="32">32 GB</option><option value="64">64 GB</option></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6.5 4 4 4-4"/></svg></div></div>
+    </div>
+    <div class="mw"><ul class="skel" aria-hidden="true"><li><i></i></li><li><i></i></li><li><i></i></li></ul><ul class="mods" id="mods" aria-live="polite"></ul></div>
+  </div>
+</section>
+
+<section class="close wrap" aria-labelledby="go">
+  <span class="kana" lang="ja" aria-hidden="true">どうぞ</span>
+  <h2 class="big" id="go">Go ahead.</h2>
+  <div class="cta"><a class="pill w lg" href="https://dozo.example/signup">Get started</a></div>
+  <small>On the web today. Desktop and mobile apps are planned.</small>
+</section>
+</main>
+
+<footer><div class="wrap">
+  <div class="fin">
+    <span class="foot"><a class="lock" href="#main" aria-label="Dozo, back to top"><svg class="dlogo" viewBox="-2 4 219 56" width="101.7" height="26" aria-hidden="true"><g class="m"><g class="mark"><path class="ink" fill-rule="evenodd" d="M35 10L45 10C52.35 10 57 14.65 57 22L57 26C57 44.82 47.82 54 29 54L19 54C11.65 54 7 49.35 7 42L7 38C7 19.18 16.18 10 35 10ZM21.6 25.22L42.04 22.71C45.93 22.23 48.7 24.39 49.17 28.28L49.37 29.87C49.97 34.73 47.27 38.19 42.4 38.78L21.96 41.29C18.07 41.77 15.3 39.61 14.83 35.72L14.63 34.13C14.03 29.27 16.73 25.81 21.6 25.22Z"/><g class="eyes"><circle cx="25.95" cy="32.74" r="3.2" class="ink"/><circle cx="38.05" cy="31.26" r="3.2" class="ink"/></g></g><g class="band"><g class="tl tl1"><path fill="#C8372D" d="M6.94 22.82C6.89 23.09 6.71 23.9 6.6 24.44C6.5 24.97 6.39 25.51 6.29 26.05C6.19 26.59 6.09 27.13 6 27.68C5.91 28.22 5.82 28.76 5.74 29.3C5.65 29.85 5.57 30.39 5.5 30.94C5.42 31.48 5.35 32.03 5.28 32.57C5.21 33.12 5.15 33.66 5.09 34.21C5.03 34.76 4.95 35.58 4.92 35.86L6.22 34.74L7.2 36.14C7.24 35.88 7.37 35.08 7.46 34.55C7.55 34.01 7.65 33.48 7.75 32.96C7.85 32.43 7.95 31.9 8.06 31.37C8.16 30.85 8.28 30.32 8.39 29.8C8.51 29.27 8.62 28.75 8.75 28.23C8.87 27.71 8.99 27.19 9.12 26.67C9.25 26.15 9.39 25.63 9.53 25.12C9.66 24.6 9.88 23.83 9.95 23.57Z"/></g><g class="tl tl2"><path fill="#C8372D" d="M7.24 22.39C7.13 22.57 6.8 23.11 6.58 23.47C6.37 23.84 6.15 24.2 5.94 24.57C5.73 24.94 5.52 25.31 5.31 25.68C5.1 26.05 4.9 26.42 4.7 26.79C4.5 27.16 4.3 27.54 4.1 27.91C3.91 28.29 3.72 28.67 3.53 29.05C3.34 29.43 3.15 29.81 2.96 30.19C2.78 30.57 2.51 31.15 2.42 31.34L3.88 30.8L4.29 32.3C4.39 32.12 4.7 31.58 4.91 31.22C5.11 30.87 5.33 30.51 5.54 30.16C5.75 29.81 5.97 29.45 6.19 29.1C6.41 28.75 6.63 28.41 6.85 28.06C7.07 27.72 7.3 27.37 7.53 27.03C7.76 26.69 7.99 26.35 8.22 26.01C8.45 25.67 8.69 25.34 8.93 25C9.17 24.67 9.53 24.17 9.65 24.01Z"/></g><path fill="#C8372D" d="M10.82 21C25.73 17.96 40.65 16.19 55.57 15.71C55.67 15.62 56.38 17.23 56.73 19.08C40.84 19.52 24.94 21.42 9.05 24.77C7.78 28.03 8.96 24.17 10.82 21Z"/><path fill="#C8372D" d="M8.01 20.29L9.38 20.41C10.68 20.53 11.46 21.46 11.35 22.76L11.23 24.13C11.12 25.43 10.18 26.21 8.88 26.1L7.52 25.98C6.21 25.87 5.43 24.93 5.54 23.63L5.66 22.27C5.78 20.96 6.71 20.18 8.01 20.29Z"/></g></g><g class="word"><path class="ink" d="M76.2 32A16 16 0 1 0 108.2 32A16 16 0 1 0 76.2 32ZM82.6 32A9.6 9.6 0 1 1 101.8 32A9.6 9.6 0 1 1 82.6 32ZM105 10H105A3.2 3.2 0 0 0 101.8 13.2V43.2A3.2 3.2 0 0 0 105 46.4H105A3.2 3.2 0 0 0 108.2 43.2V13.2A3.2 3.2 0 0 0 105 10Z"/><path class="ink" d="M112.68 32A16 16 0 1 0 144.68 32A16 16 0 1 0 112.68 32ZM119.08 32A9.6 9.6 0 1 1 138.28 32A9.6 9.6 0 1 1 119.08 32Z"/><path class="ink" d="M153.32 16.64L175.08 16.64A3.2 3.2 0 0 1 175.08 23.04L153.32 23.04A3.2 3.2 0 0 1 153.32 16.64ZM177.465 21.974L155.705 46.294A3.2 3.2 0 0 1 150.935 42.026L172.695 17.706A3.2 3.2 0 0 1 177.465 21.974ZM153.32 40.96L175.08 40.96A3.2 3.2 0 0 1 175.08 47.36L153.32 47.36A3.2 3.2 0 0 1 153.32 40.96Z"/><path class="ink" d="M183.4 32A16 16 0 1 0 215.4 32A16 16 0 1 0 183.4 32ZM189.8 32A9.6 9.6 0 1 1 209 32A9.6 9.6 0 1 1 189.8 32Z"/></g></svg></a><span class="kana" lang="ja" aria-hidden="true">どうぞ</span></span>
+    <nav aria-label="Footer"><a class="link" href="https://dozo.example/docs">Docs</a><a class="link" href="https://github.com/OWNER/dozo">GitHub</a><a class="link" href="https://github.com/OWNER/dozo/blob/main/LICENSE">Licence</a></nav>
+  </div>
+  <p class="credit">Open source, Apache-2.0</p>
+</div></footer>
+</body>
+</html>
