@@ -56,10 +56,13 @@ cleanup() {
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
   ids="$(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)" || ids=""
   [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+  # The lock goes last: it is what keeps another run out of $OUT and node_modules until they are cleared.
+  if [ "${DOZO_E2E_KEEP:-}" = 1 ]; then say "kept $OUT (DOZO_E2E_KEEP=1)"
+  else
+    [ -d "$OUT" ] && find "$OUT" -mindepth 1 -delete 2>/dev/null
+    rm -rf "$HERE/node_modules"
+  fi
   lock_release
-  if [ "${DOZO_E2E_KEEP:-}" = 1 ]; then say "kept $OUT (DOZO_E2E_KEEP=1)"; return; fi
-  [ -d "$OUT" ] && find "$OUT" -mindepth 1 -delete 2>/dev/null
-  rm -rf "$HERE/node_modules"
   return 0
 }
 trap cleanup EXIT
@@ -85,16 +88,19 @@ find "$OUT" -mindepth 1 -delete
 # container on the stack's own network, so the api and worker containers reach it as a local model
 # server. Its address is a private IP literal on purpose: the app accepts a private endpoint only
 # as an IP, localhost or host.docker.internal (never a hostname that resolves to a private address).
-NETWORK="$(docker inspect dozo-api-1 --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' 2>/dev/null | awk '{print $1}')"
-[ -n "$NETWORK" ] || { say "container dozo-api-1 not found; start the stack with: make up"; exit 2; }
+# The api container of the project build.sh runs ("dozo"), found by its compose labels, not by a name.
+API="$(docker ps -q --filter label=com.docker.compose.project=dozo --filter label=com.docker.compose.service=api | head -n1)"
+[ -n "$API" ] || { say "no running api container in project dozo; start the stack with: make up"; exit 2; }
+NETWORK="$(docker inspect "$API" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' 2>/dev/null | awk '{print $1}')"
+[ -n "$NETWORK" ] || { say "cannot read the network of the api container; start the stack with: make up"; exit 2; }
 drun "$MODEL" -d --network "$NETWORK" -e PORT=8787 -v "$HERE:/stub:ro" "$NODE_IMAGE" node /stub/model-stub.mjs >/dev/null \
   || { say "could not start the model stub (is $NODE_IMAGE pulled? docker pull $NODE_IMAGE)"; exit 2; }
 MODEL_IP="$(docker inspect "$MODEL" --format "{{(index .NetworkSettings.Networks \"$NETWORK\").IPAddress}}")"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  docker exec dozo-api-1 node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" 2>/dev/null && break
+  docker exec "$API" node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" 2>/dev/null && break
   sleep 1
 done
-docker exec dozo-api-1 node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" 2>/dev/null \
+docker exec "$API" node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" 2>/dev/null \
   || { say "the api container cannot reach the model stub at $MODEL_IP:8787"; exit 2; }
 say "offline model: http://$MODEL_IP:8787/v1 on network $NETWORK"
 

@@ -7,13 +7,17 @@
 # run made meanwhile. A lock without an owner file is one being made: it is given 2 s, then its maker
 # is taken for dead. `gate.sh qa` holds the stage lock for all its steps and exports its pid as
 # DOZO_LOCK_OWNER, so the build.sh steps it starts are not a second run.
-LOCK_START="$(ps -o lstart= -p $$ 2>/dev/null | sed 's/^ *//')"
+# The start time as ps prints it depends on TZ and the locale: fixed here, so the owner who wrote it
+# and the run that checks it (another shell, another TZ) read the same text. `|| true`: a ps that
+# fails (a sandbox) gives an empty time, never an exit under `set -e -o pipefail`.
+lock_start() { LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//' || true; }
+LOCK_START="$(lock_start $$)"
 LOCK_ME="$$ ${LOCK_START:--}"
 LOCK_HELD=""
 
 lock_owner_alive() { # $1 = "<pid> <start>" as written by the owner
   local pid="${1%% *}" start="${1#* }"
-  kill -0 "$pid" 2>/dev/null && { [ "$start" = - ] || [ "$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^ *//')" = "$start" ]; }
+  kill -0 "$pid" 2>/dev/null && { [ "$start" = - ] || [ "$(lock_start "$pid")" = "$start" ]; }
 }
 
 # lock_acquire DIR WHAT TAG: 0 when taken; 1 with a message (prefixed TAG, naming WHAT) on stderr.

@@ -15,12 +15,12 @@ make e2e       # exit 0 pass, 2 on anything else
 
 Host: `bash`, Docker, `curl` and the standard shell tools (`sed`, `awk`, `grep`, `find`, `ps`,
 `mkdir`). No Node or Playwright on the host; nothing is installed. The stack must be up with its
-container `dozo-api-1` (the script reads its network and probes the model stub from it), and the
+api container of the compose project `dozo` (found by its labels; the script reads its network and probes the model stub from it), and the
 stage it was built from must be complete (`stage.complete` and `src/apps/web/src/App.tsx`), because
 the inventory check reads the branded web source from it.
 
 Exit 2 covers every failure: no `docker` or `curl`, another run in progress, a missing stage, an
-unreachable stack, no `dozo-api-1`, the model stub not starting or not reachable from the api, a
+unreachable stack, no running api container, the model stub not starting or not reachable from the api, a
 failed `npm install`, zero tests run, a failed test, a declared key nobody visited, or an interrupt.
 
 `run.sh`:

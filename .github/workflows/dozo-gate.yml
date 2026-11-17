@@ -6,7 +6,8 @@ name: dozo-gate
 # stock GitHub runners have. It runs olc, stage, brand and unit only, never build, up, smoke or the
 # e2e suite (see dozo/README.md, Status and known limits). A required status check matches the job
 # name below: when it changes, update the branch protection rule too.
-# Action versions are pinned by the same full commit SHAs the upstream workflows already use.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same
+# SHAs the upstream workflows use).
 on:
   pull_request:
     branches: [main]
@@ -27,16 +28,22 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          # Nothing after this step pushes, and `make olc` and the unit run read the tree only:
+          # the token is not left in .git/config. The one step that asks origin passes it in.
+          persist-credentials: false
 
       # dozo/docker/gate.sh compares against the pristine upstream-main branch, and a check that
       # cannot run fails. ls-remote --exit-code answers 2 for "no such ref" and 128 for a network or
       # auth error: only the first means the branch is absent, and neither one is a pass.
       - name: Fetch upstream-main
+        env:
+          TOKEN: ${{ github.token }}
         run: |
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           rc=0
-          git ls-remote --exit-code --heads origin upstream-main >/dev/null || rc=$?
+          git ls-remote --exit-code --heads "$remote" upstream-main >/dev/null || rc=$?
           case "$rc" in
-            0) git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main ;;
+            0) git fetch "$remote" +refs/heads/upstream-main:refs/heads/upstream-main ;;
             2)
               echo "::error::origin has no upstream-main branch, so the upstream-edit check cannot run. Create it once from the upstream remote: git fetch upstream main, then publish upstream/main to origin as refs/heads/upstream-main"
               exit 2

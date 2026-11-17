@@ -59,6 +59,10 @@ without the `upstream` remote and the branch. For CI, origin also needs `upstrea
    - optionally the repository variable `DOZO_UPSTREAM_URL`, the upstream clone URL (default
      `https://github.com/elie222/rakazo.git`).
 
+   The workflow asks for no `GITHUB_TOKEN` permission (`permissions: {}`): checkout does not keep the
+   token in `.git/config` (`persist-credentials: false`), and the steps that fetch from or push to
+   origin pass `DOZO_SYNC_TOKEN` explicitly. `dozo-gate` has `contents: read` only.
+
    What `dozo-gate` runs on the PR is in `dozo/README.md` (Status and known limits).
 
 ## Exit codes of sync.sh
@@ -71,8 +75,9 @@ without the `upstream` remote and the branch. For CI, origin also needs `upstrea
 | 129, 130, 143 | SIGHUP, SIGINT, SIGTERM. Before the merge commit exists the half-made branch is removed and you are back on the original branch ("stopped early"). During the gates the branch stays |
 
 In every case after the fast-forward, `upstream-main` stays at the new tip, including after a conflict.
-The script runs the gates with `DOZO_QA_STEPS`, `DOZO_SKIP_BRAND` and `DOZO_UPSTREAM_REF` unset, so a
-"partial" verdict cannot pass here.
+The script runs the gates with `DOZO_QA_STEPS`, `DOZO_SKIP_BRAND`, `DOZO_UPSTREAM_REF`,
+`DOZO_STAGE_REF`, `DOZO_UNIT_SRC`, `DOZO_COVERAGE_MIN`, `DOZO_BRAND_COVERAGE_MIN` and
+`DOZO_MIN_FORK_TESTS` unset, so a "partial" or weakened verdict cannot pass here.
 
 ## When it fails
 

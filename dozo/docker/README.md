@@ -22,7 +22,9 @@ The Makefile exports `DOZO_STAGE_WORKTREE=1` unless it is already set (an empty 
 
 One run at a time per stage area: every `build.sh` command and `gate.sh qa` take the lock
 `<stage>/.lock` (`lock.sh`, shared with `dozo/e2e/run.sh`: a directory holding the owner's pid and
-start time, so a reused pid is not taken for the owner). A second run exits 2 naming the holder.
+start time read with `LC_ALL=C TZ=UTC`, so a reused pid is not taken for the owner and a viewer in
+another time zone or locale does not take a live owner for dead). A second run exits 2 naming the
+holder.
 The lock of a dead owner (killed with SIGKILL) is taken over under a second `mkdir` mutex, so two
 waiting runs start exactly one; a lock with no owner file is given 2 seconds, then taken over. `gate.sh qa` holds it for
 all its steps and passes its pid in `DOZO_LOCK_OWNER`, so the `build.sh` steps it starts do not lock
@@ -53,8 +55,10 @@ with `down`.
 
 1. `stage`: `git archive HEAD` (`DOZO_STAGE_REF` picks another ref) into `dozo/.stage/src.new`. With
    `DOZO_STAGE_WORKTREE=1` it then overlays the files that differ from that ref (`git diff` of the
-   ref against the working tree, staged or not) and the untracked-but-not-ignored ones, and removes
-   again every file the working tree deleted or renamed away. The new tree
+   ref against the working tree, staged or not) and the untracked-but-not-ignored ones. Every listed
+   path is first removed from the copy, whatever it is there, so a deleted or renamed-away file
+   disappears and a change of type (file to directory, directory to file, symlink to directory)
+   never leaves the old thing in the way or writes through an old symlink. The new tree
    replaces the contents of `src` except `data`, which is never moved (see Generated files). The
    marker `stage.complete` is removed first and written last: a stage cut short has none, and
    later steps refuse it ("run stage"). A stage made before the marker existed needs one
@@ -101,7 +105,8 @@ project; `down` does not remove them.
 upstream files that differ from commit `<base>` in `[tree]` (default the working tree) and is not a
 gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT: PASS in
 <s>s`, `... FAIL (<failed steps, comma separated>) in <s>s`, and for a run that is not the full gate
-`QA: PASS (partial: <what was left out>) in <s>s` (a `DOZO_QA_STEPS` subset, `DOZO_SKIP_BRAND=1`).
+`QA: PASS (partial: <what was left out>) in <s>s` (a `DOZO_QA_STEPS` subset, `DOZO_SKIP_BRAND=1`, or
+any of `DOZO_STAGE_REF`, `DOZO_UNIT_SRC`, `DOZO_COVERAGE_MIN`, `DOZO_BRAND_COVERAGE_MIN` set).
 
 ### olc
 
@@ -131,7 +136,13 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   remote: `dozo/SYNC.md`, Prerequisites). `DOZO_UPSTREAM_REF` names another ref and exists for tests.
 - A self-test of `wait_gone` (the exit status of a step that failed at once, of a step cut short by
   a signal, of one that passed), of the coverage-table parsers and of `timed_out` (which exit codes
-  count as a timeout).
+  count as a timeout), and `dozo/docker/build.test.sh`, about a second: in a scratch git repository
+  under `TMPDIR` and with a fake `docker` it runs the real `build.sh stage` with `DOZO_STAGE_REF` older
+  than `HEAD` (file to directory and back, rename, Unicode, space and tab in names, deleted file,
+  symlinks, untracked and ignored files) and compares the staged tree with the working tree; checks
+  that `dc` unsets every env-file key (also indented and `export` lines, never a comment); checks the
+  lock owner's start time across time zones; and checks that the unit step fails on fewer fork test
+  files than the committed tree has.
 
 A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no
 merge base, a missing Node image (in CI, where `CI` is set, it pulls the image; locally the message
@@ -142,8 +153,10 @@ is `docker pull node:24.22-slim`). Nothing is skipped silently.
 Runs every `dozo-*.test.ts(x)` under `apps/` and `packages/` of the branded staged tree
 (`DOZO_UNIT_SRC` names another tree and skips the `stage.complete` check) with Vitest in
 `node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, with a per-file floor
-`DOZO_COVERAGE_MIN` (default 90 percent) for lines, branches and functions. Fewer than
-`DOZO_MIN_FORK_TESTS` (default 3) test files fails. The coverage provider is installed inside the
+`DOZO_COVERAGE_MIN` (default 90 percent) for lines, branches and functions. Fewer
+test files than the committed tree has (counted with `git ls-tree` on `DOZO_STAGE_REF` or `HEAD`,
+never a fixed number) fails, so a deleted test is noticed; commit the deletion when it is meant. A
+committed tree with none fails too. The coverage provider is installed inside the
 container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm store, corepack, one
 `node_modules`, reinstalled in place when the lockfile changes); a cold run installs everything, an
 unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the
@@ -173,7 +186,7 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `DOZO_STAGE_DIR` | `dozo/.stage` | Moves the whole stage area (src, env file, logs). Absolute, or relative to the directory you run from |
-| `DOZO_STAGE_REF` | `HEAD` | Ref `stage` exports |
+| `DOZO_STAGE_REF` | `HEAD` | Ref `stage` exports; also the tree whose fork test files `unit` counts. Makes a verdict partial when set |
 | `DOZO_STAGE_WORKTREE` | `1` from make, off from the script | Overlay uncommitted and untracked files on the export |
 | `DOZO_SKIP_BRAND` | off | `1` skips `brand` and the title check; the build is unbranded and a `qa` verdict says partial |
 | `DOZO_NODE_IMAGE` | `node:24.22-slim` | Image for every Node step, including the e2e model stub |
@@ -184,8 +197,7 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 | `DOZO_QA_STEPS` | all steps | Subset of qa steps |
 | `DOZO_TIMEOUT_<STEP>` | build 2400, unit 900, else 600 | Per-step qa timeout in seconds |
 | `DOZO_TIMEOUT_BIN` | `timeout`, else `gtimeout`, else none | Timeout command for qa steps; set to an empty string to force the built-in watchdog |
-| `DOZO_UNIT_SRC` | `<stage>/src` | Tree `unit` tests |
-| `DOZO_MIN_FORK_TESTS` | `3` | Fewest `dozo-*.test.ts(x)` files `unit` accepts |
+| `DOZO_UNIT_SRC` | `<stage>/src` | Tree `unit` tests. Makes a verdict partial when set |
 | `DOZO_COVERAGE_MIN` | `90` | Web unit floor, per file, for the fork's `dozo-*` files |
 | `DOZO_BRAND_COVERAGE_MIN` | `97` | Brand floor in `olc`, per file and overall (separate so the web floor is unaffected) |
 | `DOZO_UPSTREAM_REF` | `upstream-main` | Ref of the upstream-edit check; tests only |
@@ -207,7 +219,7 @@ e2e variables are in `dozo/e2e/README.md`; the sync ones in `dozo/SYNC.md`.
 
 - Containers started by the scripts use `--init`, are named `dozo-<kind>-<pid>` and carry the label
   `dozo.run=<build|gate|e2e>-<pid>`; the script removes them on exit and on SIGINT or SIGTERM.
-  Compose containers are `dozo-<service>-1` (the e2e suite needs `dozo-api-1`).
+  Compose containers are `dozo-<service>-1` (the e2e suite finds the api one by its compose labels).
 - Images: `dozo-<service>` for the app images. The sandbox image stays `rakazo/computer:local`: its
   name is hard-coded upstream and the leak gate allows it as an identifier shape.
 - Volumes: `dozo-qa-deps` (unit dependencies), `dozo-e2e-npm` (e2e), and the project's `dozo_*`

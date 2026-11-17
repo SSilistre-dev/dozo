@@ -20,9 +20,12 @@ export DOZO_STAGE_DIR="$STAGE"
 LOGS="$STAGE/logs"
 FAILS=()
 PARTIAL=""
-# Fork-owned tests live inside upstream dirs as dozo-*.test.ts(x). Fewer than this after the
-# local-model feature (fit, catalog, page) means tests went missing: a silent pass is a failure.
-MIN_FORK_TESTS="${DOZO_MIN_FORK_TESTS:-3}"
+partial() { PARTIAL="${PARTIAL:+$PARTIAL; }$1"; }
+# A variable that changes what a gate checks makes its verdict partial, whoever set it.
+for v in DOZO_STAGE_REF DOZO_UNIT_SRC DOZO_COVERAGE_MIN DOZO_BRAND_COVERAGE_MIN; do [ -z "${!v:-}" ] || partial "$v set"; done
+# Fork-owned tests live inside upstream dirs as dozo-*.test.ts(x). The unit step expects as many in
+# the staged tree as the committed tree has (counted there, never written here), so a deleted test
+# fails; deleting one on purpose means committing the deletion.
 # Coverage floor (percent) for lines, branches and functions of the fork's own code.
 COV_MIN="${DOZO_COVERAGE_MIN:-90}"
 # The brand codemod's own floor (percent), per file and overall. Just under what it measures today
@@ -204,8 +207,8 @@ olc() {
 
 # Pure shell logic that needs no Docker: wait_gone and the coverage parsers, against fixtures of a Vitest table and
 # of Node's test-runner table (a tree: directory rows, indented names, empty number fields). Each
-# case pins one way the parser could go wrong; see the comments. Not covered: the stage swap and the
-# worktree overlay (they need a scratch git repository), the unit volume sync, the compose steps and
+# case pins one way the parser could go wrong; see the comments. The stage overlay, the dc env
+# cleaning and the lock owner's start time are in build.test.sh (a scratch git repository). Not covered: the unit volume sync, the compose steps and
 # with_timeout (they need a Docker daemon).
 selftest() {
   local got ok=1 vitest node edge
@@ -240,7 +243,9 @@ selftest() {
   # timed_out: TERM was enough (124), KILL after the limit (137), the step's own kill before it, a plain failure.
   timed_out 124 5 600 && timed_out 137 600 600 && timed_out 137 610 600 \
     && ! timed_out 137 599 600 && ! timed_out 2 700 600 && ! timed_out 0 700 600 || { ok=0; echo "[olc] selftest timed_out: wrong verdict"; }
-  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers, wait_gone and timed_out ok" || fail "selftest coverage parsers, wait_gone or timed_out"
+  # The shell logic of build.sh and lock.sh (stage overlay, dc env, lock owner), in a scratch repo.
+  out=$(bash "$ROOT/dozo/docker/build.test.sh" 2>&1) || { ok=0; printf '%s\n' "$out"; }
+  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers, wait_gone, timed_out and build.test.sh ok" || fail "selftest (coverage parsers, wait_gone, timed_out or build.test.sh)"
 }
 expect_misses() { # name min fixture want
   local got; got=$(coverage_misses "$2" <<< "$3")
@@ -264,7 +269,7 @@ upstream_ref_ok() { git rev-parse --verify -q "$UP_REF^{commit}" >/dev/null; }
 # lockfile and reinstalls into it, so old lockfiles never pile up as one full node_modules each. It runs as root because it writes only
 # to that volume; the staged tree is mounted read-only.
 unit_tests() {
-  local src="${DOZO_UNIT_SRC:-$STAGE/src}" tests n vol out
+  local src="${DOZO_UNIT_SRC:-$STAGE/src}" tests n want vol out
   # Docker reads a relative -v source as a named volume: make it absolute, as STAGE is.
   case "$src" in /*) ;; *) src="$PWD0/${src#./}" ;; esac
   [ -d "$src/apps" ] || { fail "unit: no staged tree, run dozo/docker/build.sh stage and brand first"; return 1; }
@@ -272,8 +277,10 @@ unit_tests() {
   [ -n "${DOZO_UNIT_SRC:-}" ] || [ -f "$STAGE/stage.complete" ] || { fail "unit: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
   tests=$(cd "$src" && find apps packages \( -name node_modules -prune \) -o -type f \( -name 'dozo-*.test.ts' -o -name 'dozo-*.test.tsx' \) -print | sort)
   n=$(printf '%s' "$tests" | grep -c . || true)
-  echo "[unit] fork test files found: $n (minimum $MIN_FORK_TESTS)"
-  if [ "$n" -lt "$MIN_FORK_TESTS" ]; then fail "unit: $n fork test files, expected at least $MIN_FORK_TESTS"; return 1; fi
+  want=$(git ls-tree -r --name-only "${DOZO_STAGE_REF:-HEAD}" -- apps packages | grep -Ec '/dozo-[^/]*\.test\.tsx?$' || true)
+  echo "[unit] fork test files found: $n (the committed tree has $want)"
+  if [ "$want" -lt 1 ]; then fail "unit: the committed tree has no fork test files"; return 1; fi
+  if [ "$n" -lt "$want" ]; then fail "unit: $n fork test files, the committed tree has $want (a deleted test is a failure; commit the deletion if it is meant)"; return 1; fi
   node_image || return 1
   vol=dozo-qa-deps
   out=$(mktemp "${TMPDIR:-/tmp}/dozo-unit-XXXXXX"); UNIT_OUT=$out  # removed by the EXIT trap if interrupted
@@ -413,8 +420,8 @@ qa() {
   [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
   # A subset of the steps, or an unbranded build, is not the full gate: the verdict line says so.
   local all="olc stage brand unit build up smoke" steps="${DOZO_QA_STEPS:-olc stage brand unit build up smoke}"
-  [ "$(echo $steps)" = "$all" ] || PARTIAL="steps: $(echo $steps)"
-  [ "${DOZO_SKIP_BRAND:-}" != 1 ] || PARTIAL="${PARTIAL:+$PARTIAL; }brand skipped (DOZO_SKIP_BRAND=1)"
+  [ "$(echo $steps)" = "$all" ] || partial "steps: $(echo $steps)"
+  [ "${DOZO_SKIP_BRAND:-}" != 1 ] || partial "brand skipped (DOZO_SKIP_BRAND=1)"
   for st in $steps; do
     if [ "$st" = up ]; then reached_up=1; [ "$was_up" -eq 1 ] || QA_OWNS_STACK=1; fi
     case "$st" in
