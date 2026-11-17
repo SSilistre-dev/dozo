@@ -435,6 +435,11 @@ addStems(
   (alt) => String.raw`(?<![\w/-])rakazo/${alt}/v1`,
 );
 SHAPES.push({ name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" });
+// A part of a path that is free text must not carry the name, in any capitalisation: the row would
+// swallow it and hide it from the gate (`/opt/rakazo-pro/rakazo-home`). Only the directory `rakazo`
+// itself (followed by `/`) may stand in the middle.
+const NAMED = "[Rr][Aa][Kk][Aa][Zz][Oo]";
+const PLAIN_PART = String.raw`(?![\w.$-]*${NAMED})[\w.$-]+`;
 // A path token is closed on the right: the stem is what the tree really puts after the name, and any
 // other letter, digit, `_` or `-` makes it another path (`/opt/rakazo-pro`). The bare directory
 // (`/tmp/rakazo`) is the one tail with no stem: a `/`, a quote, a space, punctuation, a full stop that
@@ -443,17 +448,17 @@ addStems(
   "fs-path",
   "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*), each tail from a closed list",
   ["-background-", "-browser", "-cache", "-chrome", "-chrome-XXXXXX", "-command-", "-command-env", "-computer", "-computer-control", "-focus-or-launch", "-home", "-local-bin", "-nss", "-page-browser", "-page-browser-", "-page-input-", "-prepare", "-proxy", "-terminal", "-user-env", "-worker-health", "-workspace-", "-workspace-archive-", "-xcapture"],
-  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo(?:${alt}(?![\w-])|(?=[/\s"'\x60,)\];:<>}]|\.(?![\w-])|$))`,
+  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/(?:rakazo(?=\/)|${PLAIN_PART}))*\/(?:\.|lib)?rakazo(?:${alt}(?![\w-])|(?=[/\s"'\x60,)\];:<>}]|\.(?![\w-])|$))`,
 );
-SHAPES.push({ name: "policy-path", re: /(?<![\w.])\/etc\/brave\/policies\/managed\/rakazo\.json(?![\w-])/g, reason: "the browser policy file written into the computer image" });
+SHAPES.push({ name: "policy-path", re: /(?<![\w.])\/etc\/brave\/policies\/managed\/rakazo\.json(?![\w-]|\.[\w-])/g, reason: "the browser policy file written into the computer image" });
 addStems(
   "shell-path",
   "relative shell paths ($dir/rakazo-proxy.json, ./rakazo-browser), each tail from a closed list",
   ["-browser", "-proxy", "-write"],
-  (alt) => String.raw`(?:\$\w+|~|\.{1,3})\/\.?rakazo${alt}(?![\w-])`,
+  (alt) => String.raw`(?:\$(?![\w]*${NAMED})\w+|~|\.{1,3})\/\.?rakazo${alt}(?![\w-])`,
 );
 SHAPES.push({ name: "windows-path", re: /(?<=\\)rakazo(?=\\)/g, reason: "profile directory on a Windows computer" });
-SHAPES.push({ name: "dev-database", re: /\/\/rakazo:rakazo@[\w.:]+\/rakazo/g, reason: "local development database URL" });
+SHAPES.push({ name: "dev-database", re: new RegExp(String.raw`\/\/rakazo:rakazo@(?![\w.:]*${NAMED})[\w.:]+\/rakazo`, "g"), reason: "local development database URL" });
 
 /** The matches of one row in one line that stand where the row allows them. */
 export const shapeMatches = (shape, line) => [...line.matchAll(shape.re)].filter((m) => !shape.ok || shape.ok(line, m));

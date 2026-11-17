@@ -313,15 +313,19 @@ const SHAPE_CASES = {
   },
   "fs-path": {
     yes: ["/tmp/rakazo/x.log", 'cd "/tmp/rakazo"', "ls /tmp/rakazo", "ls /tmp/rakazo, then", "(/tmp/rakazo)", "dir=/tmp/rakazo;", "/tmp/rakazo: busy", "[/tmp/rakazo]", "<code>/tmp/rakazo</code>", "a > /tmp/rakazo>", "Files go to /tmp/rakazo.", "see /tmp/rakazo. Next", "/tmp/rakazo'", "/usr/local/bin/rakazo-computer", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
-    no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo", "/opt/rakazo-pro", "/tmp/rakazo-notes/x", "/etc/rakazo.conf", "/tmp/rakazo.log", "/tmp/rakazo.json", "/etc/brave/policies/managed/rakazo.jsonx"],
+    no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo", "/opt/rakazo-pro", "/tmp/rakazo-notes/x", "/etc/rakazo.conf", "/tmp/rakazo.log", "/tmp/rakazo.json", "/etc/brave/policies/managed/rakazo.jsonx",
+      "cd /opt/rakazo-pro/rakazo-browser", "ls /tmp/rakazo-evil/rakazo", "ls /home/Rakazo/x/rakazo/y", "/var/rakazo-data/lib/rakazo", 'const c = "/opt/rakazo-pro/rakazo-home";', "/tmp/Rakazo-leak/rakazo-home", "/tmp/rakazo/x/rakazo-pro/rakazo"],
+    // `{}` is a path part that carries the name in the second test below and does not in the first
+    mid: ["/opt/{}/rakazo-home", "/tmp/rakazo/{}/rakazo", "/usr/{}/lib/rakazo", "/home/user/{}/.rakazo-command-env"],
   },
   "policy-path": {
     yes: ["/etc/brave/policies/managed/rakazo.json", 'write("/etc/brave/policies/managed/rakazo.json")'],
-    no: ["/etc/brave/policies/managed/rakazo.jsonx", "/etc/chrome/policies/managed/rakazo.json", "/tmp/rakazo.json", "managed/rakazo.json"],
+    no: ["/etc/brave/policies/managed/rakazo.jsonx", "/etc/brave/policies/managed/rakazo.json.bak", "/etc/chrome/policies/managed/rakazo.json", "/tmp/rakazo.json", "managed/rakazo.json"],
   },
   "shell-path": {
     yes: ['cat "$dir/rakazo-proxy.json"', "./rakazo-browser", "$directory/.rakazo-write.XXXXXX", "# --user-data-dir=.../rakazo-browser"],
-    no: ["github.com/rakazo-labs", "a/rakazo-x", "cd ~/rakazo-notes", "$dir/rakazo-proxyx"],
+    no: ["github.com/rakazo-labs", "a/rakazo-x", "cd ~/rakazo-notes", "$dir/rakazo-proxyx", "$rakazoDir/rakazo-proxy.json", "$Rakazo/rakazo-proxy.json"],
+    mid: ["${}/rakazo-proxy.json", "${}/.rakazo-write.XXXXXX"],
   },
   "windows-path": {
     yes: ["`${profile}\\\\rakazo\\\\.runs\\\\${id}`"],
@@ -329,7 +333,8 @@ const SHAPE_CASES = {
   },
   "dev-database": {
     yes: ['"postgres://rakazo:rakazo@127.0.0.1:5433/rakazo"'],
-    no: ['"postgres://rakazo:secret@127.0.0.1:5433/rakazo"', "postgres://user:rakazo@host/other"],
+    no: ['"postgres://rakazo:secret@127.0.0.1:5433/rakazo"', "postgres://user:rakazo@host/other", '"postgres://rakazo:rakazo@rakazo.internal:5433/rakazo"', "//rakazo:rakazo@Rakazo.example/rakazo"],
+    mid: ['"postgres://rakazo:rakazo@{}:5433/rakazo"'],
   },
 };
 
@@ -354,6 +359,19 @@ describe("identifier shapes", () => {
       }
       for (const line of row.right ?? []) {
         for (const glue of ["x", "Z", "9"]) assert.ok(scan(`${line}${glue}`).length >= 1, `${name} must not match glued on the right: ${line}${glue}`);
+      }
+    });
+  }
+
+  for (const [name, row] of Object.entries(SHAPE_CASES)) {
+    if (!row.mid) continue;
+    it(`${name}: a free part of the token that carries the name is a leak, one that does not is not`, () => {
+      const { scan } = scanner();
+      for (const line of row.mid) {
+        assert.deepEqual(scan(line.replace("{}", "evil")), [], `${name} should pass: ${line}`);
+        for (const fake of ["rakazo-evil", "Rakazo", "evil-rakazo", "RAKAZO", "xRakazox"]) {
+          assert.ok(scan(line.replace("{}", fake)).length >= 1, `${name} must not let a part named ${fake} through: ${line}`);
+        }
       }
     });
   }

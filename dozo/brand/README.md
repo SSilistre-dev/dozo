@@ -176,6 +176,12 @@ Known limit of the open prefix rows (`snake-name`, `env-name`, `data-attribute`,
 `x-rakazo-`), wherever it stands, so the same text in plain prose also passes. Only the closed rows
 check what follows the name.
 
+A free part inside a row's token (a directory in `fs-path`, the variable in `shell-path`, the host in
+`dev-database`) may not carry the name in any capitalisation: only the directory `rakazo` itself may stand
+in the middle of a path. The closed rows of file and binary names end at `[\w-]`, so a file extension after
+a stem (`rakazo-proxy.json`, `rakazo-browser.desktop`, `librakazo-xcapture.so`) passes, because the tree
+uses them; `rakazo-api.bak` therefore passes too. `policy-path` is the one file row that refuses an extension.
+
 Limits of the neighbourhood: a parenthesised or colon-ended name (`(RakazoPro)`, `RakazoBot: hi`) reads
 as a slot; a hyphen name at the start of a line or before `-`, `.` or a quote is not prose; a class
 list is prose-like (`ring rakazo-bot-avatar-ring-working absolute` is one reviewed `allow.text`). The
