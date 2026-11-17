@@ -68,8 +68,6 @@ main,header,footer{position:relative;z-index:1}
  .lock:hover .eyes{transform:translate(var(--ex,3.4px),var(--ey,0px))}
 }
 .nav{display:flex;align-items:center;gap:6px}
-.nav .link{display:inline-flex;align-items:center;height:44px;padding:0 14px}
-.nav .link:hover{color:var(--text)}
 .tgl{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted)}.tgl:hover{color:var(--text)}
 .tgl svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .tgl .sun{display:none}:root[data-theme="light"] .tgl .sun{display:block}:root[data-theme="light"] .tgl .moon{display:none}
@@ -133,7 +131,7 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .anim .list{transition:opacity .6s}.anim .list.out{opacity:0}
 .li.done .d,.li.done b{opacity:.55}
 .pill.ok{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
-.strip{margin-top:30px;background:var(--raise);border-radius:28px;padding:32px 40px}
+.strip{margin-top:30px;background:var(--raise);border-radius:28px;padding:32px 40px;display:grid;grid-template-columns:1fr 1fr;gap:28px 40px}
 
 h2.big{font-size:clamp(30px,4.4vw,46px);line-height:1.08;font-weight:500;letter-spacing:-.03em;text-wrap:balance}
 
@@ -141,7 +139,6 @@ h2.big{font-size:clamp(30px,4.4vw,46px);line-height:1.08;font-weight:500;letter-
 .close{text-align:center;padding:44px 0 48px}
 .close .kana{display:block;font-size:14px;margin-bottom:14px}
 .close .cta{margin-top:24px}
-.close small{display:block;margin-top:18px;color:var(--quiet);font-size:13.5px}
 footer{border-top:1px solid var(--line);padding:20px 0 32px}
 .fin{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .fin nav{display:flex;gap:6px;flex-wrap:wrap}.fin nav a{display:inline-flex;align-items:center;height:44px;padding:0 14px}
@@ -150,13 +147,13 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
 
 @media (max-width:900px){
  .pair{grid-template-columns:minmax(0,1fr)}
- .strip{padding:28px}
+ .strip{padding:28px;grid-template-columns:minmax(0,1fr)}
  .frame-app{padding:2px 28px 26px;border-radius:24px}
  .idea .vg{height:auto}
 }
 @media (max-width:560px){
  .wrap{width:min(1200px,100% - 40px)}
- .nav .link{display:none}.top{height:64px}
+ .top{height:64px}
  .hero{padding-top:28px}.crew{gap:8px;margin-bottom:22px}.av.xl{width:44px;height:44px}
  .cta .pill{flex:1 1 140px}
  .frame-app{padding:0 20px 22px;margin-top:36px}

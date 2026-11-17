@@ -142,5 +142,6 @@ function tick(t){
   }
   requestAnimationFrame(tick);
 }
-measure();requestAnimationFrame(tick);
+// Reduced motion: the eyes stay as drawn, with no tracking, glance or blink.
+measure();if(!reduce)requestAnimationFrame(tick);
 });

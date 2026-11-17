@@ -15,5 +15,8 @@ Closed pre-release state, to undo at launch:
 - No GitHub link is shown because the repository is not published. When it is, add "GitHub"
   and "Licence" links back to the header and footer navs and let "Self-host" point at
   `docs/self-host.md` in the repository.
+- Hosted plan placeholder: the "We run it for you." block says only that hosted Dozo is in a
+  closed preview and that plans and pricing come later. It has no price, plan table, form or
+  payment link on purpose. Rewrite it when pricing is set and payment is connected.
 - The page claims only what ships. The local-model panel is gone because the catalog is empty
   (`dozo/README.md`, "Status and known limits"); bring it back when models are listed.

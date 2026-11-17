@@ -54,7 +54,9 @@ placeholders are replaced.
 - [ ] **Billing, OAuth and listing names** (blocks launch if the feature is on). Create our Stripe
       products, prices and names (upstream billing code is `apps/api/src/billing.ts`; use env
       configuration, never code edits). Set our names in OAuth consent screens, the Slack, Discord and
-      Telegram apps and the OpenRouter listing.
+      Telegram apps and the OpenRouter listing. Owner's decision: the product is open source and a
+      hosted SaaS that runs on our servers; payment is not connected yet, so the landing page holds
+      a placeholder for the hosted plan (`dozo/landing/README.md`).
 - [ ] **Android build name** (blocks launch if the Android build is offered). Publish the APK as
       `dozo.apk` under the release tag the download URL names.
 - [ ] **Third-party catalog branding** (decision). The xAI/Grok plugin catalog and import text name
