@@ -29,12 +29,27 @@ show none of these surfaces, so there is no source value to map.
 ## What the overlay cannot express
 
 Only colours, one radius and font stacks. Pill shapes (999 px buttons and rows), the seigaiha
-sidebar pattern, the seal dot, tinted per-bot active rows, shadows and the six bot tile colours
-(in `packages/ui-web/src/dozo-avatar.css`) must come from a stylesheet.
+sidebar pattern, the wordmark with its seal dot, the tinted active row and the chat as a narrow
+column with unboxed bot text come from `packages/ui-web/src/dozo-shell.css`, which an anchored
+rule imports into the package stylesheet. The six bot tile colours are in the avatar palette
+(`packages/core/src/dozo-avatar-art.ts`). Three more anchored rules set defaults the design
+shows: one-line sidebar rows, a 240 px sidebar, and your own bubble and the send button in the
+theme's colours instead of the bot's upstream colour.
+
+- `--dozo-seigaiha` (on `:root`) switches the sidebar pattern: `1` shows it, `0` hides it, a value
+  between fades it.
+- `--dozo-seal` is the seal dot's red, the one colour the stylesheet writes itself.
 
 ## Activation
 
-Set `RAKAZO_THEME=/theme/theme.json` on the web service. The file must be readable there: mount
-this folder (`./dozo/theme:/theme:ro` in `docker-compose.override.yml`) and layer that file after
-the base compose file. It is re-read on each page load; an invalid file is skipped with a
-`web.instance_theme_ignored` warning.
+On by default in the fork's stack: `compose.theme.yml` in this folder sets
+`RAKAZO_THEME=/theme/theme.json` on the web service and mounts this folder at `/theme`, and
+`dozo/docker/build.sh` layers it after upstream's compose file (which stays unedited) and passes
+this folder as `DOZO_THEME_DIR`. The file is re-read on each page load, so an edit shows after a
+reload with no rebuild; an invalid file is skipped with a `web.instance_theme_ignored` warning and
+the app falls back to upstream's colours. The stack reads the folder of the checkout that started
+it: start it again (`make up`) from another checkout before removing the first.
+
+Dark is the default: two anchored rules make a missing appearance choice resolve to dark (the
+pre-paint script and the app's own resolution). System and Light still work once chosen in
+settings. To run the stack elsewhere, mount the folder and set the variable the same way.

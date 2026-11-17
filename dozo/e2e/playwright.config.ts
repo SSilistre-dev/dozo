@@ -32,13 +32,13 @@ export default defineConfig<{ theme: "light" | "dark" }>({
     { name: "scanner", testMatch: "scanner.spec.ts", use: desktop },
     {
       name: "crawl-light",
-      testMatch: ["crawl.spec.ts", "local-models.spec.ts"],
+      testMatch: ["crawl.spec.ts", "local-models.spec.ts", "look.spec.ts"],
       dependencies: ["setup"],
       use: { ...desktop, theme: "light", storageState: `${out}/auth.json` },
     },
     {
       name: "crawl-dark",
-      testMatch: ["crawl.spec.ts", "local-models.spec.ts"],
+      testMatch: ["crawl.spec.ts", "local-models.spec.ts", "look.spec.ts"],
       dependencies: ["setup"],
       use: { ...desktop, theme: "dark", storageState: `${out}/auth.json` },
     },

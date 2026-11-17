@@ -23,13 +23,13 @@ Branded output is never committed.
 | `dozo/brand/` | The brand overlay: `brand.json` (rules, names, placeholders), `apply.mjs` (codemod), `check.mjs` (leak gate). See `dozo/brand/README.md` |
 | `dozo/docker/` | Staging and image build, the compose ports override, the gates. See `dozo/docker/README.md` |
 | `dozo/e2e/` | Browser suite against the running stack. See `dozo/e2e/README.md` |
-| `dozo/theme/` | Theme tokens for the Dozo look |
+| `dozo/theme/` | Theme tokens for the Dozo look and the compose override that loads them. See `dozo/theme/README.md` |
 | `dozo/design/` | Design reference: the source of truth for how Dozo should look |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
 | `dozo/NOTICE` | Licence addendum and notice of changes |
 | `dozo/AGENTS.md` | Rules for agents and contributors in this fork |
 | `dozo/LAUNCH-CHECKLIST.md` | What the owner must decide or supply before going public |
-| `dozo-*` files in `apps/` and `packages/` | Fork-only source (local models, the bot avatar). They sit inside upstream packages so they resolve there; they are new files, so they do not conflict with upstream |
+| `dozo-*` files in `apps/` and `packages/` | Fork-only source (local models, the bot avatars, the shell stylesheet). They sit inside upstream packages so they resolve there; they are new files, so they do not conflict with upstream |
 
 ## Build and run
 

@@ -78,7 +78,8 @@ with `down`.
    fails: stage again first. Semantics: `dozo/brand/README.md`. A missing tool fails with "brand tool
    missing". `DOZO_SKIP_BRAND=1` skips the step (unbranded build, pipeline testing only).
 3. `build`: `docker compose` runs inside the staged copy, project `dozo`, upstream's compose file
-   unmodified plus `compose.ports.yml`. It builds every image, the `computer` sandbox image
+   unmodified plus `compose.ports.yml` and `dozo/theme/compose.theme.yml` (the Dozo theme, mounted
+   from the checkout's `dozo/theme`; see `dozo/theme/README.md`, Activation). It builds every image, the `computer` sandbox image
    included, one at a time (`COMPOSE_PARALLEL_LIMIT=1`; the Docker VM has about 6 GB). Afterwards it
    prunes dangling images that carry this project's compose label (the base images and other
    projects are untouched), prints the reclaimed space and lists the project's images

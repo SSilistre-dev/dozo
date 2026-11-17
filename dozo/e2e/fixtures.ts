@@ -50,6 +50,13 @@ export async function rpc<T>(page: Page, procedure: string, body: unknown): Prom
 
 export const APPEARANCE_KEY = "rakazo.uiAppearance"; // a deliberately unchanged technical identifier
 
+/**
+ * Upstream's own bot drawings (the organic body, the logo avatar, the shipped shapes). The fork
+ * draws Dozo characters instead, so none may be on any screen; a saved photo is not one of them.
+ */
+export const UPSTREAM_AVATAR_ART =
+  ".rakazo-organic-avatar, .rakazo-logo-avatar, .bot-avatar-container";
+
 export const test = base.extend<{ theme: Theme }>({
   theme: ["light", { option: true }],
   context: async ({ context, theme }, use) => {
@@ -179,6 +186,10 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
       "the app's last-resort error screen is showing",
     ).toHaveCount(0);
     await ctx.scan("");
+    await expect(
+      page.locator(UPSTREAM_AVATAR_ART),
+      `upstream's avatar art is on "${surface.name}"`,
+    ).toHaveCount(0);
     if (surface.blankByDesign === undefined) {
       const read = () => page.evaluate(() => document.body?.innerText.trim().length ?? 0);
       // The app may still be drawing: give it a few seconds before calling the page empty.

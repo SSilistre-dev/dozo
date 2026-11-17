@@ -1,0 +1,9 @@
+# Loads the Dozo theme by default: the web service reads theme.json from this folder on every page
+# load, so an edit shows after a reload with no rebuild. dozo/docker/build.sh layers this file after
+# upstream's compose file and sets DOZO_THEME_DIR to this folder. Nothing else is changed.
+services:
+  web:
+    environment:
+      RAKAZO_THEME: /theme/theme.json
+    volumes:
+      - ${DOZO_THEME_DIR:?DOZO_THEME_DIR must be the dozo/theme folder (dozo/docker/build.sh sets it)}:/theme:ro

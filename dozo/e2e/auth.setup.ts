@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { expect } from "@playwright/test";
 import type { World } from "./fixtures";
-import { authFile, rpc, test, worldFile } from "./fixtures";
+import { APPEARANCE_KEY, authFile, rpc, test, worldFile } from "./fixtures";
 import { connectModelThroughOnboarding, signUpThroughForm, throwawayUser } from "./support";
 
 // The only sign-up of a run: every other test reuses this session, so a run spends few of the
@@ -34,5 +34,8 @@ test("sign up once, connect the offline model, seed a few bots", async ({ page }
   const writer = await make("Writer");
   const world: World = { user, chiefId, scoutId: scout.id, writerId: writer.id };
   writeFileSync(worldFile(), JSON.stringify(world));
+  // The saved session must not carry this run's appearance: the fixture stores a project's theme
+  // only when none is stored, so a saved "light" would turn the dark project light.
+  await page.evaluate((key) => localStorage.removeItem(key), APPEARANCE_KEY);
   await page.context().storageState({ path: authFile() });
 });
