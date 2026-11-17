@@ -1,0 +1,124 @@
+/* The app's own screens: choose a server, connecting, can't reach it.
+   Colours, type and shapes are the ones in dozo/design/dozo.css. */
+:root {
+  --bg: #141414;
+  --raise: #1f1f1f;
+  --raise2: #262626;
+  --text: #ededed;
+  --muted: #a3a3a3;
+  --quiet: #8a8a8a;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #2b74ea;
+  --on-accent: #fff;
+  --seal: #e5484d;
+  --sans: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15.5px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  cursor: default;
+}
+main {
+  width: min(340px, 100% - 48px);
+  padding-bottom: 8vh;
+}
+.logo {
+  display: block;
+  height: 26px;
+  margin: 0 auto 44px;
+}
+form,
+section {
+  display: flex;
+  flex-direction: column;
+}
+label {
+  font-size: 12.5px;
+  color: var(--quiet);
+  padding: 0 18px;
+  margin-bottom: 6px;
+}
+input {
+  height: 48px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 24px;
+  outline: none;
+  background: var(--raise);
+  color: var(--text);
+  font: inherit;
+}
+input:focus-visible {
+  border-color: var(--line);
+  background: var(--raise2);
+}
+button {
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14.5px;
+  cursor: pointer;
+}
+button:hover {
+  color: var(--text);
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button.primary {
+  margin: 0 0 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 500;
+}
+#invalid {
+  min-height: 18px;
+  margin: 8px 18px 14px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--seal);
+}
+section p {
+  margin-bottom: 28px;
+  text-align: center;
+  color: var(--muted);
+}
+.host {
+  color: var(--text);
+}
+/* The mark breathes while the app waits for the server. */
+main:has(#connecting:not([hidden])) .logo {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo {
+    animation: none !important;
+  }
+}

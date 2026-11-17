@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dozo</title>
+    <link rel="stylesheet" href="local.css" />
+    <script type="module" src="local.js"></script>
+  </head>
+  <body>
+    <main>
+      <img class="logo" src="logo.svg" alt="Dozo" />
+
+      <form id="choose" hidden>
+        <label for="address">Server</label>
+        <input id="address" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <p id="invalid" role="alert"></p>
+        <button class="primary">Connect</button>
+        <button type="button" id="this-computer">Use the server on this computer</button>
+      </form>
+
+      <section id="connecting" hidden>
+        <p>Connecting to <span class="host"></span></p>
+      </section>
+
+      <section id="unreachable" hidden>
+        <p role="alert">Can't reach <span class="host"></span></p>
+        <button type="button" class="primary" id="retry">Try again</button>
+        <button type="button" id="change">Change server</button>
+      </section>
+    </main>
+  </body>
+</html>

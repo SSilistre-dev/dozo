@@ -50,6 +50,9 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - Install nothing on the host. No host node or pnpm. No `pnpm install` on the host. The one
   owner-accepted exception is `dozo/brand/assets/build.sh`, which renders the logo files with host
   node, python3 and Brave; run it only when the logo masters change.
+- The macOS app (`dozo/desktop/`) is the second exception: Docker cannot build one. Build it only
+  with `dozo/desktop/build.sh`, which keeps Rust and the Tauri CLI in `dozo/desktop/.toolchain/`
+  and writes nothing to `~/.cargo`, `~/.rustup`, a shell profile or Homebrew.
 - Run tooling in Docker, for example `docker run --rm -v "$PWD":/repo -w /repo node:24.22-slim node ...`.
 - Do not stop or remove containers, images or volumes you did not create.
 - Never read or print `.env` files or secrets.
