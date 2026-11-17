@@ -1,4 +1,5 @@
 import { BOT_COLOR_LIST } from "@rakazo/contracts";
+import { darkTokens } from "@rakazo/ui-tokens";
 import { describe, expect, it } from "vitest";
 import {
   DOZO_AVATAR_ART,
@@ -16,20 +17,45 @@ const hexOf = (id: string) => BOT_COLOR_LIST.find((color) => color.id === id)?.h
 const PHOTO = "data:image/png;base64,iVBORw0KGgo=";
 
 describe("Dozo avatar art", () => {
-  it("draws every character with a head, a visor and eyes", () => {
+  it("draws every character as a head with a visor hole, eyes in the head's ink and an accessory", () => {
     for (const character of DOZO_CHARACTERS) {
       const shapes = DOZO_AVATAR_ART[character];
-      expect(shapes.some(([part, , paint]) => part === "head" && paint === "body")).toBe(true);
-      expect(shapes.filter(([, , paint]) => paint === "visor")).toHaveLength(1);
-      expect(shapes.some(([part]) => part === "eyes")).toBe(true);
-      expect(shapes.some(([part]) => part === "feature")).toBe(true);
+      // One head path holds two closed outlines: the head, and the visor cut out of it.
+      const heads = shapes.filter(
+        ([part, tag, paint, attrs]) =>
+          part === "head" && tag === "path" && paint === "body" && /Z.+Z$/.test(String(attrs.d)),
+      );
+      expect(heads).toHaveLength(1);
+      const eyes = shapes.filter(([part]) => part === "eyes");
+      expect(eyes.length).toBeGreaterThan(0);
+      expect(eyes.every(([, , paint]) => paint === "body" || paint === "line")).toBe(true);
+      const accessory = shapes.filter(([part]) => part === "feature");
+      expect(accessory.some(([, , paint]) => paint === "accent")).toBe(true);
+      // The character's colour is on the accessory alone.
+      expect(shapes.some(([part, , paint]) => part === "eyes" && paint === "accent")).toBe(false);
     }
   });
 
-  it("gives each character its own tile and glow", () => {
-    const tiles = DOZO_CHARACTERS.flatMap((name) => DOZO_BOT_PALETTE[name].tile);
-    expect(new Set(tiles).size).toBe(12);
-    expect(new Set(DOZO_CHARACTERS.map((name) => DOZO_BOT_PALETTE[name].glow)).size).toBe(6);
+  it("keeps every drawing inside the 64 x 64 canvas and gives each its own outline", () => {
+    const heads = DOZO_CHARACTERS.map(
+      (name) =>
+        DOZO_AVATAR_ART[name].find(([part, tag]) => part === "head" && tag === "path")?.[3].d,
+    );
+    expect(new Set(heads).size).toBe(6);
+    for (const character of DOZO_CHARACTERS) {
+      for (const [, , , attrs] of DOZO_AVATAR_ART[character]) {
+        if (attrs.transform) continue;
+        const numbers = String(attrs.d ?? "").match(/-?\d+(?:\.\d+)?/g) ?? [];
+        for (const value of [...numbers.map(Number), attrs.cx ?? 0, attrs.cy ?? 0]) {
+          expect(Number(value)).toBeGreaterThanOrEqual(0);
+          expect(Number(value)).toBeLessThanOrEqual(64);
+        }
+      }
+    }
+  });
+
+  it("gives each character its own colour for a light page and a dark one", () => {
+    expect(new Set(DOZO_CHARACTERS.flatMap((name) => DOZO_BOT_PALETTE[name])).size).toBe(12);
   });
 
   it("names a character by its own name and hashes any other seed", () => {
@@ -54,7 +80,7 @@ describe("the character a bot is drawn as", () => {
     ["red", "yuki"],
     ["magenta", "yuki"],
     ["cyan", "mochi"],
-  ])("draws upstream's %s as %s, the closest tile in hue", (id, character) => {
+  ])("draws upstream's %s as %s, the closest character in hue", (id, character) => {
     expect(dozoCharacterForLook("bot-1", hexOf(id))).toBe(character);
     expect(dozoCharacterForLook("bot-2", hexOf(id))).toBe(character);
   });
@@ -87,14 +113,16 @@ describe("the character a bot is drawn as", () => {
 });
 
 describe("the still drawing", () => {
-  it("is one tile with the character's shapes, inked for a light page", () => {
+  it("is the character's shapes on one dark tile, so it reads on any surface", () => {
     for (const character of DOZO_CHARACTERS) {
       const svg = dozoAvatarSvg(character);
-      const { tile, glow } = DOZO_BOT_PALETTE[character];
+      const [light, dark] = DOZO_BOT_PALETTE[character];
       expect(svg).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="96" height="96"/);
-      expect(svg).toContain(`<rect width="64" height="64" rx="18" fill="${tile[0]}"/>`);
-      expect(svg).toContain(glow);
-      expect(svg).not.toContain(tile[1]);
+      expect(svg).toContain(
+        `<rect width="64" height="64" rx="18" fill="${darkTokens.background}"/>`,
+      );
+      expect(svg).toContain(`fill="${dark}"`);
+      expect(svg).not.toContain(light);
       expect(svg).not.toContain("undefined");
       expect(svg.match(/<(?:rect|circle|ellipse|path) /g)).toHaveLength(
         DOZO_AVATAR_ART[character].length + 1,
@@ -103,12 +131,14 @@ describe("the still drawing", () => {
     expect(dozoAvatarSvg("sora", 40)).toContain('width="40" height="40"');
   });
 
-  it("strokes line eyes and paints Taro's band in the tile colour", () => {
-    expect(dozoAvatarSvg("mochi")).toMatch(
-      /<path d="[^"]+" fill="none" stroke-width="2\.6" stroke-linecap="round" stroke="#b8f0f0"\/>/i,
+  it("cuts the visor out of the head, strokes line eyes and paints the accessory", () => {
+    const ink = darkTokens.foreground;
+    expect(dozoAvatarSvg("sora")).toContain(`Z" fill="${ink}" fill-rule="evenodd"/>`);
+    expect(dozoAvatarSvg("mochi")).toContain(
+      `fill="none" stroke-width="2.6" stroke-linecap="round" stroke="${ink}"/>`,
     );
-    expect(dozoAvatarSvg("taro")).toContain(
-      `<rect x="18" y="26" width="28" height="4" fill="${DOZO_BOT_PALETTE.taro.tile[0]}"/>`,
+    expect(dozoAvatarSvg("taro")).toMatch(
+      new RegExp(`<rect x="8" y="20\\.8" [^>]* fill="${DOZO_BOT_PALETTE.taro[1]}"/>`),
     );
   });
 });

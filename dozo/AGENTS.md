@@ -32,8 +32,8 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - Deviation: the six Dozo avatar identity colours live in one typed constant, `DOZO_BOT_PALETTE` in
   `packages/core/src/dozo-avatar-art.ts` (next to the art, shared by the web component and the
   server-side notification portrait), not in `@rakazo/ui-tokens`, because upstream's `botColors`
-  has seven different hues and its `botEyeColor` is one dark ink where ours glow light. The seal
-  dot's red is the one colour `packages/ui-web/src/dozo-shell.css` writes: no token carries it.
+  has seven different hues. The seal dot's red is the one colour
+  `packages/ui-web/src/dozo-shell.css` writes: no token carries it.
 
 ## Commands
 

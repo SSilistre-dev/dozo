@@ -56,8 +56,10 @@ S = 3.2
 heads = ""
 for i, (n, body) in enumerate(re.findall(
         r'<symbol id="a-(\w+)" viewBox="0 0 64 64">(.*?)</symbol>', open("../../design/dozo.js").read(), re.S)):
-    body = re.sub(r'<rect class="t\d" [^>]*/>', "", body)  # the coloured tile is not part of the hero
-    body = re.sub(r"#(?:bfe0ff|e2d6ff|c4f2d9|ffe2ae|ffd0c6|b8f0f0)", INK, body).replace("var(--taro)", RED)
+    # The mockup paints by class: b the head's ink, l the same ink as a stroke, t1..t6 the accessory.
+    body = body.replace('class="b"', f'fill="{INK}" fill-rule="evenodd"')
+    body = body.replace('class="l"', f'fill="none" stroke="{INK}" stroke-width="2.6" stroke-linecap="round"')
+    body = re.sub(r'class="t\d"', f'fill="{RED}"', body)
     heads += f'<g transform="translate({112 + i * 144} 336.5) scale(1.5)">{body}</g>'
 svg("welcome-hero.svg", 1040, 546,
     f'<rect width="1040" height="546" fill="{DARK}"/>'

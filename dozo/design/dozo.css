@@ -4,7 +4,7 @@
 --sora:#4f8fd8;--kumo:#a07ed8;--hana:#4fa37a;--taro:#d19a45;--yuki:#dc7a6a;--mochi:#3fa3a8;
 --sans:-apple-system,"SF Pro Text","Inter",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace}
 .t1{fill:var(--sora)}.t2{fill:var(--kumo)}.t3{fill:var(--hana)}.t4{fill:var(--taro)}.t5{fill:var(--yuki)}.t6{fill:var(--mochi)}
-:root[data-theme="light"]{--side:#ececea;--bg:#f5f5f3;--raise:#fdfdfc;--raise2:#fff;--text:#1a1a1a;--muted:#6b6b6b;--quiet:#777;--line:rgba(0,0,0,.08);--green:#3f8a5c;--amber:#b0852f;--idle:#bdbdb8;--pattern:rgba(0,0,0,.05);--seal:#d93f3f;--plan:#3a3a3a;--draft-line:rgba(0,0,0,.14);--draft:#555;--frame:#2a2a2c}
+:root[data-theme="light"]{--sora:#3f7fcb;--kumo:#8f6bcb;--hana:#3f9468;--taro:#c4872f;--yuki:#d26a59;--mochi:#2f9297;--side:#ececea;--bg:#f5f5f3;--raise:#fdfdfc;--raise2:#fff;--text:#1a1a1a;--muted:#6b6b6b;--quiet:#777;--line:rgba(0,0,0,.08);--green:#3f8a5c;--amber:#b0852f;--idle:#bdbdb8;--pattern:rgba(0,0,0,.05);--seal:#d93f3f;--plan:#3a3a3a;--draft-line:rgba(0,0,0,.14);--draft:#555;--frame:#2a2a2c}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1440px;height:900px;overflow:hidden;background:var(--bg);color:var(--text);font:400 15.5px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
@@ -40,16 +40,17 @@ svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke
 
 /* animated bots (see script) */
 .bot{display:block;flex:none}.bot svg{display:block;width:100%;height:100%;stroke:none}
-.bot .head,.bot .eyes,.bot .feature{transform-box:fill-box;transform-origin:center}
+.bot .b{fill:var(--text);fill-rule:evenodd}.bot .l{fill:none;stroke:var(--text);stroke-width:2.6;stroke-linecap:round}
+.bot .head,.bot .eyes,.bot .feature{transform-box:fill-box;transform-origin:center}.bot .feature{transform-origin:50% 100%}
 .bot[data-state=working] .head{animation:bob 3.2s ease-in-out infinite}
 .bot[data-state=working] .feature{animation:glow 2.4s ease-in-out infinite}
-.bot[data-bot=kumo]{--gs:1}
+.bot[data-bot=sora]{--gs:1;--as:1.08}.bot[data-bot=kumo],.bot[data-bot=yuki]{--gs:1.08;--as:1.14;--dim:1}.bot[data-bot=hana]{--gs:1.25;--as:1.6}.bot[data-bot=taro]{--gs:1.12;--as:1.25}.bot[data-bot=mochi]{--gs:1.12;--as:1.3}
 .bot[data-state=waiting] .feature{animation:attn 4.5s ease-in-out infinite}
 .bot[data-state=idle] .head{transform-origin:50% 100%;animation:breathe 5.5s ease-in-out infinite}
 .bot.hop svg{animation:hop .25s ease-out}
 @keyframes bob{50%{transform:translateY(-2.2px)}}
-@keyframes glow{50%{opacity:.45;transform:scale(var(--gs,1.2))}}
-@keyframes attn{0%,68%,100%{transform:none;opacity:1}80%{transform:scale(1.5);opacity:.55}92%{transform:none;opacity:1}}
+@keyframes glow{50%{opacity:var(--dim,.5);transform:scale(var(--gs,1.2))}}
+@keyframes attn{0%,68%,100%{transform:none;opacity:1}80%{transform:scale(var(--as,1.5));opacity:var(--dim,.5)}92%{transform:none;opacity:1}}
 @keyframes breathe{50%{transform:scale(1.03)}}
 @keyframes hop{40%{transform:translateY(-8%) rotate(-5deg)}}
 @media (prefers-reduced-motion:reduce){.bot .head,.bot .feature,.bot.hop svg{animation:none!important}}

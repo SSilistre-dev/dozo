@@ -1,10 +1,9 @@
 /* Dozo bot avatars. Every selector sits under .dozo-avatar so nothing here leaks into the app. */
 
 .dozo-avatar {
-  /* The head stays light and the visor dark on both themes, so each takes the semantic token that
-     is light (or dark) on that theme. */
-  --dozo-body: light-dark(var(--background), var(--foreground));
-  --dozo-visor: light-dark(var(--foreground), var(--background));
+  /* The head is drawn in the theme's text colour, like the logo: light on a dark page, dark on a
+     light one. The visor is a hole in the head, so it shows whatever the avatar stands on. */
+  --dozo-body: var(--foreground);
 
   display: inline-block;
   flex: none;
@@ -12,10 +11,30 @@
   user-select: none;
 }
 
-/* The tile colour (--dozo-tile) and eye glow (--dozo-glow) are set inline by the component from its
-   bot identity palette, so no colour value is written in this file. */
-.dozo-avatar[data-character="kumo"] {
+/* The character's colour (--dozo-tile) is set inline by the component from its bot identity
+   palette, so no colour value is written in this file. It paints the accessory only.
+   How far each accessory moves when it pulses: a hat or a pair of ears only stirs, a flower beats.
+   Ears are part of the head, so they do not fade (--dozo-dim). */
+.dozo-avatar[data-character="sora"] {
   --dozo-pulse: 1;
+  --dozo-attn: 1.08;
+}
+.dozo-avatar:is([data-character="kumo"], [data-character="yuki"]) {
+  --dozo-pulse: 1.08;
+  --dozo-attn: 1.14;
+  --dozo-dim: 1;
+}
+.dozo-avatar[data-character="hana"] {
+  --dozo-pulse: 1.25;
+  --dozo-attn: 1.6;
+}
+.dozo-avatar[data-character="taro"] {
+  --dozo-pulse: 1.12;
+  --dozo-attn: 1.25;
+}
+.dozo-avatar[data-character="mochi"] {
+  --dozo-pulse: 1.12;
+  --dozo-attn: 1.3;
 }
 
 .dozo-avatar .da-svg {
@@ -24,22 +43,16 @@
   height: 100%;
   stroke: none;
 }
-.dozo-avatar .da-tile,
-.dozo-avatar .da-band {
+.dozo-avatar .da-accent {
   fill: var(--dozo-tile);
 }
 .dozo-avatar .da-body {
   fill: var(--dozo-body);
+  fill-rule: evenodd;
 }
-.dozo-avatar .da-visor {
-  fill: var(--dozo-visor);
-}
-.dozo-avatar .da-glow {
-  fill: var(--dozo-glow);
-}
-.dozo-avatar .da-glow-line {
+.dozo-avatar .da-line {
   fill: none;
-  stroke: var(--dozo-glow);
+  stroke: var(--dozo-body);
   stroke-width: 2.6;
   stroke-linecap: round;
 }
@@ -50,6 +63,10 @@
 .dozo-avatar .da-blink {
   transform-box: fill-box;
   transform-origin: center;
+}
+/* An accessory grows from where it meets the head. */
+.dozo-avatar .da-feature {
+  transform-origin: 50% 100%;
 }
 
 /* Idle bots sleep: half-closed eyes. A tracked avatar overrides this inline and wakes on hover. */
@@ -113,7 +130,7 @@
 }
 @keyframes dozo-glow {
   50% {
-    opacity: 0.45;
+    opacity: var(--dozo-dim, 0.5);
     transform: scale(var(--dozo-pulse, 1.2));
   }
 }
@@ -125,8 +142,8 @@
     opacity: 1;
   }
   80% {
-    transform: scale(1.5);
-    opacity: 0.55;
+    transform: scale(var(--dozo-attn, 1.5));
+    opacity: var(--dozo-dim, 0.5);
   }
   92% {
     transform: none;

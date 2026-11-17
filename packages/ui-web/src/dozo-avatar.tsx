@@ -75,12 +75,12 @@ interface Tracker {
 }
 
 const EYE_LIMIT: Record<DozoCharacter, readonly [number, number]> = {
-  sora: [3.2, 2.6],
-  kumo: [2.5, 3],
-  hana: [3.5, 2],
-  taro: [2.7, 3],
-  yuki: [3.5, 3],
-  mochi: [2, 2.5],
+  sora: [3.2, 2.4],
+  kumo: [3.2, 2],
+  hana: [3.2, 2.4],
+  taro: [2.8, 2.4],
+  yuki: [3.4, 2.6],
+  mochi: [3.4, 2],
 };
 const GAIN: Record<DozoAvatarState, number> = { working: 0.8, waiting: 1, idle: 0.8 };
 const SLEEP_OPEN = 0.3;
@@ -278,11 +278,11 @@ function track(tracker: Tracker): () => void {
 }
 
 export interface DozoAvatarProps {
-  /** Stable identity (bot id or name). Picks the character, and the tile colour unless `color` is set. */
+  /** Stable identity (bot id or name). Picks the character, and its colour unless `color` is set. */
   seed: string;
   /** The character to draw, when something other than the seed decides it. */
   character?: DozoCharacter;
-  /** Explicit tile colour, a hex value (the bot's `color` field). The character stays seed-based. */
+  /** Explicit accessory colour, a hex value (the bot's `color` field). The character stays seed-based. */
   color?: string;
   size?: number;
   state?: DozoAvatarState;
@@ -312,16 +312,17 @@ export const DozoAvatar = memo(function DozoAvatar({
   const hash = dozoHashSeed(seed);
   // Each avatar blinks on its own period and phase, so a list never blinks in unison.
   const blinkPeriod = 4 + ((hash >>> 8) % 20) / 10;
-  const [tileLight, tileDark] = DOZO_BOT_PALETTE[character].tile;
+  const [light, dark] = DOZO_BOT_PALETTE[character];
   const style = {
     width: size,
     height: size,
     "--dozo-delay": `${-((hash % 30) / 10)}s`,
     "--dozo-blink-period": `${blinkPeriod}s`,
     "--dozo-blink-delay": `${-(((hash >>> 16) % 100) / 100) * blinkPeriod}s`,
-    // light-dark() follows the theme's color-scheme; an explicit hex colour wins over the tile.
-    "--dozo-tile": color && HEX_COLOR.test(color) ? color : `light-dark(${tileLight}, ${tileDark})`,
-    "--dozo-glow": DOZO_BOT_PALETTE[character].glow,
+    // The character's colour: its accessory, and the tint dozo-shell.css gives the open bot's row
+    // (which reads this name, kept from the tile the colour once filled). light-dark() follows the
+    // theme's color-scheme; an explicit hex colour wins.
+    "--dozo-tile": color && HEX_COLOR.test(color) ? color : `light-dark(${light}, ${dark})`,
   } as CSSProperties;
 
   useEffect(() => {
@@ -401,7 +402,6 @@ export const DozoAvatar = memo(function DozoAvatar({
         aria-hidden="true"
         onAnimationEnd={onAnimationEnd}
       >
-        <rect className="da-tile" width="64" height="64" rx="18" />
         <g className="da-head">
           <Art character={character} />
         </g>
