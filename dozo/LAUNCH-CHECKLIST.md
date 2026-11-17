@@ -61,7 +61,10 @@ placeholders are replaced.
       other vendors, not Rakazo. Decide whether to keep them.
 - [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids (`com.rakazo.app` is
       upstream's) and signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
-      workflows must stay disabled until then.
+      workflows must stay disabled until then. The fork's own macOS app (`dozo/desktop/`) is signed
+      ad hoc and opens only on the Mac that built it: handing it out needs an Apple Developer ID
+      certificate and notarization, and its bundle id (`dev.ssilistre.dozo`) was chosen without the
+      owner.
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
       `dozo/landing/`; replace its placeholder links and publish it once the domain exists.
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's

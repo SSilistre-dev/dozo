@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local",
+  "description": "The app's own screens (choose a server, connection error). It has no `remote` entry and must never get one: a page loaded from a server can call nothing.",
+  "windows": ["main"],
+  "permissions": ["allow-current-server", "allow-set-server", "allow-connect"]
+}
