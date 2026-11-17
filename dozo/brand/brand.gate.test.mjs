@@ -312,12 +312,12 @@ const SHAPE_CASES = {
     left: [".rakazo-command-env"],
   },
   "fs-path": {
-    yes: ["/tmp/rakazo/x.log", "/usr/local/bin/rakazo-x", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/etc/brave/policies/managed/rakazo.json", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
-    no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo"],
+    yes: ["/tmp/rakazo/x.log", "/usr/local/bin/rakazo-computer", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/etc/brave/policies/managed/rakazo.json", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
+    no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo", "/opt/rakazo-pro", "/tmp/rakazo-notes/x"],
   },
   "shell-path": {
-    yes: ['cat "$dir/rakazo-proxy.json"', "~/rakazo-home", "~/rakazo-chrome", "./rakazo-browser", "$directory/.rakazo-write.XXXXXX", "# --user-data-dir=.../rakazo-browser"],
-    no: ["github.com/rakazo-labs", "a/rakazo-x"],
+    yes: ['cat "$dir/rakazo-proxy.json"', "./rakazo-browser", "$directory/.rakazo-write.XXXXXX", "# --user-data-dir=.../rakazo-browser"],
+    no: ["github.com/rakazo-labs", "a/rakazo-x", "cd ~/rakazo-notes", "$dir/rakazo-proxyx"],
   },
   "windows-path": {
     yes: ["`${profile}\\\\rakazo\\\\.runs\\\\${id}`"],
@@ -614,6 +614,8 @@ const STEM_SAMPLES = {
   "process-marker": (stem, tail = "") => `pkill -f rakazo-${stem}${tail}`,
   "memory-entity": (stem, tail = "") => "`rakazo-" + stem + tail + "/${id}`",
   "kdf-context": (stem, tail = "") => `"rakazo/${stem}${tail}/v1"`,
+  "fs-path": (stem, tail = "") => `/tmp/rakazo${stem}${tail}`,
+  "shell-path": (stem, tail = "") => `$dir/rakazo${stem}${tail}`,
 };
 const allSamples = () => [
   ...Object.values(SHAPE_CASES).flatMap((row) => row.yes),

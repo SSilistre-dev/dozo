@@ -30,7 +30,7 @@ cleanup() {
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
   [ $rc -eq 0 ] || [ $rc -eq 64 ] || [ "${DIED:-}" = 1 ] || echo "[dozo] FAILED at step '$STEP' (exit $rc)" >&2
   [ -z "${ENV_TMP:-}" ] || rm -f "$ENV_TMP"
-  rm -f "$ENVF.new"
+  rm -f "$ENVF.new"; rm -rf "$STAGE/src.new"
   # Only a step that started a container (node_run) has any to remove: stage and the compose steps
   # leave Docker alone here, so a host without Docker can still stage.
   if [ "${STARTED_CONTAINER:-}" = 1 ]; then
@@ -73,21 +73,14 @@ dc() {
 # A swap cut short leaves a partial tree that still has the compose file: only the marker says it is whole.
 need_stage() { [ -f "$STAGED" ] && [ -f "$SRC/$COMPOSE_REL" ] || die "no complete staged tree at $SRC; run: dozo/docker/build.sh stage"; }
 
-# Overlay uncommitted and untracked-but-not-ignored files onto $1 (the copy of ref $2). A tracked
-# file deleted in the working tree is the one benign case (rsync would exit 23 on it), so it is
-# dropped from the list up front and any rsync failure is real. git archive already put those files
-# in the copy, so they are removed again: the gate must test the tree as it is, not files the
-# working tree no longer has. The deleted paths come from a diff of the ref against the working
-# tree: unlike `git ls-files --deleted` (index entries missing on disk) it also names a staged
-# deletion or rename, and --no-renames turns a rename into delete + add, so the old path goes and
-# the new one (in the index, hence copied above) stays. A path that exists on disk is never removed.
+# Overlay the working tree onto $1 (the copy of ref $2): the tracked files that differ from the ref
+# plus the untracked, not ignored ones. A listed path that is gone from disk (a deletion, a rename's
+# old path; --no-renames turns a rename into delete + add) is removed from the copy instead, so the
+# gate tests the tree as it is. Any rsync failure is real: the list only holds paths that exist.
 overlay_worktree() {
-  (cd "$ROOT" && git ls-files -z --cached --others --exclude-standard \
-    | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; fi; done \
+  (cd "$ROOT" && { git diff --name-only --no-renames -z "$2" --; git ls-files -z --others --exclude-standard; } \
+    | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; else rm -f "$1/$f"; fi; done \
     | rsync -a --from0 --files-from=- ./ "$1/") || die "worktree overlay failed"
-  (cd "$ROOT" && git diff --name-only --no-renames --diff-filter=D -z "$2" -- \
-    | while IFS= read -r -d '' f; do if [ ! -e "$f" ] && [ ! -L "$f" ]; then rm -f "$1/$f"; fi; done) \
-    || die "removing deleted files from the staged copy failed"
 }
 
 stage() {
@@ -109,6 +102,9 @@ stage() {
   # mounts the real dozo/ at /dozo). dozo/NOTICE stays: it is the licence addendum, and the image
   # carries the source it is about. The fork-only dozo-* source files live in apps/ and packages/.
   rm -f "$new/Makefile"
+  # The fork's tests and its README (the notice block) are not part of any image either; ignored,
+  # not removed: the unit step and the brand tools still read them from the stage.
+  printf '%s\n' '' '# dozo' '**/dozo-*.test.*' '/README.md' >> "$new/.dockerignore"
   [ ! -d "$new/dozo" ] || find "$new/dozo" -mindepth 1 -maxdepth 1 ! -name NOTICE -exec rm -rf {} +
   [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
   # Swap in by contents, never moving data/ (the compose bind mount holding the app data). The
@@ -120,7 +116,7 @@ stage() {
   find "$new" -mindepth 1 -maxdepth 1 -exec mv {} "$SRC/" \;
   rmdir "$new"
   : > "$STAGED"
-  say "stage: ok ($(find "$SRC" -type f | wc -l | tr -d ' ') files, no .git)"
+  say "stage: ok ($(find "$SRC" -path "$SRC/data" -prune -o -type f -print | wc -l | tr -d ' ') files, no .git)"
 }
 
 brand() {
@@ -168,8 +164,7 @@ genenv() {
     # Written whole into a temp file and moved in, so an interrupted run leaves no half-written file.
     ( umask 077
       printf '%s\n' "POSTGRES_PASSWORD=$pg" "POSTGRES_APP_PASSWORD=$pga" "BETTER_AUTH_SECRET=$ba" \
-        "ENCRYPTION_KEY=$ek" "SCREEN_PROXY_SECRET=$sp" "SANDBOX_SUPERVISOR_TOKEN=$st" \
-        "RAKAZO_WEB_BIND=127.0.0.1" > "$ENVF.new" && mv "$ENVF.new" "$ENVF" ) || die "cannot write $ENVF"
+        "ENCRYPTION_KEY=$ek" "SCREEN_PROXY_SECRET=$sp" "SANDBOX_SUPERVISOR_TOKEN=$st" > "$ENVF.new" && mv "$ENVF.new" "$ENVF" ) || die "cannot write $ENVF"
   else
     # By key only: the value is tested for being non-empty and never read out.
     local k bad=""
@@ -179,6 +174,8 @@ genenv() {
   # Our stack binds to 127.0.0.1 on the user's own machine, so private model endpoints (a local
   # OpenAI-compatible server) are allowed. Reaches api and worker through upstream's x-app-environment.
   setenv MCP_ALLOW_PRIVATE_ENDPOINT true
+  # The bind address is ours too (loopback only), written on every run so an older file follows it.
+  setenv RAKAZO_WEB_BIND 127.0.0.1
   # Keep the port if our own web container is running; otherwise pick a free one, starting from
   # DOZO_WEB_PORT of the caller (a seed only: once the file has the port, the file decides).
   # The service list is captured first: `dc ps | grep -q` under pipefail can fail on SIGPIPE.
@@ -225,6 +222,28 @@ up() {
   dc ps || true; die "web did not answer 200 within ${limit}s (DOZO_UP_TIMEOUT)"
 }
 
+# A web that answers proves nothing about the api or the worker (web only waits for them to start).
+# Wait, by wall clock (DOZO_SMOKE_TIMEOUT seconds), until service $1 is healthy, or running when it
+# has no healthcheck. A stopped or missing container fails at once; otherwise the last state and the
+# service's last log lines are printed.
+await_service() {
+  local svc="$1" limit="${DOZO_SMOKE_TIMEOUT:-90}" end id st; end=$(( $(date +%s) + limit ))
+  while :; do
+    id="$(dc ps -a -q "$svc" 2>/dev/null | head -n1)" || id=""
+    st=missing
+    [ -z "$id" ] || st="$(docker inspect -f '{{if not .State.Running}}{{.State.Status}}{{else if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' "$id" 2>/dev/null)" || st=missing
+    case "$st" in
+      healthy|running) say "smoke: $svc $st"; return 0 ;;
+      exited|dead|missing|created) break ;;
+    esac
+    [ "$(date +%s)" -lt "$end" ] || break
+    sleep 2
+  done
+  echo "[dozo] smoke: $svc is '$st', last log lines:" >&2
+  dc logs --no-color --tail 20 "$svc" >&2 || true
+  die "service $svc is '$st', not healthy (wait limit ${limit}s, DOZO_SMOKE_TIMEOUT)"
+}
+
 smoke() {
   STEP=smoke; need curl; genenv
   local url="http://127.0.0.1:$PORT/" code html title
@@ -240,6 +259,7 @@ smoke() {
     echo "$title" | grep -qi dozo || die "title not branded: '$title'" 2
     ! echo "$title" | grep -qi rakazo || die "title still says Rakazo: '$title'" 2
   fi
+  await_service api; await_service worker
   say "smoke: ok"
 }
 

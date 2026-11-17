@@ -156,7 +156,7 @@ shape table lets an identifier through: it is finite on purpose, so `rakazo-powe
 `{ name, re, reason }`: a case-sensitive (except `header`) global regex that matches the whole token
 that holds the old name, as the tree contains it, and masks it. Rows that are lists of names (`dotted-key`,
 `css-name`, `dom-event`, `binary-name`, `service-name`, `persisted-key`, `name-prefix`, `process-marker`,
-`memory-entity`, `kdf-context`) are closed: each stem is one name the tree uses, a name that continues
+`memory-entity`, `kdf-context`, `fs-path`, `shell-path`) are closed: each stem is one name the tree uses, a name that continues
 with a letter, digit, `_` or `-` is another name, and `apply --strict` (with the shipped config) fails on a
 row or a stem that matches nothing in the tree. Some rows also look at the neighbourhood:
 
@@ -168,6 +168,11 @@ row or a stem that matches nothing in the tree. Some rows also look at the neigh
 - `dotted-key` (`rakazo.botId`) needs quotes, a URL or path before it, or `=` after it.
 - The hyphen rows are prose, hence a leak, between a plain word and a lowercase word
   (`Try the rakazo-browser app`).
+
+Known limit of the open prefix rows (`snake-name`, `env-name`, `data-attribute`, `package-scope`,
+`header`): they match the prefix alone (`rakazo_`, `RAKAZO_`, `data-rakazo-`, `@rakazo/`,
+`x-rakazo-`), wherever it stands, so the same text in plain prose also passes. Only the closed rows
+check what follows the name.
 
 Limits of the neighbourhood: a parenthesised or colon-ended name (`(RakazoPro)`, `RakazoBot: hi`) reads
 as a slot; a hyphen name at the start of a line or before `-`, `.` or a quote is not prose; a class

@@ -435,8 +435,19 @@ addStems(
   (alt) => String.raw`(?<![\w/-])rakazo/${alt}/v1`,
 );
 SHAPES.push({ name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" });
-SHAPES.push({ name: "fs-path", re: /(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo/g, reason: "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*)" });
-SHAPES.push({ name: "shell-path", re: /(?:\$\w+|~|\.{1,3})\/\.?rakazo-/g, reason: "relative shell paths ($dir/rakazo-proxy.json, ~/rakazo-home)" });
+// A path token is closed on the right: the stem is what the tree really puts after the name ("" is the bare directory), and any other letter, digit, `_` or `-` makes it another path (`/opt/rakazo-pro`).
+addStems(
+  "fs-path",
+  "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*), each tail from a closed list",
+  ["", "-background-", "-browser", "-cache", "-chrome", "-chrome-XXXXXX", "-command-", "-command-env", "-computer", "-computer-control", "-focus-or-launch", "-home", "-local-bin", "-nss", "-page-browser", "-page-browser-", "-page-input-", "-prepare", "-proxy", "-terminal", "-user-env", "-worker-health", "-workspace-", "-workspace-archive-", "-xcapture"],
+  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo${alt}(?![\w-])`,
+);
+addStems(
+  "shell-path",
+  "relative shell paths ($dir/rakazo-proxy.json, ./rakazo-browser), each tail from a closed list",
+  ["-browser", "-proxy", "-write"],
+  (alt) => String.raw`(?:\$\w+|~|\.{1,3})\/\.?rakazo${alt}(?![\w-])`,
+);
 SHAPES.push({ name: "windows-path", re: /(?<=\\)rakazo(?=\\)/g, reason: "profile directory on a Windows computer" });
 SHAPES.push({ name: "dev-database", re: /\/\/rakazo:rakazo@[\w.:]+\/rakazo/g, reason: "local development database URL" });
 

@@ -64,6 +64,8 @@ wait_gone() {
 # fails with the one command that fixes it (olc stays offline and fast once the image is cached).
 node_image() {
   docker image inspect "$NODE_IMAGE" >/dev/null 2>&1 && return 0
+  # No daemon is not a missing image: a pull hint would send the reader the wrong way.
+  docker info >/dev/null 2>&1 || { fail "cannot reach the Docker daemon (is it running, and may this user use it?)"; return 1; }
   if [ -n "${CI:-}" ]; then
     echo "[gate] CI: pulling $NODE_IMAGE"
     docker pull -q "$NODE_IMAGE" >/dev/null && return 0
@@ -332,7 +334,8 @@ kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c";
 # step is reaped: a later cleanup must never signal a pid the system has since reused.
 WT_PID=""; WT_WD=""
 wt_stop() { # idempotent; the watchdog goes first so it cannot fire at a step that is already gone
-  [ -z "$WT_WD" ] || { kill_tree "$WT_WD"; wait_gone "$WT_WD"; }
+  # The watchdog dies by our TERM: its "Terminated" job notice is noise, so stderr is dropped here.
+  [ -z "$WT_WD" ] || { kill_tree "$WT_WD"; wait_gone "$WT_WD"; } 2>/dev/null
   [ -z "$WT_PID" ] || kill_tree "$WT_PID"
   WT_PID=""; WT_WD=""
 }

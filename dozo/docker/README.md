@@ -44,8 +44,9 @@ It uses GNU `timeout` or `gtimeout` when present and a built-in watchdog otherwi
 with `down`.
 
 1. `stage`: `git archive HEAD` (`DOZO_STAGE_REF` picks another ref) into `dozo/.stage/src.new`. With
-   `DOZO_STAGE_WORKTREE=1` it then overlays uncommitted and untracked-but-not-ignored files and
-   removes again every file the working tree deleted or renamed away, staged or not. The new tree
+   `DOZO_STAGE_WORKTREE=1` it then overlays the files that differ from that ref (`git diff` of the
+   ref against the working tree, staged or not) and the untracked-but-not-ignored ones, and removes
+   again every file the working tree deleted or renamed away. The new tree
    replaces the contents of `src` except `data`, which is never moved (see Generated files). The
    marker `stage.complete` is removed first and written last: a stage cut short has none, and
    later steps refuse it ("run stage"). A stage made before the marker existed needs one
@@ -53,7 +54,9 @@ with `down`.
    - The staged tree has no `.git`, no root `Makefile` and nothing of `dozo/` but `NOTICE` (the licence
      addendum): upstream's Dockerfile copies the whole tree before it builds the apps, so an edit to
      fork tooling would otherwise rebuild everything and ship it in the image. The stage tools read
-     the real `dozo/` (mounted at `/dozo`), not the stage.
+     the real `dozo/` (mounted at `/dozo`), not the stage. The staged `.dockerignore` also lists
+     `**/dozo-*.test.*` and the root `README.md` (the fork notice), so editing either does not
+     rebuild the images. `stage` reports the number of source files, not counting `src/data`.
    - Local versus CI: the Makefile turns the overlay on, so a local `make qa` tests uncommitted
      files and can pass where CI fails. CI stages HEAD only (it calls `build.sh stage` without the
      overlay). Commit before trusting a local pass.
@@ -71,7 +74,10 @@ with `down`.
 4. `up`: `compose up -d`, then waits for `http://127.0.0.1:<port>/` to answer 200, at most
    `DOZO_UP_TIMEOUT` seconds. On timeout it prints `compose ps` and fails.
 5. `smoke`: the web root answers 200, has a `<title>`, and (unless `DOZO_SKIP_BRAND=1`) the title
-   contains "dozo" and does not contain "rakazo".
+   contains "dozo" and does not contain "rakazo". Then the `api` container must be `healthy` and the
+   `worker` container healthy (running, if it has no healthcheck), waiting at most
+   `DOZO_SMOKE_TIMEOUT` seconds each. A stopped, missing or unhealthy one fails with its last 20 log
+   lines.
 6. `down`: `compose down`. Containers go; the named volumes (`postgres`, `pgdata`, `webassets`,
    prefixed `dozo_`) stay unless `--volumes`. Compose runs from the staged copy, so it needs the
    staged compose file and `dozo.env`; a whole tree is not required, so a stage cut short that still
@@ -163,6 +169,7 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 | `DOZO_NODE_IMAGE` | `node:24.22-slim` | Image for every Node step, including the e2e model stub |
 | `DOZO_WEB_PORT` | `5173` | First port tried when the env file has none. A seed only (see Generated files) |
 | `DOZO_UP_TIMEOUT` | `240` | Seconds `up` waits for the web app |
+| `DOZO_SMOKE_TIMEOUT` | `90` | Seconds `smoke` waits for the api, then for the worker, to be healthy |
 | `DOZO_STOP_TIMEOUT` | unset; qa sets `60` | Seconds for `up` and `down` to stop containers |
 | `DOZO_QA_STEPS` | all steps | Subset of qa steps |
 | `DOZO_TIMEOUT_<STEP>` | build 2400, unit 900, else 600 | Per-step qa timeout in seconds |
@@ -205,7 +212,7 @@ The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.compl
   `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, `SANDBOX_SUPERVISOR_TOKEN`), mode 600,
   created once and kept across restages. Without `openssl` the step stops and writes nothing; an
   existing file with an empty or missing secret is refused with the fix (see Reset). It also holds
-  `RAKAZO_WEB_BIND`, the web port and origin keys (`DOZO_WEB_PORT`, `WEB_ORIGIN`, `BETTER_AUTH_URL`,
+  `RAKAZO_WEB_BIND` (rewritten on every run), the web port and origin keys (`DOZO_WEB_PORT`, `WEB_ORIGIN`, `BETTER_AUTH_URL`,
   `RAKAZO_EXTRA_AUTH_ORIGINS`) and `MCP_ALLOW_PRIVATE_ENDPOINT=true` (added to existing files too):
   the stack binds to 127.0.0.1 on your own machine, so a local OpenAI-compatible endpoint is
   allowed. Never commit it.
