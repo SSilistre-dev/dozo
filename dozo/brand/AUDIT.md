@@ -21,7 +21,7 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 6 | Memory provider text: placeholder, `rakazo-shared` message, bank error | Fixed: placeholder and default workspace id to `dozo-`, reserved peer id `rakazo-shared` to `dozo-shared` everywhere (literal incl. all 15 `.po`), bank error reworded. Hindsight prefix regex `^rakazo-` stays (stored namespace, not shown) |
 | 7 | Offline emulator seeds (`composio-fake`, `release-watch`) | Rejected: not user-visible; both files are in `exclude` (offline emulators matched by owner/repo) |
 | 8 | Default/orange bot avatar draws the ghost; avatar set `rakazo` | Fixed: body, hand paths and eyes in `logo-avatar-art.ts` swapped for the Dozo pill (exports unchanged, so `LogoAvatar`, notification avatars, mobile follow); orange palette special case removed. Enum value `rakazo` stays (stored). Superseded on the web by the Dozo characters (see "Inline SVG mascots"): the pill rules stay as a second line for code that still reads `logo-avatar-art.ts` (the mobile app, out of scope) |
-| 9 | Sign-in/sign-up 74px orange mascot | Fixed: `LogoAvatar` is the Dozo wrapper; the anchored rule in `Auth.tsx` passes blue, which the wrapper draws as Sora, awake |
+| 9 | Sign-in/sign-up 74px orange mascot | Fixed: `LogoAvatar` is the Dozo wrapper, which draws the approved lockup (`dozo-logo.tsx`: head and wordmark in the text colour, the band in its red) whatever colour upstream passes; no rule in `Auth.tsx` |
 | 10 | Build-time Dozo bug: `rakazo.computerOwner` became `dozo.exampleputerOwner`, same for localStorage keys `rakazo.composer*` | Fixed in `lib.mjs`: URL keys need a non-word char after. Gate: URL target glued to a word. Images built before the fix carry the bad names: stage and rebuild |
 | 11 | MCP/GraphQL/host names sent outward: `rakazo` client names, `RakazoIntrospection`, `hostInfo` | Fixed: 5 anchored rules + 2 literals (remote-mcp, mcp-transport, mcp-connector, serenity, cua, mcp-app, GraphQL op). Gate: a quoted `"RakazoXyz"` name and a lowercase `"rakazo"` outside `allow.text` fail |
 | 12 | Model tool prefix `mcp__rakazo__` (Claude Code CLI provider) | Fixed: `TOOL_SERVER` constant, all uses go through it |
@@ -111,8 +111,9 @@ export the same names:
   (`dozo-avatar.tsx`). Upstream's `BotAvatar` is still called for one case, a bot with a saved
   photo: it draws the photo and, while the bot works, a plain progress ring (`:120`), no mascot.
 - `packages/ui-web/src/logo-avatar.tsx:62` (`LogoAvatar`, the sign-in 74 px mascot at
-  `apps/web/src/pages/Auth.tsx:657`): replaced by the wrapper's `LogoAvatar`; the upstream file is
-  imported only by upstream's `bot-avatar.tsx`, on a branch the wrapper never reaches.
+  `apps/web/src/pages/Auth.tsx:657`): replaced by the wrapper's `LogoAvatar`, the Dozo lockup; the
+  upstream file is imported only by upstream's `bot-avatar.tsx`, on a branch the wrapper never
+  reaches.
 - `packages/core/src/logo-avatar-art.ts:31-34` (body and hand paths): no web or server code reads
   them now. The pill rules (row 8) stay for the mobile app, which is out of scope.
 - `packages/core/src/notification-avatar.ts:54,60` (the art as a `data:image/svg+xml` portrait for

@@ -7,6 +7,7 @@ import { parseBotAvatar, BotAvatar as UpstreamBotAvatar } from "./bot-avatar.js"
 import { useBotAvatarActivity } from "./bot-avatar-activity.js";
 import type { DozoAvatarState } from "./dozo-avatar.js";
 import { DozoAvatar } from "./dozo-avatar.js";
+import { DozoLogo } from "./dozo-logo.js";
 import { cn } from "./lib/utils.js";
 
 /**
@@ -65,14 +66,11 @@ export function BotShapePreview({
 }
 
 /**
- * The brand mascot (sign-in and sign-up). Upstream's `motion` switch is not carried over: the
- * Dozo avatar decides its own motion from its size and the reduced-motion preference.
+ * What stands at the door (sign-in and sign-up): the Dozo logo, not a bot. Bots live inside the
+ * app. Upstream's props are accepted so its call site stays as it is; a logo has no colour to
+ * pick, no size of a bot's and no activity, so only the label and the class are used.
  */
 export function LogoAvatar({
-  activity = "idle",
-  size = 38,
-  avatarValue,
-  identity = "",
   label,
   className,
 }: {
@@ -84,16 +82,7 @@ export function LogoAvatar({
   motion?: boolean;
   className?: string;
 }) {
-  return (
-    <DozoAvatar
-      seed={identity || "sora"}
-      character={dozoCharacterForLook(identity, avatarValue)}
-      size={size}
-      state={stateOf(activity)}
-      title={label}
-      className={className}
-    />
-  );
+  return <DozoLogo title={label} className={className} />;
 }
 
 /** The text wordmark with its seal dot; the styles are in dozo-shell.css. */

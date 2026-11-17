@@ -17,12 +17,15 @@ and open a page. The pages are fixed at 1440x900.
 ## Decisions they fix
 
 - Palette: the variables at the top of `dozo.css` (neutral surfaces, one blue accent,
-  one red seal dot, six bot tile colours), dark and light.
+  one red seal dot, six bot identity colours), dark and light.
 - Pill controls: buttons and sidebar rows are fully rounded (999px), 38 px tall.
-- Six avatar characters: Sora, Kumo, Hana, Taro, Yuki, Mochi, each a rounded tile
-  with a white robot head, a dark visor and glowing eyes.
+- Six avatar characters, siblings of the logo mark: Sora, Kumo, Hana, Taro, Yuki, Mochi. No tile:
+  the head stands on the page in the text colour (light on dark, dark on light), a soft blob with
+  the mark's tilted visor cut out of it and two eyes in the same ink. Each wears one accessory,
+  the only place its identity colour shows: Sora a kasa hat, Kumo kitsune ears, Hana a bun with a
+  kanzashi pin, Taro a hachimaki, Yuki the ears of a snow rabbit, Mochi the tanuki's leaf.
 - Motion: eyes follow the pointer (clamped, eased), random blinking; working bots bob
-  and pulse the antenna, waiting bots pulse for attention, idle bots sleep until hovered;
+  and pulse the accessory, waiting bots pulse for attention, idle bots sleep until hovered;
   a small hop on hover; all of it off under `prefers-reduced-motion`.
 - Seigaiha sidebar pattern: faint concentric-wave scales behind the wordmark, fading out
   downward (`.wag` in `dozo.js` and `dozo.css`).

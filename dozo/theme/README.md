@@ -31,7 +31,7 @@ show none of these surfaces, so there is no source value to map.
 Only colours, one radius and font stacks. Pill shapes (999 px buttons and rows), the seigaiha
 sidebar pattern, the wordmark with its seal dot, the tinted active row and the chat as a narrow
 column with unboxed bot text come from `packages/ui-web/src/dozo-shell.css`, which an anchored
-rule imports into the package stylesheet. The six bot tile colours are in the avatar palette
+rule imports into the package stylesheet. The six bot identity colours are in the avatar palette
 (`packages/core/src/dozo-avatar-art.ts`). Three more anchored rules set defaults the design
 shows: one-line sidebar rows, a 240 px sidebar, and your own bubble and the send button in the
 theme's colours instead of the bot's upstream colour.

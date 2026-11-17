@@ -361,3 +361,25 @@ describe("the shipped config, in literal values", () => {
     assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-browser.desktop.bak"), ["infra/sandboxes/computer/rakazo-browser.desktop.bak"]);
   });
 });
+
+describe("the logo above sign-in", () => {
+  const root = path.join(import.meta.dirname, "../..");
+  const source = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
+
+  it("is the drawing of the brand file: the same outlines, order, viewBox and band red", () => {
+    const asset = source("dozo/brand/assets/logo-dark.svg");
+    const component = source("packages/ui-web/src/dozo-logo.tsx");
+    const css = source("packages/ui-web/src/dozo-shell.css");
+    const approved = [...asset.matchAll(/<path fill="([^"]+)"[^>]* d="([^"]+)"/g)].map(([, fill, d]) => [fill.toLowerCase(), d]);
+    assert.equal(approved.length, 9);
+    const band = approved.filter(([fill]) => fill !== "#f4f3f0");
+    assert.equal(band.length, 4);
+    assert.deepEqual(
+      [...component.matchAll(/^\s*"(M[^"]+)"[,;]$/gm)].map(([, d]) => d),
+      approved.map(([, d]) => d),
+    );
+    assert.ok(component.includes(`viewBox="${asset.match(/viewBox="([^"]+)"/)[1]}"`));
+    assert.equal(css.match(/\.dozo-logo-band \{\s*fill: (#[0-9a-f]{6});/)[1], band[0][0]);
+    assert.equal(new Set(band.map(([fill]) => fill)).size, 1);
+  });
+});
