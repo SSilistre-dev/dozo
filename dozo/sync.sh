@@ -222,8 +222,10 @@ run_gate() { # $1 = make target
     GATE_FAIL=1; return 0
   fi
   say "running make $1"
-  # Without the variables that make a run partial: a "QA: PASS (partial: ...)" must not count here.
-  env -u DOZO_QA_STEPS -u DOZO_SKIP_BRAND -u DOZO_UPSTREAM_REF make "$1" || { echo "[sync] make $1 FAILED" >&2; GATE_FAIL=1; }
+  # Without the variables that make a run partial or weaker: a "QA: PASS (partial: ...)" must not
+  # count here.
+  env -u DOZO_QA_STEPS -u DOZO_SKIP_BRAND -u DOZO_UPSTREAM_REF -u DOZO_STAGE_REF -u DOZO_UNIT_SRC \
+    -u DOZO_COVERAGE_MIN -u DOZO_BRAND_COVERAGE_MIN -u DOZO_MIN_FORK_TESTS make "$1" || { echo "[sync] make $1 FAILED" >&2; GATE_FAIL=1; }
 }
 # make qa starts with olc, so --fast runs olc alone and the full run runs qa alone.
 if [ "$FAST" = 1 ]; then run_gate olc; say "--fast: make qa skipped"; else run_gate qa; fi

@@ -68,7 +68,9 @@ node_run() { STARTED_CONTAINER=1; docker run --init --rm --name "dozo-node-$$" -
 # the caller's shell only seeds the generation of the file (genenv).
 dc() {
   local k clean=()
-  if [ -f "$ENVF" ]; then while IFS='=' read -r k _; do [ -z "$k" ] || clean+=(-u "$k"); done < "$ENVF"; fi
+  # Only real KEY=value lines count (an optional leading `export`, indentation allowed): a comment,
+  # a blank line or a commented-out key is not a key. Names only; values are never read out.
+  if [ -f "$ENVF" ]; then while IFS= read -r k; do clean+=(-u "$k"); done < <(sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)=.*/\2/p' "$ENVF"); fi
   (cd "$SRC" && env ${clean[@]+"${clean[@]}"} docker compose -p "$PROJECT" --env-file "$ENVF" \
     -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" "$@")
 }
@@ -77,12 +79,18 @@ dc() {
 need_stage() { [ -f "$STAGED" ] && [ -f "$SRC/$COMPOSE_REL" ] || die "no complete staged tree at $SRC; run: dozo/docker/build.sh stage"; }
 
 # Overlay the working tree onto $1 (the copy of ref $2): the tracked files that differ from the ref
-# plus the untracked, not ignored ones. A listed path that is gone from disk (a deletion, a rename's
-# old path; --no-renames turns a rename into delete + add) is removed from the copy instead, so the
-# gate tests the tree as it is. Any rsync failure is real: the list only holds paths that exist.
+# plus the untracked, not ignored ones. Every listed path is first removed from the copy, whatever
+# it is there (a file, a directory, a symlink), so a change of type (file to directory, directory to
+# file, link to directory) never leaves the old thing in the way or writes through an old symlink;
+# only a path that still exists as something other than a directory is copied back (a directory is
+# listed because it replaced a file: its files are listed on their own). --no-renames turns a rename
+# into delete + add. Any rsync failure is real: the list only holds paths that exist.
 overlay_worktree() {
-  (cd "$ROOT" && { git diff --name-only --no-renames -z "$2" --; git ls-files -z --others --exclude-standard; } \
-    | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; else rm -f "$1/$f"; fi; done \
+  (cd "$ROOT" && { git diff --name-only --no-renames -z "$2" -- && git ls-files -z --others --exclude-standard; } \
+    | while IFS= read -r -d '' f; do
+        rm -rf "${1:?}/$f"
+        if [ -L "$f" ] || { [ -e "$f" ] && [ ! -d "$f" ]; }; then printf '%s\0' "$f"; fi
+      done \
     | rsync -a --from0 --files-from=- ./ "$1/") || die "worktree overlay failed"
 }
 

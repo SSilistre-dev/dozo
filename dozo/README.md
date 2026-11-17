@@ -63,6 +63,9 @@ Accepted by the owner for now, stated here once:
 - Interrupt handling (SIGINT, SIGTERM and cleanup in the scripts) is implemented but not rehearsed
   against a real long run.
 - A local `make qa` stages uncommitted files while CI stages HEAD only (`dozo/docker/README.md`).
+- The local model panel ships with an empty catalog (`LOCAL_MODELS` in
+  `apps/web/src/lib/dozo-local-model-catalog.ts`) until tool calling has been tried against a real
+  runtime; no model is downloaded or tested before then.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite marks it as expected and fails the day it

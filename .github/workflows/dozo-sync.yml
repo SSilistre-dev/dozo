@@ -11,7 +11,8 @@ name: dozo-sync
 # created with GITHUB_TOKEN do not trigger other workflows.
 #
 # Prerequisite: origin must have the pristine `upstream-main` branch (see dozo/SYNC.md).
-# Action versions are pinned by the same full commit SHAs the upstream workflows already use.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same
+# SHAs the upstream workflows use).
 on:
   schedule:
     - cron: "37 5 * * *"
@@ -22,8 +23,9 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: read
+# The built-in GITHUB_TOKEN is never used: every git and gh call below carries DOZO_SYNC_TOKEN
+# explicitly, so the job asks for no GITHUB_TOKEN permission at all.
+permissions: {}
 
 concurrency:
   group: dozo-sync
@@ -51,18 +53,24 @@ jobs:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.DOZO_SYNC_TOKEN }}
+          # The token is not left in .git/config for the steps that run dozo/sync.sh (and the make
+          # gates it runs); the steps that talk to origin pass it in explicitly.
+          persist-credentials: false
 
       - name: Prepare branches and remote
+        env:
+          TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
         run: |
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git config user.name "dozo-sync"
           git config user.email "dozo-sync@users.noreply.github.com"
           git checkout --detach
-          git fetch origin +refs/heads/main:refs/heads/main
-          if ! git ls-remote --exit-code --heads origin upstream-main >/dev/null; then
+          git fetch "$remote" +refs/heads/main:refs/heads/main
+          if ! git ls-remote --exit-code --heads "$remote" upstream-main >/dev/null; then
             echo "::error title=upstream-main missing::origin has no upstream-main branch. Push the pristine branch once (see dozo/SYNC.md)."
             exit 1
           fi
-          git fetch origin +refs/heads/upstream-main:refs/heads/upstream-main
+          git fetch "$remote" +refs/heads/upstream-main:refs/heads/upstream-main
           git remote add upstream "$UPSTREAM_URL"
 
       - name: Run dozo/sync.sh
@@ -91,19 +99,23 @@ jobs:
         # origin's copy must follow, or merge-base checks against it misfire. No --force: a ref that
         # is not a fast-forward is refused. A no-op when origin is already there.
         if: success() && steps.sync.outputs.branch == ''
-        run: git push origin refs/heads/upstream-main:refs/heads/upstream-main
+        env:
+          TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
+        run: git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" refs/heads/upstream-main:refs/heads/upstream-main
 
       - name: Publish branches and open or replace the pull request
         if: steps.sync.outputs.branch != ''
         env:
           GH_TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
+          TOKEN: ${{ secrets.DOZO_SYNC_TOKEN }}
           BRANCH: ${{ steps.sync.outputs.branch }}
         run: |
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # upstream-main fast-forwards only; sync branch is rebuilt from main each day.
-          git push origin refs/heads/upstream-main:refs/heads/upstream-main
+          git push "$remote" refs/heads/upstream-main:refs/heads/upstream-main
           # Plain --force: the sync branch is disposable and rebuilt from main; a lease would fail
           # on re-runs because this job never fetches origin's copy of the branch.
-          git push --force origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+          git push --force "$remote" "refs/heads/$BRANCH:refs/heads/$BRANCH"
           gh label create upstream-sync --color 0e8a16 --description "Automated upstream merge" --force >/dev/null
           {
             echo "Automated merge of upstream into Dozo, built by dozo/sync.sh."
