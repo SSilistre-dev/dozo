@@ -92,9 +92,9 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .ask p{font-weight:500;margin-bottom:12px}.acts{display:flex;align-items:center;gap:10px}.acts .link{padding:0 14px}
 .sent{display:flex;align-items:center;gap:10px;font-weight:500;opacity:0;align-self:center}.sent svg{width:18px;height:18px;fill:none;stroke:var(--green);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .think{position:absolute;left:0;top:0;opacity:0;padding-top:8px}
-.think i,.skel i{display:block;height:11px;border-radius:6px;background:var(--raise2);position:relative;overflow:hidden}
+.think i{display:block;height:11px;border-radius:6px;background:var(--raise2);position:relative;overflow:hidden}
 .think i:first-child{width:300px;margin-bottom:10px}.think i+i{width:200px}
-.think i::after,.skel i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--sheen),transparent);transform:translateX(-100%);animation:sheen 1.3s linear infinite}
+.think i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--sheen),transparent);transform:translateX(-100%);animation:sheen 1.3s linear infinite}
 @keyframes sheen{to{transform:translateX(100%)}}
 /* scene states (only when the script animates; without it everything shows) */
 .anim .s{opacity:0;transform:translateY(8px);transition:opacity .5s ease,transform .5s ease}
@@ -134,29 +134,7 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .pill.ok{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
 .strip{margin-top:30px;background:var(--raise);border-radius:28px;padding:32px 40px}
 
-/* differentiator */
-.local{padding:64px 0 0;text-align:center}
 h2.big{font-size:clamp(30px,4.4vw,46px);line-height:1.08;font-weight:500;letter-spacing:-.03em;text-wrap:balance}
-.local .lede{margin-top:14px;max-width:34em}
-.panel{margin:28px auto 0;max-width:860px;background:var(--raise);border-radius:28px;padding:28px 32px 20px;text-align:left}
-.sels{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:12px}
-.sels label{display:block;font-size:12.5px;color:var(--quiet);margin:0 0 6px 16px}
-.sel{position:relative}.sel select{appearance:none;-webkit-appearance:none;width:100%;height:46px;border-radius:999px;background:var(--raise2);padding:0 40px 0 18px;font-size:15px;text-overflow:ellipsis}
-.sel svg{position:absolute;right:16px;top:15px;width:16px;height:16px;fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-.sel select option{background:var(--raise2);color:var(--text)}
-.mw{position:relative;margin-top:14px;min-height:204px}
-.mods{list-style:none}
-.mods li{display:flex;align-items:center;gap:14px;min-height:68px;border-top:1px solid var(--line)}
-.mods .n{flex:1;min-width:0}.mods .n b{font-weight:500;display:block}.mods .n span{font-size:13px;color:var(--quiet)}
-.mods .t{font:13px/1 var(--mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:8.5em;text-align:right}
-.mods .pill{height:44px;padding:0 20px;font-size:14px;min-width:116px}
-.mods .pill[aria-pressed=true]{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
-.skel{position:absolute;inset:0;list-style:none;opacity:0;pointer-events:none;transition:opacity .3s}
-.skel li{height:68px;border-top:1px solid var(--line);display:flex;align-items:center}.skel i{width:46%}.skel li:nth-child(2) i{width:36%}.skel li:nth-child(3) i{width:42%}
-.skel i::after{animation-play-state:paused}
-.panel.scan .skel{opacity:1}.panel.scan .skel i::after{animation-play-state:running}
-.anim.panel .mods li{opacity:0;transform:translateY(6px);transition:opacity .5s ease,transform .5s ease}
-.anim.panel .mods li.in{opacity:1;transform:none}
 
 /* closing + footer */
 .close{text-align:center;padding:44px 0 48px}
@@ -181,10 +159,7 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
  .hero{padding-top:28px}.crew{gap:8px;margin-bottom:22px}.av.xl{width:44px;height:44px}
  .cta .pill{flex:1 1 140px}
  .frame-app{padding:0 20px 22px;margin-top:36px}
- .ideas{margin-top:56px}.local{padding-top:64px}.close{padding:48px 0 56px}
- .panel{padding:20px 18px 14px;border-radius:24px}.sels{grid-template-columns:minmax(0,1fr)}
- .mods li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 0}.mods .n{grid-row:1}.mods .t{grid-column:1;grid-row:2;min-width:0;text-align:left}.mods .pill{grid-column:2;grid-row:1 / span 2}
- .mw{min-height:0}.skel{display:none}
+ .ideas{margin-top:56px}.close{padding:48px 0 56px}
  .vg{padding:18px}.list .li{flex-wrap:wrap;padding:10px 0}.list .li .d{flex-basis:100%;order:3}.li b{flex:1}
  .acts .link{padding:0 8px}.user{margin-bottom:20px}.strip{padding:22px}
  .fin{flex-direction:column;align-items:flex-start;gap:4px}.fin nav{margin-left:-14px}

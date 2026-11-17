@@ -1,0 +1,13 @@
+# The landing page: one static nginx, content and config copied to the host by `deploy.sh site`.
+# A separate panel service from the app stack. Paths are the default DOZO_DEPLOY_DIR.
+services:
+  site:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /run
+      - /var/cache/nginx
+    volumes:
+      - /opt/dozo/site/html:/usr/share/nginx/html:ro
+      - /opt/dozo/site/conf:/etc/nginx/conf.d:ro
