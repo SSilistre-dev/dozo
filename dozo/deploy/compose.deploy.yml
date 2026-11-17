@@ -1,0 +1,72 @@
+# Production layer for a host that a deploy panel manages. Layered after upstream's compose file
+# (unedited); deploy.sh merges the two into the one file the panel runs. What it changes, and
+# nothing else:
+#   - images are built beforehand and only referenced here (no build on deploy, no registry);
+#   - the Dozo theme is read from the image, where deploy.sh puts it (dozo/theme/compose.theme.yml
+#     mounts it from a checkout instead, which a host without one does not have);
+#   - no port is published on the host: the panel's proxy reaches web over a Docker network;
+#   - app data lives in a named volume instead of a folder next to the checkout;
+#   - long-running services restart with the host and have a memory ceiling.
+services:
+  postgres:
+    restart: unless-stopped
+    mem_limit: 768m
+
+  supervisor:
+    build: !reset null
+    image: dozo/supervisor:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      # The name must stay rakazo/computer: the supervisor treats any other as a custom image.
+      RAKAZO_COMPUTER_IMAGE: rakazo/computer:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    volumes: !override
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/data
+
+  computer:
+    build: !reset null
+    image: rakazo/computer:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    pull_policy: never
+
+  data-init:
+    volumes: !override
+      - data:/data
+
+  migrate:
+    build: !reset null
+    image: dozo/app:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    pull_policy: never
+
+  api:
+    build: !reset null
+    image: dozo/app:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 1536m
+    ports: !reset []
+    volumes: !override
+      - data:/data
+
+  worker:
+    build: !reset null
+    image: dozo/app:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 1536m
+    volumes: !override
+      - data:/data
+
+  web:
+    build: !reset null
+    image: dozo/app:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: 512m
+    ports: !reset []
+    environment:
+      RAKAZO_THEME: /theme/theme.json
+
+volumes:
+  data:
