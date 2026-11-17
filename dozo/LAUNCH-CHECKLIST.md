@@ -66,6 +66,8 @@ placeholders are replaced.
       certificate and notarization, and its bundle id (`dev.ssilistre.dozo`) was chosen without the
       owner.
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
-      `dozo/landing/`; replace its placeholder links and publish it once the domain exists.
+      `dozo/landing/`, published pre-release behind `noindex` (`dozo/deploy/README.md`, "Landing page").
+      At launch: remove `robots.txt`, the `noindex` meta and header, add the GitHub links, swap the
+      pre-release addresses for the real domain (`dozo/landing/README.md`).
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's
       README text. Decide whether to keep them below our fork notice.

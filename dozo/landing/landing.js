@@ -94,29 +94,6 @@ scene($('#asks'),async(el,w)=>{
   await w(900);
 });
 
-// 4. run on this computer: detect, then rows, then a live readout
-const panel=$('#panel'),hw=$('#hw'),mem=$('#mem'),list=$('#mods');
-const K={laptop:90,air:240,max:600,tower:520}; // example tokens/s x GB, illustration only
-const M=[['Tiny model 1B',1.2],['Small model 4B',3],['Medium model 12B',8],['Large model 27B',17]];
-let chosen=null;
-function rows(){const gb=+mem.value,k=K[hw.value];return M.filter(([,s])=>s*1.3<=gb&&k/s>=25).slice(-3).reverse().map(([n,s])=>[n,s,Math.round(k/s)])}
-function render(){
-  list.innerHTML=rows().map(([n,s,t],i)=>`<li${still?' class="in"':''}><div class="n"><b>${n}</b><span>${s} GB</span></div><span class="t" data-b="${t}">${t} tokens/s</span><button class="pill${i?'':' w'}" type="button" aria-pressed="${chosen===n}" data-m="${n}">${chosen===n?'Connected':'Connect'}</button></li>`).join('')||'<li><div class="n"><span>No model fits this memory.</span></div></li>';
-}
-const reveal=()=>$$('li',list).forEach((li,i)=>setTimeout(()=>li.classList.add('in'),i*160));
-let tok=0;
-async function detect(ms){const me=++tok;flip(panel,'scan');render();await sleep(ms);if(me!==tok)return;flip(panel,'scan',false);reveal()}
-list.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;chosen=chosen===b.dataset.m?null:b.dataset.m;render();$$('li',list).forEach(li=>li.classList.add('in'))});
-if(still){render()}
-else{
-  panel.classList.add('anim','scan');render();
-  const sel=()=>detect(500);
-  hw.addEventListener('change',sel);mem.addEventListener('change',sel);
-  (async()=>{await until(panel);await sleep(300);await detect(1500)})();
-  setInterval(()=>{if(!on(panel)||panel.classList.contains('scan'))return;
-    $$('.t',list).forEach(t=>t.textContent=Math.max(25,+t.dataset.b+Math.round(rnd(-1.4,1.4)))+' tokens/s')},1100);
-}
-
 // ---- bots: eyes follow the pointer; blink, bob, tilt and glance when it is away
 const LIM={sora:[3.2,2.6],kumo:[2.5,3],hana:[3.5,2],taro:[2.7,3],yuki:[3.5,3],mochi:[2,2.5]};
 const GAIN={working:.8,waiting:1,idle:.8},SLEEP={open:.3,gain:.15};

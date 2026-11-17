@@ -11,6 +11,7 @@ the images are built there, so they match the host's CPU and never leave it.
 | --- | --- |
 | `deploy.sh` | Deploy, roll back, create the owner's account |
 | `compose.deploy.yml` | The production layer over upstream's compose file (which stays unedited) |
+| `compose.site.yml`, `site.nginx.conf` | The landing page: its own static nginx service (see Landing page) |
 | `host-egress.sh` | Run once on the host: firewall rules that keep bot computers off the host and its networks |
 
 ## What a deploy does
@@ -112,6 +113,26 @@ visitor shares the proxy's address and one sign-in rate limit. The header is bel
 the web container. Someone who reaches the host directly, past the CDN, can send it too, which
 lets them pick the address their own attempts are counted under; that is the trade against one
 shared limit anyone can exhaust.
+
+## Landing page
+
+`dozo/deploy/deploy.sh site` publishes `dozo/landing/` (committed tree) as a second compose service
+in the same panel project: `nginx:1.27-alpine`, content and `site.nginx.conf` mounted read-only from
+`<dir>/site`, nothing built. It does not touch the app stack. Compression, cache lifetimes (HTML
+5 minutes, CSS and JS 1 hour because they are not hashed, images 30 days), security headers and
+the CSP are in `site.nginx.conf`.
+
+One-time setup, in the panel: in the same project create a compose service (type Docker Compose,
+source Raw, same server), turn on **Isolated Deployment**, add a domain (service `site`, port `80`,
+HTTPS with Let's Encrypt) and point its DNS at the server. Add to the settings file:
+
+```sh
+DOKPLOY_SITE_COMPOSE_ID=<id of that compose service>
+DOZO_SITE_DOMAIN=site.example
+```
+
+The first `deploy.sh site` writes the compose file into the service. To remove: delete the service
+in the panel and `<dir>/site` on the host.
 
 ## Roll back
 
