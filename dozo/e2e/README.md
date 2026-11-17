@@ -85,15 +85,21 @@ that resolves to a private address).
 - `playwright.config.ts`: one worker, no retries, `forbidOnly`; 90 s per test, 15 s for assertions
   and actions, 30 s for navigations; trace, screenshot and video kept on failure; reporters `list`,
   JSON (`.out/results.json`) and `coverage-reporter.ts`. Projects:
-  - `setup` (`auth.setup.ts`): signs up once, connects the model, seeds two bots, saves the session.
+  - `setup` (`auth.setup.ts`): signs up once, connects the model, seeds two bots, saves the session
+    (without the stored appearance, so each crawl project sets its own theme).
     Its teardown is `roundtrip`.
-  - `crawl-light` and `crawl-dark` (`crawl.spec.ts`, `local-models.spec.ts`): the same surfaces in both
-    themes, using the saved session; they depend on `setup`.
+  - `crawl-light` and `crawl-dark` (`crawl.spec.ts`, `local-models.spec.ts`, `look.spec.ts`): the same
+    surfaces in both themes, using the saved session; they depend on `setup`.
   - `roundtrip` (`roundtrip.spec.ts`): runs last even after failures; signs in and out, which ends the
     saved session, and checks the stored keys were not corrupted by the rename.
   - `inventory` (`inventory.spec.ts`): the inventory check and its own tests, no browser session.
   - `scanner` (`scanner.spec.ts`): tests the scanner against planted names.
   - `web-manifest` (`manifest.spec.ts`): the favicon and web manifest are served and branded.
+  - `look.spec.ts` checks the Dozo look where the app shows it: the theme file is loaded and follows
+    the appearance, bots are drawn as Dozo characters (sidebar, chat, bot panel, sign-in), the hooks
+    of `dozo-shell.css` still match (pills, wordmark, pattern, tinted row), and a first visit is dark.
+    Every crawled surface also fails when it shows an element of upstream's avatar drawings
+    (`UPSTREAM_AVATAR_ART` in `fixtures.ts`).
   - `local-models.spec.ts` checks that the local-model panel is absent while the published model list
     is empty and the upstream form still works; its second test is `fixme` until a list is published.
 - `surfaces.ts` + `surfaces/*.ts`: the crawl as data. A surface is a `name`, a `group`, `covers`

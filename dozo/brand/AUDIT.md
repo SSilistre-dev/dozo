@@ -20,8 +20,8 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 5 | `Rakazo-owned compacted context` in model history | Fixed: emits `Dozo-owned`; reader accepts both (anchored, `keep` still protects the old prefix) |
 | 6 | Memory provider text: placeholder, `rakazo-shared` message, bank error | Fixed: placeholder and default workspace id to `dozo-`, reserved peer id `rakazo-shared` to `dozo-shared` everywhere (literal incl. all 15 `.po`), bank error reworded. Hindsight prefix regex `^rakazo-` stays (stored namespace, not shown) |
 | 7 | Offline emulator seeds (`composio-fake`, `release-watch`) | Rejected: not user-visible; both files are in `exclude` (offline emulators matched by owner/repo) |
-| 8 | Default/orange bot avatar draws the ghost; avatar set `rakazo` | Fixed: body, hand paths and eyes in `logo-avatar-art.ts` swapped for the Dozo pill (exports unchanged, so `LogoAvatar`, notification avatars, mobile follow); orange palette special case removed. Enum value `rakazo` stays (stored). The pill is not the approved H1 mark: redrawing the avatars from it is a design decision, open (see "Inline SVG mascots") |
-| 9 | Sign-in/sign-up 74px orange mascot | Fixed: anchored rule `Auth.tsx` uses the `blue` colour of the same component |
+| 8 | Default/orange bot avatar draws the ghost; avatar set `rakazo` | Fixed: body, hand paths and eyes in `logo-avatar-art.ts` swapped for the Dozo pill (exports unchanged, so `LogoAvatar`, notification avatars, mobile follow); orange palette special case removed. Enum value `rakazo` stays (stored). Superseded on the web by the Dozo characters (see "Inline SVG mascots"): the pill rules stay as a second line for code that still reads `logo-avatar-art.ts` (the mobile app, out of scope) |
+| 9 | Sign-in/sign-up 74px orange mascot | Fixed: `LogoAvatar` is the Dozo wrapper; the anchored rule in `Auth.tsx` passes blue, which the wrapper draws as Sora, awake |
 | 10 | Build-time Dozo bug: `rakazo.computerOwner` became `dozo.exampleputerOwner`, same for localStorage keys `rakazo.composer*` | Fixed in `lib.mjs`: URL keys need a non-word char after. Gate: URL target glued to a word. Images built before the fix carry the bad names: stage and rebuild |
 | 11 | MCP/GraphQL/host names sent outward: `rakazo` client names, `RakazoIntrospection`, `hostInfo` | Fixed: 5 anchored rules + 2 literals (remote-mcp, mcp-transport, mcp-connector, serenity, cua, mcp-app, GraphQL op). Gate: a quoted `"RakazoXyz"` name and a lowercase `"rakazo"` outside `allow.text` fail |
 | 12 | Model tool prefix `mcp__rakazo__` (Claude Code CLI provider) | Fixed: `TOOL_SERVER` constant, all uses go through it |
@@ -60,7 +60,8 @@ OAuth names, the Android APK name, third-party catalog branding, logo parts stil
 - No real bot run: model replies, tool output, the bot's computer (the supervisor answered 500 on the
   first start; see `../README.md`, Status and known limits), the shell prompt, a sent e-mail. The
   `dozo` user rename is untested in a built image.
-- Inline-SVG avatars were never rasterised; the new pill and eye placement are unchecked visually.
+- The pill of row 8 was never rasterised (the mobile app, which still draws it, is out of scope). The
+  Dozo characters were checked in screenshots of the running web app (2026-11-17).
 - Settings Model picker, Notifications sub-pages, Upload tab, share dialog, OAuth/social sign-in,
   install and notification prompts, billing, admin pages with data.
 - `.map` files were not read; infra and scripts hits not read one by one; `apps/www`,
@@ -90,13 +91,33 @@ Out of `include`, not shipped by the stack: `apps/www/public/**` (marketing site
 `packages/testkit/src/evals/fixtures/example-*.png` (eval fixtures). The welcome mail hero is dropped by an
 anchored rule (`packages/auth/src/welcome-email.tsx:87` points at `www/email/welcome.jpg`).
 
-Inline SVG mascots and wordmarks (cannot be replaced by the asset map; a later anchored rule plus a
-`dozo-` prefixed component should replace them, not changed here). The ones fed by
-`logo-avatar-art.ts` already draw the pill (row 8); the others were not inspected for upstream art:
+Inline SVG mascots and wordmarks (cannot be replaced by the asset map). Reviewed one by one on
+2026-11-17; on the web no upstream drawing is reachable any more. Anchored rules point the
+`@rakazo/ui-web` index, `group-avatar.tsx` and the `@rakazo/core` index at `dozo-*` modules that
+export the same names:
 
-- `packages/ui-web/src/logo-avatar.tsx:62`: `<svg>` of `LogoAvatar` (sign-in 74 px mascot at `apps/web/src/pages/Auth.tsx:657`).
-- `packages/ui-web/src/bot-avatar.tsx:120` (`<svg>` in the bot avatar) and `:146-148` (the `rakazo` avatar set uses `LogoAvatar`).
-- `packages/core/src/logo-avatar-art.ts:31-34`: body and hand paths (swapped for the pill by anchored rules).
-- `packages/core/src/notification-avatar.ts:54,60`: the same art as a `data:image/svg+xml` avatar.
-- `packages/ui-web/src/dozo-avatar.tsx:508`: existing fork avatar `<svg>`.
-- `packages/auth/src/email.tsx:163`: lowercase text wordmark `rakazo` in every mail header (anchored to `dozo`).
+- `packages/ui-web/src/bot-avatar.tsx`: `BotAvatar` (the organic body at `:251`, the shipped shapes
+  at `:171`, the logo avatar at `:146`), `BotShapePreview` and `Wordmark` (upstream's two-bar mark
+  and name) are replaced by `dozo-bot-avatar.tsx`, which draws the six Dozo characters
+  (`dozo-avatar.tsx`). Upstream's `BotAvatar` is still called for one case, a bot with a saved
+  photo: it draws the photo and, while the bot works, a plain progress ring (`:120`), no mascot.
+- `packages/ui-web/src/logo-avatar.tsx:62` (`LogoAvatar`, the sign-in 74 px mascot at
+  `apps/web/src/pages/Auth.tsx:657`): replaced by the wrapper's `LogoAvatar`; the upstream file is
+  imported only by upstream's `bot-avatar.tsx`, on a branch the wrapper never reaches.
+- `packages/core/src/logo-avatar-art.ts:31-34` (body and hand paths): no web or server code reads
+  them now. The pill rules (row 8) stay for the mobile app, which is out of scope.
+- `packages/core/src/notification-avatar.ts:54,60` (the art as a `data:image/svg+xml` portrait for
+  push and browser notifications): the index exports `notificationAvatarSource` from
+  `dozo-avatar-art.ts` instead, which draws the bot's Dozo character; a saved photo stays.
+- `packages/core/src/bot-avatar-shapes.ts`, `avatar-shape.ts` (the eight shipped shapes and the
+  organic body): read only by the two upstream files above. The avatar editor
+  (`avatar-studio-popover.tsx`) lists the shapes by index and previews each through
+  `BotShapePreview`, so it offers the Dozo characters; two anchored rules keep it to six tiles,
+  one per character (upstream lists eight shapes, and eight generated bodies for a new bot).
+- `packages/ui-web/src/dozo-avatar.tsx`: the fork's own avatar.
+- `packages/auth/src/email.tsx:163`: lowercase text wordmark `rakazo` in every mail header (anchored
+  to `dozo`); text only, no drawing.
+
+Gates: `dozo-bot-avatar.test.tsx` and `dozo-avatar-art.test.ts` run on the branded tree and fail when
+the index stops exporting the wrappers; `dozo/e2e` fails any crawled screen that shows an element of
+upstream's drawings (`UPSTREAM_AVATAR_ART` in `fixtures.ts`).

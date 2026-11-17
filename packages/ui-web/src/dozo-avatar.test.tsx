@@ -92,6 +92,13 @@ describe("DozoAvatar identity", () => {
     expect(painted).toContain("--dozo-glow:");
   });
 
+  it("draws the character it is given, and keeps the seed for the blink rhythm", () => {
+    const given = renderToString(<DozoAvatar seed="bot-1" character="hana" />);
+    expect(given).toContain('data-character="hana"');
+    const delay = (html: string) => html.match(/--dozo-blink-delay:([^;"]+)/)?.[1];
+    expect(delay(given)).toBe(delay(renderToString(<DozoAvatar seed="bot-1" />)));
+  });
+
   it("ignores a colour that is not a hex value", () => {
     const html = renderToString(<DozoAvatar seed="bot-7" color="red; background:url(x)" />);
     expect(html).not.toContain("red");
@@ -187,6 +194,75 @@ describe("DozoAvatar pointer tracking", () => {
     const match = eyes?.style.transform.match(/translate\(([-\d.]+)px/);
     expect(Number(match?.[1])).toBeGreaterThan(1);
     unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("DozoAvatar cleanup", () => {
+  it("removes every listener, observer and frame it added once the last avatar unmounts", () => {
+    vi.useFakeTimers();
+    const media = preferReducedMotion(false);
+    const resize = fakeObserver();
+    const intersection = fakeObserver();
+    vi.stubGlobal("ResizeObserver", resize.Observer);
+    vi.stubGlobal("IntersectionObserver", intersection.Observer);
+    // window's own methods are copies in this environment, so both it and the prototype are watched.
+    type Call = [target: unknown, type: unknown, listener: unknown, capture: boolean];
+    const spies = [window, EventTarget.prototype].map((host) => ({
+      add: vi.spyOn(host, "addEventListener"),
+      remove: vi.spyOn(host, "removeEventListener"),
+    }));
+    const read = (spy: (typeof spies)[number]["add"]): Call[] =>
+      spy.mock.calls.map(([type, listener, options], index) => [
+        spy.mock.contexts[index],
+        type,
+        listener,
+        options === true || (typeof options === "object" && options?.capture === true),
+      ]);
+    const added = () => spies.flatMap((spy) => read(spy.add));
+    const removed = () => spies.flatMap((spy) => read(spy.remove));
+
+    const first = mount(<DozoAvatar seed="sora" size={72} state="idle" />);
+    const second = mount(<DozoAvatar seed="kumo" size={36} state="working" />);
+    const small = mount(<DozoAvatar seed="hana" size={28} />);
+    // Only what the avatars add: React's own root listeners sit on the containers.
+    const own = (calls: Call[]) =>
+      calls.filter(
+        ([target]) =>
+          target === window ||
+          target === document.documentElement ||
+          (target instanceof Element && target.closest(".dozo-avatar") !== null),
+      );
+    const types = new Set(own(added()).map(([, type]) => type));
+    for (const type of ["pointermove", "blur", "resize", "scroll", "pointerleave"]) {
+      expect(types).toContain(type);
+    }
+    expect(types).toContain("animationcancel");
+    expect(media.listeners.size).toBe(1);
+    expect(resize.instances.flatMap((observer) => [...observer.observed])).toHaveLength(2);
+    expect(intersection.instances.flatMap((observer) => [...observer.observed])).toHaveLength(3);
+
+    pointerAt(400);
+    hover(first.container, true);
+    hover(first.container, false);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    first.unmount();
+    second.unmount();
+    small.unmount();
+
+    const gone = removed();
+    const pending = own(added()).filter(
+      ([target, type, listener, capture]) =>
+        !gone.some(
+          (call) =>
+            call[0] === target && call[1] === type && call[2] === listener && call[3] === capture,
+        ),
+    );
+    expect(pending.map(([, type]) => type)).toEqual([]);
+    expect(media.listeners.size).toBe(0);
+    for (const observer of [...resize.instances, ...intersection.instances]) {
+      expect(observer.observed.size).toBe(0);
+    }
     expect(vi.getTimerCount()).toBe(0);
   });
 });
@@ -459,6 +535,28 @@ describe("DozoAvatar reduced motion", () => {
     expect(media.listeners.size).toBe(1);
     only.unmount();
     expect(media.listeners.size).toBe(0);
+  });
+
+  it("opens a hovered idle avatar's eyes in one frame, with no eased steps between", () => {
+    preferReducedMotion(true);
+    const { container } = mount(<DozoAvatar seed="taro" size={72} state="idle" />);
+    hover(container, true);
+    advance(17);
+    expect(eyeState(eyesOf(container))).toEqual({ x: 0, y: 0, open: 1 });
+    hover(container, false);
+    advance(1000);
+    expect(eyeState(eyesOf(container)).open).toBe(0.3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("eases the same wake over several frames when the preference is off", () => {
+    preferReducedMotion(false);
+    const { container } = mount(<DozoAvatar seed="taro" size={72} state="idle" />);
+    hover(container, true);
+    advance(17);
+    const { open } = eyeState(eyesOf(container));
+    expect(open).toBeGreaterThan(0.3);
+    expect(open).toBeLessThan(0.5);
   });
 
   it("does not hop on hover when the preference is on", () => {
@@ -902,17 +1000,20 @@ describe("dozo-avatar.css", () => {
   const source = readFileSync(join(import.meta.dirname, "dozo-avatar.tsx"), "utf8");
   const HEX = /#[0-9a-f]{3,8}\b/gi;
 
-  it("holds no hex colour; the six-character identity palette lives once in the component", () => {
+  it("holds no hex colour; the six-character identity palette lives once, in core", () => {
     expect(css.match(HEX)).toBeNull();
-    const palette = source.slice(
-      source.indexOf("const DOZO_BOT_PALETTE"),
-      source.indexOf("// Drawings, ported"),
+    expect(source.match(HEX)).toBeNull();
+    const art = readFileSync(
+      join(import.meta.dirname, "../../core/src/dozo-avatar-art.ts"),
+      "utf8",
     );
-    expect(source.match(/const DOZO_BOT_PALETTE/g)).toHaveLength(1);
+    const palette = art.slice(
+      art.indexOf("export const DOZO_BOT_PALETTE"),
+      art.indexOf("export type DozoPaint"),
+    );
+    expect(art.match(/const DOZO_BOT_PALETTE/g)).toHaveLength(1);
     expect(palette.match(HEX)).toHaveLength(18);
-    const outside = source.replace(palette, "");
-    // Outside the palette only upstream's colours quoted in its comment may remain.
-    expect(outside.replace(/\/\*\*[\s\S]*?\*\//g, "").match(HEX)).toBeNull();
+    expect(art.replace(palette, "").match(HEX)).toBeNull();
   });
 
   it("takes the head and visor from semantic tokens", () => {

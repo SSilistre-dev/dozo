@@ -341,8 +341,8 @@
     {
       "file": "apps/web/src/pages/Auth.tsx",
       "find": "color.id === \"orange\")?.hex}",
-      "replace": "color.id === \"blue\")?.hex}",
-      "reason": "sign-in logo was upstream's orange mascot; Dozo is blue"
+      "replace": "color.id === \"blue\")?.hex}\n              activity=\"waiting\"",
+      "reason": "sign-in mascot: blue picks the Dozo character Sora (the avatar wrapper maps a colour to a character), drawn awake"
     },
     {
       "file": "infra/sandboxes/computer/Dockerfile",
@@ -471,6 +471,83 @@
       "replace": "import { ModelStep } from \"./onboarding/dozo-model-step\";",
       "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
       "reason": "fork feature: the onboarding model step is a wrapper that offers local models next to upstream's step and re-exports the same name"
+    },
+    {
+      "file": "packages/ui-web/src/index.ts",
+      "find": "  Wordmark,\n} from \"./bot-avatar.js\";",
+      "replace": "  Wordmark,\n} from \"./dozo-bot-avatar.js\";",
+      "requires": ["packages/ui-web/src/dozo-bot-avatar.tsx", "packages/ui-web/src/dozo-avatar.tsx", "packages/ui-web/src/dozo-avatar.css"],
+      "reason": "Dozo avatars: every bot avatar, the avatar editor's previews and the wordmark come from a wrapper that re-exports the same names and draws Dozo characters instead of upstream's art"
+    },
+    {
+      "file": "packages/ui-web/src/index.ts",
+      "find": "export { LogoAvatar } from \"./logo-avatar.js\";",
+      "replace": "export { LogoAvatar } from \"./dozo-bot-avatar.js\";",
+      "requires": ["packages/ui-web/src/dozo-bot-avatar.tsx"],
+      "reason": "Dozo avatars: the sign-in and sign-up mascot is a Dozo character, not upstream's logo avatar"
+    },
+    {
+      "file": "packages/ui-web/src/group-avatar.tsx",
+      "find": "import { BotAvatar } from \"./bot-avatar.js\";",
+      "replace": "import { BotAvatar } from \"./dozo-bot-avatar.js\";",
+      "requires": ["packages/ui-web/src/dozo-bot-avatar.tsx"],
+      "reason": "Dozo avatars: the members of a group avatar are drawn by the same wrapper (this file imports the module directly, not through the index)"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./notification-avatar.js\";",
+      "replace": "export * from \"./dozo-avatar-art.js\";",
+      "requires": ["packages/core/src/dozo-avatar-art.ts"],
+      "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body"
+    },
+    {
+      "file": "packages/ui-web/src/styles.css",
+      "find": "@import \"@rakazo/ui-tokens/css\";\n\n@source",
+      "replace": "@import \"@rakazo/ui-tokens/css\";\n@import \"./dozo-shell.css\";\n\n@source",
+      "requires": ["packages/ui-web/src/dozo-shell.css"],
+      "reason": "Dozo look: what the theme file cannot express (pill controls and rows, the sidebar pattern, the wordmark with its seal dot, the tinted active row)"
+    },
+    {
+      "file": "apps/web/public/theme.js",
+      "find": "let preference = \"system\";",
+      "replace": "let preference = \"dark\";",
+      "reason": "Dozo is dark by default: with no stored choice the page starts dark; System and Light still work once chosen"
+    },
+    {
+      "file": "apps/web/src/lib/bots-sidebar-density-pref.ts",
+      "find": "return raw?.trim().toLowerCase() === \"compact\" ? \"compact\" : \"comfortable\";",
+      "replace": "return raw?.trim().toLowerCase() === \"comfortable\" ? \"comfortable\" : \"compact\";",
+      "reason": "Dozo look: sidebar rows are one line with a small avatar, as in the design; upstream's two-line rows stay one setting away"
+    },
+    {
+      "file": "packages/ui-tokens/src/index.ts",
+      "find": "return isAppearancePreference(raw) ? raw : \"system\";",
+      "replace": "return isAppearancePreference(raw) ? raw : \"dark\";",
+      "reason": "Dozo is dark by default: the app's own resolution of a missing preference, the twin of the pre-paint script"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "(active ? chatUserBubbleColors(active.color, active.id) : undefined)",
+      "replace": "(undefined as ReturnType<typeof chatUserBubbleColors>)",
+      "reason": "Dozo look: your own bubble and the send button keep the theme's colours; upstream paints both in the bot's upstream colour, which no Dozo avatar shows any more"
+    },
+    {
+      "file": "apps/web/src/lib/bots-sidebar-pref.ts",
+      "find": "export const BOTS_SIDEBAR_DEFAULT_WIDTH = 316;",
+      "replace": "export const BOTS_SIDEBAR_DEFAULT_WIDTH = 240;",
+      "reason": "Dozo look: the sidebar starts at the design's width, which is upstream's own minimum; dragging it wider still works"
+    },
+    {
+      "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
+      "find": "{SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, index) => (",
+      "replace": "{SHIPPED_BOT_AVATAR_SHAPE_KEYS.slice(0, 6).map((key, index) => (",
+      "reason": "Dozo avatars: the editor offers each of the six characters once; upstream's eight shapes would show two of them twice"
+    },
+    {
+      "file": "apps/web/src/pages/shell/create-bot-dialog.tsx",
+      "find": "            identity={identity}\n            organicIdentities={ORGANIC_PREVIEW_IDENTITIES}",
+      "replace": "            identity={identity}",
+      "reason": "Dozo avatars: upstream's eight generated bodies for a new bot would all be drawn as the same character; the six character tiles are the choice"
     }
   ],
   "assets": {

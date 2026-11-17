@@ -62,15 +62,16 @@ need_compose() {
 # --init, a name unique to this run and a label: the EXIT/INT/TERM handler removes it if we are killed.
 node_run() { STARTED_CONTAINER=1; docker run --init --rm --name "dozo-node-$$" --label "dozo.run=build-$$" --user "$(id -u):$(id -g)" -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -w /w "$NODE_IMAGE" node "$@"; }
 
-# docker compose from inside the staged copy, upstream compose file untouched. The env file is the
+# docker compose from inside the staged copy, upstream compose file untouched, plus the fork's two
+# overrides: the ports and the theme (dozo/theme/compose.theme.yml). The env file is the
 # one source of truth: compose lets an exported variable beat --env-file, so every key the file holds
 # is removed from the environment first (names only, values are never read out). DOZO_WEB_PORT in
 # the caller's shell only seeds the generation of the file (genenv).
 dc() {
   local k clean=()
   if [ -f "$ENVF" ]; then while IFS='=' read -r k _; do [ -z "$k" ] || clean+=(-u "$k"); done < "$ENVF"; fi
-  (cd "$SRC" && env ${clean[@]+"${clean[@]}"} docker compose -p "$PROJECT" --env-file "$ENVF" \
-    -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" "$@")
+  (cd "$SRC" && env ${clean[@]+"${clean[@]}"} DOZO_THEME_DIR="$ROOT/dozo/theme" docker compose -p "$PROJECT" --env-file "$ENVF" \
+    -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" -f "$ROOT/dozo/theme/compose.theme.yml" "$@")
 }
 
 # A swap cut short leaves a partial tree that still has the compose file: only the marker says it is whole.

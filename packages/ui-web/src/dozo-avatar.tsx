@@ -1,10 +1,18 @@
+import type { DozoCharacter } from "@rakazo/core";
+import {
+  DOZO_AVATAR_ART,
+  DOZO_BOT_PALETTE,
+  DOZO_CHARACTERS,
+  dozoCharacterForSeed,
+  dozoHashSeed,
+} from "@rakazo/core";
 import type { AnimationEvent, CSSProperties, ReactNode } from "react";
-import { memo, useEffect, useRef } from "react";
+import { createElement, Fragment, memo, useEffect, useRef } from "react";
 import { cn } from "./lib/utils.js";
 import "./dozo-avatar.css";
 
-export const DOZO_CHARACTERS = ["sora", "kumo", "hana", "taro", "yuki", "mochi"] as const;
-export type DozoCharacter = (typeof DOZO_CHARACTERS)[number];
+export type { DozoCharacter };
+export { DOZO_CHARACTERS, dozoCharacterForSeed };
 export type DozoAvatarState = "working" | "waiting" | "idle";
 
 /** Below this size pointer tracking and idle motion are off: unreadable, and wasted frames. */
@@ -12,151 +20,29 @@ const MIN_MOTION_SIZE = 32;
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
-function hashSeed(seed: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < seed.length; i++) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
-/** A seed that is a character's own name gets that character; any other seed is hashed. */
-export function dozoCharacterForSeed(seed: string): DozoCharacter {
-  const key = seed.trim().toLowerCase();
-  return (
-    DOZO_CHARACTERS.find((name) => name === key) ??
-    (DOZO_CHARACTERS[hashSeed(key) % DOZO_CHARACTERS.length] as DozoCharacter)
-  );
-}
-
 /**
- * The Dozo bot identity palette, the only place the avatar's identity colours are written down:
- * a tile colour (light page, dark page) and an eye glow per character. Upstream's `botColors` and
- * `botEyeColor` in `@rakazo/ui-tokens` could not be used: they are TypeScript-only values, hold
- * seven colours (#3EC5A8 #F5A03C #6A6BF5 #9B5CF6 #3B82F6 #F2622A #D9508A) instead of six with other
- * hues (indigo, pink and orange where ours are green, amber and coral), and the eye ink is one dark
- * #101014, while these eyes glow light on a dark visor. The component sets them inline on its root.
+ * Draws a character from the shared art data (`DOZO_AVATAR_ART` in `@rakazo/core`, which also
+ * holds the palette). Shapes that move together are grouped; children are passed by position, so
+ * no element needs a key.
  */
-const DOZO_BOT_PALETTE: Record<
-  DozoCharacter,
-  { readonly tile: readonly [light: string, dark: string]; readonly glow: string }
-> = {
-  sora: { tile: ["#3f7fcb", "#4f8fd8"], glow: "#bfe0ff" },
-  kumo: { tile: ["#8f6bcb", "#a07ed8"], glow: "#e2d6ff" },
-  hana: { tile: ["#3f9468", "#4fa37a"], glow: "#c4f2d9" },
-  taro: { tile: ["#c4872f", "#d19a45"], glow: "#ffe2ae" },
-  yuki: { tile: ["#d26a59", "#dc7a6a"], glow: "#ffd0c6" },
-  mochi: { tile: ["#2f9297", "#3fa3a8"], glow: "#b8f0f0" },
-};
-
-// ---------------------------------------------------------------------------------------------
-// Drawings, ported from design/d/dozo.js. Colours live in DOZO_BOT_PALETTE above, not here.
-
-function Eyes({ children }: { children: ReactNode }) {
-  return (
-    <g className="da-eyes">
-      <g className="da-blink">{children}</g>
-    </g>
-  );
-}
-
 function Art({ character }: { character: DozoCharacter }) {
-  switch (character) {
-    case "sora":
-      return (
-        <>
-          <rect className="da-body" x="30.5" y="9" width="3" height="10" rx="1.5" />
-          <g className="da-feature">
-            <circle className="da-glow" cx="32" cy="9" r="3.5" />
-          </g>
-          <circle className="da-body" cx="32" cy="36" r="18" />
-          <rect className="da-visor" x="20" y="30" width="24" height="13" rx="6.5" />
-          <Eyes>
-            <circle className="da-glow" cx="27" cy="36.5" r="2.6" />
-            <circle className="da-glow" cx="37" cy="36.5" r="2.6" />
-          </Eyes>
-        </>
-      );
-    case "kumo":
-      return (
-        <>
-          <g className="da-feature">
-            <rect className="da-body" x="22" y="11" width="3" height="10" rx="1.5" />
-            <rect className="da-body" x="39" y="11" width="3" height="10" rx="1.5" />
-          </g>
-          <rect className="da-body" x="15" y="20" width="34" height="30" rx="9" />
-          <rect className="da-visor" x="20" y="28" width="24" height="14" rx="5" />
-          <Eyes>
-            <rect className="da-glow" x="23.5" y="34.5" width="6" height="3" rx="1.5" />
-            <rect className="da-glow" x="34.5" y="34.5" width="6" height="3" rx="1.5" />
-          </Eyes>
-        </>
-      );
-    case "hana":
-      return (
-        <>
-          <rect className="da-body" x="30" y="17" width="4" height="8" />
-          <g className="da-feature">
-            <circle className="da-glow" cx="32" cy="15" r="3.5" />
-          </g>
-          <rect className="da-body" x="10" y="24" width="44" height="26" rx="13" />
-          <rect className="da-visor" x="16" y="30" width="32" height="14" rx="7" />
-          <Eyes>
-            <rect className="da-glow" x="21" y="35.2" width="22" height="3.6" rx="1.8" />
-          </Eyes>
-        </>
-      );
-    case "taro":
-      return (
-        <>
-          <rect className="da-body" x="18" y="12" width="28" height="42" rx="13" />
-          <g className="da-feature">
-            <rect className="da-band" x="18" y="26" width="28" height="4" />
-          </g>
-          <rect className="da-visor" x="22" y="33" width="20" height="15" rx="7" />
-          <Eyes>
-            <ellipse className="da-glow" cx="28" cy="40.5" rx="2.3" ry="3.3" />
-            <ellipse className="da-glow" cx="36" cy="40.5" rx="2.3" ry="3.3" />
-          </Eyes>
-        </>
-      );
-    case "yuki":
-      return (
-        <>
-          <g className="da-feature">
-            <circle className="da-body" cx="12" cy="35" r="4.5" />
-            <circle className="da-body" cx="52" cy="35" r="4.5" />
-          </g>
-          <rect className="da-body" x="14" y="18" width="36" height="34" rx="16" />
-          <rect className="da-visor" x="19" y="27" width="26" height="15" rx="7.5" />
-          <Eyes>
-            <circle className="da-glow" cx="27" cy="34.5" r="2.7" />
-            <path className="da-glow-line" d="M33.5 35q3.5-3.4 7 0" />
-          </Eyes>
-        </>
-      );
-    case "mochi":
-      return (
-        <>
-          <g className="da-feature">
-            <ellipse
-              className="da-glow"
-              cx="41"
-              cy="13"
-              rx="3"
-              ry="8.5"
-              transform="rotate(28 41 13)"
-            />
-          </g>
-          <rect className="da-body" x="15" y="21" width="34" height="30" rx="11" />
-          <rect className="da-visor" x="20" y="29" width="24" height="14" rx="7" />
-          <Eyes>
-            <path className="da-glow-line" d="M24 38q3-5 6 0M34 38q3-5 6 0" />
-          </Eyes>
-        </>
-      );
+  const groups: [part: "head" | "feature" | "eyes", nodes: ReactNode[]][] = [];
+  for (const [part, tag, paint, attrs] of DOZO_AVATAR_ART[character]) {
+    const node = createElement(tag, { className: `da-${paint}`, ...attrs });
+    const last = groups[groups.length - 1];
+    if (last?.[0] === part) last[1].push(node);
+    else groups.push([part, [node]]);
   }
+  return createElement(
+    Fragment,
+    null,
+    ...groups.flatMap(([part, nodes]) => {
+      if (part === "head") return nodes;
+      if (part === "feature") return [createElement("g", { className: "da-feature" }, ...nodes)];
+      const blink = createElement("g", { className: "da-blink" }, ...nodes);
+      return [createElement("g", { className: "da-eyes" }, blink)];
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -321,8 +207,9 @@ function tick(now: number) {
   frame = 0;
   const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.05) : 0.016;
   lastTime = now;
-  const follow = 1 - Math.exp(-dt * 10);
-  const wakeRate = 1 - Math.exp(-dt * 5);
+  // Reduced motion: the eyes take their target at once, with no eased frames in between.
+  const follow = reduced ? 1 : 1 - Math.exp(-dt * 10);
+  const wakeRate = reduced ? 1 : 1 - Math.exp(-dt * 5);
   // With no pointer nothing can move toward it, so positions stay stale until one appears.
   if (stale && pointer.active) measure();
   let moving = false;
@@ -393,6 +280,8 @@ function track(tracker: Tracker): () => void {
 export interface DozoAvatarProps {
   /** Stable identity (bot id or name). Picks the character, and the tile colour unless `color` is set. */
   seed: string;
+  /** The character to draw, when something other than the seed decides it. */
+  character?: DozoCharacter;
   /** Explicit tile colour, a hex value (the bot's `color` field). The character stays seed-based. */
   color?: string;
   size?: number;
@@ -406,6 +295,7 @@ export interface DozoAvatarProps {
 
 export const DozoAvatar = memo(function DozoAvatar({
   seed,
+  character = dozoCharacterForSeed(seed),
   color,
   size = 36,
   state = "idle",
@@ -417,10 +307,9 @@ export const DozoAvatar = memo(function DozoAvatar({
   const svgRef = useRef<SVGSVGElement>(null);
   const live = useRef<Live>({ state, awakeUntil: 0 });
 
-  const character = dozoCharacterForSeed(seed);
   const full = size >= MIN_MOTION_SIZE;
   const tracking = interactive && full;
-  const hash = hashSeed(seed);
+  const hash = dozoHashSeed(seed);
   // Each avatar blinks on its own period and phase, so a list never blinks in unison.
   const blinkPeriod = 4 + ((hash >>> 8) % 20) / 10;
   const [tileLight, tileDark] = DOZO_BOT_PALETTE[character].tile;
