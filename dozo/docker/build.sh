@@ -104,7 +104,7 @@ stage() {
   # and dozo/ would ship in the runtime image. Nothing later reads them from the stage (node_run
   # mounts the real dozo/ at /dozo). dozo/NOTICE stays: it is the licence addendum, and the image
   # carries the source it is about. The fork-only dozo-* source files live in apps/ and packages/.
-  rm -f "$new/Makefile"
+  rm -f "$new/Makefile"   # the fork's own; gate.sh olc fails if upstream has a root Makefile
   # The fork's tests and its README (the notice block) are not part of any image either; ignored,
   # not removed: the unit step and the brand tools still read them from the stage.
   printf '%s\n' '' '# dozo' '**/dozo-*.test.*' '/README.md' >> "$new/.dockerignore"
@@ -161,7 +161,7 @@ genenv() {
   need nc openssl; need_compose
   mkdir -p "$STAGE"
   if [ ! -f "$ENVF" ]; then
-    say "env: generating dozo/.stage/dozo.env (random secrets, not printed)"
+    say "env: generating $ENVF (random secrets, not printed)"
     local pg pga ba ek sp st
     rand_hex 16 pg; rand_hex 16 pga; rand_hex 32 ba; rand_hex 32 ek; rand_hex 32 sp; rand_hex 32 st
     # Written whole into a temp file and moved in, so an interrupted run leaves no half-written file.
@@ -249,13 +249,21 @@ await_service() {
 }
 
 smoke() {
-  STEP=smoke; need curl; genenv
+  STEP=smoke; need curl; need_stage; need_compose
+  # Read only: the port is what `up` put in the env file. genenv would rewrite the file and could move the port.
+  [ -f "$ENVF" ] || die "no env file at $ENVF; run: dozo/docker/build.sh up"
+  PORT="$(grep -m1 '^DOZO_WEB_PORT=' "$ENVF" | cut -d= -f2 || true)"
+  case "$PORT" in ''|*[!0-9]*) die "no web port (DOZO_WEB_PORT) in $ENVF; run: dozo/docker/build.sh up" ;; esac
   local url="http://127.0.0.1:$PORT/" code html title
   # One fetch: the body, a newline and the status. A failed fetch (nothing listening) must not abort
   # the pipeline silently: curl still prints 000, the line below says so, and the checks after it exit 2.
   html="$(curl -s --max-time 10 -w '\n%{http_code}' "$url" || true)"
   code="${html##*$'\n'}"; html="${html%$'\n'*}"; [ -n "$code" ] || code=000
-  title="$(printf '%s' "$html" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
+  # The first <title> (an inline SVG may carry more), with no markup inside it.
+  title="$(printf '%s' "$html" | tr '\n' ' ')"
+  case "$title" in *"<title>"*) title="${title#*<title>}" ;; *) title="" ;; esac
+  case "$title" in *"</title>"*) title="${title%%</title>*}" ;; *) title="" ;; esac
+  case "$title" in *"<"*) title="" ;; esac
   say "smoke: http=$code title='$title' url=$url"
   [ "$code" = 200 ] || die "web returned $code (000: nothing answered at $url)" 2
   [ -n "$title" ] || die "no <title> in HTML" 2

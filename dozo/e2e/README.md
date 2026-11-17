@@ -28,7 +28,8 @@ failed `npm install`, zero tests run, a failed test, a declared key nobody visit
    (atomic) that holds `owner`, the pid and start time of the run. A second run while the owner is
    alive is refused (exit 2). A lock whose owner is gone, or whose pid now belongs to another
    process (the start time differs), is taken over; two runs that find the same stale lock still
-   start exactly one. A directory of another user at that path is refused. It is removed when the
+   start exactly one, and a lock with no owner file is taken over after 2 seconds. The lock code is
+   shared with the stage lock (`dozo/docker/lock.sh`). A directory of another user at that path is refused. It is removed when the
    run ends, also on INT and TERM. A `.takeover.*` directory next to it is left only if a run died
    in the middle of a takeover: remove it.
 2. starts `model-stub.mjs` (below) in a throwaway `node:24.22-slim` container (`DOZO_NODE_IMAGE`) on the

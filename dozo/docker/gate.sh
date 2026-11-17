@@ -118,6 +118,8 @@ upstream_edits() {
   [ -n "$base" ] || { echo "usage: $0 upstream-edits <base-commit> [tree-ish]" >&2; return 64; }
   bad=$(git diff --name-only --no-renames --diff-filter=MDT "$base" ${tree:+"$tree"} -- . ':!dozo' ':!Makefile') || return 2
   bad=$(printf '%s\n' "$bad" | grep -vxF "$README_FILE" || true)
+  # The stage drops the root Makefile as the fork's own: one in upstream would be shadowed unnoticed.
+  ! git cat-file -e "$base:Makefile" 2>/dev/null || bad=$(printf '%s\nMakefile (upstream has a root Makefile: the fork'"'"'s shadows it and the stage deletes it)' "$bad")
   readme_outside_block "$base" "$tree" || bad=$(printf '%s\n%s' "$bad" "$README_FILE (outside the fork-notice block)")
   printf '%s\n' "$bad" | sed '/^$/d'
 }

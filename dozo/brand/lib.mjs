@@ -437,13 +437,13 @@ addStems(
 SHAPES.push({ name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" });
 // A path token is closed on the right: the stem is what the tree really puts after the name, and any
 // other letter, digit, `_` or `-` makes it another path (`/opt/rakazo-pro`). The bare directory
-// (`/tmp/rakazo`) is the one tail with no stem: a `/`, a quote, a space or the line end must follow,
-// so `/etc/rakazo.conf` is a leak. The one file named rakazo.* in the tree has its own row below.
+// (`/tmp/rakazo`) is the one tail with no stem: a `/`, a quote, a space, punctuation, a full stop that
+// no word follows, or the line end must follow, so `/etc/rakazo.conf` is a leak. The one file named rakazo.* in the tree has its own row below.
 addStems(
   "fs-path",
   "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*), each tail from a closed list",
   ["-background-", "-browser", "-cache", "-chrome", "-chrome-XXXXXX", "-command-", "-command-env", "-computer", "-computer-control", "-focus-or-launch", "-home", "-local-bin", "-nss", "-page-browser", "-page-browser-", "-page-input-", "-prepare", "-proxy", "-terminal", "-user-env", "-worker-health", "-workspace-", "-workspace-archive-", "-xcapture"],
-  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo(?:${alt}(?![\w-])|(?=[/\s"'\x60]|$))`,
+  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo(?:${alt}(?![\w-])|(?=[/\s"'\x60,)\];:<>}]|\.(?![\w-])|$))`,
 );
 SHAPES.push({ name: "policy-path", re: /(?<![\w.])\/etc\/brave\/policies\/managed\/rakazo\.json(?![\w-])/g, reason: "the browser policy file written into the computer image" });
 addStems(
@@ -529,9 +529,12 @@ export function buildScanner(config) {
     }
     const own = ownRe ? blank(text, ownRe) : text;
     for (const m of own.matchAll(domainRe)) found.push({ start: m.index, text: m[0], label: "brand domain" });
-    const masks = SHAPES.flatMap((shape) => shapeMatches(shape, text));
     let rest = text;
-    for (const m of masks) rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(m.index + m[0].length);
+    // A line without the name has nothing to mask and nothing left to find.
+    if (inName.test(text)) {
+      const masks = SHAPES.flatMap((shape) => shapeMatches(shape, text));
+      for (const m of masks) rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(m.index + m[0].length);
+    }
     for (const m of rest.matchAll(brandRe)) found.push({ start: m.index, text: m[0] });
     return dedupe(found);
   }

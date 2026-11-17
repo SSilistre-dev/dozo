@@ -155,7 +155,7 @@ shape table lets an identifier through: it is finite on purpose, so `rakazo-powe
 `rakazo.`, `- Ask rakazo` and `You are rakazo, ${x}` are leaks wherever they stand. Each row is
 `{ name, re, reason }`: a case-sensitive (except `header`) global regex that matches the whole token
 that holds the old name, as the tree contains it, and masks it. A path row ends where the tree's names end: `fs-path` takes the bare directory (`/tmp/rakazo`) only
-before `/`, a quote, a space or the line end (`/etc/rakazo.conf` is a leak), and `policy-path` is the one
+before `/`, a quote, a space, punctuation, a full stop no word follows or the line end (`/etc/rakazo.conf` is a leak), and `policy-path` is the one
 file named `rakazo.json`. Rows that are lists of names (`dotted-key`,
 `css-name`, `dom-event`, `binary-name`, `service-name`, `persisted-key`, `name-prefix`, `process-marker`,
 `memory-entity`, `kdf-context`, `fs-path`, `shell-path`) are closed: each stem is one name the tree uses, a name that continues

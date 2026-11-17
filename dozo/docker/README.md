@@ -21,8 +21,10 @@ The Makefile exports `DOZO_STAGE_WORKTREE=1` unless it is already set (an empty 
 `build.sh` with no argument is `all`; an unknown command or argument exits 64.
 
 One run at a time per stage area: every `build.sh` command and `gate.sh qa` take the lock
-`<stage>/.lock` (`lock.sh`, a directory holding the owner's pid). A second run exits 2 naming the
-holder. The lock of a dead owner (killed with SIGKILL) is taken over. `gate.sh qa` holds it for
+`<stage>/.lock` (`lock.sh`, shared with `dozo/e2e/run.sh`: a directory holding the owner's pid and
+start time, so a reused pid is not taken for the owner). A second run exits 2 naming the holder.
+The lock of a dead owner (killed with SIGKILL) is taken over under a second `mkdir` mutex, so two
+waiting runs start exactly one; a lock with no owner file is given 2 seconds, then taken over. `gate.sh qa` holds it for
 all its steps and passes its pid in `DOZO_LOCK_OWNER`, so the `build.sh` steps it starts do not lock
 again; `olc` and `unit` do not lock.
 
@@ -79,7 +81,8 @@ with `down`.
    (`[dozo] image: ...`).
 4. `up`: `compose up -d`, then waits for `http://127.0.0.1:<port>/` to answer 200, at most
    `DOZO_UP_TIMEOUT` seconds. On timeout it prints `compose ps` and fails.
-5. `smoke`: the web root answers 200, has a `<title>`, and (unless `DOZO_SKIP_BRAND=1`) the title
+5. `smoke`: reads the web port from `dozo.env` (read only; it never rewrites the file) and requires the
+   file. The web root answers 200, has a `<title>`, and (unless `DOZO_SKIP_BRAND=1`) the title
    contains "dozo" and does not contain "rakazo". Then the `api` container must be `healthy` and the
    `worker` container healthy (running, if it has no healthcheck), waiting at most
    `DOZO_SMOKE_TIMEOUT` seconds each (`starting` keeps waiting). A stopped, missing or unhealthy
@@ -121,7 +124,8 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.
 - The upstream-edit check: no upstream file may differ from the merge base of `HEAD` and
   `upstream-main` (not its tip, which may be ahead after a sync), except the marked notice block at
-  the top of the root `README.md`. A non-zero count lists the files and fails.
+  the top of the root `README.md`. A non-zero count lists the files and fails. The root `Makefile` is
+  the fork's own (the stage drops it): a root `Makefile` in the upstream ref fails the check too.
   **A missing `upstream-main` ref fails the gate, locally and in CI; there is no opt-out.** Create
   it once: `git fetch upstream main && git branch upstream-main upstream/main` (the `upstream`
   remote: `dozo/SYNC.md`, Prerequisites). `DOZO_UPSTREAM_REF` names another ref and exists for tests.

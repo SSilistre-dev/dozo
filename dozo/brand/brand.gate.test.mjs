@@ -312,7 +312,7 @@ const SHAPE_CASES = {
     left: [".rakazo-command-env"],
   },
   "fs-path": {
-    yes: ["/tmp/rakazo/x.log", 'cd "/tmp/rakazo"', "ls /tmp/rakazo", "/tmp/rakazo'", "/usr/local/bin/rakazo-computer", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
+    yes: ["/tmp/rakazo/x.log", 'cd "/tmp/rakazo"', "ls /tmp/rakazo", "ls /tmp/rakazo, then", "(/tmp/rakazo)", "dir=/tmp/rakazo;", "/tmp/rakazo: busy", "[/tmp/rakazo]", "<code>/tmp/rakazo</code>", "a > /tmp/rakazo>", "Files go to /tmp/rakazo.", "see /tmp/rakazo. Next", "/tmp/rakazo'", "/usr/local/bin/rakazo-computer", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
     no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo", "/opt/rakazo-pro", "/tmp/rakazo-notes/x", "/etc/rakazo.conf", "/tmp/rakazo.log", "/tmp/rakazo.json", "/etc/brave/policies/managed/rakazo.jsonx"],
   },
   "policy-path": {
