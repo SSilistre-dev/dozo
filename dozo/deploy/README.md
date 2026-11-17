@@ -80,8 +80,8 @@ merge). The host needs Docker Engine 26 or newer with Compose 2.24.4 or newer.
    of at least 16 characters on the host and creates an ordinary verified account. Both answers can
    be piped in instead, one per line, so a generated password never shows on a screen or in a
    command line. There is no password reset without an email provider, so keep it somewhere safe.
-6. Turn on the backup and the health check: `ssh <host> <dir>/host-jobs.sh install` (see Backups
-   and Health check).
+6. Turn on the backup and the health check, as root: `ssh <host> <dir>/host-jobs.sh install` (see
+   Backups and Health check).
 
 ## Environment in the panel
 
@@ -122,7 +122,8 @@ that is the trade against one shared limit anyone can exhaust.
 ## What the proxy does
 
 The panel adds one router for the domain, to the web container. `compose.deploy.yml` adds its own
-beside it as labels (they need the panel's HTTPS entry point to be named `websecure`, its default):
+beside it as labels. They need the panel's HTTPS entry point to be named `websecure`, its default,
+and apply to the host in `RAKAZO_HOST` only, so that must be the domain the panel routes:
 
 - `Strict-Transport-Security` and `X-Content-Type-Options` on every response, and `noindex` plus
   `Referrer-Policy: no-referrer` on shared pages (`/p/`), as upstream's own proxy sets them. The
@@ -131,8 +132,8 @@ beside it as labels (they need the panel's HTTPS entry point to be named `websec
   stayed open after the API behind it restarted, and open tabs stopped following changes until
   reloaded. While the api container is starting or unhealthy these paths answer 502 (about ten
   seconds after a restart); the app retries by itself.
-- `POST /api/v1/plugin-submissions`, the one write that needs no account, answers 403 to everyone.
-  To open it, remove its lines from `compose.deploy.yml`.
+- `/api/v1/plugin-submissions`, the one write that needs no account, answers 403 to everyone. To
+  open it, remove its lines from `compose.deploy.yml`.
 
 ## Landing page
 
@@ -188,19 +189,18 @@ ssh <host> 'systemctl list-timers "dozo-*"; journalctl -u dozo-backup.service -n
 network and compares the row count of every table with the live database, which it only reads.
 It prints `VERIFY PASS`, or the tables that differ (rows written since the backup do) and exits 1.
 
-To restore, on the host as root. The database step is what `verify` exercises; the whole
-sequence follows upstream's (`docs/self-host-backups.md`) and has not been rehearsed on a live
-stack:
+To restore, on the host as root, one line at a time: stop at the first one that fails. The
+database step is what `verify` exercises; the whole sequence follows upstream's
+(`docs/self-host-backups.md`) and has not been rehearsed on a live stack:
 
 ```sh
-set -euo pipefail
 cd <dir>/backups/<stamp> && sha256sum --check SHA256SUMS
 p=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' \
   "$(docker ps -q --filter volume=dozo_postgres)")
 of() { docker ps -aq -f "label=com.docker.compose.project=$p" -f "label=com.docker.compose.service=$1"; }
 bots=$(docker ps -q -f name=rakazo-bot-)
 docker stop $(of api) $(of worker) $(of web) $(of supervisor) $bots
-<dir>/host-jobs.sh backup                       # what you are about to replace
+DOZO_BACKUP_KEEP=99 <dir>/host-jobs.sh backup   # what you are about to replace; deletes no older one
 docker exec -i "$(of postgres)" sh -c 'pg_restore --clean --if-exists --no-owner --exit-on-error \
   --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <db.dump
 data=$(docker volume inspect -f '{{.Mountpoint}}' dozo_data)
@@ -216,11 +216,11 @@ If the database step fails nothing has changed: start the services again. Delete
 
 The same `install` enables `dozo-health.timer`: every five minutes it checks that postgres,
 supervisor, web, api and worker run and are healthy, that the api answers `/health`, and that the
-public address answers with the app's page. A fault is written to the journal and leaves the unit
-failed until the next good run. Nobody is notified: look, or point your own alerting at the unit.
+public address answers with the app's page. A fault is written to the journal as a `FAULT` line
+and leaves the unit failed until the next good run. Nobody is notified: look, or point your own alerting at the unit.
 
 ```sh
-ssh <host> 'systemctl --failed "dozo-*"; journalctl -u dozo-health.service --since -1h -p warning'
+ssh <host> 'systemctl list-units --failed "dozo-*"; journalctl -u dozo-health.service --since -1d --grep FAULT'
 ssh <host> <dir>/host-jobs.sh health            # one check now; exit 1 on a fault
 ```
 

@@ -69,6 +69,16 @@ services:
       traefik.http.routers.dozo-api.tls: "true"
       traefik.http.routers.dozo-api.service: dozo-api
       traefik.http.routers.dozo-api.middlewares: dozo-api-headers
+      # Closed pre-release: the one write that needs no account answers 403 to everyone. On this
+      # container, so it holds while the web container restarts. Remove these seven lines to open
+      # plugin submissions.
+      traefik.http.middlewares.dozo-api-closed.ipallowlist.sourcerange: 127.0.0.1/32
+      traefik.http.routers.dozo-api-closed.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/api/v1/plugin-submissions`)"
+      traefik.http.routers.dozo-api-closed.priority: "1003"
+      traefik.http.routers.dozo-api-closed.entrypoints: websecure
+      traefik.http.routers.dozo-api-closed.tls: "true"
+      traefik.http.routers.dozo-api-closed.service: dozo-api
+      traefik.http.routers.dozo-api-closed.middlewares: dozo-api-closed
 
   worker:
     build: !reset null
@@ -118,15 +128,6 @@ services:
       traefik.http.routers.dozo-app-noapi.entrypoints: websecure
       traefik.http.routers.dozo-app-noapi.tls: "true"
       traefik.http.routers.dozo-app-noapi.service: dozo-app-noapi
-      # Closed pre-release: the one write that needs no account answers 403 to everyone. Remove
-      # these seven lines to open plugin submissions.
-      traefik.http.middlewares.dozo-app-closed.ipallowlist.sourcerange: 127.0.0.1/32
-      traefik.http.routers.dozo-app-closed.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/api/v1/plugin-submissions`)"
-      traefik.http.routers.dozo-app-closed.priority: "1003"
-      traefik.http.routers.dozo-app-closed.entrypoints: websecure
-      traefik.http.routers.dozo-app-closed.tls: "true"
-      traefik.http.routers.dozo-app-closed.service: dozo-app
-      traefik.http.routers.dozo-app-closed.middlewares: dozo-app-closed
 
 networks:
   default:

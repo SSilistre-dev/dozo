@@ -25,12 +25,13 @@ die() {
   exit 2
 }
 trap 'die "line $LINENO: $BASH_COMMAND"' ERR
+[ "$keep" -ge 1 ] 2>/dev/null || die "DOZO_BACKUP_KEEP must be a number, 1 or more"
 
-# The stack's containers are found by the volumes deploy.sh names, whatever the panel calls the
-# project.
+# The stack's containers are found by its volumes, whatever the panel calls the project:
+# deploy.sh merges the compose file as project "dozo", which fixes their names.
 postgres() {
   local id
-  id=$(docker ps -q --filter volume=dozo_postgres | head -1)
+  id=$(docker ps -q --filter volume=dozo_postgres | sed -n 1p)
   [ -n "$id" ] || die "no running container mounts the dozo_postgres volume"
   echo "$id"
 }
@@ -51,6 +52,9 @@ backup() {
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   out=$backups/$stamp.partial
   mkdir -p "$backups"
+  # One run at a time: a second one would delete the first one's unfinished folder.
+  exec 9>"$backups/.lock"
+  flock -n 9 || die "another backup is running"
   rm -rf "$backups"/*.partial # what an interrupted run left
   mkdir "$out"
 
@@ -76,6 +80,7 @@ verify() {
   local snapshot=${1:-} pg image name live restored
   [ -n "$snapshot" ] || snapshot=$(find "$backups" -mindepth 1 -maxdepth 1 -type d -name '20*Z' | sort | tail -1)
   [ -r "$snapshot/db.dump" ] || die "no backup to verify (${snapshot:-$backups is empty})"
+  snapshot=$(cd "$snapshot" && pwd) # Docker reads a relative path as a volume name
   (cd "$snapshot" && sha256sum --check --quiet SHA256SUMS)
   tar -tzf "$snapshot/data.tgz" >/dev/null
 
@@ -86,7 +91,7 @@ verify() {
   docker run -d --rm --name "$name" --network none --memory 512m \
     -e POSTGRES_HOST_AUTH_METHOD=trust -v "$snapshot/db.dump:/db.dump:ro" "$image" >/dev/null
   # shellcheck disable=SC2064
-  trap "docker rm -f $name >/dev/null 2>&1 || true" EXIT
+  trap "docker rm -fv $name >/dev/null 2>&1 || true" EXIT
   # The image's first start listens on TCP only once its setup is over.
   local waited=0
   until docker exec "$name" pg_isready -q -h 127.0.0.1 2>/dev/null; do
@@ -120,36 +125,37 @@ verify() {
 }
 
 health() {
-  local pg project fault=0 service id state origin
-  pg=$(docker ps -aq --filter volume=dozo_postgres | head -1)
+  local pg project fault=0 service id state origin page
+  pg=$(docker ps -aq --filter volume=dozo_postgres | sed -n 1p)
   [ -n "$pg" ] || die "no container mounts the dozo_postgres volume"
   project=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$pg")
   for service in postgres supervisor web api worker; do
     id=$(docker ps -q -f "label=com.docker.compose.project=$project" \
-      -f "label=com.docker.compose.service=$service" | head -1)
+      -f "label=com.docker.compose.service=$service" | sed -n 1p)
     state=missing
     [ -z "$id" ] || state=$(docker inspect -f \
       '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id")
     case "$state" in
       running/healthy | running/none) ;;
       *)
-        echo "host-jobs: $service is $state" >&2
+        echo "host-jobs: FAULT: $service is $state" >&2
         fault=1
         ;;
     esac
   done
   id=$(docker ps -q -f "label=com.docker.compose.project=$project" \
-    -f label=com.docker.compose.service=api | head -1)
+    -f label=com.docker.compose.service=api | sed -n 1p)
   if [ -n "$id" ]; then
     docker exec "$id" node -e \
       "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" || {
-      echo "host-jobs: the api does not answer /health" >&2
+      echo "host-jobs: FAULT: the api does not answer /health" >&2
       fault=1
     }
     # The public address, through the proxy and whatever is in front of it.
-    origin=$(docker exec "$id" printenv WEB_ORIGIN)
-    curl -fsS -m 20 "$origin/" 2>/dev/null | grep -qi '<title>[^<]*dozo' || {
-      echo "host-jobs: $origin/ does not answer with the app's page" >&2
+    origin=$(docker exec "$id" printenv WEB_ORIGIN) || origin=
+    page=$(curl -fsS -m 20 "$origin/" 2>/dev/null) || page=
+    grep -qi '<title>[^<]*dozo' <<<"$page" || {
+      echo "host-jobs: FAULT: $origin/ does not answer with the app's page" >&2
       fault=1
     }
   fi
@@ -157,7 +163,7 @@ health() {
   echo "host-jobs: healthy"
 }
 
-# unit <name> <description> <command> <timer line>
+# unit <name> <description> <command> <timer line> <seconds a run may take>
 unit() {
   cat >"$units/$1.service" <<EOF
 [Unit]
@@ -167,6 +173,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=$5
 ExecStart=$root/host-jobs.sh $3
 EOF
   cat >"$units/$1.timer" <<EOF
@@ -184,9 +191,9 @@ EOF
 
 install_units() {
   unit dozo-backup "Dozo: daily backup of the database and app data" backup \
-    "OnCalendar=*-*-* 03:30:00"
+    "OnCalendar=*-*-* 03:30:00" 3600
   unit dozo-health "Dozo: health check of the stack and its public address" health \
-    "OnCalendar=*:0/5"
+    "OnCalendar=*:0/5" 120
   chmod 700 "$root/host-jobs.sh"
   mkdir -p "$backups"
   systemctl daemon-reload
