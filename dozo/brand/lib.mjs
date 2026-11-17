@@ -368,7 +368,7 @@ SHAPES.push({ name: "namespaced-key", re: /(?<![A-Za-z0-9])rakazo:(?=[\w$/])/g, 
 addStems(
   "dotted-key",
   "dotted attribute, label, metadata and storage keys (rakazo.botId) from a closed list, inside quotes, a URL or path, or before `=`; a public TLD is caught before this",
-  ["activity", "agent", "bot", "botId", "botsSidebarDensity", "clientIp", "composerBindings", "composerDraft", "composerEnterToSend", "composerNonce", "composerSend", "computerOwner", "control", "egressProbe", "githubStarPrompt", "invalid", "json", "loadRemoteImages", "logOutFailed", "managed", "mountSources", "passkey", "pi", "responseStreaming", "routine", "run", "showToolActivity", "signed", "signedInUser", "spaceId", "test", "uiAppearance", "uiLocale", "workspaceId"],
+  ["activity", "agent", "bot", "botId", "botsSidebarDensity", "clientIp", "composerBindings", "composerDraft", "composerEnterToSend", "composerNonce", "composerSend", "computerOwner", "control", "egressProbe", "githubStarPrompt", "invalid", "loadRemoteImages", "logOutFailed", "managed", "mountSources", "passkey", "pi", "responseStreaming", "routine", "run", "showToolActivity", "signed", "signedInUser", "spaceId", "test", "uiAppearance", "uiLocale", "workspaceId"],
   (alt) => String.raw`(?<![A-Za-z0-9])rakazo\.${alt}(?![A-Za-z0-9_])`,
   dottedInCode,
 );
@@ -435,13 +435,17 @@ addStems(
   (alt) => String.raw`(?<![\w/-])rakazo/${alt}/v1`,
 );
 SHAPES.push({ name: "hidden-name", re: /(?<![\w-])\.rakazo(?:-command-env|-executables\.json|(?=\/|["'`]))/g, reason: "hidden files and directories inside the computer workspace" });
-// A path token is closed on the right: the stem is what the tree really puts after the name ("" is the bare directory), and any other letter, digit, `_` or `-` makes it another path (`/opt/rakazo-pro`).
+// A path token is closed on the right: the stem is what the tree really puts after the name, and any
+// other letter, digit, `_` or `-` makes it another path (`/opt/rakazo-pro`). The bare directory
+// (`/tmp/rakazo`) is the one tail with no stem: a `/`, a quote, a space or the line end must follow,
+// so `/etc/rakazo.conf` is a leak. The one file named rakazo.* in the tree has its own row below.
 addStems(
   "fs-path",
   "absolute paths inside the computer image (/tmp/rakazo/*, /usr/local/bin/rakazo-*), each tail from a closed list",
-  ["", "-background-", "-browser", "-cache", "-chrome", "-chrome-XXXXXX", "-command-", "-command-env", "-computer", "-computer-control", "-focus-or-launch", "-home", "-local-bin", "-nss", "-page-browser", "-page-browser-", "-page-input-", "-prepare", "-proxy", "-terminal", "-user-env", "-worker-health", "-workspace-", "-workspace-archive-", "-xcapture"],
-  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo${alt}(?![\w-])`,
+  ["-background-", "-browser", "-cache", "-chrome", "-chrome-XXXXXX", "-command-", "-command-env", "-computer", "-computer-control", "-focus-or-launch", "-home", "-local-bin", "-nss", "-page-browser", "-page-browser-", "-page-input-", "-prepare", "-proxy", "-terminal", "-user-env", "-worker-health", "-workspace-", "-workspace-archive-", "-xcapture"],
+  (alt) => String.raw`(?<![\w.])\/(?:tmp|etc|run|var|usr|home|build|opt)(?:\/[\w.$-]+)*\/(?:\.|lib)?rakazo(?:${alt}(?![\w-])|(?=[/\s"'\x60]|$))`,
 );
+SHAPES.push({ name: "policy-path", re: /(?<![\w.])\/etc\/brave\/policies\/managed\/rakazo\.json(?![\w-])/g, reason: "the browser policy file written into the computer image" });
 addStems(
   "shell-path",
   "relative shell paths ($dir/rakazo-proxy.json, ./rakazo-browser), each tail from a closed list",

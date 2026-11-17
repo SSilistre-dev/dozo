@@ -6,6 +6,7 @@
 # `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
 # `qa` runs olc, stage, brand, unit, build, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lock.sh"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SELF")/../.." && pwd)"
 PWD0="$PWD"
@@ -129,7 +130,7 @@ syntax_check() { # $1 = script
 }
 
 olc() {
-  local s out f tests report low missing brand_src rc e2e_tests
+  local s out f tests report low missing brand_src rc e2e_tests mjs
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs.
@@ -400,6 +401,10 @@ run_step() { # name cmd...
 # for that long unless the worker exits at once.
 qa() {
   local t0 st was_up=0 reached_up=0 b="$ROOT/dozo/docker/build.sh"
+  # One qa at a time per stage area, held for all steps: the build.sh steps it starts see
+  # DOZO_LOCK_OWNER and do not lock again.
+  stage_lock "$STAGE" || { echo "QA: FAIL (stage area in use) in 0s"; exit 2; }
+  export DOZO_LOCK_OWNER=$$
   t0=$(now); mkdir -p "$LOGS"
   [ -z "$(docker ps -q --filter label=com.docker.compose.project=dozo --filter status=running 2>/dev/null)" ] || was_up=1
   export DOZO_STOP_TIMEOUT="${DOZO_STOP_TIMEOUT:-60}"
@@ -420,7 +425,7 @@ qa() {
 }
 
 UNIT_OUT=""
-on_exit() { wt_stop; rm_run_containers; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
+on_exit() { wt_stop; stage_unlock; rm_run_containers; [ -z "$UNIT_OUT" ] || rm -f "$UNIT_OUT"; }
 # Not a gate: no traps, no verdict, no Docker (sync.sh calls it for its fork-health count).
 if [ "${1:-}" = upstream-edits ]; then shift; upstream_edits "$@"; exit $?; fi
 trap 'on_signal 130' INT; trap 'on_signal 143' TERM; trap on_exit EXIT

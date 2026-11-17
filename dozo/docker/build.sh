@@ -19,6 +19,7 @@ NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 COMPOSE_REL=infra/compose/docker-compose.yml
 STAGED="$STAGE/stage.complete"   # written last by `stage`, removed first: a swap cut short has none
 STEP=init
+. "$HERE/lock.sh"
 
 say() { echo "[dozo] $*"; }
 # A failed gate exits 2 (dozo/AGENTS.md); only a usage error is 64.
@@ -30,7 +31,9 @@ cleanup() {
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
   [ $rc -eq 0 ] || [ $rc -eq 64 ] || [ "${DIED:-}" = 1 ] || echo "[dozo] FAILED at step '$STEP' (exit $rc)" >&2
   [ -z "${ENV_TMP:-}" ] || rm -f "$ENV_TMP"
-  rm -f "$ENVF.new"; rm -rf "$STAGE/src.new"
+  rm -f "$ENVF.new"
+  [ "$STEP" != stage ] || rm -rf "$STAGE/src.new"   # only the step that makes it: another run's may be in use
+  stage_unlock
   # Only a step that started a container (node_run) has any to remove: stage and the compose steps
   # leave Docker alone here, so a host without Docker can still stage.
   if [ "${STARTED_CONTAINER:-}" = 1 ]; then
@@ -224,17 +227,18 @@ up() {
 
 # A web that answers proves nothing about the api or the worker (web only waits for them to start).
 # Wait, by wall clock (DOZO_SMOKE_TIMEOUT seconds), until service $1 is healthy, or running when it
-# has no healthcheck. A stopped or missing container fails at once; otherwise the last state and the
-# service's last log lines are printed.
+# has no healthcheck. 150 s default: the worker checks every 30 s after a 2 minute start period. A
+# stopped, missing or unhealthy container fails at once (`starting` keeps waiting), and the last
+# state and the service's last log lines are printed.
 await_service() {
-  local svc="$1" limit="${DOZO_SMOKE_TIMEOUT:-90}" end id st; end=$(( $(date +%s) + limit ))
+  local svc="$1" limit="${DOZO_SMOKE_TIMEOUT:-150}" end id st; end=$(( $(date +%s) + limit ))
   while :; do
     id="$(dc ps -a -q "$svc" 2>/dev/null | head -n1)" || id=""
     st=missing
     [ -z "$id" ] || st="$(docker inspect -f '{{if not .State.Running}}{{.State.Status}}{{else if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' "$id" 2>/dev/null)" || st=missing
     case "$st" in
       healthy|running) say "smoke: $svc $st"; return 0 ;;
-      exited|dead|missing|created) break ;;
+      unhealthy|exited|dead|missing|created) break ;;
     esac
     [ "$(date +%s)" -lt "$end" ] || break
     sleep 2
@@ -247,10 +251,10 @@ await_service() {
 smoke() {
   STEP=smoke; need curl; genenv
   local url="http://127.0.0.1:$PORT/" code html title
-  code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$url" || true)"
-  # A failed fetch (nothing listening) must not abort the pipeline silently: it leaves an empty page,
-  # the line below says so, and the checks after it exit 2.
-  html="$(curl -s --max-time 10 "$url")" || html=""
+  # One fetch: the body, a newline and the status. A failed fetch (nothing listening) must not abort
+  # the pipeline silently: curl still prints 000, the line below says so, and the checks after it exit 2.
+  html="$(curl -s --max-time 10 -w '\n%{http_code}' "$url" || true)"
+  code="${html##*$'\n'}"; html="${html%$'\n'*}"; [ -n "$code" ] || code=000
   title="$(printf '%s' "$html" | tr '\n' ' ' | sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p')"
   say "smoke: http=$code title='$title' url=$url"
   [ "$code" = 200 ] || die "web returned $code (000: nothing answered at $url)" 2
@@ -281,6 +285,7 @@ CMD="${1:-all}"; VOLUMES=""
 for a in "$@"; do
   [ "$a" = "--volumes" ] && [ "$CMD" = down ] && VOLUMES=1 || usage
 done
+case "$CMD" in stage|brand|build|up|smoke|down|all) stage_lock "$STAGE" || die "the stage area is in use by another run" ;; esac
 case "$CMD" in
   stage) stage ;; brand) brand ;; build) build ;; up) up ;; smoke) smoke ;; down) down ;;
   all) stage; brand; build; up ;;

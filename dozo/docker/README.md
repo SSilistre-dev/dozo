@@ -20,6 +20,12 @@ what each gate runs. Brand rules and the leak gate: `dozo/brand/README.md`. Merg
 The Makefile exports `DOZO_STAGE_WORKTREE=1` unless it is already set (an empty value turns it off).
 `build.sh` with no argument is `all`; an unknown command or argument exits 64.
 
+One run at a time per stage area: every `build.sh` command and `gate.sh qa` take the lock
+`<stage>/.lock` (`lock.sh`, a directory holding the owner's pid). A second run exits 2 naming the
+holder. The lock of a dead owner (killed with SIGKILL) is taken over. `gate.sh qa` holds it for
+all its steps and passes its pid in `DOZO_LOCK_OWNER`, so the `build.sh` steps it starts do not lock
+again; `olc` and `unit` do not lock.
+
 ## Host requirements
 
 Docker with the Compose v2 plugin, 2.24.4 or newer (`compose.ports.yml` uses `!override` and
@@ -76,8 +82,8 @@ with `down`.
 5. `smoke`: the web root answers 200, has a `<title>`, and (unless `DOZO_SKIP_BRAND=1`) the title
    contains "dozo" and does not contain "rakazo". Then the `api` container must be `healthy` and the
    `worker` container healthy (running, if it has no healthcheck), waiting at most
-   `DOZO_SMOKE_TIMEOUT` seconds each. A stopped, missing or unhealthy one fails with its last 20 log
-   lines.
+   `DOZO_SMOKE_TIMEOUT` seconds each (`starting` keeps waiting). A stopped, missing or unhealthy
+   one fails at once with its last 20 log lines.
 6. `down`: `compose down`. Containers go; the named volumes (`postgres`, `pgdata`, `webassets`,
    prefixed `dozo_`) stay unless `--volumes`. Compose runs from the staged copy, so it needs the
    staged compose file and `dozo.env`; a whole tree is not required, so a stage cut short that still
@@ -169,7 +175,7 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 | `DOZO_NODE_IMAGE` | `node:24.22-slim` | Image for every Node step, including the e2e model stub |
 | `DOZO_WEB_PORT` | `5173` | First port tried when the env file has none. A seed only (see Generated files) |
 | `DOZO_UP_TIMEOUT` | `240` | Seconds `up` waits for the web app |
-| `DOZO_SMOKE_TIMEOUT` | `90` | Seconds `smoke` waits for the api, then for the worker, to be healthy |
+| `DOZO_SMOKE_TIMEOUT` | `150` | Seconds `smoke` waits for the api, then for the worker, to be healthy |
 | `DOZO_STOP_TIMEOUT` | unset; qa sets `60` | Seconds for `up` and `down` to stop containers |
 | `DOZO_QA_STEPS` | all steps | Subset of qa steps |
 | `DOZO_TIMEOUT_<STEP>` | build 2400, unit 900, else 600 | Per-step qa timeout in seconds |
@@ -205,8 +211,8 @@ e2e variables are in `dozo/e2e/README.md`; the sync ones in `dozo/SYNC.md`.
 
 ## Generated files
 
-The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.complete`, `logs/`, and
-`src.new/` while a stage runs.
+The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.complete`, `logs/`,
+`.lock/` while a run is active, and `src.new/` while a stage runs.
 
 - `dozo.env`: random secrets from `openssl rand -hex` (`POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD`,
   `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, `SANDBOX_SUPERVISOR_TOKEN`), mode 600,

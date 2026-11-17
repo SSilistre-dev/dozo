@@ -312,8 +312,12 @@ const SHAPE_CASES = {
     left: [".rakazo-command-env"],
   },
   "fs-path": {
-    yes: ["/tmp/rakazo/x.log", "/usr/local/bin/rakazo-computer", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/etc/brave/policies/managed/rakazo.json", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
-    no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo", "/opt/rakazo-pro", "/tmp/rakazo-notes/x"],
+    yes: ["/tmp/rakazo/x.log", 'cd "/tmp/rakazo"', "ls /tmp/rakazo", "/tmp/rakazo'", "/usr/local/bin/rakazo-computer", "/home/desktop/rakazo-home", "/usr/local/lib/librakazo-xcapture.so", "/tmp/rakazo/rakazo-terminal.py", "/home/user/.rakazo-command-env"],
+    no: ["/srv/rakazo/x", "github.com/tmp/rakazo", "see /tmp/ rakazo", "/opt/rakazo-pro", "/tmp/rakazo-notes/x", "/etc/rakazo.conf", "/tmp/rakazo.log", "/tmp/rakazo.json", "/etc/brave/policies/managed/rakazo.jsonx"],
+  },
+  "policy-path": {
+    yes: ["/etc/brave/policies/managed/rakazo.json", 'write("/etc/brave/policies/managed/rakazo.json")'],
+    no: ["/etc/brave/policies/managed/rakazo.jsonx", "/etc/chrome/policies/managed/rakazo.json", "/tmp/rakazo.json", "managed/rakazo.json"],
   },
   "shell-path": {
     yes: ['cat "$dir/rakazo-proxy.json"', "./rakazo-browser", "$directory/.rakazo-write.XXXXXX", "# --user-data-dir=.../rakazo-browser"],
@@ -640,7 +644,7 @@ describe("closed shape rows", () => {
     const { scan } = scanner();
     assert.deepEqual(SHAPES.find((shape) => shape.name === "dotted-key").stems.includes("key"), false);
     for (const line of ['"rakazo.fun"', "see rakazo.run now", "Use rakazo.managed today", "rakazo.botId", "x = rakazo.test;"]) assert.ok(scan(line).length >= 1, line);
-    for (const line of ['x = "rakazo.run"', "`rakazo.run`", "http://rakazo.test", "managed/rakazo.json", "rakazo.managed=true", "rakazo.control.aimedScroll=1"]) assert.deepEqual(scan(line), [], line);
+    for (const line of ['x = "rakazo.run"', "`rakazo.run`", "http://rakazo.test", "rakazo.managed=true", "rakazo.control.aimedScroll=1"]) assert.deepEqual(scan(line), [], line);
   });
 
   it("an identifier between plain words is prose, in code it is not", () => {
