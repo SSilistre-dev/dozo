@@ -142,11 +142,20 @@ export function loadConfig(file = DEFAULT_CONFIG) {
   return config;
 }
 
+// `{a,b}` is an alternation (one level, no nesting); a `,` outside braces stays literal.
 export function globToRegExp(glob) {
   let source = "";
+  let open = false;
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
-    if (c === "*" && glob[i + 1] === "*") {
+    if (c === "{" && !open && glob.indexOf("}", i) > i) {
+      open = true;
+      source += "(?:";
+    } else if (c === "}" && open) {
+      open = false;
+      source += ")";
+    } else if (c === "," && open) source += "|";
+    else if (c === "*" && glob[i + 1] === "*") {
       if (glob[i + 2] === "/") {
         source += "(?:.*/)?";
         i += 2;

@@ -16,7 +16,9 @@
     "apps/api/**",
     "apps/worker/**",
     "packages/**",
-    "infra/sandboxes/**"
+    "infra/sandboxes/**",
+    "apps/desktop/**/*.{png,jpg,jpeg,gif,webp,avif,bmp,ico,icns,svg,tif,tiff,heic}",
+    "apps/mobile/**/*.{png,jpg,jpeg,gif,webp,avif,bmp,ico,icns,svg,tif,tiff,heic}"
   ],
   "exclude": [
     {
@@ -214,12 +216,7 @@
         "reason": "icon bundle directory read by export-brand.ts and desktop packaging; see the Rakazo.icon keep entry"
       }
     ],
-    "binary": [
-      {
-        "glob": "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png",
-        "reason": "source image of the icon export script and desktop packaging; never copied into the web, API, worker or computer images"
-      }
-    ]
+    "binary": []
   },
   "leak": [
     "rakazo.com",
@@ -251,8 +248,14 @@
     {
       "file": "packages/auth/src/welcome-email.tsx",
       "find": "{ src: \"https://rakazo.com/email/welcome.jpg\", alt: \"Rakazo\" },",
-      "replace": "undefined,",
-      "reason": "hero image carries upstream's mascot and wordmark and no Dozo image exists; the mail falls back to the text header"
+      "replace": "{ src: \"https://rakazo.com/email/welcome.png\", alt: \"Rakazo\" },",
+      "reason": "upstream's hero carries its mascot and wordmark; point at the Dozo hero, which the web app serves from its public directory (mapped in assets). The domain and the name are rewritten after this rule"
+    },
+    {
+      "file": "packages/ui-tokens/assets/Rakazo.icon/icon.json",
+      "find": "\"translation-in-points\": [0, 90]",
+      "replace": "\"translation-in-points\": [0, 0]",
+      "reason": "upstream's character sits 90 points low in the icon; the Dozo layer (mapped in assets) is centred"
     },
     {
       "file": "packages/auth/src/referral-email.tsx",
@@ -481,7 +484,22 @@
     "apps/web/public/favicon-32x32.png": "web/favicon-32x32.png",
     "apps/web/public/apple-touch-icon.png": "web/apple-touch-icon.png",
     "apps/web/public/icon-192.png": "web/icon-192.png",
-    "apps/web/public/icon-512.png": "web/icon-512.png"
+    "apps/web/public/icon-512.png": "web/icon-512.png",
+    "apps/web/public/email/welcome.png": "mail/welcome.png",
+    "apps/desktop/assets/icon.png": "desktop/icon.png",
+    "apps/desktop/assets/icon-macos.png": "desktop/icon-macos.png",
+    "apps/desktop/assets/icon.ico": "desktop/icon.ico",
+    "apps/desktop/assets/background.png": "desktop/background.png",
+    "apps/desktop/assets/background@2x.png": "desktop/background@2x.png",
+    "apps/mobile/assets/icon.png": "mobile/icon.png",
+    "apps/mobile/assets/adaptive-icon.png": "mobile/adaptive-icon.png",
+    "apps/mobile/assets/monochrome-icon.png": "mobile/monochrome-icon.png",
+    "apps/mobile/assets/icon-background.png": "mobile/icon-background.png",
+    "apps/mobile/assets/splash-icon.png": "mobile/splash-icon.png",
+    "apps/mobile/assets/notification-icon.png": "mobile/notification-icon.png",
+    "apps/mobile/assets/favicon.png": "web/favicon.png",
+    "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png": "mobile/app-mark.png",
+    "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png": "shared/icon-layer.png"
   },
   "literals": [
     {
