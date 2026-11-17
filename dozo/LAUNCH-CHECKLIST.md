@@ -54,7 +54,9 @@ placeholders are replaced.
 - [ ] **Billing, OAuth and listing names** (blocks launch if the feature is on). Create our Stripe
       products, prices and names (upstream billing code is `apps/api/src/billing.ts`; use env
       configuration, never code edits). Set our names in OAuth consent screens, the Slack, Discord and
-      Telegram apps and the OpenRouter listing.
+      Telegram apps and the OpenRouter listing. Owner's decision: the product is open source and a
+      hosted SaaS that runs on our servers; payment is not connected yet, so the landing page holds
+      a placeholder for the hosted plan (`dozo/landing/README.md`).
 - [ ] **Android build name** (blocks launch if the Android build is offered). Publish the APK as
       `dozo.apk` under the release tag the download URL names.
 - [ ] **Third-party catalog branding** (decision). The xAI/Grok plugin catalog and import text name
@@ -66,6 +68,8 @@ placeholders are replaced.
       certificate and notarization, and its bundle id (`dev.ssilistre.dozo`) was chosen without the
       owner.
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
-      `dozo/landing/`; replace its placeholder links and publish it once the domain exists.
+      `dozo/landing/`, published pre-release behind `noindex` (`dozo/deploy/README.md`, "Landing page").
+      At launch: remove `robots.txt`, the `noindex` meta and header, add the GitHub links, swap the
+      pre-release addresses for the real domain (`dozo/landing/README.md`).
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's
       README text. Decide whether to keep them below our fork notice.

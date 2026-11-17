@@ -342,10 +342,29 @@
       "reason": "eyes placed for the Dozo pill"
     },
     {
-      "file": "apps/web/src/pages/Auth.tsx",
-      "find": "color.id === \"orange\")?.hex}",
-      "replace": "color.id === \"blue\")?.hex}\n              activity=\"waiting\"",
-      "reason": "sign-in mascot: blue picks the Dozo character Sora (the avatar wrapper maps a colour to a character), drawn awake"
+      "file": "apps/web/src/App.tsx",
+      "find": "import(\"./pages/Auth\").then((module) => module.AuthPage)",
+      "replace": "import(\"./pages/dozo-auth\").then((module) => module.AuthPage)",
+      "requires": ["apps/web/src/pages/dozo-auth.tsx"],
+      "reason": "closed registration: the sign-in and sign-up routes load a wrapper that shows sign-in at the sign-up address while the server takes no new accounts"
+    },
+    {
+      "file": "packages/contracts/src/auth.ts",
+      "find": "  crispWebsiteId: z.string().min(1).nullable().optional(),\n});\nexport type AuthCapabilities",
+      "replace": "  crispWebsiteId: z.string().min(1).nullable().optional(),\n  /** Whether new accounts can register; omitted by older servers, which means open. */\n  signupsOpen: z.boolean().optional(),\n});\nexport type AuthCapabilities",
+      "reason": "closed registration: the public capabilities say whether sign-up is open, so the client can leave the form out"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { encryptionKeyWarning } from \"@rakazo/core\";",
+      "replace": "import { encryptionKeyWarning, signupsOpen } from \"@rakazo/core\";",
+      "reason": "closed registration: the capabilities answer reads the same switch the sign-up policy reads"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n    } satisfies AuthCapabilities);",
+      "replace": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n      signupsOpen: signupsOpen(env.signupsEnabled),\n    } satisfies AuthCapabilities);",
+      "reason": "closed registration: the capabilities answer carries whether sign-up is open"
     },
     {
       "file": "infra/sandboxes/computer/Dockerfile",
@@ -486,8 +505,8 @@
       "file": "packages/ui-web/src/index.ts",
       "find": "export { LogoAvatar } from \"./logo-avatar.js\";",
       "replace": "export { LogoAvatar } from \"./dozo-bot-avatar.js\";",
-      "requires": ["packages/ui-web/src/dozo-bot-avatar.tsx"],
-      "reason": "Dozo avatars: the sign-in and sign-up mascot is a Dozo character, not upstream's logo avatar"
+      "requires": ["packages/ui-web/src/dozo-bot-avatar.tsx", "packages/ui-web/src/dozo-logo.tsx"],
+      "reason": "Dozo logo: the mark above sign-in and sign-up is the Dozo lockup, not upstream's logo avatar"
     },
     {
       "file": "packages/ui-web/src/group-avatar.tsx",

@@ -64,21 +64,30 @@ describe("DozoAvatar identity", () => {
     expect(seen.size).toBe(6);
   });
 
-  it("gives each character its own tile colour for both themes and its own eye glow", () => {
-    const tiles = new Set<string | undefined>();
-    const glows = new Set<string | undefined>();
+  it("gives each character its own colour for both themes", () => {
+    const colours = new Set<string | undefined>();
     for (const seed of MOCKUP_SEEDS) {
       const html = renderToString(<DozoAvatar seed={seed} />);
       expect(html).toContain(`data-character="${seed}"`);
-      const tile = html.match(/--dozo-tile:(light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\))/i)?.[1];
-      const glow = html.match(/--dozo-glow:(#[0-9a-f]{6})/i)?.[1];
-      expect(tile).toBeDefined();
-      expect(glow).toBeDefined();
-      tiles.add(tile);
-      glows.add(glow);
+      const colour = html.match(/--dozo-tile:(light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\))/i)?.[1];
+      expect(colour).toBeDefined();
+      colours.add(colour);
     }
-    expect(tiles.size).toBe(6);
-    expect(glows.size).toBe(6);
+    expect(colours.size).toBe(6);
+  });
+
+  it("draws no tile: a head with a visor hole, eyes and one accessory in the character's colour", () => {
+    for (const seed of MOCKUP_SEEDS) {
+      const html = renderToString(<DozoAvatar seed={seed} />);
+      expect(html).not.toContain('width="64"');
+      // The head path holds two outlines, the head and the visor cut out of it.
+      const head = html.match(/<path class="da-body" d="(M[^"]+ZM[^"]+Z)"/)?.[1];
+      expect(head?.match(/Z/g)).toHaveLength(2);
+      expect(html).toMatch(
+        /<g class="da-eyes"><g class="da-blink"><(?:circle|ellipse|path) class="da-(?:body|line)"/,
+      );
+      expect(html).toMatch(/<g class="da-feature">.*class="da-accent"/);
+    }
   });
 
   it("respects an explicit colour and keeps the seed-based character", () => {
@@ -89,7 +98,6 @@ describe("DozoAvatar identity", () => {
     expect(painted).toContain(`data-character="${character}"`);
     expect(painted).toContain("--dozo-tile:#ff00aa");
     expect(painted).not.toContain("light-dark");
-    expect(painted).toContain("--dozo-glow:");
   });
 
   it("draws the character it is given, and keeps the seed for the blink rhythm", () => {
@@ -388,8 +396,8 @@ describe("DozoAvatar characters", () => {
     const faces = markup.map((html) => html.slice(html.indexOf("<svg")));
     expect(new Set(faces).size).toBe(DOZO_CHARACTERS.length);
     for (const html of markup) expect(html).toContain('class="da-eyes"');
-    expect(markup[DOZO_CHARACTERS.indexOf("yuki")]).toContain('d="M33.5 35q3.5-3.4 7 0"');
-    expect(markup[DOZO_CHARACTERS.indexOf("mochi")]).toContain('transform="rotate(28 41 13)"');
+    expect(markup[DOZO_CHARACTERS.indexOf("yuki")]).toContain('class="da-line" d="M34.31 42.22Q37.07 38.46 40.66 41.44"');
+    expect(markup[DOZO_CHARACTERS.indexOf("mochi")]).toContain('transform="translate(33 30) rotate(26)"');
   });
 });
 
@@ -946,7 +954,7 @@ describe("DozoAvatar hover", () => {
     expect(svg?.classList.contains("is-hop")).toBe(true);
 
     act(() => {
-      svg?.querySelector("rect")?.dispatchEvent(new Event(ANIMATION_END, { bubbles: true }));
+      svg?.querySelector("circle")?.dispatchEvent(new Event(ANIMATION_END, { bubbles: true }));
     });
     expect(svg?.classList.contains("is-hop")).toBe(true);
     act(() => {
@@ -1012,13 +1020,15 @@ describe("dozo-avatar.css", () => {
       art.indexOf("export type DozoPaint"),
     );
     expect(art.match(/const DOZO_BOT_PALETTE/g)).toHaveLength(1);
-    expect(palette.match(HEX)).toHaveLength(18);
+    expect(palette.match(HEX)).toHaveLength(12);
     expect(art.replace(palette, "").match(HEX)).toBeNull();
   });
 
-  it("takes the head and visor from semantic tokens", () => {
-    expect(css).toMatch(/--dozo-body:[^;]*var\(--(?:background|foreground)\)/);
-    expect(css).toMatch(/--dozo-visor:[^;]*var\(--(?:background|foreground)\)/);
+  it("draws the head in the theme's text colour, the visor as a hole and the accessory in the character's", () => {
+    expect(css).toMatch(/--dozo-body: var\(--foreground\);/);
+    expect(css).toMatch(/\.da-body \{\s*fill: var\(--dozo-body\);\s*fill-rule: evenodd;/);
+    expect(css).toMatch(/\.da-accent \{\s*fill: var\(--dozo-tile\);/);
+    expect(css).not.toContain("--dozo-visor");
   });
 
   it("pauses animations off-screen", () => {

@@ -141,3 +141,13 @@
     padding-inline: max(1.5rem, calc((100% - 45rem) / 2));
   }
 }
+
+/* The logo's band keeps the red of the brand files (dozo/brand/assets) in both themes. */
+.dozo-logo-band {
+  fill: #c8372d;
+}
+
+/* Sign-in offers sign-up only once the server has said registration is open (dozo-auth.tsx). */
+[data-dozo-signups]:not([data-dozo-signups="open"]) p:has(> a[href^="/sign-up"]) {
+  display: none;
+}

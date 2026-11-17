@@ -112,14 +112,46 @@ test("the chat header and the bot panel show the bot's character", async ({ page
 test.describe("signed out", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("the sign-in mascot is Sora, awake", async ({ page }) => {
+  test("the mark above sign-in is the Dozo logo, not a bot", async ({ page }) => {
     await gotoStable(page, "/sign-in");
-    const mascot = page.locator('.dozo-avatar[data-character="sora"]');
-    await expect(mascot).toBeVisible();
-    await expect(mascot).toHaveAttribute("data-state", "waiting");
-    expect((await mascot.boundingBox())?.width).toBe(74);
+    const logo = page.locator("svg.dozo-logo");
+    await expect(logo).toBeVisible();
+    await expect(logo).toHaveAttribute("aria-label", "Dozo");
+    expect((await logo.boundingBox())?.height).toBe(44);
+    await expect(page.locator(".dozo-avatar")).toHaveCount(0);
     await expect(page.locator(UPSTREAM_AVATAR_ART)).toHaveCount(0);
     await expect(page.locator('[data-slot="button"]').first()).toHaveCSS("border-radius", "999px");
+  });
+
+  test("sign-up is offered while the server takes new accounts, as it does here", async ({
+    page,
+  }) => {
+    const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+    expect(capabilities.signupsOpen).toBe(true);
+    await gotoStable(page, "/sign-in");
+    await expect(page.locator('a[href^="/sign-up"]')).toBeVisible();
+    await page.goto("/sign-up");
+    await expect(page.locator('a[href^="/sign-in"]')).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-up/);
+  });
+
+  test("a server that takes no new accounts shows sign-in only, at every door", async ({
+    page,
+  }) => {
+    await page.route("**/api/auth/capabilities", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), signupsOpen: false } });
+    });
+    await gotoStable(page, "/sign-in");
+    await expect(page.locator("svg.dozo-logo")).toBeVisible();
+    await expect(page.locator('[data-dozo-signups="closed"]')).toHaveCount(1);
+    await expect(page.locator('a[href^="/sign-up"]')).toBeHidden();
+    for (const door of ["/sign-up", "/sign-up/email", "/"]) {
+      await page.goto(door);
+      await expect(page).toHaveURL(/\/sign-in/);
+      await expect(page.locator('[data-dozo-signups="closed"]')).toHaveCount(1);
+      await expect(page.locator('a[href^="/sign-up"]')).toBeHidden();
+    }
   });
 
   test("a first visit with no stored choice is dark, even on a light system", async ({
@@ -135,7 +167,7 @@ test.describe("signed out", () => {
     const page = await context.newPage();
     await gotoStable(page, "/sign-in");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(page.locator(".dozo-avatar")).toBeVisible();
+    await expect(page.locator("svg.dozo-logo")).toBeVisible();
     await context.close();
   });
 });

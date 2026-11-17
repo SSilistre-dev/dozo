@@ -24,6 +24,8 @@ const PHOTO = "data:image/png;base64,iVBORw0KGgo=";
 const UPSTREAM_ART =
   '[class*="rakazo-organic-avatar"],[class*="rakazo-logo-avatar"],[class*="rakazo-bot-avatar"]';
 
+const css = readFileSync(join(import.meta.dirname, "dozo-shell.css"), "utf8");
+
 const mounted: Array<() => void> = [];
 
 function mount(node: ReactNode) {
@@ -171,25 +173,31 @@ describe("BotShapePreview", () => {
 });
 
 describe("LogoAvatar and Wordmark", () => {
-  it("draws the sign-in mascot as Sora, awake, at the size asked for", () => {
+  it("puts the logo at the door, not a bot, whatever colour or size upstream asks for", () => {
     const { container } = mount(
-      <LogoAvatar size={74} avatarValue={hexOf("blue")} activity="waiting" motion={false} />,
+      <LogoAvatar size={74} avatarValue={hexOf("orange")} activity="waiting" motion={false} />,
     );
-    const avatar = avatarIn(container);
-    expect(avatar.dataset.character).toBe("sora");
-    expect(avatar.dataset.state).toBe("waiting");
-    expect(avatar.style.width).toBe("74px");
-    expect(avatar.getAttribute("aria-hidden")).toBe("true");
+    const logo = container.querySelector("svg.dozo-logo");
+    expect(logo?.getAttribute("role")).toBe("img");
+    expect(logo?.getAttribute("aria-label")).toBe("Dozo");
+    expect(logo?.getAttribute("height")).toBe("44");
+    expect(Number(logo?.getAttribute("width"))).toBeCloseTo(212.98, 2);
+    expect(container.querySelector(".dozo-avatar")).toBeNull();
     expect(container.querySelector(UPSTREAM_ART)).toBeNull();
   });
 
-  it("labels the mascot when asked and sleeps by default", () => {
-    const { container } = mount(<LogoAvatar identity="bot-1" label="Scout" className="mx-auto" />);
-    const avatar = avatarIn(container);
-    expect(avatar.getAttribute("aria-label")).toBe("Scout");
-    expect(avatar.dataset.state).toBe("idle");
-    expect(avatar.style.width).toBe("38px");
-    expect(avatar.classList.contains("mx-auto")).toBe(true);
+  it("draws the lockup in the text colour, with the band left to the stylesheet's red", () => {
+    const { container } = mount(<LogoAvatar label="Dozo, home" className="mx-auto" />);
+    const logo = container.querySelector("svg.dozo-logo");
+    expect(logo?.getAttribute("aria-label")).toBe("Dozo, home");
+    expect(logo?.classList.contains("mx-auto")).toBe(true);
+    expect(logo?.classList.contains("text-foreground")).toBe(true);
+    const fills = [...(logo?.querySelectorAll("path, circle") ?? [])].map(
+      (shape) => shape.getAttribute("fill") ?? shape.getAttribute("class"),
+    );
+    expect(fills.filter((fill) => fill === "currentColor")).toHaveLength(7);
+    expect(fills.filter((fill) => fill === "dozo-logo-band")).toHaveLength(4);
+    expect(fills).toHaveLength(11);
   });
 
   it("writes the wordmark as text", () => {
@@ -226,7 +234,6 @@ describe("the wrapper in place of upstream's module", () => {
 });
 
 describe("dozo-shell.css", () => {
-  const css = readFileSync(join(import.meta.dirname, "dozo-shell.css"), "utf8");
   const styles = readFileSync(join(import.meta.dirname, "styles.css"), "utf8");
 
   it("is imported by the package stylesheet, after the tokens", () => {
@@ -235,9 +242,10 @@ describe("dozo-shell.css", () => {
     );
   });
 
-  it("writes one colour, the seal, and takes every other from a token or the avatar", () => {
+  it("writes the brand's two reds, the seal and the logo band, and takes every other colour from a token or the avatar", () => {
     const hex = css.match(/#[0-9a-f]{3,8}\b/gi) ?? [];
-    expect(hex).toHaveLength(2);
+    expect(hex).toHaveLength(3);
+    expect(css).toMatch(/\.dozo-logo-band \{\s*fill: #c8372d;\s*\}/);
     expect(css).toMatch(/--dozo-seal: light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);/i);
     expect(css).toContain("var(--dozo-tile)");
   });
@@ -255,5 +263,13 @@ describe("dozo-shell.css", () => {
   it("leaves the avatar unpositioned, which the tinted row relies on", () => {
     const avatar = readFileSync(join(import.meta.dirname, "dozo-avatar.css"), "utf8");
     expect(avatar).not.toMatch(/\.dozo-avatar\s*\{[^}]*position\s*:/);
+  });
+});
+
+describe("closed registration", () => {
+  it("hides the way to sign-up until the page says registration is open", () => {
+    expect(css).toContain(
+      '[data-dozo-signups]:not([data-dozo-signups="open"]) p:has(> a[href^="/sign-up"]) {\n  display: none;',
+    );
   });
 });

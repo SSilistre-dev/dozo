@@ -17,17 +17,18 @@ trap 'die "line $LINENO: $BASH_COMMAND"' ERR
 
 usage() {
   cat >&2 <<'EOF'
-Usage: dozo/deploy/deploy.sh [deploy | rollback <tag> | owner]
+Usage: dozo/deploy/deploy.sh [deploy | rollback <tag> | owner | site]
   deploy          stage HEAD, brand, build on the host, deploy, check health (default)
   rollback <tag>  run a tag whose images are still on the host
   owner           create the owner's account (asks for email and password)
+  site            publish dozo/landing (HEAD) as its own static service
 EOF
   exit 64
 }
 
 action=${1:-deploy}
 case "$action" in
-  deploy | owner) [ $# -le 1 ] || usage ;;
+  deploy | owner | site) [ $# -le 1 ] || usage ;;
   rollback) [ $# -eq 2 ] || usage ;;
   *) usage ;;
 esac
@@ -192,6 +193,51 @@ if [ "$action" = rollback ]; then
     >/dev/null || die "the images of $tag are not on the host"
   run_tag "$tag"
   say "DEPLOY: PASS (rollback to $tag)"
+  exit 0
+fi
+
+if [ "$action" = site ]; then
+  for name in DOKPLOY_SITE_COMPOSE_ID DOZO_SITE_DOMAIN; do
+    [ -n "${!name:-}" ] || die "$name is not set in $conf (dozo/deploy/README.md, Landing page)"
+  done
+  id=$DOKPLOY_SITE_COMPOSE_ID
+  site_json() { panel "compose.one?composeId=$id"; }
+  # Same rule as a deploy: the committed tree, not the working tree.
+  stage=$(mktemp -d "$HOME/.dozo-site.XXXXXX")
+  trap 'rm -rf "$stage"' EXIT
+  git -C "$repo" archive HEAD dozo/landing dozo/deploy/site.nginx.conf dozo/deploy/compose.site.yml |
+    tar -x -C "$stage"
+  say "copy the landing page to the host"
+  remote mkdir -p "$remote_dir/site/html" "$remote_dir/site/conf"
+  rsync -az --delete --exclude=README.md "$stage/dozo/landing/" "$DOZO_DEPLOY_SSH:$remote_dir/site/html/"
+  rsync -az "$stage/dozo/deploy/site.nginx.conf" "$DOZO_DEPLOY_SSH:$remote_dir/site/conf/default.conf"
+  before=$(site_json | jq -r '[.deployments[]?.createdAt] | max // ""')
+  sed "s#/opt/dozo/#$remote_dir/#" "$stage/dozo/deploy/compose.site.yml" |
+    jq -Rs --arg id "$id" '{composeId: $id, composeFile: ., sourceType: "raw"}' |
+    panel compose.update --data-binary @- >/dev/null
+  # A redeploy restarts nginx, which is how a changed config takes effect.
+  jq -n --arg id "$id" '{composeId: $id, title: "dozo site"}' | panel compose.deploy --data-binary @- >/dev/null
+  waited=0
+  while :; do
+    status=$(site_json | jq -r --arg before "$before" \
+      '[.deployments[]? | select(.createdAt > $before)] | max_by(.createdAt) | .status // "queued"' ||
+      echo unreachable)
+    case "$status" in
+      done) break ;;
+      error) die "the panel reports a failed deployment; read its log in the panel" ;;
+    esac
+    [ "$waited" -lt "$timeout" ] || die "the panel did not finish in ${timeout}s (last status: $status)"
+    sleep 3
+    waited=$((waited + 3))
+  done
+  url="https://$DOZO_SITE_DOMAIN/"
+  waited=0
+  until curl -fsS -m 20 "$url" 2>/dev/null | grep -qi '<title>[^<]*dozo'; do
+    [ "$waited" -lt 120 ] || die "$url does not answer with the Dozo page"
+    sleep 5
+    waited=$((waited + 5))
+  done
+  say "DEPLOY: PASS (site at $url)"
   exit 0
 fi
 
