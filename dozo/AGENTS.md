@@ -66,7 +66,12 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 
 ## Recurring mistakes
 
-(none yet)
+- 2026-11-17, a leak-gate row with a free part (a directory, a variable, a host) swallowed the old
+  name inside it and passed a path that carried the name twice. Correct way: a new or widened row
+  gets a `no` sample with the name in every free part before it is trusted.
+- 2026-11-17, a fix was reported closed while an older definition of the same function, left later
+  in the script, still ran. Correct way: after editing a shell function, count its definitions
+  (`grep -c '^name()'`) and prove the fix with a case the old code fails.
 
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.
