@@ -226,22 +226,30 @@ say "build the images on the host"
 remote bash -s -- "$remote_dir" "$tag" <<'EOF' || die "the image build failed"
 set -euo pipefail
 dir=$1 tag=$2
+# A rebuild gives the app image a new id even when every step comes from cache, and a new id
+# restarts its containers. dozo/app:<tag> is tagged last, so finding all three means a whole set.
+if docker image inspect "dozo/app:$tag" "dozo/supervisor:$tag" "rakazo/computer:$tag" >/dev/null 2>&1; then
+  echo "[deploy] host: the images of $tag are there, nothing to build"
+  exit 0
+fi
 cd "$dir/src"
 {
-  docker build -q --build-arg "GIT_SHA=$tag" -f infra/compose/Dockerfile -t "dozo/app:$tag" .
-  # The theme ships inside the image, so a tag is one artefact and a rollback restores it too.
-  printf 'FROM dozo/app:%s\nCOPY theme.json /theme/theme.json\n' "$tag" |
-    docker build -q -t "dozo/app:$tag" -f - "$dir/theme"
   docker build -q -f infra/sandboxes/supervisor/Dockerfile -t "dozo/supervisor:$tag" .
   docker build -q -t "rakazo/computer:$tag" infra/sandboxes/computer
+  docker build -q --build-arg "GIT_SHA=$tag" -f infra/compose/Dockerfile -t "dozo/app:$tag-base" .
+  # The theme ships inside the image, so a tag is one artefact and a rollback restores it too.
+  printf 'FROM dozo/app:%s-base\nCOPY theme.json /theme/theme.json\n' "$tag" |
+    docker build -q -t "dozo/app:$tag" -f - "$dir/theme"
+  docker image rm "dozo/app:$tag-base"
 } >/dev/null
 EOF
 
 run_tag "$tag" "$merged"
 
 # Keep this tag, the one it replaced and the newest other one. Tags of one image list in no
-# order, so the two in use are named, never counted.
-remote bash -s -- "$tag" "${previous:-$tag}" <<'EOF' || true
+# order, so the two in use are named, never counted. A repeat of the same tag removes nothing:
+# the tag it first replaced is no longer known.
+[ "${previous:-}" = "$tag" ] || remote bash -s -- "$tag" "${previous:-$tag}" <<'EOF' || true
 for image in dozo/app dozo/supervisor rakazo/computer; do
   docker images "$image" --format '{{.Tag}}' | grep -vxF -e "$1" -e "$2" | tail -n +2 |
     while read -r old; do

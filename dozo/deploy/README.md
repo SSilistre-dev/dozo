@@ -36,7 +36,7 @@ also those to the layer and the theme):
    newest other one.
 
 It prints `DEPLOY: PASS (...)` and exits 0, or `FAIL: ...` and exits 2 (64 for a usage error). A
-deploy of an unchanged tree rebuilds from cache and restarts nothing that did not change.
+deploy of a commit whose images are already on the host builds nothing and restarts nothing.
 
 ## Settings
 
