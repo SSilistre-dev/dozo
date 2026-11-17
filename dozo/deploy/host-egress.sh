@@ -8,7 +8,7 @@
 # Tailscale network accepts forwarded traffic into it before Docker's DOCKER-USER chain is read, so
 # a computer could reach that network's other devices. The extra rule sits in the mangle table,
 # which is read before every filter chain, whatever their order. Without Tailscale it matches
-# nothing.
+# nothing. IPv4 only: computers with restricted egress have no IPv6.
 set -euo pipefail
 
 script=${DOZO_DEPLOY_DIR:-/opt/dozo}/src/infra/compose/restrict-computer-egress.sh
@@ -26,7 +26,7 @@ if [ "${1:-}" = --remove ]; then
   rm -f "/etc/systemd/system/$unit"
   systemctl daemon-reload
   # shellcheck disable=SC2086
-  iptables -t mangle -D $rule 2>/dev/null || true
+  while iptables -w 5 -t mangle -C $rule 2>/dev/null; do iptables -w 5 -t mangle -D $rule; done
   exit 0
 fi
 
@@ -39,7 +39,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'iptables -t mangle -C $rule 2>/dev/null || iptables -t mangle -I $rule'
+ExecStart=/bin/sh -c 'iptables -w 5 -t mangle -C $rule 2>/dev/null || iptables -w 5 -t mangle -I $rule'
 
 [Install]
 WantedBy=multi-user.target

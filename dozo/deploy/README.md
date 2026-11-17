@@ -15,7 +15,8 @@ the images are built there, so they match the host's CPU and never leave it.
 
 ## What a deploy does
 
-`dozo/deploy/deploy.sh` deploys the committed tree (`HEAD`; uncommitted changes are left out):
+`dozo/deploy/deploy.sh` deploys the committed tree (`HEAD`; uncommitted changes are left out,
+also those to the layer and the theme):
 
 1. `build.sh stage` and `brand` into a temporary stage under your home folder, removed afterwards.
 2. Merges upstream's compose file with `compose.deploy.yml` into one file
@@ -28,9 +29,11 @@ the images are built there, so they match the host's CPU and never leave it.
 4. Gives the panel the merged file and sets `DOZO_IMAGE_TAG` in the panel's environment, starts a
    deployment and waits for it.
 5. Checks health: on the host, postgres, supervisor, web, api and worker are running, api and
-   worker are `healthy`, the three app containers run the new tag and the api answers `/health`;
+   worker are `healthy`, the app containers and the supervisor run the new tag, the api answers
+   `/health` and no service restarts within 15 seconds;
    from outside, `https://<domain>/` answers with a title that names Dozo.
-6. Removes all but the three newest tags of the three images.
+6. Removes older tags of the three images, keeping the new one, the one it replaced and the
+   newest other one.
 
 It prints `DEPLOY: PASS (...)` and exits 0, or `FAIL: ...` and exits 2 (64 for a usage error). A
 deploy of an unchanged tree rebuilds from cache and restarts nothing that did not change.
@@ -113,7 +116,7 @@ shared limit anyone can exhaust.
 ## Roll back
 
 A deploy ends with the tag it replaced. `dozo/deploy/deploy.sh rollback <tag>` points the panel at
-that tag again and checks health; the images of the three newest tags stay on the host
+that tag again and checks health; three tags stay on the host
 (`ssh <host> docker images dozo/app`). It restores the code and the theme, not the data: migrations
 that ran stay applied, which upstream keeps compatible with the previous release. The compose file
 in the panel stays the newest one.
@@ -143,14 +146,13 @@ team computer outside the compose project. What bounds them:
   bridge, behind `SANDBOX_SUPERVISOR_TOKEN`. That token is what stands between a computer and the
   Docker socket: never reuse or expose it.
 
-To run without computers, set `SANDBOX_PROVIDER=none` on `api` and `worker` in an extra layer and
-drop the `supervisor` and `computer` services.
-
 ## Known limits
 
 - The rules are checked when the supervisor starts its first computer, not continuously: a later
   firewall reload on the host that flushes them goes unnoticed until the supervisor restarts. They
   return on boot (two systemd units).
+- A worker that is running jobs is given upstream's grace period (50 minutes) to finish them
+  before it is replaced, so a deploy can outlast `DOZO_DEPLOY_TIMEOUT`; the panel still finishes it.
 - The build cache on the host grows with each deploy and is shared with the host's other builds, so
   the script does not prune it.
 - The public address shows only the web app. The api's `/health` is not routed from outside; the

@@ -67,7 +67,7 @@ project_name() { compose_json | jq -er '.appName'; }
 
 # run_tag <tag> [merged compose file]: point the panel at the tag, deploy, wait, check health.
 run_tag() {
-  local tag=$1 file=${2:-} current env previous before status project
+  local tag=$1 file=${2:-} current env before status project
   # The environment holds secrets: it stays in memory and in pipes, never in an argument or a file.
   current=$(compose_json)
   env=$(printf '%s' "$current" | jq -r '.env // ""')
@@ -112,7 +112,8 @@ project=$1 tag=$2 timeout=$3
 container() {
   docker ps -q -f "label=com.docker.compose.project=$project" -f "label=com.docker.compose.service=$1" | head -1
 }
-for service in postgres supervisor web api worker; do
+services="postgres supervisor web api worker"
+for service in $services; do
   waited=0
   while :; do
     id=$(container "$service")
@@ -130,13 +131,31 @@ for service in postgres supervisor web api worker; do
   done
   echo "[deploy] host: $service $state"
 done
-for service in api worker web; do
+for service in api worker web supervisor; do
   image=$(docker inspect -f '{{.Config.Image}}' "$(container "$service")")
-  [ "$image" = "dozo/app:$tag" ] || { echo "$service runs $image, not dozo/app:$tag" >&2; exit 1; }
+  case "$image" in
+    "dozo/app:$tag" | "dozo/supervisor:$tag") ;;
+    *)
+      echo "$service runs $image, not tag $tag" >&2
+      exit 1
+      ;;
+  esac
 done
 docker exec "$(container api)" node -e \
   "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 echo "[deploy] host: api /health ok"
+# A service without a health check (supervisor, web) can look fine once and still be crash-looping.
+restarts() {
+  for service in $services; do
+    docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$(container "$service")"
+  done
+}
+first=$(restarts)
+sleep 15
+if [ "$(restarts)" != "$first" ] || printf '%s\n' "$first" | grep -qv '^running '; then
+  echo "a service restarted or stopped within 15s" >&2
+  exit 1
+fi
 EOF
 
   local url="https://$DOZO_DEPLOY_DOMAIN/" title
@@ -183,19 +202,25 @@ tag=$(git -C "$repo" rev-parse --short=12 HEAD)
 stage=$(mktemp -d "$HOME/.dozo-deploy.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 say "stage and brand $tag"
-DOZO_STAGE_DIR=$stage DOZO_STAGE_WORKTREE='' "$repo/dozo/docker/build.sh" stage
+DOZO_STAGE_DIR=$stage DOZO_STAGE_WORKTREE='' DOZO_STAGE_REF=$tag "$repo/dozo/docker/build.sh" stage
 DOZO_STAGE_DIR=$stage "$repo/dozo/docker/build.sh" brand
+# The layer and the theme come from the same commit as the tree, not from the working tree.
+git -C "$repo" show "$tag:dozo/deploy/compose.deploy.yml" >"$stage/compose.deploy.yml"
+git -C "$repo" show "$tag:dozo/theme/theme.json" >"$stage/theme.json"
 
+# An empty environment: nothing exported in this shell can end up in the file the panel stores.
 merged=$stage/compose.merged.yml
-docker compose -p dozo -f "$stage/src/infra/compose/docker-compose.yml" \
-  -f "$here/compose.deploy.yml" config --no-interpolate >"$merged"
+env -i PATH="$PATH" HOME="$HOME" ${DOCKER_HOST:+DOCKER_HOST="$DOCKER_HOST"} \
+  ${DOCKER_CONTEXT:+DOCKER_CONTEXT="$DOCKER_CONTEXT"} \
+  docker compose -p dozo -f "$stage/src/infra/compose/docker-compose.yml" \
+  -f "$stage/compose.deploy.yml" config --no-interpolate >"$merged"
 # Nothing may be built by the panel or published on the host.
 ! grep -qE '^ +(build|ports):' "$merged" || die "the merged compose file still builds or publishes a port"
 
 say "copy the branded tree to the host"
 remote mkdir -p "$remote_dir/src" "$remote_dir/theme"
 rsync -az --delete "$stage/src/" "$DOZO_DEPLOY_SSH:$remote_dir/src/"
-rsync -az "$repo/dozo/theme/theme.json" "$DOZO_DEPLOY_SSH:$remote_dir/theme/"
+rsync -az "$stage/theme.json" "$DOZO_DEPLOY_SSH:$remote_dir/theme/"
 
 say "build the images on the host"
 remote bash -s -- "$remote_dir" "$tag" <<'EOF' || die "the image build failed"
@@ -214,12 +239,14 @@ EOF
 
 run_tag "$tag" "$merged"
 
-# Keep the three newest tags of our own images; an image a container still uses is not removed.
-remote bash -s <<'EOF' || true
+# Keep this tag, the one it replaced and the newest other one. Tags of one image list in no
+# order, so the two in use are named, never counted.
+remote bash -s -- "$tag" "${previous:-$tag}" <<'EOF' || true
 for image in dozo/app dozo/supervisor rakazo/computer; do
-  docker images "$image" --format '{{.Tag}}' | tail -n +4 | while read -r old; do
-    docker image rm "$image:$old" >/dev/null 2>&1 || true
-  done
+  docker images "$image" --format '{{.Tag}}' | grep -vxF -e "$1" -e "$2" | tail -n +2 |
+    while read -r old; do
+      docker image rm "$image:$old" >/dev/null 2>&1 || true
+    done
 done
 EOF
 
