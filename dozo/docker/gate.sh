@@ -138,10 +138,11 @@ olc() {
   local s out f tests report low missing brand_src rc e2e_tests mjs
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
-  # is not in the image): Playwright compiles them when `make e2e` runs.
+  # is not in the image): Playwright compiles them when `make e2e` runs. The macOS app's toolchain
+  # and build output (dozo/desktop/.toolchain, target: git-ignored, third-party) are not ours to check.
   while IFS= read -r s; do syntax_check "$s"; done \
-    < <(find dozo \( -path dozo/.stage -o -name node_modules \) -prune -o -type f -name '*.sh' -print | sort)
-  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
+    < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target \) -prune -o -type f -name '*.sh' -print | sort)
+  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
     drun node-check -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
@@ -187,7 +188,7 @@ olc() {
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
   fi
   local files forkfiles bad base upwf
-  files=$(find dozo \( -path dozo/.stage \) -prune -o -type f -print | wc -l | tr -d ' ')
+  files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target \) -prune -o -type f -print | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
   # Upstream's workflows arrive enabled after a sync (dozo/SYNC.md): a changed count is the cue to look.
   upwf=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) ! -name 'dozo-*' 2>/dev/null | wc -l | tr -d ' ')

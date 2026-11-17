@@ -25,6 +25,7 @@ Branded output is never committed.
 | `dozo/e2e/` | Browser suite against the running stack. See `dozo/e2e/README.md` |
 | `dozo/theme/` | Theme tokens for the Dozo look and the compose override that loads them. See `dozo/theme/README.md` |
 | `dozo/design/` | Design reference: the source of truth for how Dozo should look |
+| `dozo/desktop/` | The macOS app: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
 | `dozo/NOTICE` | Licence addendum and notice of changes |
 | `dozo/AGENTS.md` | Rules for agents and contributors in this fork |
@@ -33,7 +34,7 @@ Branded output is never committed.
 
 ## Build and run
 
-Nothing is installed on the host (one exception: `dozo/AGENTS.md`). Node tooling runs in Docker.
+Nothing is installed on the host (the exceptions: `dozo/AGENTS.md`). Node tooling runs in Docker.
 
 - `make up` builds and starts the stack; `make olc` is the fast check (run after every change);
   `make qa` is the full gate (run before merging). Commands, variables, exit codes:

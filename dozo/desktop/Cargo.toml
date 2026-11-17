@@ -1,0 +1,38 @@
+[package]
+name = "dozo-desktop"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+tauri-plugin-window-state = "2.5"
+# For src/frames.rs only. The same crates and versions the webview layer already builds.
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSString",
+  "NSURL",
+  "NSURLRequest",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-app-kit",
+  "WKFrameInfo",
+  "WKNavigationAction",
+  "WKNavigationDelegate",
+  "WKWebView",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
