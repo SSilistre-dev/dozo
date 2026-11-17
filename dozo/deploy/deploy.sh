@@ -267,6 +267,10 @@ say "copy the branded tree to the host"
 remote mkdir -p "$remote_dir/src" "$remote_dir/theme"
 rsync -az --delete "$stage/src/" "$DOZO_DEPLOY_SSH:$remote_dir/src/"
 rsync -az "$stage/theme.json" "$DOZO_DEPLOY_SSH:$remote_dir/theme/"
+# The host's timers (backup, health check) run this copy; moved into place so a run in progress
+# keeps reading the old file.
+git -C "$repo" show "$tag:dozo/deploy/host-jobs.sh" | remote \
+  "cat >$remote_dir/host-jobs.sh.new && chmod 700 $remote_dir/host-jobs.sh.new && mv $remote_dir/host-jobs.sh.new $remote_dir/host-jobs.sh"
 
 say "build the images on the host"
 remote bash -s -- "$remote_dir" "$tag" <<'EOF' || die "the image build failed"

@@ -11,6 +11,17 @@ placeholders are replaced.
 - [ ] **Domain** (blocks launch). Replace the `dozo.example` placeholders in `dozo/brand/brand.json`
       (`urls`) with the real domain, including the app and docs subdomains. This also covers the
       links `/discord`, `/get/ios` and `/get/android`.
+- [ ] **Hosted pre-release** (blocks opening it to anyone but the owner). The stack runs closed on
+      the owner's host (`dozo/deploy/README.md`). Tried there: the owner's account and sign-in, a bot
+      computer's screen, control and isolation, the live stream across restarts, a daily backup with
+      a restore check, the health check and the response headers. Still open, all the owner's:
+  - Docker address pools on the host: other projects hold all of them, so a bot computer starts
+    only while one is free (`dozo/deploy/README.md`, Bot computers on a shared host).
+  - A copy of the backups off the host, and somewhere for the health check to report to.
+  - A model connection: nothing that needs a model has been tried there (chat, bot runs, routines).
+  - A rehearsal of a host restart and of a full restore.
+  - The CDN's injected analytics script, which the app's CSP blocks on every page: turn it off for
+    this address.
 - [ ] **GitHub owner and repo** (blocks launch). Replace `github.com/OWNER/dozo` in
       `dozo/brand/brand.json` and in the fork notice in `README.md`.
 - [ ] **Publish and enable CI** (blocks launch; what is published so far: `dozo/README.md`, Status

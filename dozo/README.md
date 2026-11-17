@@ -25,6 +25,7 @@ Branded output is never committed.
 | `dozo/e2e/` | Browser suite against the running stack. See `dozo/e2e/README.md` |
 | `dozo/theme/` | Theme tokens for the Dozo look and the compose override that loads them. See `dozo/theme/README.md` |
 | `dozo/design/` | Design reference: the source of truth for how Dozo should look |
+| `dozo/deploy/` | Running the server side on one host behind a Dokploy panel: deploy and roll back, the production compose layer, firewall rules for bot computers, backups and a health check. See `dozo/deploy/README.md` |
 | `dozo/desktop/` | The macOS app: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
 | `dozo/NOTICE` | Licence addendum and notice of changes |
@@ -70,7 +71,8 @@ Accepted by the owner for now, stated here once:
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite marks it as expected and fails the day it
-  stops happening.
+  stops happening. On the Linux host of `dozo/deploy/`, where the home is a named volume, the first
+  boot succeeded.
 
 ## Licence and attribution
 

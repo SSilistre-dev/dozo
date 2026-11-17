@@ -6,7 +6,11 @@
 #     mounts it from a checkout instead, which a host without one does not have);
 #   - no port is published on the host: the panel's proxy reaches web over a Docker network;
 #   - app data lives in a named volume instead of a folder next to the checkout;
-#   - long-running services restart with the host and have a memory ceiling.
+#   - long-running services restart with the host and have a memory ceiling;
+#   - the stack's network has a fixed subnet, so it takes none of the host's few Docker address
+#     pools, which every bot computer's network needs one of;
+#   - what upstream's own proxy (Caddyfile.prod) does and the panel's does not: its response
+#     headers, and API requests sent to the API directly; and one public form closed.
 services:
   postgres:
     restart: unless-stopped
@@ -48,6 +52,33 @@ services:
     ports: !reset []
     volumes: !override
       - data:/data
+    # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through
+    # the web container: that one keeps a live stream open after the API behind it is gone, so
+    # open tabs would stop following changes until reloaded. The network is the one the panel
+    # makes for an isolated deployment, named after the project.
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${COMPOSE_PROJECT_NAME}
+      traefik.http.services.dozo-api.loadbalancer.server.port: "3100"
+      traefik.http.middlewares.dozo-api-headers.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.dozo-api-headers.headers.contentTypeNosniff: "true"
+      traefik.http.middlewares.dozo-api-headers.headers.customFrameOptionsValue: SAMEORIGIN
+      traefik.http.routers.dozo-api.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`))"
+      traefik.http.routers.dozo-api.priority: "1002"
+      traefik.http.routers.dozo-api.entrypoints: websecure
+      traefik.http.routers.dozo-api.tls: "true"
+      traefik.http.routers.dozo-api.service: dozo-api
+      traefik.http.routers.dozo-api.middlewares: dozo-api-headers
+      # Closed pre-release: the one write that needs no account answers 403 to everyone. On this
+      # container, so it holds while the web container restarts. Remove these seven lines to open
+      # plugin submissions.
+      traefik.http.middlewares.dozo-api-closed.ipallowlist.sourcerange: 127.0.0.1/32
+      traefik.http.routers.dozo-api-closed.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/api/v1/plugin-submissions`)"
+      traefik.http.routers.dozo-api-closed.priority: "1003"
+      traefik.http.routers.dozo-api-closed.entrypoints: websecure
+      traefik.http.routers.dozo-api-closed.tls: "true"
+      traefik.http.routers.dozo-api-closed.service: dozo-api
+      traefik.http.routers.dozo-api-closed.middlewares: dozo-api-closed
 
   worker:
     build: !reset null
@@ -67,6 +98,42 @@ services:
     ports: !reset []
     environment:
       RAKAZO_THEME: /theme/theme.json
+    # Routers beside the one the panel adds for the domain, ahead of it by priority. The panel's
+    # router keeps getting the certificate; these only add what it lacks.
+    labels:
+      traefik.http.services.dozo-app.loadbalancer.server.port: "5173"
+      traefik.http.middlewares.dozo-app-headers.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.dozo-app-headers.headers.contentTypeNosniff: "true"
+      traefik.http.routers.dozo-app.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`)"
+      traefik.http.routers.dozo-app.priority: "1000"
+      traefik.http.routers.dozo-app.entrypoints: websecure
+      traefik.http.routers.dozo-app.tls: "true"
+      traefik.http.routers.dozo-app.service: dozo-app
+      traefik.http.routers.dozo-app.middlewares: dozo-app-headers
+      # A shared page's link is its only key: keep it out of search results and Referer headers.
+      traefik.http.middlewares.dozo-app-shared.headers.customResponseHeaders.X-Robots-Tag: "noindex, nofollow"
+      traefik.http.middlewares.dozo-app-shared.headers.referrerPolicy: no-referrer
+      traefik.http.routers.dozo-app-shared.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/p/`)"
+      traefik.http.routers.dozo-app-shared.priority: "1001"
+      traefik.http.routers.dozo-app-shared.entrypoints: websecure
+      traefik.http.routers.dozo-app-shared.tls: "true"
+      traefik.http.routers.dozo-app-shared.service: dozo-app
+      traefik.http.routers.dozo-app-shared.middlewares: dozo-app-headers,dozo-app-shared
+      # The proxy drops the api's router while that container is starting or unhealthy. API paths
+      # then answer 502 from a port nothing listens on, instead of falling through to this
+      # container's own proxy to the API (see the api service for why).
+      traefik.http.services.dozo-app-noapi.loadbalancer.server.port: "1"
+      traefik.http.routers.dozo-app-noapi.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`))"
+      traefik.http.routers.dozo-app-noapi.priority: "1001"
+      traefik.http.routers.dozo-app-noapi.entrypoints: websecure
+      traefik.http.routers.dozo-app-noapi.tls: "true"
+      traefik.http.routers.dozo-app-noapi.service: dozo-app-noapi
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${DOZO_STACK_SUBNET:-10.213.87.0/24}
 
 volumes:
   data:
