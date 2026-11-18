@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const root = new URL("../../", import.meta.url);
-const claim = /open[\s-]?source|açık[\s-]?kayna/i;
+const claim = /open[\s-]?source|açık[\s-]?kayna|kayna(k|ğı)(\s+kodu)?\s+açık/i;
 
 // The sentences (split at tags and sentence ends) that make the claim. One that names upstream and
 // not Dozo is attribution, not a claim about Dozo.
@@ -30,9 +30,12 @@ test("the check finds the claim in both languages and lets upstream's attributio
     "Dozo is open source, like Rakazo",
   ]);
   assert.deepEqual(
-    openSourceClaims("Source available. Kaynağı açık. The source code is here."),
+    openSourceClaims("Source available. Kaynak kodu erişilebilir. The source code is here."),
     [],
   );
+  // The Turkish for "its source is open" reads as open source too.
+  assert.deepEqual(openSourceClaims("<p>Kaynağı açık. Elastic License 2.0</p>"), ["Kaynağı açık"]);
+  assert.deepEqual(openSourceClaims("Dozo'nun kaynak kodu açık."), ["Dozo'nun kaynak kodu açık"]);
 });
 
 test("the landing pages and the repository front page do not call Dozo open source", () => {
