@@ -19,7 +19,7 @@ ask before they do anything that matters. This repository is the open source cod
 
 ## Features
 
-- A computer for every bot: a browser, files and a terminal in a sandbox
+- A computer for every bot: a real browser on a sandboxed machine
 - Watch a bot's screen, take control, hand it back
 - Routines that run a bot on a schedule
 - Memory the bots read and keep up to date between chats
