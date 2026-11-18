@@ -58,6 +58,51 @@ ours.
 Technical identifiers keep their upstream names so that merges and tooling keep working; a few
 persisted ones are renamed on purpose. The list of both is in `dozo/brand/README.md` (Identifiers).
 
+## Hosted plans
+
+Billing is off unless the server has the payment secrets (`docs/self-host-billing.md`), and a
+server that does not bill behaves as upstream's does. A server that bills offers three plans, laid
+over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
+
+- **Free** (tier `standard`): permanent, no card, no trial. Bots run on the member's own model
+  connection. No hosted computer: the server refuses to start one, and a computer on the member's
+  own machine still works. A bot still answers; a run that reaches for the computer fails and
+  offers the paid plans. A new organization starts here, and one whose subscription ends returns
+  here.
+- **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
+  monthly computer allowance and a computer size. They start without a trial.
+
+Upstream counts computer hours only on a metered cloud provider. Here every computer the server
+hosts counts, the shipped Docker provider included, so the allowance holds on our own host.
+
+An organization on Free spends nothing of the operator's. The operator's own model already needs
+credits (upstream's guard, on every model call a run or a background job makes). On top of that,
+`packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external
+reviewer from a run unless the organization pays (a live subscription or a credit balance); with
+no reviewer the run asks the person before a consequential action, as upstream does for any
+reviewer it cannot reach.
+
+Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
+until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
+
+- A paid plan is bought on the web, in Settings > Billing. The mobile app shows the plan and
+  changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
+  one.
+- While a server has a free plan, a computer's saved home is never deleted for an ended plan
+  (upstream deletes it only when the organization can no longer run bots). A storage limit is a
+  separate task.
+- Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
+  such subscription exists, since the server has never billed, and Free cannot be checked out.
+- Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;
+  they run on the pristine tree only.
+- Three optional operator services have no plan check and stay off on a server with a free plan
+  unless that cost is accepted: a keyed web search provider (`WEB_PROVIDER=keenable` with
+  `KEENABLE_API_KEY`), the operator's managed app connectors (`COMPOSIO_API_KEY`,
+  `PIPEDREAM_*`) and bot mail (`BOT_EMAIL_SMTP_URL`, limited per person per day). The default web
+  search needs no key.
+- Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
+  upstream's plans.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:
