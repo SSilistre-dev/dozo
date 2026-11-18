@@ -33,7 +33,7 @@ COV_MIN="${DOZO_COVERAGE_MIN:-90}"
 BRAND_COV_MIN="${DOZO_BRAND_COVERAGE_MIN:-97}"
 # The pristine upstream branch the upstream-edit check compares with (override for tests only).
 UP_REF="${DOZO_UPSTREAM_REF:-upstream-main}"
-# The one upstream file the fork may edit, and only inside the marked block at its top.
+# The upstream file the fork may edit inside the marked block at its top (the other exception: below).
 README_FILE="README.md"
 README_START="<!-- dozo:fork-notice:start -->"
 README_END="<!-- dozo:fork-notice:end -->"
