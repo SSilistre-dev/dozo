@@ -77,12 +77,13 @@ placeholders are replaced.
 - [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids (`com.rakazo.app` is
       upstream's) and signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
       workflows must stay disabled until then. The fork's own macOS app (`dozo/desktop/`) is a
-      universal build, signed with the owner's Developer ID and notarized, but only by
-      `dozo/desktop/build.sh` on the owner's Mac (`dozo/desktop/README.md`, Signing and
+      universal build. `dozo/desktop/build.sh` signs it with a Developer ID and has it notarized,
+      but only on a Mac that holds the owner's settings file (`dozo/desktop/README.md`, Signing and
       distribution): CI does not sign. Its bundle id (`dev.ssilistre.dozo`) was chosen without the
-      owner; changing it later loses each user's saved server and session. Its Windows installer (the `dozo-desktop-windows` workflow) is unsigned and has not
-      been run on Windows: handing it out needs a first run on a real Windows computer and a code
-      signing certificate (SmartScreen warns without one).
+      owner; changing it later loses each user's saved server and session. Its Windows installer
+      (the `dozo-desktop-windows` workflow) is unsigned and has not been run on Windows: handing it
+      out needs a first run on a real Windows computer and a code signing certificate (SmartScreen
+      warns without one).
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
       `dozo/landing/`, published pre-release behind `noindex` (`dozo/deploy/README.md`, "Landing page").
       At launch: remove `robots.txt`, the `noindex` meta and header, swap the

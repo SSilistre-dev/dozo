@@ -94,7 +94,7 @@ Windows yet, so treat everything below as untested until someone does.
 
 With `~/.config/dozo/sign.conf` in place (`sign.conf.example` lists its two values), `build.sh`
 signs the app and the disk image with a Developer ID, has Apple notarize both, staples the tickets
-and asks Gatekeeper about each; it stops if any of that fails. Such a build opens on any Mac
+and asks Gatekeeper about each; it fails if any step does, or if the file lacks a value. Such a build opens on any Mac
 without a warning. The identity and the notary credentials stay in the keychain of the Mac that
 builds: nothing about them is in this repository, and CI does not sign.
 
