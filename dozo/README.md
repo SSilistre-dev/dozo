@@ -58,6 +58,31 @@ ours.
 Technical identifiers keep their upstream names so that merges and tooling keep working; a few
 persisted ones are renamed on purpose. The list of both is in `dozo/brand/README.md` (Identifiers).
 
+## Hosted plans
+
+Billing is off unless the server has the payment secrets (`docs/self-host-billing.md`), and a
+server that does not bill behaves as upstream's does. A server that bills offers three plans, laid
+over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
+
+- **Free** (tier `standard`): permanent, no card, no trial. Bots run on the member's own model
+  connection. No hosted computer: the server refuses to start one, and a computer on the member's
+  own machine still works. A new organization starts here, and one whose subscription ends
+  returns here.
+- **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
+  monthly computer allowance and a computer size. They start without a trial.
+
+Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
+until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
+
+- A paid plan is bought on the web, in Settings > Billing. The mobile app shows the plan and
+  changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
+  one.
+- While a server has a free plan, a computer's saved home is never deleted for an ended plan
+  (upstream deletes it only when the organization can no longer run bots). A storage limit is a
+  separate task.
+- Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
+  upstream's plans.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:

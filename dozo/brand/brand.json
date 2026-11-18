@@ -848,6 +848,63 @@
         "apps/web/src/pages/dozo-admin.tsx"
       ],
       "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n  if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;\n",
+      "replace": "import { applyDozoPlans } from \"./dozo-plans.js\";\n\napplyDozoPlans(BYOK_TIERS);\n\n/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n",
+      "requires": [
+        "packages/contracts/src/dozo-plans.ts"
+      ],
+      "reason": "plans: Free, Premium and Premium Plus are laid over upstream's tiers, and a free first tier no longer hides the paid ones"
+    },
+    {
+      "file": "packages/db/src/billing.ts",
+      "find": "  return BYOK_TIERS.standard.monthlyPriceCents === null && credits.mode === \"credits\";",
+      "replace": "  return BYOK_TIERS.standard.monthlyPriceCents === null;",
+      "reason": "plans: with a free plan every organization can run bots, also one that never chose how to pay or whose subscription ended"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "    if (\n      provider.endByokPlans &&\n      hasBillingAccess(live.status) &&\n      (live.creditAmountCents ||\n        (BYOK_TIERS.standard.monthlyPriceCents === null &&\n          live.byokPlan &&\n          !live.cancelAtPeriodEnd))\n    )\n",
+      "replace": "    if (provider.endByokPlans && hasBillingAccess(live.status) && live.creditAmountCents)\n",
+      "reason": "plans: a paid plan is sold beside the free one, so the free plan must not end paid subscriptions"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          return byokTrialAvailable(account, credits, hadTrial)\n",
+      "replace": "          return BYOK_TIERS.standard.monthlyPriceCents !== null &&\n            byokTrialAvailable(account, credits, hadTrial)\n",
+      "reason": "plans: the free plan is the way to try the product, so a paid plan starts without a trial, as the status already tells clients"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "                ? \"credits\"\n                : null,\n",
+      "replace": "                ? \"credits\"\n                : BYOK_TIERS.standard.monthlyPriceCents === null\n                  ? \"byok\"\n                  : null,\n",
+      "reason": "plans: an organization that never chose how to pay is on the free plan, which runs on its own model connection"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          byokPriceCents:\n            BYOK_TIERS.standard.monthlyPriceCents &&\n            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),\n",
+      "replace": "          byokPriceCents: subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents,\n",
+      "reason": "plans: a subscriber's price is reported while the first tier is free, so clients show the paid plan"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const freeUntil = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n",
+      "replace": "  const freeEnds = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n  // The free plan offers the paid ones with the controls a free period uses.\n  const freeUntil =\n    freeEnds ?? (status.funding === \"byok\" && !status.byokPriceCents ? \"free\" : null);\n",
+      "reason": "plans: Billing offers the paid plans to an organization on the free plan, reusing the free period's controls"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "          {status.funding === \"byok\" && freeUntil ? (\n",
+      "replace": "          {status.funding === \"byok\" && freeEnds ? (\n",
+      "reason": "plans: the free plan has no end date to announce"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "useState<ByokTier>(\"standard\");",
+      "replace": "useState<ByokTier>(\n    status.byokTiers?.[0]?.tier ?? \"standard\",\n  );",
+      "reason": "plans: the plan picker starts on the first plan on offer, which is not the free one"
     }
   ],
   "assets": {
