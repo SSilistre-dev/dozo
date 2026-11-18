@@ -281,6 +281,12 @@ smoke() {
     ! echo "$title" | grep -qi rakazo || die "title still says Rakazo: '$title'" 2
   fi
   await_service api; await_service worker
+  # A healthy status is the last periodic check (up to 30 s old): ask both again, now.
+  dc exec -T api node -e "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" \
+    || die "api does not answer /health" 2
+  say "smoke: api /health ok"
+  dc exec -T worker node dist/health-check.js || die "worker health check fails" 2
+  say "smoke: worker health check ok"
   say "smoke: ok"
 }
 
