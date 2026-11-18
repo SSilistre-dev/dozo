@@ -570,6 +570,60 @@
       "find": "            identity={identity}\n            organicIdentities={ORGANIC_PREVIEW_IDENTITIES}",
       "replace": "            identity={identity}",
       "reason": "Dozo avatars: upstream's eight generated bodies for a new bot would all be drawn as the same character; the six character tiles are the choice"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "export const appContract = {\n  analytics:",
+      "replace": "export * from \"./dozo-admin.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  analytics:",
+      "requires": [
+        "packages/contracts/src/dozo-admin.ts"
+      ],
+      "reason": "hosted admin page: its procedures join the app contract, so the server and the web client share their types"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { spendingLimitRoutes } from \"./routes/spending-limit.js\";",
+      "replace": "import { spendingLimitRoutes } from \"./dozo-admin.js\";",
+      "requires": [
+        "apps/api/src/dozo-admin.ts"
+      ],
+      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
+      "replace": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { dozoAdminWiring } from \"./dozo-admin.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
+      "requires": [
+        "apps/api/src/dozo-admin.ts"
+      ],
+      "reason": "hosted admin page: the server hands the admin routes what the router's own dependencies do not carry"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  const router = createRouter({\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n    }),\n    speechSummary:",
+      "requires": [
+        "apps/api/src/dozo-admin.ts"
+      ],
+      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, and the page shows the sign-up switch"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "module.AdminPluginsPage),\n);\nconst AdminAccessPage = lazyComponent(() =>",
+      "replace": "module.AdminPluginsPage),\n);\nconst DozoAdminPage = lazyComponent(() =>\n  import(\"./pages/dozo-admin\").then((module) => module.DozoAdminPage),\n);\nconst AdminAccessPage = lazyComponent(() =>",
+      "requires": [
+        "apps/web/src/pages/dozo-admin.tsx"
+      ],
+      "reason": "hosted admin page: loaded on demand, outside the startup bundle"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "              />\n              <Route\n                path=\"/admin/access\"",
+      "replace": "              />\n              <Route path=\"/admin\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
+      "requires": [
+        "apps/web/src/pages/dozo-admin.tsx"
+      ],
+      "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
     }
   ],
   "assets": {

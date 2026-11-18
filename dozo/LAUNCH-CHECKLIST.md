@@ -22,6 +22,11 @@ placeholders are replaced.
   - A rehearsal of a host restart and of a full restore.
   - The CDN's injected analytics script, which the app's CSP blocks on every page: turn it off for
     this address.
+- [ ] **Before sign-up opens** (blocks `SIGNUPS_ENABLED=true`). Set `RAKAZO_ADMIN_EMAILS` to the
+      owner's verified address and open `/admin` on the host (`dozo/deploy/README.md`, Admin page):
+      the account list, one suspend and restore of a test account, and one Stop of a running
+      computer have not been tried there. Mail must work first: without a provider nobody can
+      verify an address or reset a password.
 - [ ] **GitHub owner and repo** (blocks launch). Replace `github.com/OWNER/dozo` in
       `dozo/brand/brand.json` and in the fork notice in `README.md`.
 - [ ] **Publish and enable CI** (blocks launch; what is published so far: `dozo/README.md`, Status

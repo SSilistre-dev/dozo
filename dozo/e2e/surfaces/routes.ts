@@ -88,6 +88,84 @@ export const routes: Surface[] = [
     },
   },
   {
+    name: "Dozo admin page (refused, then the admin flag and its lists faked in the browser)",
+    group: "routes",
+    covers: ["route:/admin"],
+    expect5xx: [],
+    async reach({ page, goto, scan, note }) {
+      // The stack's account is no admin: the address answers like one that does not exist.
+      await goto("/admin");
+      await expect(page.getByText("Page not found")).toBeVisible();
+      // With only the flag faked, the page asks and the real api refuses.
+      await asAdmin(page);
+      const refused = page.waitForResponse((response) =>
+        response.url().includes("/rpc/dozoAdmin/users"),
+      );
+      await goto("/admin");
+      expect((await refused).status()).toBe(403);
+      await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible();
+      await expect(page.getByRole("alert")).toBeVisible();
+      await scan("refused by the api");
+      const account = (id: string, more: Record<string, unknown> = {}) => ({
+        id,
+        email: `${id}@example.test`,
+        name: id,
+        createdAt: "2026-01-05T09:00:00.000Z",
+        lastSeenAt: "2026-03-02T09:00:00.000Z",
+        bots: 2,
+        runningComputers: 0,
+        suspended: false,
+        ...more,
+      });
+      await page.route("**/rpc/dozoAdmin/users", (route) =>
+        route.fulfill({
+          json: {
+            json: {
+              signupsOpen: false,
+              total: 3,
+              users: [
+                account("ada", { runningComputers: 1 }),
+                account("grace", { lastSeenAt: null, bots: 0, suspended: true }),
+                account("linus"),
+              ],
+              nextCursor: null,
+            },
+          },
+        }),
+      );
+      await page.route("**/rpc/dozoAdmin/computers", (route) =>
+        route.fulfill({
+          json: {
+            json: {
+              total: 1,
+              computers: [
+                {
+                  id: "e2e-computer",
+                  email: "ada@example.test",
+                  bots: ["Scout", "Quill"],
+                  runningSince: "2026-03-02T08:00:00.000Z",
+                },
+              ],
+            },
+          },
+        }),
+      );
+      await goto("/admin");
+      await expect(page.getByTestId("admin-status")).toContainText("Sign-up closed");
+      await expect(page.getByTestId("admin-computers")).toContainText("Scout, Quill");
+      await expect(page.getByTestId("admin-users").getByRole("listitem")).toHaveCount(3);
+      await scan("lists faked");
+      await page.getByRole("button", { name: "Suspend", exact: true }).first().click();
+      await expect(page.getByRole("alertdialog")).toContainText("Suspend ada@example.test?");
+      await scan("suspend confirmation");
+      await page.getByRole("button", { name: "Cancel" }).click();
+      await expect(page.getByRole("alertdialog")).toBeHidden();
+      note(
+        "the stack has no admin (RAKAZO_ADMIN_EMAILS is not set): the flag and the two lists are faked in the browser, nothing is suspended or stopped",
+      );
+    },
+  },
+  {
     name: "board (after switching it on in Labs)",
     group: "routes",
     once: true,

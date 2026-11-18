@@ -124,6 +124,16 @@ export const signedOut: Surface[] = [
     },
   },
   {
+    name: "Dozo admin page answers like an unknown address",
+    group: "signed out",
+    signedOut: true,
+    async reach({ page, goto }) {
+      await goto("/admin");
+      await expect(page.getByText("Page not found")).toBeVisible();
+      await expect(page).toHaveURL(/\/admin$/);
+    },
+  },
+  {
     name: "signed-in routes sent to sign-in",
     group: "signed out",
     signedOut: true,

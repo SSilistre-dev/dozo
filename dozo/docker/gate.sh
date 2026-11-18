@@ -314,6 +314,11 @@ unit_tests() {
         pnpm add -Dw "@vitest/coverage-v8@$v" --store-dir /cache/store --loglevel=warn
         echo "$want" > node_modules/.dozo-deps
       else echo "[unit] deps: cached"; fi
+      # The database client is generated, not committed: an api test that reaches @rakazo/db cannot
+      # load without it. The sync above removes the files of the last one and leaves its directories,
+      # which the generator refuses, so it starts from nothing each time (about 3 seconds).
+      rm -rf packages/db/src/generated
+      pnpm --filter @rakazo/db generate > /tmp/generate.log 2>&1 || { cat /tmp/generate.log; exit 1; }
       m=${DOZO_COVERAGE_MIN:-90}
       pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
