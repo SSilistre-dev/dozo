@@ -1,4 +1,4 @@
-# Dozo for macOS
+# Dozo for macOS and Windows
 
 A small native window around the Dozo web app, written in Rust with Tauri 2. It is the fork's own
 shell. Upstream's Electron app in `apps/desktop` is separate and is neither edited nor renamed.
@@ -62,7 +62,33 @@ Output: `dist/Dozo.app` and `dist/Dozo.dmg`. The icon and the logo are generated
 `dozo/brand/assets/` at build time and are not committed here.
 
 `make olc` does not run `check` (it runs in Docker and Rust is on the host): run it by hand after
-changing anything in this directory.
+changing anything in this directory. It checks the macOS code only; the Windows code is compiled
+and tested by the workflow under "Windows".
+
+## Windows
+
+The same app, built on a GitHub Actions Windows runner: nothing here builds it on a Mac. It
+compiles and packages there, and the unit tests pass there. Nobody has run the installed app on
+Windows yet, so treat everything below as untested until someone does.
+
+- Build: the `dozo-desktop-windows` workflow (`.github/workflows/dozo-desktop-windows.yml`). It
+  runs on a pull request that touches this directory, or by hand from the Actions tab (Run
+  workflow). It runs clippy and the tests, then `cargo tauri build`.
+- Download: the run's `dozo-windows-installer` artifact, a zip holding `Dozo_<version>_x64-setup.exe`
+  (an NSIS installer, for the signed-in user, no administrator rights). GitHub keeps artifacts
+  for 90 days and asks for a GitHub sign-in to download one.
+- Unsigned: Windows SmartScreen warns about an unknown publisher ("More info", then "Run
+  anyway"). Handing it out needs a code signing certificate; see `dozo/LAUNCH-CHECKLIST.md`.
+- WebView2: the app draws with Microsoft Edge WebView2, which Windows 11 has built in. Where it
+  is missing (some Windows 10 installs), the installer downloads Microsoft's bootstrapper and
+  installs it, so that computer needs an internet connection during setup.
+- Differences from macOS (`tauri.windows.conf.json`, `#[cfg(windows)]` in `src/`): one short
+  menu in the window (Change Server… Ctrl+, / Reload Ctrl+R / Quit); the local screens are served
+  from `http://tauri.localhost`; `src/frames.rs` is not needed, because the web view asks the
+  navigation hook about the window's own page only; links open through the system's URL handler.
+  The server address and window position are kept in `%APPDATA%\dev.ssilistre.dozo\`, the web
+  view's data in `%LOCALAPPDATA%\dev.ssilistre.dozo\`.
+- x64 only.
 
 ## Signing and distribution
 
