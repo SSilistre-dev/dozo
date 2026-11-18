@@ -1,6 +1,6 @@
 /* Dozo landing. Tokens are the product's (design/d/dozo.css); layout is page-level. */
 :root{--side:#0a0a0a;--bg:#141414;--raise:#1f1f1f;--raise2:#262626;--text:#ededed;--muted:#a3a3a3;--quiet:#8a8a8a;--line:rgba(255,255,255,.08);--green:#5fa77a;--amber:#c9a25a;--idle:#4a4a4a;
---accent:#2b74ea;--primary:#ededed;--on-primary:#141414;--dozo-motif:#A8362E;--motif-a:.17;--sheen:rgba(255,255,255,.07);--plan:#cfcfcf;--draft-line:rgba(255,255,255,.16);--draft:#b8b8b8;--frame:#1f1f1f;--win:#fafaf8;--win-text:#1d1d1d;--win-bar:#ececea;--win-bar-text:#555;--win-dot:#c9c9c6;--win-muted:#777;--win-line:#e6e6e2;
+--primary:#ededed;--on-primary:#141414;--dozo-motif:#A8362E;--motif-a:.17;--sheen:rgba(255,255,255,.07);--plan:#cfcfcf;--draft-line:rgba(255,255,255,.16);--draft:#b8b8b8;--frame:#1f1f1f;--win:#fafaf8;--win-text:#1d1d1d;--win-bar:#ececea;--win-bar-text:#555;--win-dot:#c9c9c6;--win-muted:#777;--win-line:#e6e6e2;
 --sora:#4f8fd8;--kumo:#a07ed8;--hana:#4fa37a;--taro:#d19a45;--yuki:#dc7a6a;--mochi:#3fa3a8;
 --sans:-apple-system,"SF Pro Text","Inter",system-ui,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace;color-scheme:dark}
 .t1{fill:var(--sora)}.t2{fill:var(--kumo)}.t3{fill:var(--hana)}.t4{fill:var(--taro)}.t5{fill:var(--yuki)}.t6{fill:var(--mochi)}
@@ -11,7 +11,7 @@ body{color:var(--text);font:400 15.5px/1.6 var(--sans);-webkit-font-smoothing:an
 a{color:inherit}
 button,select{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 svg{flex:none}
-:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:999px}
+:focus-visible{outline:2px solid var(--text);outline-offset:3px;border-radius:999px}
 .wrap{width:min(1200px,100% - 48px);margin:0 auto}
 .skip{position:absolute;left:16px;top:-60px;background:var(--raise2);padding:10px 18px;border-radius:999px;z-index:10}.skip:focus{top:12px}
 

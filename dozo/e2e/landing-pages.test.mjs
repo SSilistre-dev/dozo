@@ -20,8 +20,9 @@ const token = /<!--[\s\S]*?-->|<\/([a-z][\w-]*)>|<([a-z!][\w-]*)((?:\s+[\w:-]+(?
 
 // A link resolved against its page. A page links to its own language's pages (home, privacy, terms),
 // so outside the language switcher the language directory is dropped before comparing.
+// The language a link carries (`?lang=`) is this page's own, so it is dropped here and checked below.
 function address(value, file, lang, switcher) {
-  const url = new URL(value, new URL(file, site + "/")).href;
+  const url = new URL(value, new URL(file, site + "/")).href.replace(`?lang=${switcher ? "en" : lang}`, "");
   const own = site + pathOf(lang);
   return switcher || !url.startsWith(own) ? url : `${site}/${url.slice(own.length)}`;
 }
@@ -99,9 +100,14 @@ for (const lang of ["en", ...languages]) {
       const switcher = find(page, "a", (a) => "hreflang" in a);
       assert.deepEqual(
         switcher.map((tag) => [tag.attrs.hreflang, tag.attrs.lang, new URL(tag.attrs.href, at(lang)).href]),
-        ["en", ...languages].map((code) => [code, code, at(code)]),
+        // The English link says the choice, so the server stops sending this visitor to their language.
+        ["en", ...languages].map((code) => [code, code, at(code) + (code === "en" && lang !== "en" ? "?lang=en" : "")]),
         file,
       );
+      // The app opens in the language of the page that linked it.
+      for (const link of find(page, "a", (a) => a.href?.startsWith("https://dozo.ssilistre.dev/"))) {
+        assert.match(link.attrs.href, new RegExp(`^https://dozo\\.ssilistre\\.dev/sign-(in|up)\\?lang=${lang}$`), file);
+      }
       assert.deepEqual(
         switcher.filter((tag) => "aria-current" in tag.attrs).map((tag) => tag.attrs.hreflang),
         [lang],
@@ -123,6 +129,25 @@ test("every language shows the prices the code charges and links sign-up from ea
     const [free, ...paid] = read(file).match(/<article class="tier">.*?<\/article>/g);
     const shown = paid.map((card) => [...card.matchAll(/<span class="status">(.*?)<\/span>/g)].flatMap(([, words]) => words.match(/\d+/g).map(Number)));
     assert.deepEqual(shown, [charged("pro"), charged("max")], file);
-    for (const card of [free, ...paid]) assert.match(card, /href="https:\/\/dozo\.ssilistre\.dev\/sign-up"/, file);
+    for (const card of [free, ...paid]) assert.match(card, new RegExp(`href="https://dozo\\.ssilistre\\.dev/sign-up\\?lang=${lang}"`), file);
+  }
+});
+
+// The server remembers a language with one cookie. It may only ever write or act on a language
+// that has pages here, and may only send a visitor to that language's own directory.
+test("the server remembers only the languages the site has", () => {
+  const conf = readFileSync(new URL("../deploy/site.nginx.conf", import.meta.url), "utf8");
+  const cookies = [...conf.matchAll(/"dozo_lang=([^;"]*);([^"]*)"/g)];
+  assert.deepEqual(cookies.map(([, code]) => code).sort(), ["en", ...languages].sort());
+  for (const [, , flags] of cookies) assert.equal(flags, " Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax");
+  const home = conf.match(/map "\$cookie_dozo_lang \$arg_lang" \$dozo_lang_home \{([^}]*)\}/)[1];
+  assert.deepEqual(
+    [...home.matchAll(/^\s*"(\S*) " "([^"]*)";$/gm)].map(([, code, target]) => [code, target]),
+    languages.map((code) => [code, pathOf(code)]),
+  );
+  assert.match(conf, /if \(\$dozo_lang_home\) \{ return 302 \$dozo_lang_home; \}/);
+  assert.equal([...conf.matchAll(/return 30\d/g)].length, 1);
+  for (const lang of ["en", ...languages]) {
+    assert.match(read(`${lang === "en" ? "" : `${lang}/`}privacy/index.html`), /sets one cookie|tek bir çerez/);
   }
 });

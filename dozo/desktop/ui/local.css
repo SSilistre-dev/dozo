@@ -8,8 +8,8 @@
   --muted: #a3a3a3;
   --quiet: #8a8a8a;
   --line: rgba(255, 255, 255, 0.08);
-  --accent: #2b74ea;
-  --on-accent: #fff;
+  --accent: #ededed;
+  --on-accent: #141414;
   --seal: #e5484d;
   --sans: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
   color-scheme: dark;

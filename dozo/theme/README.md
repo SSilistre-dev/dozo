@@ -11,18 +11,19 @@ schema (`apps/web/src/instance-theme.ts`), using token names from `packages/ui-t
 - `--raise` -> `card`, `muted`, and `dialog` (dark)
 - `--raise2` -> `popover`, `secondary`, `chatUser`, and `dialog` (light)
 - `--muted` -> `mutedForeground`; `--quiet` -> `faintForeground`
-- `--accent` -> `primary`, `ring`; `--on-accent` -> `primaryForeground`
+- `--text` -> `primary`, `ring`; `--bg` -> `primaryForeground`: the fill of the main button is ink,
+  as on the landing page (`--primary` there). The mockups' blue `--accent` is not used: the owner
+  asked for no blue buttons.
 - `--green` -> `success`, `statusWorking`, `workingDot`; `--amber` -> `warning`
 - `radius` 16px: a judgement between the mockup's 20-24 px cards and upstream's 12 px
 - `fonts.sans`, `fonts.mono`: the mockup stacks; no font files shipped
 
-Derived, not in the mockup: `primaryHover`, `primaryDisabled` (accent shifted, or at 32% alpha)
+Derived, not in the mockup: `primaryHover`, `primaryDisabled` (primary shifted, or at 32% alpha)
 and `sidebarAccent` (6% neutral ink instead of the per-bot tinted active row).
 
 ## Left at upstream's value
 
-`accent` and `accentForeground` (upstream's hover wash; Dozo's `--accent` is the blue fill, which
-maps to `primary`), `input`, `link` (upstream's blue is tuned for text contrast), `destructive*`,
+`accent` and `accentForeground` (upstream's hover wash), `input`, `link` (upstream's blue is tuned for text contrast), `destructive*`,
 `unread`, `overlay`, `scrollbar*`, `glass*`, `faviconPlate`, `pageIcon*`, `pageTile*`. The mockups
 show none of these surfaces, so there is no source value to map.
 

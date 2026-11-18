@@ -13,7 +13,11 @@ is cheaper than a build step, a generated tree to keep in step and a deploy that
 `dozo/e2e/landing-pages.test.mjs` (part of `make olc`) holds every language to the English page's
 structure: same tags, attributes, link targets and text slots. The words the script shows during
 the animations are `data-*` attributes on the page, not strings in `landing.js`. Nothing redirects
-by browser language; the header links are the only switch.
+by browser language; the header links are the only switch. The server remembers the switch in one
+cookie (`dozo_lang`, a year, set and read only by `dozo/deploy/site.nginx.conf`, no script): the
+home address sends a visitor who chose Turkish to `/tr/`, and the English link on a translated page
+carries `?lang=en` to end that. Links to the app carry the page's language as `?lang=`, which the
+app's sign-in page reads (`apps/web/src/pages/dozo-auth.tsx`).
 
 Legal pages: `privacy/`, `terms/` and `refunds/`, one `index.html` each per language, linked from
 every footer. Plain text, no script. They state only what the code does (the data flows were read
@@ -24,7 +28,7 @@ fails while any page holds one. When the code changes what is collected, kept or
 cookie, a retention period, a provider), change the pages in both languages in the same PR.
 
 To add a language: copy `tr/` to `<code>/` and translate it, add its `hreflang` link and header
-link to every page (the legal pages too), and copy the two `/tr/` locations in `dozo/deploy/site.nginx.conf`. The test
+link to every page (the legal pages too), and copy the two `/tr/` locations and the two `tr` lines of the language cookie in `dozo/deploy/site.nginx.conf`. The test
 names whatever is missing. `og.png` carries English words and is shared by every language.
 
 Closed pre-release state, to undo at launch:
