@@ -65,12 +65,12 @@ export async function holdSharedSpace(tx: Prisma.TransactionClient, spaceId: str
     `);
     // ponytail: sums every file row of the organization on each write; keep a running total per
     // organization when one holds enough files for this to show.
-    const [row] = await tx.$queryRaw<Array<{ used: string }>>(Prisma.sql`
+    const [{ used }] = await tx.$queryRaw<[{ used: string }]>(Prisma.sql`
       SELECT COALESCE(SUM(a."size"), 0)::text AS "used"
       FROM "artifacts" a JOIN "spaces" s ON s."id" = a."spaceId"
       WHERE s."organizationId" = ${limit.organizationId}
     `);
-    if (BigInt(row?.used ?? 0) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
+    if (BigInt(used) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
   });
 }
 

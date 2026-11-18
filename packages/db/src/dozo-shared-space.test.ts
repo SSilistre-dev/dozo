@@ -116,6 +116,19 @@ describe("shared space", () => {
     expect(queries).toEqual([]);
   });
 
+  it("has no limit on a plan that names none, as upstream's do not", async () => {
+    const terms: { sharedSpaceBytes?: number } = BYOK_TIERS.standard;
+    const { sharedSpaceBytes } = terms;
+    delete terms.sharedSpaceBytes;
+    try {
+      const { queries, add } = organization({ files: [50 * GB] });
+      await expect(add(GB)).resolves.toBe("kept");
+      expect(queries).toEqual([]);
+    } finally {
+      terms.sharedSpaceBytes = sharedSpaceBytes;
+    }
+  });
+
   it("waits for the organization's other writes before it counts", async () => {
     const { queries, tx } = organization();
     await holdSharedSpace(tx, "space-1");
