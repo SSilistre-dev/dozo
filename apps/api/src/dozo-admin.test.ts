@@ -73,6 +73,7 @@ function world(users: User[]) {
     { id: "pc-old", userId: "gone", state: "running", kind: "docker", controlUserId: "bob" },
     { id: "pc-own", userId: "ada", state: "running", kind: "desktop", controlUserId: null },
     { id: "pc-off", userId: "ada", state: "stopped", kind: "docker", controlUserId: null },
+    { id: "pc-x", userId: "nobody", state: "running", kind: "docker", controlUserId: null },
   ].map((computer, index) => ({
     ...computer,
     runningSince: new Date(Date.UTC(2026, 2, index + 1)),
@@ -82,6 +83,8 @@ function world(users: User[]) {
     { id: "bot-2", name: "Quill", userId: "ada", spaceId: "space-ada", computerId: "pc-ada" },
     { id: "bot-3", name: "Relic", userId: "gone", spaceId: "space-old", computerId: "pc-old" },
     { id: "bot-4", name: "Ghost", userId: "nobody", spaceId: "space-x", computerId: "pc-x" },
+    { id: "bot-5", name: "Local", userId: "admin", spaceId: "space-admin", computerId: "pc-own" },
+    { id: "bot-6", name: "Asleep", userId: "admin", spaceId: "space-admin", computerId: "pc-off" },
   ];
   const matches = (row: User, where: Where = {}) => {
     if (where.NOT && row.email.endsWith(where.NOT.email.endsWith)) return false;
@@ -142,10 +145,9 @@ function world(users: User[]) {
         perUser(bots.filter((row) => where.userId.in.includes(row.userId))),
       ),
       findFirst: vi.fn(async ({ where }: Where) => {
+        const computer = hosted(where.computer).find((row) => row.id === where.computerId);
         const bot = bots.find((row) => row.computerId === where.computerId);
-        return (
-          bot && { ...bot, computer: computers.find((row) => row.id === bot.computerId) ?? null }
-        );
+        return computer && bot && { ...bot, computer };
       }),
       updateMany: vi.fn(async () => ({ count: 0 })),
     },
@@ -321,12 +323,15 @@ describe("suspending an account", () => {
     expect(users.find((row) => row.id === "ada")?.deactivatedAt).toBeNull();
   });
 
-  it("refuses an admin suspending their own account", async () => {
+  it("refuses an admin suspending their own account, or another admin's", async () => {
     const { as, users } = setup();
-    await expect(
-      as("admin").setSuspended({ userId: "admin", suspended: true }),
-    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
-    expect(users[0]?.deactivatedAt).toBeNull();
+    const second = users.find((row) => row.id === "squatter") as User;
+    second.emailVerified = true;
+    for (const userId of ["admin", "squatter"])
+      await expect(as("admin").setSuspended({ userId, suspended: true })).rejects.toMatchObject({
+        kind: "BAD_REQUEST",
+      });
+    expect(users.every((row) => row.deactivatedAt === null)).toBe(true);
   });
 
   it("refuses an account that does not exist, and an internal chat-app row", async () => {
@@ -369,7 +374,7 @@ describe("running computers", () => {
   it("lists the hosted ones with owner, bots and start", async () => {
     const { as } = setup();
     const result = await as("admin").computers();
-    expect(result.total).toBe(2);
+    expect(result.total).toBe(3);
     expect(result.computers).toEqual([
       {
         id: "pc-ada",
@@ -378,6 +383,7 @@ describe("running computers", () => {
         runningSince: "2026-03-01T00:00:00.000Z",
       },
       { id: "pc-old", email: null, bots: ["Relic"], runningSince: "2026-03-02T00:00:00.000Z" },
+      { id: "pc-x", email: null, bots: ["Ghost"], runningSince: "2026-03-05T00:00:00.000Z" },
     ]);
   });
 
@@ -409,9 +415,10 @@ describe("running computers", () => {
     await expect(as("admin").stopComputer({ computerId: "pc-ada" })).rejects.toThrow();
   });
 
-  it("answers not found for a computer with no bot, or no person left to act as", async () => {
+  it("answers not found for a computer the page does not list, or with nobody to act as", async () => {
     const { as } = setup();
-    for (const computerId of ["pc-none", "pc-x"])
+    // Unknown, on a person's own machine, not running, and one whose owner is gone.
+    for (const computerId of ["pc-none", "pc-own", "pc-off", "pc-x"])
       await expect(as("admin").stopComputer({ computerId })).rejects.toMatchObject({
         kind: "NOT_FOUND",
       });

@@ -4,7 +4,7 @@ import { ClientError, MESSAGING_EMAIL_SUFFIX, signupsOpen } from "@rakazo/core";
 import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
-import { requireAdmin } from "./admins.js";
+import { isAdmin, requireAdmin } from "./admins.js";
 import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
 import type { RouterContext } from "./routes/context.js";
@@ -108,8 +108,9 @@ export function dozoAdminRoutes(ctx: RouterContext) {
        * leaves other people's Spaces, which reactivating does not undo.
        */
       setSuspended: admin.dozoAdmin.setSuspended.handler(async ({ context, input }) => {
-        if (input.suspended && input.userId === context.actor.userId)
-          throw new ClientError("BAD_REQUEST", "You cannot suspend your own account");
+        // The caller is one, so this also keeps an admin from suspending their own account.
+        if (input.suspended && (await isAdmin(deps, input.userId)))
+          throw new ClientError("BAD_REQUEST", "An admin account cannot be suspended");
         if (!wiring) throw new Error("The admin routes were built without their wiring");
         const known = await runAsSystem("find an account for the admin page", () =>
           prisma.user.count({ where: { ...accounts, id: input.userId } }),
@@ -183,7 +184,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
       stopComputer: admin.dozoAdmin.stopComputer.handler(async ({ context, input }) => {
         const owner = await runAsSystem("find a computer's owner for the admin page", async () => {
           const bot = await prisma.bot.findFirst({
-            where: { computerId: input.computerId, archivedAt: null },
+            // Only what the page lists: a hosted computer that is running.
+            where: { computerId: input.computerId, archivedAt: null, computer: hosted },
             orderBy: { createdAt: "asc" },
             select: {
               id: true,
