@@ -1,4 +1,5 @@
 import { createRouterClient, os } from "@orpc/server";
+import type * as Adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type * as Db from "@rakazo/db";
 import { accountDeactivated, recordSecurityEvent } from "@rakazo/db";
@@ -32,6 +33,16 @@ vi.mock("./routes/computer.js", () => ({
     },
   }),
 }));
+// A provider that declares a memory read, standing in for the Docker host's.
+const host = vi.hoisted(() => ({ memory: vi.fn() }));
+vi.mock("@rakazo/adapters", async (original) => {
+  const real = await original<typeof Adapters>();
+  return {
+    ...real,
+    sandboxKindCapabilities: (kind: string | null | undefined) =>
+      kind === "memory-host" ? { memory: host.memory } : real.sandboxKindCapabilities(kind),
+  };
+});
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
   cancelDeactivatedAccountRuns: vi.fn(async () => 0),
@@ -232,7 +243,11 @@ const people = [
   user("chat", "tg-1@messaging.invalid", 5),
 ];
 
-function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true) {
+function setup(
+  users: User[] = people.map((row) => ({ ...row })),
+  wiring = true,
+  sandboxId?: string,
+) {
   const { prisma, sessions, organizations, bans } = world(users);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
@@ -272,6 +287,7 @@ function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true)
     pushTokens: { remove: removePush },
     events: { notify: vi.fn(), publishSpaceChange: vi.fn() },
     env: { adminEmails: ["owner@example.test", "second@example.test"] },
+    ...(sandboxId ? { sandbox: { describe: () => ({ id: sandboxId }) } } : {}),
     ...(wiring
       ? dozoAdminWiring({
           devices: { prisma, devices: {} } as unknown as DozoAdminWiring["devices"],
@@ -299,6 +315,7 @@ beforeEach(() => {
   vi.mocked(recordSecurityEvent).mockClear();
   stops.calls.length = 0;
   stops.fail = null;
+  host.memory.mockReset();
   audit.events.length = 0;
 });
 
@@ -494,6 +511,29 @@ describe("running computers", () => {
       { id: "pc-old", email: null, bots: ["Relic"], runningSince: "2026-03-02T00:00:00.000Z" },
       { id: "pc-x", email: null, bots: ["Ghost"], runningSince: "2026-03-05T00:00:00.000Z" },
     ]);
+  });
+
+  it("adds the memory the computers hold where the provider declares a total", async () => {
+    host.memory.mockResolvedValue({ usedGb: 1.5, totalGb: 6 });
+    const { as } = setup(undefined, true, "memory-host");
+    expect((await as("admin").computers()).memory).toEqual({ usedGb: 1.5, totalGb: 6 });
+  });
+
+  it("leaves memory out when no total is set or the provider has no such read", async () => {
+    host.memory.mockResolvedValue(undefined);
+    const none = await setup(undefined, true, "memory-host").as("admin").computers();
+    expect(none).not.toHaveProperty("memory");
+    expect(none.total).toBe(3);
+    const other = await setup().as("admin").computers();
+    expect(other).not.toHaveProperty("memory");
+    expect(host.memory).toHaveBeenCalledTimes(1);
+  });
+
+  it("still lists the computers when the memory read fails", async () => {
+    host.memory.mockRejectedValue(new Error("supervisor unreachable"));
+    const result = await setup(undefined, true, "memory-host").as("admin").computers();
+    expect(result).not.toHaveProperty("memory");
+    expect(result.computers).toHaveLength(3);
   });
 
   it("stops one through the app's own Stop, as the bot's owner", async () => {

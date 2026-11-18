@@ -278,6 +278,28 @@ it("says so when sign-up is open, and leaves out the computers when none runs", 
   expect(shown("admin-computers")).toBeNull();
 });
 
+it("adds the memory the computers hold when the server reports a total", async () => {
+  api.computers.mockResolvedValue({
+    total: 1,
+    computers: [computer],
+    memory: { usedGb: 1.04, totalGb: 6 },
+  });
+  await open();
+  expect(shown("admin-status")?.textContent).toBe(
+    "Sign-up closed3 users1 computer running1 of 6 GB",
+  );
+});
+
+it("rounds the memory to one decimal", async () => {
+  api.computers.mockResolvedValue({
+    total: 1,
+    computers: [computer],
+    memory: { usedGb: 4.26, totalGb: 5.96 },
+  });
+  await open();
+  expect(shown("admin-status")?.textContent).toContain("4.3 of 6 GB");
+});
+
 it("suspends only after the confirmation", async () => {
   await open();
   const users = shown("admin-users");

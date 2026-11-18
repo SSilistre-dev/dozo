@@ -76,7 +76,12 @@ export const dozoAdminContract = {
     )
     .output(z.object({ plan: DozoAdminPlanSchema })),
   computers: oc.output(
-    z.object({ total: z.number().int(), computers: z.array(DozoAdminComputerSchema) }),
+    z.object({
+      total: z.number().int(),
+      computers: z.array(DozoAdminComputerSchema),
+      /** What the running computers hold against the total the operator set; absent without one. */
+      memory: z.object({ usedGb: z.number(), totalGb: z.number() }).optional(),
+    }),
   ),
   bans: oc.output(z.object({ bans: z.array(DozoAdminBanSchema) })),
   /**

@@ -1,5 +1,5 @@
 import { createRouterClient } from "@orpc/server";
-import { sandboxKindsWhere } from "@rakazo/adapters";
+import { sandboxKindCapabilities, sandboxKindsWhere } from "@rakazo/adapters";
 import type { AccountDeletionAuth } from "@rakazo/auth";
 import {
   addBan,
@@ -25,7 +25,7 @@ import {
   setPlanGrant,
   tierInForce,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
 import type { RouterDeps } from "./router.js";
@@ -416,8 +416,14 @@ export function dozoAdminRoutes(ctx: RouterContext) {
             select: { id: true, email: true },
           });
           const emails = new Map(owners.map((owner) => [owner.id, owner.email]));
+          // The page works without the figure, so a failed read only leaves it out.
+          const memory = await bestEffort(
+            "read the computers' memory for the admin page",
+            sandboxKindCapabilities(deps.sandbox?.describe().id).memory?.(),
+          );
           return {
             total,
+            ...(memory ? { memory } : {}),
             computers: rows.map((row) => ({
               id: row.id,
               email: emails.get(row.userId) ?? null,
