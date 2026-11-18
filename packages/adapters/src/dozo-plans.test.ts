@@ -35,6 +35,8 @@ const organization = {
   mode: null as string | null,
   balanceMicros: 0n,
   billing: null as { status: string; byokTier: string; byokPriceCents: number } | null,
+  /** A plan an admin granted: its tier, and days from now until it ends. */
+  grant: null as { tier: string; days: number } | null,
   ownConnection: false,
 };
 
@@ -83,6 +85,10 @@ function harness() {
       findUnique: vi.fn(async () => ({
         modelCredits: credits(),
         billing: organization.billing,
+        dozoPlanGrant: organization.grant && {
+          tier: organization.grant.tier,
+          endsAt: new Date(Date.now() + organization.grant.days * 24 * 60 * 60 * 1000),
+        },
       })),
     },
     modelCreditAccount: {
@@ -164,6 +170,7 @@ beforeEach(() => {
     mode: null,
     balanceMicros: 0n,
     billing: null,
+    grant: null,
     ownConnection: false,
   });
   // The operator has a model of its own, paid with its own key.
@@ -212,6 +219,22 @@ describe("a hosted computer", () => {
     const stack = harness();
     await boot(stack);
     expect(stack.provision).toHaveBeenCalledOnce();
+  });
+
+  it("starts for an organization on Free while a plan an admin granted has not ended", async () => {
+    organization.mode = "byok";
+    organization.grant = { tier: "pro", days: 3 };
+    const stack = harness();
+    await boot(stack);
+    expect(stack.provision).toHaveBeenCalledOnce();
+  });
+
+  it("is not started once the granted plan has ended", async () => {
+    organization.mode = "byok";
+    organization.grant = { tier: "pro", days: -1 };
+    const stack = harness();
+    await expect(boot(stack)).rejects.toBeInstanceOf(SandboxAllowanceUsedError);
+    expect(stack.provision).not.toHaveBeenCalled();
   });
 });
 
@@ -299,6 +322,23 @@ describe("what the operator pays for by the call", () => {
     const { prisma } = harness();
     await expect(planRunServices(services, hold(prisma))).resolves.toBe(services);
     await expect(reviewer(prisma)).resolves.toBeDefined();
+  });
+
+  it("is there for an organization on a plan an admin granted, until it ends", async () => {
+    const { prisma } = harness();
+    organization.grant = { tier: "max", days: 3 };
+    await expect(operatorPaysFor({ prisma, billingEnabled: true }, context)).resolves.toBe(true);
+    await expect(planRunServices(services, hold(prisma))).resolves.toBe(services);
+    await expect(reviewer(prisma)).resolves.toBeDefined();
+    organization.grant = { tier: "max", days: -1 };
+    await expect(operatorPaysFor({ prisma, billingEnabled: true }, context)).resolves.toBe(false);
+    await expect(reviewer(prisma)).rejects.toThrow("Selected checker connection is unavailable");
+  });
+
+  it("is withheld for a granted tier an admin cannot grant", async () => {
+    const { prisma } = harness();
+    organization.grant = { tier: "standard", days: 3 };
+    await expect(operatorPaysFor({ prisma, billingEnabled: true }, context)).resolves.toBe(false);
   });
 
   it("is there for an organization with a credit balance", async () => {

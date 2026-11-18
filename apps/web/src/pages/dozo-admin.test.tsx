@@ -49,6 +49,8 @@ vi.mock("../lib/user-error", () => ({
     error instanceof Error && error.message ? error.message : fallback,
 }));
 vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
+// The plan beside each account has its own test file.
+vi.mock("./dozo-admin-plan", () => ({ DozoPlanAction: () => null }));
 vi.mock("./NotFound", () => ({ NotFoundPage: () => <div data-testid="not-found" /> }));
 vi.mock("../components/PageLoading", () => ({
   PageLoading: () => <div data-testid="page-loading" />,

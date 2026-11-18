@@ -21,8 +21,22 @@ const GB = 1024 * MB;
 type Billing = { status: string | null; byokTier: string | null } | null;
 
 /** One organization: whether the server bills, its subscription, and the sizes of its files. */
-function organization(init: { billingOn?: boolean; billing?: Billing; files?: number[] } = {}) {
-  const state = { billingOn: true, billing: null as Billing, files: [] as number[], ...init };
+function organization(
+  init: {
+    billingOn?: boolean;
+    billing?: Billing;
+    /** A plan an admin granted. */
+    grant?: { tier: string; endsAt: Date } | null;
+    files?: number[];
+  } = {},
+) {
+  const state = {
+    billingOn: true,
+    billing: null as Billing,
+    grant: null as { tier: string; endsAt: Date } | null,
+    files: [] as number[],
+    ...init,
+  };
   const queries: string[] = [];
   const tx = {
     deploymentSettings: {
@@ -31,7 +45,10 @@ function organization(init: { billingOn?: boolean; billing?: Billing; files?: nu
     space: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         where.id === "space-1"
-          ? { organizationId: "org-1", organization: { billing: state.billing } }
+          ? {
+              organizationId: "org-1",
+              organization: { billing: state.billing, dozoPlanGrant: state.grant },
+            }
           : null,
     },
     $queryRaw: async (query: TemplateStringsArray | Prisma.Sql) => {
@@ -103,6 +120,63 @@ describe("shared space", () => {
     // Deleting has no check either; once enough is gone, writing works again.
     state.files.splice(0, 2);
     await expect(add(MB)).resolves.toBe("kept");
+  });
+
+  describe("a plan an admin granted", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const grant = (tier: string, days: number) => ({
+      tier,
+      endsAt: new Date(Date.now() + days * DAY),
+    });
+
+    it("gives Free the granted plan's limit until it ends", async () => {
+      const files = [GB];
+      const { add, state } = organization({ files, grant: grant("pro", 3) });
+      await expect(add(MB)).resolves.toBe("kept");
+      state.grant = grant("pro", -1);
+      await expect(add(MB)).rejects.toBeInstanceOf(SharedSpaceFullError);
+      state.grant = null;
+      await expect(add(MB)).rejects.toBeInstanceOf(SharedSpaceFullError);
+    });
+
+    it("keeps the files and refuses new ones when it ends, as for a plan that ended", async () => {
+      const { state, add } = organization({ grant: grant("max", 1), files: [4 * GB] });
+      await expect(add(MB)).resolves.toBe("kept");
+      state.grant = grant("max", -1);
+      await expect(add(1)).rejects.toBeInstanceOf(SharedSpaceFullError);
+      expect(state.files).toEqual([4 * GB, MB]);
+    });
+
+    it("takes the higher of the subscription's limit and the grant's", async () => {
+      const lower = organization({ billing: paid("max"), grant: grant("pro", 3), files: [3 * GB] });
+      await expect(lower.add(MB)).resolves.toBe("kept");
+      const higher = organization({
+        billing: paid("pro"),
+        grant: grant("max", 3),
+        files: [3 * GB],
+      });
+      await expect(higher.add(MB)).resolves.toBe("kept");
+    });
+
+    it("counts a grant over a subscription that ended, and not one of a tier nobody can grant", async () => {
+      const ended = organization({
+        billing: paid("max", "canceled"),
+        grant: grant("pro", 3),
+        files: [GB],
+      });
+      await expect(ended.add(MB)).resolves.toBe("kept");
+      const odd = organization({ grant: grant("standard", 3), files: [500 * MB] });
+      await expect(odd.add(1)).rejects.toBeInstanceOf(SharedSpaceFullError);
+    });
+
+    it("is read by the look that runs before costly work too", async () => {
+      const { tx, state } = organization({ files: [600 * MB], grant: grant("pro", 3) });
+      await expect(sharedSpaceFull(tx as never, "space-1")).resolves.toBeNull();
+      state.grant = null;
+      await expect(sharedSpaceFull(tx as never, "space-1")).resolves.toBeInstanceOf(
+        SharedSpaceFullError,
+      );
+    });
   });
 
   it("knows a retried upload that had landed only by the caller's own word", () => {

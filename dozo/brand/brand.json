@@ -1067,6 +1067,132 @@
         "packages/db/src/dozo-shared-space.ts"
       ],
       "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/db/prisma/schema.prisma",
+      "find": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n",
+      "replace": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n  dozoPlanGrant DozoPlanGrant?\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n\n/// A plan an admin gave an organization by hand, beside its subscription. The subscription sync\n/// never writes it. It counts until `endsAt`, as the higher of it and the paid tier.\nmodel DozoPlanGrant {\n  organizationId String       @id\n  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)\n  /// \"pro\" or \"max\".\n  tier           String\n  endsAt         DateTime\n  grantedById    String?\n  grantedBy      User?        @relation(fields: [grantedById], references: [id], onDelete: SetNull)\n  note           String?\n  createdAt      DateTime     @default(now())\n  updatedAt      DateTime     @updatedAt\n\n  @@map(\"dozo_plan_grants\")\n}\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the table that holds it, and the organization it belongs to"
+    },
+    {
+      "file": "packages/db/prisma/schema.prisma",
+      "find": "model User {\n  aiDataConsents AiDataConsent[]\n",
+      "replace": "model User {\n  dozoPlanGrants DozoPlanGrant[]\n  aiDataConsents AiDataConsent[]\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the admin who granted it, kept as a reference that is cleared when the account goes"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./deferred-migrations.js\";\nexport {\n  eventsAfter,",
+      "replace": "export * from \"./deferred-migrations.js\";\nexport * from \"./dozo-plan-grant.js\";\nexport {\n  eventsAfter,",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the package exports the one function every reader of the plan calls"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "import type { PrismaClient } from \"./client.js\";\nimport { runAsSystem } from \"./row-security.js\";\n",
+      "replace": "import type { PrismaClient } from \"./client.js\";\nimport { DOZO_PLAN_GRANT_SELECT, grantedAllowanceCents, tierInForce } from \"./dozo-plan-grant.js\";\nimport { runAsSystem } from \"./row-security.js\";\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the import of the rules below"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "        modelCredits: { select: { mode: true } },\n        billing: {\n",
+      "replace": "        modelCredits: { select: { mode: true } },\n        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n        billing: {\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the computer allowance reads the grant with the organization"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  const limitCents =\n    billing?.status === \"trialing\"",
+      "replace": "  const baseLimitCents =\n    billing?.status === \"trialing\"",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: upstream's allowance is the base, a grant can only raise it (trial, cancelled trial and credit plans included)"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "        : creditShare(billing?.creditAmountCents ?? 0);\n  const periodEnd",
+      "replace": "        : creditShare(billing?.creditAmountCents ?? 0);\n  const limitCents = Math.max(\n    baseLimitCents,\n    grantedAllowanceCents(organization?.dozoPlanGrant, now),\n  );\n  const periodEnd",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the allowance is at least the unexpired grant's"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "        limitCents: creditShare(granted._sum.creditCents),\n",
+      "replace": "        limitCents: Math.max(\n          creditShare(granted._sum.creditCents),\n          grantedAllowanceCents(organization?.dozoPlanGrant, now),\n        ),\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the pool of granted credit does not lower it either"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "          modelCredits: { select: { mode: true } },\n          billing: { select: { status: true, byokTier: true, byokPriceCents: true } },\n",
+      "replace": "          modelCredits: { select: { mode: true } },\n          dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },\n          billing: { select: { status: true, byokTier: true, byokPriceCents: true } },\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the machine size reads the grant with the organization"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  const tier = byokTierOf(space?.organization.modelCredits?.mode, space?.organization.billing);\n",
+      "replace": "  const tier = tierInForce(\n    byokTierOf(space?.organization.modelCredits?.mode, space?.organization.billing),\n    space?.organization.dozoPlanGrant,\n  );\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the machine size follows the tier in force"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "  ownedBillingAccounts,\n  releaseByokTrialCheckout,\n",
+      "replace": "  ownedBillingAccounts,\n  planGrantOf,\n  releaseByokTrialCheckout,\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the import of the status rules below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "  syncCreditPurchases,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
+      "replace": "  syncCreditPurchases,\n  tierInForce,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the import of the status rules below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "        const tier = subscribed?.tier ?? \"standard\";\n        const offers = byokTierOffers();\n",
+      "replace": "        const tier = subscribed?.tier ?? \"standard\";\n        // What clients are told the plan is. Prices stay the subscription's: a granted plan has none.\n        const planTier =\n          tierInForce(subscribed?.tier ?? null, await planGrantOf(prisma, organizationId)) ??\n          \"standard\";\n        const offers = byokTierOffers();\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the status reports the tier in force and leaves every price as the subscription has it"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          byokTier: tier,\n          ...(offers.length ? { byokTiers: offers } : {}),\n",
+      "replace": "          byokTier: planTier,\n          ...(offers.length ? { byokTiers: offers } : {}),\n",
+      "requires": [
+        "packages/db/src/dozo-plan-grant.ts"
+      ],
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the tier the status reports"
     }
   ],
   "assets": {

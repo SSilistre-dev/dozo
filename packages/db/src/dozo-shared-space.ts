@@ -1,8 +1,8 @@
-import { BYOK_TIERS, ByokTierSchema } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import { hasBillingAccess } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { DOZO_PLAN_GRANT_SELECT, paidTierOf, tierInForce } from "./dozo-plan-grant.js";
 import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 
 /** The organization's files already fill its plan's shared space, so a new one is refused. */
@@ -19,8 +19,9 @@ export class SharedSpaceFullError extends ClientError {
 
 /**
  * The bytes of files the Space's organization may keep, or null without a limit: a server that
- * does not bill has none. A live subscription gives its tier's limit, anything else the first
- * tier's, so an organization whose plan ended keeps its files and only stops adding to them.
+ * does not bill has none. The tier in force gives its limit (a live subscription's, or a plan an
+ * admin granted that has not ended, whichever is higher), anything else the first tier's, so an
+ * organization whose plan ended keeps its files and only stops adding to them.
  */
 async function sharedSpaceLimit(
   tx: Pick<PrismaClient, "deploymentSettings" | "space">,
@@ -35,15 +36,18 @@ async function sharedSpaceLimit(
     where: { id: spaceId },
     select: {
       organizationId: true,
-      organization: { select: { billing: { select: { status: true, byokTier: true } } } },
+      organization: {
+        select: {
+          billing: { select: { status: true, byokTier: true } },
+          dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },
+        },
+      },
     },
   });
   if (!space) return null;
-  const billing = space.organization.billing;
-  const paid = hasBillingAccess(billing?.status ?? null)
-    ? ByokTierSchema.safeParse(billing?.byokTier).data
-    : undefined;
-  const terms: { sharedSpaceBytes?: number } = BYOK_TIERS[paid ?? "standard"];
+  const { billing, dozoPlanGrant } = space.organization;
+  const tier = tierInForce(paidTierOf(billing), dozoPlanGrant) ?? "standard";
+  const terms: { sharedSpaceBytes?: number } = BYOK_TIERS[tier];
   return terms.sharedSpaceBytes === undefined
     ? null
     : { organizationId: space.organizationId, bytes: terms.sharedSpaceBytes };

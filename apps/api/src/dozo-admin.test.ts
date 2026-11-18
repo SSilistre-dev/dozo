@@ -17,6 +17,7 @@ const stops = vi.hoisted(() => ({
   calls: [] as { actor: unknown; botId: string }[],
   fail: null as Error | null,
 }));
+const audit = vi.hoisted(() => ({ events: [] as Record<string, unknown>[] }));
 
 // The app's own Stop is upstream's and has its own tests; here it only has to be reached, as
 // the right person.
@@ -36,6 +37,10 @@ vi.mock("@rakazo/db", async (original) => ({
   cancelDeactivatedAccountRuns: vi.fn(async () => 0),
   leaveInvitedSpaces: vi.fn(async () => []),
   recordSecurityEvent: vi.fn(async () => undefined),
+  // The audit primitive has its own tests; here it only has to be asked, with the right facts.
+  recordAuditEvent: vi.fn(async (event: Record<string, unknown>) => {
+    audit.events.push(event);
+  }),
 }));
 
 type User = {
@@ -62,7 +67,17 @@ function user(id: string, email: string, day: number, more: Partial<User> = {}):
 // biome-ignore lint/suspicious/noExplicitAny: a Prisma double reads loosely typed filters
 type Where = any;
 
+type Subscription = { status: string; byokTier: string | null };
+type Grant = { tier: string; endsAt: Date; grantedById: string | null; note: string | null };
+
 function world(users: User[]) {
+  // Everyone owns an organization of their own, except Bob, who has none.
+  const memberships = users
+    .filter((row) => row.id !== "bob")
+    .map((row) => ({ userId: row.id, organizationId: `org-${row.id}`, role: "owner" }));
+  const organizations = new Map<string, { billing: Subscription | null; grant: Grant | null }>();
+  for (const membership of memberships)
+    organizations.set(membership.organizationId, { billing: null, grant: null });
   let sessions = [
     { userId: "admin", updatedAt: new Date("2026-03-01T00:00:00Z") },
     { userId: "ada", updatedAt: new Date("2026-03-02T00:00:00Z") },
@@ -115,7 +130,36 @@ function world(users: User[]) {
       },
     }));
   const prisma = {
+    member: {
+      findMany: vi.fn(async ({ where }: Where) =>
+        memberships.filter((row) => row.userId === where.userId),
+      ),
+    },
+    organization: {
+      findMany: vi.fn(async ({ where }: Where) =>
+        [...organizations]
+          .filter(([id]) => where.id.in.includes(id))
+          .map(([id, { billing, grant }]) => ({
+            id,
+            billing,
+            dozoPlanGrant: grant && { tier: grant.tier, endsAt: grant.endsAt },
+          })),
+      ),
+    },
+    dozoPlanGrant: {
+      upsert: vi.fn(async ({ where, update }: Where) => {
+        const row = organizations.get(where.organizationId);
+        if (row) row.grant = { ...update };
+      }),
+      deleteMany: vi.fn(async ({ where }: Where) => {
+        const row = organizations.get(where.organizationId);
+        const count = row?.grant ? 1 : 0;
+        if (row) row.grant = null;
+        return { count };
+      }),
+    },
     user: {
+      findFirst: vi.fn(async ({ where }: Where) => users.find((row) => matches(row, where))),
       findUnique: vi.fn(async ({ where }: Where) => users.find((row) => row.id === where.id)),
       findMany: vi.fn(async ({ where, take, cursor }: Where) => {
         const rows = users
@@ -165,7 +209,7 @@ function world(users: User[]) {
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { findMany: vi.fn(async () => []) },
   };
-  return { prisma, sessions: () => sessions };
+  return { prisma, sessions: () => sessions, organizations };
 }
 
 const people = [
@@ -177,7 +221,7 @@ const people = [
 ];
 
 function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true) {
-  const { prisma, sessions } = world(users);
+  const { prisma, sessions, organizations } = world(users);
   const removePush = vi.fn(async () => undefined);
   const deps = {
     prisma,
@@ -203,12 +247,13 @@ function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true)
     };
     return createRouterClient(dozoAdminRoutes(ctx), { context: { actor } }).dozoAdmin;
   };
-  return { prisma, sessions, users, ctx, as, removePush };
+  return { prisma, sessions, users, ctx, as, removePush, organizations };
 }
 
 beforeEach(() => {
   stops.calls.length = 0;
   stops.fail = null;
+  audit.events.length = 0;
 });
 
 describe("who may use the admin procedures", () => {
@@ -225,6 +270,14 @@ describe("who may use the admin procedures", () => {
       refused,
     );
     await expect(client.stopComputer({ computerId: "pc-ada" })).rejects.toMatchObject(refused);
+    await expect(
+      client.setPlan({ userId: "bob", tier: "max", endsAt: "2999-01-01T00:00:00.000Z" }),
+    ).rejects.toMatchObject(refused);
+    await expect(client.setPlan({ userId: "ada", tier: null })).rejects.toMatchObject(refused);
+    expect(prisma.dozoPlanGrant.upsert).not.toHaveBeenCalled();
+    expect(prisma.dozoPlanGrant.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.organization.findMany).not.toHaveBeenCalled();
+    expect(audit.events).toEqual([]);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
     expect(prisma.computer.findMany).not.toHaveBeenCalled();
     expect(prisma.user.updateMany).not.toHaveBeenCalled();
@@ -267,6 +320,7 @@ describe("listing accounts", () => {
       // Not the one on her own machine, nor the stopped one.
       runningComputers: 1,
       suspended: false,
+      plan: { tier: "standard", grantedUntil: null },
     });
     expect(result.users[0]).toMatchObject({ lastSeenAt: null, bots: 0, runningComputers: 0 });
   });
@@ -423,5 +477,195 @@ describe("running computers", () => {
         kind: "NOT_FOUND",
       });
     expect(stops.calls).toEqual([]);
+  });
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+const inDays = (days: number) => new Date(Date.now() + days * DAY);
+
+describe("the plan in the list", () => {
+  const plan = async (as: ReturnType<typeof setup>["as"], query: string) =>
+    (await as("admin").users({ query })).users[0]?.plan;
+
+  it("is Free for everyone by default, and for an account with no organization of its own", async () => {
+    const { as } = setup();
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+    expect(await plan(as, "bob")).toEqual({ tier: "standard", grantedUntil: null });
+  });
+
+  it("is the subscription's tier while it is live", async () => {
+    const { as, organizations } = setup();
+    const row = organizations.get("org-ada");
+    if (!row) throw new Error("fixture");
+    row.billing = { status: "active", byokTier: "pro" };
+    expect(await plan(as, "ada")).toEqual({ tier: "pro", grantedUntil: null });
+    row.billing = { status: "canceled", byokTier: "pro" };
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+    row.billing = { status: "active", byokTier: null };
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+  });
+
+  it("is the higher of the subscription and an unexpired grant, with the grant's end", async () => {
+    const { as, organizations } = setup();
+    const row = organizations.get("org-ada");
+    if (!row) throw new Error("fixture");
+    const endsAt = inDays(5);
+    row.grant = { tier: "max", endsAt, grantedById: "admin", note: null };
+    expect(await plan(as, "ada")).toEqual({ tier: "max", grantedUntil: endsAt.toISOString() });
+    row.billing = { status: "active", byokTier: "pro" };
+    expect(await plan(as, "ada")).toEqual({ tier: "max", grantedUntil: endsAt.toISOString() });
+    row.grant = { tier: "pro", endsAt, grantedById: "admin", note: null };
+    row.billing = { status: "active", byokTier: "max" };
+    expect(await plan(as, "ada")).toEqual({ tier: "max", grantedUntil: endsAt.toISOString() });
+  });
+
+  it("drops a grant that has ended", async () => {
+    const { as, organizations } = setup();
+    const row = organizations.get("org-ada");
+    if (!row) throw new Error("fixture");
+    row.grant = { tier: "max", endsAt: inDays(-1), grantedById: "admin", note: null };
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+  });
+});
+
+describe("giving a plan by hand", () => {
+  const until = (days: number) => inDays(days).toISOString();
+
+  it("sets, replaces and ends the grant of the account's own organization, with an audit record each time", async () => {
+    const { as, organizations } = setup();
+    const first = until(30);
+    expect(
+      await as("admin").setPlan({ userId: "ada", tier: "pro", endsAt: first, note: "press" }),
+    ).toEqual({ plan: { tier: "pro", grantedUntil: first } });
+    expect(organizations.get("org-ada")?.grant).toEqual({
+      tier: "pro",
+      endsAt: new Date(first),
+      grantedById: "admin",
+      note: "press",
+    });
+
+    const second = until(60);
+    expect(await as("admin").setPlan({ userId: "ada", tier: "max", endsAt: second })).toEqual({
+      plan: { tier: "max", grantedUntil: second },
+    });
+    expect(organizations.get("org-ada")?.grant).toMatchObject({
+      tier: "max",
+      endsAt: new Date(second),
+      note: null,
+    });
+
+    expect(await as("admin").setPlan({ userId: "ada", tier: null })).toEqual({
+      plan: { tier: "standard", grantedUntil: null },
+    });
+    expect(organizations.get("org-ada")?.grant).toBeNull();
+    // Nobody else's organization was touched.
+    expect(organizations.get("org-admin")?.grant).toBeNull();
+
+    // Tenant-visible: neither the admin's email or id, nor the note.
+    expect(JSON.stringify(audit.events)).not.toMatch(/press|owner@example|"admin"/);
+    expect(audit.events).toEqual([
+      {
+        action: "plan.granted",
+        actor: { type: "system", label: "Operator" },
+        organizationId: "org-ada",
+        target: { type: "user", id: "ada" },
+        metadata: { tier: "pro", endsAt: first },
+      },
+      {
+        action: "plan.granted",
+        actor: { type: "system", label: "Operator" },
+        organizationId: "org-ada",
+        target: { type: "user", id: "ada" },
+        metadata: { tier: "max", endsAt: second },
+      },
+      {
+        action: "plan.grant_ended",
+        actor: { type: "system", label: "Operator" },
+        organizationId: "org-ada",
+        target: { type: "user", id: "ada" },
+        metadata: { tier: null, endsAt: null },
+      },
+    ]);
+  });
+
+  it("leaves a subscription alone and answers with the higher plan", async () => {
+    const { as, organizations } = setup();
+    const row = organizations.get("org-ada");
+    if (!row) throw new Error("fixture");
+    row.billing = { status: "active", byokTier: "max" };
+    const endsAt = until(10);
+    expect(await as("admin").setPlan({ userId: "ada", tier: "pro", endsAt })).toEqual({
+      plan: { tier: "max", grantedUntil: endsAt },
+    });
+    expect(row.billing).toEqual({ status: "active", byokTier: "max" });
+  });
+
+  it("answers and audits an end of a grant that was not there", async () => {
+    const { as } = setup();
+    expect(await as("admin").setPlan({ userId: "ada", tier: null })).toEqual({
+      plan: { tier: "standard", grantedUntil: null },
+    });
+    expect(audit.events).toHaveLength(1);
+  });
+
+  it("lets an admin give themselves a plan", async () => {
+    const { as, organizations } = setup();
+    await as("admin").setPlan({ userId: "admin", tier: "pro", endsAt: until(2) });
+    expect(organizations.get("org-admin")?.grant).toMatchObject({ tier: "pro" });
+  });
+
+  it("refuses an end date that is missing, past, or too far ahead, and writes nothing", async () => {
+    const { as, prisma } = setup();
+    const refused = { kind: "BAD_REQUEST" };
+    await expect(as("admin").setPlan({ userId: "ada", tier: "pro" })).rejects.toMatchObject(
+      refused,
+    );
+    for (const endsAt of [until(-1), new Date(Date.now() - 1000).toISOString(), until(5 * 366 + 1)])
+      await expect(
+        as("admin").setPlan({ userId: "ada", tier: "max", endsAt }),
+      ).rejects.toMatchObject(refused);
+    expect(prisma.dozoPlanGrant.upsert).not.toHaveBeenCalled();
+    expect(audit.events).toEqual([]);
+    // Five years ahead is allowed.
+    await expect(
+      as("admin").setPlan({ userId: "ada", tier: "max", endsAt: until(5 * 365) }),
+    ).resolves.toMatchObject({ plan: { tier: "max" } });
+  });
+
+  it("refuses a tier that is not one an admin can give", async () => {
+    const { as, prisma } = setup();
+    await expect(
+      as("admin").setPlan({ userId: "ada", tier: "standard" as never, endsAt: until(2) }),
+    ).rejects.toThrow();
+    expect(prisma.dozoPlanGrant.upsert).not.toHaveBeenCalled();
+  });
+
+  it("answers not found for an unknown account, a chat-app row, and an account without an organization", async () => {
+    const { as, prisma } = setup();
+    for (const userId of ["nobody", "chat", "bob"])
+      await expect(
+        as("admin").setPlan({ userId, tier: "pro", endsAt: until(2) }),
+      ).rejects.toMatchObject({ kind: "NOT_FOUND" });
+    expect(prisma.dozoPlanGrant.upsert).not.toHaveBeenCalled();
+    expect(audit.events).toEqual([]);
+  });
+
+  it("fails loudly, and writes no audit record, when the grant cannot be written", async () => {
+    const { as, prisma } = setup();
+    prisma.dozoPlanGrant.upsert.mockRejectedValueOnce(new Error("database down"));
+    await expect(
+      as("admin").setPlan({ userId: "ada", tier: "pro", endsAt: until(2) }),
+    ).rejects.toThrow();
+    expect(audit.events).toEqual([]);
+  });
+
+  it("passes on a failure that is not an account without an organization", async () => {
+    const { as, prisma } = setup();
+    prisma.member.findMany.mockRejectedValueOnce(new Error("database down"));
+    await expect(
+      as("admin").setPlan({ userId: "ada", tier: "pro", endsAt: until(2) }),
+    ).rejects.toThrow("database down");
+    prisma.member.findMany.mockRejectedValueOnce(new Error("database down"));
+    await expect(as("admin").users({})).rejects.toThrow("database down");
   });
 });

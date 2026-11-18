@@ -29,6 +29,7 @@ const store = vi.hoisted(() => ({
   },
   billingOn: true,
   trialHolds: 0,
+  grant: null as { tier: string; endsAt: Date } | null,
 }));
 
 // The database helpers have upstream's own PostgreSQL tests; here one organization lives in memory.
@@ -94,7 +95,11 @@ const prisma = {
     findFirst: async () => null,
     findUnique: async () => ({
       organizationId: "org-1",
-      organization: { modelCredits: store.credits, billing: store.account },
+      organization: {
+        modelCredits: store.credits,
+        billing: store.account,
+        dozoPlanGrant: store.grant,
+      },
     }),
   },
   spaceMember: {
@@ -106,6 +111,7 @@ const prisma = {
     }),
   },
   billingAccount: { findUnique: async () => store.account },
+  dozoPlanGrant: { findUnique: async () => store.grant },
   modelCreditAccount: {
     update: async ({ data }: { data: object }) => Object.assign(store.credits, data),
     updateMany: async ({ where, data }: { where: { balanceMicros?: unknown }; data: object }) => {
@@ -116,7 +122,11 @@ const prisma = {
   },
   deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: store.billingOn }) },
   organization: {
-    findUnique: async () => ({ modelCredits: store.credits, billing: store.account }),
+    findUnique: async () => ({
+      modelCredits: store.credits,
+      billing: store.account,
+      dozoPlanGrant: store.grant,
+    }),
   },
   accessGrant: {
     aggregate: async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } }),
@@ -159,6 +169,7 @@ beforeEach(() => {
   store.credits = { organizationId: "org-1", mode: null, balanceMicros: 0n, byokFreeUntil: null };
   store.billingOn = true;
   store.trialHolds = 0;
+  store.grant = null;
   runs.length = 0;
 });
 
@@ -335,6 +346,60 @@ describe("a Premium subscriber", () => {
     expect(hasModelAccess(store.credits, store.account!.status)).toBe(true);
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(true);
     await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+  });
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+/** A plan an admin granted that ends `days` from now (before now when negative). */
+const grant = (tier: string, days: number) => ({ tier, endsAt: new Date(Date.now() + days * DAY) });
+
+describe("a plan an admin granted", () => {
+  it("gives an organization on Free the plan's computer, hours and tier, and no price", async () => {
+    store.grant = grant("pro", 30);
+    const { billing } = setup();
+    const status = await billing.status(actor);
+    expect(status).toMatchObject({
+      byokTier: "pro",
+      byokPriceCents: null,
+      byokAnnualPriceCents: null,
+      byokFreeUntil: null,
+      state: "none",
+      hasCustomer: false,
+      computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents),
+    });
+    await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
+    await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
+  });
+
+  it("is Free again once it has ended: no computer, the first tier's size", async () => {
+    store.grant = grant("max", -1);
+    const status = await setup().billing.status(actor);
+    expect(status).toMatchObject({ byokTier: "standard", computerHoursLeft: 0 });
+    await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(true);
+    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+  });
+
+  it("does not count a tier an admin cannot grant", async () => {
+    store.grant = grant("standard", 30);
+    await expect(setup().billing.status(actor)).resolves.toMatchObject({ byokTier: "standard" });
+    store.grant = grant("gold", 30);
+    await expect(setup().billing.status(actor)).resolves.toMatchObject({ byokTier: "standard" });
+  });
+
+  it("raises a lower subscription and leaves a higher one alone", async () => {
+    const context = setup();
+    await subscribe(context, "pro");
+    store.grant = grant("max", 30);
+    await expect(context.billing.status(actor)).resolves.toMatchObject({
+      byokTier: "max",
+      // The subscription's own price: the grant has none.
+      byokPriceCents: BYOK_TIERS.pro.monthlyPriceCents,
+      computerHoursLeft: sandboxAllowanceHours(BYOK_TIERS.max.computerAllowanceCents),
+    });
+    await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.max.computerSize);
+    store.grant = grant("pro", 30);
+    await context.billing.changeTier(actor, "max");
+    await expect(context.billing.status(actor)).resolves.toMatchObject({ byokTier: "max" });
   });
 });
 
