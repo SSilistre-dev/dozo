@@ -59,7 +59,13 @@ panel() {
     -H 'content-type: application/json' "$@" "$DOKPLOY_URL/api/$procedure"
 }
 
-remote() { ssh -o BatchMode=yes "$DOZO_DEPLOY_SSH" "$@"; }
+# A quiet command (the image build prints nothing for minutes) leaves the connection idle, and a
+# network that drops idle connections does not tell the client: without these ssh waits for ever.
+# With them it exits 255 about a minute after the host stops answering.
+alive=(-o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+export RSYNC_RSH="ssh ${alive[*]}"
+
+remote() { ssh -o BatchMode=yes "${alive[@]}" "$DOZO_DEPLOY_SSH" "$@"; }
 
 compose_json() { panel "compose.one?composeId=$DOKPLOY_COMPOSE_ID"; }
 
@@ -176,7 +182,7 @@ EOF
 if [ "$action" = owner ]; then
   project=$(project_name)
   # -t: the prompts need a terminal. The password is read on the host and never echoed.
-  ssh -t "$DOZO_DEPLOY_SSH" "
+  ssh -t "${alive[@]}" "$DOZO_DEPLOY_SSH" "
     id=\$(docker ps -q -f label=com.docker.compose.project=$project -f label=com.docker.compose.service=api | head -1)
     [ -n \"\$id\" ] || { echo 'the api container is not running' >&2; exit 2; }
     read -r -p 'Account email: ' OWNER_EMAIL
@@ -207,6 +213,9 @@ if [ "$action" = site ]; then
   trap 'rm -rf "$stage"' EXIT
   git -C "$repo" archive HEAD dozo/landing dozo/deploy/site.nginx.conf dozo/deploy/compose.site.yml |
     tar -x -C "$stage"
+  # Version the asset addresses by content, so a cache in front cannot pair the new page with an
+  # old stylesheet. Only this copy is stamped: the committed pages carry no version.
+  "$here/site-assets.sh" stamp "$stage/dozo/landing"
   say "copy the landing page to the host"
   remote mkdir -p "$remote_dir/site/html" "$remote_dir/site/conf"
   rsync -az --delete --exclude=README.md "$stage/dozo/landing/" "$DOZO_DEPLOY_SSH:$remote_dir/site/html/"
@@ -232,11 +241,14 @@ if [ "$action" = site ]; then
   done
   url="https://$DOZO_SITE_DOMAIN/"
   waited=0
-  until curl -fsS -m 20 "$url" 2>/dev/null | grep -qi '<title>[^<]*dozo'; do
+  # The body goes into a variable first. Piped straight into `grep -q`, grep left at the title,
+  # curl failed writing the rest (exit 23) and pipefail made a page that answered count as down.
+  until page=$(curl -fsS -m 20 "$url" 2>/dev/null) && grep -qi '<title>[^<]*dozo' <<<"$page"; do
     [ "$waited" -lt 120 ] || die "$url does not answer with the Dozo page"
     sleep 5
     waited=$((waited + 5))
   done
+  "$here/site-assets.sh" verify "$stage/dozo/landing" "$url" || die "$url does not serve what was published"
   say "DEPLOY: PASS (site at $url)"
   exit 0
 fi

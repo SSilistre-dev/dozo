@@ -11,7 +11,7 @@ the images are built there, so they match the host's CPU and never leave it.
 | --- | --- |
 | `deploy.sh` | Deploy, roll back, create the owner's account |
 | `compose.deploy.yml` | The production layer over upstream's compose file (which stays unedited) |
-| `compose.site.yml`, `site.nginx.conf` | The landing page: its own static nginx service (see Landing page) |
+| `compose.site.yml`, `site.nginx.conf`, `site-assets.sh` | The landing page: its own static nginx service (see Landing page) |
 | `host-egress.sh` | Run once on the host: firewall rules that keep bot computers off the host and its networks |
 | `host-jobs.sh` | Runs on the host: the daily backup, the restore check and the health check, as systemd timers |
 
@@ -159,8 +159,14 @@ and apply to the host in `RAKAZO_HOST` only, so that must be the domain the pane
 `dozo/deploy/deploy.sh site` publishes `dozo/landing/` (committed tree) as a second compose service
 in the same panel project: `nginx:1.27-alpine`, content and `site.nginx.conf` mounted read-only from
 `<dir>/site`, nothing built. It does not touch the app stack. Compression, cache lifetimes (HTML
-5 minutes, CSS and JS 1 hour because they are not hashed, images 30 days), security headers and
-the CSP are in `site.nginx.conf`.
+5 minutes, CSS and JS 1 hour, images 30 days), security headers and the CSP are in
+`site.nginx.conf`.
+
+A CDN in front may keep a stylesheet longer than the origin asks, which would pair a new page with
+the old CSS. So `site-assets.sh stamp` versions every local asset address in the published copy by
+content (`landing.css?v=<first 10 hex digits of its SHA-256>`); the committed pages carry no
+version. After the deploy, `site-assets.sh verify` reads the live page and fails unless it names
+those addresses and each one serves the bytes that were published.
 
 One-time setup, in the panel: in the same project create a compose service (type Docker Compose,
 source Raw, same server), turn on **Isolated Deployment**, add a domain (service `site`, port `80`,
