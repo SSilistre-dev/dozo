@@ -10,6 +10,9 @@ The committed tree is upstream plus new files. We do not edit upstream files. Th
 fork notice at the top of the root `README.md`, delimited by `dozo:fork-notice` comments, and three
 issue forms under `.github/ISSUE_TEMPLATE/` (`dozo/AGENTS.md`, Invariants).
 
+The repository page on GitHub shows `.github/README.md`, a new file, in place of the root `README.md`,
+which stays upstream's below the notice.
+
 Why: upstream lands about 2,500 commits a month and we merge it continuously. Every edited upstream
 file is a permanent merge conflict. New files never conflict.
 
