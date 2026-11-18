@@ -76,10 +76,11 @@ placeholders are replaced.
       other vendors, not Rakazo. Decide whether to keep them.
 - [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids (`com.rakazo.app` is
       upstream's) and signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
-      workflows must stay disabled until then. The fork's own macOS app (`dozo/desktop/`) is signed
-      ad hoc and opens only on the Mac that built it: handing it out needs an Apple Developer ID
-      certificate and notarization, and its bundle id (`dev.ssilistre.dozo`) was chosen without the
-      owner. Its Windows installer (the `dozo-desktop-windows` workflow) is unsigned and has not
+      workflows must stay disabled until then. The fork's own macOS app (`dozo/desktop/`) is a
+      universal build, signed with the owner's Developer ID and notarized, but only by
+      `dozo/desktop/build.sh` on the owner's Mac (`dozo/desktop/README.md`, Signing and
+      distribution): CI does not sign. Its bundle id (`dev.ssilistre.dozo`) was chosen without the
+      owner; changing it later loses each user's saved server and session. Its Windows installer (the `dozo-desktop-windows` workflow) is unsigned and has not
       been run on Windows: handing it out needs a first run on a real Windows computer and a code
       signing certificate (SmartScreen warns without one).
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in

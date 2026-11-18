@@ -1,0 +1,12 @@
+# Copy to ~/.config/dozo/sign.conf (chmod 600) and fill in. build.sh reads it; without it the app
+# is signed ad hoc. Never commit the real values: this repository is public.
+
+# SHA-1 fingerprint of the "Developer ID Application" identity in the login keychain:
+#   security find-identity -v -p codesigning
+DOZO_SIGN_IDENTITY=0000000000000000000000000000000000000000
+
+# Name of a notarytool keychain profile. Create it once (the values stay in the keychain):
+#   xcrun notarytool store-credentials dozo-notary --key <path to AuthKey .p8> \
+#     --key-id <key id> --issuer <issuer id>
+# Leave empty to sign without notarizing.
+DOZO_NOTARY_PROFILE=dozo-notary
