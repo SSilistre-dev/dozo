@@ -9,12 +9,12 @@ const dir = new URL("../landing/", import.meta.url);
 const site = "https://dozo-site.ssilistre.dev";
 const read = (path) => readFileSync(new URL(path, dir), "utf8");
 const languages = readdirSync(dir, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
+  .filter((entry) => entry.isDirectory() && /^[a-z]{2}$/.test(entry.name))
   .map((entry) => entry.name);
 const pathOf = (lang) => (lang === "en" ? "/" : `/${lang}/`);
 
-// Attributes that hold words, plus the two that say which language the page itself is.
-const worded = new Set(["aria-label", "data-full", "data-wait", "data-done", "data-ok", "aria-current"]);
+// Attributes that hold words: each page must have them, filled in, but the value is its own.
+const worded = new Set(["aria-label", "data-full", "data-wait", "data-done", "data-ok"]);
 const wordedMeta = /^(description|og:title|og:description|og:locale|og:locale:alternate|og:url)$/;
 const token = /<!--[\s\S]*?-->|<\/([a-z][\w-]*)>|<([a-z!][\w-]*)((?:\s+[\w:-]+(?:="[^"]*")?)*)\s*\/?>|[^<]+/gi;
 
@@ -35,10 +35,11 @@ function parse(file, base) {
       const meta = wordedMeta.test(attrs.name ?? attrs.property ?? "");
       const canonical = attrs.rel === "canonical";
       const kept = Object.entries(attrs)
-        .filter(([key]) => !worded.has(key) && !(name === "html" && key === "lang"))
+        // Which language the page is (its lang, the current switcher link) is checked further down.
+        .filter(([key]) => key !== "aria-current" && !(name === "html" && key === "lang"))
         .filter(([key]) => !(meta && key === "content") && !(canonical && key === "href"))
         // Addresses are compared resolved; a link into the page itself (#main) counts as the same target.
-        .map(([key, value]) => `${key}=${key === "href" || key === "src" ? new URL(value, site + base).href.replace(`${base}#`, "/#") : value}`);
+        .map(([key, value]) => `${key}=${worded.has(key) ? (value.trim() ? "(words)" : "") : key === "href" || key === "src" ? new URL(value, site + base).href.replace(`${base}#`, "/#") : value}`);
       shape.push([name, ...kept].join(" "));
     } else if (text.trim() && !text.startsWith("<!--")) shape.push("#text");
   }
