@@ -98,6 +98,7 @@ SANDBOX_COMPUTER_EGRESS=restricted
 RAKAZO_COMPUTER_SIZES=standard=2:1.5,large=2:2,xlarge=4:4   # per plan: see Bot computers on a shared host
 RAKAZO_COMPUTER_MEMORY=1536m    # a computer whose plan has no size above
 RAKAZO_COMPUTER_CPUS=2
+RAKAZO_COMPUTER_MEMORY_TOTAL=6g   # most memory the running computers may hold together; 0: no limit
 SANDBOX_MAX_COMPUTERS_PER_USER=1   # see Bot computers on a shared host
 DOZO_STACK_SUBNET=10.213.87.0/24   # optional: the stack's own network, if this range is taken
 CLIENT_IP_HEADER=cf-connecting-ip   # only when a CDN that sets this header is in front
@@ -278,20 +279,36 @@ team computer outside the compose project. What bounds them:
   created under `RAKAZO_COMPUTER_CPUS` and `RAKAZO_COMPUTER_MEMORY`, keeps whatever size it last
   had when it restarts, and Billing shows upstream's figure for it. Billing describes computers
   on this host; a bot that uses a person's own machine is not sized.
-- Nothing caps how many computers run on the host at once. `SANDBOX_MAX_COMPUTERS_PER_USER`
-  caps the computers one person's live bots have across all Spaces (it refuses a new one with
-  "User computer limit reached"), and `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps the containers of
-  one Space, stopped ones included (the supervisor refuses a new one with 429). Neither counts
-  the host. Keep `SANDBOX_MAX_COMPUTERS_PER_USER=1`.
-- A size is a ceiling, not a reservation, and Docker admits a computer whatever memory is free.
-  A computer that passes its own ceiling has a process killed inside it (usually a browser tab);
-  the rest of the host is untouched. When the computers together need more than the host has,
-  the kernel kills a process anywhere on the host, which can be the database or another project.
-  The stack's own ceilings add up to 4.7 GB. On the 13 GB host that leaves about 6 GB for
-  computers once the system and the other projects have theirs: three Premium computers, or one
-  Premium Plus and one Premium, all at their ceiling at the same time. Watch `docker stats` and
-  the kernel log for `oom-kill` as subscribers grow, and lower the sizes or move the computers to
-  a bigger host before that count is reached.
+- `RAKAZO_COMPUTER_MEMORY_TOTAL` is the most memory the running computers may hold together
+  (`6g`, in the format of `RAKAZO_COMPUTER_MEMORY`). It counts the memory ceilings of the
+  computers that are running plus the ceiling of the one starting, not what they use: a start that
+  would pass it is refused before anything is created, the person's run ends with "All computers
+  are busy. Try again shortly." and no computer time is charged. The supervisor checks it against
+  Docker's own list of running computers, so the figure on the admin page is Docker's, not a
+  remembered count, and starts are admitted one at a time so two cannot pass it together. `0`
+  means no limit, as before; left out, this layer sets `6g`. A stopped computer holds nothing, so
+  idle sleep (`SANDBOX_IDLE_MS`, 10 minutes by default, not set by this layer) is what gives
+  memory back to the budget. A computer with no memory ceiling (`RAKAZO_COMPUTER_MEMORY=0` and no
+  size for its plan) counts as nothing, so keep a ceiling on every size. A total smaller than one
+  plan's computer refuses every start of that plan. A watch routine whose start is refused tries
+  again a minute later instead of pausing, for as long as the routine stays on.
+- `SANDBOX_MAX_COMPUTERS_PER_USER` caps the computers one person's live bots have across all
+  Spaces (it refuses a new one with "User computer limit reached"), and
+  `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps the containers of one Space, stopped ones included (the
+  supervisor refuses a new one with 429). Neither counts the host; the memory total above does.
+  Keep `SANDBOX_MAX_COMPUTERS_PER_USER=1`.
+- A size is a ceiling, not a reservation, and the total only keeps the ceilings of the running
+  computers within it. A computer that passes its own ceiling has a process killed inside it
+  (usually a browser tab); the rest of the host is untouched. When everything on the host together
+  needs more than the host has, the kernel kills a process anywhere on it, which can be the
+  database or another project. The stack's own ceilings add up to 4.7 GB.
+- Why 6 GB, from one reading on the host on 2026-11-18 with no bot computer running (a single
+  reading, not a guarantee): 14.0 GB total, 7.8 GB available, swap full. The stack held 1.0 GB of
+  its 4.7 GB of ceilings, and everything else on the host held about 5.2 GB. So 6 GB fits what the
+  host uses today with about 1.8 GB to spare. It does not fit if the stack and the computers all
+  reach their ceilings at once, which is about 1.9 GB over; `4g` is the value that holds in that
+  case. Set it from a new reading when the other projects on the host change, and watch
+  `docker stats` and the kernel log for `oom-kill`.
 - `host-egress.sh` installs upstream's restricted-egress rules (public internet only: no host, no
   private or link-local address, so no other container, no published port of the host and no cloud
   metadata) plus one rule for a host on a Tailscale network, where forwarded traffic is accepted

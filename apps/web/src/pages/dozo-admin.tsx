@@ -65,6 +65,9 @@ type Action =
   | { unban: string }
   | { stop: string; email: string | null };
 
+/** One decimal, none when it is a whole number. */
+const gb = (value: number) => String(Math.round(value * 10) / 10);
+
 function AdminPanel({ ownId }: { ownId: string }) {
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
@@ -162,6 +165,8 @@ function AdminPanel({ ownId }: { ownId: string }) {
 
   const first = users.data.pages[0];
   const list = users.data.pages.flatMap((page) => page.users);
+  const usedGb = gb(computers.data.memory?.usedGb ?? 0);
+  const totalGb = gb(computers.data.memory?.totalGb ?? 0);
   return (
     <>
       <p data-testid="admin-status" className="flex flex-wrap gap-x-4 text-body-sm">
@@ -178,6 +183,13 @@ function AdminPanel({ ownId }: { ownId: string }) {
             other="# computers running"
           />
         </span>
+        {computers.data.memory ? (
+          <span className="text-muted-foreground">
+            <Trans>
+              {usedGb} of {totalGb} GB
+            </Trans>
+          </span>
+        ) : null}
       </p>
 
       {computers.data.computers.length > 0 ? (

@@ -1354,6 +1354,163 @@
         "packages/contracts/src/dozo-computer-size.ts"
       ],
       "reason": "computer sizes: mobile Billing shows the vCPUs and memory the server reports, not a fixed table"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "from \"./dozo-computer-size.js\";\nimport {\n  assertComputerMountSources,\n",
+      "replace": "from \"./dozo-computer-size.js\";\nimport {\n  COMPUTER_MEMORY_BUDGET_FULL,\n  computerMemoryUsage,\n  holdComputerMemory,\n  resumeMemoryBytes,\n} from \"./dozo-memory-budget.js\";\nimport {\n  assertComputerMountSources,\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: the imports of the four rules below"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "image: COMPUTER_IMAGE }));\n\napp.use(\"/computers\", limitSupervisorRequestBody);\n",
+      "replace": "image: COMPUTER_IMAGE }));\n\napp.get(\"/computer-memory\", async (c) => c.json(await computerMemoryUsage(docker)));\n\napp.use(\"/computers\", limitSupervisorRequestBody);\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: the server reads what the running computers hold and the total, from Docker, behind the service token"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "          if (started) {\n            await resizeStoppedComputer(existing, info.HostConfig, body.size);\n            await existing.start();\n",
+      "replace": "          if (started) {\n            // Counted first, so a refused resume leaves the stopped computer at its old size.\n            const release = await holdComputerMemory(\n              docker,\n              resumeMemoryBytes(body.size, info.HostConfig.Memory),\n              existing.id,\n            );\n            try {\n              await resizeStoppedComputer(existing, info.HostConfig, body.size);\n              await existing.start();\n            } finally {\n              release();\n            }\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: a resumed computer is admitted against the host's total before it is resized, and the lock is held until it has started"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "        let container: Docker.Container | undefined;\n        Object.assign(options.HostConfig, sizeLimits(body.size));\n",
+      "replace": "        let container: Docker.Container | undefined;\n        let releaseMemory: () => void = () => undefined;\n        Object.assign(options.HostConfig, sizeLimits(body.size));\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: the hold a new or replaced computer takes, declared where the start's try can release it"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "            await withComputerScreenLock(existing.id, async () => {\n              try {\n                await existing.remove({ force: true });\n",
+      "replace": "            await withComputerScreenLock(existing.id, async () => {\n              // Last in the lock order (bot, space, screen, memory), so a stuck screen command never\n              // holds the host's lock; before the remove, so a refusal leaves the computer alone.\n              releaseMemory = await holdComputerMemory(\n                docker,\n                options.HostConfig.Memory ?? 0,\n                existing.id,\n              );\n              try {\n                await existing.remove({ force: true });\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: a replaced computer is admitted against the host's total inside its screen lock and before it is removed, so a refusal leaves it running and gives back the network just made"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "          }\n          container = await createComputerWithNameRetry(\n            () => docker.createContainer(options),\n",
+      "replace": "          }\n          if (!existing)\n            releaseMemory = await holdComputerMemory(docker, options.HostConfig.Memory ?? 0);\n          container = await createComputerWithNameRetry(\n            () => docker.createContainer(options),\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: a new computer is admitted against the host's total right before it is created, inside the try so a refusal gives back the network just made"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "          throw error;\n        }\n        return c.json({\n          id: container.id,\n",
+      "replace": "          throw error;\n        } finally {\n          releaseMemory();\n        }\n        return c.json({\n          id: container.id,\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: the lock is let go once the computer has started or failed"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "    return c.json({ error: message }, 500);\n  }\n});\n\napp.get(\"/computers/:id\", async (c) => {\n",
+      "replace": "    return c.json({ error: message }, message === COMPUTER_MEMORY_BUDGET_FULL ? 429 : 500);\n  }\n});\n\napp.get(\"/computers/:id\", async (c) => {\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: a start the total refuses answers 429, which the server tells from a fault"
+    },
+    {
+      "file": "packages/adapters/src/docker-sandbox.ts",
+      "find": "import { operatorComputerSize } from \"./dozo-computer-size.js\";\nimport {\n  boundedSandboxCommandTimeoutMs,\n",
+      "replace": "import { operatorComputerSize } from \"./dozo-computer-size.js\";\nimport { throwIfComputersBusy } from \"./dozo-computer-budget.js\";\nimport {\n  boundedSandboxCommandTimeoutMs,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/docker-sandbox.ts",
+      "find": "      const detail = await safeBody(res, context.signal);\n      // Match team-screen style",
+      "replace": "      const detail = await safeBody(res, context.signal);\n      throwIfComputersBusy(res.status, detail);\n      // Match team-screen style",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: the supervisor's refusal becomes the error that says all computers are busy"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  sizeSpec?: (size: ComputerSize) => ComputerSizeSpec | undefined;\n}\n",
+      "replace": "  sizeSpec?: (size: ComputerSize) => ComputerSizeSpec | undefined;\n  /** Memory the running computers may use together and how much they hold, where the operator set a total. */\n  memory?: () => Promise<{ usedGb: number; totalGb: number } | undefined>;\n}\n",
+      "reason": "memory budget: a provider that bounds its computers' memory declares the read, so shared code never asks which provider it is"
+    },
+    {
+      "file": "packages/adapters/src/docker-capabilities.ts",
+      "find": "import { operatorComputerSize } from \"./dozo-computer-size.js\";\n\nexport const dockerSandboxCapabilities: SandboxKindCapabilities = {\n  sizeSpec: operatorComputerSize,\n",
+      "replace": "import { hostComputerMemory } from \"./dozo-computer-budget.js\";\nimport { operatorComputerSize } from \"./dozo-computer-size.js\";\n\nexport const dockerSandboxCapabilities: SandboxKindCapabilities = {\n  memory: hostComputerMemory,\n  sizeSpec: operatorComputerSize,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts",
+        "packages/adapters/src/dozo-computer-size.ts"
+      ],
+      "reason": "memory budget: computers on the server's own host report the memory they hold against the operator's total"
+    },
+    {
+      "file": "packages/adapters/src/run-turn.ts",
+      "find": "} from \"@rakazo/adapter-kit\";\nimport {\n  BACKGROUND_HELPER_TRIGGER,\n",
+      "replace": "} from \"@rakazo/adapter-kit\";\nimport { ComputerCapacityError } from \"./dozo-computer-budget.js\";\nimport {\n  BACKGROUND_HELPER_TRIGGER,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-turn.ts",
+      "find": "SandboxAllowanceUsedError) &&\n      !(computerError instanceof SandboxProviderAccountError)",
+      "replace": "SandboxAllowanceUsedError) &&\n      !(computerError instanceof ComputerCapacityError) &&\n      !(computerError instanceof SandboxProviderAccountError)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: a refused computer start ends the run at once with its message instead of retrying setup"
+    },
+    {
+      "file": "packages/adapters/src/run-turn.ts",
+      "find": "    error instanceof SandboxRateLimitError ||\n    error instanceof SandboxAllowanceUsedError\n  ) {",
+      "replace": "    error instanceof SandboxRateLimitError ||\n    error instanceof SandboxAllowanceUsedError ||\n    error instanceof ComputerCapacityError\n  ) {",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: a refused computer start is logged as a warning, like a spent allowance, not as a server fault"
+    },
+    {
+      "file": "packages/core/src/run-error.ts",
+      "find": "  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,\n  COMPUTER_UNRESPONSIVE_ERROR,\n",
+      "replace": "  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,\n  // The text of ComputerCapacityError (adapters); core cannot import it. A test holds the line.\n  \"All computers are busy. Try again shortly.\",\n  COMPUTER_UNRESPONSIVE_ERROR,\n",
+      "reason": "memory budget: a refused computer start is app advice, so the chat shows its own sentence, not the model provider's generic summary"
+    },
+    {
+      "file": "packages/adapters/src/routine-watch.ts",
+      "find": "import { ComputerBusyError, provisionComputer } from \"./computer-lifecycle.js\";\nimport { resolveBotWorkspaceCwd,",
+      "replace": "import { ComputerBusyError, provisionComputer } from \"./computer-lifecycle.js\";\nimport { ComputerCapacityError } from \"./dozo-computer-budget.js\";\nimport { resolveBotWorkspaceCwd,",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/routine-watch.ts",
+      "find": "      error instanceof ComputerBusyError ||\n      (error instanceof Error && [\"AbortError\"",
+      "replace": "      error instanceof ComputerBusyError ||\n      error instanceof ComputerCapacityError ||\n      (error instanceof Error && [\"AbortError\"",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: a full host is temporary, so a watch check tries again instead of pausing the person's routine"
     }
   ],
   "assets": {

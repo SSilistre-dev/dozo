@@ -25,6 +25,9 @@ services:
     environment:
       # The name must stay rakazo/computer: the supervisor treats any other as a custom image.
       RAKAZO_COMPUTER_IMAGE: rakazo/computer:${DOZO_IMAGE_TAG:?Set DOZO_IMAGE_TAG}
+      # The most memory the running computers may hold together; a start past it is refused
+      # (README, Bot computers on a shared host). 0 means no limit.
+      RAKAZO_COMPUTER_MEMORY_TOTAL: ${RAKAZO_COMPUTER_MEMORY_TOTAL:-6g}
     volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data
