@@ -16,7 +16,8 @@ and open a page. The pages are fixed at 1440x900.
 
 ## Decisions they fix
 
-- Palette: the variables at the top of `dozo.css` (neutral surfaces, one blue accent,
+- Palette: the variables at the top of `dozo.css` (neutral surfaces, one blue accent that the
+  product no longer uses: the main button is ink, see `dozo/theme/README.md`,
   one red seal dot, six bot identity colours), dark and light.
 - Pill controls: buttons and sidebar rows are fully rounded (999px), 38 px tall.
 - Six avatar characters, siblings of the logo mark: Sora, Kumo, Hana, Taro, Yuki, Mochi. No tile:

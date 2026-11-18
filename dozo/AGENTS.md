@@ -112,6 +112,11 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   worktree wrote its own `dozo/.stage/dozo.env`, while the `dozo_*` volumes belong to the checkout
   that first started the stack. Correct way: run it with `DOZO_STAGE_DIR` set to that checkout's
   `dozo/.stage`; never reset the volumes to get past it.
+- 2026-11-18, a dev server for screenshots was run from the shared `dozo-qa-deps` volume, and
+  another checkout's unit run synced its own tree into it mid-run, so the pages shown were not this
+  branch's. Correct way: copy the volume to one of your own first, check a string of your change in
+  the served file, and remove the copy afterwards. A Docker bind mount from `/tmp` arrives empty
+  (the VM does not share it): mount from the checkout or pass the script on stdin.
 
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.

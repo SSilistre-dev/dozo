@@ -585,6 +585,20 @@
       "reason": "closed registration: the sign-in and sign-up routes load a wrapper that shows sign-in at the sign-up address while the server takes no new accounts"
     },
     {
+      "file": "apps/web/src/lib/auth.ts",
+      "find": "import { desktopBridge } from \"./desktop\";\n\nconst signupSurface",
+      "replace": "import { desktopBridge } from \"./desktop\";\nimport { sendUiLocale } from \"./dozo-auth-locale\";\n\nconst signupSurface",
+      "requires": ["apps/web/src/lib/dozo-auth-locale.ts"],
+      "reason": "account emails in the chosen language: the auth client imports the hook that names the app's language"
+    },
+    {
+      "file": "apps/web/src/lib/auth.ts",
+      "find": "    headers: { [SIGNUP_SURFACE_HEADER]: signupSurface },\n  },",
+      "replace": "    headers: { [SIGNUP_SURFACE_HEADER]: signupSurface },\n    onRequest: sendUiLocale,\n  },",
+      "requires": ["apps/web/src/lib/dozo-auth-locale.ts"],
+      "reason": "account emails in the chosen language: every auth request names the language the app is shown in, which the server uses until the account has saved one"
+    },
+    {
       "file": "packages/contracts/src/auth.ts",
       "find": "  crispWebsiteId: z.string().min(1).nullable().optional(),\n});\nexport type AuthCapabilities",
       "replace": "  crispWebsiteId: z.string().min(1).nullable().optional(),\n  /** Whether new accounts can register; omitted by older servers, which means open. */\n  signupsOpen: z.boolean().optional(),\n});\nexport type AuthCapabilities",
