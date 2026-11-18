@@ -66,10 +66,14 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
 
 - **Free** (tier `standard`): permanent, no card, no trial. Bots run on the member's own model
   connection. No hosted computer: the server refuses to start one, and a computer on the member's
-  own machine still works. A new organization starts here, and one whose subscription ends
-  returns here.
+  own machine still works. A bot still answers; a run that reaches for the computer fails and
+  offers the paid plans. A new organization starts here, and one whose subscription ends returns
+  here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
+
+Upstream counts computer hours only on a metered cloud provider. Here every computer the server
+hosts counts, the shipped Docker provider included, so the allowance holds on our own host.
 
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
@@ -80,6 +84,10 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - While a server has a free plan, a computer's saved home is never deleted for an ended plan
   (upstream deletes it only when the organization can no longer run bots). A storage limit is a
   separate task.
+- Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
+  such subscription exists, since the server has never billed, and Free cannot be checked out.
+- Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;
+  they run on the pristine tree only.
 - Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
   upstream's plans.
 

@@ -905,6 +905,12 @@
       "find": "useState<ByokTier>(\"standard\");",
       "replace": "useState<ByokTier>(\n    status.byokTiers?.[0]?.tier ?? \"standard\",\n  );",
       "reason": "plans: the plan picker starts on the first plan on offer, which is not the free one"
+    },
+    {
+      "file": "packages/adapters/src/sandbox-allowance.ts",
+      "find": "  sandbox: SandboxProvider,\n  computer: Pick<ComputerRef, \"kind\">,\n): number {\n  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;\n  return sandbox.billsWhileRunning?.(computer) ? SANDBOX_HOURLY_COST_MICROS : 0;\n",
+      "replace": "  _sandbox: SandboxProvider,\n  computer: Pick<ComputerRef, \"kind\">,\n): number {\n  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;\n  return SANDBOX_HOURLY_COST_MICROS;\n",
+      "reason": "plans: a computer on the operator's own host counts against the allowance like a metered one, so Free gets none and a paid plan's hours are real whatever provider the server runs"
     }
   ],
   "assets": {

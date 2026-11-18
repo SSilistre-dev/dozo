@@ -128,7 +128,7 @@ it("keeps announcing the end of a free period", async () => {
   await render({
     ...free,
     byokPriceCents: offers[0]!.monthlyPriceCents,
-    byokFreeUntil: "2030-01-15T00:00:00.000Z",
+    byokFreeUntil: "2030-01-15T12:00:00.000Z",
   });
   expect(container.textContent).toContain("Free plan ends Jan 15, 2030");
   expect(button(/^Subscribe for /)).toBeDefined();

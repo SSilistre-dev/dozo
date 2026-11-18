@@ -79,6 +79,9 @@ vi.mock("@rakazo/db", async (original) => ({
 }));
 vi.mock("./access-grants.js", () => ({ applyAccessGrants: async () => undefined }));
 
+/** Computer hours run this period, as the usage query answers. */
+const runs: { kind: string; hours: number }[] = [];
+
 const actor: Actor = {
   userId: "user-1",
   spaceId: "space-1",
@@ -119,13 +122,13 @@ const prisma = {
     aggregate: async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } }),
   },
   referral: { findUnique: async () => null },
-  $queryRaw: async () => [],
+  $queryRaw: async () => runs,
   $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
 } as unknown as PrismaClient;
 
-/** A hosted computer provider: every running hour counts against the allowance. */
-const sandbox = { billsWhileRunning: () => true } as unknown as SandboxProvider;
-const hostedComputer = { spaceId: "space-1", kind: "fake" };
+/** The operator's own host, as the shipped stack runs it: the provider reports no metering. */
+const sandbox = {} as SandboxProvider;
+const hostedComputer = { spaceId: "space-1", kind: "docker" };
 
 function setup() {
   const provider = new BillingEmulator({ modelCredits: true });
@@ -155,6 +158,7 @@ beforeEach(() => {
   store.credits = { organizationId: "org-1", mode: null, balanceMicros: 0n, byokFreeUntil: null };
   store.billingOn = true;
   store.trialHolds = 0;
+  runs.length = 0;
 });
 
 describe("Dozo plans", () => {
@@ -278,6 +282,17 @@ describe("a Premium subscriber", () => {
       status: "active",
       cancelAtPeriodEnd: false,
     });
+  });
+
+  it("uses up its hours on the operator's own host too", async () => {
+    const context = setup();
+    await subscribe(context);
+    const hours = sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents);
+    runs.push({ kind: "docker", hours: hours - 1 });
+    await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
+    await expect(context.billing.status(actor)).resolves.toMatchObject({ computerHoursLeft: 1 });
+    runs.push({ kind: "docker", hours: 1 });
+    await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(true);
   });
 
   it("gets the plan's computer hours and size", async () => {
