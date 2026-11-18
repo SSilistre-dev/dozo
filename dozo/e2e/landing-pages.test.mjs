@@ -20,9 +20,12 @@ const token = /<!--[\s\S]*?-->|<\/([a-z][\w-]*)>|<([a-z!][\w-]*)((?:\s+[\w:-]+(?
 
 // A link resolved against its page. A page links to its own language's pages (home, privacy, terms),
 // so outside the language switcher the language directory is dropped before comparing.
-// The language a link carries (`?lang=`) is this page's own, so it is dropped here and checked below.
+// The language a link to the app or the English switcher link carries (`?lang=`) is this page's own,
+// so it is dropped here and checked below. No other link may carry one.
 function address(value, file, lang, switcher) {
-  const url = new URL(value, new URL(file, site + "/")).href.replace(`?lang=${switcher ? "en" : lang}`, "");
+  const href = new URL(value, new URL(file, site + "/")).href;
+  const carried = switcher ? "?lang=en" : href.startsWith("https://dozo.ssilistre.dev/") ? `?lang=${lang}` : "";
+  const url = carried && href.endsWith(carried) ? href.slice(0, -carried.length) : href;
   const own = site + pathOf(lang);
   return switcher || !url.startsWith(own) ? url : `${site}/${url.slice(own.length)}`;
 }
