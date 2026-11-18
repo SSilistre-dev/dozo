@@ -113,7 +113,7 @@ describe("create options", () => {
     const options = withSubnet(upstream, "10.214.0.16/28");
     expect(options).toEqual({
       ...upstream,
-      IPAM: { Driver: "default", Config: [{ Subnet: "10.214.0.16/28" }] },
+      IPAM: { Driver: "default", Config: [{ Subnet: "10.214.0.16/28", Gateway: "10.214.0.17" }] },
     });
     expect(options.Options?.["com.docker.network.bridge.name"]).toBeTruthy();
   });
@@ -121,7 +121,28 @@ describe("create options", () => {
   it("leave IPv6 automatic: no IPv6 entry beside the IPv4 subnet", () => {
     const options = withSubnet(computerNetworkCreateOptions("bot-1", "owner-1"), "10.214.0.0/28");
     expect(options.EnableIPv6).toBe(true);
-    expect(options.IPAM.Config).toEqual([{ Subnet: "10.214.0.0/28" }]);
+    expect(options.IPAM.Config).toEqual([{ Subnet: "10.214.0.0/28", Gateway: "10.214.0.1" }]);
+  });
+});
+
+describe("the gateway", () => {
+  it("is the first host address of the subnet, named so every daemon reports it", () => {
+    expect(withSubnet({}, "10.214.255.240/28").IPAM.Config[0]?.Gateway).toBe("10.214.255.241");
+    expect(withSubnet({}, "10.214.1.0/28").IPAM.Config[0]?.Gateway).toBe("10.214.1.1");
+  });
+
+  it("is on every network the wrapped client creates", async () => {
+    vi.stubEnv(RANGE_ENV, "10.214.0.0/16");
+    const fake = fakeDocker([{ name: "other", subnets: ["10.214.0.0/28"] }]);
+    await withComputerSubnets(fake.docker).createNetwork({ Name: "one" });
+    expect(fake.createNetwork).toHaveBeenCalledWith({
+      Name: "one",
+      IPAM: { Driver: "default", Config: [{ Subnet: "10.214.0.16/28", Gateway: "10.214.0.17" }] },
+    });
+  });
+
+  it("refuses a subnet it cannot read", () => {
+    expect(() => withSubnet({}, "fd00::/64")).toThrow("not an IPv4 subnet");
   });
 });
 
