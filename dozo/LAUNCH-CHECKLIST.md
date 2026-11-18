@@ -80,7 +80,7 @@ placeholders are replaced.
       owner.
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
       `dozo/landing/`, published pre-release behind `noindex` (`dozo/deploy/README.md`, "Landing page").
-      At launch: remove `robots.txt`, the `noindex` meta and header, add the GitHub links, swap the
+      At launch: remove `robots.txt`, the `noindex` meta and header, swap the
       pre-release addresses for the real domain (`dozo/landing/README.md`).
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's
       README text. Decide whether to keep them below our fork notice.
