@@ -848,6 +848,123 @@
         "apps/web/src/pages/dozo-admin.tsx"
       ],
       "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n  if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;\n",
+      "replace": "import { applyDozoPlans } from \"./dozo-plans.js\";\n\napplyDozoPlans(BYOK_TIERS);\n\n/** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */\nexport function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {\n",
+      "requires": [
+        "packages/contracts/src/dozo-plans.ts"
+      ],
+      "reason": "plans: Free, Premium and Premium Plus are laid over upstream's tiers, and a free first tier no longer hides the paid ones"
+    },
+    {
+      "file": "packages/db/src/billing.ts",
+      "find": "  return BYOK_TIERS.standard.monthlyPriceCents === null && credits.mode === \"credits\";",
+      "replace": "  return BYOK_TIERS.standard.monthlyPriceCents === null;",
+      "reason": "plans: with a free plan every organization can run bots, also one that never chose how to pay or whose subscription ended"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "    if (\n      provider.endByokPlans &&\n      hasBillingAccess(live.status) &&\n      (live.creditAmountCents ||\n        (BYOK_TIERS.standard.monthlyPriceCents === null &&\n          live.byokPlan &&\n          !live.cancelAtPeriodEnd))\n    )\n",
+      "replace": "    if (provider.endByokPlans && hasBillingAccess(live.status) && live.creditAmountCents)\n",
+      "reason": "plans: a paid plan is sold beside the free one, so the free plan must not end paid subscriptions"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          return byokTrialAvailable(account, credits, hadTrial)\n",
+      "replace": "          return BYOK_TIERS.standard.monthlyPriceCents !== null &&\n            byokTrialAvailable(account, credits, hadTrial)\n",
+      "reason": "plans: the free plan is the way to try the product, so a paid plan starts without a trial, as the status already tells clients"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "                ? \"credits\"\n                : null,\n",
+      "replace": "                ? \"credits\"\n                : BYOK_TIERS.standard.monthlyPriceCents === null\n                  ? \"byok\"\n                  : null,\n",
+      "reason": "plans: an organization that never chose how to pay is on the free plan, which runs on its own model connection"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          byokPriceCents:\n            BYOK_TIERS.standard.monthlyPriceCents &&\n            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),\n",
+      "replace": "          byokPriceCents: subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents,\n",
+      "reason": "plans: a subscriber's price is reported while the first tier is free, so clients show the paid plan"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const freeUntil = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n",
+      "replace": "  const freeEnds = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n  // The free plan offers the paid ones with the controls a free period uses.\n  const freeUntil =\n    freeEnds ?? (status.funding === \"byok\" && !status.byokPriceCents ? \"free\" : null);\n",
+      "reason": "plans: Billing offers the paid plans to an organization on the free plan, reusing the free period's controls"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "          {status.funding === \"byok\" && freeUntil ? (\n",
+      "replace": "          {status.funding === \"byok\" && freeEnds ? (\n",
+      "reason": "plans: the free plan has no end date to announce"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "useState<ByokTier>(\"standard\");",
+      "replace": "useState<ByokTier>(\n    status.byokTiers?.[0]?.tier ?? \"standard\",\n  );",
+      "reason": "plans: the plan picker starts on the first plan on offer, which is not the free one"
+    },
+    {
+      "file": "packages/adapters/src/sandbox-allowance.ts",
+      "find": "  sandbox: SandboxProvider,\n  computer: Pick<ComputerRef, \"kind\">,\n): number {\n  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;\n  return sandbox.billsWhileRunning?.(computer) ? SANDBOX_HOURLY_COST_MICROS : 0;\n",
+      "replace": "  _sandbox: SandboxProvider,\n  computer: Pick<ComputerRef, \"kind\">,\n): number {\n  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;\n  return SANDBOX_HOURLY_COST_MICROS;\n",
+      "reason": "plans: a computer on the operator's own host counts against the allowance like a metered one, so Free gets none and a paid plan's hours are real whatever provider the server runs"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const { contextStrategy, mediaGeneration, paidServices } = services;\n",
+      "replace": "  const { contextStrategy, mediaGeneration, paidServices } = await planRunServices(services, hold);\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: a run of an organization on Free is not offered media generation, which the operator pays for by the call"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "export type RunCapabilities = Awaited<ReturnType<typeof resolveRunCapabilities>>;\n\nexport async function selectRunTools(\n",
+      "replace": "export type RunCapabilities = Awaited<ReturnType<typeof resolveRunCapabilities>>;\n\nimport { planRunServices } from \"./dozo-plans.js\";\n\nexport async function selectRunTools(\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  const { web, mediaGeneration, paidServices, browser } = services;\n",
+      "replace": "  const { web, mediaGeneration, paidServices, browser } = await planRunServices(services, hold);\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: a run of an organization on Free cannot reach media generation even when the model names the tool unasked"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport type { FleetRun } from \"./fleet-tools.js\";\n",
+      "replace": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport { planRunServices } from \"./dozo-plans.js\";\nimport type { FleetRun } from \"./fleet-tools.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/adapters/src/run-auto-review.ts",
+      "find": "  if (kind === \"jev\" || kind === \"scripted\") {\n    return createAutoReviewProvider(kind);\n",
+      "replace": "  if (kind === \"jev\" || kind === \"scripted\") {\n    if (kind === \"jev\" && !(await operatorPaysFor(deps, { userId, spaceId })))\n      throw new Error(\"Selected checker connection is unavailable\");\n    return createAutoReviewProvider(kind);\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the operator's external reviewer is not spent on an organization on Free; its tool calls then ask the person, as with any unavailable checker"
+    },
+    {
+      "file": "packages/adapters/src/run-auto-review.ts",
+      "find": "import { decisionModel } from \"./decision-models.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";\n",
+      "replace": "import { decisionModel } from \"./decision-models.js\";\nimport { operatorPaysFor } from \"./dozo-plans.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the import of the check above"
     }
   ],
   "assets": {

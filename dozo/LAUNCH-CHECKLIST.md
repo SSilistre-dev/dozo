@@ -71,7 +71,8 @@ placeholders are replaced.
       is a rule change.
 - [ ] **Billing, OAuth and listing names** (blocks launch if the feature is on). Create our Stripe
       products, prices and names (upstream billing code is `apps/api/src/billing.ts`; use env
-      configuration, never code edits). Set our names in OAuth consent screens, the Slack, Discord and
+      configuration, never code edits). The plans and the one place their prices change:
+      `dozo/README.md`, Hosted plans. Set our names in OAuth consent screens, the Slack, Discord and
       Telegram apps and the OpenRouter listing. Owner's decision: the product is source available
       (Elastic License 2.0 for the fork's own files, see `dozo/NOTICE`) and a hosted SaaS that runs on our servers; payment is not connected yet, so the landing page holds
       a placeholder for the hosted plan (`dozo/landing/README.md`).
