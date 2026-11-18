@@ -79,7 +79,8 @@ An organization on Free spends nothing of the operator's. The operator's own mod
 credits (upstream's guard, on every model call a run or a background job makes). On top of that,
 `packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external
 reviewer from a run unless the organization pays (a live subscription or a credit balance); with
-no reviewer the run asks the person before a gated action.
+no reviewer the run asks the person before a consequential action, as upstream does for any
+reviewer it cannot reach.
 
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
