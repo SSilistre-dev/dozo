@@ -10,15 +10,22 @@ import type { ByokTier, ByokTierTerms } from "./billing.js";
  * This is the one place a price changes: add `monthlyPriceCents` and `annualPriceCents` to
  * `premium` or `premiumPlus` below. Until then they keep upstream's amounts. Existing subscribers
  * keep the price they signed up at.
+ *
+ * It is also the one place the shared-space limit changes: `sharedSpaceBytes`, the bytes of files
+ * an organization may keep on a server that bills. Upstream's tiers carry no such field, so an
+ * unbranded build has no limit.
  */
+type DozoTerms = Partial<ByokTierTerms> & { sharedSpaceBytes: number };
+const MB = 1024 * 1024;
 const free = {
   name: "Free",
   monthlyPriceCents: null,
   annualPriceCents: null,
   computerAllowanceCents: 0,
-} satisfies Partial<ByokTierTerms>;
-const premium = { name: "Premium" } satisfies Partial<ByokTierTerms>;
-const premiumPlus = { name: "Premium Plus" } satisfies Partial<ByokTierTerms>;
+  sharedSpaceBytes: 500 * MB,
+} satisfies DozoTerms;
+const premium = { name: "Premium", sharedSpaceBytes: 2 * 1024 * MB } satisfies DozoTerms;
+const premiumPlus = { name: "Premium Plus", sharedSpaceBytes: 5 * 1024 * MB } satisfies DozoTerms;
 
 /** Rewrites upstream's tiers in place, before anything reads them. */
 export function applyDozoPlans(tiers: Record<ByokTier, ByokTierTerms>): void {

@@ -108,6 +108,10 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - 2026-11-17, a fix was reported closed while an older definition of the same function, left later
   in the script, still ran. Correct way: after editing a shell function, count its definitions
   (`grep -c '^name()'`) and prove the fix with a case the old code fails.
+- 2026-11-18, `make qa` in a fresh git worktree failed at `up` with a database password error: the
+  worktree wrote its own `dozo/.stage/dozo.env`, while the `dozo_*` volumes belong to the checkout
+  that first started the stack. Correct way: run it with `DOZO_STAGE_DIR` set to that checkout's
+  `dozo/.stage`; never reset the volumes to get past it.
 
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.
