@@ -1037,6 +1037,24 @@
         "packages/db/src/dozo-shared-space.ts"
       ],
       "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/adapters/src/media-generation-tools.ts",
+      "find": "        if (options.recoverOnly) return undefined;\n        const input = mediaPromptSchema.safeParse(args);\n",
+      "replace": "        if (options.recoverOnly) return undefined;\n        const full = await sharedSpaceFull(prisma, run.spaceId);\n        if (full) return { error: full.message, code: full.code };\n        const input = mediaPromptSchema.safeParse(args);\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: an image or video is not generated, and not paid for, when the organization's shared space has no room to keep it; the bot is told why"
+    },
+    {
+      "file": "packages/adapters/src/media-generation-tools.ts",
+      "find": "import { isUniqueViolation } from \"@rakazo/db\";\n",
+      "replace": "import { isUniqueViolation, sharedSpaceFull } from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check above"
     }
   ],
   "assets": {

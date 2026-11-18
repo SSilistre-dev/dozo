@@ -3,7 +3,7 @@ import { ClientError } from "@rakazo/core";
 import { hasBillingAccess } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
-import { runAsSystemInTransaction } from "./row-security.js";
+import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 
 /** The organization's files already fill its plan's shared space, so a new one is refused. */
 export class SharedSpaceFullError extends ClientError {
@@ -23,7 +23,7 @@ export class SharedSpaceFullError extends ClientError {
  * tier's, so an organization whose plan ended keeps its files and only stops adding to them.
  */
 async function sharedSpaceLimit(
-  tx: Prisma.TransactionClient,
+  tx: Pick<PrismaClient, "deploymentSettings" | "space">,
   spaceId: string,
 ): Promise<{ organizationId: string; bytes: number } | null> {
   const settings = await tx.deploymentSettings.findUnique({
@@ -49,6 +49,35 @@ async function sharedSpaceLimit(
     : { organizationId: space.organizationId, bytes: terms.sharedSpaceBytes };
 }
 
+/** The recorded bytes of every file the organization keeps. Runs across its Spaces. */
+async function usedBytes(db: Pick<PrismaClient, "$queryRaw">, organizationId: string) {
+  // ponytail: sums every file row of the organization on each write; keep a running total per
+  // organization when one holds enough files for this to show.
+  const [{ used }] = await db.$queryRaw<[{ used: string }]>(Prisma.sql`
+    SELECT COALESCE(SUM(a."size"), 0)::text AS "used"
+    FROM "artifacts" a JOIN "spaces" s ON s."id" = a."spaceId"
+    WHERE s."organizationId" = ${organizationId}
+  `);
+  return BigInt(used);
+}
+
+/**
+ * The refusal a new file would meet when the organization has no room left, else null. A look
+ * without the lock, for work that costs something before it has a file to keep: it saves starting
+ * that work for nothing, and the write itself is still held to the limit by `holdSharedSpace`.
+ */
+export async function sharedSpaceFull(
+  prisma: Pick<PrismaClient, "deploymentSettings" | "space" | "$queryRaw">,
+  spaceId: string,
+): Promise<SharedSpaceFullError | null> {
+  const limit = await sharedSpaceLimit(prisma, spaceId);
+  if (!limit) return null;
+  const used = await runAsSystem("an organization's files span its Spaces", () =>
+    usedBytes(prisma, limit.organizationId),
+  );
+  return used >= BigInt(limit.bytes) ? new SharedSpaceFullError() : null;
+}
+
 /**
  * Refuses the transaction's new files when they take the organization over its shared space.
  * Call it in the transaction that added the artifact rows, after adding them and as its last
@@ -63,14 +92,8 @@ export async function holdSharedSpace(tx: Prisma.TransactionClient, spaceId: str
     await tx.$queryRaw(Prisma.sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-shared-space:${limit.organizationId}`}, 0))::text AS "lock"
     `);
-    // ponytail: sums every file row of the organization on each write; keep a running total per
-    // organization when one holds enough files for this to show.
-    const [{ used }] = await tx.$queryRaw<[{ used: string }]>(Prisma.sql`
-      SELECT COALESCE(SUM(a."size"), 0)::text AS "used"
-      FROM "artifacts" a JOIN "spaces" s ON s."id" = a."spaceId"
-      WHERE s."organizationId" = ${limit.organizationId}
-    `);
-    if (BigInt(used) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
+    if ((await usedBytes(tx, limit.organizationId)) > BigInt(limit.bytes))
+      throw new SharedSpaceFullError();
   });
 }
 

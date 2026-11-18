@@ -111,8 +111,9 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - The shared space counts files only. A computer's saved home (no size is recorded; upstream caps
   one at 5 GiB), pages, memory and messages (database text) are not counted.
 - An import that does not fit is refused whole, after its files were written and removed again.
-- A generated image or video that does not fit is reported to the bot as a failed generation,
-  without the reason, and its cost is not returned.
+- An image or video is not generated when the shared space has no room at all: the bot is told
+  why and nothing is spent. One that starts with room left and still does not fit is reported as a
+  failed generation, without the reason, and its cost is not returned.
 - A mail's attachment that does not fit is left out; the mail itself arrives.
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
   such subscription exists, since the server has never billed, and Free cannot be checked out.
