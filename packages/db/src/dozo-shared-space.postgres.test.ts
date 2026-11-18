@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { SharedSpaceFullError, withSharedSpace } from "./dozo-shared-space.js";
+import { SharedSpaceFullError, sharedSpaceFull, withSharedSpace } from "./dozo-shared-space.js";
 import { asSystem, runAsTenant } from "./row-security.js";
 
 // Runs on the branded tree only, against a migrated database: DATABASE_URL is the runtime login,
@@ -143,6 +143,16 @@ describePostgres("shared space (PostgreSQL)", () => {
     await add(spaces[1], 200 * MB);
     await expect(add(spaces[1], 1)).rejects.toBeInstanceOf(SharedSpaceFullError);
     expect(await used(id)).toBe(500 * MB);
+  });
+
+  it("tells a Space's member ahead of a write that the organization is full", async () => {
+    const { spaces } = await organization();
+    const look = () =>
+      runAsTenant({ spaceId: spaces[1], userId }, () => sharedSpaceFull(prisma, spaces[1]));
+    await add(spaces[0], 499 * MB);
+    expect(await look()).toBeNull();
+    await add(spaces[0], MB);
+    expect(await look()).toBeInstanceOf(SharedSpaceFullError);
   });
 
   it("gives a paid plan its limit, keeps an ended plan's files, and takes more once room is made", async () => {

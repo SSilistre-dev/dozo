@@ -9,6 +9,7 @@ import {
   holdSharedSpace,
   isReplayedUpload,
   SharedSpaceFullError,
+  sharedSpaceFull,
   withSharedSpace,
 } from "./dozo-shared-space.js";
 
@@ -147,6 +148,19 @@ describe("shared space", () => {
     const count = queries.findIndex((sql) => sql.includes("SUM("));
     expect(lock).toBeGreaterThan(-1);
     expect(count).toBeGreaterThan(lock);
+  });
+
+  it("says ahead of a write whether there is any room left", async () => {
+    const full = organization({ files: [500 * MB] });
+    const error = await sharedSpaceFull(full.tx as unknown as PrismaClient, "space-1");
+    expect(error).toBeInstanceOf(SharedSpaceFullError);
+    const room = organization({ files: [500 * MB - 1] });
+    expect(await sharedSpaceFull(room.tx as unknown as PrismaClient, "space-1")).toBeNull();
+    // No lock is taken to look.
+    expect(room.queries.some((sql) => sql.includes("pg_advisory_xact_lock"))).toBe(false);
+    const free = organization({ billingOn: false, files: [50 * GB] });
+    expect(await sharedSpaceFull(free.tx as unknown as PrismaClient, "space-1")).toBeNull();
+    expect(free.queries).toEqual([]);
   });
 
   it("carries the limits on the plans", () => {
