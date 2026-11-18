@@ -20,7 +20,9 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   DB names, headers, storage keys, cookies, `rakazo://`) and the few persisted ones it renames on
   purpose: `dozo/brand/README.md`, "Identifiers".
 - Never hand-edit `messages.po` files.
-- Never commit branded output or `dozo/.stage/`.
+- Never commit branded output or `dozo/.stage/`. The screenshots in `dozo/brand/assets/readme/` are
+  not build output: they are the pictures `.github/README.md` shows, taken from a local stack with
+  placeholder data.
 - Keep `NOTICE` and `LICENSE` untouched. Attribution additions go in `dozo/NOTICE`.
 - Never claim endorsement by or affiliation with Rakazo. Never reuse upstream's logo or mascot.
 
