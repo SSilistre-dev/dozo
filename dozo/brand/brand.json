@@ -1172,6 +1172,174 @@
       "find": "    ? translate(\"Your OpenRouter\")\n    : /\\bopenai\\b|openai_/i.test(signals)\n      ? translate(\"Your OpenAI\")\n      : /\\banthropic\\b|anthropic_/i.test(signals)\n        ? translate(\"Your Anthropic\")\n",
       "replace": "    ? \"OpenRouter\"\n    : /\\bopenai\\b|openai_/i.test(signals)\n      ? \"OpenAI\"\n      : /\\banthropic\\b|anthropic_/i.test(signals)\n        ? \"Anthropic\"\n",
       "reason": "wording: a named provider is the sentence's subject (\"OpenAI rejected the API key\"), not \"Your OpenAI\"; the names stay the ones upstream detects"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  CacheCapabilities as ConnectionCacheCapabilities,\n  ConnectionCatalogItem,\n",
+      "replace": "  CacheCapabilities as ConnectionCacheCapabilities,\n  ComputerSize,\n  ComputerSizeSpec,\n  ConnectionCatalogItem,\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the types of the capability below"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  storedHomeIsBackup: boolean;\n}\n",
+      "replace": "  storedHomeIsBackup: boolean;\n  /** What a size gives where the operator sets the sizes; absent: the provider's own machines. */\n  sizeSpec?: (size: ComputerSize) => ComputerSizeSpec | undefined;\n}\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: a provider that starts computers at sizes the operator sets declares them, so shared code never asks which provider it is"
+    },
+    {
+      "file": "packages/adapters/src/docker-capabilities.ts",
+      "find": "import { DEFAULT_COMPUTER_SCREEN } from \"@rakazo/core\";\n\nexport const dockerSandboxCapabilities: SandboxKindCapabilities = {\n",
+      "replace": "import { DEFAULT_COMPUTER_SCREEN } from \"@rakazo/core\";\nimport { operatorComputerSize } from \"./dozo-computer-size.js\";\n\nexport const dockerSandboxCapabilities: SandboxKindCapabilities = {\n  sizeSpec: operatorComputerSize,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: computers on the server's own host get the vCPUs and memory the operator sets for the plan's size"
+    },
+    {
+      "file": "packages/adapters/src/docker-sandbox.ts",
+      "find": "import { COMPUTER_UNRESPONSIVE_ERROR } from \"@rakazo/contracts\";\nimport {\n  boundedSandboxCommandTimeoutMs,\n",
+      "replace": "import { COMPUTER_UNRESPONSIVE_ERROR } from \"@rakazo/contracts\";\nimport type { ComputerSize } from \"@rakazo/contracts\";\nimport { operatorComputerSize } from \"./dozo-computer-size.js\";\nimport {\n  boundedSandboxCommandTimeoutMs,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the imports of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/docker-sandbox.ts",
+      "find": "    request: { botId: string; homePath: string; timezone?: string; language?: string },\n",
+      "replace": "    request: {\n      botId: string;\n      homePath: string;\n      timezone?: string;\n      language?: string;\n      size?: ComputerSize;\n    },\n",
+      "reason": "computer sizes: the provider reads the plan's size, which it used to drop"
+    },
+    {
+      "file": "packages/adapters/src/docker-sandbox.ts",
+      "find": "        timezone: request.timezone,\n        language: request.language,\n",
+      "replace": "        timezone: request.timezone,\n        size: request.size && operatorComputerSize(request.size),\n        language: request.language,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: every start tells the supervisor the vCPUs and memory of the plan's size, from the same setting Billing shows"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "} from \"./computer-locale.js\";\nimport {\n  assertComputerMountSources,\n",
+      "replace": "} from \"./computer-locale.js\";\nimport { computerSizeFields, resizeStoppedComputer, sizeLimits } from \"./dozo-computer-size.js\";\nimport {\n  assertComputerMountSources,\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the imports of the three rules below"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "      ...computerLocaleFields,\n    })\n",
+      "replace": "      ...computerLocaleFields,\n      ...computerSizeFields,\n    })\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: a start may name the vCPUs and memory the computer gets"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "          if (started) await existing.start();\n",
+      "replace": "          if (started) {\n            await resizeStoppedComputer(existing, info.HostConfig, body.size);\n            await existing.start();\n          }\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: a stopped computer moves to the plan's size before it starts, so a plan change reaches it on its next start"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/routes.ts",
+      "find": "        let container: Docker.Container | undefined;\n        const removeNamedComputer = () =>\n",
+      "replace": "        let container: Docker.Container | undefined;\n        Object.assign(options.HostConfig, sizeLimits(body.size));\n        const removeNamedComputer = () =>\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: a new or replaced computer is created at the plan's size instead of the host's one ceiling"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "import { ComputerSizeSchema } from \"./computer.js\";\nimport { EXPERIMENTS } from \"./experiments.js\";\n",
+      "replace": "import { ComputerSizeSchema } from \"./computer.js\";\nimport { ComputerSizeSpecSchema } from \"./dozo-computer-size.js\";\nimport { EXPERIMENTS } from \"./experiments.js\";\n\nexport * from \"./dozo-computer-size.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the shape of a computer's real vCPUs and memory, and the helper clients read it with"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "        computerSize: ComputerSizeSchema,\n        computerHours: z.number().nonnegative(),\n",
+      "replace": "        computerSize: ComputerSizeSchema,\n        computerSpec: ComputerSizeSpecSchema.optional(),\n        computerHours: z.number().nonnegative(),\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: each plan on offer carries the vCPUs and memory its computer really starts with"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "import { sandboxAllowance, sandboxHoursLeft } from \"@rakazo/adapters\";\nimport type {\n  Actor,\n",
+      "replace": "import { sandboxAllowance, sandboxHoursLeft } from \"@rakazo/adapters\";\nimport { withComputerSpecs } from \"./dozo-computer-size.js\";\nimport type {\n  Actor,\n",
+      "requires": [
+        "apps/api/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "        const offers = byokTierOffers();\n",
+      "replace": "        const offers = withComputerSpecs(byokTierOffers(), deps.sandbox);\n",
+      "requires": [
+        "apps/api/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: Billing is told the machine the server's computer provider really starts for each plan"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  COMPUTER_SIZE_SPECS,\n  creditAmountChoices,\n",
+      "replace": "  creditAmountChoices,\n  offerComputerSpec,\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the import of the two rules below, in place of the fixed table"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "    const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];\n",
+      "replace": "    const { vcpus, memoryGb } = offerComputerSpec(offer);\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the plan picker and Billing show the vCPUs and memory the server reports, not a fixed table"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "    const times =\n      COMPUTER_SIZE_SPECS[offer.computerSize].vcpus / COMPUTER_SIZE_SPECS[base.computerSize].vcpus;\n    return t`A ${times}× more powerful computer for your bot`;\n  };\n  const powerDetail = (offer: TierOffer, base: TierOffer) => {\n    const { memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];\n",
+      "replace": "    const ratio = offerComputerSpec(offer).vcpus / offerComputerSpec(base).vcpus;\n    const times = Math.round(ratio * 10) / 10;\n    return t`A ${times}× more powerful computer for your bot`;\n  };\n  const powerDetail = (offer: TierOffer, base: TierOffer) => {\n    const { memoryGb } = offerComputerSpec(offer);\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the plan cards compare the machines the server reports, not a fixed table"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "  COMPUTER_SIZE_SPECS,\n  creditAmountChoices,\n",
+      "replace": "  creditAmountChoices,\n  offerComputerSpec,\n",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: the import of the rule below, in place of the fixed table"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "${ph({ vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus })} vCPU, ${ph({ memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb })} GB",
+      "replace": "${ph({ vcpus: offerComputerSpec(offer).vcpus })} vCPU, ${ph({ memoryGb: offerComputerSpec(offer).memoryGb })} GB",
+      "requires": [
+        "packages/contracts/src/dozo-computer-size.ts"
+      ],
+      "reason": "computer sizes: mobile Billing shows the vCPUs and memory the server reports, not a fixed table"
     }
   ],
   "assets": {

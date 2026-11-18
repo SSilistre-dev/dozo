@@ -95,7 +95,8 @@ SIGNUPS_ENABLED=true            # false: nobody can sign up; accounts come from 
 RAKAZO_ADMIN_EMAILS=owner@dozo.example   # who may open /admin (see Admin page)
 EMAIL_PROVIDER=none
 SANDBOX_COMPUTER_EGRESS=restricted
-RAKAZO_COMPUTER_MEMORY=1536m    # per bot computer
+RAKAZO_COMPUTER_SIZES=standard=2:1.5,large=2:2,xlarge=4:4   # per plan: see Bot computers on a shared host
+RAKAZO_COMPUTER_MEMORY=1536m    # a computer whose plan has no size above
 RAKAZO_COMPUTER_CPUS=2
 SANDBOX_MAX_COMPUTERS_PER_USER=1   # see Bot computers on a shared host
 DOZO_STACK_SUBNET=10.213.87.0/24   # optional: the stack's own network, if this range is taken
@@ -264,9 +265,33 @@ team computer outside the compose project. What bounds them:
   in the api log. The stack's own network has a fixed subnet so it takes none; the fix on the host
   is `docker network prune` for networks nothing uses, or more pools (`default-address-pools` in
   the daemon's settings, which needs a Docker restart).
-- `SANDBOX_MAX_COMPUTERS_PER_USER=1`: the stack's ceilings add up to 4.7 GB and each computer's
-  to 1.5 GB more. On a 14 GB host shared with other projects, with its swap full, a second
-  computer per user leaves no headroom.
+- `RAKAZO_COMPUTER_SIZES` is what each plan's computer gets, as `size=vCPUs:GB`: `large` is
+  Premium, `xlarge` is Premium Plus, and `standard` is a computer without a paid plan's size,
+  which is not sold here (Free has no hosted computer). The default, set in `compose.deploy.yml`,
+  is `standard=2:1.5,large=2:2,xlarge=4:4`. The api and the worker read
+  it: Billing shows these numbers and every start sends them to the supervisor, so what is shown
+  is what is applied. A stopped computer moves to its plan's size on its next start (an upgrade,
+  a downgrade or a changed value); a running one keeps its size until it stops, which it does
+  after `SANDBOX_IDLE_MS` without work. Keep vCPUs at or under the host's cores: Docker refuses
+  more, and the computer then fails to start with a 500. A malformed value fails Billing and
+  every start, naming the variable. List all three sizes: a computer whose size is left out is
+  created under `RAKAZO_COMPUTER_CPUS` and `RAKAZO_COMPUTER_MEMORY`, keeps whatever size it last
+  had when it restarts, and Billing shows upstream's figure for it. Billing describes computers
+  on this host; a bot that uses a person's own machine is not sized.
+- Nothing caps how many computers run on the host at once. `SANDBOX_MAX_COMPUTERS_PER_USER`
+  caps the computers one person's live bots have across all Spaces (it refuses a new one with
+  "User computer limit reached"), and `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps the containers of
+  one Space, stopped ones included (the supervisor refuses a new one with 429). Neither counts
+  the host. Keep `SANDBOX_MAX_COMPUTERS_PER_USER=1`.
+- A size is a ceiling, not a reservation, and Docker admits a computer whatever memory is free.
+  A computer that passes its own ceiling has a process killed inside it (usually a browser tab);
+  the rest of the host is untouched. When the computers together need more than the host has,
+  the kernel kills a process anywhere on the host, which can be the database or another project.
+  The stack's own ceilings add up to 4.7 GB. On the 13 GB host that leaves about 6 GB for
+  computers once the system and the other projects have theirs: three Premium computers, or one
+  Premium Plus and one Premium, all at their ceiling at the same time. Watch `docker stats` and
+  the kernel log for `oom-kill` as subscribers grow, and lower the sizes or move the computers to
+  a bigger host before that count is reached.
 - `host-egress.sh` installs upstream's restricted-egress rules (public internet only: no host, no
   private or link-local address, so no other container, no published port of the host and no cloud
   metadata) plus one rule for a host on a Tailscale network, where forwarded traffic is accepted

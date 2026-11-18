@@ -50,6 +50,11 @@ services:
     restart: unless-stopped
     mem_limit: 1536m
     ports: !reset []
+    environment:
+      # What each plan's computer gets on this host, size=vCPUs:GB (README, Bot computers on a
+      # shared host). The api shows it and the api and worker start computers with it, so both
+      # read the one value.
+      RAKAZO_COMPUTER_SIZES: ${RAKAZO_COMPUTER_SIZES:-standard=2:1.5,large=2:2,xlarge=4:4}
     volumes: !override
       - data:/data
     # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through
@@ -86,6 +91,8 @@ services:
     pull_policy: never
     restart: unless-stopped
     mem_limit: 1536m
+    environment:
+      RAKAZO_COMPUTER_SIZES: ${RAKAZO_COMPUTER_SIZES:-standard=2:1.5,large=2:2,xlarge=4:4}
     volumes: !override
       - data:/data
 

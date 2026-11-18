@@ -6,7 +6,7 @@ import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { hasModelAccess, memberHasModelAccess, planComputerSize } from "@rakazo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing.js";
 import { PlanNotOfferedError } from "./dozo-billing.js";
 import { createReferrals } from "./referrals.js";
@@ -138,7 +138,8 @@ const prisma = {
 } as unknown as PrismaClient;
 
 /** The operator's own host, as the shipped stack runs it: the provider reports no metering. */
-const sandbox = {} as SandboxProvider;
+// The operator's own host: the provider every hosted computer here starts on.
+const sandbox = { describe: () => ({ id: "docker" }) } as SandboxProvider;
 const hostedComputer = { spaceId: "space-1", kind: "docker" };
 
 function setup() {
@@ -163,6 +164,8 @@ async function subscribe(
   await billing.syncForActor(actor);
   return checkout;
 }
+
+afterEach(() => vi.unstubAllEnvs());
 
 beforeEach(() => {
   store.account = null;
@@ -349,6 +352,25 @@ describe("a Premium subscriber", () => {
     );
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
     await expect(planComputerSize(prisma, "space-1")).resolves.toBe(BYOK_TIERS.pro.computerSize);
+  });
+
+  it("is shown the vCPUs and memory the host starts each plan's computer with", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_SIZES", "large=2:2,xlarge=4:4");
+    const context = setup();
+    await subscribe(context);
+    const status = await context.billing.status(actor);
+    expect(status.byokTiers?.map((offer) => [offer.name, offer.computerSpec])).toEqual([
+      ["Premium", { vcpus: 2, memoryGb: 2 }],
+      ["Premium Plus", { vcpus: 4, memoryGb: 4 }],
+    ]);
+  });
+
+  it("starts its computer at the size of the plan it is on now", async () => {
+    const context = setup();
+    await subscribe(context);
+    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("large");
+    await context.billing.changeTier(actor, "max");
+    await expect(planComputerSize(prisma, "space-1")).resolves.toBe("xlarge");
   });
 
   it("can move to Premium Plus but not to Free, which is cancelling", async () => {

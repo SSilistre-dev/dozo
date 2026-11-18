@@ -212,7 +212,7 @@ olc() {
   fi
   local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')
-  forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
+  forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages infra | grep -c '/dozo-[^/]*$' || true)
   # Upstream's workflows arrive enabled after a sync (dozo/SYNC.md): a changed count is the cue to look.
   upwf=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) ! -name 'dozo-*' 2>/dev/null | wc -l | tr -d ' ')
   echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles, upstream workflows=$upwf"
@@ -344,9 +344,9 @@ unit_tests() {
   [ -d "$src/apps" ] || { fail "unit: no staged tree, run dozo/docker/build.sh stage and brand first"; return 1; }
   # A stage swap cut short leaves a partial tree and no completion marker (build.sh writes it last).
   [ -n "${DOZO_UNIT_SRC:-}" ] || [ -f "$STAGE/stage.complete" ] || { fail "unit: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
-  tests=$(cd "$src" && find apps packages \( -name node_modules -prune \) -o -type f \( -name 'dozo-*.test.ts' -o -name 'dozo-*.test.tsx' \) -print | sort)
+  tests=$(cd "$src" && find apps packages infra \( -name node_modules -prune \) -o -type f \( -name 'dozo-*.test.ts' -o -name 'dozo-*.test.tsx' \) -print | sort)
   n=$(printf '%s' "$tests" | grep -c . || true)
-  want=$(git ls-tree -r --name-only "${DOZO_STAGE_REF:-HEAD}" -- apps packages | grep -Ec '/dozo-[^/]*\.test\.tsx?$' || true)
+  want=$(git ls-tree -r --name-only "${DOZO_STAGE_REF:-HEAD}" -- apps packages infra | grep -Ec '/dozo-[^/]*\.test\.tsx?$' || true)
   echo "[unit] fork test files found: $n (the committed tree has $want)"
   if [ "$want" -lt 1 ]; then fail "unit: the committed tree has no fork test files"; return 1; fi
   if [ "$n" -lt "$want" ]; then fail "unit: $n fork test files, the committed tree has $want (a deleted test is a failure; commit the deletion if it is meant)"; return 1; fi
@@ -391,6 +391,7 @@ unit_tests() {
       pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
         --coverage.include="packages/**/dozo-*.ts" --coverage.include="packages/**/dozo-*.tsx" \
+        --coverage.include="infra/**/dozo-*.ts" \
         --coverage.exclude="**/*.test.*" --coverage.thresholds.perFile \
         --coverage.thresholds.lines="$m" --coverage.thresholds.branches="$m" --coverage.thresholds.functions="$m"' \
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &

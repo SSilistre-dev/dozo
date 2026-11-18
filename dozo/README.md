@@ -39,7 +39,7 @@ Branded output is never committed.
 | `dozo/LICENSE`, `dozo/NOTICE` | The licence of the fork's own files, which files those are, and the notice of changes |
 | `dozo/AGENTS.md` | Rules for agents and contributors in this fork |
 | `dozo/LAUNCH-CHECKLIST.md` | What the owner must decide or supply before going public |
-| `dozo-*` files in `apps/` and `packages/` | Fork-only source (local models, the bot avatars, the shell stylesheet). They sit inside upstream packages so they resolve there; they are new files, so they do not conflict with upstream |
+| `dozo-*` files in `apps/`, `packages/` and `infra/` | Fork-only source (local models, the bot avatars, the shell stylesheet). They sit inside upstream packages so they resolve there; they are new files, so they do not conflict with upstream |
 
 ## Build and run
 
