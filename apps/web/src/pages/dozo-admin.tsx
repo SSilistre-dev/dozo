@@ -335,7 +335,6 @@ function AdminPanel({ ownId }: { ownId: string }) {
           <Button
             type="submit"
             variant="outline"
-            size="sm"
             disabled={change.pending || !banValue.trim()}
           >
             <Trans>Ban</Trans>
