@@ -102,12 +102,33 @@ reviewer from a run unless the organization pays (a live subscription or a credi
 no reviewer the run asks the person before a consequential action, as upstream does for any
 reviewer it cannot reach.
 
+An admin can give a member's own organization Premium or Premium Plus for a while, from the admin
+page (Set plan), without a subscription. The grant is a row in `dozo_plan_grants` (tier, end date,
+who gave it, an optional note) that the subscription sync never writes, so a webhook cannot
+overwrite it. `tierInForce` in `packages/db/src/dozo-plan-grant.ts` is the one place that compares
+the end date and takes the higher of the paid tier and an unexpired grant's; the computer allowance
+and size, the shared space, the operator's paid services and the billing status all read the plan
+through it. A grant ends by that comparison alone: nothing runs when it ends, and the organization
+is back on what it pays for, Free when nothing. A granted plan has no price and no billing row, so
+the billing page shows no price for it. Every change is an audit event in the organization's own
+audit log, as the operator: the event names the admin only by id, never by email, and not the
+internal note (which stays on the grant row). The event is the lasting record of who gave or ended
+a plan, since a new grant overwrites the row's giver and ending one deletes the row; it is written
+just after the change, as the audit primitive takes no transaction. Ending a plan that was not
+there changes and records nothing. A grant ends at the end of a UTC day, and the page offers
+tomorrow as the first. A grant only raises the computer allowance: it is at least the granted
+tier's, whatever a trial or a monthly credit plan gives, and an organization with only a grant has
+the monthly reset date. The table has no row security, as `billing_accounts` has none: the plan is
+read inside a member's own requests and uploads.
+
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
 
 - A paid plan is bought on the web, in Settings > Billing. The mobile app shows the plan and
   changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
   one.
+- When a subscription and a higher grant coexist, the billing status reports the granted tier, so
+  the plan picker marks that tier as current while the subscription bills the lower one.
 - While a server has a free plan, a computer's saved home is never deleted for an ended plan
   (upstream deletes it only when the organization can no longer run bots).
 - The shared space counts files only. A computer's saved home (no size is recorded; upstream caps
