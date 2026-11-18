@@ -118,6 +118,12 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   the served file, and remove the copy afterwards. A Docker bind mount from `/tmp` arrives empty
   (the VM does not share it): mount from the checkout or pass the script on stdin.
 
+- 2026-11-19, a change to how the supervisor creates Docker networks was verified on the local
+  daemon only (Docker 29) and broke every computer start on the live host (Docker 28), which
+  reports a network differently. Correct way: a change to what the supervisor sends Docker or reads
+  back is also run against the live host's Docker version in a throwaway `docker:<version>-dind`,
+  through the upstream code that reads the result (here the egress probe), before the PR.
+
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.
 

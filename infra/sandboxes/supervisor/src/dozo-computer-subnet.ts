@@ -34,9 +34,12 @@ function parseBlock(cidr: string): (Block & { aligned: boolean; prefix: number }
   return { start, end: start + size - 1, aligned: start === address, prefix };
 }
 
+function formatAddress(address: number): string {
+  return [24, 16, 8, 0].map((shift) => Math.floor(address / 2 ** shift) % 256).join(".");
+}
+
 function formatSubnet(start: number): string {
-  const octets = [24, 16, 8, 0].map((shift) => Math.floor(start / 2 ** shift) % 256);
-  return `${octets.join(".")}/${SUBNET_PREFIX}`;
+  return `${formatAddress(start)}/${SUBNET_PREFIX}`;
 }
 
 /**
@@ -73,11 +76,16 @@ export function freeSubnet(range: Block, used: Block[]): string | undefined {
 }
 
 /**
- * The same network with its IPv4 subnet named. IPv6 stays automatic: with `EnableIPv6` and no
- * IPv6 entry, Docker 27+ still allocates the network its own ULA /64.
+ * The same network with its IPv4 subnet and gateway named. The gateway is the subnet's first host
+ * address, the one Docker would pick; it is named because Docker 28 leaves it out of the network's
+ * inspect when only the subnet was given, and the egress probe reads it from there. IPv6 stays
+ * automatic: with `EnableIPv6` and no IPv6 entry, Docker 27+ still allocates its own ULA /64.
  */
 export function withSubnet<T extends object>(options: T, subnet: string) {
-  return { ...options, IPAM: { Driver: "default", Config: [{ Subnet: subnet }] } };
+  const block = parseBlock(subnet);
+  if (!block) throw new Error(`not an IPv4 subnet: ${subnet}`);
+  const Gateway = formatAddress(block.start + 1);
+  return { ...options, IPAM: { Driver: "default", Config: [{ Subnet: subnet, Gateway }] } };
 }
 
 // ponytail: one lock in this process, with no wait limit. It holds while this supervisor is the
