@@ -122,6 +122,7 @@ const prisma = {
     aggregate: async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } }),
   },
   referral: { findUnique: async () => null },
+  member: { count: async () => 1 },
   $queryRaw: async () => runs,
   $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
 } as unknown as PrismaClient;
@@ -334,6 +335,22 @@ describe("a Premium subscriber", () => {
     expect(hasModelAccess(store.credits, store.account!.status)).toBe(true);
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(true);
     await expect(planComputerSize(prisma, "space-1")).resolves.toBe("standard");
+  });
+});
+
+describe("a server that sells seats, without model credits", () => {
+  it("still holds an unsubscribed organization behind its paywall", async () => {
+    const provider = new BillingEmulator();
+    const billing = createBillingService({
+      prisma,
+      provider,
+      webOrigin: "https://app.example.test",
+    });
+    const status = await billing.status(actor);
+    expect(billing.modelCreditsEnabled).toBe(false);
+    expect(status).toMatchObject({ access: false, state: "none", trialAvailable: true });
+    expect(status).not.toHaveProperty("funding");
+    expect(status).not.toHaveProperty("byokTiers");
   });
 });
 

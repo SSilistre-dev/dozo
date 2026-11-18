@@ -75,6 +75,12 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
 Upstream counts computer hours only on a metered cloud provider. Here every computer the server
 hosts counts, the shipped Docker provider included, so the allowance holds on our own host.
 
+An organization on Free spends nothing of the operator's. The operator's own model already needs
+credits (upstream's guard, on every model call a run or a background job makes). On top of that,
+`packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external
+reviewer from a run unless the organization pays (a live subscription or a credit balance); with
+no reviewer the run asks the person before a gated action.
+
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
 
@@ -88,6 +94,11 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   such subscription exists, since the server has never billed, and Free cannot be checked out.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;
   they run on the pristine tree only.
+- Three optional operator services have no plan check and stay off on a server with a free plan
+  unless that cost is accepted: a keyed web search provider (`WEB_PROVIDER=keenable` with
+  `KEENABLE_API_KEY`), the operator's managed app connectors (`COMPOSIO_API_KEY`,
+  `PIPEDREAM_*`) and bot mail (`BOT_EMAIL_SMTP_URL`, limited per person per day). The default web
+  search needs no key.
 - Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
   upstream's plans.
 

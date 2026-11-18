@@ -911,6 +911,60 @@
       "find": "  sandbox: SandboxProvider,\n  computer: Pick<ComputerRef, \"kind\">,\n): number {\n  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;\n  return sandbox.billsWhileRunning?.(computer) ? SANDBOX_HOURLY_COST_MICROS : 0;\n",
       "replace": "  _sandbox: SandboxProvider,\n  computer: Pick<ComputerRef, \"kind\">,\n): number {\n  if (sandboxKindCapabilities(computer.kind).runsOnUserMachine) return 0;\n  return SANDBOX_HOURLY_COST_MICROS;\n",
       "reason": "plans: a computer on the operator's own host counts against the allowance like a metered one, so Free gets none and a paid plan's hours are real whatever provider the server runs"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const { contextStrategy, mediaGeneration, paidServices } = services;\n",
+      "replace": "  const { contextStrategy, mediaGeneration, paidServices } = await planRunServices(services, hold);\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: a run of an organization on Free is not offered media generation, which the operator pays for by the call"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "export type RunCapabilities = Awaited<ReturnType<typeof resolveRunCapabilities>>;\n\nexport async function selectRunTools(\n",
+      "replace": "export type RunCapabilities = Awaited<ReturnType<typeof resolveRunCapabilities>>;\n\nimport { planRunServices } from \"./dozo-plans.js\";\n\nexport async function selectRunTools(\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  const { web, mediaGeneration, paidServices, browser } = services;\n",
+      "replace": "  const { web, mediaGeneration, paidServices, browser } = await planRunServices(services, hold);\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: a run of an organization on Free cannot reach media generation even when the model names the tool unasked"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "import { parsePlaybook } from \"./teaching-session.js\";\n\nexport async function createRunContext(\n",
+      "replace": "import { parsePlaybook } from \"./teaching-session.js\";\n\nimport { planRunServices } from \"./dozo-plans.js\";\n\nexport async function createRunContext(\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/adapters/src/run-auto-review.ts",
+      "find": "  if (kind === \"jev\" || kind === \"scripted\") {\n    return createAutoReviewProvider(kind);\n",
+      "replace": "  if (kind === \"jev\" || kind === \"scripted\") {\n    if (kind === \"jev\" && !(await operatorPaysFor(deps, { userId, spaceId })))\n      throw new Error(\"Selected checker connection is unavailable\");\n    return createAutoReviewProvider(kind);\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the operator's external reviewer is not spent on an organization on Free; its tool calls then ask the person, as with any unavailable checker"
+    },
+    {
+      "file": "packages/adapters/src/run-auto-review.ts",
+      "find": "import { decisionModel } from \"./decision-models.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";\n",
+      "replace": "import { decisionModel } from \"./decision-models.js\";\nimport { operatorPaysFor } from \"./dozo-plans.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-plans.ts"
+      ],
+      "reason": "plans: the import of the check above"
     }
   ],
   "assets": {
