@@ -941,8 +941,8 @@
     },
     {
       "file": "packages/adapters/src/run-assembly-context.ts",
-      "find": "import { parsePlaybook } from \"./teaching-session.js\";\n\nexport async function createRunContext(\n",
-      "replace": "import { parsePlaybook } from \"./teaching-session.js\";\n\nimport { planRunServices } from \"./dozo-plans.js\";\n\nexport async function createRunContext(\n",
+      "find": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport type { FleetRun } from \"./fleet-tools.js\";\n",
+      "replace": "import { formatCurrentTimeInstruction } from \"./current-time.prompt.js\";\nimport { planRunServices } from \"./dozo-plans.js\";\nimport type { FleetRun } from \"./fleet-tools.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-plans.ts"
       ],
