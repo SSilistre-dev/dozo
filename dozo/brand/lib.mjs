@@ -175,8 +175,9 @@ export function globToRegExp(glob) {
 // ---------------------------------------------------------------------------------------------
 
 // Runtime state, never source: the stack's bind-mounted data/ (root-owned on Linux, unreadable) at the
-// top of a staged tree, and a staged copy sitting inside a repository root.
-const RUNTIME_DIRS = new Set(["data", "dozo/.stage"]);
+// top of a staged tree, a staged copy sitting inside a repository root, and the iOS build's toolchain
+// and output (dozo/mobile/build.sh: third-party tools and a second staged copy).
+const RUNTIME_DIRS = new Set(["data", "dozo/.stage", "dozo/mobile/.toolchain", "dozo/mobile/.build"]);
 
 /**
  * Regular files under root as posix relative paths; never descends into .git, node_modules or
@@ -377,7 +378,9 @@ SHAPES.push({ name: "namespaced-key", re: /(?<![A-Za-z0-9])rakazo:(?=[\w$/])/g, 
 addStems(
   "dotted-key",
   "dotted attribute, label, metadata and storage keys (rakazo.botId) from a closed list, inside quotes, a URL or path, or before `=`; a public TLD is caught before this",
-  ["activity", "agent", "bot", "botId", "botsSidebarDensity", "clientIp", "composerBindings", "composerDraft", "composerEnterToSend", "composerNonce", "composerSend", "computerOwner", "control", "egressProbe", "githubStarPrompt", "invalid", "loadRemoteImages", "logOutFailed", "managed", "mountSources", "passkey", "pi", "responseStreaming", "routine", "run", "showToolActivity", "signed", "signedInUser", "spaceId", "test", "uiAppearance", "uiLocale", "workspaceId"],
+  ["activity", "agent", "bot", "botId", "botsSidebarDensity", "clientIp", "composerBindings", "composerDraft", "composerEnterToSend", "composerNonce", "composerSend", "computerOwner", "control", "egressProbe", "githubStarPrompt", "invalid", "loadRemoteImages", "logOutFailed", "managed", "mountSources", "passkey", "pi", "responseStreaming", "routine", "run", "showToolActivity", "signed", "signedInUser", "spaceId", "test", "uiAppearance", "uiLocale", "workspaceId",
+   // the mobile app: secure-store and defaults keys, notification data keys, a keychain service, a queue label and a symbol
+   "api_base", "artifact-cache-session", "call-device", "call-greeting", "call-sounds", "calls", "cappedText", "collapsed-sections", "device-voice", "expo-error-window", "file-drop", "groupId", "haptics", "inbox-width", "incoming-session", "integrations-scope", "last_bot_id", "last_bot_space_id", "networkCacheCleared", "org_spaces", "pending_sign_out", "pending_voice_chat", "server_headers", "session_token", "space_id", "space_rollback", "startup-error", "threadId", "wait-sound"],
   (alt) => String.raw`(?<![A-Za-z0-9])rakazo\.${alt}(?![A-Za-z0-9_])`,
   dottedInCode,
 );
@@ -406,21 +409,25 @@ addStems(
 addStems(
   "service-name",
   "compose services, queues, packages, runtimes and the .po catalog project id",
-  ["api", "api-jobs", "worker", "web", "realtime", "updater", "sandboxes", "sandbox-supervisor", "desktop", "desktop-stack", "emulator", "third-party-emulator", "wuying", "prod", "exec"],
+  ["api", "api-jobs", "worker", "web", "realtime", "updater", "sandboxes", "sandbox-supervisor", "desktop", "desktop-stack", "emulator", "third-party-emulator", "wuying", "prod", "exec",
+   // the mobile app's local native modules (package names under apps/mobile/modules)
+   "file-drop", "fold-regions", "list-scroll", "network-cache", "notifications", "pdf-view", "voice-chat"],
   (alt) => String.raw`(?<![\w-])rakazo-${alt}(?![\w-])`,
   notProse,
 );
 addStems(
   "persisted-key",
   "stored keys, window and channel names, cache names and format ids that persisted data refers to",
-  ["instance-theme", "home-storage", "history", "build-id", "content-encryption", "content-security-policy", "pwa-manifest", "pwa-service-worker", "storage-migration", "export-list", "account-export", "turn", "turn-document", "oauth", "mcp-oauth", "mcp-packages", "sso-oauth", "plugin-connect", "app-connect", "slack-install", "bot-id"],
+  ["instance-theme", "home-storage", "history", "build-id", "content-encryption", "content-security-policy", "pwa-manifest", "pwa-service-worker", "storage-migration", "export-list", "account-export", "turn", "turn-document", "oauth", "mcp-oauth", "mcp-packages", "sso-oauth", "plugin-connect", "app-connect", "slack-install", "bot-id",
+   // the mobile app: a keep-awake tag, a file in the app's documents and a webview message
+   "call", "bot-voices", "computer-keyboard-ready"],
   (alt) => String.raw`(?<![\w-])rakazo-${alt}(?![\w-])`,
   notProse,
 );
 addStems(
   "name-prefix",
   "prefixes of temp directories and generated ids: followed by a quote or a generated part",
-  ["account-import", "account-import-archive", "claude-code-request", "computer", "migrations", "say", "shell", "snapshot", "teardown", "turn", "workspace", "workspace-archive", "balance", "bot", "ab", "mcp"],
+  ["account-import", "account-import-archive", "claude-code-request", "computer", "migrations", "say", "shell", "snapshot", "teardown", "turn", "workspace", "workspace-archive", "balance", "bot", "ab", "mcp", "voice"],
   (alt) => String.raw`(?<![\w-])rakazo-${alt}-(?=["'\`$[{])`,
 );
 addStems(

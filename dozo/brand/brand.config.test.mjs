@@ -175,9 +175,10 @@ describe("command line", () => {
     assert.match(applied.stderr, /rule failure/);
     const checked = bareRun("check.mjs", "--root", root);
     assert.equal(checked.status, 2);
-    const [dest] = Object.keys(shipped.assets);
-    assert.ok(dest, "the shipped config maps at least one asset");
-    assert.ok(checked.stderr.includes(`${dest}: mapped asset missing from the tree`), checked.stderr);
+    // The list is capped at 50 lines and starts with the reviewed texts, which this tree lacks.
+    const [entry] = shipped.allow.text;
+    assert.ok(entry, "the shipped config reviews at least one text");
+    assert.ok(checked.stderr.includes(`${entry.file}: allow.text ${entry.text} occurs 0 times`), checked.stderr);
   });
 });
 
@@ -317,17 +318,18 @@ describe("the shipped config, in literal values", () => {
   });
 
   it("puts the scope where it is expected", () => {
-    for (const rel of ["apps/web/e2e/a.ts", "packages/testkit/index.ts", "packages/core/src/x.test.ts", "packages/core/pnpm-lock.yaml", "packages/db/prisma/schema.prisma", "apps/web/node_modules/p/i.js", "packages/adapters/src/composio-fake.ts", "apps/web/LICENSE", "packages/core/.DS_Store", "apps/web/src/Thumbs.db"]) {
+    for (const rel of ["apps/web/e2e/a.ts", "packages/testkit/index.ts", "packages/core/src/x.test.ts", "packages/core/pnpm-lock.yaml", "packages/db/prisma/schema.prisma", "apps/web/node_modules/p/i.js", "packages/adapters/src/composio-fake.ts", "apps/web/LICENSE", "packages/core/.DS_Store", "apps/web/src/Thumbs.db",
+      "apps/mobile/.maestro/smoke.yaml", "apps/mobile/e2e/README.md", "apps/mobile/assets/sounds/warm-end.m4a", "apps/mobile/modules/rakazo-notifications/android/build.gradle", "apps/mobile/lib/push.test.ts"]) {
       assert.equal(inScope(config, rel), false, `${rel} is excluded`);
     }
     for (const rel of ["apps/web/src/App.tsx", "apps/api/src/index.ts", "apps/worker/src/main.ts", "packages/core/src/index.ts", "infra/sandboxes/computer/Dockerfile"]) {
       assert.equal(inScope(config, rel), true, `${rel} is in scope`);
     }
-    for (const rel of ["apps/www/src/a.astro", "apps/desktop/src/main.ts", "apps/desktop/assets/es.lproj/InfoPlist.strings", "apps/desktop/assets/README.md", "apps/mobile/app/a.tsx", "apps/mobile/app.json", "apps/mobile/ios-widgets/RakazoWidgets.swift", "docs/a.md", "README.md"]) {
+    for (const rel of ["apps/www/src/a.astro", "apps/desktop/src/main.ts", "apps/desktop/assets/es.lproj/InfoPlist.strings", "apps/desktop/assets/README.md", "docs/a.md", "README.md"]) {
       assert.equal(inScope(config, rel), false, `${rel} is outside include`);
     }
-    // Desktop and mobile: images only; their source text, bundle ids and store entries stay out of phase 1.
-    for (const rel of ["apps/desktop/assets/icon.png", "apps/desktop/assets/icon.ico", "apps/desktop/assets/new.icns", "apps/mobile/assets/splash-icon.png", "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png", "apps/mobile/src/img/a.svg"]) {
+    // Desktop: images only. Mobile: the whole app that the iOS build ships (dozo/mobile), ids and permission texts included.
+    for (const rel of ["apps/mobile/app/a.tsx", "apps/mobile/app.json", "apps/mobile/ios-widgets/RakazoWidgets.swift", "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift", "apps/mobile/plugins/with-app-intents.js", "apps/desktop/assets/icon.png", "apps/desktop/assets/icon.ico", "apps/desktop/assets/new.icns", "apps/mobile/assets/splash-icon.png", "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png", "apps/mobile/src/img/a.svg"]) {
       assert.equal(inScope(config, rel), true, `${rel} is in scope`);
     }
   });
@@ -345,6 +347,30 @@ describe("the shipped config, in literal values", () => {
       "infra/sandboxes/computer/rakazo-local-bin.sh",
       "infra/sandboxes/computer/rakazo-page-browser",
       "packages/ui-tokens/assets/Rakazo.icon",
+      "apps/mobile/ios-intents/RakazoIntents.swift",
+      "apps/mobile/ios-widgets/RakazoWidgets.swift",
+      "apps/mobile/modules/rakazo-file-drop",
+      "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDrop.podspec",
+      "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
+      "apps/mobile/modules/rakazo-fold-regions",
+      "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegions.podspec",
+      "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegionsModule.swift",
+      "apps/mobile/modules/rakazo-list-scroll",
+      "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScroll.podspec",
+      "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift",
+      "apps/mobile/modules/rakazo-network-cache",
+      "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCache.podspec",
+      "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCacheModule.swift",
+      "apps/mobile/modules/rakazo-notifications",
+      "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift",
+      "apps/mobile/modules/rakazo-notifications/ios/RakazoNotifications.podspec",
+      "apps/mobile/modules/rakazo-notifications/ios/RakazoWorkActivities.swift",
+      "apps/mobile/modules/rakazo-pdf-view",
+      "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfView.podspec",
+      "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfViewModule.swift",
+      "apps/mobile/modules/rakazo-voice-chat",
+      "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec",
+      "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift",
     ]);
     assert.deepEqual(config.allow.binary, [], "every shipped image is mapped, none is only reviewed");
     assert.deepEqual(
@@ -353,6 +379,9 @@ describe("the shipped config, in literal values", () => {
         ["packages/core/src/bot-look.ts", 'avatarSet === "rakazo"', 2],
         ["packages/adapters/src/apple-container-sandbox.ts", "table inet rakazo", 3],
         ["packages/adapters/src/secret-store-fake.ts", '"/rakazo"', 2],
+        ["apps/mobile/components/pdf-preview.tsx", '"RakazoPdfView"', 2],
+        ["apps/mobile/ios-intents/RakazoIntents.swift", "RakazoSession", 17],
+        ["apps/mobile/lib/push.ts", '"RakazoNotifications"', 2],
       ],
     );
     const { scanPath } = buildScanner(config);

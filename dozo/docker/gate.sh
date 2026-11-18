@@ -155,10 +155,11 @@ olc() {
   # Every shell script under dozo/ (docker, sync, e2e/run.sh, brand assets), found, not listed, so a
   # new one is covered. The e2e .ts files have no cheap check (node --check cannot strip types, tsc
   # is not in the image): Playwright compiles them when `make e2e` runs. The macOS app's toolchain
-  # and build output (dozo/desktop/.toolchain, target: git-ignored, third-party) are not ours to check.
+  # and build output (dozo/desktop/.toolchain, target: git-ignored, third-party) are not ours to check,
+  # nor are the iOS build's (dozo/mobile/.toolchain, .build).
   while IFS= read -r s; do syntax_check "$s"; done \
-    < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target \) -prune -o -type f -name '*.sh' -print | sort)
-  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
+    < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.sh' -print | sort)
+  mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
     drun node-check -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
@@ -193,6 +194,12 @@ olc() {
       out=$(drun e2e-helper-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test "${e2e_tests[@]}" 2>&1) \
         && echo "[olc] e2e helper tests ok (${#e2e_tests[@]} files)" || { printf '%s\n' "$out"; fail "e2e helper tests"; }
     else fail "dozo/e2e/model-stub.test.mjs missing: the e2e model stub is not tested"; fi
+    # The iOS app's config: upstream's app.json after the brand rules must carry the Dozo ids and
+    # nothing of upstream's Expo account, EAS project, update channel or domain. No build, no stage.
+    if [ -f dozo/mobile/check-config.test.mjs ]; then
+      out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs 2>&1) \
+        && echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel)" || { printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; }
+    else fail "dozo/mobile/check-config.test.mjs missing: the iOS app's config is not checked"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
@@ -204,7 +211,7 @@ olc() {
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
   fi
   local files forkfiles bad base upwf
-  files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target \) -prune -o -type f -print | wc -l | tr -d ' ')
+  files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages | grep -c '/dozo-[^/]*$' || true)
   # Upstream's workflows arrive enabled after a sync (dozo/SYNC.md): a changed count is the cue to look.
   upwf=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) ! -name 'dozo-*' 2>/dev/null | wc -l | tr -d ' ')

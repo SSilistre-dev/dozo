@@ -72,6 +72,11 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - The macOS app (`dozo/desktop/`) is the second exception: Docker cannot build one. Build it only
   with `dozo/desktop/build.sh`, which keeps Rust and the Tauri CLI in `dozo/desktop/.toolchain/`
   and writes nothing to `~/.cargo`, `~/.rustup`, a shell profile or Homebrew.
+- The iOS app (`dozo/mobile/`) is the third exception: Docker cannot build one. Build it only with
+  `dozo/mobile/build.sh`, from the branded staged tree, never in `apps/mobile`. It keeps Node, pnpm,
+  CocoaPods and every cache in `dozo/mobile/.toolchain/` and the build in `dozo/mobile/.build/`, and
+  writes nothing to `~/.npm`, `~/.cache`, `~/.cocoapods`, Xcode's DerivedData, a shell profile or
+  Homebrew. No Apple account, signing, device or cloud build: `dozo/mobile/README.md`.
 - Run tooling in Docker, for example `docker run --rm -v "$PWD":/repo -w /repo node:24.22-slim node ...`.
 - Do not stop or remove containers, images or volumes you did not create.
 - Never read or print `.env` files or secrets.
