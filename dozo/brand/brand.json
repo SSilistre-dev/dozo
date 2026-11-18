@@ -851,11 +851,47 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n    }),\n    speechSummary:",
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],
-      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, and the page shows the sign-up switch"
+      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, the page shows the sign-up switch, and deleting an account runs the auth's own account deletion"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "import { DEACTIVATED_AT_FIELD } from \"./directory.js\";\nimport type { EmailLocaleOf } from \"./email.js\";",
+      "replace": "import { DEACTIVATED_AT_FIELD } from \"./directory.js\";\nimport { emailBanned, refuseBanned } from \"./dozo-operator.js\";\nexport * from \"./dozo-operator.js\";\nimport type { EmailLocaleOf } from \"./email.js\";",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: the auth reads it where it admits a person, and the admin routes take the list and the operator's account deletion from the package"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "              throw new APIError(\"BAD_REQUEST\", { message: \"Email is not available\" });\n            }\n            const callbackAttribution",
+      "replace": "              throw new APIError(\"BAD_REQUEST\", { message: \"Email is not available\" });\n            }\n            await refuseBanned(prisma, user.email);\n            const callbackAttribution",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: no account is created for a banned address or domain, by any sign-up method, with the answer a deactivated account gets"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "            if (deactivated(user)) {\n              throw new APIError(\"FORBIDDEN\", {\n                code: \"ACCOUNT_DEACTIVATED\",",
+      "replace": "            if (deactivated(user) || (await emailBanned(prisma, user.email))) {\n              throw new APIError(\"FORBIDDEN\", {\n                code: \"ACCOUNT_DEACTIVATED\",",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: every sign-in ends in a new session, so a banned address or domain is refused here for password, code, passkey and social sign-in alike, as a deactivated account is"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "                  if (deactivated(session.user)) return null;\n                  if (session.user.emailVerified) return session;",
+      "replace": "                  if (deactivated(session.user)) return null;\n                  if (await emailBanned(prisma, session.user.email)) return null;\n                  if (session.user.emailVerified) return session;",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: a session opened before its address or domain was banned stops being admitted, as a deactivated account's does"
     },
     {
       "file": "apps/web/src/App.tsx",
@@ -1081,6 +1117,75 @@
         "packages/db/src/dozo-shared-space.ts"
       ],
       "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "  hasCustomer: z.boolean(),\n  /** Computer hours left",
+      "replace": "  hasCustomer: z.boolean(),\n  /** The plan's name and the bytes of its shared space in use; absent where files have no limit. */\n  sharedSpace: z\n    .object({\n      plan: z.string(),\n      usedBytes: z.number().nonnegative(),\n      limitBytes: z.number().positive(),\n    })\n    .optional(),\n  /** Computer hours left",
+      "reason": "plans: the billing status names the plan and says how much of its shared space is used, so the limit shows before a file is refused"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          referral: await referrals.status(organizationId, isOwner),\n        };\n",
+      "replace": "          referral: await referrals.status(organizationId, isOwner),\n          sharedSpace: await statusSharedSpace(prisma, organizationId, account),\n        };\n",
+      "requires": [
+        "apps/api/src/dozo-billing.ts"
+      ],
+      "reason": "plans: the billing status carries the plan's name and the shared space in use; a server that does not bill has no limit and sends nothing"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
+      "replace": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace } from \"./dozo-billing.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-billing.ts"
+      ],
+      "reason": "plans: the refusal a checkout of the free plan is answered with, and the status's read of the shared space"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "    if (amountCents === null || !provider.createByokCheckout) throw new ORPCError(\"NOT_FOUND\");\n",
+      "replace": "    if (!provider.createByokCheckout) throw new ORPCError(\"NOT_FOUND\");\n    if (amountCents === null) throw new PlanNotOfferedError();\n",
+      "requires": [
+        "apps/api/src/dozo-billing.ts"
+      ],
+      "reason": "plans: a checkout that names no paid plan is told the plan is free, instead of a bare not found"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { ConfirmDialog } from \"./ConfirmDialog\";\nimport { InfoTooltip } from \"./InfoTooltip\";\n",
+      "replace": "import { ConfirmDialog } from \"./ConfirmDialog\";\nimport { DozoSharedSpace } from \"./dozo-shared-space\";\nimport { InfoTooltip } from \"./InfoTooltip\";\n",
+      "requires": [
+        "apps/web/src/components/dozo-shared-space.tsx"
+      ],
+      "reason": "plans: Billing's line for the plan's name and its shared space"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "            <Trans>Monthly credits expire at renewal. Top-ups do not expire.</Trans>\n          )}\n        </p>\n        {status.canManage ? (\n          <div className=\"mt-5 flex flex-wrap items-center gap-3\">\n",
+      "replace": "            <Trans>Monthly credits expire at renewal. Top-ups do not expire.</Trans>\n          )}\n        </p>\n        <DozoSharedSpace status={status} />\n        {status.canManage ? (\n          <div className=\"mt-5 flex flex-wrap items-center gap-3\">\n",
+      "requires": [
+        "apps/web/src/components/dozo-shared-space.tsx"
+      ],
+      "reason": "plans: Billing names the plan and shows the shared space in use, so the limit is seen before a file is refused"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "} from \"@rakazo/contracts\";\nimport { useFocusEffect, useRouter } from \"expo-router\";\n",
+      "replace": "} from \"@rakazo/contracts\";\nimport { formatFileSize } from \"@rakazo/core\";\nimport { useFocusEffect, useRouter } from \"expo-router\";\n",
+      "reason": "plans: sizes on the mobile Billing screen's shared-space row"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "        ) : null}\n        {status.canManage ? (\n          <SettingsRow\n            title={plan && !status.byokFreeUntil ? t`Change plan` : t`Choose a plan`}\n",
+      "replace": "        ) : null}\n        {status.sharedSpace && (\n          <SettingsRow\n            title={t`Shared space`}\n            detail={currentTier ? undefined : status.sharedSpace.plan}\n            value={t`${ph({ used: formatFileSize(status.sharedSpace.usedBytes) })} of ${ph({ total: formatFileSize(status.sharedSpace.limitBytes) })}`}\n          />\n        )}\n        {status.canManage ? (\n          <SettingsRow\n            title={plan && !status.byokFreeUntil ? t`Change plan` : t`Choose a plan`}\n",
+      "reason": "plans: the mobile Billing screen shows the shared space in use, and the plan's name where no paid plan's row already does"
+    },
+    {
+      "file": "packages/core/src/run-error.ts",
+      "find": "    ? translate(\"Your OpenRouter\")\n    : /\\bopenai\\b|openai_/i.test(signals)\n      ? translate(\"Your OpenAI\")\n      : /\\banthropic\\b|anthropic_/i.test(signals)\n        ? translate(\"Your Anthropic\")\n",
+      "replace": "    ? \"OpenRouter\"\n    : /\\bopenai\\b|openai_/i.test(signals)\n      ? \"OpenAI\"\n      : /\\banthropic\\b|anthropic_/i.test(signals)\n        ? \"Anthropic\"\n",
+      "reason": "wording: a named provider is the sentence's subject (\"OpenAI rejected the API key\"), not \"Your OpenAI\"; the names stay the ones upstream detects"
     }
   ],
   "assets": {
