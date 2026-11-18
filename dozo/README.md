@@ -83,8 +83,9 @@ counted. `packages/db/src/dozo-shared-space.ts` refuses the write that takes the
 (`shared_space_full`), inside the transaction that records the file and behind a lock per
 organization, so writes running together cannot pass the limit between them. Nothing is deleted
 and everything stays readable when a plan ends with more than Free allows; only new files are
-refused until enough is deleted. A test in that directory lists upstream's writers of file rows and
-fails when a sync brings one it does not know.
+refused until enough is deleted. Only a live Premium or Premium Plus subscription raises the limit;
+every other organization, one that only buys credits included, has Free's. The test beside that
+file lists upstream's writers of file rows and fails when a sync brings one it does not know.
 
 An organization on Free spends nothing of the operator's. The operator's own model already needs
 credits (upstream's guard, on every model call a run or a background job makes). On top of that,
@@ -104,6 +105,9 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - The shared space counts files only. A computer's saved home (no size is recorded; upstream caps
   one at 5 GiB), pages, memory and messages (database text) are not counted.
 - An import that does not fit is refused whole, after its files were written and removed again.
+- A generated image or video that does not fit is reported to the bot as a failed generation,
+  without the reason, and its cost is not returned.
+- A mail's attachment that does not fit is left out; the mail itself arrives.
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
   such subscription exists, since the server has never billed, and Free cannot be checked out.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;

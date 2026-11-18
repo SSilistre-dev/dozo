@@ -10,7 +10,7 @@ export class SharedSpaceFullError extends ClientError {
   constructor() {
     super(
       "BAD_REQUEST",
-      "Shared space is full. Delete files or upgrade the plan.",
+      "Shared space is full. Delete files or change the plan.",
       "shared_space_full",
     );
     this.name = "SharedSpaceFullError";
@@ -65,12 +65,15 @@ export async function holdSharedSpace(tx: Prisma.TransactionClient, spaceId: str
     `);
     // ponytail: sums every file row of the organization on each write; keep a running total per
     // organization when one holds enough files for this to show.
-    const [{ used }] = await tx.$queryRaw<[{ used: string }]>(Prisma.sql`
-      SELECT COALESCE(SUM(a."size"), 0)::text AS "used"
+    // Rows this transaction added carry its id. One that added none (a retried upload that had
+    // already landed) is never refused, whatever the organization holds.
+    const [{ used, added }] = await tx.$queryRaw<[{ used: string; added: boolean }]>(Prisma.sql`
+      SELECT COALESCE(SUM(a."size"), 0)::text AS "used",
+        COALESCE(BOOL_OR(a.xmin = pg_current_xact_id()::xid), false) AS "added"
       FROM "artifacts" a JOIN "spaces" s ON s."id" = a."spaceId"
       WHERE s."organizationId" = ${limit.organizationId}
     `);
-    if (BigInt(used) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
+    if (added && BigInt(used) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
   });
 }
 

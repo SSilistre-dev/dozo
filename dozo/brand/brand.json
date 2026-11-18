@@ -1019,6 +1019,24 @@
         "packages/db/src/dozo-shared-space.ts"
       ],
       "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "apps/api/src/email-inbound.ts",
+      "find": "      if (!(error instanceof AttachmentValidationError)) throw error;\n",
+      "replace": "      if (!(error instanceof AttachmentValidationError || error instanceof SharedSpaceFullError))\n        throw error;\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: a mail whose attachment does not fit the shared space still arrives, without that file, instead of failing until the relay gives up"
+    },
+    {
+      "file": "apps/api/src/email-inbound.ts",
+      "find": "  isUniqueViolation,\n  SpaceDeletionInProgressError,\n  storedEmailAttachments,\n} from \"@rakazo/db\";\n",
+      "replace": "  isUniqueViolation,\n  SharedSpaceFullError,\n  SpaceDeletionInProgressError,\n  storedEmailAttachments,\n} from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check above"
     }
   ],
   "assets": {

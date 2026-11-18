@@ -16,7 +16,7 @@ type Billing = { status: string | null; byokTier: string | null } | null;
 
 /** One organization: whether the server bills, its subscription, and the sizes of its files. */
 function organization(init: { billingOn?: boolean; billing?: Billing; files?: number[] } = {}) {
-  const state = { billingOn: true, billing: null as Billing, files: [] as number[], ...init };
+  const state = { billingOn: true, billing: null as Billing, files: [] as number[], ...init, before: 0 };
   const queries: string[] = [];
   const tx = {
     deploymentSettings: {
@@ -30,13 +30,15 @@ function organization(init: { billingOn?: boolean; billing?: Billing; files?: nu
     },
     $queryRaw: async (query: TemplateStringsArray | Prisma.Sql) => {
       queries.push("sql" in query ? query.sql : query.join("?"));
-      return [{ used: String(state.files.reduce((sum, size) => sum + size, 0)) }];
+      const used = String(state.files.reduce((sum, size) => sum + size, 0));
+      return [{ used, added: state.files.length > state.before }];
     },
   } as unknown as Prisma.TransactionClient;
   // A transaction that fails leaves no file behind.
   const prisma = {
     $transaction: async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => {
       const before = [...state.files];
+      state.before = before.length;
       try {
         return await work(tx);
       } catch (error) {
@@ -97,6 +99,12 @@ describe("shared space", () => {
     // Deleting has no check either; once enough is gone, writing works again.
     state.files.splice(0, 2);
     await expect(add(MB)).resolves.toBe("kept");
+  });
+
+  it("never refuses a write that added nothing, as a retried upload that had landed", async () => {
+    const { state, tx } = organization({ files: [600 * MB] });
+    state.before = 1;
+    await expect(holdSharedSpace(tx, "space-1")).resolves.toBeUndefined();
   });
 
   it("reads a subscription without a known tier as the first plan", async () => {
