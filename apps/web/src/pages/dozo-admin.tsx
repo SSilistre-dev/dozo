@@ -18,6 +18,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageLoading } from "../components/PageLoading";
 import { useSave, useSpaceQueries } from "../lib/query";
 import { errorText } from "../lib/user-error";
+import { DozoPlanAction } from "./dozo-admin-plan";
 import { NotFoundPage } from "./NotFound";
 import { WindowChrome } from "./WindowChrome";
 
@@ -256,6 +257,7 @@ function AdminPanel({ ownId }: { ownId: string }) {
                 </>
               }
             >
+              <DozoPlanAction user={user} />
               {user.banned ? (
                 <Badge variant="outline">
                   <Trans>Banned</Trans>

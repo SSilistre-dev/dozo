@@ -224,7 +224,6 @@ if [ "$action" = site ]; then
   sed "s#/opt/dozo/#$remote_dir/#" "$stage/dozo/deploy/compose.site.yml" |
     jq -Rs --arg id "$id" '{composeId: $id, composeFile: ., sourceType: "raw"}' |
     panel compose.update --data-binary @- >/dev/null
-  # A redeploy restarts nginx, which is how a changed config takes effect.
   jq -n --arg id "$id" '{composeId: $id, title: "dozo site"}' | panel compose.deploy --data-binary @- >/dev/null
   waited=0
   while :; do
@@ -239,6 +238,10 @@ if [ "$action" = site ]; then
     sleep 3
     waited=$((waited + 3))
   done
+  # The panel does not restart a container whose compose file is unchanged: load the config here.
+  project=$(site_json | jq -er '.appName')
+  remote bash -s -- "$project" <"$here/site-reload.sh" ||
+    die "the new nginx config was not loaded (the old one is still serving)"
   url="https://$DOZO_SITE_DOMAIN/"
   waited=0
   # The body goes into a variable first. Piped straight into `grep -q`, grep left at the title,
@@ -249,6 +252,7 @@ if [ "$action" = site ]; then
     waited=$((waited + 5))
   done
   "$here/site-assets.sh" verify "$stage/dozo/landing" "$url" || die "$url does not serve what was published"
+  "$here/site-assets.sh" lang "$url" || die "$url does not run the published nginx config"
   say "DEPLOY: PASS (site at $url)"
   exit 0
 fi

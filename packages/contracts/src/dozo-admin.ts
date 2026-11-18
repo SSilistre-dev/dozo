@@ -1,6 +1,18 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
+import { ByokTierSchema } from "./billing.js";
 import { Id, IsoDate } from "./ids.js";
+
+/** The plan an account has in force, and until when an admin's grant of it lasts. */
+export const DozoAdminPlanSchema = z.object({
+  tier: ByokTierSchema,
+  /** The end of a plan an admin granted that has not ended; null without one. */
+  grantedUntil: IsoDate.nullable(),
+});
+export type DozoAdminPlan = z.infer<typeof DozoAdminPlanSchema>;
+
+/** The tiers an admin can grant; Free is what everyone has. */
+export const DozoGrantTierSchema = z.enum(["pro", "max"]);
 
 /** One account as the hosted deployment's admin page lists it. Nothing an account holds is here. */
 export const DozoAdminUserSchema = z.object({
@@ -13,6 +25,7 @@ export const DozoAdminUserSchema = z.object({
   bots: z.number().int(),
   runningComputers: z.number().int(),
   suspended: z.boolean(),
+  plan: DozoAdminPlanSchema,
   /** Its address, or its domain, is on the ban list. */
   banned: z.boolean(),
 });
@@ -47,6 +60,21 @@ export const dozoAdminContract = {
   setSuspended: oc
     .input(z.object({ userId: Id, suspended: z.boolean() }))
     .output(z.object({ suspended: z.boolean() })),
+  /**
+   * Gives the account's own organization a plan until `endsAt`, replacing any grant it has, or
+   * ends the grant when `tier` is null. `endsAt` is required with a tier, must be in the future
+   * and at most five years away.
+   */
+  setPlan: oc
+    .input(
+      z.object({
+        userId: Id,
+        tier: DozoGrantTierSchema.nullable(),
+        endsAt: IsoDate.optional(),
+        note: z.string().max(200).optional(),
+      }),
+    )
+    .output(z.object({ plan: DozoAdminPlanSchema })),
   computers: oc.output(
     z.object({
       total: z.number().int(),
