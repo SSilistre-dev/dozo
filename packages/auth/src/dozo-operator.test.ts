@@ -53,6 +53,10 @@ describe("ban entries", () => {
     ["  ada+news@example.com ", "ada@example.com"],
     ["ada+a+b@mail.example.com", "ada@mail.example.com"],
     ["+tag@example.com", "+tag@example.com"],
+    ["E.v.e+x@Gmail.com", "eve@gmail.com"],
+    ["eve@googlemail.com", "eve@gmail.com"],
+    ["googlemail.com", "gmail.com"],
+    ["e.ve@example.com", "e.ve@example.com"],
     ["Example.com", "example.com"],
     ["@example.com", "example.com"],
     ["*.example.com", "example.com"],
@@ -87,6 +91,10 @@ describe("ban entries", () => {
     expect(banKeys("+x@Example.com.")).toEqual(["+x@example.com", "example.com"]);
     expect(banKeys("a b@-odd-.example.com")).toContain("example.com");
     expect(banKeys("eve@localhost")).toEqual([]);
+    // One mailbox behind two domains and any dots; a name of dots alone stays whole.
+    expect(banKeys("E.V.E+x@googlemail.com")).toEqual(["eve@gmail.com", "gmail.com"]);
+    expect(banKeys("..@gmail.com")).toEqual(["..@gmail.com", "gmail.com"]);
+    expect(banKeys("e.ve@mail.example.com")[0]).toBe("e.ve@mail.example.com");
     // Not an address: nothing can refuse it.
     expect(banKeys("example.com")).toEqual([]);
     expect(banKeys("not an address")).toEqual([]);
@@ -223,7 +231,7 @@ describe("a banned address at the door", () => {
     return {
       prisma,
       auth,
-      ban: (value: string) => addBan(prisma as never, value, "admin"),
+      ban: (value: string) => addBan(prisma as never, banEntry(value) as string, "admin"),
       unban: (value: string) => removeBan(prisma as never, value),
       signUp: (email: string) => post("/sign-up/email", { email, password, name: "Eve" }),
       signIn: (email: string) => post("/sign-in/email", { email, password }),
@@ -254,6 +262,14 @@ describe("a banned address at the door", () => {
     // A local part that is only a tag does not walk past the domain.
     expect((await f.signUp("+x@corp.test")).status).toBe(403);
     expect((await f.signUp("eve@notcorp.test")).status).toBe(200);
+  });
+
+  it("cannot sign up as the same mailbox under its other domain or with dots", async () => {
+    const f = fixture();
+    await f.ban("eve@gmail.com");
+    expect((await f.signUp("e.ve@gmail.com")).status).toBe(403);
+    expect((await f.signUp("eve@googlemail.com")).status).toBe(403);
+    expect((await f.signUp("steve@gmail.com")).status).toBe(200);
   });
 
   it("cannot sign in, and loses the session it had, until the ban is lifted", async () => {

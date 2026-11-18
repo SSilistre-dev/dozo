@@ -21,16 +21,33 @@ function domainOf(value: string): string | null {
 export function banEntry(input: string): string | null {
   const value = input.trim().toLowerCase();
   const at = value.lastIndexOf("@");
-  if (at < 0) return domainOf(value.replace(/^\*\./, ""));
+  if (at < 0) {
+    const domain = domainOf(value.replace(/^\*\./, ""));
+    return domain && oneDomain(domain);
+  }
   const domain = domainOf(value.slice(at + 1));
-  if (!domain || at === 0) return domain;
-  const local = withoutTag(value.slice(0, at));
-  return /[\s@]/.test(local) ? null : `${local}@${domain}`;
+  if (!domain || at === 0) return domain && oneDomain(domain);
+  const local = value.slice(0, at);
+  return /[\s@]/.test(local) ? null : mailbox(local, domain);
 }
 
-/** A local part that is only a tag (`+x`) stays whole, so it still names one mailbox. */
-function withoutTag(local: string): string {
-  return local.split("+")[0] || local;
+// One mail service answers on two domains and ignores dots in the name before the `@`.
+const DOTLESS_DOMAIN = "gmail.com";
+const DOTLESS_ALIASES = new Set([DOTLESS_DOMAIN, "googlemail.com"]);
+
+function oneDomain(domain: string): string {
+  return DOTLESS_ALIASES.has(domain) ? DOTLESS_DOMAIN : domain;
+}
+
+/**
+ * The one spelling of a mailbox. A `+tag` goes for every domain, on purpose: most services deliver
+ * it to the same person, and where one does not, a ban reaching a second mailbox costs less than a
+ * banned person signing up again with a tag. A name that would be empty stays whole.
+ */
+function mailbox(local: string, domain: string): string {
+  const untagged = local.split("+")[0] || local;
+  const name = DOTLESS_ALIASES.has(domain) ? untagged.replaceAll(".", "") || untagged : untagged;
+  return `${name}@${oneDomain(domain)}`;
 }
 
 /**
@@ -43,13 +60,11 @@ export function banKeys(email: string): string[] {
   // domain here, or an odd spelling would walk past a banned domain.
   const value = email.trim().toLowerCase();
   const at = value.lastIndexOf("@");
-  const labels = value
-    .slice(at + 1)
-    .replace(/\.+$/, "")
-    .split(".");
+  const domain = oneDomain(value.slice(at + 1).replace(/\.+$/, ""));
+  const labels = domain.split(".");
   if (at < 1 || labels.length < 2) return [];
   return [
-    `${withoutTag(value.slice(0, at))}@${labels.join(".")}`,
+    mailbox(value.slice(0, at), domain),
     ...labels.slice(0, -1).map((_, index) => labels.slice(index).join(".")),
   ];
 }
@@ -68,8 +83,9 @@ export async function emailBanned(prisma: Sql, email: string): Promise<boolean> 
 }
 
 /**
- * Refuses a banned address with the answer a deactivated account gets, so the reply tells nobody
- * that the address, or anything on its domain, is on a list.
+ * Refuses a banned address with the answer a deactivated account gets. Whether an account exists
+ * does not leak: the answer is the same with and without one. That the address is refused does
+ * show, since an ordinary address signs up; the operator accepts that.
  */
 export async function refuseBanned(prisma: Sql, email: string): Promise<void> {
   if (await emailBanned(prisma, email))

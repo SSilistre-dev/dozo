@@ -1,7 +1,7 @@
 import { createRouterClient, os } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import type * as Db from "@rakazo/db";
-import { accountDeactivated } from "@rakazo/db";
+import { accountDeactivated, recordSecurityEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DozoAdminWiring } from "./dozo-admin.js";
 import {
@@ -253,6 +253,7 @@ function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true)
 }
 
 beforeEach(() => {
+  vi.mocked(recordSecurityEvent).mockClear();
   stops.calls.length = 0;
   stops.fail = null;
 });
@@ -498,6 +499,18 @@ describe("the ban list", () => {
     // Lifted in whatever spelling it is named.
     expect(await admin.unban({ value: " *.EVIL.test" })).toEqual({ ok: true });
     expect((await admin.bans()).bans.map((ban) => ban.value)).toEqual(["spam@mail.example.net"]);
+    // Each change is on record with the admin who made it.
+    const change = (change: string, entry: string) => ({
+      type: "deployment.settings.changed",
+      userId: "admin",
+      metadata: { setting: "ban_list", change, entry },
+    });
+    expect(vi.mocked(recordSecurityEvent).mock.calls.map(([event]) => event)).toEqual([
+      change("added", "spam@mail.example.net"),
+      change("added", "evil.test"),
+      change("added", "spam@mail.example.net"),
+      change("removed", "evil.test"),
+    ]);
   });
 
   it("refuses what is neither an address nor a domain", async () => {
@@ -581,6 +594,12 @@ describe("deleting an account", () => {
       // Its content goes while it can no longer sign in or act.
       expect(ada?.deactivatedAt).toBeInstanceOf(Date);
       expect(sessions().some((row) => row.userId === "ada")).toBe(false);
+      // On record, with the admin, before anything of the account is gone.
+      expect(recordSecurityEvent).toHaveBeenLastCalledWith({
+        type: "auth.account.deactivated",
+        userId: "ada",
+        metadata: { by: "operator", admin: "admin", reason: "deletion" },
+      });
       deletion.steps.push("content");
     });
     expect(await as("admin").deleteUser({ userId: "ada" })).toEqual({ ok: true });

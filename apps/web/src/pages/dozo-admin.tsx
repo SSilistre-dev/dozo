@@ -332,11 +332,7 @@ function AdminPanel({ ownId }: { ownId: string }) {
             autoComplete="off"
             maxLength={254}
           />
-          <Button
-            type="submit"
-            variant="outline"
-            disabled={change.pending || !banValue.trim()}
-          >
+          <Button type="submit" variant="outline" disabled={change.pending || !banValue.trim()}>
             <Trans>Ban</Trans>
           </Button>
         </form>
@@ -380,7 +376,9 @@ function AdminPanel({ ownId }: { ownId: string }) {
             "stop" in confirm ? (
               confirm.email
             ) : "ban" in confirm ? (
-              <Trans>Suspends the account and refuses its address from now on.</Trans>
+              <Trans>
+                Suspends the account and refuses new sign-ups and sign-ins from its address.
+              </Trans>
             ) : "remove" in confirm ? (
               <Trans>This cannot be undone.</Trans>
             ) : (

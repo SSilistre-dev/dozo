@@ -11,7 +11,7 @@ import {
   removeBan,
 } from "@rakazo/auth";
 import { ClientError, MESSAGING_EMAIL_SUFFIX, signupsOpen } from "@rakazo/core";
-import { runAsSystem } from "@rakazo/db";
+import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
@@ -83,6 +83,13 @@ export function dozoAdminRoutes(ctx: RouterContext) {
     if (outcome === "directory")
       throw new ClientError("CONFLICT", "The identity provider manages this account");
   };
+  /** The list is a setting of the deployment; the event's user is the admin who changed it. */
+  const recordBanChange = (adminId: string, change: "added" | "removed", entry: string) =>
+    recordSecurityEvent({
+      type: "deployment.settings.changed",
+      userId: adminId,
+      metadata: { setting: "ban_list", change, entry },
+    });
   const findAccount = async (userId: string) => {
     const user = await runAsSystem("find an account for the admin page", () =>
       prisma.user.findFirst({ where: { ...accounts, id: userId }, select: { email: true } }),
@@ -191,6 +198,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           throw new ClientError("BAD_REQUEST", "An admin account cannot be banned");
         if (userId) await suspend(userId, true);
         await addBan(prisma, value, context.actor.userId);
+        await recordBanChange(context.actor.userId, "added", value);
         getLogger().info("dozo.admin.ban", {
           "admin.id": context.actor.userId,
           "user.id": userId,
@@ -205,6 +213,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         // As stored; an entry from before a change of form is still found as typed.
         const value = banEntry(input.value) ?? input.value;
         await removeBan(prisma, value);
+        await recordBanChange(context.actor.userId, "removed", value);
         getLogger().info("dozo.admin.ban", {
           "admin.id": context.actor.userId,
           ban: value,
@@ -216,7 +225,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
       /**
        * Suspends the account, so it does nothing more while its content goes, then deletes it the
        * way its own "delete my account" does. A failure part way leaves it suspended, and deleting
-       * again resumes. The deletion records its own security event.
+       * again resumes. The deletion records its own security event once the account is gone.
        */
       deleteUser: admin.dozoAdmin.deleteUser.handler(async ({ context, input }) => {
         // The caller is one, so this also keeps an admin from deleting their own account.
@@ -225,6 +234,12 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         const { auth } = requireWiring();
         await findAccount(input.userId);
         await suspend(input.userId, true);
+        // Before anything goes: the deletion's own event names nobody, and comes last.
+        await recordSecurityEvent({
+          type: "auth.account.deactivated",
+          userId: input.userId,
+          metadata: { by: "operator", admin: context.actor.userId, reason: "deletion" },
+        });
         const deleted = await runAsSystem("delete an account from the admin page", () =>
           deleteAccountAsOperator(auth, input.userId),
         );
