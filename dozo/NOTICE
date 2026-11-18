@@ -40,6 +40,9 @@ The fork notice at the top of the root README.md is the one place where the
 fork writes inside an upstream file. Those lines stay under the Apache License,
 Version 2.0, like the rest of that file.
 
+Third-party material inside a Dozo path that carries its own notice keeps its
+own licence.
+
 The Elastic License 2.0 applies to Dozo files as of the commit that adds this
 sentence. Versions of those files published before that commit were released
 under the Apache License, Version 2.0, and that licence still applies to those

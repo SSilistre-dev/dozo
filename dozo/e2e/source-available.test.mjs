@@ -7,12 +7,12 @@ import { test } from "node:test";
 const root = new URL("../../", import.meta.url);
 const claim = /open[\s-]?source|açık[\s-]?kayna/i;
 
-// The sentences (split at tags and sentence ends) that make the claim. One that names upstream is
-// attribution, not a claim about Dozo.
+// The sentences (split at tags and sentence ends) that make the claim. One that names upstream and
+// not Dozo is attribution, not a claim about Dozo.
 export const openSourceClaims = (text) =>
   text
     .split(/[<>.!?\n]/)
-    .filter((part) => claim.test(part) && !/rakazo/i.test(part))
+    .filter((part) => claim.test(part) && !(/rakazo/i.test(part) && !/dozo/i.test(part)))
     .map((part) => part.trim());
 
 test("the check finds the claim in both languages and lets upstream's attribution through", () => {
@@ -26,6 +26,9 @@ test("the check finds the claim in both languages and lets upstream's attributio
     openSourceClaims("A fork of Rakazo, an open source project. Dozo is open source."),
     ["Dozo is open source"],
   );
+  assert.deepEqual(openSourceClaims("Dozo is open source, like Rakazo."), [
+    "Dozo is open source, like Rakazo",
+  ]);
   assert.deepEqual(
     openSourceClaims("Source available. Kaynağı açık. The source code is here."),
     [],
