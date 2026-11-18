@@ -35,6 +35,8 @@ DEVICE_NAME="Dozo build"
 MIN_FREE_GB=15
 # A stage of this build's own: the shared dozo/.stage belongs to the Docker stack.
 export DOZO_STAGE_DIR="$OUT/stage"
+# Like `make`: the stage is HEAD plus the uncommitted and untracked working tree (DOZO_STAGE_WORKTREE= for HEAD only).
+export DOZO_STAGE_WORKTREE="${DOZO_STAGE_WORKTREE-1}"
 SRC="$DOZO_STAGE_DIR/src"
 APP="$SRC/apps/mobile"
 HOST_RUBY="$(command -v ruby || true)"

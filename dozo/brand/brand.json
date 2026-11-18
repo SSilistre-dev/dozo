@@ -395,6 +395,45 @@
   ],
   "anchored": [
     {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "import type { AuthMode } from \"../lib/auth-routing\";\nimport { initialAuthMode } from \"../lib/auth-routing\";",
+      "replace": "import type { AuthMode } from \"../lib/auth-routing\";\nimport { authModeFor, signupsAreClosed, titleWhenKnown } from \"../lib/dozo-signups\";\nimport { initialAuthMode } from \"../lib/auth-routing\";",
+      "requires": [
+        "apps/mobile/lib/dozo-signups.ts"
+      ],
+      "reason": "closed registration on mobile: the helpers the rules below call"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "  const [mode, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));",
+      "replace": "  const [reset, setReset] = useState<PasswordResetCapabilities | null>(null);\n  const [requested, setMode] = useState<AuthMode>(() => initialAuthMode(requestedMode));\n  const signupsClosed = signupsAreClosed(reset);\n  const mode = authModeFor(requested, reset);",
+      "reason": "closed registration on mobile: the shown form follows the server's capabilities (sign-up becomes sign-in), so their state moves above it"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "  const [reset, setReset] = useState<PasswordResetCapabilities | null>(null);\n  const [capabilityError, setCapabilityError] = useState(false);",
+      "replace": "  const [capabilityError, setCapabilityError] = useState(false);",
+      "reason": "closed registration on mobile: the capabilities state is declared above the mode by the rule before this one"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                          : mode === \"up\"\n                            ? t`Sign up for Rakazo`",
+      "replace": "                          : mode === \"up\"\n                            ? titleWhenKnown(reset || capabilityError, t`Sign up for Rakazo`)",
+      "reason": "closed registration on mobile: the sign-up title waits for the capabilities, so a closed server never shows it while they load"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                            alignItems: \"center\",\n                            marginTop: 22,\n",
+      "replace": "                            alignItems: \"center\",\n                            display: signupsClosed && mode === \"in\" ? \"none\" : \"flex\",\n                            marginTop: 22,\n",
+      "reason": "closed registration on mobile: no link to sign-up under the provider buttons"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "                            alignItems: \"center\",\n                            marginTop: 24,\n",
+      "replace": "                            alignItems: \"center\",\n                            display: signupsClosed && mode === \"in\" ? \"none\" : \"flex\",\n                            marginTop: 24,\n",
+      "reason": "closed registration on mobile: no link to sign-up under the form (the link back from the reset form stays)"
+    },
+    {
       "file": "apps/mobile/app.json",
       "find": "\"slug\": \"rakazo\",\n    \"owner\": \"inbox-zero\",",
       "replace": "\"slug\": \"dozo\",",

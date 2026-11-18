@@ -54,6 +54,9 @@ All of it is in `dozo/brand/brand.json`, applied to the staged tree (`dozo/brand
   for the app group. The owner has not confirmed it;
 - no Expo owner, no EAS project id, no update URL: three anchored rules in `app.json`.
 
+On a server with registration closed the app opens on sign-in and offers no sign-up, as the web
+app does (`dozo/AGENTS.md`, "Closed registration").
+
 The server address is not a rule: upstream reads `EXPO_PUBLIC_API_URL` at build time, and
 `build.sh` sets it.
 
