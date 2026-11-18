@@ -140,13 +140,16 @@ describe("shared space", () => {
  */
 describe("writers of file rows", () => {
   const root = fileURLToPath(new URL("../../../", import.meta.url));
+  // Shipped code only: not tests, the test kit, or the generated database client.
+  const shipped = (file: string) =>
+    file.endsWith(".ts") && !/\.test\.|test-support|^packages\/testkit\/|\/generated\//.test(file);
   const sources = ["apps", "packages"].flatMap((top) =>
     readdirSync(path.join(root, top)).flatMap((name) => {
       const src = path.join(top, name, "src");
       try {
         return readdirSync(path.join(root, src), { recursive: true, encoding: "utf8" })
-          .filter((file) => file.endsWith(".ts") && !/\.test\.|test-support/.test(file))
-          .map((file) => path.join(src, file));
+          .map((file) => path.join(src, file))
+          .filter(shipped);
       } catch {
         return [];
       }
