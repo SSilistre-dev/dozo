@@ -42,9 +42,16 @@ placeholders are replaced.
       served by the web app at `/email/welcome.png` and linked under the domain you set in `urls`. Open:
       the domain must reach the web app (otherwise host the file there), and a look at the real mail in
       a light and a dark client.
-- [ ] **Privacy policy and terms pages** (blocks launch). Upstream links to its own privacy page from
-      `packages/contracts/src/ai-consent.ts` (`AI_PRIVACY_URL`), and also to a terms page. Publish our own
-      pages and point the rules in `dozo/brand/brand.json` at them before any user signs up.
+- [ ] **Privacy policy, terms and refund pages** (blocks launch: awaiting a lawyer's review). Written
+      and linked: `dozo/landing/privacy/`, `terms/` and `refunds/`, in English and Turkish, and two
+      rules in `dozo/brand/brand.json` point the app's privacy and terms links at them (upstream's
+      `AI_PRIVACY_URL` and the mobile paywall's terms link). Still open, all the owner's: a lawyer's
+      review, above all of what the pages leave out on purpose (governing law and court, a postal
+      address, a minimum age, transfers of data abroad, tax and invoices); the "last updated" date
+      if the pages go live on another day; and the pages' address when the domain changes
+      (`dozo/landing/README.md`). The pages describe the service as deployed: if one of
+      `ANALYTICS_PROVIDER`, `SENTRY_BROWSER_DSN`, `DUB_API_KEY`, referrals or
+      `WELCOME_EMAIL_ENABLED` is turned on, the privacy page is updated first.
 - [ ] **Our own docs** (blocks launch). Bots fetch upstream docs at `rakazo.com/docs/*`, mainly from
       `packages/adapters/src/builtin-skills.prompt.ts`, plus `packages/core/src/user-error.ts`. Until
       our docs exist, bots answer from upstream's. Host these pages (as `.md`, and the HTML index) and

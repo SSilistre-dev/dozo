@@ -476,6 +476,18 @@
       "reason": "upstream's hero carries its mascot and wordmark; point at the Dozo hero, which the web app serves from its public directory (mapped in assets). The domain and the name are rewritten after this rule"
     },
     {
+      "file": "packages/contracts/src/ai-consent.ts",
+      "find": "export const AI_PRIVACY_URL = \"https://rakazo.com/privacy/\";",
+      "replace": "export const AI_PRIVACY_URL = \"https://dozo-site.ssilistre.dev/privacy/\";",
+      "reason": "the privacy link in the AI data sharing prompt and settings and on the mobile paywall must open our policy (dozo/landing/privacy/), which is served by the landing site, not by the app's domain"
+    },
+    {
+      "file": "apps/mobile/app/paywall.tsx",
+      "find": "const TERMS_URL = \"https://rakazo.com/terms/\";",
+      "replace": "const TERMS_URL = \"https://dozo-site.ssilistre.dev/terms/\";",
+      "reason": "the mobile paywall's terms link must open our terms (dozo/landing/terms/), which are served by the landing site, not by the app's domain"
+    },
+    {
       "file": "packages/ui-tokens/assets/Rakazo.icon/icon.json",
       "find": "\"translation-in-points\": [0, 90]",
       "replace": "\"translation-in-points\": [0, 0]",
