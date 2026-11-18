@@ -8,17 +8,47 @@ The original work is copyright its authors and is licensed under the Apache
 License, Version 2.0 (see LICENSE at the repository root). Third-party notices
 for code included in Rakazo are in the root NOTICE.
 
-Modifications made in this fork are copyright 2026 the Dozo authors and are
-licensed under the Apache License, Version 2.0.
+Licences
+
+This repository holds files under two licences.
+
+Upstream files are licensed under the Apache License, Version 2.0 (LICENSE at
+the repository root). An upstream file is every tracked file that is not a
+Dozo file.
+
+Dozo files are copyright 2026 the Dozo authors and are licensed under the
+Elastic License 2.0 (SPDX identifier Elastic-2.0, text in dozo/LICENSE). A
+Dozo file is every tracked file that upstream's tree does not have, plus the
+three issue forms the fork replaces whole. Today these are:
+
+  dozo/**
+  LICENSE-DOZO
+  Makefile
+  apps/**/dozo-*
+  packages/**/dozo-*
+  .github/README.md
+  .github/SECURITY.md
+  .github/CONTRIBUTING.md
+  .github/PULL_REQUEST_TEMPLATE.md
+  .github/ISSUE_TEMPLATE/dozo-*.yml
+  .github/ISSUE_TEMPLATE/config.yml
+  .github/ISSUE_TEMPLATE/bug.yml
+  .github/ISSUE_TEMPLATE/self-host.yml
+  .github/workflows/dozo-*.yml
+
+The fork notice at the top of the root README.md is the one place where the
+fork writes inside an upstream file. Those lines stay under the Apache License,
+Version 2.0, like the rest of that file.
+
+The Elastic License 2.0 applies to Dozo files as of the commit that adds this
+sentence. Versions of those files published before that commit were released
+under the Apache License, Version 2.0, and that licence still applies to those
+versions.
 
 Notice of changes (Apache License 2.0, section 4(b))
 
-The git tree of this repository is the unmodified upstream source plus new
-files under dozo/, a root Makefile, .github/workflows/dozo-*.yml, new dozo-*
-source files inside apps/ and packages/, new files under .github/ (security
-policy, contributing guide, pull request template, one issue form), a fork
-notice at the top of the root README.md, and three replaced issue forms
-(.github/ISSUE_TEMPLATE/config.yml, bug.yml and self-host.yml).
+The git tree of this repository is the unmodified upstream source plus the
+Dozo files listed above and the fork notice at the top of the root README.md.
 
 Distributed builds of Dozo (for example the published container images) are
 produced by applying the brand overlay in dozo/brand/ to a copy of that source

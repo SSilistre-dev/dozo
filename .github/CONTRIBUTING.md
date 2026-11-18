@@ -29,7 +29,8 @@ Details: [`dozo/README.md`](../dozo/README.md).
 - The `dozo-gate` check must pass.
 - This repository is public. Never commit secrets, `.env` files, private URLs or real user data.
 
-Contributions are licensed under the Apache License 2.0, like the rest of the repository.
+Contributions to Dozo's own files (listed in [dozo/NOTICE](/dozo/NOTICE)) are licensed under the
+Elastic License 2.0; changes to upstream's files go to upstream, under its Apache License 2.0.
 
 ## Questions and bugs
 

@@ -22,7 +22,7 @@ mk() { mkdir -p "$(dirname "$R/$1")"; printf '%s\n' "${2:-$1}" > "$R/$1"; }
 
 g init -q
 echo ignored.log > "$R/.gitignore"
-echo "x" > "$R/infra/compose/docker-compose.yml"; echo notice > "$R/dozo/NOTICE"; echo make > "$R/Makefile"
+echo "x" > "$R/infra/compose/docker-compose.yml"; echo notice > "$R/dozo/NOTICE"; echo licence > "$R/dozo/LICENSE"; echo make > "$R/Makefile"
 mk ftd; mk dtf/x; mk dtf/y/z; mk "old name.txt"; mk "ünï/ça va.txt"; mk gone.txt; mk keep.txt; mk reg
 mk keepdir/k; mk "tab	name.txt"; mk modeless; mk unchanged.txt
 ln -s keep.txt "$R/ln"; ln -s keepdir "$R/sl"; ln -s missing "$R/dang"
@@ -43,7 +43,7 @@ chmod +x "$R/modeless"
 mk "new/untracked ✓.txt"; mk ignored.log
 
 # What the stage must hold: every tracked or untracked, not ignored path that exists, minus what
-# stage drops on purpose (the Makefile, dozo/ except NOTICE) and plus the .dockerignore it writes.
+# stage drops on purpose (the Makefile, dozo/ except NOTICE and LICENSE) and plus the .dockerignore it writes.
 sig() { # root; NUL-separated relative paths on stdin
   local p; while IFS= read -r -d '' p; do
     if [ -L "$1/$p" ]; then echo "L $p -> $(readlink "$1/$p")"

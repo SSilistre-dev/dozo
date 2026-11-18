@@ -1,0 +1,11 @@
+Dozo licensing
+
+This repository holds files under two licences.
+
+Files written for the Dozo fork are licensed under the Elastic License 2.0.
+The licence text is in dozo/LICENSE.
+
+Files that come from upstream are licensed under the Apache License,
+Version 2.0. The licence text is in LICENSE.
+
+Which file is under which licence, and from which commit: dozo/NOTICE.
