@@ -53,6 +53,9 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   auth capabilities (anchored rules in `packages/contracts/src/auth.ts` and `apps/api/src/app.ts`).
   `apps/web/src/pages/dozo-auth.tsx` then shows sign-in at the sign-up address and
   `dozo-shell.css` hides the link to sign-up. The field exists only in the staged tree.
+  The mobile sign-in screen follows the same field through `apps/mobile/lib/dozo-signups.ts` and
+  six anchored rules in `apps/mobile/app/sign-in.tsx` (no wrapper can reach the screen's own mode
+  state): closed means sign-in first and no link to sign-up, re-read when the server changes.
 
 ## Commands
 
