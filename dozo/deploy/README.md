@@ -100,6 +100,7 @@ RAKAZO_COMPUTER_MEMORY=1536m    # a computer whose plan has no size above
 RAKAZO_COMPUTER_CPUS=2
 RAKAZO_COMPUTER_MEMORY_TOTAL=6g   # most memory the running computers may hold together; 0: no limit
 SANDBOX_MAX_COMPUTERS_PER_USER=2   # see Bot computers on a shared host
+RAKAZO_COMPUTER_NETWORK_RANGE=10.214.0.0/16   # optional: the range computer networks are cut from
 DOZO_STACK_SUBNET=10.213.87.0/24   # optional: the stack's own network, if this range is taken
 CLIENT_IP_HEADER=cf-connecting-ip   # only when a CDN that sets this header is in front
 POSTGRES_PASSWORD=...           # the six secrets from step 2
@@ -301,6 +302,16 @@ team computer outside the compose project. What bounds them:
   variable. A computer whose start is refused is left as it was, not marked failed. A watch
   routine whose start is refused tries again a minute later instead of pausing, for as long as the
   routine stays on.
+- `RAKAZO_COMPUTER_NETWORK_RANGE` is the IPv4 range computer networks are cut from; this layer
+  sets `10.214.0.0/16`. Docker gives a network with no subnet a slot of its default address
+  pools, about 31 on a host, shared with every other project there; with the range, each
+  computer's network takes a /28 of it instead (4096 in a /16) and no pool slot. The supervisor
+  reads the subnets of the networks Docker has and takes the first /28 no network covers, one
+  creation at a time. It must not overlap `DOZO_STACK_SUBNET` or another network of the host:
+  nothing checks that at startup, the covered part is only skipped. A range with no /28 left
+  refuses the start like a full memory total. A range that is not an IPv4 CIDR of /28 or wider
+  stops the supervisor at startup, naming the variable. Set it empty to use Docker's pools. A
+  network made before the range was set keeps its subnet until its computer next stops.
 - `SANDBOX_MAX_COMPUTERS_PER_USER` caps the computers one person's live bots have across all
   their Spaces; this layer sets `2`. It counts computers that exist, running or not, and is
   checked when a bot is made, restored or given its own computer, never at a start. Bots in one

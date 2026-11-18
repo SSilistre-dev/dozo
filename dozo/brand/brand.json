@@ -1682,6 +1682,24 @@
         "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
       ],
       "reason": "memory budget: a malformed total stops the supervisor at startup, with the settings it validates here, instead of failing every start"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/context.ts",
+      "find": "import { computerImageEnsurer } from \"./computer-image.js\";\nimport { memoryBudgetBytes }",
+      "replace": "import { computerImageEnsurer } from \"./computer-image.js\";\nimport { withComputerSubnets } from \"./dozo-computer-subnet.js\";\nimport { memoryBudgetBytes }",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
+      ],
+      "reason": "computer subnets: the import of the rule below (anchored on the memory budget's import, which the rule above it adds)"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/context.ts",
+      "find": "export const docker = dockerSocketPath\n  ? new Docker({ socketPath: dockerSocketPath })\n  : new Docker();\n",
+      "replace": "// Every network the supervisor creates takes a /28 of RAKAZO_COMPUTER_NETWORK_RANGE when one is\n// set; a malformed range stops the supervisor here, after the root env is loaded.\nexport const docker = withComputerSubnets(\n  dockerSocketPath ? new Docker({ socketPath: dockerSocketPath }) : new Docker(),\n);\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
+      ],
+      "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
     }
   ],
   "assets": {
