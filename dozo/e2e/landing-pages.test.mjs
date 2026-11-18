@@ -110,3 +110,19 @@ for (const lang of ["en", ...languages]) {
     }
   });
 }
+
+// The prices are written by hand on each page; the code that charges them is the source.
+test("every language shows the prices the code charges and links sign-up from each hosted plan", () => {
+  const billing = readFileSync(new URL("../../packages/contracts/src/billing.ts", import.meta.url), "utf8");
+  const charged = (tier) => {
+    const [, month, year] = billing.match(new RegExp(`\\b${tier}: \\{[^}]*?monthlyPriceCents: (\\d+),\\s*annualPriceCents: (\\d+)`));
+    return [month / 100, year / 100, year / 1200];
+  };
+  for (const lang of ["en", ...languages]) {
+    const file = `${lang === "en" ? "" : `${lang}/`}index.html`;
+    const [free, ...paid] = read(file).match(/<article class="tier">.*?<\/article>/g);
+    const shown = paid.map((card) => [...card.matchAll(/<span class="status">(.*?)<\/span>/g)].flatMap(([, words]) => words.match(/\d+/g).map(Number)));
+    assert.deepEqual(shown, [charged("pro"), charged("max")], file);
+    for (const card of [free, ...paid]) assert.match(card, /href="https:\/\/dozo\.ssilistre\.dev\/sign-up"/, file);
+  }
+});

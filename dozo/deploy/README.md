@@ -1,8 +1,8 @@
 # dozo/deploy: one host behind a Dokploy panel
 
 Runs the server side of Dozo (postgres, api, worker, supervisor, web) on a Linux host that a
-[Dokploy](https://dokploy.com) panel manages, as a compose service in its own project. It is meant
-for a closed pre-release: sign-up is off and nothing but the panel's proxy reaches the stack.
+[Dokploy](https://dokploy.com) panel manages, as a compose service in its own project. Nothing
+but the panel's proxy reaches the stack, and `SIGNUPS_ENABLED` opens or closes sign-up.
 
 No registry and no Git remote are involved. The branded tree is copied to the host over SSH and
 the images are built there, so they match the host's CPU and never leave it.
@@ -91,7 +91,7 @@ WEB_ORIGIN=https://dozo.example
 BETTER_AUTH_URL=https://dozo.example
 API_URL=https://dozo.example
 RAKAZO_HOST=dozo.example
-SIGNUPS_ENABLED=false           # nobody can sign up; accounts come from `deploy.sh owner`
+SIGNUPS_ENABLED=true            # false: nobody can sign up; accounts come from `deploy.sh owner`
 RAKAZO_ADMIN_EMAILS=owner@dozo.example   # who may open /admin (see Admin page)
 EMAIL_PROVIDER=none
 SANDBOX_COMPUTER_EGRESS=restricted
@@ -112,7 +112,7 @@ Keep `ENCRYPTION_KEY` and the two database passwords for the life of the data: s
 are encrypted with the first, and Postgres takes its passwords only when its volume is first
 created. Every other upstream setting (`docs/self-host-configuration.md`) can be added the same
 way. Model keys, sign-in providers and email are deliberately not set: the owner connects a model
-in the app. Billing is set in test mode only.
+in the app. Billing is live on the hosted version.
 
 `CLIENT_IP_HEADER`: the panel's proxy reports the CDN's address, not the visitor's, so without it
 every visitor shares one sign-in rate limit. The header is believed only from the stack's own

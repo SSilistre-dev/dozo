@@ -32,7 +32,7 @@ Closed pre-release state, to undo at launch:
 - `robots.txt` disallows everything, the page has `<meta name="robots" content="noindex">` and the
   server sends `X-Robots-Tag: noindex` (`dozo/deploy/site.nginx.conf`). Remove all three.
 - `og:url` and `og:image` and the call to action point at the pre-release addresses
-  (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain, also in the
+  (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in` and `/sign-up`). Swap in the real domain, also in the
   legal pages' `canonical` and `hreflang` links, in `dozo/e2e/landing-pages.test.mjs` and in the two
   legal-link rules in `dozo/brand/brand.json`.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
@@ -42,11 +42,12 @@ Closed pre-release state, to undo at launch:
   `Dozo-Windows-x64-setup.exe`), so a new release needs no edit here; renaming an asset breaks them.
   The "not signed yet" note is the one `<p>` in that block, once per language: edit that line when
   a package is signed.
-- Plans: the "Plans." section compares four ways to run Dozo. Only self-hosting can be started
-  today, so it is the filled card and the page's one primary button. Hosted Free reads "Sign-up
-  closed" and the two paid plans read "Soon": no price, number, form or payment link on purpose.
-  Write a price or a limit there only once the owner has set it and the code enforces it, and move
-  the primary button to sign-up when registration opens.
+- Plans: the "Plans." section compares four ways to run Dozo. Self-hosting is the filled card and
+  the primary button; the three hosted plans link to sign-up, and buying happens in the app. The
+  two paid cards show the prices of tiers `pro` and `max` in `BYOK_TIERS`
+  (`packages/contracts/src/billing.ts`); `dozo/e2e/landing-pages.test.mjs` fails when a page and
+  that file disagree. No discount, tax line or other number: write one only once the owner has set
+  it and the code enforces it.
 - The dragon behind the plans (`.scales`) is decoration, drawn once per language page: the logo
   mark as its head, in the mark's red, kept faint. Its body path is generated, not hand-drawn:
   redraw it whole if the shape changes. The plan cards are slightly translucent so it shows
