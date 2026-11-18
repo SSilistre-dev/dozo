@@ -1,5 +1,15 @@
 import { createRouterClient } from "@orpc/server";
 import { sandboxKindsWhere } from "@rakazo/adapters";
+import type { AccountDeletionAuth } from "@rakazo/auth";
+import {
+  addBan,
+  banEntry,
+  banKeys,
+  bannedEntries,
+  deleteAccountAsOperator,
+  listBans,
+  removeBan,
+} from "@rakazo/auth";
 import { ClientError, MESSAGING_EMAIL_SUFFIX, signupsOpen } from "@rakazo/core";
 import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -22,6 +32,8 @@ export interface DozoAdminWiring {
   directoryProvisioning: boolean;
   /** SIGNUPS_ENABLED as the environment has it. */
   signupsEnabled: string | undefined;
+  /** The server's auth, whose account deletion the admin page runs for someone else. */
+  auth: AccountDeletionAuth;
 }
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -49,6 +61,35 @@ export function dozoAdminRoutes(ctx: RouterContext) {
     state: "running",
     kind: { notIn: sandboxKindsWhere((capabilities) => capabilities.runsOnUserMachine) },
   };
+  const requireWiring = () => {
+    if (!wiring) throw new Error("The admin routes were built without their wiring");
+    return wiring;
+  };
+  /** Upstream's account deactivation, for an account the page lists. */
+  const suspend = async (userId: string, suspended: boolean) => {
+    const { devices, directoryProvisioning } = requireWiring();
+    const outcome = await setAccountActive(
+      {
+        prisma,
+        pushTokens: deps.pushTokens,
+        devices,
+        events: deps.events,
+        afterDeparture: (actor, departure) => afterSpaceDeparture(deps, actor, departure),
+      },
+      userId,
+      !suspended,
+      directoryProvisioning,
+    );
+    if (outcome === "directory")
+      throw new ClientError("CONFLICT", "The identity provider manages this account");
+  };
+  const findAccount = async (userId: string) => {
+    const user = await runAsSystem("find an account for the admin page", () =>
+      prisma.user.findFirst({ where: { ...accounts, id: userId }, select: { email: true } }),
+    );
+    if (!user) throw new ClientError("NOT_FOUND", "Account not found");
+    return user;
+  };
 
   return {
     dozoAdmin: {
@@ -67,7 +108,11 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           });
           const page = rows.slice(0, DOZO_ADMIN_USERS_PAGE);
           const mine = { userId: { in: page.map((user) => user.id) } };
-          const [total, sessions, bots, computers] = await Promise.all([
+          const [banned, total, sessions, bots, computers] = await Promise.all([
+            bannedEntries(
+              prisma,
+              page.map((user) => user.email),
+            ),
             prisma.user.count({ where: accounts }),
             prisma.session.groupBy({ by: ["userId"], where: mine, _max: { updatedAt: true } }),
             prisma.bot.groupBy({
@@ -96,6 +141,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
               bots: botCount.get(user.id) ?? 0,
               runningComputers: computerCount.get(user.id) ?? 0,
               suspended: Boolean(user.deactivatedAt),
+              banned: banKeys(user.email).some((key) => banned.has(key)),
             })),
             nextCursor: rows[DOZO_ADMIN_USERS_PAGE]?.id ?? null,
           };
@@ -111,31 +157,83 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         // The caller is one, so this also keeps an admin from suspending their own account.
         if (input.suspended && (await isAdmin(deps, input.userId)))
           throw new ClientError("BAD_REQUEST", "An admin account cannot be suspended");
-        if (!wiring) throw new Error("The admin routes were built without their wiring");
-        const known = await runAsSystem("find an account for the admin page", () =>
-          prisma.user.count({ where: { ...accounts, id: input.userId } }),
-        );
-        if (!known) throw new ClientError("NOT_FOUND", "Account not found");
-        const outcome = await setAccountActive(
-          {
-            prisma,
-            pushTokens: deps.pushTokens,
-            devices: wiring.devices,
-            events: deps.events,
-            afterDeparture: (actor, departure) => afterSpaceDeparture(deps, actor, departure),
-          },
-          input.userId,
-          !input.suspended,
-          wiring.directoryProvisioning,
-        );
-        if (outcome === "directory")
-          throw new ClientError("CONFLICT", "The identity provider manages this account");
+        requireWiring();
+        await findAccount(input.userId);
+        await suspend(input.userId, input.suspended);
         getLogger().info("dozo.admin.account_status", {
           "admin.id": context.actor.userId,
           "user.id": input.userId,
           suspended: input.suspended,
         });
         return { suspended: input.suspended };
+      }),
+
+      bans: admin.dozoAdmin.bans.handler(async () => ({
+        bans: (await listBans(prisma)).map((ban) => ({
+          value: ban.value,
+          createdAt: ban.createdAt.toISOString(),
+        })),
+      })),
+
+      /**
+       * A listed address or domain is refused at sign-up and sign-in, and its open sessions stop
+       * being admitted. Banning an account suspends it first, so a suspension the directory
+       * refuses lists nothing. No entry may cover an admin's address: it would lock the admin out.
+       */
+      ban: admin.dozoAdmin.ban.handler(async ({ context, input }) => {
+        const userId = "userId" in input ? input.userId : undefined;
+        if (userId) requireWiring();
+        const value = banEntry(
+          "userId" in input ? (await findAccount(input.userId)).email : input.value,
+        );
+        if (!value) throw new ClientError("BAD_REQUEST", "Enter an email address or a domain");
+        if ((deps.env.adminEmails ?? []).some((email) => banKeys(email).includes(value)))
+          throw new ClientError("BAD_REQUEST", "An admin account cannot be banned");
+        if (userId) await suspend(userId, true);
+        await addBan(prisma, value, context.actor.userId);
+        getLogger().info("dozo.admin.ban", {
+          "admin.id": context.actor.userId,
+          "user.id": userId,
+          ban: value,
+          banned: true,
+        });
+        return { value };
+      }),
+
+      /** Lifts the entry only: an account suspended with it stays suspended until restored. */
+      unban: admin.dozoAdmin.unban.handler(async ({ context, input }) => {
+        // As stored; an entry from before a change of form is still found as typed.
+        const value = banEntry(input.value) ?? input.value;
+        await removeBan(prisma, value);
+        getLogger().info("dozo.admin.ban", {
+          "admin.id": context.actor.userId,
+          ban: value,
+          banned: false,
+        });
+        return { ok: true as const };
+      }),
+
+      /**
+       * Suspends the account, so it does nothing more while its content goes, then deletes it the
+       * way its own "delete my account" does. A failure part way leaves it suspended, and deleting
+       * again resumes. The deletion records its own security event.
+       */
+      deleteUser: admin.dozoAdmin.deleteUser.handler(async ({ context, input }) => {
+        // The caller is one, so this also keeps an admin from deleting their own account.
+        if (await isAdmin(deps, input.userId))
+          throw new ClientError("BAD_REQUEST", "An admin account cannot be deleted");
+        const { auth } = requireWiring();
+        await findAccount(input.userId);
+        await suspend(input.userId, true);
+        const deleted = await runAsSystem("delete an account from the admin page", () =>
+          deleteAccountAsOperator(auth, input.userId),
+        );
+        if (!deleted) throw new ClientError("NOT_FOUND", "Account not found");
+        getLogger().info("dozo.admin.account_delete", {
+          "admin.id": context.actor.userId,
+          "user.id": input.userId,
+        });
+        return { ok: true as const };
       }),
 
       computers: admin.dozoAdmin.computers.handler(() =>
