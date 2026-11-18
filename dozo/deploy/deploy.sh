@@ -59,7 +59,13 @@ panel() {
     -H 'content-type: application/json' "$@" "$DOKPLOY_URL/api/$procedure"
 }
 
-remote() { ssh -o BatchMode=yes "$DOZO_DEPLOY_SSH" "$@"; }
+# A quiet command (the image build prints nothing for minutes) leaves the connection idle, and a
+# network that drops idle connections does not tell the client: without these ssh waits for ever.
+# With them it exits 255 about a minute after the host stops answering.
+alive=(-o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+export RSYNC_RSH="ssh ${alive[*]}"
+
+remote() { ssh -o BatchMode=yes "${alive[@]}" "$DOZO_DEPLOY_SSH" "$@"; }
 
 compose_json() { panel "compose.one?composeId=$DOKPLOY_COMPOSE_ID"; }
 
@@ -176,7 +182,7 @@ EOF
 if [ "$action" = owner ]; then
   project=$(project_name)
   # -t: the prompts need a terminal. The password is read on the host and never echoed.
-  ssh -t "$DOZO_DEPLOY_SSH" "
+  ssh -t "${alive[@]}" "$DOZO_DEPLOY_SSH" "
     id=\$(docker ps -q -f label=com.docker.compose.project=$project -f label=com.docker.compose.service=api | head -1)
     [ -n \"\$id\" ] || { echo 'the api container is not running' >&2; exit 2; }
     read -r -p 'Account email: ' OWNER_EMAIL
