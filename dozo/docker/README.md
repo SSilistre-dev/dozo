@@ -165,7 +165,8 @@ committed tree with none fails too. The coverage provider is installed inside th
 container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm store, corepack, one
 `node_modules`, reinstalled in place when the lockfile changes); a cold run installs everything, an
 unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the
-host. A failing run prints each file under the floor with its number.
+host. The database client (`packages/db/src/generated`) is generated in the volume before every
+run, because api tests load `@rakazo/db`. A failing run prints each file under the floor with its number.
 
 ### qa
 

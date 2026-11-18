@@ -92,6 +92,7 @@ BETTER_AUTH_URL=https://dozo.example
 API_URL=https://dozo.example
 RAKAZO_HOST=dozo.example
 SIGNUPS_ENABLED=false           # nobody can sign up; accounts come from `deploy.sh owner`
+RAKAZO_ADMIN_EMAILS=owner@dozo.example   # who may open /admin (see Admin page)
 EMAIL_PROVIDER=none
 SANDBOX_COMPUTER_EGRESS=restricted
 RAKAZO_COMPUTER_MEMORY=1536m    # per bot computer
@@ -118,6 +119,24 @@ every visitor shares one sign-in rate limit. The header is believed only from th
 networks (the panel's proxy and the web container). Someone who reaches the host directly, past
 the CDN, can send it too, which lets them pick the address their own attempts are counted under;
 that is the trade against one shared limit anyone can exhaust.
+
+## Admin page
+
+`/admin`, in the web app: the accounts (search, suspend, restore), the bot computers that are
+running (stop) and whether sign-up is open. It links to upstream's `/admin/access` and
+`/admin/plugins`.
+
+- An admin is an account whose address is in `RAKAZO_ADMIN_EMAILS` (comma-separated; case does not matter)
+  and is verified. `deploy.sh owner` creates a verified account. Set the variable in the panel and
+  redeploy; there is no admin without it.
+- Anyone else, signed in or not, gets the page an unknown address shows, and the api answers 403.
+- Suspending is upstream's account deactivation (`User.deactivatedAt`; the same as
+  `node dist/cli/account-status.js deactivate <email>` in the api container): sign-in is refused,
+  open sessions and paired devices end, running work is cancelled and nothing new starts. The
+  account also leaves other people's Spaces, and restoring does not put it back. Its computer
+  stops when its work has ended and the idle time has passed, or at once with Stop.
+- Stop is the app's own Stop: it saves the computer first and refuses while another bot is still
+  working on it.
 
 ## What the proxy does
 
