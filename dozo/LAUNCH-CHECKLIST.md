@@ -49,7 +49,9 @@ placeholders are replaced.
       review, above all of what the pages leave out on purpose (governing law and court, a postal
       address, a minimum age, transfers of data abroad, tax and invoices); the "last updated" date
       if the pages go live on another day; and the pages' address when the domain changes
-      (`dozo/landing/README.md`).
+      (`dozo/landing/README.md`). The pages describe the service as deployed: if one of
+      `ANALYTICS_PROVIDER`, `SENTRY_BROWSER_DSN`, `DUB_API_KEY`, referrals or
+      `WELCOME_EMAIL_ENABLED` is turned on, the privacy page is updated first.
 - [ ] **Our own docs** (blocks launch). Bots fetch upstream docs at `rakazo.com/docs/*`, mainly from
       `packages/adapters/src/builtin-skills.prompt.ts`, plus `packages/core/src/user-error.ts`. Until
       our docs exist, bots answer from upstream's. Host these pages (as `.md`, and the HTML index) and
