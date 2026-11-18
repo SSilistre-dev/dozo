@@ -5,7 +5,12 @@ import { BYOK_TIERS } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient } from "./client.js";
-import { holdSharedSpace, SharedSpaceFullError, withSharedSpace } from "./dozo-shared-space.js";
+import {
+  holdSharedSpace,
+  isReplayedUpload,
+  SharedSpaceFullError,
+  withSharedSpace,
+} from "./dozo-shared-space.js";
 
 // Runs on the branded tree only: the limits exist once the brand rules are applied.
 
@@ -16,7 +21,7 @@ type Billing = { status: string | null; byokTier: string | null } | null;
 
 /** One organization: whether the server bills, its subscription, and the sizes of its files. */
 function organization(init: { billingOn?: boolean; billing?: Billing; files?: number[] } = {}) {
-  const state = { billingOn: true, billing: null as Billing, files: [] as number[], ...init, before: 0 };
+  const state = { billingOn: true, billing: null as Billing, files: [] as number[], ...init };
   const queries: string[] = [];
   const tx = {
     deploymentSettings: {
@@ -30,15 +35,13 @@ function organization(init: { billingOn?: boolean; billing?: Billing; files?: nu
     },
     $queryRaw: async (query: TemplateStringsArray | Prisma.Sql) => {
       queries.push("sql" in query ? query.sql : query.join("?"));
-      const used = String(state.files.reduce((sum, size) => sum + size, 0));
-      return [{ used, added: state.files.length > state.before }];
+      return [{ used: String(state.files.reduce((sum, size) => sum + size, 0)) }];
     },
   } as unknown as Prisma.TransactionClient;
   // A transaction that fails leaves no file behind.
   const prisma = {
     $transaction: async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => {
       const before = [...state.files];
-      state.before = before.length;
       try {
         return await work(tx);
       } catch (error) {
@@ -101,10 +104,10 @@ describe("shared space", () => {
     await expect(add(MB)).resolves.toBe("kept");
   });
 
-  it("never refuses a write that added nothing, as a retried upload that had landed", async () => {
-    const { state, tx } = organization({ files: [600 * MB] });
-    state.before = 1;
-    await expect(holdSharedSpace(tx, "space-1")).resolves.toBeUndefined();
+  it("knows a retried upload that had landed only by the caller's own word", () => {
+    expect(isReplayedUpload({ row: {}, replay: true })).toBe(true);
+    for (const other of [{ row: {}, replay: false }, { row: {} }, "kept", null, undefined])
+      expect(isReplayedUpload(other)).toBe(false);
   });
 
   it("reads a subscription without a known tier as the first plan", async () => {
@@ -176,10 +179,15 @@ describe("writers of file rows", () => {
       }
     }),
   );
+  const text = (file: string) => readFileSync(path.join(root, file), "utf8");
+  // A model write, a write nested in another model's, or SQL of our own.
+  const WRITES = [
+    /\bartifact\s*\.(create|createMany|createManyAndReturn|upsert)\(/g,
+    /\bartifacts\s*:\s*\{\s*(create|createMany|connectOrCreate|upsert)\b/g,
+    /\bINSERT\s+INTO\s+"?artifacts\b/gi,
+  ];
   const writes = (file: string) =>
-    readFileSync(path.join(root, file), "utf8").match(
-      /\bartifact\s*\.(create|createMany|createManyAndReturn|upsert)\(/g,
-    )?.length ?? 0;
+    WRITES.reduce((count, write) => count + (text(file).match(write)?.length ?? 0), 0);
 
   it("are the known ones, each held to the shared space", () => {
     const writers = Object.fromEntries(
@@ -191,8 +199,11 @@ describe("writers of file rows", () => {
       "packages/adapters/src/thread-artifacts.ts": 2,
       "apps/api/src/account-import.ts": 1,
     });
-    const text = (file: string) => readFileSync(path.join(root, file), "utf8");
-    expect(text("packages/db/src/artifact-versions.ts")).toContain("await holdSharedSpace(tx,");
+    expect(text("packages/db/src/artifact-versions.ts")).toContain(
+      "if (!isReplayedUpload(result)) await holdSharedSpace(tx,",
+    );
+    // The one answer that skips the check is still the upload route's.
+    expect(text("apps/api/src/artifacts.ts")).toContain("return { row: raced, replay: true };");
     expect(text("packages/adapters/src/thread-artifacts.ts")).toMatch(
       /withSharedSpace\(deps\.prisma, owner\.spaceId, \(tx\) =>\s+tx\.artifact\.create\(/,
     );

@@ -65,16 +65,24 @@ export async function holdSharedSpace(tx: Prisma.TransactionClient, spaceId: str
     `);
     // ponytail: sums every file row of the organization on each write; keep a running total per
     // organization when one holds enough files for this to show.
-    // Rows this transaction added carry its id. One that added none (a retried upload that had
-    // already landed) is never refused, whatever the organization holds.
-    const [{ used, added }] = await tx.$queryRaw<[{ used: string; added: boolean }]>(Prisma.sql`
-      SELECT COALESCE(SUM(a."size"), 0)::text AS "used",
-        COALESCE(BOOL_OR(a.xmin = pg_current_xact_id()::xid), false) AS "added"
+    const [{ used }] = await tx.$queryRaw<[{ used: string }]>(Prisma.sql`
+      SELECT COALESCE(SUM(a."size"), 0)::text AS "used"
       FROM "artifacts" a JOIN "spaces" s ON s."id" = a."spaceId"
       WHERE s."organizationId" = ${limit.organizationId}
     `);
-    if (added && BigInt(used) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
+    if (BigInt(used) > BigInt(limit.bytes)) throw new SharedSpaceFullError();
   });
+}
+
+/**
+ * Whether an upload's transaction only found the file an earlier try had already added: the
+ * upload route answers `{ replay: true }` then. It added nothing, so it is not held to the limit.
+ * Told by the caller and not read off the rows, so anything else is checked.
+ */
+export function isReplayedUpload(result: unknown): boolean {
+  return (
+    typeof result === "object" && result !== null && "replay" in result && result.replay === true
+  );
 }
 
 /** Runs a write that adds artifact rows to the Space in a transaction held to its shared space. */

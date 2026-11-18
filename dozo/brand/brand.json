@@ -969,7 +969,7 @@
     {
       "file": "packages/db/src/artifact-versions.ts",
       "find": "        return await attempt(tx, version);\n",
-      "replace": "        const result = await attempt(tx, version);\n        await holdSharedSpace(tx, params.spaceId);\n        return result;\n",
+      "replace": "        const result = await attempt(tx, version);\n        if (!isReplayedUpload(result)) await holdSharedSpace(tx, params.spaceId);\n        return result;\n",
       "requires": [
         "packages/db/src/dozo-shared-space.ts"
       ],
@@ -978,7 +978,7 @@
     {
       "file": "packages/db/src/artifact-versions.ts",
       "find": "import { Prisma } from \"./client.js\";\nimport { isUniqueViolation } from \"./prisma-errors.js\";\n",
-      "replace": "import { Prisma } from \"./client.js\";\nimport { holdSharedSpace } from \"./dozo-shared-space.js\";\nimport { isUniqueViolation } from \"./prisma-errors.js\";\n\nexport * from \"./dozo-shared-space.js\";\n",
+      "replace": "import { Prisma } from \"./client.js\";\nimport { holdSharedSpace, isReplayedUpload } from \"./dozo-shared-space.js\";\nimport { isUniqueViolation } from \"./prisma-errors.js\";\n\nexport * from \"./dozo-shared-space.js\";\n",
       "requires": [
         "packages/db/src/dozo-shared-space.ts"
       ],
