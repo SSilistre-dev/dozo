@@ -131,14 +131,17 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.
 - The upstream-edit check: no upstream file may differ from the merge base of `HEAD` and
   `upstream-main` (not its tip, which may be ahead after a sync), except the marked notice block at
-  the top of the root `README.md`. A non-zero count lists the files and fails. The root `Makefile` is
+  the top of the root `README.md` and the three issue forms the fork replaces whole
+  (`.github/ISSUE_TEMPLATE/config.yml`, `bug.yml`, `self-host.yml`; exact names, and a deleted one or
+  one that names upstream fails). A non-zero count lists the files and fails. The root `Makefile` is
   the fork's own (the stage drops it): a root `Makefile` in the upstream ref fails the check too.
   **A missing `upstream-main` ref fails the gate, locally and in CI; there is no opt-out.** Create
   it once: `git fetch upstream main && git branch upstream-main upstream/main` (the `upstream`
   remote: `dozo/SYNC.md`, Prerequisites). `DOZO_UPSTREAM_REF` names another ref and exists for tests.
 - A self-test of `wait_gone` (the exit status of a step that failed at once, of a step cut short by
   a signal, of one that passed), of the coverage-table parsers and of `timed_out` (which exit codes
-  count as a timeout), and `dozo/docker/build.test.sh`, about a second: in a scratch git repository
+  count as a timeout), of the allowed set (per issue form: changed passes; deleted, naming upstream
+  and its neighbours do not), and `dozo/docker/build.test.sh`, about a second: in a scratch git repository
   under `TMPDIR` and with a fake `docker` it runs the real `build.sh stage` with `DOZO_STAGE_REF` older
   than `HEAD` (file to directory and back, rename, Unicode, space and tab in names, deleted file,
   symlinks, untracked and ignored files) and compares the staged tree with the working tree; checks

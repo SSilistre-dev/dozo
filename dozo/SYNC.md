@@ -7,7 +7,8 @@
 - `sync/upstream-<sha>`: short-lived branch (`<sha>` is 9 characters) where `upstream-main` is merged into
   `main` for review.
 - Committed: only new files (`dozo/**`, `Makefile`, `.github/workflows/dozo-*.yml`, `dozo-*` source files).
-  No upstream file is edited, except the marked block at the top of the root `README.md`.
+  No upstream file is edited, except the marked block at the top of the root `README.md` and three
+  issue forms the fork replaces whole (`.github/ISSUE_TEMPLATE/config.yml`, `bug.yml`, `self-host.yml`).
 - Fork-only source files inside upstream directories are named `dozo-*` (under `apps/` and
   `packages/`). `sync.sh` lists how many there are and refuses to run (exit 2) if upstream ever ships a
   `dozo-*` file of its own. An upstream merge cannot delete or overwrite ours because upstream does not
@@ -17,7 +18,8 @@
   `dozo/brand/README.md`).
 
 **Fork health** = the number of upstream files that our tree edited, deleted or retyped, compared with
-the merge base with `upstream-main`, leaving out `dozo/`, `Makefile` and the marked block of `README.md`.
+the merge base with `upstream-main`, leaving out `dozo/`, `Makefile`, the marked block of `README.md`
+and the three issue forms (a deleted one counts).
 Added files are ours and do not count. One computation, `gate.sh upstream-edits <base> [tree]`, serves
 `make olc` (working tree against the merge base with `upstream-main`; it fails above 0 and lists the
 files) and `sync.sh` (the merge result against the upstream commit it contains; it prints the count and
@@ -86,6 +88,12 @@ aborts the merge, removes the sync branch and lists the files. Conflicts are onl
 own. If an upstream file conflicts, someone committed an edit to it. Do not resolve it on the sync
 branch: find the edit (`git log main -- <file>`), move the change into a new file or into the codemod,
 revert the edit on `main`, run the sync again.
+
+The three issue forms are the exception: they conflict whenever upstream changes one, and ours always
+wins. `sync.sh` cannot resolve it, so merge by hand on a `sync/upstream-<sha>` branch
+(`git merge --no-ff upstream-main`), keep our side (`git checkout --ours -- .github/ISSUE_TEMPLATE/config.yml
+.github/ISSUE_TEMPLATE/bug.yml .github/ISSUE_TEMPLATE/self-host.yml`, then `git add` them), commit and
+run `make qa`. `make olc` fails if one of them names upstream afterwards.
 
 **Brand leak or anchored-rule mismatch** (`dozo-gate` or `make qa` fails at `brand`). Upstream changed a
 file the codemod depends on. Run `dozo/docker/build.sh stage` then `brand` and read the output: a leak

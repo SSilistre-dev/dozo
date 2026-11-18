@@ -5,8 +5,14 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 
 ## Invariants
 
-- Never edit upstream files. The only upstream file the fork edits is the marked block at the top of
-  the root `README.md`.
+- Never edit upstream files. Two exceptions, both held by `make olc` as exact file names:
+  - the marked block at the top of the root `README.md`;
+  - the issue forms `.github/ISSUE_TEMPLATE/config.yml`, `bug.yml` and `self-host.yml`, which the
+    fork replaces whole. GitHub reads them from that path only, so a new file cannot override them,
+    and upstream's sent reports to upstream. They must not name upstream and must not be deleted.
+- Other community files are new files: `.github/SECURITY.md` and `.github/CONTRIBUTING.md` (GitHub
+  shows them before the root ones, which stay upstream's), `.github/PULL_REQUEST_TEMPLATE.md` and
+  `.github/ISSUE_TEMPLATE/dozo-*.yml`.
 - Put work in `dozo/`, or in new `dozo-*` files inside upstream directories (see below).
 - To change upstream behaviour or wording, add an anchored rule in `dozo/brand/brand.json`. It is
   applied to a staged copy at build time. Do not patch the source.

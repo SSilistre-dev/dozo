@@ -6,8 +6,9 @@ open source code. It is an independent fork of [Rakazo](https://github.com/elie2
 
 ## Principle
 
-The committed tree is upstream plus new files. We do not edit upstream files. The one exception is a
-fork notice at the top of the root `README.md`, delimited by `dozo:fork-notice` comments.
+The committed tree is upstream plus new files. We do not edit upstream files. The two exceptions are a
+fork notice at the top of the root `README.md`, delimited by `dozo:fork-notice` comments, and three
+issue forms under `.github/ISSUE_TEMPLATE/` (`dozo/AGENTS.md`, Invariants).
 
 Why: upstream lands about 2,500 commits a month and we merge it continuously. Every edited upstream
 file is a permanent merge conflict. New files never conflict.
