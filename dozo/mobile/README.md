@@ -65,8 +65,10 @@ Expo resolves, which is what the Xcode project is generated from.
 
 Each is upstream's own behaviour for a build without the piece, not new code.
 
-- Push notifications and incoming-call pushes: without an EAS project id the app asks for no Expo
-  push token and registers none with the server.
+- Push notifications: without an EAS project id the app asks for no Expo push token and registers
+  none with the server. Incoming-call pushes: the app still hands its call token to the server it
+  is signed in to, but that server sends with upstream's bundle id as the topic, which a Dozo app
+  does not match, so no call push arrives.
 - Over-the-air updates: off. A new version is a new build.
 - Passkeys: the app asks for the server's domain as an associated domain, but the server's
   association file names no Dozo app yet, so iOS offers no passkey. Password sign-in works.

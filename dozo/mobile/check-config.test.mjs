@@ -44,6 +44,31 @@ function branded() {
   return root;
 }
 
+describe("check-config.mjs as a command", () => {
+  const script = path.join(here, "check-config.mjs");
+  const run = (file, ...args) => spawnSync(process.execPath, [file, ...args], { encoding: "utf8" });
+
+  it("exits 2 on upstream's config, 0 on a clean one, and 2 without or with an unreadable file", () => {
+    const bad = run(script, path.join(repo, FILES[0]));
+    assert.equal(bad.status, 2, bad.stdout);
+    assert.match(bad.stderr, /owner is set/);
+    const good = run(script, path.join(branded(), FILES[0]), "https://dozo.example");
+    assert.equal(good.status, 0, good.stderr);
+    assert.match(good.stdout, /Dozo values/);
+    assert.equal(run(script).status, 2);
+    assert.equal(run(script, path.join(temp, "missing.json")).status, 2);
+  });
+
+  it("still checks when it is reached through a symlink in a directory with a space", () => {
+    const dir = path.join(temp, "with space");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.symlinkSync(here, path.join(dir, "link"));
+    const res = run(path.join(dir, "link", "check-config.mjs"), path.join(repo, FILES[0]));
+    assert.equal(res.status, 2, "a guard that misses exits 0 without checking");
+    assert.match(res.stderr, /owner is set/);
+  });
+});
+
 describe("the mobile app's config after the brand rules", () => {
   const root = branded();
   const config = JSON.parse(fs.readFileSync(path.join(root, FILES[0]), "utf8"));

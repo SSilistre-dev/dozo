@@ -5,16 +5,17 @@
  *   node dozo/mobile/check-config.mjs <expo-config.json> [<api-url>]
  *
  * <expo-config.json> is `expo config --json` of the branded staged tree, or upstream's app.json
- * after the brand rules (`{ "expo": { ... } }`, as brand.mobile.test.mjs passes it). Exit 0 when it
+ * after the brand rules (`{ "expo": { ... } }`, as check-config.test.mjs passes it). Exit 0 when it
  * carries the Dozo values and nothing of upstream's accounts, 2 with one line per problem.
  */
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /** The old name stays only in these identifiers (dozo/brand/README.md, "Identifiers"). */
-const KEPT = ['"scheme":"rakazo"', "Rakazo.icon", '"targetName":"RakazoWidgets"', '"RakazoDefaultApiBase"'];
+const KEPT = ['"scheme":"rakazo"', "Rakazo.icon", '"targetName":"RakazoWidgets"'];
 
-/** Upstream's Expo account, EAS project, update channel, bundle ids and domain. */
-const FOREIGN = [/inbox-zero/i, /u\.expo\.dev/i, /07f7eb04/i, /com\.rakazo/i, /rakazo\.(?:com|ai|app)/i, /apps\.apple\.com/i];
+/** Upstream's Expo account, EAS project, update channel, bundle ids, domain and GitHub owner. */
+const FOREIGN = [/inbox-?zero/i, /elie222/i, /u\.expo\.dev/i, /07f7eb04/i, /com\.rakazo/i, /rakazo\.(?:com|ai|app)/i, /apps\.apple\.com/i];
 
 /** The problems of one config object; `apiUrl` is the server a build was made for, when known. */
 export function problems(input, apiUrl) {
@@ -52,7 +53,17 @@ export function problems(input, apiUrl) {
   return out;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run as a script, whatever the path looks like (a symlinked checkout, a space in a directory name):
+// a guard that misses would make the check pass without looking.
+const isMain = () => {
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+
+if (isMain()) {
   const [file, apiUrl] = process.argv.slice(2);
   if (!file) {
     console.error("usage: check-config.mjs <expo-config.json> [<api-url>]");

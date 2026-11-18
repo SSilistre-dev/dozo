@@ -61,7 +61,7 @@ stage() {
 seal() {
   mkdir -p "$TC/home" "$TC/cache"
   export HOME="$TC/home"
-  export PATH="$TC/node/bin:$TC/pnpm/bin:$TC/gems/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  export PATH="$TC/node/bin:$TC/pnpm/bin:$TC/gems/bin:$TC/ruby/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   export npm_config_cache="$TC/cache/npm"
   export npm_config_update_notifier=false COREPACK_HOME="$TC/cache/corepack"
   export XDG_CACHE_HOME="$TC/cache/xdg" XDG_DATA_HOME="$TC/home/.local/share"
@@ -115,7 +115,11 @@ find_ruby() {
 cocoapods() {
   local ruby
   ruby=$(find_ruby) || die "CocoaPods needs Ruby 3.3 or newer and none was found: set DOZO_MOBILE_RUBY to one"
-  export PATH="$(dirname "$ruby"):$PATH"
+  # Only ruby and gem are linked in: the directory they come from (a Homebrew bin, say) may hold a
+  # host node or pod, and it never joins PATH.
+  mkdir -p "$TC/ruby/bin"
+  ln -sf "$ruby" "$TC/ruby/bin/ruby"; ln -sf "$(dirname "$ruby")/gem" "$TC/ruby/bin/gem"
+  [ "$(command -v pod || true)" != "" ] && [ "$(command -v pod)" != "$GEM_HOME/bin/pod" ] && die "a pod outside the toolchain is on PATH"
   [ "$(pod --version 2>/dev/null)" = "$COCOAPODS_VERSION" ] && return 0
   say "installing CocoaPods $COCOAPODS_VERSION into .toolchain ($("$ruby" --version | cut -d' ' -f1,2), a few minutes, once)"
   rm -rf "$GEM_HOME"
@@ -151,7 +155,7 @@ device() {
 }
 
 build() {
-  local udid app id
+  local udid app id foreign
   xcrun --find xcodebuild >/dev/null 2>&1 || die "Xcode not found"
   cocoapods
   udid=$(device)
@@ -161,6 +165,10 @@ build() {
   # Xcode's script phases find node here, not through a version manager in a shell profile.
   echo "export NODE_BINARY=\"$TC/node/bin/node\"" >"$APP/ios/.xcode.env.local"
   ( cd "$APP/ios" && pod install ) >"$OUT/pod-install.log" 2>&1 || die "pod install failed ($OUT/pod-install.log)"
+  # The generated project (Info.plist, entitlements, Expo.plist, the Xcode project), not only the
+  # config it came from: nothing of upstream's accounts, ids or domain may have reached it.
+  foreign=$(grep -rIlE 'com\.rakazo|07f7eb04|u\.expo\.dev|inbox-?zero|rakazo\.(com|ai|app)' "$APP/ios" --exclude-dir=Pods || true)
+  [ -z "$foreign" ] || die "the generated iOS project names upstream's account, ids or domain: $foreign"
   say "xcodebuild (Release, simulator): the log is $OUT/xcodebuild.log"
   xcodebuild -workspace "$APP/ios/Dozo.xcworkspace" -scheme Dozo -configuration Release \
     -sdk iphonesimulator -destination "id=$udid" -derivedDataPath "$OUT/derived" \
