@@ -28,6 +28,10 @@ services:
       # The most memory the running computers may hold together; a start past it is refused
       # (README, Bot computers on a shared host). 0 means no limit.
       RAKAZO_COMPUTER_MEMORY_TOTAL: ${RAKAZO_COMPUTER_MEMORY_TOTAL:-6g}
+      # Each computer's network takes a /28 of this range (4096 of them in a /16) instead of a slot
+      # of the daemon's default address pools. Keep it clear of DOZO_STACK_SUBNET and of the host's
+      # other networks: a part another network covers is skipped. Empty means the daemon's pools.
+      RAKAZO_COMPUTER_NETWORK_RANGE: ${RAKAZO_COMPUTER_NETWORK_RANGE-10.214.0.0/16}
     volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data
