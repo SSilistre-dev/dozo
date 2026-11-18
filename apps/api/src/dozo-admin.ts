@@ -10,8 +10,21 @@ import {
   listBans,
   removeBan,
 } from "@rakazo/auth";
+import type { DozoAdminPlan } from "@rakazo/contracts";
 import { ClientError, MESSAGING_EMAIL_SUFFIX, signupsOpen } from "@rakazo/core";
-import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
+import {
+  DOZO_PLAN_GRANT_SELECT,
+  grantInForce,
+  IsolationError,
+  ownedOrganizationId,
+  paidTierOf,
+  recordAuditEvent,
+  recordSecurityEvent,
+  revokePlanGrant,
+  runAsSystem,
+  setPlanGrant,
+  tierInForce,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
@@ -24,6 +37,23 @@ import type { DeviceStore } from "./user-devices.js";
 
 export const DOZO_ADMIN_USERS_PAGE = 50;
 export const DOZO_ADMIN_COMPUTERS_LIMIT = 100;
+/** How far ahead an admin can end a granted plan. */
+export const DOZO_ADMIN_PLAN_MAX_YEARS = 5;
+
+/** The end of a granted plan: required, in the future and within `DOZO_ADMIN_PLAN_MAX_YEARS`. */
+function grantEnd(value: string | undefined, now: Date): Date {
+  if (!value) throw new ClientError("BAD_REQUEST", "An end date is required");
+  const endsAt = new Date(value);
+  const latest = new Date(now);
+  latest.setUTCFullYear(latest.getUTCFullYear() + DOZO_ADMIN_PLAN_MAX_YEARS);
+  if (endsAt <= now) throw new ClientError("BAD_REQUEST", "The end date must be in the future");
+  if (endsAt > latest)
+    throw new ClientError(
+      "BAD_REQUEST",
+      `The end date must be within ${DOZO_ADMIN_PLAN_MAX_YEARS} years`,
+    );
+  return endsAt;
+}
 
 /** What the admin routes need from the server that the router's own dependencies do not carry. */
 export interface DozoAdminWiring {
@@ -98,6 +128,47 @@ export function dozoAdminRoutes(ctx: RouterContext) {
     return user;
   };
 
+  /**
+   * The plan in force for each account, through its own organization: the subscription's tier or
+   * an unexpired grant's, whichever is higher. Run as system work by the caller. An account with
+   * no organization of its own is on Free.
+   */
+  async function plansOf(userIds: string[], now: Date) {
+    // ponytail: one lookup per listed account (at most one page); batch it when a page is large.
+    const owned = await Promise.all(
+      userIds.map(async (userId) => {
+        const organizationId = await ownedOrganizationId(prisma, userId).catch((error) => {
+          if (error instanceof IsolationError) return null;
+          throw error;
+        });
+        return [userId, organizationId] as const;
+      }),
+    );
+    const organizations = await prisma.organization.findMany({
+      where: { id: { in: owned.flatMap(([, organizationId]) => organizationId ?? []) } },
+      select: {
+        id: true,
+        billing: { select: { status: true, byokTier: true } },
+        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },
+      },
+    });
+    const byId = new Map(organizations.map((organization) => [organization.id, organization]));
+    const organizationOf = new Map(
+      owned.map(([userId, organizationId]) => [
+        userId,
+        organizationId ? byId.get(organizationId) : undefined,
+      ]),
+    );
+    return (userId: string): DozoAdminPlan => {
+      const organization = organizationOf.get(userId);
+      const grant = organization?.dozoPlanGrant;
+      return {
+        tier: tierInForce(paidTierOf(organization?.billing), grant, now) ?? "standard",
+        grantedUntil: grantInForce(grant, now)?.endsAt.toISOString() ?? null,
+      };
+    };
+  }
+
   return {
     dozoAdmin: {
       users: admin.dozoAdmin.users.handler(({ input }) =>
@@ -115,7 +186,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           });
           const page = rows.slice(0, DOZO_ADMIN_USERS_PAGE);
           const mine = { userId: { in: page.map((user) => user.id) } };
-          const [banned, total, sessions, bots, computers] = await Promise.all([
+          const [banned, total, sessions, bots, computers, planOf] = await Promise.all([
             bannedEntries(
               prisma,
               page.map((user) => user.email),
@@ -132,6 +203,10 @@ export function dozoAdminRoutes(ctx: RouterContext) {
               where: { ...mine, ...hosted },
               _count: { _all: true },
             }),
+            plansOf(
+              page.map((user) => user.id),
+              new Date(),
+            ),
           ]);
           const lastSeen = new Map(sessions.map((row) => [row.userId, row._max.updatedAt]));
           const botCount = new Map(bots.map((row) => [row.userId, row._count._all]));
@@ -148,6 +223,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
               bots: botCount.get(user.id) ?? 0,
               runningComputers: computerCount.get(user.id) ?? 0,
               suspended: Boolean(user.deactivatedAt),
+              plan: planOf(user.id),
               banned: banKeys(user.email).some((key) => banned.has(key)),
             })),
             nextCursor: rows[DOZO_ADMIN_USERS_PAGE]?.id ?? null,
@@ -173,6 +249,70 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           suspended: input.suspended,
         });
         return { suspended: input.suspended };
+      }),
+
+      /**
+       * Gives the account's own organization a plan by hand, or ends the one it was given. The
+       * subscription sync never touches it and a grant ends by its own date. Both are audited.
+       */
+      setPlan: admin.dozoAdmin.setPlan.handler(async ({ context, input }) => {
+        const now = new Date();
+        const grant = input.tier ? { tier: input.tier, endsAt: grantEnd(input.endsAt, now) } : null;
+        const target = await runAsSystem(
+          "find an account's organization for the admin page",
+          async () => {
+            const user = await prisma.user.findFirst({
+              where: { ...accounts, id: input.userId },
+              select: { id: true, email: true },
+            });
+            if (!user) throw new ClientError("NOT_FOUND", "Account not found");
+            const organizationId = await ownedOrganizationId(prisma, user.id).catch((error) => {
+              if (error instanceof IsolationError)
+                throw new ClientError("NOT_FOUND", "Account has no organization of its own");
+              throw error;
+            });
+            return { user, organizationId };
+          },
+        );
+        const { organizationId } = target;
+        // Setting a plan always changes it; ending one changes it only when there was one.
+        const changed = await runAsSystem("change a granted plan for the admin page", async () => {
+          if (!grant) return revokePlanGrant(prisma, organizationId);
+          await setPlanGrant(prisma, {
+            organizationId,
+            ...grant,
+            grantedById: context.actor.userId,
+            note: input.note,
+          });
+          return true;
+        });
+        // The organization reads its own audit log, so the event carries neither the admin's
+        // email nor the internal note (which stays on the grant row), only the admin's opaque id:
+        // a new grant overwrites the row's `grantedById` and ending one deletes the row, so this
+        // is the lasting record of who did it. It is a second write because the audit primitive
+        // opens its own transaction and takes none.
+        if (changed)
+          await recordAuditEvent({
+            action: grant ? "plan.granted" : "plan.grant_ended",
+            actor: { type: "system", label: "Operator" },
+            organizationId,
+            target: { type: "user", id: target.user.id },
+            metadata: {
+              adminId: context.actor.userId,
+              tier: grant?.tier ?? null,
+              endsAt: grant?.endsAt.toISOString() ?? null,
+            },
+          });
+        getLogger().info("dozo.admin.plan", {
+          "admin.id": context.actor.userId,
+          "user.id": input.userId,
+          "plan.tier": grant?.tier ?? null,
+          "plan.ends_at": grant?.endsAt.toISOString() ?? null,
+        });
+        const planOf = await runAsSystem("read a plan for the admin page", () =>
+          plansOf([input.userId], new Date()),
+        );
+        return { plan: planOf(input.userId) };
       }),
 
       bans: admin.dozoAdmin.bans.handler(async () => ({

@@ -6,7 +6,40 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ capabilities: vi.fn(), upstream: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  capabilities: vi.fn(),
+  upstream: vi.fn(),
+  setUiLocale: vi.fn(),
+  active: "en",
+}));
+
+vi.mock("@lingui/react/macro", () => ({
+  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+}));
+vi.mock("@rakazo/ui-web", () => ({
+  OptionSelect: (props: {
+    value: string;
+    options: { value: string; label: string }[];
+    onValueChange: (value: string) => void;
+    "aria-label": string;
+  }) => (
+    <select
+      aria-label={props["aria-label"]}
+      value={props.value}
+      onChange={(event) => props.onValueChange(event.target.value)}
+    >
+      {props.options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
+}));
+vi.mock("../lib/i18n", () => ({
+  getActiveUiLocale: () => mocks.active,
+  setUiLocale: mocks.setUiLocale,
+}));
 
 vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: mocks.capabilities }));
 vi.mock("./Auth", () => ({
@@ -25,6 +58,12 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.capabilities.mockReset();
   mocks.upstream.mockClear();
+  mocks.active = "en";
+  mocks.setUiLocale.mockReset();
+  mocks.setUiLocale.mockImplementation(async (locale: string) => {
+    mocks.active = locale;
+    return locale;
+  });
 });
 afterEach(() => {
   act(() => root?.unmount());
@@ -134,4 +173,59 @@ it.each([
   await act(async () => settle(held));
   expect(container.querySelector("[data-dozo-signups]")).toBeNull();
   expect(mocks.upstream).toHaveBeenCalledTimes(1);
+});
+
+const language = () => container.querySelector<HTMLSelectElement>('select[aria-label="Language"]');
+
+it("shows the language a link asked for from the first paint, saves it and drops the parameter", async () => {
+  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
+  const loading = deferred<string>();
+  mocks.setUiLocale.mockReturnValue(loading.promise);
+  await open("/sign-up?lang=tr&next=%2Fapp");
+  expect(mocks.setUiLocale).toHaveBeenCalledExactlyOnceWith("tr");
+  expect(shown()).toBeUndefined();
+  await act(async () => loading.resolve("tr"));
+  expect(shown()).toBe("up");
+  expect(language()?.value).toBe("tr");
+  expect(where()).toBe("/sign-up?next=%2Fapp");
+});
+
+it("keeps the asked language when registration is closed and the address changes", async () => {
+  mocks.capabilities.mockResolvedValue({ signupsOpen: false });
+  await open("/sign-up?lang=tr");
+  expect(mocks.setUiLocale).toHaveBeenCalledWith("tr");
+  expect(where()).toBe("/sign-in");
+  expect(language()?.value).toBe("tr");
+});
+
+it.each([
+  "TR",
+  "tr-TR",
+  "xx",
+  "",
+  "//evil.example",
+  "https://evil.example",
+  "<script>alert(1)</script>",
+  "__proto__",
+])("ignores %j as a language and only drops it from the address", async (value) => {
+  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
+  await open(`/sign-in?lang=${encodeURIComponent(value)}&next=%2Fapp`);
+  expect(mocks.setUiLocale).not.toHaveBeenCalled();
+  expect(shown()).toBe("in");
+  expect(language()?.value).toBe("en");
+  expect(where()).toBe("/sign-in?next=%2Fapp");
+  expect(container.innerHTML).not.toContain("evil");
+});
+
+it("saves a language chosen on the page through the app's own preference", async () => {
+  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
+  await open("/sign-in");
+  const select = language();
+  if (!select) throw new Error("no language choice");
+  await act(async () => {
+    select.value = "tr";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(mocks.setUiLocale).toHaveBeenCalledExactlyOnceWith("tr");
+  expect(language()?.value).toBe("tr");
 });

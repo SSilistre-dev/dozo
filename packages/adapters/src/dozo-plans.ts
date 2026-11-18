@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@rakazo/db";
-import { hasBillingAccess, organizationForMember } from "@rakazo/db";
+import {
+  DOZO_PLAN_GRANT_SELECT,
+  hasBillingAccess,
+  organizationForMember,
+  tierInForce,
+} from "@rakazo/db";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { modelCreditBillingEnabled } from "./run-model.js";
 
@@ -8,8 +13,9 @@ type BillingDeps = Pick<ExecutorDeps, "billingEnabled"> & { prisma: PrismaClient
 /**
  * Whether a run may use what the operator pays for by the call (media generation, an external
  * reviewer): always on a server that does not bill, else only for an organization that pays, with
- * a live subscription or a credit balance. A guest is paid for by their own organization. The
- * operator's model is not decided here: credits already meter it.
+ * a live subscription, a credit balance, or a plan an admin granted that has not ended. A guest is
+ * paid for by their own organization. The operator's model is not decided here: credits already
+ * meter it.
  */
 export async function operatorPaysFor(
   deps: BillingDeps,
@@ -23,10 +29,12 @@ export async function operatorPaysFor(
     select: {
       billing: { select: { status: true } },
       modelCredits: { select: { balanceMicros: true } },
+      dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },
     },
   });
   return (
     hasBillingAccess(organization?.billing?.status ?? null) ||
+    tierInForce(null, organization?.dozoPlanGrant) !== null ||
     (organization?.modelCredits?.balanceMicros ?? 0n) > 0n
   );
 }
