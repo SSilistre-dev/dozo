@@ -12,9 +12,8 @@ Closed pre-release state, to undo at launch:
   server sends `X-Robots-Tag: noindex` (`dozo/deploy/site.nginx.conf`). Remove all three.
 - `og:url` and `og:image` and the call to action point at the pre-release addresses
   (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain.
-- No GitHub link is shown because the repository is not published. When it is, add "GitHub"
-  and "Licence" links back to the header and footer navs and let "Self-host" point at
-  `docs/self-host.md` in the repository.
+- The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
+  to "GitHub", the footer to "Licence", and "Self-host" points at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - Hosted plan placeholder: the "We run it for you." block says only that hosted Dozo is in a
   closed preview and that plans and pricing come later. It has no price, plan table, form or
   payment link on purpose. Rewrite it when pricing is set and payment is connected.
