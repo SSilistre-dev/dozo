@@ -162,7 +162,7 @@ is `docker pull node:24.22-slim`). Nothing is skipped silently.
 
 ### unit
 
-Runs every `dozo-*.test.ts(x)` under `apps/` and `packages/` of the branded staged tree
+Runs every `dozo-*.test.ts(x)` under `apps/`, `packages/` and `infra/` of the branded staged tree
 (`DOZO_UNIT_SRC` names another tree and skips the `stage.complete` check) with Vitest in
 `node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, with a per-file floor
 `DOZO_COVERAGE_MIN` (default 90 percent) for lines, branches and functions. Fewer

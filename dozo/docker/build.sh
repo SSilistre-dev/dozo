@@ -113,7 +113,7 @@ stage() {
   # and dozo/ would ship in the runtime image. Nothing later reads them from the stage (node_run
   # mounts the real dozo/ at /dozo). dozo/NOTICE and dozo/LICENSE stay: they are the licence of the
   # fork's files, and the image carries the source they are about. The fork-only dozo-* source
-  # files live in apps/ and packages/.
+  # files live in apps/, packages/ and infra/.
   rm -f "$new/Makefile"   # the fork's own; gate.sh olc fails if upstream has a root Makefile
   # The fork's tests and its README (the notice block) are not part of any image either; ignored,
   # not removed: the unit step and the brand tools still read them from the stage.
