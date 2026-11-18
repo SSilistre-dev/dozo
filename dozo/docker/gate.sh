@@ -231,7 +231,8 @@ olc() {
   # The legal pages write what only the owner can supply as [[NAME]] (dozo/LAUNCH-CHECKLIST.md,
   # Privacy policy and terms pages). A page that still carries one must not merge or be published.
   bad=$(grep -rno '\[\[[^]<]*\]*' dozo/landing --include='*.html' | sort -u || true)
-  if [ -z "$bad" ]; then echo "[olc] landing pages: no unfilled [[PLACEHOLDER]]"
+  if ! ls dozo/landing/*.html >/dev/null 2>&1; then fail "landing placeholders: no page under dozo/landing, the check cannot run"
+  elif [ -z "$bad" ]; then echo "[olc] landing pages: no unfilled [[PLACEHOLDER]]"
   else printf '%s\n' "$bad" | sed 's/^/[olc] unfilled placeholder: /' | head -20
     fail "landing placeholders: $(printf '%s\n' "$bad" | cut -d: -f3 | sort -u | tr '\n' ' ' | sed 's/ $//')"; fi
   selftest
