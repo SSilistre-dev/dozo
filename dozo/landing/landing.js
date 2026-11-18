@@ -47,9 +47,10 @@ async function fadeReset(el,w,reset){ // fade out, reset without transitions, no
 }
 
 // 1. hero chat
-const hero=$('#hero'),body=$('#body',hero),full=body.dataset.full;
+// Visible words come from the page (text and data-* attributes), so each language's page carries its own.
+const hero=$('#hero'),body=$('#body',hero),full=body.dataset.full,ht=$('#ht'),working=ht.textContent;
 const blank=()=>body.innerHTML='<span class="rest">'+esc(full)+'</span>';
-const status=(t,c)=>{$('#ht').textContent=t;$('#hd').className='dot'+(c?' '+c:'')};
+const status=(t,c)=>{ht.textContent=t;$('#hd').className='dot'+(c?' '+c:'')};
 if(!still)blank();
 scene(hero,async(el,w)=>{
   const show=(s,v=true)=>$$(s,el).forEach(e=>flip(e,'show',v));
@@ -59,11 +60,11 @@ scene(hero,async(el,w)=>{
   await w(500);for(const li of $$('.plan li',el)){li.classList.add('show');await w(450)}
   await w(300);show('.draft');await w(600);
   for(let i=0;i<=full.length;i+=2){body.innerHTML=esc(full.slice(0,i))+'<span class="rest">'+esc(full.slice(i))+'</span>';await w(40)}
-  await w(600);show('.ask');status('Waiting for you','wait');
+  await w(600);show('.ask');status(ht.dataset.wait,'wait');
   await w(2400);const ap=$('.ask .w',el);flip(ap,'press');await w(250);flip(ap,'press',false);
-  show('.ask',false);show('.sent');status('Done');
+  show('.ask',false);show('.sent');status(ht.dataset.done);
   await w(3400);
-  await fadeReset($('.conv',el),w,()=>{show('.s',false);show('.sent',false);show('.think',false);blank();status('Working')});
+  await fadeReset($('.conv',el),w,()=>{show('.s',false);show('.sent',false);show('.think',false);blank();status(working)});
   await w(900);
 });
 
@@ -86,11 +87,11 @@ scene($('#comp'),async(el,w)=>{
 
 // 3. requests arrive, one gets approved
 scene($('#asks'),async(el,w)=>{
-  const list=$('.list',el),rs=$$('.li',el),b=$('.pill',rs[0]);
+  const list=$('.list',el),rs=$$('.li',el),b=$('.pill',rs[0]),review=b.textContent;
   await w(700);for(const r of rs){flip(r,'show');await w(1100)}
-  await w(900);flip(b,'press');await w(250);flip(b,'press',false);b.textContent='Approved';flip(b,'ok');flip(rs[0],'done');
+  await w(900);flip(b,'press');await w(250);flip(b,'press',false);b.textContent=b.dataset.ok;flip(b,'ok');flip(rs[0],'done');
   await w(2800);
-  await fadeReset(list,w,()=>{rs.forEach(r=>{flip(r,'show',false);flip(r,'done',false)});b.textContent='Review';flip(b,'ok',false)});
+  await fadeReset(list,w,()=>{rs.forEach(r=>{flip(r,'show',false);flip(r,'done',false)});b.textContent=review;flip(b,'ok',false)});
   await w(900);
 });
 

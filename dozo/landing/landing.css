@@ -70,6 +70,7 @@ main,header,footer{position:relative;z-index:1}
 .nav{display:flex;align-items:center;gap:6px}
 .tgl{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted)}.tgl:hover{color:var(--text)}
 .tgl svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.langs{display:flex}.langs a{display:inline-flex;align-items:center;height:44px;padding:0 7px}.langs a:hover,.langs [aria-current]{color:var(--text)}
 .tgl .sun{display:none}:root[data-theme="light"] .tgl .sun{display:block}:root[data-theme="light"] .tgl .moon{display:none}
 
 /* hero */
@@ -153,7 +154,8 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
 }
 @media (max-width:560px){
  .wrap{width:min(1200px,100% - 40px)}
- .top{height:64px}
+ .top{height:auto;min-height:64px;flex-wrap:wrap}
+ .nav{gap:2px;margin-left:auto}.nav .tgl{width:34px}.nav .pill{height:36px;padding:0 11px;font-size:14px}.langs a{padding:0 4px}
  .hero{padding-top:28px}.crew{gap:8px;margin-bottom:22px}.av.xl{width:44px;height:44px}
  .cta .pill{flex:1 1 140px}
  .frame-app{padding:0 20px 22px;margin-top:36px}
