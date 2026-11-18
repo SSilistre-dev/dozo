@@ -26,6 +26,7 @@ three issue forms the fork replaces whole. Today these are:
   Makefile
   apps/**/dozo-*
   packages/**/dozo-*
+  packages/db/prisma/migrations/*_dozo_*/**
   .github/README.md
   .github/SECURITY.md
   .github/CONTRIBUTING.md

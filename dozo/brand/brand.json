@@ -837,11 +837,47 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n    }),\n    speechSummary:",
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],
-      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, and the page shows the sign-up switch"
+      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, the page shows the sign-up switch, and deleting an account runs the auth's own account deletion"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "import { DEACTIVATED_AT_FIELD } from \"./directory.js\";\nimport type { EmailLocaleOf } from \"./email.js\";",
+      "replace": "import { DEACTIVATED_AT_FIELD } from \"./directory.js\";\nimport { emailBanned, refuseBanned } from \"./dozo-operator.js\";\nexport * from \"./dozo-operator.js\";\nimport type { EmailLocaleOf } from \"./email.js\";",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: the auth reads it where it admits a person, and the admin routes take the list and the operator's account deletion from the package"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "              throw new APIError(\"BAD_REQUEST\", { message: \"Email is not available\" });\n            }\n            const callbackAttribution",
+      "replace": "              throw new APIError(\"BAD_REQUEST\", { message: \"Email is not available\" });\n            }\n            await refuseBanned(prisma, user.email);\n            const callbackAttribution",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: no account is created for a banned address or domain, by any sign-up method, with the answer a deactivated account gets"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "            if (deactivated(user)) {\n              throw new APIError(\"FORBIDDEN\", {\n                code: \"ACCOUNT_DEACTIVATED\",",
+      "replace": "            if (deactivated(user) || (await emailBanned(prisma, user.email))) {\n              throw new APIError(\"FORBIDDEN\", {\n                code: \"ACCOUNT_DEACTIVATED\",",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: every sign-in ends in a new session, so a banned address or domain is refused here for password, code, passkey and social sign-in alike, as a deactivated account is"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "                  if (deactivated(session.user)) return null;\n                  if (session.user.emailVerified) return session;",
+      "replace": "                  if (deactivated(session.user)) return null;\n                  if (await emailBanned(prisma, session.user.email)) return null;\n                  if (session.user.emailVerified) return session;",
+      "requires": [
+        "packages/auth/src/dozo-operator.ts"
+      ],
+      "reason": "ban list: a session opened before its address or domain was banned stops being admitted, as a deactivated account's does"
     },
     {
       "file": "apps/web/src/App.tsx",
