@@ -965,6 +965,78 @@
         "packages/adapters/src/dozo-plans.ts"
       ],
       "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "packages/db/src/artifact-versions.ts",
+      "find": "        return await attempt(tx, version);\n",
+      "replace": "        const result = await attempt(tx, version);\n        if (!isReplayedUpload(result)) await holdSharedSpace(tx, params.spaceId);\n        return result;\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: an upload or a bot's file that takes the organization over its plan's shared space is refused, in the transaction that records it"
+    },
+    {
+      "file": "packages/db/src/artifact-versions.ts",
+      "find": "import { Prisma } from \"./client.js\";\nimport { isUniqueViolation } from \"./prisma-errors.js\";\n",
+      "replace": "import { Prisma } from \"./client.js\";\nimport { holdSharedSpace, isReplayedUpload } from \"./dozo-shared-space.js\";\nimport { isUniqueViolation } from \"./prisma-errors.js\";\n\nexport * from \"./dozo-shared-space.js\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check above, and the package's export of it for the two writers below"
+    },
+    {
+      "file": "packages/adapters/src/thread-artifacts.ts",
+      "find": "  const row = await deps.prisma.artifact\n    .create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    })\n    .catch(async (error) => {\n      await deps.artifacts.remove(stored.id, context).catch(() => undefined);\n      throw error;\n    });\n",
+      "replace": "  const row = await withSharedSpace(deps.prisma, owner.spaceId, (tx) =>\n    tx.artifact.create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    }),\n  ).catch(async (error) => {\n    await deps.artifacts.remove(stored.id, context).catch(() => undefined);\n    throw error;\n  });\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: a file a run keeps out of sight (a screenshot, a connector app) counts against the shared space like any other"
+    },
+    {
+      "file": "packages/adapters/src/thread-artifacts.ts",
+      "find": "  withResolvedArtifactVersion,\n  withTransactionRetry,\n} from \"@rakazo/db\";\n",
+      "replace": "  withResolvedArtifactVersion,\n  withSharedSpace,\n  withTransactionRetry,\n} from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "apps/api/src/account-import.ts",
+      "find": "      if (rows.length) await this.deps.prisma.artifact.createMany({ data: rows });\n",
+      "replace": "      if (rows.length)\n        await withSharedSpace(this.deps.prisma, space.spaceId, (tx) =>\n          tx.artifact.createMany({ data: rows }),\n        ).catch((error) => {\n          throw error instanceof SharedSpaceFullError\n            ? new AccountImportError(error.message, 413)\n            : error;\n        });\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: an imported export's files count against the shared space, and one that does not fit is refused whole with the reason"
+    },
+    {
+      "file": "apps/api/src/account-import.ts",
+      "find": "  runAsTenant,\n  SpaceLimitError,\n} from \"@rakazo/db\";\n",
+      "replace": "  runAsTenant,\n  SharedSpaceFullError,\n  SpaceLimitError,\n  withSharedSpace,\n} from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check above"
+    },
+    {
+      "file": "apps/api/src/email-inbound.ts",
+      "find": "      if (!(error instanceof AttachmentValidationError)) throw error;\n",
+      "replace": "      if (!(error instanceof AttachmentValidationError || error instanceof SharedSpaceFullError))\n        throw error;\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: a mail whose attachment does not fit the shared space still arrives, without that file, instead of failing until the relay gives up"
+    },
+    {
+      "file": "apps/api/src/email-inbound.ts",
+      "find": "  isUniqueViolation,\n  SpaceDeletionInProgressError,\n  storedEmailAttachments,\n} from \"@rakazo/db\";\n",
+      "replace": "  isUniqueViolation,\n  SharedSpaceFullError,\n  SpaceDeletionInProgressError,\n  storedEmailAttachments,\n} from \"@rakazo/db\";\n",
+      "requires": [
+        "packages/db/src/dozo-shared-space.ts"
+      ],
+      "reason": "plans: the import of the check above"
     }
   ],
   "assets": {

@@ -78,6 +78,21 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
 Upstream counts computer hours only on a metered cloud provider. Here every computer the server
 hosts counts, the shipped Docker provider included, so the allowance holds on our own host.
 
+Each plan has a shared space: the bytes of files an organization may keep across its Spaces, 500 MB
+on Free, 2 GB on Premium and 5 GB on Premium Plus (`sharedSpaceBytes` in
+`packages/contracts/src/dozo-plans.ts`). Files are what `artifacts` rows record: uploads, files
+bots attach or generate, inbound attachments, kept screenshots and imported files, every version
+counted. `packages/db/src/dozo-shared-space.ts` refuses the write that takes the organization over
+(`shared_space_full`), inside the transaction that records the file and behind a lock per
+organization, so writes running together cannot pass the limit between them. Nothing is deleted
+and everything stays readable when a plan ends with more than Free allows; only new files are
+refused until enough is deleted. Only a live Premium or Premium Plus subscription raises the limit;
+every other organization, one that only buys credits included, has Free's. The test beside that
+file lists upstream's writers of file rows and fails when a sync brings one it does not know. The
+lock, the count across Spaces and row security are tested in `dozo-shared-space.postgres.test.ts`,
+which needs a migrated database (`VERIFY_DATABASE=1` and `DATABASE_URL` of the runtime login); the
+unit gate has none and skips it, so run it by hand after changing the check.
+
 An organization on Free spends nothing of the operator's. The operator's own model already needs
 credits (upstream's guard, on every model call a run or a background job makes). On top of that,
 `packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external
@@ -92,8 +107,13 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
   one.
 - While a server has a free plan, a computer's saved home is never deleted for an ended plan
-  (upstream deletes it only when the organization can no longer run bots). A storage limit is a
-  separate task.
+  (upstream deletes it only when the organization can no longer run bots).
+- The shared space counts files only. A computer's saved home (no size is recorded; upstream caps
+  one at 5 GiB), pages, memory and messages (database text) are not counted.
+- An import that does not fit is refused whole, after its files were written and removed again.
+- A generated image or video that does not fit is reported to the bot as a failed generation,
+  without the reason, and its cost is not returned.
+- A mail's attachment that does not fit is left out; the mail itself arrives.
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
   such subscription exists, since the server has never billed, and Free cannot be checked out.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;
