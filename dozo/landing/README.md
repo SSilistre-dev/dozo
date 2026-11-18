@@ -26,7 +26,7 @@ Closed pre-release state, to undo at launch:
 - `og:url` and `og:image` and the call to action point at the pre-release addresses
   (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
-  to "GitHub", the footer to "Licence", and "Self-host" points at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
+  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host" points at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
   latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
   `Dozo-Windows-x64-setup.exe`), so a new release needs no edit here; renaming an asset breaks them.

@@ -1,6 +1,6 @@
 <!-- dozo:fork-notice:start -->
 > **Dozo** is a hosted service of persistent AI bots, each with its own computer. This repository is
-> Dozo's open source code.
+> Dozo's source code.
 >
 > Dozo is an independent fork of [Rakazo](https://github.com/elie222/rakazo) and is not affiliated with or
 > endorsed by the Rakazo project. The text below is upstream's README. For how this fork is organised, see

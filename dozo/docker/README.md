@@ -63,8 +63,8 @@ with `down`.
    marker `stage.complete` is removed first and written last: a stage cut short has none, and
    later steps refuse it ("run stage"). A stage made before the marker existed needs one
    re-stage.
-   - The staged tree has no `.git`, no root `Makefile` and nothing of `dozo/` but `NOTICE` (the licence
-     addendum): upstream's Dockerfile copies the whole tree before it builds the apps, so an edit to
+   - The staged tree has no `.git`, no root `Makefile` and nothing of `dozo/` but `NOTICE` and `LICENSE` (the
+     licence of the fork's files): upstream's Dockerfile copies the whole tree before it builds the apps, so an edit to
      fork tooling would otherwise rebuild everything and ship it in the image. The stage tools read
      the real `dozo/` (mounted at `/dozo`), not the stage. The staged `.dockerignore` also lists
      `**/dozo-*.test.*` and the root `README.md` (the fork notice), so editing either does not
@@ -123,7 +123,8 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   that is not a test or a `*.test-support.mjs` fixture; the count is printed.
 - The e2e helper tests: every `dozo/e2e/*.test.mjs` with Node's test runner (the offline model
   stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
-  exist.
+  exist. `source-available.test.mjs` fails when the landing page or `.github/README.md` calls Dozo
+  open source.
 - Every anchored brand rule against the repository tree: `apply.mjs --check --allow-git --strict`
   (writes nothing; prints the `hooks:` line).
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files

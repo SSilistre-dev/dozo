@@ -24,6 +24,12 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   not build output: they are the pictures `.github/README.md` shows, taken from a local stack with
   placeholder data.
 - Keep `NOTICE` and `LICENSE` untouched. Attribution additions go in `dozo/NOTICE`.
+- The fork's own files are under the Elastic License 2.0 (`dozo/LICENSE`, never reworded); upstream's
+  stay Apache-2.0. `dozo/NOTICE` holds the one list of which file is which: a new kind of fork file
+  goes there. Dozo is "source available", never "open source" (`make olc` holds the landing page and
+  `.github/README.md` to it).
+- `LICENSE-DOZO` is a new root file without the `dozo-` prefix: GitHub lists a second licence only
+  from a root file named `LICENSE*`. If upstream ever adds that name, the sync conflicts: keep ours.
 - Never claim endorsement by or affiliation with Rakazo. Never reuse upstream's logo or mascot.
 
 ## Fork features inside upstream directories

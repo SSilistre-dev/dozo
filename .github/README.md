@@ -8,14 +8,14 @@
   <a href="https://dozo-site.ssilistre.dev">Hosted</a> ·
   <a href="https://github.com/SSilistre-dev/dozo/releases/latest">Desktop app</a> ·
   <a href="#run-it-yourself">Run it yourself</a> ·
-  <a href="/LICENSE">Apache-2.0</a>
+  <a href="/dozo/NOTICE">Licence</a>
 </p>
 
 ![A chat with a bot in Dozo: the bot plans an email, drafts it and waits for approval](/dozo/brand/assets/readme/chat.png)
 
 Dozo gives you bots that stay around. Each one keeps its conversation, its memory and its routines,
 and works on a computer of its own. You talk to them like teammates, alone or in a group, and they
-ask before they do anything that matters. This repository is the open source code.
+ask before they do anything that matters. This repository is the source code.
 
 ## Features
 
@@ -83,7 +83,9 @@ account there and connect a model. `make down` stops it and keeps the data. Deta
 
 - [Contributing](/.github/CONTRIBUTING.md)
 - [Reporting a vulnerability](/.github/SECURITY.md)
-- Apache License 2.0: [LICENSE](/LICENSE), with the fork's notice of changes in
+- Licence: Dozo's own files are under the [Elastic License 2.0](/dozo/LICENSE), upstream's files
+  under the [Apache License 2.0](/LICENSE). You may run and change Dozo, also inside your company;
+  you may not offer it to others as a hosted or managed service. Which file is under which licence:
   [dozo/NOTICE](/dozo/NOTICE)
 
 Dozo is an independent fork of [Rakazo](https://github.com/elie222/rakazo) (Apache-2.0). It is not

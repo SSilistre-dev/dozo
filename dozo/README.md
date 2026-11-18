@@ -1,7 +1,7 @@
 # Dozo
 
 Dozo is a hosted service of persistent AI bots, each with its own computer. This repository is its
-open source code. It is an independent fork of [Rakazo](https://github.com/elie222/rakazo)
+source code. It is an independent fork of [Rakazo](https://github.com/elie222/rakazo)
 (Apache-2.0) and is not affiliated with or endorsed by the Rakazo project.
 
 ## Principle
@@ -32,7 +32,7 @@ Branded output is never committed.
 | `dozo/deploy/` | Running the server side on one host behind a Dokploy panel: deploy and roll back, the production compose layer, firewall rules for bot computers, backups and a health check. See `dozo/deploy/README.md` |
 | `dozo/desktop/` | The macOS app: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
-| `dozo/NOTICE` | Licence addendum and notice of changes |
+| `dozo/LICENSE`, `dozo/NOTICE` | The licence of the fork's own files, which files those are, and the notice of changes |
 | `dozo/AGENTS.md` | Rules for agents and contributors in this fork |
 | `dozo/LAUNCH-CHECKLIST.md` | What the owner must decide or supply before going public |
 | `dozo-*` files in `apps/` and `packages/` | Fork-only source (local models, the bot avatars, the shell stylesheet). They sit inside upstream packages so they resolve there; they are new files, so they do not conflict with upstream |
@@ -80,6 +80,8 @@ Accepted by the owner for now, stated here once:
 
 ## Licence and attribution
 
-Apache License 2.0, see `LICENSE`. Upstream's `NOTICE` stays untouched; our addendum is
-`dozo/NOTICE`. Dozo claims no right to the Rakazo name or marks, and does not reuse upstream's logo or
+The fork's own files are under the Elastic License 2.0 (`dozo/LICENSE`); upstream's files stay under
+the Apache License 2.0 (`LICENSE`). `dozo/NOTICE` says which file is which and from which commit.
+Dozo is source available, not open source: do not describe it as open source. Upstream's `NOTICE`
+stays untouched; our addendum is `dozo/NOTICE`. Dozo claims no right to the Rakazo name or marks, and does not reuse upstream's logo or
 mascot. Dozo's name is not yet cleared as a trademark (see `dozo/LAUNCH-CHECKLIST.md`).

@@ -111,13 +111,14 @@ stage() {
   # Fork tooling never reaches the build context: upstream's Dockerfile runs `COPY . .` before the
   # app builds, so an edit to dozo/ (docs, tests, scripts) or the Makefile would rebuild every app,
   # and dozo/ would ship in the runtime image. Nothing later reads them from the stage (node_run
-  # mounts the real dozo/ at /dozo). dozo/NOTICE stays: it is the licence addendum, and the image
-  # carries the source it is about. The fork-only dozo-* source files live in apps/ and packages/.
+  # mounts the real dozo/ at /dozo). dozo/NOTICE and dozo/LICENSE stay: they are the licence of the
+  # fork's files, and the image carries the source they are about. The fork-only dozo-* source
+  # files live in apps/ and packages/.
   rm -f "$new/Makefile"   # the fork's own; gate.sh olc fails if upstream has a root Makefile
   # The fork's tests and its README (the notice block) are not part of any image either; ignored,
   # not removed: the unit step and the brand tools still read them from the stage.
   printf '%s\n' '' '# dozo' '**/dozo-*.test.*' '/README.md' >> "$new/.dockerignore"
-  [ ! -d "$new/dozo" ] || find "$new/dozo" -mindepth 1 -maxdepth 1 ! -name NOTICE -exec rm -rf {} +
+  [ ! -d "$new/dozo" ] || find "$new/dozo" -mindepth 1 -maxdepth 1 ! -name NOTICE ! -name LICENSE -exec rm -rf {} +
   [ -f "$new/$COMPOSE_REL" ] || die "staged tree lacks $COMPOSE_REL"
   # Swap in by contents, never moving data/ (the compose bind mount holding the app data). The
   # marker goes first and comes back last, so an interrupted swap is never taken for a whole tree.
