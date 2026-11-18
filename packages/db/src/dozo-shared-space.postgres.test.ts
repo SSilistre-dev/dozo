@@ -25,13 +25,20 @@ describePostgres("shared space (PostgreSQL)", () => {
   async function organization(tier?: string) {
     const id = `shared-space-org-${suffix}-${organizations.length}`;
     organizations.push(id);
-    await owner.organization.create({ data: { id, name: "Acme", slug: id, createdAt: new Date() } });
+    await owner.organization.create({
+      data: { id, name: "Acme", slug: id, createdAt: new Date() },
+    });
     const spaces = [`${id}-a`, `${id}-b`] as const;
     for (const space of spaces)
       await owner.space.create({ data: { id: space, organizationId: id, name: space } });
     if (tier)
       await owner.billingAccount.create({
-        data: { organizationId: id, customerId: `customer-${id}`, status: "active", byokTier: tier },
+        data: {
+          organizationId: id,
+          customerId: `customer-${id}`,
+          status: "active",
+          byokTier: tier,
+        },
       });
     return { id, spaces };
   }

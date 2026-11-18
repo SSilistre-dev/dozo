@@ -986,8 +986,8 @@
     },
     {
       "file": "packages/adapters/src/thread-artifacts.ts",
-      "find": "  const row = await deps.prisma.artifact\n    .create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    })\n    .catch(async (error) => {\n",
-      "replace": "  const row = await withSharedSpace(deps.prisma, owner.spaceId, (tx) =>\n    tx.artifact.create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    }),\n  ).catch(async (error) => {\n",
+      "find": "  const row = await deps.prisma.artifact\n    .create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    })\n    .catch(async (error) => {\n      await deps.artifacts.remove(stored.id, context).catch(() => undefined);\n      throw error;\n    });\n",
+      "replace": "  const row = await withSharedSpace(deps.prisma, owner.spaceId, (tx) =>\n    tx.artifact.create({\n      data: {\n        ...owner,\n        runId: input.runId,\n        name,\n        mimeType: file.mimeType,\n        size: file.bytes.byteLength,\n        hash,\n        storageKey: stored.id,\n      },\n    }),\n  ).catch(async (error) => {\n    await deps.artifacts.remove(stored.id, context).catch(() => undefined);\n    throw error;\n  });\n",
       "requires": [
         "packages/db/src/dozo-shared-space.ts"
       ],
