@@ -17,20 +17,34 @@ export class SharedSpaceFullError extends ClientError {
   }
 }
 
+type PlanBilling = { status: string | null; byokTier: string | null } | null | undefined;
+
 /**
- * The bytes of files the Space's organization may keep, or null without a limit: a server that
- * does not bill has none. A live subscription gives its tier's limit, anything else the first
- * tier's, so an organization whose plan ended keeps its files and only stops adding to them.
+ * The plan an organization is on. A live subscription gives its tier, anything else the first
+ * one, so an organization whose plan ended keeps its files and only stops adding to them.
  */
-async function sharedSpaceLimit(
-  tx: Pick<PrismaClient, "deploymentSettings" | "space">,
-  spaceId: string,
-): Promise<{ organizationId: string; bytes: number } | null> {
+function planTerms(billing: PlanBilling): { name: string; sharedSpaceBytes?: number } {
+  const paid = hasBillingAccess(billing?.status ?? null)
+    ? ByokTierSchema.safeParse(billing?.byokTier).data
+    : undefined;
+  return BYOK_TIERS[paid ?? "standard"];
+}
+
+/** Whether the server bills. One that does not has no plans, so no limit. */
+async function serverBills(tx: Pick<PrismaClient, "deploymentSettings">) {
   const settings = await tx.deploymentSettings.findUnique({
     where: { id: "default" },
     select: { modelCreditsEnabled: true },
   });
-  if (!settings?.modelCreditsEnabled) return null;
+  return settings?.modelCreditsEnabled === true;
+}
+
+/** The bytes of files the Space's organization may keep, or null without a limit. */
+async function sharedSpaceLimit(
+  tx: Pick<PrismaClient, "deploymentSettings" | "space">,
+  spaceId: string,
+): Promise<{ organizationId: string; bytes: number } | null> {
+  if (!(await serverBills(tx))) return null;
   const space = await tx.space.findUnique({
     where: { id: spaceId },
     select: {
@@ -39,14 +53,10 @@ async function sharedSpaceLimit(
     },
   });
   if (!space) return null;
-  const billing = space.organization.billing;
-  const paid = hasBillingAccess(billing?.status ?? null)
-    ? ByokTierSchema.safeParse(billing?.byokTier).data
-    : undefined;
-  const terms: { sharedSpaceBytes?: number } = BYOK_TIERS[paid ?? "standard"];
-  return terms.sharedSpaceBytes === undefined
+  const { sharedSpaceBytes } = planTerms(space.organization.billing);
+  return sharedSpaceBytes === undefined
     ? null
-    : { organizationId: space.organizationId, bytes: terms.sharedSpaceBytes };
+    : { organizationId: space.organizationId, bytes: sharedSpaceBytes };
 }
 
 /** The recorded bytes of every file the organization keeps. Runs across its Spaces. */
@@ -76,6 +86,25 @@ export async function sharedSpaceFull(
     usedBytes(prisma, limit.organizationId),
   );
   return used >= BigInt(limit.bytes) ? new SharedSpaceFullError() : null;
+}
+
+/**
+ * The organization's plan by name and how much of its shared space its files take, for showing;
+ * null where files have no limit. `billing` is the organization's billing account as the caller
+ * already read it. The same plan and count the writes are held to.
+ */
+export async function sharedSpaceUsage(
+  prisma: Pick<PrismaClient, "deploymentSettings" | "$queryRaw">,
+  organizationId: string,
+  billing: PlanBilling,
+): Promise<{ plan: string; usedBytes: number; limitBytes: number } | null> {
+  if (!(await serverBills(prisma))) return null;
+  const { name, sharedSpaceBytes } = planTerms(billing);
+  if (sharedSpaceBytes === undefined) return null;
+  const used = await runAsSystem("an organization's files span its Spaces", () =>
+    usedBytes(prisma, organizationId),
+  );
+  return { plan: name, usedBytes: Number(used), limitBytes: sharedSpaceBytes };
 }
 
 /**
