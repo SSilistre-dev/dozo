@@ -34,7 +34,7 @@
     <button class="tgl" id="theme" type="button" aria-label="Switch theme"><svg class="moon" viewBox="0 0 16 16"><path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1Z"/></svg><svg class="sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></svg></button>
     <span class="langs"><a class="link" href="./" lang="en" hreflang="en" aria-label="English" aria-current="page">EN</a><a class="link" href="tr/" lang="tr" hreflang="tr" aria-label="Türkçe">TR</a></span>
     <a class="pill" href="https://github.com/SSilistre-dev/dozo" rel="noopener">GitHub</a>
-    <a class="pill w" href="https://dozo.ssilistre.dev/sign-in">Sign in</a>
+    <a class="pill" href="https://dozo.ssilistre.dev/sign-in">Sign in</a>
   </nav>
 </div></header>
 
@@ -50,15 +50,15 @@
   </div>
   <h1 id="h1">Bots with their own computer.</h1>
   <p class="lede">Always-on bots that do real work on their own machine, and ask before anything that matters.</p>
-  <div class="cta"><a class="pill w lg" href="https://dozo.ssilistre.dev/sign-in">Sign in</a></div>
+  <div class="cta"><a class="pill w lg" href="https://github.com/SSilistre-dev/dozo/tree/main/dozo#readme" rel="noopener">Self-host for free</a></div>
 
   <div class="frame-app" id="hero" aria-hidden="true" inert>
     <div class="ft"><h2><span class="bot av hd" data-bot="sora" data-state="working"><svg viewBox="0 0 64 64"></svg></span>Sora<span class="status"><span class="dot" id="hd"></span><span id="ht" data-wait="Waiting for you" data-done="Done">Working</span></span></h2></div>
     <div class="conv">
-      <div class="user s">Email the 14 people on the March signup list about the new pricing. Keep it short and friendly.</div>
+      <div class="user s">Email the 14 people on the March signup list: the workshop moves to Thursday. Keep it short and friendly.</div>
       <div class="slot"><div class="think"><i></i><i></i></div><p class="s">I will draft one short email and send it once you approve. Plan:</p></div>
       <ul class="plan"><li class="s">1. Pull the 14 contacts from signups.csv</li><li class="s">2. Write the email in your tone</li><li class="s">3. Send after your approval</li></ul>
-      <div class="draft s"><p>Subject: New pricing from April 1</p><p id="body" data-full="Hi Ana, a quick note: our plans get simpler on April 1. Details are on the pricing page. Reply here if anything looks off.">Hi Ana, a quick note: our plans get simpler on April 1. Details are on the pricing page. Reply here if anything looks off.</p><p>Maya</p></div>
+      <div class="draft s"><p>Subject: Workshop moves to Thursday</p><p id="body" data-full="Hi Ana, a quick note: the workshop moves to Thursday, same time and place. Reply here if that day does not work for you.">Hi Ana, a quick note: the workshop moves to Thursday, same time and place. Reply here if that day does not work for you.</p><p>Maya</p></div>
       <div class="decide">
         <div class="ask s"><p>Send this email to 14 recipients?</p><div class="acts"><span class="pill w">Approve</span><span class="pill">Edit</span><span class="link">Deny</span></div></div>
         <div class="sent"><svg viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></svg>Sent to 14 recipients.</div>
@@ -76,7 +76,7 @@
         <div class="ph"><span>Sora's computer</span><span class="status"><span class="dot"></span>Working</span></div>
         <div class="tabs"><span class="on">Screen</span><span>Files</span><span>Terminal</span></div>
         <div class="fr">
-          <div class="win p-screen"><div class="url"><i></i><i></i><i></i><span>mail.acme.co/lists/march-signups</span></div><div class="pg"><b>March signups</b><table><tr><td>Ana Ruiz</td><td>Pro</td></tr><tr><td>Ben Okafor</td><td>Free</td></tr><tr><td>Clara Weiss</td><td>Pro</td></tr><tr><td>Dev Patel</td><td>Team</td></tr></table><i class="hlbar"></i><svg class="cur" viewBox="0 0 16 16"><path d="M3 2l9 4.2-3.8 1.3L6.6 11.3z"/></svg></div></div>
+          <div class="win p-screen"><div class="url"><i></i><i></i><i></i><span>mail.acme.co/lists/march-signups</span></div><div class="pg"><b>March signups</b><table><tr><td>Ana Ruiz</td><td>Mar 3</td></tr><tr><td>Ben Okafor</td><td>Mar 9</td></tr><tr><td>Clara Weiss</td><td>Mar 14</td></tr><tr><td>Dev Patel</td><td>Mar 21</td></tr></table><i class="hlbar"></i><svg class="cur" viewBox="0 0 16 16"><path d="M3 2l9 4.2-3.8 1.3L6.6 11.3z"/></svg></div></div>
           <div class="term p-term"><div><u>$</u> open signups.csv</div><div><u>$</u> read 14 rows</div><div><u>$</u> write draft.txt</div></div>
         </div>
       </div>
@@ -91,17 +91,27 @@
       </div></div>
     </article>
   </div>
+</section>
+
+<section class="plans wrap" id="plans" aria-labelledby="ph">
+  <h2 class="ih" id="ph">Plans.</h2>
+  <div class="tiers">
+    <article class="tier on"><h3>Self-hosted</h3><span class="status"><span class="dot"></span>Free</span><ul><li>Your server, your limits</li><li>Bots get their own computer</li><li>Source on GitHub</li></ul><a class="pill sm w" href="https://github.com/SSilistre-dev/dozo/tree/main/dozo#readme" rel="noopener">Set it up</a></article>
+    <article class="tier"><h3>Free</h3><span class="status">Sign-up closed</span><ul><li>No card needed</li><li>Bots run, without their own computer</li></ul></article>
+    <article class="tier"><h3>Premium</h3><span class="status">Soon</span><ul><li>Bots get their own computer</li><li>Monthly usage allowance</li></ul></article>
+    <article class="tier"><h3>Premium Plus</h3><span class="status">Soon</span><ul><li>A bigger computer</li><li>More usage</li></ul></article>
+  </div>
+  <p class="fine">Every plan uses your own model connection: your key or your subscription. Model costs come from there.</p>
+  <p class="fine">Self-hosting is under the Elastic License 2.0: you may not offer Dozo to others as a hosted service.</p>
   <article class="strip">
-    <div><h2 class="ih">We run it for you.</h2><p>Dozo runs on our servers, in a closed preview for now. Plans and pricing come later.</p></div>
-    <div id="self-host"><h2 class="ih">Source available.</h2><p>Dozo's own code is under the Elastic License 2.0, the code it builds on under Apache-2.0. Run it on your own server, with any compatible model API or a model on your own machine. You may not offer it to others as a hosted service.</p></div>
-    <div class="dl"><h2 class="ih">Desktop app.</h2><p>Preview builds. The Windows build is not signed yet: Windows warns the first time you open it.</p><div class="get"><a class="pill" href="https://github.com/SSilistre-dev/dozo/releases/latest/download/Dozo-macOS.dmg" rel="noopener" aria-label="Download for macOS">macOS</a><a class="pill" href="https://github.com/SSilistre-dev/dozo/releases/latest/download/Dozo-Windows-x64-setup.exe" rel="noopener" aria-label="Download for Windows">Windows</a></div></div>
+    <div class="dl"><h2 class="ih">Desktop app.</h2><p>Opens your server or ours. Preview builds. The Windows build is not signed yet: Windows warns the first time you open it.</p><div class="get"><a class="pill" href="https://github.com/SSilistre-dev/dozo/releases/latest/download/Dozo-macOS.dmg" rel="noopener" aria-label="Download for macOS">macOS</a><a class="pill" href="https://github.com/SSilistre-dev/dozo/releases/latest/download/Dozo-Windows-x64-setup.exe" rel="noopener" aria-label="Download for Windows">Windows</a></div></div>
   </article>
 </section>
 
 <section class="close wrap" aria-labelledby="go">
   <span class="kana" lang="ja" aria-hidden="true">どうぞ</span>
   <h2 class="big" id="go">Go ahead.</h2>
-  <div class="cta"><a class="pill w lg" href="https://dozo.ssilistre.dev/sign-in">Sign in</a></div>
+  <div class="cta"><a class="pill w lg" href="https://github.com/SSilistre-dev/dozo/tree/main/dozo#readme" rel="noopener">Self-host for free</a></div>
 </section>
 </main>
 

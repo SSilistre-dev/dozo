@@ -26,14 +26,17 @@ Closed pre-release state, to undo at launch:
 - `og:url` and `og:image` and the call to action point at the pre-release addresses
   (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
-  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host" points at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
+  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the plan card's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
   latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
   `Dozo-Windows-x64-setup.exe`), so a new release needs no edit here; renaming an asset breaks them.
   The "not signed yet" note is the one `<p>` in that block, once per language: edit that line when
   a package is signed.
-- Hosted plan placeholder: the "We run it for you." block says only that hosted Dozo is in a
-  closed preview and that plans and pricing come later. It has no price, plan table, form or
-  payment link on purpose. Rewrite it when pricing is set and payment is connected.
+- Plans: the "Plans." section compares four ways to run Dozo. Only self-hosting can be started
+  today, so it is the filled card and the page's one primary button. Hosted Free reads "Sign-up
+  closed" and the two paid plans read "Soon": no price, number, form or payment link on purpose.
+  Write a price or a limit there only once the owner has set it and the code enforces it, and move
+  the primary button to sign-up when registration opens.
+- The demo scenes avoid plan and pricing words, so nothing in them reads as Dozo's own offer.
 - The page claims only what ships. The local-model panel is gone because the catalog is empty
   (`dozo/README.md`, "Status and known limits"); bring it back when models are listed.

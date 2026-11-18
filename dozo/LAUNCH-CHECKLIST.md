@@ -74,8 +74,8 @@ placeholders are replaced.
       configuration, never code edits). The plans and the one place their prices change:
       `dozo/README.md`, Hosted plans. Set our names in OAuth consent screens, the Slack, Discord and
       Telegram apps and the OpenRouter listing. Owner's decision: the product is source available
-      (Elastic License 2.0 for the fork's own files, see `dozo/NOTICE`) and a hosted SaaS that runs on our servers; payment is not connected yet, so the landing page holds
-      a placeholder for the hosted plan (`dozo/landing/README.md`).
+      (Elastic License 2.0 for the fork's own files, see `dozo/NOTICE`) and a hosted SaaS that runs on our servers; payment is not connected yet, so the landing page shows
+      the plans without prices (`dozo/landing/README.md`).
 - [ ] **Android build name** (blocks launch if the Android build is offered). Publish the APK as
       `dozo.apk` under the release tag the download URL names.
 - [ ] **Third-party catalog branding** (decision). The xAI/Grok plugin catalog and import text name
