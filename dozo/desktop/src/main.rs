@@ -1,21 +1,22 @@
-//! Dozo for macOS: a native window around the Dozo web app. What it does and leaves out: README.md.
+//! Dozo for macOS and Windows: a native window around the Dozo web app. What it does and leaves
+//! out: README.md.
+// A release build on Windows opens no console window beside the app.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
 mod frames;
 mod server;
 
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
-use server::{Verdict, decide, outside, parse_server, reachable};
+use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::{NewWindowResponse, PermissionResponse};
 use tauri::{
     AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
     window::Color,
 };
-
-/// The app's own screens (ui/), under Tauri's local scheme. `?change` asks for the server form.
-const LOCAL: &str = "tauri://localhost/index.html";
 
 /// The server the user chose. Only its origin loads in the window.
 struct Server(Mutex<Option<Url>>);
@@ -71,7 +72,21 @@ fn open_outside(url: Url) {
     }
     *last = Some(Instant::now());
     // Waited for on its own thread so the finished `open` is reaped.
-    std::thread::spawn(move || Command::new("/usr/bin/open").arg(url.as_str()).status());
+    std::thread::spawn(move || opener().arg(url.as_str()).status());
+}
+
+#[cfg(target_os = "macos")]
+fn opener() -> Command {
+    Command::new("/usr/bin/open")
+}
+
+/// The shell's handler for a web or mail address. The address is one argument and no command
+/// interpreter reads it.
+#[cfg(windows)]
+fn opener() -> Command {
+    let mut command = Command::new("rundll32");
+    command.arg("url.dll,FileProtocolHandler");
+    command
 }
 
 fn show_local(window: &WebviewWindow, query: &str) {
@@ -81,7 +96,7 @@ fn show_local(window: &WebviewWindow, query: &str) {
 /// Reloads the server's page in place. A server that stopped answering would leave a failed
 /// page, so that case (and a reload of a local screen) starts over from the local screen.
 fn reload(window: WebviewWindow) {
-    let on_server = window.url().is_ok_and(|url| url.scheme() != "tauri");
+    let on_server = window.url().is_ok_and(|url| !is_local(&url));
     let server = chosen(window.app_handle()).filter(|_| on_server);
     tauri::async_runtime::spawn_blocking(move || match server {
         Some(server) if reachable(&server) => {
@@ -91,6 +106,7 @@ fn reload(window: WebviewWindow) {
     });
 }
 
+#[cfg(target_os = "macos")]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let separator = || PredefinedMenuItem::separator(app);
     Menu::with_items(
@@ -159,6 +175,26 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     )
 }
 
+/// Windows draws the menu inside the window, and the web view has the editing shortcuts itself:
+/// one short menu.
+#[cfg(windows)]
+fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    Menu::with_items(
+        app,
+        &[&Submenu::with_items(
+            app,
+            "Dozo",
+            true,
+            &[
+                &MenuItem::with_id(app, "change-server", "Change Server…", true, Some("Ctrl+,"))?,
+                &MenuItem::with_id(app, "reload", "Reload", true, Some("Ctrl+R"))?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::quit(app, None)?,
+            ],
+        )?],
+    )
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -216,7 +252,12 @@ fn main() {
                     // Camera, microphone and the like: the web view grants them unless told otherwise.
                     .on_permission_request(|_, _| PermissionResponse::Deny)
                     .build()?;
+            // Only macOS needs the gate: the Windows web view asks the navigation hook about
+            // the window's own page alone, so frames load there as they do in a browser.
+            #[cfg(target_os = "macos")]
             frames::only_gate_the_main_frame(&window)?;
+            #[cfg(not(target_os = "macos"))]
+            let _ = window;
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -4,6 +4,23 @@ use std::net::{IpAddr, TcpStream};
 use std::time::Duration;
 use tauri::Url;
 
+/// The app's own screens (ui/), at the address Tauri serves them from: its own scheme, or on
+/// Windows, where the web view has no such scheme, a host name only the app answers for.
+/// `?change` asks for the server form.
+#[cfg(not(windows))]
+pub const LOCAL: &str = "tauri://localhost/index.html";
+#[cfg(windows)]
+pub const LOCAL: &str = "http://tauri.localhost/index.html";
+
+/// True for the app's own screens.
+pub fn is_local(url: &Url) -> bool {
+    if cfg!(windows) {
+        url.scheme() == "http" && url.host_str() == Some("tauri.localhost") && url.port().is_none()
+    } else {
+        url.scheme() == "tauri" && url.host_str() == Some("localhost")
+    }
+}
+
 /// Where a navigation of the window's own page goes.
 #[derive(Debug, PartialEq)]
 pub enum Verdict {
@@ -71,7 +88,7 @@ pub fn outside(url: &Url) -> Option<Url> {
 pub fn decide(url: &Url, server: Option<&Url>) -> Verdict {
     let on_server = server.is_some_and(|server| server.origin() == url.origin());
     match url.scheme() {
-        "tauri" if url.host_str() == Some("localhost") => Verdict::Window,
+        _ if is_local(url) => Verdict::Window,
         "about" => Verdict::Window,
         // A blob URL carries the origin of the page that made it.
         "http" | "https" | "blob" if on_server => Verdict::Window,
@@ -184,10 +201,7 @@ mod tests {
             window("blob:https://dozo.example.com/0b0e"),
             Verdict::Window
         );
-        assert_eq!(
-            window("tauri://localhost/index.html?change"),
-            Verdict::Window
-        );
+        assert_eq!(window(&format!("{LOCAL}?change")), Verdict::Window);
         assert_eq!(window("about:blank"), Verdict::Window);
         // Same host, another scheme or port, and look-alike hosts are other origins.
         for other in [
@@ -229,10 +243,24 @@ mod tests {
             decide(&url("blob:https://dozo.example.com/0b0e"), None),
             Verdict::Refused
         );
-        assert_eq!(
-            decide(&url("tauri://localhost/index.html"), None),
-            Verdict::Window
-        );
+        assert_eq!(decide(&url(LOCAL), None), Verdict::Window);
+    }
+
+    // The Windows address of the local screens is a web address: nothing near it may pass for it.
+    #[cfg(windows)]
+    #[test]
+    fn only_the_exact_local_address_is_local() {
+        for other in [
+            "https://tauri.localhost/index.html",
+            "http://tauri.localhost:8080/index.html",
+            "http://tauri.localhost.evil.test/",
+            "http://evil.tauri.localhost/",
+            "http://localhost/index.html",
+        ] {
+            assert!(!is_local(&url(other)), "{other}");
+        }
+        // Nor can it be chosen as the server.
+        assert!(parse_server("http://tauri.localhost").is_err());
     }
 
     #[test]

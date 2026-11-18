@@ -1,0 +1,65 @@
+name: dozo-desktop-windows
+
+# Builds the Windows installer of the fork's own desktop app (dozo/desktop, Tauri 2) and keeps it
+# as a workflow artifact. Unsigned: no secrets, no signing (dozo/desktop/README.md, "Windows").
+# The versions come from the same files the macOS build reads: Rust from rust-toolchain.toml, the
+# Tauri CLI from build.sh, the crates from Cargo.lock.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same
+# SHAs the upstream workflows use).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - dozo/desktop/**
+      - .github/workflows/dozo-desktop-windows.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-desktop-windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: dozo/desktop
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # The version and components in rust-toolchain.toml.
+      - name: Rust toolchain
+        run: rustup toolchain install
+
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "$(sed -n 's/^TAURI_CLI=//p' build.sh)" --locked
+
+      # Generated from the approved brand files, never committed here (as build.sh does on macOS).
+      - name: Icon and logo
+        run: |
+          mkdir -p icons
+          cp ../brand/assets/desktop/icon.ico icons/icon.ico
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+
+      # Formatting is the same on every system and is checked on macOS (build.sh check).
+      - name: Lint and test
+        run: |
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+
+      # The bundle is the one tauri.windows.conf.json names: an NSIS installer.
+      - name: Build the installer
+        run: cargo tauri build -- --locked
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dozo-windows-installer
+          path: dozo/desktop/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
