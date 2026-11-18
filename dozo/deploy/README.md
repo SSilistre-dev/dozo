@@ -111,8 +111,8 @@ SANDBOX_SUPERVISOR_TOKEN=...
 Keep `ENCRYPTION_KEY` and the two database passwords for the life of the data: stored credentials
 are encrypted with the first, and Postgres takes its passwords only when its volume is first
 created. Every other upstream setting (`docs/self-host-configuration.md`) can be added the same
-way. Model keys, sign-in providers, email and billing are deliberately not set: the owner connects
-a model in the app.
+way. Model keys, sign-in providers and email are deliberately not set: the owner connects a model
+in the app. Billing is set in test mode only.
 
 `CLIENT_IP_HEADER`: the panel's proxy reports the CDN's address, not the visitor's, so without it
 every visitor shares one sign-in rate limit. The header is believed only from the stack's own

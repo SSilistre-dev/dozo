@@ -1,8 +1,11 @@
 # Dozo
 
-Dozo is a hosted service of persistent AI bots, each with its own computer. This repository is its
-source code. It is an independent fork of [Rakazo](https://github.com/elie222/rakazo)
-(Apache-2.0) and is not affiliated with or endorsed by the Rakazo project.
+Dozo runs persistent AI bots, each with its own computer. Run it on your own server for free, or use
+the hosted version (a free plan and paid plans; sign-up is not open yet). This repository is its
+source code: source available, with Dozo's own files under the Elastic License 2.0 and the code it
+builds on under Apache-2.0. Dozo is an independent fork of
+[Rakazo](https://github.com/elie222/rakazo) and is not affiliated with or endorsed by the
+Rakazo project.
 
 ## Principle
 
