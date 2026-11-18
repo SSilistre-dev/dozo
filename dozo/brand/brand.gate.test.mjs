@@ -605,14 +605,17 @@ describe("leak gate and symlinks in scope", () => {
 });
 
 describe("runtime directories", () => {
-  it("never walks the top-level data/ of the stage or a nested dozo/.stage", () => {
-    const root = tree({ "data/a.txt": "Rakazo", "dozo/.stage/src/a.txt": "Rakazo", "src/a.txt": "Rakazo", "src/data/b.txt": "Rakazo" });
+  it("never walks the top-level data/ of the stage, a nested dozo/.stage or the iOS build's directories", () => {
+    const root = tree({ "data/a.txt": "Rakazo", "dozo/.stage/src/a.txt": "Rakazo", "dozo/mobile/.build/a.txt": "Rakazo", "dozo/mobile/.toolchain/a.txt": "Rakazo", "dozo/mobile/a.txt": "Rakazo", "src/a.txt": "Rakazo", "src/data/b.txt": "Rakazo" });
     fs.chmodSync(path.join(root, "data"), 0o000); // root-owned on Linux: unreadable, must not crash
     const res = apply(root, configFile({ include: ["**"] }));
     fs.chmodSync(path.join(root, "data"), 0o755);
     assert.equal(res.status, 0, res.stderr);
     assert.equal(read(root, "data/a.txt"), "Rakazo");
     assert.equal(read(root, "dozo/.stage/src/a.txt"), "Rakazo");
+    assert.equal(read(root, "dozo/mobile/.build/a.txt"), "Rakazo");
+    assert.equal(read(root, "dozo/mobile/.toolchain/a.txt"), "Rakazo");
+    assert.equal(read(root, "dozo/mobile/a.txt"), "Dozo");
     assert.equal(read(root, "src/a.txt"), "Dozo");
     assert.equal(read(root, "src/data/b.txt"), "Dozo");
   });

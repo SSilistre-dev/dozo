@@ -18,7 +18,7 @@
     "packages/**",
     "infra/sandboxes/**",
     "apps/desktop/**/*.{png,jpg,jpeg,gif,webp,avif,bmp,ico,icns,svg,tif,tiff,heic}",
-    "apps/mobile/**/*.{png,jpg,jpeg,gif,webp,avif,bmp,ico,icns,svg,tif,tiff,heic}"
+    "apps/mobile/**"
   ],
   "exclude": [
     {
@@ -100,6 +100,22 @@
     {
       "glob": "packages/db/prisma/**",
       "reason": "schema and migrations are checksummed and persisted; only doc comments mention the brand"
+    },
+    {
+      "glob": "apps/mobile/.maestro/**",
+      "reason": "device test flows: like the other tests they run on the pristine tree and launch upstream's bundle id"
+    },
+    {
+      "glob": "apps/mobile/e2e/**",
+      "reason": "upstream's store screenshot tooling, run on the pristine tree; not part of the app"
+    },
+    {
+      "glob": "apps/mobile/assets/sounds/**",
+      "reason": "call and wait sounds: audio with no text and no name in it"
+    },
+    {
+      "glob": "apps/mobile/modules/*/android/**",
+      "reason": "Android native sources: only the iOS app is built (dozo/mobile/README.md); the Java package names are identifiers"
     }
   ],
   "keep": [
@@ -107,9 +123,10 @@
       "text": "Rakazo.icon",
       "files": [
         "packages/ui-tokens/scripts/export-brand.ts",
-        "packages/ui-tokens/assets/README.md"
+        "packages/ui-tokens/assets/README.md",
+        "apps/mobile/app.json"
       ],
-      "reason": "directory name of packages/ui-tokens/assets/Rakazo.icon, referenced by export-brand.ts and desktop packaging"
+      "reason": "directory name of packages/ui-tokens/assets/Rakazo.icon, referenced by export-brand.ts, desktop packaging and the iOS app icon path in app.json"
     },
     {
       "text": "Rakazo-owned compacted context",
@@ -188,7 +205,61 @@
       { "file": "infra/sandboxes/computer/test_page_browser.py", "text": "\"__rakazoTyping = \"", "reason": "probe text of the page-browser script, a code identifier inside a string" },
       { "file": "infra/sandboxes/supervisor/src/identity.ts", "text": "COMPUTER_IMAGE + rakazo.workspaceId (same rule as isRakazoContainer).", "reason": "developer comment naming a label key and a function" },
       { "file": "infra/sandboxes/supervisor/src/identity.ts", "text": "inspect with the same managed rule as isRakazoContainer.", "reason": "developer comment naming a function" },
-      { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute", "reason": "second class of a className list; the avatar CSS names stay" }
+      { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute", "reason": "second class of a className list; the avatar CSS names stay" },
+      { "file": "apps/mobile/app.json", "text": "\"RakazoWidgets\"", "reason": "widget target name in Xcode; never shown" },
+      { "file": "apps/mobile/app.json", "text": "\"scheme\": \"rakazo\"", "reason": "deep-link scheme: the API trusts it as the app's origin and builds notification links with it, so it changes only together with the server (README, Identifiers)" },
+      { "file": "apps/mobile/app/(settings)/general.tsx", "text": "value: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "apps/mobile/app/bot-settings.tsx", "text": "key: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
+      { "file": "apps/mobile/app/new-bot.tsx", "text": "set === \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "apps/mobile/components/bot-avatar.tsx", "text": "avatarSet: \"rakazo\"", "reason": "stored avatar-set enum value" },
+      { "file": "apps/mobile/components/pdf-preview.tsx", "text": "\"RakazoPdfView\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "\"RakazoDefaultApiBase\"", "reason": "Info.plist key read by the Siri intents" },
+      { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "\"RakazoPendingVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "RakazoSession", "count": 17, "reason": "Swift type name; `struct` is not a keyword the camel-name row knows" },
+      { "file": "apps/mobile/ios-intents/RakazoIntents.swift", "text": "RakazoShortcuts", "reason": "Swift type name; `struct` is not a keyword the camel-name row knows" },
+      { "file": "apps/mobile/ios-widgets/RakazoWidgets.swift", "text": "RakazoWidgets", "reason": "Swift type name; `struct` is not a keyword the camel-name row knows" },
+      { "file": "apps/mobile/lib/call-background.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/file-drop.ts", "text": "\"RakazoFileDrop\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/fold-regions.ts", "text": "\"RakazoFoldRegions\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/incoming-calls.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/live-notifications.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/native-list-scroll.ts", "text": "\"RakazoListScroll\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/network-cache.ts", "text": "\"RakazoNetworkCache\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/notification-open.ts", "text": "\"rakazo:\"", "reason": "the kept deep-link scheme, compared with a URL's protocol" },
+      { "file": "apps/mobile/lib/notification-open.ts", "text": "`rakazo.${key}`", "reason": "prefix of the notification data keys the server sends (rakazo.threadId); never shown" },
+      { "file": "apps/mobile/lib/push.ts", "text": "\"RakazoNotifications\"", "count": 2, "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/sso.ts", "text": "\"rakazo:\"", "reason": "the kept deep-link scheme, compared with a URL's protocol" },
+      { "file": "apps/mobile/lib/voice-chat-intent.ts", "text": "\"RakazoVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/lib/work-activity.ts", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-file-drop/expo-module.config.json", "text": "\"RakazoFileDropModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-file-drop/expo-module.config.json", "text": "\"com.rakazo.filedrop.RakazoFileDropModule\"", "reason": "Android class of a local native module; Android is not built" },
+      { "file": "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDrop.podspec", "text": "'RakazoFileDrop'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift", "text": "\"RakazoFileDrop\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-fold-regions/expo-module.config.json", "text": "\"RakazoFoldRegionsModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegions.podspec", "text": "'RakazoFoldRegions'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegionsModule.swift", "text": "\"RakazoFoldRegions\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-list-scroll/expo-module.config.json", "text": "\"RakazoListScrollModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScroll.podspec", "text": "'RakazoListScroll'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift", "text": "\"RakazoListScroll\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-network-cache/expo-module.config.json", "text": "\"RakazoNetworkCacheModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCache.podspec", "text": "'RakazoNetworkCache'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCacheModule.swift", "text": "\"RakazoNetworkCache\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/expo-module.config.json", "text": "\"RakazoCallsSubscriber\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/expo-module.config.json", "text": "\"RakazoNotificationsModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/expo-module.config.json", "text": "\"com.rakazo.notifications.RakazoNotificationsModule\"", "reason": "Android class of a local native module; Android is not built" },
+      { "file": "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift", "text": "\"RakazoIncomingCallChanged\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift", "text": "\"RakazoNotifications\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/ios/RakazoNotifications.podspec", "text": "'RakazoNotifications'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-notifications/ios/WorkActivityAttributes.swift", "text": "parts.scheme = \"rakazo\"", "reason": "the kept deep-link scheme of the Live Activity's link" },
+      { "file": "apps/mobile/modules/rakazo-pdf-view/expo-module.config.json", "text": "\"RakazoPdfViewModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-pdf-view/expo-module.config.json", "text": "\"com.rakazo.pdfview.RakazoPdfViewModule\"", "reason": "Android class of a local native module; Android is not built" },
+      { "file": "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfView.podspec", "text": "'RakazoPdfView'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfViewModule.swift", "text": "\"RakazoPdfView\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-voice-chat/expo-module.config.json", "text": "\"RakazoVoiceChatModule\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec", "text": "'RakazoVoiceChat'", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift", "text": "\"RakazoPendingVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift", "text": "\"RakazoVoiceChat\"", "reason": "name of a local native module, class or in-process notification that JS and Swift look up; never shown" },
+      { "file": "apps/mobile/plugins/with-app-intents.js", "text": "\"RakazoWidgets\"", "reason": "widget target name in Xcode; never shown" }
     ],
     "paths": [
       {
@@ -214,6 +285,102 @@
       {
         "glob": "packages/ui-tokens/assets/Rakazo.icon",
         "reason": "icon bundle directory read by export-brand.ts and desktop packaging; see the Rakazo.icon keep entry"
+      },
+      {
+        "glob": "apps/mobile/ios-intents/RakazoIntents.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/ios-widgets/RakazoWidgets.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-file-drop",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDrop.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-fold-regions",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegions.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegionsModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-list-scroll",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScroll.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-network-cache",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCache.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCacheModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-notifications",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-notifications/ios/RakazoNotifications.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-notifications/ios/RakazoWorkActivities.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-pdf-view",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfView.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfViewModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-voice-chat",
+        "reason": "directory of a local native module: Expo autolinking and the plugins find it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec",
+        "reason": "podspec of a local native module: CocoaPods finds it by this name"
+      },
+      {
+        "glob": "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift",
+        "reason": "Swift source file named after its type; file names are never renamed"
       }
     ],
     "binary": []
@@ -227,6 +394,24 @@
     "com.rakazo.app"
   ],
   "anchored": [
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"slug\": \"rakazo\",\n    \"owner\": \"inbox-zero\",",
+      "replace": "\"slug\": \"dozo\",",
+      "reason": "Expo slug, and no owner: a Dozo build must not belong to upstream's Expo account"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"eas\": {\n        \"projectId\": \"07f7eb04-45e3-47fe-9374-99a2f991131e\",\n        \"build\"",
+      "replace": "\"eas\": {\n        \"build\"",
+      "reason": "upstream's EAS project id: without it the app mints no Expo push token (lib/push.ts returns early) and no build or update is tied to upstream's project"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"updates\": {\n      \"url\": \"https://u.expo.dev/07f7eb04-45e3-47fe-9374-99a2f991131e\"\n    }",
+      "replace": "\"updates\": {\n      \"enabled\": false\n    }",
+      "reason": "upstream's over-the-air update channel: a Dozo build must never fetch code from it, so updates are off"
+    },
     {
       "file": "apps/web/index.html",
       "find": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />",
@@ -652,6 +837,15 @@
     "packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png": "shared/icon-layer.png"
   },
   "literals": [
+    {
+      "find": "com.rakazo.app",
+      "replace": "dev.ssilistre.dozo",
+      "files": [
+        "apps/mobile/app.json",
+        "apps/mobile/lib/incoming-share.ts"
+      ],
+      "reason": "the one definition of the mobile id family: iOS bundle id, its extensions (.widgets, .expo-sharing-extension, .notifications), the app group (group.<id>) and the Android package all carry this prefix, so the owner changes one line"
+    },
     {
       "find": "/home/rakazo",
       "replace": "/home/dozo",

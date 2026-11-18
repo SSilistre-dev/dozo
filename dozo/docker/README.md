@@ -125,6 +125,10 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
   exist. `source-available.test.mjs` fails when the landing page or `.github/README.md` calls Dozo
   open source.
+- The iOS app's config: `dozo/mobile/check-config.test.mjs` brands upstream's `apps/mobile/app.json`
+  with the shipped rules in a scratch tree and fails unless it carries the Dozo name and id family
+  and nothing of upstream's Expo account, EAS project, update channel, bundle ids or domain. It
+  builds nothing; the check on the resolved config is `dozo/mobile/build.sh check`.
 - Every anchored brand rule against the repository tree: `apply.mjs --check --allow-git --strict`
   (writes nothing; prints the `hooks:` line).
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
@@ -150,7 +154,7 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   lock owner's start time across time zones; and checks that the unit step fails on fewer fork test
   files than the committed tree has.
 
-A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no
+A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no mobile config test, no
 merge base, a missing Node image (in CI, where `CI` is set, it pulls the image; locally the message
 is `docker pull node:24.22-slim`). Nothing is skipped silently.
 

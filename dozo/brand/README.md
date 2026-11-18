@@ -85,12 +85,18 @@ is branded and gated. Names of files and directories are never renamed.
 
 ## Config (`brand.json`)
 
-Scope: `include` (globs: `apps/web`, `apps/api`, `apps/worker`, `packages`, `infra/sandboxes`, plus the
-image files of `apps/desktop` and `apps/mobile`) minus `exclude`. A glob may use `{a,b}` (one level) for
-alternatives; the two image globs list the extensions of `BINARY_EXT` that are pictures. Everything else
-(`apps/www`, the text, bundle ids and store entries of `apps/desktop` and `apps/mobile`, `docs/`, the root
-files) is out of scope: neither branded nor gated. So an upstream picture added under desktop or mobile
-fails the gate until it is mapped or reviewed, while their source text stays phase 3.
+Scope: `include` (globs: `apps/web`, `apps/api`, `apps/worker`, `packages`, `infra/sandboxes`, `apps/mobile`,
+plus the image files of `apps/desktop`) minus `exclude`. A glob may use `{a,b}` (one level) for
+alternatives; the image glob lists the extensions of `BINARY_EXT` that are pictures. Everything else
+(`apps/www`, the text, bundle ids and store entries of `apps/desktop`, `docs/`, the root
+files) is out of scope: neither branded nor gated. So an upstream picture added under desktop
+fails the gate until it is mapped or reviewed, while its source text stays phase 3.
+
+The mobile app is in scope as the iOS build ships it (`dozo/mobile/`): screens, permission texts, the
+widget, the Siri intents and the iOS side of the local native modules. Out, each an `exclude` entry: its
+tests and device flows, upstream's store screenshot tooling, the sound files, and the Android sources of
+the native modules (no Android build is made, so an Android build of the staged tree would still show
+upstream's name in its notification channels).
 
 Keys: `from`, `to`, `variants`, `urls`, `literals`, `include`, `exclude`, `keep`, `allow`,
 `leak` (extra substrings), `leakWords` (extra case-sensitive whole words, e.g. the upstream founder's
@@ -145,6 +151,21 @@ Renamed on purpose (each is a rule in `brand.json`):
   summaries; the reader still accepts the old prefix (`keep`).
 - The memory-provider provenance label `rakazo space:<id> bot:<id>` -> `dozo space:<id> bot:<id>`
   (free text sent to the provider; nothing reads it back; the entity ids `rakazo-space/...` stay).
+- The mobile app's id family: `com.rakazo.app` -> `dev.ssilistre.dozo`, one literal limited to
+  `apps/mobile/app.json` and `lib/incoming-share.ts`. The iOS bundle id, the widget, share and
+  notification extensions (`<id>.widgets`, `<id>.expo-sharing-extension`, `<id>.notifications`), the app
+  group (`group.<id>`) and the Android package all carry that prefix, so it is defined once. Three
+  anchored rules in `app.json` set the Expo slug and drop upstream's Expo owner, EAS project id and
+  update URL (updates are off).
+
+Kept in the mobile app, each a stem or a reviewed text: the `rakazo://` deep-link scheme (the API trusts
+it as the app's origin and writes it into notification links, so it can only change together with the
+server; an upstream app on the same phone claims the same scheme), the secure-store and defaults keys
+(`rakazo.session_token`), the names of the local native modules (`RakazoNotifications`,
+`modules/rakazo-notifications`), Swift type and file names, and the Xcode widget target `RakazoWidgets`.
+None is shown. The server side still names upstream's bundle id (`app-association.ts`,
+`apns-voip-config.ts`, reviewed in `allow.text`): push and passkeys for a Dozo app need those changed
+with the owner's ids (`dozo/LAUNCH-CHECKLIST.md`).
 
 This is consistent for a fresh Dozo installation built entirely from the staged tree. It is not
 compatible with data or volumes created by an upstream Rakazo installation (home directories, memory
@@ -242,9 +263,12 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
   (mapped to `apps/web/public/email/`); the mail links it under the `urls` domain, so that domain must
   reach the web app (`dozo/LAUNCH-CHECKLIST.md`). Mail clients may block remote images; the alt text is
   "Dozo".
-- Desktop and mobile: only their pictures are branded. Packaging text, bundle ids, store listings and the
-  `.icns`/`Assets.car` build (needs Xcode, not run here) are untouched; `Rakazo.icon/icon.json` keeps
-  `system-dark` as the plate and is moved from 90 points low to centred by an anchored rule.
+- Desktop: only its pictures are branded. Packaging text, bundle ids, store listings and the
+  `.icns` build are untouched. `Rakazo.icon/icon.json` keeps `system-dark` as the plate and is moved
+  from 90 points low to centred by an anchored rule; the iOS build compiles it into the app icon.
+- Mobile: the store links in the app are the `urls` placeholders (`dozo.example/get/ios`, the paywall's
+  terms link) until launch; no Android build is made. What a Dozo iOS build has switched off:
+  `dozo/mobile/README.md`.
 - Owner actions and the values to fill before launch: `dozo/LAUNCH-CHECKLIST.md`.
 - Details of every audit decision: `AUDIT.md`.
 

@@ -1,0 +1,4 @@
+# Node, pnpm, CocoaPods and their caches (build.sh installs them here, not on the host)
+.toolchain/
+# Staged tree, prebuild output, DerivedData, screenshots
+.build/

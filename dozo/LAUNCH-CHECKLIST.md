@@ -79,8 +79,17 @@ placeholders are replaced.
       `dozo.apk` under the release tag the download URL names.
 - [ ] **Third-party catalog branding** (decision). The xAI/Grok plugin catalog and import text name
       other vendors, not Rakazo. Decide whether to keep them.
-- [ ] **Desktop and mobile apps** (can follow). Store listings, bundle ids (`com.rakazo.app` is
-      upstream's) and signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
+- [ ] **iOS app** (can follow). `dozo/mobile/build.sh sim` builds upstream's mobile app as Dozo for
+      the simulator only. Before anyone gets it on a phone, the owner decides or provides: the
+      lasting bundle id (`dev.ssilistre.dozo` and its extensions were chosen without the owner; it
+      is one line in `dozo/brand/brand.json`, and changing it after release loses each user's
+      session), an Apple Developer team with the app, its three extensions and the app group
+      registered, signing, a TestFlight group, the store listing (category, age rating, privacy
+      answers), and whether push notifications and calls are wanted: they need the server's own
+      APNs key and an Expo project of ours, and the server still names upstream's bundle id as its
+      push topic and in its app-association file. What is off until then: `dozo/mobile/README.md`.
+- [ ] **Desktop and Android apps** (can follow). Store listings, the Electron and Android ids and
+      signing are out of phase 1. The `apps/desktop` and `apps/mobile` release
       workflows must stay disabled until then. The fork's own macOS app (`dozo/desktop/`) is a
       universal build. `dozo/desktop/build.sh` signs it with a Developer ID and has it notarized,
       but only on a Mac that holds the owner's settings file (`dozo/desktop/README.md`, Signing and
