@@ -37,6 +37,10 @@ Closed pre-release state, to undo at launch:
   closed" and the two paid plans read "Soon": no price, number, form or payment link on purpose.
   Write a price or a limit there only once the owner has set it and the code enforces it, and move
   the primary button to sign-up when registration opens.
+- The dragon behind the plans (`.scales`) is decoration, drawn once per language page: the logo
+  mark as its head, in the mark's red, kept faint. Its body path is generated, not hand-drawn:
+  redraw it whole if the shape changes. The plan cards are slightly translucent so it shows
+  through; keep text contrast at 4.5 or more when changing either opacity.
 - The demo scenes avoid plan and pricing words, so nothing in them reads as Dozo's own offer.
 - The page claims only what ships. The local-model panel is gone because the catalog is empty
   (`dozo/README.md`, "Status and known limits"); bring it back when models are listed.

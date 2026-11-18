@@ -135,9 +135,20 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 
 /* plans: the one you can start today is the filled card */
 .plans{margin-top:52px}
-.tiers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
-.tier{display:flex;flex-direction:column;align-items:flex-start;border-radius:24px;padding:22px 24px;box-shadow:inset 0 0 0 1px var(--line)}
-.tier.on{background:var(--raise);box-shadow:none}
+.tiers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0;position:relative}
+/* the dragon behind the plans: the mark's head on a scaled body, in the mark's red, faint. It lies
+   along the top of the cards and dips behind them; the cards are a little translucent. */
+.scales{position:absolute;right:0;bottom:100%;width:min(990px,100%);transform:translateY(42.9%);opacity:var(--scale-a,.5);pointer-events:none;color:#C8372D}
+:root[data-theme="light"] .scales{--scale-a:.42}
+:root[data-theme="light"] .tier:not(.on){background:color-mix(in srgb,var(--bg) 90%,transparent)}
+.scales svg{display:block;overflow:visible}
+.scales .body{stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
+.scales .fin,.scales .ink{fill:currentColor}.scales .spine{stroke:var(--bg);stroke-width:1.5;stroke-linejoin:round}
+.scales .horn,.scales .whisker{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round}.scales .whisker{stroke-width:1.7}
+.scales .visor{fill:var(--bg)}
+.scales .band path{fill:var(--bg);stroke:currentColor;stroke-width:1}
+.tier{display:flex;flex-direction:column;align-items:flex-start;border-radius:24px;padding:22px 24px;box-shadow:inset 0 0 0 1px var(--line);position:relative;background:color-mix(in srgb,var(--bg) 80%,transparent)}
+.tier.on{background:color-mix(in srgb,var(--raise) 90%,transparent);box-shadow:none}
 .tier h3{font-size:18px;font-weight:500;letter-spacing:-.015em}
 .tier ul{list-style:none;margin:14px 0 20px;font-size:14.5px;color:var(--muted)}.tier li+li{margin-top:4px}
 .tier .pill{margin-top:auto}
