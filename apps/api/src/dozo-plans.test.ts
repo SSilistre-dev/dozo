@@ -2,11 +2,13 @@ import type { BillingSubscriptionSnapshot, SandboxProvider } from "@rakazo/adapt
 import { BillingEmulator, sandboxAllowanceUsedUp } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { BYOK_TIERS, byokTierPriceCents, sandboxAllowanceHours } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
 import { hasModelAccess, memberHasModelAccess, planComputerSize } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing.js";
+import { PlanNotOfferedError } from "./dozo-billing.js";
 import { createReferrals } from "./referrals.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
@@ -29,6 +31,7 @@ const store = vi.hoisted(() => ({
   },
   billingOn: true,
   trialHolds: 0,
+  fileBytes: 0,
 }));
 
 // The database helpers have upstream's own PostgreSQL tests; here one organization lives in memory.
@@ -123,7 +126,10 @@ const prisma = {
   },
   referral: { findUnique: async () => null },
   member: { count: async () => 1 },
-  $queryRaw: async () => runs,
+  // Two questions reach the database raw: the bytes of the organization's files, and its
+  // computer hours.
+  $queryRaw: async (query: { sql?: string }) =>
+    query.sql?.includes('"artifacts"') ? [{ used: String(store.fileBytes) }] : runs,
   $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
 } as unknown as PrismaClient;
 
@@ -159,6 +165,7 @@ beforeEach(() => {
   store.credits = { organizationId: "org-1", mode: null, balanceMicros: 0n, byokFreeUntil: null };
   store.billingOn = true;
   store.trialHolds = 0;
+  store.fileBytes = 0;
   runs.length = 0;
 });
 
@@ -238,10 +245,30 @@ describe("an organization on Free", () => {
     ).resolves.toBe(false);
   });
 
-  it("cannot check out Free", async () => {
+  it("cannot check out Free, named or by naming no plan, and is told why", async () => {
+    const { billing, provider } = setup();
+    for (const tier of ["standard", undefined] as const) {
+      const refusal = await billing
+        .checkout(actor, undefined, "month", tier)
+        .catch((error) => error);
+      expect(refusal).toBeInstanceOf(PlanNotOfferedError);
+      expect(refusal).toBeInstanceOf(ClientError);
+      expect(refusal).toMatchObject({ kind: "BAD_REQUEST", code: "plan_not_offered" });
+    }
+    // Nothing was opened with the payment provider.
+    expect(store.account).toBeNull();
+    expect(provider.byokCheckouts.size).toBe(0);
+  });
+
+  it("sees its plan's name and how much of its shared space is used", async () => {
+    store.fileBytes = 120 * 1024 * 1024;
     const { billing } = setup();
-    await expect(billing.checkout(actor, undefined, "month", "standard")).rejects.toMatchObject({
-      code: "NOT_FOUND",
+    await expect(billing.status(actor)).resolves.toMatchObject({
+      sharedSpace: {
+        plan: "Free",
+        usedBytes: 120 * 1024 * 1024,
+        limitBytes: 500 * 1024 ** 2,
+      },
     });
   });
 
@@ -271,6 +298,19 @@ describe("a Premium subscriber", () => {
       byokTier: "pro",
       byokPriceCents: BYOK_TIERS.pro.monthlyPriceCents,
       trialAvailable: false,
+    });
+  });
+
+  it("sees its own plan's name and shared space", async () => {
+    const context = setup();
+    await subscribe(context);
+    store.fileBytes = 1024 ** 3;
+    await expect(context.billing.status(actor)).resolves.toMatchObject({
+      sharedSpace: {
+        plan: "Premium",
+        usedBytes: 1024 ** 3,
+        limitBytes: 2 * 1024 ** 3,
+      },
     });
   });
 
@@ -355,6 +395,13 @@ describe("a server that sells seats, without model credits", () => {
 });
 
 describe("a server that does not bill", () => {
+  it("shows no shared space, which has no limit there", async () => {
+    store.billingOn = false;
+    store.fileBytes = 50 * 1024 ** 3;
+    const status = await setup().billing.status(actor);
+    expect(status.sharedSpace).toBeUndefined();
+  });
+
   it("never limits computers, whatever the plans say", async () => {
     store.billingOn = false;
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);

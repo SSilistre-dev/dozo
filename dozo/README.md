@@ -87,7 +87,9 @@ counted. `packages/db/src/dozo-shared-space.ts` refuses the write that takes the
 organization, so writes running together cannot pass the limit between them. Nothing is deleted
 and everything stays readable when a plan ends with more than Free allows; only new files are
 refused until enough is deleted. Only a live Premium or Premium Plus subscription raises the limit;
-every other organization, one that only buys credits included, has Free's. The test beside that
+every other organization, one that only buys credits included, has Free's. The billing status
+carries the plan's name and the bytes in use (`sharedSpace`, read with the same count), which
+Billing shows on web and mobile; a server that does not bill sends none. The test beside that
 file lists upstream's writers of file rows and fails when a sync brings one it does not know. The
 lock, the count across Spaces and row security are tested in `dozo-shared-space.postgres.test.ts`,
 which needs a migrated database (`VERIFY_DATABASE=1` and `DATABASE_URL` of the runtime login); the
@@ -116,7 +118,10 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   failed generation, without the reason, and its cost is not returned.
 - A mail's attachment that does not fit is left out; the mail itself arrives.
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
-  such subscription exists, since the server has never billed, and Free cannot be checked out.
+  such subscription exists, since the server has never billed, and Free cannot be checked out: a
+  checkout that names no paid plan is refused as `plan_not_offered`.
+- The shared space in use shows in Billing only, read when the screen opens. The files screen
+  does not show it: it would need a second read of the billing status.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;
   they run on the pristine tree only.
 - Three optional operator services have no plan check and stay off on a server with a free plan
