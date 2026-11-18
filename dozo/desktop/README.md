@@ -28,7 +28,6 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 - Camera, microphone and similar requests from a page are denied.
 - Links to the browser are limited to one a second, so a page cannot flood it.
 - Closing the window quits the app. Menus and the local screens are English only.
-- One architecture: the build is for the Mac it runs on (no universal binary).
 
 ## Security
 
@@ -58,7 +57,8 @@ directory: rustup, Rust and the Tauri CLI go into `.toolchain/` and the build ou
 `target/` (about 4 GB together; both git-ignored). The first run downloads and compiles for several minutes.
 Versions are pinned in `rust-toolchain.toml`, `build.sh` (`TAURI_CLI`) and `Cargo.lock`.
 
-Output: `dist/Dozo.app` and `dist/Dozo.dmg`. The icon and the logo are generated from
+Output: `dist/Dozo.app` and `dist/Dozo.dmg`, one universal app for Apple silicon and Intel Macs
+(macOS 12 or later). The icon and the logo are generated from
 `dozo/brand/assets/` at build time and are not committed here.
 
 `make olc` does not run `check` (it runs in Docker and Rust is on the host): run it by hand after
@@ -92,10 +92,20 @@ Windows yet, so treat everything below as untested until someone does.
 
 ## Signing and distribution
 
-The app is signed ad hoc (no Apple Developer identity). It opens without a warning on the Mac
-that built it, because a locally built app is not quarantined. It is not ready to hand out: on
-another Mac a downloaded copy is blocked by Gatekeeper (`spctl --assess` rejects it). Distribution
-needs a Developer ID certificate and notarization; see `dozo/LAUNCH-CHECKLIST.md`.
+With `~/.config/dozo/sign.conf` in place (`sign.conf.example` lists its two values), `build.sh`
+signs the app and the disk image with a Developer ID, has Apple notarize both, staples the tickets
+and asks Gatekeeper about each; it fails if any step does, or if the file lacks a value. Such a build opens on any Mac
+without a warning. The identity and the notary credentials stay in the keychain of the Mac that
+builds: nothing about them is in this repository, and CI does not sign.
+
+- Hardened runtime, secure timestamp.
+- Entitlements: none. The app does not use the App Sandbox, and the hardened runtime needs an
+  exception only for what a process does itself. This one runs no JIT and loads no unsigned code:
+  the system web view compiles JavaScript in its own processes, which carry Apple's entitlements.
+  Camera and microphone requests are denied, so there is no device entitlement either.
+
+Without that file the app is signed ad hoc and `build.sh` says so. It then opens without a warning
+only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
 
 ## Where it keeps things
 
