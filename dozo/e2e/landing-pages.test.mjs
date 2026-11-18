@@ -1,6 +1,6 @@
-// The landing page is one hand-kept HTML file per language (dozo/landing/index.html and
-// dozo/landing/<lang>/index.html), with no build step. This holds them to one structure: the same
-// tags, attributes, link targets and text slots, differing only in the words.
+// The landing site is hand-kept HTML, one copy per language (dozo/landing/ and dozo/landing/<lang>/),
+// with no build step. This holds each language to the English pages' structure: the same tags,
+// attributes, link targets and text slots, differing only in the words.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -18,7 +18,15 @@ const worded = new Set(["aria-label", "data-full", "data-wait", "data-done", "da
 const wordedMeta = /^(description|og:title|og:description|og:locale|og:locale:alternate|og:url)$/;
 const token = /<!--[\s\S]*?-->|<\/([a-z][\w-]*)>|<([a-z!][\w-]*)((?:\s+[\w:-]+(?:="[^"]*")?)*)\s*\/?>|[^<]+/gi;
 
-function parse(file, base) {
+// A link resolved against its page. A page links to its own language's pages (home, privacy, terms),
+// so outside the language switcher the language directory is dropped before comparing.
+function address(value, file, lang, switcher) {
+  const url = new URL(value, new URL(file, site + "/")).href;
+  const own = site + pathOf(lang);
+  return switcher || !url.startsWith(own) ? url : `${site}/${url.slice(own.length)}`;
+}
+
+function parse(file, lang) {
   const html = read(file);
   const tags = [];
   const shape = [];
@@ -38,8 +46,7 @@ function parse(file, base) {
         // Which language the page is (its lang, the current switcher link) is checked further down.
         .filter(([key]) => key !== "aria-current" && !(name === "html" && key === "lang"))
         .filter(([key]) => !(meta && key === "content") && !(canonical && key === "href"))
-        // Addresses are compared resolved; a link into the page itself (#main) counts as the same target.
-        .map(([key, value]) => `${key}=${worded.has(key) ? (value.trim() ? "(words)" : "") : key === "href" || key === "src" ? new URL(value, site + base).href.replace(`${base}#`, "/#") : value}`);
+        .map(([key, value]) => `${key}=${worded.has(key) ? (value.trim() ? "(words)" : "") : key === "href" || key === "src" ? address(value, file, lang, "hreflang" in attrs) : value}`);
       shape.push([name, ...kept].join(" "));
     } else if (text.trim() && !text.startsWith("<!--")) shape.push("#text");
   }
@@ -55,45 +62,51 @@ function sameShape(actual, expected, file) {
 }
 
 const find = (page, name, where) => page.tags.filter((tag) => tag.name === name && where(tag.attrs));
-const english = { index: parse("index.html", "/"), missing: parse("404.html", "/") };
+// Every language has the same pages: the landing page and, each in its own directory, the legal pages.
+const pages = ["", "privacy/", "terms/", "refunds/"];
+const english = Object.fromEntries(["404.html", ...pages.map((page) => `${page}index.html`)].map((file) => [file, parse(file, "en")]));
 
 test("there is at least one translated landing page", () => {
   assert.ok(languages.includes("tr"));
 });
 
 for (const lang of ["en", ...languages]) {
-  const base = pathOf(lang);
   const prefix = lang === "en" ? "" : `${lang}/`;
 
-  test(`${lang}: same structure as the English page`, () => {
-    sameShape(parse(`${prefix}index.html`, base).shape, english.index.shape, `${prefix}index.html`);
-    // The 404 page links to its own language's home page, so that one target is put back first.
-    const missing = parse(`${prefix}404.html`, base).shape.map((line) => line.replace(site + base, `${site}/`));
-    sameShape(missing, english.missing.shape, `${prefix}404.html`);
+  test(`${lang}: same structure as the English pages`, () => {
+    for (const [file, page] of Object.entries(english)) sameShape(parse(prefix + file, lang).shape, page.shape, prefix + file);
   });
 
   test(`${lang}: names its language and links every other one`, () => {
-    const page = parse(`${prefix}index.html`, base);
-    assert.equal(find(page, "html", () => true)[0].attrs.lang, lang);
-    assert.equal(find(parse(`${prefix}404.html`, base), "html", () => true)[0].attrs.lang, lang);
+    assert.equal(find(parse(`${prefix}404.html`, lang), "html", () => true)[0].attrs.lang, lang);
+    for (const path of pages) {
+      const file = `${prefix}${path}index.html`;
+      const page = parse(file, lang);
+      const at = (code) => site + pathOf(code) + path;
+      assert.equal(find(page, "html", () => true)[0].attrs.lang, lang, file);
 
-    const alternates = Object.fromEntries(
-      find(page, "link", (a) => a.rel === "alternate").map((tag) => [tag.attrs.hreflang, tag.attrs.href]),
-    );
-    const expected = Object.fromEntries(["en", ...languages].map((code) => [code, site + pathOf(code)]));
-    assert.deepEqual(alternates, { ...expected, "x-default": `${site}/` });
-    assert.equal(find(page, "link", (a) => a.rel === "canonical")[0].attrs.href, site + base);
-    assert.equal(find(page, "meta", (a) => a.property === "og:url")[0].attrs.content, site + base);
-    assert.match(find(page, "meta", (a) => a.property === "og:locale")[0].attrs.content, new RegExp(`^${lang}_`));
+      const alternates = Object.fromEntries(
+        find(page, "link", (a) => a.rel === "alternate").map((tag) => [tag.attrs.hreflang, tag.attrs.href]),
+      );
+      const expected = Object.fromEntries(["en", ...languages].map((code) => [code, at(code)]));
+      assert.deepEqual(alternates, { ...expected, "x-default": at("en") }, file);
+      assert.equal(find(page, "link", (a) => a.rel === "canonical")[0].attrs.href, at(lang), file);
+      if (!path) {
+        assert.equal(find(page, "meta", (a) => a.property === "og:url")[0].attrs.content, at(lang));
+        assert.match(find(page, "meta", (a) => a.property === "og:locale")[0].attrs.content, new RegExp(`^${lang}_`));
+      }
 
-    const switcher = find(page, "a", (a) => "hreflang" in a);
-    assert.deepEqual(
-      switcher.map((tag) => [tag.attrs.hreflang, tag.attrs.lang, new URL(tag.attrs.href, site + base).href]),
-      ["en", ...languages].map((code) => [code, code, site + pathOf(code)]),
-    );
-    assert.deepEqual(
-      switcher.filter((tag) => "aria-current" in tag.attrs).map((tag) => tag.attrs.hreflang),
-      [lang],
-    );
+      const switcher = find(page, "a", (a) => "hreflang" in a);
+      assert.deepEqual(
+        switcher.map((tag) => [tag.attrs.hreflang, tag.attrs.lang, new URL(tag.attrs.href, at(lang)).href]),
+        ["en", ...languages].map((code) => [code, code, at(code)]),
+        file,
+      );
+      assert.deepEqual(
+        switcher.filter((tag) => "aria-current" in tag.attrs).map((tag) => tag.attrs.hreflang),
+        [lang],
+        file,
+      );
+    }
   });
 }

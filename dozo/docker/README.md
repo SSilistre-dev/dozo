@@ -125,6 +125,8 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
   exist. `source-available.test.mjs` fails when the landing page or `.github/README.md` calls Dozo
   open source.
+- The landing pages (`dozo/landing/**/*.html`) hold no `[[`: a legal page writes a value only the
+  owner can supply as `[[NAME]]`, and a page that still has one must not merge.
 - The iOS app's config: `dozo/mobile/check-config.test.mjs` brands upstream's `apps/mobile/app.json`
   with the shipped rules in a scratch tree and fails unless it carries the Dozo name and id family
   and nothing of upstream's Expo account, EAS project, update channel, bundle ids or domain. It

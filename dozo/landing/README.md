@@ -15,8 +15,16 @@ structure: same tags, attributes, link targets and text slots. The words the scr
 the animations are `data-*` attributes on the page, not strings in `landing.js`. Nothing redirects
 by browser language; the header links are the only switch.
 
+Legal pages: `privacy/`, `terms/` and `refunds/`, one `index.html` each per language, linked from
+every footer. Plain text, no script. They state only what the code does (the data flows were read
+from the code) and what the owner's own published policies say; a lawyer has not reviewed them
+(`dozo/LAUNCH-CHECKLIST.md`). The app's privacy and terms links open them through two anchored rules
+in `dozo/brand/brand.json`. A value only the owner can supply is written `[[NAME]]`, and `make olc`
+fails while any page holds one. When the code changes what is collected, kept or sent (a new
+cookie, a retention period, a provider), change the pages in both languages in the same PR.
+
 To add a language: copy `tr/` to `<code>/` and translate it, add its `hreflang` link and header
-link to every page, and copy the two `/tr/` locations in `dozo/deploy/site.nginx.conf`. The test
+link to every page (the legal pages too), and copy the two `/tr/` locations in `dozo/deploy/site.nginx.conf`. The test
 names whatever is missing. `og.png` carries English words and is shared by every language.
 
 Closed pre-release state, to undo at launch:
@@ -24,7 +32,9 @@ Closed pre-release state, to undo at launch:
 - `robots.txt` disallows everything, the page has `<meta name="robots" content="noindex">` and the
   server sends `X-Robots-Tag: noindex` (`dozo/deploy/site.nginx.conf`). Remove all three.
 - `og:url` and `og:image` and the call to action point at the pre-release addresses
-  (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain.
+  (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain, also in the
+  legal pages' `canonical` and `hreflang` links, in `dozo/e2e/landing-pages.test.mjs` and in the two
+  legal-link rules in `dozo/brand/brand.json`.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the plan card's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
