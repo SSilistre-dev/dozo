@@ -207,6 +207,9 @@ if [ "$action" = site ]; then
   trap 'rm -rf "$stage"' EXIT
   git -C "$repo" archive HEAD dozo/landing dozo/deploy/site.nginx.conf dozo/deploy/compose.site.yml |
     tar -x -C "$stage"
+  # Version the asset addresses by content, so a cache in front cannot pair the new page with an
+  # old stylesheet. Only this copy is stamped: the committed pages carry no version.
+  "$here/site-assets.sh" stamp "$stage/dozo/landing"
   say "copy the landing page to the host"
   remote mkdir -p "$remote_dir/site/html" "$remote_dir/site/conf"
   rsync -az --delete --exclude=README.md "$stage/dozo/landing/" "$DOZO_DEPLOY_SSH:$remote_dir/site/html/"
@@ -232,11 +235,14 @@ if [ "$action" = site ]; then
   done
   url="https://$DOZO_SITE_DOMAIN/"
   waited=0
-  until curl -fsS -m 20 "$url" 2>/dev/null | grep -qi '<title>[^<]*dozo'; do
+  # The body goes into a variable first. Piped straight into `grep -q`, grep left at the title,
+  # curl failed writing the rest (exit 23) and pipefail made a page that answered count as down.
+  until page=$(curl -fsS -m 20 "$url" 2>/dev/null) && grep -qi '<title>[^<]*dozo' <<<"$page"; do
     [ "$waited" -lt 120 ] || die "$url does not answer with the Dozo page"
     sleep 5
     waited=$((waited + 5))
   done
+  "$here/site-assets.sh" verify "$stage/dozo/landing" "$url" || die "$url does not serve what was published"
   say "DEPLOY: PASS (site at $url)"
   exit 0
 fi
