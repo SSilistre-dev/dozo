@@ -87,7 +87,9 @@ counted. `packages/db/src/dozo-shared-space.ts` refuses the write that takes the
 organization, so writes running together cannot pass the limit between them. Nothing is deleted
 and everything stays readable when a plan ends with more than Free allows; only new files are
 refused until enough is deleted. Only a live Premium or Premium Plus subscription raises the limit;
-every other organization, one that only buys credits included, has Free's. The test beside that
+every other organization, one that only buys credits included, has Free's. The billing status
+carries the plan's name and the bytes in use (`sharedSpace`, read with the same count), which
+Billing shows on web and mobile; a server that does not bill sends none. The test beside that
 file lists upstream's writers of file rows and fails when a sync brings one it does not know. The
 lock, the count across Spaces and row security are tested in `dozo-shared-space.postgres.test.ts`,
 which needs a migrated database (`VERIFY_DATABASE=1` and `DATABASE_URL` of the runtime login); the
@@ -109,10 +111,15 @@ and size, the shared space, the operator's paid services and the billing status 
 through it. A grant ends by that comparison alone: nothing runs when it ends, and the organization
 is back on what it pays for, Free when nothing. A granted plan has no price and no billing row, so
 the billing page shows no price for it. Every change is an audit event in the organization's own
-audit log, as the operator: the event names neither the admin nor the internal note (the note stays
-on the grant row, the admin's id in the server log). A grant only raises the computer allowance: it
-is at least the granted tier's, whatever a trial or a monthly credit plan gives. The table has no row security, as `billing_accounts` has none:
-the plan is read inside a member's own requests and uploads.
+audit log, as the operator: the event names the admin only by id, never by email, and not the
+internal note (which stays on the grant row). The event is the lasting record of who gave or ended
+a plan, since a new grant overwrites the row's giver and ending one deletes the row; it is written
+just after the change, as the audit primitive takes no transaction. Ending a plan that was not
+there changes and records nothing. A grant ends at the end of a UTC day, and the page offers
+tomorrow as the first. A grant only raises the computer allowance: it is at least the granted
+tier's, whatever a trial or a monthly credit plan gives, and an organization with only a grant has
+the monthly reset date. The table has no row security, as `billing_accounts` has none: the plan is
+read inside a member's own requests and uploads.
 
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
@@ -132,7 +139,10 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   failed generation, without the reason, and its cost is not returned.
 - A mail's attachment that does not fit is left out; the mail itself arrives.
 - Nobody may hold a paid subscription to tier `standard`: it would pay and get no computer. No
-  such subscription exists, since the server has never billed, and Free cannot be checked out.
+  such subscription exists, since the server has never billed, and Free cannot be checked out: a
+  checkout that names no paid plan is refused as `plan_not_offered`.
+- The shared space in use shows in Billing only, read when the screen opens. The files screen
+  does not show it: it would need a second read of the billing status.
 - Upstream's own billing tests (`*.test.ts` without the `dozo-` prefix) assert upstream's plans;
   they run on the pristine tree only.
 - Three optional operator services have no plan check and stay off on a server with a free plan

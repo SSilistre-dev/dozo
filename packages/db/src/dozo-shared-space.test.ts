@@ -10,6 +10,7 @@ import {
   isReplayedUpload,
   SharedSpaceFullError,
   sharedSpaceFull,
+  sharedSpaceUsage,
   withSharedSpace,
 } from "./dozo-shared-space.js";
 
@@ -207,8 +208,11 @@ describe("shared space", () => {
     const { sharedSpaceBytes } = terms;
     delete terms.sharedSpaceBytes;
     try {
-      const { queries, add } = organization({ files: [50 * GB] });
+      const { queries, add, tx } = organization({ files: [50 * GB] });
       await expect(add(GB)).resolves.toBe("kept");
+      await expect(
+        sharedSpaceUsage(tx as unknown as PrismaClient, "org-1", null, null),
+      ).resolves.toBeNull();
       expect(queries).toEqual([]);
     } finally {
       terms.sharedSpaceBytes = sharedSpaceBytes;
@@ -235,6 +239,59 @@ describe("shared space", () => {
     const free = organization({ billingOn: false, files: [50 * GB] });
     expect(await sharedSpaceFull(free.tx as unknown as PrismaClient, "space-1")).toBeNull();
     expect(free.queries).toEqual([]);
+  });
+
+  it("names the plan and counts what its files take, for showing", async () => {
+    const usage = (init: Parameters<typeof organization>[0]) => {
+      const { state, tx } = organization(init);
+      return sharedSpaceUsage(tx as unknown as PrismaClient, "org-1", state.billing, state.grant);
+    };
+    await expect(usage({ files: [100 * MB, 20 * MB] })).resolves.toEqual({
+      plan: "Free",
+      usedBytes: 120 * MB,
+      limitBytes: 500 * MB,
+    });
+    await expect(usage({ billing: paid("pro"), files: [GB] })).resolves.toEqual({
+      plan: "Premium",
+      usedBytes: GB,
+      limitBytes: 2 * GB,
+    });
+    await expect(usage({ billing: paid("max") })).resolves.toEqual({
+      plan: "Premium Plus",
+      usedBytes: 0,
+      limitBytes: 5 * GB,
+    });
+    // A plan that ended is Free again, with everything it kept still counted.
+    await expect(usage({ billing: paid("pro", "canceled"), files: [GB] })).resolves.toEqual({
+      plan: "Free",
+      usedBytes: GB,
+      limitBytes: 500 * MB,
+    });
+  });
+
+  it("names a granted plan and its limit for showing, and Free again once it ends", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const { state, tx } = organization({
+      files: [GB],
+      grant: { tier: "max", endsAt: new Date(Date.now() + day) },
+    });
+    const usage = () =>
+      sharedSpaceUsage(tx as unknown as PrismaClient, "org-1", state.billing, state.grant);
+    await expect(usage()).resolves.toEqual({
+      plan: "Premium Plus",
+      usedBytes: GB,
+      limitBytes: 5 * GB,
+    });
+    state.grant = { tier: "max", endsAt: new Date(Date.now() - day) };
+    await expect(usage()).resolves.toEqual({ plan: "Free", usedBytes: GB, limitBytes: 500 * MB });
+  });
+
+  it("has no usage to show on a server that does not bill, and counts nothing for it", async () => {
+    const { queries, tx } = organization({ billingOn: false, files: [50 * GB] });
+    await expect(
+      sharedSpaceUsage(tx as unknown as PrismaClient, "org-1", null, null),
+    ).resolves.toBeNull();
+    expect(queries).toEqual([]);
   });
 
   it("carries the limits on the plans", () => {

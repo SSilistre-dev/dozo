@@ -26,6 +26,8 @@ export const DozoAdminUserSchema = z.object({
   runningComputers: z.number().int(),
   suspended: z.boolean(),
   plan: DozoAdminPlanSchema,
+  /** Its address, or its domain, is on the ban list. */
+  banned: z.boolean(),
 });
 export type DozoAdminUser = z.infer<typeof DozoAdminUserSchema>;
 
@@ -37,6 +39,10 @@ export const DozoAdminComputerSchema = z.object({
   runningSince: IsoDate.nullable(),
 });
 export type DozoAdminComputer = z.infer<typeof DozoAdminComputerSchema>;
+
+/** A refused address (`ada@example.com`) or a refused domain with its subdomains (`example.com`). */
+export const DozoAdminBanSchema = z.object({ value: z.string(), createdAt: IsoDate });
+export type DozoAdminBan = z.infer<typeof DozoAdminBanSchema>;
 
 /** Every procedure is refused with FORBIDDEN unless the caller is a deployment admin. */
 export const dozoAdminContract = {
@@ -72,5 +78,18 @@ export const dozoAdminContract = {
   computers: oc.output(
     z.object({ total: z.number().int(), computers: z.array(DozoAdminComputerSchema) }),
   ),
+  bans: oc.output(z.object({ bans: z.array(DozoAdminBanSchema) })),
+  /**
+   * Refuses sign-up and sign-in for an address or a domain. Naming an account bans its address and
+   * suspends it. The entry comes back as stored: lower case, without a `+tag`.
+   */
+  ban: oc
+    .input(z.union([z.object({ userId: Id }), z.object({ value: z.string().max(254) })]))
+    .output(z.object({ value: z.string() })),
+  unban: oc
+    .input(z.object({ value: z.string().max(254) }))
+    .output(z.object({ ok: z.literal(true) })),
+  /** Deletes the account and what it holds, as the account's own deletion does. Cannot be undone. */
+  deleteUser: oc.input(z.object({ userId: Id })).output(z.object({ ok: z.literal(true) })),
   stopComputer: oc.input(z.object({ computerId: Id })).output(z.object({ ok: z.literal(true) })),
 };

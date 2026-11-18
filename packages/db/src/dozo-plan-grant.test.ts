@@ -326,6 +326,19 @@ describe("the computer a granted plan gives", () => {
     );
   });
 
+  it("resets at the start of next month for an organization with only a grant, until it ends", async () => {
+    const nextMonth = new Date(Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth() + 1, 1));
+    const resetsAt = async (prisma: PrismaClient) =>
+      (await sandboxAllowancePlan(prisma, "org-1", NOW))?.resetsAt;
+    for (const mode of [null, "byok"]) {
+      const { prisma, state } = organization({ mode, grant: { tier: "pro", endsAt: later } });
+      expect(await resetsAt(prisma)).toEqual(nextMonth);
+      // Once it ends, the reset is upstream's: none on Free's no allowance.
+      state.grant = { tier: "pro", endsAt: earlier };
+      expect(await resetsAt(prisma)).toBeNull();
+    }
+  });
+
   it("reaches an organization that has no plan of its own yet", async () => {
     const { prisma } = organization({ mode: null, grant: { tier: "pro", endsAt: later } });
     expect(await limit(prisma)).toBe(BYOK_TIERS.pro.computerAllowanceCents);

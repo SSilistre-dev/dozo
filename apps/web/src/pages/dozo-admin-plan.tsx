@@ -32,6 +32,8 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
     onFailed: (error) => toast.error(errorText(error, t`Could not change the plan`)),
   });
   const granting = choice !== "none";
+  // The end is a UTC day, and the first one that can still be chosen is tomorrow's.
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   return (
     <>
@@ -78,6 +80,7 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
             {granting ? (
               <Input
                 type="date"
+                min={tomorrow}
                 aria-label={t`End date`}
                 className="w-auto"
                 value={until}

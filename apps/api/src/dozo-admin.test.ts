@@ -1,7 +1,7 @@
 import { createRouterClient, os } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import type * as Db from "@rakazo/db";
-import { accountDeactivated } from "@rakazo/db";
+import { accountDeactivated, recordSecurityEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DozoAdminWiring } from "./dozo-admin.js";
 import {
@@ -111,6 +111,8 @@ function world(users: User[]) {
     if (where.deactivatedAt?.not === null && !row.deactivatedAt) return false;
     return true;
   };
+  // The ban list is the fork's own table, read and written with SQL.
+  const bans = new Map<string, Date>();
   const hosted = (where: Where) =>
     computers.filter(
       (row) =>
@@ -158,9 +160,19 @@ function world(users: User[]) {
         return { count };
       }),
     },
+    $queryRaw: vi.fn(async (sql: TemplateStringsArray, keys: string[]) =>
+      sql.join("").includes('"createdAt"')
+        ? [...bans].map(([value, createdAt]) => ({ value, createdAt }))
+        : keys.filter((key) => bans.has(key)).map((value) => ({ value })),
+    ),
+    $executeRaw: vi.fn(async (sql: TemplateStringsArray, value: string) => {
+      if (!sql.join("").includes("INSERT")) bans.delete(value);
+      else if (!bans.has(value)) bans.set(value, new Date("2026-04-01T00:00:00Z"));
+      return 1;
+    }),
     user: {
-      findFirst: vi.fn(async ({ where }: Where) => users.find((row) => matches(row, where))),
       findUnique: vi.fn(async ({ where }: Where) => users.find((row) => row.id === where.id)),
+      findFirst: vi.fn(async ({ where }: Where) => users.find((row) => matches(row, where))),
       findMany: vi.fn(async ({ where, take, cursor }: Where) => {
         const rows = users
           .filter((row) => matches(row, where))
@@ -209,7 +221,7 @@ function world(users: User[]) {
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { findMany: vi.fn(async () => []) },
   };
-  return { prisma, sessions: () => sessions, organizations };
+  return { prisma, sessions: () => sessions, organizations, bans };
 }
 
 const people = [
@@ -221,8 +233,40 @@ const people = [
 ];
 
 function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true) {
-  const { prisma, sessions, organizations } = world(users);
+  const { prisma, sessions, organizations, bans } = world(users);
   const removePush = vi.fn(async () => undefined);
+  // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
+  const steps: string[] = [];
+  const step = (name: string) =>
+    vi.fn(async (..._args: unknown[]): Promise<unknown> => void steps.push(name));
+  const deletion = {
+    steps,
+    findUserById: vi.fn(async (id: string) => users.find((row) => row.id === id) ?? null),
+    beforeDelete: step("content"),
+    afterDelete: step("recorded"),
+    deleteUser: vi.fn(async (id: string) => {
+      steps.push("account");
+      users.splice(
+        users.findIndex((row) => row.id === id),
+        1,
+      );
+    }),
+    deleteUserSessions: step("sessions"),
+  };
+  const auth = {
+    $context: Promise.resolve({
+      internalAdapter: {
+        findUserById: deletion.findUserById,
+        deleteUser: deletion.deleteUser,
+        deleteUserSessions: deletion.deleteUserSessions,
+      },
+    }),
+    options: {
+      user: {
+        deleteUser: { beforeDelete: deletion.beforeDelete, afterDelete: deletion.afterDelete },
+      },
+    },
+  };
   const deps = {
     prisma,
     pushTokens: { remove: removePush },
@@ -233,6 +277,7 @@ function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true)
           devices: { prisma, devices: {} } as unknown as DozoAdminWiring["devices"],
           directoryProvisioning: false,
           signupsEnabled: "false",
+          auth,
         })
       : {}),
   } as unknown as RouterDeps;
@@ -247,10 +292,11 @@ function setup(users: User[] = people.map((row) => ({ ...row })), wiring = true)
     };
     return createRouterClient(dozoAdminRoutes(ctx), { context: { actor } }).dozoAdmin;
   };
-  return { prisma, sessions, users, ctx, as, removePush, organizations };
+  return { prisma, sessions, users, ctx, as, removePush, organizations, bans, deletion };
 }
 
 beforeEach(() => {
+  vi.mocked(recordSecurityEvent).mockClear();
   stops.calls.length = 0;
   stops.fail = null;
   audit.events.length = 0;
@@ -278,6 +324,14 @@ describe("who may use the admin procedures", () => {
     expect(prisma.dozoPlanGrant.deleteMany).not.toHaveBeenCalled();
     expect(prisma.organization.findMany).not.toHaveBeenCalled();
     expect(audit.events).toEqual([]);
+    await expect(client.bans()).rejects.toMatchObject(refused);
+    await expect(client.ban({ value: "bob@example.test" })).rejects.toMatchObject(refused);
+    await expect(client.ban({ userId: "bob" })).rejects.toMatchObject(refused);
+    await expect(client.unban({ value: "bob@example.test" })).rejects.toMatchObject(refused);
+    await expect(client.deleteUser({ userId: "bob" })).rejects.toMatchObject(refused);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(users).toHaveLength(people.length);
     expect(prisma.user.findMany).not.toHaveBeenCalled();
     expect(prisma.computer.findMany).not.toHaveBeenCalled();
     expect(prisma.user.updateMany).not.toHaveBeenCalled();
@@ -321,6 +375,7 @@ describe("listing accounts", () => {
       runningComputers: 1,
       suspended: false,
       plan: { tier: "standard", grantedUntil: null },
+      banned: false,
     });
     expect(result.users[0]).toMatchObject({ lastSeenAt: null, bots: 0, runningComputers: 0 });
   });
@@ -561,29 +616,29 @@ describe("giving a plan by hand", () => {
     // Nobody else's organization was touched.
     expect(organizations.get("org-admin")?.grant).toBeNull();
 
-    // Tenant-visible: neither the admin's email or id, nor the note.
-    expect(JSON.stringify(audit.events)).not.toMatch(/press|owner@example|"admin"/);
+    // Tenant-visible: the admin only as an opaque id, never their email, nor the note.
+    expect(JSON.stringify(audit.events)).not.toMatch(/press|owner@example/i);
     expect(audit.events).toEqual([
       {
         action: "plan.granted",
         actor: { type: "system", label: "Operator" },
         organizationId: "org-ada",
         target: { type: "user", id: "ada" },
-        metadata: { tier: "pro", endsAt: first },
+        metadata: { adminId: "admin", tier: "pro", endsAt: first },
       },
       {
         action: "plan.granted",
         actor: { type: "system", label: "Operator" },
         organizationId: "org-ada",
         target: { type: "user", id: "ada" },
-        metadata: { tier: "max", endsAt: second },
+        metadata: { adminId: "admin", tier: "max", endsAt: second },
       },
       {
         action: "plan.grant_ended",
         actor: { type: "system", label: "Operator" },
         organizationId: "org-ada",
         target: { type: "user", id: "ada" },
-        metadata: { tier: null, endsAt: null },
+        metadata: { adminId: "admin", tier: null, endsAt: null },
       },
     ]);
   });
@@ -600,12 +655,12 @@ describe("giving a plan by hand", () => {
     expect(row.billing).toEqual({ status: "active", byokTier: "max" });
   });
 
-  it("answers and audits an end of a grant that was not there", async () => {
+  it("answers, and writes no audit record, for an end of a grant that was not there", async () => {
     const { as } = setup();
     expect(await as("admin").setPlan({ userId: "ada", tier: null })).toEqual({
       plan: { tier: "standard", grantedUntil: null },
     });
-    expect(audit.events).toHaveLength(1);
+    expect(audit.events).toEqual([]);
   });
 
   it("lets an admin give themselves a plan", async () => {
@@ -667,5 +722,172 @@ describe("giving a plan by hand", () => {
     ).rejects.toThrow("database down");
     prisma.member.findMany.mockRejectedValueOnce(new Error("database down"));
     await expect(as("admin").users({})).rejects.toThrow("database down");
+  });
+});
+
+describe("the ban list", () => {
+  it("stores an address or a domain in one form, lists it and lifts it", async () => {
+    const { as } = setup();
+    const admin = as("admin");
+    expect(await admin.ban({ value: "  Spam+promo@Mail.Example.NET " })).toEqual({
+      value: "spam@mail.example.net",
+    });
+    expect(await admin.ban({ value: "*.Evil.TEST" })).toEqual({ value: "evil.test" });
+    // The same entry again changes nothing.
+    await admin.ban({ value: "spam+other@mail.example.net" });
+    expect((await admin.bans()).bans).toEqual([
+      { value: "spam@mail.example.net", createdAt: "2026-04-01T00:00:00.000Z" },
+      { value: "evil.test", createdAt: "2026-04-01T00:00:00.000Z" },
+    ]);
+    // Lifted in whatever spelling it is named.
+    expect(await admin.unban({ value: " *.EVIL.test" })).toEqual({ ok: true });
+    expect((await admin.bans()).bans.map((ban) => ban.value)).toEqual(["spam@mail.example.net"]);
+    // Each change is on record with the admin who made it.
+    const change = (change: string, entry: string) => ({
+      type: "deployment.settings.changed",
+      userId: "admin",
+      metadata: { setting: "ban_list", change, entry },
+    });
+    expect(vi.mocked(recordSecurityEvent).mock.calls.map(([event]) => event)).toEqual([
+      change("added", "spam@mail.example.net"),
+      change("added", "evil.test"),
+      change("added", "spam@mail.example.net"),
+      change("removed", "evil.test"),
+    ]);
+  });
+
+  it("refuses what is neither an address nor a domain", async () => {
+    const { as, bans } = setup();
+    for (const value of ["", "nonsense", "a b@example.test", "test", "x@localhost", "a@@b.test"])
+      await expect(as("admin").ban({ value }), value).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    expect(bans.size).toBe(0);
+  });
+
+  it("refuses an entry that would lock an admin out", async () => {
+    const { as, bans, users } = setup();
+    for (const input of [
+      { value: "OWNER+x@example.test" },
+      { value: "example.test" },
+      { userId: "admin" },
+      // Listed as an admin, verified or not.
+      { userId: "squatter" },
+    ])
+      await expect(as("admin").ban(input)).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "An admin account cannot be banned",
+      });
+    expect(bans.size).toBe(0);
+    expect(users.every((row) => row.deactivatedAt === null)).toBe(true);
+  });
+
+  it("bans an account: suspends it and lists its address", async () => {
+    const users = [...people.map((row) => ({ ...row })), user("eve", "Eve+tag@Corp.test", 6)];
+    const { as, prisma, sessions } = setup(users);
+    sessions().push({ userId: "eve", updatedAt: new Date("2026-03-03T00:00:00Z") });
+    expect(await as("admin").ban({ userId: "eve" })).toEqual({ value: "eve@corp.test" });
+    expect(await accountDeactivated(prisma as never, "eve")).toBe(true);
+    expect(sessions().some((row) => row.userId === "eve")).toBe(false);
+    expect((await as("admin").users({ query: "eve" })).users[0]).toMatchObject({
+      suspended: true,
+      banned: true,
+    });
+    // Lifting the entry leaves the suspension, which is restored on its own.
+    await as("admin").unban({ value: "eve@corp.test" });
+    expect((await as("admin").users({ query: "eve" })).users[0]).toMatchObject({
+      suspended: true,
+      banned: false,
+    });
+  });
+
+  it("marks every account a banned domain covers, subdomains included", async () => {
+    const users = [
+      ...people.map((row) => ({ ...row })),
+      user("eve", "eve@corp.test", 6),
+      user("mal", "mal@mail.corp.test", 7),
+      user("ann", "ann@notcorp.test", 8),
+    ];
+    const { as } = setup(users);
+    await as("admin").ban({ value: "corp.test" });
+    const listed = (await as("admin").users({})).users;
+    expect(listed.filter((row) => row.banned).map((row) => row.id)).toEqual(["mal", "eve"]);
+    // A list entry alone suspends nobody.
+    expect(listed.some((row) => row.suspended)).toBe(false);
+  });
+
+  it("lists nothing when the account cannot be suspended", async () => {
+    const { as, bans } = setup();
+    await expect(as("admin").ban({ userId: "nobody" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(as("admin").ban({ userId: "chat" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(setup(undefined, false).as("admin").ban({ userId: "bob" })).rejects.toThrow(
+      /wiring/,
+    );
+    expect(bans.size).toBe(0);
+  });
+});
+
+describe("deleting an account", () => {
+  it("suspends it, then runs the account's own deletion in its order", async () => {
+    const { as, users, deletion, sessions } = setup();
+    const ada = users.find((row) => row.id === "ada");
+    deletion.beforeDelete.mockImplementationOnce(async () => {
+      // Its content goes while it can no longer sign in or act.
+      expect(ada?.deactivatedAt).toBeInstanceOf(Date);
+      expect(sessions().some((row) => row.userId === "ada")).toBe(false);
+      // On record, with the admin, before anything of the account is gone.
+      expect(recordSecurityEvent).toHaveBeenLastCalledWith({
+        type: "auth.account.deactivated",
+        userId: "ada",
+        metadata: { by: "operator", admin: "admin", reason: "deletion" },
+      });
+      deletion.steps.push("content");
+    });
+    expect(await as("admin").deleteUser({ userId: "ada" })).toEqual({ ok: true });
+    expect(deletion.steps).toEqual(["content", "account", "sessions", "recorded"]);
+    expect(deletion.beforeDelete).toHaveBeenCalledExactlyOnceWith(ada);
+    expect(deletion.afterDelete).toHaveBeenCalledExactlyOnceWith(ada);
+    expect(users.some((row) => row.id === "ada")).toBe(false);
+  });
+
+  it("keeps the account when its content could not be deleted", async () => {
+    const { as, users, deletion } = setup();
+    deletion.beforeDelete.mockRejectedValueOnce(new Error("provider down"));
+    await expect(as("admin").deleteUser({ userId: "ada" })).rejects.toThrow("provider down");
+    expect(deletion.deleteUser).not.toHaveBeenCalled();
+    // Suspended, so deleting again resumes.
+    expect(users.find((row) => row.id === "ada")?.deactivatedAt).toBeInstanceOf(Date);
+    expect(await as("admin").deleteUser({ userId: "ada" })).toEqual({ ok: true });
+  });
+
+  it("refuses an admin deleting their own account, or another admin's", async () => {
+    const { as, users, deletion } = setup();
+    (users.find((row) => row.id === "squatter") as User).emailVerified = true;
+    for (const userId of ["admin", "squatter"])
+      await expect(as("admin").deleteUser({ userId })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "An admin account cannot be deleted",
+      });
+    expect(deletion.steps).toEqual([]);
+    expect(users.every((row) => row.deactivatedAt === null)).toBe(true);
+  });
+
+  it("answers not found for an unknown account, a chat contact, or one gone meanwhile", async () => {
+    const { as, deletion } = setup();
+    // Gone between the page's lookup and the auth's.
+    deletion.findUserById.mockResolvedValueOnce(null);
+    for (const userId of ["nobody", "chat", "bob"])
+      await expect(as("admin").deleteUser({ userId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    expect(deletion.steps).toEqual([]);
+  });
+
+  it("is refused without the server's wiring", async () => {
+    await expect(setup(undefined, false).as("admin").deleteUser({ userId: "bob" })).rejects.toThrow(
+      /wiring/,
+    );
   });
 });

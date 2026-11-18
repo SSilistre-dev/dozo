@@ -165,6 +165,19 @@ it("gives a plan until the chosen day, and reads the list again", async () => {
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
 });
 
+it("makes tomorrow, in UTC, the first day that can be chosen", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    // Late on the 31st in UTC: the day after is in the next month.
+    vi.setSystemTime(new Date("2026-12-31T23:30:00.000Z"));
+    await render({ tier: "standard", grantedUntil: null });
+    await click(button("Set plan"));
+    expect(date()?.min).toBe("2027-01-01");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("starts from the granted plan, and takes it back without a date", async () => {
   await render({ tier: "max", grantedUntil: "2027-01-05T23:59:59.000Z" });
   await click(button("Set plan"));

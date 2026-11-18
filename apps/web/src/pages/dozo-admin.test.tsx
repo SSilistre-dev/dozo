@@ -13,11 +13,23 @@ const api = vi.hoisted(() => ({
   computers: vi.fn(),
   setSuspended: vi.fn(),
   stopComputer: vi.fn(),
+  bans: vi.fn(),
+  ban: vi.fn(),
+  unban: vi.fn(),
+  deleteUser: vi.fn(),
   toastError: vi.fn(),
 }));
 
 vi.mock("../lib/rpc", () => {
-  const rpc = { dozoAdmin: { setSuspended: api.setSuspended, stopComputer: api.stopComputer } };
+  const rpc = {
+    dozoAdmin: {
+      setSuspended: api.setSuspended,
+      stopComputer: api.stopComputer,
+      ban: api.ban,
+      unban: api.unban,
+      deleteUser: api.deleteUser,
+    },
+  };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
 vi.mock("../lib/query", async (importOriginal) => ({
@@ -40,6 +52,10 @@ vi.mock("../lib/query", async (importOriginal) => ({
       computers: {
         key: () => ["computers"],
         queryOptions: () => ({ queryKey: ["computers"], queryFn: () => api.computers() }),
+      },
+      bans: {
+        key: () => ["bans"],
+        queryOptions: () => ({ queryKey: ["bans"], queryFn: () => api.bans() }),
       },
     },
   }),
@@ -97,6 +113,7 @@ vi.mock("@rakazo/ui-web", () => {
       <button type="button" {...props} />
     ),
     buttonVariants: () => "",
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
     ListSearchInput: (props: {
       query: string;
       setQuery: (query: string) => void;
@@ -126,6 +143,7 @@ const owner = {
   bots: 1,
   runningComputers: 0,
   suspended: false,
+  banned: false,
 };
 const ada = {
   ...owner,
@@ -175,6 +193,9 @@ async function render() {
 
 const shown = (testId: string) => container.querySelector(`[data-testid="${testId}"]`);
 const row = (label: string) => container.querySelector(`li[aria-label="${label}"]`);
+// A person's computer is listed under the same address, above the accounts.
+const userRow = (label: string) =>
+  shown("admin-users")?.querySelector(`li[aria-label="${label}"]`) ?? null;
 
 function button(name: string, within: ParentNode | null = container) {
   const found = [...(within?.querySelectorAll("button") ?? [])].find(
@@ -199,6 +220,10 @@ beforeEach(() => {
   api.computers.mockResolvedValue({ total: 1, computers: [computer] });
   api.setSuspended.mockResolvedValue({ suspended: true });
   api.stopComputer.mockResolvedValue({ ok: true });
+  api.bans.mockResolvedValue({ bans: [] });
+  api.ban.mockResolvedValue({ value: "ada@example.test" });
+  api.unban.mockResolvedValue({ ok: true });
+  api.deleteUser.mockResolvedValue({ ok: true });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -307,6 +332,74 @@ it("reports a failed account change in its own words", async () => {
   await vi.waitFor(() =>
     expect(api.toastError).toHaveBeenCalledWith("Could not stop the computer"),
   );
+});
+
+it("bans an account only after the confirmation, and marks a banned one", async () => {
+  api.users.mockResolvedValue(page([ada, { ...bob, banned: true }, owner]));
+  await open();
+  const bobRow = row("bob@example.test");
+  expect(bobRow?.querySelector("[data-badge]")?.textContent).toBe("Banned");
+  expect([...(bobRow?.querySelectorAll("button") ?? [])].map((node) => node.textContent)).toEqual([
+    "Restore",
+    "Delete",
+  ]);
+  await click(button("Ban", userRow("ada@example.test")));
+  expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+    "Ban ada@example.test?",
+  );
+  await click(button("Cancel"));
+  expect(api.ban).not.toHaveBeenCalled();
+  await click(button("Ban", userRow("ada@example.test")));
+  await click(container.querySelector<HTMLElement>("[data-confirm]") as HTMLElement);
+  expect(api.ban).toHaveBeenCalledExactlyOnceWith({ userId: "ada" });
+  await vi.waitFor(() => expect(api.bans).toHaveBeenCalledTimes(2));
+});
+
+it("deletes an account only after the confirmation", async () => {
+  await open();
+  await click(button("Delete", userRow("ada@example.test")));
+  const dialog = container.querySelector('[role="alertdialog"]');
+  expect(dialog?.textContent).toContain("Delete ada@example.test?");
+  expect(dialog?.textContent).toContain("This cannot be undone.");
+  await click(button("Cancel"));
+  expect(api.deleteUser).not.toHaveBeenCalled();
+  await click(button("Delete", userRow("ada@example.test")));
+  await click(container.querySelector<HTMLElement>("[data-confirm]") as HTMLElement);
+  expect(api.deleteUser).toHaveBeenCalledExactlyOnceWith({ userId: "ada" });
+  await vi.waitFor(() => expect(api.users).toHaveBeenCalledTimes(2));
+});
+
+it("adds an address or a domain to the ban list, and removes one", async () => {
+  api.bans.mockResolvedValue({
+    bans: [{ value: "corp.test", createdAt: "2026-02-01T00:00:00.000Z" }],
+  });
+  await open();
+  expect(row("corp.test")?.textContent).toContain("Feb 1, 2026");
+  const field = container.querySelector<HTMLInputElement>('input[aria-label="Email or domain"]');
+  const submit = button("Ban", field?.closest("form"));
+  // Nothing to ban yet.
+  expect(submit.disabled).toBe(true);
+  await act(async () => field?.closest("form")?.requestSubmit());
+  expect(api.ban).not.toHaveBeenCalled();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      field,
+      " Spam@Evil.test ",
+    );
+    field?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click(submit);
+  expect(api.ban).toHaveBeenCalledExactlyOnceWith({ value: "Spam@Evil.test" });
+  await vi.waitFor(() => expect(field?.value).toBe(""));
+
+  await click(button("Remove", row("corp.test")));
+  expect(api.unban).toHaveBeenCalledExactlyOnceWith({ value: "corp.test" });
+});
+
+it("leaves out the list while nothing is banned", async () => {
+  await open();
+  expect(shown("admin-bans")).toBeNull();
+  expect(container.querySelector('input[aria-label="Email or domain"]')).toBeTruthy();
 });
 
 it("loads the next page from the cursor", async () => {

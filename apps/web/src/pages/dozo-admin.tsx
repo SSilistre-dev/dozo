@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   buttonVariants,
+  Input,
   ListSearchInput,
   SectionHeading,
   Spinner,
@@ -59,6 +60,10 @@ export function DozoAdminPage() {
 
 type Action =
   | { suspend: string; email: string; suspended: boolean }
+  | { ban: string; email: string }
+  | { remove: string; email: string }
+  | { banValue: string }
+  | { unban: string }
   | { stop: string; email: string | null };
 
 function AdminPanel({ ownId }: { ownId: string }) {
@@ -83,13 +88,29 @@ function AdminPanel({ ownId }: { ownId: string }) {
     ...queries.dozoAdmin.computers.queryOptions(),
     refetchOnWindowFocus: "always",
   });
+  const bans = useQuery({
+    ...queries.dozoAdmin.bans.queryOptions(),
+    refetchOnWindowFocus: "always",
+  });
+  const [banValue, setBanValue] = useState("");
   const [confirm, setConfirm] = useState<Action | null>(null);
   const change = useSave({
     save: async (input: Action, rpc) => {
       if ("stop" in input) await rpc.dozoAdmin.stopComputer({ computerId: input.stop });
-      else await rpc.dozoAdmin.setSuspended({ userId: input.suspend, suspended: input.suspended });
+      else if ("ban" in input) await rpc.dozoAdmin.ban({ userId: input.ban });
+      else if ("remove" in input) await rpc.dozoAdmin.deleteUser({ userId: input.remove });
+      else if ("unban" in input) await rpc.dozoAdmin.unban({ value: input.unban });
+      else if ("banValue" in input) {
+        await rpc.dozoAdmin.ban({ value: input.banValue });
+        setBanValue("");
+      } else
+        await rpc.dozoAdmin.setSuspended({ userId: input.suspend, suspended: input.suspended });
     },
-    stale: [queries.dozoAdmin.users.key(), queries.dozoAdmin.computers.key()],
+    stale: [
+      queries.dozoAdmin.users.key(),
+      queries.dozoAdmin.computers.key(),
+      queries.dozoAdmin.bans.key(),
+    ],
     onFailed: (error, input) =>
       toast.error(
         errorText(
@@ -116,22 +137,23 @@ function AdminPanel({ ownId }: { ownId: string }) {
     return t`Since ${time}`;
   };
 
-  if (users.isPending || computers.isPending)
+  if (users.isPending || computers.isPending || bans.isPending)
     return (
       <div className="grid place-items-center py-10">
         <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
       </div>
     );
-  if (users.isError || computers.isError)
+  if (users.isError || computers.isError || bans.isError)
     return (
       <div role="alert" className="flex items-center gap-3 text-body text-destructive">
-        {errorText(users.error ?? computers.error, t`Couldn't load the admin page`)}
+        {errorText(users.error ?? computers.error ?? bans.error, t`Couldn't load the admin page`)}
         <Button
           variant="outline"
           size="sm"
           onClick={() => {
             void users.refetch();
             void computers.refetch();
+            void bans.refetch();
           }}
         >
           <Trans>Retry</Trans>
@@ -224,33 +246,59 @@ function AdminPanel({ ownId }: { ownId: string }) {
               }
             >
               <DozoPlanAction user={user} />
-              {user.suspended ? (
+              {user.banned ? (
+                <Badge variant="outline">
+                  <Trans>Banned</Trans>
+                </Badge>
+              ) : user.suspended ? (
                 <Badge variant="outline">
                   <Trans>Suspended</Trans>
                 </Badge>
               ) : null}
-              {user.id === ownId ? null : user.suspended ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={change.pending}
-                  onClick={() =>
-                    change.run({ suspend: user.id, email: user.email, suspended: false })
-                  }
-                >
-                  <Trans>Restore</Trans>
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={change.pending}
-                  onClick={() =>
-                    setConfirm({ suspend: user.id, email: user.email, suspended: true })
-                  }
-                >
-                  <Trans>Suspend</Trans>
-                </Button>
+              {user.id === ownId ? null : (
+                <>
+                  {user.suspended ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={change.pending}
+                      onClick={() =>
+                        change.run({ suspend: user.id, email: user.email, suspended: false })
+                      }
+                    >
+                      <Trans>Restore</Trans>
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={change.pending}
+                      onClick={() =>
+                        setConfirm({ suspend: user.id, email: user.email, suspended: true })
+                      }
+                    >
+                      <Trans>Suspend</Trans>
+                    </Button>
+                  )}
+                  {user.banned ? null : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={change.pending}
+                      onClick={() => setConfirm({ ban: user.id, email: user.email })}
+                    >
+                      <Trans>Ban</Trans>
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={change.pending}
+                    onClick={() => setConfirm({ remove: user.id, email: user.email })}
+                  >
+                    <Trans>Delete</Trans>
+                  </Button>
+                </>
               )}
             </Row>
           ))}
@@ -267,11 +315,61 @@ function AdminPanel({ ownId }: { ownId: string }) {
         ) : null}
       </section>
 
-      {confirm ? (
+      <section className="space-y-3">
+        <SectionHeading>
+          <Trans>Banned</Trans>
+        </SectionHeading>
+        <form
+          className="flex gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (banValue.trim()) change.run({ banValue: banValue.trim() });
+          }}
+        >
+          <Input
+            value={banValue}
+            onChange={(event) => setBanValue(event.target.value)}
+            aria-label={t`Email or domain`}
+            placeholder={t`Email or domain`}
+            autoComplete="off"
+            maxLength={254}
+          />
+          <Button type="submit" variant="outline" disabled={change.pending || !banValue.trim()}>
+            <Trans>Ban</Trans>
+          </Button>
+        </form>
+        {bans.data.bans.length > 0 ? (
+          <Rows testId="admin-bans">
+            {bans.data.bans.map((ban) => (
+              <Row
+                key={ban.value}
+                label={ban.value}
+                title={ban.value}
+                details={<span>{date(ban.createdAt)}</span>}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={change.pending}
+                  onClick={() => change.run({ unban: ban.value })}
+                >
+                  <Trans>Remove</Trans>
+                </Button>
+              </Row>
+            ))}
+          </Rows>
+        ) : null}
+      </section>
+
+      {confirm && "email" in confirm ? (
         <ConfirmDialog
           title={
             "stop" in confirm ? (
               <Trans>Stop this computer?</Trans>
+            ) : "ban" in confirm ? (
+              <Trans>Ban {confirm.email}?</Trans>
+            ) : "remove" in confirm ? (
+              <Trans>Delete {confirm.email}?</Trans>
             ) : (
               <Trans>Suspend {confirm.email}?</Trans>
             )
@@ -279,11 +377,27 @@ function AdminPanel({ ownId }: { ownId: string }) {
           description={
             "stop" in confirm ? (
               confirm.email
+            ) : "ban" in confirm ? (
+              <Trans>
+                Suspends the account and refuses new sign-ups and sign-ins from its address.
+              </Trans>
+            ) : "remove" in confirm ? (
+              <Trans>This cannot be undone.</Trans>
             ) : (
               <Trans>Signs them out, stops their bots and removes them from shared Spaces.</Trans>
             )
           }
-          confirmLabel={"stop" in confirm ? <Trans>Stop</Trans> : <Trans>Suspend</Trans>}
+          confirmLabel={
+            "stop" in confirm ? (
+              <Trans>Stop</Trans>
+            ) : "ban" in confirm ? (
+              <Trans>Ban</Trans>
+            ) : "remove" in confirm ? (
+              <Trans>Delete</Trans>
+            ) : (
+              <Trans>Suspend</Trans>
+            )
+          }
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             setConfirm(null);
