@@ -85,7 +85,10 @@ organization, so writes running together cannot pass the limit between them. Not
 and everything stays readable when a plan ends with more than Free allows; only new files are
 refused until enough is deleted. Only a live Premium or Premium Plus subscription raises the limit;
 every other organization, one that only buys credits included, has Free's. The test beside that
-file lists upstream's writers of file rows and fails when a sync brings one it does not know.
+file lists upstream's writers of file rows and fails when a sync brings one it does not know. The
+lock, the count across Spaces and row security are tested in `dozo-shared-space.postgres.test.ts`,
+which needs a migrated database (`VERIFY_DATABASE=1` and `DATABASE_URL` of the runtime login); the
+unit gate has none and skips it, so run it by hand after changing the check.
 
 An organization on Free spends nothing of the operator's. The operator's own model already needs
 credits (upstream's guard, on every model call a run or a background job makes). On top of that,
