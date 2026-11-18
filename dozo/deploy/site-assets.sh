@@ -45,6 +45,10 @@ stamp() {
         cat "$page.stamp" >"$page"
         rm "$page.stamp"
       done
+    # An address written another way (single quotes, no quotes, upper case, a fragment) would stay
+    # unversioned and cached without a word: fail instead.
+    ! grep -Eio "(href|src)=[\"']?[^\"' >:?]*\.(css|js|svg|png|ico)([\"' >#]|\$)" "$page" ||
+      die "$page: the addresses above are local assets the stamp cannot version"
   done
 }
 

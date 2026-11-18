@@ -47,6 +47,14 @@ test("every page names the one file by the same version, whatever the path to it
   assert.equal(read("index.html"), once);
 });
 
+test("a local asset written in a way the stamp cannot version fails", () => {
+  const cases = ["<link rel='stylesheet' href='landing.css'>", '<img src="/favicon.SVG">', '<a href="favicon.svg#x">'];
+  for (const extra of cases) {
+    const { result } = stamp("a{}", extra);
+    assert.equal(result.status, 2, extra);
+  }
+});
+
 test("an address without a file fails", () => {
   const { result } = stamp("a{}", '<script src="missing.js"></script>');
   assert.equal(result.status, 2);
