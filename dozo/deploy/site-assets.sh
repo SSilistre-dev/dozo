@@ -8,6 +8,10 @@
 #   site-assets.sh verify <dir> <url>  the page at <url> must name the same stamped addresses as
 #                                      <dir>/index.html, and each must serve the bytes of the file
 #                                      in <dir>.
+#   site-assets.sh lang <url>          the language rule of site.nginx.conf, by behaviour: <url>tr/
+#                                      must set the dozo_lang=tr cookie and <url> must answer that
+#                                      cookie with a 302 to <url>tr/. A config that was copied
+#                                      but not loaded fails here.
 # Not stamped: absolute URLs (og:image, read by crawlers, not by the page) and url() inside CSS
 # (none today; stamp fails on nothing there, so check when one is added).
 # Exits 2 on failure and 64 on a usage error.
@@ -76,8 +80,19 @@ $want"
     "$url" "$(wc -l <<<"$live" | tr -d ' ')"
 }
 
+lang() {
+  local url=${1%/}/ headers answer
+  headers=$(curl -fsS -m 20 -o /dev/null -D - "${url}tr/") || die "${url}tr/ does not answer"
+  grep -qi '^set-cookie: dozo_lang=tr;' <<<"$headers" || die "${url}tr/ does not set the dozo_lang=tr cookie"
+  answer=$(curl -sS -m 20 -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Cookie: dozo_lang=tr' "$url") ||
+    die "$url does not answer"
+  [ "$answer" = "302 ${url}tr/" ] || die "$url answers the dozo_lang=tr cookie with \"$answer\", not a 302 to ${url}tr/"
+  printf '[site-assets] %s: the language cookie is set and acted on\n' "$url"
+}
+
 case "${1:-}" in
   stamp) [ $# -eq 2 ] && [ -d "$2" ] || exit 64; stamp "$2" ;;
   verify) [ $# -eq 3 ] && [ -f "$2/index.html" ] || exit 64; verify "$2" "$3" ;;
+  lang) [ $# -eq 2 ] || exit 64; lang "$2" ;;
   *) exit 64 ;;
 esac
