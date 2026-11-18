@@ -15,8 +15,10 @@ Notice of changes (Apache License 2.0, section 4(b))
 
 The git tree of this repository is the unmodified upstream source plus new
 files under dozo/, a root Makefile, .github/workflows/dozo-*.yml, new dozo-*
-source files inside apps/ and packages/, and a fork notice at the top of the
-root README.md.
+source files inside apps/ and packages/, new files under .github/ (security
+policy, contributing guide, pull request template, one issue form), a fork
+notice at the top of the root README.md, and three replaced issue forms
+(.github/ISSUE_TEMPLATE/config.yml, bug.yml and self-host.yml).
 
 Distributed builds of Dozo (for example the published container images) are
 produced by applying the brand overlay in dozo/brand/ to a copy of that source

@@ -37,6 +37,12 @@ UP_REF="${DOZO_UPSTREAM_REF:-upstream-main}"
 README_FILE="README.md"
 README_START="<!-- dozo:fork-notice:start -->"
 README_END="<!-- dozo:fork-notice:end -->"
+# The second exception (dozo/AGENTS.md, Invariants): GitHub reads the "New issue" forms from these
+# paths only, so the fork replaces upstream's whole. Exact names, never a pattern: a neighbour is
+# still upstream's. Replacing is allowed; deleting or retyping one is not (dozo/SYNC.md).
+OWNED_FILES=(.github/ISSUE_TEMPLATE/config.yml .github/ISSUE_TEMPLATE/bug.yml .github/ISSUE_TEMPLATE/self-host.yml)
+# What an owned file must not say again: it is ours so that nothing in it points at upstream.
+UPSTREAM_NAME="rakazo"
 fail() { FAILS+=("$1"); echo "[gate] FAIL: $1"; }
 now() { date +%s; }
 
@@ -111,20 +117,30 @@ readme_outside_block() {
     { blank = 0; print }' | cmp -s - <(git show "$1:$README_FILE")
 }
 
-# dozo/AGENTS.md: the fork edits no upstream file but the marked block of the root README.md. Prints
+# dozo/AGENTS.md: the fork edits no upstream file but the marked block of the root README.md and the
+# owned issue forms ($OWNED_FILES: a changed one is ours, a deleted or retyped one is listed). Prints
 # the files that differ from upstream's commit $1 (edited, deleted, retyped; added files are ours),
 # one per line, in tree-ish $2 or, without it, in the working tree. The one computation behind both
 # `make olc` and sync.sh's fork-health count (`gate.sh upstream-edits <base> [tree]`). Exit 2 when
 # git cannot compute it.
 upstream_edits() {
-  local base="${1:-}" tree="${2:-}" bad
+  local base="${1:-}" tree="${2:-}" bad gone
   [ -n "$base" ] || { echo "usage: $0 upstream-edits <base-commit> [tree-ish]" >&2; return 64; }
   bad=$(git diff --name-only --no-renames --diff-filter=MDT "$base" ${tree:+"$tree"} -- . ':!dozo' ':!Makefile') || return 2
-  bad=$(printf '%s\n' "$bad" | grep -vxF "$README_FILE" || true)
+  gone=$(git diff --name-only --no-renames --diff-filter=DT "$base" ${tree:+"$tree"} -- "${OWNED_FILES[@]}") || return 2
+  bad=$(printf '%s\n' "$bad" | grep -vxF -e "$README_FILE" $(printf -- '-e %s ' "${OWNED_FILES[@]}") || true)
+  [ -z "$gone" ] || bad=$(printf '%s\n%s' "$bad" "$(printf '%s\n' "$gone" | sed 's/$/ (owned issue form deleted or retyped)/')")
   # The stage drops the root Makefile as the fork's own: one in upstream would be shadowed unnoticed.
   ! git cat-file -e "$base:Makefile" 2>/dev/null || bad=$(printf '%s\nMakefile (upstream has a root Makefile: the fork'"'"'s shadows it and the stage deletes it)' "$bad")
   readme_outside_block "$base" "$tree" || bad=$(printf '%s\n%s' "$bad" "$README_FILE (outside the fork-notice block)")
   printf '%s\n' "$bad" | sed '/^$/d'
+}
+
+# The owned issue forms (working tree) that name upstream: a sync resolved with upstream's side, or
+# a line of upstream's that merged in cleanly, would send our users' reports to upstream again.
+owned_naming_upstream() {
+  local f
+  for f in "${OWNED_FILES[@]}"; do [ ! -f "$f" ] || ! grep -qi "$UPSTREAM_NAME" "$f" || echo "$f"; done
 }
 
 # Each shell script is syntax-checked by its own interpreter (a #!/bin/sh script is not bash).
@@ -199,10 +215,12 @@ olc() {
   if upstream_ref_ok; then
     if base=$(git merge-base HEAD "$UP_REF" 2>/dev/null) && [ -n "$base" ]; then
       if ! bad=$(upstream_edits "$base"); then fail "upstream-edit check: git diff against the merge base failed"
-      elif [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE, notice block only): 0"
+      elif [ -z "$bad" ]; then echo "[olc] upstream files edited outside the allowed set ($README_FILE notice block, ${#OWNED_FILES[@]} issue forms): 0"
       else printf '%s\n' "$bad" | sed "s/^/[olc] upstream file differs from the merge base with $UP_REF: /"; fail "upstream files edited: $(printf '%s\n' "$bad" | grep -c .)"; fi
     else fail "no merge base between HEAD and $UP_REF: the upstream-edit check cannot run"; fi
   else fail "$UP_REF ref missing: the upstream-edit check cannot run. Create it: git fetch upstream main && git branch $UP_REF upstream/main"; fi
+  bad=$(owned_naming_upstream)
+  [ -z "$bad" ] || { printf '%s\n' "$bad" | sed 's/^/[olc] owned issue form names upstream: /'; fail "owned issue forms name upstream: $(printf '%s\n' "$bad" | grep -c .)"; }
   selftest
 }
 
@@ -244,10 +262,46 @@ selftest() {
   # timed_out: TERM was enough (124), KILL after the limit (137), the step's own kill before it, a plain failure.
   timed_out 124 5 600 && timed_out 137 600 600 && timed_out 137 610 600 \
     && ! timed_out 137 599 600 && ! timed_out 2 700 600 && ! timed_out 0 700 600 || { ok=0; echo "[olc] selftest timed_out: wrong verdict"; }
+  selftest_owned || ok=0
   # The shell logic of build.sh and lock.sh (stage overlay, dc env, lock owner), in a scratch repo.
   out=$(bash "$ROOT/dozo/docker/build.test.sh" 2>&1) || { ok=0; printf '%s\n' "$out"; }
-  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers, wait_gone, timed_out and build.test.sh ok" || fail "selftest (coverage parsers, wait_gone, timed_out or build.test.sh)"
+  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms and build.test.sh ok" || fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms or build.test.sh)"
 }
+# The allowed set of the upstream-edit check, in a scratch repository. For every owned file: a
+# changed one is not listed; a deleted one and one that names upstream are; a file whose name only
+# starts with it and one of the same name elsewhere are listed. So are another issue form and the
+# README outside its block, as before.
+selftest_owned() (
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/dozo-gatetest-XXXXXX") || exit 1
+  trap 'rm -rf "$tmp"' EXIT
+  cd "$tmp" || exit 1
+  g() { git -c user.name=t -c user.email=t@example.invalid -c core.autocrlf=false "$@"; }
+  want() { # name expected-output; restores the tree afterwards
+    local got; got=$(upstream_edits "$base") || { echo "[olc] selftest owned $1: upstream_edits failed"; rc=1; }
+    [ "$got" = "$2" ] || { echo "[olc] selftest owned $1: got '$got', want '$2'"; rc=1; }
+    g checkout -q -- .
+  }
+  rc=0
+  for f in README.md .github/ISSUE_TEMPLATE/other.yml "${OWNED_FILES[@]}"; do
+    for n in "$f" "$f.bak" "sub/$f"; do mkdir -p "$(dirname "$n")"; echo "upstream" > "$n"; done
+  done
+  g init -q && g add -A && g commit -qm base || exit 1
+  base=$(g rev-parse HEAD)
+  want "untouched tree" ""
+  for f in "${OWNED_FILES[@]}"; do
+    echo ours > "$f"
+    [ -z "$(owned_naming_upstream)" ] || { echo "[olc] selftest owned: $f without the name was reported"; rc=1; }
+    want "changed $f" ""
+    echo "see ${UPSTREAM_NAME}.example" > "$f"
+    [ "$(owned_naming_upstream)" = "$f" ] || { echo "[olc] selftest owned: $f naming upstream was not reported"; rc=1; }
+    rm "$f"; want "deleted $f" "$f (owned issue form deleted or retyped)"
+    echo ours > "$f.bak"; echo ours > "sub/$f"
+    want "neighbours of $f" "$f.bak"$'\n'"sub/$f"
+  done
+  echo ours > .github/ISSUE_TEMPLATE/other.yml; echo ours >> README.md
+  want "files outside the set" $'.github/ISSUE_TEMPLATE/other.yml\nREADME.md (outside the fork-notice block)'
+  exit "$rc"
+)
 expect_misses() { # name min fixture want
   local got; got=$(coverage_misses "$2" <<< "$3")
   [ "$got" = "$4" ] && return 0

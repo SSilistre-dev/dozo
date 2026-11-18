@@ -52,9 +52,11 @@ placeholders are replaced.
   - `mobile-app.md`, `models.md`, `routines.md`, `skills.md`, `spaces.md`
   - `self-host.md`, `self-host-configuration.md`, `voice-and-calls.md`
   - `troubleshooting/#mcp-oauth-redirect-mismatch`
-- [ ] **Support and contact email** (blocks launch). Supply the address. Set it in
-      `dozo/brand/brand.json`, and in `SECURITY.md` terms if we need our own disclosure contact
-      (`SECURITY.md` is an upstream file, so handle it via a build-time rule).
+- [ ] **Support and contact email** (blocks launch). Supply the address and set it in
+      `dozo/brand/brand.json`. Done for the repository, without an address: security reports go
+      through GitHub private vulnerability reporting (`.github/SECURITY.md`), questions and bugs
+      through GitHub issues (`.github/ISSUE_TEMPLATE/`). The root `SECURITY.md` and `CONTRIBUTING.md`
+      stay upstream's and still show upstream's addresses to anyone who opens them.
 - [ ] **Image registry** (blocks launch for published images). Choose the registry and image names,
       publish the server and computer images, then replace `PUBLISHED_IMAGE_REPO` and the
       `ghcr.io/elie222/rakazo` image names (allowed in the gate until then; `--launch` fails on them).
