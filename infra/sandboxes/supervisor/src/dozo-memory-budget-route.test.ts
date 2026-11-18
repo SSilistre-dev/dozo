@@ -1,6 +1,7 @@
 import type * as NodeFsPromises from "node:fs/promises";
 import path from "node:path";
 import { resolveSupervisorToken } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computerNetworkNameFor, hostComputerUser } from "./computer-spec.js";
 
@@ -102,20 +103,20 @@ function dockerWith(existing?: ReturnType<typeof existingComputer>) {
   return { network, created };
 }
 
-async function start() {
+async function start(botId = "bot") {
   const { supervisorApp } = await import("./index.js");
   return supervisorApp.request("/computers", {
     method: "POST",
     headers: {
       authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
       "content-type": "application/json",
-      "x-rakazo-bot-id": "bot",
+      "x-rakazo-bot-id": botId,
       "x-rakazo-space-id": "space",
     },
     body: JSON.stringify({
-      botId: "bot",
+      botId,
       spaceId: "space",
-      homePath: path.join(process.env.DATA_DIR ?? "", "homes", "bot"),
+      homePath: path.join(process.env.DATA_DIR ?? "", "homes", botId),
       size,
     }),
   });
@@ -201,5 +202,45 @@ describe("the memory budget on the start route", () => {
     expect(
       mocks.docker.listContainers.mock.calls.filter(([options]) => !options?.all),
     ).toHaveLength(0);
+  });
+});
+
+describe("two starts together", () => {
+  it("admits only one when the budget fits one, whichever answers first", async () => {
+    running = [];
+    const firstStart = deferred();
+    const containers = [
+      { id: "new-a", start: vi.fn(() => firstStart.promise), remove: vi.fn() },
+      { id: "new-b", start: vi.fn(async () => undefined), remove: vi.fn() },
+    ];
+    dockerWith();
+    let created = 0;
+    mocks.docker.createContainer.mockImplementation(async () => containers[created++]);
+    // Every computer holds the 4 GB the requests ask for.
+    mocks.docker.getContainer.mockImplementation(() => ({
+      inspect: async () => ({ HostConfig: { Memory: 4 * GB } }),
+    }));
+
+    const first = start("bot-a");
+    await vi.waitFor(() => expect(containers[0]?.start).toHaveBeenCalledOnce());
+    // The second has made its network and now waits for the first's start: nothing runs yet.
+    const second = start("bot-b");
+    await vi.waitFor(() => expect(mocks.docker.createNetwork).toHaveBeenCalledTimes(2));
+    expect(mocks.docker.createContainer).toHaveBeenCalledOnce();
+
+    running.push({ Id: "new-a", Labels: { "rakazo.botId": "bot-a" } });
+    firstStart.resolve();
+    const answers = await Promise.all([first, second]);
+    expect(answers.map((answer) => answer.status).sort()).toEqual([200, 429]);
+    expect(mocks.docker.createContainer).toHaveBeenCalledOnce();
+    expect(containers[0]?.start).toHaveBeenCalledOnce();
+    expect(containers[1]?.start).not.toHaveBeenCalled();
+  });
+});
+
+describe("a malformed total", () => {
+  it("stops the supervisor at startup, naming the variable", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY_TOTAL", "lots");
+    await expect(import("./index.js")).rejects.toThrow(/RAKAZO_COMPUTER_MEMORY_TOTAL/);
   });
 });

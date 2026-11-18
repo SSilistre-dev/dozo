@@ -99,7 +99,7 @@ RAKAZO_COMPUTER_SIZES=standard=2:1.5,large=2:2,xlarge=4:4   # per plan: see Bot 
 RAKAZO_COMPUTER_MEMORY=1536m    # a computer whose plan has no size above
 RAKAZO_COMPUTER_CPUS=2
 RAKAZO_COMPUTER_MEMORY_TOTAL=6g   # most memory the running computers may hold together; 0: no limit
-SANDBOX_MAX_COMPUTERS_PER_USER=1   # see Bot computers on a shared host
+SANDBOX_MAX_COMPUTERS_PER_USER=2   # see Bot computers on a shared host
 DOZO_STACK_SUBNET=10.213.87.0/24   # optional: the stack's own network, if this range is taken
 CLIENT_IP_HEADER=cf-connecting-ip   # only when a CDN that sets this header is in front
 POSTGRES_PASSWORD=...           # the six secrets from step 2
@@ -292,15 +292,26 @@ team computer outside the compose project. What bounds them:
   remembered count, and starts are admitted one at a time so two cannot pass it together. `0`
   means no limit, as before; left out, this layer sets `6g`. A stopped computer holds nothing, so
   idle sleep (`SANDBOX_IDLE_MS`, 10 minutes by default, not set by this layer) is what gives
-  memory back to the budget. A computer with no memory ceiling (`RAKAZO_COMPUTER_MEMORY=0` and no
-  size for its plan) counts as nothing, so keep a ceiling on every size. A total smaller than one
-  plan's computer refuses every start of that plan. A watch routine whose start is refused tries
-  again a minute later instead of pausing, for as long as the routine stays on.
+  memory back to the budget. A computer with no memory ceiling of its own (`RAKAZO_COMPUTER_MEMORY=0`
+  and no size for its plan) counts as `RAKAZO_COMPUTER_MEMORY`, and as the whole total when that
+  is unlimited too, so nothing else starts beside it; keep a ceiling on every size. A total
+  smaller than one plan's computer refuses every start of that plan. A start waits at most 30
+  seconds for its turn behind the starts ahead of it, then is refused the same way, so one stuck
+  start cannot hold the rest. A malformed total stops the supervisor at startup, naming the
+  variable. A computer whose start is refused is left as it was, not marked failed. A watch
+  routine whose start is refused tries again a minute later instead of pausing, for as long as the
+  routine stays on.
 - `SANDBOX_MAX_COMPUTERS_PER_USER` caps the computers one person's live bots have across all
-  Spaces (it refuses a new one with "User computer limit reached"), and
-  `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps the containers of one Space, stopped ones included (the
-  supervisor refuses a new one with 429). Neither counts the host; the memory total above does.
-  Keep `SANDBOX_MAX_COMPUTERS_PER_USER=1`.
+  their Spaces; this layer sets `2`. It counts computers that exist, running or not, and is
+  checked when a bot is made, restored or given its own computer, never at a start. Bots in one
+  Space share one computer, kept for the Space's owner, so a member's bot there counts for the
+  owner; a bot switched to its own computer is one more. It counts on every plan, Free included.
+  At `2` a person has a second Space, or one bot with its own computer, and can hold two
+  computers' memory at once: 4 GB of the total on Premium, 8 GB on Premium Plus. At `1` nobody
+  holds more than one, and the first bot in a second Space is refused. Past the cap the person
+  reads "User computer limit (2) reached". `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps the containers
+  of one Space, stopped ones included (the supervisor refuses a new one with 429). Neither counts
+  the host; the memory total above does.
 - A size is a ceiling, not a reservation, and the total only keeps the ceilings of the running
   computers within it. A computer that passes its own ceiling has a process killed inside it
   (usually a browser tab); the rest of the host is untouched. When everything on the host together
@@ -311,8 +322,9 @@ team computer outside the compose project. What bounds them:
   its 4.7 GB of ceilings, and everything else on the host held about 5.2 GB. So 6 GB fits what the
   host uses today with about 1.8 GB to spare. It does not fit if the stack and the computers all
   reach their ceilings at once, which is about 1.9 GB over; `4g` is the value that holds in that
-  case. Set it from a new reading when the other projects on the host change, and watch
-  `docker stats` and the kernel log for `oom-kill`.
+  case. The live host is to be set to `4g` from the panel, since 6 GB only holds while the stack
+  and the computers stay below their ceilings. Set it from a new reading when the other projects
+  on the host change, and watch `docker stats` and the kernel log for `oom-kill`.
 - `host-egress.sh` installs upstream's restricted-egress rules (public internet only: no host, no
   private or link-local address, so no other container, no published port of the host and no cloud
   metadata) plus one rule for a host on a Tailscale network, where forwarded traffic is accepted

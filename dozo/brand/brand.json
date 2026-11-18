@@ -1646,6 +1646,42 @@
         "packages/adapters/src/dozo-computer-budget.ts"
       ],
       "reason": "memory budget: a full host is temporary, so a watch check tries again instead of pausing the person's routine"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.ts",
+      "find": "import { toComputerRef } from \"./computer-support.js\";\nimport {\n  checkpointComputerWorkspace,\n",
+      "replace": "import { toComputerRef } from \"./computer-support.js\";\nimport { ComputerCapacityError } from \"./dozo-computer-budget.js\";\nimport {\n  checkpointComputerWorkspace,\n",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.ts",
+      "find": "            ...(incomplete ? { restorePending: true } : {}),\n          },\n        });\n        // Stored, so its record goes too.",
+      "replace": "            ...(incomplete ? { restorePending: true } : {}),\n            // A start refused for want of memory changed nothing at the provider: the computer goes back\n            // to the state it was in (an abandoned claim keeps its old stamp), not to error.\n            ...(error instanceof ComputerCapacityError && !provisioned\n              ? { state: existing.state, updatedAt: reclaimStamp ?? suspendStamp ?? undefined }\n              : {}),\n          },\n        });\n        // Stored, so its record goes too.",
+      "requires": [
+        "packages/adapters/src/dozo-computer-budget.ts"
+      ],
+      "reason": "memory budget: a start the host refused for want of memory leaves the computer as it was instead of marking it failed to boot"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/context.ts",
+      "find": "import { computerImageEnsurer } from \"./computer-image.js\";\nimport {\n  assertComputerMountSources,\n",
+      "replace": "import { computerImageEnsurer } from \"./computer-image.js\";\nimport { memoryBudgetBytes } from \"./dozo-memory-budget.js\";\nimport {\n  assertComputerMountSources,\n",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: the import of the rule below"
+    },
+    {
+      "file": "infra/sandboxes/supervisor/src/context.ts",
+      "find": "export const teamScreenLimit = resolveTeamScreenLimit();\n// Host-run supervisors",
+      "replace": "export const teamScreenLimit = resolveTeamScreenLimit();\n// A malformed total stops the supervisor here, naming the variable, after the root env is loaded.\nmemoryBudgetBytes();\n// Host-run supervisors",
+      "requires": [
+        "infra/sandboxes/supervisor/src/dozo-memory-budget.ts"
+      ],
+      "reason": "memory budget: a malformed total stops the supervisor at startup, with the settings it validates here, instead of failing every start"
     }
   ],
   "assets": {

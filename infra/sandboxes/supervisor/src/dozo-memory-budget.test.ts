@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPUTER_IMAGE } from "./computer-spec.js";
 import {
   COMPUTER_MEMORY_BUDGET_FULL,
+  COMPUTER_MEMORY_WAIT_MS,
   computerMemoryUsage,
   holdComputerMemory,
   memoryBudgetBytes,
@@ -138,7 +139,23 @@ describe("runningComputerMemory", () => {
     expect(await runningComputerMemory(docker)).toBe(2 * GB);
   });
 
-  it("counts a computer with no ceiling as nothing", async () => {
+  it("counts a computer with no ceiling as the host's per-computer ceiling", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY", "3g");
+    const { docker } = fakeDocker([
+      bot("a", 0),
+      { ...bot("b", 0), labels: { "rakazo.botId": "b" } },
+    ]);
+    expect(await runningComputerMemory(docker)).toBe(6 * GB);
+  });
+
+  it("counts it as the whole budget when the host's ceiling is unlimited too", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY", "0");
+    const { docker } = fakeDocker([bot("a", 0)]);
+    expect(await runningComputerMemory(docker)).toBe(6 * GB);
+  });
+
+  it("counts it as nothing where no budget is set", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY_TOTAL", "");
     const { docker } = fakeDocker([bot("a", 0)]);
     expect(await runningComputerMemory(docker)).toBe(0);
   });
@@ -278,6 +295,113 @@ describe("holdComputerMemory", () => {
     next();
     await third;
     expect(settled).toBe(true);
+  });
+});
+
+describe("computers with no memory ceiling", () => {
+  it("leaves no room beside a running computer that may take everything", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY", "0");
+    const { docker } = fakeDocker([bot("a", 0)]);
+    await expect(holdComputerMemory(docker, GB)).rejects.toThrow(COMPUTER_MEMORY_BUDGET_FULL);
+  });
+
+  it("counts a start with no ceiling of its own as the host's ceiling", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY", "2g");
+    const fits = fakeDocker([bot("a", 4 * GB)]);
+    (await holdComputerMemory(fits.docker, 0))();
+    const over = fakeDocker([bot("a", 4 * GB + 1)]);
+    await expect(holdComputerMemory(over.docker, 0)).rejects.toThrow(COMPUTER_MEMORY_BUDGET_FULL);
+  });
+
+  it("counts a start with no ceiling and an unlimited host as the whole budget", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY", "0");
+    (await holdComputerMemory(fakeDocker().docker, 0))();
+    await expect(holdComputerMemory(fakeDocker([bot("a", GB)]).docker, 0)).rejects.toThrow(
+      COMPUTER_MEMORY_BUDGET_FULL,
+    );
+  });
+
+  it("is not counted where no budget is set", async () => {
+    vi.stubEnv("RAKAZO_COMPUTER_MEMORY_TOTAL", "");
+    const { docker, listContainers } = fakeDocker([bot("a", 0)]);
+    (await holdComputerMemory(docker, 0))();
+    expect(listContainers).not.toHaveBeenCalled();
+  });
+});
+
+describe("the wait for the lock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A hold's outcome as it settles, so a test can read it while time is held. */
+  function watch(hold: Promise<() => void>) {
+    const outcome: {
+      state: "waiting" | "admitted" | "refused";
+      release?: () => void;
+      error?: unknown;
+    } = { state: "waiting" };
+    hold.then(
+      (release) => Object.assign(outcome, { state: "admitted", release }),
+      (error) => Object.assign(outcome, { state: "refused", error }),
+    );
+    return outcome;
+  }
+
+  it("refuses a start behind a holder that never lets go, after the limit", async () => {
+    const { docker, listContainers } = fakeDocker();
+    const holder = await holdComputerMemory(docker, GB);
+    const waiter = watch(holdComputerMemory(docker, GB));
+    await vi.advanceTimersByTimeAsync(COMPUTER_MEMORY_WAIT_MS - 1);
+    expect(waiter.state).toBe("waiting");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(waiter.state).toBe("refused");
+    expect(waiter.error).toEqual(new Error(COMPUTER_MEMORY_BUDGET_FULL));
+    // Only the holder counted: the refused waiter never took its turn.
+    expect(listContainers).toHaveBeenCalledTimes(1);
+    // The lock is process-wide: give it back for the tests after this one.
+    holder();
+  });
+
+  it("admits a later start once the holder lets go", async () => {
+    const { docker } = fakeDocker();
+    const holder = await holdComputerMemory(docker, GB);
+    const refused = watch(holdComputerMemory(docker, GB));
+    await vi.advanceTimersByTimeAsync(COMPUTER_MEMORY_WAIT_MS);
+    expect(refused.state).toBe("refused");
+    holder();
+    (await holdComputerMemory(docker, GB))();
+  });
+
+  it("does not let a refused start's late turn block those behind it", async () => {
+    const { docker, listContainers } = fakeDocker();
+    const holder = await holdComputerMemory(docker, GB);
+    const first = watch(holdComputerMemory(docker, GB));
+    await vi.advanceTimersByTimeAsync(20_000);
+    const second = watch(holdComputerMemory(docker, GB));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(first.state).toBe("refused");
+    expect(second.state).toBe("waiting");
+
+    holder();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(second.state).toBe("admitted");
+    const third = watch(holdComputerMemory(docker, GB));
+    second.release?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(third.state).toBe("admitted");
+    third.release?.();
+    // The holder, the second and the third counted; the refused first never did.
+    expect(listContainers).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops the timer of a start that got its turn", async () => {
+    const { docker } = fakeDocker();
+    (await holdComputerMemory(docker, GB))();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

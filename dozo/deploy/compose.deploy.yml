@@ -58,6 +58,9 @@ services:
       # shared host). The api shows it and the api and worker start computers with it, so both
       # read the one value.
       RAKAZO_COMPUTER_SIZES: ${RAKAZO_COMPUTER_SIZES:-standard=2:1.5,large=2:2,xlarge=4:4}
+      # How many computers one person's live bots may have across all their Spaces (README, Bot
+      # computers on a shared host). The api and the worker both create bots, so both read it.
+      SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-2}
     volumes: !override
       - data:/data
     # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through
@@ -96,6 +99,7 @@ services:
     mem_limit: 1536m
     environment:
       RAKAZO_COMPUTER_SIZES: ${RAKAZO_COMPUTER_SIZES:-standard=2:1.5,large=2:2,xlarge=4:4}
+      SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-2}
     volumes: !override
       - data:/data
 

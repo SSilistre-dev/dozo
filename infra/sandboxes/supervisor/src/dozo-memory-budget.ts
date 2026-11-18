@@ -1,11 +1,15 @@
+import { abortableDelay } from "@rakazo/core";
 import type Docker from "dockerode";
-import { COMPUTER_IMAGE, parseMemoryBytes } from "./computer-spec.js";
+import { COMPUTER_IMAGE, computerResourceLimits, parseMemoryBytes } from "./computer-spec.js";
 import { sizeLimits } from "./dozo-computer-size.js";
 
 /** The refusal's exact text. The server's provider matches it, from its own copy of this line. */
 export const COMPUTER_MEMORY_BUDGET_FULL = "Computer memory budget reached";
 
 const BUDGET_ENV = "RAKAZO_COMPUTER_MEMORY_TOTAL";
+
+/** How long a start waits for the lock before it is refused as if the budget were full. */
+export const COMPUTER_MEMORY_WAIT_MS = 30_000;
 
 type Listing = Pick<Docker, "listContainers" | "getContainer">;
 
@@ -27,10 +31,24 @@ function isBotComputer(item: Docker.ContainerInfo): boolean {
 }
 
 /**
+ * What a computer with no memory ceiling may take: the host's per-computer ceiling, or, when that
+ * is unlimited too, the whole budget, so nothing else starts beside a computer that may take
+ * everything. Only asked where a budget is set.
+ */
+function ceilinglessBytes(budget: number): number {
+  return computerResourceLimits().Memory || budget;
+}
+
+/**
  * The memory ceilings of the bot computers Docker says are running, paused or restarting (created
  * and exited ones hold none). The figure comes from Docker alone, never from remembered state.
+ * With a budget, a computer with no ceiling counts as `ceilinglessBytes`; without one, as nothing.
  */
-export async function runningComputerMemory(docker: Listing, exceptId?: string): Promise<number> {
+export async function runningComputerMemory(
+  docker: Listing,
+  exceptId?: string,
+  budget = memoryBudgetBytes(),
+): Promise<number> {
   const listed = await docker.listContainers();
   const ceilings = await Promise.all(
     listed
@@ -38,7 +56,8 @@ export async function runningComputerMemory(docker: Listing, exceptId?: string):
       .map(async (item) => {
         try {
           const info = await docker.getContainer(item.Id).inspect();
-          return info.HostConfig?.Memory ?? 0;
+          const memory = info.HostConfig?.Memory ?? 0;
+          return memory || (budget === undefined ? 0 : ceilinglessBytes(budget));
         } catch (error) {
           // Gone between the list and the inspect: it holds nothing now.
           if ((error as { statusCode?: number }).statusCode === 404) return 0;
@@ -60,7 +79,9 @@ let tail: Promise<void> = Promise.resolve();
  * together: a computer still starting is not yet running for Docker, which is why the lock covers
  * the start itself and not only the count. With no budget there is no lock and no Docker call.
  * Take it last, after the bot, space and screen locks: a stuck screen command then never holds
- * the host's lock, and nothing is waited for while it is held but Docker and the start.
+ * the host's lock, and nothing is waited for while it is held but Docker and the start. A start
+ * that waits longer than COMPUTER_MEMORY_WAIT_MS leaves the queue and is refused like a full
+ * budget, so one stuck start cannot hold every other behind it for ever.
  */
 export async function holdComputerMemory(
   docker: Listing,
@@ -76,7 +97,20 @@ export async function holdComputerMemory(
   });
   const previous = tail;
   tail = previous.then(() => gate);
-  await previous;
+  const stopWaiting = new AbortController();
+  const turn = await Promise.race([
+    previous.then(() => "turn" as const),
+    abortableDelay(COMPUTER_MEMORY_WAIT_MS, stopWaiting.signal).then(() =>
+      stopWaiting.signal.aborted ? ("turn" as const) : ("late" as const),
+    ),
+  ]);
+  stopWaiting.abort();
+  if (turn === "late") {
+    // Our link stays in the chain, but opened: when its turn comes it passes at once and holds
+    // nothing, so those behind it are not kept waiting for a start that was refused.
+    open();
+    throw new Error(COMPUTER_MEMORY_BUDGET_FULL);
+  }
   let released = false;
   const release = () => {
     if (released) return;
@@ -84,7 +118,8 @@ export async function holdComputerMemory(
     open();
   };
   try {
-    if ((await runningComputerMemory(docker, exceptId)) + needBytes > budget) {
+    const need = needBytes || ceilinglessBytes(budget);
+    if ((await runningComputerMemory(docker, exceptId, budget)) + need > budget) {
       throw new Error(COMPUTER_MEMORY_BUDGET_FULL);
     }
   } catch (error) {
@@ -98,7 +133,7 @@ export async function computerMemoryUsage(
   docker: Listing,
 ): Promise<{ usedBytes: number; budgetBytes?: number }> {
   const budgetBytes = memoryBudgetBytes();
-  const usedBytes = await runningComputerMemory(docker);
+  const usedBytes = await runningComputerMemory(docker, undefined, budgetBytes);
   return budgetBytes === undefined ? { usedBytes } : { usedBytes, budgetBytes };
 }
 
