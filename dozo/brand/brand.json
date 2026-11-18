@@ -1076,30 +1076,21 @@
     },
     {
       "file": "apps/api/src/billing.ts",
-      "find": "  reserveByokTrialCheckout,\n  syncBillingSnapshot,\n",
-      "replace": "  reserveByokTrialCheckout,\n  sharedSpaceUsage,\n  syncBillingSnapshot,\n",
-      "requires": [
-        "packages/db/src/dozo-shared-space.ts"
-      ],
-      "reason": "plans: the billing status reads the shared space with the count the writes are held to"
-    },
-    {
-      "file": "apps/api/src/billing.ts",
       "find": "          referral: await referrals.status(organizationId, isOwner),\n        };\n",
-      "replace": "          referral: await referrals.status(organizationId, isOwner),\n          sharedSpace: (await sharedSpaceUsage(prisma, organizationId, account)) ?? undefined,\n        };\n",
+      "replace": "          referral: await referrals.status(organizationId, isOwner),\n          sharedSpace: await statusSharedSpace(prisma, organizationId, account),\n        };\n",
       "requires": [
-        "packages/db/src/dozo-shared-space.ts"
+        "apps/api/src/dozo-billing.ts"
       ],
       "reason": "plans: the billing status carries the plan's name and the shared space in use; a server that does not bill has no limit and sends nothing"
     },
     {
       "file": "apps/api/src/billing.ts",
       "find": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
-      "replace": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { PlanNotOfferedError } from \"./dozo-billing.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
+      "replace": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace } from \"./dozo-billing.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
       "requires": [
         "apps/api/src/dozo-billing.ts"
       ],
-      "reason": "plans: the refusal a checkout of the free plan is answered with"
+      "reason": "plans: the refusal a checkout of the free plan is answered with, and the status's read of the shared space"
     },
     {
       "file": "apps/api/src/billing.ts",

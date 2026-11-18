@@ -129,7 +129,11 @@ const prisma = {
   // Two questions reach the database raw: the bytes of the organization's files, and its
   // computer hours.
   $queryRaw: async (query: { sql?: string }) =>
-    query.sql?.includes('"artifacts"') ? [{ used: String(store.fileBytes) }] : runs,
+    query.sql?.includes('"artifacts"')
+      ? Number.isNaN(store.fileBytes)
+        ? Promise.reject(new Error("the count failed"))
+        : [{ used: String(store.fileBytes) }]
+      : runs,
   $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
 } as unknown as PrismaClient;
 
@@ -391,6 +395,15 @@ describe("a server that sells seats, without model credits", () => {
     expect(status).toMatchObject({ access: false, state: "none", trialAvailable: true });
     expect(status).not.toHaveProperty("funding");
     expect(status).not.toHaveProperty("byokTiers");
+  });
+});
+
+describe("a billing status whose count of files fails", () => {
+  it("still answers, without the shared space", async () => {
+    store.fileBytes = Number.NaN;
+    const status = await setup().billing.status(actor);
+    expect(status).toMatchObject({ access: true, funding: "byok" });
+    expect(status.sharedSpace).toBeUndefined();
   });
 });
 
