@@ -6,6 +6,19 @@ Plain static files, no build step: open `index.html` or run
 It is not part of `apps/www`: that Astro site is upstream's and is not edited by hand, and one
 static page needs no framework. Publishing: `dozo/deploy/README.md`, "Landing page".
 
+Languages: English at `/` (`index.html`, `404.html`) and Turkish at `/tr/` (`tr/`). Each language is
+its own hand-kept static page, so it works without scripts and previews show the right language;
+the CSS, script and images are one shared copy. There is no generator: a second copy of the markup
+is cheaper than a build step, a generated tree to keep in step and a deploy that knows about both.
+`dozo/e2e/landing-pages.test.mjs` (part of `make olc`) holds every language to the English page's
+structure: same tags, attributes, link targets and text slots. The words the script shows during
+the animations are `data-*` attributes on the page, not strings in `landing.js`. Nothing redirects
+by browser language; the header links are the only switch.
+
+To add a language: copy `tr/` to `<code>/` and translate it, add its `hreflang` link and header
+link to every page, and copy the two `/tr/` locations in `dozo/deploy/site.nginx.conf`. The test
+names whatever is missing. `og.png` carries English words and is shared by every language.
+
 Closed pre-release state, to undo at launch:
 
 - `robots.txt` disallows everything, the page has `<meta name="robots" content="noindex">` and the
@@ -14,6 +27,11 @@ Closed pre-release state, to undo at launch:
   (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in`). Swap in the real domain.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer to "Licence", and "Self-host" points at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
+- The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
+  latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
+  `Dozo-Windows-x64-setup.exe`), so a new release needs no edit here; renaming an asset breaks them.
+  The "not signed yet" note is the one `<p>` in that block, once per language: edit that line when
+  a package is signed.
 - Hosted plan placeholder: the "We run it for you." block says only that hosted Dozo is in a
   closed preview and that plans and pricing come later. It has no price, plan table, form or
   payment link on purpose. Rewrite it when pricing is set and payment is connected.
