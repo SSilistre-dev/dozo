@@ -209,6 +209,19 @@ olc() {
         && echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')" \
         || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
+    # The leak gate of the brand step, brought forward: the working tree's apps, packages and infra
+    # (tracked and untracked, not ignored) are branded in a scratch copy inside one container and
+    # scanned, so the old name left in anything users see (a screen, an e-mail template, a locale
+    # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds.
+    if [ -f dozo/brand/check.mjs ]; then
+      out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra \
+        | drun brand-leak -i --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'set -e
+            mkdir -p /tmp/w; tar --null --ignore-failed-read -T - -cf - | tar -C /tmp/w -xf -
+            node dozo/brand/apply.mjs --root /tmp/w --strict > /dev/null
+            node dozo/brand/check.mjs --root /tmp/w' 2>&1) \
+        && echo "[olc] $(printf '%s\n' "$out" | tail -1) (branded copy of the working tree)" \
+        || { printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; }
+    else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
   fi
   local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')

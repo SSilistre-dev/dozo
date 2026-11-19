@@ -134,6 +134,10 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   builds nothing; the check on the resolved config is `dozo/mobile/build.sh check`.
 - Every anchored brand rule against the repository tree: `apply.mjs --check --allow-git --strict`
   (writes nothing; prints the `hooks:` line).
+- The leak gate on a branded copy: the working tree's `apps`, `packages` and `infra` (tracked and
+  untracked, not ignored) are branded in a scratch copy inside one container and scanned by
+  `check.mjs`, so the old name left in a screen, an e-mail template, a locale catalogue or a prompt
+  fails here, not only at `make qa`. About 9 seconds.
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
   inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
   `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.

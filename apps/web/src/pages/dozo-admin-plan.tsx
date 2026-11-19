@@ -1,11 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoAdminUser } from "@rakazo/contracts";
 import { BYOK_TIERS } from "@rakazo/contracts";
-import { Button, Input, NativeSelect, NativeSelectOption, toast } from "@rakazo/ui-web";
+import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
 
 type Choice = "pro" | "max" | "none";
 
@@ -29,7 +29,7 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
       rpc.dozoAdmin.setPlan({ userId: user.id, ...input }),
     stale: [queries.dozoAdmin.users.key()],
     onSaved: () => setOpen(false),
-    onFailed: (error) => toast.error(errorText(error, t`Could not change the plan`)),
+    onFailed: (error) => toastError(t`Could not change the plan`, error),
   });
   const granting = choice !== "none";
   // The end is a UTC day, and the first one that can still be chosen is tomorrow's.

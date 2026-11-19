@@ -1,4 +1,4 @@
-import { BYOK_TIERS } from "@rakazo/contracts";
+import { BYOK_TIERS, PLAN_LIMIT_CODES } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -12,7 +12,7 @@ export class SharedSpaceFullError extends ClientError {
     super(
       "BAD_REQUEST",
       "Shared space is full. Delete files or change the plan.",
-      "shared_space_full",
+      PLAN_LIMIT_CODES.sharedSpaceFull,
     );
     this.name = "SharedSpaceFullError";
   }
