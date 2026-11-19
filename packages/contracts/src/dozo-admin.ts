@@ -4,15 +4,16 @@ import { ByokTierSchema } from "./billing.js";
 import { Id, IsoDate } from "./ids.js";
 
 /**
- * What keeps an account's plan in force and when it ends: the subscription's period (`renews`
- * when it is not cancelled), a trial, a plan an admin granted, or on Free a free period.
+ * When the plan in force ends or renews, as the member's own billing status tells it (`PlanEnd`),
+ * and what keeps it until then: the subscription's period, a trial, a plan an admin granted, or on
+ * Free a free period. Days left are counted where it is shown (`planEndDays`).
  */
 export const DozoAdminPlanEndSchema = z.object({
   source: z.enum(["subscription", "trial", "granted", "freeMonth"]),
   at: IsoDate,
-  /** Whole days left, counting a part day as one. */
-  daysLeft: z.number().int(),
   renews: z.boolean(),
+  /** A granted plan above a subscription: the subscription's plan follows it. */
+  fallsTo: z.object({ from: z.string(), to: z.string() }).optional(),
 });
 export type DozoAdminPlanEnd = z.infer<typeof DozoAdminPlanEndSchema>;
 

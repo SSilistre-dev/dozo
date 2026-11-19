@@ -150,27 +150,42 @@ it("shows the plan's name, what keeps it and the days it has left, with the day 
     });
     return shown();
   };
-  const at = "2027-01-05T23:59:59.000Z";
-  const end = { at, renews: false };
-  expect(await summary("max", { ...end, source: "granted", daysLeft: 12 })).toBe(
-    "Premium PlusGranted12 days left",
-  );
-  expect(container.querySelector("[title]")?.getAttribute("title")).toBe("Jan 5, 2027");
-  expect(await summary("pro", { ...end, source: "trial", daysLeft: 1 })).toBe(
-    "PremiumTrial1 day left",
-  );
-  expect(await summary("pro", { at, source: "subscription", daysLeft: 30, renews: true })).toBe(
-    "PremiumSubscriptionRenews in 30 days",
-  );
-  expect(await summary("pro", { at, source: "subscription", daysLeft: 1, renews: true })).toBe(
-    "PremiumSubscriptionRenews in 1 day",
-  );
-  expect(await summary("pro", { ...end, source: "subscription", daysLeft: 4 })).toBe(
-    "PremiumSubscription4 days left",
-  );
-  expect(await summary("standard", { ...end, source: "freeMonth", daysLeft: 9 })).toBe(
-    "FreeFree period9 days left",
-  );
+  // Days are counted from today, as the member's own page counts them.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date("2026-12-24T12:00:00.000Z"));
+    const at = "2027-01-05T12:00:00.000Z";
+    const end = { at, renews: false };
+    expect(await summary("max", { ...end, source: "granted" })).toBe(
+      "Premium PlusGranted12 days left",
+    );
+    expect(container.querySelector("[title]")?.getAttribute("title")).toBe("Jan 5, 2027");
+    expect(
+      await summary("max", {
+        ...end,
+        source: "granted",
+        fallsTo: { from: "Premium Plus", to: "Premium" },
+      }),
+    ).toBe("Premium PlusGranted12 days leftThen Premium");
+    expect(
+      await summary("pro", { at: "2026-12-25T12:00:00.000Z", source: "trial", renews: false }),
+    ).toBe("PremiumTrial1 day left");
+    expect(await summary("pro", { at, source: "subscription", renews: true })).toBe(
+      "PremiumSubscriptionRenews in 12 days",
+    );
+    expect(
+      await summary("pro", {
+        at: "2026-12-25T12:00:00.000Z",
+        source: "subscription",
+        renews: true,
+      }),
+    ).toBe("PremiumSubscriptionRenews in 1 day");
+    expect(await summary("standard", { ...end, source: "freeMonth" })).toBe(
+      "FreeFree period12 days left",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("gives a plan until the chosen day, and reads the list again", async () => {

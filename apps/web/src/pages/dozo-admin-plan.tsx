@@ -1,6 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { DozoAdminPlan, DozoAdminUser } from "@rakazo/contracts";
-import { BYOK_TIERS } from "@rakazo/contracts";
+import { BYOK_TIERS, planEndDays } from "@rakazo/contracts";
 import { Button, Input, NativeSelect, NativeSelectOption, toast } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -10,12 +10,14 @@ import { errorText } from "../lib/user-error";
 type Choice = "pro" | "max" | "none";
 
 /**
- * A member's plan, what keeps it and how many days it has left; the date itself on hover. Free
- * with nothing running out is the plan's name alone.
+ * A member's plan, what keeps it and how many days it has left, counted as the member's own page
+ * counts them; the date itself on hover, and the plan that follows a granted one. Free with
+ * nothing running out is the plan's name alone.
  */
 export function DozoPlanSummary({ plan }: { plan: DozoAdminPlan }) {
   const { t, i18n } = useLingui();
   const { ends } = plan;
+  const days = ends ? planEndDays(ends) : 0;
   const source = ends
     ? {
         subscription: t`Subscription`,
@@ -37,11 +39,12 @@ export function DozoPlanSummary({ plan }: { plan: DozoAdminPlan }) {
             })}
           >
             {ends.renews ? (
-              <Plural value={ends.daysLeft} one="Renews in # day" other="Renews in # days" />
+              <Plural value={days} one="Renews in # day" other="Renews in # days" />
             ) : (
-              <Plural value={ends.daysLeft} one="# day left" other="# days left" />
+              <Plural value={days} one="# day left" other="# days left" />
             )}
           </span>
+          {ends.fallsTo ? <span>{t`Then ${ends.fallsTo.to}`}</span> : null}
         </>
       ) : null}
     </span>

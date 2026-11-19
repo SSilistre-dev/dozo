@@ -3,15 +3,13 @@ import { banKeys, bannedEntries } from "@rakazo/auth";
 import type { DozoAdminAccount } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { sharedSpaceUsage } from "@rakazo/db";
-import {
-  DOZO_ADMIN_ORGANIZATION_SELECT,
-  ownedOrganizations,
-  planOfOrganization,
-} from "./dozo-admin-members.js";
+import { IsolationError, ownedOrganizationId, sharedSpaceUsage } from "@rakazo/db";
+import { DOZO_ADMIN_ORGANIZATION_SELECT, planOfOrganization } from "./dozo-admin-members.js";
 
 /** How many of an account's sign-ins its page shows, most recently used first. */
 export const DOZO_ADMIN_ACCOUNT_SESSIONS = 5;
+/** How many of an account's Spaces, bots and computers its page lists, oldest first. */
+export const DOZO_ADMIN_ACCOUNT_LIST = 50;
 
 /**
  * One account as its admin page shows it: who it is, its plan and every date that ends one, where
@@ -37,22 +35,28 @@ export async function readAccount(
   });
   if (!user) throw new ClientError("NOT_FOUND", "Account not found");
   const ownMachine = new Set(sandboxKindsWhere((capabilities) => capabilities.runsOnUserMachine));
-  const [owned, banned, memberships, bots, computers, sessions] = await Promise.all([
-    ownedOrganizations(prisma, [userId]),
+  const [organizationId, banned, memberships, bots, computers, sessions] = await Promise.all([
+    ownedOrganizationId(prisma, userId).catch((error) => {
+      if (error instanceof IsolationError) return undefined;
+      throw error;
+    }),
     bannedEntries(prisma, [user.email]),
     prisma.spaceMember.findMany({
       where: { userId, space: { deletingAt: null } },
       orderBy: { createdAt: "asc" },
+      take: DOZO_ADMIN_ACCOUNT_LIST,
       select: { space: { select: { id: true, name: true, organizationId: true } } },
     }),
     prisma.bot.findMany({
       where: { userId, archivedAt: null },
       orderBy: { createdAt: "asc" },
+      take: DOZO_ADMIN_ACCOUNT_LIST,
       select: { id: true, name: true },
     }),
     prisma.computer.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
+      take: DOZO_ADMIN_ACCOUNT_LIST,
       select: {
         id: true,
         state: true,
@@ -72,7 +76,6 @@ export async function readAccount(
       select: { id: true, createdAt: true, updatedAt: true, userAgent: true },
     }),
   ]);
-  const organizationId = owned.get(userId);
   const organization = organizationId
     ? await prisma.organization.findUnique({
         where: { id: organizationId },

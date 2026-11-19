@@ -2,7 +2,13 @@ import { createRouterClient, os } from "@orpc/server";
 import type * as Adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type * as Db from "@rakazo/db";
-import { accountDeactivated, recordSecurityEvent } from "@rakazo/db";
+import {
+  accountDeactivated,
+  hasBillingAccess,
+  IsolationError,
+  ownedOrganizationId,
+  recordSecurityEvent,
+} from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DozoAdminWiring } from "./dozo-admin.js";
 import {
@@ -11,6 +17,7 @@ import {
   dozoAdminWiring,
   spendingLimitRoutes,
 } from "./dozo-admin.js";
+import { LIVE_BILLING_STATUSES, ownedOrganizations } from "./dozo-admin-members.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
@@ -149,6 +156,10 @@ function world(users: User[]) {
     },
   ];
   const settings = { modelCreditsEnabled: false };
+  // Ada's computer, paired through her sign-in.
+  const devices: { id: string; userId: string; revokedAt: Date | null }[] = [
+    { id: "device-ada", userId: "ada", revokedAt: null },
+  ];
   const computers = [
     { id: "pc-ada", userId: "ada", state: "running", kind: "docker", controlUserId: null },
     { id: "pc-old", userId: "gone", state: "running", kind: "docker", controlUserId: "bob" },
@@ -167,12 +178,46 @@ function world(users: User[]) {
     { id: "bot-5", name: "Local", userId: "admin", spaceId: "space-admin", computerId: "pc-own" },
     { id: "bot-6", name: "Asleep", userId: "admin", spaceId: "space-admin", computerId: "pc-off" },
   ];
-  const matches = (row: User, where: Where = {}) => {
-    if (where.NOT && row.email.endsWith(where.NOT.email.endsWith)) return false;
+  // Every fixture organization is live, so the live condition always holds.
+  const organizationMatches = (id: string, where: Where): boolean => {
+    const row = organizations.get(id);
+    if (!row) return false;
+    if (where.AND) return where.AND.every((part: Where) => organizationMatches(id, part));
+    if (where.OR) return where.OR.some((part: Where) => organizationMatches(id, part));
+    if (where.billing)
+      return (
+        row.billing !== null &&
+        where.billing.status.in.includes(row.billing.status) &&
+        where.billing.byokTier.in.includes(row.billing.byokTier)
+      );
+    if (where.dozoPlanGrant)
+      return (
+        row.grant !== null &&
+        where.dozoPlanGrant.tier.in.includes(row.grant.tier) &&
+        row.grant.endsAt > where.dozoPlanGrant.endsAt.gt
+      );
+    return true;
+  };
+  const matches = (row: User, where: Where = {}): boolean => {
+    if (where.NOT && matches(row, where.NOT)) return false;
+    if (where.AND && !where.AND.every((part: Where) => matches(row, part))) return false;
+    if (where.members) {
+      const { role, organization } = where.members.some;
+      const owns = memberships.some(
+        (membership) =>
+          membership.userId === row.id &&
+          membership.role.includes(role.contains) &&
+          organizationMatches(membership.organizationId, organization),
+      );
+      if (!owns) return false;
+    }
     if (typeof where.id === "string" && row.id !== where.id) return false;
     if (where.id?.in && !where.id.in.includes(row.id)) return false;
-    if (where.id?.notIn?.includes(row.id)) return false;
-    if (where.email && !row.email.toLowerCase().includes(where.email.contains.toLowerCase()))
+    if (where.email?.endsWith && !row.email.endsWith(where.email.endsWith)) return false;
+    if (
+      where.email?.contains &&
+      !row.email.toLowerCase().includes(where.email.contains.toLowerCase())
+    )
       return false;
     if (where.deactivatedAt === null && row.deactivatedAt) return false;
     if (where.deactivatedAt?.not === null && !row.deactivatedAt) return false;
@@ -213,12 +258,7 @@ function world(users: User[]) {
     organization: {
       findMany: vi.fn(async ({ where }: Where) =>
         [...organizations]
-          .filter(([id, row]) =>
-            where.OR
-              ? row.billing?.status != null ||
-                (row.grant !== null && row.grant.endsAt > where.OR[1].dozoPlanGrant.endsAt.gt)
-              : where.id.in.includes(id),
-          )
+          .filter(([id]) => where.id.in.includes(id))
           .map(([id]) => organization(id)),
       ),
       findUnique: vi.fn(async ({ where }: Where) => organization(where.id) ?? null),
@@ -324,7 +364,16 @@ function world(users: User[]) {
     },
     callPushDevice: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    userDevice: { findMany: vi.fn(async () => []) },
+    userDevice: {
+      findMany: vi.fn(async ({ where }: Where) =>
+        devices.filter((row) => row.userId === where.userId && !row.revokedAt),
+      ),
+      updateMany: vi.fn(async ({ where, data }: Where) => {
+        const rows = devices.filter((row) => row.id === where.id && !row.revokedAt);
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
+      }),
+    },
   };
   return {
     prisma,
@@ -334,6 +383,7 @@ function world(users: User[]) {
     memberships,
     settings,
     computers,
+    devices,
   };
 }
 
@@ -350,7 +400,9 @@ function setup(
   wiring = true,
   sandboxId?: string,
 ) {
-  const { prisma, sessions, organizations, bans, memberships, settings, computers } = world(users);
+  const { prisma, sessions, organizations, bans, memberships, settings, computers, devices } =
+    world(users);
+  const disconnect = vi.fn(async () => undefined);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
   const steps: string[] = [];
@@ -392,7 +444,7 @@ function setup(
     ...(sandboxId ? { sandbox: { describe: () => ({ id: sandboxId }) } } : {}),
     ...(wiring
       ? dozoAdminWiring({
-          devices: { prisma, devices: {} } as unknown as DozoAdminWiring["devices"],
+          devices: { prisma, devices: { disconnect } } as unknown as DozoAdminWiring["devices"],
           directoryProvisioning: false,
           signupsEnabled: "false",
           auth,
@@ -423,6 +475,8 @@ function setup(
     memberships,
     settings,
     computers,
+    devices,
+    disconnect,
   };
 }
 
@@ -701,11 +755,10 @@ describe("running computers", () => {
 
 const DAY = 24 * 60 * 60 * 1000;
 const inDays = (days: number) => new Date(Date.now() + days * DAY);
-/** What the list says of a grant in force that ends at `at`, as days left from now. */
+/** What the list says of a grant in force that ends at `at`. */
 const granted = (at: Date | string) => ({
   source: "granted",
   at: new Date(at).toISOString(),
-  daysLeft: Math.ceil((new Date(at).getTime() - Date.now()) / DAY),
   renews: false,
 });
 
@@ -746,7 +799,7 @@ describe("the plan in the list", () => {
     expect(await plan(as, "ada")).toEqual({
       tier: "max",
       grantedUntil: endsAt.toISOString(),
-      ends: granted(endsAt),
+      ends: { ...granted(endsAt), fallsTo: { from: "Premium Plus", to: "Premium" } },
     });
     row.grant = { tier: "pro", endsAt, grantedById: "admin", note: null };
     row.billing = { status: "active", byokTier: "max" };
@@ -1076,7 +1129,7 @@ describe("deleting an account", () => {
   });
 });
 
-describe("what keeps a plan and how long it has left", () => {
+describe("what keeps a plan and when it ends", () => {
   const plan = async (as: ReturnType<typeof setup>["as"]) =>
     (await as("admin").users({ query: "ada" })).users[0]?.plan;
   const fixture = (organizations: ReturnType<typeof setup>["organizations"]) => {
@@ -1093,7 +1146,6 @@ describe("what keeps a plan and how long it has left", () => {
     expect((await plan(as))?.ends).toEqual({
       source: "subscription",
       at: end.toISOString(),
-      daysLeft: 12,
       renews: true,
     });
     row.billing.cancelAtPeriodEnd = true;
@@ -1104,43 +1156,84 @@ describe("what keeps a plan and how long it has left", () => {
     const { as, organizations } = setup();
     const row = fixture(organizations);
     const trial = inDays(3);
+    const period = inDays(30);
     row.billing = {
       status: "trialing",
       byokTier: "max",
       trialEndsAt: trial,
-      currentPeriodEndsAt: inDays(30),
+      currentPeriodEndsAt: period,
     };
     expect((await plan(as))?.ends).toEqual({
       source: "trial",
       at: trial.toISOString(),
-      daysLeft: 3,
-      renews: false,
+      renews: true,
     });
     row.billing.trialEndsAt = null;
-    expect((await plan(as))?.ends).toMatchObject({ source: "trial", daysLeft: 30 });
+    expect((await plan(as))?.ends).toMatchObject({ source: "trial", at: period.toISOString() });
   });
 
-  it("is the grant when the grant is what raises the plan", async () => {
+  it("names the plan that follows a grant above the subscription", async () => {
     const { as, organizations } = setup();
     const row = fixture(organizations);
     const end = inDays(40);
     row.billing = { status: "active", byokTier: "pro", currentPeriodEndsAt: inDays(5) };
     row.grant = { tier: "max", endsAt: end, grantedById: "admin", note: null };
-    expect((await plan(as))?.ends).toEqual(granted(end));
-    // A subscription with no date left falls back to an equal grant.
+    expect((await plan(as))?.ends).toEqual({
+      ...granted(end),
+      fallsTo: { from: "Premium Plus", to: "Premium" },
+    });
+    // A subscription with no date left leaves an equal grant's end.
     row.billing = { status: "active", byokTier: "max" };
     expect((await plan(as))?.ends).toEqual(granted(end));
   });
 
-  it("is a free period on Free, counting a part day as a whole one", async () => {
+  // Each as the member's own billing status tells it (statusPlanEnd): the admin sees the same end.
+  it("is the later grant when a cancelled subscription of the same plan ends first", async () => {
     const { as, organizations } = setup();
     const row = fixture(organizations);
-    const end = new Date(Date.now() + 2 * DAY + 60_000);
+    const end = inDays(40);
+    row.billing = {
+      status: "active",
+      byokTier: "pro",
+      currentPeriodEndsAt: inDays(20),
+      cancelAtPeriodEnd: true,
+    };
+    row.grant = { tier: "pro", endsAt: end, grantedById: "admin", note: null };
+    expect((await plan(as))?.ends).toEqual(granted(end));
+  });
+
+  it("is a subscription on credits' period, though it raises no plan", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    const end = inDays(10);
+    row.billing = { status: "active", byokTier: null, currentPeriodEndsAt: end };
+    expect(await plan(as)).toEqual({
+      tier: "standard",
+      grantedUntil: null,
+      ends: { source: "subscription", at: end.toISOString(), renews: true },
+    });
+  });
+
+  it("says a trial cancelled before it ends does not renew", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    row.billing = {
+      status: "trialing",
+      byokTier: "pro",
+      trialEndsAt: inDays(4),
+      cancelAtPeriodEnd: true,
+    };
+    expect((await plan(as))?.ends).toMatchObject({ source: "trial", renews: false });
+  });
+
+  it("is a running free period on Free with nothing else ending", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    const end = inDays(3);
     row.freeUntil = end;
     expect((await plan(as))?.ends).toEqual({
       source: "freeMonth",
       at: end.toISOString(),
-      daysLeft: 3,
       renews: false,
     });
     row.freeUntil = inDays(-1);
@@ -1191,14 +1284,66 @@ describe("sorting and filtering the list", () => {
     expect(result).toMatchObject({ users: [], matching: 0, total: 4 });
   });
 
-  it("judges an account by its own oldest organization, not one it owns later", async () => {
+  it("counts an account that owns several organizations at its highest plan", async () => {
     const { as, organizations, memberships } = setup();
-    // Bob, who owned none, now owns a paying organization; Ada owns one too, after her own.
+    // Bob, who owned none, now owns a paying organization; Ada owns one too, beside her own.
     for (const userId of ["bob", "ada"])
       memberships.push({ userId, organizationId: "org-paid", role: "owner" });
+    // Owning is what counts: a member of a paying organization is not on its plan.
+    memberships.push({ userId: "squatter", organizationId: "org-paid", role: "member" });
     organizations.set("org-paid", { billing: { status: "active", byokTier: "max" }, grant: null });
-    expect(await ids(as, { plan: "max" })).toEqual(["bob"]);
-    expect(await ids(as, { plan: "standard" })).toEqual(["ada", "squatter", "admin"]);
+    expect(await ids(as, { plan: "max" })).toEqual(["bob", "ada"]);
+    expect(await ids(as, { plan: "standard" })).toEqual(["squatter", "admin"]);
+  });
+
+  it("filters in the list's own query, and counts only when something narrows it", async () => {
+    const { as, prisma } = setup();
+    await as("admin").users({});
+    // The total alone: unfiltered, everything matches.
+    expect(prisma.user.count).toHaveBeenCalledTimes(1);
+    expect((await as("admin").users({})).matching).toBe(4);
+    prisma.user.count.mockClear();
+    prisma.member.findMany.mockClear();
+    prisma.organization.findMany.mockClear();
+    await as("admin").users({ plan: "standard" });
+    expect(prisma.user.count).toHaveBeenCalledTimes(2);
+    // The plans of the page's accounts, nothing more: no organization is read to filter.
+    expect(prisma.member.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.organization.findMany).toHaveBeenCalledTimes(1);
+    // The account filter keeps its own conditions beside the plan's.
+    const [query] = prisma.user.findMany.mock.lastCall ?? [];
+    const { where } = query as { where: Record<string, unknown> };
+    expect(where).toMatchObject({ NOT: { email: { endsWith: expect.any(String) } } });
+    expect(where.AND).toHaveLength(1);
+  });
+
+  it("filters only on the statuses that give a plan", () => {
+    for (const status of [
+      "trialing",
+      "active",
+      "past_due",
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "unpaid",
+      "paused",
+    ])
+      expect(LIVE_BILLING_STATUSES.includes(status)).toBe(hasBillingAccess(status));
+  });
+
+  it("finds each account's own organization as the one-account lookup does", async () => {
+    const { prisma, memberships } = setup();
+    memberships.push({ userId: "bob", organizationId: "org-later", role: "member" });
+    memberships.push({ userId: "ada", organizationId: "org-later", role: "admin,owner" });
+    const ids = ["admin", "squatter", "ada", "bob"];
+    const batch = await ownedOrganizations(prisma as never, ids);
+    for (const userId of ids)
+      expect(batch.get(userId)).toBe(
+        await ownedOrganizationId(prisma as never, userId).catch((error) => {
+          if (error instanceof IsolationError) return undefined;
+          throw error;
+        }),
+      );
   });
 
   it("reads a page in the same number of queries whatever its size", async () => {
@@ -1244,7 +1389,7 @@ describe("one account in full", () => {
       plan: {
         tier: "pro",
         grantedUntil: null,
-        ends: { source: "subscription", at: period.toISOString(), daysLeft: 20, renews: true },
+        ends: { source: "subscription", at: period.toISOString(), renews: true },
       },
       billing: {
         status: "active",
@@ -1353,7 +1498,7 @@ describe("one account in full", () => {
 });
 
 describe("renaming an account", () => {
-  it("changes its name only", async () => {
+  it("changes its name only, in the account's audit log", async () => {
     const { as, users } = setup();
     expect(await as("admin").rename({ userId: "ada", name: "  Ada L.  " })).toEqual({
       name: "Ada L.",
@@ -1362,6 +1507,16 @@ describe("renaming an account", () => {
       name: "Ada L.",
       email: "ada@example.test",
     });
+    // Tenant-visible: the admin as an opaque id, and neither name.
+    expect(audit.events).toEqual([
+      {
+        action: "user.renamed",
+        actor: { type: "system", label: "Operator" },
+        userId: "ada",
+        target: { type: "user", id: "ada" },
+        metadata: { adminId: "admin" },
+      },
+    ]);
   });
 
   it("refuses an empty name, an unknown account and a chat-app row", async () => {
@@ -1374,22 +1529,58 @@ describe("renaming an account", () => {
         kind: "NOT_FOUND",
       });
     expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(audit.events).toEqual([]);
   });
 });
 
 describe("signing an account out everywhere", () => {
-  it("ends its sessions and notification sign-ups only, and records it", async () => {
-    const { as, sessions, users, removePush } = setup();
+  it("ends every way in it has, keeps it active, and records it", async () => {
+    const { as, prisma, sessions, users, removePush, devices, disconnect } = setup();
     expect(await as("admin").endSessions({ userId: "ada" })).toEqual({ ok: true });
     expect(sessions().map((row) => row.userId)).toEqual(["admin"]);
+    expect(devices[0]?.revokedAt).toBeInstanceOf(Date);
+    expect(disconnect).toHaveBeenCalledWith("device-ada", "session-ended");
     expect(removePush).toHaveBeenCalledWith("ada");
+    expect(prisma.callPushDevice.deleteMany).toHaveBeenCalledWith({ where: { userId: "ada" } });
+    expect(prisma.messagingLinkCode.deleteMany).toHaveBeenCalledWith({ where: { userId: "ada" } });
+    // Links to its bots' screens stop working.
+    expect(prisma.bot.updateMany).toHaveBeenCalledWith({
+      where: { userId: "ada" },
+      data: { screenGeneration: { increment: 1 } },
+    });
     // It can sign in again.
     expect(users.find((row) => row.id === "ada")?.deactivatedAt).toBeNull();
     expect(recordSecurityEvent).toHaveBeenCalledWith({
       type: "auth.session.revoked",
       userId: "ada",
-      metadata: { by: "operator", admin: "admin" },
+      metadata: { by: "operator", admin: "admin", complete: true },
     });
+  });
+
+  it("tries every step when one fails, records it, then reports the failure", async () => {
+    const { as, prisma, removePush, disconnect } = setup();
+    prisma.session.deleteMany.mockRejectedValueOnce(new Error("database down"));
+    await expect(as("admin").endSessions({ userId: "ada" })).rejects.toThrow(
+      "Could not end every sign-in of the account",
+    );
+    expect(disconnect).toHaveBeenCalled();
+    expect(removePush).toHaveBeenCalledWith("ada");
+    expect(prisma.bot.updateMany).toHaveBeenCalled();
+    expect(recordSecurityEvent).toHaveBeenCalledWith({
+      type: "auth.session.revoked",
+      userId: "ada",
+      metadata: { by: "operator", admin: "admin", complete: false },
+    });
+  });
+
+  it("lets an admin sign out of their own sessions, never another admin's", async () => {
+    const { as, users, sessions } = setup();
+    (users.find((row) => row.id === "squatter") as User).emailVerified = true;
+    await expect(as("admin").endSessions({ userId: "squatter" })).rejects.toMatchObject({
+      kind: "BAD_REQUEST",
+    });
+    expect(await as("admin").endSessions({ userId: "admin" })).toEqual({ ok: true });
+    expect(sessions().some((row) => row.userId === "admin")).toBe(false);
   });
 
   it("answers not found for an unknown account, and is refused without the wiring", async () => {

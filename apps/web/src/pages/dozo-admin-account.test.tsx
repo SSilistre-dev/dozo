@@ -291,8 +291,31 @@ it("leaves out what an account does not have, and says a trial or a cancelled pe
     },
   });
   expect(shown("admin-account-dates")?.textContent).toBe(
-    "Subscription trialingTrial ends Apr 1, 2026Ends Apr 1, 2026",
+    "Subscription on trialTrial ends Apr 1, 2026Ends Apr 1, 2026",
   );
+});
+
+it("says the subscription's state in words, whatever state it is in", async () => {
+  const dates = async (status: string) => {
+    api.user.mockResolvedValue({
+      ...bare,
+      billing: { status, trialEndsAt: null, currentPeriodEndsAt: null, cancelAtPeriodEnd: false },
+    });
+    await act(async () => client.invalidateQueries());
+    await vi.waitFor(() => expect(api.user).toHaveBeenLastCalledWith({ userId: "bob" }));
+    return vi.waitFor(() => {
+      const text = shown("admin-account-dates")?.textContent;
+      if (!text?.includes(expected[status] ?? "")) throw new Error(text);
+      return text;
+    });
+  };
+  const expected: Record<string, string> = {
+    past_due: "Subscription payment due",
+    canceled: "Subscription cancelled",
+    incomplete: "Subscription inactive",
+  };
+  await open(bare);
+  for (const status of Object.keys(expected)) expect(await dates(status)).toBe(expected[status]);
 });
 
 it("marks a suspended or banned account, and offers restoring a suspended one at once", async () => {

@@ -50,6 +50,21 @@ export function DozoAdminAccount({ ownId }: { ownId: string }) {
     },
     onFailed: (error) => toast.error(errorText(error, t`Could not change the account`)),
   });
+  /** The subscription's state in words; one this page does not know reads as inactive. */
+  const subscriptionStatus = (status: string) => {
+    switch (status) {
+      case "trialing":
+        return t`Subscription on trial`;
+      case "active":
+        return t`Subscription active`;
+      case "past_due":
+        return t`Subscription payment due`;
+      case "canceled":
+        return t`Subscription cancelled`;
+      default:
+        return t`Subscription inactive`;
+    }
+  };
   const date = (value: string) =>
     new Date(value).toLocaleDateString(i18n.locale, { dateStyle: "medium" });
 
@@ -82,7 +97,7 @@ export function DozoAdminAccount({ ownId }: { ownId: string }) {
   const { billing, storage } = user;
   const joined = date(user.createdAt);
   const dates = [
-    billing?.status ? t`Subscription ${billing.status}` : null,
+    billing?.status ? subscriptionStatus(billing.status) : null,
     billing?.trialEndsAt ? t`Trial ends ${date(billing.trialEndsAt)}` : null,
     billing?.currentPeriodEndsAt
       ? billing.cancelAtPeriodEnd

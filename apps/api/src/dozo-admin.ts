@@ -26,6 +26,7 @@ import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
 import { readAccount } from "./dozo-admin-account.js";
 import { onTier, plansOf } from "./dozo-admin-members.js";
+import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
 import type { RouterContext } from "./routes/context.js";
@@ -145,8 +146,10 @@ export function dozoAdminRoutes(ctx: RouterContext) {
             ...(input.status
               ? { deactivatedAt: input.status === "suspended" ? { not: null } : null }
               : {}),
-            ...(input.plan ? await onTier(prisma, input.plan, now) : {}),
+            // Its own conditions, so none of them replaces one of the account filter's.
+            ...(input.plan ? { AND: [onTier(input.plan, now)] } : {}),
           };
+          const filtered = Boolean(query || input.status || input.plan);
           const [rows, matching] = await Promise.all([
             prisma.user.findMany({
               where,
@@ -156,7 +159,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
               ...(input.cursor ? { cursor: { id: input.cursor } } : {}),
               select: { id: true, email: true, name: true, createdAt: true, deactivatedAt: true },
             }),
-            prisma.user.count({ where }),
+            // Unfiltered, what matches is every account, which is counted below anyway.
+            filtered ? prisma.user.count({ where }) : null,
           ]);
           const page = rows.slice(0, DOZO_ADMIN_USERS_PAGE);
           const mine = { userId: { in: page.map((user) => user.id) } };
@@ -189,7 +193,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           return {
             signupsOpen: signupsOpen(wiring?.signupsEnabled),
             total,
-            matching,
+            matching: matching ?? total,
             users: page.map((user) => ({
               id: user.id,
               email: user.email,
@@ -220,6 +224,14 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         await runAsSystem("rename an account from the admin page", () =>
           prisma.user.update({ where: { id: input.userId }, data: { name: input.name } }),
         );
+        // In the account's own audit log, as a granted plan is: the admin only as an opaque id.
+        await recordAuditEvent({
+          action: "user.renamed",
+          actor: { type: "system", label: "Operator" },
+          userId: input.userId,
+          target: { type: "user", id: input.userId },
+          metadata: { adminId: context.actor.userId },
+        });
         getLogger().info("dozo.admin.account_rename", {
           "admin.id": context.actor.userId,
           "user.id": input.userId,
@@ -229,25 +241,46 @@ export function dozoAdminRoutes(ctx: RouterContext) {
 
       /**
        * Signs the account out everywhere, as deactivating it does, but leaves it able to sign in
-       * again: its sessions, its paired computers and its notification sign-ups end.
+       * again: its sessions, paired computers, notification sign-ups, pending chat-app link codes
+       * and links to its bots' screens end. Every step is tried even when one fails, the event is
+       * recorded either way, and the failures are reported together; running it again is safe.
+       * An admin may sign out of their own sessions, never another admin's.
        */
       endSessions: admin.dozoAdmin.endSessions.handler(async ({ context, input }) => {
         const { devices } = requireWiring();
+        if (input.userId !== context.actor.userId && (await isAdmin(deps, input.userId)))
+          throw new ClientError("BAD_REQUEST", "Another admin's sessions cannot be ended");
         await findAccount(input.userId);
-        await runAsSystem("end an account's sessions from the admin page", () =>
-          prisma.session.deleteMany({ where: { userId: input.userId } }),
-        );
-        await revokeUserDevices(devices, input.userId);
-        await deps.pushTokens.remove(input.userId);
+        const { userId } = input;
+        const steps: Array<() => Promise<unknown>> = [
+          () => prisma.session.deleteMany({ where: { userId } }),
+          () => revokeUserDevices(devices, userId),
+          () => deps.pushTokens.remove(userId),
+          () => prisma.callPushDevice.deleteMany({ where: { userId } }),
+          () => prisma.messagingLinkCode.deleteMany({ where: { userId } }),
+          () =>
+            prisma.bot.updateMany({
+              where: { userId },
+              data: { screenGeneration: { increment: 1 } },
+            }),
+        ];
+        const failures: unknown[] = [];
+        await runAsSystem("end an account's sessions from the admin page", async () => {
+          for (const step of steps)
+            await (async () => step())().catch((error: unknown) => failures.push(error));
+        });
         await recordSecurityEvent({
           type: "auth.session.revoked",
-          userId: input.userId,
-          metadata: { by: "operator", admin: context.actor.userId },
+          userId,
+          metadata: { by: "operator", admin: context.actor.userId, complete: !failures.length },
         });
         getLogger().info("dozo.admin.sessions_end", {
           "admin.id": context.actor.userId,
-          "user.id": input.userId,
+          "user.id": userId,
+          failures: failures.length,
         });
+        if (failures.length)
+          throw new AggregateError(failures, "Could not end every sign-in of the account");
         return { ok: true as const };
       }),
 
@@ -506,7 +539,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
   };
 }
 
-/** The name the router imports: upstream's routes, plus the admin page's. */
+/** The name the router imports: upstream's routes, plus the admin page's and the cache share. */
 export function spendingLimitRoutes(ctx: RouterContext) {
-  return { ...upstreamSpendingLimitRoutes(ctx), ...dozoAdminRoutes(ctx) };
+  return { ...upstreamSpendingLimitRoutes(ctx), ...dozoAdminRoutes(ctx), ...dozoUsageRoutes(ctx) };
 }
