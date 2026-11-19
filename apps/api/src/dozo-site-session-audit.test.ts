@@ -3,7 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import type * as Db from "@rakazo/db";
 import type { Computer } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { auditSiteSessionsAfterControl, SITE_AUDIT_DELAY_MS } from "./dozo-site-session-audit.js";
+import { auditSiteSessionsAfterControl } from "./dozo-site-session-audit.js";
 import type { RouterDeps } from "./router.js";
 
 const audit = vi.hoisted(() => vi.fn(async (_input: unknown) => undefined));
@@ -36,6 +36,7 @@ function deps(granted: Date | null) {
             { host: "accounts.example.com", created: GRANTED.getTime() + 5, lastUsed: 0 },
             { host: "example.com", created: GRANTED.getTime() + 9, lastUsed: 0 },
             { host: "unsaved.example", created: null, lastUsed: null },
+            { host: "older.example", created: GRANTED.getTime() - 9, lastUsed: null },
           ];
           yield { type: "stdout", data: JSON.stringify({ ok: true, hosts }) };
           yield { type: "exit", code: 0 };
@@ -50,8 +51,15 @@ beforeEach(() => audit.mockClear());
 describe("sites opened under a person's control", () => {
   it("records each site whose first cookie came while they held the screen", async () => {
     const { deps: d } = deps(GRANTED);
-    auditSiteSessionsAfterControl(d, actor, running, "bot-1", "lease-1", 0);
-    await vi.waitFor(() => expect(audit).toHaveBeenCalledTimes(1));
+    auditSiteSessionsAfterControl(d, actor, running, "bot-1", "lease-1");
+    await vi.waitFor(() => expect(audit).toHaveBeenCalledTimes(2));
+    expect(audit).toHaveBeenCalledWith({
+      action: "computer.site.session_opened",
+      actor: { type: "user", id: "ada" },
+      spaceId: "space-1",
+      target: { type: "bot", id: "bot-1" },
+      metadata: { site: "unsaved.example", via: "control" },
+    });
     expect(audit).toHaveBeenCalledWith({
       action: "computer.site.session_opened",
       actor: { type: "user", id: "ada" },
@@ -61,40 +69,18 @@ describe("sites opened under a person's control", () => {
     });
   });
 
-  it("waits for the browser to save its new cookies before it looks", async () => {
-    vi.useFakeTimers();
-    try {
-      const { deps: d, asked } = deps(GRANTED);
-      auditSiteSessionsAfterControl(d, actor, running, "bot-1", "lease-1");
-      await vi.advanceTimersByTimeAsync(SITE_AUDIT_DELAY_MS - 1);
-      expect(asked).toEqual([]);
-      await vi.advanceTimersByTimeAsync(1);
-    } finally {
-      vi.useRealTimers();
-    }
-    await vi.waitFor(() => expect(audit).toHaveBeenCalledTimes(1));
-  });
-
   it("records nothing without the grant, or on a computer that cannot tell", async () => {
     const none = deps(null);
-    auditSiteSessionsAfterControl(none.deps, actor, running, "bot-1", "lease-1", 0);
+    auditSiteSessionsAfterControl(none.deps, actor, running, "bot-1", "lease-1");
     await vi.waitFor(() => expect(none.deps.prisma.event.findFirst).toHaveBeenCalled());
     const other = deps(GRANTED);
-    auditSiteSessionsAfterControl(
-      other.deps,
-      actor,
-      { ...running, kind: "desktop" },
-      "bot-1",
-      "l",
-      0,
-    );
+    auditSiteSessionsAfterControl(other.deps, actor, { ...running, kind: "desktop" }, "bot-1", "l");
     auditSiteSessionsAfterControl(
       other.deps,
       actor,
       { ...running, state: "stopped" },
       "bot-1",
       "l",
-      0,
     );
     expect(other.asked).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
