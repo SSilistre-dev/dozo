@@ -16,6 +16,7 @@ what each gate runs. Brand rules and the leak gate: `dozo/brand/README.md`. Merg
 | `make up` | `build.sh all`: stage, brand, build, up. It stages again every time; `smoke` is not part of it |
 | `make down` | `build.sh down`. It cannot pass `--volumes`; call the script for that (see Reset) |
 | `make e2e` | `dozo/e2e/run.sh` against a running stack (`make up` first) |
+| `make olcum` | `dozo/metrics/olcum.sh`: code measurement against `dozo/metrics/baseline.json` (`dozo/metrics/README.md`); not part of `olc` or `qa` |
 
 The Makefile exports `DOZO_STAGE_WORKTREE=1` unless it is already set (an empty value turns it off).
 `build.sh` with no argument is `all`; an unknown command or argument exits 64.

@@ -1,0 +1,13 @@
+{
+  "name": "dozo-metrics-tools",
+  "private": true,
+  "description": "Pinned analysis tools for make olcum; installed only inside the dozo-olcum image.",
+  "license": "Elastic-2.0",
+  "dependencies": {
+    "eslint": "10.15.0",
+    "eslint-plugin-sonarjs": "4.2.2",
+    "jscpd": "5.4.3",
+    "knip": "6.46.1",
+    "typescript-eslint": "8.73.0"
+  }
+}
