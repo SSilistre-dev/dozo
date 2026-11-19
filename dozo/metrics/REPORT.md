@@ -1,11 +1,11 @@
 # Code measurement (`make olcum`)
 
-Written by `dozo/metrics/report.mjs` at commit 0502eff7b; do not edit. Target: both fork scores >= 90.
+Written by `dozo/metrics/report.mjs` at commit 1b4f709f2; do not edit. Target: both fork scores >= 90.
 
 | Set | Quality | Readability |
 | --- | --- | --- |
-| fork (dozo/ and dozo-* files) | 87.4 | 91.3 |
-| whole repository | 86.4 | 95.5 |
+| fork (dozo/ and dozo-* files) | 88.7 | 93.2 |
+| whole repository | 86.3 | 95.5 |
 
 Fork: every file dozo/NOTICE lists as a Dozo file. Whole repository: every file git lists. Code files are
 TypeScript and JavaScript outside the directories biome.jsonc leaves out; source files are code files that are
@@ -40,29 +40,29 @@ are the tools' own defaults or a published rating, never tuned to this repositor
 
 | Sub-measure | Fork | Fork raw | All | All raw |
 | --- | --- | --- | --- | --- |
-| types | 95.3 | files 64, dirty 3, findings 6 | 99.9 | files 4371, dirty 4, findings 7 |
-| lint | 91.5 | files 118, dirty 10, findings 42 | 99.6 | files 4375, dirty 19, findings 73 |
-| tests | 100.0 | passed 880, failed 0, skipped 19 | 100.0 | passed 29468, failed 12, skipped 1328 |
-| lineCoverage | 99.7 | covered 2373, total 2380 | 81.5 | covered 95195, total 116827 |
-| branchCoverage | 96.9 | covered 1202, total 1241 | 76.5 | covered 82835, total 108275 |
+| types | 98.1 | files 157, dirty 3, findings 6 | 99.9 | files 4466, dirty 4, findings 7 |
+| lint | 95.3 | files 213, dirty 10, findings 43 | 99.6 | files 4470, dirty 19, findings 74 |
+| tests | 100.0 | passed 1306, failed 0, skipped 19 | 100.0 | passed 29894, failed 12, skipped 1328 |
+| lineCoverage | 99.8 | covered 3627, total 3635 | 81.7 | covered 96469, total 118082 |
+| branchCoverage | 97.3 | covered 2233, total 2294 | 76.7 | covered 83906, total 109328 |
 | security | 25.0 | info 0, low 4, moderate 9, high 11, critical 0, rating D | 25.0 | info 0, low 4, moderate 9, high 11, critical 0, rating D |
-| shell | 56.3 | files 16, dirty 7, findings 36 | 67.7 | files 65, dirty 21, findings 70 |
-| checks | 96.8 | passed 92, failed 3, skipped 0 | 96.8 | passed 92, failed 3, skipped 0 |
-| complexity | 98.7 | functions 842, over 11, max 41 | 97.8 | functions 33212, over 722, max 348 |
-| functionLength | 97.5 | functions 842, over 21, max 409 | 94.7 | functions 33212, over 1746, max 1347 |
-| fileLength | 90.9 | files 66, dirty 6, findings 2737 | 80.7 | files 2386, dirty 460, findings 276426 |
-| duplication | 100.0 | lines 9004, duplicated 53, percent 0.59, rating A | 100.0 | lines 466992, duplicated 7332, percent 1.57, rating A |
-| deadCode | 51.5 | files 66, dirty 32, findings 52 | 88.9 | files 2386, dirty 266, findings 386 |
-| format | 85.6 | files 118, dirty 17, findings 22 | 99.6 | files 4375, dirty 17, findings 22 |
+| shell | 58.8 | files 17, dirty 7, findings 37 | 68.2 | files 66, dirty 21, findings 71 |
+| checks | 93.7 | passed 89, failed 6, skipped 0 | 93.7 | passed 89, failed 6, skipped 0 |
+| complexity | 98.8 | functions 1278, over 15, max 51 | 97.8 | functions 33648, over 726, max 348 |
+| functionLength | 96.9 | functions 1278, over 39, max 459 | 94.8 | functions 33648, over 1764, max 1347 |
+| fileLength | 92.2 | files 116, dirty 9, findings 4037 | 81.0 | files 2436, dirty 463, findings 277726 |
+| duplication | 100.0 | lines 14392, duplicated 245, percent 1.70, rating A | 100.0 | lines 472380, duplicated 7553, percent 1.60, rating A |
+| deadCode | 59.5 | files 116, dirty 47, findings 76 | 88.5 | files 2436, dirty 281, findings 410 |
+| format | 92.5 | files 213, dirty 16, findings 21 | 99.6 | files 4470, dirty 16, findings 21 |
 
 Cognitive complexity per function (functions in each bucket):
 
 | Set | 0 | 1-5 | 6-10 | 11-15 | 16-25 | >25 |
 | --- | --- | --- | --- | --- | --- | --- |
-| fork | 569 | 234 | 20 | 8 | 4 | 7 |
-| all | 18623 | 11766 | 1550 | 551 | 395 | 327 |
+| fork | 845 | 367 | 42 | 9 | 7 | 8 |
+| all | 18899 | 11899 | 1572 | 552 | 398 | 328 |
 
-Tracked, not scored: web startup bundle 865.5 kB of its 900 kB budget (scripts/checks/bundle-size.mjs).
+Tracked, not scored: web startup bundle 870.5 kB of its 900 kB budget (scripts/checks/bundle-size.mjs).
 
 ## Fork sub-measures under 90: the five jobs worth the most
 
@@ -76,29 +76,21 @@ Points are the sub-measure's own gain from fixing that one item; its weight carr
 - brace-expansion (high): +5.0
 - joi (high): +5.0
 
-### shell (56.3)
+### shell (58.8)
 
-- dozo/docker/gate.sh (23): +6.3
-- dozo/e2e/run.sh (4): +6.3
-- dozo/docker/build.sh (3): +6.3
-- dozo/desktop/build.sh (2): +6.3
-- dozo/docker/lock.sh (2): +6.3
+- dozo/docker/gate.sh (24): +5.9
+- dozo/e2e/run.sh (4): +5.9
+- dozo/docker/build.sh (3): +5.9
+- dozo/desktop/build.sh (2): +5.9
+- dozo/docker/lock.sh (2): +5.9
 
-### deadCode (51.5)
+### deadCode (59.5)
 
-- dozo/brand/lib.mjs (12): +1.5
-- dozo/e2e/fixtures.ts (5): +1.5
-- dozo/e2e/support.ts (4): +1.5
-- apps/api/src/dozo-admin.ts (2): +1.5
-- dozo/e2e/ui.ts (2): +1.5
-
-### format (85.6)
-
-- dozo/brand/apply.mjs (2): +0.8
-- dozo/brand/brand.apply.test.mjs (2): +0.8
-- dozo/brand/brand.config.test.mjs (2): +0.8
-- dozo/brand/brand.gate.test.mjs (2): +0.8
-- dozo/brand/check.mjs (2): +0.8
+- dozo/brand/lib.mjs (13): +0.9
+- dozo/e2e/fixtures.ts (5): +0.9
+- dozo/e2e/support.ts (4): +0.9
+- packages/testkit/src/evals/dozo-token-bench.ts (4): +0.9
+- packages/auth/src/dozo-email-shell.tsx (3): +0.9
 
 ## Known limits
 
