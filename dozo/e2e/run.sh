@@ -154,6 +154,10 @@ NET=(--network "$NETWORK")
 FORWARD=1
 if [ "$(uname -s)" = Linux ]; then NET=(--network host); FORWARD=0; fi
 
+# The computer image's own checks that need no stack: the signed-in sites script against a real
+# browser, offline (dozo/e2e/site-sessions-image.sh).
+say "computer image: signed-in sites script"
+"$HERE/site-sessions-image.sh" >&2 || { say "the signed-in sites script failed in the computer image"; exit 2; }
 say "browser: docker ($IMAGE), base $BASE, forwarder=$FORWARD"
 # The quoted script is expanded by the container's shell, not this one (SC2016).
 # shellcheck disable=SC2016

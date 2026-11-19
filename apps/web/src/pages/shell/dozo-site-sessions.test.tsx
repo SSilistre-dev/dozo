@@ -142,7 +142,7 @@ const click = (node: Element | null | undefined) =>
 
 async function openDialog() {
   await render();
-  await click(labelled("Signed-in sites"));
+  await click(labelled("Sites with cookies"));
 }
 
 async function type(value: string) {
@@ -178,10 +178,10 @@ it("shows only on a running computer of this bot whose provider can read its ses
     status({ siteSessions: undefined }),
   ]) {
     await render(computer);
-    expect(labelled("Signed-in sites")).toBeNull();
+    expect(labelled("Sites with cookies")).toBeNull();
   }
   await render();
-  expect(labelled("Signed-in sites")).toBeTruthy();
+  expect(labelled("Sites with cookies")).toBeTruthy();
   expect(api.list).not.toHaveBeenCalled();
 });
 
@@ -198,7 +198,7 @@ it("reads the sites when opened and lists them with their last use", async () =>
 
 it("says sign-ins are shared before a sign-in in a shared space", async () => {
   await render(status({ shared: true }));
-  await click(labelled("Signed-in sites"));
+  await click(labelled("Sites with cookies"));
   expect(container.textContent).toContain(
     "Sites you sign in to stay signed in for everyone in this space",
   );

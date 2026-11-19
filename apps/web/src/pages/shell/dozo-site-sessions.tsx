@@ -22,7 +22,7 @@ import { formatRelativeTime } from "../../lib/relative-time";
 type Ending = { site: string | null };
 
 /**
- * The sites this bot's browser is signed in to, from the computer's header: open one to sign in
+ * The sites this bot's browser holds cookies for, from the computer's header: open one to sign in
  * with control, or sign the bot out of one or all. Shown only on a running computer whose
  * provider can read its browser's sessions.
  */
@@ -46,7 +46,7 @@ export function SiteSessionsControl({
         variant="ghost"
         size="icon-sm"
         className="text-muted-foreground"
-        aria-label={t`Signed-in sites`}
+        aria-label={t`Sites with cookies`}
         data-testid="computer-site-sessions"
         onClick={() => setOpen(true)}
       >
@@ -111,7 +111,7 @@ function SiteSessionsDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Signed-in sites</Trans>
+            <Trans>Sites with cookies</Trans>
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="flex gap-2">
@@ -128,6 +128,9 @@ function SiteSessionsDialog({
             <Trans>Sign in</Trans>
           </Button>
         </form>
+        <p className="text-body-sm text-muted-foreground">
+          <Trans>The bot can act as you on these sites, and a page it reads can steer it.</Trans>
+        </p>
         {shared ? (
           <p className="text-body-sm text-muted-foreground">
             <Trans>Sites you sign in to stay signed in for everyone in this space</Trans>

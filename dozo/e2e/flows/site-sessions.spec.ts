@@ -5,7 +5,9 @@ import { outDir } from "../scan";
 import { openBot, openBotPanel } from "../ui";
 import { expect, test } from "./flow";
 
-const SITE = "wikipedia.org";
+// Nothing answers there: the scenario needs no network. Cookies, sign-out and the domain edges
+// are checked against a real browser by site-sessions-image.sh.
+const SITE = "localhost:9";
 
 async function shot(page: Page, name: string) {
   mkdirSync(`${outDir()}/shots`, { recursive: true });
@@ -13,15 +15,11 @@ async function shot(page: Page, name: string) {
 }
 
 /**
- * The computer's header lists the sites the bot's browser is signed in to. Signing in to one from
- * there takes control and opens it on the bot's screen in one click; handing back control leaves
- * the site in the list, and signing out removes it. The bot's computer needs the internet: the
- * site sets its own cookies.
+ * The computer's header opens the sites the bot's browser holds cookies for. Signing in to one
+ * from there takes control and opens it on the bot's screen in one click; the warning is there
+ * before it, and handing back control returns the screen.
  */
-test("site sessions: sign in from the computer's header, then sign out", async ({
-  page,
-  guard,
-}) => {
+test("site sessions: sign in from the computer's header with control", async ({ page, guard }) => {
   test.setTimeout(360_000);
   guard.allow(
     /^failed: net::ERR_(CONNECTION_REFUSED|CONNECTION_RESET|EMPTY_RESPONSE|INCOMPLETE_CHUNKED_ENCODING) [A-Z]+ [^ ]+\/(rpc|api)\//,
@@ -48,8 +46,9 @@ test("site sessions: sign in from the computer's header, then sign out", async (
 
   await sites.click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Signed-in sites")).toBeVisible();
+  await expect(dialog.getByText("Sites with cookies")).toBeVisible();
   await expect(dialog.getByText("No sites yet").or(dialog.getByRole("list"))).toBeVisible();
+  await expect(dialog.getByText("a page it reads can steer it")).toBeVisible();
   await shot(page, "3-dialog");
   await dialog.getByLabel("Site to sign in to").fill(SITE);
   // One click: the dialog closes and this person has the screen, the site opening on it. The
@@ -71,15 +70,8 @@ test("site sessions: sign in from the computer's header, then sign out", async (
   });
 
   await sites.click();
-  const row = dialog.getByRole("listitem").filter({ hasText: SITE });
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await shot(page, "5-listed");
-  await row.getByRole("button", { name: `Sign out of ${SITE}` }).click();
-  const confirm = page.getByRole("alertdialog");
-  await expect(confirm).toContainText(`Sign out of ${SITE}?`);
-  await shot(page, "6-confirm");
-  await confirm.getByRole("button", { name: "Sign out" }).click();
-  await expect(confirm).toBeHidden({ timeout: 60_000 });
-  await expect(row).toHaveCount(0);
-  await shot(page, "7-signed-out");
+  await expect(dialog.getByText("No sites yet").or(dialog.getByRole("list"))).toBeVisible({
+    timeout: 30_000,
+  });
+  await shot(page, "5-after");
 });

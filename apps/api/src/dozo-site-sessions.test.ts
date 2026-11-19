@@ -1,5 +1,6 @@
 import { createRouterClient } from "@orpc/server";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import type * as Adapters from "@rakazo/adapters";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { dozoSiteSessionsRoutes } from "./dozo-site-sessions.js";
@@ -7,6 +8,8 @@ import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
 const spies = vi.hoisted(() => ({
+  lease: vi.fn(async (..._args: unknown[]) => ({ computerId: "computer-1" }) as unknown),
+  leaseEnd: vi.fn(async (..._args: unknown[]) => undefined),
   audit: vi.fn(async (_input: unknown) => undefined),
   release: vi.fn(async (..._args: unknown[]) => true),
   take: vi.fn(async (_deps: unknown, _actor: unknown, _botId: string) => ({
@@ -17,6 +20,11 @@ const spies = vi.hoisted(() => ({
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
   recordAuditEvent: spies.audit,
+}));
+vi.mock("@rakazo/adapters", async (original) => ({
+  ...(await original<typeof Adapters>()),
+  acquireComputerExecutionLease: spies.lease,
+  releaseComputerExecutionLease: spies.leaseEnd,
 }));
 vi.mock("./computer-control.js", async (original) => ({
   ...(await original<typeof import("./computer-control.js")>()),
@@ -73,7 +81,15 @@ function instance(
       scripts.push({ ...request, botId: ctx.botId });
       const reply =
         request.op === "list"
-          ? { ok: true, hosts: hosts.map((host) => ({ ...host, value: "session-secret" })) }
+          ? {
+              ok: true,
+              hosts: hosts.map((host) => ({ ...host, value: "session-secret" })),
+              visited: hosts.map(({ host }) => host),
+              storageKeys: [
+                "https://alice.github.io/",
+                "https://example.com/^0https://top.example",
+              ],
+            }
           : request.op === "delete"
             ? { ok: true, remaining: 0 }
             : openReply;
@@ -93,6 +109,8 @@ function instance(
 beforeEach(() => {
   spies.audit.mockClear();
   spies.take.mockClear();
+  spies.lease.mockClear();
+  spies.leaseEnd.mockClear();
   spies.release.mockClear();
 });
 
@@ -176,7 +194,14 @@ describe("signing out", () => {
     expect(scripts.at(-1)).toMatchObject({
       op: "delete",
       hosts: ["alice.github.io", "www.alice.github.io"],
+      storageKeys: ["https://alice.github.io/"],
     });
+    // The bot cannot use its computer meanwhile, and gets it back afterwards.
+    expect(spies.lease).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ computerId: "computer-1", botId: "bot-1" }),
+    );
+    expect(spies.leaseEnd).toHaveBeenCalledTimes(1);
     expect(spies.audit).toHaveBeenCalledTimes(1);
     expect(spies.audit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -217,6 +242,26 @@ describe("signing out", () => {
     );
     expect(spies.audit).toHaveBeenCalledTimes(4);
   });
+
+  it("waits for nothing and touches nothing while the bot is using its computer", async () => {
+    const { as, scripts } = instance();
+    const busy = Object.assign(new Error("Computer is busy"), { name: "ComputerBusyError" });
+    spies.lease.mockRejectedValueOnce(busy);
+    await expect(as("ada").signOut({ botId: "bot-1" })).rejects.toThrow("Computer is busy");
+    spies.lease.mockRejectedValueOnce(busy);
+    await expect(as("ada").signIn({ botId: "bot-1", url: "example.com" })).rejects.toThrow(
+      "Computer is busy",
+    );
+    expect(scripts).toEqual([]);
+    expect(spies.take).not.toHaveBeenCalled();
+    expect(spies.audit).not.toHaveBeenCalled();
+  });
+
+  it("gives the computer back to the bot when signing out fails", async () => {
+    const { as } = instance();
+    await expect(as("ada").signOut({ botId: "bot-1", site: "nowhere.example" })).rejects.toThrow();
+    expect(spies.leaseEnd).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("signing in", () => {
@@ -243,6 +288,20 @@ describe("signing in", () => {
       expect.objectContaining({ id: "computer-1" }),
       "bot-1",
     );
+  });
+
+  it("keeps control this person already held when the site could not be opened", async () => {
+    const held = computer({
+      controlHolder: "user",
+      controlLeaseId: "lease-0",
+      controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+      controlUserId: "ada",
+      controlBotId: "bot-1",
+    });
+    const { as } = instance(held, { ok: false, error: "no_browser" });
+    await expect(as("ada").signIn({ botId: "bot-1", url: "example.com" })).rejects.toThrow();
+    expect(spies.release).not.toHaveBeenCalled();
+    expect(spies.leaseEnd).toHaveBeenCalledTimes(1);
   });
 
   it("has nothing to hand back when the computer went away meanwhile", async () => {
