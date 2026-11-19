@@ -268,8 +268,9 @@ The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.compl
   replaces the contents of `src` except `data`, so a failed stage cannot lose it. Upstream's
   `data-init` service creates it as root; on Linux `rm -rf dozo/.stage` may need `sudo` for it.
 - `compose.ports.yml`: upstream hard-codes web port 5173 (only the bind address is configurable)
-  and api port 3100. It moves web to the generated port and stops publishing the api. Nothing else
-  is overridden.
+  and api port 3100. It moves web to the generated port and stops publishing the api. It also
+  makes the stack's network dual-stack: otherwise every computer start and stop briefly refuses
+  connections on the web port (the file says why). Nothing else is overridden.
 
 ## Reset
 

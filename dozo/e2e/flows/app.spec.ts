@@ -8,19 +8,12 @@ import { expect, test } from "./flow";
  * offline model connected). Each test ends where its screenshot shows the result.
  */
 
-const LOCAL_BILLING_404 = {
-  pattern: /404 POST [^ ]*\/rpc\/billing\/status/,
-  reason:
-    "FINDING: the model step asks for the billing status on a server without billing, which answers 404",
-};
-
 test("onboarding: the model step's 'Later' opens the app with the first bot", async ({
   browser,
   guard,
 }) => {
   const { page } = await newAccount(browser, "later");
   guard.follow(page);
-  guard.allow(LOCAL_BILLING_404.pattern, LOCAL_BILLING_404.reason);
   await page.goto("/onboarding");
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
   await page.getByRole("button", { name: "Later" }).click();
@@ -78,11 +71,7 @@ test("chat: a message gets the model's reply; a tool call waits for approval and
   }
 });
 
-test("bots: create, rename, delete", async ({ page, guard }) => {
-  guard.allow(
-    /404 POST [^ ]*\/rpc\/routines\/list/,
-    "FINDING: after a bot is deleted the app still asks for its routines, which answers 404",
-  );
+test("bots: create, rename, delete", async ({ page }) => {
   const world = readWorld();
   await openBot(page, world.chiefId, "Chief");
   const name = `Temp ${Math.random().toString(36).slice(2, 7)}`;
@@ -105,12 +94,17 @@ test("bots: create, rename, delete", async ({ page, guard }) => {
   await input.press("Enter");
   await expect(page.getByPlaceholder(`Message ${renamed}`)).toBeVisible();
   // Delete from the sidebar's menu for that bot.
+  const deleted = new URL(page.url()).pathname;
   const row = page.getByRole("button", { name: new RegExp(`^${renamed}`) }).first();
   await row.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete" }).click();
   const confirm = page.getByRole("alertdialog").or(page.getByRole("dialog")).last();
   await confirm.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByRole("button", { name: new RegExp(`^${renamed}`) })).toHaveCount(0);
+  // The app has moved on to another chat: the reads the deletion set off have run by now, and
+  // none of them asked for the deleted bot.
+  await expect.poll(() => new URL(page.url()).pathname).not.toBe(deleted);
+  await expect(page.getByRole("combobox", { name: /^Message / })).toBeVisible();
 });
 
 test("scheduled task: create in the bot panel, then delete", async ({ page }) => {

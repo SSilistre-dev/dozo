@@ -182,7 +182,8 @@ line; the chat scenario uses it for a tool call that waits for the owner's appro
 There is no payment provider on this stack: billing's server answers are faked in the browser from
 the server's own plans (`fakeBilling`, prices read from `dozoAdmin/plans/list`, never written in the
 suite); the checkout is recorded and answered with the `?billing=canceled` return. Free access
-grants exist only on a billing server, so its four calls are answered in the browser too.
+grants exist only on a billing server, so the account reports billing (`reportBilling`) and the four
+calls are answered in the browser too; without billing the admin page does not list the section.
 
 ## Coverage
 
