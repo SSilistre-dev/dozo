@@ -738,6 +738,13 @@
       "reason": "fork feature: the model settings tab is a wrapper that adds the local-models panel to upstream's overlay and re-exports the same name"
     },
     {
+      "file": "apps/web/src/pages/SettingsOverlay.tsx",
+      "find": "import { PlanUsage } from \"../components/PlanUsage\";",
+      "replace": "import { PlanUsage } from \"../components/dozo-plan-usage\";",
+      "requires": ["apps/web/src/components/dozo-plan-usage.tsx"],
+      "reason": "fork feature: Settings > Usage shows this period's cache share under upstream's allowances, through a wrapper that re-exports the same name"
+    },
+    {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "import { ModelStep } from \"./onboarding/model-step\";",
       "replace": "import { ModelStep } from \"./onboarding/dozo-model-step\";",
@@ -824,11 +831,12 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "export const appContract = {\n  analytics:",
-      "replace": "export * from \"./dozo-admin.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  analytics:",
+      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-usage.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoUsage: dozoUsageContract,\n  analytics:",
       "requires": [
-        "packages/contracts/src/dozo-admin.ts"
+        "packages/contracts/src/dozo-admin.ts",
+        "packages/contracts/src/dozo-usage.ts"
       ],
-      "reason": "hosted admin page: its procedures join the app contract, so the server and the web client share their types"
+      "reason": "hosted admin page and the cache share on Usage: their procedures join the app contract, so the server and the web client share their types"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -837,7 +845,7 @@
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],
-      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures"
+      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures and the cache share on Usage"
     },
     {
       "file": "apps/api/src/app.ts",
