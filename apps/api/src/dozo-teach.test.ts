@@ -580,7 +580,7 @@ describe("typeTeachKeys", () => {
   };
 
   function typing(computer: Record<string, unknown> | null, outcome = "recorded") {
-    const sendInput = vi.fn(async () => undefined);
+    const act = vi.fn(async () => ({ completed: 3 }));
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const enqueue = vi.fn(async () => undefined);
     const recordKeys = vi.fn(async () => outcome as "recorded" | "idle" | "stale");
@@ -589,7 +589,7 @@ describe("typeTeachKeys", () => {
         {
           deps: {
             prisma: { computer: { updateMany } },
-            sandbox: { sendInput },
+            sandbox: { act },
             jobs: { enqueue, cancel: vi.fn() },
           } as never,
           getBot: vi.fn(async () => ({ id: "bot-1", computer })) as never,
@@ -599,29 +599,32 @@ describe("typeTeachKeys", () => {
         "bot-1",
         ["a", "b", "Enter"],
       );
-    return { run, sendInput, updateMany, recordKeys };
+    return { run, act, updateMany, recordKeys };
   }
 
   it("records the keys while teaching, in one call, and keeps the computer awake", async () => {
-    const { run, sendInput, updateMany, recordKeys } = typing(held);
+    const { run, act, updateMany, recordKeys } = typing(held);
     expect(await run()).toEqual({ ok: true });
     expect(recordKeys).toHaveBeenCalledWith(teacher, "bot-1", ["a", "b", "Enter"]);
     // Recording already sent them to the computer.
-    expect(sendInput).not.toHaveBeenCalled();
+    expect(act).not.toHaveBeenCalled();
     expect(updateMany).toHaveBeenCalledOnce();
   });
 
-  it("sends the keys one by one when nothing records, and nothing when the recording ended", async () => {
+  it("sends the keys in order when nothing records, and nothing when the recording ended", async () => {
     const idle = typing(held, "idle");
     await idle.run();
-    expect(idle.sendInput.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
-      { kind: "clipboard", text: "a" },
-      { kind: "clipboard", text: "b" },
-      { kind: "key", key: "Return" },
-    ]);
+    expect((idle.act.mock.calls[0] as unknown[])[1]).toEqual({
+      actions: [
+        { kind: "clipboard", text: "a" },
+        { kind: "clipboard", text: "b" },
+        { kind: "key", key: "Return" },
+      ],
+      observe: false,
+    });
     const stale = typing(held, "stale");
     await stale.run();
-    expect(stale.sendInput).not.toHaveBeenCalled();
+    expect(stale.act).not.toHaveBeenCalled();
     expect(stale.updateMany).not.toHaveBeenCalled();
   });
 

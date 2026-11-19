@@ -1,5 +1,10 @@
 import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
-import { applyTeachingDesktopInput, parsePlaybook, scheduleComputerSleep } from "@rakazo/adapters";
+import {
+  parsePlaybook,
+  scheduleComputerSleep,
+  sendTeachKeys,
+  teachKeysContext,
+} from "@rakazo/adapters";
 import type {
   Actor,
   DozoTeachTarget,
@@ -285,21 +290,7 @@ export async function typeTeachKeys(
   const outcome = await ctx.taughtSkills.recordKeys(actor, bot.id, keys);
   if (outcome === "stale") return { ok: true };
   if (outcome === "idle") {
-    for (const key of keys) {
-      await applyTeachingDesktopInput(
-        ctx.deps.sandbox,
-        computer,
-        { kind: "key", key, sensitive: false },
-        {
-          operationId: "input",
-          traceId: "input",
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          botId: bot.id,
-          signal: new AbortController().signal,
-        },
-      );
-    }
+    await sendTeachKeys(ctx.deps.sandbox, computer, keys, teachKeysContext(actor, bot.id));
   }
   await ctx.deps.prisma.computer.updateMany({
     where: { id: computer.id, state: "running" },

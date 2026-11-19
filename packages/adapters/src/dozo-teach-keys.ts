@@ -1,20 +1,39 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { TeachRecordingEvent } from "@rakazo/core";
-import { sanitizeTeachRecordingEvent } from "@rakazo/core";
+import { computerInputForDomKey, sanitizeTeachRecordingEvent } from "@rakazo/core";
+import { toComputerRef } from "./computer-support.js";
 import { expireTaughtSkillTeaching } from "./dozo-teach-expire.js";
 import { withTeachClickTarget } from "./dozo-teach-targets.js";
 import type { TeachingSessionDeps } from "./teaching-session.js";
-import {
-  applyTeachingDesktopInput,
-  getActiveTeachingSession,
-  parseRecording,
-} from "./teaching-session.js";
+import { getActiveTeachingSession, parseRecording } from "./teaching-session.js";
 
-/** The most keys one request carries; the page sends what is queued, in order. */
-export const TEACH_KEYS_MAX = 200;
+/** The most actions the computer takes in one call. */
+const ACTIONS_PER_CALL = 24;
 
-function context(actor: Actor, botId: string): AdapterContext {
+/**
+ * Sends keys to the computer in order, as one request per key would type them, but as a few
+ * action calls: one input request starts a process on the computer for each key (about 0.2 s
+ * each, measured), while an action call runs its keys in the computer's own control process.
+ */
+export async function sendTeachKeys(
+  sandbox: Pick<SandboxProvider, "act">,
+  computer: { homeKey: string; kind: string; providerRef: string | null },
+  keys: string[],
+  context: AdapterContext,
+): Promise<void> {
+  if (!computer.providerRef) return;
+  const actions = keys.map((key) => computerInputForDomKey(key));
+  for (let at = 0; at < actions.length; at += ACTIONS_PER_CALL) {
+    await sandbox.act(
+      toComputerRef(computer),
+      { actions: actions.slice(at, at + ACTIONS_PER_CALL), observe: false },
+      context,
+    );
+  }
+}
+
+export function teachKeysContext(actor: Actor, botId: string): AdapterContext {
   return {
     operationId: "input",
     traceId: "input",
@@ -27,8 +46,8 @@ function context(actor: Actor, botId: string): AdapterContext {
 
 /**
  * Keys typed in a row while teaching, recorded as one event each exactly as one request per key
- * would record them, but with one check of the recording before and one write after: each key
- * still reaches the computer in order, one by one. Plain keys only; protected input keeps its own
+ * would record them, but with one check of the recording before and one write after: the keys
+ * reach the computer in order (`sendTeachKeys`). Plain keys only; protected input keeps its own
  * request. "idle" when nothing records for this person (the caller then just sends the keys),
  * "stale" when the recording ended meanwhile.
  */
@@ -59,17 +78,12 @@ export async function recordTeachingKeys(
     return "stale";
   }
   if (prepared.state === "stale") return "stale";
-  const events: TeachRecordingEvent[] = [];
-  for (const key of keys) {
-    if (prepared.computer?.providerRef) {
-      await applyTeachingDesktopInput(
-        deps.sandbox,
-        prepared.computer,
-        { kind: "key", key, sensitive: false },
-        context(actor, botId),
-      );
-    }
-    events.push(sanitizeTeachRecordingEvent({ at: new Date().toISOString(), kind: "key", key }));
+  const at = new Date().toISOString();
+  const events: TeachRecordingEvent[] = keys.map((key) =>
+    sanitizeTeachRecordingEvent({ at, kind: "key", key }),
+  );
+  if (prepared.computer) {
+    await sendTeachKeys(deps.sandbox, prepared.computer, keys, teachKeysContext(actor, botId));
   }
   const recorded = await deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${skill.id} FOR UPDATE`;

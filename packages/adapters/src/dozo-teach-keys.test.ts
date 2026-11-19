@@ -54,8 +54,8 @@ function setup(
       taughtSkill: { findFirst: vi.fn(async () => current) },
     },
     sandbox: {
-      sendInput: vi.fn(async () => {
-        order.push("send");
+      act: vi.fn(async (_ref: unknown, request: { actions: unknown[] }) => {
+        order.push(`act ${request.actions.length}`);
         if (options.endAfterSend && current) current = { ...current, status: options.endAfterSend };
       }),
     },
@@ -66,9 +66,17 @@ function setup(
 
 describe("recordTeachingKeys", () => {
   it("sends each key in order, then records them all in one write beside the targets", async () => {
-    const { record, order, current } = setup();
+    const { record, order, current, deps } = setup();
     expect(await record(["a", "b", "Enter"])).toBe("recorded");
-    expect(order).toEqual(["lock", "send", "send", "send", "lock", "write"]);
+    expect(order).toEqual(["lock", "act 3", "lock", "write"]);
+    expect(deps.sandbox.act.mock.calls[0]?.[1]).toEqual({
+      actions: [
+        { kind: "clipboard", text: "a" },
+        { kind: "clipboard", text: "b" },
+        { kind: "key", key: "Return" },
+      ],
+      observe: false,
+    });
     const recording = current()?.recording as {
       events: Array<{ kind: string; key?: string }>;
       dozoTargets: unknown;
@@ -84,14 +92,20 @@ describe("recordTeachingKeys", () => {
   it("records without sending when the computer is not running", async () => {
     const { record, deps } = setup({}, { computer: null });
     expect(await record(["a"])).toBe("recorded");
-    expect(deps.sandbox.sendInput).not.toHaveBeenCalled();
+    expect(deps.sandbox.act).not.toHaveBeenCalled();
+  });
+
+  it("splits many keys into calls the computer takes", async () => {
+    const { record, order } = setup();
+    expect(await record(Array.from({ length: 50 }, () => "x"))).toBe("recorded");
+    expect(order).toEqual(["lock", "act 24", "act 24", "act 2", "lock", "write"]);
   });
 
   it("is idle with no recording, and stale once it ended", async () => {
     expect(await setup(null).record(["a"])).toBe("idle");
     const ended = setup({ status: "draft" });
     expect(await ended.record(["a"])).toBe("stale");
-    expect(ended.deps.sandbox.sendInput).not.toHaveBeenCalled();
+    expect(ended.deps.sandbox.act).not.toHaveBeenCalled();
     const endedMeanwhile = setup({}, { endAfterSend: "draft" });
     expect(await endedMeanwhile.record(["a"])).toBe("stale");
     expect(endedMeanwhile.order).not.toContain("write");
@@ -101,10 +115,10 @@ describe("recordTeachingKeys", () => {
     expired.mockClear();
     const late = setup({ expiresAt: new Date(Date.now() - 1) });
     expect(await late.record(["a"])).toBe("stale");
-    expect(late.deps.sandbox.sendInput).not.toHaveBeenCalled();
+    expect(late.deps.sandbox.act).not.toHaveBeenCalled();
     expect(expired).toHaveBeenCalledWith(expect.anything(), "skill-1");
     const timesOut = setup({}, {});
-    timesOut.deps.sandbox.sendInput.mockImplementation(async () => {
+    timesOut.deps.sandbox.act.mockImplementation(async () => {
       const skill = timesOut.current();
       if (skill) skill.expiresAt = new Date(Date.now() - 1);
     });
