@@ -25,7 +25,7 @@ if [ -n "${DOZO_TOKEN_PRICING:-}" ]; then
 fi
 want=$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)
 git ls-files -z -co --exclude-standard | tar --null --ignore-failed-read -T - -cf - 2>/dev/null |
-docker run -i --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+docker run -i --rm --cpus 3 --memory 6g --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD:/repo:ro" -v "$vol:/deps:ro" -v "$PWD/dozo/metrics:/out" "${pricing[@]}" \
   -e WANT="$want" -e PRICED="${DOZO_TOKEN_PRICING:+1}" "$image" sh -c '
   set -e
