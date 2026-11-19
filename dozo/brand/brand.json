@@ -3449,11 +3449,11 @@
     {
       "file": "apps/web/src/lib/i18n.ts",
       "find": "    if (!isCurrent()) return getActiveUiLocale();\n    return activateLoaded(\"en\", {});\n",
-      "replace": "    if (!isCurrent()) return getActiveUiLocale();\n    return noCatalog();\n",
+      "replace": "    if (!isCurrent()) return getActiveUiLocale();\n    // Once a language shows, a switch that finds no catalog keeps it.\n    return activeLocale ? activeLocale : noCatalog();\n",
       "requires": [
         "apps/web/src/lib/dozo-boot-deadline.ts"
       ],
-      "reason": "stalled start: with no catalog at all, not even English, the built app would show message ids; the page offers the boot shell's retry instead"
+      "reason": "stalled start: with no catalog at all, not even English, the built app would show message ids; on the first start the page offers the boot shell's retry instead, and a later switch keeps the language shown"
     },
     {
       "file": "apps/web/src/lib/i18n-activate.test.ts",
@@ -3467,7 +3467,7 @@
     {
       "file": "apps/web/src/lib/i18n-activate.test.ts",
       "find": "    const locale = await activateUiLocale(\"ko\");\n    expect(locale).toBe(\"en\");\n    expect(i18n.locale).toBe(\"en\");\n  });\n\n  it(\"lets the latest locale selection win under concurrency\"",
-      "replace": "    const dozoBootUnreachable = vi.fn();\n    vi.stubGlobal(\"window\", { dozoBootUnreachable });\n    void activateUiLocale(\"ko\");\n    await vi.waitFor(() => expect(dozoBootUnreachable).toHaveBeenCalledOnce());\n  });\n\n  it(\"lets the latest locale selection win under concurrency\"",
+      "replace": "    const dozoBootUnreachable = vi.fn();\n    vi.stubGlobal(\"window\", { dozoBootUnreachable });\n    void activateUiLocale(\"ko\");\n    await vi.waitFor(() => expect(dozoBootUnreachable).toHaveBeenCalledOnce());\n  });\n\n  it(\"keeps the shown language when a later switch finds no catalog\", async () => {\n    setCatalogLoadersForTests(\n      Object.fromEntries(\n        UI_LOCALES.map((locale) => [\n          locale,\n          async () => {\n            if (locale !== \"de\") throw new Error(`${locale} missing`);\n            return { messages: {} };\n          },\n        ]),\n      ) as Parameters<typeof setCatalogLoadersForTests>[0],\n    );\n    expect(await activateUiLocale(\"de\")).toBe(\"de\");\n    expect(await activateUiLocale(\"ko\")).toBe(\"de\");\n    expect(i18n.locale).toBe(\"de\");\n  });\n\n  it(\"lets the latest locale selection win under concurrency\"",
       "requires": [
         "apps/web/src/lib/dozo-boot-deadline.ts"
       ],
