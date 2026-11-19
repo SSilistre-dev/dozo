@@ -1332,9 +1332,21 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [purchaseOpen, setPurchaseOpen] = useState(false);\n  const [interval, setByokInterval] = useState<ByokInterval>(\"month\");\n",
+      "replace": "  const [purchaseOpen, setPurchaseOpen] = useState(false);\n  // A plan picked on the landing page before sign-up starts selected.\n  const [planIntent] = useState(readPlanIntent);\n  const [interval, setByokInterval] = useState<ByokInterval>(planIntent?.period ?? \"month\");\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: Billing starts on the period picked on the landing page, when there is one"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "useState<ByokTier>(\"standard\");",
-      "replace": "useState<ByokTier>(\n    status.byokTiers?.[0]?.tier ?? \"standard\",\n  );",
-      "reason": "plans: the plan picker starts on the first plan on offer, which is not the free one"
+      "replace": "useState<ByokTier>(\n    status.byokTiers?.find((offer) => offer.tier === planIntent?.tier)?.tier ??\n      status.byokTiers?.[0]?.tier ??\n      \"standard\",\n  );",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan picker starts on the plan picked on the landing page when it is on offer, else on the first plan on offer, which is not the free one"
     },
     {
       "file": "packages/adapters/src/sandbox-allowance.ts",
@@ -2070,6 +2082,40 @@
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
     },
     {
+      "file": "apps/web/src/App.tsx",
+      "find": "import { ShellPage } from \"./pages/Shell\";",
+      "replace": "import { NavigateKeepingPlan, ShellPage } from \"./pages/dozo-shell\";",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the app shell opens Billing for a plan picked before sign-up, and again after a checkout left unpaid"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "import { authErrorText, credentialIssueText } from \"../lib/user-error\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "replace": "import { authErrorText, credentialIssueText } from \"../lib/user-error\";\nimport { DozoSignupTerms } from \"./dozo-signup-terms\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "requires": [
+        "apps/web/src/pages/dozo-signup-terms.tsx"
+      ],
+      "reason": "sign-up: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "              </Button>\n              {mode === \"in\" && !codeStep ? (\n",
+      "replace": "              </Button>\n              {mode === \"up\" && !codeStep ? <DozoSignupTerms /> : null}\n              {mode === \"in\" && !codeStep ? (\n",
+      "requires": [
+        "apps/web/src/pages/dozo-signup-terms.tsx"
+      ],
+      "reason": "sign-up: the terms and the privacy policy, one line under the button"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "            cancelUrl: client === \"mobile\" ? mobileReturnUrl : appUrl,\n          });\n        } catch (error) {\n",
+      "replace": "            cancelUrl: client === \"mobile\" ? mobileReturnUrl : `${appUrl}?billing=canceled`,\n          });\n        } catch (error) {\n",
+      "reason": "plans: a plan's checkout left unpaid says so on the way back, as a credit checkout does, so the web app reopens Billing"
+    },
+    {
       "file": "packages/auth/src/welcome-email.tsx",
       "find": "import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from \"@rakazo/contracts\";\nimport { Link, Text } from \"react-email\";\n",
       "replace": "import { Link, Text } from \"react-email\";\n",
@@ -2716,6 +2762,15 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { desktopBridge } from \"../lib/desktop\";\nimport { billingErrorText }",
+      "replace": "import { desktopBridge } from \"../lib/desktop\";\nimport { readPlanIntent } from \"../lib/dozo-plan-intent\";\nimport { billingErrorText }",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the import of the plan-preselection rules (after the plan limits import, which it extends)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "    } catch {\n      setError(t`Could not open billing`);\n",
       "replace": "    } catch (error) {\n      setError(billingErrorText(error, t`Could not open billing`));\n",
       "requires": [
@@ -3059,6 +3114,80 @@
         "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
       ],
       "reason": "models: each role list is filtered from the catalog read the screen just made, instead of its own full catalog"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<Navigate to={newAccountDestination(next)} replace />",
+      "replace": "<NavigateKeepingPlan to={newAccountDestination(next)} />",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: a member already signed in who follows a landing link to sign-up keeps the plan it names"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<Navigate to={next ?? \"/app\"} replace />",
+      "replace": "<NavigateKeepingPlan to={next ?? \"/app\"} />",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: a member already signed in who follows a landing link to sign-in keeps the plan it names"
+    },
+    {
+      "file": "apps/web/src/lib/sign-out.ts",
+      "find": "import { clearComposerDrafts } from \"./composer-draft\";\nimport { clearSpaceSelection }",
+      "replace": "import { clearComposerDrafts } from \"./composer-draft\";\nimport { clearPlanIntent } from \"./dozo-plan-intent\";\nimport { clearSpaceSelection }",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/lib/sign-out.ts",
+      "find": "    clearComposerDrafts();\n    window.location.assign(destination);",
+      "replace": "    clearComposerDrafts();\n    clearPlanIntent();\n    window.location.assign(destination);",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: signing out forgets a plan picked on the landing page, so the next account in the tab is not offered it"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);\n  const [interval, setByokInterval] = useState<ByokInterval>(\"month\");\n",
+      "replace": "  const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);\n  // The plans start on the period picked on the landing page, when there is one.\n  const [interval, setByokInterval] = useState<ByokInterval>(\n    () => readPlanIntent()?.period ?? \"month\",\n  );\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan cards start on the period picked on the landing page"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [first] = tiers;\n  /** A bigger tier",
+      "replace": "  const [first] = tiers;\n  // The plan picked on the landing page leads when it is on offer; otherwise the first one does.\n  const picked = readPlanIntent()?.tier;\n  const lead = tiers.find((offer) => offer.tier === picked)?.tier ?? first?.tier;\n  /** A bigger tier",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan cards put the plan picked on the landing page first in emphasis"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "<Card key={offer.tier} className={index === 0 ? \"ring-2 ring-primary\" : undefined}>",
+      "replace": "<Card key={offer.tier} className={offer.tier === lead ? \"ring-2 ring-primary\" : undefined}>",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the picked plan's card is the one marked"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "className={index === 0 ? \"w-full\" : \"w-full bg-background dark:bg-transparent\"}\n                  variant={index === 0 ? \"default\" : \"outline\"}",
+      "replace": "className={\n                    offer.tier === lead ? \"w-full\" : \"w-full bg-background dark:bg-transparent\"\n                  }\n                  variant={offer.tier === lead ? \"default\" : \"outline\"}",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the picked plan's button is the primary one"
     }
   ],
   "assets": {

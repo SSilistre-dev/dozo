@@ -127,6 +127,14 @@ tier's, whatever a trial or a monthly credit plan gives, and an organization wit
 the monthly reset date. The table has no row security, as `billing_accounts` has none: the plan is
 read inside a member's own requests and uploads.
 
+A plan picked on the landing page follows the visitor to checkout. Its sign-up links carry
+`?plan=premium|premium_plus&period=month|year`; the web sign-up page keeps a valid pick in session
+storage for the tab and drops both parameters from the address (anything else, Free included, is
+ignored). When the app opens after setup, `apps/web/src/pages/dozo-shell.tsx` opens Billing with that
+plan and period selected, once: closing Billing forgets the pick and the account stays on Free. The
+server still prices the tier and period itself, so a link cannot open a price that is not offered.
+A plan checkout left unpaid returns to `/app?billing=canceled`, which reopens Billing quietly.
+
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:
 
