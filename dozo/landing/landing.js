@@ -19,6 +19,17 @@ const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
 addEventListener('DOMContentLoaded',()=>{
 $('#theme').addEventListener('click',()=>{if(root.dataset.theme==='light')delete root.dataset.theme;else root.dataset.theme='light'});
 $('#sym').innerHTML=SYMBOLS;
+// plans: the cards hold both prices (both show without the script); the switch shows one and
+// carries the period to the sign-up links. Yearly first.
+const period=$('.period');
+const setPeriod=p=>{
+  root.dataset.period=p;
+  $$('button',period).forEach(b=>b.setAttribute('aria-pressed',b.dataset.period===p));
+  $$('.tier a[href*="period="]').forEach(a=>{const u=new URL(a.href);u.searchParams.set('period',p);a.href=u.href});
+};
+period.hidden=false;
+period.addEventListener('click',e=>{const b=e.target.closest('button');if(b)setPeriod(b.dataset.period)});
+setPeriod('year');
 // logo: eyes glance toward the pointer on hover; one gesture on load and on tap for touch
 $$('.lock').forEach(l=>{
   const eyes=$('.eyes',l),play=()=>{l.classList.add('play');setTimeout(()=>l.classList.remove('play'),950)};
