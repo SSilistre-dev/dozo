@@ -225,6 +225,8 @@ function world(users: User[]) {
   };
   // The ban list is the fork's own table, read and written with SQL.
   const bans = new Map<string, Date>();
+  // The site settings' one row, once an admin saved one.
+  const site: Record<string, unknown>[] = [];
   const hosted = (where: Where) =>
     computers.filter(
       (row) =>
@@ -284,6 +286,7 @@ function world(users: User[]) {
     $queryRaw: vi.fn(async (sql: TemplateStringsArray | { sql: string }, keys: string[]) => {
       // The files an organization keeps are summed with a query object, not a template.
       if ("sql" in sql) return [{ used: String(3 * 1024 * 1024) }];
+      if (sql.join("").includes("dozo_site_settings")) return site;
       return sql.join("").includes('"createdAt"')
         ? [...bans].map(([value, createdAt]) => ({ value, createdAt }))
         : keys.filter((key) => bans.has(key)).map((value) => ({ value }));
@@ -380,6 +383,7 @@ function world(users: User[]) {
     sessions: () => sessions,
     organizations,
     bans,
+    site,
     memberships,
     settings,
     computers,
@@ -400,7 +404,7 @@ function setup(
   wiring = true,
   sandboxId?: string,
 ) {
-  const { prisma, sessions, organizations, bans, memberships, settings, computers, devices } =
+  const { prisma, sessions, organizations, bans, site, memberships, settings, computers, devices } =
     world(users);
   const disconnect = vi.fn(async () => undefined);
   const removePush = vi.fn(async () => undefined);
@@ -471,6 +475,7 @@ function setup(
     removePush,
     organizations,
     bans,
+    site,
     deletion,
     memberships,
     settings,
@@ -604,6 +609,12 @@ describe("listing accounts", () => {
 
   it("reads the sign-up switch as open when the wiring is absent", async () => {
     expect((await setup(undefined, false).as("admin").users({})).signupsOpen).toBe(true);
+  });
+
+  it("reads the sign-up switch an admin set over the environment's", async () => {
+    const { as, site } = setup();
+    site.push({ signupsOpen: true });
+    expect((await as("admin").users({})).signupsOpen).toBe(true);
   });
 });
 

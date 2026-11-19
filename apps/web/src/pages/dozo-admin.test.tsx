@@ -284,7 +284,14 @@ it("shows the status line, the running computers and the accounts", async () => 
   expect(row("owner@example.test")?.querySelector("button")).toBeNull();
   expect(
     [...container.querySelectorAll("header a")].map((link) => link.getAttribute("href")),
-  ).toEqual(["/app", "/admin", "/admin/access", "/admin/plugins", "/admin/extra"]);
+  ).toEqual([
+    "/app",
+    "/admin",
+    "/admin/access",
+    "/admin/plugins",
+    "/admin/settings",
+    "/admin/extra",
+  ]);
 });
 
 it("says so when sign-up is open, and leaves out the computers when none runs", async () => {
@@ -490,10 +497,11 @@ it("lists the sections that have a page, the open one marked, and opens each", a
     ["Members", "/admin"],
     ["Free access", "/admin/access"],
     ["Plugins", "/admin/plugins"],
+    ["Site settings", "/admin/settings"],
     ["Extra", "/admin/extra"],
   ]);
   expect(links[0]?.getAttribute("aria-current")).toBe("page");
-  await click(links[3] as HTMLElement);
+  await click(links[4] as HTMLElement);
   await vi.waitFor(() => expect(shown("extra-page")).toBeTruthy());
   expect(shown("admin-users")).toBeNull();
 });
