@@ -33,12 +33,21 @@ function branded() {
     include: ["apps/mobile/**"],
     assets: {},
     anchored: shipped.anchored.filter((rule) => inTree(rule.file)),
-    allow: { ...shipped.allow, text: shipped.allow.text.filter((entry) => inTree(entry.file)), paths: [], binary: [] },
+    allow: {
+      ...shipped.allow,
+      text: shipped.allow.text.filter((entry) => inTree(entry.file)),
+      paths: [],
+      binary: [],
+    },
   };
   const file = path.join(temp, "brand.json");
   fs.writeFileSync(file, JSON.stringify(config));
   for (const script of ["apply.mjs", "check.mjs"]) {
-    const res = spawnSync(process.execPath, [path.join(repo, "dozo/brand", script), "--root", root, "--config", file], { encoding: "utf8" });
+    const res = spawnSync(
+      process.execPath,
+      [path.join(repo, "dozo/brand", script), "--root", root, "--config", file],
+      { encoding: "utf8" },
+    );
     assert.equal(res.status, 0, `${script}: ${res.stdout}${res.stderr}`);
   }
   return root;
@@ -79,12 +88,26 @@ describe("the mobile app's config after the brand rules", () => {
 
   it("the share extension's app group in the code is the one in the config", () => {
     const share = fs.readFileSync(path.join(root, FILES[1]), "utf8");
-    assert.ok(share.includes(`"group.${config.expo.ios.bundleIdentifier}"`), share.match(/IOS_SHARE_APP_GROUP.*/)?.[0]);
+    assert.ok(
+      share.includes(`"group.${config.expo.ios.bundleIdentifier}"`),
+      share.match(/IOS_SHARE_APP_GROUP.*/)?.[0],
+    );
   });
 
   it("the check fails on upstream's own config, one line per tie to upstream", () => {
     const found = problems(upstream).join("\n");
-    for (const part of ["name is", "slug is", "owner is set", "projectId is set", "updates.url is set", "updates.enabled", "com\\.rakazo", "u\\.expo\\.dev", "inbox-zero", "outside the kept identifiers"]) {
+    for (const part of [
+      "name is",
+      "slug is",
+      "owner is set",
+      "projectId is set",
+      "updates.url is set",
+      "updates.enabled",
+      "com\\.rakazo",
+      "u\\.expo\\.dev",
+      "inbox-zero",
+      "outside the kept identifiers",
+    ]) {
       assert.ok(found.includes(part), `${part}\n${found}`);
     }
   });
@@ -94,10 +117,19 @@ describe("the mobile app's config after the brand rules", () => {
     const [first, share] = expo.extra.eas.build.experimental.ios.appExtensions;
     first.bundleIdentifier = "com.example.widgets";
     share.entitlements["com.apple.security.application-groups"] = ["group.com.example"];
-    expo.ios.associatedDomains = ["webcredentials:dozo.example", "webcredentials:other.example?mode=developer"];
+    expo.ios.associatedDomains = [
+      "webcredentials:dozo.example",
+      "webcredentials:other.example?mode=developer",
+    ];
     expo.description = "Made by rakazo";
     const found = problems({ expo }, "https://dozo.example").join("\n");
-    for (const part of ["outside", "uses app group group.com.example", "other.example", "Made by rakazo"]) assert.ok(found.includes(part), `${part}\n${found}`);
+    for (const part of [
+      "outside",
+      "uses app group group.com.example",
+      "other.example",
+      "Made by rakazo",
+    ])
+      assert.ok(found.includes(part), `${part}\n${found}`);
     assert.ok(!found.includes("webcredentials:dozo.example is not"), found);
   });
 });

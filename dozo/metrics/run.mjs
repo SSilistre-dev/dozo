@@ -24,7 +24,7 @@ const NOT_CODE =
 const TEST = /\.(test|spec|test-support)\.[a-z]+$/;
 
 /** Runs a command; resolves with its exit code and output. Rejects only when it cannot start. */
-export function run(cmd, args, { cwd = SRC, env = {} } = {}) {
+function run(cmd, args, { cwd = SRC, env = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env } });
     const out = [];

@@ -1,6 +1,6 @@
 import type { BillingSubscriptionSnapshot, SandboxProvider } from "@rakazo/adapter-kit";
 import { BillingEmulator, sandboxAllowanceUsedUp } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, ByokTier } from "@rakazo/contracts";
 import { BYOK_TIERS, byokTierPriceCents, sandboxAllowanceHours } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
@@ -12,6 +12,12 @@ import { PlanNotOfferedError } from "./dozo-billing.js";
 import { createReferrals } from "./referrals.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
+
+/** A tier's shared-space limit, read as the server reads it: upstream's tier type has no such field. */
+function sharedSpaceBytes(tier: ByokTier) {
+  const terms: { name: string; sharedSpaceBytes?: number } = BYOK_TIERS[tier];
+  return terms.sharedSpaceBytes;
+}
 
 type Account = {
   organizationId: string;
@@ -474,14 +480,14 @@ describe("a plan an admin granted", () => {
     store.grant = grant("pro", 30);
     const { billing } = setup();
     await expect(billing.status(actor)).resolves.toMatchObject({
-      sharedSpace: { plan: "Premium", usedBytes: GB, limitBytes: BYOK_TIERS.pro.sharedSpaceBytes },
+      sharedSpace: { plan: "Premium", usedBytes: GB, limitBytes: sharedSpaceBytes("pro") },
     });
     store.grant = grant("max", 30);
     await expect(billing.status(actor)).resolves.toMatchObject({
       sharedSpace: {
         plan: "Premium Plus",
         usedBytes: GB,
-        limitBytes: BYOK_TIERS.max.sharedSpaceBytes,
+        limitBytes: sharedSpaceBytes("max"),
       },
     });
     store.grant = grant("max", -1);
@@ -489,7 +495,7 @@ describe("a plan an admin granted", () => {
       sharedSpace: {
         plan: "Free",
         usedBytes: GB,
-        limitBytes: BYOK_TIERS.standard.sharedSpaceBytes,
+        limitBytes: sharedSpaceBytes("standard"),
       },
     });
   });

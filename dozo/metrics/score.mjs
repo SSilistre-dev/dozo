@@ -261,7 +261,7 @@ export const MEASURES = [
     weight: 10,
     tool: "knip (unused files, exports, types, members)",
     conversion: "share of source files with no knip finding",
-    threshold: "knip's defaults, no configuration",
+    threshold: "knip's defaults plus the entry points it cannot see (dozo/metrics/knip.config.mjs)",
     measure: (m, s) => cleanFiles(m.files.source.filter(s), m.deadCode),
   },
   {

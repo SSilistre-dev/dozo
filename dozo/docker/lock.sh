@@ -20,6 +20,9 @@ lock_owner_alive() { # $1 = "<pid> <start>" as written by the owner
   kill -0 "$pid" 2>/dev/null && { [ "$start" = - ] || [ "$(lock_start "$pid")" = "$start" ]; }
 }
 
+# The lock directory's inode number (GNU stat, then BSD stat); empty when it is gone.
+lock_inode() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1" 2>/dev/null || true; }
+
 # lock_acquire DIR WHAT TAG: 0 when taken; 1 with a message (prefixed TAG, naming WHAT) on stderr.
 lock_acquire() {
   local dir="$1" what="$2" tag="$3" n seen ino key
@@ -30,7 +33,7 @@ lock_acquire() {
     fi
     [ -e "$dir" ] || continue
     [ -d "$dir" ] && [ -O "$dir" ] || { echo "$tag $dir is not a directory of this user; remove it or set TMPDIR" >&2; return 1; }
-    seen="$(cat "$dir/owner" 2>/dev/null || true)"; ino="$(ls -di "$dir" 2>/dev/null | awk '{print $1}')"
+    seen="$(cat "$dir/owner" 2>/dev/null || true)"; ino="$(lock_inode "$dir")"
     if [ -n "$seen" ] && lock_owner_alive "$seen"; then
       echo "$tag another $what is in progress (pid ${seen%% *}); wait for it to finish" >&2; return 1
     fi
@@ -38,7 +41,7 @@ lock_acquire() {
     if [ -z "$seen" ] && [ "$n" -lt 10 ]; then sleep 0.2; continue; fi
     key="$dir.takeover.${seen%% *}"
     if mkdir "$key" 2>/dev/null; then
-      if [ "$(cat "$dir/owner" 2>/dev/null || true)" = "$seen" ] && [ "$(ls -di "$dir" 2>/dev/null | awk '{print $1}')" = "$ino" ]; then rm -rf "$dir"; fi
+      if [ "$(cat "$dir/owner" 2>/dev/null || true)" = "$seen" ] && [ "$(lock_inode "$dir")" = "$ino" ]; then rm -rf "$dir"; fi
       rmdir "$key"
     else sleep 0.2
     fi

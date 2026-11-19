@@ -39,7 +39,7 @@ export function DozoAnnouncementLayout() {
   );
 }
 
-export function DozoAnnouncement() {
+function DozoAnnouncement() {
   const { i18n } = useLingui();
   // Read once, then again on the live stream's signal (it also signals on every reconnect) and
   // when the window comes back: nothing here is polled.

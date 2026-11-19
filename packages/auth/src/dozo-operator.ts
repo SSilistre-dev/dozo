@@ -96,7 +96,7 @@ export async function refuseBanned(prisma: Sql, email: string): Promise<void> {
 }
 
 // ponytail: one bounded read, no paging; page it when a deployment's list outgrows this.
-export const DOZO_BANS_LIMIT = 500;
+const DOZO_BANS_LIMIT = 500;
 
 export function listBans(prisma: Sql): Promise<{ value: string; createdAt: Date }[]> {
   return prisma.$queryRaw`

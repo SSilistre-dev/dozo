@@ -59,7 +59,8 @@ describePostgres("shared space (PostgreSQL)", () => {
   const add = (
     spaceId: string,
     size: number,
-    write = (tx: Prisma.TransactionClient) => tx.artifact.create(file(spaceId, size)),
+    write: (tx: Prisma.TransactionClient) => Promise<unknown> = async (tx) =>
+      tx.artifact.create(file(spaceId, size)),
   ) => runAsTenant({ spaceId, userId }, () => withSharedSpace(prisma, spaceId, write));
 
   const used = async (organizationId: string) =>

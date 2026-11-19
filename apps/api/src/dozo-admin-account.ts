@@ -7,9 +7,9 @@ import { IsolationError, ownedOrganizationId, sharedSpaceUsage } from "@rakazo/d
 import { DOZO_ADMIN_ORGANIZATION_SELECT, planOfOrganization } from "./dozo-admin-members.js";
 
 /** How many of an account's sign-ins its page shows, most recently used first. */
-export const DOZO_ADMIN_ACCOUNT_SESSIONS = 5;
+const DOZO_ADMIN_ACCOUNT_SESSIONS = 5;
 /** How many of an account's Spaces, bots and computers its page lists, oldest first. */
-export const DOZO_ADMIN_ACCOUNT_LIST = 50;
+const DOZO_ADMIN_ACCOUNT_LIST = 50;
 
 /**
  * One account as its admin page shows it: who it is, its plan and every date that ends one, where

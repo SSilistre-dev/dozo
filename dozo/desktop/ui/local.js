@@ -10,7 +10,8 @@ let waiting;
 function show(screen, server) {
   clearTimeout(waiting);
   for (const id of SCREENS) el(id).hidden = id !== screen;
-  if (server) for (const host of document.querySelectorAll(".host")) host.textContent = new URL(server).host;
+  if (server)
+    for (const host of document.querySelectorAll(".host")) host.textContent = new URL(server).host;
 }
 
 function chooseServer(server) {

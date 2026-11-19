@@ -50,9 +50,11 @@ test("no running site container fails", () => {
   assert.equal(calls.length, 1);
 });
 
-const curl = 'case "$*" in *"Cookie: dozo_lang=tr"*) printf %s "$FAKE_HOME" ;; *) printf "%b" "$FAKE_TR" ;; esac';
+const curl =
+  'case "$*" in *"Cookie: dozo_lang=tr"*) printf %s "$FAKE_HOME" ;; *) printf "%b" "$FAKE_TR" ;; esac';
 const cookie = "HTTP/2 200\\r\\nset-cookie: dozo_lang=tr; Path=/\\r\\n";
-const lang = (env) => run([deploy("site-assets.sh"), "lang", "https://site.example"], "curl", curl, env);
+const lang = (env) =>
+  run([deploy("site-assets.sh"), "lang", "https://site.example"], "curl", curl, env);
 
 test("the live site sets the language cookie and follows it", () => {
   const { result, calls } = lang({ FAKE_TR: cookie, FAKE_HOME: "302 https://site.example/tr/" });
