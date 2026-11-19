@@ -191,6 +191,17 @@ for site, extra in (("alice.github.io", []), ("10.0.0.5", []), ("xn--bcher-kva.e
 stopped = {h["host"] for h in run({"op": "list"})["hosts"]}
 check(not {"alice.github.io", "10.0.0.5", "xn--bcher-kva.example"} & stopped, "stopped sign-outs drop off the list")
 check({"notexample.com", "example.com.evil.org"} <= stopped, f"their neighbours stay ({sorted(stopped)})")
+# Signing out of everything left, several sites in one request, with the browser running again.
+process, client = start_browser(9312)
+remaining = run({"op": "list"})
+every = sorted({h["host"] for h in remaining["hosts"]})
+check(len(every) >= 2, f"several sites are left to sign out of at once ({every})")
+done = run({"op": "delete", "hosts": every + [f"www.{h}" for h in every], "storageKeys": remaining["storageKeys"]})
+check(done == {"ok": True, "remaining": 0}, f"signing out of all of them at once reports nothing left ({done})")
+check(own_cookies(client) == [], "no cookie is left in the profile")
+check(run({"op": "list"})["hosts"] == [], "the list is empty")
+client.call("Browser.close")
+process.wait(10)
 bad = subprocess.run(["python3", "-I", "-c", SCRIPT, json.dumps({"op": "list", "profile": "/etc/passwd"})],
                      capture_output=True, text=True, timeout=30)
 check(json.loads(bad.stdout) == {"ok": False, "error": "profile"}, "a profile outside the bots' folder is refused")

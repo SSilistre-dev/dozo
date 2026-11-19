@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerStatus } from "@rakazo/contracts";
 import {
   Button,
@@ -10,13 +11,19 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
+import { KeyRound, X } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { errorText } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { formatRelativeTime } from "../../lib/relative-time";
+
+/**
+ * The browser saves new cookies to disk about every 30 seconds, and only the disk knows their
+ * times: a list read right after a sign-in shows "just now" and is read once more after this.
+ */
+const UNSAVED_REREAD_MS = 35_000;
 
 /** One site, or every site when null. */
 type Ending = { site: string | null };
@@ -103,6 +110,15 @@ function SiteSessionsDialog({
     if (address.trim()) signIn.run(address.trim());
   };
   const list = sites.data?.sites ?? [];
+  // One read again, never a poll: the times are on disk by then.
+  const [reread, setReread] = useState(false);
+  useTimeout(
+    () => {
+      setReread(true);
+      void sites.refetch();
+    },
+    !reread && list.some(({ lastUsedAt }) => lastUsedAt === null) ? UNSAVED_REREAD_MS : null,
+  );
   return (
     <Dialog
       open
@@ -110,12 +126,22 @@ function SiteSessionsDialog({
         if (!next) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>
             <Trans>Sites with cookies</Trans>
           </DialogTitle>
         </DialogHeader>
+        {/* The dialog's own close button names itself in English only. */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="absolute top-4.5 right-4.5"
+          aria-label={t`Close`}
+          onClick={onClose}
+        >
+          <X />
+        </Button>
         <form onSubmit={submit} className="flex gap-2">
           <Input
             value={address}
@@ -164,7 +190,7 @@ function SiteSessionsDialog({
                 <span className="min-w-0 truncate text-body">{entry.site}</span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="text-body-sm text-muted-foreground">
-                    {entry.lastUsedAt ? formatRelativeTime(entry.lastUsedAt) : null}
+                    {entry.lastUsedAt ? formatRelativeTime(entry.lastUsedAt) : t`just now`}
                   </span>
                   <Button
                     variant="ghost"
