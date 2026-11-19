@@ -327,6 +327,47 @@ it("shows why it could not start, and forgets it on Cancel", async () => {
   expect(container.querySelector('[data-testid="popover"]')).toBeNull();
 });
 
+it("treats a start whose answer was lost as started when the bot is recording", async () => {
+  api.start.mockRejectedValue(new TypeError("Failed to fetch"));
+  await render();
+  api.list.mockResolvedValue([skill("s1", "saved", "Weekly export"), skill("s4", "recording", "")]);
+  await click(container.querySelector('[data-testid="dozo-teach-start"]'));
+  await type(container.querySelector("textarea") as HTMLTextAreaElement, "Export");
+  await click(byText("Start recording"));
+  await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+  expect(api.list).toHaveBeenLastCalledWith({ botId: "bot-1" });
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('[data-testid="popover"]')).toBeNull();
+  expect(document.activeElement).toBe(document.body);
+});
+
+it("shows the start's error when the bot is not recording or the re-read fails", async () => {
+  api.start.mockRejectedValue(new Error("A teaching session is already active"));
+  await render();
+  const calls = api.list.mock.calls.length;
+  await click(container.querySelector('[data-testid="dozo-teach-start"]'));
+  await type(container.querySelector("textarea") as HTMLTextAreaElement, "Export");
+  await click(byText("Start recording"));
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "A teaching session is already active",
+  );
+  expect(api.list.mock.calls.length).toBe(calls + 1);
+  expect(onOpen).not.toHaveBeenCalled();
+
+  await click(byText("Cancel"));
+  api.list.mockRejectedValue(new TypeError("Failed to fetch"));
+  await click(container.querySelector('[data-testid="dozo-teach-start"]'));
+  await type(container.querySelector("textarea") as HTMLTextAreaElement, "Export");
+  await click(byText("Start recording"));
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "A teaching session is already active",
+    ),
+  );
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
 it("gets the computer section as the shell builds it: a ComputerPanel that opens the computer", () => {
   // The section reads `onOpen` from the panel's computer element, so a change to how the shell
   // passes it would hide the section without an error. The tree under test is the branded one.

@@ -48,7 +48,19 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
   const start = useSave({
     save: async (text: string, rpc) => {
       await rpc.computer.boot({ botId });
-      return rpc.skills.start({ botId, goal: text });
+      try {
+        return await rpc.skills.start({ botId, goal: text });
+      } catch (error) {
+        // The answer can be lost while the recording did start (the network flaps as the
+        // computer boots): a live recording for this bot means it started. If the re-read
+        // fails too, the start's own error is the one to show.
+        const skills = await rpc.skills.list({ botId }).catch(() => {
+          throw error;
+        });
+        const recording = skills.find((skill) => skill.status === "recording");
+        if (recording) return recording;
+        throw error;
+      }
     },
     onSaved: () => {
       started.current = true;
