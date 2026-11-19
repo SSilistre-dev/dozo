@@ -32,7 +32,10 @@ export function DozoAdminFunnel() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
-  const granted = funnel.data?.granted ?? 0;
+  // Without billing nobody pays: the paid step and the granted note under it are left out.
+  const billing = useQuery(useSpaceQueries().me.queryOptions()).data?.billingEnabled === true;
+  const steps = funnel.data?.steps.filter((row) => billing || row.step !== "paid") ?? [];
+  const granted = billing ? (funnel.data?.granted ?? 0) : 0;
   const names: Record<DozoFunnelStep, string> = {
     signedUp: t`Signed up`,
     modelConnected: t`Connected a model`,
@@ -82,7 +85,7 @@ export function DozoAdminFunnel() {
             data-testid="funnel"
             className="divide-y divide-border rounded-xl border border-border"
           >
-            {funnel.data.steps.map((row) => (
+            {steps.map((row) => (
               <li
                 key={row.step}
                 aria-label={names[row.step]}

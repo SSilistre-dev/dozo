@@ -8,10 +8,13 @@ export type DozoAdminSection = {
   path: string;
   label: MessageDescriptor;
   /**
-   * The section's page, loaded when it opens, at `/admin/<path>`. Without one the address has a
-   * route of its own: the members list is the admin page's own, the others are upstream pages.
+   * The section's page, loaded when it opens, at `/admin/<path>`. Only the members list has none:
+   * it is the admin page's own. Upstream's free access and plugin pages are their panels here,
+   * without their own header, so the navigation stays.
    */
   page?: LazyExoticComponent<ComponentType>;
+  /** Listed only on a server that bills (`billingEnabled`): without billing it has nothing to show. */
+  billing?: true;
 };
 
 /**
@@ -20,8 +23,21 @@ export type DozoAdminSection = {
  */
 export const DOZO_ADMIN_NAV: readonly DozoAdminSection[] = [
   { path: "", label: msg`Members` },
-  { path: "access", label: msg`Free access` },
-  { path: "plugins", label: msg`Plugins` },
+  {
+    path: "access",
+    label: msg`Free access`,
+    billing: true,
+    page: lazyComponent(() =>
+      import("./AdminAccessPage").then((module) => module.AccessGrantsPanel),
+    ),
+  },
+  {
+    path: "plugins",
+    label: msg`Plugins`,
+    page: lazyComponent(() =>
+      import("./PluginSubmissionsPanel").then((module) => module.PluginSubmissionsPanel),
+    ),
+  },
   {
     path: "settings",
     label: msg`Site settings`,

@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from "@playwright/test";
 import { test as flow } from "../flows/flow";
 import { outDir } from "../scan";
 import { deadLinks } from "./budgets";
+import { fenceVerdict, isNetworkFlap } from "./fence";
 
 export { expect, SIGNED_OUT } from "../flows/flow";
 
@@ -40,10 +41,27 @@ export function note(text: string) {
 
 /**
  * Every scenario of the live run: the e2e scenario fixture (console and 4xx/5xx watch, a picture
- * of the last screen) plus a fence that refuses any RPC whose name changes something other than
- * the probe's own session, so a misclick can never ban, pay or administer anything.
+ * of the last screen) plus a fence (canli/fence.ts) that refuses any admin, grant, plugin-review or
+ * billing-portal call that is not a known read, so a misclick can never ban, pay or administer
+ * anything; an unknown procedure is refused too.
  */
 export const test = flow.extend<{ fence: undefined }>({
+  // A navigation that meets this machine's own network change is tried again, at most twice; a
+  // site error (4xx/5xx, a timeout, wrong content) is never retried.
+  page: async ({ page }, use) => {
+    const goto = page.goto.bind(page);
+    page.goto = async (url, options) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await goto(url, options);
+        } catch (error) {
+          if (attempt >= 2 || !isNetworkFlap(String(error))) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        }
+      }
+    };
+    await use(page);
+  },
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's first parameter as an object pattern
   storageState: async ({}, use) => {
     await use(existsSync(STATE_FILE()) ? STATE_FILE() : { cookies: [], origins: [] });
@@ -55,25 +73,14 @@ export const test = flow.extend<{ fence: undefined }>({
         "FINDING (known): the CDN injects its analytics beacon, which the app's own CSP blocks",
       );
       const refused: string[] = [];
-      await page.route(
-        /\/rpc\/(dozoAdmin|admin|accessGrants|plugins\/review|billing\/portal)/,
-        (route) => {
-          const path = new URL(route.request().url()).pathname;
-          const last = path.split("/").at(-1) ?? "";
-          if (
-            /^(set|update|delete|create|suspend|unsuspend|ban|unban|stop|revoke|grant|save|remove|approve|reject|publish)/i.test(
-              last,
-            )
-          ) {
-            refused.push(path);
-            return route.abort();
-          }
-          return route.continue();
-        },
-      );
+      await page.route("**/rpc/**", (route) => {
+        const verdict = fenceVerdict(new URL(route.request().url()).pathname);
+        if (verdict.pass) return route.continue();
+        refused.push(verdict.reason);
+        return route.abort();
+      });
       await use(undefined);
-      if (refused.length)
-        throw new Error(`the live run tried to change something: ${refused.join(", ")}`);
+      if (refused.length) throw new Error(`the live run's fence refused: ${refused.join("; ")}`);
     },
     { auto: true },
   ],

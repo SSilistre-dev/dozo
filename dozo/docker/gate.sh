@@ -42,6 +42,8 @@ README_END="<!-- dozo:fork-notice:end -->"
 # paths only, so the fork replaces upstream's whole. Exact names, never a pattern: a neighbour is
 # still upstream's. Replacing is allowed; deleting or retyping one is not (dozo/SYNC.md).
 OWNED_FILES=(.github/ISSUE_TEMPLATE/config.yml .github/ISSUE_TEMPLATE/bug.yml .github/ISSUE_TEMPLATE/self-host.yml)
+# Upstream's workflows as reviewed: one that is not listed arrives enabled after a sync (dozo/SYNC.md).
+WORKFLOW_LIST="dozo/upstream-workflows.txt"
 # What an owned file must not say again: it is ours so that nothing in it points at upstream.
 UPSTREAM_NAME="rakazo"
 fail() { FAILS+=("$1"); echo "[gate] FAIL: $1"; }
@@ -147,6 +149,17 @@ owned_naming_upstream() {
   for f in "${OWNED_FILES[@]}"; do [ ! -f "$f" ] || ! grep -qi "$UPSTREAM_NAME" "$f" || echo "$f"; done
 }
 
+# The workflow files in $2 that are not named dozo-* and not listed in $1 (one name per line).
+upstream_workflows_unlisted() { # $1 = list, $2 = workflows directory
+  local f
+  for f in "$2"/*.yml "$2"/*.yaml; do
+    [ -f "$f" ] || continue
+    f=${f##*/}
+    case "$f" in dozo-*) continue ;; esac
+    grep -qxF -- "$f" "$1" || echo "$f"
+  done
+}
+
 # Each shell script is syntax-checked by its own interpreter (a #!/bin/sh script is not bash).
 syntax_check() { # $1 = script
   local sh="bash"
@@ -163,6 +176,10 @@ olc() {
   # nor are the iOS build's (dozo/mobile/.toolchain, .build).
   while IFS= read -r s; do syntax_check "$s"; done \
     < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.sh' -print | sort)
+  # What the production compose layer gives the panel: trusted proxies, the closed plugin form, the
+  # origin allowlist and the app's Referrer-Policy, from `docker compose config` (about a second).
+  if out=$(bash dozo/deploy/compose.deploy.test.sh 2>&1); then echo "[olc] compose layer ok (dozo/deploy/compose.deploy.test.sh)"
+  else printf '%s\n' "$out"; fail "compose layer (dozo/deploy/compose.deploy.test.sh)"; fi
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
@@ -232,9 +249,14 @@ olc() {
   local files forkfiles bad base upwf
   files=$(find dozo \( -path dozo/.stage -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -print | wc -l | tr -d ' ')
   forkfiles=$(git ls-files --cached --others --exclude-standard -- apps packages infra | grep -c '/dozo-[^/]*$' || true)
-  # Upstream's workflows arrive enabled after a sync (dozo/SYNC.md): a changed count is the cue to look.
   upwf=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) ! -name 'dozo-*' 2>/dev/null | wc -l | tr -d ' ')
   echo "[olc] rules: dozo files=$files, dozo-* fork files inside upstream dirs=$forkfiles, upstream workflows=$upwf"
+  # Upstream's workflows arrive enabled after a sync (dozo/SYNC.md): an unreviewed one fails here.
+  if [ ! -f "$WORKFLOW_LIST" ]; then fail "$WORKFLOW_LIST missing: upstream workflows cannot be checked"
+  elif bad=$(upstream_workflows_unlisted "$WORKFLOW_LIST" .github/workflows) && [ -z "$bad" ]; then
+    echo "[olc] upstream workflows: all $upwf listed in $WORKFLOW_LIST"
+  else printf '%s\n' "$bad" | sed "s|^|[olc] upstream workflow not in $WORKFLOW_LIST: |"
+    fail "upstream workflows not reviewed: $(printf '%s\n' "$bad" | tr '\n' ' ' | sed 's/ $//')"; fi
   # Compared with the merge base, not the tip of $UP_REF: after an aborted sync or a daily sync on
   # origin the ref is ahead, and everything upstream changed since would look like our edit. A check
   # that cannot run fails: without the ref, nothing says what upstream's files are.
@@ -298,10 +320,16 @@ selftest() {
     ok=0; echo "[olc] selftest timed_out: wrong verdict"
   fi
   selftest_owned || ok=0
+  # Unlisted upstream workflows: a listed one, dozo-* and a neighbour by prefix are not reported.
+  local wf; wf=$(mktemp -d "${TMPDIR:-/tmp}/dozo-wftest-XXXXXX") || return 1
+  printf '# comment\na.yml\n' > "$wf/list"
+  touch "$wf/a.yml" "$wf/a.yml.yml" "$wf/b.yaml" "$wf/dozo-x.yml" "$wf/notes.md"
+  got=$(upstream_workflows_unlisted "$wf/list" "$wf"); rm -rf "$wf"
+  [ "$got" = $'a.yml.yml\nb.yaml' ] || { ok=0; echo "[olc] selftest upstream_workflows_unlisted: got '$got', want 'a.yml.yml, b.yaml'"; }
   # The shell logic of build.sh and lock.sh (stage overlay, dc env, lock owner), in a scratch repo.
   out=$(bash "$ROOT/dozo/docker/build.test.sh" 2>&1) || { ok=0; printf '%s\n' "$out"; }
-  if [ "$ok" = 1 ]; then echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms and build.test.sh ok"
-  else fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms or build.test.sh)"; fi
+  if [ "$ok" = 1 ]; then echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms, workflow list and build.test.sh ok"
+  else fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms, workflow list or build.test.sh)"; fi
 }
 # The allowed set of the upstream-edit check, in a scratch repository. For every owned file: a
 # changed one is not listed; a deleted one and one that names upstream are; a file whose name only

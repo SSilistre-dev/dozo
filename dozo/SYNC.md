@@ -110,11 +110,11 @@ General) before the first push, disable the workflows below in Settings > Action
 files causes modify/delete conflicts on every sync. Disabled workflows keep merging cleanly. Keep
 `dozo-gate.yml` and `dozo-sync.yml` enabled.
 
-Upstream ships 23 workflows. Re-check after every sync: a new upstream workflow arrives enabled
-and would run on the first push. `make olc` prints `upstream workflows=<n>` (the files under
-`.github/workflows` not named `dozo-*`) in its rules line; a different number means one was added or
-removed. List them (`ls .github/workflows`), sort the new one into the groups below and disable it
-the same way before the sync branch is pushed. The line informs, it does not fail the gate.
+Upstream ships 23 workflows, listed in `dozo/upstream-workflows.txt`. A new upstream workflow
+arrives enabled and would run on the first push, so `make olc` fails (exit 2) on any file under
+`.github/workflows` not named `dozo-*` and not in that list, naming it. Sort the new one into the
+groups below, disable it the same way before the sync branch is pushed, then add its name to the
+list. A removed one: delete its name.
 
 Safe to leave on (no secrets, no publishing):
 - `computer-replay.yml`: path-filtered runtime tests on a stock runner.

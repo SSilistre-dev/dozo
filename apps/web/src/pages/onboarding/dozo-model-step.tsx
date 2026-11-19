@@ -17,9 +17,14 @@ type Option = OnboardingModel["providerOptions"]["main"][number];
 
 /**
  * Whether the deployment sells model credits. Onboarding offers credits only then: picking them
- * while they are not on sale went back to the same step. Unknown counts as not on sale.
+ * while they are not on sale went back to the same step. Unknown counts as not on sale. A server
+ * without billing (`billingEnabled` from `me`) has no billing routes, so it is not asked.
  */
-export function dozoCreditsOnSale(signal: AbortSignal): Promise<boolean> {
+export async function dozoCreditsOnSale(
+  billingEnabled: boolean,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!billingEnabled) return false;
   return rpc.billing.status(undefined, { signal }).then(
     (status) => status.creditPurchasesEnabled !== false,
     () => false,

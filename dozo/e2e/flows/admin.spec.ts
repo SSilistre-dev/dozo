@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { adminBrowser, newAccount, rpcAs } from "./accounts";
+import { adminBrowser, newAccount, reportBilling, rpcAs } from "./accounts";
 import { expect, test } from "./flow";
 
 /**
@@ -18,6 +18,39 @@ async function adminAt(browser: import("@playwright/test").Browser, path: string
 function row(page: Page, email: string) {
   return page.getByTestId("admin-users").getByRole("listitem").filter({ hasText: email });
 }
+
+// As `make canli`'s admin mode opens them: each section keeps the admin navigation.
+const SECTIONS: [path: string, label: string][] = [
+  ["/admin", "Members"],
+  ["/admin/plugins", "Plugins"],
+  ["/admin/settings", "Site settings"],
+  ["/admin/plans", "Plans"],
+  ["/admin/billing", "Billing"],
+  ["/admin/funnel", "Funnel"],
+];
+
+test("every section opens inside the admin page, its navigation kept", async ({
+  browser,
+  guard,
+}) => {
+  const { page } = await adminBrowser(browser);
+  guard.follow(page);
+  const nav = page.getByRole("navigation", { name: "Admin" });
+  for (const [path, label] of SECTIONS) {
+    await page.goto(path);
+    await expect(nav.getByRole("link", { name: label, exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByTestId("page-loading")).toHaveCount(0);
+    await expect(page.getByText(/Couldn't load/i)).toHaveCount(0);
+  }
+  // Free access exists only on a server that bills, which this stack is not: its address
+  // opens the members list, and the navigation does not offer it.
+  await page.goto("/admin/access");
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(nav.getByText("Free access", { exact: true })).toHaveCount(0);
+});
 
 test("members: search, filter, give a plan, take it back, suspend, delete", async ({
   browser,
@@ -124,8 +157,10 @@ test("free access: a grant is made, edited and deleted (grants faked: no billing
 }) => {
   const { page } = await adminBrowser(browser);
   guard.follow(page);
-  // Grants exist only on a server that bills; this stack does not, so the four calls are answered
-  // in the browser and the page's own create, edit and delete are what is checked.
+  // Grants exist only on a server that bills; this stack does not, so the account reports billing
+  // and the four calls are answered in the browser: the page's own create, edit and delete are
+  // what is checked.
+  await reportBilling(page);
   type Grant = {
     id: string;
     email: string;
@@ -170,6 +205,10 @@ test("free access: a grant is made, edited and deleted (grants faked: no billing
     return route.continue();
   });
   await page.goto("/admin/access");
+  // A section of the admin page, as the others: the navigation stays.
+  await expect(
+    page.getByRole("navigation", { name: "Admin" }).getByRole("link", { name: "Free access" }),
+  ).toHaveAttribute("aria-current", "page");
   const email = "grant-e2e@example.test";
   await page.locator("#grant-email").fill(email);
   await page.locator("#grant-months").fill("2");
@@ -191,11 +230,14 @@ test("billing summary and funnel: the counts and the periods", async ({ browser,
   guard.follow(page);
   await expect(page.getByText(/\d+ members/)).toBeVisible();
   await expect(page.getByText("Premium Plus")).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Admin" })
-    .getByText("Funnel", { exact: true })
-    .click();
+  // This stack does not bill: free access, which only a billing server has, is not listed.
+  const nav = page.getByRole("navigation", { name: "Admin" });
+  await expect(nav.getByText("Plans", { exact: true })).toBeVisible();
+  await expect(nav.getByText("Free access", { exact: true })).toHaveCount(0);
+  await nav.getByText("Funnel", { exact: true }).click();
   await expect(page.getByText("Signed up")).toBeVisible();
+  // Nor the funnel's paid step: nobody can pay here.
+  await expect(page.getByTestId("funnel").getByRole("listitem")).toHaveCount(4);
   for (const period of ["30 days", "90 days", "7 days"]) {
     await page.getByRole("button", { name: period }).click();
     await expect(page.getByRole("button", { name: period })).toHaveAttribute(

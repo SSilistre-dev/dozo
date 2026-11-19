@@ -38,6 +38,8 @@ export function DozoAdminPage() {
   if (me.isPending) return <PageLoading />;
   if (!me.data?.isAdmin) return <NotFoundPage />;
   const ownId = me.data.userId;
+  const billingEnabled = me.data.billingEnabled;
+  const sections = DOZO_ADMIN_NAV.filter((section) => billingEnabled || !section.billing);
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <WindowChrome />
@@ -53,7 +55,7 @@ export function DozoAdminPage() {
           <Trans>Admin</Trans>
         </h1>
         <nav aria-label={t`Admin`} className="flex min-w-0 flex-1 flex-wrap gap-1">
-          {DOZO_ADMIN_NAV.map((section) => (
+          {sections.map((section) => (
             <NavLink
               key={section.path}
               to={section.path ? `/admin/${section.path}` : "/admin"}
@@ -73,7 +75,7 @@ export function DozoAdminPage() {
             <Routes>
               <Route index element={<AdminPanel ownId={ownId} />} />
               <Route path="users/:userId" element={<DozoAdminAccount ownId={ownId} />} />
-              {DOZO_ADMIN_NAV.map(({ path, page: Page }) =>
+              {sections.map(({ path, page: Page }) =>
                 Page && path ? <Route key={path} path={path} element={<Page />} /> : null,
               )}
               <Route path="*" element={<Navigate to="/admin" replace />} />

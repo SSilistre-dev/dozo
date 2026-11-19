@@ -141,7 +141,15 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   fails here, not only at `make qa`. About 9 seconds.
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
   inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
-  `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.
+  `dozo-*`).
+- The production compose layer (`dozo/deploy/compose.deploy.test.sh`): `docker compose config` of
+  upstream's compose file with `compose.deploy.yml`, no daemon and no `.env`, checks what the panel
+  gets: `TRUSTED_PROXIES` and `DOZO_PLUGIN_SUBMISSIONS` reach the api (closed by default), every
+  router goes through the origin allowlist (everyone unless `DOZO_ORIGIN_SOURCE_RANGE` is set), and
+  the app's Referrer-Policy. Needs `docker compose` and `jq`. About a second.
+- The upstream workflow list: a workflow file under `.github/workflows`, not named `dozo-*`, that
+  `dozo/upstream-workflows.txt` does not list fails the gate, so a sync that brings one stays red
+  until it is reviewed (`dozo/SYNC.md`, Upstream's GitHub workflows).
 - The upstream-edit check: no upstream file may differ from the merge base of `HEAD` and
   `upstream-main` (not its tip, which may be ahead after a sync), except the marked notice block at
   the top of the root `README.md` and the three issue forms the fork replaces whole
@@ -268,8 +276,9 @@ The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.compl
   replaces the contents of `src` except `data`, so a failed stage cannot lose it. Upstream's
   `data-init` service creates it as root; on Linux `rm -rf dozo/.stage` may need `sudo` for it.
 - `compose.ports.yml`: upstream hard-codes web port 5173 (only the bind address is configurable)
-  and api port 3100. It moves web to the generated port and stops publishing the api. Nothing else
-  is overridden.
+  and api port 3100. It moves web to the generated port and stops publishing the api. It also
+  makes the stack's network dual-stack: otherwise every computer start and stop briefly refuses
+  connections on the web port (the file says why). Nothing else is overridden.
 
 ## Reset
 
