@@ -59,8 +59,11 @@ Options:
 | `DOZO_E2E_SUITE` | this directory | Another suite directory |
 | `DOZO_E2E_REUSE_DIR` | unset | Development: a directory with `auth.json` and `world.json`; skips the sign-up |
 
-`run.sh` itself sets `DOZO_E2E_OUT`, `DOZO_E2E_SRC` and `DOZO_E2E_MODEL_URL` inside the container;
-do not set them.
+`run.sh` itself sets `DOZO_E2E_OUT`, `DOZO_E2E_SRC`, `DOZO_E2E_MODEL_URL` and the
+`DOZO_E2E_VERIFY_*` variables inside the container; do not set them. The stack sends no mail, so for
+`flows/verify.spec.ts` run.sh signs up an account only that run uses and makes the two verification
+links its mail would carry (one valid, one expired: the link's token and the result page's mark),
+signed inside the api container with the api's own secret, which is never printed or written.
 
 The app only accepts its configured origin (`127.0.0.1:<port>`), so the browser must see that name.
 Linux: `--network host`. Docker Desktop (macOS): a TCP forwarder inside the container relays
@@ -186,9 +189,9 @@ calls are answered in the browser too; without billing the admin page does not l
 
 What is checked where, per surface. "crawl" = opened and scanned (`surfaces/`), "flow" = a scenario
 does the feature end to end (`flows/`), "flow (faked)" = a scenario with the server's answer faked
-in the browser because this stack lacks the provider, "live" = `make canli` only. 48 inventory keys
+in the browser because this stack lacks the provider, "live" = `make canli` only. 49 inventory keys
 (routes, settings sections, overlays, onboarding steps; the inventory check fails on a new one) plus
-the features below: 37 surfaces in the table, 35 checked, 2 not (each row is one surface).
+the features below: 38 surfaces in the table, 36 checked, 2 not (each row is one surface).
 
 | Surface | Scenario | Status |
 | --- | --- | --- |
@@ -196,6 +199,7 @@ the features below: 37 surfaces in the table, 35 checked, 2 not (each row is one
 | Sign-in / sign-out | sign out from the account menu, sign in again | flow |
 | Sign-in errors | wrong password, address already registered: Turkish lines | flow; live |
 | Forgot / reset password | request (this stack says recovery is not configured), invalid token form | flow; live (form) |
+| E-mail verification | the reminder line, a real link → verified, a second click still verified, the line gone, signed out → still verified and sign-in filled in; expired link → address filled in, new link asked (no mail: the server's refusal shown); unreadable link; a hand-made result address claims nothing | flow (mail capability faked) |
 | Onboarding: model step | connect the offline model (setup); every provider's form | crawl; setup |
 | Onboarding: "Later" | new account goes on to the app with its first bot | flow; live |
 | Onboarding: survey, first bot | opened | crawl |
@@ -255,9 +259,21 @@ makes itself:
   opens every admin section read only. No picture of member lists is kept.
 
 Every live scenario uses the scenario fixture above (console and 4xx/5xx watch, a picture) plus a
-fence (`canli/live.ts`) that aborts and fails on any admin, grant or billing-portal call whose name
-changes something. No payment, no ban, no admin action. A billing scenario skips itself on a server
-that does not bill.
+fence (`canli/fence.ts`, used by `canli/live.ts`). Every RPC is a POST and the contracts carry no
+read/write mark, so the fence lists each procedure of the namespaces it guards (`dozoAdmin`,
+`dozoSiteSettings`, `accessGrants`, `marketplace`) as a read or a write; a write, `billing/portal`
+or a procedure in neither list is aborted and fails the scenario ("unknown procedure ..., if it
+only reads, add it to READS"). `canli-fence.test.mjs` (`make olc`) reads those namespaces from
+`packages/contracts/src` and fails while any procedure is unlisted or a listed one is gone. No
+payment, no ban, no admin action. A billing scenario skips itself on a server that does not bill;
+when the sign-up scenario fails, every later account step is skipped as "hesap açılamadı", so the
+report shows the one root cause.
+
+The run waits for the machine's local-stack lock when the file exists (`DOZO_STACK_LOCK`, default
+`/tmp/dozo-yigin.lock`, through `flock -w 7200`): another run starting or stopping containers changes
+the host's network under the browser. A caller that already holds the lock sets
+`DOZO_CANLI_LOCKED=1`. A navigation that still meets `net::ERR_NETWORK_CHANGED` or
+`ERR_INTERNET_DISCONNECTED` is tried again, at most twice; a site error is never retried.
 
 Output in `dozo/.stage/canli/`: `RAPOR.md`, `rapor.html`, `shots/`, `results.json`. The probe's
 password and session files are removed when the run ends. Budgets (`canli/budgets.ts`, tested

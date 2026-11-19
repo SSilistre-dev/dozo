@@ -134,6 +134,37 @@ else
   say "the api has no RAKAZO_ADMIN_EMAILS: the admin scenarios will fail; run make up again (build.sh adds one)"
 fi
 
+# Verification links for flows/verify.spec.ts. The stack sends no mail, so the account is signed up
+# here through the auth API and the links its mail would carry are made as the server makes them:
+# the link's token (HS256 over the address, with its expiry) and the result page's mark (an HMAC
+# over the account id, packages/auth/src/dozo-email-link.ts), signed inside the api container with
+# the api's own secret, which is never printed or written. One valid and one expired link, for an
+# address only this run uses. The password is a local test account's, like the admin's.
+VERIFY_EMAIL="verify-$$-$(date +%s)@example.test"
+VERIFY_PASSWORD="dozo-e2e-verify-pass-12"
+code="$(curl -s -o /dev/null -m 20 -w '%{http_code}' -X POST "$BASE/api/auth/sign-up/email" \
+  -H 'content-type: application/json' -H "origin: $BASE" \
+  --data "{\"email\":\"$VERIFY_EMAIL\",\"password\":\"$VERIFY_PASSWORD\",\"name\":\"E2E Verify\"}" || true)"
+[ "$code" = 200 ] || { say "verification account sign-up answered HTTP ${code:-none}"; exit 2; }
+VERIFY_USER="$(psql_run "SELECT id FROM \"user\" WHERE email = '$VERIFY_EMAIL'")"
+[ -n "$VERIFY_USER" ] || { say "cannot read the verification account's id"; exit 2; }
+verify_link() {
+  docker exec -e E="$VERIFY_EMAIL" -e U="$VERIFY_USER" -e X="$1" -e BASE="$BASE" "$API" node -e '
+    const c = require("node:crypto");
+    const key = process.env.BETTER_AUTH_SECRET;
+    if (!key) process.exit(3);
+    const part = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const now = Math.floor(Date.now() / 1000);
+    const body = part({ alg: "HS256", typ: "JWT" }) + "." + part({ email: process.env.E, iat: now - 7200, exp: now + Number(process.env.X) });
+    const token = body + "." + c.createHmac("sha256", key).update(body).digest("base64url");
+    const payload = Buffer.from(process.env.U).toString("base64url") + "." + (now + 7 * 24 * 3600);
+    const mark = payload + "." + c.createHmac("sha256", key).update("dozo-email-link:" + payload).digest("base64url");
+    const back = process.env.BASE + "/verify-email?v=" + encodeURIComponent(mark);
+    console.log("/api/auth/verify-email?token=" + token + "&callbackURL=" + encodeURIComponent(back));'
+}
+VERIFY_LINK="$(verify_link 3600)" && VERIFY_EXPIRED="$(verify_link -60)" \
+  || { say "cannot make the verification links in the api container"; exit 2; }
+
 # npm's download cache lives in a named Docker volume (nothing on the host); the container runs as
 # the invoking user, so the volume is opened for writing. If that fails, run without a cache.
 CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
@@ -162,6 +193,8 @@ drun "$NAME" --cpus "${DOZO_E2E_CPUS:-3}" --memory "${DOZO_E2E_MEMORY:-6g}" --ip
   -e DOZO_E2E_ARGS="${DOZO_E2E_ARGS:-}" -e FORWARD="$FORWARD" -e PORT="${PORT:-80}" -e VERSION="$VERSION" \
   -e DOZO_E2E_MODEL_URL="http://$MODEL_IP:8787/v1" -e DOZO_E2E_SRC=/webapp-src \
   -e DOZO_E2E_ADMIN_EMAIL="$ADMIN_EMAIL" -e DOZO_E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  -e DOZO_E2E_VERIFY_EMAIL="$VERIFY_EMAIL" -e DOZO_E2E_VERIFY_PASSWORD="$VERIFY_PASSWORD" \
+  -e DOZO_E2E_VERIFY_LINK="$VERIFY_LINK" -e DOZO_E2E_VERIFY_EXPIRED="$VERIFY_EXPIRED" \
   -v "$SUITE:/suite:ro" -v "$OUT:/out" -v "$WEBSRC:/webapp-src:ro" ${REUSE[@]+"${REUSE[@]}"} ${CACHE[@]+"${CACHE[@]}"} \
   "$IMAGE" bash -c '
     set -e

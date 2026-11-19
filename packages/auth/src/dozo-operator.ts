@@ -39,6 +39,11 @@ function oneDomain(domain: string): string {
   return DOTLESS_ALIASES.has(domain) ? DOTLESS_DOMAIN : domain;
 }
 
+/** Every spelling of an entry's domain that an account's address may carry. */
+export function banDomainSpellings(domain: string): string[] {
+  return domain === DOTLESS_DOMAIN ? [...DOTLESS_ALIASES] : [domain];
+}
+
 /**
  * The one spelling of a mailbox. A `+tag` goes for every domain, on purpose: most services deliver
  * it to the same person, and where one does not, a ban reaching a second mailbox costs less than a
