@@ -1,3 +1,4 @@
+import type { BillingByokPlan } from "@rakazo/adapter-kit";
 import { parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
 import { z } from "zod";
 import type {
@@ -27,6 +28,8 @@ const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
  * one-time credit purchase (which its charge carries too).
  */
 const MARKERS = ["rakazo_plan", "rakazo_credit_cents"];
+/** The prefix `stripe-billing.ts` gives every own-key plan price's lookup key. */
+const PRICE_KEY_PREFIX = "rakazo_byok_";
 
 const metadata = z.record(z.string(), z.string()).nullish();
 const invoiceSchema = z.object({
@@ -89,6 +92,18 @@ export class DozoStripeLedger implements DozoPaymentLedger {
   constructor(private readonly config: DozoStripeLedgerConfig) {
     this.fetchImpl = config.fetch ?? fetch;
     this.apiBase = config.apiBase ?? "https://api.stripe.com";
+  }
+
+  /**
+   * The lookup key `stripe-billing.ts` (`byokPrice`) finds or creates the plan's price under; it
+   * keeps the formula private, so it is restated here and a test holds the two equal.
+   */
+  priceKey({ tier, interval, amountCents }: BillingByokPlan): string {
+    const period = interval === "year" ? "yearly" : "monthly";
+    // Standard keeps the keys its existing prices were created under.
+    return tier === "standard"
+      ? `${PRICE_KEY_PREFIX}${period}_${amountCents}`
+      : `${PRICE_KEY_PREFIX}${tier}_${period}_${amountCents}`;
   }
 
   async read(range: { from: Date; to: Date }, accounts: DozoLedgerAccounts): Promise<DozoLedger> {

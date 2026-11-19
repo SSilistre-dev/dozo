@@ -28,9 +28,11 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
+import { dozoAdminAccessRoutes } from "./dozo-admin-access.js";
 import { readAccount } from "./dozo-admin-account.js";
 import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
 import { onTier, plansOf } from "./dozo-admin-members.js";
+import { dozoAdminPlansRoutes } from "./dozo-admin-plans.js";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
@@ -547,6 +549,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
       }),
 
       billing: dozoAdminBillingRoutes(ctx, wiring?.payments),
+      plans: dozoAdminPlansRoutes(ctx, wiring?.payments),
+      accessGrants: dozoAdminAccessRoutes(ctx),
     },
   };
 }

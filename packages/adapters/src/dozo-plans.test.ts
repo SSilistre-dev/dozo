@@ -81,6 +81,8 @@ function harness() {
     deploymentSettings: {
       findUnique: vi.fn(async () => ({ modelCreditsEnabled: organization.billingOn })),
     },
+    // No admin set a plan quota: the plans hold their terms.
+    dozoPlanQuota: { findMany: vi.fn(async () => []) },
     organization: {
       findUnique: vi.fn(async () => ({
         modelCredits: credits(),

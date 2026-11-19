@@ -15,6 +15,7 @@ import {
   setPlanGrant,
   tierInForce,
 } from "./dozo-plan-grant.js";
+import { computerHoursCents } from "./dozo-plan-quotas.js";
 import { planComputerSize, sandboxAllowancePlan } from "./sandbox-allowance.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
@@ -176,6 +177,8 @@ function organization(
     grant?: { tier: string; endsAt: Date } | null;
     /** Credit an admin granted without a monthly plan, in cents. */
     pool?: number | null;
+    /** Hours an admin set on the plans page, as `dozo_plan_quotas` rows. */
+    quotas?: { tier: string; sharedSpaceMb: number | null; computerHours: number | null }[];
   } = {},
 ) {
   const state = {
@@ -183,9 +186,11 @@ function organization(
     billing: null as Billing,
     grant: null as { tier: string; endsAt: Date } | null,
     pool: null as number | null,
+    quotas: [] as { tier: string; sharedSpaceMb: number | null; computerHours: number | null }[],
     ...init,
   };
   const prisma = {
+    dozoPlanQuota: { findMany: async () => state.quotas },
     deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
     organization: {
       findUnique: async () => ({
@@ -337,6 +342,17 @@ describe("the computer a granted plan gives", () => {
       state.grant = { tier: "pro", endsAt: earlier };
       expect(await resetsAt(prisma)).toBeNull();
     }
+  });
+
+  it("holds the hours an admin set for the plan, a paid one's and a granted one's", async () => {
+    const quotas = [{ tier: "pro", sharedSpaceMb: null, computerHours: 7 }];
+    const subscribed = organization({ billing: paid("pro"), quotas });
+    expect(await limit(subscribed.prisma)).toBe(computerHoursCents(7));
+    const granted = organization({ grant: { tier: "pro", endsAt: far }, quotas });
+    expect(await limit(granted.prisma)).toBe(computerHoursCents(7));
+    // Another plan's quota leaves this one on its terms.
+    const other = organization({ billing: paid("max"), quotas });
+    expect(await limit(other.prisma)).toBe(BYOK_TIERS.max.computerAllowanceCents);
   });
 
   it("reaches an organization that has no plan of its own yet", async () => {

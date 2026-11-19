@@ -33,6 +33,8 @@ function setup(organization: { billingOn: boolean; usedBytes: number }) {
     deploymentSettings: {
       findUnique: async () => ({ modelCreditsEnabled: organization.billingOn }),
     },
+    // No admin set a plan quota: the plans hold their terms.
+    dozoPlanQuota: { findMany: vi.fn(async () => []) },
     space: {
       findUnique: async () => ({ organizationId: "org", organization: { billing: null } }),
     },

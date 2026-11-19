@@ -1440,6 +1440,12 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "    const usage = Math.round(offer.computerHours / base.computerHours);\n",
+      "replace": "    const usage = Math.round(offer.computerHours / Math.max(base.computerHours, 1));\n",
+      "reason": "plan quotas: the hours an admin sets reach this comparison, so it never divides by zero (the server already keeps a paid plan at one hour or more)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "  const freeUntil = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n",
       "replace": "  const freeEnds = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n  // The free plan offers the paid ones with the controls a free period uses.\n  const freeUntil =\n    freeEnds ?? (status.funding === \"byok\" && !status.byokPriceCents ? \"free\" : null);\n",
       "reason": "plans: Billing offers the paid plans to an organization on the free plan, reusing the free period's controls"
@@ -1621,7 +1627,7 @@
     {
       "file": "packages/db/prisma/schema.prisma",
       "find": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n",
-      "replace": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n  dozoPlanGrant DozoPlanGrant?\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n\n/// A plan an admin gave an organization by hand, beside its subscription. The subscription sync\n/// never writes it. It counts until `endsAt`, as the higher of it and the paid tier.\nmodel DozoPlanGrant {\n  organizationId String       @id\n  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)\n  /// \"pro\" or \"max\".\n  tier           String\n  endsAt         DateTime\n  grantedById    String?\n  grantedBy      User?        @relation(fields: [grantedById], references: [id], onDelete: SetNull)\n  note           String?\n  createdAt      DateTime     @default(now())\n  updatedAt      DateTime     @updatedAt\n\n  @@map(\"dozo_plan_grants\")\n}\n",
+      "replace": "  referrals    Referral[]          @relation(\"ReferrerOrganization\")\n  dozoPlanGrant DozoPlanGrant?\n\n  @@unique([slug])\n  @@map(\"organization\")\n}\n\n/// A plan an admin gave an organization by hand, beside its subscription. The subscription sync\n/// never writes it. It counts until `endsAt`, as the higher of it and the paid tier.\nmodel DozoPlanGrant {\n  organizationId String       @id\n  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)\n  /// \"pro\" or \"max\".\n  tier           String\n  endsAt         DateTime\n  grantedById    String?\n  grantedBy      User?        @relation(fields: [grantedById], references: [id], onDelete: SetNull)\n  note           String?\n  createdAt      DateTime     @default(now())\n  updatedAt      DateTime     @updatedAt\n\n  @@map(\"dozo_plan_grants\")\n}\n\n/// What an admin set for a plan (`standard`, `pro`, `max`) on the admin page. A null quota follows\n/// the plan's terms in code. Never a price.\nmodel DozoPlanQuota {\n  tier            String   @id\n  sharedSpaceMb   Int?\n  computerHours   Int?\n  updatedByUserId String?\n  updatedAt       DateTime @updatedAt\n\n  @@map(\"dozo_plan_quotas\")\n}\n",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -1639,20 +1645,41 @@
     {
       "file": "packages/db/src/index.ts",
       "find": "export * from \"./deferred-migrations.js\";\nexport {\n  eventsAfter,",
-      "replace": "export * from \"./deferred-migrations.js\";\nexport * from \"./dozo-plan-grant.js\";\nexport {\n  eventsAfter,",
+      "replace": "export * from \"./deferred-migrations.js\";\nexport * from \"./dozo-plan-grant.js\";\nexport * from \"./dozo-plan-quotas.js\";\nexport * from \"./dozo-admin-change.js\";\nexport {\n  eventsAfter,",
       "requires": [
-        "packages/db/src/dozo-plan-grant.ts"
+        "packages/db/src/dozo-plan-grant.ts",
+        "packages/db/src/dozo-plan-quotas.ts",
+        "packages/db/src/dozo-admin-change.ts"
       ],
       "reason": "plans: a plan an admin grants by hand counts beside the subscription: the package exports the one function every reader of the plan calls"
     },
     {
       "file": "packages/db/src/sandbox-allowance.ts",
       "find": "import type { PrismaClient } from \"./client.js\";\nimport { runAsSystem } from \"./row-security.js\";\n",
-      "replace": "import type { PrismaClient } from \"./client.js\";\nimport { DOZO_PLAN_GRANT_SELECT, grantedAllowanceCents, tierInForce } from \"./dozo-plan-grant.js\";\nimport { runAsSystem } from \"./row-security.js\";\n",
+      "replace": "import type { PrismaClient } from \"./client.js\";\nimport { DOZO_PLAN_GRANT_SELECT, grantedAllowanceCents, tierInForce } from \"./dozo-plan-grant.js\";\nimport { readPlanLimits } from \"./dozo-plan-quotas.js\";\nimport { runAsSystem } from \"./row-security.js\";\n",
       "requires": [
-        "packages/db/src/dozo-plan-grant.ts"
+        "packages/db/src/dozo-plan-grant.ts",
+        "packages/db/src/dozo-plan-quotas.ts"
       ],
-      "reason": "plans: a plan an admin grants by hand counts beside the subscription: the import of the rules below"
+      "reason": "plans: a plan an admin grants by hand counts beside the subscription, and an admin's plan quotas hold: the import of the rules below"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  if (!settings?.modelCreditsEnabled) return null;\n  const billing = organization?.billing;\n",
+      "replace": "  if (!settings?.modelCreditsEnabled) return null;\n  const planLimits = await readPlanLimits(prisma);\n  const billing = organization?.billing;\n",
+      "requires": [
+        "packages/db/src/dozo-plan-quotas.ts"
+      ],
+      "reason": "plan quotas: the computer allowance reads the plans' limits once, with the hours an admin set on the plans page, so a change holds on every instance at once"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "        ? BYOK_TIERS[tier].computerAllowanceCents\n",
+      "replace": "        ? planLimits[tier].computerAllowanceCents\n",
+      "requires": [
+        "packages/db/src/dozo-plan-quotas.ts"
+      ],
+      "reason": "plan quotas: a plan's allowance is the hours an admin set for it, else its terms"
     },
     {
       "file": "packages/db/src/sandbox-allowance.ts",
@@ -1675,7 +1702,7 @@
     {
       "file": "packages/db/src/sandbox-allowance.ts",
       "find": "        : creditShare(billing?.creditAmountCents ?? 0);\n  const periodEnd",
-      "replace": "        : creditShare(billing?.creditAmountCents ?? 0);\n  const limitCents = Math.max(\n    baseLimitCents,\n    grantedAllowanceCents(organization?.dozoPlanGrant, now),\n  );\n  const periodEnd",
+      "replace": "        : creditShare(billing?.creditAmountCents ?? 0);\n  const limitCents = Math.max(\n    baseLimitCents,\n    grantedAllowanceCents(organization?.dozoPlanGrant, now, planLimits),\n  );\n  const periodEnd",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -1684,7 +1711,7 @@
     {
       "file": "packages/db/src/sandbox-allowance.ts",
       "find": "    (!tier && !live) ||\n",
-      "replace": "    (!tier && !live && !grantedAllowanceCents(organization?.dozoPlanGrant, now)) ||\n",
+      "replace": "    (!tier &&\n      !live &&\n      !grantedAllowanceCents(organization?.dozoPlanGrant, now, planLimits)) ||\n",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -1693,7 +1720,7 @@
     {
       "file": "packages/db/src/sandbox-allowance.ts",
       "find": "        limitCents: creditShare(granted._sum.creditCents),\n",
-      "replace": "        limitCents: Math.max(\n          creditShare(granted._sum.creditCents),\n          grantedAllowanceCents(organization?.dozoPlanGrant, now),\n        ),\n",
+      "replace": "        limitCents: Math.max(\n          creditShare(granted._sum.creditCents),\n          grantedAllowanceCents(organization?.dozoPlanGrant, now, planLimits),\n        ),\n",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts"
       ],
@@ -1729,11 +1756,21 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "  syncCreditPurchases,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
-      "replace": "  syncCreditPurchases,\n  tierInForce,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
+      "replace": "  syncCreditPurchases,\n  readPlanLimits,\n  tierInForce,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
       "requires": [
-        "packages/db/src/dozo-plan-grant.ts"
+        "packages/db/src/dozo-plan-grant.ts",
+        "packages/db/src/dozo-plan-quotas.ts"
       ],
       "reason": "plans: a plan an admin grants by hand counts beside the subscription: the import of the status rules below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "      const allowanceCents = BYOK_TIERS[to.tier].computerAllowanceCents;\n      if (allowanceCents < BYOK_TIERS[from.tier].computerAllowanceCents && deps.sandbox) {\n",
+      "replace": "      const planLimits = await readPlanLimits(prisma);\n      const allowanceCents = planLimits[to.tier].computerAllowanceCents;\n      if (allowanceCents < planLimits[from.tier].computerAllowanceCents && deps.sandbox) {\n",
+      "requires": [
+        "packages/db/src/dozo-plan-quotas.ts"
+      ],
+      "reason": "plan quotas: a plan change is held to the hours an admin set for both plans, as the allowance it leads to is"
     },
     {
       "file": "apps/api/src/billing.ts",
@@ -1771,7 +1808,7 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
-      "replace": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace } from \"./dozo-billing.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
+      "replace": "import { applyAccessGrants } from \"./access-grants.js\";\nimport { PlanNotOfferedError, statusSharedSpace, withPlanHours } from \"./dozo-billing.js\";\nimport { createExperiments } from \"./experiments.js\";\n",
       "requires": [
         "apps/api/src/dozo-billing.ts"
       ],
@@ -1939,7 +1976,7 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "        const offers = byokTierOffers();\n",
-      "replace": "        const offers = withComputerSpecs(byokTierOffers(), deps.sandbox);\n",
+      "replace": "        const offers = await withPlanHours(\n          prisma,\n          withComputerSpecs(byokTierOffers(), deps.sandbox),\n        );\n",
       "requires": [
         "apps/api/src/dozo-computer-size.ts"
       ],
@@ -2480,6 +2517,24 @@
         "apps/web/src/lib/dozo-error-text.ts"
       ],
       "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "import { errorText, toastError } from \"../lib/dozo-error-text\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "replace": "import { errorText, toastError } from \"../lib/dozo-error-text\";\nimport { DozoGrantActions } from \"./dozo-access-grant-actions\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "requires": [
+        "apps/web/src/pages/dozo-access-grant-actions.tsx"
+      ],
+      "reason": "free access: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "              {item.status === \"pending\" ? (\n                <Button\n                  variant=\"ghost\"\n                  size=\"sm\"\n                  disabled={change.pending}\n                  onClick={() => change.run({ revoke: item.id })}\n                >\n                  <Trans>Revoke</Trans>\n                </Button>\n              ) : null}\n",
+      "replace": "              <DozoGrantActions\n                grant={item}\n                busy={change.pending}\n                onRevoke={() => change.run({ revoke: item.id })}\n              />\n",
+      "requires": [
+        "apps/web/src/pages/dozo-access-grant-actions.tsx"
+      ],
+      "reason": "free access: a grant not yet received can be edited and deleted as well as revoked, behind one actions menu; a received one has no actions"
     },
     {
       "file": "apps/web/src/pages/PluginSubmissionsPanel.tsx",
