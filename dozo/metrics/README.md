@@ -4,7 +4,8 @@ Measures code quality and readability with established tools at their own defaul
 0-100, and compares the result with the committed `baseline.json`. The targets (both fork scores
 at least 90) apply to the fork's own files; the whole repository is tracked only. The formula,
 the baseline values and the jobs that would raise each low score are in the generated
-[REPORT.md](REPORT.md).
+[REPORT.md](REPORT.md). The token benchmark beside it (`token-kiyas.sh`, `make token-kiyas`) is
+separate and shares nothing with it.
 
 ## Running it
 
