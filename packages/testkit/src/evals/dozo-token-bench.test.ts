@@ -3,8 +3,10 @@ import type { BenchCall, BenchTask, WireBody } from "./dozo-token-bench.js";
 import {
   fakeModelFetch,
   fakeUsage,
+  listedRecords,
   prefixText,
   requestComponents,
+  resolveReply,
   runBenchTask,
   runTokenBench,
   tokensOf,
@@ -25,6 +27,34 @@ const unitPricing = {
   cacheRead: 1,
   cacheWrite: 1,
 };
+
+describe("listed records", () => {
+  it("lists rows in creation order, then by id, whatever order the database returned", () => {
+    const rows = [
+      { id: "b", createdAt: "2026-01-02", name: "B" },
+      { id: "a", createdAt: "2026-01-02", name: "A" },
+      { id: "c", createdAt: "2026-01-01", name: "C" },
+    ];
+    expect(listedRecords(rows).map((r) => r.id)).toEqual(["c", "a", "b"]);
+    expect(listedRecords(rows, [2, 0, 1])).toEqual(listedRecords(rows));
+  });
+});
+
+describe("scripted built-in calls", () => {
+  it("call a listed built-in directly and reach a deferred one through find_tool", () => {
+    const reply = { builtin: "schedule_list", args: {} };
+    const listed = {
+      messages: [],
+      tools: [{ type: "function", function: { name: "schedule_list" } }],
+    };
+    expect(resolveReply(reply, listed)).toEqual([{ tool: "schedule_list", args: {} }]);
+    expect(resolveReply(reply, { messages: [] })).toEqual([
+      { tool: "find_tool", args: { names: ["schedule_list"] } },
+      { tool: "use_tool", args: { name: "schedule_list", arguments: {} } },
+    ]);
+    expect(resolveReply({ text: "hi" }, { messages: [] })).toEqual([{ text: "hi" }]);
+  });
+});
 
 describe("fake model usage", () => {
   it("counts a quarter token per byte and splits a request into its parts", () => {

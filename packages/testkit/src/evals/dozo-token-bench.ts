@@ -1,9 +1,13 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
+import { diskNoteInstruction } from "../../../adapters/src/computer-disk.js";
+import { historyWithRecall } from "../../../adapters/src/dozo-recalled-memory.js";
 import { formatRecalledMemory } from "../../../adapters/src/history-compaction.prompt.js";
 import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
 import {
+  connectedPluginsInstruction,
   runIdentityInstruction,
+  taughtSkillsInstruction,
   userTurnInstructions,
 } from "../../../adapters/src/run-instructions.prompt.js";
 import { runReplyGuidance } from "../../../adapters/src/run-replies.prompt.js";
@@ -15,7 +19,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v1";
+export const BENCH_VERSION = "dozo-token-bench-v6";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 export const FAKE_PROVIDER = {
@@ -29,15 +33,43 @@ export const FAKE_PROVIDER = {
 export type ScriptedReply =
   | { text: string }
   | { tool: string; args: Record<string, unknown> }
-  | { tools: Array<{ tool: string; args: Record<string, unknown> }> };
+  | { tools: Array<{ tool: string; args: Record<string, unknown> }> }
+  /**
+   * A built-in the model calls directly when it is in the tool list, and otherwise reaches as the
+   * runtime tells it to: find_tool for its parameters, then use_tool (one more model call).
+   */
+  | { builtin: string; args: Record<string, unknown> };
+
+/** The model's reply to one request: a built-in call resolved against the tools it was sent. */
+export function resolveReply(reply: ScriptedReply, body: WireBody): ScriptedReply[] {
+  if (!("builtin" in reply)) return [reply];
+  const listed = (body.tools ?? []).some(
+    (tool) => (tool as { function?: { name?: string } }).function?.name === reply.builtin,
+  );
+  return listed
+    ? [{ tool: reply.builtin, args: reply.args }]
+    : [
+        { tool: "find_tool", args: { names: [reply.builtin] } },
+        { tool: "use_tool", args: { name: reply.builtin, arguments: reply.args } },
+      ];
+}
+
+type SentReply = Exclude<ScriptedReply, { builtin: string }>;
 
 export type BenchTurn = {
   prompt: string;
-  /** What the server would recall for this turn: placed first in history, as it does. */
+  /** What the server would recall for this turn, placed in the history where the server puts it. */
   recalled?: string[];
   /** The model's replies for this turn, in order; an exhausted script answers "Done." */
   replies: ScriptedReply[];
+  /** The order the database returns the task's records in this turn (indexes into them). */
+  recordOrder?: number[];
+  /** The bot computer's disk as last measured before this turn, in GB. */
+  disk?: { usedGb: number; freeGb: number };
 };
+
+/** A saved row the server lists in the system prompt: a taught skill or a connected plugin. */
+export type BenchRecord = { id: string; createdAt: string; name: string };
 
 export type BenchTask = {
   id: string;
@@ -45,6 +77,8 @@ export type BenchTask = {
   history?: AgentRunRequest["history"];
   /** Extra system prompt text the server adds for this bot, such as its memory file. */
   memoryContext?: string;
+  /** Taught skills and connected plugins, which the server reads from the database every turn. */
+  records?: BenchRecord[];
   turns: BenchTurn[];
   /** Deterministic tool output by tool name and arguments. */
   toolResult?: (name: string, args: Record<string, unknown>) => unknown;
@@ -131,7 +165,7 @@ export function fakeUsage(body: WireBody, written: string[], outputTokens: numbe
   };
 }
 
-function sse(reply: ScriptedReply, usage: unknown, call: number) {
+function sse(reply: SentReply, usage: unknown, call: number) {
   const chunk = (delta: unknown, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: `bench-${call}`, object: "chat.completion.chunk", created: 0, model: "bench", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
   const calls = "text" in reply ? [] : "tools" in reply ? reply.tools : [reply];
@@ -150,7 +184,7 @@ function sse(reply: ScriptedReply, usage: unknown, call: number) {
   return `${body}data: ${JSON.stringify({ id: `bench-${call}`, choices: [], usage })}\n\ndata: [DONE]\n\n`;
 }
 
-function replyTokens(reply: ScriptedReply) {
+function replyTokens(reply: SentReply) {
   if ("text" in reply) return tokensOf(reply.text);
   const calls = "tools" in reply ? reply.tools : [reply];
   return calls.reduce((n, c) => n + tokensOf(c.tool + JSON.stringify(c.args)), 0);
@@ -165,10 +199,12 @@ export type BenchCall = MeasuredCall & {
 /** A fake endpoint for one task: scripted replies, computed usage, per-thread prefix cache. */
 export function fakeModelFetch(script: ScriptedReply[], calls: BenchCall[]) {
   const written: string[] = [];
-  let next = 0;
+  const pending = [...script];
   const fetch: typeof globalThis.fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body)) as WireBody;
-    const reply = script[next++] ?? { text: "Done." };
+    const [first, ...rest] = resolveReply(pending.shift() ?? { text: "Done." }, body);
+    pending.unshift(...rest);
+    const reply = first as SentReply;
     const { components, usage } = fakeUsage(body, written, replyTokens(reply));
     calls.push({
       id: `call-${calls.length + 1}`,
@@ -190,8 +226,24 @@ export function fakeModelFetch(script: ScriptedReply[], calls: BenchCall[]) {
   return fetch;
 }
 
+/**
+ * The records as the server lists them, from the rows in the order the database returned them:
+ * sorted by creation time, then id, as the brand rules make both queries do.
+ */
+export function listedRecords(records: BenchRecord[], order?: number[]) {
+  return (order ?? records.map((_, i) => i))
+    .map((i) => records[i]!)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
 /** A typical system prompt: every built-in tool offered, rendered from fixed placeholders. */
-export function benchInstructions(memoryContext?: string) {
+export function benchInstructions(
+  memoryContext?: string,
+  records?: BenchRecord[],
+  disk?: BenchTurn["disk"],
+  /** Whether the history carries recalled memory (the bench has no compacted summaries). */
+  historicalContext = false,
+) {
   return userTurnInstructions({
     botInstructions: runIdentityInstruction(
       { name: "Bench", description: "Helps with research.", instructions: "Answer briefly." },
@@ -201,16 +253,27 @@ export function benchInstructions(memoryContext?: string) {
     messagingContext: undefined,
     redactedMemoryContext: memoryContext,
     redactedScratchpadContext: undefined,
-    hasHistoricalContext: true,
+    hasHistoricalContext: historicalContext,
     historyRetrievalEnabled: true,
-    computerInstruction: "",
+    computerInstruction: disk
+      ? (diskNoteInstruction({
+          diskUsedBytes: BigInt(Math.round(disk.usedGb * 1e9)),
+          diskFreeBytes: BigInt(Math.round(disk.freeGb * 1e9)),
+        }) ?? "")
+      : "",
     pageBrowserAllowed: true,
     workspaceInstruction: "",
     agentEnvironmentInstruction: undefined,
     botDirectory: undefined,
-    pluginLine: undefined,
+    pluginLine: records
+      ? connectedPluginsInstruction(
+          records.map((r) => ({ displayName: r.name, connectorId: "mcp", provider: r.id })),
+        )
+      : undefined,
     agentSkillsLine: undefined,
-    taughtSkillsLine: undefined,
+    taughtSkillsLine: records
+      ? taughtSkillsInstruction(records.map((r) => ({ name: r.name, whenToUse: r.name })))
+      : undefined,
     replyGuidance: runReplyGuidance("user"),
   })
     .filter((part): part is string => Boolean(part))
@@ -235,7 +298,6 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
   const calls: BenchCall[] = [];
   const script = task.turns.flatMap((turn) => turn.replies);
   const runtime = new PiAgentRuntime({ modelFetch: fakeModelFetch(script, calls) });
-  const instructions = benchInstructions(task.memoryContext);
   const history: AgentRunRequest["history"] = [...(task.history ?? [])];
   const tools = builtinAgentTools;
   for (const [index, turn] of task.turns.entries()) {
@@ -247,6 +309,13 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
           },
         ]
       : [];
+    const records = task.records && listedRecords(task.records, turn.recordOrder);
+    const instructions = benchInstructions(
+      task.memoryContext,
+      records,
+      turn.disk,
+      recalled.length > 0,
+    );
     let answer = "";
     for await (const event of runtime.run(
       {
@@ -255,7 +324,7 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
         runId: `bench-${task.id}-${index + 1}`,
         prompt: turn.prompt,
         instructions,
-        history: [...recalled, ...history],
+        history: historyWithRecall([], history, recalled),
         tools,
         model: BENCH_MODEL,
         executeTool: async (name, args) =>
