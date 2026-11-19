@@ -1319,12 +1319,13 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n      ...(dozoBilling ? { planChanged: dozoBilling.afterPlanChange } : {}),\n    }),\n    speechSummary:",
       "requires": [
         "apps/api/src/dozo-admin.ts",
-        "packages/adapters/src/dozo-stripe-ledger.ts"
+        "packages/adapters/src/dozo-stripe-ledger.ts",
+        "apps/api/src/dozo-billing-lifecycle.ts"
       ],
-      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, the page shows the sign-up switch, deleting an account runs the auth's own account deletion, and the billing page reads payments from the configured provider"
+      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, the page shows the sign-up switch, deleting an account runs the auth's own account deletion, the billing page reads payments from the configured provider, and a plan given by hand queues the mail before it ends"
     },
     {
       "file": "packages/auth/src/index.ts",
@@ -2616,7 +2617,7 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "\"Plural-Forms: \\n\"\n",
-      "replace": "\"Plural-Forms: nplurals=2; plural=(n != 1);\\n\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect email or password\"\nmsgstr \"E-posta ya da parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect password\"\nmsgstr \"Parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Password must be at least {min} characters\"\nmsgstr \"Parola en az {min} karakter olmalı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This password appeared in a data breach. Choose another.\"\nmsgstr \"Bu parola bir veri sızıntısında görüldü. Başka bir parola seç.\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"An account with this email already exists\"\nmsgstr \"Bu e-postayla bir hesap zaten var\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This link is invalid or expired\"\nmsgstr \"Bu bağlantı geçersiz ya da süresi dolmuş\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This account is already linked\"\nmsgstr \"Bu hesap zaten bağlı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Keep at least one way to sign in\"\nmsgstr \"Oturum açmak için en az bir yol kalmalı\"\n",
+      "replace": "\"Plural-Forms: nplurals=2; plural=(n != 1);\\n\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect email or password\"\nmsgstr \"E-posta ya da parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect password\"\nmsgstr \"Parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Password must be at least {min} characters\"\nmsgstr \"Parola en az {min} karakter olmalı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This password appeared in a data breach. Choose another.\"\nmsgstr \"Bu parola bir veri sızıntısında görüldü. Başka bir parola seç.\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"An account with this email already exists\"\nmsgstr \"Bu e-postayla bir hesap zaten var\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This link is invalid or expired\"\nmsgstr \"Bu bağlantı geçersiz ya da süresi dolmuş\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This account is already linked\"\nmsgstr \"Bu hesap zaten bağlı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Keep at least one way to sign in\"\nmsgstr \"Oturum açmak için en az bir yol kalmalı\"\n\n#: apps/web/src/components/dozo-past-due.tsx\n#: apps/mobile/components/dozo-past-due-line.tsx\nmsgid \"Your last payment didn't go through.\"\nmsgstr \"Son ödemeniz alınamadı.\"\n",
       "reason": "fork strings: the Turkish copy of the fork's own UI strings, which upstream's catalog cannot hold; the build compiles them with the catalog. Add new ones to this block (the header line is the anchor, so it is rewritten too)"
     },
     {
@@ -3308,6 +3309,92 @@
         "apps/web/src/lib/dozo-plan-intent.ts"
       ],
       "reason": "plans: the picked plan's button is the primary one"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "export { referralEmail } from \"./referral-email.js\";\nexport type { SocialAuthConfig } from \"./social.js\";\n",
+      "replace": "export { referralEmail } from \"./referral-email.js\";\nexport {\n  cancellationEmail,\n  paymentFailedEmail,\n  planEndingEmail,\n} from \"./dozo-billing-email.js\";\nexport type { SocialAuthConfig } from \"./social.js\";\n",
+      "requires": [
+        "packages/auth/src/dozo-billing-email.tsx"
+      ],
+      "reason": "billing mails: the failed payment, plan ending and cancellation mails, in the Dozo mail shell"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./wakeup.js\";\nexport * from \"./web-limits.js\";\n",
+      "replace": "export * from \"./wakeup.js\";\nexport * from \"./dozo-job-queue.js\";\nexport * from \"./web-limits.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-job-queue.ts"
+      ],
+      "reason": "billing mails: the queue that runs the fork's own timed jobs in the API process"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "  partnerProgram?: PartnerProgram;\n}): BillingService {",
+      "replace": "  partnerProgram?: PartnerProgram;\n  /** Billing's mails, told each time a sync stored an organization's subscription. */\n  dozoAfterSync?: (organizationId: string) => Promise<void>;\n}): BillingService {",
+      "reason": "billing mails: the billing service takes the hook a sync calls"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "    const live = snapshot;\n    // Measurement never decides whether a paid plan activates.\n",
+      "replace": "    const live = snapshot;\n    // Reads what was just stored and only reports its own failures: a mail never fails a sync.\n    await deps.dozoAfterSync?.(previous.organizationId);\n    // Measurement never decides whether a paid plan activates.\n",
+      "reason": "billing mails: every stored subscription is checked for a failed payment, a cancellation and a plan end to mail about"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { createBillingService } from \"./billing.js\";\nimport { mountBillingRoutes } from \"./billing-webhook.js\";\n",
+      "replace": "import { createBillingService } from \"./billing.js\";\nimport { createBillingLifecycle } from \"./dozo-billing-lifecycle.js\";\nimport { DozoJobQueue } from \"@rakazo/adapters\";\nimport { mountBillingRoutes } from \"./billing-webhook.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-billing-lifecycle.ts",
+        "packages/adapters/src/dozo-job-queue.ts"
+      ],
+      "reason": "billing mails: the import of the rules below"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  const billing = billingProvider\n    ? createBillingService({",
+      "replace": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  // Billing's transactional mails: none without a way to send them, and no reminder before a plan\n  // ends without the durable queue.\n  const dozoBilling =\n    billingProvider && email\n      ? createBillingLifecycle({\n          prisma,\n          email,\n          billingUrl: new URL(\"/app?settings=billing\", env.webOrigin).href,\n          queue:\n            jobPool && !inMemoryJobs ? (tasks) => new DozoJobQueue(jobPool, tasks) : undefined,\n          onError: emailErrorLogger(\"billing email failed\"),\n        })\n      : undefined;\n  const billing = billingProvider\n    ? createBillingService({",
+      "requires": [
+        "apps/api/src/dozo-billing-lifecycle.ts",
+        "packages/adapters/src/dozo-job-queue.ts"
+      ],
+      "reason": "billing mails: the server builds them where billing and the account email are both configured"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "        partnerProgram,\n      })\n    : undefined;",
+      "replace": "        partnerProgram,\n        ...(dozoBilling ? { dozoAfterSync: dozoBilling.afterSync } : {}),\n      })\n    : undefined;",
+      "requires": [
+        "apps/api/src/dozo-billing-lifecycle.ts"
+      ],
+      "reason": "billing mails: the billing service tells them about each stored subscription"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "      await botEmail?.drain?.();\n      await email?.drain?.();\n",
+      "replace": "      await botEmail?.drain?.();\n      await dozoBilling?.stop();\n      await email?.drain?.();\n",
+      "requires": [
+        "apps/api/src/dozo-billing-lifecycle.ts"
+      ],
+      "reason": "billing mails: the fork's job queue stops, finishing its running job, before the mail and the database close"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "import { useHomeInbox } from \"../lib/use-home-inbox\";\nimport { chatRpc, useInboxChatActions } from \"../lib/use-inbox-chat-actions\";\n",
+      "replace": "import { useHomeInbox } from \"../lib/use-home-inbox\";\nimport { DozoPastDueLine } from \"../components/dozo-past-due-line\";\nimport { chatRpc, useInboxChatActions } from \"../lib/use-inbox-chat-actions\";\n",
+      "requires": [
+        "apps/mobile/components/dozo-past-due-line.tsx"
+      ],
+      "reason": "failed payment: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "      )}\n\n      <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>",
+      "replace": "      )}\n\n      {onShareSelect ? null : <DozoPastDueLine />}\n      <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>",
+      "requires": [
+        "apps/mobile/components/dozo-past-due-line.tsx"
+      ],
+      "reason": "failed payment: one line above the chats while the subscription is past due, for the member who manages billing"
     }
   ],
   "assets": {

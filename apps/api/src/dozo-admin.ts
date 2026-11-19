@@ -79,6 +79,8 @@ export interface DozoAdminWiring {
   realtime?: RealtimeFanout;
   /** What the billing page reads payments from; absent when no payment provider is configured. */
   payments?: DozoPaymentLedger;
+  /** Queues the mail before a granted plan ends; absent when the server sends no billing mail. */
+  planChanged?: (organizationId: string) => Promise<void>;
 }
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -354,6 +356,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         // a new grant overwrites the row's `grantedById` and ending one deletes the row, so this
         // is the lasting record of who did it. It is a second write because the audit primitive
         // opens its own transaction and takes none.
+        if (changed) await wiring?.planChanged?.(organizationId);
         if (changed)
           await recordAuditEvent({
             action: grant ? "plan.granted" : "plan.grant_ended",

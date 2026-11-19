@@ -3,6 +3,7 @@ import type { DozoAnnouncement as Announcement } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
 import { queryClient, useSpaceQueries } from "../lib/query";
+import { DozoPastDue } from "./dozo-past-due";
 
 /**
  * The live stream's site-settings signal: whatever shows a site setting reads it again. Only
@@ -22,13 +23,17 @@ export function announcementText(announcement: Announcement | undefined, locale:
     : (announcement.en ?? announcement.tr);
 }
 
-/** The signed-in pages, with the admin's announcement as one line below them when there is one. */
+/**
+ * The signed-in pages, with one line below them for a failed payment and one for the admin's
+ * announcement, each only when there is one.
+ */
 export function DozoAnnouncementLayout() {
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1">
         <Outlet />
       </div>
+      <DozoPastDue />
       <DozoAnnouncement />
     </div>
   );
