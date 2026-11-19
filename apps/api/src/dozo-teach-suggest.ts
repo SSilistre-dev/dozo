@@ -86,7 +86,10 @@ export async function askTeachModel(
     return null;
   }
   const images = request.images?.slice(0, model.maxImagesPerPrompt ?? request.images.length);
-  if (images && !(images.length && modelAcceptsImageInput(model.provider, model.id, model.acceptsImages))) {
+  if (
+    images &&
+    !(images.length && modelAcceptsImageInput(model.provider, model.id, model.acceptsImages))
+  ) {
     return null;
   }
   let answer = "";

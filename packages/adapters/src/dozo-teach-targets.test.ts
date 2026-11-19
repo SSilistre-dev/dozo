@@ -261,8 +261,11 @@ describe("withTeachClickTarget", () => {
     const stored = {
       dozoTargets: Array.from({ length: 40 }, (_, eventIndex) => ({ eventIndex, image: "AAAA" })),
     };
-    const next = withTeachClickTarget("skill-1", stored, recording, { window: "W", image: "CCCC" });
-    expect(next.dozoTargets?.at(-1)).toEqual({ eventIndex: 3, window: "W" });
+    const next = withTeachClickTarget("skill-1", stored, recording, {
+      window: "W",
+      image: "CCCC",
+    }) as unknown as { dozoTargets: unknown[] };
+    expect(next.dozoTargets.at(-1)).toEqual({ eventIndex: 3, window: "W" });
     expect(next.dozoTargets).toHaveLength(41);
   });
 });

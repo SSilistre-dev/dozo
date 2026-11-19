@@ -69,9 +69,16 @@ describePostgres("typed values never stay in a saved skill (PostgreSQL)", () => 
       { at, kind: "key", key: "Tab" },
       ...typing(PASSWORD),
       { at, kind: "key", key: "Tab" },
+      { at, kind: "pointer", x: 30, y: 40, type: "click" },
       { at, kind: "key", sensitive: true },
       { at, kind: "key", sensitive: true },
       { at, kind: "key", key: "Enter" },
+    ];
+    // What each click hit: a picture for the first, and one for the click before the protected run.
+    const secretClick = events.findIndex((event) => event.x === 30);
+    const targets = [
+      { eventIndex: 0, window: "Form – Browser", image: "AAAA" },
+      { eventIndex: secretClick, window: "Form – Browser", image: "BBBB" },
     ];
     const recording = await system.taughtSkill.create({
       data: {
@@ -80,7 +87,7 @@ describePostgres("typed values never stay in a saved skill (PostgreSQL)", () => 
         userId: id,
         goal: "Sign in",
         status: "recording",
-        recording: { events, snapshots: [] } as never,
+        recording: { events, snapshots: [], dozoTargets: targets } as never,
       },
     });
     await system.$transaction(async (tx) => {
@@ -99,11 +106,20 @@ describePostgres("typed values never stay in a saved skill (PostgreSQL)", () => 
     } as never);
     const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
     const drafted = await system.taughtSkill.findUniqueOrThrow({ where: { id: recording.id } });
+    // Drafting dropped the picture of the click before protected input, and kept its window.
+    expect((drafted.recording as { dozoTargets: unknown }).dozoTargets).toEqual([
+      targets[0],
+      { eventIndex: secretClick, window: "Form – Browser" },
+    ]);
     const values = typedValuesFromRecording(events);
     const password = values.find((value) => value.text === PASSWORD)!.placeholder;
     // Before the save only the teacher's review holds the text.
     const review = await runAsTenant(actor, () => teach.review(actor, recording.id));
     expect(review.values.map((value) => value.text)).toEqual(["ali@example.test", PASSWORD, null]);
+    expect(review.targets.map((target) => [target.id, target.image])).toEqual([
+      ["0", "data:image/webp;base64,AAAA"],
+      [String(secretClick), undefined],
+    ]);
 
     const draft = {
       skillId: recording.id,
@@ -139,6 +155,14 @@ describePostgres("typed values never stay in a saved skill (PostgreSQL)", () => 
     expect(kept.events.map((event) => `${event.key ?? ""}${event.text ?? ""}`).join("")).toBe("");
     expect(JSON.stringify(kept)).not.toContain(PASSWORD);
     expect(skill.status).toBe("saved");
+    // No picture outlives the save; what the clicks hit stays in their steps.
+    expect(JSON.stringify(skill.recording)).not.toContain("AAAA");
+    expect(JSON.stringify(skill.recording)).not.toContain("BBBB");
+    expect(JSON.stringify(skill.recording)).not.toContain('"image"');
+    expect((skill.recording as Record<string, unknown>).dozoTargets).toBeUndefined();
+    expect((skill.playbook as { steps: string[] }).steps[0]).toBe(
+      'Click in "Form – Browser" (near 10, 20).',
+    );
     expect((await runAsTenant(actor, () => teach.review(actor, recording.id))).values).toEqual([]);
   });
 });
