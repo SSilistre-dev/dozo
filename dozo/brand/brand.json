@@ -848,24 +848,6 @@
     },
     {
       "file": "apps/web/src/App.tsx",
-      "find": "  import(\"./pages/AdminAccessPage\").then((module) => module.AdminAccessPage),\n);\nconst NavLinkPage = lazyComponent(() =>\n",
-      "replace": "  import(\"./pages/AdminAccessPage\").then((module) => module.AdminAccessPage),\n);\nconst DozoAdminSettingsPage = lazyComponent(() =>\n  import(\"./pages/dozo-admin-settings\").then((module) => module.DozoAdminSettingsPage),\n);\nconst NavLinkPage = lazyComponent(() =>\n",
-      "requires": [
-        "apps/web/src/pages/dozo-admin-settings.tsx"
-      ],
-      "reason": "site settings: the admin settings page, loaded on demand, outside the startup bundle"
-    },
-    {
-      "file": "apps/web/src/App.tsx",
-      "find": "                  user ? <AdminAccessPage /> : <Navigate to=\"/sign-in?next=/admin/access\" replace />\n                }\n              />\n              <Route\n                element={\n",
-      "replace": "                  user ? <AdminAccessPage /> : <Navigate to=\"/sign-in?next=/admin/access\" replace />\n                }\n              />\n              <Route\n                path=\"/admin/settings\"\n                element={user ? <DozoAdminSettingsPage /> : <NotFoundPage />}\n              />\n              <Route\n                element={\n",
-      "requires": [
-        "apps/web/src/pages/dozo-admin-settings.tsx"
-      ],
-      "reason": "site settings: the admin settings page's address; signed out it answers like an address that does not exist"
-    },
-    {
-      "file": "apps/web/src/App.tsx",
       "find": "import { SubscriptionGate } from \"./components/SubscriptionGate\";\nimport { authClient } from \"./lib/auth\";\n",
       "replace": "import { SubscriptionGate } from \"./components/SubscriptionGate\";\nimport { DozoAnnouncementLayout } from \"./components/dozo-announcement\";\nimport { authClient } from \"./lib/auth\";\n",
       "requires": [
@@ -1286,11 +1268,11 @@
     {
       "file": "apps/web/src/App.tsx",
       "find": "              />\n              <Route\n                path=\"/admin/access\"",
-      "replace": "              />\n              <Route path=\"/admin\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
+      "replace": "              />\n              <Route path=\"/admin/*\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
       "requires": [
         "apps/web/src/pages/dozo-admin.tsx"
       ],
-      "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
+      "reason": "hosted admin page: its address and the sections under it (upstream's own /admin pages still win); signed out it answers like an address that does not exist"
     },
     {
       "file": "packages/contracts/src/billing.ts",
@@ -2650,6 +2632,72 @@
       "reason": "plan end: mobile Billing shows when the plan in force renews or ends, a granted plan included, in place of upstream's end rows, which stay for a subscription below a granted plan"
     },
     {
+      "file": "packages/db/prisma/schema.prisma",
+      "find": "model Lease {\n  key       String   @id\n  fence     BigInt\n  expiresAt DateTime @db.Timestamptz(3)\n\n  @@map(\"leases\")\n}\n\n/// One stretch a computer ran",
+      "replace": "model Lease {\n  key       String   @id\n  fence     BigInt\n  expiresAt DateTime @db.Timestamptz(3)\n\n  @@map(\"leases\")\n}\n\n/// The plugin catalog last read from the public registries, served at once after a restart and\n/// refreshed in the background. `refreshedAt` is the last time every registry answered;\n/// `failures` counts incomplete refreshes in a row and `retryAt` is when any process may try again.\nmodel DozoCatalogSnapshot {\n  key         String    @id\n  data        Json\n  refreshedAt DateTime\n  failures    Int       @default(0)\n  retryAt     DateTime?\n\n  @@map(\"dozo_catalog_snapshots\")\n}\n\n/// A catalog logo or site icon, drawn small once and served from our own domain under its hash.\n/// `source` is the logo's address or `site:<origin>`; a null hash records a source with no image.\nmodel DozoCatalogImage {\n  source    String   @id\n  hash      String?\n  body      Bytes?\n  checkedAt DateTime\n\n  @@index([hash])\n  @@map(\"dozo_catalog_images\")\n}\n\n/// One stretch a computer ran",
+      "requires": [
+        "packages/adapters/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the stored catalog and its logos, so the Apps page never waits on the public registries after a restart"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./plugin-marketplace.js\";\nexport * from \"./product-analytics.js\";\n",
+      "replace": "export * from \"./plugin-marketplace.js\";\nexport * from \"./dozo-plugin-catalog.js\";\nexport * from \"./product-analytics.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the package exports the stored catalog and the logo store beside the upstream marketplace"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "  applyMcpSourcePreset,\n  createPluginMarketplace,\n",
+      "replace": "  applyMcpSourcePreset,\n",
+      "reason": "plugin catalog: the routes no longer build the per-process marketplace themselves"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "import { requireAdmin } from \"../admins.js\";\nimport { searchIntegrationCatalog } from \"../integration-catalog.js\";\n",
+      "replace": "import { requireAdmin } from \"../admins.js\";\nimport { dozoPluginMarketplace } from \"../dozo-plugin-catalog.js\";\nimport { searchIntegrationCatalog } from \"../integration-catalog.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the routes read the stored catalog"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "  const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);\n",
+      "replace": "  const pluginMarketplace = dozoPluginMarketplace(deps);\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: browse answers from the copy kept in Postgres and warmed at startup, never from a fetch the visitor waits on, with logos from our own domain"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { cspReportRoutes } from \"./csp-report.js\";\nimport { configuredEmailProvider } from \"./email.js\";\n",
+      "replace": "import { cspReportRoutes } from \"./csp-report.js\";\nimport { mountDozoCatalogImages } from \"./dozo-plugin-catalog.js\";\nimport { configuredEmailProvider } from \"./email.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the API serves the stored logos"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  mountScriptAssets(app);\n  mountSharedPages(app, prisma, requestClientIp);\n",
+      "replace": "  mountScriptAssets(app);\n  mountDozoCatalogImages(app, prisma);\n  mountSharedPages(app, prisma, requestClientIp);\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: logos and site icons are served by content hash from our own domain with a year-long immutable cache"
+    },
+    {
+      "file": "apps/api/src/routes/connections.ts",
+      "find": "              return items;\n            } catch {\n              return [];\n            }\n",
+      "replace": "              return items;\n            } catch (error) {\n              // The page still lists the other providers' apps; the failure is logged, not hidden.\n              if (!context.signal?.aborted)\n                getLogger().error(`${provider.describe().id} connection catalog failed`, error);\n              return [];\n            }\n",
+      "reason": "connections catalog: a provider whose catalog fails is still left out, but the failure is logged instead of swallowed"
+    },
+    {
       "file": "apps/web/src/pages/shell/shell-overlays.tsx",
       "find": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport type { ShellOverlay }",
       "replace": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport { PluginsOverlay, usePreloadPluginsOverlay } from \"../dozo-plugins-overlay\";\nimport type { ShellOverlay }",
@@ -2771,6 +2819,79 @@
       "find": "ref={pillRef}\n          onClick={onIntegrations}",
       "replace": "ref={pillRef}\n          onPointerEnter={warmPluginsOverlay}\n          onFocus={warmPluginsOverlay}\n          onClick={onIntegrations}",
       "reason": "fork performance (Apps opens at once): the sidebar's Connect apps pill fetches the overlay's code on pointer or focus"
+    },
+    {
+      "file": "apps/web/index.html",
+      "find": "    <script src=\"/theme.js\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n",
+      "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
+      "requires": [
+        "apps/web/public/dozo-boot.js",
+        "apps/web/src/lib/dozo-boot.ts"
+      ],
+      "reason": "cold start: until the app paints, the page shows the theme's background and, on a chat route, the sidebar, instead of an empty screen; apps/web/src/lib/dozo-boot.ts removes it in the frame the app draws"
+    },
+    {
+      "file": "apps/web/src/main.tsx",
+      "find": "import \"./monitoring-bootstrap\";\nimport { rememberSignupAttribution }",
+      "replace": "import \"./monitoring-bootstrap\";\nimport \"./lib/dozo-boot\";\nimport { rememberSignupAttribution }",
+      "requires": [
+        "apps/web/src/lib/dozo-boot.ts"
+      ],
+      "reason": "cold start: the session and capability reads start with the bootstrap instead of two waves later, the boot shell goes when the app paints, and common screens load when idle"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-mentions.ts",
+      "find": "import type { createSpaceRpc } from \"../../lib/rpc\";\n\nfunction routineListData",
+      "replace": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport { loadComposerConnections } from \"./dozo-composer-connections\";\n\nfunction routineListData",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-composer-connections.ts"
+      ],
+      "reason": "cold start: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-mentions.ts",
+      "find": "    // The catalog call reconciles connection rows, so list them after it.\n    queryFn: async () => {\n      const catalog = await rpc.connections.catalog({}).catch(() => null);\n      const connections = await rpc.connections.list().catch(() => null);\n      return { catalog, connections };\n    },\n",
+      "replace": "    queryFn: () => loadComposerConnections(rpc, queryClient, queries),\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-composer-connections.ts"
+      ],
+      "reason": "cold start: the shell no longer waits on the apps catalog (and a serial list after it) unless the account has connections; Apps loads the catalog when it opens"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "import { errorText } from \"../../lib/user-error\";\nimport { useModelConnectionForm }",
+      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { readChatCatalog } from \"./dozo-model-catalog\";\nimport { useModelConnectionForm }",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    queryFn: () => rpc.models.list(),\n",
+      "replace": "    queryFn: () => readChatCatalog(queryClient, queries, rpc),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the Models screen reads the model catalog once and derives the chat list from it, instead of one full catalog per list"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "import { spaceQueries } from \"../lib/query\";\nimport { useSpaceRpc }",
+      "replace": "import { spaceQueries } from \"../lib/query\";\nimport { readRoleCatalog } from \"./model-settings/dozo-model-catalog\";\nimport { useSpaceRpc }",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "            queryFn: () => rpc.models.forRole(catalogInput, { context: { spaceId } }),\n",
+      "replace": "            queryFn: () => readRoleCatalog(queryClient, userId, spaceId, rpc, role),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: each role list is filtered from the catalog read the screen just made, instead of its own full catalog"
     }
   ],
   "assets": {

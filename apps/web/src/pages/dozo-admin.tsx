@@ -1,32 +1,43 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import type { ByokTier, DozoAdminUsersSort } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
 import {
   Badge,
   Button,
   buttonVariants,
   Input,
   ListSearchInput,
+  NativeSelect,
+  NativeSelectOption,
   SectionHeading,
   Spinner,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
-import type { ReactNode } from "react";
-import { useDeferredValue, useState } from "react";
-import { Link } from "react-router-dom";
+import { Suspense, useDeferredValue, useState } from "react";
+import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageLoading } from "../components/PageLoading";
 import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
+import { DozoAdminAccount } from "./dozo-admin-account";
+import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 import { DozoPlanAction } from "./dozo-admin-plan";
+import { Row, Rows } from "./dozo-admin-rows";
 import { NotFoundPage } from "./dozo-not-found";
 import { WindowChrome } from "./WindowChrome";
 
-/** The hosted deployment's admin page. Anyone else sees the page an unknown address shows. */
+/**
+ * The hosted deployment's admin page, at `/admin` and every address under it that has no route
+ * of its own: its sections' navigation, and the section the address names. Anyone else sees the
+ * page an unknown address shows.
+ */
 export function DozoAdminPage() {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const me = useQuery(useSpaceQueries().me.queryOptions());
   if (me.isPending) return <PageLoading />;
   if (!me.data?.isAdmin) return <NotFoundPage />;
+  const ownId = me.data.userId;
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <WindowChrome />
@@ -38,24 +49,54 @@ export function DozoAdminPage() {
         >
           <ChevronLeft />
         </Link>
-        <h1 className="flex-1 px-2 font-medium">
+        <h1 className="px-2 font-medium">
           <Trans>Admin</Trans>
         </h1>
-        <Link to="/admin/access" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-          <Trans>Free access</Trans>
-        </Link>
-        <Link to="/admin/plugins" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-          <Trans>Plugins</Trans>
-        </Link>
+        <nav aria-label={t`Admin`} className="flex min-w-0 flex-1 flex-wrap gap-1">
+          {DOZO_ADMIN_NAV.map((section) => (
+            <NavLink
+              key={section.path}
+              to={section.path ? `/admin/${section.path}` : "/admin"}
+              end
+              className={({ isActive }) =>
+                buttonVariants({ variant: isActive ? "secondary" : "ghost", size: "sm" })
+              }
+            >
+              {i18n._(section.label)}
+            </NavLink>
+          ))}
+        </nav>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl space-y-8 px-4 py-6">
-          <AdminPanel ownId={me.data.userId} />
+          <Suspense fallback={<Loading />}>
+            <Routes>
+              <Route index element={<AdminPanel ownId={ownId} />} />
+              <Route path="users/:userId" element={<DozoAdminAccount ownId={ownId} />} />
+              {DOZO_ADMIN_NAV.map(({ path, page: Page }) =>
+                Page && path ? <Route key={path} path={path} element={<Page />} /> : null,
+              )}
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
     </div>
   );
 }
+
+function Loading() {
+  const { t } = useLingui();
+  return (
+    <div className="grid place-items-center py-10">
+      <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
+    </div>
+  );
+}
+
+const SORTS: readonly DozoAdminUsersSort[] = ["newest", "oldest", "email"];
+const PLANS: readonly ByokTier[] = ["standard", "pro", "max"];
+type Status = "active" | "suspended";
 
 type Action =
   | { suspend: string; email: string; suspended: boolean }
@@ -73,12 +114,19 @@ function AdminPanel({ ownId }: { ownId: string }) {
   const queries = useSpaceQueries();
   const [search, setSearch] = useState("");
   const query = useDeferredValue(search.trim());
+  const [sort, setSort] = useState<DozoAdminUsersSort>("newest");
+  const [plan, setPlan] = useState<ByokTier | "">("");
+  const [status, setStatus] = useState<Status | "">("");
+  const filtered = Boolean(query || plan || status);
   // Read once, and again whenever the window comes back: nothing here is polled.
   const users = useInfiniteQuery(
     queries.dozoAdmin.users.infiniteOptions({
       input: (cursor: string | null) => ({
         ...(query ? { query } : {}),
         ...(cursor ? { cursor } : {}),
+        ...(sort === "newest" ? {} : { sort }),
+        ...(plan ? { plan } : {}),
+        ...(status ? { status } : {}),
       }),
       initialPageParam: null as string | null,
       getNextPageParam: (page) => page.nextCursor,
@@ -137,12 +185,7 @@ function AdminPanel({ ownId }: { ownId: string }) {
     return t`Since ${time}`;
   };
 
-  if (users.isPending || computers.isPending || bans.isPending)
-    return (
-      <div className="grid place-items-center py-10">
-        <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
-      </div>
-    );
+  if (users.isPending || computers.isPending || bans.isPending) return <Loading />;
   if (users.isError || computers.isError || bans.isError)
     return (
       <div role="alert" className="flex items-center gap-3 text-body text-destructive">
@@ -174,6 +217,11 @@ function AdminPanel({ ownId }: { ownId: string }) {
         <span className="text-muted-foreground">
           <Plural value={first?.total ?? 0} one="# user" other="# users" />
         </span>
+        {filtered ? (
+          <span data-testid="admin-matching" className="text-muted-foreground">
+            <Plural value={first?.matching ?? 0} one="# match" other="# matches" />
+          </span>
+        ) : null}
         <span className="text-muted-foreground">
           <Plural
             value={computers.data.total}
@@ -232,12 +280,56 @@ function AdminPanel({ ownId }: { ownId: string }) {
           label={t`Search by email`}
           placeholder={t`Search by email`}
         />
+        <div className="flex flex-wrap gap-2">
+          <NativeSelect
+            aria-label={t`Plan`}
+            value={plan}
+            onChange={(event) => setPlan(event.target.value as ByokTier | "")}
+          >
+            <NativeSelectOption value="">{t`All plans`}</NativeSelectOption>
+            {PLANS.map((tier) => (
+              <NativeSelectOption key={tier} value={tier}>
+                {BYOK_TIERS[tier].name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <NativeSelect
+            aria-label={t`Status`}
+            value={status}
+            onChange={(event) => setStatus(event.target.value as Status | "")}
+          >
+            <NativeSelectOption value="">{t`Any status`}</NativeSelectOption>
+            <NativeSelectOption value="active">{t`Active`}</NativeSelectOption>
+            <NativeSelectOption value="suspended">{t`Suspended`}</NativeSelectOption>
+          </NativeSelect>
+          <NativeSelect
+            aria-label={t`Sort`}
+            value={sort}
+            onChange={(event) => setSort(event.target.value as DozoAdminUsersSort)}
+          >
+            {SORTS.map((value) => (
+              <NativeSelectOption key={value} value={value}>
+                {
+                  {
+                    newest: t`Newest first`,
+                    oldest: t`Oldest first`,
+                    email: t`By email`,
+                  }[value]
+                }
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
         <Rows testId="admin-users">
           {list.map((user) => (
             <Row
               key={user.id}
               label={user.email}
-              title={user.email}
+              title={
+                <Link to={`/admin/users/${user.id}`} className="hover:underline">
+                  {user.email}
+                </Link>
+              }
               details={
                 <>
                   <span className="truncate">{user.name}</span>
@@ -415,36 +507,5 @@ function AdminPanel({ ownId }: { ownId: string }) {
         />
       ) : null}
     </>
-  );
-}
-
-function Rows({ testId, children }: { testId: string; children: ReactNode }) {
-  return (
-    <ul data-testid={testId} className="divide-y divide-border rounded-xl border border-border">
-      {children}
-    </ul>
-  );
-}
-
-function Row({
-  label,
-  title,
-  details,
-  children,
-}: {
-  label: string;
-  title: string;
-  /** One `span` per field. */
-  details: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <li aria-label={label} className="flex items-center gap-3 px-4 py-3 text-body-sm">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-body font-medium">{title}</div>
-        <div className="flex min-w-0 flex-wrap gap-x-3 text-muted-foreground">{details}</div>
-      </div>
-      {children}
-    </li>
   );
 }

@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
-import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ComponentProps, ReactNode } from "react";
-import { act } from "react";
+import type { ComponentProps, ComponentType, ReactNode } from "react";
+import { act, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
-  me: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
   toastError: vi.fn(),
@@ -21,7 +19,6 @@ vi.mock("../lib/rpc", () => {
 vi.mock("../lib/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
   useSpaceQueries: () => ({
-    me: { queryOptions: () => ({ queryKey: ["me"], queryFn: () => api.me() }) },
     dozoSiteSettings: {
       get: {
         key: () => ["settings"],
@@ -34,11 +31,6 @@ vi.mock("../lib/query", async (importOriginal) => ({
 vi.mock("../lib/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error && error.message ? error.message : fallback,
-}));
-vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
-vi.mock("./NotFound", () => ({ NotFoundPage: () => <div data-testid="not-found" /> }));
-vi.mock("../components/PageLoading", () => ({
-  PageLoading: () => <div data-testid="page-loading" />,
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -80,6 +72,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 
 import type * as Query from "../lib/query";
+import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 import { DozoAdminSettingsPage } from "./dozo-admin-settings";
 
 const settings = {
@@ -94,14 +87,16 @@ const settings = {
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-async function render() {
+async function render(Page: ComponentType = DozoAdminSettingsPage) {
   await act(async () => {
     root.render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
         <MemoryRouter>
-          <DozoAdminSettingsPage />
+          <Suspense fallback={null}>
+            <Page />
+          </Suspense>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -131,7 +126,6 @@ async function type(label: string, value: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   for (const mock of Object.values(api)) mock.mockReset();
-  api.me.mockResolvedValue({ isAdmin: true, userId: "admin" });
   api.get.mockResolvedValue(settings);
   api.update.mockResolvedValue(settings);
   container = document.createElement("div");
@@ -145,14 +139,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows anyone but an admin the page an unknown address shows, and reads nothing", async () => {
-  const me = deferred<{ isAdmin: boolean }>();
-  api.me.mockReturnValue(me.promise);
-  await render();
-  expect(container.querySelector('[data-testid="page-loading"]')).toBeTruthy();
-  await act(async () => me.resolve({ isAdmin: false }));
-  await vi.waitFor(() => expect(container.querySelector('[data-testid="not-found"]')).toBeTruthy());
-  expect(api.get).not.toHaveBeenCalled();
+it("is the admin page's Site settings section, loaded when it opens", async () => {
+  const section = DOZO_ADMIN_NAV.find((candidate) => candidate.path === "settings");
+  expect(section?.label.message ?? section?.label.id).toBeTruthy();
+  if (!section?.page) throw new Error("The settings section has no page");
+  await render(section.page);
+  await vi.waitFor(() => expect(labelled("Sign-up open")).toBeTruthy());
 });
 
 it("shows what the environment says until an admin sets it, with nothing to save", async () => {

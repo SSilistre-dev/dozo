@@ -1,46 +1,19 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoSiteSettings, DozoSiteSettingsChange } from "@rakazo/contracts";
 import { DOZO_ANNOUNCEMENT_MAX } from "@rakazo/contracts";
-import { Button, buttonVariants, Input, Spinner, Switch, toast } from "@rakazo/ui-web";
+import { Button, Input, Spinner, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { PageLoading } from "../components/PageLoading";
+import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
-import { NotFoundPage } from "./NotFound";
-import { WindowChrome } from "./WindowChrome";
 
-/** The site settings an admin changes without a deploy. Anyone else sees an unknown address. */
+/**
+ * The admin page's site settings section, at `/admin/settings`: what an admin changes without a
+ * deploy. The admin page around it checks who may see it.
+ */
 export function DozoAdminSettingsPage() {
-  const { t } = useLingui();
-  const me = useQuery(useSpaceQueries().me.queryOptions());
-  if (me.isPending) return <PageLoading />;
-  if (!me.data?.isAdmin) return <NotFoundPage />;
-  return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <WindowChrome />
-      <header className="flex items-center gap-1 border-b px-4 py-3">
-        <Link
-          to="/admin"
-          className={buttonVariants({ variant: "ghost", size: "icon" })}
-          aria-label={t`Back`}
-        >
-          <ChevronLeft />
-        </Link>
-        <h1 className="flex-1 px-2 font-medium">
-          <Trans>Site settings</Trans>
-        </h1>
-      </header>
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-6">
-          <SettingsPanel />
-        </div>
-      </main>
-    </div>
-  );
+  return <SettingsPanel />;
 }
 
 function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
@@ -63,7 +36,7 @@ function SettingsPanel() {
   const change = useSave({
     save: (input: DozoSiteSettingsChange, rpc) => rpc.dozoSiteSettings.update(input),
     stale: [queries.dozoSiteSettings.get.key(), queries.dozoSiteSettings.announcement.key()],
-    onFailed: (error) => toast.error(errorText(error, t`Could not save the settings`)),
+    onFailed: (error) => toastError(t`Could not save the settings`, error),
   });
 
   if (settings.isPending)
