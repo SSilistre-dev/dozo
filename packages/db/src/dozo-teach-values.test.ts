@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { TeachRecordingEvent } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { isCiphertext } from "./content-crypto.js";
@@ -201,5 +202,25 @@ describe("expireTeachValues", () => {
     expect(calls).toEqual([
       { sql: expect.stringContaining('"expiresAt" <= CURRENT_TIMESTAMP'), params: ["skill-1"] },
     ]);
+  });
+});
+
+describe("the migrations", () => {
+  const migration = (name: string) =>
+    readFileSync(new URL(`../prisma/migrations/${name}/migration.sql`, import.meta.url));
+
+  // Prisma never runs a migration again once applied, whatever its file says now: an edit to an
+  // applied one leaves a database without what the edit added (here the values table, so every
+  // stop failed). Its checksum is pinned to what databases ran.
+  it("never edits the scrub migration databases already applied", () => {
+    const applied = createHash("sha256")
+      .update(migration("20261230120000_dozo_teach_recording_scrub"))
+      .digest("hex");
+    expect(applied).toBe("f1ed3a45b6183a7fa522eeefb211d6dc4d91283a59b1f648c44446da879c0f2d");
+  });
+
+  it("creates the values store in a migration of its own, after it", () => {
+    const sql = migration("20261230120100_dozo_teach_values").toString("utf8");
+    expect(sql).toContain('CREATE TABLE "dozo_teach_values"');
   });
 });

@@ -28,7 +28,7 @@ const PROTECTED = "S3cret-Pass!";
 const TYPED = ["ali@example.test", "hunter2", "my secret phrase"];
 const SCRUB = readFileSync(
   new URL(
-    "../../../packages/db/prisma/migrations/20261230120000_dozo_teach_recording_scrub/migration.sql",
+    "../../../packages/db/prisma/migrations/20261230120100_dozo_teach_values/migration.sql",
     import.meta.url,
   ),
   "utf8",
