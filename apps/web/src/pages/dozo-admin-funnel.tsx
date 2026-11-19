@@ -32,6 +32,7 @@ export function DozoAdminFunnel() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
+  const granted = funnel.data?.granted ?? 0;
   const names: Record<DozoFunnelStep, string> = {
     signedUp: t`Signed up`,
     modelConnected: t`Connected a model`,
@@ -107,9 +108,9 @@ export function DozoAdminFunnel() {
               </li>
             ))}
           </ul>
-          {funnel.data.granted ? (
+          {granted ? (
             <p data-testid="funnel-granted" className="text-body-sm text-muted-foreground">
-              <Trans>{funnel.data.granted} on a granted plan, not counted as paid</Trans>
+              <Trans>{granted} on a granted plan, not counted as paid</Trans>
             </p>
           ) : null}
         </>
