@@ -379,19 +379,33 @@ describe("the ban list", () => {
     });
   });
 
-  it("marks every account a banned domain covers, subdomains included", async () => {
+  it("suspends and marks every account a banned domain covers, subdomains included", async () => {
     const users = [
       ...people.map((row) => ({ ...row })),
       user("eve", "eve@corp.test", 6),
-      user("mal", "mal@mail.corp.test", 7),
+      user("mal", "Mal@Mail.Corp.TEST", 7),
       user("ann", "ann@notcorp.test", 8),
     ];
-    const { as } = setup(users);
+    const { as, sessions } = setup(users);
+    const at = new Date("2026-03-03T00:00:00Z");
+    sessions().push({ id: "s-eve", userId: "eve", createdAt: at, updatedAt: at, userAgent: null });
     await as("admin").ban({ value: "corp.test" });
     const listed = (await as("admin").users({})).users;
     expect(listed.filter((row) => row.banned).map((row) => row.id)).toEqual(["mal", "eve"]);
-    // A list entry alone suspends nobody.
-    expect(listed.some((row) => row.suspended)).toBe(false);
+    expect(listed.filter((row) => row.suspended).map((row) => row.id)).toEqual(["mal", "eve"]);
+    expect(sessions().some((row) => row.userId === "eve")).toBe(false);
+  });
+
+  it("suspends the account a banned address names, in any spelling", async () => {
+    const users = [
+      ...people.map((row) => ({ ...row })),
+      user("eve", "E.ve+tag@GoogleMail.com", 6),
+      user("steve", "steve@gmail.com", 7),
+    ];
+    const { as } = setup(users);
+    await as("admin").ban({ value: "eve@gmail.com" });
+    const listed = (await as("admin").users({})).users;
+    expect(listed.filter((row) => row.suspended).map((row) => row.id)).toEqual(["eve"]);
   });
 
   it("lists nothing when the account cannot be suspended", async () => {
@@ -681,7 +695,7 @@ describe("one account in full", () => {
     expect(await as("admin").user({ userId: "bob" })).toMatchObject({
       admin: false,
       banned: true,
-      suspended: false,
+      suspended: true,
       emailVerified: false,
       plan: { tier: "standard", grantedUntil: null, ends: null },
       billing: null,

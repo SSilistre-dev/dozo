@@ -3818,6 +3818,24 @@
         "apps/mobile/lib/dozo-site-settings.ts"
       ],
       "reason": "announcement: the app's one live stream carries a content-free signal when the site settings change, so the mobile home re-reads the announcement at once, as the web app does"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "from \"./identity-confirmation.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
+      "replace": "from \"./identity-confirmation.js\";\nimport { verifyEmailAdapter } from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
+      "requires": [
+        "packages/auth/src/dozo-verify-email.ts"
+      ],
+      "reason": "verification link: the import of the rule below"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "                    }\n                  : {}),\n                // Authorize at lookup: bearer conversion happens after before\n",
+      "replace": "                    }\n                  : {}),\n                ...(ctx.path === \"/verify-email\"\n                  ? verifyEmailAdapter(ctx, (userId) => revokeUnprovenCredentials(prisma, userId))\n                  : {}),\n                // Authorize at lookup: bearer conversion happens after before\n",
+      "requires": [
+        "packages/auth/src/dozo-verify-email.ts"
+      ],
+      "reason": "verification link: opened outside the account's own signed-in browser, it leaves the account only what the mailbox proves, as a sign-in code and a password reset already do"
     }
   ],
   "assets": {
