@@ -291,17 +291,58 @@ function inputLabel(name: string, secret: boolean): string {
 
 /** Where a window title names its application: after the last of these. */
 const TITLE_SEPARATORS = [" - ", " \u2013 ", " \u2014 "];
+/** Longer than this, the last part of a title is a document or a page, not an application. */
+const APP_NAME_MAX = 40;
+const APP_NAME_WORDS_MAX = 4;
+/** A typed value shorter than this, normalised, is too common to tell apart from a name. */
+const TYPED_MATCH_MIN = 3;
+
+/** Case, accents, spacing, separators and punctuation removed, so a reworded copy still matches. */
+function comparable(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/ı/g, "i")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/** Whether a title part may be something typed or opened rather than an application's name. */
+function unsureAppName(part: string): boolean {
+  const words = part.split(/\s+/);
+  return (
+    part.length > APP_NAME_MAX ||
+    words.length > APP_NAME_WORDS_MAX ||
+    /[@/\\]/.test(part) ||
+    // A word of letters and digits together reads as an id, a code or a password.
+    words.some((word) => /\p{L}/u.test(word) && /\p{N}/u.test(word))
+  );
+}
 
 /**
  * The application a window title names (its trailing " - App" or " — App" segment), or null when
  * it names none. The rest of a title can show what the person typed or opened (a search term, a
- * document, an address), so only this part is ever kept.
+ * document, an address), so only this part is ever kept, and not even that when it looks like
+ * anything but a name or matches, either way round, a value typed in the recording (`typed`: the
+ * texts known; protected input has none to compare).
  */
-export function teachAppName(title: string): string | null {
+export function teachAppName(title: string, typed: readonly string[]): string | null {
   const at = Math.max(...TITLE_SEPARATORS.map((separator) => title.lastIndexOf(separator)));
   if (at < 0) return null;
   const separator = TITLE_SEPARATORS.find((candidate) => title.startsWith(candidate, at))!;
-  return title.slice(at + separator.length).trim() || null;
+  const part = title.slice(at + separator.length).trim();
+  if (!part || unsureAppName(part)) return null;
+  const name = comparable(part);
+  const matches = typed.some((text) => {
+    const value = comparable(text);
+    return value.length >= TYPED_MATCH_MIN && (name.includes(value) || value.includes(name));
+  });
+  return matches ? null : part;
+}
+
+/** The texts typed in a recording that are known, for `teachAppName`. */
+function typedTexts(values: TeachTypedValue[]): string[] {
+  return values.flatMap((value) => (value.text === null ? [] : [value.text]));
 }
 
 /**
@@ -324,7 +365,7 @@ export function buildPlaybookFromRecording(
     ],
     steps: steps.length ? steps : [DEFAULT_STEP],
     // The last window's application, never the rest of its title.
-    howToCheck: playbookHowToCheck((title && teachAppName(title)) || undefined),
+    howToCheck: playbookHowToCheck((title && teachAppName(title, typedTexts(values))) || undefined),
     whatToReturn: DEFAULT_WHAT_TO_RETURN,
     approvalBoundaries: DEFAULT_APPROVAL,
     failureHandling: DEFAULT_FAILURE,
@@ -494,14 +535,15 @@ export function forgetTeachTyping<
 >(recording: R, forgotten = teachTypingForgotten(recording)) {
   const { dozoSuggestions: _cached, ...kept } = recording as R & { dozoSuggestions?: unknown };
   if (forgotten) return { ...kept, [FORGOTTEN]: true as const };
+  const typed = typedTexts(typedValuesFromRecording(recording.events));
   const events = scrubTeachEvents(recording.events).map((event) => {
     if (event.kind !== "snapshot" || event.summary === undefined) return event;
     const { summary, ...rest } = event;
-    const app = teachAppName(summary);
+    const app = teachAppName(summary, typed);
     return app ? { ...rest, summary: app } : rest;
   });
   const snapshots = recording.snapshots.flatMap((snapshot) => {
-    const app = teachAppName(snapshot.summary);
+    const app = teachAppName(snapshot.summary, typed);
     return app ? [{ ...snapshot, summary: app }] : [];
   });
   return { ...kept, events, snapshots, [FORGOTTEN]: true as const };

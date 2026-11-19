@@ -125,6 +125,23 @@ describe("buildPlaybookFromRecording", () => {
     expect(bare.howToCheck).toBe(buildPlaybookFromRecording("Search", []).howToCheck);
   });
 
+  it("says nothing of a window whose last part was typed in the recording", () => {
+    const events = [...typing("Gizli Plan"), click(1, 1)];
+    const playbook = buildPlaybookFromRecording("Write", events, [
+      { at, summary: "Chromium \u2014 gizli-plan" },
+    ]);
+    expect(JSON.stringify(playbook)).not.toMatch(/gizli/i);
+    expect(playbook.howToCheck).toBe(buildPlaybookFromRecording("Write", []).howToCheck);
+  });
+
+  it("compares with typing rebuilt from its edits", () => {
+    const events = [...typing("Gizli Planx"), ...keys("Backspace"), click(1, 1)];
+    const playbook = buildPlaybookFromRecording("Write", events, [
+      { at, summary: "Editor - Gizli Plan" },
+    ]);
+    expect(JSON.stringify(playbook)).not.toMatch(/gizli/i);
+  });
+
   it("keeps upstream's inputs, steps and defaults without typed values", () => {
     const events: TeachRecordingEvent[] = [
       { at, kind: "pointer", x: 1, y: 2, type: "down" },
@@ -395,11 +412,36 @@ describe("recorded clicks", () => {
 
 describe("teachAppName", () => {
   it("keeps the trailing application segment of a title, or nothing", () => {
-    expect(teachAppName("ali@example.test - Inbox - Mail")).toBe("Mail");
-    expect(teachAppName("report.pdf \u2014 Viewer")).toBe("Viewer");
-    expect(teachAppName("Search \u2013 a - b \u2014 Browser")).toBe("Browser");
-    expect(teachAppName("hunter2")).toBeNull();
-    expect(teachAppName("hunter2 - ")).toBeNull();
+    expect(teachAppName("ali@example.test - Inbox - Mail", [])).toBe("Mail");
+    expect(teachAppName("report.pdf \u2014 Viewer", [])).toBe("Viewer");
+    expect(teachAppName("Search \u2013 a - b \u2014 Browser", [])).toBe("Browser");
+    expect(teachAppName("Notes - Office 365", [])).toBe("Office 365");
+    expect(teachAppName("hunter2", [])).toBeNull();
+    expect(teachAppName("hunter2 - ", [])).toBeNull();
+  });
+
+  it("drops a title whose last part is something typed, either way round", () => {
+    // The application first, what was typed after it.
+    expect(teachAppName("Chromium \u2014 Gizli Plan", ["Gizli Plan"])).toBeNull();
+    // The last part is the person's own content.
+    expect(teachAppName("Rapor - Haziran Notu", ["haziran notu"])).toBeNull();
+    // Changed case, spacing and separators still match.
+    expect(teachAppName("Rapor - GIZLI-plan", ["gizli  plan"])).toBeNull();
+    expect(teachAppName("Rapor - \u0130stanbul Gezisi", ["istanbulgezisi"])).toBeNull();
+    // Part of a value, or a value inside the part.
+    expect(teachAppName("Doc - Plan", ["Gizli plan B"])).toBeNull();
+    expect(teachAppName("Doc - Gizli Plan Taslak", ["plan t"])).toBeNull();
+    // Values too short to tell apart from a name are not compared; unrelated ones neither.
+    expect(teachAppName("Doc - Browser", ["ro", "", "Gizli"])).toBe("Browser");
+  });
+
+  it("drops a title part that reads as anything but an application's name", () => {
+    expect(teachAppName("Rapor - hunter2", [])).toBeNull();
+    expect(teachAppName("Inbox - ali@example.test", [])).toBeNull();
+    expect(teachAppName("Page - example.test/path", [])).toBeNull();
+    expect(teachAppName("Doc - one two three four five", [])).toBeNull();
+    expect(teachAppName(`Doc - ${"a".repeat(41)}`, [])).toBeNull();
+    expect(teachAppName(`Doc - ${"a".repeat(40)}`, [])).toBe("a".repeat(40));
   });
 });
 
@@ -439,6 +481,21 @@ describe("forgetTeachTyping", () => {
     expect(buildPlaybookFromRecording("x", forgotten.events).steps).toEqual(
       buildPlaybookFromRecording("x", recording.events).steps,
     );
+  });
+
+  it("drops every title whose last part was typed", () => {
+    const forgotten = forgetTeachTyping({
+      events: [
+        ...typing("Gizli Plan"),
+        { at, kind: "snapshot" as const, summary: "Rapor - gizli plan" },
+      ],
+      snapshots: [{ at, summary: "Chromium \u2014 GIZLI PLAN" }],
+    });
+    expect(forgotten.snapshots).toEqual([]);
+    expect(forgotten.events).toEqual([
+      { at, kind: "key", typed: true },
+      { at, kind: "snapshot" },
+    ]);
   });
 
   it("leaves a recording already forgotten as it is", () => {

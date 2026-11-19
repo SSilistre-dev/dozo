@@ -10,7 +10,7 @@ import {
 } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { SKILL_NOT_DRAFT } from "./dozo-taught-skills.js";
+import { SKILL_NOT_DRAFT, TEACH_RECORDING_UNREADABLE } from "./dozo-taught-skills.js";
 import type { DozoTeachInput } from "./dozo-teach.js";
 import { createDozoTeach, dozoTeachRoutes, dozoTeachWiring } from "./dozo-teach.js";
 import type { TeachClickLabeller } from "./dozo-teach-labels.js";
@@ -383,6 +383,16 @@ describe("test", () => {
     const [, , prompt] = taughtSkills.testRun.mock.calls[0] as unknown as [unknown, string, string];
     expect(prompt).toContain("Run taught skill: Sign in");
     expect(prompt).toContain("Type {{value 1}}.");
+  });
+});
+
+describe("a recording not in its shape", () => {
+  it("is a refusal the person can act on, not a server error", async () => {
+    const { teach } = setup({ row: { recording: { events: [null], snapshots: [] } } });
+    await expect(teach.test(teacher, input())).rejects.toMatchObject({
+      kind: "CONFLICT",
+      code: TEACH_RECORDING_UNREADABLE,
+    });
   });
 });
 

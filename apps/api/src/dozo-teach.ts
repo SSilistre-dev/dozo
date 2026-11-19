@@ -1,5 +1,5 @@
 import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
-import { parsePlaybook, parseRecording } from "@rakazo/adapters";
+import { parsePlaybook } from "@rakazo/adapters";
 import type {
   Actor,
   DozoTeachTarget,
@@ -28,6 +28,7 @@ import {
   forgetOldTeachTyping,
   keptTeachClicks,
   SKILL_NOT_DRAFT,
+  teachRecordingOf,
   teachTargetId,
 } from "./dozo-taught-skills.js";
 import type { TeachClickLabeller } from "./dozo-teach-labels.js";
@@ -122,7 +123,7 @@ export function createDozoTeach(deps: {
     values: TeachTypedValue[],
   ): Promise<TeachValueSuggestions> {
     if (!deps.suggest) return {};
-    const recording = parseRecording(skill.recording);
+    const recording = teachRecordingOf(skill);
     const suggestions =
       (await deps.suggest(
         actor,
@@ -138,7 +139,7 @@ export function createDozoTeach(deps: {
 
   /** The clicks the teacher reviews: those whose step is still in the draft, with their picture. */
   function targetsFor(skill: Skill, stored: StoredTeachValues): DozoTeachTarget[] {
-    const events = parseRecording(skill.recording).events;
+    const events = teachRecordingOf(skill).events;
     const indexes = clickStepIndexes(parsePlaybook(skill.playbook).steps, events);
     const images = new Map(stored.images.map((image) => [image.eventIndex, image.image]));
     return storedTeachTargets(skill.id, skill.recording).flatMap((target) => {
@@ -164,7 +165,7 @@ export function createDozoTeach(deps: {
   async function labelsFor(actor: Actor, skill: Skill, input: DozoTeachInput) {
     const stored = await valuesFor(actor, skill);
     if (!deps.label || !stored?.images.length) return {};
-    const events = parseRecording(skill.recording).events;
+    const events = teachRecordingOf(skill).events;
     const indexes = clickStepIndexes(input.playbook.steps, events);
     const kept = new Set(
       keptTeachClicks(skill.id, skill.recording, events, input).map((click) => click.eventIndex),
@@ -199,7 +200,7 @@ export function createDozoTeach(deps: {
       : input.playbook;
     if (skill.userId !== actor.userId || skill.status !== "draft") return { skill, playbook };
     // A test never asks the model about the pictures: its clicks say only their window.
-    const events = parseRecording(skill.recording).events;
+    const events = teachRecordingOf(skill).events;
     const clicks = keptTeachClicks(skill.id, skill.recording, events, input);
     return {
       skill,

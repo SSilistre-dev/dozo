@@ -144,6 +144,8 @@ export async function keepTeachValues<
   }
 > {
   const values = typedValuesFromRecording(recording.events);
+  // Known typed texts: a title part matching one is no application's name.
+  const typed = values.flatMap((value) => (value.text === null ? [] : [value.text]));
   // Where each click is once typed runs are one event each; a recording already forgotten has
   // its runs collapsed, so its clicks stay where they are.
   const already = teachTypingForgotten(recording);
@@ -155,7 +157,7 @@ export async function keepTeachValues<
     const eventIndex = already ? target.eventIndex : indexOf.get(target.eventIndex);
     if (eventIndex === undefined) continue;
     // Only the application's name: the rest of a title can show what was typed or opened.
-    const window = target.window ? teachAppName(target.window) : null;
+    const window = target.window ? teachAppName(target.window, typed) : null;
     targets.push({ eventIndex, ...(window ? { window } : {}) });
     if (target.image && !secret.has(target.eventIndex)) {
       images.push({ eventIndex, image: target.image });
