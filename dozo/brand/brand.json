@@ -1861,6 +1861,228 @@
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
     },
     {
+      "file": "apps/web/src/lib/user-error.ts",
+      "find": "import {\n  authErrorMessage,\n  CALL_NOT_RINGING_ERROR,",
+      "replace": "import { dozoAuthErrorMessage } from \"./dozo-auth-error\";\nimport {\n  CALL_NOT_RINGING_ERROR,",
+      "requires": [
+        "apps/web/src/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/lib/user-error.ts",
+      "find": "  return authErrorMessage(error, {",
+      "replace": "  return dozoAuthErrorMessage(error, {",
+      "requires": [
+        "apps/web/src/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: an auth code upstream leaves to the server's English words gets copy of its own, and an unknown one the caller's copy; the server's message is never shown"
+    },
+    {
+      "file": "apps/mobile/lib/user-error.ts",
+      "find": "import {\n  authErrorMessage,\n  CALL_NOT_RINGING_ERROR,",
+      "replace": "import { dozoAuthErrorMessage } from \"./dozo-auth-error\";\nimport {\n  CALL_NOT_RINGING_ERROR,",
+      "requires": [
+        "apps/mobile/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/user-error.ts",
+      "find": "  return authErrorMessage(body, {",
+      "replace": "  return dozoAuthErrorMessage(body, {",
+      "requires": [
+        "apps/mobile/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: the mobile app maps the same auth codes as the web app and never shows the server's message"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "        <form\n          onSubmit={onSubmit}\n",
+      "replace": "        <form\n          noValidate\n          onSubmit={onSubmit}\n",
+      "reason": "error copy: the auth forms check their own fields and say so under the field, never in the browser's own bubble"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "  const [pending, setPending] = useState(false);\n  const entering = useRef(false);",
+      "replace": "  const [pending, setPending] = useState(false);\n  // A missing or malformed email or password is named under its own field.\n  const fieldIssue =\n    error === credentialIssueText(\"email\")\n      ? \"email\"\n      : error === credentialIssueText(\"password\")\n        ? \"password\"\n        : null;\n  const entering = useRef(false);",
+      "reason": "error copy: which field, if any, the current error is about"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "                    type=\"email\"\n                    required\n                    className={fieldClass}\n                  />\n",
+      "replace": "                    type=\"email\"\n                    required\n                    aria-invalid={fieldIssue === \"email\" || undefined}\n                    aria-describedby={fieldIssue === \"email\" ? \"email-issue\" : undefined}\n                    className={fieldClass}\n                  />\n                  {fieldIssue === \"email\" ? (\n                    <p id=\"email-issue\" role=\"alert\" className=\"mt-2 text-body-sm text-destructive\">\n                      {error}\n                    </p>\n                  ) : null}\n",
+      "reason": "error copy: an empty or malformed email is said in one line under the email field, tied to it for assistive technology"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "                    maxLength={MAX_PASSWORD_LENGTH}\n                    className={fieldClass}\n                  />\n                  {mode === \"in\" && reset?.passwordReset ? (",
+      "replace": "                    maxLength={MAX_PASSWORD_LENGTH}\n                    aria-invalid={fieldIssue === \"password\" || undefined}\n                    aria-describedby={fieldIssue === \"password\" ? \"password-issue\" : undefined}\n                    className={fieldClass}\n                  />\n                  {fieldIssue === \"password\" ? (\n                    <p id=\"password-issue\" role=\"alert\" className=\"mt-2 text-body-sm text-destructive\">\n                      {error}\n                    </p>\n                  ) : null}\n                  {mode === \"in\" && reset?.passwordReset ? (",
+      "reason": "error copy: an empty password is said in one line under the password field, tied to it for assistive technology"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "              {error ? (\n                <p role=\"alert\" className=\"mt-3 w-full text-body text-destructive\">",
+      "replace": "              {error && !fieldIssue ? (\n                <p role=\"alert\" className=\"mt-3 w-full text-body text-destructive\">",
+      "reason": "error copy: a field's error shows under that field only, not again below the form"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "import { errorText } from \"../lib/user-error\";",
+      "replace": "import { errorText, toastError } from \"../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the admin access page shows no server message as it is, in a toast or on the page"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "      toast.error(\n        errorText(error, \"grant\" in input ? t`Could not grant access` : t`Could not revoke grant`),\n      ),",
+      "replace": "      toastError(\"grant\" in input ? t`Could not grant access` : t`Could not revoke grant`, error),",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/PluginSubmissionsPanel.tsx",
+      "find": "import { errorText } from \"../lib/user-error\";",
+      "replace": "import { errorText, toastError } from \"../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the plugin review panel shows no server message as it is, in a toast or on the page"
+    },
+    {
+      "file": "apps/web/src/pages/PluginSubmissionsPanel.tsx",
+      "find": "      toast.error(\n        errorText(\n          error,\n          input.decision === \"reject\" ? t`Could not reject plugin` : t`Could not approve plugin`,\n        ),\n      ),",
+      "replace": "      toastError(\n        input.decision === \"reject\" ? t`Could not reject plugin` : t`Could not approve plugin`,\n        error,\n      ),",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/McpServersOverlay.tsx",
+      "find": "import type { ErrorDetails } from \"../lib/user-error\";\nimport { errorCode, errorDetails } from \"../lib/user-error\";",
+      "replace": "import type { ErrorDetails } from \"../lib/user-error\";\nimport { toastError } from \"../lib/dozo-error-text\";\nimport { errorCode, errorDetails } from \"../lib/user-error\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/McpServersOverlay.tsx",
+      "find": "toast.error(t`${updated.name} is not working`);",
+      "replace": "toastError(t`${updated.name} is not working`);",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/space-bots-model.tsx",
+      "find": "import { useCallback, useEffect, useRef, useState } from \"react\";\nimport { useSpaceRpc } from \"../../lib/space-rpc\";",
+      "replace": "import { useCallback, useEffect, useRef, useState } from \"react\";\nimport { toastError } from \"../../lib/dozo-error-text\";\nimport { useSpaceRpc } from \"../../lib/space-rpc\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/space-bots-model.tsx",
+      "find": "toast.error(t`Could not switch ${failedNames}. Try again.`);",
+      "replace": "toastError(t`Could not switch ${failedNames}. Try again.`);",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-chat-snooze.ts",
+      "find": "import { toast } from \"@rakazo/ui-web\";",
+      "replace": "import { toastError } from \"../../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-chat-snooze.ts",
+      "find": "if (failed) toast.error(t`Could not save`);",
+      "replace": "if (failed) toastError(t`Could not save`);",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-read-aloud.ts",
+      "find": "import { toast } from \"@rakazo/ui-web\";",
+      "replace": "import { toastError } from \"../../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-read-aloud.ts",
+      "find": "if (error) toast.error(error, { id: READ_ALOUD_TOAST });",
+      "replace": "if (error) toastError(error, undefined, { id: READ_ALOUD_TOAST });",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper; the text is the speaker's, which the two rules in tts.ts keep free of server messages"
+    },
+    {
+      "file": "apps/web/src/lib/tts.ts",
+      "find": "import { errorText, voiceAccountErrorText } from \"./user-error.js\";",
+      "replace": "import { errorText } from \"./dozo-error-text\";\nimport { voiceAccountErrorText } from \"./user-error.js\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: a voice failure the server answered is told in the app's copy, not the server's words"
+    },
+    {
+      "file": "apps/web/src/lib/tts.ts",
+      "find": "throw new Error(voiceAccountErrorText(body) ?? body.error ?? \"\");",
+      "replace": "throw new Error(voiceAccountErrorText(body) ?? \"\");",
+      "reason": "error copy: the voice endpoint's own error text is not shown; an empty message becomes the generic copy"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "import { useBilling } from \"../../components/SubscriptionGate\";\n\nexport function ComposerError({",
+      "replace": "import { useBilling } from \"../../components/SubscriptionGate\";\nimport { DozoRunErrorDetails } from \"./dozo-run-error-details\";\n\nexport function ComposerError({",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-run-error-details.tsx"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "          <details key={runError} className=\"mt-1\">\n            <summary className=\"w-fit cursor-pointer\">{t`Details`}</summary>\n            <pre className=\"mt-2 whitespace-pre-wrap break-words text-label\">\n              {normalizedRunError?.details}\n            </pre>\n          </details>",
+      "replace": "          <DozoRunErrorDetails key={runError} details={normalizedRunError?.details} />",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-run-error-details.tsx"
+      ],
+      "reason": "error copy: a run error's raw text (a provider's or server's own words) is shown to the deployment's admins only; everyone else has the summary, which says what to do"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "import(\"./pages/NotFound\").then((module) => module.NotFoundPage),",
+      "replace": "import(\"./pages/dozo-not-found\").then((module) => module.NotFoundPage),",
+      "requires": [
+        "apps/web/src/pages/dozo-not-found.tsx"
+      ],
+      "reason": "404: upstream's page with the Dozo dragon faint behind it, loaded on demand like the page itself"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "\"Plural-Forms: \\n\"\n",
+      "replace": "\"Plural-Forms: nplurals=2; plural=(n != 1);\\n\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect email or password\"\nmsgstr \"E-posta ya da parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect password\"\nmsgstr \"Parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Password must be at least {min} characters\"\nmsgstr \"Parola en az {min} karakter olmalı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This password appeared in a data breach. Choose another.\"\nmsgstr \"Bu parola bir veri sızıntısında görüldü. Başka bir parola seç.\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"An account with this email already exists\"\nmsgstr \"Bu e-postayla bir hesap zaten var\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This link is invalid or expired\"\nmsgstr \"Bu bağlantı geçersiz ya da süresi dolmuş\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This account is already linked\"\nmsgstr \"Bu hesap zaten bağlı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Keep at least one way to sign in\"\nmsgstr \"Oturum açmak için en az bir yol kalmalı\"\n",
+      "reason": "fork strings: the Turkish copy of the fork's own UI strings, which upstream's catalog cannot hold; the build compiles them with the catalog. Add new ones to this block (the header line is the anchor, so it is rewritten too)"
+    },
+    {
       "file": "packages/contracts/src/index.ts",
       "find": "export * from \"./billing.js\";\nexport * from \"./board.js\";\n",
       "replace": "export * from \"./billing.js\";\nexport * from \"./dozo-plan-limits.js\";\nexport * from \"./board.js\";\n",

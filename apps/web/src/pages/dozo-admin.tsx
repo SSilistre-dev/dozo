@@ -7,7 +7,6 @@ import {
   ListSearchInput,
   SectionHeading,
   Spinner,
-  toast,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
@@ -16,10 +15,10 @@ import { useDeferredValue, useState } from "react";
 import { Link } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageLoading } from "../components/PageLoading";
+import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
 import { DozoPlanAction } from "./dozo-admin-plan";
-import { NotFoundPage } from "./NotFound";
+import { NotFoundPage } from "./dozo-not-found";
 import { WindowChrome } from "./WindowChrome";
 
 /** The hosted deployment's admin page. Anyone else sees the page an unknown address shows. */
@@ -115,11 +114,9 @@ function AdminPanel({ ownId }: { ownId: string }) {
       queries.dozoAdmin.bans.key(),
     ],
     onFailed: (error, input) =>
-      toast.error(
-        errorText(
-          error,
-          "stop" in input ? t`Could not stop the computer` : t`Could not change the account`,
-        ),
+      toastError(
+        "stop" in input ? t`Could not stop the computer` : t`Could not change the account`,
+        error,
       ),
   });
   const date = (value: string) =>
