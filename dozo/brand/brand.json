@@ -392,6 +392,126 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/pi-runtime-tools.ts",
+      "find": "  };\n}\n\nfunction toAgentTool(",
+      "replace": "  };\n}\n\nexport function toAgentTool(",
+      "reason": "exported for the fork's checkpoint restore of a deferred built-in (dozo-checkpoint-tools.ts)"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime.ts",
+      "find": "} from \"./pi-runtime-tools.js\";\nimport type { PiSessionHandle",
+      "replace": "} from \"./pi-runtime-tools.js\";\nimport { restoredDeferredTool } from \"./dozo-checkpoint-tools.js\";\nimport type { PiSessionHandle",
+      "requires": [
+        "packages/adapters/src/dozo-checkpoint-tools.ts"
+      ],
+      "reason": "import of the fork's checkpoint restore for deferred built-ins, used by the rule below"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime.ts",
+      "find": "                const tool = tools.find((candidate) => candidate.name === call.name);\n                if (!tool) throw new Error(\"Pending checkpoint tool is no longer available\");",
+      "replace": "                const tool =\n                  tools.find((candidate) => candidate.name === call.name) ??\n                  restoredDeferredTool(toolDefs, host, call.name);\n                if (!tool) throw new Error(\"Pending checkpoint tool is no longer available\");",
+      "requires": [
+        "packages/adapters/src/dozo-checkpoint-tools.ts"
+      ],
+      "reason": "a turn paused on a direct call to a built-in that is now deferred (schedule_create across a deploy) resumes on it instead of failing"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "    prompt,\n    historicalContext,\n    runtimeHistory,",
+      "replace": "    prompt,\n    // Recalled memory still counts as historical context: the system prompt then says its block is\n    // untrusted historical data, now that it sits next to the prompt.\n    historicalContext: [...historicalContext, ...recalledContext],\n    runtimeHistory,",
+      "reason": "the run's historical context still includes recalled memory moved out of it, so the untrusted-history line stays in the system prompt"
+    },
+    {
+      "file": "packages/contracts/src/model-roles.ts",
+      "find": "export const ModelRoleSchema = z.enum([\"main\", \"approval\", \"computer\"]);",
+      "replace": "export const ModelRoleSchema = z.enum([\"main\", \"approval\", \"computer\", \"compaction\"]);",
+      "reason": "a role for the model that writes history summaries, so they can run on a cheaper model; without a choice the thread's model writes them as before"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactHistory }",
+      "replace": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactWithRoleModel } from \"./dozo-compaction-model.js\";\nimport { compactHistory }",
+      "requires": [
+        "packages/adapters/src/dozo-compaction-model.ts"
+      ],
+      "reason": "import of the fork's summary model resolver, used by the rule below"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "      await compactHistory(\n        {\n          prisma: deps.prisma,\n          runtime: deps.runtime,\n          jobs: deps.jobs,\n          memoryProviders: deps.memoryProviders,\n          deploymentModelKey: deps.deploymentModelKey,\n          deploymentModelConfigured: deps.deploymentModelConfigured,\n          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),\n        },\n        payload.threadId,\n        payload.userId,\n      );",
+      "replace": "      await compactWithRoleModel(deps.prisma, deps.executor, (resolveModel) =>\n        compactHistory(\n          {\n            prisma: deps.prisma,\n            runtime: deps.runtime,\n            jobs: deps.jobs,\n            memoryProviders: deps.memoryProviders,\n            deploymentModelKey: deps.deploymentModelKey,\n            deploymentModelConfigured: deps.deploymentModelConfigured,\n            ...(resolveModel ? { resolveModel } : {}),\n          },\n          payload.threadId,\n          payload.userId,\n        ),\n      );",
+      "requires": [
+        "packages/adapters/src/dozo-compaction-model.ts"
+      ],
+      "reason": "history summaries use the compaction role's model when the member chose one and fall back to the thread's model when it fails; without a choice nothing changes"
+    },
+    {
+      "file": "packages/adapters/src/builtin-tool-bridge.ts",
+      "find": "  \"reflect_memory\",\n  \"schedule_create\",\n  \"schedule_list\",\n  \"search_history\",",
+      "replace": "  \"reflect_memory\",\n  \"search_history\",",
+      "reason": "the schedule tools (about 1090 tokens) are offered to every run and used in few turns: reach them through find_tool"
+    },
+    {
+      "file": "packages/adapters/src/context-selection.ts",
+      "find": "import type { VerbatimMcpServers } from \"./verbatim-mcp-result.js\";\nimport { isVerbatimMcpResult",
+      "replace": "import type { VerbatimMcpServers } from \"./verbatim-mcp-result.js\";\nimport { alignHistoryStart } from \"./dozo-history-window.js\";\nimport { isVerbatimMcpResult",
+      "requires": [
+        "packages/adapters/src/dozo-history-window.ts"
+      ],
+      "reason": "import of the fork's stable history window, used by the rule below"
+    },
+    {
+      "file": "packages/adapters/src/context-selection.ts",
+      "find": "    if (earlier) earlierTokens += group.tokens;\n  }\n  const selectedIndexes",
+      "replace": "    if (earlier) earlierTokens += group.tokens;\n  }\n  used -= alignHistoryStart(\n    messages,\n    groups,\n    selected,\n    protectedGroupIndexes,\n    currentStart,\n    exchangeLimit,\n  );\n  const selectedIndexes",
+      "requires": [
+        "packages/adapters/src/dozo-history-window.ts"
+      ],
+      "reason": "a cut long history started one exchange later every turn and was rewritten to the prompt cache each turn: start it at content-picked messages so it holds for several turns"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "import { loadBotGroupDirectory } from \"./group-handoff.js\";\nimport { formatCompactedSummary }",
+      "replace": "import { loadBotGroupDirectory } from \"./group-handoff.js\";\nimport { historyWithRecall } from \"./dozo-recalled-memory.js\";\nimport { formatCompactedSummary }",
+      "requires": [
+        "packages/adapters/src/dozo-recalled-memory.ts"
+      ],
+      "reason": "import of the fork's history order, used by the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  if (recalledMemory) {\n    historicalContext.push({",
+      "replace": "  const recalledContext: AgentRunRequest[\"history\"] = [];\n  if (recalledMemory) {\n    recalledContext.push({",
+      "reason": "memory recalled for this turn is kept apart so it can go after the conversation"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  const runtimeHistory = [...historicalContext, ...historyWithImages];",
+      "replace": "  const runtimeHistory = historyWithRecall(historicalContext, historyWithImages, recalledContext);",
+      "requires": [
+        "packages/adapters/src/dozo-recalled-memory.ts"
+      ],
+      "reason": "recalled memory changes every turn: placed last, next to the prompt, it stops the whole conversation being rewritten to the prompt cache each turn"
+    },
+    {
+      "file": "packages/adapters/src/computer-disk.ts",
+      "find": "  const size = free >= 1e9 ? `${Math.round(free / 1e9)} GB` : `${Math.round(free / 1e6)} MB`;\n  return `The computer's disk is ${percent}% full (${size} free).",
+      "replace": "  // Coarse figures: the note is in the system prompt, and exact ones changed it, and broke the\n  // cached prompt prefix, whenever the disk was measured again.\n  const leading = (n: number) => {\n    const step = 10 ** Math.floor(Math.log10(n));\n    return Math.floor(n / step) * step;\n  };\n  const size =\n    free >= 1e9 ? `${leading(free / 1e9)} GB` : `${leading(Math.max(free / 1e6, 1))} MB`;\n  return `The computer's disk is over ${Math.floor(percent / 5) * 5}% full (about ${size} free).",
+      "reason": "the disk note is in the system prompt: coarse figures keep the cached prefix while the disk fills"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      select: {",
+      "replace": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: {",
+      "reason": "the connected plugins line is in the system prompt: a stable order keeps the cached prefix when a status sync rewrites a row"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "    deps.prisma.taughtSkill.findMany({\n      where: { botId: run.botId, spaceId: run.spaceId, status: \"saved\" },\n    }),",
+      "replace": "    deps.prisma.taughtSkill.findMany({\n      where: { botId: run.botId, spaceId: run.spaceId, status: \"saved\" },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n    }),",
+      "reason": "the first 20 taught skills are listed in the system prompt: a stable order keeps the cached prefix and the same 20"
+    },
+    {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "import type { AuthMode } from \"../lib/auth-routing\";\nimport { initialAuthMode } from \"../lib/auth-routing\";",
       "replace": "import type { AuthMode } from \"../lib/auth-routing\";\nimport { authModeFor, signupsAreClosed, titleWhenKnown } from \"../lib/dozo-signups\";\nimport { initialAuthMode } from \"../lib/auth-routing\";",
@@ -1332,9 +1452,21 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [purchaseOpen, setPurchaseOpen] = useState(false);\n  const [interval, setByokInterval] = useState<ByokInterval>(\"month\");\n",
+      "replace": "  const [purchaseOpen, setPurchaseOpen] = useState(false);\n  // A plan picked on the landing page before sign-up starts selected.\n  const [planIntent] = useState(readPlanIntent);\n  const [interval, setByokInterval] = useState<ByokInterval>(planIntent?.period ?? \"month\");\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: Billing starts on the period picked on the landing page, when there is one"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "useState<ByokTier>(\"standard\");",
-      "replace": "useState<ByokTier>(\n    status.byokTiers?.[0]?.tier ?? \"standard\",\n  );",
-      "reason": "plans: the plan picker starts on the first plan on offer, which is not the free one"
+      "replace": "useState<ByokTier>(\n    status.byokTiers?.find((offer) => offer.tier === planIntent?.tier)?.tier ??\n      status.byokTiers?.[0]?.tier ??\n      \"standard\",\n  );",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan picker starts on the plan picked on the landing page when it is on offer, else on the first plan on offer, which is not the free one"
     },
     {
       "file": "packages/adapters/src/sandbox-allowance.ts",
@@ -2070,6 +2202,40 @@
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
     },
     {
+      "file": "apps/web/src/App.tsx",
+      "find": "import { ShellPage } from \"./pages/Shell\";",
+      "replace": "import { NavigateKeepingPlan, ShellPage } from \"./pages/dozo-shell\";",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the app shell opens Billing for a plan picked before sign-up, and again after a checkout left unpaid"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "import { authErrorText, credentialIssueText } from \"../lib/user-error\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "replace": "import { authErrorText, credentialIssueText } from \"../lib/user-error\";\nimport { DozoSignupTerms } from \"./dozo-signup-terms\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "requires": [
+        "apps/web/src/pages/dozo-signup-terms.tsx"
+      ],
+      "reason": "sign-up: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "              </Button>\n              {mode === \"in\" && !codeStep ? (\n",
+      "replace": "              </Button>\n              {mode === \"up\" && !codeStep ? <DozoSignupTerms /> : null}\n              {mode === \"in\" && !codeStep ? (\n",
+      "requires": [
+        "apps/web/src/pages/dozo-signup-terms.tsx"
+      ],
+      "reason": "sign-up: the terms and the privacy policy, one line under the button"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "            cancelUrl: client === \"mobile\" ? mobileReturnUrl : appUrl,\n          });\n        } catch (error) {\n",
+      "replace": "            cancelUrl: client === \"mobile\" ? mobileReturnUrl : `${appUrl}?billing=canceled`,\n          });\n        } catch (error) {\n",
+      "reason": "plans: a plan's checkout left unpaid says so on the way back, as a credit checkout does, so the web app reopens Billing"
+    },
+    {
       "file": "packages/auth/src/welcome-email.tsx",
       "find": "import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from \"@rakazo/contracts\";\nimport { Link, Text } from \"react-email\";\n",
       "replace": "import { Link, Text } from \"react-email\";\n",
@@ -2716,6 +2882,15 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { desktopBridge } from \"../lib/desktop\";\nimport { billingErrorText }",
+      "replace": "import { desktopBridge } from \"../lib/desktop\";\nimport { readPlanIntent } from \"../lib/dozo-plan-intent\";\nimport { billingErrorText }",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the import of the plan-preselection rules (after the plan limits import, which it extends)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "    } catch {\n      setError(t`Could not open billing`);\n",
       "replace": "    } catch (error) {\n      setError(billingErrorText(error, t`Could not open billing`));\n",
       "requires": [
@@ -3059,6 +3234,80 @@
         "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
       ],
       "reason": "models: each role list is filtered from the catalog read the screen just made, instead of its own full catalog"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<Navigate to={newAccountDestination(next)} replace />",
+      "replace": "<NavigateKeepingPlan to={newAccountDestination(next)} />",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: a member already signed in who follows a landing link to sign-up keeps the plan it names"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<Navigate to={next ?? \"/app\"} replace />",
+      "replace": "<NavigateKeepingPlan to={next ?? \"/app\"} />",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: a member already signed in who follows a landing link to sign-in keeps the plan it names"
+    },
+    {
+      "file": "apps/web/src/lib/sign-out.ts",
+      "find": "import { clearComposerDrafts } from \"./composer-draft\";\nimport { clearSpaceSelection }",
+      "replace": "import { clearComposerDrafts } from \"./composer-draft\";\nimport { clearPlanIntent } from \"./dozo-plan-intent\";\nimport { clearSpaceSelection }",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/lib/sign-out.ts",
+      "find": "    clearComposerDrafts();\n    window.location.assign(destination);",
+      "replace": "    clearComposerDrafts();\n    clearPlanIntent();\n    window.location.assign(destination);",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: signing out forgets a plan picked on the landing page, so the next account in the tab is not offered it"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);\n  const [interval, setByokInterval] = useState<ByokInterval>(\"month\");\n",
+      "replace": "  const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);\n  // The plans start on the period picked on the landing page, when there is one.\n  const [interval, setByokInterval] = useState<ByokInterval>(\n    () => readPlanIntent()?.period ?? \"month\",\n  );\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan cards start on the period picked on the landing page"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [first] = tiers;\n  /** A bigger tier",
+      "replace": "  const [first] = tiers;\n  // The plan picked on the landing page leads when it is on offer; otherwise the first one does.\n  const picked = readPlanIntent()?.tier;\n  const lead = tiers.find((offer) => offer.tier === picked)?.tier ?? first?.tier;\n  /** A bigger tier",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan cards put the plan picked on the landing page first in emphasis"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "<Card key={offer.tier} className={index === 0 ? \"ring-2 ring-primary\" : undefined}>",
+      "replace": "<Card key={offer.tier} className={offer.tier === lead ? \"ring-2 ring-primary\" : undefined}>",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the picked plan's card is the one marked"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "className={index === 0 ? \"w-full\" : \"w-full bg-background dark:bg-transparent\"}\n                  variant={index === 0 ? \"default\" : \"outline\"}",
+      "replace": "className={\n                    offer.tier === lead ? \"w-full\" : \"w-full bg-background dark:bg-transparent\"\n                  }\n                  variant={offer.tier === lead ? \"default\" : \"outline\"}",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the picked plan's button is the primary one"
     }
   ],
   "assets": {
