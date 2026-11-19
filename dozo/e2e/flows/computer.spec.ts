@@ -14,10 +14,6 @@ test("computer: start from the bot panel, stop from the admin list", async ({
   guard,
 }) => {
   test.setTimeout(300_000);
-  guard.allow(
-    /^failed: net::ERR_(CONNECTION_REFUSED|CONNECTION_RESET|EMPTY_RESPONSE|INCOMPLETE_CHUNKED_ENCODING) [A-Z]+ [^ ]+\/(rpc|api)\//,
-    "FINDING: while a computer starts or stops, the stack's own address refuses connections for a moment (no container restarts; docker sets up the computer's network); the app retries",
-  );
   const world = readWorld();
   await openBot(page, world.chiefId, "Chief");
   await openBotPanel(page);
