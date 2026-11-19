@@ -3964,6 +3964,96 @@
       "reason": "chat diagram: the same as the bot HTML preview, every navigation reaches the diagram's own check"
     },
     {
+      "file": "apps/web/src/pages/onboarding/use-onboarding-model.ts",
+      "find": "import { rpc } from \"../../lib/rpc\";\nimport { useModelOAuthSignIn }",
+      "replace": "import { rpc } from \"../../lib/rpc\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\nimport { useModelOAuthSignIn }",
+      "requires": [
+        "packages/i18n/src/dozo-server-text.ts"
+      ],
+      "reason": "sign-in label: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/use-onboarding-model.ts",
+      "find": "const signInLabel = selected?.oauthLabel ?? t`Sign in`;",
+      "replace": "const signInLabel = signInLabelText(selected?.oauthLabel) ?? t`Sign in`;",
+      "requires": [
+        "packages/i18n/src/dozo-server-text.ts"
+      ],
+      "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "import { Button, Disclosure, Input } from \"@rakazo/ui-web\";\nimport { Check",
+      "replace": "import { Button, Disclosure, Input } from \"@rakazo/ui-web\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\nimport { Check",
+      "requires": [
+        "packages/i18n/src/dozo-server-text.ts"
+      ],
+      "reason": "sign-in label: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
+      "find": "(selected?.oauthLabel ?? t`Sign in`)",
+      "replace": "(signInLabelText(selected?.oauthLabel) ?? t`Sign in`)",
+      "requires": [
+        "packages/i18n/src/dozo-server-text.ts"
+      ],
+      "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/model-connection.tsx",
+      "find": "import { errorText } from \"../../lib/user-error\";\n\ntype ModelSelection",
+      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\n\ntype ModelSelection",
+      "requires": [
+        "packages/i18n/src/dozo-server-text.ts"
+      ],
+      "reason": "sign-in label: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/model-connection.tsx",
+      "find": "(selected.oauthLabel ?? t`Sign in`)",
+      "replace": "(signInLabelText(selected.oauthLabel) ?? t`Sign in`)",
+      "requires": [
+        "packages/i18n/src/dozo-server-text.ts"
+      ],
+      "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
+      "replace": "import type { RouterContext } from \"./context.js\";\nimport { requireBotRunEditor, requireGroupRemover } from \"./dozo-bot-edit.js\";\nimport { computerContext",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared bots: the import of the three rules below"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "const existing = await repos.getBot(context.actor, input.botId);\n        if (input.sectionId) {",
+      "replace": "const existing = await repos.getBot(context.actor, input.botId);\n        await requireBotRunEditor(deps.prisma, context.actor, existing, input);\n        if (input.sectionId) {",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared bots: a bot's triggered runs act as its creator, so only the creator or the space owner changes the settings that decide what those runs do"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "const bot = await repos.getBot(context.actor, input.botId);\n        if (!bot.thread) throw new IsolationError();\n        await commitBotUpdate({",
+      "replace": "const bot = await repos.getBot(context.actor, input.botId);\n        await requireBotRunEditor(deps.prisma, context.actor, bot);\n        if (!bot.thread) throw new IsolationError();\n        await commitBotUpdate({",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared bots: restoring earlier instructions is an instructions change, kept to the creator or the space owner"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "remove: authed.groups.remove.handler(async ({ context, input }) => {\n        const removed",
+      "replace": "remove: authed.groups.remove.handler(async ({ context, input }) => {\n        await requireGroupRemover(deps.prisma, context.actor, input.groupId);\n        const removed",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared groups: any member archives a group, only its creator or the space owner deletes it for good, as for bots"
+    },
+    {
       "file": "packages/auth/src/index.ts",
       "find": "from \"./identity-confirmation.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
       "replace": "from \"./identity-confirmation.js\";\nimport { finishPendingVerification, verifyEmailAdapter } from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
@@ -4061,60 +4151,6 @@
         "packages/adapters/src/mcp-connector.ts"
       ],
       "reason": "MCP client name announced to third-party servers"
-    },
-    {
-      "file": "apps/web/src/pages/onboarding/use-onboarding-model.ts",
-      "find": "import { rpc } from \"../../lib/rpc\";\nimport { useModelOAuthSignIn }",
-      "replace": "import { rpc } from \"../../lib/rpc\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\nimport { useModelOAuthSignIn }",
-      "requires": [
-        "packages/i18n/src/dozo-server-text.ts"
-      ],
-      "reason": "sign-in label: the import of the rule below"
-    },
-    {
-      "file": "apps/web/src/pages/onboarding/use-onboarding-model.ts",
-      "find": "const signInLabel = selected?.oauthLabel ?? t`Sign in`;",
-      "replace": "const signInLabel = signInLabelText(selected?.oauthLabel) ?? t`Sign in`;",
-      "requires": [
-        "packages/i18n/src/dozo-server-text.ts"
-      ],
-      "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
-    },
-    {
-      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
-      "find": "import { Button, Disclosure, Input } from \"@rakazo/ui-web\";\nimport { Check",
-      "replace": "import { Button, Disclosure, Input } from \"@rakazo/ui-web\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\nimport { Check",
-      "requires": [
-        "packages/i18n/src/dozo-server-text.ts"
-      ],
-      "reason": "sign-in label: the import of the rule below"
-    },
-    {
-      "file": "apps/web/src/pages/model-settings/connection-controls.tsx",
-      "find": "(selected?.oauthLabel ?? t`Sign in`)",
-      "replace": "(signInLabelText(selected?.oauthLabel) ?? t`Sign in`)",
-      "requires": [
-        "packages/i18n/src/dozo-server-text.ts"
-      ],
-      "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
-    },
-    {
-      "file": "apps/mobile/app/(settings)/model-connection.tsx",
-      "find": "import { errorText } from \"../../lib/user-error\";\n\ntype ModelSelection",
-      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { signInLabelText } from \"@rakazo/i18n/run-error\";\n\ntype ModelSelection",
-      "requires": [
-        "packages/i18n/src/dozo-server-text.ts"
-      ],
-      "reason": "sign-in label: the import of the rule below"
-    },
-    {
-      "file": "apps/mobile/app/(settings)/model-connection.tsx",
-      "find": "(selected.oauthLabel ?? t`Sign in`)",
-      "replace": "(signInLabelText(selected.oauthLabel) ?? t`Sign in`)",
-      "requires": [
-        "packages/i18n/src/dozo-server-text.ts"
-      ],
-      "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
     }
   ],
   "leakWords": [

@@ -106,6 +106,10 @@ describe("config validation", () => {
       { ...base, literals: [{ find: "a", replace: "b", files: [], reason: "r" }] },
       /literal files must be a non-empty list/,
     );
+    rejects(
+      { ...base, literals: [{ file: "src/a.ts", find: "a", replace: "b", reason: "r" }] },
+      /literal has a `file` field/,
+    );
     rejects({ ...base, keep: [{ text: "a", files: "x", reason: "r" }] }, /non-empty `files` list/);
     rejects({ ...base, keep: [{ text: "a", files: [1], reason: "r" }] }, /non-empty `files` list/);
     rejects({ ...base, keep: [{ text: "", files: ["x"], reason: "r" }] }, /keep entry needs text/);
@@ -259,6 +263,17 @@ describe("shipped brand.json", () => {
     ]) {
       assert.ok(entry.reason, JSON.stringify(entry));
     }
+    for (const entry of shipped.literals) assert.equal(entry.file, undefined, entry.find);
+    const signIn = shipped.anchored.filter((rule) => rule.reason.startsWith("sign-in label"));
+    assert.deepEqual(
+      [...new Set(signIn.map((rule) => rule.file))].sort(),
+      [
+        "apps/mobile/app/(settings)/model-connection.tsx",
+        "apps/web/src/pages/model-settings/connection-controls.tsx",
+        "apps/web/src/pages/onboarding/use-onboarding-model.ts",
+      ],
+    );
+    assert.equal(signIn.length, 6);
     const anchored = shipped.anchored.map((rule) => `${rule.file}\0${rule.find}`);
     assert.equal(new Set(anchored).size, anchored.length);
     const texts = shipped.allow.text.map((e) => `${e.file}\0${e.text}`);
