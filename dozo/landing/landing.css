@@ -133,25 +133,39 @@ h1{font-size:clamp(38px,6.2vw,68px);line-height:1.05;font-weight:500;letter-spac
 .li.done .d,.li.done b{opacity:.55}
 .pill.ok{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
 
-/* plans: the one you can start today is the filled card */
+/* plans: three hosted plans side by side, rows aligned across cards; Premium has the ink frame */
 .plans{margin-top:52px}
-.tiers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0;position:relative}
+.phead{display:flex;align-items:center;gap:12px 28px;flex-wrap:wrap;position:relative;z-index:1}
+.period{display:flex;align-items:center;gap:4px;padding:4px;border-radius:999px;background:var(--raise);box-shadow:inset 0 0 0 1px var(--line)}
+.period[hidden]{display:none}
+.period button{height:36px;padding:0 16px;border-radius:999px;font-size:14px;color:var(--muted)}
+.period button[aria-pressed=true]{background:var(--raise2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.period button:hover{color:var(--text)}
+.save{padding:0 12px 0 8px;font-size:13px;color:var(--muted)}
+.tiers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0;position:relative}
 /* the dragon behind the plans: the mark's head on a scaled body, in the mark's red, faint. It lies
    along the top of the cards and dips behind them; the cards are a little translucent. */
 .scales{position:absolute;right:0;bottom:100%;width:min(990px,100%);transform:translateY(42.9%);opacity:var(--scale-a,.5);pointer-events:none;color:#C8372D}
 :root[data-theme="light"] .scales{--scale-a:.42}
-:root[data-theme="light"] .tier:not(.on){background:color-mix(in srgb,var(--bg) 90%,transparent)}
 .scales svg{display:block;overflow:visible}
 .scales .body{stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
 .scales .fin,.scales .ink{fill:currentColor}.scales .spine{stroke:var(--bg);stroke-width:1.5;stroke-linejoin:round}
 .scales .horn,.scales .whisker{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round}.scales .whisker{stroke-width:1.7}
 .scales .visor{fill:var(--bg)}
 .scales .band path{fill:var(--bg);stroke:currentColor;stroke-width:1}
-.tier{display:flex;flex-direction:column;align-items:flex-start;border-radius:24px;padding:22px 24px;box-shadow:inset 0 0 0 1px var(--line);position:relative;background:color-mix(in srgb,var(--bg) 80%,transparent)}
-.tier.on{background:color-mix(in srgb,var(--raise) 90%,transparent);box-shadow:none}
+.tier{display:grid;grid-row:span 5;grid-template-rows:subgrid;row-gap:0;justify-items:start;border-radius:24px;padding:24px;box-shadow:inset 0 0 0 1px var(--line);position:relative;background:color-mix(in srgb,var(--bg) 90%,transparent)}
+.tier.hi{box-shadow:inset 0 0 0 1px var(--text)}
 .tier h3{font-size:18px;font-weight:500;letter-spacing:-.015em}
-.tier ul{list-style:none;margin:14px 0 20px;font-size:14.5px;color:var(--muted)}.tier li+li{margin-top:4px}
-.tier .pill{margin-top:auto}
+.price{margin-top:14px;color:var(--muted);font-size:14.5px;display:grid}
+.price b{font-size:36px;line-height:1.1;font-weight:500;letter-spacing:-.03em;color:var(--text)}
+.bill{min-height:1.6em;font-size:13.5px;color:var(--muted)}
+:root[data-period=year] .price .m,:root[data-period=month] .price .y{display:none}
+:root[data-period=month] .bill .y{visibility:hidden}
+.tier .pill{margin-top:18px}
+.tier ul{list-style:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:14.5px;color:var(--muted);justify-self:stretch}.tier li+li{margin-top:6px}
+.tier .no{color:var(--quiet)}
+.self{display:flex;align-items:center;gap:8px 24px;flex-wrap:wrap;margin-bottom:12px;padding:18px 24px;border-radius:24px;box-shadow:inset 0 0 0 1px var(--line)}
+.self h3{font-size:16px;font-weight:500}.self p{flex:1 1 24em;font-size:14.5px;color:var(--muted)}
 .fine{font-size:14.5px;color:var(--muted)}
 .get{display:flex;flex-wrap:wrap;gap:10px}
 .strip{margin-top:24px;background:var(--raise);border-radius:28px;padding:28px 40px}
@@ -171,7 +185,7 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
 
 @media (max-width:900px){
  .pair{grid-template-columns:minmax(0,1fr)}
- .strip{padding:28px}.tiers{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .strip{padding:28px}
  .frame-app{padding:2px 28px 26px;border-radius:24px}
  .idea .vg{height:auto}
 }
@@ -182,7 +196,7 @@ footer{border-top:1px solid var(--line);padding:20px 0 32px}
  .hero{padding-top:28px}.crew{gap:8px;margin-bottom:22px}.av.xl{width:44px;height:44px}
  .cta .pill{flex:1 1 140px}
  .frame-app{padding:0 20px 22px;margin-top:36px}
- .ideas,.plans{margin-top:56px}.tiers{grid-template-columns:minmax(0,1fr)}.close{padding:48px 0 56px}
+ .ideas,.plans{margin-top:56px}.tiers{grid-template-columns:minmax(0,1fr)}.period{width:100%}.period button{flex:1;height:40px}.close{padding:48px 0 56px}
  .vg{padding:18px}.list .li{flex-wrap:wrap;padding:10px 0}.list .li .d{flex-basis:100%;order:3}.li b{flex:1}
  .acts .link{padding:0 8px}.user{margin-bottom:20px}.strip{padding:22px}
  .fin{flex-direction:column;align-items:flex-start;gap:4px}.fin nav{margin-left:-14px}

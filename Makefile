@@ -21,3 +21,8 @@ down:
 # Not part of qa. See dozo/e2e/README.md.
 e2e:
 	@dozo/e2e/run.sh
+.PHONY: token-kiyas
+# Offline token benchmark against a fake model; rewrites dozo/metrics/token-baseline.json and ends
+# with a TOKEN: line. Optional DOZO_TOKEN_PRICING=<file>. See dozo/metrics/token-kiyas.sh.
+token-kiyas:
+	@dozo/metrics/token-kiyas.sh

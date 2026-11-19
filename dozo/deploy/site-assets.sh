@@ -16,6 +16,8 @@
 # (none today; stamp fails on nothing there, so check when one is added).
 # Exits 2 on failure and 64 on a usage error.
 set -Eeuo pipefail
+# Ranges like [a-z] follow the locale's collation: under tr_TR.UTF-8, GNU grep and sed leave "i" out.
+export LC_ALL=C
 
 die() {
   printf '[site-assets] FAIL: %s\n' "$*" >&2
@@ -45,7 +47,8 @@ stamp() {
         esac
         [ -f "$file" ] || die "$page names $ref, which is not a file in the tree"
         escaped=$(printf '%s' "$ref" | sed 's/\./\\./g')
-        sed -E "s|(href\|src)=\"$escaped\"|\\1=\"$ref?v=$(digest <"$file")\"|g" "$page" >"$page.stamp"
+        # "#" is never in $ref (see the grep above); an escaped "|" delimiter is read differently by sed builds.
+        sed -E "s#(href|src)=\"$escaped\"#\\1=\"$ref?v=$(digest <"$file")\"#g" "$page" >"$page.stamp"
         cat "$page.stamp" >"$page"
         rm "$page.stamp"
       done
