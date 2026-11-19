@@ -137,6 +137,16 @@ services:
       traefik.http.routers.dozo-app-shared.tls: "true"
       traefik.http.routers.dozo-app-shared.service: dozo-app
       traefik.http.routers.dozo-app-shared.middlewares: dozo-app-headers,dozo-app-shared
+      # Built assets in brotli: the web server compresses only with gzip. The proxy compresses
+      # instead, so the request it forwards asks for no particular encoding.
+      traefik.http.middlewares.dozo-app-compress.compress.encodings: br,gzip
+      traefik.http.middlewares.dozo-app-identity.headers.customRequestHeaders.Accept-Encoding: ""
+      traefik.http.routers.dozo-app-assets.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/assets/`)"
+      traefik.http.routers.dozo-app-assets.priority: "1001"
+      traefik.http.routers.dozo-app-assets.entrypoints: websecure
+      traefik.http.routers.dozo-app-assets.tls: "true"
+      traefik.http.routers.dozo-app-assets.service: dozo-app
+      traefik.http.routers.dozo-app-assets.middlewares: dozo-app-headers,dozo-app-compress,dozo-app-identity
       # The proxy drops the api's router while that container is starting or unhealthy. API paths
       # then answer 502 from a port nothing listens on, instead of falling through to this
       # container's own proxy to the API (see the api service for why).
