@@ -4,9 +4,12 @@ import type { TeachRecordingEvent } from "./dozo-teach-playbook.js";
 import {
   applyValueDecisions,
   buildPlaybookFromRecording,
+  clickStepIndexes,
+  clicksBeforeSecrets,
   formatSkillRunPrompt,
   promptInvokesSkill,
   typedValuesFromRecording,
+  withClickTargets,
 } from "./dozo-teach-playbook.js";
 import * as core from "./index.js";
 import { formatSkillRunPrompt as upstreamFormatSkillRunPrompt } from "./teach-playbook.js";
@@ -146,6 +149,71 @@ describe("typedValuesFromRecording", () => {
       { placeholder: "{{value 4}}", text: "weekly-export.csv", secret: false },
       { placeholder: "{{value 5}}", text: null, secret: true },
       { placeholder: "{{value 6}}", text: "my api_key", secret: true },
+    ]);
+  });
+});
+
+describe("recorded clicks", () => {
+  // Events 0 and 28 are signIn's clicks; the second is followed by protected input.
+  const playbook = buildPlaybookFromRecording("Sign in", signIn);
+
+  it("finds the clicks whose next value is secret, also by placeholder", () => {
+    expect([...clicksBeforeSecrets(signIn)]).toEqual([28]);
+    expect([...clicksBeforeSecrets(signIn, ["{{value 1}}"])].sort()).toEqual([0, 28]);
+    // A press and release in place is a click; one with nothing typed after it is not secret.
+    const pressed: TeachRecordingEvent[] = [
+      { at, kind: "pointer", x: 1, y: 1, type: "down" },
+      { at, kind: "pointer", x: 1, y: 1, type: "up" },
+      { at, kind: "key", sensitive: true },
+      { at, kind: "pointer", x: 5, y: 5, type: "click" },
+    ];
+    expect([...clicksBeforeSecrets(pressed)]).toEqual([0]);
+  });
+
+  it("says what each click hit, the coordinate only a hint", () => {
+    const labelled = withClickTargets(playbook, signIn, [
+      { eventIndex: 0, label: "Email field", window: "Sign in – Browser" },
+      { eventIndex: 28, window: "Sign in – Browser" },
+    ]);
+    expect(labelled.steps[0]).toBe('Click "Email field" in "Sign in – Browser" (near 10, 20).');
+    expect(labelled.steps[4]).toBe('Click in "Sign in – Browser" (near 30, 40).');
+    expect(labelled.steps.slice(1, 4)).toEqual(playbook.steps.slice(1, 4));
+    const right = [{ at, kind: "pointer" as const, x: 3, y: 4, type: "click", button: "right" }];
+    expect(
+      withClickTargets(buildPlaybookFromRecording("x", right), right, [
+        { eventIndex: 0, label: "File" },
+      ]).steps,
+    ).toEqual(['Right-click "File" (near 3, 4).']);
+  });
+
+  it("quotes model and window text safely and skips what says nothing", () => {
+    const labelled = withClickTargets(playbook, signIn, [
+      { eventIndex: 0, label: ' {{password}} "Go"\n', window: "   " },
+      { eventIndex: 28, label: "", window: "" },
+      { eventIndex: 99, label: "Nowhere" },
+    ]);
+    expect(labelled.steps[0]).toBe('Click "password Go" (near 10, 20).');
+    expect(labelled.steps[4]).toBe(playbook.steps[4]);
+    expect(labelled.steps).toHaveLength(playbook.steps.length);
+  });
+
+  it("matches clicks to steps in order and leaves a rewritten step alone", () => {
+    const twice: TeachRecordingEvent[] = [
+      { at, kind: "pointer", x: 1, y: 1, type: "click" },
+      { at, kind: "key", key: "Enter" },
+      { at, kind: "pointer", x: 1, y: 1, type: "click" },
+    ];
+    const built = buildPlaybookFromRecording("x", twice);
+    expect([...clickStepIndexes(built.steps, twice)]).toEqual([
+      [0, 0],
+      [2, 2],
+    ]);
+    const edited = { ...built, steps: ["Open the menu.", ...built.steps.slice(1)] };
+    expect([...clickStepIndexes(edited.steps, twice)]).toEqual([[0, 2]]);
+    expect(withClickTargets(edited, twice, [{ eventIndex: 0, label: "Menu" }]).steps).toEqual([
+      "Open the menu.",
+      "Press key: Enter.",
+      'Click "Menu" (near 1, 1).',
     ]);
   });
 });

@@ -28,6 +28,22 @@ export type TeachTypedValue = {
   secret: boolean;
 };
 
+/**
+ * A click step of the recording: the event it came from (a plain click, or a press and release
+ * in place), the step as first written, and the value typed next, if any.
+ */
+type TeachClick = {
+  eventIndex: number;
+  step: string;
+  button: string;
+  x: number;
+  y: number;
+  value?: string;
+};
+
+/** What a recorded click hit, as the save writes it into its step. */
+export type TeachClickTarget = { eventIndex: number; window?: string; label?: string };
+
 /** What the teacher decided for one typed value. */
 export type TeachValueDecision =
   | { action: "variable"; name: string }
@@ -45,6 +61,11 @@ function placeholderOf(index: number): string {
   return `{{value ${index}}}`;
 }
 
+/** A click step as the builder writes it, before anything says what was clicked. */
+function clickStep(button: string, x: number, y: number): string {
+  return `Click ${button} button at (${x}, ${y}).`;
+}
+
 function describePointer(event: TeachRecordingEvent): string {
   const action = event.type ?? "click";
   const button = event.button ?? "left";
@@ -52,7 +73,8 @@ function describePointer(event: TeachRecordingEvent): string {
   if (action === "move") return `Move pointer to ${at}.`;
   if (action === "down") return `Press ${button} button at ${at}.`;
   if (action === "up") return `Release ${button} button at ${at}.`;
-  return `${action === "click" ? "Click" : action} ${button} button at ${at}.`;
+  if (action === "click") return clickStep(button, event.x ?? 0, event.y ?? 0);
+  return `${action} ${button} button at ${at}.`;
 }
 
 function describeScroll(event: TeachRecordingEvent): string {
@@ -72,18 +94,37 @@ function describeScroll(event: TeachRecordingEvent): string {
 function walkRecording(events: TeachRecordingEvent[]): {
   steps: string[];
   values: TeachTypedValue[];
+  clicks: TeachClick[];
 } {
   const steps: string[] = [];
   const values: TeachTypedValue[] = [];
+  const clicks: TeachClick[] = [];
   let typed = "";
   let typedSensitive = false;
-  let drag: { button: string; fromX: number; fromY: number; toX: number; toY: number } | null =
-    null;
+  let drag: {
+    eventIndex: number;
+    button: string;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+  } | null = null;
+  // The last click step, until a value is typed after it.
+  let lastClick: TeachClick | null = null;
 
   function addValue(text: string | null) {
     const placeholder = placeholderOf(values.length + 1);
     values.push({ placeholder, text, secret: text === null || SECRET_TEXT.test(text) });
     steps.push(`Type ${placeholder}.`);
+    if (lastClick) lastClick.value = placeholder;
+    lastClick = null;
+  }
+
+  function addClick(eventIndex: number, button: string, x: number, y: number) {
+    const step = clickStep(button, x, y);
+    lastClick = { eventIndex, step, button, x, y };
+    clicks.push(lastClick);
+    steps.push(step);
   }
 
   function flushTyped() {
@@ -104,21 +145,23 @@ function walkRecording(events: TeachRecordingEvent[]): {
   function flushDrag() {
     if (!drag) return;
     const moved = Math.hypot(drag.toX - drag.fromX, drag.toY - drag.fromY) >= 8;
-    steps.push(
-      moved
-        ? `Drag ${drag.button} button from (${drag.fromX}, ${drag.fromY}) to (${drag.toX}, ${drag.toY}).`
-        : `Click ${drag.button} button at (${drag.fromX}, ${drag.fromY}).`,
-    );
+    if (moved) {
+      steps.push(
+        `Drag ${drag.button} button from (${drag.fromX}, ${drag.fromY}) to (${drag.toX}, ${drag.toY}).`,
+      );
+    } else {
+      addClick(drag.eventIndex, drag.button, drag.fromX, drag.fromY);
+    }
     drag = null;
   }
 
-  function pointer(event: TeachRecordingEvent) {
+  function pointer(event: TeachRecordingEvent, eventIndex: number) {
     const action = event.type ?? "click";
     const x = event.x ?? 0;
     const y = event.y ?? 0;
     if (action === "down") {
       flushDrag();
-      drag = { button: event.button ?? "left", fromX: x, fromY: y, toX: x, toY: y };
+      drag = { eventIndex, button: event.button ?? "left", fromX: x, fromY: y, toX: x, toY: y };
       return;
     }
     if (action === "move" && drag) {
@@ -133,10 +176,11 @@ function walkRecording(events: TeachRecordingEvent[]): {
       return;
     }
     flushDrag();
-    steps.push(describePointer(event));
+    if (action === "click") addClick(eventIndex, event.button ?? "left", x, y);
+    else steps.push(describePointer(event));
   }
 
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     if (event.kind === "key") {
       if (event.sensitive) {
         flushDrag();
@@ -159,7 +203,7 @@ function walkRecording(events: TeachRecordingEvent[]): {
     }
     flushPendingInput();
     if (event.kind === "pointer") {
-      pointer(event);
+      pointer(event, index);
       continue;
     }
     flushDrag();
@@ -172,7 +216,7 @@ function walkRecording(events: TeachRecordingEvent[]): {
   }
   flushPendingInput();
   flushDrag();
-  return { steps, values };
+  return { steps, values, clicks };
 }
 
 function inputLabel(name: string, secret: boolean): string {
@@ -207,6 +251,91 @@ export function buildPlaybookFromRecording(
 /** The values typed while teaching, numbered as the playbook's placeholders are. */
 export function typedValuesFromRecording(events: TeachRecordingEvent[]): TeachTypedValue[] {
   return walkRecording(events).values;
+}
+
+/**
+ * The events of the clicks whose next typed value is secret: by the recording's own rule, or
+ * one of `alsoSecret` (placeholders). A picture of what such a click hit is never kept.
+ */
+export function clicksBeforeSecrets(
+  events: TeachRecordingEvent[],
+  alsoSecret: Iterable<string> = [],
+): Set<number> {
+  const { values, clicks } = walkRecording(events);
+  const secret = new Set(alsoSecret);
+  for (const value of values) if (value.secret) secret.add(value.placeholder);
+  return new Set(
+    clicks.flatMap((click) =>
+      click.value !== undefined && secret.has(click.value) ? [click.eventIndex] : [],
+    ),
+  );
+}
+
+/**
+ * Where each click's step is in `steps`, by event: matched in order by the words the builder
+ * wrote, so a step the teacher rewrote or removed has none.
+ */
+export function clickStepIndexes(
+  steps: string[],
+  events: TeachRecordingEvent[],
+): Map<number, number> {
+  const indexes = new Map<number, number>();
+  let from = 0;
+  for (const click of walkRecording(events).clicks) {
+    const at = steps.indexOf(click.step, from);
+    if (at < 0) continue;
+    indexes.set(click.eventIndex, at);
+    from = at + 1;
+  }
+  return indexes;
+}
+
+const LABEL_MAX = 60;
+const WINDOW_MAX = 80;
+
+/** Model or window text made safe to quote in a step: one line, no input braces. */
+function quoted(text: string | undefined, max: number): string | undefined {
+  const clean = text
+    ?.replace(/[\p{Cc}{}"]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max)
+    .trim();
+  return clean ? `"${clean}"` : undefined;
+}
+
+function describeClick(click: TeachClick, target: TeachClickTarget): string {
+  const label = quoted(target.label, LABEL_MAX);
+  const window = quoted(target.window, WINDOW_MAX);
+  if (!label && !window) return click.step;
+  const verb =
+    click.button === "left"
+      ? "Click"
+      : `${click.button.charAt(0).toUpperCase()}${click.button.slice(1)}-click`;
+  return [verb, label, window && `in ${window}`, `(near ${click.x}, ${click.y}).`]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Says in each click's step what it hit, as `Click "Submit button" in "Form" (near 208, 206).`:
+ * the thing clicked is what to look for, the coordinate only a hint. A step the teacher rewrote
+ * stays as written.
+ */
+export function withClickTargets(
+  playbook: SkillPlaybook,
+  events: TeachRecordingEvent[],
+  targets: TeachClickTarget[],
+): SkillPlaybook {
+  const clicks = new Map(walkRecording(events).clicks.map((click) => [click.eventIndex, click]));
+  const indexes = clickStepIndexes(playbook.steps, events);
+  const steps = [...playbook.steps];
+  for (const target of targets) {
+    const click = clicks.get(target.eventIndex);
+    const at = indexes.get(target.eventIndex);
+    if (click && at !== undefined) steps[at] = describeClick(click, target);
+  }
+  return { ...playbook, steps };
 }
 
 /** Lowercase letters, digits and underscores, at most 40; accents are dropped, not the letter. */

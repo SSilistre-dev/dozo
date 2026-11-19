@@ -3793,6 +3793,54 @@
         "apps/api/src/dozo-taught-skills.ts"
       ],
       "reason": "teaching: a wrapper of the same name refuses teaching on a plan with no computer time before any run is cancelled, and every save forgets the typed keys"
+    },
+    {
+      "file": "packages/adapters/src/teaching-session.ts",
+      "find": "import { toComputerRef } from \"./computer-support.js\";",
+      "replace": "import { toComputerRef } from \"./computer-support.js\";\nimport type { TeachClickObservation } from \"./dozo-teach-targets.js\";\nimport {\n  observeTeachClick,\n  teachClickTarget,\n  withTeachClickTarget,\n} from \"./dozo-teach-targets.js\";",
+      "requires": ["packages/adapters/src/dozo-teach-targets.ts"],
+      "reason": "teaching, what each click hit: the imports of the three hooks below"
+    },
+    {
+      "file": "packages/adapters/src/teaching-session.ts",
+      "find": "  if (prepared.kind === \"stale\") return \"stale\";\n  if (prepared.computer?.providerRef) {",
+      "replace": "  if (prepared.kind === \"stale\") return \"stale\";\n  let dozoClick: TeachClickObservation | undefined;\n  if (prepared.computer?.providerRef) {",
+      "reason": "teaching, what each click hit: the screen seen before a recorded click lands, read below"
+    },
+    {
+      "file": "packages/adapters/src/teaching-session.ts",
+      "find": "    await applyTeachingDesktopInput(\n      deps.sandbox,\n      prepared.computer,\n      mapped,\n      computerContext(actor, botId, \"input\"),\n    );\n  }\n  const recorded = await deps.prisma.$transaction(async (tx) => {",
+      "replace": "    dozoClick = await observeTeachClick(\n      deps.sandbox,\n      prepared.computer,\n      mapped,\n      computerContext(actor, botId, \"skills.click\"),\n    );\n    await applyTeachingDesktopInput(\n      deps.sandbox,\n      prepared.computer,\n      mapped,\n      computerContext(actor, botId, \"input\"),\n    );\n  }\n  const dozoTarget = await teachClickTarget(dozoClick);\n  const recorded = await deps.prisma.$transaction(async (tx) => {",
+      "requires": ["packages/adapters/src/dozo-teach-targets.ts"],
+      "reason": "teaching, what each click hit: a recorded click observes the screen (bounded, never failing the click) before it lands; its window and a small picture around it are kept for the review, so a step can say what was clicked instead of only where"
+    },
+    {
+      "file": "packages/adapters/src/teaching-session.ts",
+      "find": "    const recording = parseRecording(current.recording);\n    recording.events.push(event);",
+      "replace": "    const recording = withTeachClickTarget(\n      skill.id,\n      current.recording,\n      parseRecording(current.recording),\n      dozoTarget,\n    );\n    recording.events.push(event);",
+      "requires": ["packages/adapters/src/dozo-teach-targets.ts"],
+      "reason": "teaching, what each click hit: the click's target is stored with the index of the event appended here, under the same row lock, and the recording's earlier targets survive the rewrite"
+    },
+    {
+      "file": "packages/adapters/src/teaching-session.ts",
+      "find": "    const current = parseRecording(skill.recording);\n    const next = mutate(current);",
+      "replace": "    const current = withTeachClickTarget(\n      skillId,\n      skill.recording,\n      parseRecording(skill.recording),\n    );\n    const next = mutate(current);",
+      "requires": ["packages/adapters/src/dozo-teach-targets.ts"],
+      "reason": "teaching, what each click hit: a snapshot or appended event during a recording keeps the targets recorded so far"
+    },
+    {
+      "file": "packages/db/src/teaching-recordings.ts",
+      "find": "import { buildPlaybookFromRecording } from \"@rakazo/core\";",
+      "replace": "import { buildPlaybookFromRecording } from \"@rakazo/core\";\nimport { withoutSecretClickImages } from \"./dozo-teaching-recordings.js\";\nexport { storedTeachTargets, TEACH_TARGETS_KEY } from \"./dozo-teaching-recordings.js\";",
+      "requires": ["packages/db/src/dozo-teaching-recordings.ts"],
+      "reason": "teaching, what each click hit: the import of the hook below, and the targets' reader for the adapters and the API (the package exports this module)"
+    },
+    {
+      "file": "packages/db/src/teaching-recordings.ts",
+      "find": "      status: \"draft\",\n      recording: recording as never,",
+      "replace": "      status: \"draft\",\n      recording: withoutSecretClickImages(skill.id, recording) as never,",
+      "requires": ["packages/db/src/dozo-teaching-recordings.ts"],
+      "reason": "teaching, what each click hit: every way a recording ends drafts here, and a click before a secret value loses its picture before anyone can review it"
     }
   ],
   "assets": {
