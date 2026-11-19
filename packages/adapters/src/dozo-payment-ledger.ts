@@ -1,10 +1,11 @@
 /** One payment, refund or failed payment as the payment provider recorded it. */
 export interface DozoLedgerEntry {
   /** The provider's id for the payer, matched against the deployment's billing accounts. */
-  customerId: string | null;
+  customerId: string;
   /** In the currency's minor unit (cents), as the provider reports it. */
   amount: number;
   currency: string;
+  /** When it was paid, refunded or declined. */
   at: Date;
   status: "paid" | "refunded" | "failed";
 }
@@ -12,15 +13,28 @@ export interface DozoLedgerEntry {
 export interface DozoLedger {
   /** Newest first. */
   entries: DozoLedgerEntry[];
-  /** The provider held more records than one read takes; `entries` are the newest. */
+  /**
+   * Records in the period held by the deployment's payers that do not show they are the
+   * deployment's (another product on the same payer, or an older record without a mark). Never
+   * in `entries`.
+   */
+  unclassified: number;
+  /** Not every record was read: `entries` are not the whole period. */
   partial: boolean;
+}
+
+/** The deployment's payers, and the subscriptions its billing accounts hold, as the provider names them. */
+export interface DozoLedgerAccounts {
+  customers: ReadonlySet<string>;
+  subscriptions: ReadonlySet<string>;
 }
 
 /**
  * Reads what the deployment was paid, read-only, for the admin billing page. The payment account
- * may also hold other products' payments: an implementation returns only this deployment's, those
- * of a payer in `customers` or carrying the marker the deployment's own checkout writes.
+ * may also hold other products' payments, even for the same payer: an implementation reads only
+ * the deployment's payers and returns a record only when the record itself shows it is the
+ * deployment's.
  */
 export interface DozoPaymentLedger {
-  read(range: { from: Date; to: Date }, customers: ReadonlySet<string>): Promise<DozoLedger>;
+  read(range: { from: Date; to: Date }, accounts: DozoLedgerAccounts): Promise<DozoLedger>;
 }

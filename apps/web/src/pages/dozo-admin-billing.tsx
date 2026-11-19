@@ -230,12 +230,16 @@ function Revenue() {
       ) : (
         <>
           <p data-testid="billing-totals" className="flex flex-wrap gap-x-4 text-body-sm">
-            {revenue.data.totals.length === 0 ? (
+            {revenue.data.totals === null ? (
+              <span className="text-muted-foreground">
+                <Trans>Too many records to total</Trans>
+              </span>
+            ) : revenue.data.totals.length === 0 ? (
               <span className="text-muted-foreground">
                 <Trans>No payments</Trans>
               </span>
             ) : null}
-            {revenue.data.totals.map((total) => {
+            {revenue.data.totals?.map((total) => {
               const paid = money(total.paid, total.currency);
               const refunded = money(total.refunded, total.currency);
               return (
@@ -260,9 +264,9 @@ function Revenue() {
                 />
               </span>
             ) : null}
-            {revenue.data.partial ? (
+            {revenue.data.unclassified ? (
               <span className="text-muted-foreground">
-                <Trans>Newest records only</Trans>
+                <Trans>{revenue.data.unclassified} unclassified</Trans>
               </span>
             ) : null}
           </p>

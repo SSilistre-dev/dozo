@@ -1,9 +1,11 @@
 import { createRouterClient } from "@orpc/server";
-import type { DozoLedgerEntry, DozoPaymentLedger } from "@rakazo/adapters";
+import type { DozoLedger, DozoLedgerEntry, DozoPaymentLedger } from "@rakazo/adapters";
+import { hasBillingAccess } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import type { BillingRow } from "./dozo-admin-billing.js";
+import type { BillingRow, SummaryInput } from "./dozo-admin-billing.js";
 import {
   billingSummary,
+  DOZO_ADMIN_LIVE_STATUSES,
   DOZO_ADMIN_RECENT_PAYMENTS,
   DOZO_ADMIN_REVENUE_CACHE_MS,
   dozoAdminBillingRoutes,
@@ -30,64 +32,86 @@ function billing(organizationId: string, more: Partial<BillingRow> = {}): Billin
   };
 }
 
+function input(more: Partial<SummaryInput>): SummaryInput {
+  return { members: 0, statuses: [], live: [], grants: [], owned: new Map(), ...more };
+}
+
 describe("counting plans", () => {
-  it("counts each paid tier by how it is billed, grants apart, and everyone else as Free", () => {
+  it("reads only the statuses that give the plan as live", () => {
+    for (const status of DOZO_ADMIN_LIVE_STATUSES) expect(hasBillingAccess(status)).toBe(true);
+  });
+
+  it("counts each member by the organization they own: how it pays, a grant, or Free", () => {
     const summary = billingSummary(
-      10,
-      [
-        billing("monthly-pro"),
-        billing("yearly-pro", { byokInterval: "year" }),
-        billing("yearly-max", { byokTier: "max", byokInterval: "year" }),
-        // A Premium subscription under a granted Premium Plus counts as the grant.
-        billing("raised", { byokTier: "pro" }),
-        // Ended: on Free.
-        billing("ended", { status: "canceled" }),
-        // Credits only: paid, but no own-model tier.
-        billing("credits", { byokTier: null }),
-      ],
-      [
-        { organizationId: "raised", tier: "max", endsAt: inDays(60) },
-        { organizationId: "gift", tier: "pro", endsAt: inDays(90) },
-        // Expired grants count as none.
-        { organizationId: "old", tier: "max", endsAt: inDays(-1) },
-      ],
+      input({
+        members: 10,
+        live: [
+          billing("org-monthly"),
+          billing("org-yearly", { byokInterval: "year" }),
+          billing("org-max", { byokTier: "max", byokInterval: "year" }),
+          // Premium under a granted Premium Plus counts as the grant.
+          billing("org-raised"),
+          // Credits only: no own-model tier, so Free.
+          billing("org-credits", { byokTier: null }),
+          // A Free subscription is Free, counted by how it pays.
+          billing("org-free", { byokTier: "standard" }),
+        ],
+        grants: [
+          { organizationId: "org-raised", tier: "max", endsAt: inDays(60) },
+          { organizationId: "org-gift", tier: "pro", endsAt: inDays(90) },
+        ],
+        owned: new Map([
+          ["ada", "org-monthly"],
+          ["bob", "org-yearly"],
+          ["cy", "org-max"],
+          ["dee", "org-raised"],
+          ["eve", "org-credits"],
+          ["fay", "org-gift"],
+          ["gus", "org-free"],
+          // A member of a paid team who owns a Free organization of their own is on Free.
+          ["hal", "org-own"],
+        ]),
+      }),
       now,
     );
     expect(summary.members).toBe(10);
-    expect(summary.paid).toBe(5);
     expect(summary.granted).toBe(2);
     expect(summary.plans).toEqual([
-      { tier: "standard", total: 5, monthly: 0, yearly: 0, granted: 0 },
+      { tier: "standard", total: 5, monthly: 1, yearly: 0, granted: 0 },
       { tier: "pro", total: 3, monthly: 1, yearly: 1, granted: 1 },
       { tier: "max", total: 2, monthly: 0, yearly: 1, granted: 1 },
     ]);
   });
 
-  it("counts trials, payment trouble, cancellations and what ends soon, once per organization", () => {
+  it("counts subscriptions by status, cancellations and what ends soon, once per organization", () => {
     const summary = billingSummary(
-      4,
-      [
-        billing("trial", { status: "trialing", trialEndsAt: inDays(3) }),
-        billing("late", { status: "past_due" }),
-        billing("unpaid", { status: "unpaid", byokTier: "max" }),
-        billing("leaving", { cancelAtPeriodEnd: true, currentPeriodEndsAt: inDays(10) }),
-        // A cancelled subscription that already ended is not "cancelling".
-        billing("gone", { status: "canceled", cancelAtPeriodEnd: true }),
-        // Ends in 2 days by trial and in 40 by grant: counted once, by the soonest.
-        billing("both", { status: "trialing", trialEndsAt: inDays(2) }),
-      ],
-      [
-        { organizationId: "both", tier: "max", endsAt: inDays(40) },
-        { organizationId: "later", tier: "pro", endsAt: inDays(45) },
-      ],
+      input({
+        members: 4,
+        statuses: [
+          { status: "active", count: 7 },
+          { status: "trialing", count: 2 },
+          { status: "past_due", count: 1 },
+          { status: "unpaid", count: 3 },
+          { status: "canceled", count: 9 },
+          { status: null, count: 4 },
+        ],
+        live: [
+          billing("trial", { status: "trialing", trialEndsAt: inDays(3) }),
+          billing("leaving", { cancelAtPeriodEnd: true, currentPeriodEndsAt: inDays(10) }),
+          // Ends in 2 days by trial and in 40 by grant: counted once, by the soonest.
+          billing("both", { status: "trialing", trialEndsAt: inDays(2) }),
+          // A trial whose end already passed ends nothing.
+          billing("stale", { status: "trialing", trialEndsAt: inDays(-1) }),
+        ],
+        grants: [
+          { organizationId: "both", tier: "max", endsAt: inDays(40) },
+          { organizationId: "later", tier: "pro", endsAt: inDays(45) },
+        ],
+      }),
       now,
     );
-    expect(summary.trialing).toBe(2);
-    expect(summary.pastDue).toBe(2);
-    expect(summary.cancelling).toBe(1);
+    expect(summary).toMatchObject({ paid: 7, trialing: 2, pastDue: 4, cancelling: 1 });
     expect(summary.ending).toEqual({ within7Days: 2, within30Days: 3 });
-    // More organizations on a paid plan than members counted: Free never goes below zero.
-    expect(summary.plans[0]).toMatchObject({ tier: "standard", total: 0 });
   });
 });
 
@@ -116,6 +140,10 @@ function entry(more: Partial<DozoLedgerEntry> = {}): DozoLedgerEntry {
   return { customerId: "cus_ada", amount: 1000, currency: "usd", at: now, status: "paid", ...more };
 }
 
+function ledgerOf(entries: DozoLedgerEntry[], more: Partial<DozoLedger> = {}): DozoLedger {
+  return { entries, unclassified: 0, partial: false, ...more };
+}
+
 describe("summing payments", () => {
   it("totals each currency apart, counts failures and keeps the newest payments", () => {
     const entries = [
@@ -125,13 +153,21 @@ describe("summing payments", () => {
       entry({ status: "failed" }),
       ...Array.from({ length: DOZO_ADMIN_RECENT_PAYMENTS }, () => entry({ amount: 1 })),
     ];
-    const revenue = revenueOf(entries);
+    const revenue = revenueOf(ledgerOf(entries, { unclassified: 2 }));
     expect(revenue.totals).toEqual([
       { currency: "usd", paid: 1000 + DOZO_ADMIN_RECENT_PAYMENTS, refunded: 500 },
       { currency: "eur", paid: 900, refunded: 0 },
     ]);
     expect(revenue.failed).toBe(1);
+    expect(revenue.unclassified).toBe(2);
     expect(revenue.recent).toEqual(entries.slice(0, DOZO_ADMIN_RECENT_PAYMENTS));
+  });
+
+  it("never shows a partial read as a total", () => {
+    const revenue = revenueOf(ledgerOf([entry(), entry({ status: "failed" })], { partial: true }));
+    expect(revenue.totals).toBeNull();
+    expect(revenue.failed).toBeNull();
+    expect(revenue.recent).toHaveLength(2);
   });
 });
 
@@ -139,6 +175,10 @@ function setup(ledger?: DozoPaymentLedger) {
   const people = [
     { id: "admin", email: "owner@example.test", emailVerified: true },
     { id: "ada", email: "ada@example.test", emailVerified: true },
+  ];
+  const accounts = [
+    { customerId: "cus_ada", subscriptionId: "sub_ada", ...billing("org-ada") },
+    { customerId: "cus_team", subscriptionId: null, ...billing("org-team", { byokTier: "max" }) },
   ];
   const prisma = {
     user: {
@@ -149,26 +189,36 @@ function setup(ledger?: DozoPaymentLedger) {
       count: vi.fn(async () => 3),
     },
     billingAccount: {
-      findMany: vi.fn(async () => [
-        { customerId: "cus_ada", ...billing("org-ada") },
-        { customerId: "cus_team", ...billing("org-team", { byokTier: "max" }) },
-      ]),
+      findMany: vi.fn(async () => accounts),
+      groupBy: vi.fn(async () => [{ status: "active", _count: { _all: 2 } }]),
     },
     dozoPlanGrant: { findMany: vi.fn(async () => []) },
     member: {
-      findMany: vi.fn(async () => [
-        {
-          organizationId: "org-ada",
-          role: "owner",
-          user: { id: "ada", email: "ada@example.test" },
-        },
-        // A member who does not own the organization is never shown as the payer.
-        {
-          organizationId: "org-team",
-          role: "member",
-          user: { id: "admin", email: "owner@example.test" },
-        },
-      ]),
+      findMany: vi.fn(async ({ distinct }: { distinct?: string[] }) =>
+        distinct
+          ? [{ userId: "ada" }, { userId: "admin" }]
+          : [
+              {
+                userId: "ada",
+                organizationId: "org-ada",
+                role: "owner",
+                user: { id: "ada", email: "ada@example.test" },
+              },
+              // A member who does not own the organization is never its payer or its plan.
+              {
+                userId: "admin",
+                organizationId: "org-team",
+                role: "member",
+                user: { id: "admin", email: "owner@example.test" },
+              },
+              {
+                userId: "admin",
+                organizationId: "org-admin",
+                role: "owner",
+                user: { id: "admin", email: "owner@example.test" },
+              },
+            ],
+      ),
     },
   };
   const deps = { prisma, env: { adminEmails: ["owner@example.test"] } } as unknown as RouterDeps;
@@ -184,13 +234,13 @@ function setup(ledger?: DozoPaymentLedger) {
   return { prisma, as };
 }
 
-function ledgerOf(entries: DozoLedgerEntry[]) {
-  return { read: vi.fn(async () => ({ entries, partial: true })) };
+function reader(entries: DozoLedgerEntry[], more: Partial<DozoLedger> = {}) {
+  return { read: vi.fn(async () => ledgerOf(entries, more)) };
 }
 
 describe("the billing procedures", () => {
   it("refuses anyone who is not an admin, before anything is read", async () => {
-    const ledger = ledgerOf([]);
+    const ledger = reader([]);
     const { as, prisma } = setup(ledger);
     const refused = { code: "FORBIDDEN" };
     await expect(as("ada").summary()).rejects.toMatchObject(refused);
@@ -200,11 +250,15 @@ describe("the billing procedures", () => {
     expect(ledger.read).not.toHaveBeenCalled();
   });
 
-  it("counts plans from the deployment's own records", async () => {
+  it("counts in the database and reads only live subscriptions and unexpired grants", async () => {
     const { as, prisma } = setup();
     const summary = await as("admin").summary();
     expect(summary).toMatchObject({ members: 3, paid: 2 });
-    expect(summary.plans.map((plan) => plan.total)).toEqual([1, 1, 1]);
+    // Ada owns a Premium organization; the admin is in the Premium Plus team but owns another.
+    expect(summary.plans.map((plan) => plan.total)).toEqual([2, 1, 0]);
+    expect(prisma.billingAccount.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: { in: DOZO_ADMIN_LIVE_STATUSES } } }),
+    );
     expect(prisma.dozoPlanGrant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { endsAt: { gt: expect.any(Date) } } }),
     );
@@ -215,24 +269,28 @@ describe("the billing procedures", () => {
     expect(await as("admin").revenue({ period: "lastMonth" })).toBeNull();
   });
 
-  it("reads the period's payments for the deployment's own payers and names the owner", async () => {
-    const ledger = ledgerOf([
-      entry({ currency: "USD" }),
-      entry({ customerId: "cus_team", status: "failed" }),
-      entry({ customerId: null, status: "refunded", amount: 300 }),
-    ]);
+  it("reads the period for the deployment's payers and subscriptions and names the owner", async () => {
+    const ledger = reader(
+      [
+        entry({ currency: "USD" }),
+        entry({ customerId: "cus_team", status: "failed" }),
+        entry({ customerId: "cus_gone", status: "refunded", amount: 300 }),
+      ],
+      { unclassified: 1 },
+    );
     const { as } = setup(ledger);
     const revenue = await as("admin").revenue({ period: "lastMonth" });
-    const [range, customers] = ledger.read.mock.calls[0] as unknown as [
+    const [range, accounts] = ledger.read.mock.calls[0] as unknown as [
       { from: Date; to: Date },
-      Set<string>,
+      { customers: Set<string>; subscriptions: Set<string> },
     ];
     expect(range.to.getTime() - range.from.getTime()).toBeGreaterThan(27 * day);
-    expect([...customers]).toEqual(["cus_ada", "cus_team"]);
+    expect([...accounts.customers]).toEqual(["cus_ada", "cus_team"]);
+    expect([...accounts.subscriptions]).toEqual(["sub_ada"]);
     expect(revenue).toEqual({
       totals: [{ currency: "usd", paid: 1000, refunded: 300 }],
       failed: 1,
-      partial: true,
+      unclassified: 1,
       payments: [
         {
           member: { id: "ada", email: "ada@example.test" },
@@ -250,7 +308,7 @@ describe("the billing procedures", () => {
   it("reuses a read for a minute, per period, and never keeps a failed one", async () => {
     vi.useFakeTimers({ now });
     try {
-      const ledger = ledgerOf([]);
+      const ledger = reader([]);
       ledger.read.mockRejectedValueOnce(new Error("provider down"));
       const { as } = setup(ledger);
       const client = as("admin");

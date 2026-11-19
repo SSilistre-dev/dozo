@@ -108,7 +108,7 @@ const revenue = {
     { currency: "jpy", paid: 5_000, refunded: 0 },
   ],
   failed: 2,
-  partial: false,
+  unclassified: 0,
   payments: [
     {
       member: { id: "ada", email: "ada@example.test" },
@@ -230,12 +230,19 @@ it("reads another period when one is picked, and keeps it when it is picked agai
   expect(button("12 months").getAttribute("aria-pressed")).toBe("true");
 });
 
-it("says when there were no payments and when only the newest records were read", async () => {
-  api.revenue.mockResolvedValue({ totals: [], failed: 0, partial: true, payments: [] });
+it("says when there were no payments, and gives no total when not every record was read", async () => {
+  api.revenue.mockResolvedValueOnce({ totals: [], failed: 0, unclassified: 0, payments: [] });
   await render();
   await vi.waitFor(() => expect(shown("billing-totals")).toBeTruthy());
-  expect(text("billing-totals")).toBe("No paymentsNewest records only");
+  expect(text("billing-totals")).toBe("No payments");
   expect(shown("billing-payments")).toBeNull();
+
+  api.revenue.mockResolvedValue({ ...revenue, totals: null, failed: null, unclassified: 3 });
+  await click(button("Last month"));
+  await vi.waitFor(() =>
+    expect(text("billing-totals")).toBe("Too many records to total3 unclassified"),
+  );
+  expect(shown("billing-payments")).toBeTruthy();
 });
 
 it("hides payments without a payment provider", async () => {

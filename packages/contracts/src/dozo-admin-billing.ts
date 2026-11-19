@@ -43,7 +43,7 @@ export const DozoAdminRevenueTotalSchema = z.object({
 });
 
 export const DozoAdminPaymentSchema = z.object({
-  /** The account that pays; null when no account of this deployment holds the payer any more. */
+  /** The account that pays; null when no account of this deployment owns the payer any more. */
   member: z.object({ id: Id, email: z.string() }).nullable(),
   amount: z.number().int(),
   currency: z.string(),
@@ -53,13 +53,17 @@ export const DozoAdminPaymentSchema = z.object({
 export type DozoAdminPayment = z.infer<typeof DozoAdminPaymentSchema>;
 
 export const DozoAdminRevenueSchema = z.object({
-  /** One row per currency paid or refunded in. */
-  totals: z.array(DozoAdminRevenueTotalSchema),
-  failed: z.number().int(),
+  /** One row per currency paid or refunded in; null when not every record could be read. */
+  totals: z.array(DozoAdminRevenueTotalSchema).nullable(),
+  /** Failed payments; null when not every record could be read. */
+  failed: z.number().int().nullable(),
+  /**
+   * Records of the deployment's payers in the period that do not show they are the deployment's:
+   * another product's, or older ones without a mark. Never in the totals or the payments.
+   */
+  unclassified: z.number().int(),
   /** Newest first. */
   payments: z.array(DozoAdminPaymentSchema),
-  /** The provider had more records than one read takes: the figures cover the newest only. */
-  partial: z.boolean(),
 });
 export type DozoAdminRevenue = z.infer<typeof DozoAdminRevenueSchema>;
 
