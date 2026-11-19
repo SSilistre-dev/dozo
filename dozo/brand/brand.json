@@ -765,9 +765,44 @@
     {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "import { ModelStep } from \"./onboarding/model-step\";",
-      "replace": "import { ModelStep } from \"./onboarding/dozo-model-step\";",
+      "replace": "import { dozoCreditsOnSale, ModelStep } from \"./onboarding/dozo-model-step\";",
       "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
-      "reason": "fork feature: the onboarding model step is a wrapper that offers local models next to upstream's step and re-exports the same name"
+      "reason": "fork feature: the onboarding model step is a wrapper (short provider list, preselection, a plain rejected-key message, local models) that re-exports the same name, and tells whether credits are on sale"
+    },
+    {
+      "file": "apps/web/src/pages/Onboarding.tsx",
+      "find": "      rpc.models.list(undefined, { signal }).catch(() => []),\n    ])\n      .then(([me, models]) => {\n        if (signal.aborted) return;\n        setBillingEnabled(me.billingEnabled);",
+      "replace": "      rpc.models.list(undefined, { signal }).catch(() => []),\n      dozoCreditsOnSale(signal),\n    ])\n      .then(([me, models, creditsOnSale]) => {\n        if (signal.aborted) return;\n        setBillingEnabled(me.billingEnabled && creditsOnSale);",
+      "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
+      "reason": "onboarding offers credits only while they are on sale; picking them otherwise went back to the same step (the flag only decides that option)"
+    },
+    {
+      "file": "apps/web/src/pages/Onboarding.tsx",
+      "find": "<ModelStep model={model} fieldId={fieldId} />",
+      "replace": "<ModelStep model={model} fieldId={fieldId} onLater={() => goTo(\"bot\")} />",
+      "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
+      "reason": "the model step can be left for later: the first bot is created as after a connection, and a send without a model links to connecting one"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "import { Check, Copy } from \"lucide-react\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "replace": "import { Check, Copy } from \"lucide-react\";\nimport { DozoKeyLink } from \"./dozo-key-link\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "requires": ["apps/web/src/pages/onboarding/dozo-key-link.tsx"],
+      "reason": "the link under the API key field, placed by the next rule"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "                  placeholder=\"sk-…\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n              </label>",
+      "replace": "                  placeholder=\"sk-…\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n                <DozoKeyLink provider={provider} />\n              </label>",
+      "requires": ["apps/web/src/pages/onboarding/dozo-key-link.tsx"],
+      "reason": "onboarding: where to get a key for the chosen provider, from the provider catalog"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./model-providers.js\";\nexport * from \"./model-role-settings.js\";",
+      "replace": "export * from \"./model-providers.js\";\nexport * from \"./dozo-model-providers.js\";\nexport * from \"./model-role-settings.js\";",
+      "requires": ["packages/core/src/dozo-model-providers.ts"],
+      "reason": "onboarding's featured providers and key pages, product data next to upstream's provider catalog"
     },
     {
       "file": "packages/ui-web/src/index.ts",
