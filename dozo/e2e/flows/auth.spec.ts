@@ -15,11 +15,7 @@ async function emailForm(page: import("@playwright/test").Page, path: string) {
   if (await choice.isVisible()) await choice.click();
 }
 
-test("kayıt, çıkış, yeniden giriş", async ({ page, guard }) => {
-  guard.allow(
-    /404 POST [^ ]*\/rpc\/billing\/status/,
-    "FINDING: the model step asks for the billing status on a server without billing, which answers 404",
-  );
+test("kayıt, çıkış, yeniden giriş", async ({ page }) => {
   const email = uniqueEmail("auth");
   await emailForm(page, "/sign-up");
   await expect(page.getByRole("heading", { name: "Hesabınızı oluşturun" })).toBeVisible();

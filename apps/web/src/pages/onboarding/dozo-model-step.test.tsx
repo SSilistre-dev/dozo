@@ -118,23 +118,28 @@ describe("dozoCreditsOnSale", () => {
   it("is true while the deployment sells credits", async () => {
     mocks.status.mockResolvedValue({ creditPurchasesEnabled: true });
     const signal = new AbortController().signal;
-    await expect(dozoCreditsOnSale(signal)).resolves.toBe(true);
+    await expect(dozoCreditsOnSale(true, signal)).resolves.toBe(true);
     expect(mocks.status).toHaveBeenCalledWith(undefined, { signal });
   });
 
   it("is true for a server that does not report it, as upstream reads the flag", async () => {
     mocks.status.mockResolvedValue({});
-    await expect(dozoCreditsOnSale(new AbortController().signal)).resolves.toBe(true);
+    await expect(dozoCreditsOnSale(true, new AbortController().signal)).resolves.toBe(true);
   });
 
   it("is false while credit purchases are off", async () => {
     mocks.status.mockResolvedValue({ creditPurchasesEnabled: false });
-    await expect(dozoCreditsOnSale(new AbortController().signal)).resolves.toBe(false);
+    await expect(dozoCreditsOnSale(true, new AbortController().signal)).resolves.toBe(false);
+  });
+
+  it("does not ask a server without billing", async () => {
+    await expect(dozoCreditsOnSale(false, new AbortController().signal)).resolves.toBe(false);
+    expect(mocks.status).not.toHaveBeenCalled();
   });
 
   it("is false when billing cannot say", async () => {
     mocks.status.mockRejectedValue(new Error("no billing"));
-    await expect(dozoCreditsOnSale(new AbortController().signal)).resolves.toBe(false);
+    await expect(dozoCreditsOnSale(true, new AbortController().signal)).resolves.toBe(false);
   });
 });
 

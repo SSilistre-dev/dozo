@@ -5,6 +5,7 @@ import { sandboxKindCapabilities, sandboxKindsWhere } from "@rakazo/adapters";
 import type { AccountDeletionAuth } from "@rakazo/auth";
 import {
   addBan,
+  banDomainSpellings,
   banEntry,
   banKeys,
   bannedEntries,
@@ -141,6 +142,23 @@ export function dozoAdminRoutes(ctx: RouterContext) {
       userId: adminId,
       metadata: { setting: "ban_list", change, entry },
     });
+  /** The active accounts a ban entry refuses; the domain narrows the read, banKeys decides. */
+  const coveredAccounts = async (entry: string) => {
+    const domain = entry.slice(entry.lastIndexOf("@") + 1);
+    const rows = await runAsSystem("find the accounts a ban covers", () =>
+      prisma.user.findMany({
+        where: {
+          ...accounts,
+          deactivatedAt: null,
+          OR: banDomainSpellings(domain).map((spelling) => ({
+            email: { endsWith: spelling, mode: "insensitive" as const },
+          })),
+        },
+        select: { id: true, email: true },
+      }),
+    );
+    return rows.filter((row) => banKeys(row.email).includes(entry)).map((row) => row.id);
+  };
   const findAccount = async (userId: string) => {
     const user = await runAsSystem("find an account for the admin page", () =>
       prisma.user.findFirst({ where: { ...accounts, id: userId }, select: { email: true } }),
@@ -396,7 +414,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
 
       /**
        * A listed address or domain is refused at sign-up and sign-in, and its open sessions stop
-       * being admitted. Banning an account suspends it first, so a suspension the directory
+       * being admitted. Every account it covers is suspended first, so a suspension the directory
        * refuses lists nothing. No entry may cover an admin's address: it would lock the admin out.
        */
       ban: admin.dozoAdmin.ban.handler(async ({ context, input }) => {
@@ -408,7 +426,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         if (!value) throw new ClientError("BAD_REQUEST", "Enter an email address or a domain");
         if ((deps.env.adminEmails ?? []).some((email) => banKeys(email).includes(value)))
           throw new ClientError("BAD_REQUEST", "An admin account cannot be banned");
-        if (userId) await suspend(userId, true);
+        for (const id of userId ? [userId] : await coveredAccounts(value)) await suspend(id, true);
         await addBan(prisma, value, context.actor.userId);
         await recordBanChange(context.actor.userId, "added", value);
         getLogger().info("dozo.admin.ban", {

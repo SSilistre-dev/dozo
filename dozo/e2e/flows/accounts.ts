@@ -99,8 +99,8 @@ export async function serverPlans(browser: Browser): Promise<PlanRow[]> {
  * may subscribe. A checkout is recorded and answered with the address a person lands on when they
  * leave the payment page without paying (`?billing=canceled`).
  */
-export async function fakeBilling(page: Page, plans: PlanRow[]) {
-  const checkouts: unknown[] = [];
+/** The account as a server that bills reports it (`billingEnabled`); the rest of `me` is real. */
+export async function reportBilling(page: Page) {
   const patchMe = async (route: Route) => {
     const response = await route.fetch();
     const body = (await response.json()) as { json?: Record<string, unknown> };
@@ -112,6 +112,11 @@ export async function fakeBilling(page: Page, plans: PlanRow[]) {
   };
   await page.route("**/rpc/me", patchMe);
   await page.route("**/rpc/bootstrap", patchMe);
+}
+
+export async function fakeBilling(page: Page, plans: PlanRow[]) {
+  const checkouts: unknown[] = [];
+  await reportBilling(page);
   const sizes: Record<string, string> = { pro: "large", max: "xlarge" };
   await page.route("**/rpc/billing/status", (route) =>
     route.fulfill({

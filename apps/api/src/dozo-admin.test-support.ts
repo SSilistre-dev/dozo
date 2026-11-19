@@ -157,7 +157,14 @@ function world(users: User[]) {
     }
     if (typeof where.id === "string" && row.id !== where.id) return false;
     if (where.id?.in && !where.id.in.includes(row.id)) return false;
-    if (where.email?.endsWith && !row.email.endsWith(where.email.endsWith)) return false;
+    if (where.OR && !where.OR.some((part: Where) => matches(row, part))) return false;
+    if (
+      where.email?.endsWith &&
+      !(where.email.mode === "insensitive" ? row.email.toLowerCase() : row.email).endsWith(
+        where.email.endsWith,
+      )
+    )
+      return false;
     if (
       where.email?.contains &&
       !row.email.toLowerCase().includes(where.email.contains.toLowerCase())

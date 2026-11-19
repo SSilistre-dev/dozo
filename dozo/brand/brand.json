@@ -1177,9 +1177,9 @@
     {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "      rpc.models.list(undefined, { signal }).catch(() => []),\n    ])\n      .then(([me, models]) => {\n        if (signal.aborted) return;\n        setBillingEnabled(me.billingEnabled);",
-      "replace": "      rpc.models.list(undefined, { signal }).catch(() => []),\n      dozoCreditsOnSale(signal),\n    ])\n      .then(([me, models, creditsOnSale]) => {\n        if (signal.aborted) return;\n        setBillingEnabled(me.billingEnabled && creditsOnSale);",
+      "replace": "      rpc.models.list(undefined, { signal }).catch(() => []),\n    ])\n      .then(async ([me, models]) => {\n        const creditsOnSale = await dozoCreditsOnSale(me.billingEnabled, signal);\n        if (signal.aborted) return;\n        setBillingEnabled(creditsOnSale);",
       "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
-      "reason": "onboarding offers credits only while they are on sale; picking them otherwise went back to the same step (the flag only decides that option)"
+      "reason": "onboarding offers credits only while they are on sale; picking them otherwise went back to the same step (the flag only decides that option). A server without billing is not asked: it has no billing routes"
     },
     {
       "file": "apps/web/src/pages/Onboarding.tsx",
@@ -1261,6 +1261,42 @@
       "find": "return isAppearancePreference(raw) ? raw : \"system\";",
       "replace": "return isAppearancePreference(raw) ? raw : \"dark\";",
       "reason": "Dozo is dark by default: the app's own resolution of a missing preference, the twin of the pre-paint script"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { KeyboardShortcutsDialog } from \"./shell/keyboard-shortcuts-dialog\";\nimport { ShellDialogs, useShellDialogs } from \"./shell/shell-dialogs\";",
+      "replace": "import { KeyboardShortcutsDialog } from \"./shell/keyboard-shortcuts-dialog\";\nimport { dozoForgetBot } from \"./shell/dozo-forget-bot\";\nimport { ShellDialogs, useShellDialogs } from \"./shell/shell-dialogs\";",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-forget-bot.ts"
+      ],
+      "reason": "a deleted bot is forgotten at once (next rules): its open reads asked for it after the deletion and were refused"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "          paletteActions={paletteActions}\n        />",
+      "replace": "          paletteActions={paletteActions}\n          forgetBot={(botId) => dozoForgetBot(queryClient, setBots, botId)}\n        />",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-forget-bot.ts"
+      ],
+      "reason": "a deleted bot is forgotten at once: the dialogs get the roster and the cache to drop it from"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-dialogs.tsx",
+      "find": "  deleteRoutineDialogProps,\n  paletteActions,\n}: {",
+      "replace": "  deleteRoutineDialogProps,\n  paletteActions,\n  forgetBot,\n}: {",
+      "reason": "a deleted bot is forgotten at once (see the Shell.tsx rule)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-dialogs.tsx",
+      "find": "  paletteActions: CommandPaletteAction[];\n}) {",
+      "replace": "  paletteActions: CommandPaletteAction[];\n  /** Drops a deleted bot from the roster and forgets its reads. */\n  forgetBot: (botId: string) => void;\n}) {",
+      "reason": "a deleted bot is forgotten at once (see the Shell.tsx rule)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-dialogs.tsx",
+      "find": "            await rpc.bots.remove({ botId: deleteTarget.id, deleteMemories });\n            discardChatAttachments(deleteTarget.id);",
+      "replace": "            await rpc.bots.remove({ botId: deleteTarget.id, deleteMemories });\n            forgetBot(deleteTarget.id);\n            discardChatAttachments(deleteTarget.id);",
+      "reason": "the deletion signals routines and runs to be read again; before the roster is read again the composer's read of the deleted bot's routines asked for it and was refused (404)"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
@@ -1364,21 +1400,39 @@
     },
     {
       "file": "apps/web/src/App.tsx",
-      "find": "module.AdminPluginsPage),\n);\nconst AdminAccessPage = lazyComponent(() =>",
-      "replace": "module.AdminPluginsPage),\n);\nconst DozoAdminPage = lazyComponent(() =>\n  import(\"./pages/dozo-admin\").then((module) => module.DozoAdminPage),\n);\nconst AdminAccessPage = lazyComponent(() =>",
+      "find": "const AdminPluginsPage = lazyComponent(() =>\n  import(\"./pages/AdminPluginsPage\").then((module) => module.AdminPluginsPage),\n);\nconst AdminAccessPage = lazyComponent(() =>\n  import(\"./pages/AdminAccessPage\").then((module) => module.AdminAccessPage),\n);\n",
+      "replace": "const DozoAdminPage = lazyComponent(() =>\n  import(\"./pages/dozo-admin\").then((module) => module.DozoAdminPage),\n);\n",
       "requires": [
         "apps/web/src/pages/dozo-admin.tsx"
       ],
-      "reason": "hosted admin page: loaded on demand, outside the startup bundle"
+      "reason": "hosted admin page: loaded on demand, outside the startup bundle. Upstream's free access and plugin pages open inside it as sections (dozo-admin-nav.ts), so their own pages are not loaded"
     },
     {
       "file": "apps/web/src/App.tsx",
-      "find": "              />\n              <Route\n                path=\"/admin/access\"",
-      "replace": "              />\n              <Route path=\"/admin/*\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
+      "find": "              <Route\n                path=\"/admin/access\"\n                element={\n                  user ? <AdminAccessPage /> : <Navigate to=\"/sign-in?next=/admin/access\" replace />\n                }\n              />\n",
+      "replace": "              <Route path=\"/admin/*\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              {user ? null : (\n                <Route\n                  path=\"/admin/access\"\n                  element={<Navigate to=\"/sign-in?next=/admin/access\" replace />}\n                />\n              )}\n",
       "requires": [
         "apps/web/src/pages/dozo-admin.tsx"
       ],
-      "reason": "hosted admin page: its address and the sections under it (upstream's own /admin pages still win); signed out it answers like an address that does not exist"
+      "reason": "hosted admin page: its address and every section under it, upstream's free access page included, so its navigation stays; signed out it answers like an address that does not exist, except the two upstream addresses, which still send to sign-in"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "              <Route\n                path=\"/admin/plugins\"\n                element={\n                  user ? (\n                    <AdminPluginsPage />\n                  ) : (\n                    <Navigate to=\"/sign-in?next=/admin/plugins\" replace />\n                  )\n                }\n              />\n",
+      "replace": "              {user ? null : (\n                <Route\n                  path=\"/admin/plugins\"\n                  element={<Navigate to=\"/sign-in?next=/admin/plugins\" replace />}\n                />\n              )}\n",
+      "requires": [
+        "apps/web/src/pages/dozo-admin-nav.ts"
+      ],
+      "reason": "plugin submissions open inside the admin page as a section (dozo-admin-nav.ts), its navigation kept; signed out the address still sends to sign-in"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "}\n\nfunction AccessGrantsPanel() {",
+      "replace": "}\n\nexport function AccessGrantsPanel() {",
+      "requires": [
+        "apps/web/src/pages/dozo-admin-nav.ts"
+      ],
+      "reason": "free access opens inside the admin page as a section (dozo-admin-nav.ts): the section is this panel, without the page's own header"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -3764,6 +3818,45 @@
         "apps/mobile/lib/dozo-site-settings.ts"
       ],
       "reason": "announcement: the app's one live stream carries a content-free signal when the site settings change, so the mobile home re-reads the announcement at once, as the web app does"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  const limitCents = Math.max(\n    baseLimitCents,\n",
+      "replace": "  const limitCents = Math.max(\n    // A past-due subscription keeps its plan but opens no computer allowance until it is paid.\n    billing?.status === \"past_due\" ? 0 : baseLimitCents,\n",
+      "reason": "plans: a past-due subscription gets no hosted computer hours until its payment goes through; its other plan rights stay as upstream's grace period has them, and an admin's grant still counts"
+    },
+    {
+      "file": "packages/adapters/src/stripe-billing.ts",
+      "find": "      payment_method_collection: \"always\",\n      allow_promotion_codes: true,\n",
+      "replace": "      payment_method_collection: \"always\",\n",
+      "reason": "plans: the deployment hands out no promotion codes, so checkout shows no code field"
+    },
+    {
+      "file": "packages/adapters/src/stripe-billing.ts",
+      "find": "        adaptive_pricing: { enabled: false },\n        allow_promotion_codes: true,\n",
+      "replace": "        adaptive_pricing: { enabled: false },\n",
+      "reason": "plans: the deployment hands out no promotion codes, so the plan checkout shows no code field"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { pluginSubmissionRoutes } from \"./plugin-submissions.js\";",
+      "replace": "import { pluginSubmissionRoutes } from \"./dozo-plugin-submissions.js\";",
+      "requires": [
+        "apps/api/src/dozo-plugin-submissions.ts"
+      ],
+      "reason": "plugin submissions: DOZO_PLUGIN_SUBMISSIONS=closed answers the public submission form with 403 in the API itself"
+    },
+    {
+      "file": "apps/mobile/components/sandboxed-html-preview.tsx",
+      "find": "originWhitelist={appShell ? [\"*\"] : undefined}",
+      "replace": "originWhitelist={[\"*\"]}",
+      "reason": "bot HTML preview: every navigation reaches the preview's own check, so a link to an app scheme stays inside the preview instead of opening another screen or app"
+    },
+    {
+      "file": "apps/mobile/components/mermaid-diagram.tsx",
+      "find": "overScrollMode=\"never\"\n          onShouldStartLoadWithRequest",
+      "replace": "overScrollMode=\"never\"\n          originWhitelist={[\"*\"]}\n          onShouldStartLoadWithRequest",
+      "reason": "chat diagram: the same as the bot HTML preview, every navigation reaches the diagram's own check"
     },
     {
       "file": "packages/adapter-kit/src/types.ts",
