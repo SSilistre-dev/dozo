@@ -249,7 +249,7 @@ export function SkillDraftCard({
         rows={5}
       />
       {targets.length ? (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-3">
           {targets.map((target) => {
             // What the button removes: the step the picture belongs to.
             const label = playbook.steps[target.step] ?? "";
@@ -257,19 +257,19 @@ export function SkillDraftCard({
               <figure
                 key={target.id}
                 data-testid="skill-draft-target"
-                className="relative m-0 w-28"
+                className="relative m-0 w-fit"
               >
                 <img
                   src={target.image}
                   alt=""
-                  className="block h-14 w-28 rounded-md border border-border object-cover"
+                  className="block h-auto max-h-24 w-auto max-w-40 rounded-md border border-border object-contain"
                 />
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="icon-sm"
                   aria-label={t`Remove ${label}`}
                   disabled={busy}
-                  className="absolute top-0 right-0 size-5"
+                  className="absolute -top-2 -right-2 size-6 rounded-full border border-border"
                   onClick={() => setRemovedTargets((current) => [...current, target.id])}
                 >
                   <XIcon className="size-3" />
