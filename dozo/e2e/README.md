@@ -179,7 +179,8 @@ line; the chat scenario uses it for a tool call that waits for the owner's appro
 There is no payment provider on this stack: billing's server answers are faked in the browser from
 the server's own plans (`fakeBilling`, prices read from `dozoAdmin/plans/list`, never written in the
 suite); the checkout is recorded and answered with the `?billing=canceled` return. Free access
-grants exist only on a billing server, so its four calls are answered in the browser too.
+grants exist only on a billing server, so the account reports billing (`reportBilling`) and the four
+calls are answered in the browser too; without billing the admin page does not list the section.
 
 ## Coverage
 
@@ -254,9 +255,21 @@ makes itself:
   opens every admin section read only. No picture of member lists is kept.
 
 Every live scenario uses the scenario fixture above (console and 4xx/5xx watch, a picture) plus a
-fence (`canli/live.ts`) that aborts and fails on any admin, grant or billing-portal call whose name
-changes something. No payment, no ban, no admin action. A billing scenario skips itself on a server
-that does not bill.
+fence (`canli/fence.ts`, used by `canli/live.ts`). Every RPC is a POST and the contracts carry no
+read/write mark, so the fence lists each procedure of the namespaces it guards (`dozoAdmin`,
+`dozoSiteSettings`, `accessGrants`, `marketplace`) as a read or a write; a write, `billing/portal`
+or a procedure in neither list is aborted and fails the scenario ("unknown procedure ..., if it
+only reads, add it to READS"). `canli-fence.test.mjs` (`make olc`) reads those namespaces from
+`packages/contracts/src` and fails while any procedure is unlisted or a listed one is gone. No
+payment, no ban, no admin action. A billing scenario skips itself on a server that does not bill;
+when the sign-up scenario fails, every later account step is skipped as "hesap açılamadı", so the
+report shows the one root cause.
+
+The run waits for the machine's local-stack lock when the file exists (`DOZO_STACK_LOCK`, default
+`/tmp/dozo-yigin.lock`, through `flock -w 7200`): another run starting or stopping containers changes
+the host's network under the browser. A caller that already holds the lock sets
+`DOZO_CANLI_LOCKED=1`. A navigation that still meets `net::ERR_NETWORK_CHANGED` or
+`ERR_INTERNET_DISCONNECTED` is tried again, at most twice; a site error is never retried.
 
 Output in `dozo/.stage/canli/`: `RAPOR.md`, `rapor.html`, `shots/`, `results.json`. The probe's
 password and session files are removed when the run ends. Budgets (`canli/budgets.ts`, tested

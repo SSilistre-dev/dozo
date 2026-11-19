@@ -22,6 +22,14 @@ import {
  * teardown (canli/cleanup.ts) deletes the account if it is still there: the finally step.
  */
 
+const SIGN_UP = "kayıt → model adımı → 'Daha sonra' → uygulama";
+
+// Every later step needs the account: without it they report the one root cause, not their own.
+// biome-ignore lint/correctness/noEmptyPattern: Playwright reads a hook's first parameter as an object pattern
+test.beforeEach(({}, info) => {
+  if (info.title !== SIGN_UP && !readProbe()) test.skip(true, "atlandı: hesap açılamadı");
+});
+
 /** The page's language is Turkish from the first screen: the run reads Turkish copy. */
 async function openApp(page: Page, path = "/app") {
   await page.goto("/app");
@@ -29,7 +37,7 @@ async function openApp(page: Page, path = "/app") {
   if (path !== "/app") await page.goto(path);
 }
 
-test("kayıt → model adımı → 'Daha sonra' → uygulama", async ({ page, guard }) => {
+test(SIGN_UP, async ({ page, guard }) => {
   guard.allow(
     /404 POST [^ ]*\/rpc\/billing\/status/,
     "a server without billing answers 404 (local runs)",

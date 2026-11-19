@@ -6,10 +6,11 @@ import { act, Children, cloneElement, isValidElement, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ read: vi.fn() }));
+const api = vi.hoisted(() => ({ read: vi.fn(), me: vi.fn() }));
 
 vi.mock("../lib/query", () => ({
   useSpaceQueries: () => ({
+    me: { queryOptions: () => ({ queryKey: ["me"], queryFn: () => api.me() }) },
     dozoAdmin: {
       funnel: {
         read: {
@@ -124,6 +125,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.read.mockReset();
   api.read.mockResolvedValue(funnel);
+  api.me.mockReset();
+  api.me.mockResolvedValue({ billingEnabled: true });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -166,6 +169,21 @@ it("shows one row per step: its count, its share of the step before and its medi
   );
   expect(widths).toEqual(["100%", "50%", "25%", "22.5%", "0%"]);
   expect(shown("funnel-granted")?.textContent).toBe("2 on a granted plan, not counted as paid");
+});
+
+it("leaves out the paid step and the granted note on a server without billing", async () => {
+  api.me.mockResolvedValue({ billingEnabled: false });
+  await render();
+  await vi.waitFor(() => expect(api.me).toHaveBeenCalled());
+  await vi.waitFor(() => expect(shown("funnel")).toBeTruthy());
+  const rows = [...(shown("funnel")?.querySelectorAll("li") ?? [])];
+  expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+    "Signed up",
+    "Connected a model",
+    "Created a bot",
+    "Sent a message",
+  ]);
+  expect(shown("funnel-granted")).toBeNull();
 });
 
 it("reads the period picked, from 30 days by default", async () => {

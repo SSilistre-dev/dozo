@@ -234,7 +234,7 @@ async function open() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   for (const mock of Object.values(api)) mock.mockReset();
-  api.me.mockResolvedValue({ isAdmin: true, userId: "admin" });
+  api.me.mockResolvedValue({ isAdmin: true, userId: "admin", billingEnabled: true });
   api.users.mockResolvedValue(page([ada, bob, owner]));
   api.computers.mockResolvedValue({ total: 1, computers: [computer] });
   api.setSuspended.mockResolvedValue({ suspended: true });
@@ -510,6 +510,15 @@ it("lists the sections that have a page, the open one marked, and opens each", a
   await click(links[7] as HTMLElement);
   await vi.waitFor(() => expect(shown("extra-page")).toBeTruthy());
   expect(shown("admin-users")).toBeNull();
+});
+
+it("leaves out the sections only a server that bills can fill, their address too", async () => {
+  api.me.mockResolvedValue({ isAdmin: true, userId: "admin", billingEnabled: false });
+  await render("/admin/access");
+  await vi.waitFor(() => expect(shown("admin-users")).toBeTruthy());
+  const links = [...container.querySelectorAll("nav a")].map((link) => link.getAttribute("href"));
+  expect(links).not.toContain("/admin/access");
+  expect(links).toContain("/admin/billing");
 });
 
 it("opens an account from its address, and sends an unknown address to the members", async () => {

@@ -23,7 +23,10 @@ export default class CanliReport implements Reporter {
     this.rows.push({
       title,
       status: result.status,
-      error: result.error?.message?.split("\n").slice(0, 6).join(" ").slice(0, 600),
+      // A skipped step says why (a server without billing, or the account that could not be made).
+      error:
+        result.error?.message?.split("\n").slice(0, 6).join(" ").slice(0, 600) ??
+        test.annotations.find((a) => a.type === "skip")?.description,
       shot,
     });
   }
@@ -52,7 +55,7 @@ export default class CanliReport implements Reporter {
       "| --- | --- | --- |",
       ...this.rows.map(
         (row) =>
-          `| ${row.title} | ${row.status === "passed" ? "GEÇTİ" : row.status === "skipped" ? "atlandı" : `KALDI: ${(row.error ?? "").replace(/\|/g, "/")}`} | ${row.shot ? `shots/${row.shot}` : ""} |`,
+          `| ${row.title} | ${row.status === "passed" ? "GEÇTİ" : row.status === "skipped" ? `atlandı${row.error ? `: ${row.error.replace(/^atlandı: /, "")}` : ""}` : `KALDI: ${(row.error ?? "").replace(/\|/g, "/")}`} | ${row.shot ? `shots/${row.shot}` : ""} |`,
       ),
       "",
       "## Performans bütçeleri (uyarı, kırmaz)",
