@@ -452,6 +452,23 @@ describe("anchored rules", () => {
 
 // ---------------------------------------------------------------------------------------------
 
+describe("placeholders", () => {
+  it("fails apply, strict or not, when a branded file would ship one, naming file and line, and writes nothing", () => {
+    const root = tree({ "src/a.ts": 'a = 1;\nu = "https://rakazo.com/x";', "src/b.ts": 'r = "github.com/OWNER/dozo";', "src/c.test.ts": 'u = "dozo.example"' });
+    const config = configFile({ placeholders: ["dozo.example", "OWNER/"] });
+    for (const flags of [[], ["--strict"], ["--check"]]) {
+      const res = apply(root, config, ...flags);
+      assert.equal(res.status, 2, flags.join(" "));
+      assert.match(res.stderr, /src\/a\.ts:2: dozo\.example is a placeholder and would ship/);
+      assert.match(res.stderr, /src\/b\.ts:1: OWNER\/ is a placeholder/);
+      assert.doesNotMatch(res.stderr, /c\.test\.ts/, "an excluded file is not shipped");
+    }
+    assert.equal(read(root, "src/a.ts"), 'a = 1;\nu = "https://rakazo.com/x";');
+    const fixed = apply(root, configFile({ urls: { "rakazo.com": "real.test" }, placeholders: ["dozo.example"] }));
+    assert.equal(fixed.status, 0, fixed.stderr);
+  });
+});
+
 describe("apply safety", () => {
   it("is idempotent, and --strict on the result fails only because of anchored rules", () => {
     const root = tree({ "src/a.ts": "Rakazo https://rakazo.com Rakazos" });

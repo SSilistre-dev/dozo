@@ -10,8 +10,8 @@
  * directory names, binary files, symlinks and mapped assets.
  *
  * Exit 0 when clean, 2 with a `path:line: match` list (first 50) plus a total otherwise, and 2
- * when no file was scanned. `--launch` adds the placeholders in the `urls` targets and the
- * `allow.phrases` entries not marked `permanent: true` (upstream image names).
+ * when no file was scanned. A `placeholders` entry (`dozo.example`) is a finding too. `--launch` adds
+ * the `allow.phrases` entries not marked `permanent: true` (upstream image names).
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -21,7 +21,6 @@ import {
   DEFAULT_CONFIG,
   buildScanner,
   countText,
-  escapeRe,
   expectedCount,
   fail,
   guard,
@@ -31,6 +30,7 @@ import {
   loadConfig,
   parseArgs,
   phraseRe,
+  placeholderHits,
   readFile,
 } from "./lib.mjs";
 
@@ -42,10 +42,8 @@ if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail(`${root} is n
 const config = loadConfig(args.config ?? DEFAULT_CONFIG);
 const { scan, scanPath } = buildScanner(config);
 
-// Placeholders are the URL map's targets (`dozo.example`, `github.com/OWNER/dozo`); upstream image
-// names are the `allow.phrases` that are not permanent (an HMAC input can never be a launch blocker).
-const launchRe = (list) => (list.length ? new RegExp(list.map(escapeRe).join("|"), "g") : null);
-const placeholders = launchRe(Object.values(config.urls));
+// Upstream image names are the `allow.phrases` that are not permanent (an HMAC input can never be a
+// launch blocker).
 const upstream = config.allow.phrases.filter((entry) => !entry.permanent);
 
 const found = [];
@@ -93,8 +91,9 @@ for (const rel of tracked) {
   scanned++;
   for (const entry of config.allow.text) if (entry.file === rel) textSeen.set(entry, countText(entry, read.text));
   const lines = read.text.split("\n");
+  for (const hit of placeholderHits(config, read.text)) found.push(`${rel}:${hit} (placeholder)`);
   const launch = args.launch
-    ? [placeholders, ...upstream.filter((entry) => entry.filesRe.some((re) => re.test(rel))).map((entry) => phraseRe(entry.text))].filter(Boolean)
+    ? upstream.filter((entry) => entry.filesRe.some((re) => re.test(rel))).map((entry) => phraseRe(entry.text))
     : [];
   for (let i = 0; i < lines.length; i++) {
     for (const hit of scan(rel, lines[i])) {

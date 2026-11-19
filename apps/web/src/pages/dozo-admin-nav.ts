@@ -1,6 +1,7 @@
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import type { ComponentType, LazyExoticComponent } from "react";
+import { lazyComponent } from "../lib/preload-recovery";
 
 export type DozoAdminSection = {
   /** Its address under `/admin`; "" is the members list. */
@@ -21,4 +22,18 @@ export const DOZO_ADMIN_NAV: readonly DozoAdminSection[] = [
   { path: "", label: msg`Members` },
   { path: "access", label: msg`Free access` },
   { path: "plugins", label: msg`Plugins` },
+  {
+    path: "settings",
+    label: msg`Site settings`,
+    page: lazyComponent(() =>
+      import("./dozo-admin-settings").then((module) => module.DozoAdminSettingsPage),
+    ),
+  },
+  {
+    path: "billing",
+    label: msg`Billing`,
+    page: lazyComponent(() =>
+      import("./dozo-admin-billing").then((module) => module.DozoAdminBilling),
+    ),
+  },
 ];
