@@ -211,8 +211,9 @@ for (const asset of assets) {
 }
 
 if (errors.length) {
-  console.error(`dozo-brand: ${errors.length} rule failure(s), nothing written:`);
-  for (const error of errors) console.error(`  ${error}`);
+  const report = [`dozo-brand: ${errors.length} rule failure(s), nothing written:`, ...errors];
+  // One write, waited for: a list past the pipe's buffer would otherwise lose its end to exit.
+  await new Promise((done) => process.stderr.write(`${report.join("\n  ")}\n`, done));
   process.exit(2);
 }
 

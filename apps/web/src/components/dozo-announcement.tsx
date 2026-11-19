@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { DozoAnnouncement as Announcement } from "@rakazo/contracts";
+import { announcementText } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
 import { queryClient, useSpaceQueries } from "../lib/query";
@@ -15,13 +15,7 @@ export function dozoSiteChanged(client = queryClient): Promise<void> {
   });
 }
 
-/** The text in the app's language, else the one there is. */
-export function announcementText(announcement: Announcement | undefined, locale: string) {
-  if (!announcement) return null;
-  return locale.startsWith("tr")
-    ? (announcement.tr ?? announcement.en)
-    : (announcement.en ?? announcement.tr);
-}
+export { announcementText };
 
 /**
  * The signed-in pages, with one line below them for a failed payment and one for the admin's
