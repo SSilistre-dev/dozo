@@ -70,6 +70,10 @@ export const SERVER_SENTENCES: ReadonlySet<string> = new Set([
   "Choose an email address for this bot first.",
   "A skill with that name already exists.",
   "Your model provider rejected the API key. Check your connection settings.",
+  "The bot's browser is busy. Try again in a moment.",
+  "The bot's computer could not do that.",
+  "Not signed in there.",
+  "Some sites could not be signed out. The list shows what is left.",
 ]);
 
 /**
