@@ -1700,6 +1700,72 @@
         "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
       ],
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
+    },
+    {
+      "file": "packages/db/prisma/schema.prisma",
+      "find": "model Lease {\n  key       String   @id\n  fence     BigInt\n  expiresAt DateTime @db.Timestamptz(3)\n\n  @@map(\"leases\")\n}\n\n/// One stretch a computer ran",
+      "replace": "model Lease {\n  key       String   @id\n  fence     BigInt\n  expiresAt DateTime @db.Timestamptz(3)\n\n  @@map(\"leases\")\n}\n\n/// The plugin catalog last read from the public registries, served at once after a restart and\n/// refreshed in the background. `refreshedAt` is the last time every registry answered.\nmodel DozoCatalogSnapshot {\n  key         String   @id\n  data        Json\n  refreshedAt DateTime\n\n  @@map(\"dozo_catalog_snapshots\")\n}\n\n/// A catalog logo or site icon, drawn small once and served from our own domain under its hash.\n/// `source` is the logo's address or `site:<origin>`; a null hash records a source with no image.\nmodel DozoCatalogImage {\n  source    String   @id\n  hash      String?\n  body      Bytes?\n  checkedAt DateTime\n\n  @@index([hash])\n  @@map(\"dozo_catalog_images\")\n}\n\n/// One stretch a computer ran",
+      "requires": [
+        "packages/adapters/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the stored catalog and its logos, so the Apps page never waits on the public registries after a restart"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./plugin-marketplace.js\";\nexport * from \"./product-analytics.js\";\n",
+      "replace": "export * from \"./plugin-marketplace.js\";\nexport * from \"./dozo-plugin-catalog.js\";\nexport * from \"./product-analytics.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the package exports the stored catalog and the logo store beside the upstream marketplace"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "  applyMcpSourcePreset,\n  createPluginMarketplace,\n",
+      "replace": "  applyMcpSourcePreset,\n",
+      "reason": "plugin catalog: the routes no longer build the per-process marketplace themselves"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "import { requireAdmin } from \"../admins.js\";\nimport { searchIntegrationCatalog } from \"../integration-catalog.js\";\n",
+      "replace": "import { requireAdmin } from \"../admins.js\";\nimport { dozoPluginMarketplace } from \"../dozo-plugin-catalog.js\";\nimport { searchIntegrationCatalog } from \"../integration-catalog.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the routes read the stored catalog"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "  const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);\n",
+      "replace": "  const pluginMarketplace = dozoPluginMarketplace(deps);\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: browse answers from the copy kept in Postgres and warmed at startup, never from a fetch the visitor waits on, with logos from our own domain"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { cspReportRoutes } from \"./csp-report.js\";\nimport { configuredEmailProvider } from \"./email.js\";\n",
+      "replace": "import { cspReportRoutes } from \"./csp-report.js\";\nimport { mountDozoCatalogImages } from \"./dozo-plugin-catalog.js\";\nimport { configuredEmailProvider } from \"./email.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the API serves the stored logos"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  mountScriptAssets(app);\n  mountSharedPages(app, prisma, requestClientIp);\n",
+      "replace": "  mountScriptAssets(app);\n  mountDozoCatalogImages(app, prisma);\n  mountSharedPages(app, prisma, requestClientIp);\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: logos and site icons are served by content hash from our own domain with a year-long immutable cache"
+    },
+    {
+      "file": "apps/api/src/routes/connections.ts",
+      "find": "              return items;\n            } catch {\n              return [];\n            }\n",
+      "replace": "              return items;\n            } catch (error) {\n              // The page still lists the other providers' apps; the failure is logged, not hidden.\n              if (!context.signal?.aborted)\n                getLogger().error(`${provider.describe().id} connection catalog failed`, error);\n              return [];\n            }\n",
+      "reason": "connections catalog: a provider whose catalog fails is still left out, but the failure is logged instead of swallowed"
     }
   ],
   "assets": {
