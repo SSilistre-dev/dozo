@@ -174,6 +174,10 @@ Accepted by the owner for now, stated here once:
 - The local model panel ships with an empty catalog (`LOCAL_MODELS` in
   `apps/web/src/lib/dozo-local-model-catalog.ts`) until tool calling has been tried against a real
   runtime; no model is downloaded or tested before then.
+- The cache share on Settings > Usage (`apps/web/src/components/dozo-cache-savings.tsx`) is
+  translated to Turkish only, by fixed ids merged into the catalog there, since the fork never edits
+  `messages.po`; other languages show the English. The mobile app does not show it: it has no usage
+  screen to put it beside.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite marks it as expected and fails the day it

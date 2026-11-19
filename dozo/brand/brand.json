@@ -738,6 +738,31 @@
       "reason": "fork feature: the model settings tab is a wrapper that adds the local-models panel to upstream's overlay and re-exports the same name"
     },
     {
+      "file": "apps/web/src/pages/SettingsOverlay.tsx",
+      "find": "import { PlanUsage } from \"../components/PlanUsage\";",
+      "replace": "import { PlanUsage } from \"../components/dozo-plan-usage\";",
+      "requires": ["apps/web/src/components/dozo-plan-usage.tsx"],
+      "reason": "fork feature: Settings > Usage shows this period's cache share under upstream's allowances, through a wrapper that re-exports the same name"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));\n  const periodStart =\n    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now\n      ? billing.currentPeriodStartsAt\n      : null;\n  const since = periodStart\n    ? // A yearly plan's allowance still renews monthly, on the day its period began.\n      billing?.byokInterval === \"year\"\n      ? latestMonthlyAnniversary(periodStart, now)\n      : periodStart\n    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));\n",
+      "replace": "  const { live, periodStart, since } = monthlyBillingPeriod(billing, now);\n",
+      "reason": "cache share on Usage: the allowance's monthly period moves, unchanged, into an exported function (below) so Usage counts the same period without a copy"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  return anniversary <= now ? anniversary : monthlyAnniversary(start, months - 1);\n}\n\n/**\n * Hours the organization's computers ran between",
+      "replace": "  return anniversary <= now ? anniversary : monthlyAnniversary(start, months - 1);\n}\n\n/**\n * The organization's monthly period: whether its subscription is live, when the billing period\n * began (null without a live one that has begun), and when the current month of it began. A\n * yearly plan still renews monthly, on the day its period began; without a live subscription the\n * month is the calendar month in UTC. The computer allowance and the cache share on Usage both\n * count from here.\n */\nexport function monthlyBillingPeriod(\n  billing:\n    | {\n        status: string | null;\n        currentPeriodStartsAt: Date | null;\n        byokInterval: string | null;\n      }\n    | null\n    | undefined,\n  now: Date,\n): { live: boolean; periodStart: Date | null; since: Date } {\n  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));\n  const periodStart =\n    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now\n      ? billing.currentPeriodStartsAt\n      : null;\n  const since = periodStart\n    ? // A yearly plan's allowance still renews monthly, on the day its period began.\n      billing?.byokInterval === \"year\"\n      ? latestMonthlyAnniversary(periodStart, now)\n      : periodStart\n    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));\n  return { live, periodStart, since };\n}\n\n/**\n * Hours the organization's computers ran between",
+      "reason": "cache share on Usage: the allowance's monthly period, moved here unchanged from sandboxAllowancePlan and exported through the package's existing export of this file"
+    },
+    {
+      "file": "apps/web/src/lib/space-changes.ts",
+      "find": "    [\"routines\", \"history\"],\n  ],",
+      "replace": "    [\"routines\", \"history\"],\n    [\"dozoUsage\", \"cacheSavings\"],\n  ],",
+      "reason": "cache share on Usage: a finished run records its usage, and its runs signal re-reads the share while Usage is open"
+    },
+    {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "import { ModelStep } from \"./onboarding/model-step\";",
       "replace": "import { ModelStep } from \"./onboarding/dozo-model-step\";",
@@ -824,11 +849,12 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "export const appContract = {\n  analytics:",
-      "replace": "export * from \"./dozo-admin.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  analytics:",
+      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-usage.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoUsage: dozoUsageContract,\n  analytics:",
       "requires": [
-        "packages/contracts/src/dozo-admin.ts"
+        "packages/contracts/src/dozo-admin.ts",
+        "packages/contracts/src/dozo-usage.ts"
       ],
-      "reason": "hosted admin page: its procedures join the app contract, so the server and the web client share their types"
+      "reason": "hosted admin page and the cache share on Usage: their procedures join the app contract, so the server and the web client share their types"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -837,7 +863,7 @@
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],
-      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures"
+      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures and the cache share on Usage"
     },
     {
       "file": "apps/api/src/app.ts",
