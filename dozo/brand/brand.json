@@ -1064,11 +1064,11 @@
     {
       "file": "apps/web/src/App.tsx",
       "find": "              />\n              <Route\n                path=\"/admin/access\"",
-      "replace": "              />\n              <Route path=\"/admin\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
+      "replace": "              />\n              <Route path=\"/admin/*\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
       "requires": [
         "apps/web/src/pages/dozo-admin.tsx"
       ],
-      "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
+      "reason": "hosted admin page: its address and the sections under it (upstream's own /admin pages still win); signed out it answers like an address that does not exist"
     },
     {
       "file": "packages/contracts/src/billing.ts",
