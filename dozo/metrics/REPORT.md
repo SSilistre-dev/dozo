@@ -1,10 +1,10 @@
 # Code measurement (`make olcum`)
 
-Written by `dozo/metrics/report.mjs` at commit 8953db7b4; do not edit. Target: both fork scores >= 90.
+Written by `dozo/metrics/report.mjs` at commit c05d7a325; do not edit. Target: both fork scores >= 90.
 
 | Set | Quality | Readability |
 | --- | --- | --- |
-| fork (dozo/ and dozo-* files) | 91.4 | 98.3 |
+| fork (dozo/ and dozo-* files) | 91.4 | 98.4 |
 | whole repository | 87.0 | 95.7 |
 
 Fork: every file dozo/NOTICE lists as a Dozo file. Whole repository: every file git lists. Code files are
@@ -40,29 +40,29 @@ are the tools' own defaults or a published rating, never tuned to this repositor
 
 | Sub-measure | Fork | Fork raw | All | All raw |
 | --- | --- | --- | --- | --- |
-| types | 100.0 | files 157, dirty 0, findings 0 | 100.0 | files 4466, dirty 1, findings 1 |
-| lint | 95.8 | files 214, dirty 9, findings 41 | 99.6 | files 4471, dirty 18, findings 72 |
-| tests | 100.0 | passed 1306, failed 0, skipped 19 | 100.0 | passed 29893, failed 13, skipped 1328 |
-| lineCoverage | 99.8 | covered 4073, total 4081 | 81.8 | covered 96921, total 118528 |
-| branchCoverage | 97.3 | covered 2231, total 2292 | 76.8 | covered 83911, total 109326 |
+| types | 100.0 | files 175, dirty 0, findings 0 | 100.0 | files 4484, dirty 1, findings 1 |
+| lint | 96.1 | files 232, dirty 9, findings 41 | 99.6 | files 4489, dirty 18, findings 72 |
+| tests | 100.0 | passed 1399, failed 0, skipped 19 | 100.0 | passed 29986, failed 13, skipped 1328 |
+| lineCoverage | 99.8 | covered 4243, total 4251 | 81.8 | covered 97089, total 118698 |
+| branchCoverage | 97.4 | covered 2396, total 2459 | 76.8 | covered 84081, total 109493 |
 | security | 25.0 | info 0, low 4, moderate 9, high 11, critical 0, rating D | 25.0 | info 0, low 4, moderate 9, high 11, critical 0, rating D |
 | shell | 100.0 | files 17, dirty 0, findings 0 | 78.8 | files 66, dirty 14, findings 34 |
-| checks | 95.8 | passed 91, failed 4, skipped 0 | 95.8 | passed 91, failed 4, skipped 0 |
-| complexity | 98.8 | functions 1290, over 15, max 51 | 97.8 | functions 33660, over 726, max 348 |
-| functionLength | 97.0 | functions 1290, over 39, max 459 | 94.8 | functions 33660, over 1764, max 1347 |
-| fileLength | 91.5 | files 117, dirty 10, findings 4780 | 81.0 | files 2437, dirty 464, findings 278469 |
-| duplication | 100.0 | lines 15157, duplicated 245, percent 1.62, rating A | 100.0 | lines 473145, duplicated 7553, percent 1.60, rating A |
-| deadCode | 100.0 | files 117, dirty 0, findings 0 | 90.4 | files 2437, dirty 233, findings 330 |
-| format | 100.0 | files 214, dirty 0, findings 0 | 100.0 | files 4471, dirty 0, findings 0 |
+| checks | 94.7 | passed 90, failed 5, skipped 0 | 94.7 | passed 90, failed 5, skipped 0 |
+| complexity | 98.9 | functions 1345, over 15, max 51 | 97.8 | functions 33715, over 726, max 348 |
+| functionLength | 97.0 | functions 1345, over 40, max 459 | 94.8 | functions 33715, over 1765, max 1347 |
+| fileLength | 91.9 | files 124, dirty 10, findings 4849 | 81.0 | files 2444, dirty 464, findings 278538 |
+| duplication | 100.0 | lines 15734, duplicated 245, percent 1.56, rating A | 100.0 | lines 473722, duplicated 7553, percent 1.59, rating A |
+| deadCode | 100.0 | files 124, dirty 0, findings 0 | 90.5 | files 2444, dirty 233, findings 330 |
+| format | 100.0 | files 232, dirty 0, findings 0 | 100.0 | files 4489, dirty 0, findings 0 |
 
 Cognitive complexity per function (functions in each bucket):
 
 | Set | 0 | 1-5 | 6-10 | 11-15 | 16-25 | >25 |
 | --- | --- | --- | --- | --- | --- | --- |
-| fork | 853 | 372 | 42 | 8 | 7 | 8 |
-| all | 18907 | 11904 | 1572 | 551 | 398 | 328 |
+| fork | 880 | 398 | 44 | 8 | 7 | 8 |
+| all | 18934 | 11930 | 1574 | 551 | 398 | 328 |
 
-Tracked, not scored: web startup bundle 870.5 kB of its 900 kB budget (scripts/checks/bundle-size.mjs).
+Tracked, not scored: web startup bundle 871.6 kB of its 900 kB budget (scripts/checks/bundle-size.mjs).
 
 ## Fork sub-measures under 90: the five jobs worth the most
 
