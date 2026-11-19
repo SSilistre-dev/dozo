@@ -103,6 +103,8 @@ export const test = base.extend<{ guard: Guard }>({
           shown = other;
         },
       });
+      // A skipped scenario showed nothing worth a picture.
+      if (info.status === "skipped") return;
       mkdirSync(`${outDir()}/shots`, { recursive: true });
       const name = shotName(info);
       const taken = await shown.screenshot({ path: `${outDir()}/shots/${name}` }).then(

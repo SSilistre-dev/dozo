@@ -17,6 +17,15 @@ NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 say() { printf 'canli: %s\n' "$*" >&2; }
 verdict() { echo "CANLI: FAIL (0 senaryo)"; exit 2; }
 
+# The machine's local-stack lock, when this machine has one (DOZO_STACK_LOCK): the run waits for it,
+# because another run bringing containers and networks up or down changes the host's network
+# under the test browser (net::ERR_NETWORK_CHANGED). Taken once; the re-run inside holds it.
+LOCKFILE="${DOZO_STACK_LOCK:-/tmp/dozo-yigin.lock}"
+if [ -z "${DOZO_CANLI_LOCKED:-}" ] && [ -e "$LOCKFILE" ] && command -v flock >/dev/null; then
+  say "waiting for the local stack lock $LOCKFILE"
+  DOZO_CANLI_LOCKED=1 exec flock -w 7200 "$LOCKFILE" "$0" "$@"
+fi
+
 case "${CANLI_URL:-}" in
   https://*|http://*) ;;
   *) say "CANLI_URL is not set; run: CANLI_URL=https://... make canli"; verdict ;;
