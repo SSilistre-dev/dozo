@@ -20,7 +20,9 @@ export * from "./teach-playbook.js";
 /**
  * A value typed or pasted while teaching. Its text never enters the playbook: the steps hold
  * `placeholder` (`{{value N}}`, numbered in the order typed) until the teacher decides what it is.
- * Protected input has no text, and it and text that looks like a password are secret.
+ * `secret` is the protected-input mark, the only thing besides the teacher's own choice that makes
+ * a value secret. `text` is null for protected input (never stored) and for typing that cannot be
+ * rebuilt safely (an edit outside what was typed, a protected paste in the middle).
  */
 export type TeachTypedValue = {
   placeholder: string;
@@ -28,18 +30,28 @@ export type TeachTypedValue = {
   secret: boolean;
 };
 
-/** What the teacher decided for one typed value. */
+/** What the teacher decided for one typed value; `hidden` is an input typed from a saved login. */
 export type TeachValueDecision =
   | { action: "variable"; name: string }
+  | { action: "hidden"; name: string }
   | { action: "fixed" }
   | { action: "remove" };
 
-const SECRET_TEXT = /password|secret|token|api[_-]?key/i;
+/**
+ * A recorded event, plus the one shape the fork stores in place of a typed run once its text is
+ * forgotten: `{ at, kind: "key", typed: true }` (and `sensitive` when it was protected).
+ */
+type RecordedEvent = TeachRecordingEvent & { typed?: boolean };
+
 /** How a secret input is listed in `inputs`, so the run prompt can tell it apart. */
 const SECRET_MARK = " (secret)";
 const PLACEHOLDER_LABEL = /^value \d+(?: \(secret\))?$/;
 const INPUT_IN_STEP = /\{\{([^{}]+)\}\}/g;
 const NAME_MAX = 40;
+/** Keys that edit the text being typed; outside a value they are steps of their own. */
+const EDIT_KEYS = new Set(["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Home", "End"]);
+/** Keys that move to another line or entry: inside a value its text can no longer be known. */
+const BLIND_KEYS = new Set(["ArrowUp", "ArrowDown"]);
 
 function placeholderOf(index: number): string {
   return `{{value ${index}}}`;
@@ -64,41 +76,86 @@ function describeScroll(event: TeachRecordingEvent): string {
     : `Scroll ${direction}${at}.`;
 }
 
+/** One stretch of typing: the text rebuilt with its cursor, and the events it spans. */
+type TypedRun = {
+  chars: string[];
+  cursor: number;
+  protected: boolean;
+  unknown: boolean;
+  first: number;
+  last: number;
+};
+
+/** The events of one typed run, and whether it left a value (an emptied field leaves none). */
+type RunSpan = { first: number; last: number; value: TeachTypedValue | null };
+
+/** Applies an editing key to the run; one reaching past what was typed makes its text unknown. */
+function editRun(run: TypedRun, key: string) {
+  const { chars, cursor } = run;
+  if (key === "Home") run.cursor = 0;
+  else if (key === "End") run.cursor = chars.length;
+  else if (key === "Backspace" && cursor > 0) {
+    chars.splice(cursor - 1, 1);
+    run.cursor -= 1;
+  } else if (key === "Delete" && cursor < chars.length) chars.splice(cursor, 1);
+  else if (key === "ArrowLeft" && cursor > 0) run.cursor -= 1;
+  else if (key === "ArrowRight" && cursor < chars.length) run.cursor += 1;
+  else run.unknown = true;
+}
+
 /**
- * The one walk over a recording: upstream's steps, with every typed run, pasted text and protected
- * run replaced by its placeholder. The playbook and the value list both come from here, so their
- * numbering cannot drift apart.
+ * The one walk over a recording: upstream's steps, with every typed run (keys, pastes and
+ * protected input in a row, with the edits made to them) replaced by its placeholder. Tab, Enter
+ * and every other key end a run and stay steps. The playbook, the value list and the scrub all
+ * come from here, so their numbering cannot drift apart.
  */
-function walkRecording(events: TeachRecordingEvent[]): {
+function walkRecording(events: RecordedEvent[]): {
   steps: string[];
   values: TeachTypedValue[];
+  runs: RunSpan[];
+  /** Every run's text as far as it is known, also where the value's text is unknown. */
+  typed: string[];
 } {
   const steps: string[] = [];
   const values: TeachTypedValue[] = [];
-  let typed = "";
-  let typedSensitive = false;
+  const runs: RunSpan[] = [];
+  const typed: string[] = [];
+  let run: TypedRun | null = null;
   let drag: { button: string; fromX: number; fromY: number; toX: number; toY: number } | null =
     null;
 
-  function addValue(text: string | null) {
-    const placeholder = placeholderOf(values.length + 1);
-    values.push({ placeholder, text, secret: text === null || SECRET_TEXT.test(text) });
-    steps.push(`Type ${placeholder}.`);
+  function endRun() {
+    if (!run) return;
+    const blind = run.protected || run.unknown;
+    let value: TeachTypedValue | null = null;
+    if (blind || run.chars.length) {
+      value = {
+        placeholder: placeholderOf(values.length + 1),
+        text: blind ? null : run.chars.join(""),
+        secret: run.protected,
+      };
+      values.push(value);
+      steps.push(`Type ${value.placeholder}.`);
+    }
+    runs.push({ first: run.first, last: run.last, value });
+    if (run.chars.length) typed.push(run.chars.join(""));
+    run = null;
   }
 
-  function flushTyped() {
-    if (typed) addValue(typed);
-    typed = "";
+  /** Adds the event at `index` to the current run, starting one if needed. */
+  function joinRun(index: number): TypedRun {
+    flushDrag();
+    run ??= { chars: [], cursor: 0, protected: false, unknown: false, first: index, last: index };
+    run.last = index;
+    return run;
   }
 
-  function flushSensitiveTyped() {
-    if (typedSensitive) addValue(null);
-    typedSensitive = false;
-  }
-
-  function flushPendingInput() {
-    flushTyped();
-    flushSensitiveTyped();
+  function insert(index: number, text: string) {
+    const current = joinRun(index);
+    // Counted in code points: an emoji is two UTF-16 units but one character typed.
+    const chars = [...text];
+    current.chars.splice(current.cursor, 0, ...chars);
+    current.cursor += chars.length;
   }
 
   function flushDrag() {
@@ -136,60 +193,96 @@ function walkRecording(events: TeachRecordingEvent[]): {
     steps.push(describePointer(event));
   }
 
-  for (const event of events) {
-    if (event.kind === "key") {
-      if (event.sensitive) {
-        flushDrag();
-        flushTyped();
-        typedSensitive = true;
-        continue;
-      }
-      const key = event.key;
-      if (!key) continue;
-      flushDrag();
-      // One character, counted in code points: an emoji is two UTF-16 units but still typed text.
-      if ([...key].length === 1) {
-        flushSensitiveTyped();
-        typed += key;
-        continue;
-      }
-      flushPendingInput();
-      steps.push(`Press key: ${key}.`);
-      continue;
+  function key(event: RecordedEvent, index: number) {
+    if (event.typed || event.sensitive) {
+      // A run whose text is already forgotten, or protected input: no text to rebuild.
+      const current = joinRun(index);
+      if (event.sensitive) current.protected = true;
+      else current.unknown = true;
+      return;
     }
-    flushPendingInput();
+    const name = event.key;
+    if (!name) return;
+    if ([...name].length === 1) {
+      insert(index, name);
+      return;
+    }
+    if (run && (EDIT_KEYS.has(name) || BLIND_KEYS.has(name))) {
+      const current = joinRun(index);
+      if (BLIND_KEYS.has(name)) current.unknown = true;
+      else editRun(current, name);
+      return;
+    }
+    endRun();
+    flushDrag();
+    steps.push(`Press key: ${name}.`);
+  }
+
+  events.forEach((event, index) => {
+    if (event.kind === "key") {
+      key(event, index);
+      return;
+    }
+    if (event.kind === "clipboard") {
+      if (event.sensitive) joinRun(index).protected = true;
+      else if (event.text) insert(index, event.text);
+      return;
+    }
+    endRun();
     if (event.kind === "pointer") {
       pointer(event);
-      continue;
+      return;
     }
     flushDrag();
-    if (event.kind === "clipboard") {
-      if (event.sensitive) addValue(null);
-      else if (event.text) addValue(event.text);
-    } else if (event.kind === "scroll") {
-      steps.push(describeScroll(event));
-    }
-  }
-  flushPendingInput();
+    if (event.kind === "scroll") steps.push(describeScroll(event));
+  });
+  endRun();
   flushDrag();
-  return { steps, values };
+  return { steps, values, runs, typed };
 }
 
 function inputLabel(name: string, secret: boolean): string {
   return secret ? `${name}${SECRET_MARK}` : name;
 }
 
+/** Typed text this short says nothing when a window title happens to hold it. */
+const TELLING_LENGTH = 3;
+
+/**
+ * Whether a window title shows something typed (a search term in a results page's title), so it
+ * cannot go where anyone but the teacher sees it.
+ */
+function showsTyped(title: string, typed: string[]): boolean {
+  const shown = title.toLowerCase();
+  return typed.some(
+    (text) => [...text].length >= TELLING_LENGTH && shown.includes(text.toLowerCase()),
+  );
+}
+
+/**
+ * The window titles seen while teaching that show none of the values, oldest first, and none
+ * when a value's text is unknown, since then nothing can be checked against it.
+ */
+export function teachWindowTitles(snapshots: TeachSnapshot[], values: TeachTypedValue[]): string[] {
+  if (values.some((value) => value.text === null && !value.secret)) return [];
+  const typed = values.flatMap((value) => (value.text === null ? [] : [value.text]));
+  return [...new Set(snapshots.map((snapshot) => snapshot.summary))].filter(
+    (title) => !showsTyped(title, typed),
+  );
+}
+
 /**
  * Upstream's playbook, except that no typed or pasted text enters it: each value is a
- * `{{value N}}` placeholder, listed after the goal in `inputs` (marked when secret).
+ * `{{value N}}` placeholder, listed after the goal in `inputs` (marked when protected).
  */
 export function buildPlaybookFromRecording(
   goal: string,
   events: TeachRecordingEvent[],
   snapshots: TeachSnapshot[] = [],
 ): SkillPlaybook {
-  const { steps, values } = walkRecording(events);
+  const { steps, values, typed } = walkRecording(events);
   const trimmed = goal.trim();
+  const title = snapshots.at(-1)?.summary;
   return {
     whenToUse: trimmed || DEFAULT_WHEN_TO_USE,
     inputs: [
@@ -197,7 +290,8 @@ export function buildPlaybookFromRecording(
       ...values.map((value) => inputLabel(value.placeholder.slice(2, -2), value.secret)),
     ],
     steps: steps.length ? steps : [DEFAULT_STEP],
-    howToCheck: playbookHowToCheck(snapshots.at(-1)?.summary),
+    // The last window title shows the result, unless it shows something typed.
+    howToCheck: playbookHowToCheck(title && !showsTyped(title, typed) ? title : undefined),
     whatToReturn: DEFAULT_WHAT_TO_RETURN,
     approvalBoundaries: DEFAULT_APPROVAL,
     failureHandling: DEFAULT_FAILURE,
@@ -207,6 +301,33 @@ export function buildPlaybookFromRecording(
 /** The values typed while teaching, numbered as the playbook's placeholders are. */
 export function typedValuesFromRecording(events: TeachRecordingEvent[]): TeachTypedValue[] {
   return walkRecording(events).values;
+}
+
+/**
+ * The events with what was typed forgotten: each typed run becomes one `{ at, kind: "key", typed:
+ * true }` event at its first event's time (marked `sensitive` when protected), so neither its
+ * text, its length nor its timing is left; a run that left no value is dropped. The steps and
+ * their numbering built from the result are the same as from the original.
+ */
+export function scrubTeachEvents(events: TeachRecordingEvent[]): TeachRecordingEvent[] {
+  const { runs } = walkRecording(events);
+  const scrubbed: TeachRecordingEvent[] = [];
+  let next = 0;
+  for (const run of runs) {
+    scrubbed.push(...events.slice(next, run.first));
+    if (run.value) {
+      const marker: RecordedEvent = {
+        at: events[run.first]!.at,
+        kind: "key",
+        typed: true,
+        ...(run.value.secret ? { sensitive: true } : {}),
+      };
+      scrubbed.push(marker);
+    }
+    next = run.last + 1;
+  }
+  scrubbed.push(...events.slice(next));
+  return scrubbed;
 }
 
 /** Lowercase letters, digits and underscores, at most 40; accents are dropped, not the letter. */
@@ -222,11 +343,18 @@ export function teachInputName(name: string): string {
     .replace(/_+$/, "");
 }
 
+/** The name an input is listed under, without the secret mark. */
+function inputName(input: string): string {
+  return input.endsWith(SECRET_MARK) ? input.slice(0, -SECRET_MARK.length) : input;
+}
+
 /**
- * Applies the teacher's decision to each typed value: an input the bot fills on each run, text
- * kept in the steps, or the steps that type it removed. A value with no decision is an input
- * named `value_N`. Secret values are never kept as text. Values the steps no longer hold are
- * left alone.
+ * Applies the teacher's decision to each typed value: an input the bot fills on each run (hidden
+ * ones typed from a saved login, never asked for in chat), text kept in the steps, or the steps
+ * that type it removed. A value with no decision is an input named `value_N`. A protected value
+ * stays secret whatever is chosen, and one without text is never kept as text. Values the steps
+ * no longer hold are left alone. The inputs already listed (the goal, ones added by hand) stay,
+ * without the draft's `value N` labels; the named inputs follow.
  */
 export function applyValueDecisions(
   playbook: SkillPlaybook,
@@ -245,21 +373,21 @@ export function applyValueDecisions(
     }
     if (decision.action === "fixed") {
       if (value.secret || value.text === null) {
-        throw new ClientError("BAD_REQUEST", "A secret value cannot be kept in the skill");
+        throw new ClientError("BAD_REQUEST", "This value cannot be kept in the skill");
       }
       const text = JSON.stringify(value.text);
       steps = steps.map((step) => step.replaceAll(value.placeholder, text));
       return;
     }
     const name = teachInputName(decision.name) || `value_${index + 1}`;
-    // A value the teacher names like a password is secret too.
-    const secret = value.secret || SECRET_TEXT.test(name);
+    const secret = value.secret || decision.action === "hidden";
     variables.set(name, (variables.get(name) ?? false) || secret);
     steps = steps.map((step) => step.replaceAll(value.placeholder, `{{${name}}}`));
   });
-  const inputs = variables.size
-    ? [...variables].map(([name, secret]) => inputLabel(name, secret))
-    : playbook.inputs.filter((input) => !PLACEHOLDER_LABEL.test(input));
+  const kept = playbook.inputs.filter(
+    (input) => !PLACEHOLDER_LABEL.test(input) && !variables.has(inputName(input)),
+  );
+  const inputs = [...kept, ...[...variables].map(([name, secret]) => inputLabel(name, secret))];
   return { ...playbook, inputs, steps: steps.length ? steps : [DEFAULT_STEP] };
 }
 

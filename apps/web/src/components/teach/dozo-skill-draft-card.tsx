@@ -50,22 +50,24 @@ function defaultName(placeholder: string): string {
 }
 
 /**
- * Every value is an input by default: nothing typed is kept in the skill unless the teacher picks
- * Fixed, since a password typed into an unprotected field cannot be told apart.
+ * Every value is an input by default, hidden when it was typed as protected input: nothing typed
+ * is kept in the skill unless the teacher picks Fixed, since a password typed into an unprotected
+ * field cannot be told apart.
  */
 function defaultChoice(value: DozoTeachValue): Choice {
   const name = value.suggestion?.name || defaultName(value.placeholder);
-  return { action: "variable", name };
+  return { action: value.secret ? "hidden" : "variable", name };
 }
 
 function decisionOf(placeholder: string, choice: Choice): DozoTeachValueDecision {
-  if (choice.action !== "variable") return { action: choice.action };
-  return { action: "variable", name: choice.name.trim() || defaultName(placeholder) };
+  if (choice.action === "fixed" || choice.action === "remove") return { action: choice.action };
+  return { action: choice.action, name: choice.name.trim() || defaultName(placeholder) };
 }
 
 /**
  * Upstream's draft card, with the values typed while teaching shown to the teacher one by one:
- * each becomes an input asked for on each run, stays as typed, or is dropped. Save and Test send
+ * each becomes an input asked for on each run, an input typed from a saved login (hidden), stays
+ * as typed, or is dropped. Save and Test send
  * those decisions; until the values are known, neither is offered, so none is saved unseen.
  */
 export function SkillDraftCard({
@@ -199,54 +201,62 @@ export function SkillDraftCard({
         <div id={`${id}-inputs`} className="flex flex-col gap-2">
           {values.map((value) => {
             const choice = choiceOf(value);
+            // Protected input and text that could not be rebuilt are never shown or kept.
             const hidden = value.secret || value.text === null;
+            const named = choice.action === "variable" || choice.action === "hidden";
             return (
-              <div
-                key={value.placeholder}
-                data-testid="skill-draft-value"
-                className="flex items-center gap-2"
-              >
-                <span
-                  dir="auto"
-                  className="w-28 shrink-0 break-words text-body-sm text-muted-foreground"
-                >
-                  {hidden ? "••••••" : value.text}
-                </span>
-                {choice.action === "variable" ? (
-                  <Input
-                    aria-label={t`Name`}
-                    disabled={busy}
-                    className="min-w-0 flex-1"
-                    value={choice.name}
-                    onChange={(event) =>
-                      setChoice(value.placeholder, { ...choice, name: event.target.value })
-                    }
-                  />
-                ) : (
-                  <span className="flex-1" />
-                )}
-                <ToggleGroup
-                  value={[choice.action]}
-                  disabled={busy}
-                  onValueChange={([next]) => {
-                    if (next) setChoice(value.placeholder, { ...choice, action: next as Action });
-                  }}
-                  spacing={0}
-                  size="sm"
-                  variant="outline"
-                >
-                  <ToggleGroupItem value="variable">
-                    <Trans>Variable</Trans>
-                  </ToggleGroupItem>
-                  {value.secret ? null : (
-                    <ToggleGroupItem value="fixed">
-                      <Trans>Fixed</Trans>
-                    </ToggleGroupItem>
+              <div key={value.placeholder} data-testid="skill-draft-value">
+                <div className="flex items-center gap-2">
+                  <span
+                    dir="auto"
+                    className="w-28 shrink-0 break-words text-body-sm text-muted-foreground"
+                  >
+                    {hidden ? "••••••" : value.text}
+                  </span>
+                  {named ? (
+                    <Input
+                      aria-label={t`Name`}
+                      disabled={busy}
+                      className="min-w-0 flex-1"
+                      value={choice.name}
+                      onChange={(event) =>
+                        setChoice(value.placeholder, { ...choice, name: event.target.value })
+                      }
+                    />
+                  ) : (
+                    <span className="flex-1" />
                   )}
-                  <ToggleGroupItem value="remove">
-                    <Trans>Remove</Trans>
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                  <ToggleGroup
+                    value={[choice.action]}
+                    disabled={busy}
+                    onValueChange={([next]) => {
+                      if (next) setChoice(value.placeholder, { ...choice, action: next as Action });
+                    }}
+                    spacing={0}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <ToggleGroupItem value="variable">
+                      <Trans>Variable</Trans>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="hidden">
+                      <Trans>Hidden</Trans>
+                    </ToggleGroupItem>
+                    {hidden ? null : (
+                      <ToggleGroupItem value="fixed">
+                        <Trans>Fixed</Trans>
+                      </ToggleGroupItem>
+                    )}
+                    <ToggleGroupItem value="remove">
+                      <Trans>Remove</Trans>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+                {choice.action === "fixed" ? (
+                  <p className="mt-1 text-label text-muted-foreground">
+                    <Trans>Saved in the steps, visible to everyone in this space.</Trans>
+                  </p>
+                ) : null}
               </div>
             );
           })}

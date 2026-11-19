@@ -6,6 +6,8 @@ import {
   buildPlaybookFromRecording,
   formatSkillRunPrompt,
   promptInvokesSkill,
+  scrubTeachEvents,
+  teachWindowTitles,
   typedValuesFromRecording,
 } from "./dozo-teach-playbook.js";
 import * as core from "./index.js";
@@ -17,26 +19,63 @@ function typing(text: string, extra: Partial<TeachRecordingEvent> = {}): TeachRe
   return [...text].map((key) => ({ at, kind: "key", key, ...extra }));
 }
 
-/** A sign-in: an email, an unprotected password, a protected run, a paste and a key. */
+function keys(...names: string[]): TeachRecordingEvent[] {
+  return names.map((key) => ({ at, kind: "key", key }));
+}
+
+const click = (x: number, y: number): TeachRecordingEvent => ({
+  at,
+  kind: "pointer",
+  x,
+  y,
+  type: "click",
+});
+
+/**
+ * A sign-in: an email, an unprotected password, a protected run, a paste, a protected paste and
+ * a password-like value nothing marks, each ended by a click or a key.
+ */
 const signIn: TeachRecordingEvent[] = [
-  { at, kind: "pointer", x: 10, y: 20, type: "click" },
+  click(10, 20),
   ...typing("ali@example.test"),
   { at, kind: "key", key: "Tab" },
   ...typing("Gizli-5678"),
-  { at, kind: "pointer", x: 30, y: 40, type: "click" },
+  click(30, 40),
   { at, kind: "key", sensitive: true },
   { at, kind: "key", sensitive: true },
+  click(50, 60),
   { at, kind: "clipboard", text: "weekly-export.csv" },
+  click(70, 80),
   { at, kind: "clipboard", sensitive: true },
-  { at, kind: "clipboard", text: "my api_key" },
+  { at, kind: "key", key: "Tab" },
+  ...typing("hunter2"),
   { at, kind: "key", key: "Enter" },
 ];
+
+const signInSteps = [
+  "Click left button at (10, 20).",
+  "Type {{value 1}}.",
+  "Press key: Tab.",
+  "Type {{value 2}}.",
+  "Click left button at (30, 40).",
+  "Type {{value 3}}.",
+  "Click left button at (50, 60).",
+  "Type {{value 4}}.",
+  "Click left button at (70, 80).",
+  "Type {{value 5}}.",
+  "Press key: Tab.",
+  "Type {{value 6}}.",
+  "Press key: Enter.",
+];
+
+const TYPED = ["ali@example.test", "Gizli-5678", "weekly-export.csv", "hunter2"];
 
 describe("the package export", () => {
   it("serves the fork's builder and run prompt under upstream's names", () => {
     expect(core.buildPlaybookFromRecording).toBe(buildPlaybookFromRecording);
     expect(core.formatSkillRunPrompt).toBe(formatSkillRunPrompt);
     expect(core.typedValuesFromRecording).toBe(typedValuesFromRecording);
+    expect(core.scrubTeachEvents).toBe(scrubTeachEvents);
     expect(promptInvokesSkill("run Export list", "Export list")).toBe(true);
   });
 });
@@ -48,24 +87,11 @@ describe("buildPlaybookFromRecording", () => {
 
   it("never puts typed or pasted text in the steps", () => {
     const text = JSON.stringify(playbook);
-    for (const secret of ["ali@example.test", "Gizli-5678", "weekly-export.csv", "api_key"]) {
-      expect(text).not.toContain(secret);
-    }
-    expect(playbook.steps).toEqual([
-      "Click left button at (10, 20).",
-      "Type {{value 1}}.",
-      "Press key: Tab.",
-      "Type {{value 2}}.",
-      "Click left button at (30, 40).",
-      "Type {{value 3}}.",
-      "Type {{value 4}}.",
-      "Type {{value 5}}.",
-      "Type {{value 6}}.",
-      "Press key: Enter.",
-    ]);
+    for (const typed of TYPED) expect(text).not.toContain(typed);
+    expect(playbook.steps).toEqual(signInSteps);
   });
 
-  it("lists the goal, then each value, marked when secret", () => {
+  it("lists the goal, then each value, marked only when protected", () => {
     expect(playbook.inputs).toEqual([
       "Sign in",
       "value 1",
@@ -73,9 +99,22 @@ describe("buildPlaybookFromRecording", () => {
       "value 3 (secret)",
       "value 4",
       "value 5 (secret)",
-      "value 6 (secret)",
+      "value 6",
     ]);
     expect(playbook.howToCheck).toContain("Dashboard open");
+  });
+
+  it("leaves out a last window title that shows something typed", () => {
+    const shown = buildPlaybookFromRecording(
+      "Search",
+      [...typing("hunter2"), click(1, 1)],
+      [{ at, summary: "HUNTER2 - Search results" }],
+    );
+    expect(JSON.stringify(shown)).not.toMatch(/hunter2/i);
+    expect(shown.howToCheck).toBe(buildPlaybookFromRecording("Search", []).howToCheck);
+    // Two typed characters say nothing about a title that holds them.
+    const short = buildPlaybookFromRecording("x", typing("ab"), [{ at, summary: "About" }]);
+    expect(short.howToCheck).toContain("About");
   });
 
   it("keeps upstream's inputs, steps and defaults without typed values", () => {
@@ -117,15 +156,6 @@ describe("buildPlaybookFromRecording", () => {
     expect(empty.whenToUse.length).toBeGreaterThan(0);
   });
 
-  it("splits typed and protected runs that follow each other", () => {
-    const built = buildPlaybookFromRecording("x", [
-      ...typing("ab"),
-      { at, kind: "key", sensitive: true },
-      ...typing("c"),
-    ]);
-    expect(built.steps).toEqual(["Type {{value 1}}.", "Type {{value 2}}.", "Type {{value 3}}."]);
-  });
-
   it("counts a character beyond two code units as typed, not as a key", () => {
     const built = buildPlaybookFromRecording("x", [
       ...typing("hi 😀𝒳"),
@@ -138,15 +168,163 @@ describe("buildPlaybookFromRecording", () => {
 });
 
 describe("typedValuesFromRecording", () => {
-  it("numbers the values as the playbook does", () => {
+  const texts = (events: TeachRecordingEvent[]) =>
+    typedValuesFromRecording(events).map((value) => value.text);
+
+  it("numbers the values as the playbook does; only protected input is secret", () => {
     expect(typedValuesFromRecording(signIn)).toEqual([
       { placeholder: "{{value 1}}", text: "ali@example.test", secret: false },
       { placeholder: "{{value 2}}", text: "Gizli-5678", secret: false },
       { placeholder: "{{value 3}}", text: null, secret: true },
       { placeholder: "{{value 4}}", text: "weekly-export.csv", secret: false },
       { placeholder: "{{value 5}}", text: null, secret: true },
-      { placeholder: "{{value 6}}", text: "my api_key", secret: true },
+      { placeholder: "{{value 6}}", text: "hunter2", secret: false },
     ]);
+  });
+
+  it("applies the editing keys to the text, at the cursor", () => {
+    expect(texts([...typing("abcX"), ...keys("Backspace"), ...typing("d")])).toEqual(["abcd"]);
+    expect(texts([...typing("acd"), ...keys("ArrowLeft", "ArrowLeft"), ...typing("b")])).toEqual([
+      "abcd",
+    ]);
+    expect(texts([...typing("bc"), ...keys("Home"), ...typing("a"), ...keys("End")])).toEqual([
+      "abc",
+    ]);
+    expect(
+      texts([...typing("xab"), ...keys("Home", "Delete", "ArrowRight", "ArrowRight")]),
+    ).toEqual(["ab"]);
+    // Typed and wiped out leaves no value and no step.
+    const wiped = [...typing("no"), ...keys("Backspace", "Backspace"), click(1, 1)];
+    expect(texts(wiped)).toEqual([]);
+    expect(buildPlaybookFromRecording("x", wiped).steps).toEqual(["Click left button at (1, 1)."]);
+  });
+
+  it("inserts a paste at the cursor", () => {
+    expect(
+      texts([
+        ...typing("ad"),
+        ...keys("ArrowLeft"),
+        { at, kind: "clipboard", text: "bc" },
+        ...keys("End"),
+        ...typing("e"),
+      ]),
+    ).toEqual(["abcde"]);
+  });
+
+  it("makes a run with a protected paste one protected value", () => {
+    expect(
+      typedValuesFromRecording([
+        ...typing("ab"),
+        { at, kind: "clipboard", sensitive: true },
+        ...typing("c"),
+      ]),
+    ).toEqual([{ placeholder: "{{value 1}}", text: null, secret: true }]);
+  });
+
+  it("ends a value at Tab, Enter and any other key, which stay steps", () => {
+    const events = [...typing("a"), ...keys("Tab"), ...typing("b"), ...keys("Enter", "Escape")];
+    expect(texts(events)).toEqual(["a", "b"]);
+    expect(buildPlaybookFromRecording("x", events).steps).toEqual([
+      "Type {{value 1}}.",
+      "Press key: Tab.",
+      "Type {{value 2}}.",
+      "Press key: Enter.",
+      "Press key: Escape.",
+    ]);
+  });
+
+  it("keeps an editing key outside a value as a step", () => {
+    const events = [click(1, 1), ...keys("Backspace", "ArrowDown"), ...typing("a")];
+    expect(buildPlaybookFromRecording("x", events).steps).toEqual([
+      "Click left button at (1, 1).",
+      "Press key: Backspace.",
+      "Press key: ArrowDown.",
+      "Type {{value 1}}.",
+    ]);
+  });
+
+  it("makes a value whose text cannot be rebuilt one unknown value", () => {
+    const unknown = { placeholder: "{{value 1}}", text: null, secret: false };
+    for (const events of [
+      [...typing("ab"), ...keys("ArrowUp"), ...typing("c")],
+      [...typing("ab"), ...keys("ArrowDown")],
+      [...typing("a"), ...keys("Backspace", "Backspace")],
+      [...typing("a"), ...keys("Delete")],
+      [...typing("a"), ...keys("ArrowLeft", "ArrowLeft")],
+      [...typing("a"), ...keys("ArrowRight")],
+    ]) {
+      expect(typedValuesFromRecording(events)).toEqual([unknown]);
+      expect(buildPlaybookFromRecording("x", events).steps).toEqual(["Type {{value 1}}."]);
+    }
+  });
+});
+
+describe("scrubTeachEvents", () => {
+  const events: TeachRecordingEvent[] = [
+    ...signIn,
+    ...keys("Backspace"),
+    ...typing("gone"),
+    ...keys("Backspace", "Backspace", "Backspace", "Backspace", "Tab"),
+  ];
+  const scrubbed = scrubTeachEvents(events);
+
+  it("forgets every typed character, its length and its timing", () => {
+    const text = JSON.stringify(scrubbed);
+    for (const typed of [...TYPED, "gone"]) expect(text).not.toContain(typed);
+    expect(scrubbed.filter((event) => event.key && [...event.key].length === 1)).toEqual([]);
+    expect(scrubbed.filter((event) => event.kind === "clipboard")).toEqual([]);
+    expect(scrubbed.filter((event) => event.kind === "key").map((event) => event.key)).toEqual([
+      undefined,
+      "Tab",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "Tab",
+      undefined,
+      "Enter",
+      "Backspace",
+      "Tab",
+    ]);
+  });
+
+  it("keeps one marker per value, at its first event, protected ones marked", () => {
+    const later = typing("ab").map((event, index) => ({ ...event, at: `t${index}` }));
+    expect(scrubTeachEvents([...later, { at, kind: "clipboard", sensitive: true }])).toEqual([
+      { at: "t0", kind: "key", typed: true, sensitive: true },
+    ]);
+    expect(scrubTeachEvents(typing("ab"))).toEqual([{ at, kind: "key", typed: true }]);
+  });
+
+  it("builds the same steps and numbering, with no text left to review", () => {
+    expect(buildPlaybookFromRecording("Sign in", scrubbed)).toEqual(
+      buildPlaybookFromRecording("Sign in", events),
+    );
+    expect(typedValuesFromRecording(scrubbed)).toEqual(
+      typedValuesFromRecording(events).map((value) => ({ ...value, text: null })),
+    );
+    expect(scrubTeachEvents(scrubbed)).toEqual(scrubbed);
+  });
+});
+
+describe("teachWindowTitles", () => {
+  const titles = [
+    { at, summary: "Sign in" },
+    { at, summary: "hunter2 - search" },
+    { at, summary: "Sign in" },
+    { at, summary: "Dashboard" },
+  ];
+
+  it("leaves out titles that show a value, once each", () => {
+    expect(teachWindowTitles(titles, typedValuesFromRecording(signIn))).toEqual([
+      "Sign in",
+      "Dashboard",
+    ]);
+  });
+
+  it("gives none when a value's text is unknown", () => {
+    const unknown = typedValuesFromRecording([...typing("ab"), ...keys("ArrowUp")]);
+    expect(teachWindowTitles(titles, unknown)).toEqual([]);
   });
 });
 
@@ -154,11 +332,11 @@ describe("applyValueDecisions", () => {
   const playbook = buildPlaybookFromRecording("Sign in", signIn);
   const values = typedValuesFromRecording(signIn);
 
-  it("turns values into named inputs, fixed text or nothing", () => {
+  it("turns values into named or hidden inputs, fixed text or nothing", () => {
     const applied = applyValueDecisions(playbook, values, {
       "{{value 1}}": { action: "variable", name: "E-posta Adresi" },
-      "{{value 2}}": { action: "variable", name: "Şifre" },
-      "{{value 3}}": { action: "variable", name: "password" },
+      "{{value 2}}": { action: "hidden", name: "Şifre" },
+      "{{value 3}}": { action: "variable", name: "pin" },
       "{{value 4}}": { action: "fixed" },
       "{{value 5}}": { action: "remove" },
       "{{value 6}}": { action: "variable", name: "ŞİFRE" },
@@ -169,14 +347,18 @@ describe("applyValueDecisions", () => {
       "Press key: Tab.",
       "Type {{sifre}}.",
       "Click left button at (30, 40).",
-      "Type {{password}}.",
+      "Type {{pin}}.",
+      "Click left button at (50, 60).",
       'Type "weekly-export.csv".',
+      "Click left button at (70, 80).",
+      "Press key: Tab.",
       "Type {{sifre}}.",
       "Press key: Enter.",
     ]);
-    // Inputs are exactly the variables; a name shared with a secret value is secret.
-    expect(applied.inputs).toEqual(["e_posta_adresi", "sifre (secret)", "password (secret)"]);
+    // The goal stays; a name shared with a hidden value is hidden; protected input stays secret.
+    expect(applied.inputs).toEqual(["Sign in", "e_posta_adresi", "sifre (secret)", "pin (secret)"]);
     expect(JSON.stringify(applied)).not.toContain("Gizli-5678");
+    expect(JSON.stringify(applied)).not.toContain("hunter2");
   });
 
   it("names an undecided or unnameable value after its number, at most 40 characters", () => {
@@ -185,21 +367,39 @@ describe("applyValueDecisions", () => {
       "{{value 2}}": { action: "variable", name: `${"a".repeat(39)}_b` },
     });
     expect(applied.inputs).toEqual([
+      "Sign in",
       "value_1",
       "a".repeat(39),
       "value_3 (secret)",
       "value_4",
       "value_5 (secret)",
-      "value_6 (secret)",
+      "value_6",
     ]);
   });
 
-  it("refuses to keep a secret value as text", () => {
-    for (const placeholder of ["{{value 3}}", "{{value 6}}"]) {
+  it("keeps inputs added by hand once, and a variable named like one", () => {
+    const applied = applyValueDecisions(
+      { ...playbook, inputs: ["Sign in", "account", "value 1", "email (secret)"] },
+      values.slice(0, 1),
+      { "{{value 1}}": { action: "variable", name: "email" } },
+    );
+    expect(applied.inputs).toEqual(["Sign in", "account", "email"]);
+  });
+
+  it("refuses to keep a protected or unknown value as text", () => {
+    for (const placeholder of ["{{value 3}}", "{{value 5}}"]) {
       expect(() =>
         applyValueDecisions(playbook, values, { [placeholder]: { action: "fixed" } }),
       ).toThrow(ClientError);
     }
+    const unknown = [...typing("ab"), ...keys("ArrowUp")];
+    expect(() =>
+      applyValueDecisions(
+        buildPlaybookFromRecording("x", unknown),
+        typedValuesFromRecording(unknown),
+        { "{{value 1}}": { action: "fixed" } },
+      ),
+    ).toThrow(ClientError);
   });
 
   it("leaves alone values whose steps were edited away", () => {
@@ -207,9 +407,15 @@ describe("applyValueDecisions", () => {
       ...playbook,
       steps: playbook.steps.filter((step) => !/value [36]\b/.test(step)),
     };
-    // A secret value no step holds is not refused: there is nothing to keep.
+    // A protected value no step holds is not refused: there is nothing to keep.
     const applied = applyValueDecisions(edited, values, { "{{value 3}}": { action: "fixed" } });
-    expect(applied.inputs).toEqual(["value_1", "value_2", "value_4", "value_5 (secret)"]);
+    expect(applied.inputs).toEqual([
+      "Sign in",
+      "value_1",
+      "value_2",
+      "value_4",
+      "value_5 (secret)",
+    ]);
   });
 
   it("keeps the goal and drops the value labels when nothing stays an input", () => {
@@ -236,7 +442,7 @@ describe("formatSkillRunPrompt", () => {
     typedValuesFromRecording(signIn),
     {
       "{{value 1}}": { action: "variable", name: "email" },
-      "{{value 2}}": { action: "variable", name: "password" },
+      "{{value 2}}": { action: "hidden", name: "password" },
       "{{value 4}}": { action: "fixed" },
       "{{value 5}}": { action: "remove" },
       "{{value 6}}": { action: "remove" },

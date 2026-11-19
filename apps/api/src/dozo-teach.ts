@@ -9,32 +9,19 @@ import type {
 import type { TeachTypedValue } from "@rakazo/core";
 import {
   applyValueDecisions,
+  buildPlaybookFromRecording,
   ClientError,
   formatSkillRunPrompt,
-  typedValuesFromRecording,
+  teachWindowTitles,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, readJsonColumn } from "@rakazo/db";
-import * as z from "zod";
+import type { PrismaClient, StoredTeachValues, TeachValueSuggestions } from "@rakazo/db";
+import { cacheTeachSuggestions, IsolationError, readTeachValues } from "@rakazo/db";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
-import type { TeachValueSuggester, TeachValueSuggestions } from "./dozo-teach-suggest.js";
-import { createTeachValueSuggester } from "./dozo-teach-suggest.js";
+import { SKILL_NOT_DRAFT } from "./dozo-taught-skills.js";
+import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
+import { createTeachValueSuggester, teachValueShape } from "./dozo-teach-suggest.js";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
-
-/**
- * Where the recording keeps the model's suggestions, next to its events, until the save. An empty
- * record marks a call that gave none, so a failed call is not made again on every review.
- */
-const SUGGESTIONS_KEY = "dozoSuggestions";
-const StoredSuggestions = z.object({
-  [SUGGESTIONS_KEY]: z
-    .record(z.string(), z.object({ name: z.string(), secret: z.boolean().default(false) }))
-    .optional(),
-});
-
-/** A save or test that decides about values of a skill no longer a draft. */
-export const SKILL_NOT_DRAFT = "skill_not_draft";
 
 type TaughtSkills = Pick<
   ReturnType<typeof createTaughtSkillsService>,
@@ -67,17 +54,28 @@ export function dozoTeachWiring(deps: {
   return { dozoTeach: { suggest: createTeachValueSuggester(deps) } };
 }
 
+type Skill = {
+  id: string;
+  userId: string;
+  botId: string;
+  name: string;
+  goal: string;
+  status: string;
+  recording: unknown;
+};
+
 /**
  * Reviewing what was typed while teaching, and saving or testing a draft with the teacher's
- * decision for each typed value. The values come from the recording on the server, never from
- * the client, and only the person who taught the skill sees them or decides about them.
+ * decision for each typed value. The values come from the draft's short-lived store on the
+ * server, never from the client, and only the person who taught the skill sees them or decides
+ * about them.
  */
 export function createDozoTeach(deps: {
   prisma: PrismaClient;
   taughtSkills: TaughtSkills;
   suggest?: TeachValueSuggester;
 }) {
-  async function skillOf(actor: Actor, skillId: string) {
+  async function skillOf(actor: Actor, skillId: string): Promise<Skill> {
     const skill = await deps.prisma.taughtSkill.findFirst({
       where: { id: skillId, spaceId: actor.spaceId },
     });
@@ -85,37 +83,42 @@ export function createDozoTeach(deps: {
     return skill;
   }
 
-  function cachedSuggestions(id: string, recording: unknown): TeachValueSuggestions | undefined {
-    return readJsonColumn(
-      StoredSuggestions,
-      recording,
-      { table: "taught_skills", column: "recording", id },
-      { fallback: {} },
-    )[SUGGESTIONS_KEY];
-  }
-
-  /** The typed values the actor may decide about: the teacher's, while the skill is a draft. */
-  function valuesFor(actor: Actor, skill: { userId: string; status: string; recording: unknown }) {
-    if (skill.userId !== actor.userId || skill.status !== "draft") return [];
-    return typedValuesFromRecording(parseRecording(skill.recording).events);
+  /** The values of a draft, for the person who taught it and nobody else. */
+  async function valuesFor(actor: Actor, skill: Skill): Promise<StoredTeachValues | null> {
+    if (skill.userId !== actor.userId || skill.status !== "draft") return null;
+    const stored = await readTeachValues(deps.prisma, skill.id);
+    return stored?.userId === actor.userId ? stored : null;
   }
 
   /**
-   * The values with what the model said about them: a name, and a value it took for a secret is
-   * one too, never kept as text and shown only as dots. The model saw no secret value, so
-   * anything it says about one is made up and ignored.
+   * Asked once per draft, failed or not, and kept with the values. The model is told the task,
+   * the recorded steps and each value's shape, never a value. Two first reviews at once may both
+   * ask; the first to write is kept.
    */
-  function withSuggestions(values: TeachTypedValue[], suggestions: TeachValueSuggestions) {
-    return values.map((value): DozoTeachValue => {
-      const suggestion = value.secret ? undefined : suggestions[value.placeholder];
-      if (!suggestion) return value;
-      return { ...value, secret: suggestion.secret, suggestion: { name: suggestion.name } };
-    });
+  async function suggestionsFor(
+    actor: Actor,
+    skill: Skill,
+    values: TeachTypedValue[],
+  ): Promise<TeachValueSuggestions> {
+    if (!deps.suggest) return {};
+    const recording = parseRecording(skill.recording);
+    const suggestions =
+      (await deps.suggest(
+        actor,
+        {
+          botId: skill.botId,
+          goal: skill.goal,
+          steps: buildPlaybookFromRecording(skill.goal, recording.events).steps,
+          windowTitles: teachWindowTitles(recording.snapshots, values),
+        },
+        values.map(teachValueShape),
+      )) ?? {};
+    return (await cacheTeachSuggestions(deps.prisma, skill.id, suggestions)) ?? suggestions;
   }
 
   /**
-   * The playbook with the decisions applied. Someone else than the teacher sends none: for them
-   * upstream's rules apply. Once saved, nothing typed is left to decide about.
+   * The playbook with the decisions applied, for a test run. Someone else than the teacher sends
+   * none: for them upstream's rules apply. Once saved, nothing typed is left to decide about.
    */
   async function decided(actor: Actor, input: DozoTeachInput) {
     const skill = await skillOf(actor, input.skillId);
@@ -125,66 +128,34 @@ export function createDozoTeach(deps: {
         "Only the person who taught this skill can decide about its values",
       );
     }
-    // The values are forgotten once saved: the decisions would apply to nothing, and the
-    // client's placeholders would replace the saved steps.
     if (skill.status !== "draft" && Object.keys(input.decisions).length) {
       throw new ClientError("CONFLICT", "This skill is already saved", SKILL_NOT_DRAFT);
     }
-    const values = withSuggestions(
-      valuesFor(actor, skill),
-      cachedSuggestions(skill.id, skill.recording) ?? {},
-    );
+    const values = (await valuesFor(actor, skill))?.values ?? [];
     if (!values.length) return { skill, playbook: input.playbook };
     return { skill, playbook: applyValueDecisions(input.playbook, values, input.decisions) };
-  }
-
-  /**
-   * Cached in the recording on the first review, failed or not, so the model is asked once per
-   * skill. Two first reviews at once may both ask; the first to write is kept.
-   */
-  async function suggestionsFor(
-    actor: Actor,
-    skill: { id: string; botId: string; goal: string; recording: unknown },
-    values: TeachTypedValue[],
-  ): Promise<TeachValueSuggestions> {
-    const cached = cachedSuggestions(skill.id, skill.recording);
-    if (cached) return cached;
-    if (!deps.suggest) return {};
-    // Secret and protected values never reach the model.
-    const open = values.flatMap((value) =>
-      value.secret || value.text === null
-        ? []
-        : [{ placeholder: value.placeholder, text: value.text }],
-    );
-    const suggestions = (await deps.suggest(actor, skill, open)) ?? {};
-    return deps.prisma.$transaction(async (tx) => {
-      const [row] = await tx.$queryRaw<Array<{ recording: unknown }>>`
-        SELECT recording FROM taught_skills WHERE id = ${skill.id} AND status = 'draft'
-        FOR UPDATE`;
-      if (!row) return suggestions;
-      const written = cachedSuggestions(skill.id, row.recording);
-      if (written) return written;
-      await tx.$executeRaw`
-        UPDATE taught_skills
-        SET recording = recording || jsonb_build_object(${SUGGESTIONS_KEY}::text, ${JSON.stringify(suggestions)}::jsonb)
-        WHERE id = ${skill.id}`;
-      return suggestions;
-    });
   }
 
   return {
     async review(actor: Actor, skillId: string): Promise<{ values: DozoTeachValue[] }> {
       const skill = await skillOf(actor, skillId);
-      const values = valuesFor(actor, skill);
-      if (!values.length) return { values: [] };
-      return { values: withSuggestions(values, await suggestionsFor(actor, skill, values)) };
+      const stored = await valuesFor(actor, skill);
+      if (!stored?.values.length) return { values: [] };
+      const suggestions = stored.suggestions ?? (await suggestionsFor(actor, skill, stored.values));
+      return {
+        values: stored.values.map((value): DozoTeachValue => {
+          const suggestion = suggestions[value.placeholder];
+          return suggestion ? { ...value, suggestion: { name: suggestion.name } } : value;
+        }),
+      };
     },
 
-    /** Saves through the taught-skills service, whose save forgets what was typed. */
-    async save(actor: Actor, input: DozoTeachInput) {
-      const { playbook } = await decided(actor, input);
-      await deps.taughtSkills.updateDraft(actor, input.skillId, { name: input.name, playbook });
-      return deps.taughtSkills.save(actor, input.skillId, input.name);
+    /** One transaction applies the decisions, saves and forgets the values (the wrapper's save). */
+    save(actor: Actor, input: DozoTeachInput) {
+      return deps.taughtSkills.save(actor, input.skillId, input.name, {
+        playbook: input.playbook,
+        decisions: input.decisions,
+      });
     },
 
     /** The draft keeps its placeholders; only the test run's prompt has the decisions applied. */

@@ -7,18 +7,22 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordUsage: usage.record,
 }));
 
-const { createTeachValueSuggester } = await import("./dozo-teach-suggest.js");
+const { createTeachValueSuggester, teachValueShape } = await import("./dozo-teach-suggest.js");
 
 const actor = { userId: "ada", spaceId: "space-1", email: "ada@example.test" } as never;
-const skill = { botId: "bot-1", goal: "Sign in" };
+const skill = {
+  botId: "bot-1",
+  goal: "Sign in",
+  steps: ["Type {{value 1}}.", "Press key: Tab.", "Type {{value 2}}."],
+  windowTitles: ["Sign in"],
+};
 const values = [
-  { placeholder: "{{value 1}}", text: "ali@example.test" },
-  { placeholder: "{{value 2}}", text: "Kadıköy" },
+  { placeholder: "{{value 1}}", shape: "9-20 characters, has @" },
+  { placeholder: "{{value 2}}", shape: "4-8 characters" },
 ];
 
 function runtime(
   reply: (request: AgentRunRequest, signal?: AbortSignal) => AsyncIterable<AgentRuntimeEvent>,
-  compaction = true,
 ) {
   const run = vi.fn((request: AgentRunRequest, context?: { signal?: AbortSignal }) =>
     reply(request, context?.signal),
@@ -26,7 +30,7 @@ function runtime(
   return {
     run,
     runtime: {
-      describe: () => ({ capabilities: { compaction } }),
+      describe: () => ({ capabilities: {} }),
       run,
       abort: async () => undefined,
     } as unknown as AgentRuntime,
@@ -38,36 +42,46 @@ async function* answer(text: string): AsyncIterable<AgentRuntimeEvent> {
   yield { type: "done", text } as never;
 }
 
-function setup(fake: ReturnType<typeof runtime>, provider = "openai-compatible") {
+function setup(fake: ReturnType<typeof runtime>, resolveModel?: () => Promise<never>) {
   const suggest = createTeachValueSuggester({
     prisma: {} as never,
     runtime: fake.runtime,
-    resolveModel: async () => ({ provider, model: "m" }) as never,
+    resolveModel: resolveModel ?? (async () => ({ provider: "scripted", model: "m" }) as never),
   });
   return { suggest };
 }
 
+describe("teachValueShape", () => {
+  it("tells the length class and the kinds of characters, never a character", () => {
+    const shape = (text: string | null, secret = false) =>
+      teachValueShape({ placeholder: "{{value 1}}", text, secret }).shape;
+    expect(shape("ali@example.test")).toBe("9-20 characters, has @");
+    expect(shape("Gizli-5678")).toBe("9-20 characters, letters and digits");
+    expect(shape("4821")).toBe("4-8 characters, digits only");
+    expect(shape("my secret phrase")).toBe("9-20 characters, has spaces");
+    expect(shape("ab")).toBe("1-3 characters");
+    expect(shape("x".repeat(30))).toBe("21-60 characters");
+    expect(shape("x".repeat(61))).toBe("over 60 characters");
+    expect(shape(null, true)).toBe("protected input");
+    expect(shape(null)).toBe("unknown");
+  });
+});
+
 describe("createTeachValueSuggester", () => {
-  it("names each value from the model's JSON, sending only placeholder and text", async () => {
+  it("names each value from the model's JSON, sending task, steps, titles and shapes", async () => {
     const fake = runtime(() =>
       answer(
-        'Here:\n```json\n[{"placeholder":"{{value 1}}","name":"E-mail","changesEachTime":false,"secret":false},' +
-          '{"placeholder":"{{value 2}}","name":"district","changesEachTime":true,"secret":false},' +
-          '{"placeholder":"{{value 9}}","name":"other","changesEachTime":true,"secret":true},' +
-          '{"placeholder":"{{value 2}}","name":"!!","changesEachTime":true,"secret":false},' +
-          '{"placeholder":"{{value 3}}","name":"!!","changesEachTime":false,"secret":true}]\n```',
+        'Here:\n```json\n[{"placeholder":"{{value 1}}","name":"E-mail"},' +
+          '{"placeholder":"{{value 2}}","name":"district"},' +
+          '{"placeholder":"{{value 9}}","name":"other"},' +
+          '{"placeholder":"{{value 2}}","name":"!!"}]\n```',
       ),
     );
-    const { suggest } = setup(fake);
-    const result = await suggest(actor, skill, [
-      ...values,
-      { placeholder: "{{value 3}}", text: "4821" },
-    ]);
-    // Whether a value changes only helps the name; a secret stays one without a usable name.
+    const result = await setup(fake).suggest(actor, skill, values);
+    // An unusable name leaves the one before it; an unknown placeholder is ignored.
     expect(result).toEqual({
-      "{{value 1}}": { name: "e_mail", secret: false },
-      "{{value 2}}": { name: "district", secret: false },
-      "{{value 3}}": { name: "", secret: true },
+      "{{value 1}}": { name: "e_mail" },
+      "{{value 2}}": { name: "district" },
     });
     const request = fake.run.mock.calls[0]![0];
     expect(request.tools).toEqual([]);
@@ -76,13 +90,21 @@ describe("createTeachValueSuggester", () => {
     expect(request.usageOperationKind).toBe("setup");
     expect(JSON.parse(request.prompt)).toEqual({
       task: "Sign in",
-      values: [...values, { placeholder: "{{value 3}}", text: "4821" }],
+      steps: skill.steps,
+      windowTitles: ["Sign in"],
+      values,
     });
     expect(usage.record).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ type: "usage" }),
       expect.objectContaining({ userId: "ada", botId: "bot-1", operationKind: "setup" }),
     );
+  });
+
+  it("leaves window titles out of the prompt when there are none", async () => {
+    const fake = runtime(() => answer("[]"));
+    await setup(fake).suggest(actor, { ...skill, windowTitles: [] }, values);
+    expect(JSON.parse(fake.run.mock.calls[0]![0].prompt)).not.toHaveProperty("windowTitles");
   });
 
   it("has nothing to ask without values", async () => {
@@ -97,16 +119,17 @@ describe("createTeachValueSuggester", () => {
     }
   });
 
-  it("gives no suggestion when the call throws or no model is configured", async () => {
+  it("gives no suggestion when the call or the model lookup throws", async () => {
     const throwing = runtime(() => {
       throw new Error("provider down");
     });
     expect(await setup(throwing).suggest(actor, skill, values)).toBeNull();
-    const noCompaction = runtime(() => answer("[]"), false);
-    expect(await setup(noCompaction).suggest(actor, skill, values)).toBeNull();
-    const scripted = runtime(() => answer("[]"));
-    expect(await setup(scripted, "scripted").suggest(actor, skill, values)).toBeNull();
-    expect(scripted.run).not.toHaveBeenCalled();
+    const unresolved = runtime(() => answer("[]"));
+    const failing = async () => {
+      throw new Error("no model");
+    };
+    expect(await setup(unresolved, failing).suggest(actor, skill, values)).toBeNull();
+    expect(unresolved.run).not.toHaveBeenCalled();
   });
 
   it("gives up when the model does not answer in time", async () => {

@@ -1,31 +1,37 @@
 import { createRouterClient } from "@orpc/server";
-import type { AgentRuntime } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
-import { buildPlaybookFromRecording, ClientError } from "@rakazo/core";
+import {
+  buildPlaybookFromRecording,
+  ClientError,
+  scrubTeachEvents,
+  typedValuesFromRecording,
+} from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { SKILL_NOT_DRAFT } from "./dozo-taught-skills.js";
 import type { DozoTeachInput } from "./dozo-teach.js";
-import {
-  createDozoTeach,
-  dozoTeachRoutes,
-  dozoTeachWiring,
-  SKILL_NOT_DRAFT,
-} from "./dozo-teach.js";
+import { createDozoTeach, dozoTeachRoutes, dozoTeachWiring } from "./dozo-teach.js";
 import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
+import { createTeachValueSuggester } from "./dozo-teach-suggest.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
 const at = "2026-01-01T00:00:00.000Z";
 const typing = (text: string): TeachRecordingEvent[] =>
   [...text].map((key) => ({ at, kind: "key", key }));
+const tab: TeachRecordingEvent = { at, kind: "key", key: "Tab" };
 const events: TeachRecordingEvent[] = [
   ...typing("ali@example.test"),
-  { at, kind: "key", key: "Tab" },
-  ...typing("Gizli-5678"),
-  { at, kind: "key", key: "Tab" },
+  tab,
+  ...typing("hunter2"),
+  tab,
+  ...typing("my secret phrase"),
+  tab,
   { at, kind: "key", sensitive: true },
 ];
+const TYPED = ["ali@example.test", "hunter2", "my secret phrase"];
 const playbook: SkillPlaybook = buildPlaybookFromRecording("Sign in", events);
 const teacher: Actor = {
   userId: "ada",
@@ -51,12 +57,54 @@ type Row = {
   recording: unknown;
 };
 
+type Stored = {
+  skillId: string;
+  spaceId: string;
+  userId: string;
+  values: string;
+  suggestions: unknown;
+  due?: boolean;
+};
+
+/**
+ * A database holding one skill and its values store, answering the store's SQL as Postgres would
+ * (with content encryption off, so values are plain JSON text).
+ */
+function fakeDb(row: Row, stored: Stored | null) {
+  const state = { stored };
+  const sql = (strings: TemplateStringsArray) => strings.join("?");
+  const executeRaw = vi.fn(async (strings: TemplateStringsArray) => {
+    if (sql(strings).includes('DELETE FROM "dozo_teach_values"') && state.stored?.due) {
+      state.stored = null;
+    }
+    return 1;
+  });
+  const queryRaw = vi.fn(async (strings: TemplateStringsArray, ...params: unknown[]) => {
+    const text = sql(strings);
+    if (text.includes('UPDATE "dozo_teach_values"')) {
+      if (!state.stored) return [];
+      state.stored.suggestions ??= JSON.parse(params[0] as string);
+      return [{ suggestions: state.stored.suggestions }];
+    }
+    return state.stored && !state.stored.due ? [state.stored] : [];
+  });
+  const prisma = {
+    taughtSkill: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string; spaceId: string } }) =>
+        where.id === row.id && where.spaceId === row.spaceId ? row : null,
+      ),
+    },
+    $executeRaw: executeRaw,
+    $queryRaw: queryRaw,
+  };
+  return { prisma, state, queryRaw };
+}
+
 function setup(
   options: {
     row?: Partial<Row>;
+    stored?: Partial<Stored> | null;
     suggest?: TeachValueSuggester | null;
-    /** What the row holds when the review locks it to write the suggestions. */
-    locked?: unknown[];
   } = {},
 ) {
   const row: Row = {
@@ -67,21 +115,28 @@ function setup(
     name: "",
     goal: "Sign in",
     status: "draft",
-    recording: { events, snapshots: [] },
+    // As the draft keeps it: nothing typed is left in the recording.
+    recording: {
+      events: scrubTeachEvents(events),
+      snapshots: [
+        { at, summary: "Sign in" },
+        { at, summary: "hunter2 - Search" },
+      ],
+    },
     ...options.row,
   };
-  const executeRaw = vi.fn(async (..._args: unknown[]) => 1);
-  const queryRaw = vi.fn(async (..._args: unknown[]) => options.locked ?? [row]);
-  const prisma = {
-    taughtSkill: {
-      findFirst: vi.fn(async ({ where }: { where: { id: string; spaceId: string } }) =>
-        where.id === row.id && where.spaceId === row.spaceId ? row : null,
-      ),
-    },
-    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) =>
-      work({ $queryRaw: queryRaw, $executeRaw: executeRaw }),
-    ),
-  };
+  const stored: Stored | null =
+    options.stored === null
+      ? null
+      : {
+          skillId: row.id,
+          spaceId: row.spaceId,
+          userId: "ada",
+          values: JSON.stringify(typedValuesFromRecording(events)),
+          suggestions: null,
+          ...options.stored,
+        };
+  const db = fakeDb(row, stored);
   const taughtSkills = {
     updateDraft: vi.fn(async () => ({}) as never),
     save: vi.fn(async () => ({
@@ -105,12 +160,11 @@ function setup(
       ? undefined
       : (options.suggest ??
         vi.fn<TeachValueSuggester>(async () => ({
-          "{{value 1}}": { name: "email", secret: false },
-          "{{value 2}}": { name: "password", secret: true },
-          "{{value 3}}": { name: "pin", secret: false },
+          "{{value 1}}": { name: "email" },
+          "{{value 2}}": { name: "password" },
         })));
-  const teach = createDozoTeach({ prisma: prisma as never, taughtSkills, suggest });
-  return { teach, prisma, taughtSkills, suggest, executeRaw, queryRaw, row };
+  const teach = createDozoTeach({ prisma: db.prisma as never, taughtSkills, suggest });
+  return { teach, db, taughtSkills, suggest, row };
 }
 
 const input = (decisions: DozoTeachInput["decisions"] = {}): DozoTeachInput => ({
@@ -122,7 +176,7 @@ const input = (decisions: DozoTeachInput["decisions"] = {}): DozoTeachInput => (
 
 describe("review", () => {
   it("gives the teacher the typed values with suggestions, and caches them", async () => {
-    const { teach, suggest, executeRaw, queryRaw } = setup();
+    const { teach, suggest, db } = setup();
     const { values } = await teach.review(teacher, "skill-1");
     expect(values).toEqual([
       {
@@ -131,83 +185,109 @@ describe("review", () => {
         secret: false,
         suggestion: { name: "email" },
       },
-      // The model took it for a password: a secret from now on.
       {
         placeholder: "{{value 2}}",
-        text: "Gizli-5678",
-        secret: true,
+        text: "hunter2",
+        secret: false,
         suggestion: { name: "password" },
       },
-      // A secret value gets no suggestion, even one the model made up.
-      { placeholder: "{{value 3}}", text: null, secret: true },
+      { placeholder: "{{value 3}}", text: "my secret phrase", secret: false },
+      { placeholder: "{{value 4}}", text: null, secret: true },
     ]);
-    // Only open values reach the model.
-    expect(suggest).toHaveBeenCalledWith(teacher, expect.objectContaining({ botId: "bot-1" }), [
-      { placeholder: "{{value 1}}", text: "ali@example.test" },
-      { placeholder: "{{value 2}}", text: "Gizli-5678" },
-    ]);
-    // Written under the row's lock, only while it is a draft.
-    expect(JSON.stringify(queryRaw.mock.calls[0])).toContain("FOR UPDATE");
-    expect(executeRaw).toHaveBeenCalledOnce();
-    expect(JSON.stringify(executeRaw.mock.calls[0])).toContain("dozoSuggestions");
+    // The model is told the steps, titles that show nothing typed and shapes, never a value.
+    expect(suggest).toHaveBeenCalledWith(
+      teacher,
+      {
+        botId: "bot-1",
+        goal: "Sign in",
+        steps: playbook.steps,
+        windowTitles: ["Sign in"],
+      },
+      [
+        { placeholder: "{{value 1}}", shape: "9-20 characters, has @" },
+        { placeholder: "{{value 2}}", shape: "4-8 characters, letters and digits" },
+        { placeholder: "{{value 3}}", shape: "9-20 characters, has spaces" },
+        { placeholder: "{{value 4}}", shape: "protected input" },
+      ],
+    );
+    expect(db.state.stored?.suggestions).toEqual({
+      "{{value 1}}": { name: "email" },
+      "{{value 2}}": { name: "password" },
+    });
   });
 
-  it("reads cached suggestions instead of asking again, also an older cache", async () => {
-    const cached = {
-      "{{value 1}}": { name: "login", variable: false },
-      "{{value 2}}": { name: "password", secret: true },
-    };
-    const { teach, suggest, executeRaw } = setup({
-      row: { recording: { events, snapshots: [], dozoSuggestions: cached } },
+  it("never sends a typed value to the model", async () => {
+    const run = vi.fn(async function* (_request: AgentRunRequest) {
+      yield { type: "done", text: "[]" } as never;
+    });
+    const suggest = createTeachValueSuggester({
+      prisma: {} as never,
+      runtime: { describe: () => ({ capabilities: {} }), run } as unknown as AgentRuntime,
+      resolveModel: async () => ({ provider: "any", model: "m" }) as never,
+    });
+    await setup({ suggest }).teach.review(teacher, "skill-1");
+    expect(run).toHaveBeenCalledOnce();
+    const body = JSON.stringify(run.mock.calls[0]);
+    for (const typed of TYPED) expect(body).not.toContain(typed);
+    expect(body).toContain("{{value 3}}");
+  });
+
+  it("reads cached suggestions instead of asking again", async () => {
+    const { teach, suggest } = setup({
+      stored: { suggestions: { "{{value 1}}": { name: "login" } } },
     });
     const { values } = await teach.review(teacher, "skill-1");
-    expect(values[0]).toMatchObject({ secret: false, suggestion: { name: "login" } });
-    expect(values[1]).toMatchObject({ secret: true, suggestion: { name: "password" } });
-    expect(values[2]?.suggestion).toBeUndefined();
+    expect(values[0]).toMatchObject({ suggestion: { name: "login" } });
+    expect(values[1]?.suggestion).toBeUndefined();
     expect(suggest).not.toHaveBeenCalled();
-    expect(executeRaw).not.toHaveBeenCalled();
   });
 
   it("caches a failed call too, so the model is not asked again", async () => {
     const failed = setup({ suggest: vi.fn(async () => null) });
     const { values } = await failed.teach.review(teacher, "skill-1");
     expect(values.every((value) => !value.suggestion)).toBe(true);
-    expect(failed.executeRaw).toHaveBeenCalledOnce();
-    expect(JSON.stringify(failed.executeRaw.mock.calls[0])).toContain('"{}"');
-
-    const again = setup({ row: { recording: { events, snapshots: [], dozoSuggestions: {} } } });
-    expect((await again.teach.review(teacher, "skill-1")).values).toHaveLength(3);
-    expect(again.suggest).not.toHaveBeenCalled();
+    expect(failed.db.state.stored?.suggestions).toEqual({});
 
     const none = setup({ suggest: null });
-    expect((await none.teach.review(teacher, "skill-1")).values).toHaveLength(3);
-    expect(none.prisma.$transaction).not.toHaveBeenCalled();
+    expect((await none.teach.review(teacher, "skill-1")).values).toHaveLength(4);
+    expect(none.db.state.stored?.suggestions).toBeNull();
   });
 
-  it("keeps what another review wrote first, and writes nothing once the draft is gone", async () => {
-    const first = { "{{value 1}}": { name: "login", secret: false } };
-    const raced = setup({
-      locked: [{ recording: { events, snapshots: [], dozoSuggestions: first } }],
+  it("keeps what another review wrote first, and what it got when the values went", async () => {
+    const raced = setup();
+    vi.mocked(raced.suggest!).mockImplementationOnce(async () => {
+      raced.db.state.stored!.suggestions = { "{{value 1}}": { name: "login" } };
+      return { "{{value 1}}": { name: "email" } };
     });
-    const { values } = await raced.teach.review(teacher, "skill-1");
-    expect(values[0]?.suggestion).toEqual({ name: "login" });
-    expect(raced.suggest).toHaveBeenCalledOnce();
-    expect(raced.executeRaw).not.toHaveBeenCalled();
+    expect((await raced.teach.review(teacher, "skill-1")).values[0]?.suggestion).toEqual({
+      name: "login",
+    });
 
-    const saved = setup({ locked: [] });
-    expect((await saved.teach.review(teacher, "skill-1")).values[0]?.suggestion).toEqual({
+    const gone = setup();
+    vi.mocked(gone.suggest!).mockImplementationOnce(async () => {
+      gone.db.state.stored = null;
+      return { "{{value 1}}": { name: "email" } };
+    });
+    expect((await gone.teach.review(teacher, "skill-1")).values[0]?.suggestion).toEqual({
       name: "email",
     });
-    expect(saved.executeRaw).not.toHaveBeenCalled();
   });
 
-  it("gives nobody else the values, and none once saved or without typing", async () => {
+  it("gives nobody else the values, and none once saved, due or never stored", async () => {
     expect((await setup().teach.review(member, "skill-1")).values).toEqual([]);
+    // A member who took the draft over by editing it is not who typed the values.
+    const handedOver = setup({ row: { userId: "bob" } });
+    expect((await handedOver.teach.review(member, "skill-1")).values).toEqual([]);
     const saved = setup({ row: { status: "saved" } });
     expect((await saved.teach.review(teacher, "skill-1")).values).toEqual([]);
-    const clicks = setup({ row: { recording: { events: [], snapshots: [] } } });
-    expect((await clicks.teach.review(teacher, "skill-1")).values).toEqual([]);
-    expect(clicks.suggest).not.toHaveBeenCalled();
+    const due = setup({ stored: { due: true } });
+    expect((await due.teach.review(teacher, "skill-1")).values).toEqual([]);
+    expect(due.db.state.stored).toBeNull();
+    const none = setup({ stored: null });
+    expect((await none.teach.review(teacher, "skill-1")).values).toEqual([]);
+    expect(none.suggest).not.toHaveBeenCalled();
+    const other = setup({ stored: { userId: "bob" } });
+    expect((await other.teach.review(teacher, "skill-1")).values).toEqual([]);
   });
 
   it("refuses a skill of another Space", async () => {
@@ -219,82 +299,15 @@ describe("review", () => {
 });
 
 describe("save", () => {
-  it("applies the decisions, then saves through the service", async () => {
+  it("hands the draft and the decisions to the service's one-transaction save", async () => {
     const { teach, taughtSkills } = setup();
-    await teach.save(
-      teacher,
-      input({
-        "{{value 1}}": { action: "fixed" },
-        "{{value 2}}": { action: "variable", name: "password" },
-      }),
-    );
-    const [, , draft] = taughtSkills.updateDraft.mock.calls[0] as unknown as [
-      unknown,
-      string,
-      { playbook: SkillPlaybook; name: string },
-    ];
-    expect(draft.name).toBe("Sign in");
-    expect(draft.playbook.steps).toEqual([
-      'Type "ali@example.test".',
-      "Press key: Tab.",
-      "Type {{password}}.",
-      "Press key: Tab.",
-      "Type {{value_3}}.",
-    ]);
-    expect(draft.playbook.inputs).toEqual(["password (secret)", "value_3 (secret)"]);
-    expect(JSON.stringify(draft)).not.toContain("Gizli-5678");
-    expect(taughtSkills.save).toHaveBeenCalledWith(teacher, "skill-1", "Sign in");
-    expect(taughtSkills.updateDraft.mock.invocationCallOrder[0]).toBeLessThan(
-      taughtSkills.save.mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it("refuses to keep a secret value as text, also one the model took for a secret", async () => {
-    const { teach, taughtSkills } = setup();
-    await expect(
-      teach.save(teacher, input({ "{{value 3}}": { action: "fixed" } })),
-    ).rejects.toBeInstanceOf(ClientError);
-    const flagged = setup({
-      row: {
-        recording: {
-          events,
-          snapshots: [],
-          dozoSuggestions: { "{{value 2}}": { name: "password", secret: true } },
-        },
-      },
-    });
-    await expect(
-      flagged.teach.save(teacher, input({ "{{value 2}}": { action: "fixed" } })),
-    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
-    expect(taughtSkills.save).not.toHaveBeenCalled();
-    expect(flagged.taughtSkills.save).not.toHaveBeenCalled();
-  });
-
-  it("refuses decisions for a skill already saved, and saves one without them as upstream", async () => {
-    const saved = setup({ row: { status: "saved" } });
-    for (const call of [saved.teach.save, saved.teach.test]) {
-      await expect(
-        call(teacher, input({ "{{value 1}}": { action: "variable", name: "email" } })),
-      ).rejects.toMatchObject({ kind: "CONFLICT", code: SKILL_NOT_DRAFT });
-    }
-    expect(saved.taughtSkills.updateDraft).not.toHaveBeenCalled();
-    await saved.teach.save(teacher, input());
-    expect(saved.taughtSkills.updateDraft).toHaveBeenCalledWith(teacher, "skill-1", {
-      name: "Sign in",
+    const decisions = { "{{value 2}}": { action: "hidden" as const, name: "password" } };
+    await teach.save(teacher, input(decisions));
+    expect(taughtSkills.save).toHaveBeenCalledWith(teacher, "skill-1", "Sign in", {
       playbook,
+      decisions,
     });
-  });
-
-  it("lets someone else save without decisions, as upstream does", async () => {
-    const { teach, taughtSkills } = setup();
-    await teach.save(member, input());
-    expect(taughtSkills.updateDraft).toHaveBeenCalledWith(member, "skill-1", {
-      name: "Sign in",
-      playbook,
-    });
-    await expect(
-      teach.save(member, input({ "{{value 1}}": { action: "fixed" } })),
-    ).rejects.toMatchObject({ kind: "FORBIDDEN" });
+    expect(taughtSkills.updateDraft).not.toHaveBeenCalled();
   });
 });
 
@@ -302,7 +315,10 @@ describe("test", () => {
   it("keeps the draft's placeholders and runs the prompt with the decisions applied", async () => {
     const { teach, taughtSkills } = setup({ row: { name: "Saved name" } });
     const result = await teach.test(teacher, {
-      ...input({ "{{value 2}}": { action: "variable", name: "password" } }),
+      ...input({
+        "{{value 1}}": { action: "fixed" },
+        "{{value 2}}": { action: "hidden", name: "password" },
+      }),
       name: undefined,
     });
     expect(result).toEqual({ runId: "run-1" });
@@ -313,27 +329,43 @@ describe("test", () => {
     const [, , prompt] = taughtSkills.testRun.mock.calls[0] as unknown as [unknown, string, string];
     expect(prompt).toContain("Run taught skill: Saved name");
     expect(prompt).toContain("safe test run");
-    expect(prompt).toContain("Type {{password}}.");
-    expect(prompt).toContain("{{value_1}}");
-    expect(prompt).not.toContain("Gizli-5678");
-    expect(prompt).not.toContain("ali@example.test");
+    expect(prompt).toContain('Type "ali@example.test".');
+    expect(prompt).toContain("Secret inputs ({{password}}, {{value_4}})");
+    expect(prompt).not.toContain("hunter2");
     expect(taughtSkills.save).not.toHaveBeenCalled();
   });
 
-  it("names the run after the goal when the skill has no name", async () => {
+  it("refuses to keep a protected value as text", async () => {
     const { teach, taughtSkills } = setup();
-    await teach.test(teacher, { ...input(), name: "" });
+    await expect(
+      teach.test(teacher, input({ "{{value 4}}": { action: "fixed" } })),
+    ).rejects.toBeInstanceOf(ClientError);
+    expect(taughtSkills.testRun).not.toHaveBeenCalled();
+  });
+
+  it("refuses decisions from someone else or for a saved skill", async () => {
+    const decided = input({ "{{value 1}}": { action: "variable", name: "email" } });
+    await expect(setup().teach.test(member, decided)).rejects.toMatchObject({ kind: "FORBIDDEN" });
+    await expect(
+      setup({ row: { status: "saved" } }).teach.test(teacher, decided),
+    ).rejects.toMatchObject({ kind: "CONFLICT", code: SKILL_NOT_DRAFT });
+  });
+
+  it("runs someone else's test as upstream, and names it after the goal", async () => {
+    const { teach, taughtSkills } = setup();
+    await teach.test(member, { ...input(), name: "" });
     const [, , prompt] = taughtSkills.testRun.mock.calls[0] as unknown as [unknown, string, string];
     expect(prompt).toContain("Run taught skill: Sign in");
+    expect(prompt).toContain("Type {{value 1}}.");
   });
 });
 
 describe("the routes", () => {
   it("serve review, save and test for the signed-in member", async () => {
-    const { prisma, taughtSkills } = setup();
+    const { db, taughtSkills } = setup();
     const suggest = vi.fn<TeachValueSuggester>(async () => ({}));
     const ctx = createRouterContext({
-      prisma,
+      prisma: db.prisma,
       events: { notify: () => undefined, publishSpaceChange: () => undefined },
       env: {},
       dozoTeach: { suggest },
@@ -341,7 +373,7 @@ describe("the routes", () => {
     const client = createRouterClient(dozoTeachRoutes({ ...ctx, taughtSkills } as never), {
       context: { actor: teacher },
     }).dozoTeach;
-    expect((await client.review({ skillId: "skill-1" })).values).toHaveLength(3);
+    expect((await client.review({ skillId: "skill-1" })).values).toHaveLength(4);
     expect(suggest).toHaveBeenCalledOnce();
     await client.save({ skillId: "skill-1", playbook });
     expect(taughtSkills.save).toHaveBeenCalledOnce();
