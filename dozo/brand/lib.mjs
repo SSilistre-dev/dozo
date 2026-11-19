@@ -61,7 +61,7 @@ export function loadConfig(file = DEFAULT_CONFIG) {
   }
   const need = (ok, message) => ok || fail(`config: ${message}`);
   need(isObject(raw), "must be a JSON object");
-  const KEYS = ["from", "to", "variants", "urls", "include", "exclude", "keep", "allow", "literals", "leak", "leakWords", "anchored", "assets"];
+  const KEYS = ["from", "to", "variants", "urls", "include", "exclude", "keep", "allow", "literals", "leak", "leakWords", "placeholders", "anchored", "assets"];
   for (const key of Object.keys(raw)) need(KEYS.includes(key), `unknown key ${key}`);
   need(isText(raw.from) && isText(raw.to), "needs `from` and `to` (non-empty strings)");
   need(!raw.to.includes(raw.from), "`to` must not contain `from`, a re-run would rename again");
@@ -81,7 +81,7 @@ export function loadConfig(file = DEFAULT_CONFIG) {
     }
     maps[name] = value;
   }
-  for (const name of ["include", "leak", "leakWords"]) {
+  for (const name of ["include", "leak", "leakWords", "placeholders"]) {
     need(raw[name] === undefined || (Array.isArray(raw[name]) && raw[name].every(isText)), `\`${name}\` must be a list of non-empty strings`);
   }
   need(raw.include?.length > 0, "`include` is empty");
@@ -126,6 +126,7 @@ export function loadConfig(file = DEFAULT_CONFIG) {
     include: raw.include,
     leak: raw.leak ?? [],
     leakWords: raw.leakWords ?? [],
+    placeholders: raw.placeholders ?? [],
     anchored: raw.anchored ?? [],
     exclude: lists.exclude,
     keep: lists.keep,
@@ -246,6 +247,13 @@ export function writeAtomic(file, data) {
 // ---------------------------------------------------------------------------------------------
 
 export const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** `line:placeholder` for every placeholder in `text`: an address that does not exist must never ship. */
+export function placeholderHits(config, text) {
+  if (config.placeholders.length === 0) return [];
+  const re = new RegExp(config.placeholders.map(escapeRe).join("|"), "g");
+  return text.split("\n").flatMap((line, i) => [...line.matchAll(re)].map((m) => `${i + 1}: ${m[0]}`));
+}
 
 /** A literal applies to every file in scope, or only to the globs in its `files`. */
 export const literalApplies = (literal, rel) =>

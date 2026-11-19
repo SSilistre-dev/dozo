@@ -5,12 +5,9 @@
     "Rakazos": "Dozos"
   },
   "urls": {
-    "rakazo.com": "dozo.example",
-    "github.com/elie222/rakazo": "github.com/OWNER/dozo",
-    "https://discord.gg/RWwKa2Sn7h": "https://dozo.example/discord",
-    "https://apps.apple.com/app/rakazo/id6801531099": "https://dozo.example/get/ios",
-    "https://play.google.com/store/apps/details?id=com.rakazo.app": "https://dozo.example/get/android"
+    "github.com/elie222/rakazo": "github.com/SSilistre-dev/dozo"
   },
+  "placeholders": ["dozo.example", "OWNER/"],
   "include": [
     "apps/web/**",
     "apps/api/**",
@@ -470,12 +467,6 @@
       "reason": "mail signed with upstream's founder name"
     },
     {
-      "file": "packages/auth/src/welcome-email.tsx",
-      "find": "{ src: \"https://rakazo.com/email/welcome.jpg\", alt: \"Rakazo\" },",
-      "replace": "{ src: \"https://rakazo.com/email/welcome.png\", alt: \"Rakazo\" },",
-      "reason": "upstream's hero carries its mascot and wordmark; point at the Dozo hero, which the web app serves from its public directory (mapped in assets). The domain and the name are rewritten after this rule"
-    },
-    {
       "file": "packages/contracts/src/ai-consent.ts",
       "find": "export const AI_PRIVACY_URL = \"https://rakazo.com/privacy/\";",
       "replace": "export const AI_PRIVACY_URL = \"https://dozo-site.ssilistre.dev/privacy/\";",
@@ -510,12 +501,6 @@
       "find": "filename=\"rakazo-audit-log-",
       "replace": "filename=\"dozo-audit-log-",
       "reason": "download file name"
-    },
-    {
-      "file": "packages/contracts/src/client-build.ts",
-      "find": "/download/android/rakazo.apk",
-      "replace": "/download/android/dozo.apk",
-      "reason": "APK file name offered for download; the Dozo release must publish this name"
     },
     {
       "file": "packages/adapters/src/history-compaction.prompt.ts",
@@ -1700,6 +1685,156 @@
         "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
       ],
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from \"@rakazo/contracts\";\nimport { Link, Text } from \"react-email\";\n",
+      "replace": "import { Link, Text } from \"react-email\";\n",
+      "reason": "the welcome mail offers no store links: Dozo has no App Store or Play listing (its import goes with them)"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "const APPS: Readonly<Record<string, string>> = {\n  iPhone: IOS_APP_STORE_URL,\n  Android: ANDROID_APP_STORE_URL,\n  Mac: \"https://rakazo.com/api/download?platform=mac\",\n  Windows: \"https://rakazo.com/api/download?platform=windows\",\n  Linux: \"https://rakazo.com/api/download?platform=linux\",\n};\n",
+      "replace": "const APPS: Readonly<Record<string, string>> = {\n  Mac: \"https://github.com/SSilistre-dev/dozo/releases/latest/download/Dozo-macOS.dmg\",\n  Windows: \"https://github.com/SSilistre-dev/dozo/releases/latest/download/Dozo-Windows-x64-setup.exe\",\n};\n",
+      "reason": "the welcome mail links only desktop builds Dozo publishes, the same release files the landing page links (no Linux build, no store listing)"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "      <Text>\n        {say(\"Welcome to Rakazo. The people who get the most out of it do three things:\")}\n      </Text>\n      <Text style={stepStyle}>\n        <strong>1. ",
+      "replace": "      <Text style={stepStyle}>\n        <strong>",
+      "reason": "with the community and GitHub steps gone one step is left: no numbered list and no \"three things\" intro"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "      <Text style={stepStyle}>\n        <strong>2. {say(\"Join the community\")}</strong>\n      </Text>\n      <Text style={{ marginTop: 0 }}>\n        {withNodes(\n          say(\n            \"See what others are building, get help fast, and tell us what to build next on {discord}.\",\n          ),\n          {\n            discord: (\n              <Link href=\"https://discord.gg/RWwKa2Sn7h\" style={linkStyle}>\n                Discord\n              </Link>\n            ),\n          },\n        )}\n      </Text>\n      <Text style={stepStyle}>\n        <strong>3. {say(\"Star us on GitHub\")}</strong>\n      </Text>\n      <Text style={{ marginTop: 0 }}>\n        {withNodes(say(\"Rakazo is open source. {star} helps more people find it.\"), {\n          star: (\n            <Link href=\"https://github.com/elie222/rakazo\" style={linkStyle}>\n              {say(\"A star on GitHub\")}\n            </Link>\n          ),\n        })}\n      </Text>\n      <Text style={{ marginTop: \"28px\" }}>{say(\"Questions? Just reply. I read every one.\")}</Text>\n",
+      "replace": "      <Text style={{ marginTop: \"28px\" }}>{say(\"Questions? Just reply. I read every one.\")}</Text>\n",
+      "reason": "drops the Discord step (Dozo has no community server) and the GitHub star step (no star prompt; and Dozo is source available, not open source)"
+    },
+    {
+      "file": "packages/auth/src/welcome-email.tsx",
+      "find": "    unsubscribeUrl,\n    { src: \"https://rakazo.com/email/welcome.jpg\", alt: \"Rakazo\" },\n",
+      "replace": "    unsubscribeUrl,\n",
+      "reason": "upstream's hero carries its mascot and wordmark, and the landing site serves no mail hero: the mail goes without one"
+    },
+    {
+      "file": "packages/contracts/src/client-build.ts",
+      "find": "export const IOS_APP_STORE_URL = \"https://apps.apple.com/app/rakazo/id6801531099\";\nexport const ANDROID_APK_URL =\n  \"https://github.com/elie222/rakazo/releases/download/android/rakazo.apk\";\nexport const ANDROID_APP_STORE_URL = \"https://play.google.com/store/apps/details?id=com.rakazo.app\";\n",
+      "replace": "export const IOS_APP_STORE_URL = \"https://dozo-site.ssilistre.dev/\";\nexport const ANDROID_APK_URL = \"https://dozo-site.ssilistre.dev/\";\nexport const ANDROID_APP_STORE_URL = \"https://dozo-site.ssilistre.dev/\";\n",
+      "reason": "Dozo has no App Store or Play listing and no APK: the app's update fallback opens the landing page"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from \"@rakazo/contracts\";\nimport {\n",
+      "replace": "import {\n",
+      "reason": "no mobile app link in the account menu (below), so its store links are not imported"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "            <a\n              className={`${buttonVariants({ variant: \"ghost\" })} h-9 w-full justify-start gap-2.5 font-normal`}\n              href={\n                /Android/i.test(navigator.userAgent) ? ANDROID_APP_STORE_URL : IOS_APP_STORE_URL\n              }\n              target=\"_blank\"\n              rel=\"noreferrer\"\n            >\n              <Smartphone className=\"text-muted-foreground\" strokeWidth={1.75} />\n              <Trans>Get the mobile app</Trans>\n            </a>\n            {onInvite ? (\n",
+      "replace": "            {onInvite ? (\n",
+      "reason": "\"Get the mobile app\" has nowhere to go: Dozo has no store listing"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "  Smartphone,\n  SquareKanban,\n",
+      "replace": "  SquareKanban,\n",
+      "reason": "its only use was the mobile app link removed above"
+    },
+    {
+      "file": "packages/contracts/src/domain.ts",
+      "find": "export const SUBMIT_PLUGIN_URL = \"https://rakazo.com/plugins/submit/\";\nexport const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;\n",
+      "replace": "export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;\n",
+      "reason": "Dozo has no plugin submission page; the web and mobile links to it are removed"
+    },
+    {
+      "file": "packages/contracts/src/domain.ts",
+      "find": "export const integrationPageUrl = (slug: string) => `https://rakazo.com/integrations/${slug}/`;",
+      "replace": "export const integrationPageUrl = (_slug: string) => \"/app?integrations\";",
+      "reason": "Dozo has no public integration pages: a claim points at the app's own integrations view"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "import { CATALOG_SEARCH_QUERY_MAX_LENGTH, SUBMIT_PLUGIN_URL } from \"@rakazo/contracts\";",
+      "replace": "import { CATALOG_SEARCH_QUERY_MAX_LENGTH } from \"@rakazo/contracts\";",
+      "reason": "no plugin submission link (below)"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "import { ArrowUpRight, Search } from \"lucide-react\";",
+      "replace": "import { Search } from \"lucide-react\";",
+      "reason": "its only use was the submission link removed below"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "      {catalogLoaded && !category ? (\n        <div className=\"mt-10 flex justify-center\">\n          <a\n            href={SUBMIT_PLUGIN_URL}\n            target=\"_blank\"\n            rel=\"noreferrer\"\n            className=\"inline-flex items-center gap-1 text-body-sm text-muted-foreground hover:text-foreground\"\n          >\n            <Trans>Submit a plugin</Trans>\n            <ArrowUpRight size={14} />\n          </a>\n        </div>\n      ) : null}\n    </>\n",
+      "replace": "    </>\n",
+      "reason": "\"Submit a plugin\" pointed at upstream's submission page; Dozo has none"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/integrations.tsx",
+      "find": "import { mcpServerConnection, mcpServerNeedsSignIn, SUBMIT_PLUGIN_URL } from \"@rakazo/contracts\";",
+      "replace": "import { mcpServerConnection, mcpServerNeedsSignIn } from \"@rakazo/contracts\";",
+      "reason": "no plugin submission link (below)"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/integrations.tsx",
+      "find": "                {pluginsState !== \"loading\" ? (\n                  <NativeActionButton\n                    fill={false}\n                    label={t`Submit a plugin`}\n                    onPress={() => void Linking.openURL(SUBMIT_PLUGIN_URL)}\n                    prominence=\"quiet\"\n                    size=\"compact\"\n                    variant=\"text\"\n                  />\n                ) : null}\n              </>\n",
+      "replace": "              </>\n",
+      "reason": "\"Submit a plugin\" pointed at upstream's submission page; Dozo has none"
+    },
+    {
+      "file": "apps/api/src/plugin-submissions.ts",
+      "find": "return c.redirect(`${integrationPageUrl(row.claim)}claim/?expired`, 303);",
+      "replace": "return c.redirect(new URL(integrationPageUrl(row.claim), deps.webOrigin).href, 303);",
+      "reason": "an expired claim link opens the app's integrations view; Dozo has no public claim page"
+    },
+    {
+      "file": "apps/api/src/plugin-submissions.ts",
+      "find": "return c.redirect(`${integrationPageUrl(row.claim)}claim/?confirmed`, 303);",
+      "replace": "return c.redirect(new URL(integrationPageUrl(row.claim), deps.webOrigin).href, 303);",
+      "reason": "a confirmed claim opens the app's integrations view; Dozo has no public claim page"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer.tsx",
+      "find": "import { recordMessageSent } from \"../../components/GitHubStarPrompt\";\nimport type { ArtifactTarget } from \"../../lib/artifact-open\";\n",
+      "replace": "import type { ArtifactTarget } from \"../../lib/artifact-open\";\n",
+      "reason": "no GitHub star prompt in Dozo"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer.tsx",
+      "find": "      if (accepted) {\n        recordMessageSent();\n        return;\n      }",
+      "replace": "      if (accepted) return;",
+      "reason": "no GitHub star prompt in Dozo: a sent message no longer counts towards one"
+    },
+    {
+      "file": "packages/adapters/src/builtin-skills.prompt.ts",
+      "find": "const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [\n  [\"Getting started, first bot, what Rakazo does\", \"https://rakazo.com/docs.md\"],\n  [\n    \"Creating bots, chatting, bot settings, sidebar, search\",\n    \"https://rakazo.com/docs/bots-and-chats.md\",\n  ],\n  [\"Importing an OpenClaw, Hermes or ChatGPT agent\", \"https://rakazo.com/docs/import-an-agent.md\"],\n  [\n    \"Connecting apps and integrations (Gmail, GitHub, MCP tools)\",\n    \"https://rakazo.com/docs/integrations.md\",\n  ],\n  [\"Slack, Telegram, WhatsApp and other chat apps\", \"https://rakazo.com/docs/messaging-apps.md\"],\n  [\"Routines, schedules and triggers\", \"https://rakazo.com/docs/routines.md\"],\n  [\"The bot's computer, files, using your own computer\", \"https://rakazo.com/docs/computer.md\"],\n  [\"Memory\", \"https://rakazo.com/docs/memory.md\"],\n  [\"Skills\", \"https://rakazo.com/docs/skills.md\"],\n  [\"Approvals, Allow and Block lists\", \"https://rakazo.com/docs/approvals.md\"],\n  [\"Group chats, bots working together, subagents\", \"https://rakazo.com/docs/groups.md\"],\n  [\"Voice, calls, spoken replies\", \"https://rakazo.com/docs/voice-and-calls.md\"],\n  [\"Models, providers, API keys, fallbacks, usage\", \"https://rakazo.com/docs/models.md\"],\n  [\"Spaces\", \"https://rakazo.com/docs/spaces.md\"],\n  [\"Saved credentials and website logins\", \"https://rakazo.com/docs/bot-secrets.md\"],\n  [\n    \"Account, preferences, data export, credits, plans, billing\",\n    \"https://rakazo.com/docs/account.md\",\n  ],\n  [\"Desktop app\", \"https://rakazo.com/docs/desktop-app.md\"],\n  [\"Mobile app\", \"https://rakazo.com/docs/mobile-app.md\"],\n  [\"Bots that create and manage bots\", \"https://rakazo.com/docs/fleet-management.md\"],\n  [\"Building a plugin\", \"https://rakazo.com/docs/build-a-plugin.md\"],\n  [\"Self-hosting\", \"https://rakazo.com/docs/self-host.md\"],\n  [\"Self-hosted server configuration\", \"https://rakazo.com/docs/self-host-configuration.md\"],\n];\n",
+      "replace": "const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];\n",
+      "reason": "Dozo has no docs site: the bot gets no docs links to fetch or hand out"
+    },
+    {
+      "file": "packages/adapters/src/builtin-skills.prompt.ts",
+      "find": "  {\n    name: \"Rakazo\",\n    description: \"How to use or set up Rakazo: chat apps, your computer, billing, hosting\",\n    body: `Answer questions about Rakazo itself from its docs. Fetch the matching page with web_fetch before answering, then answer briefly in your own words and link the page. If fetching fails or is unavailable, answer only what this index says and link the page. Never invent menus, buttons, or steps the page doesn't show. Account-specific facts (credit balance, plan, usage) aren't in the docs: point to the screen that shows them.\n\n${RAKAZO_DOCS.map(([topics, url]) => `- ${topics}: ${url}`).join(\"\\n\")}`,\n  },\n];\n",
+      "replace": "];\n",
+      "reason": "the product docs skill only fetched and linked the docs pages, which Dozo does not have"
+    },
+    {
+      "file": "packages/core/src/user-error.ts",
+      "find": "import { MCP_OAUTH_REDIRECT_MISMATCH } from \"@rakazo/contracts\";\n\n/** Only reviewed, public documentation links belong here; never use URLs from an error body. */\n",
+      "replace": "/** Only reviewed, public documentation links belong here; never use URLs from an error body. */\n",
+      "reason": "no help link (below)"
+    },
+    {
+      "file": "packages/core/src/user-error.ts",
+      "find": "const ERROR_GUIDES: Readonly<Record<string, string>> = {\n  [MCP_OAUTH_REDIRECT_MISMATCH]:\n    \"https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch\",\n};\n",
+      "replace": "const ERROR_GUIDES: Readonly<Record<string, string>> = {};\n",
+      "reason": "Dozo has no docs site: an error carries no troubleshooting link"
+    },
+    {
+      "file": "packages/adapters/src/openrouter-usage.ts",
+      "find": "headers.set(\"HTTP-Referer\", \"https://rakazo.com\");",
+      "replace": "headers.set(\"HTTP-Referer\", \"https://dozo-site.ssilistre.dev\");",
+      "reason": "the app's public site, sent as the referer to the model provider"
     }
   ],
   "assets": {

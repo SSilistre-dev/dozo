@@ -27,8 +27,8 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 12 | Model tool prefix `mcp__rakazo__` (Claude Code CLI provider) | Fixed: `TOOL_SERVER` constant, all uses go through it |
 | 13 | Page-kit import specifier `rakazo/page` in the model's guide | Fixed: `PAGE_KIT_MODULE` and guide text to `dozo/page` (validate/runtime use the constant) |
 | 14 | E-mails signed "Elie" (welcome, referral) | Fixed: anchored rules to "Dozo". Gate: `leakWords: ["Elie"]` |
-| 15 | Welcome mail hero image (upstream art, then broken `dozo.example` URL) | Fixed: the hero is `assets/mail/welcome.png` (lockup and the six avatar heads, 1040x546), mapped to `apps/web/public/email/` and linked by an anchored rule. Owner action: the mail links it under the `urls` domain, which must reach the web app |
-| 16 | Placeholder domains/owner `dozo.example`, `OWNER/dozo` | Owner action (`LAUNCH-CHECKLIST.md`). Gate: `check.mjs --launch` fails on them |
+| 15 | Welcome mail hero image (upstream art, then broken `dozo.example` URL) | Fixed: the mail has no hero; the landing site serves none (`assets/mail/welcome.png` stays mapped, unused) |
+| 16 | Placeholder domains/owner `dozo.example`, `OWNER/dozo` | Fixed: GitHub is `SSilistre-dev/dozo`; every `dozo.example` link is pointed at a real address or dropped by an anchored rule (README, Known gaps). Gate: `placeholders`, checked by `apply` and the leak gate |
 | 17 | Self-update/compute image defaults pull `ghcr.io/elie222/rakazo/*` | Owner action: publish images. `--launch` fails while the allow-listed names exist. Until then disable self-update |
 | 18 | Mobile-only strings in web `messages-*.js` catalogs | Superseded by row 31: `apps/mobile` is in scope, so the strings are renamed at the source. The gate still cannot see build output |
 | 19 | `orange-bot.png` mascot source | Reviewed in `allow.binary`: export-script source, never shipped |

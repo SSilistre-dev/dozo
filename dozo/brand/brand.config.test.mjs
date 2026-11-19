@@ -94,6 +94,7 @@ describe("config validation", () => {
     rejects({ ...base, include: "src/**" }, /`include` must be a list of non-empty strings/);
     rejects({ ...base, leak: [""] }, /`leak` must be a list/);
     rejects({ ...base, leakWords: [3] }, /`leakWords` must be a list/);
+    rejects({ ...base, placeholders: ["dozo.example", ""] }, /`placeholders` must be a list of non-empty strings/);
     rejects({ ...base, anchored: {} }, /`anchored` must be a list/);
     rejects({ ...base, anchored: ["x"] }, /anchored rule needs file, find, replace and reason/);
     rejects({ ...base, anchored: [{ file: "a", find: "b", replace: "c", reason: "r", requires: "x" }] }, /requires must be a list of paths/);
@@ -278,11 +279,11 @@ describe("the shipped rules reach the tree through a mini stage", () => {
     const file = path.join(tempDir(), "brand.json");
     fs.writeFileSync(file, JSON.stringify(withoutFiles));
     const root = tree({
-      "apps/web/src/a.ts": 'x = "Rakazo"; y = RakazoDesktop; z = "https://rakazo.com/privacy/"; w = "@rakazo/core"; q = "RAKAZO_HOST"',
+      "apps/web/src/a.ts": 'x = "Rakazo"; y = RakazoDesktop; z = "https://github.com/elie222/rakazo/blob/main/docs/x.md"; w = "@rakazo/core"; q = "RAKAZO_HOST"',
     });
     const res = apply(root, file);
     assert.equal(res.status, 0, res.stderr);
-    assert.equal(read(root, "apps/web/src/a.ts"), 'x = "Dozo"; y = RakazoDesktop; z = "https://dozo.example/privacy/"; w = "@rakazo/core"; q = "RAKAZO_HOST"');
+    assert.equal(read(root, "apps/web/src/a.ts"), 'x = "Dozo"; y = RakazoDesktop; z = "https://github.com/SSilistre-dev/dozo/blob/main/docs/x.md"; w = "@rakazo/core"; q = "RAKAZO_HOST"');
     assert.equal(check(root, file).status, 0);
   });
 });
@@ -295,19 +296,14 @@ describe("the shipped config, in literal values", () => {
     assert.equal(config.from, "Rakazo");
     assert.equal(config.to, "Dozo");
     assert.deepEqual(config.variants, { Rakazos: "Dozos" });
-    assert.deepEqual(config.urls, {
-      "rakazo.com": "dozo.example",
-      "github.com/elie222/rakazo": "github.com/OWNER/dozo",
-      "https://discord.gg/RWwKa2Sn7h": "https://dozo.example/discord",
-      "https://apps.apple.com/app/rakazo/id6801531099": "https://dozo.example/get/ios",
-      "https://play.google.com/store/apps/details?id=com.rakazo.app": "https://dozo.example/get/android",
-    });
+    assert.deepEqual(config.urls, { "github.com/elie222/rakazo": "github.com/SSilistre-dev/dozo" });
+    assert.deepEqual(config.placeholders, ["dozo.example", "OWNER/"]);
     const counts = {};
     const sample = "Rakazo Rakazos RAKAZO rakazo Rakazo's RakazoPro Rakazo.icon";
     assert.equal(rewrite(sample, config, counts, "apps/web/src/x.ts"), "Dozo Dozos RAKAZO rakazo Dozo's RakazoPro Dozo.icon");
-    for (const [from, to] of [["rakazo.com", "dozo.example"], ["https://discord.gg/RWwKa2Sn7h", "https://dozo.example/discord"], ["https://apps.apple.com/app/rakazo/id6801531099", "https://dozo.example/get/ios"]]) {
-      assert.equal(rewrite(`u = "${from}"`, config, {}, "apps/web/src/x.ts"), `u = "${to}"`);
-    }
+    assert.equal(rewrite('u = "https://github.com/elie222/rakazo/blob/main/docs/x.md"', config, {}, "apps/web/src/x.ts"), 'u = "https://github.com/SSilistre-dev/dozo/blob/main/docs/x.md"');
+    // No URL map entry may write an address that does not exist.
+    for (const target of Object.values(config.urls)) assert.ok(!config.placeholders.some((p) => target.includes(p)), target);
   });
 
   it("OS junk with NUL bytes under a branded path is out of scope, not a UTF-16 failure", () => {
