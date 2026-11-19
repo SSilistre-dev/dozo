@@ -1,13 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { formatFileSize } from "@rakazo/core";
-import { Badge, Button, buttonVariants, Input, SectionHeading, toast } from "@rakazo/ui-web";
+import { Badge, Button, buttonVariants, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
 import { DozoPlanAction } from "./dozo-admin-plan";
 import { Row, Rows } from "./dozo-admin-rows";
 
@@ -48,7 +48,7 @@ export function DozoAdminAccount({ ownId }: { ownId: string }) {
       setConfirm(null);
       if (input.kind === "delete") navigate("/admin", { replace: true });
     },
-    onFailed: (error) => toast.error(errorText(error, t`Could not change the account`)),
+    onFailed: (error) => toastError(t`Could not change the account`, error),
   });
   /** The subscription's state in words; one this page does not know reads as inactive. */
   const subscriptionStatus = (status: string) => {

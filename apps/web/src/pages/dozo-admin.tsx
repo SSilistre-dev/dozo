@@ -11,7 +11,6 @@ import {
   NativeSelectOption,
   SectionHeading,
   Spinner,
-  toast,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
@@ -19,13 +18,13 @@ import { Suspense, useDeferredValue, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageLoading } from "../components/PageLoading";
+import { errorText, toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
 import { DozoAdminAccount } from "./dozo-admin-account";
 import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 import { DozoPlanAction } from "./dozo-admin-plan";
 import { Row, Rows } from "./dozo-admin-rows";
-import { NotFoundPage } from "./NotFound";
+import { NotFoundPage } from "./dozo-not-found";
 import { WindowChrome } from "./WindowChrome";
 
 /**
@@ -163,11 +162,9 @@ function AdminPanel({ ownId }: { ownId: string }) {
       queries.dozoAdmin.bans.key(),
     ],
     onFailed: (error, input) =>
-      toast.error(
-        errorText(
-          error,
-          "stop" in input ? t`Could not stop the computer` : t`Could not change the account`,
-        ),
+      toastError(
+        "stop" in input ? t`Could not stop the computer` : t`Could not change the account`,
+        error,
       ),
   });
   const date = (value: string) =>
