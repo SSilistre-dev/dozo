@@ -9,7 +9,7 @@ import { expect, SIGNED_OUT, test } from "./flow";
  * unreachable/retry screen. Once for the signed-in app, once for the signed-out sign-in page.
  */
 
-/** The longest wait the fix allows: a boot read's deadline twice (catalog, then English) and some. */
+/** The longest wait the fix allows: a chunk's deadline (15 s) and the screen it fails into. */
 const LIMIT_MS = 25_000;
 
 /**
@@ -80,7 +80,9 @@ const starts: Record<string, Start> = {
   "sign-in": {
     path: "/sign-in?lang=tr",
     state: SIGNED_OUT,
-    content: (page) => page.getByRole("heading", { name: "Dozo'da oturum açın" }),
+    // English when the Turkish catalog is the request held: the app falls back to it.
+    content: (page) =>
+      page.getByRole("heading", { name: /^(Dozo'da oturum açın|Sign in to Dozo)$/ }),
   },
 };
 

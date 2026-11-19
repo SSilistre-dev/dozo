@@ -134,6 +134,15 @@ describe("boot shell watch", () => {
     expect(shell().dataset.state).toBe("unreachable");
   });
 
+  it("brings the shell back with its retry when the app finds no catalog after it ran", () => {
+    start();
+    (window as Watched).dozoBootStarted?.();
+    shell().remove();
+    (window as Watched & { dozoBootUnreachable?: () => void }).dozoBootUnreachable?.();
+    expect(shell().dataset.state).toBe("unreachable");
+    expect(shell().textContent).toContain("Şimdi tekrar dene");
+  });
+
   it("offers a retry when the app's code hangs, and stays quiet once it runs", () => {
     start();
     vi.advanceTimersByTime(14_999);

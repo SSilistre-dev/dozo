@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BOOT_READ_MS, bootChunk, bootReadFetch, bootReadSignal } from "./dozo-boot-deadline";
+import {
+  BOOT_READ_MS,
+  bootChunk,
+  bootReadFetch,
+  bootReadSignal,
+  CHUNK_MS,
+  noCatalog,
+} from "./dozo-boot-deadline";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -72,8 +79,28 @@ describe("bootReadFetch", () => {
 describe("bootChunk", () => {
   it("fails a chunk that never arrives, and passes one that does", async () => {
     const hung = bootChunk(new Promise(() => {})).catch((error: unknown) => error);
-    await vi.advanceTimersByTimeAsync(BOOT_READ_MS);
+    await vi.advanceTimersByTimeAsync(CHUNK_MS - 1);
+    let settled = false;
+    void hung.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await hung).toBeInstanceOf(DOMException);
     await expect(bootChunk(Promise.resolve("catalog"))).resolves.toBe("catalog");
+  });
+});
+
+describe("noCatalog", () => {
+  it("asks the boot shell for its retry and never settles", async () => {
+    const dozoBootUnreachable = vi.fn();
+    let settled = false;
+    void noCatalog({ dozoBootUnreachable }).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(dozoBootUnreachable).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
   });
 });

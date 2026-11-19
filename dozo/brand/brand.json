@@ -3420,22 +3420,58 @@
       "reason": "stalled start: a session read that hangs fails after a deadline, so the reconnect screen shows instead of an endless spinner"
     },
     {
-      "file": "apps/web/src/lib/i18n.ts",
-      "find": "import { desktopBridge } from \"./desktop\";\nimport { importChunk } from \"./preload-recovery\";\n",
-      "replace": "import { desktopBridge } from \"./desktop\";\nimport { bootChunk } from \"./dozo-boot-deadline\";\nimport { importChunk } from \"./preload-recovery\";\n",
+      "file": "apps/web/src/lib/preload-recovery.ts",
+      "find": "import { lazy, useLayoutEffect, useState } from \"react\";\n\nconst PRELOAD_RECOVERY_KEY",
+      "replace": "import { lazy, useLayoutEffect, useState } from \"react\";\nimport { bootChunk } from \"./dozo-boot-deadline\";\n\nconst PRELOAD_RECOVERY_KEY",
       "requires": [
         "apps/web/src/lib/dozo-boot-deadline.ts"
       ],
-      "reason": "stalled start: the import of the catalog deadline below"
+      "reason": "stalled start: the import of the chunk deadline below"
+    },
+    {
+      "file": "apps/web/src/lib/preload-recovery.ts",
+      "find": "  return load().catch((error: unknown) => {\n    if (reloading) return untilReload;",
+      "replace": "  return bootChunk(load()).catch((error: unknown) => {\n    if (reloading) return untilReload;",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: a lazy chunk (a screen, the language catalog) that never arrives fails after a deadline, so the error boundary's retry or the English fallback shows instead of an endless spinner"
     },
     {
       "file": "apps/web/src/lib/i18n.ts",
-      "find": "  const { messages } = await importChunk(catalogLoaders[locale]);\n",
-      "replace": "  const { messages } = await bootChunk(importChunk(catalogLoaders[locale]));\n",
+      "find": "import { desktopBridge } from \"./desktop\";\nimport { importChunk }",
+      "replace": "import { desktopBridge } from \"./desktop\";\nimport { noCatalog } from \"./dozo-boot-deadline\";\nimport { importChunk }",
       "requires": [
         "apps/web/src/lib/dozo-boot-deadline.ts"
       ],
-      "reason": "stalled start: a language catalog that hangs fails after a deadline, so the app falls back to English instead of staying empty"
+      "reason": "stalled start: the import of the no-catalog answer below"
+    },
+    {
+      "file": "apps/web/src/lib/i18n.ts",
+      "find": "    if (!isCurrent()) return getActiveUiLocale();\n    return activateLoaded(\"en\", {});\n",
+      "replace": "    if (!isCurrent()) return getActiveUiLocale();\n    return noCatalog();\n",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: with no catalog at all, not even English, the built app would show message ids; the page offers the boot shell's retry instead"
+    },
+    {
+      "file": "apps/web/src/lib/i18n-activate.test.ts",
+      "find": "  it(\"falls back to empty English when every catalog fails\", async () => {\n",
+      "replace": "  it(\"offers the boot shell's retry when every catalog fails\", async () => {\n",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: upstream's test of the no-catalog answer, which now offers the retry (the title)"
+    },
+    {
+      "file": "apps/web/src/lib/i18n-activate.test.ts",
+      "find": "    const locale = await activateUiLocale(\"ko\");\n    expect(locale).toBe(\"en\");\n    expect(i18n.locale).toBe(\"en\");\n  });\n\n  it(\"lets the latest locale selection win under concurrency\"",
+      "replace": "    const dozoBootUnreachable = vi.fn();\n    vi.stubGlobal(\"window\", { dozoBootUnreachable });\n    void activateUiLocale(\"ko\");\n    await vi.waitFor(() => expect(dozoBootUnreachable).toHaveBeenCalledOnce());\n  });\n\n  it(\"lets the latest locale selection win under concurrency\"",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: upstream's test of the no-catalog answer, which now offers the retry instead of message ids (the check)"
     },
     {
       "file": "apps/web/src/pages/shell/use-composer-mentions.ts",

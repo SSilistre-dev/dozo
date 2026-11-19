@@ -35,8 +35,9 @@
 // runs would leave it up for good: the entry script failed (a network change drops its chunks, a
 // deploy removed them) or it hangs. A failed load reloads once, unless it did so in the last 30
 // seconds or the browser is offline; then, as after STALL_MS without the code, the shell says the
-// server cannot be reached and offers a retry. The text is the app's own for that case
-// (SessionUnavailable in src/App.tsx); the test of this file holds it equal to the catalogs.
+// server cannot be reached and offers a retry, as it does when the app finds no language catalog.
+// The text is the app's own for that case (SessionUnavailable in src/App.tsx); a test holds it equal
+// to the catalogs.
 (() => {
   const STALL_MS = 15_000;
   const RELOADED_KEY = "dozo:boot-reload";
@@ -72,10 +73,16 @@
     return TEXT[lower.split("-")[0]] || TEXT.en;
   };
   const offer = () => {
-    const shell = document.getElementById("dozo-boot");
-    if (!shell) {
-      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", offer);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", offer, { once: true });
       return;
+    }
+    // The app removes the shell once it runs; a failure it meets later brings the shell back.
+    let shell = document.getElementById("dozo-boot");
+    if (!shell) {
+      shell = document.createElement("div");
+      shell.id = "dozo-boot";
+      document.body.append(shell);
     }
     if (shell.dataset.state === "unreachable") return;
     const [message, retry] = text();
@@ -109,6 +116,8 @@
   };
   document.addEventListener("error", onError, true);
   const timer = setTimeout(offer, STALL_MS);
+  // Called by the app's code: when no language catalog can load (src/lib/dozo-boot-deadline.ts).
+  window.dozoBootUnreachable = offer;
   // Called by the app's code as it starts running.
   window.dozoBootStarted = () => {
     clearTimeout(timer);

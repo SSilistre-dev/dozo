@@ -28,7 +28,27 @@ export function bootReadFetch(input: RequestInfo | URL, init?: RequestInit): Pro
   return fetch(input, { ...init, signal: bootReadSignal(url, signal ?? undefined) });
 }
 
-/** A lazy chunk the first screen waits for (the language catalog), failing after `BOOT_READ_MS`. */
+/**
+ * How long a lazy chunk (a screen, the language catalog) may take to arrive. Longer than a read:
+ * a chunk is a download, and a slow connection still gets one in this time.
+ */
+export const CHUNK_MS = 15_000;
+
+/** A lazy chunk, failing after `CHUNK_MS` so the screen's error boundary or fallback shows. */
 export function bootChunk<T>(load: Promise<T>): Promise<T> {
-  return withAbort(load, deadlineSignal(BOOT_READ_MS));
+  return withAbort(load, deadlineSignal(CHUNK_MS));
+}
+
+/** The page, as far as the boot shell script (`public/dozo-boot.js`) extends it. */
+type ShellWindow = Partial<Pick<Window, "document">> & { dozoBootUnreachable?: () => void };
+
+/**
+ * No language catalog could load, not even English. The built app would show message ids, so the
+ * page shows the boot shell's unreachable text and retry (`public/dozo-boot.js`) and waits there.
+ */
+export function noCatalog(
+  view: ShellWindow | undefined = typeof window === "undefined" ? undefined : window,
+): Promise<never> {
+  view?.dozoBootUnreachable?.();
+  return new Promise<never>(() => {});
 }
