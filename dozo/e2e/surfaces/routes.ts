@@ -2,15 +2,21 @@ import type { Surface } from "../fixtures";
 import { expect } from "../fixtures";
 import { gotoStable, openBot } from "../ui";
 
-/** Admin pages need RAKAZO_ADMIN_EMAILS and a verified email, which this stack has not set. */
-async function asAdmin(page: import("@playwright/test").Page) {
+/**
+ * Admin pages need RAKAZO_ADMIN_EMAILS and a verified email, which this stack has not set. `billing`
+ * also reports a server that bills, which free access needs to be listed.
+ */
+async function asAdmin(page: import("@playwright/test").Page, billing = false) {
   const admin = async (route: import("@playwright/test").Route) => {
     const response = await route.fetch();
     const body = (await response.json()) as { json?: Record<string, unknown> };
     const me = route.request().url().endsWith("/me")
       ? body.json
       : (body.json?.me as Record<string, unknown> | undefined);
-    if (me) me.isAdmin = true;
+    if (me) {
+      me.isAdmin = true;
+      if (billing) me.billingEnabled = true;
+    }
     await route.fulfill({ response, json: body });
   };
   await page.route("**/rpc/me", admin);
@@ -76,12 +82,15 @@ export const routes: Surface[] = [
     covers: ["route:/admin/plugins", "route:/admin/access"],
     expect5xx: [],
     async reach({ page, goto, scan, note }) {
-      await asAdmin(page);
+      await asAdmin(page, true);
+      // Both are sections of the admin page: its navigation stays, the open one marked.
+      const section = (name: string) =>
+        page.getByRole("navigation", { name: "Admin" }).getByRole("link", { name, exact: true });
       await goto("/admin/plugins");
-      await expect(page.getByText("Plugin submissions")).toBeVisible();
+      await expect(section("Plugins")).toHaveAttribute("aria-current", "page");
       await scan("plugin submissions");
       await goto("/admin/access");
-      await expect(page.getByText("Free access")).toBeVisible();
+      await expect(section("Free access")).toHaveAttribute("aria-current", "page");
       note(
         "admin flag is faked client-side; the api answers 403, so only the page's own copy is scanned",
       );
