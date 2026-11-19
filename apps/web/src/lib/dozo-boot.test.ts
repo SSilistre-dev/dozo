@@ -3,11 +3,25 @@
 import { flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listen, fetchAuthCapabilities } = vi.hoisted(() => ({
-  listen: vi.fn((_signal: string, listener: () => void) => listener()),
-  fetchAuthCapabilities: vi.fn(() => Promise.resolve({})),
-}));
-vi.mock("./auth", () => ({ authClient: { $store: { listen } } }));
+type SessionState = { isPending: boolean; data: unknown };
+const { session, fetchAuthCapabilities } = vi.hoisted(() => {
+  const listeners = new Set<(state: SessionState) => void>();
+  const session = {
+    state: { isPending: true, data: null } as SessionState,
+    listeners,
+    get: () => session.state,
+    listen: vi.fn((listener: (state: SessionState) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }),
+    set(state: SessionState) {
+      session.state = state;
+      for (const listener of [...listeners]) listener(state);
+    },
+  };
+  return { session, fetchAuthCapabilities: vi.fn(() => Promise.resolve({})) };
+});
+vi.mock("./auth", () => ({ authClient: { $store: { atoms: { session } } } }));
 vi.mock("./auth-capabilities", () => ({ fetchAuthCapabilities }));
 vi.mock("../pages/SettingsOverlay", () => ({ screen: "settings" }));
 vi.mock("../components/bot-templates/bot-templates-dialog", () => ({ screen: "new bot" }));
@@ -100,20 +114,30 @@ describe("releaseBootShell", () => {
 
 describe("startBootReads", () => {
   beforeEach(() => {
-    listen.mockClear();
+    session.listen.mockClear();
+    session.listeners.clear();
+    session.state = { isPending: true, data: null };
     fetchAuthCapabilities.mockClear();
   });
 
   it("starts the session and capability reads on a chat route", () => {
     expect(startBootReads("/app/bot_1", false)).toBe(true);
-    expect(listen).toHaveBeenCalledTimes(1);
+    expect(session.listen).toHaveBeenCalledTimes(1);
     expect(fetchAuthCapabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops listening to the session at its first answer", () => {
+    startBootReads("/app", false);
+    session.set({ isPending: true, data: null });
+    expect(session.listeners.size).toBe(1);
+    session.set({ isPending: false, data: null });
+    expect(session.listeners.size).toBe(0);
   });
 
   it("leaves other pages to load as before", () => {
     expect(startBootReads("/sign-in", false)).toBe(false);
     expect(startBootReads("/", false)).toBe(false);
-    expect(listen).not.toHaveBeenCalled();
+    expect(session.listen).not.toHaveBeenCalled();
     expect(fetchAuthCapabilities).not.toHaveBeenCalled();
   });
 
@@ -165,12 +189,38 @@ describe("boot", () => {
       setTimeout: vi.fn(),
       requestIdleCallback: vi.fn((callback: () => void) => idle.push(callback)),
     };
+    session.state = { isPending: false, data: { user: { id: "u1" } } };
     const root = page("");
     boot(chat as never, document);
     expect(chat.requestIdleCallback).not.toHaveBeenCalled();
     root.innerHTML = '<div data-rakazo-app-state="ready"><main></main></div>';
     await flush();
     expect(chat.requestIdleCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("preloads nothing for a signed-out visitor or a browser saving data", () => {
+    const signedIn = { isPending: false, data: { user: { id: "u1" } } };
+    const chat = (saveData: boolean) => ({
+      location: { pathname: "/app" },
+      navigator: { connection: { saveData } },
+      setTimeout: vi.fn(),
+    });
+    session.state = { isPending: false, data: null };
+    const signedOut = chat(false);
+    page('<div data-rakazo-app-state="ready"><main></main></div>');
+    boot(signedOut as never, document);
+    expect(signedOut.setTimeout).not.toHaveBeenCalled();
+
+    session.state = signedIn;
+    const saving = chat(true);
+    page('<div data-rakazo-app-state="ready"><main></main></div>');
+    boot(saving as never, document);
+    expect(saving.setTimeout).not.toHaveBeenCalled();
+
+    const plain = chat(false);
+    page('<div data-rakazo-app-state="ready"><main></main></div>');
+    boot(plain as never, document);
+    expect(plain.setTimeout).toHaveBeenCalledTimes(1);
   });
 
   it("preloads nothing on other pages", () => {

@@ -78,15 +78,24 @@ describe("one catalog read for the Models screen", () => {
     expect(forRole).toHaveBeenCalledTimes(2);
   });
 
-  it("shares the screen's unscoped read only while no space is selected", async () => {
+  it("shares the screen's unscoped read only for the Space it answered for", async () => {
     const client = new QueryClient();
     const { forRole, rpc } = server();
-    await readChatCatalog(client, spaceQueries("u", null), rpc);
+    const unscoped = spaceQueries("u", null);
+    client.setQueryData(unscoped.me.queryKey(), { spaceId: "s" } as never);
+    await readChatCatalog(client, unscoped, rpc);
     await readRoleCatalog(client, "u", "s", rpc, "main");
     expect(forRole).toHaveBeenCalledTimes(1);
-    selected.mockReturnValue("s");
+    // Settings bound to another Space while none is selected: not the unscoped read's Space.
     await readRoleCatalog(client, "u", "other", rpc, "main");
     expect(forRole).toHaveBeenCalledTimes(2);
+    expect(forRole).toHaveBeenLastCalledWith(
+      { role: "approval" },
+      { context: { spaceId: "other" } },
+    );
+    selected.mockReturnValue("s");
+    await readRoleCatalog(client, "u", "s2", rpc, "main");
+    expect(forRole).toHaveBeenCalledTimes(3);
   });
 
   it("after a change, joins the refresh's new read rather than keeping the old one", async () => {

@@ -1,5 +1,7 @@
 // Runs before first paint, after theme.js. On a chat route the boot shell in index.html draws the
-// sidebar, at the width this browser last showed; src/lib/dozo-boot.ts removes the shell.
+// sidebar at the width the app will give it; src/lib/dozo-boot.ts removes the shell. The numbers
+// are those of src/lib/bots-sidebar-pref.ts (default, min, max, mini, chat column), which the
+// test of this file holds equal.
 (() => {
   const path = location.pathname;
   const chat =
@@ -7,6 +9,7 @@
   if (!chat) return;
   const root = document.documentElement;
   root.dataset.dozoBoot = "chat";
+  const [DEFAULT, MIN, MAX, MINI, CHAT] = [240, 240, 480, 72, 320];
   // Saved per user, and the user is not known yet: only a browser with one saved value is read.
   const saved = (prefix) => {
     const values = [];
@@ -18,12 +21,12 @@
     } catch {}
     return values.length === 1 ? values[0] : null;
   };
-  const width = Number(saved("rakazo:bots-sidebar-width:"));
+  const stored = Number(saved("rakazo:bots-sidebar-width:"));
+  const preferred = Number.isFinite(stored) && stored >= MIN ? stored : DEFAULT;
+  const widest = Math.max(MIN, Math.min(MAX, window.innerWidth - CHAT));
   const side =
     saved("rakazo:bots-sidebar-collapsed:") === "1"
-      ? 72
-      : Number.isFinite(width) && width >= 240
-        ? Math.min(width, 480)
-        : 240;
+      ? MINI
+      : Math.max(MIN, Math.min(widest, preferred));
   root.style.setProperty("--dozo-boot-side", `${side}px`);
 })();

@@ -57,15 +57,19 @@ export function releaseBootShell(
  */
 export function startBootReads(pathname: string, desktop: boolean): boolean {
   if (!initialBootstrapTarget(pathname, desktop)) return false;
-  // Subscribing mounts the session store, which reads the session once; the app's own
-  // subscription later shares that read instead of sending another.
-  authClient.$store.listen("session", () => {});
+  // Listening mounts the session store, which reads the session once; the app subscribes before
+  // the answer comes and shares that read. The listener goes with the first answer.
+  const session = authClient.$store.atoms.session;
+  const stop = session?.listen((state: { isPending: boolean }) => {
+    if (!state.isPending) stop?.();
+  });
   // Failure clears the cached request, so the subscription gate asks again.
   void fetchAuthCapabilities().catch(() => undefined);
   return true;
 }
 
 type BootWindow = Pick<Window, "location" | "setTimeout"> & {
+  navigator?: Partial<Navigator> & { connection?: { saveData?: boolean } };
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
   rakazoDesktop?: unknown;
 };
@@ -88,11 +92,20 @@ export const loadCommonScreens = () =>
     import("../pages/BotContextMenu"),
   ]);
 
-/** Once the app has painted a chat route, its common screens load while the browser is idle. */
+/** Whether someone is signed in, by the session store's last answer. */
+function signedIn(): boolean {
+  return Boolean(authClient.$store.atoms.session?.get()?.data);
+}
+
+/**
+ * Once the app has painted a chat route for a signed-in user, its common screens load while the
+ * browser is idle, unless the browser asks to save data.
+ */
 export function boot(view: BootWindow, doc: Document): void {
   const chatRoute = startBootReads(view.location.pathname, Boolean(view.rakazoDesktop));
   releaseBootShell(doc, 10_000, () => {
-    if (chatRoute) whenIdle(view, loadCommonScreens);
+    if (!chatRoute || view.navigator?.connection?.saveData || !signedIn()) return;
+    whenIdle(view, loadCommonScreens);
   });
 }
 

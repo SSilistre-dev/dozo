@@ -48,7 +48,7 @@ export async function readChatCatalog(
  * One role's list. It joins a read of the whole catalog in flight, or takes one answered moments
  * ago, which is the read the screen's own refresh sent; otherwise it reads the catalog itself.
  * Without a selected space the screen reads through the unscoped client, which answers for the
- * same space the role list names.
+ * account's own Space.
  */
 export async function readRoleCatalog(
   queryClient: QueryClient,
@@ -59,7 +59,15 @@ export async function readRoleCatalog(
   now: () => number = Date.now,
 ): Promise<ModelCatalogEntry[]> {
   const scopes = [spaceQueries(userId, spaceId)];
-  if (selectedSpaceId() === null) scopes.push(spaceQueries(userId, null));
+  // Settings can be bound to another Space while none is selected, so the unscoped read counts
+  // only when the account it loaded says it answers for this Space.
+  const unscoped = spaceQueries(userId, null);
+  if (
+    selectedSpaceId() === null &&
+    queryClient.getQueryData(unscoped.me.queryKey())?.spaceId === spaceId
+  ) {
+    scopes.push(unscoped);
+  }
   const read = () => rpc.models.forRole({ role: "approval" }, { context: { spaceId } });
   for (let attempt = 0; ; attempt += 1) {
     try {
