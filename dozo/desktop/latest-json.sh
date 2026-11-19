@@ -5,7 +5,8 @@
 #   Dozo-macOS.app.tar.gz, Dozo-Windows-x64-setup.exe, Dozo-Linux-x86_64.AppImage,
 #   Dozo-Linux-amd64.deb. A missing one fails: a manifest without a platform leaves it behind.
 # The updater looks up "<os>-<arch>-<install kind>" first, then "<os>-<arch>"; the universal
-# macOS app serves both Mac architectures. Needs jq. Exit 0 ok, 2 failed, 64 usage.
+# macOS app serves both Mac architectures. White space around a signature is dropped: a line
+# break left in a .sig file would make it fail to verify. Needs jq. Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
 trap 'rc=$?; [ $rc -eq 0 ] || [ $rc -eq 64 ] || exit 2' EXIT
 
@@ -27,7 +28,7 @@ for ((i = 0; i < ${#entries[@]}; i += 2)); do
   key=${entries[i]} file=${entries[i + 1]}
   [ -s "$dir/$file" ] && [ -s "$dir/$file.sig" ] || { echo "missing $file or its .sig in $dir" >&2; exit 2; }
   platforms=$(jq -c --arg key "$key" --arg url "$base/$file" --rawfile sig "$dir/$file.sig" \
-    '.[$key] = {url: $url, signature: $sig}' <<<"$platforms")
+    '.[$key] = {url: $url, signature: ($sig | gsub("\\s"; ""))}' <<<"$platforms")
 done
 
 jq -n --arg version "$version" --argjson platforms "$platforms" \

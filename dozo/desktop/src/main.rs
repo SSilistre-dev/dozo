@@ -219,23 +219,32 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 /// Shows the one menu item that restarts into a downloaded update: a menu of that one item at
 /// the end of the menu bar, whose title says the same. A macOS menu bar takes only menus, and a
-/// plain item in a GTK menu bar is never activated.
-fn offer_update(app: &AppHandle) {
+/// plain item in a GTK menu bar is never activated. Says whether it is shown; it is added once.
+fn offer_update(app: &AppHandle) -> bool {
+    let (shown, answer) = std::sync::mpsc::channel();
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    let asked = app.run_on_main_thread(move || {
         let app = &handle;
+        let Some(menu) = app.menu() else {
+            let _ = shown.send(false);
+            return;
+        };
+        if menu.get(update::MENU_HOLDER_ID).is_some() {
+            let _ = shown.send(true);
+            return;
+        }
         let label = update::label(sys_locale::get_locale().as_deref());
-        let added =
-            MenuItem::with_id(app, update::MENU_ID, label, true, None::<&str>).and_then(|item| {
-                let Some(menu) = app.menu() else {
-                    return Ok(());
-                };
-                menu.append(&Submenu::with_items(app, label, true, &[&item])?)
-            });
-        if let Err(error) = added {
+        let added = MenuItem::with_id(app, update::MENU_ID, label, true, None::<&str>)
+            .and_then(|item| {
+                Submenu::with_id_and_items(app, update::MENU_HOLDER_ID, label, true, &[&item])
+            })
+            .and_then(|holder| menu.append(&holder));
+        if let Err(error) = &added {
             eprintln!("dozo: could not show the update item: {error}");
         }
+        let _ = shown.send(added.is_ok());
     });
+    asked.is_ok() && answer.recv().unwrap_or(false)
 }
 
 fn main() {

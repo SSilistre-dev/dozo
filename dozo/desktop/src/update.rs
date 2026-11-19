@@ -6,6 +6,7 @@
 
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -14,6 +15,10 @@ use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 /// The menu item's id.
 pub const MENU_ID: &str = "update";
+/// The id of the one-item menu that holds it, so it is added once.
+pub const MENU_HOLDER_ID: &str = "update-menu";
+/// The log is cut to a fresh file past this size, keeping one older file.
+const LOG_LIMIT: u64 = 64 * 1024;
 
 /// A downloaded update whose signature checked out, waiting for the user.
 #[derive(Default)]
@@ -30,8 +35,9 @@ pub fn label(locale: Option<&str>) -> &'static str {
 }
 
 /// Checks now and then once a day, on a thread of its own. `ready` runs once an update is
-/// downloaded and verified.
-pub fn watch(app: AppHandle, ready: fn(&AppHandle)) {
+/// downloaded and verified and says whether it could be offered; one that could not is dropped,
+/// so the next check runs.
+pub fn watch(app: AppHandle, ready: fn(&AppHandle) -> bool) {
     const DAY: Duration = Duration::from_secs(24 * 60 * 60);
     std::thread::spawn(move || {
         let mut last: Option<SystemTime> = None;
@@ -51,7 +57,10 @@ pub fn watch(app: AppHandle, ready: fn(&AppHandle)) {
                     Ok(Some(found)) => {
                         log(&app, &format!("downloaded {}", found.0.version));
                         *app.state::<Pending>().0.lock().unwrap() = Some(found);
-                        ready(&app);
+                        if !ready(&app) {
+                            app.state::<Pending>().0.lock().unwrap().take();
+                            log(&app, "no menu to offer it in");
+                        }
                     }
                     Ok(None) => {}
                     Err(error) => log(&app, &format!("check failed: {error}")),
@@ -73,33 +82,46 @@ pub async fn fetch(updater: &Updater) -> tauri_plugin_updater::Result<Option<(Up
 }
 
 /// Installs the waiting update and starts the new version. On Windows the installer closes the
-/// app and starts it again itself.
+/// app and starts it again itself. A failed install (a refused password, a folder the app cannot
+/// write) keeps the update waiting, so the menu still works and the user can try again.
 pub fn install<R: Runtime>(app: &AppHandle<R>) {
-    let Some((update, bytes)) = app.state::<Pending>().0.lock().unwrap().take() else {
-        return;
-    };
-    match update.install(&bytes) {
-        Ok(()) => app.restart(),
-        Err(error) => log(
-            app,
-            &format!("install of {} failed: {error}", update.version),
-        ),
+    match install_waiting(&app.state::<Pending>()) {
+        Some(Ok(())) => app.restart(),
+        Some(Err(error)) => log(app, &error),
+        None => {}
     }
 }
 
+fn install_waiting(pending: &Pending) -> Option<Result<(), String>> {
+    let mut waiting = pending.0.lock().unwrap();
+    let (update, bytes) = waiting.as_ref()?;
+    if let Err(error) = update.install(bytes) {
+        return Some(Err(format!(
+            "install of {} failed: {error}",
+            update.version
+        )));
+    }
+    *waiting = None;
+    Some(Ok(()))
+}
+
 fn log<R: Runtime>(app: &AppHandle<R>, line: &str) {
-    let Ok(dir) = app.path().app_log_dir() else {
-        return;
-    };
+    if let Ok(dir) = app.path().app_log_dir() {
+        append(&dir, line);
+    }
+}
+
+fn append(dir: &Path, line: &str) {
     let at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |time| time.as_secs());
+    let file = dir.join("updates.log");
     // Nowhere else to report it: an update that fails must not interrupt the user.
-    let _ = std::fs::create_dir_all(&dir).and_then(|()| {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("updates.log"))?;
+    let _ = std::fs::create_dir_all(dir).and_then(|()| {
+        if file.metadata().is_ok_and(|meta| meta.len() > LOG_LIMIT) {
+            std::fs::rename(&file, dir.join("updates.old.log"))?;
+        }
+        let mut file = OpenOptions::new().create(true).append(true).open(&file)?;
         writeln!(file, "{at} {line}")
     });
 }
@@ -224,6 +246,13 @@ mod tests {
         ));
     }
 
+    /// What latest-json.sh guards against: a line break after the signature breaks it.
+    #[test]
+    fn a_signature_with_a_trailing_line_break_does_not_verify() {
+        let signature = format!("{SIGNATURE}\n");
+        assert!(fetch_from(manifest("0.2.0", &signature), PAYLOAD).is_err());
+    }
+
     #[test]
     fn a_signature_made_for_another_version_is_refused() {
         // Signed as 0.2.0: a manifest cannot pass it off as 0.3.0.
@@ -246,6 +275,50 @@ mod tests {
         );
         assert_eq!(settings["requireSignedVersion"], true);
         assert_ne!(settings["pubkey"], TEST_PUBKEY);
+    }
+
+    /// A real update whose package cannot install: the test payload is not an AppImage. Only on
+    /// Linux, where that is found before anything is written; elsewhere install runs an installer.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_failed_install_keeps_the_update_waiting() {
+        let app = app();
+        let endpoint = serve(manifest("0.2.0", SIGNATURE), PAYLOAD.to_vec());
+        let updater = app
+            .updater_builder()
+            .endpoints(vec![endpoint])
+            .unwrap()
+            .build()
+            .unwrap();
+        let found = tauri::async_runtime::block_on(fetch(&updater)).unwrap();
+        let pending = Pending(Mutex::new(found));
+        for _ in 0..2 {
+            let error = install_waiting(&pending).unwrap().unwrap_err();
+            assert!(error.starts_with("install of 0.2.0 failed"), "{error}");
+            assert!(pending.0.lock().unwrap().is_some());
+        }
+        assert!(install_waiting(&Pending::default()).is_none());
+    }
+
+    #[test]
+    fn the_log_keeps_one_older_file_past_its_limit() {
+        let dir = std::env::temp_dir().join(format!("dozo-update-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        append(&dir, "first");
+        std::fs::write(dir.join("updates.log"), vec![b'x'; LOG_LIMIT as usize + 1]).unwrap();
+        append(&dir, "next");
+        let log = std::fs::read_to_string(dir.join("updates.log")).unwrap();
+        assert!(
+            log.ends_with(" next\n") && log.lines().count() == 1,
+            "{log}"
+        );
+        assert!(
+            std::fs::metadata(dir.join("updates.old.log"))
+                .unwrap()
+                .len()
+                > LOG_LIMIT
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

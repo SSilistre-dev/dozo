@@ -21,22 +21,29 @@ concurrency:
   group: dozo-desktop-release-${{ github.ref }}
   cancel-in-progress: false
 
+# The updater key reaches only the three Build steps, which sign. Those jobs run in the
+# `desktop-release` environment, which the owner protects (required reviewer, desktop-v* tags).
 env:
-  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
   # Build the signed update packages next to the installers.
   UPDATER: '{"bundle":{"createUpdaterArtifacts":true}}'
 
 jobs:
   version:
-    name: Tag matches the app version
+    name: Tag is on main and matches the app version
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - run: |
+          fetch-depth: 0
+      # A tag on an unmerged commit would run that commit's own copy of this workflow.
+      - name: Tagged commit is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "$GITHUB_REF_NAME is not on main: tag a merged commit"; exit 1; }
+      - name: Tag matches the app version
+        run: |
           tag=${GITHUB_REF_NAME#desktop-v}
           conf=$(jq -r .version dozo/desktop/tauri.conf.json)
           crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' dozo/desktop/Cargo.toml | head -n1)
@@ -46,19 +53,13 @@ jobs:
   macos:
     name: macOS
     needs: version
+    environment: desktop-release
     runs-on: macos-latest
     timeout-minutes: 90
     defaults:
       run:
         shell: bash
         working-directory: dozo/desktop
-    env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -73,6 +74,15 @@ jobs:
           cargo tauri icon ../brand/assets/desktop/icon-macos.png --output icons
           cp ../brand/assets/logo-dark.svg ui/logo.svg
       - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # An empty secret still sets the variable, and the bundler would try to use it.
           if [ -z "$APPLE_CERTIFICATE" ]; then
@@ -101,15 +111,13 @@ jobs:
   windows:
     name: Windows
     needs: version
+    environment: desktop-release
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
         working-directory: dozo/desktop
-    env:
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -126,9 +134,12 @@ jobs:
       # With a code signing certificate (a base64 .pfx), it goes into the runner's store and the
       # bundler signs the app and the installer with it. Without one the installer is unsigned.
       - name: Code signing certificate
-        if: env.WINDOWS_CERTIFICATE != ''
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         shell: pwsh
         run: |
+          if (-not $env:WINDOWS_CERTIFICATE) { "no code signing certificate"; exit 0 }
           $pfx = Join-Path $env:RUNNER_TEMP 'certificate.pfx'
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
           $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
@@ -136,6 +147,9 @@ jobs:
           Remove-Item $pfx
           "WINDOWS_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
       - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           config=$UPDATER
           if [ -n "${WINDOWS_THUMBPRINT:-}" ]; then
@@ -156,6 +170,7 @@ jobs:
   linux:
     name: Linux
     needs: version
+    environment: desktop-release
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     defaults:
@@ -177,6 +192,9 @@ jobs:
           cargo tauri icon ../brand/assets/desktop/icon.png --output icons --png 32,128,256,512
           cp ../brand/assets/logo-dark.svg ui/logo.svg
       - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           cargo tauri build --config "$UPDATER" -- --locked
           mkdir -p dist

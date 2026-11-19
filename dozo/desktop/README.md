@@ -146,18 +146,23 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
 - Then one menu appears at the end of the menu bar, "Restart to Update" ("Güncellemek için yeniden
   başlat" on a Turkish system), holding that one item. Nothing installs until it is picked. On
   Windows the installer closes the app and opens the new one; on macOS and Linux the app restarts.
+  If the install fails, the update stays waiting and the menu can be picked again.
 - A failed check, download, signature or install changes nothing and adds a line to `updates.log`
-  in the app's log folder (`~/Library/Logs/dev.ssilistre.dozo/`,
+  (cut to a fresh file past 64 KB, keeping one older file) in the app's log folder (`~/Library/Logs/dev.ssilistre.dozo/`,
   `%LOCALAPPDATA%\dev.ssilistre.dozo\logs\`, `~/.local/share/dev.ssilistre.dozo/logs/`).
 - Linux: the AppImage replaces itself, so its folder must be writable; the .deb asks for an
   administrator password through the system's prompt.
-- Release: push a `desktop-v<version>` tag whose version matches `tauri.conf.json` and
-  `Cargo.toml`. The `dozo-desktop-release` workflow builds all three systems, signs every update
-  package with the updater key (repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), writes `latest.json` (`latest-json.sh`) and checksums,
-  and leaves a draft release. Publishing the draft ships the update. The private key and its
-  password are kept only in those secrets and offline by the owner: without them no installed
-  app can be updated again.
+- Release: push a `desktop-v<version>` tag on a commit already on `main`, whose version matches
+  `tauri.conf.json` and `Cargo.toml`; the workflow stops otherwise. The `dozo-desktop-release`
+  workflow builds all three systems in the `desktop-release` environment, signs every update
+  package with the updater key (secrets `TAURI_SIGNING_PRIVATE_KEY` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, given only to the steps that sign), writes `latest.json`
+  (`latest-json.sh`) and checksums, and leaves a draft release.
+- Publish the draft as the repository's latest release (`gh release edit <tag> --draft=false
+  --latest`): the apps read `releases/latest`, so if any other release became the latest, every
+  app would find no manifest and stop updating until a desktop release is latest again.
+- The private key and its password are kept only in those secrets and offline by the owner:
+  without them no installed app can be updated again.
 - Platform signing in that workflow is optional. With `APPLE_CERTIFICATE`,
   `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` the Mac app is signed, and with
   `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` also notarized; with `WINDOWS_CERTIFICATE` (a
