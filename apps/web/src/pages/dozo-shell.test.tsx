@@ -19,7 +19,7 @@ vi.mock("../lib/auth", () => ({
 vi.mock("../lib/rpc", () => ({ rpc: { me: mocks.me, billing: { status: mocks.status } } }));
 
 import { readPlanIntent, savePlanIntent } from "../lib/dozo-plan-intent";
-import { NavigateKeepingPlan, ShellPage } from "./dozo-shell";
+import { NavigateKeepingPlan, OFFER_CHECK_MS, ShellPage } from "./dozo-shell";
 
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
@@ -216,4 +216,20 @@ it("forgets the pick of a paid account even when it comes back from a checkout l
   await open("/app/bot-1?billing=canceled");
   expect(where()).toBe("/app/bot-1?settings=billing");
   expect(readPlanIntent()).toBeNull();
+});
+
+it("holds the app on a spinner while it checks, then opens it without the offer when the server is slow", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    mocks.status.mockReturnValue(new Promise(() => {}));
+    savePlanIntent({ tier: "pro", period: "month" });
+    await open("/app/bot-1");
+    expect(container.querySelector('[data-testid="upstream-shell"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(OFFER_CHECK_MS));
+    expect(container.querySelector('[data-testid="upstream-shell"]')).not.toBeNull();
+    expect(where()).toBe("/app/bot-1");
+    expect(readPlanIntent()).toEqual({ tier: "pro", period: "month" });
+  } finally {
+    vi.useRealTimers();
+  }
 });
