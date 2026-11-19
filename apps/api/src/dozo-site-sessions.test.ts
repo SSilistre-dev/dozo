@@ -60,10 +60,15 @@ function instance(
   botComputer: ReturnType<typeof computer> | null = computer(),
   openReply: unknown = { ok: true },
   hosts: { host: string; created: number | null; lastUsed: number | null }[] = HOSTS,
+  options: { visited?: string[]; waiting?: boolean; deleteReplies?: unknown[] } = {},
 ) {
   const bots = [{ id: "bot-1", name: "Scout", spaceId: "space-ada", computer: botComputer }];
   const scripts: { op: string; hosts?: string[]; url?: string; botId?: string }[] = [];
+  const deleteReplies = [...(options.deleteReplies ?? [])];
   const prisma = {
+    run: {
+      findFirst: vi.fn(async () => (options.waiting ? { id: "run-1", userId: "ada" } : null)),
+    },
     bot: {
       findFirst: vi.fn(async ({ where }: { where: { id: string; spaceId: string } }) => {
         const bot = bots.find((b) => b.id === where.id && b.spaceId === where.spaceId);
@@ -84,14 +89,14 @@ function instance(
           ? {
               ok: true,
               hosts: hosts.map((host) => ({ ...host, value: "session-secret" })),
-              visited: hosts.map(({ host }) => host),
+              visited: options.visited ?? hosts.map(({ host }) => host),
               storageKeys: [
                 "https://alice.github.io/",
                 "https://example.com/^0https://top.example",
               ],
             }
           : request.op === "delete"
-            ? { ok: true, remaining: 0 }
+            ? (deleteReplies.shift() ?? { ok: true, remaining: 0 })
             : openReply;
       yield { type: "stdout", data: JSON.stringify(reply) };
       yield { type: "exit", code: 0 };
@@ -241,6 +246,48 @@ describe("signing out", () => {
       ]),
     );
     expect(spies.audit).toHaveBeenCalledTimes(4);
+  });
+
+  it("signs out of every site with cookies, trackers and unlisted ones included", async () => {
+    const tracked = [...HOSTS, { host: "tracker.example", created: 1, lastUsed: 1 }];
+    const { as, scripts } = instance(computer(), { ok: true }, tracked, {
+      visited: ["example.com"],
+    });
+    expect((await as("ada").list({ botId: "bot-1" })).sites.map(({ site }) => site)).toEqual([
+      "example.com",
+    ]);
+    await as("ada").signOut({ botId: "bot-1" });
+    expect(scripts.at(-1)!.hosts).toEqual(
+      expect.arrayContaining(["tracker.example", "alice.github.io", "example.com"]),
+    );
+  });
+
+  it("records the sites already gone when a later part fails", async () => {
+    const many = Array.from({ length: 3000 }, (_, i) => ({
+      host: `site-${i}-with-a-longer-name.example${i % 7}.com`,
+      created: 1,
+      lastUsed: 1,
+    }));
+    const { as } = instance(computer(), { ok: true }, many, {
+      deleteReplies: [
+        { ok: true, remaining: 0 },
+        { ok: true, remaining: 2 },
+      ],
+    });
+    await expect(as("ada").signOut({ botId: "bot-1" })).rejects.toMatchObject({
+      message: "Some sites could not be signed out. The list shows what is left.",
+    });
+    const recorded = spies.audit.mock.calls.length;
+    expect(recorded).toBeGreaterThan(0);
+    expect(recorded).toBeLessThan(7);
+  });
+
+  it("does not wait on a bot that is waiting for someone on its screen", async () => {
+    const { as, scripts } = instance(computer(), { ok: true }, HOSTS, { waiting: true });
+    await as("ada").signIn({ botId: "bot-1", url: "example.com" });
+    await as("ada").signOut({ botId: "bot-1", site: "example.com" });
+    expect(spies.lease).not.toHaveBeenCalled();
+    expect(scripts.map(({ op }) => op)).toEqual(["open", "list", "delete"]);
   });
 
   it("waits for nothing and touches nothing while the bot is using its computer", async () => {

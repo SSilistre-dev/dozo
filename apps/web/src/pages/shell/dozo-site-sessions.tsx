@@ -95,6 +95,8 @@ function SiteSessionsDialog({
       rpc.dozoSiteSessions.signOut({ botId, ...(site ? { site } : {}) }),
     stale: [queries.dozoSiteSessions.list.key({ input: { botId } })],
     onSaved: () => setEnding(null),
+    // Some sites may be gone even so: the list read again shows which are left.
+    onFailed: () => void sites.refetch(),
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();

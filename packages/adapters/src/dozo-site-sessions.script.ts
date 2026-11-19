@@ -9,13 +9,14 @@
  *   the hosts of pages opened at the top level (since `since`, from the browser's history and its
  *   open tabs) and every storage key, partitioned ones included.
  * - `delete`: removes the cookies of exactly `hosts` (partitioned ones too) and everything stored
- *   under `storageKeys` and the hosts' origins, then checks: cookies through the browser, storage
- *   by opening each key's origin in a page the script answers itself, with no network. Replies
- *   how much is left, or null when it could not tell in time.
+ *   under `storageKeys` and the hosts' origins, then reads back what is left without opening any
+ *   page (so nothing lands in the history or recreates storage): cookies and service workers
+ *   through the browser, storage buckets and Local Storage keys from the profile. Replies how
+ *   much is left, or null when it could not tell in time.
  * - `open`: opens an http(s) address in a new tab of the running browser.
  */
 export const SITE_SESSIONS_SCRIPT = String.raw`
-import base64, ctypes, json, os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, time
+import ctypes, json, os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, time
 from urllib.parse import urlsplit
 sys.path.insert(0, "/usr/local/lib/rakazo")
 from page_secrets import CdpClient, discover_ws_url
@@ -24,8 +25,6 @@ EPOCH_US = 11644473600 * 1000000
 PROFILE = re.compile(r"/home/rakazo/\.browser-profiles/chromium-bot-[a-f0-9]{32}")
 BROWSERS = ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable",
             "/opt/google/chrome/chrome", "brave-browser", "/opt/brave.com/brave/brave")
-# The page a check opens to read what an origin still stores: never fetched, never a visit.
-CHECK_PATH = "/.dozo-site-check"
 LIMIT = 5000
 START = time.time()
 # The API gives the whole command 60 seconds; the rest is for the reply.
@@ -86,53 +85,56 @@ def stored_hosts(profile):
 
 def storage_keys(profile):
     """Every storage key the profile holds data under, partitioned ones included."""
-    keys = {key for (key,) in rows(os.path.join(profile, "Default/WebStorage/QuotaManager"),
+    keys = quota_keys(profile) | {key for key, alive in meta_keys(profile).items() if alive}
+    return sorted(key for key in keys if valid_key(key))[:LIMIT]
+
+
+def quota_keys(profile):
+    return {key for (key,) in rows(os.path.join(profile, "Default/WebStorage/QuotaManager"),
                                    "SELECT storage_key FROM buckets")}
+
+
+def meta_keys(profile):
+    """Local Storage's "META:<storage key>" keys and whether each is still there: the last write
+    wins, tables (.ldb, older) before the log. In a log record a write is tag 1 and a removal tag 0,
+    then the key's length; in a table the entry's unshared length counts an 8-byte trailer whose
+    first byte is the same tag."""
+    state = {}
     folder = os.path.join(profile, "Default/Local Storage/leveldb")
-    for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
-        if name.endswith((".log", ".ldb")):
-            with open(os.path.join(folder, name), "rb") as handle:
-                keys |= meta_keys(handle.read())
-    # Local Storage writes a first-party key without the slash the browser's own form has.
-    keys = {key if "/" in key[8:] else key + "/" for key in keys}
-    return sorted(key for key in keys if VALID_KEY.fullmatch(key))[:LIMIT]
-
-
-VALID_KEY = re.compile(r"https?://[A-Za-z0-9.\-\[\]:]+/(\^[0-9][!-~]+)?")
-
-
-def meta_keys(data):
-    """Local Storage's "META:<storage key>" keys, each read to its stored length: in a log record
-    a put is tag 1 then the key's length, in a table the entry's unshared length counts 8 more."""
-    found = set()
-    for match in re.finditer(rb"META:", data):
-        at = match.start()
-        if at >= 2 and data[at - 2] == 1 and data[at - 1] < 128:
-            size = data[at - 1]
-        elif at >= 3 and data[at - 3] == 0 and 8 < data[at - 2] < 128:
-            size = data[at - 2] - 8
-        else:
-            continue
-        key = data[at + 5:at + size]
-        if key.isascii():
-            found.add(key.decode("ascii"))
-    return found
+    names = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+    for name in [n for n in names if n.endswith(".ldb")] + [n for n in names if n.endswith(".log")]:
+        with open(os.path.join(folder, name), "rb") as handle:
+            data = handle.read()
+        for match in re.finditer(rb"META:", data):
+            at = match.start()
+            if name.endswith(".log") and at >= 2 and data[at - 2] in (0, 1) and data[at - 1] < 128:
+                size, alive = data[at - 1], data[at - 2] == 1
+            elif name.endswith(".ldb") and at >= 3 and data[at - 3] == 0 and 13 < data[at - 2] < 128:
+                size = data[at - 2] - 8
+                alive = data[at + size] == 1 if at + size < len(data) else True
+            else:
+                continue
+            key = data[at + 5:at + size]
+            if key.isascii():
+                text = key.decode("ascii")
+                state[text if "/" in text[8:] else text + "/"] = alive
+    return state
 
 
 def host_of(url):
     parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or parts.path == CHECK_PATH:
-        return None
-    return parts.hostname
+    return parts.hostname if parts.scheme in ("http", "https") else None
 
 
 def visited(profile, since_ms):
     """Hosts of the pages opened at the top level since then, from the browser's history."""
     since = since_ms * 1000 + EPOCH_US if since_ms else 0
+    # Newest first, so a long history never cuts off the sites just signed in to.
     found = rows(os.path.join(profile, "Default/History"),
-                 "SELECT DISTINCT urls.url FROM visits JOIN urls ON urls.id = visits.url "
-                 "WHERE (visits.transition & 255) NOT IN (3, 4) AND visits.visit_time >= ?", (since,))
-    return {host_of(url) for (url,) in found} - {None}
+                 "SELECT urls.url, MAX(visits.visit_time) AS last FROM visits JOIN urls ON urls.id = visits.url "
+                 "WHERE (visits.transition & 255) NOT IN (3, 4) AND visits.visit_time >= ? "
+                 "GROUP BY urls.id ORDER BY last DESC", (since,))
+    return {host_of(url) for (url, _) in found} - {None}
 
 
 def lock_pid(profile):
@@ -237,82 +239,49 @@ def valid_host(host):
     return bool(NAME.fullmatch(host)) and not host.rsplit(".", 1)[-1].isdigit()
 
 
+KEY = re.compile(r"(https?://[^/^]+)/(\^0(https?://[^/^]+))?")
+
+
+def valid_key(key):
+    """A storage key in the browser's own form whose origin, and top-level site if any, are hosts
+    the browser reads as themselves."""
+    match = KEY.fullmatch(key)
+    return bool(match) and all(valid_host(urlsplit(part).hostname or "")
+                               for part in (match.group(1), match.group(3)) if part)
+
+
 def first_party(key):
     """The origin a storage key belongs to, and the top-level site it is partitioned under."""
     origin, _, top = key.partition("^0")
     return origin.rstrip("/"), (top or None)
 
 
-PROBE = ("(async () => { const r = { ls: localStorage.length };"
-         " try { r.idb = (await indexedDB.databases()).length } catch (e) { r.idb = 0 }"
-         " try { r.caches = (await caches.keys()).length } catch (e) { r.caches = 0 }"
-         " try { r.sw = (await navigator.serviceWorker.getRegistrations()).length } catch (e) { r.sw = 0 }"
-         " (window.parent === window ? window : window.parent).postMessage({ dozo: r }, '*'); })();")
-LISTEN = "addEventListener('message', (e) => { if (e.data && e.data.dozo) window.__dozo = e.data.dozo });"
-WAIT = "new Promise((r) => { const t = () => window.__dozo ? r(window.__dozo) : setTimeout(t, 100); t(); })"
+def service_worker_scopes(client, session):
+    """The scopes of every service worker registration, read without opening any page."""
+    seen = []
+    handle = client._handle_event
 
-
-def paused_requests(client):
-    """Fetch.requestPaused events, kept even when they arrive while another call waits."""
-    queue = getattr(client, "dozo_paused", None)
-    if queue is None:
-        queue = client.dozo_paused = []
-        handle = client._handle_event
-
-        def keep(message):
-            if message.get("method") == "Fetch.requestPaused":
-                queue.append(message)
-            else:
-                handle(message)
-        client._handle_event = keep
-    return queue
-
-
-def probe(client, origin, top):
-    """What an origin still stores, read from a page this script answers itself: no network."""
-    queue = paused_requests(client)
-    target = client.call("Target.createTarget", {"url": "about:blank", "background": True})["targetId"]
+    def keep(message):
+        if message.get("method") == "ServiceWorker.workerRegistrationUpdated":
+            seen.extend(r.get("scopeURL", "") for r in message.get("params", {}).get("registrations", [])
+                         if not r.get("isDeleted"))
+        else:
+            handle(message)
+    client._handle_event = keep
     try:
-        session = client.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
-        client.call("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, session_id=session)
-        pages = {origin + CHECK_PATH: f"<script>{PROBE}</script>"}
-        url = (top or origin) + CHECK_PATH
-        pages[url] = (f"<script>{LISTEN}</script><iframe src='{origin}{CHECK_PATH}'></iframe>" if top
-                      else f"<script>{LISTEN}{PROBE}</script>")
-        client._send(0x1, json.dumps({"id": 900000, "method": "Page.navigate", "params": {"url": url},
-                                      "sessionId": session}).encode())
-        served, deadline = 0, time.time() + max(1, min(5, left()))
-        while served < len(pages) and time.time() < deadline:
-            if not queue:
-                client._sock.settimeout(0.5)
-                try:
-                    message = json.loads(client._read_frame().decode("utf-8"))
-                except (OSError, ValueError):
-                    continue
-                if message.get("method") == "Fetch.requestPaused":
-                    queue.append(message)
-                continue
-            message = queue.pop(0)
-            params = message["params"]
-            body = pages.get(params["request"]["url"].split("?")[0], "")
-            served += 1 if body else 0
-            client.call("Fetch.fulfillRequest", {
-                "requestId": params["requestId"], "responseCode": 200,
-                "responseHeaders": [{"name": "Content-Type", "value": "text/html"}],
-                "body": base64.b64encode(body.encode()).decode()}, session_id=message.get("sessionId"))
-        result = client.call("Runtime.evaluate", {"expression": WAIT, "awaitPromise": True, "returnByValue": True},
-                             session_id=session, timeout_s=max(1, min(5, left())))
-        counts = result.get("result", {}).get("value")
-        return sum(counts.values()) if isinstance(counts, dict) else None
-    except (OSError, RuntimeError):
-        return None
+        client.call("ServiceWorker.enable", session_id=session)
+        # The registrations arrive as events right after; a short read collects them.
+        client.call("Runtime.evaluate", {"expression": "1"}, session_id=session)
+        client.call("ServiceWorker.disable", session_id=session)
     finally:
-        queue.clear()
-        client.call("Target.closeTarget", {"targetId": target})
+        client._handle_event = handle
+    return seen
 
 
-def sign_out(client, hosts, keys):
-    """Ends the site everywhere the browser keeps it; how much is left, or None when unknown."""
+def sign_out(client, profile, hosts, keys):
+    """Ends the site everywhere the browser keeps it, then reads back, without opening any page,
+    how much is left: cookies, storage buckets, Local Storage keys and service workers. None
+    when it could not tell in time."""
     expired = []
     for cookie in matching(client, hosts):
         param = {key: cookie[key] for key in ("name", "domain", "path", "secure", "httpOnly",
@@ -320,33 +289,36 @@ def sign_out(client, hosts, keys):
         expired.append({**param, "value": "", "expires": 1})
     for start in range(0, len(expired), 200):
         client.call("Storage.setCookies", {"cookies": expired[start:start + 200]})
+    keys = [key for key in keys if valid_key(key)]
     # An address the browser cannot parse reads as an opaque origin, and clearing one clears
     # everything: only well-formed hosts are ever sent.
     origins = {f"{scheme}://{host}" for host in hosts if valid_host(host) for scheme in ("https", "http")}
-    origins |= {origin for origin in (first_party(key)[0] for key in keys) if valid_host(urlsplit(origin).hostname or "")}
+    origins |= {first_party(key)[0] for key in keys}
     # Site storage is cleared from a tab of its own: the browser target refuses it.
     target = client.call("Target.createTarget", {"url": "about:blank", "background": True})["targetId"]
     try:
         session = client.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
         for key in keys:
-            try:
-                client.call("Storage.clearDataForStorageKey", {"storageKey": key, "storageTypes": "all"},
-                            session_id=session)
-            except RuntimeError:
-                # A key the browser cannot read is checked below like any other: never a success.
-                pass
+            client.call("Storage.clearDataForStorageKey", {"storageKey": key, "storageTypes": "all"},
+                        session_id=session)
         for origin in sorted(origins):
             client.call("Storage.clearDataForOrigin", {"origin": origin, "storageTypes": "all"},
                         session_id=session)
+        workers = [scope for scope in service_worker_scopes(client, session)
+                   if urlsplit(scope).scheme + "://" + (urlsplit(scope).netloc or "") in origins]
     finally:
         client.call("Target.closeTarget", {"targetId": target})
-    remaining = len(matching(client, hosts))
-    for key in keys:
-        found = probe(client, *first_party(key)) if left() > 6 else None
-        if found is None:
-            return None
-        remaining += found
-    return remaining
+    mine = set(keys)
+    ours = lambda key: key in mine or first_party(key)[0] in origins
+    # The browser writes the removals to disk within moments: wait a little for them, then count.
+    settle = time.time() + min(3, max(0, left() - 2))
+    while True:
+        stored = [key for key in quota_keys(profile) if ours(key)]
+        stored += [key for key, alive in meta_keys(profile).items() if alive and ours(key)]
+        if not stored or time.time() >= settle:
+            break
+        time.sleep(0.3)
+    return len(matching(client, hosts)) + len(stored) + len(workers)
 
 
 def open_site(profile, url):
@@ -404,7 +376,7 @@ def main():
     client = None
     try:
         client = connect(port)
-        remaining = sign_out(client, hosts, keys)
+        remaining = sign_out(client, profile, hosts, keys)
     finally:
         if process is not None:
             stop_headless(process, client)

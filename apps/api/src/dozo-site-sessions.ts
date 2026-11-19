@@ -16,6 +16,7 @@ import {
   holdsComputerControl,
   releaseComputerControl,
   takeComputerControl,
+  waitingTakeoverRun,
 } from "./computer-control.js";
 import type { RouterContext } from "./routes/context.js";
 import { computerContext } from "./routes/shared.js";
@@ -43,12 +44,21 @@ export function dozoSiteSessionsRoutes(ctx: RouterContext) {
    * lease, as a reset takes it, so the script never starts a browser on the profile beside the
    * bot's. Refused with "Computer is busy" while the bot is working.
    */
-  async function whileBotIdle<T>(computerId: string, botId: string, work: () => Promise<T>) {
-    const lease = await acquireComputerExecutionLease(deps.prisma, {
-      computerId,
-      runId: `site-sessions:${randomUUID()}`,
-      botId,
-    });
+  async function whileBotIdle<T>(
+    actor: Actor,
+    computerId: string,
+    botId: string,
+    work: () => Promise<T>,
+  ) {
+    // A bot waiting for someone on its screen keeps its lease but cannot act until answered:
+    // that is the moment people sign in for it, so it is not "busy".
+    const lease = (await waitingTakeoverRun(deps, actor.spaceId, botId))
+      ? null
+      : await acquireComputerExecutionLease(deps.prisma, {
+          computerId,
+          runId: `site-sessions:${randomUUID()}`,
+          botId,
+        });
     try {
       return await work();
     } finally {
@@ -81,28 +91,42 @@ export function dozoSiteSessionsRoutes(ctx: RouterContext) {
         if (!found) throw new ClientError("CONFLICT", "Start the computer first.");
         assertNotAnotherPersonsControl(found.computer, context.actor);
         const adapterContext = computerContext(context.actor, found.bot.id, "site-sessions.end");
-        const ending = await whileBotIdle(found.computer.id, found.bot.id, async () => {
+        // Recorded as each part is gone, so a part that fails later never hides them.
+        const record = async (ended: { site: string }[]) => {
+          for (const { site } of ended) {
+            await recordAuditEvent({
+              action: "computer.site.session_ended",
+              actor: { type: "user", id: context.actor.userId },
+              spaceId: context.actor.spaceId,
+              target: { type: "bot", id: found.bot.id, label: found.bot.name },
+              metadata: { site },
+            });
+          }
+        };
+        await whileBotIdle(context.actor, found.computer.id, found.bot.id, async () => {
+          // Signing out of everything means every site with cookies, trackers and sites only
+          // ever loaded inside other pages included, not only the listed ones.
           const sites = await listSiteSessions(
             deps.sandbox,
             found.ref,
             found.bot.id,
             adapterContext,
+            {
+              everySite: !input.site,
+            },
           );
           const chosen = input.site ? sites.filter(({ site }) => site === input.site) : sites;
           if (input.site && !chosen.length)
             throw new ClientError("NOT_FOUND", "Not signed in there.");
-          await endSiteSessions(deps.sandbox, found.ref, found.bot.id, chosen, adapterContext);
-          return chosen;
+          await endSiteSessions(
+            deps.sandbox,
+            found.ref,
+            found.bot.id,
+            chosen,
+            adapterContext,
+            record,
+          );
         });
-        for (const { site } of ending) {
-          await recordAuditEvent({
-            action: "computer.site.session_ended",
-            actor: { type: "user", id: context.actor.userId },
-            spaceId: context.actor.spaceId,
-            target: { type: "bot", id: found.bot.id, label: found.bot.name },
-            metadata: { site },
-          });
-        }
         return { ok: true as const };
       }),
 
@@ -110,7 +134,7 @@ export function dozoSiteSessionsRoutes(ctx: RouterContext) {
         const found = await computerOf(context.actor, input.botId);
         if (!found) throw new ClientError("CONFLICT", "Start the computer first.");
         const heldBefore = holdsComputerControl(found.computer, found.bot.id, context.actor);
-        return whileBotIdle(found.computer.id, found.bot.id, async () => {
+        return whileBotIdle(context.actor, found.computer.id, found.bot.id, async () => {
           // The same checks as Take control: refused while someone else is using the screen.
           const lease = await takeComputerControl(deps, context.actor, found.bot.id);
           try {

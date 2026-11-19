@@ -11,7 +11,7 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "site-sessions-image: no
 # The image's own home: the brand renames it, and the script's profile path must match.
 home="$(docker image inspect "$IMAGE" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^HOME=//p')"
 [ -n "$home" ] || { echo "site-sessions-image: the image sets no HOME" >&2; exit 2; }
-if docker run --rm --name "$NAME" --network none --cpus 3 --memory 6g --shm-size 512m \
+if docker run --rm --name "$NAME" --network none --cpus 2 --memory 4g --shm-size 512m \
   --tmpfs "$home:uid=1000,gid=1000,exec" -e HOME="$home" --entrypoint /usr/bin/env \
   -v "$ROOT/packages/adapters/src/dozo-site-sessions.script.ts:/src/dozo-site-sessions.script.ts:ro" \
   -v "$ROOT/dozo/e2e/site-sessions-image.py:/src/test.py:ro" \

@@ -115,6 +115,20 @@ describe("sites from what the browser holds", () => {
     expect(sites.map(({ site }) => site)).toEqual(["news.example"]);
   });
 
+  it("keeps every site with cookies when signing out of everything", () => {
+    const sites = groupSiteSessions(
+      browser({
+        hosts: [
+          { host: "tracker.example", created: 1, lastUsed: 2 },
+          { host: "news.example", created: 1, lastUsed: 2 },
+        ],
+        visited: ["news.example"],
+      }),
+      { everySite: true },
+    );
+    expect(sites.map(({ site }) => site).sort()).toEqual(["news.example", "tracker.example"]);
+  });
+
   it("keeps a host the browser has not saved yet, with no time, after the ones it has", () => {
     const sites = groupSiteSessions(
       browser({
@@ -240,6 +254,30 @@ describe("the session script", () => {
     expect(requests.length).toBeGreaterThan(1);
     expect(requests.every(({ argv }) => argv.at(-1)!.length < 100_000)).toBe(true);
     expect(requests.flatMap(({ request }) => request.hosts as string[])).toHaveLength(3000 + 7 * 2);
+  });
+
+  it("reports the parts already gone when a later part fails", async () => {
+    const { provider, requests } = sandbox(
+      json({ ok: true, remaining: 0 }),
+      json({ ok: true, remaining: 3 }),
+    );
+    const hosts = Array.from({ length: 3000 }, (_, i) => ({
+      host: `site-${i}-with-a-longer-name.example${i % 7}.com`,
+      created: 1,
+      lastUsed: 1,
+    }));
+    const sites = groupSiteSessions(browser({ hosts, visited: hosts.map(({ host }) => host) }));
+    const ended: string[] = [];
+    await expect(
+      endSiteSessions(provider, computer, "bot-1", sites, context, async (batch) => {
+        ended.push(...batch.map(({ site }) => site));
+      }),
+    ).rejects.toMatchObject({
+      message: "Some sites could not be signed out. The list shows what is left.",
+    });
+    expect(requests).toHaveLength(2);
+    expect(ended.length).toBeGreaterThan(0);
+    expect(ended.length).toBeLessThan(sites.length);
   });
 
   it("refuses a site too large for one argument", async () => {

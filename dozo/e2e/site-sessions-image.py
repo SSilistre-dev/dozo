@@ -6,7 +6,7 @@ lists (hosts, times, top-level visits, storage keys; never a value) and that sig
 exactly one site's cookies and storage, partitioned ones included, with the browser running and
 with it stopped.
 """
-import base64, json, os, re, subprocess, sys, time
+import base64, json, os, re, sqlite3, subprocess, sys, time
 
 sys.path.insert(0, "/usr/local/lib/rakazo")
 from page_secrets import CdpClient, discover_ws_url  # noqa: E402
@@ -114,6 +114,10 @@ visit(client, "https://top.example/", {
     "https://top.example/": ([], "<iframe src='https://example.com/frame'></iframe>"),
     "https://example.com/frame": ([], STORE.replace("<script>", "<script>document.cookie = "
                                   f"'p={SECRET}; Path=/; Secure; SameSite=None; Partitioned; Max-Age=86400';", 1))})
+# bob.github.io embedded under another site too: storage partitioned under it.
+visit(client, "https://other-top.example/", {
+    "https://other-top.example/": ([], "<iframe src='https://bob.github.io/frame'></iframe>"),
+    "https://bob.github.io/frame": ([], STORE)})
 # A tracker that only ever loads inside another site's page.
 visit(client, "https://news.example/", {
     "https://news.example/": ([], "<iframe src='https://tracker.example/pixel'></iframe>"),
@@ -138,6 +142,7 @@ check(bool(partitioned), "the partitioned storage key of example.com is listed")
 check(any(k.startswith("https://alice.github.io") for k in keys), "alice.github.io's storage key is listed")
 
 # Signing out of example.com with the browser running: exactly its hosts and storage keys.
+signed_out_at = int(time.time() * 1_000_000) + 11644473600 * 1000000
 example_keys = [k for k in keys if re.match(r"https?://(a\.)?example\.com(:\d+)?/", k.split("^0")[0] + "/")]
 done = run({"op": "delete", "hosts": ["example.com", "a.example.com", "www.example.com"], "storageKeys": example_keys})
 check(done == {"ok": True, "remaining": 0}, f"signing out of example.com while running reports nothing left ({done})")
@@ -148,17 +153,44 @@ check({d for d, _, _ in after} >= {"notexample.com", "example.com.evil.org", "al
                                    "10.0.0.5", "xn--bcher-kva.example"}, "other sites' cookies stay")
 relisted = run({"op": "list"})
 check(not {"example.com", "a.example.com"} & {h["host"] for h in relisted["hosts"]}, "example.com drops off the list")
+# Keys the browser would misread are never cleared: they could mean any origin.
+done = run({"op": "delete", "hosts": [], "storageKeys": ["http://./", "https://keep.example/^0http://./", "javascript:x"]})
+check(done == {"ok": True, "remaining": 0}, f"malformed storage keys are skipped ({done})")
+check(any(k.startswith("https://alice.github.io") for k in run({"op": "list"})["storageKeys"]), "and nothing else is cleared")
+# What is left is read back, not assumed: clearing bob.github.io by its first-party key alone
+# reports exactly what the profile still holds under its origin.
+bob_keys = [k for k in run({"op": "list"})["storageKeys"] if k.startswith("https://bob.github.io/")]
+done = run({"op": "delete", "hosts": [], "storageKeys": [k for k in bob_keys if "^0" not in k]})
+left_keys = [k for k in run({"op": "list"})["storageKeys"] if k.startswith("https://bob.github.io/")]
+check(any("^0" in k for k in bob_keys), f"bob.github.io has a partitioned key to leave behind ({bob_keys})")
+check(left_keys and (done.get("remaining") or 0) >= len(left_keys),
+      f"the reply counts what is left ({done}, {left_keys})")
+# A tracker that only ever loaded inside another page is signed out of like any site.
+done = run({"op": "delete", "hosts": ["tracker.example", "www.tracker.example"], "storageKeys": []})
+check(done == {"ok": True, "remaining": 0} and not any(d == "tracker.example" for d, _, _ in own_cookies(client)),
+      "a site seen only inside another page can be signed out of")
 
 # The same with the browser stopped: the script starts its own on the profile.
 client.call("Browser.close")
 process.wait(10)
+# Signing out opened no page: nothing was added to the history, no storage came back for example.com.
+history = PROFILE + "/Default/History"
+db = sqlite3.connect(f"file:{history}?mode=ro", uri=True)
+added = db.execute("SELECT COUNT(*) FROM visits WHERE visit_time >= ?", (signed_out_at,)).fetchone()[0]
+db.close()
+check(added == 0, f"signing out added no history ({added} visits)")
+quota = sqlite3.connect(f"file:{PROFILE}/Default/WebStorage/QuotaManager?mode=ro", uri=True)
+back = [k for (k,) in quota.execute("SELECT storage_key FROM buckets") if "example.com" in k.split("^0")[0]
+        and "evil" not in k and "notexample" not in k]
+quota.close()
+check(not back, f"no storage bucket came back for example.com ({back})")
 for site, extra in (("alice.github.io", []), ("10.0.0.5", []), ("xn--bcher-kva.example", [])):
     site_keys = [k for k in run({"op": "list"})["storageKeys"] if k.split("^0")[0].split("/")[2].split(":")[0] == site]
     done = run({"op": "delete", "hosts": [site, f"www.{site}", *extra], "storageKeys": site_keys})
     check(done == {"ok": True, "remaining": 0}, f"signing out of {site} while stopped reports nothing left ({done})")
 stopped = {h["host"] for h in run({"op": "list"})["hosts"]}
 check(not {"alice.github.io", "10.0.0.5", "xn--bcher-kva.example"} & stopped, "stopped sign-outs drop off the list")
-check({"bob.github.io", "notexample.com", "example.com.evil.org"} <= stopped, f"their neighbours stay ({sorted(stopped)})")
+check({"notexample.com", "example.com.evil.org"} <= stopped, f"their neighbours stay ({sorted(stopped)})")
 bad = subprocess.run(["python3", "-I", "-c", SCRIPT, json.dumps({"op": "list", "profile": "/etc/passwd"})],
                      capture_output=True, text=True, timeout=30)
 check(json.loads(bad.stdout) == {"ok": False, "error": "profile"}, "a profile outside the bots' folder is refused")

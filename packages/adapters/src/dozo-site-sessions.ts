@@ -16,6 +16,7 @@ const MAX_REPLY_BYTES = 4 * 1024 * 1024;
 /** The request is one argument: well under Linux's 128 KiB limit for a single one. */
 const MAX_REQUEST_BYTES = 100_000;
 const FAILED = "The bot's computer could not do that.";
+const PARTIAL = "Some sites could not be signed out. The list shows what is left.";
 
 /**
  * A cookie host with its oldest cookie's set time and its last use, in epoch milliseconds; null
@@ -81,14 +82,18 @@ function either(pick: (...times: number[]) => number, a: number | null, b: numbe
 /**
  * Cookie hosts grouped by site, newest use first, then those with no known use. A site counts
  * only when a page of it was opened at the top level: a tracker or a CDN that only ever loaded
- * inside other sites' pages has cookies, but no one signed in to it.
+ * inside other sites' pages has cookies, but no one signed in to it. `everySite` keeps those too,
+ * for signing out of everything.
  */
-export function groupSiteSessions(browser: BrowserSites): SiteSession[] {
+export function groupSiteSessions(
+  browser: BrowserSites,
+  options: { everySite?: boolean } = {},
+): SiteSession[] {
   const visited = new Set(browser.visited.map(cookieSite));
   const sites = new Map<string, SiteSession>();
   for (const { host, created, lastUsed } of browser.hosts) {
     const site = cookieSite(host);
-    if (!site || !visited.has(site)) continue;
+    if (!site || !(options.everySite || visited.has(site))) continue;
     const known = sites.get(site);
     if (!known) {
       sites.set(site, {
@@ -183,8 +188,9 @@ export async function listSiteSessions(
   computer: ComputerRef,
   botId: string,
   context: AdapterContext,
+  options: { everySite?: boolean } = {},
 ): Promise<SiteSession[]> {
-  return groupSiteSessions(await readBrowserSites(sandbox, computer, botId, context));
+  return groupSiteSessions(await readBrowserSites(sandbox, computer, botId, context), options);
 }
 
 /** The hosts a site is ended on: those the browser listed, plus its bare and www names. */
@@ -198,7 +204,8 @@ function hostsOf({ site, hosts }: SiteSession): string[] {
  * Ends these sites in this bot's browser: every cookie of their hosts (partitioned ones too) and
  * everything stored under their storage keys and origins. Hosts are those the browser listed for
  * exactly these sites, never a suffix match, so `example.com` leaves `notexample.com` and
- * `example.com.evil.org` alone. Fails unless the script found nothing left afterwards.
+ * `example.com.evil.org` alone. Fails unless the script found nothing left afterwards; `onEnded`
+ * hears each request's sites as soon as they are gone, so a later failure never hides them.
  */
 export async function endSiteSessions(
   sandbox: SandboxProvider,
@@ -206,6 +213,7 @@ export async function endSiteSessions(
   botId: string,
   sites: SiteSession[],
   context: AdapterContext,
+  onEnded: (sites: SiteSession[]) => Promise<void> = async () => {},
 ): Promise<void> {
   // Sites go in as few requests as fit one argument each.
   const batches: SiteSession[][] = [];
@@ -214,9 +222,18 @@ export async function endSiteSessions(
     if (last && requestSize([...last, site]) <= MAX_REQUEST_BYTES) last.push(site);
     else batches.push([site]);
   }
+  let ended = 0;
   for (const batch of batches) {
-    const result = await runScript(sandbox, computer, botId, deleteRequest(batch), context);
-    if (result.remaining !== 0) throw new SiteSessionError(FAILED);
+    try {
+      const result = await runScript(sandbox, computer, botId, deleteRequest(batch), context);
+      if (result.remaining !== 0) throw new SiteSessionError(FAILED);
+    } catch (error) {
+      // Some sites are gone already: say so, and the list read again shows which are left.
+      if (ended && error instanceof SiteSessionError) throw new SiteSessionError(PARTIAL);
+      throw error;
+    }
+    ended += batch.length;
+    await onEnded(batch);
   }
 }
 

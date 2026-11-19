@@ -233,8 +233,14 @@ Accepted by the owner for now, stated here once:
 - Sites with cookies (the key button in a bot computer's header, `apps/api/src/dozo-site-sessions.ts`):
   sessions stay in the bot's browser profile on its computer; only site names, times and storage
   keys reach the server. A site is listed only when one of its pages was opened at the top level,
-  so trackers and CDNs that only loaded inside other pages are left out. The list needs a running
+  so trackers and CDNs that only loaded inside other pages are left out. It is the cookies in this
+  bot's browser, whoever opened the site: sites the bot browsed on its own are listed too. "Sign
+  out of all" ends every site with cookies, unlisted ones included. The list needs a running
   computer, and only Docker computers declare it. The mobile app has no such view yet.
+- Signing out and signing in hold the bot's execution lease so the script never runs a browser
+  beside the bot's; a bot waiting for someone on its screen is not held up. A Private computer has
+  no such lease (upstream's lease covers Team computers only), so there a sign-out the bot races
+  can still meet its browser starting.
 - What it makes visible: every member of the Space sees, for every bot there, which sites its
   browser holds cookies for and when each was last used, without who opened them (the audit log
   has that). Before, this was only on the screen of whoever looked at the browser.
