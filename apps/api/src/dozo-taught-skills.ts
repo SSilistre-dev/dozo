@@ -7,14 +7,15 @@ import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "
 
 /**
  * Forgets what was typed while teaching: the keys and text of the recording's key and clipboard
- * events, and the cached value suggestions. One statement on the row, so it cannot lose an update
- * made meanwhile. The protected-input marks and pointer steps stay.
+ * events, the cached model answers, and what each click hit (its window and picture). One
+ * statement on the row, so it cannot lose an update made meanwhile. The protected-input marks and
+ * pointer steps stay.
  */
 export async function scrubTeachRecording(prisma: PrismaClient, skillId: string): Promise<void> {
   await prisma.$executeRaw`
     UPDATE taught_skills SET
       recording = jsonb_set(
-        recording - 'dozoSuggestions',
+        recording - 'dozoSuggestions' - 'dozoLabels' - 'dozoTargets',
         '{events}',
         (SELECT coalesce(jsonb_agg(
             CASE WHEN jsonb_typeof(e) = 'object' AND e->>'kind' IN ('key', 'clipboard')

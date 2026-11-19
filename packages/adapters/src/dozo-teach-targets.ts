@@ -95,7 +95,11 @@ export async function observeTeachClick(
   const signal = deadlineSignal(CLICK_OBSERVE_TIMEOUT_MS, context.signal);
   const observation = await bestEffort(
     "teach click observe",
-    withAbort(sandbox.observe(toComputerRef(computer), { ...context, signal }), signal),
+    // Async, so a provider that throws before returning a promise is a failure like any other.
+    withAbort(
+      (async () => sandbox.observe(toComputerRef(computer), { ...context, signal }))(),
+      signal,
+    ),
   );
   return observation ? { x: mapped.x, y: mapped.y, observation } : undefined;
 }

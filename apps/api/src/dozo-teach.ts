@@ -208,15 +208,19 @@ export function createDozoTeach(deps: {
   }
 
   function suggestionsFor(actor: Actor, skill: SkillRow, values: TeachTypedValue[]) {
+    const suggest = deps.suggest;
+    // With no model to ask there is nothing new to cache.
+    if (!suggest) {
+      return Promise.resolve(cached(skill.id, skill.recording)[SUGGESTIONS_KEY] ?? {});
+    }
     return cachedAnswer(skill, SUGGESTIONS_KEY, async () => {
-      if (!deps.suggest) return {};
       // Secret and protected values never reach the model.
       const open = values.flatMap((value) =>
         value.secret || value.text === null
           ? []
           : [{ placeholder: value.placeholder, text: value.text }],
       );
-      return deps.suggest(actor, skill, open);
+      return suggest(actor, skill, open);
     });
   }
 
@@ -225,10 +229,11 @@ export function createDozoTeach(deps: {
     const pictures = clicks.flatMap((click) =>
       click.image ? [{ id: click.id, image: click.image }] : [],
     );
-    if (!pictures.length) return Promise.resolve<TeachClickLabels>({});
-    return cachedAnswer(skill, LABELS_KEY, async () =>
-      deps.label ? deps.label(actor, skill, pictures) : {},
-    );
+    const label = deps.label;
+    if (!label || !pictures.length) {
+      return Promise.resolve<TeachClickLabels>(cached(skill.id, skill.recording)[LABELS_KEY] ?? {});
+    }
+    return cachedAnswer(skill, LABELS_KEY, () => label(actor, skill, pictures));
   }
 
   /**
