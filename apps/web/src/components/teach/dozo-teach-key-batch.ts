@@ -4,20 +4,42 @@ import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 /** The most keys one request carries (the server's limit). */
 const MAX_KEYS = 200;
 
-type Batch = { botId: string; keys: string[]; sent: boolean };
+/** This page, so the server tells its batches apart from another page's. */
+const PAGE = crypto.randomUUID();
+
+type Batch = { botId: string; keys: string[]; sent: boolean; seq: number };
 
 /** Per bot, the batch still taking keys: the last thing queued for that bot. */
 const open = new Map<string, Batch>();
 /** Batches queued and not yet sent, oldest first. */
 const unsent: Batch[] = [];
+/** Per bot, the last batch number given. */
+const numbered = new Map<string, number>();
+/** Per bot, the last batch sent that has no answer yet. */
+const unanswered = new Map<string, number>();
 
+/**
+ * Sends a batch numbered in the order it was queued. One sent while the batch before it has no
+ * answer yet (only as the page goes away) names that one, and the server types and records it
+ * only after that one, so neither overtakes the other.
+ */
 function send(batch: Batch, keepalive: boolean) {
   batch.sent = true;
   unsent.splice(unsent.indexOf(batch), 1);
-  return rpc.dozoTeach.keys(
-    { botId: batch.botId, keys: batch.keys },
-    keepalive ? { context: { keepalive: true } } : undefined,
-  );
+  const after = unanswered.get(batch.botId);
+  unanswered.set(batch.botId, batch.seq);
+  return rpc.dozoTeach
+    .keys(
+      {
+        botId: batch.botId,
+        keys: batch.keys,
+        order: { page: PAGE, seq: batch.seq, ...(after ? { after } : {}) },
+      },
+      keepalive ? { context: { keepalive: true } } : undefined,
+    )
+    .finally(() => {
+      if (unanswered.get(batch.botId) === batch.seq) unanswered.delete(batch.botId);
+    });
 }
 
 /**
@@ -29,7 +51,9 @@ function send(batch: Batch, keepalive: boolean) {
 export function queueTeachKey(botId: string, key: string): void {
   let batch = open.get(botId);
   if (!batch || batch.keys.length >= MAX_KEYS) {
-    const next: Batch = { botId, keys: [], sent: false };
+    const seq = (numbered.get(botId) ?? 0) + 1;
+    numbered.set(botId, seq);
+    const next: Batch = { botId, keys: [], sent: false, seq };
     batch = next;
     open.set(botId, next);
     unsent.push(next);
@@ -49,8 +73,9 @@ export function closeTeachKeys(botId: string): void {
 }
 
 /**
- * The page is going away: the keys queued and not yet sent go now, in order, on requests that
- * outlive the page, so the last text typed is not lost.
+ * The page is going away: the keys queued and not yet sent go now, on requests that outlive the
+ * page, so the last text typed is not lost. They may reach the server before a batch still on its
+ * way, so each names the batch before it, and the server keeps their order.
  */
 export function sendTeachKeysNow(): void {
   open.clear();

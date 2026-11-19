@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { flush } from "@rakazo/core/test-async";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const expired = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock("./dozo-teach-expire.js", () => ({ expireTaughtSkillTeaching: expired }));
 
-const { recordTeachingKeys } = await import("./dozo-teach-keys.js");
+const { KEY_ORDER_WAIT_MS, recordTeachingKeys } = await import("./dozo-teach-keys.js");
 
 const actor = { spaceId: "space-1", userId: "user-1" } as never;
 const computer = {
@@ -51,7 +52,10 @@ function setup(
   const deps = {
     prisma: {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
-      taughtSkill: { findFirst: vi.fn(async () => current) },
+      taughtSkill: {
+        findFirst: vi.fn(async () => current),
+        findUnique: vi.fn(async () => current),
+      },
     },
     sandbox: {
       act: vi.fn(async (_ref: unknown, request: { actions: unknown[] }) => {
@@ -60,7 +64,8 @@ function setup(
       }),
     },
   };
-  const record = (keys: string[]) => recordTeachingKeys(deps as never, actor, "bot-1", keys);
+  const record = (keys: string[], keyOrder?: { page: string; seq: number; after?: number }) =>
+    recordTeachingKeys(deps as never, actor, "bot-1", keys, keyOrder);
   return { record, order, deps, current: () => current };
 }
 
@@ -124,5 +129,53 @@ describe("recordTeachingKeys", () => {
     });
     expect(await timesOut.record(["a"])).toBe("stale");
     expect(expired).toHaveBeenCalledTimes(2);
+  });
+
+  describe("in the page's order", () => {
+    afterEach(() => vi.useRealTimers());
+    const typed = (skill: Record<string, unknown> | null) =>
+      ((skill?.recording ?? { events: [] }) as { events: Array<{ key?: string }> }).events.flatMap(
+        (event) => (event.key ? [event.key] : []),
+      );
+
+    it("types and records a batch only after the one sent before it, whichever arrives first", async () => {
+      const { record, deps, current } = setup();
+      // Sent as the page went away, it arrives while the batch before it is still on its way.
+      const late = record(["c"], { page: "page-1", seq: 2, after: 1 });
+      await flush();
+      expect(deps.sandbox.act).not.toHaveBeenCalled();
+      expect(await record(["a", "b"], { page: "page-1", seq: 1 })).toBe("recorded");
+      expect(await late).toBe("recorded");
+      expect(deps.sandbox.act.mock.calls.map(([, request]) => request.actions.length)).toEqual([
+        2, 1,
+      ]);
+      expect(typed(current())).toEqual(["a", "b", "c"]);
+      expect(current()?.recording).toMatchObject({ dozoKeyOrder: { page: "page-1", seq: 2 } });
+      // A batch that names no earlier one never waits.
+      expect(await record(["d"], { page: "page-1", seq: 3 })).toBe("recorded");
+      expect(current()?.recording).toMatchObject({ dozoKeyOrder: { page: "page-1", seq: 3 } });
+    });
+
+    it("waits no longer than its bound for a batch that never comes, nor once the recording ended", async () => {
+      vi.useFakeTimers();
+      const { record, current } = setup({
+        recording: { events: [], snapshots: [], dozoKeyOrder: { page: "other", seq: 9 } },
+      });
+      let done = false;
+      const late = record(["z"], { page: "page-1", seq: 5, after: 4 }).then((outcome) => {
+        done = true;
+        return outcome;
+      });
+      await vi.advanceTimersByTimeAsync(KEY_ORDER_WAIT_MS - 100);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(await late).toBe("recorded");
+      expect(typed(current())).toEqual(["z"]);
+      expect(current()?.recording).toMatchObject({ dozoKeyOrder: { page: "page-1", seq: 5 } });
+      vi.useRealTimers();
+      const ended = setup({ status: "draft" });
+      expect(await ended.record(["a"], { page: "page-1", seq: 2, after: 1 })).toBe("stale");
+      expect(ended.deps.prisma.taughtSkill.findUnique).toHaveBeenCalledOnce();
+    });
   });
 });

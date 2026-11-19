@@ -234,6 +234,33 @@ export async function takeTeachValues(
 }
 
 /**
+ * Forgets one click's picture at once, for the teacher only, under the row's lock so a picture
+ * removed meanwhile is not written back. Removing one already gone, or from values gone or due,
+ * does nothing.
+ */
+export async function forgetTeachImage(
+  prisma: PrismaClient,
+  skill: { id: string; userId: string },
+  eventIndex: number,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRaw<Row[]>`
+      SELECT "skillId", "spaceId", "userId", "values", "targets", "suggestions"
+      FROM "dozo_teach_values"
+      WHERE "skillId" = ${skill.id} AND "userId" = ${skill.userId}
+        AND "expiresAt" > CURRENT_TIMESTAMP
+      FOR UPDATE`;
+    if (!row?.targets) return;
+    const { images } = await decode(tx, row);
+    const kept = images.filter((image) => image.eventIndex !== eventIndex);
+    if (kept.length === images.length) return;
+    const targets = kept.length ? await seal(tx, row, "targets", JSON.stringify(kept)) : null;
+    await tx.$executeRaw`
+      UPDATE "dozo_teach_values" SET "targets" = ${targets} WHERE "skillId" = ${skill.id}`;
+  });
+}
+
+/**
  * Keeps the first suggestions written for a draft, so two reviews at once agree. Null when the
  * values are gone meanwhile.
  */

@@ -105,14 +105,19 @@ export type TeachModelDeps = {
 
 /**
  * One short call to the bot's own model connection with no tools, history or thinking, its usage
- * recorded as setup. Null when images are given and the model cannot see them; throws when the
- * call fails or runs out of time.
+ * recorded as setup. Images past what the model takes in one prompt are not sent, and `prompt`
+ * is written for those sent only (given how many go). Null when images are given and the model
+ * cannot see them; throws when the call fails or runs out of time.
  */
 export async function askTeachModel(
   deps: TeachModelDeps,
   actor: Actor,
   botId: string,
-  request: { prompt: string; instructions: string; images?: AgentInputImage[] },
+  request: {
+    prompt: (imagesSent: number) => string;
+    instructions: string;
+    images?: AgentInputImage[];
+  },
   timeoutMs: number,
 ): Promise<string | null> {
   const scope = { userId: actor.userId, spaceId: actor.spaceId, botId };
@@ -137,7 +142,7 @@ export async function askTeachModel(
       runId: id,
       usageOperationKind: "setup",
       onUsage: record,
-      prompt: request.prompt,
+      prompt: request.prompt(images?.length ?? 0),
       instructions: request.instructions,
       history: [],
       tools: [],
@@ -168,11 +173,12 @@ export function createTeachValueSuggester(deps: TeachModelDeps): TeachValueSugge
         actor,
         skill.botId,
         {
-          prompt: teachValueSuggestionPrompt({
-            goal: skill.goal,
-            steps: skill.steps,
-            values,
-          }),
+          prompt: () =>
+            teachValueSuggestionPrompt({
+              goal: skill.goal,
+              steps: skill.steps,
+              values,
+            }),
           instructions: teachValueSuggestionInstructions(),
         },
         SUGGEST_TIMEOUT_MS,

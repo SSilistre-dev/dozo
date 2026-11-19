@@ -141,8 +141,9 @@ export async function teachClickTarget(
 }
 
 /**
- * The recording about to be written, carrying the targets the stored one holds (upstream's parse
- * keeps only its own keys) and, for a click about to be appended as the next event, its target.
+ * The recording about to be written, carrying what the fork keeps in the stored one (upstream's
+ * parse keeps only its own keys): the targets, any other `dozo…` key (the key batches' order),
+ * and, for a click about to be appended as the next event, its target.
  */
 export function withTeachClickTarget<R extends { events: unknown[] }>(
   skillId: string,
@@ -160,5 +161,16 @@ export function withTeachClickTarget<R extends { events: unknown[] }>(
       ...(image && pictured < MAX_IMAGES ? { image } : {}),
     });
   }
-  return targets.length ? { ...recording, [TEACH_TARGETS_KEY]: targets } : recording;
+  const forks =
+    typeof stored === "object" && stored !== null
+      ? Object.entries(stored).filter(
+          ([key]) => key.startsWith("dozo") && key !== TEACH_TARGETS_KEY,
+        )
+      : [];
+  if (!forks.length && !targets.length) return recording;
+  return {
+    ...recording,
+    ...Object.fromEntries(forks),
+    ...(targets.length ? { [TEACH_TARGETS_KEY]: targets } : {}),
+  };
 }

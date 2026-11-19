@@ -269,6 +269,12 @@ describe("withTeachClickTarget", () => {
       dozoTargets: stored.dozoTargets,
     });
     expect(withTeachClickTarget("skill-1", {}, recording)).toBe(recording);
+    // The fork's other keys stay too: where the key batches stand.
+    const order = { page: "p", seq: 2 };
+    expect(withTeachClickTarget("skill-1", { dozoKeyOrder: order, other: 1 }, recording)).toEqual({
+      ...recording,
+      dozoKeyOrder: order,
+    });
     // Targets in another shape are dropped, not guessed at.
     expect(withTeachClickTarget("skill-1", { dozoTargets: "x" }, recording)).toBe(recording);
   });

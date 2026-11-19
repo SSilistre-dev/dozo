@@ -378,6 +378,23 @@ describe("recorded clicks", () => {
     expect([...clicksBeforeSecrets(pressed)]).toEqual([0]);
   });
 
+  it("counts every click since the last value before protected input, not only the last one", () => {
+    // Click the field, then click it again (or a reveal toggle), then type the password.
+    const twice: TeachRecordingEvent[] = [
+      click(1, 1),
+      ...typing("ali"),
+      click(2, 2),
+      keys("Tab")[0]!,
+      click(3, 3),
+      click(4, 4),
+      { at, kind: "key", sensitive: true },
+      click(5, 5),
+    ];
+    expect([...clicksBeforeSecrets(twice)]).toEqual([4, 6, 7]);
+    // The same for a value the teacher hid.
+    expect([...clicksBeforeSecrets(twice, ["{{value 1}}"])]).toEqual([0, 4, 6, 7]);
+  });
+
   it("moves each click with the scrub, which keeps the same clicks secret", () => {
     const { events, indexOf } = scrubTeachRecordingEvents(signIn);
     expect([0, 28, 31, 33].map((index) => indexOf.get(index))).toEqual([0, 4, 6, 8]);
@@ -485,6 +502,7 @@ describe("forgetTeachTyping", () => {
     ],
     controlLeaseId: "lease-1",
     dozoSuggestions: { "{{value 1}}": { name: "x" } },
+    dozoKeyOrder: { page: "page-1", seq: 4 },
   };
 
   it("keeps one event per typed run and only application names, and marks it", () => {
@@ -530,7 +548,7 @@ describe("forgetTeachTyping", () => {
     expect(teachTypingForgotten(null)).toBe(false);
     expect(forgetTeachTyping(once)).toEqual(once);
     // Told it was forgotten, it only drops cached suggestions and marks it.
-    const { dozoSuggestions: _cached, ...rest } = recording;
+    const { dozoSuggestions: _cached, dozoKeyOrder: _order, ...rest } = recording;
     expect(forgetTeachTyping(recording, true)).toEqual({ ...rest, dozoScrubbed: true });
   });
 });

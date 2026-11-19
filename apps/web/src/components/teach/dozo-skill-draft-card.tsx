@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
-import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
+import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -23,15 +23,20 @@ type SkillDraftBlock = {
 
 type Choice = TeachValueChoice;
 
-/** What a draft is saved or tested with: its fields, a decision for each typed value, and the
- * clicked pictures the teacher took away. */
+/** What a draft is saved or tested with: its fields, a decision for each typed value, the
+ * clicked pictures the teacher took away, and the labels they kept. */
 type Sent = {
   fields: string;
   name: string;
   playbook: SkillPlaybook;
   decisions: Record<string, DozoTeachValueDecision>;
   removedTargets: string[];
+  labels: Record<string, string>;
 };
+
+/** What a step may quote of a label: one line, no input braces or quotes, 60 characters. */
+const LABEL_MAX = 60;
+const plainLabel = (text: string) => text.replace(/[{}"\p{Cc}]/gu, "").slice(0, LABEL_MAX);
 
 /** Skills this page learned are deleted, so their cards stop asking whenever they mount. */
 const goneSkills = new Set<string>();
@@ -88,6 +93,10 @@ export function SkillDraftCard({
   // Once saved, the server has forgotten the values and the steps hold the decisions.
   const [decided, setDecided] = useState(false);
   const [removedTargets, setRemovedTargets] = useState<string[]>([]);
+  // Nothing about the pictures goes to the model unless the teacher turns this on; the labels it
+  // gives are shown, editable, and only those kept are saved.
+  const [nameSteps, setNameSteps] = useState(false);
+  const [labels, setLabels] = useState<Record<string, string>>({});
   const saved = savedFields === JSON.stringify({ name, playbook });
 
   // Deleted from this card, or known gone from an earlier mount: never asked about again.
@@ -139,12 +148,20 @@ export function SkillDraftCard({
         valueDecisionOf(value.placeholder, choiceOf(value)),
       ]),
     );
+    const shown = new Set(targets.map((target) => target.id));
     return {
       fields: JSON.stringify({ name, playbook }),
       name,
       playbook,
       decisions,
       removedTargets,
+      labels: nameSteps
+        ? Object.fromEntries(
+            Object.entries(labels).flatMap(([target, label]) =>
+              shown.has(target) && label.trim() ? [[target, label.trim()]] : [],
+            ),
+          )
+        : {},
     };
   }
 
@@ -154,6 +171,7 @@ export function SkillDraftCard({
     playbook: input.playbook,
     decisions: input.decisions,
     removedTargets: input.removedTargets,
+    labels: input.labels,
   });
 
   // The write already succeeded, so a failed thread refresh is not reported as its failure.
@@ -181,7 +199,34 @@ export function SkillDraftCard({
     },
   });
 
-  const busy = save.pending || test.pending;
+  // A removed picture is forgotten on the server at once, not only left out of the save.
+  const removeTarget = useSave({
+    save: (target: string, rpc) =>
+      rpc.dozoTeach.removeTarget({ skillId: block.skillId, targetId: target }),
+    onSaved: (_done, target) => {
+      setRemovedTargets((current) => [...current, target]);
+      setLabels(({ [target]: _gone, ...rest }) => rest);
+    },
+  });
+
+  const nameTargets = useSave<void, { labels: Record<string, string> }>({
+    save: (_input, rpc) =>
+      rpc.dozoTeach.labelTargets({ skillId: block.skillId, decisions: sent().decisions }),
+    onSaved: (named) =>
+      setLabels(
+        Object.fromEntries(
+          Object.entries(named.labels).map(([target, label]) => [target, plainLabel(label)]),
+        ),
+      ),
+  });
+
+  function turnNameSteps(on: boolean) {
+    setNameSteps(on);
+    setLabels({});
+    if (on) nameTargets.run();
+  }
+
+  const busy = save.pending || test.pending || removeTarget.pending;
   const failed = save.error ?? test.error;
   const error =
     failed && errorCode(failed) === TEACH_NAME_TAKEN
@@ -190,9 +235,11 @@ export function SkillDraftCard({
         ? errorText(save.error, t`Could not save skill`)
         : test.error
           ? errorText(test.error)
-          : reviewing && review.isError
-            ? t`Could not load`
-            : null;
+          : removeTarget.error
+            ? errorText(removeTarget.error)
+            : (reviewing && review.isError) || nameTargets.error
+              ? t`Could not load`
+              : null;
 
   const skillName = name || block.name || block.goal.slice(0, 80);
 
@@ -271,35 +318,61 @@ export function SkillDraftCard({
         rows={5}
       />
       {targets.length ? (
-        <div className="mt-3 flex flex-wrap gap-3">
-          {targets.map((target) => {
-            // What the button removes: the step the picture belongs to.
-            const label = playbook.steps[target.step] ?? "";
-            return (
-              <figure
-                key={target.id}
-                data-testid="skill-draft-target"
-                className="relative m-0 w-fit"
-              >
-                <img
-                  src={target.image}
-                  alt=""
-                  className="block h-auto max-h-24 w-auto max-w-40 rounded-md border border-border object-contain"
-                />
-                <Button
-                  variant="secondary"
-                  size="icon-sm"
-                  aria-label={t`Remove ${label}`}
-                  disabled={busy}
-                  className="absolute -top-2 -right-2 size-6 rounded-full border border-border"
-                  onClick={() => setRemovedTargets((current) => [...current, target.id])}
+        <>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {targets.map((target) => {
+              // What the button removes: the step the picture belongs to.
+              const label = playbook.steps[target.step] ?? "";
+              return (
+                <figure
+                  key={target.id}
+                  data-testid="skill-draft-target"
+                  className="relative m-0 flex w-40 flex-col gap-1"
                 >
-                  <XIcon className="size-3" />
-                </Button>
-              </figure>
-            );
-          })}
-        </div>
+                  <img
+                    src={target.image}
+                    alt=""
+                    className="block h-auto max-h-24 w-auto max-w-40 rounded-md border border-border object-contain"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    aria-label={t`Remove ${label}`}
+                    disabled={busy}
+                    className="absolute -top-2 -right-2 size-6 rounded-full border border-border"
+                    onClick={() => removeTarget.run(target.id)}
+                  >
+                    <XIcon className="size-3" />
+                  </Button>
+                  {nameSteps && !nameTargets.pending ? (
+                    <Input
+                      aria-label={label}
+                      disabled={busy}
+                      value={labels[target.id] ?? ""}
+                      maxLength={LABEL_MAX}
+                      className="h-7 text-body-sm"
+                      onChange={(event) =>
+                        setLabels((current) => ({
+                          ...current,
+                          [target.id]: plainLabel(event.target.value),
+                        }))
+                      }
+                    />
+                  ) : null}
+                </figure>
+              );
+            })}
+          </div>
+          <Label className="mt-2 flex items-center gap-2 text-body-sm font-normal text-muted-foreground">
+            <Switch
+              size="sm"
+              checked={nameSteps}
+              disabled={busy || nameTargets.pending}
+              onCheckedChange={turnNameSteps}
+            />
+            <Trans>Send these images to the model to name the steps</Trans>
+          </Label>
+        </>
       ) : null}
       {fieldLabel(`${id}-check`, <Trans>How to check</Trans>)}
       <Textarea

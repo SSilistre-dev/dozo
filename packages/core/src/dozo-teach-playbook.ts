@@ -36,7 +36,9 @@ export type TeachTypedValue = {
 
 /**
  * A click step of the recording: the event it came from (a plain click, or a press and release
- * in place), the step as first written, and the placeholder of the value typed next, if any.
+ * in place), the step as first written, and the placeholder of the value typed next, if any: the
+ * same for every click since the value before, so a second click on a field (or anywhere) before
+ * typing counts as much as the last one.
  */
 type TeachClick = {
   eventIndex: number;
@@ -154,13 +156,14 @@ function walkRecording(events: RecordedEvent[]): {
     toX: number;
     toY: number;
   } | null = null;
-  // The last click step, until a value is typed after it.
-  let lastClick: TeachClick | null = null;
+  // The click steps since the last value, until a value is typed after them.
+  let pending: TeachClick[] = [];
 
   function addClick(eventIndex: number, button: string, x: number, y: number) {
     const step = clickStep(button, x, y);
-    lastClick = { eventIndex, step, button, x, y };
-    clicks.push(lastClick);
+    const click = { eventIndex, step, button, x, y };
+    pending.push(click);
+    clicks.push(click);
     steps.push(step);
   }
 
@@ -176,8 +179,8 @@ function walkRecording(events: RecordedEvent[]): {
       };
       values.push(value);
       steps.push(`Type ${value.placeholder}.`);
-      if (lastClick) lastClick.value = value.placeholder;
-      lastClick = null;
+      for (const click of pending) click.value = value.placeholder;
+      pending = [];
     }
     runs.push({ first: run.first, last: run.last, value });
     run = null;
@@ -436,8 +439,9 @@ export function scrubTeachRecordingEvents(events: TeachRecordingEvent[]): {
 
 /**
  * The events of the clicks whose next typed value is secret: protected input, or one of
- * `alsoSecret` (placeholders the teacher chose Hidden for). What such a click hit is never kept:
- * no picture, no label, no window.
+ * `alsoSecret` (placeholders the teacher chose Hidden for). Every click since the value before it
+ * counts, not only the last: the field may have been clicked twice, or something else clicked in
+ * between. What such a click hit is never kept: no picture, no label, no window.
  */
 export function clicksBeforeSecrets(
   events: TeachRecordingEvent[],
@@ -539,13 +543,18 @@ export function teachTypingForgotten(recording: unknown): boolean {
  * A recording with what was typed and opened in it forgotten: each typed run is one event (as
  * `scrubTeachEvents`), every window title keeps only its application's name (a snapshot whose
  * title names none is dropped, its event kept without a title so the steps stay the same), and
- * cached value suggestions go. Marked, so a recording already forgotten is left as it is: its
+ * cached value suggestions and the key batches' order go. Marked, so a recording already forgotten is left as it is: its
  * titles are already application names, which would not survive a second pass.
  */
 export function forgetTeachTyping<
   R extends { events: TeachRecordingEvent[]; snapshots: TeachSnapshot[] },
 >(recording: R, forgotten = teachTypingForgotten(recording)) {
-  const { dozoSuggestions: _cached, ...kept } = recording as R & { dozoSuggestions?: unknown };
+  // The suggestions cached by older drafts, and where the key batches stood while recording.
+  const {
+    dozoSuggestions: _cached,
+    dozoKeyOrder: _order,
+    ...kept
+  } = recording as R & { dozoSuggestions?: unknown; dozoKeyOrder?: unknown };
   if (forgotten) return { ...kept, [FORGOTTEN]: true as const };
   const typed = typedTexts(typedValuesFromRecording(recording.events));
   const events = scrubTeachEvents(recording.events).map((event) => {

@@ -75,6 +75,17 @@ describe("createTeachClickLabeller", () => {
     expect(few.run.mock.calls[0]![0].currentTurnImages).toHaveLength(3);
   });
 
+  it("lists in the prompt only the pictures sent, and keeps no label for one never sent", async () => {
+    const fake = runtime(() =>
+      answer('[{"id":"0","label":"Email field"},{"id":"5","label":"Invented"}]'),
+    );
+    const labels = await setup(fake, { maxImagesPerPrompt: 1 })(actor, skill, pictures);
+    const request = fake.run.mock.calls[0]![0];
+    expect(JSON.parse(request.prompt)).toEqual({ task: "Sign in", pictures: ["0"] });
+    expect(request.currentTurnImages?.map((image) => image.name)).toEqual(["click-0.webp"]);
+    expect(labels).toEqual({ "0": "Email field" });
+  });
+
   it("has nothing to ask without pictures", async () => {
     const fake = runtime(() => answer("[]"));
     expect(await setup(fake)(actor, skill, [])).toEqual({});

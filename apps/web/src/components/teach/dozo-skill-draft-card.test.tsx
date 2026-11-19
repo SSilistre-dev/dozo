@@ -13,12 +13,20 @@ const api = vi.hoisted(() => ({
   review: vi.fn(),
   save: vi.fn(),
   test: vi.fn(),
+  labelTargets: vi.fn(),
+  removeTarget: vi.fn(),
   list: vi.fn(async () => []),
 }));
 
 vi.mock("../../lib/rpc", () => {
   const client = {
-    dozoTeach: { review: api.review, save: api.save, test: api.test },
+    dozoTeach: {
+      review: api.review,
+      save: api.save,
+      test: api.test,
+      labelTargets: api.labelTargets,
+      removeTarget: api.removeTarget,
+    },
     skills: { list: api.list },
   };
   return {
@@ -52,6 +60,23 @@ vi.mock("@rakazo/ui-web", () => {
       <label htmlFor={htmlFor}>{children}</label>
     ),
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    Switch: ({
+      checked,
+      disabled,
+      onCheckedChange,
+    }: {
+      checked: boolean;
+      disabled?: boolean;
+      onCheckedChange: (checked: boolean) => void;
+    }) => (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onCheckedChange(!checked)}
+      />
+    ),
     ToggleGroup: ({
       value,
       onValueChange,
@@ -175,6 +200,8 @@ beforeEach(() => {
     playbook: { ...input.playbook, steps: ["Type {{email}}", "Type Weekly"] },
   }));
   api.test.mockResolvedValue({ runId: "run-1" });
+  api.removeTarget.mockResolvedValue({ ok: true });
+  api.labelTargets.mockResolvedValue({ labels: {} });
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   onRefresh = vi.fn(async () => undefined);
   onAddRoutine = vi.fn();
@@ -271,6 +298,7 @@ it("saves with each value's decision, then shows what the server saved", async (
       "{{value 4}}": { action: "variable", name: "value_4" },
     },
     removedTargets: [],
+    labels: {},
   });
   await vi.waitFor(() => expect(button(container, "Saved")).toBeDefined());
   expect(rows()).toHaveLength(0);
@@ -361,6 +389,7 @@ it("behaves as upstream's card when there are no values to decide about", async 
     playbook: { ...playbook, inputs: ["a", "b"] },
     decisions: {},
     removedTargets: [],
+    labels: {},
   });
   await click(button(container, "Add to routine"));
   expect(onAddRoutine).toHaveBeenCalledWith("Export", expect.stringContaining("Export"));
@@ -455,18 +484,87 @@ it("shows a thumbnail per kept picture", async () => {
   ]);
 });
 
-it("sends the removed pictures with Save and Test, and takes them off the card", async () => {
+const nameSwitch = () => container.querySelector<HTMLButtonElement>('button[role="switch"]');
+const labelInputs = () =>
+  thumbs().map((node) => node.querySelector<HTMLInputElement>("input") ?? null);
+
+it("forgets a removed picture on the server at once, and sends it with Save and Test", async () => {
   api.review.mockResolvedValue({ values: [], targets });
   await render();
   await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
   await click(removes()[0]);
-  expect(thumbs()).toHaveLength(1);
+  expect(api.removeTarget).toHaveBeenCalledWith({ skillId: "skill-1", targetId: "0" });
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(1));
   await click(button(container, "Test"));
-  expect(api.test).toHaveBeenCalledWith(expect.objectContaining({ removedTargets: ["0"] }));
+  expect(api.test).toHaveBeenCalledWith(
+    expect.objectContaining({ removedTargets: ["0"], labels: {} }),
+  );
   await click(button(container, "Save"));
-  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ removedTargets: ["0"] }));
+  expect(api.save).toHaveBeenCalledWith(
+    expect.objectContaining({ removedTargets: ["0"], labels: {} }),
+  );
   // Once saved the pictures are gone from the server and from the card.
   await vi.waitFor(() => expect(thumbs()).toHaveLength(0));
+});
+
+it("keeps a picture whose removal failed, and says so", async () => {
+  api.review.mockResolvedValue({ values: [], targets });
+  api.removeTarget.mockRejectedValue(new Error("offline"));
+  await render();
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
+  await click(removes()[0]);
+  await vi.waitFor(() => expect(errorLine()).not.toBeNull());
+  expect(thumbs()).toHaveLength(2);
+});
+
+it("sends no picture to the model until the teacher turns it on", async () => {
+  api.review.mockResolvedValue({ values: [], targets });
+  await render();
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
+  expect(nameSwitch()?.getAttribute("aria-checked")).toBe("false");
+  expect(container.textContent).toContain("Send these images to the model to name the steps");
+  expect(labelInputs()).toEqual([null, null]);
+  await click(button(container, "Save"));
+  expect(api.labelTargets).not.toHaveBeenCalled();
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ labels: {} }));
+});
+
+it("shows the model's labels to edit or clear, and saves only those kept", async () => {
+  api.review.mockResolvedValue({ values, targets });
+  api.labelTargets.mockResolvedValue({ labels: { "0": "Email field", "4": "Submit button" } });
+  await render();
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
+  await click(nameSwitch() ?? undefined);
+  expect(api.labelTargets).toHaveBeenCalledWith(
+    expect.objectContaining({ skillId: "skill-1", decisions: expect.any(Object) }),
+  );
+  await vi.waitFor(() =>
+    expect(labelInputs().map((input) => input?.value)).toEqual(["Email field", "Submit button"]),
+  );
+  // Named after the step it belongs to.
+  expect(labelInputs()[0]?.getAttribute("aria-label")).toBe("Type {{value 1}}");
+  await type(labelInputs()[0] as HTMLInputElement, 'Sign "in" {now}');
+  expect(labelInputs()[0]?.value).toBe("Sign in now");
+  await type(labelInputs()[1] as HTMLInputElement, "  ");
+  await click(button(container, "Save"));
+  expect(api.save).toHaveBeenCalledWith(
+    expect.objectContaining({ labels: { "0": "Sign in now" } }),
+  );
+});
+
+it("drops the labels when turned off again, and asks anew when turned on", async () => {
+  api.review.mockResolvedValue({ values: [], targets });
+  api.labelTargets.mockResolvedValue({ labels: { "0": "Email field" } });
+  await render();
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
+  await click(nameSwitch() ?? undefined);
+  await vi.waitFor(() => expect(labelInputs()[0]?.value).toBe("Email field"));
+  await click(nameSwitch() ?? undefined);
+  expect(labelInputs()).toEqual([null, null]);
+  await click(button(container, "Test"));
+  expect(api.test).toHaveBeenCalledWith(expect.objectContaining({ labels: {} }));
+  await click(nameSwitch() ?? undefined);
+  await vi.waitFor(() => expect(api.labelTargets).toHaveBeenCalledTimes(2));
 });
 
 it("shows no pictures for a skill already saved", async () => {

@@ -1,4 +1,5 @@
 import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
+import type { TeachKeyOrder } from "@rakazo/adapters";
 import {
   parsePlaybook,
   scheduleComputerSleep,
@@ -23,10 +24,16 @@ import {
   withClickTargets,
 } from "@rakazo/core";
 import type { PrismaClient, StoredTeachValues, TeachValueSuggestions } from "@rakazo/db";
-import { cacheTeachSuggestions, readTeachValues, storedTeachTargets } from "@rakazo/db";
+import {
+  cacheTeachSuggestions,
+  forgetTeachImage,
+  readTeachValues,
+  storedTeachTargets,
+} from "@rakazo/db";
 import { expireStaleComputerControl, holdsComputerControl } from "./computer-control.js";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
 import {
+  checkTeachLabels,
   forgetOldTeachTyping,
   keptTeachClicks,
   SKILL_NOT_DRAFT,
@@ -51,6 +58,8 @@ export type DozoTeachInput = {
   playbook: SkillPlaybook;
   decisions: Record<string, DozoTeachValueDecision>;
   removedTargets?: string[];
+  /** The labels the teacher saw and kept, by click id. */
+  labels?: Record<string, string>;
 };
 
 /** What the teach routes need from the server that the router's own dependencies do not carry. */
@@ -161,22 +170,25 @@ export function createDozoTeach(deps: {
   }
 
   /**
-   * What the model saw each click the teacher kept hit, asked at the save and only then: never
-   * for a removed picture, one whose step is gone, or one before a hidden value. Failures and
-   * models that cannot see pictures give no labels.
+   * What the model sees each kept click hit, asked only when the teacher chooses to, and shown
+   * to them before anything keeps it: never for a removed picture or one before a hidden value.
+   * Failures and models that cannot see pictures give no labels.
    */
-  async function labelsFor(actor: Actor, skill: Skill, input: DozoTeachInput) {
+  async function labelsFor(
+    actor: Actor,
+    skill: Skill,
+    decisions: Record<string, DozoTeachValueDecision>,
+  ) {
     const stored = await valuesFor(actor, skill);
     if (!deps.label || !stored?.images.length) return {};
     const events = teachRecordingOf(skill).events;
-    const indexes = clickStepIndexes(input.playbook.steps, events);
     const kept = new Set(
-      keptTeachClicks(skill.id, skill.recording, events, input).map((click) => click.eventIndex),
+      keptTeachClicks(skill.id, skill.recording, events, { decisions }).map(
+        (click) => click.eventIndex,
+      ),
     );
     const pictures = stored.images.flatMap(({ eventIndex, image }) =>
-      kept.has(eventIndex) && indexes.has(eventIndex)
-        ? [{ id: teachTargetId(eventIndex), image }]
-        : [],
+      kept.has(eventIndex) ? [{ id: teachTargetId(eventIndex), image }] : [],
     );
     if (!pictures.length) return {};
     return (await deps.label(actor, skill, pictures)) ?? {};
@@ -197,12 +209,15 @@ export function createDozoTeach(deps: {
     if (skill.status !== "draft" && Object.keys(input.decisions).length) {
       throw new ClientError("CONFLICT", "This skill is already saved", SKILL_NOT_DRAFT);
     }
-    const values = (await valuesFor(actor, skill))?.values ?? [];
+    const stored = await valuesFor(actor, skill);
+    const values = stored?.values ?? [];
+    checkTeachLabels(input.labels, stored?.images ?? []);
     const playbook = values.length
       ? applyValueDecisions(input.playbook, values, input.decisions)
       : input.playbook;
     if (skill.userId !== actor.userId || skill.status !== "draft") return { skill, playbook };
-    // A test never asks the model about the pictures: its clicks say only their window.
+    // A test never asks the model about the pictures: its clicks say their window and the
+    // labels the teacher kept.
     const events = teachRecordingOf(skill).events;
     const clicks = keptTeachClicks(skill.id, skill.recording, events, input);
     return {
@@ -233,19 +248,41 @@ export function createDozoTeach(deps: {
     },
 
     /**
-     * The labels for the kept pictures are asked first, outside the transaction; then one
-     * transaction applies the decisions and the labels, saves, and forgets the values and every
-     * picture (the wrapper's save).
+     * One transaction applies the decisions and the labels the teacher kept, saves, and forgets
+     * the values and every picture (the wrapper's save). The model is not asked here: a label
+     * reaches a step only once the teacher has seen it.
      */
     async save(actor: Actor, input: DozoTeachInput) {
-      const skill = await skillOf(actor, input.skillId);
-      const labels = await labelsFor(actor, skill, input);
       return deps.taughtSkills.save(actor, input.skillId, input.name, {
         playbook: input.playbook,
         decisions: input.decisions,
         removedTargets: input.removedTargets,
-        labels,
+        labels: input.labels,
       });
+    },
+
+    /** Labels for the kept pictures, for the teacher to see; nothing is kept. */
+    async labelTargets(
+      actor: Actor,
+      input: { skillId: string; decisions: Record<string, DozoTeachValueDecision> },
+    ): Promise<{ labels: Record<string, string> }> {
+      const skill = await skillOf(actor, input.skillId);
+      return { labels: await labelsFor(actor, skill, input.decisions) };
+    },
+
+    /** Forgets a click's picture at once; only its teacher may, and again is the same. */
+    async removeTarget(actor: Actor, input: { skillId: string; targetId: string }) {
+      const skill = await skillOf(actor, input.skillId);
+      if (skill.userId !== actor.userId) {
+        throw new ClientError(
+          "FORBIDDEN",
+          "Only the person who taught this skill can remove its pictures",
+        );
+      }
+      if (/^\d+$/.test(input.targetId)) {
+        await forgetTeachImage(deps.prisma, skill, Number(input.targetId));
+      }
+      return { ok: true as const };
     },
 
     /** The draft keeps its placeholders; only the test run's prompt has the decisions applied. */
@@ -279,6 +316,7 @@ export async function typeTeachKeys(
   actor: Actor,
   botId: string,
   keys: string[],
+  order?: TeachKeyOrder,
 ): Promise<{ ok: true }> {
   const bot = await ctx.getBot(actor, botId);
   const computer = bot.computer;
@@ -287,7 +325,7 @@ export async function typeTeachKeys(
     throw new ClientError("FORBIDDEN", "You are not controlling this computer");
   }
   if (!computer.providerRef) return { ok: true };
-  const outcome = await ctx.taughtSkills.recordKeys(actor, bot.id, keys);
+  const outcome = await ctx.taughtSkills.recordKeys(actor, bot.id, keys, order);
   if (outcome === "stale") return { ok: true };
   if (outcome === "idle") {
     await sendTeachKeys(ctx.deps.sandbox, computer, keys, teachKeysContext(actor, bot.id));
@@ -316,6 +354,12 @@ export function dozoTeachRoutes(ctx: RouterContext) {
         teach.review(context.actor, input.skillId),
       ),
       save: authed.dozoTeach.save.handler(({ context, input }) => teach.save(context.actor, input)),
+      labelTargets: authed.dozoTeach.labelTargets.handler(({ context, input }) =>
+        teach.labelTargets(context.actor, input),
+      ),
+      removeTarget: authed.dozoTeach.removeTarget.handler(({ context, input }) =>
+        teach.removeTarget(context.actor, input),
+      ),
       test: authed.dozoTeach.test.handler(({ context, input }) => teach.test(context.actor, input)),
       decideSaved: authed.dozoTeach.decideSaved.handler(({ context, input }) =>
         taughtSkills.decideSavedValues(context.actor, input.skillId, input),
@@ -326,6 +370,7 @@ export function dozoTeachRoutes(ctx: RouterContext) {
           context.actor,
           input.botId,
           input.keys,
+          input.order,
         ),
       ),
     },

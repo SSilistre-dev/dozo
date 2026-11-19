@@ -1,4 +1,5 @@
 import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import type { TeachKeyOrder } from "@rakazo/adapters";
 import {
   emptyRecording,
   parsePlaybook,
@@ -128,9 +129,24 @@ export type TeachSaveEdit = {
   decisions: Record<string, DozoTeachValueDecision>;
   /** Ids of the clicks whose picture the teacher removed: their steps keep the coordinate. */
   removedTargets?: string[];
-  /** What the model saw each kept click hit, by click id, made before the save. */
+  /** What each kept click hit, by click id, as the teacher saw and kept it. */
   labels?: Record<string, string>;
 };
+
+/**
+ * Refuses labels for a click with no picture kept for the teacher (removed, never taken, or
+ * values gone): a label is only ever the teacher's edit of what the model said about a picture
+ * they saw. Their text the contract already holds to plain, short, one-line text.
+ */
+export function checkTeachLabels(
+  labels: Record<string, string> | undefined,
+  images: ReadonlyArray<{ eventIndex: number }>,
+) {
+  const pictured = new Set(images.map((image) => teachTargetId(image.eventIndex)));
+  if (Object.keys(labels ?? {}).some((id) => !pictured.has(id))) {
+    throw new ClientError("BAD_REQUEST", "A label is for a picture that is no longer kept");
+  }
+}
 
 /** A recorded click's id: the index of its event in the drafted recording. */
 export const teachTargetId = (eventIndex: number) => String(eventIndex);
@@ -250,9 +266,9 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       return upstream.get(actor, skillId);
     },
 
-    /** Keys typed in a row while teaching, recorded with one check and one write. */
-    recordKeys(actor: Actor, botId: string, keys: string[]) {
-      return recordTeachingKeys(deps, actor, botId, keys);
+    /** Keys typed in a row while teaching, recorded with one check and one write, in order. */
+    recordKeys(actor: Actor, botId: string, keys: string[], order?: TeachKeyOrder) {
+      return recordTeachingKeys(deps, actor, botId, keys, order);
     },
 
     async start(actor: Actor, botId: string, goal: string) {
@@ -303,10 +319,9 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           throw new ClientError("CONFLICT", "This skill is already saved", SKILL_NOT_DRAFT);
         }
         const stored = await takeTeachValues(tx, skill.id);
-        const values =
-          teacher && skill.status === "draft" && stored?.userId === actor.userId
-            ? stored.values
-            : [];
+        const own = teacher && skill.status === "draft" && stored?.userId === actor.userId;
+        const values = own ? stored.values : [];
+        checkTeachLabels(edit?.labels, own ? stored.images : []);
         const playbook = edit?.playbook ?? parsePlaybook(skill.playbook);
         // Someone else gets the skill without the recording, so only the teacher's is read.
         const recording = teacher ? teachRecordingOf(skill) : emptyRecording();

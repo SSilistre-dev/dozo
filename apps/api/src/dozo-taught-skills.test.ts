@@ -344,7 +344,10 @@ describe("save", () => {
           dozoTargets: [0, 18, 27, 29].map((eventIndex) => ({ eventIndex, window })),
         },
       },
-      stored: { values: JSON.stringify(typedValuesFromRecording(clicked)) },
+      stored: {
+        values: JSON.stringify(typedValuesFromRecording(clicked)),
+        targets: JSON.stringify([0, 18, 29].map((eventIndex) => ({ eventIndex, image: "AAAA" }))),
+      },
     });
     await service.save(actor, "skill-1", "Sign in", {
       playbook: clickedPlaybook,
@@ -359,6 +362,20 @@ describe("save", () => {
     expect(written().playbook.steps).toContain("Click left button at (50, 60).");
     expect(written().playbook.steps).toContain("Click left button at (70, 80).");
     expect(written().recording).not.toHaveProperty("dozoTargets");
+  });
+
+  it("refuses a label for a click with no picture kept, and writes nothing", async () => {
+    const pictured = { targets: JSON.stringify([{ eventIndex: 0, image: "AAAA" }]) };
+    for (const [who, labels] of [
+      [actor, { "5": "Password field" }],
+      [member, { "0": "Email field" }],
+    ] as const) {
+      const { service, update } = saving({ stored: pictured });
+      await expect(
+        service.save(who, "skill-1", "Sign in", { playbook, decisions: {}, labels }),
+      ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+      expect(update).not.toHaveBeenCalled();
+    }
   });
 
   it("refuses, as the person can act on, a recording not in its shape, and writes nothing", async () => {

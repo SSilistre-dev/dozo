@@ -7,6 +7,7 @@ import {
   cacheTeachSuggestions,
   expireAllTeachValues,
   expireTeachValues,
+  forgetTeachImage,
   keepTeachValues,
   readTeachValues,
   takeTeachValues,
@@ -332,7 +333,54 @@ describe("expireAllTeachValues", () => {
     ]);
     expect(calls[0]?.sql).not.toContain('"skillId"');
   });
+});
 
+describe("forgetTeachImage", () => {
+  const row = (targets: string | null) => ({
+    skillId: "skill-1",
+    spaceId: "space-1",
+    userId: "ada",
+    values: "[]",
+    targets,
+    suggestions: null,
+  });
+  const pictures = JSON.stringify([
+    { eventIndex: 0, image: "AAAA" },
+    { eventIndex: 3, image: "BBBB" },
+  ]);
+  function prisma(stored: ReturnType<typeof row> | null) {
+    const inner = client((sql) => (sql.includes("FOR UPDATE") && stored ? [stored] : []), ring);
+    const transaction = vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work(inner.db));
+    return { ...inner, prisma: { $transaction: transaction } };
+  }
+
+  it("forgets one picture at once, sealed again under the teacher's row lock", async () => {
+    const { prisma: db, calls } = prisma(row(pictures));
+    await forgetTeachImage(db as never, { id: "skill-1", userId: "ada" }, 3);
+    expect(calls[0]?.sql).toContain("FOR UPDATE");
+    expect(calls[0]?.sql).toContain('"userId" = ?');
+    expect(calls[0]?.params).toEqual(["skill-1", "ada"]);
+    const update = calls.find((call) => call.sql.includes('SET "targets"'));
+    const sealed = update?.params[0] as string;
+    expect(isCiphertext(sealed)).toBe(true);
+    expect(sealed).not.toContain("BBBB");
+    // Read back, only the other picture is left.
+    const read = client(() => [row(sealed)], ring);
+    expect((await readTeachValues(read.db as never, "skill-1"))?.images).toEqual([
+      { eventIndex: 0, image: "AAAA" },
+    ]);
+  });
+
+  it("leaves no column once the last picture goes, and is idempotent", async () => {
+    const last = prisma(row(JSON.stringify([{ eventIndex: 3, image: "BBBB" }])));
+    await forgetTeachImage(last.prisma as never, { id: "skill-1", userId: "ada" }, 3);
+    expect(last.calls.find((call) => call.sql.includes('SET "targets"'))?.params[0]).toBeNull();
+    for (const stored of [row(pictures), row(null), null]) {
+      const again = prisma(stored);
+      await forgetTeachImage(again.prisma as never, { id: "skill-1", userId: "ada" }, 7);
+      expect(again.calls.some((call) => call.sql.includes('SET "targets"'))).toBe(false);
+    }
+  });
 });
 
 describe("the pictures' migration", () => {

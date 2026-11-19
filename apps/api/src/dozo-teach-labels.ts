@@ -10,6 +10,19 @@ const LABEL_TIMEOUT_MS = 10_000;
 const MAX_PICTURES = 20;
 const LABEL_MAX = 60;
 
+/**
+ * A model's label made plain, as the teacher may keep it: one line, no input braces, quotes or
+ * control characters, at most 60 characters.
+ */
+export function teachClickLabel(text: string): string {
+  return text
+    .replace(/[\p{Cc}{}"]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, LABEL_MAX)
+    .trim();
+}
+
 /** A label per target id: what was clicked, in a few words. */
 export type TeachClickLabels = Record<string, string>;
 
@@ -28,20 +41,22 @@ const Answer = z.array(z.object({ id: z.string(), label: z.string() }));
  */
 export function createTeachClickLabeller(deps: TeachModelDeps): TeachClickLabeller {
   return async (actor, skill, pictures) => {
-    const sent = pictures.slice(0, MAX_PICTURES);
-    if (!sent.length) return {};
+    const offered = pictures.slice(0, MAX_PICTURES);
+    if (!offered.length) return {};
+    // The ones the model takes in one prompt; the prompt names exactly those, in order.
+    let sent: string[] = [];
     try {
       const answer = await askTeachModel(
         deps,
         actor,
         skill.botId,
         {
-          prompt: teachClickLabelPrompt(
-            skill.goal,
-            sent.map((picture) => picture.id),
-          ),
+          prompt: (count) => {
+            sent = offered.slice(0, count).map((picture) => picture.id);
+            return teachClickLabelPrompt(skill.goal, sent);
+          },
           instructions: teachClickLabelInstructions(),
-          images: sent.map((picture) => ({
+          images: offered.map((picture) => ({
             name: `click-${picture.id}.webp`,
             mimeType: "image/webp",
             data: Buffer.from(picture.image, "base64"),
@@ -52,10 +67,11 @@ export function createTeachClickLabeller(deps: TeachModelDeps): TeachClickLabell
       if (answer === null) return null;
       const parsed = Answer.safeParse(jsonArrayIn(answer));
       if (!parsed.success) return null;
-      const ids = new Set(sent.map((picture) => picture.id));
+      // An answer about a picture the model never got is made up.
+      const ids = new Set(sent);
       const labels: TeachClickLabels = {};
       for (const entry of parsed.data) {
-        const label = entry.label.replace(/\s+/g, " ").trim().slice(0, LABEL_MAX);
+        const label = teachClickLabel(entry.label);
         if (ids.has(entry.id) && label) labels[entry.id] = label;
       }
       return labels;

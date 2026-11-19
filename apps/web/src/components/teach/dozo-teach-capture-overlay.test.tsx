@@ -62,7 +62,10 @@ it("lets a focused page control go when the screen is clicked, so typing is reco
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
   });
   await vi.waitFor(() => expect(keys).toHaveBeenCalled());
-  expect(keys).toHaveBeenCalledWith({ botId: "bot-1", keys: ["a"] }, undefined);
+  expect(keys).toHaveBeenCalledWith(
+    { botId: "bot-1", keys: ["a"], order: { page: expect.any(String), seq: expect.any(Number) } },
+    undefined,
+  );
 });
 
 it("sends keys typed in a row together, once, and a click between them keeps its place", async () => {
@@ -81,8 +84,8 @@ it("sends keys typed in a row together, once, and a click between them keeps its
   });
   await vi.waitFor(() => expect(keys).toHaveBeenCalledTimes(2));
   expect(keys.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
-    { botId: "bot-1", keys: ["a", "b"] },
-    { botId: "bot-1", keys: ["c", "Enter"] },
+    expect.objectContaining({ botId: "bot-1", keys: ["a", "b"] }),
+    expect.objectContaining({ botId: "bot-1", keys: ["c", "Enter"] }),
   ]);
   // Upstream's own listener never sent them one by one.
   expect(computerInput).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "key" }));
@@ -107,9 +110,20 @@ it("closes the batch on a scroll or protected input, and sends what is left as t
     typed("c");
     window.dispatchEvent(new Event("pagehide"));
   });
+  // Each names the batch before it, the first the one still in flight.
+  const [inFlight] = keys.mock.calls.map(
+    (call) => (call as unknown[])[0] as { order: { seq: number } },
+  );
+  const seq = inFlight?.order.seq ?? 0;
   expect(keys.mock.calls.slice(1).map((call) => call as unknown[])).toEqual([
-    [{ botId: "bot-1", keys: ["b"] }, { context: { keepalive: true } }],
-    [{ botId: "bot-1", keys: ["c"] }, { context: { keepalive: true } }],
+    [
+      expect.objectContaining({ keys: ["b"], order: expect.objectContaining({ after: seq }) }),
+      { context: { keepalive: true } },
+    ],
+    [
+      expect.objectContaining({ keys: ["c"], order: expect.objectContaining({ after: seq + 1 }) }),
+      { context: { keepalive: true } },
+    ],
   ]);
   await act(async () => first.resolve({ ok: true }));
   // Sent as the page went: not again.
@@ -134,7 +148,10 @@ it("takes keys typed on the page, not shortcuts with a modifier", async () => {
     plain.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true }));
   });
   await vi.waitFor(() => expect(keys).toHaveBeenCalledOnce());
-  expect(keys).toHaveBeenCalledWith({ botId: "bot-1", keys: ["x"] }, undefined);
+  expect(keys).toHaveBeenCalledWith(
+    expect.objectContaining({ botId: "bot-1", keys: ["x"] }),
+    undefined,
+  );
 });
 
 it("does nothing to focus when nothing but the page has it", async () => {
