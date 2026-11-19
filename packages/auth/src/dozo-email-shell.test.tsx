@@ -2,7 +2,12 @@
 import { render } from "react-email";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DozoFooter, DozoHeader, markUrl } from "./dozo-email-shell.js";
-import { signInCodeEmail } from "./email.js";
+import {
+  accountDeletionEmail,
+  identityCodeEmail,
+  passwordResetEmail,
+  signInCodeEmail,
+} from "./email.js";
 import { welcomeEmail } from "./welcome-email.js";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -10,6 +15,13 @@ afterEach(() => vi.unstubAllEnvs());
 describe("markUrl", () => {
   it("loads the mark from the server's own public https origin", () => {
     expect(markUrl("https://app.example.com/")).toBe("https://app.example.com/icon-192.png");
+  });
+
+  it("accepts a public name that merely starts like a private one", () => {
+    expect(markUrl("https://localhost-tools.example.com")).toBe(
+      "https://localhost-tools.example.com/icon-192.png",
+    );
+    expect(markUrl("https://10.example.com")).toBe("https://10.example.com/icon-192.png");
   });
 
   it("reads the origin from WEB_ORIGIN", () => {
@@ -25,6 +37,20 @@ describe("markUrl", () => {
     "https://localhost:5173",
     "https://127.0.0.1",
     "https://[::1]:8080",
+    "https://10.0.0.5",
+    "https://192.168.1.20",
+    "https://172.16.0.1",
+    "https://169.254.169.254",
+    "https://0x7f.1",
+    "https://2130706433",
+    "https://foo.local",
+    "https://dozo.internal",
+    "https://box.lan",
+    "https://nas.home.arpa",
+    "https://app.localhost",
+    "https://intranet",
+    "https://[fd00::1]",
+    "https://[::ffff:7f00:1]",
   ])("has no mark for %s", (origin) => {
     expect(markUrl(origin)).toBeNull();
   });
@@ -83,6 +109,29 @@ describe("branded account mail", () => {
     expect(mail.html).not.toContain("Arial, Helvetica, sans-serif;");
     expect(mail.text).toContain("Gizlilik https://dozo-site.ssilistre.dev/tr/privacy/");
     expect(mail.text).toContain("info@ssilistre.dev");
+  });
+
+  it("escapes a hostile code and name, and links nothing but the footer", async () => {
+    vi.stubEnv("WEB_ORIGIN", "");
+    const hostile = '<script>alert(1)</script><a href="https://evil.example">x</a>';
+    const footerLinks = 3; // privacy, terms, contact
+    for (const mail of [
+      await signInCodeEmail("ada@example.com", hostile),
+      await accountDeletionEmail("ada@example.com", hostile),
+      await identityCodeEmail("ada@example.com", hostile),
+    ]) {
+      expect(mail.html).not.toContain("<script>");
+      expect(mail.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+      expect(mail.html).not.toContain('evil.example">');
+      expect((mail.html ?? "").split("<a ").length - 1).toBe(footerLinks);
+      expect(mail.text).toContain("<script>alert(1)</script>");
+    }
+    const reset = await passwordResetEmail(
+      { id: "u1", email: "ada@example.com", name: hostile },
+      "https://app.example.com/reset",
+    );
+    expect(reset.html).not.toContain("<script>");
+    expect(reset.html).not.toContain('href="https://evil.example"');
   });
 
   it("keeps the unsubscribe link and header of a marketing mail", async () => {

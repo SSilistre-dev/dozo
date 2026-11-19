@@ -58,8 +58,24 @@ export function markUrl(origin = process.env.WEB_ORIGIN): string | null {
   } catch {
     return null;
   }
-  const local = /^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(url.hostname);
-  return url.protocol === "https:" && !local ? `${url.origin}/icon-192.png` : null;
+  return url.protocol === "https:" && publicDnsName(url.hostname)
+    ? `${url.origin}/icon-192.png`
+    : null;
+}
+
+// Names that only resolve inside a network or on one machine.
+const PRIVATE_SUFFIXES = ["localhost", "local", "internal", "lan", "home.arpa"];
+
+/**
+ * A DNS name a mail client elsewhere can reach: no IP literal (the URL parser has already turned
+ * every IPv4 spelling into dotted decimal and wrapped IPv6 in brackets), at least two labels, an
+ * alphabetic top-level label, and no private-use suffix.
+ */
+function publicDnsName(hostname: string): boolean {
+  const labels = hostname.split(".");
+  const top = labels.at(-1) ?? "";
+  if (hostname.startsWith("[") || labels.length < 2 || !/^[a-z]{2,}$/.test(top)) return false;
+  return !PRIVATE_SUFFIXES.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`));
 }
 
 /** The mark and the wordmark. Without a public origin the wordmark stands alone. */
