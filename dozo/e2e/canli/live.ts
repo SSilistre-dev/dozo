@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import type { APIRequestContext, Page } from "@playwright/test";
-import { test as flow } from "../flows/flow";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { expect as expectFlow, test as flow } from "../flows/flow";
+import { watchLoad } from "../load-watch";
 import { outDir } from "../scan";
 import { deadLinks } from "./budgets";
 import { fenceVerdict, isNetworkFlap } from "./fence";
@@ -92,6 +93,21 @@ export async function placeholderLinks(page: Page): Promise<string[]> {
     [...document.querySelectorAll("a[href]")].map((a) => (a as HTMLAnchorElement).href),
   );
   return deadLinks(hrefs);
+}
+
+/**
+ * Opens `path` and waits for `shown`. A load that stalls fails as before, and the report names
+ * the requests that never finished and the ones that failed, the clue to why.
+ */
+export async function openAndSee(page: Page, path: string, shown: (page: Page) => Locator) {
+  const load = watchLoad(page);
+  await page.goto(path);
+  try {
+    await expectFlow(shown(page)).toBeVisible();
+  } catch (error) {
+    note(`${path} açılışı takıldı; ${load.report()}`);
+    throw error;
+  }
 }
 
 /** First contentful paint of the page's current document, in ms (null before it painted). */
