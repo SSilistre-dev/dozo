@@ -453,15 +453,93 @@
     },
     {
       "file": "apps/web/index.html",
+      "find": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta name=\"theme-color\"",
+      "replace": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:type\" content=\"website\" />\n    <meta property=\"og:title\" content=\"Dozo\" />\n    <meta property=\"og:description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:image\" content=\"https://dozo-site.ssilistre.dev/og.png\" />\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"theme-color\"",
+      "reason": "a link to the app shared in a chat or a post shows the Dozo card; the image is the landing site's published one (dozo/landing/og.png)"
+    },
+    {
+      "file": "apps/web/index.html",
       "find": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />",
       "replace": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\"/>\n    <link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\" />",
       "reason": "the Dozo mark switches ink with the browser colour scheme; upstream has no SVG favicon, so link the mapped favicon.svg (the PNG/ICO stay as fallbacks)"
     },
     {
       "file": "packages/auth/src/email.tsx",
-      "find": "                rakazo\n              </Text>",
-      "replace": "                dozo\n              </Text>",
-      "reason": "lowercase text wordmark in every mail header without a hero image"
+      "find": "import { webLightTokens as lightTokens, webDarkTokens } from \"@rakazo/ui-tokens\";",
+      "replace": "import {\n  DozoFooter,\n  DozoHeader,\n  EMAIL_FONT,\n  lightTokens,\n  webDarkTokens,\n} from \"./dozo-email-shell.js\";",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: every account mail takes the Dozo palette (solid hex, light and dark), font, header and footer from one fork file"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "  Hr,\n  Html,\n  Img,\n  Link,\n  render,",
+      "replace": "  Html,\n  Img,\n  render,",
+      "reason": "Dozo mail shell: the rule and the unsubscribe link moved into the shell's footer, so these two imports are unused"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "          fontFamily: \"Arial, Helvetica, sans-serif\",",
+      "replace": "          fontFamily: EMAIL_FONT,",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: the theme's sans stack, ending in the mail-safe fonts"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "            borderRadius: \"12px\",\n            border: `1px solid ${lightTokens.border}`,",
+      "replace": "            borderRadius: \"16px\",\n            border: `1px solid ${lightTokens.border}`,",
+      "reason": "Dozo mail shell: the card takes the theme's radius"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "            {image ? null : (\n              // Text, not a hosted logo: self-hosted servers send these too, and must not call out.\n              <Text\n                style={{\n                  margin: \"0 0 24px\",\n                  fontSize: \"22px\",\n                  fontWeight: 600,\n                  letterSpacing: \"-0.5px\",\n                }}\n              >\n                rakazo\n              </Text>\n            )}",
+      "replace": "            {image ? null : <DozoHeader />}",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: the header of every mail without a hero image is the mark and the lowercase wordmark; the mark is loaded only from the sending server's own public origin, never from another host"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "            {unsubscribeUrl ? (\n              <>\n                <Hr style={{ borderColor: lightTokens.border, marginTop: \"28px\" }} />\n                <FinePrint>\n                  <Link href={unsubscribeUrl} style={{ color: lightTokens.mutedForeground }}>\n                    {emailText(locale)(\"Unsubscribe\")}\n                  </Link>\n                </FinePrint>\n              </>\n            ) : null}",
+      "replace": "            <DozoFooter\n              locale={locale}\n              unsubscribe={\n                unsubscribeUrl\n                  ? { href: unsubscribeUrl, label: emailText(locale)(\"Unsubscribe\") }\n                  : undefined\n              }\n            />",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: every mail ends with the same footer (unsubscribe when the mail has one, privacy and terms in the reader's language, the operator and the contact address)"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "  \"Invite a friend\": \"Bir arkadaşını davet et\",",
+      "replace": "  \"Invite a friend\": \"Bir arkadaşınızı davet edin\",",
+      "reason": "Turkish mails address the reader as siz; the referral mail mixed sen and siz"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "    \"Bir arkadaşını Rakazo'ya davet et: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da sen bir ay ücretsiz kazanırsın.\",",
+      "replace": "    \"Bir arkadaşınızı Dozo’ya davet edin: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da siz bir ay ücretsiz kazanırsınız.\",",
+      "reason": "Turkish mails address the reader as siz; the referral mail mixed sen and siz"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "  \"Your saved computer files will be deleted\": \"Kayıtlı bilgisayar dosyaların silinecek\",",
+      "replace": "  \"Your saved computer files will be deleted\": \"Kayıtlı bilgisayar dosyalarınız silinecek\",",
+      "reason": "Turkish mails address the reader as siz; the file deletion mail used sen next to its siz button"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "    \"Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.\",",
+      "replace": "    \"Yeniden abone olmazsanız kayıtlı bilgisayar dosyalarınız {date} tarihinde silinecek.\",",
+      "reason": "Turkish mails address the reader as siz; the file deletion mail used sen next to its siz button"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "    \"Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.\",",
+      "replace": "    \"Bir plan seçmezseniz kayıtlı bilgisayar dosyalarınız {date} tarihinde silinecek.\",",
+      "reason": "Turkish mails address the reader as siz; the file deletion mail used sen next to its siz button"
     },
     {
       "file": "packages/auth/src/welcome-email.tsx",
