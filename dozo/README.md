@@ -232,8 +232,8 @@ Accepted by the owner for now, stated here once:
   screen to put it beside.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
-  succeeds. It is upstream's ownership check. The e2e suite marks it as expected and fails the day it
-  stops happening. On the Linux host of `dozo/deploy/`, where the home is a named volume, the first
+  succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and
+  does not require it). On the Linux host of `dozo/deploy/`, where the home is a named volume, the first
   boot succeeded.
 
 ## Licence and attribution

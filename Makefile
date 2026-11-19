@@ -21,6 +21,12 @@ down:
 # Not part of qa. See dozo/e2e/README.md.
 e2e:
 	@dozo/e2e/run.sh
+.PHONY: canli
+# The safe live smoke run: CANLI_URL=https://... make canli (no default). A throwaway account,
+# read-only steps, deleted at the end. Last line CANLI: PASS|FAIL (n senaryo); exit 0 or 2.
+# Report in dozo/.stage/canli/. See dozo/e2e/README.md.
+canli:
+	@dozo/e2e/canli.sh
 .PHONY: token-kiyas
 # Offline token benchmark against a fake model; rewrites dozo/metrics/token-baseline.json and ends
 # with a TOKEN: line. Optional DOZO_TOKEN_PRICING=<file>. See dozo/metrics/token-kiyas.sh.

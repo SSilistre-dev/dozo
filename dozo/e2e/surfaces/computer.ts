@@ -3,39 +3,38 @@ import { expect } from "../fixtures";
 import { dismiss, ensureComputerAwake, openBot, openBotPanel } from "../ui";
 
 /**
- * FINDING (functional, not brand): on this host the first start of a team's computer answers 500.
- * `docker logs dozo-supervisor-1`: POST /computers 500; `docker logs dozo-api-1`:
- * computer.provision_failed "computer home is not usable by uid 1000; run sudo chown -R 1000:1000
- * /data/homes/team-... or use Compose data-init". A second attempt (Retry screen) starts it.
- * `mustOccur` keeps this honest: the day the first start works, this surface fails and says so.
+ * Upstream's first start of a new team computer can answer 500 on macOS Docker Desktop or Colima
+ * bind mounts ("computer home is not usable by uid 1000"; dozo/README.md, Status and known limits);
+ * a retry starts it. On Linux it does not happen, so it is allowed, not required.
  */
-const FIRST_START_FAILS = {
+const FIRST_START_ON_MACOS = {
   pattern: /500 POST \/rpc\/computer\/boot/,
-  reason:
-    "supervisor: computer home is not usable by uid 1000 (first start of a new team computer)",
-  mustOccur: true,
+  reason: "upstream's first start on macOS bind mounts (computer home not usable by uid 1000)",
 };
 
 export const computer: Surface[] = [
   {
-    name: "computer: first start from the bot panel (fails on this host)",
+    name: "computer: first start from the bot panel",
     group: "computer",
     once: true,
-    expect5xx: [FIRST_START_FAILS],
-    async reach({ page, world, scan, note }) {
+    slow: 240_000,
+    expect5xx: [FIRST_START_ON_MACOS],
+    async reach({ page, world, scan }) {
       await openBot(page, world.chiefId, "Chief");
       await openBotPanel(page);
       await scan("asleep");
+      // Waking opens the computer's own window; once its screen is up the panel says Awake.
       await page.getByTestId("computer-preview-open").click();
-      await expect(page.getByText("Internal server error")).toBeVisible({ timeout: 60_000 });
-      await scan("failed start (visible error)");
-      note(
-        "first start: POST /rpc/computer/boot 500, the card shows 'Internal server error' and 'Retry screen'",
-      );
+      await expect(page.getByRole("button", { name: "Take control" })).toBeVisible({
+        timeout: 180_000,
+      });
+      await page.keyboard.press("Escape");
+      await expect(page.getByText("Awake", { exact: true })).toBeVisible();
+      await scan("awake");
     },
   },
   {
-    name: "computer: screen after a retry, full window, teach a task",
+    name: "computer: full window, teach a task",
     group: "computer",
     once: true,
     slow: 240_000,

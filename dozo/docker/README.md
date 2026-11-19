@@ -256,7 +256,9 @@ The stage area is `dozo/.stage/` (git-ignored): `src/`, `dozo.env`, `stage.compl
   `RAKAZO_WEB_BIND` (rewritten on every run), the web port and origin keys (`DOZO_WEB_PORT`, `WEB_ORIGIN`, `BETTER_AUTH_URL`,
   `RAKAZO_EXTRA_AUTH_ORIGINS`) and `MCP_ALLOW_PRIVATE_ENDPOINT=true` (added to existing files too):
   the stack binds to 127.0.0.1 on your own machine, so a local OpenAI-compatible endpoint is
-  allowed. Never commit it.
+  allowed. When it names no admin it gets `RAKAZO_ADMIN_EMAILS=admin@dozo-e2e.test`, the account
+  `make e2e` signs up and verifies for its admin scenarios (a reserved `.test` address). Never
+  commit it.
 - The web port: `DOZO_WEB_PORT` in your shell only seeds the first generation (the first free port
   from it; `up` prints the address it ends up answering at). Afterwards the env file is the single source: the port is kept
   while our web container runs, a busy port is replaced by the next free one, and every key the file
