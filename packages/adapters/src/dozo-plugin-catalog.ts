@@ -26,7 +26,7 @@ export const CATALOG_REFRESH_MS = 30 * 60_000;
  * with each failure in a row up to `CATALOG_RETRY_MAX_MS`. The count lives in the stored row.
  */
 export const CATALOG_RETRY_MS = 5 * 60_000;
-export const CATALOG_RETRY_MAX_MS = 6 * 60 * 60_000;
+const CATALOG_RETRY_MAX_MS = 6 * 60 * 60_000;
 /**
  * A registry listing fewer than half the plugins it listed last time is kept at its last listing
  * (a broken or emptied index must not wipe it), unless it has done so this many refreshes in a row.

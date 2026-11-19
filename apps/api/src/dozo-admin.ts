@@ -41,7 +41,7 @@ import type { DeviceStore } from "./user-devices.js";
 import { revokeUserDevices } from "./user-devices.js";
 
 export const DOZO_ADMIN_USERS_PAGE = 50;
-export const DOZO_ADMIN_COMPUTERS_LIMIT = 100;
+const DOZO_ADMIN_COMPUTERS_LIMIT = 100;
 /** The list's orders; the id breaks ties so the cursor is stable. */
 const USERS_ORDER = {
   newest: [{ createdAt: "desc" }, { id: "desc" }],
@@ -49,7 +49,7 @@ const USERS_ORDER = {
   email: [{ email: "asc" }, { id: "asc" }],
 } as const satisfies Record<DozoAdminUsersSort, object[]>;
 /** How far ahead an admin can end a granted plan. */
-export const DOZO_ADMIN_PLAN_MAX_YEARS = 5;
+const DOZO_ADMIN_PLAN_MAX_YEARS = 5;
 
 /** The end of a granted plan: required, in the future and within `DOZO_ADMIN_PLAN_MAX_YEARS`. */
 function grantEnd(value: string | undefined, now: Date): Date {

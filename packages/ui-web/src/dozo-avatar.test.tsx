@@ -396,8 +396,12 @@ describe("DozoAvatar characters", () => {
     const faces = markup.map((html) => html.slice(html.indexOf("<svg")));
     expect(new Set(faces).size).toBe(DOZO_CHARACTERS.length);
     for (const html of markup) expect(html).toContain('class="da-eyes"');
-    expect(markup[DOZO_CHARACTERS.indexOf("yuki")]).toContain('class="da-line" d="M34.31 42.22Q37.07 38.46 40.66 41.44"');
-    expect(markup[DOZO_CHARACTERS.indexOf("mochi")]).toContain('transform="translate(33 30) rotate(26)"');
+    expect(markup[DOZO_CHARACTERS.indexOf("yuki")]).toContain(
+      'class="da-line" d="M34.31 42.22Q37.07 38.46 40.66 41.44"',
+    );
+    expect(markup[DOZO_CHARACTERS.indexOf("mochi")]).toContain(
+      'transform="translate(33 30) rotate(26)"',
+    );
   });
 });
 

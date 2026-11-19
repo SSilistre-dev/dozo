@@ -38,7 +38,7 @@ export type BillingRow = {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
 };
-export type GrantRow = { organizationId: string; tier: string; endsAt: Date };
+type GrantRow = { organizationId: string; tier: string; endsAt: Date };
 
 export interface SummaryInput {
   members: number;

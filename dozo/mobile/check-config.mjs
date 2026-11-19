@@ -15,7 +15,15 @@ import { fileURLToPath } from "node:url";
 const KEPT = ['"scheme":"rakazo"', "Rakazo.icon", '"targetName":"RakazoWidgets"'];
 
 /** Upstream's Expo account, EAS project, update channel, bundle ids, domain and GitHub owner. */
-const FOREIGN = [/inbox-?zero/i, /elie222/i, /u\.expo\.dev/i, /07f7eb04/i, /com\.rakazo/i, /rakazo\.(?:com|ai|app)/i, /apps\.apple\.com/i];
+const FOREIGN = [
+  /inbox-?zero/i,
+  /elie222/i,
+  /u\.expo\.dev/i,
+  /07f7eb04/i,
+  /com\.rakazo/i,
+  /rakazo\.(?:com|ai|app)/i,
+  /apps\.apple\.com/i,
+];
 
 /** The problems of one config object; `apiUrl` is the server a build was made for, when known. */
 export function problems(input, apiUrl) {
@@ -25,8 +33,14 @@ export function problems(input, apiUrl) {
   const id = config.ios?.bundleIdentifier ?? "";
   want(config.name === "Dozo", `name is ${JSON.stringify(config.name)}, not "Dozo"`);
   want(config.slug === "dozo", `slug is ${JSON.stringify(config.slug)}, not "dozo"`);
-  want(config.owner === undefined, `owner is set (${config.owner}): the build belongs to an Expo account`);
-  want(config.extra?.eas?.projectId === undefined, "extra.eas.projectId is set: push tokens and updates use that EAS project");
+  want(
+    config.owner === undefined,
+    `owner is set (${config.owner}): the build belongs to an Expo account`,
+  );
+  want(
+    config.extra?.eas?.projectId === undefined,
+    "extra.eas.projectId is set: push tokens and updates use that EAS project",
+  );
   want(config.updates?.url === undefined, `updates.url is set (${config.updates?.url})`);
   want(config.updates?.enabled === false, "updates.enabled is not false");
   want(/^[a-z0-9]+(\.[a-z0-9-]+)+$/.test(id), `ios.bundleIdentifier is ${JSON.stringify(id)}`);
@@ -34,15 +48,24 @@ export function problems(input, apiUrl) {
   const extensions = config.extra?.eas?.build?.experimental?.ios?.appExtensions ?? [];
   want(extensions.length > 0, "no app extensions listed");
   for (const extension of extensions) {
-    want(extension.bundleIdentifier?.startsWith(`${id}.`), `extension ${extension.targetName} has id ${extension.bundleIdentifier}, outside ${id}.*`);
+    want(
+      extension.bundleIdentifier?.startsWith(`${id}.`),
+      `extension ${extension.targetName} has id ${extension.bundleIdentifier}, outside ${id}.*`,
+    );
     for (const group of extension.entitlements?.["com.apple.security.application-groups"] ?? []) {
-      want(group === `group.${id}`, `extension ${extension.targetName} uses app group ${group}, not group.${id}`);
+      want(
+        group === `group.${id}`,
+        `extension ${extension.targetName} uses app group ${group}, not group.${id}`,
+      );
     }
   }
   if (apiUrl) {
     const host = new URL(apiUrl).hostname;
     for (const domain of config.ios?.associatedDomains ?? []) {
-      want(domain.split(":")[1]?.split("?")[0] === host, `associated domain ${domain} is not the server ${host}`);
+      want(
+        domain.split(":")[1]?.split("?")[0] === host,
+        `associated domain ${domain} is not the server ${host}`,
+      );
     }
   }
   let text = JSON.stringify(config);
@@ -77,5 +100,7 @@ if (isMain()) {
   }
   for (const line of found) console.error(`[mobile] config: ${line}`);
   if (found.length) process.exit(2);
-  console.log("[mobile] config: Dozo values, no upstream account, project, update channel or domain");
+  console.log(
+    "[mobile] config: Dozo values, no upstream account, project, update channel or domain",
+  );
 }
