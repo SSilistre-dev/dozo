@@ -4016,6 +4016,42 @@
         "packages/i18n/src/dozo-server-text.ts"
       ],
       "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
+      "replace": "import type { RouterContext } from \"./context.js\";\nimport { requireBotRunEditor, requireGroupRemover } from \"./dozo-bot-edit.js\";\nimport { computerContext",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared bots: the import of the three rules below"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "const existing = await repos.getBot(context.actor, input.botId);\n        if (input.sectionId) {",
+      "replace": "const existing = await repos.getBot(context.actor, input.botId);\n        await requireBotRunEditor(deps.prisma, context.actor, existing, input);\n        if (input.sectionId) {",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared bots: a bot's triggered runs act as its creator, so only the creator or the space owner changes the settings that decide what those runs do"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "const bot = await repos.getBot(context.actor, input.botId);\n        if (!bot.thread) throw new IsolationError();\n        await commitBotUpdate({",
+      "replace": "const bot = await repos.getBot(context.actor, input.botId);\n        await requireBotRunEditor(deps.prisma, context.actor, bot);\n        if (!bot.thread) throw new IsolationError();\n        await commitBotUpdate({",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared bots: restoring earlier instructions is an instructions change, kept to the creator or the space owner"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "remove: authed.groups.remove.handler(async ({ context, input }) => {\n        const removed",
+      "replace": "remove: authed.groups.remove.handler(async ({ context, input }) => {\n        await requireGroupRemover(deps.prisma, context.actor, input.groupId);\n        const removed",
+      "requires": [
+        "apps/api/src/routes/dozo-bot-edit.ts"
+      ],
+      "reason": "shared groups: any member archives a group, only its creator or the space owner deletes it for good, as for bots"
     }
   ],
   "assets": {
