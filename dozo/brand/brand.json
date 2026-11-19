@@ -3820,6 +3820,24 @@
       "reason": "announcement: the app's one live stream carries a content-free signal when the site settings change, so the mobile home re-reads the announcement at once, as the web app does"
     },
     {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  const limitCents = Math.max(\n    baseLimitCents,\n",
+      "replace": "  const limitCents = Math.max(\n    // A past-due subscription keeps its plan but opens no computer allowance until it is paid.\n    billing?.status === \"past_due\" ? 0 : baseLimitCents,\n",
+      "reason": "plans: a past-due subscription gets no hosted computer hours until its payment goes through; its other plan rights stay as upstream's grace period has them, and an admin's grant still counts"
+    },
+    {
+      "file": "packages/adapters/src/stripe-billing.ts",
+      "find": "      payment_method_collection: \"always\",\n      allow_promotion_codes: true,\n",
+      "replace": "      payment_method_collection: \"always\",\n",
+      "reason": "plans: the deployment hands out no promotion codes, so checkout shows no code field"
+    },
+    {
+      "file": "packages/adapters/src/stripe-billing.ts",
+      "find": "        adaptive_pricing: { enabled: false },\n        allow_promotion_codes: true,\n",
+      "replace": "        adaptive_pricing: { enabled: false },\n",
+      "reason": "plans: the deployment hands out no promotion codes, so the plan checkout shows no code field"
+    },
+    {
       "file": "packages/auth/src/index.ts",
       "find": "from \"./identity-confirmation.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
       "replace": "from \"./identity-confirmation.js\";\nimport { verifyEmailAdapter } from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
