@@ -127,6 +127,18 @@ tier's, whatever a trial or a monthly credit plan gives, and an organization wit
 the monthly reset date. The table has no row security, as `billing_accounts` has none: the plan is
 read inside a member's own requests and uploads.
 
+Billing mails an organization's owners, the members who manage billing, in English or Turkish
+(`packages/auth/src/dozo-billing-email.tsx`; no unsubscribe link, as they are not marketing): once
+when a payment fails (again only after it was paid up in between), once when a subscription is set
+to cancel (the day the plan lasts until), and three days before the plan in force ends without
+renewing, a canceled subscription's or a granted plan's (the plan that follows). Each is decided
+from the stored state after every sync (`apps/api/src/dozo-billing-lifecycle.ts`) and kept to one
+mail per owner and occasion by an `email_sends` row; the reminder is a Graphile job keyed per
+organization, run by the API (`packages/adapters/src/dozo-job-queue.ts`), which mails only if that
+is still the end when it runs. Without account email nothing is sent. Receipts are the payment
+provider's own mails, turned on in its settings, so none is written here. While a subscription is
+past due, web and mobile show the owner one line with Manage billing.
+
 A plan picked on the landing page follows the visitor to checkout. Its sign-up links carry
 `?plan=premium|premium_plus&period=month|year`; the web sign-up page keeps a valid pick in session
 storage for the tab and drops both parameters from the address (anything else, Free included, is
