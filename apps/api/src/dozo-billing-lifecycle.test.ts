@@ -80,6 +80,7 @@ function memoryStore() {
     jobs: new Map<string, { task: string; runAt: Date; payload: object }>(),
     removed: [] as string[],
     purged: 0,
+    checked: [] as string[],
     clock: NOW.getTime(),
   };
   /** Each organization's lock: the end of the transaction that holds it. */
@@ -117,6 +118,9 @@ function memoryStore() {
     },
     async addJob(task, key, runAt, payload) {
       tx.writes.push(() => db.jobs.set(key, { task, runAt, payload }));
+    },
+    async markReminderChecked(organizationId) {
+      tx.writes.push(() => db.checked.push(organizationId));
     },
   });
   const store: BillingMailStore = {
@@ -674,6 +678,8 @@ describe("the hourly sweep", () => {
     });
     await billing.sweep();
     expect(db.jobs.get(`${PLAN_ENDING_TASK}:org`)?.runAt).toEqual(inDays(7));
+    // Looked at, so it goes behind the others next time.
+    expect(db.checked).toEqual(["org"]);
     expect(db.mails.get("orphan")?.status).toBe("failed");
     expect(db.purged).toBe(1);
     await tasks[BILLING_SWEEP_TASK]?.(undefined);

@@ -11,6 +11,9 @@ CREATE TABLE "dozo_billing_notices" (
     "organizationId" TEXT NOT NULL,
     "pastDueTold" BOOLEAN NOT NULL DEFAULT false,
     "canceledSubscriptionId" TEXT,
+    -- When the hourly sweep last looked for the organization's missing reminder: it starts from
+    -- the longest ago, so organizations that never need one cannot crowd out those that do.
+    "reminderCheckedAt" TIMESTAMPTZ(3),
     "updatedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "dozo_billing_notices_pkey" PRIMARY KEY ("organizationId")
@@ -23,7 +26,8 @@ ALTER TABLE "dozo_billing_notices" ADD CONSTRAINT "dozo_billing_notices_organiza
 INSERT INTO "dozo_billing_notices" ("organizationId", "pastDueTold", "canceledSubscriptionId")
 SELECT
     "organizationId",
-    "status" IN ('past_due', 'unpaid'),
+    -- A customer that never subscribed has no status, which counts as nothing overdue.
+    COALESCE("status" IN ('past_due', 'unpaid'), false),
     CASE
         WHEN "cancelAtPeriodEnd" AND "status" IN ('trialing', 'active', 'past_due')
         THEN "subscriptionId"

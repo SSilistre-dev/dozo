@@ -36,6 +36,8 @@ export const MAIL_CLAIM_MS = 5 * MINUTE_MS;
 const MAIL_BACKUP_MS = MAIL_CLAIM_MS + MINUTE_MS;
 /** A pending mail with no backup job left after this long is given up on. */
 const MAIL_ABANDONED_MS = DAY_MS;
+/** One sweep looks at most this many organizations for a missing reminder; the next, the rest. */
+const GAPS_PER_SWEEP = 500;
 /** Settled mails are kept this long, then deleted. */
 const MAIL_RETENTION_MS = 90 * DAY_MS;
 
@@ -271,13 +273,15 @@ export function createBillingLifecycle(deps: BillingLifecycleDeps) {
     }
   }
 
-  async function queueReminder(organizationId: string) {
+  /** `checked`: the sweep looked, so the organization goes behind the others next time. */
+  async function queueReminder(organizationId: string, { checked = false } = {}) {
     await store.transaction(async (tx) => {
       const [account, grant] = await Promise.all([
         tx.subscription(organizationId),
         tx.grant(organizationId),
       ]);
       await scheduleReminder(tx, organizationId, account, grant);
+      if (checked) await tx.markReminderChecked(organizationId);
     });
   }
 
@@ -321,8 +325,9 @@ export function createBillingLifecycle(deps: BillingLifecycleDeps) {
    */
   async function sweep() {
     await runAsSystem("sweep billing mails", async () => {
-      for (const organizationId of await store.reminderGaps(`${PLAN_ENDING_TASK}:`))
-        await queueReminder(organizationId).catch(deps.onError);
+      const gaps = await store.reminderGaps(`${PLAN_ENDING_TASK}:`, GAPS_PER_SWEEP);
+      for (const organizationId of gaps)
+        await queueReminder(organizationId, { checked: true }).catch(deps.onError);
       const abandoned = await store.failAbandoned(`${BILLING_MAIL_TASK}:`, MAIL_ABANDONED_MS);
       if (abandoned.length)
         getLogger().warn("billing mails given up after their retries", {

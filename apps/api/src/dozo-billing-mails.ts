@@ -49,6 +49,8 @@ export interface BillingTx {
     kind: MailKind;
     details: MailDetails;
   }): Promise<string | null>;
+  /** Notes that the sweep looked for the organization's missing reminder now. */
+  markReminderChecked(organizationId: string): Promise<void>;
   /** Queues a job that commits with the transaction, replacing the one queued under `key`. */
   addJob(task: string, key: string, runAt: Date, payload: object): Promise<void>;
 }
@@ -64,10 +66,12 @@ export interface BillingMailStore {
   /** The organization a provider's customer bills, or null for one this server does not know. */
   organizationOf(customerId: string): Promise<string | null>;
   /**
-   * Organizations whose plan in force may end without renewing (an unexpired grant, a live
-   * subscription set to cancel) and that have no live job under `keyPrefix` + their id.
+   * Up to `limit` organizations whose plan in force may end without renewing (an unexpired grant,
+   * a live subscription set to cancel) and that have no live job under `keyPrefix` + their id, the
+   * ones the sweep looked at longest ago (or never) first. Some never need a job (a grant under a
+   * subscription that renews); marking each one checked moves it behind the rest.
    */
-  reminderGaps(keyPrefix: string): Promise<string[]>;
+  reminderGaps(keyPrefix: string, limit: number): Promise<string[]>;
   /**
    * Marks failed the pending mails older than `olderThanMs` whose backup job (`keyPrefix` + id) is
    * gone or out of tries; their ids.
@@ -79,8 +83,6 @@ export interface BillingMailStore {
 
 /** Graphile's backoff grows with each try; ten spread a failing job over a few hours. */
 const MAX_ATTEMPTS = 10;
-/** One sweep queues at most this many missing reminders; the next sweep takes the rest. */
-const GAPS_PER_SWEEP = 500;
 
 /**
  * The store on the database. `jobs` is false where there is no job queue to add to (an in-memory
@@ -146,6 +148,13 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
         RETURNING "id"`;
       return rows[0]?.id ?? null;
     },
+    async markReminderChecked(organizationId) {
+      await tx.$executeRaw`
+        INSERT INTO "dozo_billing_notices" ("organizationId", "reminderCheckedAt")
+        VALUES (${organizationId}, CURRENT_TIMESTAMP)
+        ON CONFLICT ("organizationId")
+        DO UPDATE SET "reminderCheckedAt" = EXCLUDED."reminderCheckedAt"`;
+    },
     async addJob(task, key, runAt, payload) {
       if (!jobs) return;
       // As upstream's publisher adds a job in a transaction; the date goes as text with its zone.
@@ -193,7 +202,7 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
       });
       return account?.organizationId ?? null;
     },
-    async reminderGaps(keyPrefix) {
+    async reminderGaps(keyPrefix, limit) {
       if (!jobs) return [];
       const rows = await prisma.$queryRaw<{ organizationId: string }[]>`
         SELECT ending."organizationId" FROM (
@@ -203,11 +212,14 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
           WHERE "cancelAtPeriodEnd" AND "status" IN ('trialing', 'active', 'past_due')
             AND "currentPeriodEndsAt" > CURRENT_TIMESTAMP
         ) AS ending
+        LEFT JOIN "dozo_billing_notices" AS notice
+          ON notice."organizationId" = ending."organizationId"
         WHERE NOT EXISTS (
           SELECT 1 FROM graphile_worker.jobs AS job
           WHERE job.key = ${keyPrefix} || ending."organizationId"
             AND job.attempts < job.max_attempts)
-        LIMIT ${GAPS_PER_SWEEP}`;
+        ORDER BY notice."reminderCheckedAt" ASC NULLS FIRST, ending."organizationId" ASC
+        LIMIT ${limit}`;
       return rows.map((row) => row.organizationId);
     },
     async failAbandoned(keyPrefix, olderThanMs) {

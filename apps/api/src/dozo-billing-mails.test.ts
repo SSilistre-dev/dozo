@@ -95,6 +95,13 @@ describe("sqlMailStore", () => {
     ]);
   });
 
+  it("notes when the sweep looked at an organization", async () => {
+    const { prisma, calls } = fakePrisma();
+    await (await inside(prisma)).markReminderChecked("org");
+    expect(calls[0]?.sql).toContain('DO UPDATE SET "reminderCheckedAt"');
+    expect(calls[0]?.values).toEqual(["org"]);
+  });
+
   it("queues and removes jobs only where there is a queue", async () => {
     const queued = fakePrisma();
     const store = sqlMailStore(queued.prisma, { jobs: true });
@@ -159,7 +166,7 @@ describe("sqlMailStore", () => {
   it("sweeps only where there is a queue, and purges settled mails", async () => {
     const { prisma, calls } = fakePrisma([[{ organizationId: "org" }], [{ id: "mail-1" }]]);
     const store = sqlMailStore(prisma, { jobs: true });
-    expect(await store.reminderGaps("dozo.plan-ending:")).toEqual(["org"]);
+    expect(await store.reminderGaps("dozo.plan-ending:", 500)).toEqual(["org"]);
     expect(await store.failAbandoned("dozo.billing-mail:", 86_400_000)).toEqual(["mail-1"]);
     expect(await store.purge(7_776_000_000)).toBe(1);
     expect(calls.map((call) => call.values)).toEqual([
@@ -169,7 +176,7 @@ describe("sqlMailStore", () => {
     ]);
     const none = fakePrisma();
     const without = sqlMailStore(none.prisma, { jobs: false });
-    expect(await without.reminderGaps("p")).toEqual([]);
+    expect(await without.reminderGaps("p", 1)).toEqual([]);
     expect(await without.failAbandoned("p", 1)).toEqual([]);
     expect(none.calls).toEqual([]);
   });

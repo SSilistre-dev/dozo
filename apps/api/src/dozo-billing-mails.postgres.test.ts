@@ -250,7 +250,7 @@ describePostgres("billing mails (PostgreSQL)", () => {
     const organizationId = await organization({ status: "active", cancelAtPeriodEnd: true });
     const store = sqlMailStore(prisma, { jobs: true });
     const prefix = `dozo.plan-ending-test-${suffix}:`;
-    expect(await store.reminderGaps(prefix)).toContain(organizationId);
+    expect(await store.reminderGaps(prefix, 10_000)).toContain(organizationId);
     await store.transaction((tx) =>
       tx.addJob(
         "dozo.test-none",
@@ -259,7 +259,7 @@ describePostgres("billing mails (PostgreSQL)", () => {
         {},
       ),
     );
-    expect(await store.reminderGaps(prefix)).not.toContain(organizationId);
+    expect(await store.reminderGaps(prefix, 10_000)).not.toContain(organizationId);
     await prisma.$executeRaw`SELECT graphile_worker.remove_job(${`${prefix}${organizationId}`}::text)`;
     const id = await store.transaction((tx) =>
       tx.addMail({
@@ -279,11 +279,48 @@ describePostgres("billing mails (PostgreSQL)", () => {
     expect(await mails(organizationId)).toEqual([]);
   });
 
+  it("reaches a missing reminder however many organizations never need one", async () => {
+    const store = sqlMailStore(prisma, { jobs: true });
+    const endsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    // Granted Premium under a Premium subscription that renews: a candidate that never gets a job.
+    const never: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const id = await organization({ status: "active" });
+      await prisma.dozoPlanGrant.create({ data: { organizationId: id, tier: "pro", endsAt } });
+      never.push(id);
+    }
+    // A plan granted alone: its reminder is what went missing.
+    const missing = await organization({ status: null });
+    await prisma.dozoPlanGrant.create({ data: { organizationId: missing, tier: "max", endsAt } });
+    const prefix = `dozo.plan-ending-rotation-${suffix}:`;
+    const total = (await store.reminderGaps(prefix, 10_000)).length;
+    // Sweeps of one at a time, each looking at what it was given, as the real sweep does.
+    const seen: string[] = [];
+    for (let round = 0; round < total; round++) {
+      const [next] = await store.reminderGaps(prefix, 1);
+      if (!next) break;
+      seen.push(next);
+      await store.transaction((tx) => tx.markReminderChecked(next));
+    }
+    expect(new Set(seen).size).toBe(total);
+    expect(seen).toContain(missing);
+    for (const id of never) expect(seen.filter((seenId) => seenId === id)).toHaveLength(1);
+    // And the real sweep queues the missing one, and nothing for those that never need one.
+    const { billing } = lifecycle();
+    await billing.sweep();
+    await billing.stop();
+    const keys = await prisma.$queryRaw<Array<{ key: string }>>`
+      SELECT key FROM graphile_worker.jobs WHERE key = ANY(${[missing, ...never].map((id) => `dozo.plan-ending:${id}`)})`;
+    expect(keys.map((row) => row.key)).toEqual([`dozo.plan-ending:${missing}`]);
+  });
+
   it("counts what was overdue or canceled when it shipped as told", async () => {
     if (!SEED) throw new Error("The migration's seed was not found");
     const overdue = await organization({ status: "past_due" });
     const canceled = await organization({ status: "active", cancelAtPeriodEnd: true });
     const ended = await organization({ status: "canceled", cancelAtPeriodEnd: true });
+    // A customer that never subscribed has no status.
+    const never = await organization({ status: null });
     // The seed again, for these organizations only, rolled back after.
     const seeded = await prisma
       .$transaction(async (tx) => {
@@ -296,15 +333,16 @@ describePostgres("billing mails (PostgreSQL)", () => {
             canceledSubscriptionId: string | null;
           }>
         >`SELECT "organizationId", "pastDueTold", "canceledSubscriptionId" FROM "dozo_billing_notices"
-          WHERE "organizationId" = ANY(${[overdue, canceled, ended]})`;
+          WHERE "organizationId" = ANY(${[overdue, canceled, ended, never]})`;
         throw Object.assign(new Error("rollback"), { rows });
       })
-      .catch((error: { rows?: unknown }) => error.rows);
+      .catch((error: { rows?: unknown }) => error.rows ?? error);
     expect(seeded).toEqual(
       expect.arrayContaining([
         { organizationId: overdue, pastDueTold: true, canceledSubscriptionId: null },
         { organizationId: canceled, pastDueTold: false, canceledSubscriptionId: `sub-${canceled}` },
         { organizationId: ended, pastDueTold: false, canceledSubscriptionId: null },
+        { organizationId: never, pastDueTold: false, canceledSubscriptionId: null },
       ]),
     );
     // Seeded as told, the first sync after mails nothing.
