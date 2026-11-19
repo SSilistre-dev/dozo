@@ -58,6 +58,11 @@ cleanup() {
   ids=(); while IFS= read -r f; do ids+=("$f"); done < <(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)
   [ "${#ids[@]}" -eq 0 ] || docker rm -f "${ids[@]}" >/dev/null 2>&1 || true
   # The lock goes last: it is what keeps another run out of $OUT and node_modules until they are cleared.
+  # Each scenario's last screen outlives the run: dozo/.stage/e2e/shots (replaced every run).
+  if [ -d "$OUT/shots" ]; then
+    rm -rf "$REPO/dozo/.stage/e2e/shots" && mkdir -p "$REPO/dozo/.stage/e2e" \
+      && cp -R "$OUT/shots" "$REPO/dozo/.stage/e2e/shots" && say "screenshots: dozo/.stage/e2e/shots"
+  fi
   if [ "${DOZO_E2E_KEEP:-}" = 1 ]; then say "kept $OUT (DOZO_E2E_KEEP=1)"
   else
     [ -d "$OUT" ] && find "$OUT" -mindepth 1 -delete 2>/dev/null
@@ -105,13 +110,36 @@ docker exec "$API" node -e "fetch('http://$MODEL_IP:8787/v1/models').then(r=>pro
   || { say "the api container cannot reach the model stub at $MODEL_IP:8787"; exit 2; }
 say "offline model: http://$MODEL_IP:8787/v1 on network $NETWORK"
 
-# npm's download cache lives in a named Docker volume (nothing on the host); the container runs as
-# the invoking user, so a new volume is opened for writing once. If that fails, run without a cache.
-CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
-if ! docker volume inspect dozo-e2e-npm >/dev/null 2>&1; then
-  docker volume create dozo-e2e-npm >/dev/null 2>&1 \
-    && drun "dozo-e2e-npm-$$" -v dozo-e2e-npm:/npm "$NODE_IMAGE" chmod 777 /npm >/dev/null 2>&1 || CACHE=()
+# The admin of the admin scenarios: the first address in the api's RAKAZO_ADMIN_EMAILS (build.sh
+# writes admin@dozo-e2e.test when the env file names none). It is signed up once through the auth
+# API and its address marked verified in the database, as an admin's must be; an existing account
+# keeps its password. The auth rate limit's rows are cleared, so repeated runs within 15 minutes
+# are not refused (production keeps the limit: it is the stack's, cleared only here, locally).
+PG="$(docker ps -q --filter label=com.docker.compose.project=dozo --filter label=com.docker.compose.service=postgres | head -n1)"
+[ -n "$PG" ] || { say "no running postgres container in project dozo; start the stack with: make up"; exit 2; }
+psql_run() { docker exec "$PG" sh -c 'psql -v ON_ERROR_STOP=1 -qtA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"' _ "$1"; }
+ADMIN_EMAIL="$(docker exec "$API" printenv RAKAZO_ADMIN_EMAILS 2>/dev/null | cut -d, -f1 | tr -d ' ' | tr '[:upper:]' '[:lower:]')"
+ADMIN_PASSWORD="dozo-e2e-admin-pass-12"   # a local test account on a loopback stack, not a secret
+psql_run 'DELETE FROM "rateLimit"' >/dev/null || { say "cannot clear the auth rate limit in the database"; exit 2; }
+if [ -n "$ADMIN_EMAIL" ]; then
+  case "$ADMIN_EMAIL" in *[!a-z0-9@.+_-]*) say "unexpected characters in RAKAZO_ADMIN_EMAILS"; exit 2 ;; esac
+  code="$(curl -s -o /dev/null -m 20 -w '%{http_code}' -X POST "$BASE/api/auth/sign-up/email" \
+    -H 'content-type: application/json' -H "origin: $BASE" \
+    --data "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\",\"name\":\"E2E Admin\"}" || true)"
+  case "$code" in 200|422) ;; *) say "admin sign-up answered HTTP ${code:-none}"; exit 2 ;; esac
+  psql_run "UPDATE \"user\" SET \"emailVerified\" = true WHERE lower(email) = '$ADMIN_EMAIL'" >/dev/null \
+    || { say "cannot mark the admin's email verified"; exit 2; }
+  say "admin: $ADMIN_EMAIL"
+else
+  say "the api has no RAKAZO_ADMIN_EMAILS: the admin scenarios will fail; run make up again (build.sh adds one)"
 fi
+
+# npm's download cache lives in a named Docker volume (nothing on the host); the container runs as
+# the invoking user, so the volume is opened for writing. If that fails, run without a cache.
+CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
+# Opened on every run, not only when created: a volume another tool made is root-owned otherwise.
+{ docker volume inspect dozo-e2e-npm >/dev/null 2>&1 || docker volume create dozo-e2e-npm >/dev/null 2>&1; } \
+  && drun "dozo-e2e-npm-$$" -v dozo-e2e-npm:/npm "$NODE_IMAGE" chmod -R a+rwX /npm >/dev/null 2>&1 || CACHE=()
 REUSE=()
 if [ -n "${DOZO_E2E_REUSE_DIR:-}" ]; then REUSE=(-v "$DOZO_E2E_REUSE_DIR:/reuse:ro" -e DOZO_E2E_REUSE_DIR=/reuse); fi
 
@@ -129,10 +157,11 @@ if [ "$(uname -s)" = Linux ]; then NET=(--network host); FORWARD=0; fi
 say "browser: docker ($IMAGE), base $BASE, forwarder=$FORWARD"
 # The quoted script is expanded by the container's shell, not this one (SC2016).
 # shellcheck disable=SC2016
-drun "$NAME" --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}" \
+drun "$NAME" --cpus "${DOZO_E2E_CPUS:-3}" --memory "${DOZO_E2E_MEMORY:-6g}" --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}" \
   -e HOME=/tmp -e DOZO_E2E_BASE_URL="$BASE" -e DOZO_E2E_OUT=/out \
   -e DOZO_E2E_ARGS="${DOZO_E2E_ARGS:-}" -e FORWARD="$FORWARD" -e PORT="${PORT:-80}" -e VERSION="$VERSION" \
   -e DOZO_E2E_MODEL_URL="http://$MODEL_IP:8787/v1" -e DOZO_E2E_SRC=/webapp-src \
+  -e DOZO_E2E_ADMIN_EMAIL="$ADMIN_EMAIL" -e DOZO_E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   -v "$SUITE:/suite:ro" -v "$OUT:/out" -v "$WEBSRC:/webapp-src:ro" ${REUSE[@]+"${REUSE[@]}"} ${CACHE[@]+"${CACHE[@]}"} \
   "$IMAGE" bash -c '
     set -e

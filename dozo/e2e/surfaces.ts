@@ -31,9 +31,9 @@ export const NOT_REACHABLE: { what: string; reason: string }[] = [
       "desktop app only (the shortcuts dialog lists Find in chat only for the Electron host); the desktop app is out of scope here",
   },
   {
-    what: "tool-call cards (ask, approval, secret ask, sub-agent, tool activity), artifact viewer, shared pages",
+    what: "tool-call cards other than an approval (ask, secret ask, sub-agent), artifact viewer, shared pages",
     reason:
-      "the offline model answers with text only, so no bot ever calls a tool or makes a file; /app/artifacts/:id and /p/:slug are scanned with unknown ids only",
+      "the offline model calls a tool only when a scenario asks it to (flows: one approval); no bot makes a file, so /app/artifacts/:id and /p/:slug are scanned with unknown ids only",
   },
   {
     what: "voice calls and dictation",
@@ -50,9 +50,9 @@ export const NOT_REACHABLE: { what: string; reason: string }[] = [
       "a second account would spend more of the 10 credential calls per 15 minutes; WebAuthn and social providers need devices or accounts that are not on this stack",
   },
   {
-    what: "admin pages with real data, billing, paywall, wallet, messaging and computer provider settings",
+    what: "a real payment provider, paywall, wallet, messaging and computer provider settings",
     reason:
-      "RAKAZO_ADMIN_EMAILS and the billing, wallet and messaging providers are not configured; the pages are opened with those flags faked in the browser, so only their own copy is scanned",
+      "the billing, wallet and messaging providers are not configured: billing's screens are scenarios with the server's answers faked in the browser (flows/billing.spec.ts) and the payment page is make canli's; the other pages are opened with their flags faked, so only their own copy is scanned",
   },
   { what: "mobile app", reason: "out of scope (Expo app)" },
 ];

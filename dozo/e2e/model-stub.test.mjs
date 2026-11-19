@@ -123,3 +123,67 @@ test("only a literal stream:true streams; false, missing, a string answer JSON",
     assert.equal((await response.json()).object, "chat.completion");
   }
 });
+
+test("plan: a tool the request offers is called; its result ends with TOOL_DONE", async () => {
+  const { plan, TOOL_DONE } = await import("./model-stub.mjs");
+  const tools = [{ type: "function", function: { name: "create_space" } }];
+  const ask = { role: "user", content: 'Please [e2e-tool:create_space {"name":"E2E"}]' };
+  assert.deepEqual(plan({ messages: [ask], tools }), {
+    tool: { name: "create_space", arguments: '{"name":"E2E"}' },
+  });
+  assert.deepEqual(
+    plan({ messages: [{ role: "user", content: [{ type: "text", text: ask.content }] }], tools }),
+    {
+      tool: { name: "create_space", arguments: '{"name":"E2E"}' },
+    },
+  );
+  assert.deepEqual(
+    plan({ messages: [ask, { role: "assistant" }, { role: "tool", content: "ok" }], tools }),
+    {
+      text: TOOL_DONE,
+    },
+  );
+  assert.deepEqual(plan({ messages: [ask], tools: [{ name: "other" }] }), {
+    text: "The tool create_space is not offered. Offered: other.",
+  });
+  assert.deepEqual(
+    plan({
+      messages: [{ role: "user", content: "[e2e-tool:forget_memory]" }],
+      tools: [{ name: "forget_memory" }],
+    }),
+    {
+      tool: { name: "forget_memory", arguments: "{}" },
+    },
+  );
+  const b64 = Buffer.from('{"url":"https://a.invalid/"}').toString("base64");
+  assert.deepEqual(
+    plan({
+      messages: [{ role: "user", content: `[e2e-tool:web_fetch b64:${b64}]` }],
+      tools: [{ name: "web_fetch" }],
+    }),
+    {
+      tool: { name: "web_fetch", arguments: '{"url":"https://a.invalid/"}' },
+    },
+  );
+  assert.equal(plan({ messages: [{ role: "user", content: "hi" }] }).text.length > 0, true);
+});
+
+test("streams a tool call as chunks that end with finish_reason tool_calls", async () => {
+  const response = await fetch(`${base}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      stream: true,
+      messages: [{ role: "user", content: '[e2e-tool:create_space {"name":"E2E"}]' }],
+      tools: [{ type: "function", function: { name: "create_space" } }],
+    }),
+  });
+  const events = (await response.text())
+    .split("\n\n")
+    .filter((line) => line.startsWith("data: {"))
+    .map((line) => JSON.parse(line.slice(6)));
+  const calls = events.flatMap((event) => event.choices[0].delta.tool_calls ?? []);
+  assert.equal(calls[0].function.name, "create_space");
+  assert.equal(calls.map((call) => call.function.arguments).join(""), '{"name":"E2E"}');
+  assert.equal(events.at(-1).choices[0].finish_reason, "tool_calls");
+});

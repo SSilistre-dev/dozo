@@ -88,13 +88,18 @@ export const routes: Surface[] = [
     },
   },
   {
-    name: "Dozo admin page (refused, then the admin flag and its lists faked in the browser)",
+    name: "Dozo admin page (refused to a member, also with the admin flag faked in the browser)",
     group: "routes",
     covers: ["route:/admin/*"],
+    landsOn: {
+      "route:/admin/*": { path: "/admin/:section", reason: "a section's address under /admin" },
+    },
     expect5xx: [],
     async reach({ page, goto, scan, note }) {
-      // The stack's account is no admin: the address answers like one that does not exist.
+      // The crawl's account is no admin: the address answers like one that does not exist.
       await goto("/admin");
+      await expect(page.getByText("Page not found")).toBeVisible();
+      await goto("/admin/settings");
       await expect(page.getByText("Page not found")).toBeVisible();
       // With only the flag faked, the page asks and the real api refuses.
       await asAdmin(page);
@@ -106,65 +111,8 @@ export const routes: Surface[] = [
       await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible();
       await expect(page.getByRole("alert")).toBeVisible();
       await scan("refused by the api");
-      const account = (id: string, more: Record<string, unknown> = {}) => ({
-        id,
-        email: `${id}@example.test`,
-        name: id,
-        createdAt: "2026-01-05T09:00:00.000Z",
-        lastSeenAt: "2026-03-02T09:00:00.000Z",
-        bots: 2,
-        runningComputers: 0,
-        suspended: false,
-        banned: false,
-        plan: { tier: "standard", grantedUntil: null, ends: null },
-        ...more,
-      });
-      await page.route("**/rpc/dozoAdmin/users", (route) =>
-        route.fulfill({
-          json: {
-            json: {
-              signupsOpen: false,
-              total: 3,
-              matching: 3,
-              users: [
-                account("ada", { runningComputers: 1 }),
-                account("grace", { lastSeenAt: null, bots: 0, suspended: true }),
-                account("linus"),
-              ],
-              nextCursor: null,
-            },
-          },
-        }),
-      );
-      await page.route("**/rpc/dozoAdmin/computers", (route) =>
-        route.fulfill({
-          json: {
-            json: {
-              total: 1,
-              computers: [
-                {
-                  id: "e2e-computer",
-                  email: "ada@example.test",
-                  bots: ["Scout", "Quill"],
-                  runningSince: "2026-03-02T08:00:00.000Z",
-                },
-              ],
-            },
-          },
-        }),
-      );
-      await goto("/admin");
-      await expect(page.getByTestId("admin-status")).toContainText("Sign-up closed");
-      await expect(page.getByTestId("admin-computers")).toContainText("Scout, Quill");
-      await expect(page.getByTestId("admin-users").getByRole("listitem")).toHaveCount(3);
-      await scan("lists faked");
-      await page.getByRole("button", { name: "Suspend", exact: true }).first().click();
-      await expect(page.getByRole("alertdialog")).toContainText("Suspend ada@example.test?");
-      await scan("suspend confirmation");
-      await page.getByRole("button", { name: "Cancel" }).click();
-      await expect(page.getByRole("alertdialog")).toBeHidden();
       note(
-        "the stack has no admin (RAKAZO_ADMIN_EMAILS is not set): the flag and the two lists are faked in the browser, nothing is suspended or stopped",
+        "a member with the admin flag faked is refused by the api; the admin pages with real data are the admin scenarios in flows/admin.spec.ts",
       );
     },
   },

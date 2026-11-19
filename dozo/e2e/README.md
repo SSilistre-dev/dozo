@@ -95,6 +95,7 @@ that resolves to a private address).
   - `inventory` (`inventory.spec.ts`): the inventory check and its own tests, no browser session.
   - `scanner` (`scanner.spec.ts`): tests the scanner against planted names.
   - `web-manifest` (`manifest.spec.ts`): the favicon and web manifest are served and branded.
+  - `flows` (`flows/*.spec.ts`): the scenarios (below); depends on `setup` only.
   - `look.spec.ts` checks the Dozo look where the app shows it: the theme file is loaded and follows
     the appearance, bots are drawn as Dozo characters (sidebar, chat, bot panel, sign-in), the hooks
     of `dozo-shell.css` still match (pills, wordmark, pattern, tinted row), and a first visit is dark.
@@ -107,8 +108,8 @@ that resolves to a private address).
   theme only, it creates data), `slow` (longer timeout), `signedOut` (starts without a session),
   `blankByDesign` (a reason; the screen renders nothing on purpose, so the content floor skips it),
   `expect5xx` (server errors the surface is expected to meet, each with its reason; `mustOccur` fails
-  the surface the day the defect is gone). The known first-start defect (`dozo/README.md`, Status and
-  known limits) is one such entry.
+  the surface the day the defect is gone). The known first-start defect on macOS (`dozo/README.md`,
+  Status and known limits) is one such entry, without `mustOccur`: it does not happen on Linux.
 - `scan.ts`: what is scanned for `rakazo`, `getrakazo`, `elie222` and two upstream identifiers, the
   Discord invite code `RWwKa2Sn7h` and the App Store id `id6801531099` (any capitalisation): document
   title, visible text, hidden text, `alt`, `title`, `aria-label`, `aria-description`, `placeholder`,
@@ -148,14 +149,128 @@ that resolves to a private address).
   every `dozo/e2e/*.test.mjs`. The reporter and the runner themselves need Playwright and run only
   in `make e2e`.
 
+## Scenarios (`flows/`)
+
+The crawl proves every screen opens and carries no upstream name; the scenarios in `flows/*.spec.ts`
+prove the features work. Project `flows` (depends on `setup` only), light theme, the setup's account unless a
+scenario makes its own (`flows/accounts.ts`: `newAccount`, the admin's `adminBrowser`). Every
+scenario (`flows/flow.ts`):
+
+- fails on a console error, an uncaught page error or a 4xx/5xx answer, unless the scenario allows
+  that exact answer with a reason (`guard.allow`). A known defect is allowed with a reason that
+  starts with `FINDING:`, so it is listed, not hidden;
+- saves its last screen to `dozo/.stage/e2e/shots/<project>--<title>.png` (run.sh copies it out
+  before it empties `.out/`);
+- waits for conditions, never a fixed time, and puts back what it changed (a quota, an announcement,
+  the approval mode), so three runs in a row start the same.
+
+The admin: build.sh writes `RAKAZO_ADMIN_EMAILS=admin@dozo-e2e.test` into a stage's env file that
+names no admin; run.sh signs that address up through the auth API, marks it verified in the
+database and passes it to the container (`DOZO_E2E_ADMIN_EMAIL`/`_PASSWORD`, a local test account).
+A stack started before that change needs `make up` again. run.sh also clears the auth rate limit's
+rows, so repeated runs are not refused (only on this local stack).
+
+The model stub calls a tool when the newest user message holds `[e2e-tool:<name> <args>]` (args as
+JSON or `b64:<base64 JSON>`) and the request offers that tool, then answers its result with a fixed
+line; the chat scenario uses it for a tool call that waits for the owner's approval.
+
+There is no payment provider on this stack: billing's server answers are faked in the browser from
+the server's own plans (`fakeBilling`, prices read from `dozoAdmin/plans/list`, never written in the
+suite); the checkout is recorded and answered with the `?billing=canceled` return. Free access
+grants exist only on a billing server, so its four calls are answered in the browser too.
+
+## Coverage
+
+What is checked where, per surface. "crawl" = opened and scanned (`surfaces/`), "flow" = a scenario
+does the feature end to end (`flows/`), "flow (faked)" = a scenario with the server's answer faked
+in the browser because this stack lacks the provider, "live" = `make canli` only. 48 inventory keys
+(routes, settings sections, overlays, onboarding steps; the inventory check fails on a new one) plus
+the features below: 37 surfaces in the table, 35 checked, 2 not (each row is one surface).
+
+| Surface | Scenario | Status |
+| --- | --- | --- |
+| Sign-up | real form, Turkish; lands on the model step | flow; live |
+| Sign-in / sign-out | sign out from the account menu, sign in again | flow |
+| Sign-in errors | wrong password, address already registered: Turkish lines | flow; live |
+| Forgot / reset password | request (this stack says recovery is not configured), invalid token form | flow; live (form) |
+| Onboarding: model step | connect the offline model (setup); every provider's form | crawl; setup |
+| Onboarding: "Later" | new account goes on to the app with its first bot | flow; live |
+| Onboarding: survey, first bot | opened | crawl |
+| Chat | message, the model's reply | flow; crawl |
+| Chat: tool call | the call waits on an Allow card in "ask" mode, runs after Allow, the model sees the result | flow |
+| Chat: message actions, composer menus, slash, mention | opened | crawl |
+| Bots | create, rename, delete | flow; crawl (create, panel, avatar, settings) |
+| Scheduled task (routine) | create with a schedule, saved, delete | flow; crawl (editor) |
+| Apps / integrations window | opens, switches category, every logo loads (live: from our own host) | flow; live; crawl |
+| Skills, templates, MCP overlays | opened | crawl |
+| Settings: each section | general, models, approvals, vault, memory, voice, labs, usage, organization open without error | flow; crawl (every popup) |
+| Settings: Models | model roles, provider list, connection forms; live: responses counted | crawl; live |
+| Settings: billing | the server's plans and prices, monthly and yearly | flow (faked); live |
+| Billing: landing plan pick | `?plan=premium_plus&period=year` → Billing opens with it, checkout asks for it | flow (faked) |
+| Billing: `?billing=canceled` | Billing opens again, the address is cleaned | flow (faked); live |
+| Billing: payment page | opens with the right plan and amount, no card entered | live |
+| Plan limit: Free computer | waking is refused, the plan line and Upgrade | live |
+| Plan limit: shared space | a full space refuses the upload with its line | flow (faked) |
+| Computer | start from the bot panel, stop from the admin list, asleep again | flow; crawl (full window, teach) |
+| Admin: members | search, plan filter, give Premium, take it back, suspend, status filter, delete | flow |
+| Admin: site settings | announcement saved, a member sees the line, cleared | flow |
+| Admin: plans | a quota changed and put back | flow |
+| Admin: free access | create, edit, delete | flow (faked) |
+| Admin: billing, funnel | counts shown, the three periods switch | flow |
+| Admin: plugins | opened | crawl |
+| Admin: a member is refused | `/admin` answers like an unknown address | crawl |
+| Admin, live | every section opens read only (optional admin mode) | live |
+| 404 | signed in and signed out | flow; crawl; live |
+| Spaces, groups, invite, board, artifacts, shared pages, callbacks | opened (unknown ids) | crawl |
+| Dead links | `dozo.example`, `OWNER/`, own links answering | live |
+| `/assets` caching | public, a year, immutable; the HTML is not | live |
+| Performance budgets | cold first paint, Apps click to window and first tile, Models responses | live (warns only) |
+| Settings: updates | desktop app only | not checked |
+| E-mails, voice, real integrations, passkeys, mobile | see Not covered | not checked |
+
+## Live smoke run (`make canli`)
+
+`CANLI_URL=https://... make canli` (no default address, so it never runs against the live site by
+accident) runs `canli.sh`: the Playwright image with the same module cache, `--cpus 3 --memory 6g`,
+the browser in Turkish, `canli/playwright.config.ts`. Only safe steps, limited to an account it
+makes itself:
+
+- `canli/public.spec.ts`: no account. Cold first paint of `/sign-in`, the wrong-password line, the
+  reset form, the 404 page, placeholder links (`dozo.example`, `OWNER/`) and our own links on the
+  public pages (each must answer), `/assets` cache headers.
+- `canli/account.spec.ts`, in order: sign up `info+dozo-probe<random>@ssilistre.dev` → model step →
+  "Daha sonra"; the same address again is refused in Turkish; cold first paint of `/app`; the Apps
+  window (time to window and first tile, every logo loaded from our own host); Settings → Models
+  (responses counted); Billing and `?billing=canceled`; the payment page opens with the plan's
+  name and the amount the server's own status gives (no card entered); Free's computer refusal;
+  then the account is deleted with its own session and proven gone (the same sign-in answers 401,
+  no session left). A failed step does not skip the next ones. The global teardown
+  (`canli/cleanup.ts`) is the finally step: whatever failed, an account the run made is deleted
+  there; what happened is the report's "Temizlik" line.
+- `canli/admin.spec.ts`: only with `DOZO_CANLI_ADMIN_EMAIL` and `DOZO_CANLI_ADMIN_PASSWORD` in the
+  environment (passed to the container by name, never written to a file or a log). Signs in and
+  opens every admin section read only. No picture of member lists is kept.
+
+Every live scenario uses the scenario fixture above (console and 4xx/5xx watch, a picture) plus a
+fence (`canli/live.ts`) that aborts and fails on any admin, grant or billing-portal call whose name
+changes something. No payment, no ban, no admin action. A billing scenario skips itself on a server
+that does not bill.
+
+Output in `dozo/.stage/canli/`: `RAPOR.md`, `rapor.html`, `shots/`, `results.json`. The probe's
+password and session files are removed when the run ends. Budgets (`canli/budgets.ts`, tested
+offline by `canli-budgets.test.mjs`) only warn: the numbers come from one machine over the public
+internet. The last line is `CANLI: PASS|FAIL (n senaryo)`; exit 0 or 2.
+
 ## Rate limit
 
-The auth endpoints allow 10 credential calls per 15 minutes (`packages/auth/src/index.ts`). A run
-spends three: the one sign-up, one wrong password, one sign-in. The suite reports a 429 with its
-retry-after if the limit is hit.
+The auth endpoints allow 10 credential calls per 15 minutes per address and path
+(`packages/auth/src/index.ts`). run.sh clears the stack's rate-limit rows before each run; a run
+spends about eight sign-ups and five sign-ins (the admin signs in once, its session is reused). The
+suite reports a 429 with its retry-after if the limit is hit. `make canli` spends two sign-ups and
+up to three sign-ins on the live site.
 
 ## Not covered
 
 See `NOT_REACHABLE` in `surfaces.ts` (also printed by every run): e-mails (no mail server), desktop
-only screens, tool-call cards (the model answers with text only), voice, real integrations, a
-second account, admin and billing with real data, the mobile app.
+only screens, voice, real integrations, passkeys and social sign-in, the mobile app. Tool calls,
+admin pages with real data and billing's screens are now covered by the scenarios above.

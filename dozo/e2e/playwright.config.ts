@@ -43,5 +43,14 @@ export default defineConfig<{ theme: "light" | "dark" }>({
       use: { ...desktop, theme: "dark", storageState: `${out}/auth.json` },
     },
     { name: "web-manifest", testMatch: "manifest.spec.ts", use: desktop },
+    // What a person does, end to end (flows/*.spec.ts): light theme, the setup's account by
+    // default; a scenario that needs another account makes it. It depends on setup only, so a
+    // failed crawl surface does not skip the scenarios.
+    {
+      name: "flows",
+      testMatch: "flows/*.spec.ts",
+      dependencies: ["setup"],
+      use: { ...desktop, storageState: `${out}/auth.json` },
+    },
   ],
 });

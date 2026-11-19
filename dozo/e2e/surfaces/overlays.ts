@@ -14,7 +14,10 @@ export const overlays: Surface[] = [
       await expect(page).toHaveURL(/[?&]skills/);
       await expect(page.getByRole("button", { name: "Close skills" })).toBeVisible();
       await scan("skills list");
-      await page.getByRole("button", { name: /^Dozo\s*Built-in/ }).click();
+      await page
+        .getByRole("button", { name: /Built-in/ })
+        .first()
+        .click();
       await scan("a built-in skill");
       await gotoStable(page, `/app/${world.chiefId}?skills`);
       await page.getByRole("button", { name: "New skill" }).click();

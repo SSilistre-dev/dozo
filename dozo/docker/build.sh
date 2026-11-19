@@ -190,6 +190,9 @@ genenv() {
   setenv MCP_ALLOW_PRIVATE_ENDPOINT true
   # The bind address is ours too (loopback only), written on every run so an older file follows it.
   setenv RAKAZO_WEB_BIND 127.0.0.1
+  # The admin of the e2e suite (dozo/e2e/run.sh signs it up and verifies it), a reserved .test
+  # address nobody can own. Only added when the file names no admin, so a chosen one is kept.
+  grep -q '^RAKAZO_ADMIN_EMAILS=.' "$ENVF" || setenv RAKAZO_ADMIN_EMAILS admin@dozo-e2e.test
   # Keep the port if our own web container is running; otherwise pick a free one, starting from
   # DOZO_WEB_PORT of the caller (a seed only: once the file has the port, the file decides).
   # The service list is captured first: `dc ps | grep -q` under pipefail can fail on SIGPIPE.
