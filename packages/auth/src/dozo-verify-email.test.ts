@@ -1,6 +1,5 @@
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { verifyEmailAdapter } from "./dozo-verify-email.js";
 import { createAuth } from "./index.js";
 
 // Better Auth's real routes over its offline memory adapter, as the ban list tests do.
@@ -28,13 +27,15 @@ const webOrigin = "http://web.example.test";
 const email = "ada@example.test";
 const password = "offline-password-1234";
 
-function fixture() {
+function fixture({ origin = baseURL, web = webOrigin } = {}) {
   const messages: TransactionalEmail[] = [];
   const devices = vi.fn(async () => ({ count: 0 }));
   const prisma = {
     authData: { user: [], account: [], session: [], verification: [] },
-    // The ban list is empty.
-    $queryRaw: vi.fn(async () => []),
+    // The verification mail limit lets every mail go; the ban list is empty.
+    $queryRaw: vi.fn(async (sql: TemplateStringsArray) =>
+      sql.join("").includes("rateLimit") ? [{ count: 1 }] : [],
+    ),
     $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
@@ -53,8 +54,8 @@ function fixture() {
   };
   const auth = createAuth(prisma as never, {
     secret: "offline-auth-secret-at-least-32-characters",
-    baseURL,
-    webOrigin,
+    baseURL: origin,
+    webOrigin: web,
     signupsEnabled: "true",
     signupAllowlist: "",
     email: {
@@ -71,28 +72,51 @@ function fixture() {
   });
   const call = (path: string, body?: unknown, cookie?: string) =>
     auth.handler(
-      new Request(`${baseURL}/api/auth${path}`, {
+      new Request(`${origin}/api/auth${path}`, {
         method: body ? "POST" : "GET",
         headers: {
           "content-type": "application/json",
-          origin: webOrigin,
+          origin: web,
           ...(cookie ? { cookie } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
       }),
     );
-  const cookieOf = (response: Response) =>
-    (response.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
-  const signUp = async () => {
-    const response = await call("/sign-up/email", { email, password, name: "Ada" });
+  const cookieOf = (response: Response, jar = "") => {
+    const cookies = new Map(
+      jar
+        .split("; ")
+        .filter(Boolean)
+        .map((pair) => [pair.split("=")[0], pair] as const),
+    );
+    for (const set of response.headers.getSetCookie?.() ?? []) {
+      const pair = set.split(";")[0] as string;
+      const name = pair.split("=")[0] as string;
+      if (/max-age=0/i.test(set) || pair.endsWith("=")) cookies.delete(name);
+      else cookies.set(name, pair);
+    }
+    return [...cookies.values()].join("; ");
+  };
+  const signUp = async (address = email, cookie?: string) => {
+    const response = await call(
+      "/sign-up/email",
+      { email: address, password, name: "Ada" },
+      cookie,
+    );
     expect(response.status).toBe(200);
     return cookieOf(response);
   };
-  const signIn = () => call("/sign-in/email", { email, password });
+  const signIn = (cookie?: string) => call("/sign-in/email", { email, password }, cookie);
   /** Opens the link of the last verification mail, in a browser holding `cookie` or none. */
-  const openLink = (cookie?: string) => {
-    const mail = messages.findLast((message) => message.subject.startsWith("Verify"));
-    const url = new URL(mail!.text.match(/http:\/\/\S+/)![0]);
+  const openLink = async (cookie?: string, edit = (_url: URL) => {}) => {
+    // The mail goes out in the background.
+    const mail = await vi.waitFor(() => {
+      const found = messages.findLast((message) => message.text.includes("/verify-email?"));
+      if (!found) throw new Error("no verification mail yet");
+      return found;
+    });
+    const url = new URL(mail.text.match(/https?:\/\/\S+/)![0]);
+    edit(url);
     return call(`${url.pathname.replace("/api/auth", "")}${url.search}`, undefined, cookie);
   };
   const user = async (cookie: string) =>
@@ -101,27 +125,48 @@ function fixture() {
 }
 
 describe("the emailed verification link", () => {
-  it("opened where the account is not signed in, leaves only the mailbox as a way in", async () => {
+  it("opened where the account is not signed in, verifies nothing and takes nothing away", async () => {
     const f = fixture();
     const earlier = await f.signUp();
+
+    const opened = await f.openLink();
+
+    expect(opened.status).toBe(302);
+    // The link's result page, which asks this browser to sign in.
+    expect(opened.headers.get("location")).toMatch(
+      new RegExp(`^${webOrigin}/verify-email\\?v=[^&]+$`),
+    );
     expect(await f.user(earlier)).toMatchObject({ email, emailVerified: false });
-
-    expect((await f.openLink()).status).toBeLessThan(400);
-
-    expect(await f.user(earlier)).toBeNull();
-    expect((await f.signIn()).status).toBe(401);
-    expect(f.devices).toHaveBeenCalled();
-    // The owner signs in with a code, verified.
-    expect(
-      (await f.call("/email-otp/send-verification-otp", { email, type: "sign-in" })).status,
-    ).toBe(200);
-    const otp = f.messages.at(-1)!.text.match(/\b\d{6}\b/)![0];
-    const signedIn = await f.call("/sign-in/email-otp", { email, otp });
-    expect(signedIn.status).toBe(200);
-    expect(await f.user(f.cookieOf(signedIn))).toMatchObject({ email, emailVerified: true });
+    expect((await f.signIn()).status).toBe(200);
+    expect(f.devices).not.toHaveBeenCalled();
   });
 
-  it("opened where the account is signed in, keeps that session and the password", async () => {
+  it("finishes once that browser signs in to the account", async () => {
+    const f = fixture();
+    const earlier = await f.signUp();
+    const browser = f.cookieOf(await f.openLink());
+
+    const signedIn = await f.signIn(browser);
+
+    expect(signedIn.status).toBe(200);
+    const after = f.cookieOf(signedIn, browser);
+    expect(await f.user(after)).toMatchObject({ email, emailVerified: true });
+    // The account kept its first session, and the browser keeps nothing of the link.
+    expect(await f.user(earlier)).toMatchObject({ emailVerified: true });
+    expect(after).not.toMatch(/verify/);
+  });
+
+  it("is not finished by a sign-in in another browser", async () => {
+    const f = fixture();
+    const session = await f.signUp();
+    await f.openLink();
+
+    expect((await f.signIn()).status).toBe(200);
+
+    expect(await f.user(session)).toMatchObject({ emailVerified: false });
+  });
+
+  it("opened where the account is signed in, verifies it and keeps everything", async () => {
     const f = fixture();
     const session = await f.signUp();
 
@@ -143,21 +188,45 @@ describe("the emailed verification link", () => {
     expect((await f.signIn()).status).toBe(200);
   });
 
-  it("leaves an account another opening verified meanwhile as it is", async () => {
-    const internalAdapter = {
-      findUserByEmail: vi.fn(async () => ({ user: { id: "ada", emailVerified: true } })),
-      findAccounts: vi.fn(),
-      deleteAccount: vi.fn(),
-      deleteUserSessions: vi.fn(),
-      updateUserByEmail: vi.fn(async () => ({ id: "ada" })),
-    };
-    const revoke = vi.fn();
-    const adapter = verifyEmailAdapter({ context: { internalAdapter } } as never, revoke);
+  it("opened without a page to return to, answers that signing in is needed", async () => {
+    const f = fixture();
+    const earlier = await f.signUp();
 
-    await adapter.updateUserByEmail(email, { emailVerified: true });
+    const opened = await f.openLink(undefined, (url) => url.searchParams.delete("callbackURL"));
 
-    expect(internalAdapter.updateUserByEmail).toHaveBeenCalledWith(email, { emailVerified: true });
-    expect(internalAdapter.deleteUserSessions).not.toHaveBeenCalled();
-    expect(revoke).not.toHaveBeenCalled();
+    expect(opened.status).toBe(403);
+    expect(await f.user(earlier)).toMatchObject({ emailVerified: false });
+  });
+
+  it("holds the link only over https where the server is served over https", async () => {
+    const f = fixture({ origin: "https://auth.example.test", web: "https://web.example.test" });
+    await f.signUp();
+
+    const opened = await f.openLink();
+
+    expect(opened.headers.get("set-cookie")).toMatch(/dozo_pending_verification=.*; Secure/);
+  });
+
+  it("is not finished by that browser signing in to another account", async () => {
+    const f = fixture();
+    const ada = await f.signUp();
+    const browser = f.cookieOf(await f.openLink());
+
+    const other = await f.signUp("bob@example.test", browser);
+
+    expect(await f.user(other)).toMatchObject({ emailVerified: false });
+    expect(await f.user(ada)).toMatchObject({ emailVerified: false });
+  });
+
+  it("is not finished by a held link that does not check out", async () => {
+    const f = fixture();
+    const session = await f.signUp();
+    const browser = f
+      .cookieOf(await f.openLink())
+      .replace(/dozo_pending_verification=[^;]+/, "dozo_pending_verification=not-a-link");
+
+    expect((await f.signIn(browser)).status).toBe(200);
+
+    expect(await f.user(session)).toMatchObject({ emailVerified: false });
   });
 });

@@ -3966,20 +3966,29 @@
     {
       "file": "packages/auth/src/index.ts",
       "find": "from \"./identity-confirmation.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
-      "replace": "from \"./identity-confirmation.js\";\nimport { verifyEmailAdapter } from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
+      "replace": "from \"./identity-confirmation.js\";\nimport { finishPendingVerification, verifyEmailAdapter } from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
       "requires": [
         "packages/auth/src/dozo-verify-email.ts"
       ],
-      "reason": "verification link: the import of the rule below"
+      "reason": "verification link: the import of the rules below"
     },
     {
       "file": "packages/auth/src/index.ts",
       "find": "                    }\n                  : {}),\n                // Authorize at lookup: bearer conversion happens after before\n",
-      "replace": "                    }\n                  : {}),\n                ...(ctx.path === \"/verify-email\"\n                  ? verifyEmailAdapter(ctx, (userId) => revokeUnprovenCredentials(prisma, userId))\n                  : {}),\n                // Authorize at lookup: bearer conversion happens after before\n",
+      "replace": "                    }\n                  : {}),\n                ...(ctx.path === \"/verify-email\"\n                  ? verifyEmailAdapter(ctx)\n                  : {}),\n                // Authorize at lookup: bearer conversion happens after before\n",
       "requires": [
         "packages/auth/src/dozo-verify-email.ts"
       ],
-      "reason": "verification link: opened outside the account's own signed-in browser, it leaves the account only what the mailbox proves, as a sign-in code and a password reset already do"
+      "reason": "verification link: opened outside a browser signed in to the account, it verifies nothing and changes nothing; that browser keeps the link until it signs in to the account, which finishes the verification"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "      after: createAuthMiddleware(async (ctx) => {\n        const accountEvent = ACCOUNT_EVENT_PATHS[ctx.path];\n",
+      "replace": "      after: createAuthMiddleware(async (ctx) => {\n        await finishPendingVerification(ctx);\n        const accountEvent = ACCOUNT_EVENT_PATHS[ctx.path];\n",
+      "requires": [
+        "packages/auth/src/dozo-verify-email.ts"
+      ],
+      "reason": "verification link: a sign-in from the browser that opened the account's link finishes the verification the link held"
     }
   ],
   "assets": {
