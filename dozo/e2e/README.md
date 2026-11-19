@@ -59,8 +59,11 @@ Options:
 | `DOZO_E2E_SUITE` | this directory | Another suite directory |
 | `DOZO_E2E_REUSE_DIR` | unset | Development: a directory with `auth.json` and `world.json`; skips the sign-up |
 
-`run.sh` itself sets `DOZO_E2E_OUT`, `DOZO_E2E_SRC` and `DOZO_E2E_MODEL_URL` inside the container;
-do not set them.
+`run.sh` itself sets `DOZO_E2E_OUT`, `DOZO_E2E_SRC`, `DOZO_E2E_MODEL_URL` and the
+`DOZO_E2E_VERIFY_*` link variables inside the container; do not set them. The stack sends no mail,
+so for `flows/verify.spec.ts` run.sh makes the two verification links a mail would carry (one valid,
+one expired, for an address only that run uses), signed inside the api container with the api's own
+secret, which is never printed or written.
 
 The app only accepts its configured origin (`127.0.0.1:<port>`), so the browser must see that name.
 Linux: `--network host`. Docker Desktop (macOS): a TCP forwarder inside the container relays
@@ -185,9 +188,9 @@ grants exist only on a billing server, so its four calls are answered in the bro
 
 What is checked where, per surface. "crawl" = opened and scanned (`surfaces/`), "flow" = a scenario
 does the feature end to end (`flows/`), "flow (faked)" = a scenario with the server's answer faked
-in the browser because this stack lacks the provider, "live" = `make canli` only. 48 inventory keys
+in the browser because this stack lacks the provider, "live" = `make canli` only. 49 inventory keys
 (routes, settings sections, overlays, onboarding steps; the inventory check fails on a new one) plus
-the features below: 37 surfaces in the table, 35 checked, 2 not (each row is one surface).
+the features below: 38 surfaces in the table, 36 checked, 2 not (each row is one surface).
 
 | Surface | Scenario | Status |
 | --- | --- | --- |
@@ -195,6 +198,7 @@ the features below: 37 surfaces in the table, 35 checked, 2 not (each row is one
 | Sign-in / sign-out | sign out from the account menu, sign in again | flow |
 | Sign-in errors | wrong password, address already registered: Turkish lines | flow; live |
 | Forgot / reset password | request (this stack says recovery is not configured), invalid token form | flow; live (form) |
+| E-mail verification | sign-up, the reminder line, a real link → verified, a second click still verified, the line gone, signed out → sign-in filled in; expired link → new link asked (no mail: the server's refusal shown); unreadable link | flow (mail capability faked) |
 | Onboarding: model step | connect the offline model (setup); every provider's form | crawl; setup |
 | Onboarding: "Later" | new account goes on to the app with its first bot | flow; live |
 | Onboarding: survey, first bot | opened | crawl |

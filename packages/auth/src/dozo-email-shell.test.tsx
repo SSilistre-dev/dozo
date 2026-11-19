@@ -1,71 +1,32 @@
 /** @jsxRuntime automatic */
 import { render } from "react-email";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DozoFooter, DozoHeader, markUrl } from "./dozo-email-shell.js";
+import { DOZO_MARK, DozoFooter, DozoHeader } from "./dozo-email-shell.js";
 import {
   accountDeletionEmail,
   identityCodeEmail,
   passwordResetEmail,
   signInCodeEmail,
+  verificationEmail,
 } from "./email.js";
 import { welcomeEmail } from "./welcome-email.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("markUrl", () => {
-  it("loads the mark from the server's own public https origin", () => {
-    expect(markUrl("https://app.example.com/")).toBe("https://app.example.com/icon-192.png");
-  });
-
-  it("accepts a public name that merely starts like a private one", () => {
-    expect(markUrl("https://localhost-tools.example.com")).toBe(
-      "https://localhost-tools.example.com/icon-192.png",
-    );
-    expect(markUrl("https://10.example.com")).toBe("https://10.example.com/icon-192.png");
-  });
-
-  it("reads the origin from WEB_ORIGIN", () => {
-    vi.stubEnv("WEB_ORIGIN", "https://app.example.com");
-    expect(markUrl()).toBe("https://app.example.com/icon-192.png");
-  });
-
-  it.each([
-    undefined,
-    "",
-    "not a url",
-    "http://app.example.com",
-    "https://localhost:5173",
-    "https://127.0.0.1",
-    "https://[::1]:8080",
-    "https://10.0.0.5",
-    "https://192.168.1.20",
-    "https://172.16.0.1",
-    "https://169.254.169.254",
-    "https://0x7f.1",
-    "https://2130706433",
-    "https://foo.local",
-    "https://dozo.internal",
-    "https://box.lan",
-    "https://nas.home.arpa",
-    "https://app.localhost",
-    "https://intranet",
-    "https://[fd00::1]",
-    "https://[::ffff:7f00:1]",
-  ])("has no mark for %s", (origin) => {
-    expect(markUrl(origin)).toBeNull();
+describe("DOZO_MARK", () => {
+  it("is a 60 px PNG, carried as base64", () => {
+    const png = Buffer.from(DOZO_MARK.content, "base64");
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
+    expect(png.readUInt32BE(16)).toBe(60);
+    expect(png.readUInt32BE(20)).toBe(60);
+    expect(DOZO_MARK.contentType).toBe("image/png");
   });
 });
 
 describe("DozoHeader", () => {
-  it("shows the mark beside the wordmark", async () => {
-    const html = await render(<DozoHeader mark="https://app.example.com/icon-192.png" />);
-    expect(html).toContain('src="https://app.example.com/icon-192.png"');
-    expect(html).toContain("dozo");
-  });
-
-  it("shows the wordmark alone without a mark", async () => {
-    const html = await render(<DozoHeader mark={null} />);
-    expect(html).not.toContain("<img");
+  it("shows the mark from inside the mail beside the wordmark", async () => {
+    const html = await render(<DozoHeader />);
+    expect(html).toContain(`src="cid:${DOZO_MARK.contentId}"`);
     expect(html).toContain("dozo");
   });
 });
@@ -102,9 +63,9 @@ describe("DozoFooter", () => {
 // The rules in dozo/brand/brand.json put the shell into upstream's mails; this runs on the branded tree.
 describe("branded account mail", () => {
   it("carries the Dozo header, footer and palette in html and plain text", async () => {
-    vi.stubEnv("WEB_ORIGIN", "https://app.example.com");
     const mail = await signInCodeEmail("ada@example.com", "123456", "tr");
-    expect(mail.html).toContain('src="https://app.example.com/icon-192.png"');
+    expect(mail.html).toContain(`src="cid:${DOZO_MARK.contentId}"`);
+    expect(mail.inline).toEqual([DOZO_MARK]);
     expect(mail.html).toContain("#1F1F1F");
     expect(mail.html).not.toContain("Arial, Helvetica, sans-serif;");
     expect(mail.text).toContain("Gizlilik https://dozo-site.ssilistre.dev/tr/privacy/");
@@ -112,7 +73,6 @@ describe("branded account mail", () => {
   });
 
   it("escapes a hostile code and name, and links nothing but the footer", async () => {
-    vi.stubEnv("WEB_ORIGIN", "");
     const hostile = '<script>alert(1)</script><a href="https://evil.example">x</a>';
     const footerLinks = 3; // privacy, terms, contact
     for (const mail of [
@@ -141,5 +101,43 @@ describe("branded account mail", () => {
     );
     expect(mail.text).toContain("Unsubscribe https://app.example.com/unsubscribe");
     expect(mail.headers?.["List-Unsubscribe"]).toBe("<https://app.example.com/unsubscribe>");
+  });
+
+  it("loads no image from anywhere: every image is inside the mail", async () => {
+    for (const mail of [
+      await signInCodeEmail("ada@example.com", "123456"),
+      await accountDeletionEmail("ada@example.com", "123456", "tr"),
+      await identityCodeEmail("ada@example.com", "123456"),
+      await verificationEmail("ada@example.com", "https://app.example.com/verify", "tr"),
+      await passwordResetEmail(
+        { id: "u1", email: "ada@example.com", name: "Ada" },
+        "https://app.example.com/reset",
+      ),
+      await welcomeEmail(
+        { email: "ada@example.com", name: "Ada" },
+        "https://app.example.com/unsubscribe",
+      ),
+    ]) {
+      const sources = [...(mail.html ?? "").matchAll(/<img[^>]*\ssrc="([^"]*)"/g)].map((m) => m[1]);
+      expect(sources).toEqual([`cid:${DOZO_MARK.contentId}`]);
+      expect(mail.html).not.toMatch(/url\(/);
+      expect(mail.inline).toEqual([DOZO_MARK]);
+    }
+  });
+
+  it("says in the verification mail what the link is for, in English and Turkish", async () => {
+    const en = await verificationEmail("ada@example.com", "https://app.example.com/v", "en");
+    expect(en.subject).toBe("Verify your Dozo email");
+    expect(en.text).toContain("Verify the email address for your Dozo account.");
+    expect(en.text).toContain("This link expires in one hour.");
+    expect(en.text).not.toContain("Then return");
+    const tr = await verificationEmail("ada@example.com", "https://app.example.com/v", "tr");
+    expect(tr.subject).toBe("Dozo e-posta adresinizi doğrulayın");
+    expect(tr.text).toContain("Dozo hesabınızın e-posta adresini doğrulayın.");
+    expect(tr.text).toContain("E-postayı doğrula");
+    expect(tr.text).not.toContain("Ardından");
+    expect(tr.html?.indexOf("hesabınızın")).toBeLessThan(
+      tr.html?.indexOf("E-postayı doğrula") ?? 0,
+    );
   });
 });

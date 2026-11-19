@@ -134,6 +134,24 @@ else
   say "the api has no RAKAZO_ADMIN_EMAILS: the admin scenarios will fail; run make up again (build.sh adds one)"
 fi
 
+# Verification links for flows/verify.spec.ts. The stack sends no mail, so the link a mail would
+# carry is made here as the auth server makes it (an HS256 token over the address, with its expiry),
+# signed inside the api container with the api's own secret, which is never printed or written.
+# One valid and one expired link, for an address only this run uses.
+VERIFY_EMAIL="verify-$$-$(date +%s)@example.test"
+verify_token() {
+  docker exec -e E="$VERIFY_EMAIL" -e X="$1" "$API" node -e '
+    const c = require("node:crypto");
+    const part = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const now = Math.floor(Date.now() / 1000);
+    const body = part({ alg: "HS256", typ: "JWT" }) + "." + part({ email: process.env.E, iat: now - 7200, exp: now + Number(process.env.X) });
+    const key = process.env.BETTER_AUTH_SECRET;
+    if (!key) process.exit(3);
+    console.log(body + "." + c.createHmac("sha256", key).update(body).digest("base64url"));'
+}
+VERIFY_TOKEN="$(verify_token 3600)" && VERIFY_EXPIRED="$(verify_token -60)" \
+  || { say "cannot make the verification links in the api container"; exit 2; }
+
 # npm's download cache lives in a named Docker volume (nothing on the host); the container runs as
 # the invoking user, so the volume is opened for writing. If that fails, run without a cache.
 CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
@@ -162,6 +180,7 @@ drun "$NAME" --cpus "${DOZO_E2E_CPUS:-3}" --memory "${DOZO_E2E_MEMORY:-6g}" --ip
   -e DOZO_E2E_ARGS="${DOZO_E2E_ARGS:-}" -e FORWARD="$FORWARD" -e PORT="${PORT:-80}" -e VERSION="$VERSION" \
   -e DOZO_E2E_MODEL_URL="http://$MODEL_IP:8787/v1" -e DOZO_E2E_SRC=/webapp-src \
   -e DOZO_E2E_ADMIN_EMAIL="$ADMIN_EMAIL" -e DOZO_E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  -e DOZO_E2E_VERIFY_EMAIL="$VERIFY_EMAIL" -e DOZO_E2E_VERIFY_TOKEN="$VERIFY_TOKEN" -e DOZO_E2E_VERIFY_EXPIRED="$VERIFY_EXPIRED" \
   -v "$SUITE:/suite:ro" -v "$OUT:/out" -v "$WEBSRC:/webapp-src:ro" ${REUSE[@]+"${REUSE[@]}"} ${CACHE[@]+"${CACHE[@]}"} \
   "$IMAGE" bash -c '
     set -e

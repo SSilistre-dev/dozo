@@ -303,9 +303,14 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
   palette as solid hex (light by default, dark where the client honours `prefers-color-scheme`), the
   theme's font stack, the header (mark and lowercase wordmark) and the footer (unsubscribe when the
   mail has one, privacy and terms on the landing site in English or Turkish, operator and contact).
-- The mark is `icon-192.png` from the sending server's own `WEB_ORIGIN`, and only when that is a
-  public https address; otherwise the wordmark stands alone. No other remote image, no tracking pixel.
-  The welcome mail keeps its hero image instead of the header.
+- The mark travels inside the mail as an inline image (`DOZO_MARK`, referenced as `cid:dozo-mark`),
+  so it shows where remote images are blocked and no mail loads anything from a server: no remote
+  image, no tracking pixel. Transactional mail carries it in an optional `inline` field that both
+  email adapters translate (anchored rules on `adapter-kit/src/types.ts`, `smtp-email.ts`,
+  `resend-email.ts`; tested by `packages/adapters/src/dozo-email-inline.test.ts`). The welcome mail
+  keeps its hero image instead of the header.
+- A verification link lands on the web app's result page (`/verify-email`, set by
+  `packages/auth/src/dozo-email-link.ts`): verified, expired with a new link, or not valid.
 - The sender's name is not in the code: it is the name part of `EMAIL_FROM` (for example
   `Dozo <no-reply@your-domain>`), set where the server runs.
 - Upstream's `email.test.ts` asserts that code mails carry no link; on the branded tree they carry
