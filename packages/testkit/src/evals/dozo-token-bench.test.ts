@@ -3,6 +3,7 @@ import type { BenchCall, BenchTask, WireBody } from "./dozo-token-bench.js";
 import {
   fakeModelFetch,
   fakeUsage,
+  listedRecords,
   prefixText,
   requestComponents,
   runBenchTask,
@@ -25,6 +26,18 @@ const unitPricing = {
   cacheRead: 1,
   cacheWrite: 1,
 };
+
+describe("listed records", () => {
+  it("lists rows in creation order, then by id, whatever order the database returned", () => {
+    const rows = [
+      { id: "b", createdAt: "2026-01-02", name: "B" },
+      { id: "a", createdAt: "2026-01-02", name: "A" },
+      { id: "c", createdAt: "2026-01-01", name: "C" },
+    ];
+    expect(listedRecords(rows).map((r) => r.id)).toEqual(["c", "a", "b"]);
+    expect(listedRecords(rows, [2, 0, 1])).toEqual(listedRecords(rows));
+  });
+});
 
 describe("fake model usage", () => {
   it("counts a quarter token per byte and splits a request into its parts", () => {

@@ -395,6 +395,18 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      select: {",
+      "replace": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: {",
+      "reason": "the connected plugins line is in the system prompt: a stable order keeps the cached prefix when a status sync rewrites a row"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "    deps.prisma.taughtSkill.findMany({\n      where: { botId: run.botId, spaceId: run.spaceId, status: \"saved\" },\n    }),",
+      "replace": "    deps.prisma.taughtSkill.findMany({\n      where: { botId: run.botId, spaceId: run.spaceId, status: \"saved\" },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n    }),",
+      "reason": "the first 20 taught skills are listed in the system prompt: a stable order keeps the cached prefix and the same 20"
+    },
+    {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "import type { AuthMode } from \"../lib/auth-routing\";\nimport { initialAuthMode } from \"../lib/auth-routing\";",
       "replace": "import type { AuthMode } from \"../lib/auth-routing\";\nimport { authModeFor, signupsAreClosed, titleWhenKnown } from \"../lib/dozo-signups\";\nimport { initialAuthMode } from \"../lib/auth-routing\";",

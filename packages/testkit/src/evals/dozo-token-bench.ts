@@ -3,7 +3,9 @@ import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition
 import { formatRecalledMemory } from "../../../adapters/src/history-compaction.prompt.js";
 import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
 import {
+  connectedPluginsInstruction,
   runIdentityInstruction,
+  taughtSkillsInstruction,
   userTurnInstructions,
 } from "../../../adapters/src/run-instructions.prompt.js";
 import { runReplyGuidance } from "../../../adapters/src/run-replies.prompt.js";
@@ -15,7 +17,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v1";
+export const BENCH_VERSION = "dozo-token-bench-v2";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 export const FAKE_PROVIDER = {
@@ -37,7 +39,12 @@ export type BenchTurn = {
   recalled?: string[];
   /** The model's replies for this turn, in order; an exhausted script answers "Done." */
   replies: ScriptedReply[];
+  /** The order the database returns the task's records in this turn (indexes into them). */
+  recordOrder?: number[];
 };
+
+/** A saved row the server lists in the system prompt: a taught skill or a connected plugin. */
+export type BenchRecord = { id: string; createdAt: string; name: string };
 
 export type BenchTask = {
   id: string;
@@ -45,6 +52,8 @@ export type BenchTask = {
   history?: AgentRunRequest["history"];
   /** Extra system prompt text the server adds for this bot, such as its memory file. */
   memoryContext?: string;
+  /** Taught skills and connected plugins, which the server reads from the database every turn. */
+  records?: BenchRecord[];
   turns: BenchTurn[];
   /** Deterministic tool output by tool name and arguments. */
   toolResult?: (name: string, args: Record<string, unknown>) => unknown;
@@ -190,8 +199,18 @@ export function fakeModelFetch(script: ScriptedReply[], calls: BenchCall[]) {
   return fetch;
 }
 
+/**
+ * The records as the server lists them, from the rows in the order the database returned them:
+ * sorted by creation time, then id, as the brand rules make both queries do.
+ */
+export function listedRecords(records: BenchRecord[], order?: number[]) {
+  return (order ?? records.map((_, i) => i))
+    .map((i) => records[i]!)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
 /** A typical system prompt: every built-in tool offered, rendered from fixed placeholders. */
-export function benchInstructions(memoryContext?: string) {
+export function benchInstructions(memoryContext?: string, records?: BenchRecord[]) {
   return userTurnInstructions({
     botInstructions: runIdentityInstruction(
       { name: "Bench", description: "Helps with research.", instructions: "Answer briefly." },
@@ -208,9 +227,15 @@ export function benchInstructions(memoryContext?: string) {
     workspaceInstruction: "",
     agentEnvironmentInstruction: undefined,
     botDirectory: undefined,
-    pluginLine: undefined,
+    pluginLine: records
+      ? connectedPluginsInstruction(
+          records.map((r) => ({ displayName: r.name, connectorId: "mcp", provider: r.id })),
+        )
+      : undefined,
     agentSkillsLine: undefined,
-    taughtSkillsLine: undefined,
+    taughtSkillsLine: records
+      ? taughtSkillsInstruction(records.map((r) => ({ name: r.name, whenToUse: r.name })))
+      : undefined,
     replyGuidance: runReplyGuidance("user"),
   })
     .filter((part): part is string => Boolean(part))
@@ -235,7 +260,6 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
   const calls: BenchCall[] = [];
   const script = task.turns.flatMap((turn) => turn.replies);
   const runtime = new PiAgentRuntime({ modelFetch: fakeModelFetch(script, calls) });
-  const instructions = benchInstructions(task.memoryContext);
   const history: AgentRunRequest["history"] = [...(task.history ?? [])];
   const tools = builtinAgentTools;
   for (const [index, turn] of task.turns.entries()) {
@@ -247,6 +271,8 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
           },
         ]
       : [];
+    const records = task.records && listedRecords(task.records, turn.recordOrder);
+    const instructions = benchInstructions(task.memoryContext, records);
     let answer = "";
     for await (const event of runtime.run(
       {

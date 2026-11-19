@@ -1,5 +1,5 @@
 {
-  "version": "dozo-token-bench-v1",
+  "version": "dozo-token-bench-v2",
   "fakeProvider": {
     "tokenizer": "ceil(utf8 bytes / 4) per request part",
     "cache": "prefix cache per thread: a request reads the longest byte prefix it shares with an earlier request of the same thread, up to what that request wrote; every request of at least minimumTokens writes its block-aligned prefix",
@@ -8,19 +8,19 @@
   },
   "pricing": null,
   "totals": {
-    "modelCalls": 62,
-    "promptTokens": 950043,
-    "inputTokens": 3867,
-    "outputTokens": 691,
-    "cacheReadTokens": 669440,
-    "cacheWriteTokens": 276736,
-    "cacheReadShare": 0.7046417898979309,
+    "modelCalls": 65,
+    "promptTokens": 983700,
+    "inputTokens": 4116,
+    "outputTokens": 721,
+    "cacheReadTokens": 691712,
+    "cacheWriteTokens": 287872,
+    "cacheReadShare": 0.7031737318288096,
     "costUsd": null,
     "components": {
-      "system": 130528,
-      "tools": 552792,
-      "history": 50099,
-      "prompt": 1338,
+      "system": 137257,
+      "tools": 579540,
+      "history": 50216,
+      "prompt": 1401,
       "toolCalls": 4097,
       "toolResults": 211189
     }
@@ -312,6 +312,24 @@
         "prompt": 58,
         "toolCalls": 81,
         "toolResults": 379
+      }
+    },
+    {
+      "id": "records-reordered",
+      "kind": "short-chat",
+      "modelCalls": 3,
+      "inputTokens": 249,
+      "outputTokens": 30,
+      "cacheReadTokens": 22272,
+      "cacheWriteTokens": 11136,
+      "costUsd": null,
+      "components": {
+        "system": 6729,
+        "tools": 26748,
+        "history": 117,
+        "prompt": 63,
+        "toolCalls": 0,
+        "toolResults": 0
       }
     },
     {

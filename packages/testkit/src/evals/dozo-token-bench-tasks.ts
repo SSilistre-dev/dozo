@@ -150,6 +150,25 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     }),
   },
   {
+    id: "records-reordered",
+    kind: "short-chat",
+    // Postgres returns unordered rows in storage order, which an update changes (a plugin's status
+    // sync rewrites its row), so the same skills and plugins can be listed in another order.
+    records: Array.from({ length: 6 }, (_, i) => ({
+      id: `rec${i + 1}`,
+      createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+      name: `Saved record ${i + 1}`,
+    })),
+    turns: chatTurns(3).map((turn, i) => ({
+      ...turn,
+      recordOrder: [
+        [0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 0],
+        [2, 3, 4, 5, 0, 1],
+      ][i],
+    })),
+  },
+  {
     id: "parallel-tools",
     kind: "multi-page",
     turns: [
