@@ -1,5 +1,9 @@
 import { ClientError } from "./client-error.js";
-import { skillGivenInputs, skillInputsInstruction } from "./dozo-teach-playbook.prompt.js";
+import {
+  SKILL_CLICK_TARGETS_NOTE,
+  skillGivenInputs,
+  skillInputsInstruction,
+} from "./dozo-teach-playbook.prompt.js";
 import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "./teach-playbook.js";
 import {
   scrollDirection,
@@ -291,6 +295,8 @@ export function clickStepIndexes(
 }
 
 const LABEL_MAX = 60;
+/** A click step that quotes what it hit, as `describeClick` writes it. */
+const QUOTED_CLICK = /" \(near -?\d+, -?\d+\)\.$/;
 const WINDOW_MAX = 80;
 
 /** Model or window text made safe to quote in a step: one line, no input braces. */
@@ -351,6 +357,11 @@ export function teachInputName(name: string): string {
     .replace(/_+$/, "");
 }
 
+/** A value the teacher names like a password is secret too. */
+export function secretInputName(name: string): boolean {
+  return SECRET_TEXT.test(teachInputName(name));
+}
+
 /**
  * Applies the teacher's decision to each typed value: an input the bot fills on each run, text
  * kept in the steps, or the steps that type it removed. A value with no decision is an input
@@ -381,8 +392,7 @@ export function applyValueDecisions(
       return;
     }
     const name = teachInputName(decision.name) || `value_${index + 1}`;
-    // A value the teacher names like a password is secret too.
-    const secret = value.secret || SECRET_TEXT.test(name);
+    const secret = value.secret || secretInputName(name);
     variables.set(name, (variables.get(name) ?? false) || secret);
     steps = steps.map((step) => step.replaceAll(value.placeholder, `{{${name}}}`));
   });
@@ -414,7 +424,12 @@ export function formatSkillRunPrompt(
   test = false,
   values?: Record<string, string>,
 ): string {
-  const prompt = upstreamFormatSkillRunPrompt(name, playbook, test);
+  const prompt = [
+    upstreamFormatSkillRunPrompt(name, playbook, test),
+    playbook.steps.some((step) => QUOTED_CLICK.test(step)) ? SKILL_CLICK_TARGETS_NOTE : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const inputs = stepInputs(playbook);
   if (!inputs.length) return prompt;
   const given = inputs.flatMap((input) => {

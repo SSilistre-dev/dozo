@@ -14,6 +14,7 @@ import {
   clickStepIndexes,
   clicksBeforeSecrets,
   formatSkillRunPrompt,
+  secretInputName,
   typedValuesFromRecording,
   withClickTargets,
 } from "@rakazo/core";
@@ -239,7 +240,9 @@ export function createDozoTeach(deps: {
   /**
    * The playbook with the decisions applied. Someone else than the teacher sends none: for them
    * upstream's rules apply. Once saved, nothing typed is left to decide about. Each click the
-   * teacher kept says what it hit, from labels already made: the save never asks the model.
+   * teacher kept says what it hit, from labels already made: the save never asks the model. A
+   * click before a secret value says nothing of what it hit, also when only the teacher's name
+   * for the value makes it one: its label was read off a picture of that field.
    */
   async function decided(actor: Actor, input: DozoTeachInput) {
     const skill = await skillOf(actor, input.skillId);
@@ -262,8 +265,16 @@ export function createDozoTeach(deps: {
     const events = parseRecording(skill.recording).events;
     const removed = new Set(input.removedTargets ?? []);
     const labels = answers[LABELS_KEY] ?? {};
+    const secret = clicksBeforeSecrets(
+      events,
+      values.flatMap((value) => {
+        const decision = input.decisions[value.placeholder];
+        const named = decision?.action === "variable" && secretInputName(decision.name);
+        return value.secret || named ? [value.placeholder] : [];
+      }),
+    );
     const kept = clicksFor(actor, skill, events, input.playbook.steps, values).flatMap((click) =>
-      removed.has(click.id)
+      removed.has(click.id) || secret.has(click.eventIndex)
         ? []
         : [{ eventIndex: click.eventIndex, window: click.window, label: labels[click.id] }],
     );

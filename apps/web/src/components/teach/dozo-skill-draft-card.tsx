@@ -294,33 +294,41 @@ export function SkillDraftCard({
       />
       {targets.length ? (
         <div className="mt-2 flex flex-wrap gap-2">
-          {targets.map((target) => (
-            <figure key={target.id} data-testid="skill-draft-target" className="relative m-0 w-28">
-              <img
-                src={target.image}
-                alt={target.label ?? ""}
-                className="block h-14 w-28 rounded-md border border-border object-cover"
-              />
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t`Remove`}
-                disabled={busy}
-                className="absolute top-0 right-0 size-5"
-                onClick={() => setRemovedTargets((current) => [...current, target.id])}
+          {targets.map((target) => {
+            // What the button removes: the label under the picture, else the step it belongs to.
+            const label = target.label ?? playbook.steps[target.step] ?? "";
+            return (
+              <figure
+                key={target.id}
+                data-testid="skill-draft-target"
+                className="relative m-0 w-28"
               >
-                <XIcon className="size-3" />
-              </Button>
-              {target.label ? (
-                <figcaption
-                  dir="auto"
-                  className="mt-1 break-words text-label text-muted-foreground"
+                <img
+                  src={target.image}
+                  alt=""
+                  className="block h-14 w-28 rounded-md border border-border object-cover"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t`Remove ${label}`}
+                  disabled={busy}
+                  className="absolute top-0 right-0 size-5"
+                  onClick={() => setRemovedTargets((current) => [...current, target.id])}
                 >
-                  {target.label}
-                </figcaption>
-              ) : null}
-            </figure>
-          ))}
+                  <XIcon className="size-3" />
+                </Button>
+                {target.label ? (
+                  <figcaption
+                    dir="auto"
+                    className="mt-1 break-words text-label text-muted-foreground"
+                  >
+                    {target.label}
+                  </figcaption>
+                ) : null}
+              </figure>
+            );
+          })}
         </div>
       ) : null}
       {fieldLabel(`${id}-check`, <Trans>How to check</Trans>)}

@@ -12,7 +12,10 @@ import type { TeachComputerInput } from "./teaching-session.js";
  * around the point are kept in the recording beside its events until the save.
  */
 
-/** How long a click waits for the screen before it lands anyway. */
+/**
+ * The most a click's capture may take: observing the screen before it lands, then cutting and
+ * encoding the picture after. Past it the click keeps only its window.
+ */
 export const CLICK_OBSERVE_TIMEOUT_MS = 1_500;
 /** The area around a click that is kept, in screen pixels, and the most a picture may weigh. */
 export const CROP_WIDTH = 240;
@@ -25,8 +28,16 @@ const WINDOW_MAX = 200;
 type Size = { width: number; height: number };
 type Region = { left: number; top: number; width: number; height: number };
 
-/** The screen as it was just before a click landed. */
-export type TeachClickObservation = { x: number; y: number; observation: ComputerObservation };
+/**
+ * The screen as it was just before a click landed, and what is left of the capture's time for
+ * its picture.
+ */
+export type TeachClickObservation = {
+  x: number;
+  y: number;
+  observation: ComputerObservation;
+  budgetMs: number;
+};
 export type TeachClickTarget = Omit<DozoTeachStoredTarget, "eventIndex">;
 
 /**
@@ -56,7 +67,9 @@ export function cropRegion(screen: Size, picture: Size, x: number, y: number): R
 }
 
 /** The picture around the click as base64 WebP, at most CROP_WIDTH by CROP_HEIGHT pixels. */
-export async function cropAroundClick(click: TeachClickObservation): Promise<string | undefined> {
+export async function cropAroundClick(
+  click: Omit<TeachClickObservation, "budgetMs">,
+): Promise<string | undefined> {
   // sharp is a native addon; load it only when an image is processed.
   const { default: sharp } = await import("sharp");
   const { observation } = click;
@@ -92,6 +105,7 @@ export async function observeTeachClick(
 ): Promise<TeachClickObservation | undefined> {
   if (mapped.kind !== "pointer" || mapped.sensitive) return undefined;
   if (mapped.type !== "click" && mapped.type !== "down") return undefined;
+  const started = performance.now();
   const signal = deadlineSignal(CLICK_OBSERVE_TIMEOUT_MS, context.signal);
   const observation = await bestEffort(
     "teach click observe",
@@ -101,16 +115,27 @@ export async function observeTeachClick(
       signal,
     ),
   );
-  return observation ? { x: mapped.x, y: mapped.y, observation } : undefined;
+  if (!observation) return undefined;
+  const budgetMs = Math.floor(CLICK_OBSERVE_TIMEOUT_MS - (performance.now() - started));
+  return { x: mapped.x, y: mapped.y, observation, budgetMs };
 }
 
-/** What is kept of an observed click: its window, and its picture when one could be made. */
+/**
+ * What is kept of an observed click: its window, and its picture when one could be made in the
+ * time the observation left. The picture is not waited for past that: the click's request returns.
+ */
 export async function teachClickTarget(
   click: TeachClickObservation | undefined,
 ): Promise<TeachClickTarget | undefined> {
   if (!click) return undefined;
   const title = click.observation.activeWindow?.title?.trim().slice(0, WINDOW_MAX);
-  const image = await bestEffort("teach click crop", cropAroundClick(click));
+  const image =
+    click.budgetMs > 0
+      ? await bestEffort(
+          "teach click crop",
+          withAbort(cropAroundClick(click), deadlineSignal(click.budgetMs)),
+        )
+      : undefined;
   if (!title && !image) return undefined;
   return { ...(title ? { window: title } : {}), ...(image ? { image } : {}) };
 }

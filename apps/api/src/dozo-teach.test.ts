@@ -515,6 +515,26 @@ describe("clicks", () => {
     expect(taughtSkills.save).toHaveBeenCalledOnce();
   });
 
+  it("writes nothing of what a click hit before a value the teacher names like a secret", async () => {
+    const { teach, taughtSkills } = drafted({
+      row: { recording: { ...recording, dozoLabels: { "0": "Password field" } } },
+    });
+    await teach.save(
+      teacher,
+      draftInput({ decisions: { "{{value 1}}": { action: "variable", name: "Password" } } }),
+    );
+    const [, , draft] = taughtSkills.updateDraft.mock.calls[0] as unknown as [
+      unknown,
+      string,
+      { playbook: SkillPlaybook },
+    ];
+    expect(draft.playbook.steps[0]).toBe(clickPlaybook.steps[0]);
+    expect(JSON.stringify(draft.playbook)).not.toContain("Password field");
+    // The protected run's click says nothing either; the last click still does.
+    expect(draft.playbook.steps[2]).toBe(clickPlaybook.steps[2]);
+    expect(draft.playbook.steps[4]).toBe('Click in "Thanks – Browser" (near 50, 60).');
+  });
+
   it("builds the test run's steps the same way and leaves the draft as it was", async () => {
     const { teach, taughtSkills } = drafted({
       row: { recording: { ...recording, dozoLabels: { "0": "Email field" } } },

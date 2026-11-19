@@ -159,6 +159,7 @@ describe("observeTeachClick", () => {
       x: 5,
       y: 6,
       observation: seen,
+      budgetMs: expect.any(Number),
     });
     const down = { kind: "pointer", type: "down", x: 1, y: 2 } as never;
     expect((await observeTeachClick({ observe }, computer, down, context))?.x).toBe(1);
@@ -197,6 +198,14 @@ describe("observeTeachClick", () => {
       await observeTeachClick({ observe: throwing }, computer, click, context),
     ).toBeUndefined();
     const slow = vi.fn(() => new Promise<ComputerObservation>(() => undefined));
+    // What a slow observation leaves for the picture: the rest of the capture's time.
+    const now = vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValueOnce(1_200);
+    const seenLate = await observation(1000, 600);
+    expect(
+      (await observeTeachClick({ observe: vi.fn(async () => seenLate) }, computer, click, context))
+        ?.budgetMs,
+    ).toBe(CLICK_OBSERVE_TIMEOUT_MS - 1_200);
+    now.mockRestore();
     const late = { ...(context as object), signal: AbortSignal.abort() } as never;
     expect(await observeTeachClick({ observe: slow }, computer, click, late)).toBeUndefined();
   });
@@ -206,6 +215,7 @@ describe("teachClickTarget", () => {
   const seen = async (title?: string): Promise<TeachClickObservation> => ({
     x: 500,
     y: 300,
+    budgetMs: CLICK_OBSERVE_TIMEOUT_MS,
     observation: await observation(
       1000,
       600,
@@ -229,6 +239,12 @@ describe("teachClickTarget", () => {
     expect((await teachClickTarget({ ...(await seen("x".repeat(500))) }))?.window).toHaveLength(
       200,
     );
+  });
+
+  it("keeps only the window when the observation used up the capture's time", async () => {
+    expect(await teachClickTarget({ ...(await seen("Form")), budgetMs: 0 })).toEqual({
+      window: "Form",
+    });
   });
 });
 

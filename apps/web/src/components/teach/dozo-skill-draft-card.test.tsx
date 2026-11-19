@@ -29,7 +29,8 @@ vi.mock("../../lib/rpc", () => {
   };
 });
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    String.raw({ raw: parts }, ...values);
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts.join("") }));
@@ -368,7 +369,7 @@ const targets = [
   { id: "6", step: 4, window: "Form" },
 ];
 const thumbs = () => [...container.querySelectorAll('[data-testid="skill-draft-target"]')];
-const removes = () => [...container.querySelectorAll('button[aria-label="Remove"]')];
+const removes = () => [...container.querySelectorAll('button[aria-label^="Remove "]')];
 
 it("shows a thumbnail per kept picture, labelled when it has a label", async () => {
   api.review.mockResolvedValue({ values: [], targets });
@@ -380,7 +381,12 @@ it("shows a thumbnail per kept picture, labelled when it has a label", async () 
   ]);
   expect(thumbs()[0]?.textContent).toBe("Email field");
   expect(thumbs()[1]?.textContent).toBe("");
-  expect(removes()).toHaveLength(2);
+  // The label is read once, under the picture; each Remove says what it removes.
+  expect(thumbs().map((node) => node.querySelector("img")?.getAttribute("alt"))).toEqual(["", ""]);
+  expect(removes().map((node) => node.getAttribute("aria-label"))).toEqual([
+    "Remove Email field",
+    "Remove Type {{value 3}}",
+  ]);
 });
 
 it("sends the removed pictures with Save and Test, and takes them off the card", async () => {
