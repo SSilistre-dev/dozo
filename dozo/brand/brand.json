@@ -3818,6 +3818,15 @@
         "apps/mobile/lib/dozo-site-settings.ts"
       ],
       "reason": "announcement: the app's one live stream carries a content-free signal when the site settings change, so the mobile home re-reads the announcement at once, as the web app does"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { pluginSubmissionRoutes } from \"./plugin-submissions.js\";",
+      "replace": "import { pluginSubmissionRoutes } from \"./dozo-plugin-submissions.js\";",
+      "requires": [
+        "apps/api/src/dozo-plugin-submissions.ts"
+      ],
+      "reason": "plugin submissions: DOZO_PLUGIN_SUBMISSIONS=closed answers the public submission form with 403 in the API itself"
     }
   ],
   "assets": {
