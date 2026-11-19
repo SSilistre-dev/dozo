@@ -360,3 +360,41 @@ describe("the computer a granted plan gives", () => {
     expect(await limit(prisma)).toBe(BYOK_TIERS.pro.computerAllowanceCents);
   });
 });
+
+describe("the computer a past-due subscription gives", () => {
+  const plan = (prisma: PrismaClient) => sandboxAllowancePlan(prisma, "org-1", NOW);
+  const billed = (status: string): NonNullable<Billing> => ({
+    ...paid("max", status),
+    currentPeriodStartsAt: earlier,
+    currentPeriodEndsAt: new Date("2026-06-30T12:00:00.000Z"),
+    byokInterval: "month",
+  });
+
+  it("is none until the payment goes through, then the plan's again", async () => {
+    const { prisma, state } = organization({ billing: billed("past_due") });
+    expect(await plan(prisma)).toMatchObject({ limitCents: 0, resetsAt: null });
+    state.billing = billed("active");
+    expect(await plan(prisma)).toMatchObject({
+      limitCents: BYOK_TIERS.max.computerAllowanceCents,
+      since: earlier,
+    });
+  });
+
+  it("keeps the plan itself, and a grant's allowance", async () => {
+    expect(paidTierOf(billed("past_due"))).toBe("max");
+    const { prisma } = organization({
+      billing: billed("past_due"),
+      grant: { tier: "pro", endsAt: later },
+    });
+    expect((await plan(prisma))?.limitCents).toBe(BYOK_TIERS.pro.computerAllowanceCents);
+  });
+
+  it("leaves an active or trialing subscription's allowance as it was", async () => {
+    expect((await plan(organization({ billing: billed("active") }).prisma))?.limitCents).toBe(
+      BYOK_TIERS.max.computerAllowanceCents,
+    );
+    expect((await plan(organization({ billing: billed("trialing") }).prisma))?.limitCents).toBe(
+      TRIAL_SANDBOX_ALLOWANCE_CENTS,
+    );
+  });
+});
