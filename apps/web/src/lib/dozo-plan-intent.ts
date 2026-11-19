@@ -81,17 +81,24 @@ export function readPlanIntent(userId?: string): PlanIntent | null {
 }
 
 /**
- * Gives an unclaimed pick to `userId` and returns it; drops a pick that is stale, malformed or
- * another account's, and returns null.
+ * Gives an unclaimed pick to `userId`, telling `onClaim`, and returns it; drops a pick that is
+ * stale, malformed or another account's, and returns null.
  */
-export function bindPlanIntent(userId: string): PlanIntent | null {
+export function bindPlanIntent(
+  userId: string,
+  onClaim?: (intent: PlanIntent) => void,
+): PlanIntent | null {
   const stored = readStored();
   if (!stored || (stored.userId !== undefined && stored.userId !== userId)) {
     clearPlanIntent();
     return null;
   }
-  if (stored.userId === undefined) write({ ...stored, userId });
-  return { tier: stored.tier, period: stored.period };
+  const intent = { tier: stored.tier, period: stored.period };
+  if (stored.userId === undefined) {
+    write({ ...stored, userId });
+    onClaim?.(intent);
+  }
+  return intent;
 }
 
 export function clearPlanIntent(): void {

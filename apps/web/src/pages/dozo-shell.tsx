@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { PageLoading } from "../components/PageLoading";
 import { authClient } from "../lib/auth";
+import { reportEvent, reportSignupStarted } from "../lib/dozo-events";
+import type { PlanIntent } from "../lib/dozo-plan-intent";
 import {
   bindPlanIntent,
   clearPlanIntent,
@@ -61,7 +63,10 @@ export function useBillingOffer(): { ready: boolean; redirect?: string } {
   // "asked" once Billing is requested, "shown" once the address has it open.
   const offer = useRef<"none" | "asked" | "shown">("none");
   // A pick to check before the shell mounts, claimed for this account on the first render.
-  const [checking, setChecking] = useState(() => Boolean(userId && bindPlanIntent(userId)));
+  const claimed = useRef<PlanIntent | null>(null);
+  const [checking, setChecking] = useState(() =>
+    Boolean(userId && bindPlanIntent(userId, (intent) => (claimed.current = intent))),
+  );
   const [opening, setOpening] = useState(false);
   const settle = (answer: "offer" | "drop" | "wait") => {
     if (answer === "drop") clearPlanIntent();
@@ -75,6 +80,17 @@ export function useBillingOffer(): { ready: boolean; redirect?: string } {
   settleRef.current = settle;
   // A slow server must not hold the app: it opens, and the pick waits for the next time.
   useTimeout(() => settleRef.current("wait"), checking ? OFFER_CHECK_MS : null);
+
+  useEffect(() => {
+    if (userId) reportSignupStarted();
+  }, [userId]);
+
+  // Reported once rendered: the claim happens while rendering, which reports nothing.
+  useEffect(() => {
+    const intent = claimed.current;
+    claimed.current = null;
+    if (intent) reportEvent({ name: "plan_intent", plan: intent.tier, period: intent.period });
+  }, []);
 
   useEffect(() => {
     if (!checking) return;

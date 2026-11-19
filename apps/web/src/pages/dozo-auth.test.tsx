@@ -49,6 +49,7 @@ vi.mock("./Auth", () => ({
   },
 }));
 
+import { takeSignupStarted } from "../lib/dozo-signup-start";
 import { AuthPage } from "./dozo-auth";
 
 let root: ReturnType<typeof createRoot> | undefined;
@@ -106,6 +107,18 @@ it("is upstream's page, props unchanged, while registration is open", async () =
   expect(signups()).toBe("open");
   expect(where()).toBe("/sign-up?next=%2Fapp");
   expect(mocks.upstream).toHaveBeenLastCalledWith({ mode: "up" });
+});
+
+it("keeps when the sign-up form opened, only while registration is open", async () => {
+  window.sessionStorage.clear();
+  mocks.capabilities.mockResolvedValue({ signupsOpen: false });
+  await open("/sign-up");
+  expect(takeSignupStarted()).toBeNull();
+  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
+  await open("/sign-in");
+  expect(takeSignupStarted()).toBeNull();
+  await open("/sign-up");
+  expect(takeSignupStarted()).toEqual(expect.any(String));
 });
 
 it("counts a server that does not say as open", async () => {

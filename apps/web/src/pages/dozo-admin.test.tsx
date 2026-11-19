@@ -292,6 +292,7 @@ it("shows the status line, the running computers and the accounts", async () => 
     "/admin/settings",
     "/admin/plans",
     "/admin/billing",
+    "/admin/funnel",
     "/admin/extra",
   ]);
 });
@@ -502,10 +503,11 @@ it("lists the sections that have a page, the open one marked, and opens each", a
     ["Site settings", "/admin/settings"],
     ["Plans", "/admin/plans"],
     ["Billing", "/admin/billing"],
+    ["Funnel", "/admin/funnel"],
     ["Extra", "/admin/extra"],
   ]);
   expect(links[0]?.getAttribute("aria-current")).toBe("page");
-  await click(links[6] as HTMLElement);
+  await click(links[7] as HTMLElement);
   await vi.waitFor(() => expect(shown("extra-page")).toBeTruthy());
   expect(shown("admin-users")).toBeNull();
 });

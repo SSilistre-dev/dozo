@@ -31,8 +31,10 @@ import { isAdmin, requireAdmin } from "./admins.js";
 import { dozoAdminAccessRoutes } from "./dozo-admin-access.js";
 import { readAccount } from "./dozo-admin-account.js";
 import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
+import { dozoAdminFunnelRoutes } from "./dozo-admin-funnel.js";
 import { onTier, plansOf } from "./dozo-admin-members.js";
 import { dozoAdminPlansRoutes } from "./dozo-admin-plans.js";
+import { dozoEventsRoutes } from "./dozo-events.js";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
@@ -554,13 +556,22 @@ export function dozoAdminRoutes(ctx: RouterContext) {
       }),
 
       billing: dozoAdminBillingRoutes(ctx, wiring?.payments),
+      funnel: dozoAdminFunnelRoutes(ctx),
       plans: dozoAdminPlansRoutes(ctx, wiring?.payments),
       accessGrants: dozoAdminAccessRoutes(ctx),
     },
   };
 }
 
-/** The name the router imports: upstream's routes, plus the admin page's and the cache share. */
+/**
+ * The name the router imports: upstream's routes, plus the admin page's, the cache share and the
+ * apps' product events.
+ */
 export function spendingLimitRoutes(ctx: RouterContext) {
-  return { ...upstreamSpendingLimitRoutes(ctx), ...dozoAdminRoutes(ctx), ...dozoUsageRoutes(ctx) };
+  return {
+    ...upstreamSpendingLimitRoutes(ctx),
+    ...dozoAdminRoutes(ctx),
+    ...dozoUsageRoutes(ctx),
+    ...dozoEventsRoutes(ctx),
+  };
 }

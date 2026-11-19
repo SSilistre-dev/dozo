@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   userId: "user-a" as string | undefined,
   me: vi.fn(),
   status: vi.fn(),
+  track: vi.fn(),
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <div data-testid="upstream-shell" /> }));
 vi.mock("../lib/auth", () => ({
@@ -16,9 +17,13 @@ vi.mock("../lib/auth", () => ({
     useSession: () => ({ data: mocks.userId ? { user: { id: mocks.userId } } : null }),
   },
 }));
-vi.mock("../lib/rpc", () => ({ rpc: { me: mocks.me, billing: { status: mocks.status } } }));
+vi.mock("../lib/rpc", () => ({
+  rpc: { me: mocks.me, billing: { status: mocks.status }, dozoEvents: { track: mocks.track } },
+}));
 
+import { forgetEventServer } from "../lib/dozo-event-sender";
 import { readPlanIntent, savePlanIntent } from "../lib/dozo-plan-intent";
+import { markSignupStarted } from "../lib/dozo-signup-start";
 import { NavigateKeepingPlan, OFFER_CHECK_MS, ShellPage } from "./dozo-shell";
 
 let root: ReturnType<typeof createRoot>;
@@ -65,8 +70,10 @@ const navigate = (to: string) => act(async () => go(to));
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.userId = "user-a";
-  mocks.me.mockReset().mockResolvedValue({ billingEnabled: true });
+  mocks.me.mockReset().mockResolvedValue({ billingEnabled: true, productEvents: true });
   mocks.status.mockReset().mockResolvedValue(free);
+  mocks.track.mockReset().mockResolvedValue({ ok: true });
+  forgetEventServer();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -83,6 +90,28 @@ it("is upstream's shell and asks nothing without a picked plan", async () => {
   expect(container.querySelector('[data-testid="upstream-shell"]')).not.toBeNull();
   expect(where()).toBe("/app/bot-1");
   expect(mocks.me).not.toHaveBeenCalled();
+});
+
+it("reports the landing pick once, when an account claims it", async () => {
+  savePlanIntent({ tier: "max", period: "year" });
+  await open("/app");
+  await reopen("/app");
+  await vi.waitFor(() => expect(mocks.track).toHaveBeenCalled());
+  expect(mocks.track.mock.calls).toEqual([[{ name: "plan_intent", plan: "max", period: "year" }]]);
+});
+
+it("reports when this tab opened the sign-up form, once the account is signed in", async () => {
+  mocks.userId = undefined;
+  markSignupStarted();
+  await open("/app");
+  expect(mocks.track).not.toHaveBeenCalled();
+  mocks.userId = "user-a";
+  await reopen("/app");
+  await reopen("/app");
+  await vi.waitFor(() => expect(mocks.track).toHaveBeenCalled());
+  expect(mocks.track.mock.calls).toEqual([
+    [{ name: "signup_started", startedAt: expect.any(String) }],
+  ]);
 });
 
 it("offers the picked plan in Billing once setup opens the app, and forgets it when closed", async () => {

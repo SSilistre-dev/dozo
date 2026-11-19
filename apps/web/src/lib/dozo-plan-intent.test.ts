@@ -120,3 +120,12 @@ it("has no pick where storage is refused, and saves none where it is full", () =
   expect(() => savePlanIntent({ tier: "pro", period: "month" })).not.toThrow();
   expect(() => clearPlanIntent()).not.toThrow();
 });
+
+it("tells who claims a pick only when it is claimed", () => {
+  const claimed = vi.fn();
+  savePlanIntent({ tier: "pro", period: "year" });
+  expect(bindPlanIntent("user-a", claimed)).toEqual({ tier: "pro", period: "year" });
+  expect(bindPlanIntent("user-a", claimed)).toEqual({ tier: "pro", period: "year" });
+  expect(bindPlanIntent("user-b", claimed)).toBeNull();
+  expect(claimed.mock.calls).toEqual([[{ tier: "pro", period: "year" }]]);
+});

@@ -3,10 +3,12 @@ import * as z from "zod";
 import { ByokTierSchema } from "./billing.js";
 import { dozoAdminAccessContract } from "./dozo-admin-access.js";
 import { dozoAdminBillingContract } from "./dozo-admin-billing.js";
+import { dozoAdminFunnelContract } from "./dozo-admin-funnel.js";
 import { dozoAdminPlansContract } from "./dozo-admin-plans.js";
 import { Id, IsoDate } from "./ids.js";
 
 export * from "./dozo-admin-billing.js";
+export * from "./dozo-admin-funnel.js";
 export * from "./dozo-admin-plans.js";
 /**
  * When the plan in force ends or renews, as the member's own billing status tells it (`PlanEnd`),
@@ -189,6 +191,8 @@ export const dozoAdminContract = {
   stopComputer: oc.input(z.object({ computerId: Id })).output(z.object({ ok: z.literal(true) })),
   /** The billing page: `/admin/billing`. */
   billing: dozoAdminBillingContract,
+  /** The sign-up funnel: `/admin/funnel`. */
+  funnel: dozoAdminFunnelContract,
   /** The plans page: `/admin/plans`. */
   plans: dozoAdminPlansContract,
   /** Free-access grants an account has not received yet, beside upstream's list, create, revoke. */

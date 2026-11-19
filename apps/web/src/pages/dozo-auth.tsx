@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { planIntentFromParams, savePlanIntent } from "../lib/dozo-plan-intent";
+import { markSignupStarted } from "../lib/dozo-signup-start";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import type { UiLocale } from "../lib/ui-locale";
 import { UI_LOCALES } from "../lib/ui-locale";
@@ -95,6 +96,10 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
       active = false;
     };
   }, []);
+  const signingUp = props.mode === "up" && signups === "open";
+  useEffect(() => {
+    if (signingUp) markSignupStarted();
+  }, [signingUp]);
   if (props.mode === "up" && signups !== "open") {
     return signups === "closed" ? <Navigate to={`/sign-in${search}`} replace /> : null;
   }
