@@ -15,7 +15,9 @@ vi.mock("../lib/rpc", () => {
 });
 vi.mock("../lib/query", async (importOriginal) => ({
   ...(await importOriginal<typeof Query>()),
-  useSpaceQueries: () => ({ dozoAdmin: { users: { key: () => ["users"] } } }),
+  useSpaceQueries: () => ({
+    dozoAdmin: { users: { key: () => ["users"] }, user: { key: () => ["user"] } },
+  }),
 }));
 vi.mock("../lib/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
@@ -55,6 +57,8 @@ vi.mock("@lingui/react/macro", () => ({
     i18n: { locale: "en" },
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
+  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+    (value === 1 ? one : other).replace("#", String(value)),
 }));
 vi.mock("@rakazo/ui-web", () => ({
   Button: ({
@@ -70,10 +74,12 @@ vi.mock("@rakazo/ui-web", () => ({
   toast: { error: api.toastError },
 }));
 
+import type { DozoAdminPlan } from "@rakazo/contracts";
 import type * as Query from "../lib/query";
-import { DozoPlanAction } from "./dozo-admin-plan";
+import { DozoPlanAction, DozoPlanSummary } from "./dozo-admin-plan";
 
 type Plan = { tier: "standard" | "pro" | "max"; grantedUntil: string | null };
+type Ends = NonNullable<DozoAdminPlan["ends"]>;
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -83,7 +89,9 @@ async function render(plan: Plan) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <DozoPlanAction user={{ id: "ada", email: "ada@example.test", plan }} />
+        <DozoPlanAction
+          user={{ id: "ada", email: "ada@example.test", plan: { ends: null, ...plan } }}
+        />
       </QueryClientProvider>,
     );
   });
@@ -131,13 +139,38 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the plan's name, and the day a granted plan ends", async () => {
+it("shows the plan's name, what keeps it and the days it has left, with the day on hover", async () => {
   await render({ tier: "standard", grantedUntil: null });
   expect(shown()).toBe("Free");
   await render({ tier: "pro", grantedUntil: null });
   expect(shown()).toBe("Premium");
-  await render({ tier: "max", grantedUntil: "2027-01-05T23:59:59.000Z" });
-  expect(shown()).toBe("Premium PlusUntil Jan 5, 2027");
+  const summary = async (tier: Plan["tier"], ends: Ends) => {
+    await act(async () => {
+      root.render(<DozoPlanSummary plan={{ tier, grantedUntil: null, ends }} />);
+    });
+    return shown();
+  };
+  const at = "2027-01-05T23:59:59.000Z";
+  const end = { at, renews: false };
+  expect(await summary("max", { ...end, source: "granted", daysLeft: 12 })).toBe(
+    "Premium PlusGranted12 days left",
+  );
+  expect(container.querySelector("[title]")?.getAttribute("title")).toBe("Jan 5, 2027");
+  expect(await summary("pro", { ...end, source: "trial", daysLeft: 1 })).toBe(
+    "PremiumTrial1 day left",
+  );
+  expect(await summary("pro", { at, source: "subscription", daysLeft: 30, renews: true })).toBe(
+    "PremiumSubscriptionRenews in 30 days",
+  );
+  expect(await summary("pro", { at, source: "subscription", daysLeft: 1, renews: true })).toBe(
+    "PremiumSubscriptionRenews in 1 day",
+  );
+  expect(await summary("pro", { ...end, source: "subscription", daysLeft: 4 })).toBe(
+    "PremiumSubscription4 days left",
+  );
+  expect(await summary("standard", { ...end, source: "freeMonth", daysLeft: 9 })).toBe(
+    "FreeFree period9 days left",
+  );
 });
 
 it("gives a plan until the chosen day, and reads the list again", async () => {

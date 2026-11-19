@@ -1,5 +1,5 @@
-import { Trans, useLingui } from "@lingui/react/macro";
-import type { DozoAdminUser } from "@rakazo/contracts";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import type { DozoAdminPlan, DozoAdminUser } from "@rakazo/contracts";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import { Button, Input, NativeSelect, NativeSelectOption, toast } from "@rakazo/ui-web";
 import { useState } from "react";
@@ -9,25 +9,57 @@ import { errorText } from "../lib/user-error";
 
 type Choice = "pro" | "max" | "none";
 
+/**
+ * A member's plan, what keeps it and how many days it has left; the date itself on hover. Free
+ * with nothing running out is the plan's name alone.
+ */
+export function DozoPlanSummary({ plan }: { plan: DozoAdminPlan }) {
+  const { t, i18n } = useLingui();
+  const { ends } = plan;
+  const source = ends
+    ? {
+        subscription: t`Subscription`,
+        trial: t`Trial`,
+        granted: t`Granted`,
+        freeMonth: t`Free period`,
+      }[ends.source]
+    : null;
+  return (
+    <span data-testid="admin-plan" className="flex gap-x-2 text-body-sm text-muted-foreground">
+      <span>{BYOK_TIERS[plan.tier].name}</span>
+      {ends ? (
+        <>
+          <span>{source}</span>
+          <span
+            title={new Date(ends.at).toLocaleDateString(i18n.locale, {
+              dateStyle: "medium",
+              timeZone: "UTC",
+            })}
+          >
+            {ends.renews ? (
+              <Plural value={ends.daysLeft} one="Renews in # day" other="Renews in # days" />
+            ) : (
+              <Plural value={ends.daysLeft} one="# day left" other="# days left" />
+            )}
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
 /** A member's plan in the admin list, and the way to give one by hand or take it back. */
 export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "email" | "plan"> }) {
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const queries = useSpaceQueries();
   const { grantedUntil } = user.plan;
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<Choice>("pro");
   const [until, setUntil] = useState("");
-  // The grant ends at the end of a UTC day, so the day is read in UTC too.
-  const ends = grantedUntil
-    ? new Date(grantedUntil).toLocaleDateString(i18n.locale, {
-        dateStyle: "medium",
-        timeZone: "UTC",
-      })
-    : null;
   const save = useSave({
     save: (input: { tier: "pro" | "max" | null; endsAt?: string }, rpc) =>
       rpc.dozoAdmin.setPlan({ userId: user.id, ...input }),
-    stale: [queries.dozoAdmin.users.key()],
+    stale: [queries.dozoAdmin.users.key(), queries.dozoAdmin.user.key()],
     onSaved: () => setOpen(false),
     onFailed: (error) => toast.error(errorText(error, t`Could not change the plan`)),
   });
@@ -37,10 +69,7 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
 
   return (
     <>
-      <span data-testid="admin-plan" className="flex gap-x-2 text-body-sm text-muted-foreground">
-        <span>{BYOK_TIERS[user.plan.tier].name}</span>
-        {ends ? <span>{t`Until ${ends}`}</span> : null}
-      </span>
+      <DozoPlanSummary plan={user.plan} />
       <Button
         variant="ghost"
         size="sm"

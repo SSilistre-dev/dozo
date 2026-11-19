@@ -78,7 +78,13 @@ function user(id: string, email: string, day: number, more: Partial<User> = {}):
 // biome-ignore lint/suspicious/noExplicitAny: a Prisma double reads loosely typed filters
 type Where = any;
 
-type Subscription = { status: string; byokTier: string | null };
+type Subscription = {
+  status: string;
+  byokTier: string | null;
+  trialEndsAt?: Date | null;
+  currentPeriodEndsAt?: Date | null;
+  cancelAtPeriodEnd?: boolean;
+};
 type Grant = { tier: string; endsAt: Date; grantedById: string | null; note: string | null };
 
 function world(users: User[]) {
@@ -86,14 +92,63 @@ function world(users: User[]) {
   const memberships = users
     .filter((row) => row.id !== "bob")
     .map((row) => ({ userId: row.id, organizationId: `org-${row.id}`, role: "owner" }));
-  const organizations = new Map<string, { billing: Subscription | null; grant: Grant | null }>();
+  const organizations = new Map<
+    string,
+    { billing: Subscription | null; grant: Grant | null; freeUntil?: Date | null }
+  >();
   for (const membership of memberships)
     organizations.set(membership.organizationId, { billing: null, grant: null });
+  const organization = (id: string) => {
+    const row = organizations.get(id);
+    return (
+      row && {
+        id,
+        billing: row.billing && {
+          trialEndsAt: null,
+          currentPeriodEndsAt: null,
+          cancelAtPeriodEnd: false,
+          ...row.billing,
+        },
+        dozoPlanGrant: row.grant && { tier: row.grant.tier, endsAt: row.grant.endsAt },
+        modelCredits: row.freeUntil === undefined ? null : { byokFreeUntil: row.freeUntil },
+      }
+    );
+  };
   let sessions = [
-    { userId: "admin", updatedAt: new Date("2026-03-01T00:00:00Z") },
-    { userId: "ada", updatedAt: new Date("2026-03-02T00:00:00Z") },
-    { userId: "ada", updatedAt: new Date("2026-03-05T00:00:00Z") },
+    {
+      id: "s-1",
+      userId: "admin",
+      createdAt: new Date("2026-02-01T00:00:00Z"),
+      updatedAt: new Date("2026-03-01T00:00:00Z"),
+      userAgent: null as string | null,
+    },
+    {
+      id: "s-2",
+      userId: "ada",
+      createdAt: new Date("2026-02-02T00:00:00Z"),
+      updatedAt: new Date("2026-03-02T00:00:00Z"),
+      userAgent: "Phone",
+    },
+    {
+      id: "s-3",
+      userId: "ada",
+      createdAt: new Date("2026-02-03T00:00:00Z"),
+      updatedAt: new Date("2026-03-05T00:00:00Z"),
+      userAgent: null,
+    },
   ];
+  // Everyone's own Space, and Ada invited into the admin's.
+  const spaces = [
+    ...memberships.map((row) => ({
+      userId: row.userId,
+      space: { id: `space-${row.userId}`, name: "Home", organizationId: row.organizationId },
+    })),
+    {
+      userId: "ada",
+      space: { id: "space-admin", name: "Team", organizationId: "org-admin" },
+    },
+  ];
+  const settings = { modelCreditsEnabled: false };
   const computers = [
     { id: "pc-ada", userId: "ada", state: "running", kind: "docker", controlUserId: null },
     { id: "pc-old", userId: "gone", state: "running", kind: "docker", controlUserId: "bob" },
@@ -116,6 +171,7 @@ function world(users: User[]) {
     if (where.NOT && row.email.endsWith(where.NOT.email.endsWith)) return false;
     if (typeof where.id === "string" && row.id !== where.id) return false;
     if (where.id?.in && !where.id.in.includes(row.id)) return false;
+    if (where.id?.notIn?.includes(row.id)) return false;
     if (where.email && !row.email.toLowerCase().includes(where.email.contains.toLowerCase()))
       return false;
     if (where.deactivatedAt === null && row.deactivatedAt) return false;
@@ -145,18 +201,32 @@ function world(users: User[]) {
   const prisma = {
     member: {
       findMany: vi.fn(async ({ where }: Where) =>
-        memberships.filter((row) => row.userId === where.userId),
+        memberships.filter((row) =>
+          where.userId?.in
+            ? where.userId.in.includes(row.userId)
+            : where.organizationId?.in
+              ? where.organizationId.in.includes(row.organizationId)
+              : row.userId === where.userId,
+        ),
       ),
     },
     organization: {
       findMany: vi.fn(async ({ where }: Where) =>
         [...organizations]
-          .filter(([id]) => where.id.in.includes(id))
-          .map(([id, { billing, grant }]) => ({
-            id,
-            billing,
-            dozoPlanGrant: grant && { tier: grant.tier, endsAt: grant.endsAt },
-          })),
+          .filter(([id, row]) =>
+            where.OR
+              ? row.billing?.status != null ||
+                (row.grant !== null && row.grant.endsAt > where.OR[1].dozoPlanGrant.endsAt.gt)
+              : where.id.in.includes(id),
+          )
+          .map(([id]) => organization(id)),
+      ),
+      findUnique: vi.fn(async ({ where }: Where) => organization(where.id) ?? null),
+    },
+    deploymentSettings: { findUnique: vi.fn(async () => settings) },
+    spaceMember: {
+      findMany: vi.fn(async ({ where }: Where) =>
+        spaces.filter((row) => row.userId === where.userId).map(({ space }) => ({ space })),
       ),
     },
     dozoPlanGrant: {
@@ -171,11 +241,13 @@ function world(users: User[]) {
         return { count };
       }),
     },
-    $queryRaw: vi.fn(async (sql: TemplateStringsArray, keys: string[]) =>
-      sql.join("").includes('"createdAt"')
+    $queryRaw: vi.fn(async (sql: TemplateStringsArray | { sql: string }, keys: string[]) => {
+      // The files an organization keeps are summed with a query object, not a template.
+      if ("sql" in sql) return [{ used: String(3 * 1024 * 1024) }];
+      return sql.join("").includes('"createdAt"')
         ? [...bans].map(([value, createdAt]) => ({ value, createdAt }))
-        : keys.filter((key) => bans.has(key)).map((value) => ({ value })),
-    ),
+        : keys.filter((key) => bans.has(key)).map((value) => ({ value }));
+    }),
     $executeRaw: vi.fn(async (sql: TemplateStringsArray, value: string) => {
       if (!sql.join("").includes("INSERT")) bans.delete(value);
       else if (!bans.has(value)) bans.set(value, new Date("2026-04-01T00:00:00Z"));
@@ -184,14 +256,27 @@ function world(users: User[]) {
     user: {
       findUnique: vi.fn(async ({ where }: Where) => users.find((row) => row.id === where.id)),
       findFirst: vi.fn(async ({ where }: Where) => users.find((row) => matches(row, where))),
-      findMany: vi.fn(async ({ where, take, cursor }: Where) => {
+      findMany: vi.fn(async ({ where, take, cursor, orderBy }: Where) => {
+        const order: Record<string, "asc" | "desc">[] = orderBy ?? [{ createdAt: "desc" }];
         const rows = users
           .filter((row) => matches(row, where))
-          .sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+          .sort((a, b) => {
+            for (const entry of order) {
+              const [field, direction] = Object.entries(entry)[0] as [keyof User, string];
+              const key = (value: User[keyof User]) =>
+                value instanceof Date ? Number(value) : String(value);
+              const [x, y] = [key(a[field]), key(b[field])];
+              if (x !== y) return (x < y ? -1 : 1) * (direction === "asc" ? 1 : -1);
+            }
+            return 0;
+          });
         const from = cursor ? rows.findIndex((row) => row.id === cursor.id) : 0;
         return from < 0 ? [] : rows.slice(from, take ? from + take : undefined);
       }),
       count: vi.fn(async ({ where }: Where) => users.filter((row) => matches(row, where)).length),
+      update: vi.fn(async ({ where, data }: Where) =>
+        Object.assign(users.find((row) => row.id === where.id) as User, data),
+      ),
       updateMany: vi.fn(async ({ where, data }: Where) => {
         const rows = users.filter((row) => matches(row, where));
         for (const row of rows) Object.assign(row, data);
@@ -206,6 +291,12 @@ function world(users: User[]) {
         sessions = sessions.filter((row) => row.userId !== where.userId);
         return { count: 0 };
       }),
+      findMany: vi.fn(async ({ where, take }: Where) =>
+        sessions
+          .filter((row) => row.userId === where.userId)
+          .sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt))
+          .slice(0, take),
+      ),
     },
     bot: {
       groupBy: vi.fn(async ({ where }: Where) =>
@@ -217,22 +308,33 @@ function world(users: User[]) {
         return computer && bot && { ...bot, computer };
       }),
       updateMany: vi.fn(async () => ({ count: 0 })),
+      findMany: vi.fn(async ({ where }: Where) =>
+        bots.filter((row) => row.userId === where.userId).map(({ id, name }) => ({ id, name })),
+      ),
     },
     computer: {
       groupBy: vi.fn(async ({ where }: Where) => perUser(hosted(where))),
       count: vi.fn(async ({ where }: Where) => hosted(where).length),
+      // The running hosted ones for the list, or every one an account has for its page.
       findMany: vi.fn(async ({ where }: Where) =>
-        hosted(where).map((row) => ({
-          ...row,
-          bots: bots.filter((bot) => bot.computerId === row.id),
-        })),
+        (where.state ? hosted(where) : computers.filter((row) => row.userId === where.userId)).map(
+          (row) => ({ ...row, bots: bots.filter((bot) => bot.computerId === row.id) }),
+        ),
       ),
     },
     callPushDevice: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { findMany: vi.fn(async () => []) },
   };
-  return { prisma, sessions: () => sessions, organizations, bans };
+  return {
+    prisma,
+    sessions: () => sessions,
+    organizations,
+    bans,
+    memberships,
+    settings,
+    computers,
+  };
 }
 
 const people = [
@@ -248,7 +350,7 @@ function setup(
   wiring = true,
   sandboxId?: string,
 ) {
-  const { prisma, sessions, organizations, bans } = world(users);
+  const { prisma, sessions, organizations, bans, memberships, settings, computers } = world(users);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
   const steps: string[] = [];
@@ -308,7 +410,20 @@ function setup(
     };
     return createRouterClient(dozoAdminRoutes(ctx), { context: { actor } }).dozoAdmin;
   };
-  return { prisma, sessions, users, ctx, as, removePush, organizations, bans, deletion };
+  return {
+    prisma,
+    sessions,
+    users,
+    ctx,
+    as,
+    removePush,
+    organizations,
+    bans,
+    deletion,
+    memberships,
+    settings,
+    computers,
+  };
 }
 
 beforeEach(() => {
@@ -346,6 +461,15 @@ describe("who may use the admin procedures", () => {
     await expect(client.ban({ userId: "bob" })).rejects.toMatchObject(refused);
     await expect(client.unban({ value: "bob@example.test" })).rejects.toMatchObject(refused);
     await expect(client.deleteUser({ userId: "bob" })).rejects.toMatchObject(refused);
+    await expect(client.user({ userId: "bob" })).rejects.toMatchObject(refused);
+    await expect(client.rename({ userId: "bob", name: "Robert" })).rejects.toMatchObject(refused);
+    await expect(client.endSessions({ userId: "ada" })).rejects.toMatchObject(refused);
+    await expect(client.users({ plan: "max" })).rejects.toMatchObject(refused);
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.session.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.session.findMany).not.toHaveBeenCalled();
+    expect(prisma.member.findMany).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.$executeRaw).not.toHaveBeenCalled();
     expect(users).toHaveLength(people.length);
@@ -391,7 +515,7 @@ describe("listing accounts", () => {
       // Not the one on her own machine, nor the stopped one.
       runningComputers: 1,
       suspended: false,
-      plan: { tier: "standard", grantedUntil: null },
+      plan: { tier: "standard", grantedUntil: null, ends: null },
       banned: false,
     });
     expect(result.users[0]).toMatchObject({ lastSeenAt: null, bots: 0, runningComputers: 0 });
@@ -577,6 +701,13 @@ describe("running computers", () => {
 
 const DAY = 24 * 60 * 60 * 1000;
 const inDays = (days: number) => new Date(Date.now() + days * DAY);
+/** What the list says of a grant in force that ends at `at`, as days left from now. */
+const granted = (at: Date | string) => ({
+  source: "granted",
+  at: new Date(at).toISOString(),
+  daysLeft: Math.ceil((new Date(at).getTime() - Date.now()) / DAY),
+  renews: false,
+});
 
 describe("the plan in the list", () => {
   const plan = async (as: ReturnType<typeof setup>["as"], query: string) =>
@@ -584,8 +715,8 @@ describe("the plan in the list", () => {
 
   it("is Free for everyone by default, and for an account with no organization of its own", async () => {
     const { as } = setup();
-    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
-    expect(await plan(as, "bob")).toEqual({ tier: "standard", grantedUntil: null });
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null, ends: null });
+    expect(await plan(as, "bob")).toEqual({ tier: "standard", grantedUntil: null, ends: null });
   });
 
   it("is the subscription's tier while it is live", async () => {
@@ -593,11 +724,11 @@ describe("the plan in the list", () => {
     const row = organizations.get("org-ada");
     if (!row) throw new Error("fixture");
     row.billing = { status: "active", byokTier: "pro" };
-    expect(await plan(as, "ada")).toEqual({ tier: "pro", grantedUntil: null });
+    expect(await plan(as, "ada")).toEqual({ tier: "pro", grantedUntil: null, ends: null });
     row.billing = { status: "canceled", byokTier: "pro" };
-    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null, ends: null });
     row.billing = { status: "active", byokTier: null };
-    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null, ends: null });
   });
 
   it("is the higher of the subscription and an unexpired grant, with the grant's end", async () => {
@@ -606,12 +737,24 @@ describe("the plan in the list", () => {
     if (!row) throw new Error("fixture");
     const endsAt = inDays(5);
     row.grant = { tier: "max", endsAt, grantedById: "admin", note: null };
-    expect(await plan(as, "ada")).toEqual({ tier: "max", grantedUntil: endsAt.toISOString() });
+    expect(await plan(as, "ada")).toEqual({
+      tier: "max",
+      grantedUntil: endsAt.toISOString(),
+      ends: granted(endsAt),
+    });
     row.billing = { status: "active", byokTier: "pro" };
-    expect(await plan(as, "ada")).toEqual({ tier: "max", grantedUntil: endsAt.toISOString() });
+    expect(await plan(as, "ada")).toEqual({
+      tier: "max",
+      grantedUntil: endsAt.toISOString(),
+      ends: granted(endsAt),
+    });
     row.grant = { tier: "pro", endsAt, grantedById: "admin", note: null };
     row.billing = { status: "active", byokTier: "max" };
-    expect(await plan(as, "ada")).toEqual({ tier: "max", grantedUntil: endsAt.toISOString() });
+    expect(await plan(as, "ada")).toEqual({
+      tier: "max",
+      grantedUntil: endsAt.toISOString(),
+      ends: null,
+    });
   });
 
   it("drops a grant that has ended", async () => {
@@ -619,7 +762,7 @@ describe("the plan in the list", () => {
     const row = organizations.get("org-ada");
     if (!row) throw new Error("fixture");
     row.grant = { tier: "max", endsAt: inDays(-1), grantedById: "admin", note: null };
-    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null });
+    expect(await plan(as, "ada")).toEqual({ tier: "standard", grantedUntil: null, ends: null });
   });
 });
 
@@ -631,7 +774,7 @@ describe("giving a plan by hand", () => {
     const first = until(30);
     expect(
       await as("admin").setPlan({ userId: "ada", tier: "pro", endsAt: first, note: "press" }),
-    ).toEqual({ plan: { tier: "pro", grantedUntil: first } });
+    ).toEqual({ plan: { tier: "pro", grantedUntil: first, ends: granted(first) } });
     expect(organizations.get("org-ada")?.grant).toEqual({
       tier: "pro",
       endsAt: new Date(first),
@@ -641,7 +784,7 @@ describe("giving a plan by hand", () => {
 
     const second = until(60);
     expect(await as("admin").setPlan({ userId: "ada", tier: "max", endsAt: second })).toEqual({
-      plan: { tier: "max", grantedUntil: second },
+      plan: { tier: "max", grantedUntil: second, ends: granted(second) },
     });
     expect(organizations.get("org-ada")?.grant).toMatchObject({
       tier: "max",
@@ -650,7 +793,7 @@ describe("giving a plan by hand", () => {
     });
 
     expect(await as("admin").setPlan({ userId: "ada", tier: null })).toEqual({
-      plan: { tier: "standard", grantedUntil: null },
+      plan: { tier: "standard", grantedUntil: null, ends: null },
     });
     expect(organizations.get("org-ada")?.grant).toBeNull();
     // Nobody else's organization was touched.
@@ -690,7 +833,7 @@ describe("giving a plan by hand", () => {
     row.billing = { status: "active", byokTier: "max" };
     const endsAt = until(10);
     expect(await as("admin").setPlan({ userId: "ada", tier: "pro", endsAt })).toEqual({
-      plan: { tier: "max", grantedUntil: endsAt },
+      plan: { tier: "max", grantedUntil: endsAt, ends: null },
     });
     expect(row.billing).toEqual({ status: "active", byokTier: "max" });
   });
@@ -698,7 +841,7 @@ describe("giving a plan by hand", () => {
   it("answers, and writes no audit record, for an end of a grant that was not there", async () => {
     const { as } = setup();
     expect(await as("admin").setPlan({ userId: "ada", tier: null })).toEqual({
-      plan: { tier: "standard", grantedUntil: null },
+      plan: { tier: "standard", grantedUntil: null, ends: null },
     });
     expect(audit.events).toEqual([]);
   });
@@ -825,7 +968,8 @@ describe("the ban list", () => {
   it("bans an account: suspends it and lists its address", async () => {
     const users = [...people.map((row) => ({ ...row })), user("eve", "Eve+tag@Corp.test", 6)];
     const { as, prisma, sessions } = setup(users);
-    sessions().push({ userId: "eve", updatedAt: new Date("2026-03-03T00:00:00Z") });
+    const at = new Date("2026-03-03T00:00:00Z");
+    sessions().push({ id: "s-eve", userId: "eve", createdAt: at, updatedAt: at, userAgent: null });
     expect(await as("admin").ban({ userId: "eve" })).toEqual({ value: "eve@corp.test" });
     expect(await accountDeactivated(prisma as never, "eve")).toBe(true);
     expect(sessions().some((row) => row.userId === "eve")).toBe(false);
@@ -929,5 +1073,333 @@ describe("deleting an account", () => {
     await expect(setup(undefined, false).as("admin").deleteUser({ userId: "bob" })).rejects.toThrow(
       /wiring/,
     );
+  });
+});
+
+describe("what keeps a plan and how long it has left", () => {
+  const plan = async (as: ReturnType<typeof setup>["as"]) =>
+    (await as("admin").users({ query: "ada" })).users[0]?.plan;
+  const fixture = (organizations: ReturnType<typeof setup>["organizations"]) => {
+    const row = organizations.get("org-ada");
+    if (!row) throw new Error("fixture");
+    return row;
+  };
+
+  it("is the subscription's period: renewing, or ending when it is cancelled", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    const end = inDays(12);
+    row.billing = { status: "active", byokTier: "pro", currentPeriodEndsAt: end };
+    expect((await plan(as))?.ends).toEqual({
+      source: "subscription",
+      at: end.toISOString(),
+      daysLeft: 12,
+      renews: true,
+    });
+    row.billing.cancelAtPeriodEnd = true;
+    expect((await plan(as))?.ends).toMatchObject({ source: "subscription", renews: false });
+  });
+
+  it("is the trial's end while it is a trial, else its period's", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    const trial = inDays(3);
+    row.billing = {
+      status: "trialing",
+      byokTier: "max",
+      trialEndsAt: trial,
+      currentPeriodEndsAt: inDays(30),
+    };
+    expect((await plan(as))?.ends).toEqual({
+      source: "trial",
+      at: trial.toISOString(),
+      daysLeft: 3,
+      renews: false,
+    });
+    row.billing.trialEndsAt = null;
+    expect((await plan(as))?.ends).toMatchObject({ source: "trial", daysLeft: 30 });
+  });
+
+  it("is the grant when the grant is what raises the plan", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    const end = inDays(40);
+    row.billing = { status: "active", byokTier: "pro", currentPeriodEndsAt: inDays(5) };
+    row.grant = { tier: "max", endsAt: end, grantedById: "admin", note: null };
+    expect((await plan(as))?.ends).toEqual(granted(end));
+    // A subscription with no date left falls back to an equal grant.
+    row.billing = { status: "active", byokTier: "max" };
+    expect((await plan(as))?.ends).toEqual(granted(end));
+  });
+
+  it("is a free period on Free, counting a part day as a whole one", async () => {
+    const { as, organizations } = setup();
+    const row = fixture(organizations);
+    const end = new Date(Date.now() + 2 * DAY + 60_000);
+    row.freeUntil = end;
+    expect((await plan(as))?.ends).toEqual({
+      source: "freeMonth",
+      at: end.toISOString(),
+      daysLeft: 3,
+      renews: false,
+    });
+    row.freeUntil = inDays(-1);
+    expect((await plan(as))?.ends).toBeNull();
+    // Paying, the free period is not what keeps the plan.
+    row.freeUntil = inDays(9);
+    row.billing = { status: "active", byokTier: "pro" };
+    expect((await plan(as))?.ends).toBeNull();
+  });
+});
+
+describe("sorting and filtering the list", () => {
+  const ids = async (as: ReturnType<typeof setup>["as"], input: object) =>
+    (await as("admin").users(input)).users.map((row) => row.id);
+
+  it("sorts newest first by default, oldest first, or by email", async () => {
+    const { as } = setup();
+    expect(await ids(as, {})).toEqual(["bob", "ada", "squatter", "admin"]);
+    expect(await ids(as, { sort: "oldest" })).toEqual(["admin", "squatter", "ada", "bob"]);
+    expect(await ids(as, { sort: "email" })).toEqual(["admin", "ada", "bob", "squatter"]);
+  });
+
+  it("filters by status, and counts what matches beside the total", async () => {
+    const { as, users } = setup();
+    (users.find((row) => row.id === "bob") as User).deactivatedAt = new Date();
+    const suspended = await as("admin").users({ status: "suspended" });
+    expect(suspended.users.map((row) => row.id)).toEqual(["bob"]);
+    expect(suspended).toMatchObject({ total: 4, matching: 1 });
+    expect(await ids(as, { status: "active" })).toEqual(["ada", "squatter", "admin"]);
+    expect((await as("admin").users({ query: "example" })).matching).toBe(4);
+  });
+
+  it("filters by the plan in force, by the same rule as the list", async () => {
+    const { as, organizations } = setup();
+    const ada = organizations.get("org-ada");
+    const admin = organizations.get("org-admin");
+    const squatter = organizations.get("org-squatter");
+    if (!ada || !admin || !squatter) throw new Error("fixture");
+    ada.billing = { status: "active", byokTier: "pro" };
+    admin.grant = { tier: "max", endsAt: inDays(3), grantedById: "admin", note: null };
+    // A lapsed subscription and an ended grant are Free.
+    squatter.billing = { status: "canceled", byokTier: "max" };
+    squatter.grant = { tier: "max", endsAt: inDays(-1), grantedById: "admin", note: null };
+    expect(await ids(as, { plan: "pro" })).toEqual(["ada"]);
+    expect(await ids(as, { plan: "max" })).toEqual(["admin"]);
+    expect(await ids(as, { plan: "standard" })).toEqual(["bob", "squatter"]);
+    const result = await as("admin").users({ plan: "max", query: "ada" });
+    expect(result).toMatchObject({ users: [], matching: 0, total: 4 });
+  });
+
+  it("judges an account by its own oldest organization, not one it owns later", async () => {
+    const { as, organizations, memberships } = setup();
+    // Bob, who owned none, now owns a paying organization; Ada owns one too, after her own.
+    for (const userId of ["bob", "ada"])
+      memberships.push({ userId, organizationId: "org-paid", role: "owner" });
+    organizations.set("org-paid", { billing: { status: "active", byokTier: "max" }, grant: null });
+    expect(await ids(as, { plan: "max" })).toEqual(["bob"]);
+    expect(await ids(as, { plan: "standard" })).toEqual(["ada", "squatter", "admin"]);
+  });
+
+  it("reads a page in the same number of queries whatever its size", async () => {
+    const queries = async (count: number) => {
+      const many = Array.from({ length: count }, (_, index) =>
+        user(`u${index}`, `u${index}@example.test`, index + 10),
+      );
+      const { as, prisma } = setup([people[0] as User, ...many]);
+      await as("admin").users({});
+      return Object.values(prisma)
+        .flatMap((model) =>
+          typeof model === "function"
+            ? [model]
+            : Object.values(model as Record<string, ReturnType<typeof vi.fn>>),
+        )
+        .reduce((total, fn) => total + fn.mock.calls.length, 0);
+    };
+    const few = await queries(4);
+    expect(await queries(DOZO_ADMIN_USERS_PAGE)).toBe(few);
+    expect(await queries(DOZO_ADMIN_USERS_PAGE + 20)).toBe(few);
+  });
+});
+
+describe("one account in full", () => {
+  it("shows who it is, its plan and dates, where it works and its latest sign-ins", async () => {
+    const { as, organizations, settings } = setup();
+    const row = organizations.get("org-ada");
+    if (!row) throw new Error("fixture");
+    const period = inDays(20);
+    row.billing = { status: "active", byokTier: "pro", currentPeriodEndsAt: period };
+    row.freeUntil = inDays(-2);
+    settings.modelCreditsEnabled = true;
+    const account = await as("admin").user({ userId: "ada" });
+    expect(account).toEqual({
+      id: "ada",
+      email: "ada@example.test",
+      name: "ada",
+      emailVerified: true,
+      createdAt: "2026-01-03T00:00:00.000Z",
+      suspended: false,
+      banned: false,
+      admin: false,
+      plan: {
+        tier: "pro",
+        grantedUntil: null,
+        ends: { source: "subscription", at: period.toISOString(), daysLeft: 20, renews: true },
+      },
+      billing: {
+        status: "active",
+        trialEndsAt: null,
+        currentPeriodEndsAt: period.toISOString(),
+        cancelAtPeriodEnd: false,
+      },
+      // An ended free period is not shown.
+      freeUntil: null,
+      storage: { usedBytes: 3 * 1024 * 1024, limitBytes: 2 * 1024 * 1024 * 1024 },
+      spaces: [
+        { id: "space-ada", name: "Home", owned: true },
+        { id: "space-admin", name: "Team", owned: false },
+      ],
+      bots: [
+        { id: "bot-1", name: "Scout" },
+        { id: "bot-2", name: "Quill" },
+      ],
+      computers: [
+        {
+          id: "pc-ada",
+          running: true,
+          ownMachine: false,
+          runningSince: "2026-03-01T00:00:00.000Z",
+          bots: ["Scout", "Quill"],
+        },
+        {
+          id: "pc-own",
+          running: true,
+          ownMachine: true,
+          runningSince: "2026-03-03T00:00:00.000Z",
+          bots: ["Local"],
+        },
+        {
+          id: "pc-off",
+          running: false,
+          ownMachine: false,
+          runningSince: "2026-03-04T00:00:00.000Z",
+          bots: ["Asleep"],
+        },
+      ],
+      sessions: [
+        {
+          id: "s-3",
+          createdAt: "2026-02-03T00:00:00.000Z",
+          lastUsedAt: "2026-03-05T00:00:00.000Z",
+          userAgent: null,
+        },
+        {
+          id: "s-2",
+          createdAt: "2026-02-02T00:00:00.000Z",
+          lastUsedAt: "2026-03-02T00:00:00.000Z",
+          userAgent: "Phone",
+        },
+      ],
+    });
+  });
+
+  it("says an admin is one, a banned address is banned, and an account without an organization is on Free", async () => {
+    const { as, users } = setup();
+    expect(await as("admin").user({ userId: "admin" })).toMatchObject({ admin: true });
+    await as("admin").ban({ value: "bob@example.test" });
+    (users.find((row) => row.id === "bob") as User).emailVerified = false;
+    expect(await as("admin").user({ userId: "bob" })).toMatchObject({
+      admin: false,
+      banned: true,
+      suspended: false,
+      emailVerified: false,
+      plan: { tier: "standard", grantedUntil: null, ends: null },
+      billing: null,
+      freeUntil: null,
+      storage: null,
+      spaces: [],
+      sessions: [],
+    });
+  });
+
+  it("shows a trial with no period yet, and a computer that has not run", async () => {
+    const { as, organizations, computers } = setup();
+    const row = organizations.get("org-ada");
+    const computer = computers.find((candidate) => candidate.id === "pc-off");
+    if (!row || !computer) throw new Error("fixture");
+    const trial = inDays(7);
+    row.billing = { status: "trialing", byokTier: "max", trialEndsAt: trial };
+    (computer as { runningSince: Date | null }).runningSince = null;
+    const account = await as("admin").user({ userId: "ada" });
+    expect(account.billing).toEqual({
+      status: "trialing",
+      trialEndsAt: trial.toISOString(),
+      currentPeriodEndsAt: null,
+      cancelAtPeriodEnd: false,
+    });
+    expect(account.computers.find((candidate) => candidate.id === "pc-off")).toMatchObject({
+      running: false,
+      runningSince: null,
+    });
+    // Billing off: files have no limit to show.
+    expect(account.storage).toBeNull();
+  });
+
+  it("answers not found for an unknown account and an internal chat-app row", async () => {
+    const { as } = setup();
+    for (const userId of ["nobody", "chat"])
+      await expect(as("admin").user({ userId })).rejects.toMatchObject({ kind: "NOT_FOUND" });
+  });
+});
+
+describe("renaming an account", () => {
+  it("changes its name only", async () => {
+    const { as, users } = setup();
+    expect(await as("admin").rename({ userId: "ada", name: "  Ada L.  " })).toEqual({
+      name: "Ada L.",
+    });
+    expect(users.find((row) => row.id === "ada")).toMatchObject({
+      name: "Ada L.",
+      email: "ada@example.test",
+    });
+  });
+
+  it("refuses an empty name, an unknown account and a chat-app row", async () => {
+    const { as, prisma } = setup();
+    await expect(as("admin").rename({ userId: "ada", name: "   " })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    for (const userId of ["nobody", "chat"])
+      await expect(as("admin").rename({ userId, name: "X" })).rejects.toMatchObject({
+        kind: "NOT_FOUND",
+      });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("signing an account out everywhere", () => {
+  it("ends its sessions and notification sign-ups only, and records it", async () => {
+    const { as, sessions, users, removePush } = setup();
+    expect(await as("admin").endSessions({ userId: "ada" })).toEqual({ ok: true });
+    expect(sessions().map((row) => row.userId)).toEqual(["admin"]);
+    expect(removePush).toHaveBeenCalledWith("ada");
+    // It can sign in again.
+    expect(users.find((row) => row.id === "ada")?.deactivatedAt).toBeNull();
+    expect(recordSecurityEvent).toHaveBeenCalledWith({
+      type: "auth.session.revoked",
+      userId: "ada",
+      metadata: { by: "operator", admin: "admin" },
+    });
+  });
+
+  it("answers not found for an unknown account, and is refused without the wiring", async () => {
+    const { as, prisma } = setup();
+    await expect(as("admin").endSessions({ userId: "chat" })).rejects.toMatchObject({
+      kind: "NOT_FOUND",
+    });
+    await expect(
+      setup(undefined, false).as("admin").endSessions({ userId: "ada" }),
+    ).rejects.toThrow();
+    expect(prisma.session.deleteMany).not.toHaveBeenCalled();
   });
 });
