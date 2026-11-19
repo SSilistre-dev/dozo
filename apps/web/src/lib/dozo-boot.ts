@@ -3,7 +3,7 @@ import { fetchAuthCapabilities } from "./auth-capabilities";
 import { initialBootstrapTarget } from "./bootstrap-target";
 
 /** The shell `index.html` draws before any script runs; see `dozo-boot.js` in `public/`. */
-export const BOOT_SHELL_ID = "dozo-boot";
+const BOOT_SHELL_ID = "dozo-boot";
 
 /**
  * Whether the app has drawn something of its own: a screen, a sign-in form or an error. Until

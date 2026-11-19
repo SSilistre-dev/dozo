@@ -103,11 +103,6 @@ export async function openUserSettings(page: Page, section: SettingsId = "genera
   return settings;
 }
 
-export async function closeUserSettings(page: Page) {
-  await page.getByRole("button", { name: "Close user settings" }).click();
-  await expect(page.getByTestId("user-settings")).toBeHidden();
-}
-
 export async function openAccountMenu(page: Page) {
   await page.getByTestId("user-menu-trigger").click();
   const menu = page.locator('[data-slot="popover-content"]');
@@ -127,24 +122,28 @@ export async function openCreateMenu(page: Page) {
   await page.getByTestId("create-menu-trigger").click();
 }
 
-/** Closes the topmost popup (menu, picker, small dialog) with one Escape. */
-export async function dismiss(page: Page) {
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(250);
-}
+const POPUPS =
+  '[role="dialog"],[role="alertdialog"],[role="listbox"],[role="menu"],[data-slot="popover-content"],[data-slot="select-content"],[data-testid="command-palette"]';
 
-export async function visible(locator: Locator) {
-  await expect(locator.first()).toBeVisible();
+/** Closes the topmost popup (menu, picker, small dialog) with one Escape and waits until it is gone. */
+export async function dismiss(page: Page) {
+  const open = page.locator(POPUPS).filter({ visible: true });
+  const before = await open.count();
+  await page.keyboard.press("Escape");
+  if (before > 0) await expect.poll(() => open.count()).toBeLessThan(before);
 }
 
 /** Unfolds every collapsed section inside `scope`, one at a time (menus and pickers are left alone). */
-export async function expandAll(page: Page, scope: Locator) {
+export async function expandAll(scope: Locator) {
   for (let round = 0; round < 15; round++) {
     const closed = scope.locator('button[aria-expanded="false"]:not([aria-haspopup])');
     if ((await closed.count()) === 0) return;
-    await closed.first().scrollIntoViewIfNeeded();
-    await closed.first().click();
-    await page.waitForTimeout(200);
+    const section = await closed.first().elementHandle();
+    if (!section) return;
+    await section.scrollIntoViewIfNeeded();
+    await section.click();
+    // A section that re-rendered on opening is detached: it opened too.
+    await expect.poll(() => section.getAttribute("aria-expanded").catch(() => "true")).toBe("true");
   }
 }
 
@@ -187,14 +186,12 @@ export async function openEachPopup(
           .last();
         if (await popup.isVisible().catch(() => false)) {
           await scan(`${label}, popup ${i + 1}`);
-          await page.keyboard.press("Escape");
-          await page.waitForTimeout(250);
+          await dismiss(page);
         }
         break;
       } catch (error) {
-        // The page re-rendered under the trigger; look it up again once.
+        // The page re-rendered under the trigger; look it up again once (the click waits for it to settle).
         if (attempt === 2) throw error;
-        await page.waitForTimeout(500);
       }
     }
   }

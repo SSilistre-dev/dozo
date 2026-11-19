@@ -9,11 +9,13 @@ export function DozoSharedSpace({ status }: { status: BillingStatus }) {
   const used = formatFileSize(space.usedBytes);
   const total = formatFileSize(space.limitBytes);
   return (
-    <p data-testid="shared-space" className="mt-2 text-body text-muted-foreground">
-      {space.plan} ·{" "}
-      <Trans>
-        {used} of {total} shared space
-      </Trans>
-    </p>
+    <div data-testid="shared-space" className="mt-2 text-body text-muted-foreground">
+      <p>{space.plan}</p>
+      <p>
+        <Trans>
+          {used} of {total} shared space
+        </Trans>
+      </p>
+    </div>
   );
 }

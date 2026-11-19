@@ -15,7 +15,7 @@ const LIMITS = [
   "Tests that need Postgres, a desktop or a network service skip themselves here as they do in upstream's unit job; they count as skipped.",
   "Coverage of dozo/ scripts counts only the modules a dozo/ test loads (Node's coverage lists no others). Upstream's coverage counts every source file next to its tests, loaded or not.",
   "tsc does not see dozo/e2e (Playwright compiles it); `make e2e` does.",
-  "knip runs without a configuration, so a dozo/ script started from a shell script or a Makefile (an entry point knip cannot see) is reported as an unused file; the fork's deadCode score takes knip's word and is understated by them. Check a deadCode job before acting on it.",
+  "knip runs on the unbranded tree. dozo/metrics/knip.config.mjs adds the entry points it cannot see: dozo/ scripts started from a shell script or an HTML page, and the files a brand rule requires (imported only in the branded tree). knip does not report the unused exports of an entry file, so those of a brand-required file are not counted.",
   "`pnpm audit` and `pnpm checks` cover the whole repository: both sets get the same value.",
 ];
 

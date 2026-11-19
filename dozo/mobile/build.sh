@@ -17,7 +17,8 @@
 # DOZO_MOBILE_DEVICE: the simulator device type (default "iPhone 17").
 # Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
-trap 'rc=$?; [ $rc -eq 0 ] || [ $rc -eq 64 ] || exit 2' EXIT
+on_exit() { local rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 64 ] || exit 2; }
+trap on_exit EXIT
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"

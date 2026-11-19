@@ -19,10 +19,10 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v6";
+const BENCH_VERSION = "dozo-token-bench-v6";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
-export const FAKE_PROVIDER = {
+const FAKE_PROVIDER = {
   tokenizer: "ceil(utf8 bytes / 4) per request part",
   cache:
     "prefix cache per thread: a request reads the longest byte prefix it shares with an earlier request of the same thread, up to what that request wrote; every request of at least minimumTokens writes its block-aligned prefix",
@@ -56,7 +56,7 @@ export function resolveReply(reply: ScriptedReply, body: WireBody): ScriptedRepl
 
 type SentReply = Exclude<ScriptedReply, { builtin: string }>;
 
-export type BenchTurn = {
+type BenchTurn = {
   prompt: string;
   /** What the server would recall for this turn, placed in the history where the server puts it. */
   recalled?: string[];
@@ -354,7 +354,7 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
   };
 }
 
-export type BenchTaskResult = Awaited<ReturnType<typeof runBenchTask>>;
+type BenchTaskResult = Awaited<ReturnType<typeof runBenchTask>>;
 
 export async function runTokenBench(tasks: readonly BenchTask[], pricing?: EvalPricing) {
   const results: BenchTaskResult[] = [];

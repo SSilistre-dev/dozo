@@ -2,8 +2,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
+import {
+  apply,
+  bare,
+  check,
+  configFile,
+  read,
+  scanner,
+  tempDir,
+  temps,
+  texts,
+  tree,
+  URLS,
+} from "./brand.test-support.mjs";
 import { escapeRe, globToRegExp, isSvg, loadConfig, rewrite, writeAtomic } from "./lib.mjs";
-import { temps, tempDir, tree, read, URLS, configFile, bare, apply, check, scanner, texts } from "./brand.test-support.mjs";
 
 // The codemod: blanket replace, urls, anchored rules, apply safety, assets, literals, dead entries.
 
@@ -66,7 +78,11 @@ describe("blanket replace", () => {
     });
     assert.equal(apply(root, configFile()).status, 0);
     assert.equal(read(root, "src/a.ts"), "Rakazo.icon Dozo.icons Dozo.icon-x Rakazo.icon/Assets");
-    assert.equal(read(root, "packages/b.ts"), "Dozo.icon", "outside the entry's files it is rewritten");
+    assert.equal(
+      read(root, "packages/b.ts"),
+      "Dozo.icon",
+      "outside the entry's files it is rewritten",
+    );
   });
 
   it("skips excluded paths, files outside include, binaries and node_modules", () => {
@@ -81,7 +97,12 @@ describe("blanket replace", () => {
     fs.writeFileSync(path.join(root, "src/img.png"), binary);
     const res = apply(root, configFile());
     assert.equal(res.status, 0, res.stderr);
-    for (const rel of ["src/a.test.ts", "src/LICENSE", "docs/readme.md", "src/node_modules/x/index.js"]) {
+    for (const rel of [
+      "src/a.test.ts",
+      "src/LICENSE",
+      "docs/readme.md",
+      "src/node_modules/x/index.js",
+    ]) {
       assert.equal(read(root, rel), "Rakazo", rel);
     }
     assert.ok(fs.readFileSync(path.join(root, "src/img.png")).equals(binary));
@@ -103,7 +124,8 @@ describe(".po catalogs", () => {
   it("rewrites msgid and msgstr alike so ids still match the rewritten source", () => {
     const root = tree({
       "src/App.tsx": "export const title = t`Welcome to Rakazo`;",
-      "packages/i18n/locales/en/messages.po": 'msgid "Welcome to Rakazo"\nmsgstr "Welcome to Rakazo"\n',
+      "packages/i18n/locales/en/messages.po":
+        'msgid "Welcome to Rakazo"\nmsgstr "Welcome to Rakazo"\n',
       "packages/i18n/locales/de/messages.po":
         'msgid "Welcome to Rakazo"\nmsgstr "Willkommen bei Rakazo"\n\nmsgid "Rakazo\\"s"\nmsgstr "Rakazos"\n',
     });
@@ -111,10 +133,16 @@ describe(".po catalogs", () => {
     const source = /t`(.*)`/.exec(read(root, "src/App.tsx"))[1];
     for (const lang of ["en", "de"]) {
       const po = read(root, `packages/i18n/locales/${lang}/messages.po`);
-      assert.ok(po.includes(`msgid "${source}"`), `${lang} keeps an entry for the rewritten source`);
+      assert.ok(
+        po.includes(`msgid "${source}"`),
+        `${lang} keeps an entry for the rewritten source`,
+      );
       assert.ok(!/\bRakazo\b/.test(po));
     }
-    assert.match(read(root, "packages/i18n/locales/de/messages.po"), /msgstr "Willkommen bei Dozo"/);
+    assert.match(
+      read(root, "packages/i18n/locales/de/messages.po"),
+      /msgstr "Willkommen bei Dozo"/,
+    );
   });
 });
 
@@ -147,8 +175,15 @@ describe("escaping", () => {
 
   it("globToRegExp: {a,b} is one alternation; a lone or unclosed brace and a comma outside braces are literal", () => {
     const m = (glob, text) => globToRegExp(glob).test(text);
-    assert.ok(m("a/**/*.{png,ico}", "a/b/c.png") && m("a/**/*.{png,ico}", "a/c.ico") && !m("a/**/*.{png,ico}", "a/c.jpg"));
-    assert.ok(!m("a.{png,ico}", "a.png,ico") && !m("a.{png,ico}", "a.{png,ico}"), "braces are not literal");
+    assert.ok(
+      m("a/**/*.{png,ico}", "a/b/c.png") &&
+        m("a/**/*.{png,ico}", "a/c.ico") &&
+        !m("a/**/*.{png,ico}", "a/c.jpg"),
+    );
+    assert.ok(
+      !m("a.{png,ico}", "a.png,ico") && !m("a.{png,ico}", "a.{png,ico}"),
+      "braces are not literal",
+    );
     assert.ok(m("a,b", "a,b") && !m("a,b", "a") && m("a{b", "a{b") && m("a}b", "a}b"));
   });
 
@@ -156,11 +191,18 @@ describe("escaping", () => {
     const config = loadConfig();
     for (const [key, target] of Object.entries(config.urls)) {
       assert.equal(rewrite(`x = "${key}";`, config, {}), `x = "${target}";`, key);
-      assert.equal(rewrite(`x = "${key.toUpperCase()}";`, config, {}), `x = "${target}";`, `${key} in capitals`);
+      assert.equal(
+        rewrite(`x = "${key.toUpperCase()}";`, config, {}),
+        `x = "${target}";`,
+        `${key} in capitals`,
+      );
       for (let i = 0; i < key.length; i++) {
         if (!".?".includes(key[i])) continue;
         // `.` must not be any character, `?` must not make the character before it optional
-        const near = key[i] === "." ? key.slice(0, i) + "X" + key.slice(i + 1) : key.slice(0, i - 1) + key.slice(i + 1);
+        const near =
+          key[i] === "."
+            ? key.slice(0, i) + "X" + key.slice(i + 1)
+            : key.slice(0, i - 1) + key.slice(i + 1);
         assert.equal(rewrite(`x = "${near}";`, config, {}), `x = "${near}";`, near);
       }
     }
@@ -171,12 +213,22 @@ describe("url map", () => {
   const rw = (text, urls = URLS) => rewrite(text, loadConfig(configFile({ urls })), {});
 
   it("replaces the longest key first", () => {
-    assert.equal(rw('"https://app.rakazo.com/x" "https://rakazo.com/docs"'), '"https://console.dozo.example/x" "https://dozo.example/docs"');
+    assert.equal(
+      rw('"https://app.rakazo.com/x" "https://rakazo.com/docs"'),
+      '"https://console.dozo.example/x" "https://dozo.example/docs"',
+    );
   });
 
   it("a longer key wins over a shorter key that starts the same way", () => {
-    const urls = { "rakazo.com": "a.example", "rakazo.com/docs": "docs.example", "rakazo.com/docs/api": "api.example" };
-    assert.equal(rw('"rakazo.com/docs/api/x" "rakazo.com/docs/y" "rakazo.com/z"', urls), '"api.example/x" "docs.example/y" "a.example/z"');
+    const urls = {
+      "rakazo.com": "a.example",
+      "rakazo.com/docs": "docs.example",
+      "rakazo.com/docs/api": "api.example",
+    };
+    assert.equal(
+      rw('"rakazo.com/docs/api/x" "rakazo.com/docs/y" "rakazo.com/z"', urls),
+      '"api.example/x" "docs.example/y" "a.example/z"',
+    );
   });
 
   it("replaces a differently capitalised URL with the mapped target exactly", () => {
@@ -188,10 +240,16 @@ describe("url map", () => {
   });
 
   it("does not eat the start of rakazo.computerOwner, and the gate ignores it", () => {
-    const root = tree({ "src/a.ts": 'l = "rakazo.computerOwner"; k = "rakazo.composerDraft."; u = "https://rakazo.com/x"; v = "rakazo.com"' });
+    const root = tree({
+      "src/a.ts":
+        'l = "rakazo.computerOwner"; k = "rakazo.composerDraft."; u = "https://rakazo.com/x"; v = "rakazo.com"',
+    });
     const config = configFile();
     assert.equal(apply(root, config).status, 0);
-    assert.equal(read(root, "src/a.ts"), 'l = "rakazo.computerOwner"; k = "rakazo.composerDraft."; u = "https://dozo.example/x"; v = "dozo.example"');
+    assert.equal(
+      read(root, "src/a.ts"),
+      'l = "rakazo.computerOwner"; k = "rakazo.composerDraft."; u = "https://dozo.example/x"; v = "dozo.example"',
+    );
     assert.equal(check(root, config).status, 0);
   });
 
@@ -200,7 +258,11 @@ describe("url map", () => {
       const root = tree({ "src/a.ts": `u = "https://${text}/x";` });
       const config = configFile({ urls: { "rakazo.com": "dozo.example" } });
       assert.equal(apply(root, config).status, 0);
-      assert.equal(read(root, "src/a.ts"), `u = "https://${text}/x";`, `${text} is another host: untouched`);
+      assert.equal(
+        read(root, "src/a.ts"),
+        `u = "https://${text}/x";`,
+        `${text} is another host: untouched`,
+      );
       const res = check(root, config);
       assert.equal(res.status, 2, `${text} stays a leak the gate reports`);
       assert.match(res.stderr, /src\/a\.ts:1: rakazo\.com/);
@@ -210,10 +272,14 @@ describe("url map", () => {
   it("a key does not match when more query parameters follow, and the gate catches the bare ids", () => {
     const store = "https://play.google.com/store/apps/details?id=com.rakazo.app";
     assert.equal(rw(`"${store}"`), '"https://dozo.example/get/android"');
-    for (const rest of ["&hl=en", "=1", "-x", "x"]) assert.equal(rw(`"${store}${rest}"`), `"${store}${rest}"`, rest);
+    for (const rest of ["&hl=en", "=1", "-x", "x"])
+      assert.equal(rw(`"${store}${rest}"`), `"${store}${rest}"`, rest);
     const cases = {
       "store link with an extra parameter": [`"${store}&hl=en"`, "com.rakazo.app"],
-      "localized App Store path": ['"https://apps.apple.com/us/app/rakazo/id6801531099"', "id6801531099"],
+      "localized App Store path": [
+        '"https://apps.apple.com/us/app/rakazo/id6801531099"',
+        "id6801531099",
+      ],
       "scheme-less Discord invite": ["see discord.gg/RWwKa2Sn7h", "RWwKa2Sn7h"],
     };
     for (const [name, [line, needle]] of Object.entries(cases)) {
@@ -228,13 +294,39 @@ describe("url map", () => {
 
   it("the old name with another public TLD is a leak, a property of the same name is not", () => {
     const { scan } = scanner();
-    for (const tld of ["ai", "app", "io", "net", "org", "dev", "co", "xyz", "me", "cloud", "info", "tech", "tools", "so", "sh", "ly", "gg", "chat", "site", "online", "store"]) {
+    for (const tld of [
+      "ai",
+      "app",
+      "io",
+      "net",
+      "org",
+      "dev",
+      "co",
+      "xyz",
+      "me",
+      "cloud",
+      "info",
+      "tech",
+      "tools",
+      "so",
+      "sh",
+      "ly",
+      "gg",
+      "chat",
+      "site",
+      "online",
+      "store",
+    ]) {
       assert.deepEqual(texts(scan(`u = "https://www.rakazo.${tld}/x"`)), [`rakazo.${tld}`], tld);
     }
-    assert.deepEqual(texts(scan("write to hello@rakazo.ai or HELLO@RAKAZO.AI")), ["rakazo.ai", "RAKAZO.AI"]);
+    assert.deepEqual(texts(scan("write to hello@rakazo.ai or HELLO@RAKAZO.AI")), [
+      "rakazo.ai",
+      "RAKAZO.AI",
+    ]);
     assert.deepEqual(scan('"rakazo.botId" "rakazo.managed" "http://rakazo.test"'), []);
     // the dotted keys are a closed list: a TLD that is not in it is a leak too
-    for (const tld of ["fun", "studio", "page", "xyz2"]) assert.ok(scan(`u = "https://rakazo.${tld}/x"`).length >= 1, tld);
+    for (const tld of ["fun", "studio", "page", "xyz2"])
+      assert.ok(scan(`u = "https://rakazo.${tld}/x"`).length >= 1, tld);
   });
 
   it("the gate reports the new brand followed by a public TLD that no URL target owns", () => {
@@ -244,7 +336,15 @@ describe("url map", () => {
       assert.equal(res.status, 2, text);
       assert.match(res.stderr, /src\/a\.ts:1: .*\(brand domain\)/, text);
     }
-    assert.equal(check(tree({ "src/a.ts": 'u = "dozo.example"; v = "console.dozo.example/x"; w = "Dozo.computer"' }), config).status, 0);
+    assert.equal(
+      check(
+        tree({
+          "src/a.ts": 'u = "dozo.example"; v = "console.dozo.example/x"; w = "Dozo.computer"',
+        }),
+        config,
+      ).status,
+      0,
+    );
   });
 
   it("the gate flags a URL target glued to the next word", () => {
@@ -264,7 +364,12 @@ describe("url map", () => {
 // ---------------------------------------------------------------------------------------------
 
 describe("anchored rules", () => {
-  const rule = (find, replace = "Y", file = "src/a.ts") => ({ file, find, replace, reason: "test" });
+  const rule = (find, replace = "Y", file = "src/a.ts") => ({
+    file,
+    find,
+    replace,
+    reason: "test",
+  });
 
   it("fails with exit 2 and writes nothing when the find text is not exactly once", () => {
     const root = tree({ "src/a.ts": "A A B Rakazo", "src/other.ts": "Rakazo" });
@@ -352,7 +457,10 @@ describe("anchored rules", () => {
     assert.equal(apply(lf, configFile({ anchored: [rule("one\ntwo", "Z")] })).status, 0);
     const crlfOk = tree({ "src/a.ts": "one\r\ntwo\r\n" });
     assert.equal(apply(crlfOk, configFile({ anchored: [rule("one\r\ntwo", "Z")] })).status, 0);
-    const missing = apply(tree({ "src/a.ts": "x\r\n" }), configFile({ anchored: [rule("one", "Z")] }));
+    const missing = apply(
+      tree({ "src/a.ts": "x\r\n" }),
+      configFile({ anchored: [rule("one", "Z")] }),
+    );
     assert.doesNotMatch(missing.stderr, /CRLF/, "a find without \\n never blames the line endings");
   });
 
@@ -371,9 +479,18 @@ describe("anchored rules", () => {
 
   it("rules on several files: each file gets its own rules", () => {
     const root = tree({ "src/a.ts": "A", "src/b.ts": "A", "src/c.ts": "A" });
-    const config = bare({ anchored: [rule("A", "1", "src/a.ts"), rule("A", "2", "src/b.ts"), rule("A", "3", "src/c.ts")] });
+    const config = bare({
+      anchored: [
+        rule("A", "1", "src/a.ts"),
+        rule("A", "2", "src/b.ts"),
+        rule("A", "3", "src/c.ts"),
+      ],
+    });
     assert.equal(apply(root, config, "--strict").status, 0);
-    assert.deepEqual(["a", "b", "c"].map((n) => read(root, `src/${n}.ts`)), ["1", "2", "3"]);
+    assert.deepEqual(
+      ["a", "b", "c"].map((n) => read(root, `src/${n}.ts`)),
+      ["1", "2", "3"],
+    );
   });
 
   it("a rule on a file outside include applies exactly once and the file gets no blanket rename", () => {
@@ -454,7 +571,11 @@ describe("anchored rules", () => {
 
 describe("placeholders", () => {
   it("fails apply, strict or not, when a branded file would ship one, naming file and line, and writes nothing", () => {
-    const root = tree({ "src/a.ts": 'a = 1;\nu = "https://rakazo.com/x";', "src/b.ts": 'r = "github.com/OWNER/dozo";', "src/c.test.ts": 'u = "dozo.example"' });
+    const root = tree({
+      "src/a.ts": 'a = 1;\nu = "https://rakazo.com/x";',
+      "src/b.ts": 'r = "github.com/OWNER/dozo";',
+      "src/c.test.ts": 'u = "dozo.example"',
+    });
     const config = configFile({ placeholders: ["dozo.example", "OWNER/"] });
     for (const flags of [[], ["--strict"], ["--check"]]) {
       const res = apply(root, config, ...flags);
@@ -464,7 +585,10 @@ describe("placeholders", () => {
       assert.doesNotMatch(res.stderr, /c\.test\.ts/, "an excluded file is not shipped");
     }
     assert.equal(read(root, "src/a.ts"), 'a = 1;\nu = "https://rakazo.com/x";');
-    const fixed = apply(root, configFile({ urls: { "rakazo.com": "real.test" }, placeholders: ["dozo.example"] }));
+    const fixed = apply(
+      root,
+      configFile({ urls: { "rakazo.com": "real.test" }, placeholders: ["dozo.example"] }),
+    );
     assert.equal(fixed.status, 0, fixed.stderr);
   });
 });
@@ -478,7 +602,11 @@ describe("apply safety", () => {
     assert.equal(second.status, 0);
     assert.match(second.stdout, /changed: 0/);
     assert.match(second.stdout, /replacements:\n {2}none/);
-    assert.equal(apply(root, config, "--strict").status, 2, "strict wants live entries: nothing is left to rewrite");
+    assert.equal(
+      apply(root, config, "--strict").status,
+      2,
+      "strict wants live entries: nothing is left to rewrite",
+    );
   });
 
   it("refuses a tree with .git unless --allow-git", () => {
@@ -498,7 +626,15 @@ describe("apply safety", () => {
     fs.mkdirSync(path.join(configDir, "assets"));
     fs.writeFileSync(path.join(configDir, "assets/logo.svg"), "<svg/>");
     const config = path.join(configDir, "brand.json");
-    fs.writeFileSync(config, JSON.stringify({ from: "Rakazo", to: "Dozo", include: ["src/**"], assets: { "src/public/logo.svg": "logo.svg" } }));
+    fs.writeFileSync(
+      config,
+      JSON.stringify({
+        from: "Rakazo",
+        to: "Dozo",
+        include: ["src/**"],
+        assets: { "src/public/logo.svg": "logo.svg" },
+      }),
+    );
     const root = tree({ "src/a.ts": "Rakazo" });
     const res = apply(root, config, "--check");
     assert.equal(res.status, 0, res.stderr);
@@ -514,7 +650,10 @@ describe("apply safety", () => {
     const good = { file: "src/a.ts", find: "A", replace: "Y", reason: "t" };
     const dry = (anchored) => apply(root, configFile({ anchored }), "--check", "--allow-git");
     assert.equal(dry([good]).status, 0);
-    for (const rule of [{ ...good, find: "NOPE", replace: "Q" }, { ...good, file: "src/gone.ts" }]) {
+    for (const rule of [
+      { ...good, find: "NOPE", replace: "Q" },
+      { ...good, file: "src/gone.ts" },
+    ]) {
       const res = dry([good, rule]);
       assert.equal(res.status, 2, res.stderr);
       assert.match(res.stderr, /need exactly 1|does not exist/);
@@ -537,7 +676,15 @@ describe("apply safety", () => {
     fs.writeFileSync(path.join(configDir, "assets/logo.svg"), "<svg/>");
     const config = path.join(configDir, "brand.json");
     // the asset's parent directory is a regular file: mkdir fails after validation passed
-    fs.writeFileSync(config, JSON.stringify({ from: "Rakazo", to: "Dozo", include: ["src/**"], assets: { "src/a.ts/logo.svg": "logo.svg" } }));
+    fs.writeFileSync(
+      config,
+      JSON.stringify({
+        from: "Rakazo",
+        to: "Dozo",
+        include: ["src/**"],
+        assets: { "src/a.ts/logo.svg": "logo.svg" },
+      }),
+    );
     const root = tree({ "src/a.ts": "Rakazo" });
     const res = apply(root, config);
     assert.equal(res.status, 2, res.stderr);
@@ -589,7 +736,11 @@ describe("apply safety", () => {
     assert.ok(fs.readFileSync(path.join(root, "src/notes.txt")).equals(utf16));
     fs.rmSync(path.join(root, "src/notes.txt"));
     fs.writeFileSync(path.join(root, "src/font.woff2"), utf16);
-    assert.equal(apply(root, configFile({ allow: { binary: [{ glob: "src/font.woff2", reason: "r" }] } })).status, 0);
+    assert.equal(
+      apply(root, configFile({ allow: { binary: [{ glob: "src/font.woff2", reason: "r" }] } }))
+        .status,
+      0,
+    );
   });
 
   it("zero files in scope is a failure, in apply and in the gate", () => {
@@ -611,7 +762,11 @@ describe("assets", () => {
     fs.writeFileSync(path.join(configDir, "assets/logo.svg"), "<svg/>");
     fs.mkdirSync(path.join(configDir, "assets/dir"));
     const config = path.join(configDir, "brand.json");
-    const write = (assets) => fs.writeFileSync(config, JSON.stringify({ from: "Rakazo", to: "Dozo", include: ["src/**"], assets }));
+    const write = (assets) =>
+      fs.writeFileSync(
+        config,
+        JSON.stringify({ from: "Rakazo", to: "Dozo", include: ["src/**"], assets }),
+      );
     return { config, write };
   };
 
@@ -647,7 +802,11 @@ describe("assets", () => {
       write({ "public/x.svg": source });
       const res = apply(root, config);
       assert.equal(res.status, 2, source);
-      assert.match(res.stderr, /must stay under assets/, "an absolute source, or a sibling that shares the prefix, is outside assets/");
+      assert.match(
+        res.stderr,
+        /must stay under assets/,
+        "an absolute source, or a sibling that shares the prefix, is outside assets/",
+      );
     }
 
     fs.mkdirSync(path.join(root, "public/taken"));
@@ -673,11 +832,15 @@ describe("assets", () => {
 
 // ---------------------------------------------------------------------------------------------
 
-
 describe("literals", () => {
   const literals = [
     { find: "/home/rakazo", replace: "/home/dozo", reason: "path" },
-    { find: "rakazo-runtime:x:", replace: "dozo-runtime:x:", files: ["src/u.sh"], reason: "one file" },
+    {
+      find: "rakazo-runtime:x:",
+      replace: "dozo-runtime:x:",
+      files: ["src/u.sh"],
+      reason: "one file",
+    },
   ];
   it("renames everywhere, or only in the listed files", () => {
     const root = tree({
@@ -700,8 +863,14 @@ describe("literals", () => {
     const res = apply(root, configFile({ literals }));
     assert.match(res.stdout, /^brand Rakazo -> Dozo, root /);
     assert.match(res.stdout, /files scanned: 1, changed: 1\n/);
-    assert.match(res.stdout, /replacements:\n {2}blanket: 2\n {2}literal \/home\/rakazo: 1\n {2}url rakazo\.com: 2\n {2}variant Rakazos: 1\n/);
-    assert.match(res.stdout, /hooks: anchored 0 of 0 applied, 0 already applied; assets 0 copied\n$/);
+    assert.match(
+      res.stdout,
+      /replacements:\n {2}blanket: 2\n {2}literal \/home\/rakazo: 1\n {2}url rakazo\.com: 2\n {2}variant Rakazos: 1\n/,
+    );
+    assert.match(
+      res.stdout,
+      /hooks: anchored 0 of 0 applied, 0 already applied; assets 0 copied\n$/,
+    );
     const dry = apply(tree({ "src/a.ts": "Rakazo" }), configFile({ literals }), "--check");
     assert.match(dry.stdout, /^brand Rakazo -> Dozo \(dry run\), root /);
     assert.match(dry.stdout, /would change: 1\n/);
@@ -710,7 +879,8 @@ describe("literals", () => {
 
 describe("dead entries (apply --strict)", () => {
   const files = {
-    "src/a.ts": 'Rakazo https://rakazo.com Rakazos Rakazo.icon ghcr.io/elie222/rakazo\nrakazo: "computer"\n/home/rakazo',
+    "src/a.ts":
+      'Rakazo https://rakazo.com Rakazos Rakazo.icon ghcr.io/elie222/rakazo\nrakazo: "computer"\n/home/rakazo',
     "src/rakazo-x.ts": "x",
     "src/Rakazo.icon/i.png": "x",
   };
@@ -736,9 +906,21 @@ describe("dead entries (apply --strict)", () => {
     variants: { variants: { Rakazos: "Dozos", Rakazoz: "Dozoz" } },
     keep: { keep: [...live.keep, { text: "Rakazo.exe", files: ["src/a.ts"], reason: "r" }] },
     "keep, right file": { keep: [{ text: "Rakazo.icon", files: ["src/other.ts"], reason: "r" }] },
-    "allow.phrases": { allow: { ...live.allow, phrases: [...live.allow.phrases, { text: "gone", files: ["src/a.ts"], reason: "r" }] } },
-    "allow.text": { allow: { ...live.allow, text: [{ file: "src/b.ts", text: 'rakazo: "computer"', reason: "r" }] } },
-    "allow.paths": { allow: { ...live.allow, paths: [...live.allow.paths, { glob: "src/gone.ts", reason: "r" }] } },
+    "allow.phrases": {
+      allow: {
+        ...live.allow,
+        phrases: [...live.allow.phrases, { text: "gone", files: ["src/a.ts"], reason: "r" }],
+      },
+    },
+    "allow.text": {
+      allow: {
+        ...live.allow,
+        text: [{ file: "src/b.ts", text: 'rakazo: "computer"', reason: "r" }],
+      },
+    },
+    "allow.paths": {
+      allow: { ...live.allow, paths: [...live.allow.paths, { glob: "src/gone.ts", reason: "r" }] },
+    },
     "allow.binary": { allow: { ...live.allow, binary: [{ glob: "src/gone.png", reason: "r" }] } },
     literals: { literals: [...live.literals, { find: "/gone", replace: "/x", reason: "r" }] },
   };
@@ -748,20 +930,34 @@ describe("dead entries (apply --strict)", () => {
       const strict = apply(root, configFile({ ...live, ...extra }), "--strict");
       assert.equal(strict.status, 2, strict.stderr);
       assert.match(strict.stderr, /dead [\w.]+ entry \(matches nothing in the tree, delete it\)/);
-      assert.equal(read(root, "src/a.ts").startsWith("Rakazo"), true, "nothing is written on failure");
+      assert.equal(
+        read(root, "src/a.ts").startsWith("Rakazo"),
+        true,
+        "nothing is written on failure",
+      );
       assert.equal(apply(root, configFile({ ...live, ...extra })).status, 0);
     });
   }
   it("an entry that matches only a longer word is dead", () => {
     const root = tree({ "src/a.ts": "Rakazo.icons Rakazo" });
-    const res = apply(root, configFile({ ...live, urls: {}, variants: {}, literals: [], allow: {}, keep: [{ text: "Rakazo.icon", files: ["src/a.ts"], reason: "r" }] }), "--strict");
+    const res = apply(
+      root,
+      configFile({
+        ...live,
+        urls: {},
+        variants: {},
+        literals: [],
+        allow: {},
+        keep: [{ text: "Rakazo.icon", files: ["src/a.ts"], reason: "r" }],
+      }),
+      "--strict",
+    );
     assert.equal(res.status, 2);
     assert.match(res.stderr, /dead keep entry.*Rakazo\.icon/);
   });
 });
 
 // ---------------------------------------------------------------------------------------------
-
 
 describe("binary types are never decoded", () => {
   const notUtf8 = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]); // a PDF header: high bytes, no NUL
@@ -773,12 +969,25 @@ describe("binary types are never decoded", () => {
       fs.writeFileSync(path.join(root, `src/f.${ext}`), notUtf8);
       const applied = apply(root, configFile());
       assert.equal(applied.status, 0, `${ext}: ${applied.stderr}`);
-      assert.ok(fs.readFileSync(path.join(root, `src/f.${ext}`)).equals(notUtf8), `${ext} is left as it is`);
+      assert.ok(
+        fs.readFileSync(path.join(root, `src/f.${ext}`)).equals(notUtf8),
+        `${ext} is left as it is`,
+      );
       const gate = check(root, configFile());
       assert.equal(gate.status, 2, ext);
-      assert.match(gate.stderr, new RegExp(`src/f\\.${ext}: binary file neither mapped in "assets" nor reviewed in "allow.binary"`));
+      assert.match(
+        gate.stderr,
+        new RegExp(
+          `src/f\\.${ext}: binary file neither mapped in "assets" nor reviewed in "allow.binary"`,
+        ),
+      );
       assert.doesNotMatch(gate.stderr, /not valid UTF-8/);
-      assert.equal(check(root, configFile({ allow: { binary: [{ glob: `src/f.${ext}`, reason: "r" }] } })).status, 0, ext);
+      assert.equal(
+        check(root, configFile({ allow: { binary: [{ glob: `src/f.${ext}`, reason: "r" }] } }))
+          .status,
+        0,
+        ext,
+      );
     }
   });
 
@@ -791,8 +1000,14 @@ describe("binary types are never decoded", () => {
       assert.equal(res.status, 2, script.name);
       assert.match(res.stderr, /src\/logo\.svg is not valid UTF-8/);
     }
-    const upper = tree({ "src/a.ts": "const a = 1;", "src/LOGO.SVG": "<svg><title>Rakazo</title></svg>" });
-    const res = check(upper, configFile({ allow: { binary: [{ glob: "src/LOGO.SVG", reason: "r" }] } }));
+    const upper = tree({
+      "src/a.ts": "const a = 1;",
+      "src/LOGO.SVG": "<svg><title>Rakazo</title></svg>",
+    });
+    const res = check(
+      upper,
+      configFile({ allow: { binary: [{ glob: "src/LOGO.SVG", reason: "r" }] } }),
+    );
     assert.equal(res.status, 2);
     assert.match(res.stderr, /LOGO\.SVG:1: Rakazo/);
     assert.ok(isSvg("a.SVG") && isSvg("a.svg") && !isSvg("a.svg.png") && !isSvg("svg"));
@@ -803,11 +1018,13 @@ describe("a failed atomic write", () => {
   it("removes its temp file; a good write leaves none either", () => {
     const dir = tempDir();
     fs.mkdirSync(path.join(dir, "target/sub"), { recursive: true });
-    assert.throws(() => writeAtomic(path.join(dir, "target"), "x"), "a file cannot replace a directory");
+    assert.throws(
+      () => writeAtomic(path.join(dir, "target"), "x"),
+      "a file cannot replace a directory",
+    );
     assert.deepEqual(fs.readdirSync(dir), ["target"], "no temp file next to the target");
     writeAtomic(path.join(dir, "ok.txt"), "x");
     assert.deepEqual(fs.readdirSync(dir).sort(), ["ok.txt", "target"]);
     assert.equal(fs.readFileSync(path.join(dir, "ok.txt"), "utf8"), "x");
   });
 });
-
