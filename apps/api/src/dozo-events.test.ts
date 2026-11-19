@@ -1,11 +1,15 @@
 import { createRouterClient } from "@orpc/server";
 import type { BillingSubscriptionSnapshot, ProductAnalytics } from "@rakazo/adapter-kit";
-import type { DozoLedgerEntry, DozoPaymentLedger } from "@rakazo/adapters";
+import type { DozoLedger, DozoLedgerEntry, DozoPaymentLedger } from "@rakazo/adapters";
 import { AnalyticsEvent } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BillingService } from "./billing.js";
 import {
+  DOZO_EVENT_REPEAT_MS,
+  DOZO_EVENTS_PER_MINUTE,
+  DOZO_FIRSTS_REMEMBERED,
   DOZO_REFUND_LOOKBACK_MS,
   DOZO_SIGNUP_FORM_MS,
   dozoBillingChange,
@@ -13,6 +17,8 @@ import {
   dozoFirstBot,
   dozoFirstMessage,
   dozoRefundReports,
+  dozoReportingRepos,
+  forgetRecordedFirsts,
 } from "./dozo-events.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
@@ -51,14 +57,32 @@ describe("the event schema", () => {
 });
 
 describe("the apps' reports", () => {
-  function setup(sink?: ProductAnalytics) {
+  function setup(sink?: ProductAnalytics, clock = () => Date.now()) {
     const prisma = { user: { findUnique: vi.fn(async () => ({ createdAt })) } };
     const deps = { prisma, ...(sink ? { analytics: sink } : {}) } as unknown as RouterDeps;
-    const client = createRouterClient(dozoEventsRoutes(createRouterContext(deps)), {
+    const client = createRouterClient(dozoEventsRoutes(createRouterContext(deps), clock), {
       context: { actor },
     });
     return { prisma, track: client.dozoEvents.track };
   }
+
+  it("sends the same report once per window, and refuses a flood", async () => {
+    let time = 0;
+    const sink = analytics();
+    const { track } = setup(sink, () => time);
+    for (let index = 0; index < 5; index++) await track({ name: "upgrade_viewed", source: "app" });
+    await track({ name: "upgrade_viewed", source: "paywall" });
+    expect(sink.capture).toHaveBeenCalledTimes(2);
+    time = DOZO_EVENT_REPEAT_MS;
+    await track({ name: "upgrade_viewed", source: "app" });
+    expect(sink.capture).toHaveBeenCalledTimes(3);
+    for (let index = 0; index < DOZO_EVENTS_PER_MINUTE; index++)
+      await track({ name: "plan_limit_hit", kind: "computer_hours" }).catch((error) => error);
+    await expect(
+      track({ name: "plan_limit_hit", kind: "space_limit_reached" }),
+    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    expect(sink.capture).toHaveBeenCalledTimes(4);
+  });
 
   it("sends nothing, and reads nothing, without analytics", async () => {
     const { prisma, track } = setup();
@@ -88,18 +112,33 @@ describe("the apps' reports", () => {
   });
 
   it("takes a sign-up start only from within the hour before the account was made", async () => {
-    const sink = analytics();
-    const { track } = setup(sink);
     const opened = new Date(createdAt.getTime() - 5 * 60_000);
-    await track({ name: "signup_started", startedAt: opened.toISOString() });
     // An hour and a millisecond before, and after the account: neither started it.
     const early = new Date(createdAt.getTime() - DOZO_SIGNUP_FORM_MS - 1);
-    await track({ name: "signup_started", startedAt: early.toISOString() });
     const later = new Date(createdAt.getTime() + 1);
-    await track({ name: "signup_started", startedAt: later.toISOString() });
-    expect(sink.capture.mock.calls).toEqual([
-      ["ada", { name: "signup_started" }, { id: "ada", at: opened }],
+    const sent = [];
+    for (const startedAt of [opened, early, later]) {
+      const sink = analytics();
+      await setup(sink).track({ name: "signup_started", startedAt: startedAt.toISOString() });
+      sent.push(sink.capture.mock.calls);
+    }
+    expect(sent).toEqual([
+      [["ada", { name: "signup_started" }, { id: "ada", at: opened }]],
+      [],
+      [],
     ]);
+  });
+
+  it("takes one sign-up start per account, whatever time a repeat carries", async () => {
+    const sink = analytics();
+    const { prisma, track } = setup(sink);
+    await track({ name: "signup_started", startedAt: createdAt.toISOString() });
+    await track({
+      name: "signup_started",
+      startedAt: new Date(createdAt.getTime() - 1).toISOString(),
+    });
+    expect(sink.capture).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
   });
 
   it("drops a sign-up start for an account it cannot find", async () => {
@@ -112,67 +151,101 @@ describe("the apps' reports", () => {
 });
 
 describe("a first bot and a first message", () => {
-  function prisma(found: { id: string } | null) {
+  /** The marks table: an insert adds a row only when the member has none of that kind. */
+  function marks() {
+    const rows = new Set<string>();
     return {
-      bot: { findFirst: vi.fn(async () => found) },
-      message: { findFirst: vi.fn(async () => found) },
+      rows,
+      $executeRaw: vi.fn(async (_strings: TemplateStringsArray, userId: string, kind: string) => {
+        const key = `${kind}:${userId}`;
+        if (rows.has(key)) return 0;
+        rows.add(key);
+        return 1;
+      }),
     };
   }
+  beforeEach(() => forgetRecordedFirsts());
 
-  it("is reported when the member has no other", async () => {
+  it("is reported once per member, however many race, and never asked again after", async () => {
     const sink = analytics();
-    const db = prisma(null);
+    const db = marks();
     const deps = { prisma: db as unknown as PrismaClient, analytics: sink };
-    await dozoFirstBot(deps, actor, "bot-1");
-    await dozoFirstMessage(deps, actor, { id: "message-1", createdAt });
-    expect(db.bot.findFirst).toHaveBeenCalledWith({
-      where: { userId: "ada", id: { not: "bot-1" } },
-      select: { id: true },
-    });
-    expect(db.message.findFirst).toHaveBeenCalledWith({
-      where: {
-        role: "user",
-        authorUserId: "ada",
-        id: { not: "message-1" },
-        thread: { spaceId: "space-ada" },
-      },
-      select: { id: true },
-    });
+    await Promise.all([dozoFirstBot(deps, actor), dozoFirstBot(deps, actor)]);
+    await Promise.all([
+      dozoFirstMessage(deps, actor, { createdAt }),
+      dozoFirstMessage(deps, actor, { createdAt }),
+    ]);
     expect(sink.capture.mock.calls).toEqual([
       ["ada", { name: "first_bot_created" }, { id: "ada", at: expect.any(Date) }],
       ["ada", { name: "first_message_sent" }, { id: "ada", at: createdAt }],
     ]);
+    const asked = db.$executeRaw.mock.calls.length;
+    await dozoFirstMessage(deps, actor, { createdAt });
+    await dozoFirstBot(deps, actor);
+    expect(db.$executeRaw).toHaveBeenCalledTimes(asked);
   });
 
-  it("is not reported after another, nor read without analytics, nor ever thrown", async () => {
+  it("is not reported for a member already recorded, as the migration records earlier ones", async () => {
     const sink = analytics();
-    const db = prisma({ id: "older" });
-    await dozoFirstBot({ prisma: db as unknown as PrismaClient, analytics: sink }, actor, "bot-2");
+    const db = marks();
+    db.rows.add("message:ada");
     await dozoFirstMessage({ prisma: db as unknown as PrismaClient, analytics: sink }, actor, {
-      id: "message-2",
       createdAt,
     });
     expect(sink.capture).not.toHaveBeenCalled();
+  });
 
-    const quiet = prisma(null);
-    await dozoFirstBot({ prisma: quiet as unknown as PrismaClient }, actor, "bot-3");
-    await dozoFirstMessage({ prisma: quiet as unknown as PrismaClient }, actor, {
-      id: "message-3",
-      createdAt,
-    });
-    expect(quiet.bot.findFirst).not.toHaveBeenCalled();
-    expect(quiet.message.findFirst).not.toHaveBeenCalled();
+  it("forgets the longest remembered member past its limit", async () => {
+    const db = marks();
+    const deps = { prisma: db as unknown as PrismaClient, analytics: analytics() };
+    for (let index = 0; index <= DOZO_FIRSTS_REMEMBERED; index++)
+      await dozoFirstMessage(deps, { ...actor, userId: `user-${index}` }, { createdAt });
+    const asked = db.$executeRaw.mock.calls.length;
+    await dozoFirstMessage(deps, { ...actor, userId: "user-0" }, { createdAt });
+    await dozoFirstMessage(
+      deps,
+      { ...actor, userId: `user-${DOZO_FIRSTS_REMEMBERED}` },
+      { createdAt },
+    );
+    expect(db.$executeRaw).toHaveBeenCalledTimes(asked + 1);
+  });
+
+  it("reads nothing without analytics, and never throws", async () => {
+    const quiet = marks();
+    await dozoFirstBot({ prisma: quiet as unknown as PrismaClient }, actor);
+    await dozoFirstMessage({ prisma: quiet as unknown as PrismaClient }, actor, { createdAt });
+    expect(quiet.$executeRaw).not.toHaveBeenCalled();
 
     const broken = {
-      bot: { findFirst: vi.fn(async () => Promise.reject(new Error("down"))) },
-      message: { findFirst: vi.fn(async () => Promise.reject(new Error("down"))) },
+      $executeRaw: vi.fn(async () => Promise.reject(new Error("down"))),
     } as unknown as PrismaClient;
-    await expect(dozoFirstBot({ prisma: broken, analytics: sink }, actor, "b")).resolves.toBe(
-      undefined,
-    );
+    const sink = analytics();
+    await expect(dozoFirstBot({ prisma: broken, analytics: sink }, actor)).resolves.toBe(undefined);
     await expect(
-      dozoFirstMessage({ prisma: broken, analytics: sink }, actor, { id: "m", createdAt }),
+      dozoFirstMessage({ prisma: broken, analytics: sink }, actor, { createdAt }),
     ).resolves.toBe(undefined);
+    expect(sink.capture).not.toHaveBeenCalled();
+  });
+
+  it("reports a first bot from every creation that goes through the repositories", async () => {
+    const sink = analytics();
+    const db = marks();
+    const repos = {
+      createBot: vi.fn(async (_actor: typeof actor, input: { name: string }) => ({
+        id: input.name,
+      })),
+      getBot: vi.fn(),
+    };
+    const wrapped = dozoReportingRepos(repos, {
+      prisma: db as unknown as PrismaClient,
+      analytics: sink,
+    });
+    expect(await wrapped.createBot(actor, { name: "first" })).toEqual({ id: "first" });
+    expect(wrapped.getBot).toBe(repos.getBot);
+    await vi.waitFor(() => expect(sink.capture).toHaveBeenCalledTimes(1));
+    expect(repos.createBot).toHaveBeenCalledWith(actor, { name: "first" });
+    // Without analytics the repositories are as they were.
+    expect(dozoReportingRepos(repos, { prisma: db as unknown as PrismaClient })).toBe(repos);
   });
 });
 
@@ -190,6 +263,7 @@ function account(more: Partial<BillingAccount> = {}): BillingAccount {
     subscriptionId: "sub-1",
     status: "active",
     cancelAtPeriodEnd: false,
+    updatedAt: createdAt,
     ...more,
   } as BillingAccount;
 }
@@ -233,6 +307,17 @@ describe("a billing change", () => {
         { id: `sub-1:${createdAt.toISOString()}`, at: expect.any(Date) },
       ],
     ]);
+    // Paid again, then failing again in the same period: a new report, with its own id.
+    const recovered = new Date(createdAt.getTime() + 60_000);
+    expect(
+      await change(account({ updatedAt: recovered }), snapshot({ status: "past_due" })),
+    ).toEqual([
+      [
+        "ada",
+        { name: "payment_failed" },
+        { id: `sub-1:${recovered.toISOString()}`, at: expect.any(Date) },
+      ],
+    ]);
     // Still failing, now unpaid: already reported.
     expect(await change(account({ status: "past_due" }), snapshot({ status: "unpaid" }))).toEqual(
       [],
@@ -246,17 +331,32 @@ describe("a billing change", () => {
     ).toHaveLength(1);
   });
 
+  it("reports a cancellation again after it was taken back", async () => {
+    const undone = new Date(createdAt.getTime() + 5_000);
+    const first = await change(account(), snapshot({ cancelAtPeriodEnd: true }));
+    const second = await change(
+      account({ updatedAt: undone }),
+      snapshot({ cancelAtPeriodEnd: true }),
+    );
+    expect(first[0]?.[2]).toEqual({ id: `sub-1:${createdAt.toISOString()}`, at: expect.any(Date) });
+    expect(second[0]?.[2]).toEqual({ id: `sub-1:${undone.toISOString()}`, at: expect.any(Date) });
+  });
+
   it("reports a subscription set to end, at the period's end or at once", async () => {
     expect(await change(account(), snapshot({ cancelAtPeriodEnd: true }))).toEqual([
       [
         "ada",
         { name: "subscription_canceled", atPeriodEnd: true },
-        { id: "sub-1", at: expect.any(Date) },
+        { id: `sub-1:${createdAt.toISOString()}`, at: expect.any(Date) },
       ],
     ]);
     const ended = new Date(createdAt.getTime() + 1000);
     expect(await change(account(), snapshot({ status: "canceled", endedAt: ended }))).toEqual([
-      ["ada", { name: "subscription_canceled", atPeriodEnd: false }, { id: "sub-1", at: ended }],
+      [
+        "ada",
+        { name: "subscription_canceled", atPeriodEnd: false },
+        { id: `sub-1:${createdAt.toISOString()}`, at: ended },
+      ],
     ]);
     // Ending at the period's end, as already reported, and an end with no time.
     expect(
@@ -272,7 +372,7 @@ describe("a billing change", () => {
       [
         "ada",
         { name: "subscription_canceled", atPeriodEnd: false },
-        { id: "sub-1", at: expect.any(Date) },
+        { id: `sub-1:${createdAt.toISOString()}`, at: expect.any(Date) },
       ],
     ]);
   });
@@ -312,7 +412,15 @@ describe("refunds after a payment webhook", () => {
         ),
       },
     };
-    const ledger = { read: vi.fn(async () => ({ entries, unclassified: 0, partial: false })) };
+    const ledger = {
+      read: vi.fn(
+        async (..._args: unknown[]): Promise<DozoLedger> => ({
+          entries,
+          unclassified: 0,
+          partial: false,
+        }),
+      ),
+    };
     const wrapped = dozoRefundReports(billing, {
       prisma: db as unknown as PrismaClient,
       analytics: sink,
@@ -329,51 +437,73 @@ describe("refunds after a payment webhook", () => {
     expect(dozoRefundReports(billing, { prisma, analytics: analytics() })).toBe(billing);
   });
 
-  it("syncs first, then reports each recent refund of the payer to its owner", async () => {
+  it("answers the webhook once synced, then reports each recent refund of the payer", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(now);
     const refundedAt = new Date(now.getTime() - 60_000);
-    const { sink, billing, ledger, wrapped } = setup([
+    const run = setup([
       entry("paid", new Date(now.getTime() - 120_000)),
       entry("refunded", refundedAt),
     ]);
-    await wrapped.sync("cus-ada");
+    const read = deferred<DozoLedger>();
+    run.ledger.read.mockReturnValueOnce(read.promise);
+    await run.wrapped.sync("cus-ada");
     vi.useRealTimers();
-    expect(billing.sync).toHaveBeenCalledWith("cus-ada");
-    expect(ledger.read).toHaveBeenCalledWith(
-      { from: new Date(now.getTime() - DOZO_REFUND_LOOKBACK_MS), to: now },
-      { customers: new Set(["cus-ada"]), subscriptions: new Set(["sub-1"]) },
+    // The answer did not wait for the read.
+    expect(run.billing.sync).toHaveBeenCalledWith("cus-ada");
+    await vi.waitFor(() => expect(run.ledger.read).toHaveBeenCalled());
+    expect(run.sink.capture).not.toHaveBeenCalled();
+    const [range, accounts, signal] = run.ledger.read.mock.calls[0]!;
+    expect(range).toEqual({ from: new Date(now.getTime() - DOZO_REFUND_LOOKBACK_MS), to: now });
+    expect(accounts).toEqual({
+      customers: new Set(["cus-ada"]),
+      subscriptions: new Set(["sub-1"]),
+    });
+    expect(signal).toBeInstanceOf(AbortSignal);
+    read.resolve({
+      entries: [entry("paid", now), entry("refunded", refundedAt)],
+      unclassified: 0,
+      partial: false,
+    });
+    await vi.waitFor(() =>
+      expect(run.sink.capture.mock.calls).toEqual([
+        [
+          "ada",
+          { name: "refund_issued" },
+          { id: `cus-ada:${refundedAt.toISOString()}`, at: refundedAt },
+        ],
+      ]),
     );
-    expect(sink.capture.mock.calls).toEqual([
-      [
-        "ada",
-        { name: "refund_issued" },
-        { id: `cus-ada:${refundedAt.toISOString()}`, at: refundedAt },
-      ],
-    ]);
     // Everything else is the service's own.
-    await wrapped.reportPartnerSales("cus-ada");
-    expect(billing.reportPartnerSales).toHaveBeenCalledWith("cus-ada");
+    await run.wrapped.reportPartnerSales("cus-ada");
+    expect(run.billing.reportPartnerSales).toHaveBeenCalledWith("cus-ada");
   });
 
   it("reports nothing for an unknown payer, without refunds, or when the read fails", async () => {
     const unknown = setup([entry("refunded", now)], false);
     await unknown.wrapped.sync("cus-x");
+    await vi.waitFor(() => expect(unknown.db.billingAccount.findUnique).toHaveBeenCalled());
+    await flush();
     expect(unknown.ledger.read).not.toHaveBeenCalled();
 
     const none = setup([entry("paid", now)]);
     await none.wrapped.sync("cus-ada");
+    await vi.waitFor(() => expect(none.ledger.read).toHaveBeenCalled());
+    await flush();
     expect(none.db.member.findMany).not.toHaveBeenCalled();
 
     const failing = setup([]);
     failing.ledger.read.mockRejectedValueOnce(new Error("provider down"));
     await expect(failing.wrapped.sync("cus-ada")).resolves.toBe(undefined);
+    await vi.waitFor(() => expect(failing.ledger.read).toHaveBeenCalled());
 
     const ownerless = setup([entry("refunded", now)]);
     ownerless.db.member.findMany.mockResolvedValueOnce([]);
     await ownerless.wrapped.sync("cus-ada");
-    expect(ownerless.sink.capture).not.toHaveBeenCalled();
-    for (const run of [unknown, none, failing]) expect(run.sink.capture).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(ownerless.db.member.findMany).toHaveBeenCalled());
+    await flush();
+    for (const run of [unknown, none, failing, ownerless])
+      expect(run.sink.capture).not.toHaveBeenCalled();
   });
 
   it("reads a payer without a subscription with no subscriptions", async () => {
@@ -383,9 +513,12 @@ describe("refunds after a payment webhook", () => {
       subscriptionId: null,
     } as never);
     await run.wrapped.sync("cus-ada");
-    expect(run.ledger.read).toHaveBeenCalledWith(expect.anything(), {
-      customers: new Set(["cus-ada"]),
-      subscriptions: new Set(),
-    });
+    await vi.waitFor(() =>
+      expect(run.ledger.read).toHaveBeenCalledWith(
+        expect.anything(),
+        { customers: new Set(["cus-ada"]), subscriptions: new Set() },
+        expect.any(AbortSignal),
+      ),
+    );
   });
 });

@@ -2,26 +2,30 @@
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const track = vi.hoisted(() => vi.fn());
-vi.mock("./rpc", () => ({ rpc: { dozoEvents: { track } } }));
+const api = vi.hoisted(() => ({ track: vi.fn(), me: vi.fn() }));
+vi.mock("./rpc", () => ({ rpc: { me: api.me, dozoEvents: { track: api.track } } }));
 
-import { reportEvent, reportSignupStarted, reportUpgradeViewed } from "./dozo-events";
+import { forgetEventServer } from "./dozo-event-sender";
+import { reportSignupStarted, reportUpgradeViewed } from "./dozo-events";
 import { savePlanIntent } from "./dozo-plan-intent";
 import { markSignupStarted } from "./dozo-signup-start";
 
 beforeEach(() => {
-  track.mockReset().mockResolvedValue({ ok: true });
+  forgetEventServer();
+  api.me.mockReset().mockResolvedValue({ productEvents: true });
+  api.track.mockReset().mockResolvedValue({ ok: true });
 });
 afterEach(() => window.sessionStorage.clear());
 
-it("says where the paid plans were shown from", () => {
+it("says where the paid plans were shown from", async () => {
   reportUpgradeViewed(false);
   reportUpgradeViewed(true);
   savePlanIntent({ tier: "pro", period: "month" });
   reportUpgradeViewed(true);
   // Required to go on is the paywall, a landing pick or not.
   reportUpgradeViewed(false);
-  expect(track.mock.calls.map(([event]) => event.source)).toEqual([
+  await vi.waitFor(() => expect(api.track).toHaveBeenCalledTimes(4));
+  expect(api.track.mock.calls.map(([event]) => event.source)).toEqual([
     "paywall",
     "app",
     "landing",
@@ -29,18 +33,21 @@ it("says where the paid plans were shown from", () => {
   ]);
 });
 
-it("reports the sign-up form's start once, and nothing without one", () => {
+it("reports the sign-up form's start once, and nothing without one", async () => {
   reportSignupStarted();
-  expect(track).not.toHaveBeenCalled();
   markSignupStarted();
   reportSignupStarted();
   reportSignupStarted();
-  expect(track.mock.calls).toEqual([[{ name: "signup_started", startedAt: expect.any(String) }]]);
+  await vi.waitFor(() => expect(api.track).toHaveBeenCalled());
+  expect(api.track.mock.calls).toEqual([
+    [{ name: "signup_started", startedAt: expect.any(String) }],
+  ]);
 });
 
-it("loses a report that fails, without an error", async () => {
-  const failed = Promise.reject(new Error("offline"));
-  track.mockReturnValueOnce(failed);
-  reportEvent({ name: "upgrade_viewed", source: "app" });
-  await expect(failed.catch(() => "handled")).resolves.toBe("handled");
+it("reports nothing to a server without analytics", async () => {
+  api.me.mockResolvedValue({ productEvents: false });
+  reportUpgradeViewed(true);
+  await vi.waitFor(() => expect(api.me).toHaveBeenCalled());
+  await api.me.mock.results[0]!.value;
+  expect(api.track).not.toHaveBeenCalled();
 });

@@ -6,11 +6,13 @@ import type {
 } from "@rakazo/contracts";
 import { DOZO_FUNNEL_STEPS } from "@rakazo/contracts";
 import { MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
-import { isOwnerRole, runAsSystem } from "@rakazo/db";
+import { Prisma, runAsSystem } from "@rakazo/db";
 import { requireAdmin } from "./admins.js";
 import type { RouterContext } from "./routes/context.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A count is reused this long, so reloading or switching back to a period reads nothing. */
+export const DOZO_FUNNEL_CACHE_MS = 60_000;
 
 /** When each member of the period first reached each step after signing up. */
 export interface FunnelInput {
@@ -63,11 +65,11 @@ export function funnelOf(input: FunnelInput, days: DozoFunnelDays): DozoAdminFun
   return { days, steps, granted };
 }
 
-/** The first time per member, from `groupBy` rows with `_min.createdAt`. */
-function firstTimes(rows: [string | null, Date | null][]) {
-  const times = new Map<string, Date>();
-  for (const [id, at] of rows) if (id && at) times.set(id, at);
-  return times;
+type FirstRow = { id: string; at: Date };
+
+/** The first time per member, from rows of a member and a time. */
+function firstTimes(rows: FirstRow[]) {
+  return new Map(rows.map((row) => [row.id, row.at]));
 }
 
 /**
@@ -90,77 +92,72 @@ export function dozoAdminFunnelRoutes(ctx: RouterContext) {
     return next();
   });
 
+  const cache = new Map<DozoFunnelDays, { until: number; value: Promise<DozoAdminFunnel> }>();
+
   async function readFunnel(days: DozoFunnelDays) {
     const from = new Date(Date.now() - days * DAY_MS);
-    const members = await prisma.user.findMany({
-      // Chat-app contacts are internal rows with no sign-in; members are people.
-      where: { createdAt: { gte: from }, NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
-      select: { id: true, createdAt: true },
-    });
-    const ids = members.map((member) => member.id);
-    const [credentials, bots, messages, owned] = await Promise.all([
-      prisma.userModelCredential.groupBy({
-        by: ["userId"],
-        where: { userId: { in: ids } },
-        _min: { createdAt: true },
-      }),
-      prisma.bot.groupBy({
-        by: ["userId"],
-        where: { userId: { in: ids } },
-        _min: { createdAt: true },
-      }),
-      prisma.message.groupBy({
-        by: ["authorUserId"],
-        where: { authorUserId: { in: ids }, role: "user" },
-        _min: { createdAt: true },
-      }),
-      prisma.member.findMany({
-        where: { userId: { in: ids } },
-        select: { userId: true, organizationId: true, role: true },
-      }),
+    // Chat-app contacts are internal rows with no sign-in; members are people. Every read joins
+    // the period's members instead of listing their ids.
+    const cohort = Prisma.sql`u."createdAt" >= ${from} AND u.email NOT LIKE ${`%${MESSAGING_EMAIL_SUFFIX}`}`;
+    const owner = Prisma.sql`'owner' = ANY (string_to_array(replace(m.role, ' ', ''), ','))`;
+    const [members, credentials, bots, messages, paid, granted] = await Promise.all([
+      prisma.$queryRaw<{ id: string; createdAt: Date }[]>`
+        SELECT u.id, u."createdAt" FROM "user" u WHERE ${cohort}`,
+      prisma.$queryRaw<FirstRow[]>`
+        SELECT c."userId" AS id, min(c."createdAt") AS at
+        FROM user_model_credentials c JOIN "user" u ON u.id = c."userId"
+        WHERE ${cohort} GROUP BY c."userId"`,
+      prisma.$queryRaw<FirstRow[]>`
+        SELECT b."userId" AS id, min(b."createdAt") AS at
+        FROM bots b JOIN "user" u ON u.id = b."userId"
+        WHERE ${cohort} GROUP BY b."userId"`,
+      // One probe per member of dozo_messages_author_idx, never a pass over every message.
+      prisma.$queryRaw<FirstRow[]>`
+        SELECT u.id, f.at FROM "user" u CROSS JOIN LATERAL (
+          SELECT m."createdAt" AS at FROM messages m
+          WHERE m."authorUserId" = u.id AND m.role = 'user'
+          ORDER BY m."createdAt" LIMIT 1
+        ) f
+        WHERE ${cohort}`,
+      prisma.$queryRaw<FirstRow[]>`
+        SELECT m."userId" AS id, min(b."paidAt") AS at
+        FROM member m
+        JOIN billing_accounts b ON b."organizationId" = m."organizationId"
+        JOIN "user" u ON u.id = m."userId"
+        WHERE b."paidAt" IS NOT NULL AND ${owner} AND ${cohort} GROUP BY m."userId"`,
+      prisma.$queryRaw<{ id: string }[]>`
+        SELECT DISTINCT m."userId" AS id
+        FROM member m
+        JOIN dozo_plan_grants g ON g."organizationId" = m."organizationId"
+        JOIN "user" u ON u.id = m."userId"
+        WHERE ${owner} AND ${cohort}`,
     ]);
-    const ownerOf = new Map<string, string[]>();
-    for (const membership of owned) {
-      if (!isOwnerRole(membership.role)) continue;
-      const owners = ownerOf.get(membership.organizationId) ?? [];
-      ownerOf.set(membership.organizationId, [...owners, membership.userId]);
-    }
-    const organizations = [...ownerOf.keys()];
-    const [payments, grants] = await Promise.all([
-      prisma.billingAccount.findMany({
-        where: { organizationId: { in: organizations }, paidAt: { not: null } },
-        select: { organizationId: true, paidAt: true },
-      }),
-      prisma.dozoPlanGrant.findMany({
-        where: { organizationId: { in: organizations } },
-        select: { organizationId: true },
-      }),
-    ]);
-    const paid = new Map<string, Date>();
-    for (const payment of payments)
-      for (const userId of ownerOf.get(payment.organizationId)!) {
-        const earlier = paid.get(userId);
-        // Read with `paidAt` set.
-        if (!earlier || payment.paidAt! < earlier) paid.set(userId, payment.paidAt!);
-      }
     return funnelOf(
       {
         members,
         reached: {
-          modelConnected: firstTimes(credentials.map((row) => [row.userId, row._min.createdAt])),
-          firstBot: firstTimes(bots.map((row) => [row.userId, row._min.createdAt])),
-          firstMessage: firstTimes(messages.map((row) => [row.authorUserId, row._min.createdAt])),
-          paid,
+          modelConnected: firstTimes(credentials),
+          firstBot: firstTimes(bots),
+          firstMessage: firstTimes(messages),
+          paid: firstTimes(paid),
         },
-        granted: new Set(grants.flatMap((grant) => ownerOf.get(grant.organizationId)!)),
+        granted: new Set(granted.map((row) => row.id)),
       },
       days,
     );
   }
 
   return {
-    read: admin.dozoAdmin.funnel.read.handler(({ input }) =>
-      runAsSystem("count the sign-up funnel for the admin page", () => readFunnel(input.days)),
-    ),
+    read: admin.dozoAdmin.funnel.read.handler(({ input }) => {
+      const cached = cache.get(input.days);
+      if (cached && cached.until > Date.now()) return cached.value;
+      const value = runAsSystem("count the sign-up funnel for the admin page", () =>
+        readFunnel(input.days),
+      );
+      cache.set(input.days, { until: Date.now() + DOZO_FUNNEL_CACHE_MS, value });
+      // A failed read is not kept: the next load asks again.
+      value.catch(() => cache.delete(input.days));
+      return value;
+    }),
   };
 }

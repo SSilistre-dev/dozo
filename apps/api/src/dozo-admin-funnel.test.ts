@@ -1,7 +1,8 @@
 import { createRouterClient } from "@orpc/server";
+import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FunnelInput } from "./dozo-admin-funnel.js";
-import { dozoAdminFunnelRoutes, funnelOf } from "./dozo-admin-funnel.js";
+import { DOZO_FUNNEL_CACHE_MS, dozoAdminFunnelRoutes, funnelOf } from "./dozo-admin-funnel.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
@@ -131,101 +132,50 @@ describe("the funnel's arithmetic", () => {
   });
 });
 
-type Row = { id: string; email: string; createdAt: Date };
+/** The text and values of a query, its fragments spelled out. */
+function flatten(strings: readonly string[], values: unknown[]) {
+  const sql = Prisma.sql(strings, ...values);
+  return { text: sql.text, values: sql.values };
+}
 
-/** A database that answers the funnel's reads from fixed rows, applying their filters. */
+/**
+ * A database that answers each of the funnel's reads with fixed rows, as they would come back for
+ * the period asked. The SQL itself runs against Postgres in the branch's own check, not here.
+ */
 function database() {
-  const users: Row[] = [
-    { id: "admin", email: "owner@example.test", createdAt: at(-400 * day) },
-    // Signed up 30 days ago to the millisecond: inside the 30-day period.
-    { id: "edge", email: "edge@example.test", createdAt: at(-30 * day) },
-    // A millisecond earlier: outside it.
-    { id: "early", email: "early@example.test", createdAt: at(-30 * day - 1) },
-    { id: "ada", email: "ada@example.test", createdAt: at(-3 * day) },
-    // Suspended: still counted.
-    { id: "sus", email: "sus@example.test", createdAt: at(-2 * day) },
-    { id: "gift", email: "gift@example.test", createdAt: at(-2 * day) },
-    // A chat-app contact is not a member.
-    { id: "contact", email: "x@messaging.invalid", createdAt: at(-day) },
-  ];
-  const ever = (ids: string[]) =>
-    ids.flatMap((id) => [{ userId: id, _min: { createdAt: at(-day) } }]);
-  const inIds = (where: { userId?: { in: string[] }; authorUserId?: { in: string[] } }) =>
-    (where.userId ?? where.authorUserId)!.in;
+  const rows = {
+    members: [
+      { id: "edge", createdAt: at(-30 * day) },
+      { id: "ada", createdAt: at(-3 * day) },
+      { id: "sus", createdAt: at(-2 * day) },
+      { id: "gift", createdAt: at(-2 * day) },
+    ],
+    credentials: ["edge", "ada", "sus", "gift"].map((id) => ({ id, at: at(-day) })),
+    bots: ["ada", "sus", "gift"].map((id) => ({ id, at: at(-day) })),
+    messages: ["ada", "sus", "gift"].map((id) => ({ id, at: at(-day + hour) })),
+    paid: [{ id: "ada", at: at(-hour) }],
+    granted: [{ id: "gift" }],
+  };
+  const queries: { text: string; values: unknown[] }[] = [];
   const prisma = {
     user: {
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
-        const user = users.find((row) => row.id === where.id);
-        return user ? { ...user, emailVerified: true } : null;
-      }),
-      findMany: vi.fn(
-        async ({
-          where,
-        }: {
-          where: { createdAt: { gte: Date }; NOT: { email: { endsWith: string } } };
-        }) =>
-          users
-            .filter(
-              (row) =>
-                row.createdAt >= where.createdAt.gte &&
-                !row.email.endsWith(where.NOT.email.endsWith),
-            )
-            .map(({ id, createdAt }) => ({ id, createdAt })),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === "admin"
+          ? { id: "admin", email: "owner@example.test", emailVerified: true }
+          : null,
       ),
     },
-    userModelCredential: {
-      groupBy: vi.fn(async ({ where }: { where: { userId: { in: string[] } } }) =>
-        // "gone" is a deleted account whose rows a test leaves behind; never asked for.
-        ever(["edge", "early", "ada", "sus", "gift", "gone"]).filter((row) =>
-          inIds(where).includes(row.userId),
-        ),
-      ),
-    },
-    bot: {
-      groupBy: vi.fn(async ({ where }: { where: { userId: { in: string[] } } }) =>
-        ever(["ada", "sus", "gift", "gone"]).filter((row) => inIds(where).includes(row.userId)),
-      ),
-    },
-    message: {
-      groupBy: vi.fn(async ({ where }: { where: { authorUserId: { in: string[] } } }) =>
-        ["ada", "sus", "gift", "gone"]
-          .filter((id) => inIds(where).includes(id))
-          .map((id) => ({
-            authorUserId: id,
-            _min: { createdAt: at(-day + hour) } as { createdAt: Date | null },
-          }))
-          // A group without a time is no first message.
-          .concat([{ authorUserId: "edge", _min: { createdAt: null } }]),
-      ),
-    },
-    member: {
-      findMany: vi.fn(async ({ where }: { where: { userId: { in: string[] } } }) =>
-        [
-          { userId: "ada", organizationId: "org-ada", role: "owner" },
-          // Ada also owns an organization that paid later: the first payment counts.
-          { userId: "ada", organizationId: "org-ada-2", role: "owner" },
-          { userId: "gift", organizationId: "org-gift", role: "owner" },
-          // A member of a paying team who does not own it has not paid.
-          { userId: "sus", organizationId: "org-ada", role: "member" },
-        ].filter((row) => where.userId.in.includes(row.userId)),
-      ),
-    },
-    billingAccount: {
-      findMany: vi.fn(async ({ where }: { where: { organizationId: { in: string[] } } }) =>
-        [
-          { organizationId: "org-ada-2", paidAt: at(-hour / 2) },
-          { organizationId: "org-ada", paidAt: at(-hour) },
-          { organizationId: "org-ada-2", paidAt: at(-hour / 4) },
-        ].filter((row) => where.organizationId.in.includes(row.organizationId)),
-      ),
-    },
-    dozoPlanGrant: {
-      findMany: vi.fn(async ({ where }: { where: { organizationId: { in: string[] } } }) =>
-        [{ organizationId: "org-gift" }].filter((row) =>
-          where.organizationId.in.includes(row.organizationId),
-        ),
-      ),
-    },
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = flatten(strings, values);
+      queries.push(query);
+      const { text } = query;
+      if (text.includes("user_model_credentials")) return rows.credentials;
+      if (text.includes("FROM bots")) return rows.bots;
+      if (text.includes("FROM messages")) return rows.messages;
+      if (text.includes("billing_accounts")) return rows.paid;
+      if (text.includes("dozo_plan_grants")) return rows.granted;
+      return rows.members;
+    }),
   };
   const deps = { prisma, env: { adminEmails: ["owner@example.test"] } } as unknown as RouterDeps;
   const routes = { dozoAdmin: { funnel: dozoAdminFunnelRoutes(createRouterContext(deps)) } };
@@ -235,7 +185,7 @@ function database() {
         actor: { userId, spaceId: `space-${userId}`, email: "", isDeploymentOwner: false },
       },
     }).dozoAdmin.funnel;
-  return { prisma, as };
+  return { prisma, as, queries, rows };
 }
 
 describe("the funnel procedure", () => {
@@ -248,7 +198,7 @@ describe("the funnel procedure", () => {
   it("refuses anyone who is not an admin, before anything is read", async () => {
     const { as, prisma } = database();
     await expect(as("ada").read({ days: 30 })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(prisma.user.findMany).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
   it("refuses a period it does not offer", async () => {
@@ -258,10 +208,9 @@ describe("the funnel procedure", () => {
     });
   });
 
-  it("counts the period's members step by step, from grouped reads", async () => {
-    const { as, prisma } = database();
+  it("counts the period's members step by step, every read joined to the period's members", async () => {
+    const { as, queries } = database();
     const funnel = await as("admin").read({ days: 30 });
-    // edge, ada, sus and gift; not early, the admin, the contact or the deleted account.
     expect(funnel.steps.map((row) => [row.step, row.members, row.rate])).toEqual([
       ["signedUp", 4, null],
       ["modelConnected", 4, 100],
@@ -270,31 +219,30 @@ describe("the funnel procedure", () => {
       ["paid", 1, 33],
     ]);
     expect(funnel.granted).toBe(1);
-    // Ada's first payment, an hour ago, after her first message a day ago less an hour.
+    // Ada's payment, an hour ago, after her first message a day ago less an hour.
     expect(funnel.steps[4]!.medianSeconds).toBe(day / 1000 - 2 * 3600);
-    expect(prisma.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ createdAt: { gte: at(-30 * day) } }),
-      }),
-    );
-    for (const read of [prisma.userModelCredential, prisma.bot, prisma.message])
-      expect(read.groupBy).toHaveBeenCalledTimes(1);
-    expect(prisma.message.groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ role: "user" }) }),
-    );
-    expect(prisma.billingAccount.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          organizationId: { in: ["org-ada", "org-ada-2", "org-gift"] },
-          paidAt: { not: null },
-        },
-      }),
-    );
+    expect(queries).toHaveLength(6);
+    for (const query of queries) {
+      // From the period's start to the millisecond, people only, and no list of ids.
+      expect(query.text).toContain('u."createdAt" >= $1 AND u.email NOT LIKE $2');
+      expect(query.values).toEqual([at(-30 * day), "%@messaging.invalid"]);
+    }
+    const messages = queries.find((query) => query.text.includes("FROM messages"))!;
+    expect(messages.text).toContain("CROSS JOIN LATERAL");
+    expect(messages.text).toContain("m.role = 'user'");
   });
 
-  it("reads a shorter period from its own boundary", async () => {
-    const { as } = database();
-    const funnel = await as("admin").read({ days: 7 });
-    expect(funnel.steps[0]).toMatchObject({ members: 3 });
+  it("reuses a period's count for a minute, and reads again after a failure", async () => {
+    const { as, prisma } = database();
+    await as("admin").read({ days: 30 });
+    await as("admin").read({ days: 30 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
+    await as("admin").read({ days: 7 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(12);
+    vi.setSystemTime(new Date(now.getTime() + DOZO_FUNNEL_CACHE_MS + 1));
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("down"));
+    await expect(as("admin").read({ days: 30 })).rejects.toThrow();
+    await as("admin").read({ days: 30 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(24);
   });
 });

@@ -21,6 +21,7 @@ vi.mock("../lib/rpc", () => ({
   rpc: { me: mocks.me, billing: { status: mocks.status }, dozoEvents: { track: mocks.track } },
 }));
 
+import { forgetEventServer } from "../lib/dozo-event-sender";
 import { readPlanIntent, savePlanIntent } from "../lib/dozo-plan-intent";
 import { markSignupStarted } from "../lib/dozo-signup-start";
 import { NavigateKeepingPlan, ShellPage } from "./dozo-shell";
@@ -69,7 +70,8 @@ const navigate = (to: string) => act(async () => go(to));
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.userId = "user-a";
-  mocks.me.mockReset().mockResolvedValue({ billingEnabled: true });
+  mocks.me.mockReset().mockResolvedValue({ billingEnabled: true, productEvents: true });
+  forgetEventServer();
   mocks.status.mockReset().mockResolvedValue(free);
   mocks.track.mockReset().mockResolvedValue({ ok: true });
   container = document.createElement("div");
@@ -108,6 +110,7 @@ it("reports the landing pick once, when an account claims it", async () => {
   savePlanIntent({ tier: "max", period: "year" });
   await open("/app");
   await reopen("/app");
+  await vi.waitFor(() => expect(mocks.track).toHaveBeenCalled());
   expect(mocks.track.mock.calls).toEqual([[{ name: "plan_intent", plan: "max", period: "year" }]]);
 });
 
@@ -119,6 +122,7 @@ it("reports when this tab opened the sign-up form, once the account is signed in
   mocks.userId = "user-a";
   await reopen("/app");
   await reopen("/app");
+  await vi.waitFor(() => expect(mocks.track).toHaveBeenCalled());
   expect(mocks.track.mock.calls).toEqual([
     [{ name: "signup_started", startedAt: expect.any(String) }],
   ]);

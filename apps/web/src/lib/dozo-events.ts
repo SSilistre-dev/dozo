@@ -1,14 +1,12 @@
 import type { DozoClientEvent } from "@rakazo/contracts";
+import { sendEvent } from "./dozo-event-sender";
 import { readPlanIntent } from "./dozo-plan-intent";
 import { takeSignupStarted } from "./dozo-signup-start";
 import { rpc } from "./rpc";
 
-/**
- * The fork's product events the web app reports (`DozoClientEventSchema`). The server sends them
- * on only when analytics is configured; a failed report is measurement lost, never an error shown.
- */
+/** The fork's product events the web app reports (`DozoClientEventSchema`), through `sendEvent`. */
 export function reportEvent(event: DozoClientEvent): void {
-  void rpc.dozoEvents.track(event).catch(() => undefined);
+  sendEvent(rpc, event);
 }
 
 /** The paid plans are on screen: required to go on, opened in the app, or for a landing pick. */

@@ -207,6 +207,15 @@ describe("the payment ledger", () => {
     }
   });
 
+  it("ends its requests when the caller's signal does", async () => {
+    const { reader, calls } = ledger({});
+    const caller = new AbortController();
+    await reader.read(range, accounts, caller.signal);
+    caller.abort();
+    expect(calls.length).toBeGreaterThan(0);
+    for (const { init } of calls) expect(init.signal?.aborted).toBe(true);
+  });
+
   it("says the read is partial past the payers, pages or refunds it reads", async () => {
     const many = new Set(
       Array.from({ length: DOZO_LEDGER_MAX_CUSTOMERS + 1 }, (_, i) => `cus_${i}`),

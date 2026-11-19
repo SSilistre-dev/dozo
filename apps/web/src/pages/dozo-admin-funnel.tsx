@@ -28,7 +28,9 @@ export function DozoAdminFunnel() {
   const funnel = useQuery({
     ...useSpaceQueries().dozoAdmin.funnel.read.queryOptions({ input: { days } }),
     placeholderData: (previous) => previous,
-    refetchOnWindowFocus: "always",
+    // A count over every recent member: read again only after a minute, not on each focus.
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const names: Record<DozoFunnelStep, string> = {
     signedUp: t`Signed up`,

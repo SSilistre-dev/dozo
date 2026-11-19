@@ -3329,24 +3329,6 @@
       "reason": "product events: sign-up started, first bot, first message, plan limit, upgrade shown, landing plan pick, failed payment, cancellation and refund join the provider-neutral event list, which is also the allowlist at the analytics boundary"
     },
     {
-      "file": "apps/api/src/routes/bots.ts",
-      "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
-      "replace": "import type { RouterContext } from \"./context.js\";\nimport { dozoFirstBot } from \"../dozo-events.js\";\nimport { computerContext",
-      "requires": [
-        "apps/api/src/dozo-events.ts"
-      ],
-      "reason": "product events: the import of the first-bot report below"
-    },
-    {
-      "file": "apps/api/src/routes/bots.ts",
-      "find": "        const bot = await repos.createBot(context.actor, request);\n        await enqueueBotIntroRun",
-      "replace": "        const bot = await repos.createBot(context.actor, request);\n        void dozoFirstBot(deps, context.actor, bot.id);\n        await enqueueBotIntroRun",
-      "requires": [
-        "apps/api/src/dozo-events.ts"
-      ],
-      "reason": "product events: a member's first bot is reported once it exists, without holding up the answer"
-    },
-    {
       "file": "apps/api/src/thread-target.ts",
       "find": "import { cancelThreadRuns, finishThreadStop, isStopMessage } from \"./thread-stop.js\";\n\n",
       "replace": "import { cancelThreadRuns, finishThreadStop, isStopMessage } from \"./thread-stop.js\";\nimport { dozoFirstMessage } from \"./dozo-events.js\";\n\n",
@@ -3399,6 +3381,87 @@
         "apps/api/src/dozo-events.ts"
       ],
       "reason": "product events: a payment webhook also reports the payer's recent refunds, read from the payment ledger the admin billing page uses; only with analytics configured"
+    },
+    {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "import { createTaughtSkillsService } from \"../taught-skills.js\";\nimport { meDto }",
+      "replace": "import { createTaughtSkillsService } from \"../taught-skills.js\";\nimport { dozoReportingRepos } from \"../dozo-events.js\";\nimport { meDto }",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the first-bot report below"
+    },
+    {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "  const repos = createRepos(deps.prisma, {\n    phoneCallsEnabled: deps.env?.phoneCallsEnabled,\n    phoneCallRingSeconds: deps.env?.phoneCallRingSeconds,\n  });\n",
+      "replace": "  const repos = dozoReportingRepos(\n    createRepos(deps.prisma, {\n      phoneCallsEnabled: deps.env?.phoneCallsEnabled,\n      phoneCallRingSeconds: deps.env?.phoneCallRingSeconds,\n    }),\n    deps,\n  );\n",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: every bot the app creates (new, from a template, imported, copied) goes through these repositories, which report a member's first bot once"
+    },
+    {
+      "file": "apps/api/src/account-import.ts",
+      "find": "import type { AdapterContext } from \"@rakazo/adapter-kit\";\nimport { normalizeWorkspacePath",
+      "replace": "import type { AdapterContext, ProductAnalytics } from \"@rakazo/adapter-kit\";\nimport { normalizeWorkspacePath",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the analytics type the account import takes below"
+    },
+    {
+      "file": "apps/api/src/account-import.ts",
+      "find": "import { cancelBody } from \"./http-body.js\";\nimport type { SpaceDeletionDeps }",
+      "replace": "import { cancelBody } from \"./http-body.js\";\nimport { dozoReportingRepos } from \"./dozo-events.js\";\nimport type { SpaceDeletionDeps }",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the first-bot report below"
+    },
+    {
+      "file": "apps/api/src/account-import.ts",
+      "find": "export type AccountImportDeps = SpaceDeletionDeps & { maxArtifactBytes: number };",
+      "replace": "export type AccountImportDeps = SpaceDeletionDeps & {\n  maxArtifactBytes: number;\n  analytics?: ProductAnalytics;\n};",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the account import reports a member's first bot like the app does"
+    },
+    {
+      "file": "apps/api/src/account-import.ts",
+      "find": "    this.repos = createRepos(deps.prisma);\n",
+      "replace": "    this.repos = dozoReportingRepos(createRepos(deps.prisma), deps);\n",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: bots an account import creates report a member's first bot once"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "      maxArtifactBytes: env.maxUploadSizeBytes,\n    },\n    sessionActor,",
+      "replace": "      maxArtifactBytes: env.maxUploadSizeBytes,\n      analytics,\n    },\n    sessionActor,",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the account import gets the analytics it reports a first bot to"
+    },
+    {
+      "file": "packages/contracts/src/domain.ts",
+      "find": "  billingEnabled: z.boolean(),\n  /** True until a user of a billing deployment",
+      "replace": "  billingEnabled: z.boolean(),\n  /** The server sends product events on: apps report theirs only then. Absent from older servers. */\n  productEvents: z.boolean().optional(),\n  /** True until a user of a billing deployment",
+      "requires": [
+        "apps/web/src/lib/dozo-events.ts"
+      ],
+      "reason": "product events: apps report their events only to a server that sends them on, so a deployment without analytics gets no reports"
+    },
+    {
+      "file": "apps/api/src/routes/shared.ts",
+      "find": "    billingEnabled: Boolean(deps.billing),\n    // Only billing deployments ask",
+      "replace": "    billingEnabled: Boolean(deps.billing),\n    productEvents: Boolean(deps.analytics),\n    // Only billing deployments ask",
+      "requires": [
+        "apps/web/src/lib/dozo-events.ts"
+      ],
+      "reason": "product events: the app is told whether analytics is configured"
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",

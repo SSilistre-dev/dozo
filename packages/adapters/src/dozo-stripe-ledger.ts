@@ -1,4 +1,4 @@
-import { parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
+import { deadlineSignal, parseRetryAfter, readBoundedJsonResponse, retry } from "@rakazo/core";
 import { z } from "zod";
 import type {
   DozoLedger,
@@ -91,8 +91,12 @@ export class DozoStripeLedger implements DozoPaymentLedger {
     this.apiBase = config.apiBase ?? "https://api.stripe.com";
   }
 
-  async read(range: { from: Date; to: Date }, accounts: DozoLedgerAccounts): Promise<DozoLedger> {
-    const signal = AbortSignal.timeout(READ_TIMEOUT_MS);
+  async read(
+    range: { from: Date; to: Date },
+    accounts: DozoLedgerAccounts,
+    caller?: AbortSignal,
+  ): Promise<DozoLedger> {
+    const signal = deadlineSignal(READ_TIMEOUT_MS, caller);
     const customers = [...accounts.customers].sort();
     const ledger: DozoLedger = {
       entries: [],

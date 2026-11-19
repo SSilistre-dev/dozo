@@ -36,5 +36,10 @@ export interface DozoLedgerAccounts {
  * deployment's.
  */
 export interface DozoPaymentLedger {
-  read(range: { from: Date; to: Date }, accounts: DozoLedgerAccounts): Promise<DozoLedger>;
+  /** `signal` ends the read early, on top of the implementation's own time limit. */
+  read(
+    range: { from: Date; to: Date },
+    accounts: DozoLedgerAccounts,
+    signal?: AbortSignal,
+  ): Promise<DozoLedger>;
 }
