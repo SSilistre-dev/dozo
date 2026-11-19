@@ -27,6 +27,7 @@ import {
   DEFAULT_CONFIG,
   deadShapes,
   entryApplies,
+  exitWhenFlushed,
   expectedCount,
   fail,
   guard,
@@ -213,7 +214,7 @@ for (const asset of assets) {
 if (errors.length) {
   console.error(`dozo-brand: ${errors.length} rule failure(s), nothing written:`);
   for (const error of errors) console.error(`  ${error}`);
-  process.exit(2);
+  await exitWhenFlushed(2);
 }
 
 if (!args.check) {

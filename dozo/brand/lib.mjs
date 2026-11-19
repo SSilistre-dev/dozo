@@ -6,6 +6,18 @@ import { fileURLToPath } from "node:url";
 
 export const DEFAULT_CONFIG = path.join(path.dirname(fileURLToPath(import.meta.url)), "brand.json");
 
+/**
+ * Exit once everything written to stdout and stderr has left the process. A child's stdio under
+ * spawnSync is a socket, where Node writes asynchronously: `process.exit` straight after a long
+ * error list dropped its tail (the line a test looked for) whenever the reader fell behind.
+ */
+export async function exitWhenFlushed(code) {
+  await Promise.all(
+    [process.stdout, process.stderr].map((stream) => new Promise((done) => stream.write("", done))),
+  );
+  process.exit(code);
+}
+
 export function fail(message) {
   console.error(`dozo-brand: ${message}`);
   process.exit(2);

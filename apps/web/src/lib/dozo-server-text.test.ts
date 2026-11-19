@@ -2,14 +2,16 @@ import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
-import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
+import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import {
   knownServerText,
   NO_COMPUTER_HOURS,
+  planLimitCopy,
   SERVER_SENTENCES,
+  SIGN_IN_LABELS,
   serverErrorText,
-} from "@rakazo/i18n/dozo-server-text";
-import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
+  signInLabelText,
+} from "@rakazo/i18n/run-error";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 // Runs on the branded tree only: the Turkish lines are in the fork's catalog block.
@@ -76,4 +78,21 @@ it("leaves the two refusals screens recognise and word themselves", () => {
   );
   const model = refused(MODEL_REQUIRED_SEND_ERROR);
   expect(serverErrorText(model, MODEL_REQUIRED_SEND_ERROR, "x")).toBe(MODEL_REQUIRED_SEND_ERROR);
+});
+
+it("says the key refusal in Turkish where onboarding would only say the model was not saved", () => {
+  const rejected = "Your model provider rejected the API key. Check your connection settings.";
+  expect(serverErrorText(refused(rejected), rejected, "Model kaydedilemedi")).toBe(
+    "Model sağlayıcınız API anahtarını reddetti. Bağlantı ayarlarınızı kontrol edin.",
+  );
+});
+
+it("says a server-sent sign-in label in the UI's language and leaves other labels alone", () => {
+  expect(signInLabelText("Sign in with ChatGPT")).toBe("ChatGPT ile giriş yap");
+  const untranslated = [...SIGN_IN_LABELS].filter((label) => signInLabelText(label) === label);
+  expect(untranslated).toEqual([]);
+  expect(signInLabelText("Sign in with Something")).toBe("Sign in with Something");
+  expect(signInLabelText(undefined)).toBeUndefined();
+  i18n.activate("en");
+  expect(signInLabelText("Sign in with ChatGPT")).toBe("Sign in with ChatGPT");
 });

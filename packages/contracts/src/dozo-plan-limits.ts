@@ -39,7 +39,7 @@ export type PlanLimitBilling = Pick<
 
 /**
  * The table's sentences and labels, in the UI's language. Clients build it from their translation
- * catalog (`planLimitCopy` in `@rakazo/i18n/dozo-plan-limits`), so this table holds no copy.
+ * catalog (`planLimitCopy` in `packages/i18n/src/dozo-plan-limits.ts`), so this table holds no copy.
  */
 export type PlanLimitCopy = {
   computerNotInPlan: string;

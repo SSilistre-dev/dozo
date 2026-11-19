@@ -1,6 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { DozoAdminPlan, DozoAdminUser } from "@rakazo/contracts";
-import { BYOK_TIERS, planEndDays } from "@rakazo/contracts";
+import { BYOK_TIERS, grantEndsAt, planEndDays } from "@rakazo/contracts";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -67,8 +67,14 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
     onFailed: (error) => toastError(t`Could not change the plan`, error),
   });
   const granting = choice !== "none";
-  // The end is a UTC day, and the first one that can still be chosen is tomorrow's.
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // The first day that can be chosen is tomorrow, on the admin's calendar.
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  const tomorrow = [
+    next.getFullYear(),
+    String(next.getMonth() + 1).padStart(2, "0"),
+    String(next.getDate()).padStart(2, "0"),
+  ].join("-");
 
   return (
     <>
@@ -94,7 +100,7 @@ export function DozoPlanAction({ user }: { user: Pick<DozoAdminUser, "id" | "ema
           confirmDisabled={granting && !until}
           onCancel={() => setOpen(false)}
           onConfirm={() =>
-            save.run(granting ? { tier: choice, endsAt: `${until}T23:59:59.000Z` } : { tier: null })
+            save.run(granting ? { tier: choice, endsAt: grantEndsAt(until) } : { tier: null })
           }
         >
           <div className="flex flex-wrap items-center gap-2">

@@ -1,8 +1,8 @@
 // Entry point of make token-kiyas (run by dozo/metrics/token-kiyas.sh inside Docker).
 import { readFileSync, writeFileSync } from "node:fs";
-import { runTokenBench } from "../../packages/testkit/src/evals/dozo-token-bench.js";
-import { runTokenBenchCli } from "../../packages/testkit/src/evals/dozo-token-bench-report.js";
-import { TOKEN_BENCH_TASKS } from "../../packages/testkit/src/evals/dozo-token-bench-tasks.js";
+import { runTokenBench } from "../evals/dozo-token-bench.js";
+import { runTokenBenchCli } from "../evals/dozo-token-bench-report.js";
+import { TOKEN_BENCH_TASKS } from "../evals/dozo-token-bench-tasks.js";
 
 process.exitCode = await runTokenBenchCli(process.argv.slice(2), {
   read: (path) => {

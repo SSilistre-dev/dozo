@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { PlanLimitAction, PlanLimitBilling, PlanLimitNotice } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, planLimitNotice, planLimitOf } from "@rakazo/contracts";
-import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
+import { planLimitCopy } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Alert, Linking } from "react-native";

@@ -171,6 +171,12 @@ it("saves the sign-up switch at once, and resets it to the environment", async (
   expect(api.update).toHaveBeenLastCalledWith({ signupsOpen: null });
 });
 
+it("names the announcement's two languages in the UI's language, not a fixed English word", async () => {
+  await open();
+  expect(labelled("Announcement in English")?.placeholder).toBe("English");
+  expect(labelled("Announcement in Turkish")?.placeholder).toBe("Turkish");
+});
+
 it("saves the cap and the announcement together; an empty cap follows the environment", async () => {
   await open();
   await type("Computers per person", "2");

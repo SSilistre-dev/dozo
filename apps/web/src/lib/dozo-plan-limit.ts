@@ -1,5 +1,5 @@
 import { DOZO_PLAN_LIMIT_KINDS, planLimitOf, planLimitText } from "@rakazo/contracts";
-import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
+import { planLimitCopy } from "@rakazo/i18n/run-error";
 import { sendEvent } from "./dozo-event-sender";
 
 /** A billing page's failure: the shared table's sentence for a refused plan, else the fallback. */

@@ -18,7 +18,7 @@ const FORK_SCRIPTS = [
   "dozo/brand/assets/render.mjs", // dozo/brand/assets/build.sh
   "dozo/metrics/collect.mjs", // dozo/metrics/collect.sh
   "dozo/metrics/report.mjs", // dozo/metrics/olcum.sh
-  "dozo/metrics/token-kiyas.ts", // dozo/metrics/token-kiyas.sh
+  "packages/testkit/src/cli/dozo-token-kiyas.ts", // dozo/metrics/token-kiyas.sh
   "dozo/e2e/playwright.config.ts", // dozo/e2e/run.sh (npx playwright test)
   "dozo/e2e/auth.setup.ts", // the setup project of playwright.config.ts
   "dozo/e2e/coverage-reporter.ts", // a reporter of playwright.config.ts
