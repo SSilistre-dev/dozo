@@ -75,6 +75,14 @@ describe("computer hours", () => {
     });
   });
 
+  it("a status that names no tier is on the first one, Free", () => {
+    // Upstream's composer test passes a status without `byokTier`: on the branded tree it is Free.
+    expect(
+      planLimitNotice("computer_hours", billing({ byokTier: undefined, state: "active" }), "en")
+        ?.code,
+    ).toBe("computer_not_in_plan");
+  });
+
   it("Free, a member who cannot manage billing: ask the owner, no action", () => {
     expect(planLimitNotice("computer_hours", billing({ canManage: false }), "tr")).toEqual({
       code: "computer_not_in_plan",

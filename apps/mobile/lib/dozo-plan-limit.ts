@@ -22,9 +22,18 @@ export function openPlanUpgrade(
   openInApp: () => void,
   openUrl: (url: string) => Promise<unknown> = (url) => Linking.openURL(url),
 ): void {
-  if (action?.kind === "upgrade" && action.startsPaidPlan)
-    void openUrl(webBillingUrl(currentApiBase())).catch(openInApp);
-  else openInApp();
+  if (action?.kind !== "upgrade" || !action.startsPaidPlan) {
+    openInApp();
+    return;
+  }
+  // A browser that throws at once or rejects later both fall back to the app's own Billing.
+  void (async () => {
+    try {
+      await openUrl(webBillingUrl(currentApiBase()));
+    } catch {
+      openInApp();
+    }
+  })();
 }
 
 /** Limits whose sentence and upgrade depend on the plan and on who is asking. */

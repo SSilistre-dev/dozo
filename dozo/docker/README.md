@@ -16,6 +16,7 @@ what each gate runs. Brand rules and the leak gate: `dozo/brand/README.md`. Merg
 | `make up` | `build.sh all`: stage, brand, build, up. It stages again every time; `smoke` is not part of it |
 | `make down` | `build.sh down`. It cannot pass `--volumes`; call the script for that (see Reset) |
 | `make e2e` | `dozo/e2e/run.sh` against a running stack (`make up` first) |
+| `make token-kiyas` | `dozo/metrics/token-kiyas.sh`: the offline token benchmark (fixed tasks, real runtime, fake model, no network) against `dozo/metrics/token-baseline.json`; deps read-only from `dozo-qa-deps`; optional `DOZO_TOKEN_PRICING=<file>` |
 
 The Makefile exports `DOZO_STAGE_WORKTREE=1` unless it is already set (an empty value turns it off).
 `build.sh` with no argument is `all`; an unknown command or argument exits 64.

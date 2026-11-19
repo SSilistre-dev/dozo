@@ -65,8 +65,10 @@ describe("a server refusal reaches the client with its stable code and maps to a
 
   it("Space count: its own code and sentence, no upgrade (the limit is not a plan's)", () => {
     const sent = answer(new SpaceLimitError());
+    // Upstream's client-error-mapping test expects code BAD_REQUEST; here only the code differs.
     expect(sent.code).toBe(PLAN_LIMIT_CODES.spaceLimit);
     expect(sent.status).toBe(400);
+    expect(sent.message).toBe("Space limit reached");
     expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, "tr")).toEqual({
       code: "space_limit_reached",
       text: "Alan sınırına ulaşıldı. Yenisi için bir alanı silin.",
@@ -77,6 +79,8 @@ describe("a server refusal reaches the client with its stable code and maps to a
   it("per-user computers: its own code and sentence, no upgrade", () => {
     const sent = answer(new ComputerLimitError(3));
     expect(sent.code).toBe(PLAN_LIMIT_CODES.computerLimit);
+    expect(sent.status).toBe(400);
+    expect(sent.message).toBe("User computer limit (3) reached");
     expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, "en")).toEqual({
       code: "computer_limit_reached",
       text: "Computer limit reached. Archive a bot to free one.",

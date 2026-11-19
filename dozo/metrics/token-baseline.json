@@ -1,0 +1,336 @@
+{
+  "version": "dozo-token-bench-v1",
+  "fakeProvider": {
+    "tokenizer": "ceil(utf8 bytes / 4) per request part",
+    "cache": "prefix cache per thread: a request reads the longest byte prefix it shares with an earlier request of the same thread, up to what that request wrote; every request of at least minimumTokens writes its block-aligned prefix",
+    "minimumTokens": 1024,
+    "blockTokens": 128
+  },
+  "pricing": null,
+  "totals": {
+    "modelCalls": 62,
+    "promptTokens": 950105,
+    "inputTokens": 3929,
+    "outputTokens": 691,
+    "cacheReadTokens": 669952,
+    "cacheWriteTokens": 276224,
+    "cacheReadShare": 0.7051346956389031,
+    "costUsd": null,
+    "components": {
+      "system": 130528,
+      "tools": 552854,
+      "history": 50099,
+      "prompt": 1338,
+      "toolCalls": 4097,
+      "toolResults": 211189
+    }
+  },
+  "tasks": [
+    {
+      "id": "chat-1-turn",
+      "kind": "short-chat",
+      "modelCalls": 1,
+      "inputTokens": 124,
+      "outputTokens": 10,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 10880,
+      "costUsd": null,
+      "components": {
+        "system": 2066,
+        "tools": 8917,
+        "history": 0,
+        "prompt": 21,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "chat-3-turns",
+      "kind": "short-chat",
+      "modelCalls": 3,
+      "inputTokens": 233,
+      "outputTokens": 30,
+      "cacheReadTokens": 21888,
+      "cacheWriteTokens": 11008,
+      "costUsd": null,
+      "components": {
+        "system": 6198,
+        "tools": 26751,
+        "history": 117,
+        "prompt": 63,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "chat-6-turns",
+      "kind": "short-chat",
+      "modelCalls": 6,
+      "inputTokens": 433,
+      "outputTokens": 60,
+      "cacheReadTokens": 55040,
+      "cacheWriteTokens": 11136,
+      "costUsd": null,
+      "components": {
+        "system": 12396,
+        "tools": 53502,
+        "history": 585,
+        "prompt": 126,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "chat-with-history",
+      "kind": "short-chat",
+      "modelCalls": 2,
+      "inputTokens": 55,
+      "outputTokens": 20,
+      "cacheReadTokens": 11520,
+      "cacheWriteTokens": 11520,
+      "costUsd": null,
+      "components": {
+        "system": 4132,
+        "tools": 17834,
+        "history": 1087,
+        "prompt": 42,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "tool-result-8k",
+      "kind": "long-tool-result",
+      "modelCalls": 3,
+      "inputTokens": 207,
+      "outputTokens": 25,
+      "cacheReadTokens": 21888,
+      "cacheWriteTokens": 13056,
+      "costUsd": null,
+      "components": {
+        "system": 6198,
+        "tools": 26751,
+        "history": 37,
+        "prompt": 59,
+        "toolCalls": 45,
+        "toolResults": 2061
+      }
+    },
+    {
+      "id": "tool-result-40k",
+      "kind": "long-tool-result",
+      "modelCalls": 3,
+      "inputTokens": 207,
+      "outputTokens": 25,
+      "cacheReadTokens": 21888,
+      "cacheWriteTokens": 13568,
+      "costUsd": null,
+      "components": {
+        "system": 6198,
+        "tools": 26751,
+        "history": 37,
+        "prompt": 59,
+        "toolCalls": 45,
+        "toolResults": 2573
+      }
+    },
+    {
+      "id": "tool-result-120k",
+      "kind": "long-tool-result",
+      "modelCalls": 3,
+      "inputTokens": 206,
+      "outputTokens": 25,
+      "cacheReadTokens": 21888,
+      "cacheWriteTokens": 12928,
+      "costUsd": null,
+      "components": {
+        "system": 6198,
+        "tools": 26751,
+        "history": 37,
+        "prompt": 59,
+        "toolCalls": 45,
+        "toolResults": 1932
+      }
+    },
+    {
+      "id": "browse-3-pages",
+      "kind": "multi-page",
+      "modelCalls": 4,
+      "inputTokens": 28,
+      "outputTokens": 55,
+      "cacheReadTokens": 37248,
+      "cacheWriteTokens": 15232,
+      "costUsd": null,
+      "components": {
+        "system": 8264,
+        "tools": 35668,
+        "history": 0,
+        "prompt": 104,
+        "toolCalls": 276,
+        "toolResults": 8196
+      }
+    },
+    {
+      "id": "browse-6-pages",
+      "kind": "multi-page",
+      "modelCalls": 7,
+      "inputTokens": 360,
+      "outputTokens": 97,
+      "cacheReadTokens": 96896,
+      "cacheWriteTokens": 23424,
+      "costUsd": null,
+      "components": {
+        "system": 14462,
+        "tools": 62419,
+        "history": 0,
+        "prompt": 182,
+        "toolCalls": 966,
+        "toolResults": 42651
+      }
+    },
+    {
+      "id": "browse-10-pages",
+      "kind": "multi-page",
+      "modelCalls": 11,
+      "inputTokens": 698,
+      "outputTokens": 154,
+      "cacheReadTokens": 232832,
+      "cacheWriteTokens": 38400,
+      "costUsd": null,
+      "components": {
+        "system": 22726,
+        "tools": 98087,
+        "history": 0,
+        "prompt": 286,
+        "toolCalls": 2531,
+        "toolResults": 148300
+      }
+    },
+    {
+      "id": "history-64",
+      "kind": "long-history",
+      "modelCalls": 2,
+      "inputTokens": 85,
+      "outputTokens": 20,
+      "cacheReadTokens": 15104,
+      "cacheWriteTokens": 15104,
+      "costUsd": null,
+      "components": {
+        "system": 4132,
+        "tools": 17834,
+        "history": 8285,
+        "prompt": 42,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "history-90",
+      "kind": "long-history",
+      "modelCalls": 3,
+      "inputTokens": 225,
+      "outputTokens": 30,
+      "cacheReadTokens": 33536,
+      "cacheWriteTokens": 16768,
+      "costUsd": null,
+      "components": {
+        "system": 6198,
+        "tools": 26751,
+        "history": 17517,
+        "prompt": 63,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "history-140",
+      "kind": "long-history",
+      "modelCalls": 2,
+      "inputTokens": 185,
+      "outputTokens": 20,
+      "cacheReadTokens": 10880,
+      "cacheWriteTokens": 28800,
+      "costUsd": null,
+      "components": {
+        "system": 4132,
+        "tools": 17834,
+        "history": 17857,
+        "prompt": 42,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "memory-in-system",
+      "kind": "memory-recall",
+      "modelCalls": 3,
+      "inputTokens": 198,
+      "outputTokens": 21,
+      "cacheReadTokens": 23552,
+      "cacheWriteTokens": 11776,
+      "costUsd": null,
+      "components": {
+        "system": 8634,
+        "tools": 26751,
+        "history": 93,
+        "prompt": 48,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "memory-recall-each-turn",
+      "kind": "memory-recall",
+      "modelCalls": 3,
+      "inputTokens": 126,
+      "outputTokens": 21,
+      "cacheReadTokens": 22016,
+      "cacheWriteTokens": 15232,
+      "costUsd": null,
+      "components": {
+        "system": 6198,
+        "tools": 26751,
+        "history": 4377,
+        "prompt": 48,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "memory-tool-lookup",
+      "kind": "memory-recall",
+      "modelCalls": 4,
+      "inputTokens": 360,
+      "outputTokens": 32,
+      "cacheReadTokens": 32896,
+      "cacheWriteTokens": 11264,
+      "costUsd": null,
+      "components": {
+        "system": 8264,
+        "tools": 35668,
+        "history": 70,
+        "prompt": 58,
+        "toolCalls": 81,
+        "toolResults": 379
+      }
+    },
+    {
+      "id": "parallel-tools",
+      "kind": "multi-page",
+      "modelCalls": 2,
+      "inputTokens": 199,
+      "outputTokens": 46,
+      "cacheReadTokens": 10880,
+      "cacheWriteTokens": 16128,
+      "costUsd": null,
+      "components": {
+        "system": 4132,
+        "tools": 17834,
+        "history": 0,
+        "prompt": 36,
+        "toolCalls": 108,
+        "toolResults": 5097
+      }
+    }
+  ]
+}

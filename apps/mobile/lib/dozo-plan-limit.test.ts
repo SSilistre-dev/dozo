@@ -106,6 +106,15 @@ describe("openPlanUpgrade", () => {
     expect(inApp).toHaveBeenCalledOnce();
   });
 
+  it("falls back to the app's Billing when opening the browser throws at once", async () => {
+    const inApp = vi.fn();
+    openPlanUpgrade({ kind: "upgrade", label: "Upgrade", startsPaidPlan: true }, inApp, () => {
+      throw new Error("no browser");
+    });
+    await flush();
+    expect(inApp).toHaveBeenCalledOnce();
+  });
+
   it("stays in the app for a change between paid plans and without an action", () => {
     const inApp = vi.fn();
     openPlanUpgrade({ kind: "upgrade", label: "Upgrade", startsPaidPlan: false }, inApp);
