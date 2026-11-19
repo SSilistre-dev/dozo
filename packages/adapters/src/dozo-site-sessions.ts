@@ -81,7 +81,8 @@ def live_port(profile):
             continue
         try:
             with open(f"/proc/{entry}/cmdline", "rb") as handle:
-                args = handle.read().decode("utf-8", "replace").split("\0")
+                # Chromium rewrites its title into one space-joined line; a profile path has no space.
+                args = re.split(r"[\0 ]", handle.read().decode("utf-8", "replace"))
         except OSError:
             continue
         if f"--user-data-dir={profile}" not in args:
