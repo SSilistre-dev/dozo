@@ -240,6 +240,6 @@ export async function runSurface(surface: Surface, page: Page, theme: Theme) {
   expect(merged.leaks, leakMessage(merged.leaks)).toEqual([]);
 }
 
-export function leakMessage(leaks: Leak[]) {
+function leakMessage(leaks: Leak[]) {
   return leaks.map((leak) => `${leak.surface}, ${leak.where}: "${leak.text}"`).join("\n");
 }

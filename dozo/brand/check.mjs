@@ -10,18 +10,17 @@
  * directory names, binary files, symlinks and mapped assets.
  *
  * Exit 0 when clean, 2 with a `path:line: match` list (first 50) plus a total otherwise, and 2
- * when no file was scanned. `--launch` adds the placeholders in the `urls` targets and the
- * `allow.phrases` entries not marked `permanent: true` (upstream image names).
+ * when no file was scanned. A `placeholders` entry (`dozo.example`) is a finding too. `--launch` adds
+ * the `allow.phrases` entries not marked `permanent: true` (upstream image names).
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
   BINARY_EXT,
-  DEFAULT_CONFIG,
   buildScanner,
   countText,
-  escapeRe,
+  DEFAULT_CONFIG,
   expectedCount,
   fail,
   guard,
@@ -31,6 +30,7 @@ import {
   loadConfig,
   parseArgs,
   phraseRe,
+  placeholderHits,
   readFile,
 } from "./lib.mjs";
 
@@ -42,10 +42,8 @@ if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail(`${root} is n
 const config = loadConfig(args.config ?? DEFAULT_CONFIG);
 const { scan, scanPath } = buildScanner(config);
 
-// Placeholders are the URL map's targets (`dozo.example`, `github.com/OWNER/dozo`); upstream image
-// names are the `allow.phrases` that are not permanent (an HMAC input can never be a launch blocker).
-const launchRe = (list) => (list.length ? new RegExp(list.map(escapeRe).join("|"), "g") : null);
-const placeholders = launchRe(Object.values(config.urls));
+// Upstream image names are the `allow.phrases` that are not permanent (an HMAC input can never be a
+// launch blocker).
 const upstream = config.allow.phrases.filter((entry) => !entry.permanent);
 
 const found = [];
@@ -59,13 +57,22 @@ const tracked = listFiles(root, links);
 const realRoot = fs.realpathSync(root);
 for (const rel of links) {
   let real = null;
-  try { real = fs.realpathSync(path.join(root, rel)); } catch {}
+  try {
+    real = fs.realpathSync(path.join(root, rel));
+  } catch {}
   if (real === null || !real.startsWith(realRoot + path.sep)) {
-    found.push(`${rel}: symlink whose target is outside the tree or cannot be resolved (not scanned)`);
+    found.push(
+      `${rel}: symlink whose target is outside the tree or cannot be resolved (not scanned)`,
+    );
   } else if (inScope(config, rel)) {
-    const target = real.slice(realRoot.length + 1).split(path.sep).join("/");
+    const target = real
+      .slice(realRoot.length + 1)
+      .split(path.sep)
+      .join("/");
     if (!inScope(config, fs.statSync(real).isDirectory() ? `${target}/` : target)) {
-      found.push(`${rel}: symlink whose target ${target} is in the tree but outside the scanned paths (not scanned)`);
+      found.push(
+        `${rel}: symlink whose target ${target} is in the tree but outside the scanned paths (not scanned)`,
+      );
     }
   }
 }
@@ -76,7 +83,10 @@ for (const rel of tracked) {
   if (!inScope(config, rel)) continue;
   // Names are not rewritten: a file or directory that carries the old name is listed or reviewed in allow.paths.
   for (const bad of scanPath(rel)) {
-    if (!reportedPaths.has(bad)) found.push(`${bad}: file or directory name carries the old brand (rename is not done by apply; review it in allow.paths)`);
+    if (!reportedPaths.has(bad))
+      found.push(
+        `${bad}: file or directory name carries the old brand (rename is not done by apply; review it in allow.paths)`,
+      );
     reportedPaths.add(bad);
   }
   const read = readFile(root, rel);
@@ -87,21 +97,29 @@ for (const rel of tracked) {
     }
     if (read.binary || !isSvg(rel)) continue;
   } else if (read.binary) {
-    if (!BINARY_EXT.test(rel)) found.push(`${rel}: binary content (NUL byte) in a file type that is not a known binary: UTF-16 text? it was not scanned`);
+    if (!BINARY_EXT.test(rel))
+      found.push(
+        `${rel}: binary content (NUL byte) in a file type that is not a known binary: UTF-16 text? it was not scanned`,
+      );
     continue;
   }
   scanned++;
-  for (const entry of config.allow.text) if (entry.file === rel) textSeen.set(entry, countText(entry, read.text));
+  for (const entry of config.allow.text)
+    if (entry.file === rel) textSeen.set(entry, countText(entry, read.text));
   const lines = read.text.split("\n");
+  for (const hit of placeholderHits(config, read.text)) found.push(`${rel}:${hit} (placeholder)`);
   const launch = args.launch
-    ? [placeholders, ...upstream.filter((entry) => entry.filesRe.some((re) => re.test(rel))).map((entry) => phraseRe(entry.text))].filter(Boolean)
+    ? upstream
+        .filter((entry) => entry.filesRe.some((re) => re.test(rel)))
+        .map((entry) => phraseRe(entry.text))
     : [];
   for (let i = 0; i < lines.length; i++) {
     for (const hit of scan(rel, lines[i])) {
       found.push(`${rel}:${i + 1}: ${hit.text}${hit.label ? ` (${hit.label})` : ""}`);
     }
     for (const re of launch) {
-      for (const match of lines[i].matchAll(re)) found.push(`${rel}:${i + 1}: ${match[0]} (launch placeholder)`);
+      for (const match of lines[i].matchAll(re))
+        found.push(`${rel}:${i + 1}: ${match[0]} (launch placeholder)`);
     }
   }
 }
@@ -109,7 +127,10 @@ for (const rel of tracked) {
 // A reviewed text stands for exactly the occurrences counted in brand.json: a new one is a new leak.
 for (const entry of config.allow.text) {
   const n = textSeen.get(entry) ?? 0;
-  if (n !== expectedCount(entry)) found.push(`${entry.file}: allow.text ${entry.text} occurs ${n} times, expected ${expectedCount(entry)} (review a new occurrence, then set count)`);
+  if (n !== expectedCount(entry))
+    found.push(
+      `${entry.file}: allow.text ${entry.text} occurs ${n} times, expected ${expectedCount(entry)} (review a new occurrence, then set count)`,
+    );
 }
 
 // Mapped assets must be our files, byte for byte.
@@ -118,13 +139,18 @@ for (const [dest, source] of Object.entries(config.assets)) {
   const ours = path.join(config.dir, "assets", source);
   if (!fs.existsSync(file)) found.push(`${dest}: mapped asset missing from the tree`);
   else if (!fs.existsSync(ours) || sha(fs.readFileSync(file)) !== sha(fs.readFileSync(ours))) {
-    found.push(`${dest}: differs from dozo/brand/assets/${source} (upstream image still in place?)`);
+    found.push(
+      `${dest}: differs from dozo/brand/assets/${source} (upstream image still in place?)`,
+    );
   }
 }
 
-if (scanned === 0) found.push("nothing was checked: 0 files in scope (check `include`, `exclude` and --root)");
+if (scanned === 0)
+  found.push("nothing was checked: 0 files in scope (check `include`, `exclude` and --root)");
 if (found.length === 0) {
-  console.log(`leak gate clean: ${scanned} files scanned${args.launch ? " (launch checks on)" : ""}`);
+  console.log(
+    `leak gate clean: ${scanned} files scanned${args.launch ? " (launch checks on)" : ""}`,
+  );
   process.exit(0);
 }
 for (const line of found.slice(0, 50)) console.error(line);

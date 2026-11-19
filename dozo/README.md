@@ -96,6 +96,17 @@ lock, the count across Spaces and row security are tested in `dozo-shared-space.
 which needs a migrated database (`VERIFY_DATABASE=1` and `DATABASE_URL` of the runtime login); the
 unit gate has none and skips it, so run it by hand after changing the check.
 
+An admin can change two numbers per plan without a deploy, on the admin page's Plans section: its
+shared space and, on Premium and Premium Plus, its monthly computer hours (at least one; Free never
+gets hours). Prices stay in code: a new price is a new price at the payment provider. The values
+live in `dozo_plan_quotas` (`packages/db/src/dozo-plan-quotas.ts`); an empty one follows the
+terms in `dozo-plans.ts`. Every limit reads them from the database on each request, so a change
+holds on every instance at once: the shared space, the computer allowance, the hours Billing shows
+and the check that a move to a smaller plan fits this month's use. Each change is a
+`deployment.settings.changed` security event. Lowering a quota deletes nothing, as above. The
+landing page still shows the terms in code, so the admin page says in one line what it states
+when a value differs.
+
 An organization on Free spends nothing of the operator's. The operator's own model already needs
 credits (upstream's guard, on every model call a run or a background job makes). On top of that,
 `packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external
@@ -126,6 +137,40 @@ tomorrow as the first. A grant only raises the computer allowance: it is at leas
 tier's, whatever a trial or a monthly credit plan gives, and an organization with only a grant has
 the monthly reset date. The table has no row security, as `billing_accounts` has none: the plan is
 read inside a member's own requests and uploads.
+
+Billing mails an organization's owners, the members who manage billing, in English or Turkish
+(`packages/auth/src/dozo-billing-email.tsx`; no unsubscribe link, as they are not marketing): once
+when a payment fails (again only after it was paid up in between), once when a subscription is set
+to cancel (the day the plan lasts until), and three days before the plan in force ends without
+renewing, a canceled subscription's or a granted plan's (the plan that follows). Only owners who
+were owners when it happened, active and with a verified address of their own, are mailed.
+The mails are never part of what they are about: `apps/api/src/dozo-billing-lifecycle.ts` runs
+after every step of a sync and after an admin's plan change, reports its own failures, and is made
+up for by the next sync, the backup jobs and an hourly sweep. It decides in one transaction that
+locks the organization's row in `dozo_billing_notices` (what was already told) and reads the
+subscription as stored then; an occasion counts as told only once a mail was recorded for an
+owner, and the migration counted whatever was overdue or canceled at the time as told, so nothing
+earlier is mailed. Each mail is a row in `dozo_billing_mails` with a backup job, sent after commit
+without the caller waiting. A send claims its row and has a minute: sent, refused for good (never
+tried again), or given back for the backup job; a claim left behind is taken over after five
+minutes, so a mail the provider accepted just before a crash, a timeout or a failed mark can rarely
+go twice. The reminder is one Graphile job per organization: it mails only if that is still the
+end, then queues itself for the next one. The hourly sweep (a Graphile cron, once across all API
+processes) queues a reminder that is missing, gives up on mails whose backup job ran out of tries,
+and deletes settled mails after 90 days. The API runs these jobs
+(`packages/adapters/src/dozo-job-queue.ts`) on a pool of two connections of its own; Graphile
+checks once a minute for jobs that have come due, the one timed check besides the sweep. Without
+account email nothing is sent. Receipts are the payment provider's own mails, turned on in its
+settings, so none is written here. While a subscription is past due, web and mobile show the owner
+one line with Manage billing.
+
+A plan picked on the landing page follows the visitor to checkout. Its sign-up links carry
+`?plan=premium|premium_plus&period=month|year`; the web sign-up page keeps a valid pick in session
+storage for the tab and drops both parameters from the address (anything else, Free included, is
+ignored). When the app opens after setup, `apps/web/src/pages/dozo-shell.tsx` opens Billing with that
+plan and period selected, once: closing Billing forgets the pick and the account stays on Free. The
+server still prices the tier and period itself, so a link cannot open a price that is not offered.
+A plan checkout left unpaid returns to `/app?billing=canceled`, which reopens Billing quietly.
 
 Tier ids and price lookup keys are upstream's and never change. Prices change in that one file;
 until the owner sets them it carries none and the paid plans keep upstream's amounts. Known limits:

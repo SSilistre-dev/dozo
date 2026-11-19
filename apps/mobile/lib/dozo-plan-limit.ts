@@ -1,7 +1,7 @@
-import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import type { PlanLimitAction, PlanLimitBilling, PlanLimitNotice } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, planLimitNotice, planLimitOf } from "@rakazo/contracts";
+import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Alert, Linking } from "react-native";
@@ -43,9 +43,10 @@ function needsBilling(limit: ReturnType<typeof planLimitOf>): boolean {
 
 /** The shared table's notice for a failure, reading the billing status only when it matters. */
 export function usePlanLimitNotice(error: unknown): PlanLimitNotice | null {
-  const limit = planLimitOf(error);
+  const copy = planLimitCopy();
+  const limit = planLimitOf(error, copy);
   const billing = useQuery({ ...rpcQuery("billing/status"), enabled: needsBilling(limit) }).data;
-  return limit ? planLimitNotice(limit, billing, i18n.locale) : null;
+  return limit ? planLimitNotice(limit, billing, copy) : null;
 }
 
 /**
@@ -53,10 +54,11 @@ export function usePlanLimitNotice(error: unknown): PlanLimitNotice | null {
  * says whether it did. The billing status is read first; without it the sentence offers nothing.
  */
 export function showPlanLimitAlert(title: string, error: unknown): boolean {
-  const limit = planLimitOf(error);
+  const copy = planLimitCopy();
+  const limit = planLimitOf(error, copy);
   if (!limit || !needsBilling(limit)) return false;
   const show = (billing: PlanLimitBilling | null) => {
-    const notice = planLimitNotice(limit, billing, i18n.locale);
+    const notice = planLimitNotice(limit, billing, copy);
     const action = notice?.action;
     const close = {
       text: action?.kind === "upgrade" ? t`Not Now` : t`Close`,

@@ -5,6 +5,8 @@ import type { ComponentProps } from "react";
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import { planIntentFromParams, savePlanIntent } from "../lib/dozo-plan-intent";
+import { markSignupStarted } from "../lib/dozo-signup-start";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import type { UiLocale } from "../lib/ui-locale";
 import { UI_LOCALES } from "../lib/ui-locale";
@@ -23,7 +25,17 @@ import { AuthPage as UpstreamAuthPage } from "./Auth";
  * an exact app language counts, anything else is dropped, and the parameter leaves the address
  * either way. The choice goes through `setUiLocale`, the same saved preference the settings use,
  * so it holds after sign-in, where the app saves it to the account.
+ *
+ * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
+ * for this tab (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
+ * the same way. The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
  */
+function withoutLinkParams(current: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(current);
+  for (const key of ["lang", "plan", "period"]) next.delete(key);
+  return next;
+}
+
 export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   const { t } = useLingui();
   const { search } = useLocation();
@@ -31,19 +43,21 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   const asked = params.get("lang");
   const wanted = UI_LOCALES.find((code) => code === asked);
   const [locale, setLocale] = useState<UiLocale>(getActiveUiLocale);
+  const plan = params.get("plan");
+  const period = params.get("period");
+  useEffect(() => {
+    if (plan === null && period === null) return;
+    const intent = planIntentFromParams(plan, period);
+    if (intent) savePlanIntent(intent);
+    // A language in the address is dropped later, and these leave with it in one change.
+    if (asked === null) setParams(withoutLinkParams, { replace: true });
+  }, [plan, period, asked, setParams]);
   useEffect(() => {
     if (asked === null) return;
     let active = true;
     const drop = () => {
       if (!active) return;
-      setParams(
-        (current) => {
-          const next = new URLSearchParams(current);
-          next.delete("lang");
-          return next;
-        },
-        { replace: true },
-      );
+      setParams(withoutLinkParams, { replace: true });
     };
     if (!wanted) {
       drop();
@@ -58,6 +72,15 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
       active = false;
     };
   }, [asked, wanted, setParams]);
+  const title = props.mode === "up" ? t`Sign up` : props.mode === "in" ? t`Sign in` : null;
+  useEffect(() => {
+    if (!title) return;
+    const before = document.title;
+    document.title = `${title} · ${before}`;
+    return () => {
+      document.title = before;
+    };
+  }, [title]);
   const [signups, setSignups] = useState<"pending" | "open" | "closed">("pending");
   useEffect(() => {
     let active = true;
@@ -73,6 +96,10 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
       active = false;
     };
   }, []);
+  const signingUp = props.mode === "up" && signups === "open";
+  useEffect(() => {
+    if (signingUp) markSignupStarted();
+  }, [signingUp]);
   if (props.mode === "up" && signups !== "open") {
     return signups === "closed" ? <Navigate to={`/sign-in${search}`} replace /> : null;
   }

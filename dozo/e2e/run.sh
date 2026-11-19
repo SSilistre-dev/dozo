@@ -48,14 +48,15 @@ wait_gone() {
 # The output directory and the saved session are shared by every run: a second run would wipe the
 # first one's files, so refuse instead (the lock: dozo/docker/lock.sh). Taken before the cleanup trap
 # exists, which would otherwise release the running one's lock on this early exit.
+# shellcheck source=SCRIPTDIR/../docker/lock.sh
 . "$HERE/../docker/lock.sh"
 lock_acquire "$LOCK" "e2e run" "e2e:" || exit 2
 
 cleanup() {
-  local ids
+  local ids f
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
-  ids="$(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)" || ids=""
-  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+  ids=(); while IFS= read -r f; do ids+=("$f"); done < <(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)
+  [ "${#ids[@]}" -eq 0 ] || docker rm -f "${ids[@]}" >/dev/null 2>&1 || true
   # The lock goes last: it is what keeps another run out of $OUT and node_modules until they are cleared.
   if [ "${DOZO_E2E_KEEP:-}" = 1 ]; then say "kept $OUT (DOZO_E2E_KEEP=1)"
   else
@@ -126,6 +127,8 @@ FORWARD=1
 if [ "$(uname -s)" = Linux ]; then NET=(--network host); FORWARD=0; fi
 
 say "browser: docker ($IMAGE), base $BASE, forwarder=$FORWARD"
+# The quoted script is expanded by the container's shell, not this one (SC2016).
+# shellcheck disable=SC2016
 drun "$NAME" --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}" \
   -e HOME=/tmp -e DOZO_E2E_BASE_URL="$BASE" -e DOZO_E2E_OUT=/out \
   -e DOZO_E2E_ARGS="${DOZO_E2E_ARGS:-}" -e FORWARD="$FORWARD" -e PORT="${PORT:-80}" -e VERSION="$VERSION" \
@@ -174,6 +177,6 @@ drun "$NAME" --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}" \
     exit $rc
   ' &
 wait_gone $!; rc=$WAIT_RC
-if [ "$rc" -eq 0 ]; then say "PASS"; exit 0; fi
-say "FAIL (docker/playwright exit $rc)"
-exit 2
+if [ "$rc" -eq 0 ]; then say "PASS"
+else say "FAIL (docker/playwright exit $rc)"; exit 2
+fi

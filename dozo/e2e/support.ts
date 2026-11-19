@@ -54,7 +54,7 @@ export async function signUpThroughForm(page: Page, user = throwawayUser()) {
 }
 
 /** The OpenAI-compatible address of the model stub, as the api container reaches it. */
-export function modelUrl() {
+function modelUrl() {
   const url = process.env.DOZO_E2E_MODEL_URL;
   if (!url)
     throw new Error(

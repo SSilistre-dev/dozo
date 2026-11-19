@@ -5,7 +5,7 @@ import { BYOK_TIERS, sandboxAllowanceHours } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Runs on the branded tree only: Billing offers the paid plans once the brand rules are applied.
 
@@ -42,7 +42,7 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import type { RpcClient } from "../lib/rpc";
-import { ModelCreditsSettings } from "./ModelCredits";
+import { CreditChoice, ModelCreditsSettings } from "./ModelCredits";
 
 const offers = (["pro", "max"] as const).map((tier) => ({
   tier,
@@ -161,27 +161,62 @@ it("starts no checkout that names no paid plan, whatever is pressed on Free", as
     expect(["pro", "max"]).toContain((terms as { tier?: string }).tier);
 });
 
+function sharedSpaceRows() {
+  const rows = container.querySelectorAll('[data-testid="shared-space"] p');
+  return [...rows].map((row) => row.textContent);
+}
+
 it("names the plan and shows how much of its shared space is used", async () => {
   const MB = 1024 * 1024;
   await render({
     ...free,
     sharedSpace: { plan: "Free", usedBytes: 120 * MB, limitBytes: 500 * MB },
   });
-  expect(container.querySelector('[data-testid="shared-space"]')?.textContent).toBe(
-    "Free · 120 MB of 500 MB shared space",
-  );
+  expect(sharedSpaceRows()).toEqual(["Free", "120 MB of 500 MB shared space"]);
   await render({
     ...free,
     sharedSpace: { plan: "Premium", usedBytes: 1.2 * 1024 * MB, limitBytes: 2 * 1024 * MB },
   });
-  expect(container.querySelector('[data-testid="shared-space"]')?.textContent).toBe(
-    "Premium · 1.2 GB of 2 GB shared space",
-  );
+  expect(sharedSpaceRows()).toEqual(["Premium", "1.2 GB of 2 GB shared space"]);
 });
 
 it("shows no shared space where the server sends none, as one that does not bill", async () => {
   await render(free);
   expect(container.querySelector('[data-testid="shared-space"]')).toBeNull();
+});
+
+it("starts on the plan and period picked on the landing page, once, then on the first plan", async () => {
+  const { clearPlanIntent, savePlanIntent } = await import("../lib/dozo-plan-intent");
+  savePlanIntent({ tier: "max", period: "month" });
+  await render(free);
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "max" });
+
+  act(() => root.unmount());
+  root = createRoot(container);
+  savePlanIntent({ tier: "pro", period: "year" });
+  await render(free);
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({
+    interval: BYOK_TIERS.pro.annualPriceCents ? "year" : "month",
+    tier: "pro",
+  });
+
+  act(() => root.unmount());
+  root = createRoot(container);
+  clearPlanIntent();
+  await render(free);
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "pro" });
+});
+
+it("falls back to the first plan when the picked one is not on offer", async () => {
+  const { clearPlanIntent, savePlanIntent } = await import("../lib/dozo-plan-intent");
+  savePlanIntent({ tier: "max", period: "month" });
+  await render({ ...free, byokTiers: offers.filter((offer) => offer.tier === "pro") });
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "pro" });
+  clearPlanIntent();
 });
 
 it("shows when the plan renews once, below the plan, not again on the subscription", async () => {
@@ -231,4 +266,67 @@ it("keeps the subscription's renewal when a granted plan above it ends first", a
   expect(container.querySelector('[data-testid="own-key-plan"]')?.textContent).toContain(
     "Renews Feb 15, 2030",
   );
+});
+
+describe("the plan cards", () => {
+  const selectFunding = vi.fn(async (_terms: unknown) => ({ ok: true, url: "#checkout" }));
+  const cardsClient = { billing: { checkout, selectFunding } } as unknown as RpcClient;
+  const cards = { ...free, planLayout: "tiers" as const };
+  const subscribe = (name: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="Subscribe to ${name}"]`);
+
+  async function renderCards() {
+    await act(async () => {
+      root.render(<CreditChoice status={cards} client={cardsClient} dismissible />);
+    });
+  }
+
+  afterEach(async () => {
+    const { clearPlanIntent } = await import("../lib/dozo-plan-intent");
+    clearPlanIntent();
+    selectFunding.mockClear();
+  });
+
+  it("lead with the plan and period picked on the landing page", async () => {
+    const { savePlanIntent } = await import("../lib/dozo-plan-intent");
+    savePlanIntent({ tier: "max", period: "year" });
+    await renderCards();
+    expect(subscribe("Premium Plus")?.className).toBe("w-full");
+    expect(subscribe("Premium")?.className).toContain("bg-background");
+    await act(async () => subscribe("Premium Plus")?.click());
+    expect(selectFunding).toHaveBeenCalledWith({
+      funding: "byok",
+      tier: "max",
+      interval: BYOK_TIERS.max.annualPriceCents ? "year" : "month",
+    });
+  });
+
+  it("lead with the first plan, monthly, without a pick", async () => {
+    await renderCards();
+    expect(subscribe("Premium")?.className).toBe("w-full");
+    expect(subscribe("Premium Plus")?.className).toContain("bg-background");
+    await act(async () => subscribe("Premium")?.click());
+    expect(selectFunding).toHaveBeenCalledWith({ funding: "byok", tier: "pro", interval: "month" });
+  });
+
+  it("lead with the first plan when the picked one is not on offer", async () => {
+    const { savePlanIntent } = await import("../lib/dozo-plan-intent");
+    savePlanIntent({ tier: "max", period: "month" });
+    await act(async () => {
+      root.render(
+        <CreditChoice
+          status={{
+            ...cards,
+            byokTiers: [
+              ...offers,
+              { ...offers[0]!, tier: "standard" as const, name: "Free" },
+            ].filter((offer) => offer.tier !== "max"),
+          }}
+          client={cardsClient}
+          dismissible
+        />,
+      );
+    });
+    expect(subscribe("Premium")?.className).toBe("w-full");
+  });
 });

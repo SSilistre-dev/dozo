@@ -2,7 +2,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { BenchTask } from "./dozo-token-bench.js";
 
 /** Synthetic filler with a stable length; each line is distinct so no two documents share text. */
-export function filler(label: string, lines: number) {
+function filler(label: string, lines: number) {
   return Array.from(
     { length: lines },
     (_, i) =>
@@ -115,6 +115,12 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     turns: chatTurns(2),
   },
   {
+    id: "history-140-6-turns",
+    kind: "long-history",
+    history: conversation(140, "h140l"),
+    turns: chatTurns(6),
+  },
+  {
     id: "memory-in-system",
     kind: "memory-recall",
     memoryContext: `<memory>\n${filler("memory", 30)}\n</memory>`,
@@ -148,6 +154,58 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     toolResult: (_name, args) => ({
       results: [{ memory: `${String(args.query)}: ${filler(String(args.query), 6)}` }],
     }),
+  },
+  {
+    id: "records-reordered",
+    kind: "short-chat",
+    // Postgres returns unordered rows in storage order, which an update changes (a plugin's status
+    // sync rewrites its row), so the same skills and plugins can be listed in another order.
+    records: Array.from({ length: 6 }, (_, i) => ({
+      id: `rec${i + 1}`,
+      createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+      name: `Saved record ${i + 1}`,
+    })),
+    turns: chatTurns(3).map((turn, i) => ({
+      ...turn,
+      recordOrder: [
+        [0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 0],
+        [2, 3, 4, 5, 0, 1],
+      ][i],
+    })),
+  },
+  {
+    id: "disk-filling",
+    kind: "short-chat",
+    // A build fills the bot computer's 40 GB disk past the 85% note, a few hundred MB per turn.
+    turns: chatTurns(4).map((turn, i) => ({
+      ...turn,
+      disk: { usedGb: 35.2 + i * 0.3, freeGb: 4.8 - i * 0.3 },
+    })),
+  },
+  {
+    id: "rare-tool-needed",
+    kind: "short-chat",
+    // A rarely used built-in, called on the second turn: listed it is one call, deferred it is
+    // reached through find_tool and use_tool.
+    turns: [
+      chatTurns(1)[0]!,
+      {
+        prompt: "Remind me tomorrow at 9 to send the weekly report.",
+        replies: [
+          {
+            builtin: "schedule_create",
+            args: {
+              name: "Weekly report",
+              prompt: "Remind the user to send the weekly report.",
+              runAt: "2026-01-02T09:00:00Z",
+            },
+          },
+          { text: "I will remind you tomorrow at 9." },
+        ],
+      },
+      chatTurns(2)[1]!,
+    ],
   },
   {
     id: "parallel-tools",
