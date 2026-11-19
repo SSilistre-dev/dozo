@@ -6,6 +6,7 @@ import {
   listedRecords,
   prefixText,
   requestComponents,
+  resolveReply,
   runBenchTask,
   runTokenBench,
   tokensOf,
@@ -36,6 +37,22 @@ describe("listed records", () => {
     ];
     expect(listedRecords(rows).map((r) => r.id)).toEqual(["c", "a", "b"]);
     expect(listedRecords(rows, [2, 0, 1])).toEqual(listedRecords(rows));
+  });
+});
+
+describe("scripted built-in calls", () => {
+  it("call a listed built-in directly and reach a deferred one through find_tool", () => {
+    const reply = { builtin: "schedule_list", args: {} };
+    const listed = {
+      messages: [],
+      tools: [{ type: "function", function: { name: "schedule_list" } }],
+    };
+    expect(resolveReply(reply, listed)).toEqual([{ tool: "schedule_list", args: {} }]);
+    expect(resolveReply(reply, { messages: [] })).toEqual([
+      { tool: "find_tool", args: { names: ["schedule_list"] } },
+      { tool: "use_tool", args: { name: "schedule_list", arguments: {} } },
+    ]);
+    expect(resolveReply({ text: "hi" }, { messages: [] })).toEqual([{ text: "hi" }]);
   });
 });
 

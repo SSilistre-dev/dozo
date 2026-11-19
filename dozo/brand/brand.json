@@ -395,6 +395,12 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/builtin-tool-bridge.ts",
+      "find": "  \"reflect_memory\",\n  \"schedule_create\",\n  \"schedule_list\",\n  \"search_history\",",
+      "replace": "  \"reflect_memory\",\n  \"search_history\",",
+      "reason": "the schedule tools (about 1090 tokens) are offered to every run and used in few turns: reach them through find_tool"
+    },
+    {
       "file": "packages/adapters/src/context-selection.ts",
       "find": "import type { VerbatimMcpServers } from \"./verbatim-mcp-result.js\";\nimport { isVerbatimMcpResult",
       "replace": "import type { VerbatimMcpServers } from \"./verbatim-mcp-result.js\";\nimport { alignHistoryStart } from \"./dozo-history-window.js\";\nimport { isVerbatimMcpResult",

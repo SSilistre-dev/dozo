@@ -19,7 +19,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v4";
+export const BENCH_VERSION = "dozo-token-bench-v5";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 export const FAKE_PROVIDER = {
@@ -33,7 +33,28 @@ export const FAKE_PROVIDER = {
 export type ScriptedReply =
   | { text: string }
   | { tool: string; args: Record<string, unknown> }
-  | { tools: Array<{ tool: string; args: Record<string, unknown> }> };
+  | { tools: Array<{ tool: string; args: Record<string, unknown> }> }
+  /**
+   * A built-in the model calls directly when it is in the tool list, and otherwise reaches as the
+   * runtime tells it to: find_tool for its parameters, then use_tool (one more model call).
+   */
+  | { builtin: string; args: Record<string, unknown> };
+
+/** The model's reply to one request: a built-in call resolved against the tools it was sent. */
+export function resolveReply(reply: ScriptedReply, body: WireBody): ScriptedReply[] {
+  if (!("builtin" in reply)) return [reply];
+  const listed = (body.tools ?? []).some(
+    (tool) => (tool as { function?: { name?: string } }).function?.name === reply.builtin,
+  );
+  return listed
+    ? [{ tool: reply.builtin, args: reply.args }]
+    : [
+        { tool: "find_tool", args: { names: [reply.builtin] } },
+        { tool: "use_tool", args: { name: reply.builtin, arguments: reply.args } },
+      ];
+}
+
+type SentReply = Exclude<ScriptedReply, { builtin: string }>;
 
 export type BenchTurn = {
   prompt: string;
@@ -144,7 +165,7 @@ export function fakeUsage(body: WireBody, written: string[], outputTokens: numbe
   };
 }
 
-function sse(reply: ScriptedReply, usage: unknown, call: number) {
+function sse(reply: SentReply, usage: unknown, call: number) {
   const chunk = (delta: unknown, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: `bench-${call}`, object: "chat.completion.chunk", created: 0, model: "bench", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
   const calls = "text" in reply ? [] : "tools" in reply ? reply.tools : [reply];
@@ -163,7 +184,7 @@ function sse(reply: ScriptedReply, usage: unknown, call: number) {
   return `${body}data: ${JSON.stringify({ id: `bench-${call}`, choices: [], usage })}\n\ndata: [DONE]\n\n`;
 }
 
-function replyTokens(reply: ScriptedReply) {
+function replyTokens(reply: SentReply) {
   if ("text" in reply) return tokensOf(reply.text);
   const calls = "tools" in reply ? reply.tools : [reply];
   return calls.reduce((n, c) => n + tokensOf(c.tool + JSON.stringify(c.args)), 0);
@@ -178,10 +199,12 @@ export type BenchCall = MeasuredCall & {
 /** A fake endpoint for one task: scripted replies, computed usage, per-thread prefix cache. */
 export function fakeModelFetch(script: ScriptedReply[], calls: BenchCall[]) {
   const written: string[] = [];
-  let next = 0;
+  const pending = [...script];
   const fetch: typeof globalThis.fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body)) as WireBody;
-    const reply = script[next++] ?? { text: "Done." };
+    const [first, ...rest] = resolveReply(pending.shift() ?? { text: "Done." }, body);
+    pending.unshift(...rest);
+    const reply = first as SentReply;
     const { components, usage } = fakeUsage(body, written, replyTokens(reply));
     calls.push({
       id: `call-${calls.length + 1}`,

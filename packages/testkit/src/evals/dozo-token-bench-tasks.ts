@@ -184,6 +184,26 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     })),
   },
   {
+    id: "rare-tool-needed",
+    kind: "short-chat",
+    // A rarely used built-in, called on the second turn: listed it is one call, deferred it is
+    // reached through find_tool and use_tool.
+    turns: [
+      chatTurns(1)[0]!,
+      {
+        prompt: "Remind me tomorrow at 9 to send the weekly report.",
+        replies: [
+          {
+            builtin: "schedule_create",
+            args: { title: "Send the weekly report", runAt: "2026-01-02T09:00:00Z" },
+          },
+          { text: "I will remind you tomorrow at 9." },
+        ],
+      },
+      chatTurns(2)[1]!,
+    ],
+  },
+  {
     id: "parallel-tools",
     kind: "multi-page",
     turns: [
