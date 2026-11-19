@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 const HERE = __dirname;
 
-export function webSourceDir() {
+function webSourceDir() {
   const candidates = [
     process.env.DOZO_E2E_SRC,
     "/webapp-src", // run.sh mounts the staged tree's apps/web/src here
