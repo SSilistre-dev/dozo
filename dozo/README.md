@@ -230,6 +230,31 @@ Accepted by the owner for now, stated here once:
   translated to Turkish only, by fixed ids merged into the catalog there, since the fork never edits
   `messages.po`; other languages show the English. The mobile app does not show it: it has no usage
   screen to put it beside.
+- Sites with cookies (the key button in a bot computer's header, `apps/api/src/dozo-site-sessions.ts`):
+  sessions stay in the bot's browser profile on its computer; only site names, times and storage
+  keys reach the server. A site is listed only when one of its pages was opened at the top level,
+  so trackers and CDNs that only loaded inside other pages are left out. It is the cookies in this
+  bot's browser, whoever opened the site: sites the bot browsed on its own are listed too. "Sign
+  out of all" ends every site with cookies, unlisted ones included. The list needs a running
+  computer, and only Docker computers declare it. The mobile app has no such view yet.
+- Signing out and signing in hold the bot's execution lease so the script never runs a browser
+  beside the bot's; a bot waiting for someone on its screen is not held up. A Private computer has
+  no such lease (upstream's lease covers Team computers only), so there a sign-out the bot races
+  can still meet its browser starting.
+- What it makes visible: every member of the Space sees, for every bot there, which sites its
+  browser holds cookies for and when each was last used, without who opened them (the audit log
+  has that). Before, this was only on the screen of whoever looked at the browser.
+- Each bot has its own browser profile, but on a Team Computer every bot runs as the same user in
+  the same home, so any bot there (through its shell) can read another bot's profile, cookies
+  included: a site one person signs in to through one bot is usable by every bot on that computer
+  and by everyone who can direct them. Upstream's `docs/computer.md` says sign-ins are "carried
+  over"; that is wrong about the mechanism and right about the reach. Use a Private computer for a
+  sign-in that must not be shared.
+- `browser_act`, `computer_act` and `shell` never ask for approval (`packages/core/src/action-approval.ts`),
+  and outside-content gating applies only to webhook runs: on a signed-in site, a page that tricks
+  the bot can make it post, delete or change settings unasked. Only payment presses and saved
+  login or card fills ask. The sign-in dialog says so in one line on every computer ("The bot can
+  act as you on these sites, and a page it reads can steer it."); the approval rules are unchanged.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and

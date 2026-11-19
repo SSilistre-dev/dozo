@@ -185,6 +185,20 @@ NET=(--network "$NETWORK")
 FORWARD=1
 if [ "$(uname -s)" = Linux ]; then NET=(--network host); FORWARD=0; fi
 
+# The computer image's own checks that need no stack: the signed-in sites script against a real
+# browser, offline (dozo/e2e/site-sessions-image.sh).
+# Without the image (another computer image, or none built yet) it is skipped and said so; under CI
+# it is required.
+COMPUTER_IMAGE="${DOZO_COMPUTER_IMAGE:-rakazo/computer:local}"
+if docker image inspect "$COMPUTER_IMAGE" >/dev/null 2>&1; then
+  say "computer image: signed-in sites script"
+  DOZO_COMPUTER_IMAGE="$COMPUTER_IMAGE" "$HERE/site-sessions-image.sh" >&2 \
+    || { say "the signed-in sites script failed in the computer image"; exit 2; }
+elif [ -n "${CI:-}" ]; then
+  say "no computer image $COMPUTER_IMAGE: the signed-in sites check is required under CI"; exit 2
+else
+  say "skipped: no computer image $COMPUTER_IMAGE for the signed-in sites check"
+fi
 say "browser: docker ($IMAGE), base $BASE, forwarder=$FORWARD"
 # The quoted script is expanded by the container's shell, not this one (SC2016).
 # shellcheck disable=SC2016
