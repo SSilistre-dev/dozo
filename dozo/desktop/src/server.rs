@@ -96,16 +96,6 @@ pub fn decide(url: &Url, server: Option<&Url>) -> Verdict {
     }
 }
 
-/// What the navigation hook answers. On Linux the hook is asked about frames too and cannot tell
-/// them from the window's own page, so it lets every web address through and `frames_gtk.rs`
-/// gives the window's own page the `decide` verdict when its answer arrives.
-pub fn hook_verdict(url: &Url, server: Option<&Url>) -> Verdict {
-    match url.scheme() {
-        "http" | "https" | "blob" if cfg!(target_os = "linux") => Verdict::Window,
-        _ => decide(url, server),
-    }
-}
-
 /// True when something accepts a connection at the server's address.
 // ponytail: a TCP connect, not an HTTP request, so a proxy in front of a stopped server still
 // counts as reachable and the proxy's own error page shows. Send a real request if that confuses.
@@ -254,35 +244,6 @@ mod tests {
             Verdict::Refused
         );
         assert_eq!(decide(&url(LOCAL), None), Verdict::Window);
-    }
-
-    #[test]
-    fn the_hook_lets_web_addresses_through_only_on_linux() {
-        let server = url("https://dozo.example.com/");
-        for web in [
-            "https://evil.test/",
-            "http://evil.test/",
-            "blob:https://evil.test/0b0e",
-        ] {
-            let expected = if cfg!(target_os = "linux") {
-                Verdict::Window
-            } else {
-                decide(&url(web), Some(&server))
-            };
-            assert_eq!(hook_verdict(&url(web), Some(&server)), expected, "{web}");
-        }
-        // Everything else is the same verdict everywhere.
-        for other in [
-            "file:///etc/passwd",
-            "data:text/html,x",
-            "mailto:someone@example.com",
-        ] {
-            let other = url(other);
-            assert_eq!(
-                hook_verdict(&other, Some(&server)),
-                decide(&other, Some(&server))
-            );
-        }
     }
 
     // The Windows address of the local screens is a web address: nothing near it may pass for it.

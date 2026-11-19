@@ -14,7 +14,7 @@ mod update;
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
-use server::{LOCAL, Verdict, hook_verdict, is_local, outside, parse_server, reachable};
+use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::{NewWindowResponse, PermissionResponse};
 use tauri::{
@@ -278,7 +278,7 @@ fn main() {
                     .background_color(Color(20, 20, 20, 255))
                     .on_navigation({
                         let app = app.clone();
-                        move |url| follow(hook_verdict(url, chosen(&app).as_ref()))
+                        move |url| follow(decide(url, chosen(&app).as_ref()))
                     })
                     // The app has one window: a link that asks for a new one goes to the browser.
                     .on_new_window(|url, _| {
@@ -297,8 +297,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             frames::only_gate_the_main_frame(&window)?;
             #[cfg(target_os = "linux")]
-            frames::only_gate_the_main_frame(&window, move |url| {
-                follow(server::decide(url, chosen(&app).as_ref()))
+            frames::only_gate_the_main_frame(&window, move |url, seen| {
+                follow(frames::verdict(url, chosen(&app).as_ref(), seen))
             })?;
             #[cfg(windows)]
             let _ = window;
