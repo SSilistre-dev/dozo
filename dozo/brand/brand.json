@@ -4032,6 +4032,15 @@
       "reason": "teaching: a plan with no computer shows no Teach control in the computer header"
     },
     {
+      "file": "apps/web/src/pages/shell/computer-overlay.tsx",
+      "find": "import { TeachCaptureOverlay } from \"../../components/teach/TeachCaptureOverlay\";",
+      "replace": "import { TeachCaptureOverlay } from \"../../components/teach/dozo-teach-capture-overlay\";",
+      "requires": [
+        "apps/web/src/components/teach/dozo-teach-capture-overlay.tsx"
+      ],
+      "reason": "teaching: clicking the bot's screen moves focus off the page control the computer window opened on, so the text typed next is recorded"
+    },
+    {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
       "find": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { botProfilePatch }",
       "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"./dozo-bot-skills-section\";\nimport { botProfilePatch }",
