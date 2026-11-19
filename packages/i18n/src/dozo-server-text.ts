@@ -69,7 +69,25 @@ export const SERVER_SENTENCES: ReadonlySet<string> = new Set([
   "This bot already has an address.",
   "Choose an email address for this bot first.",
   "A skill with that name already exists.",
+  "Your model provider rejected the API key. Check your connection settings.",
 ]);
+
+/**
+ * Sign-in button labels the server sends for subscription providers, by their fixed English text.
+ * The provider names are product data; each label is its own catalog id with a Turkish line.
+ */
+export const SIGN_IN_LABELS: ReadonlySet<string> = new Set([
+  "Sign in with ChatGPT",
+  "Sign in with GitHub Copilot",
+  "Sign in with SuperGrok or X Premium",
+  "Sign in with Claude",
+]);
+
+/** A server-sent sign-in label in the UI's language; any other label stays as sent. */
+export function signInLabelText(label: string | undefined): string | undefined {
+  if (!label || !SIGN_IN_LABELS.has(label) || !i18n.locale) return label;
+  return i18n._({ id: label, message: label });
+}
 
 function messageOf(error: unknown): string | undefined {
   if (typeof error === "string") return error;

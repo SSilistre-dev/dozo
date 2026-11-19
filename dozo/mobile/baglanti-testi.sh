@@ -7,7 +7,7 @@
 set -uo pipefail
 
 [ $# -eq 1 ] || { echo "usage: $0 <server url>" >&2; exit 64; }
-command -v curl >/dev/null && command -v jq >/dev/null || { echo "FAIL: needs curl and jq" >&2; exit 2; }
+if ! command -v curl >/dev/null || ! command -v jq >/dev/null; then echo "FAIL: needs curl and jq" >&2; exit 2; fi
 
 # The app's own address handling: https when no scheme, only scheme and host kept.
 url=$(printf '%s' "$1" | tr -d '[:space:]')

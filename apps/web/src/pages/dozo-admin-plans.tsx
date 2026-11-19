@@ -1,6 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { DozoAdminPlanQuotaChange, DozoAdminPlanRow } from "@rakazo/contracts";
-import { Button, Input, Spinner } from "@rakazo/ui-web";
+import { Button, Disclosure, Input, Spinner } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
@@ -135,29 +135,40 @@ function Plan({
         {plan.monthlyPriceCents === null ? (
           <Trans>Free</Trans>
         ) : (
-          <span className="tabular-nums">
-            <Trans>{money(plan.monthlyPriceCents)} / month</Trans>
+          <>
+            <span className="tabular-nums">
+              <Trans>{money(plan.monthlyPriceCents)} / month</Trans>
+            </span>
             {plan.annualPriceCents === null ? null : (
-              <>
-                {" · "}
+              <span className="tabular-nums text-muted-foreground">
                 <Trans>{money(plan.annualPriceCents)} / year</Trans>
-              </>
+              </span>
             )}
-          </span>
+          </>
         )}
       </Row>
       {keys.length ? (
-        <Row label={<Trans>Price keys</Trans>}>
-          <span className="truncate font-mono text-body-sm text-muted-foreground">
-            {keys.join(" · ")}
-          </span>
-        </Row>
+        <Disclosure
+          className="text-body-sm text-muted-foreground"
+          summary={<Trans>Price keys</Trans>}
+        >
+          <ul className="mt-1 space-y-0.5 font-mono">
+            {keys.map((key) => (
+              <li key={key} className="truncate">
+                {key}
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
       ) : null}
       {plan.computer ? (
         <Row label={<Trans>Computer</Trans>}>
-          <Trans>
-            {plan.computer.vcpus} vCPU · {plan.computer.memoryGb} GB RAM
-          </Trans>
+          <span>
+            <Trans>{plan.computer.vcpus} vCPU</Trans>
+          </span>
+          <span className="text-muted-foreground">
+            <Trans>{plan.computer.memoryGb} GB RAM</Trans>
+          </span>
         </Row>
       ) : null}
       <Row label={<Trans>Shared space (MB)</Trans>}>

@@ -21,6 +21,7 @@ import {
   buildScanner,
   countText,
   DEFAULT_CONFIG,
+  exitWhenFlushed,
   expectedCount,
   fail,
   guard,
@@ -151,9 +152,9 @@ if (found.length === 0) {
   console.log(
     `leak gate clean: ${scanned} files scanned${args.launch ? " (launch checks on)" : ""}`,
   );
-  process.exit(0);
+  await exitWhenFlushed(0);
 }
 for (const line of found.slice(0, 50)) console.error(line);
 const capped = found.length > 50 ? " (list capped at 50)" : "";
 console.error(`${found.length} leak(s) of the old brand in ${scanned} files scanned${capped}`);
-process.exit(2);
+await exitWhenFlushed(2);

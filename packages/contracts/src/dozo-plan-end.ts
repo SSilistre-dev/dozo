@@ -11,6 +11,15 @@ export const PLAN_END_WARNING_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The instant a grant ends when an admin picks the calendar day `YYYY-MM-DD`: noon UTC of that day.
+ * Noon falls on the same calendar day in every zone from UTC-11 to UTC+11, so the date shown and
+ * the days `planEndDays` counts match what was picked, for the admin and the member alike.
+ */
+export function grantEndsAt(day: string): string {
+  return `${day}T12:00:00.000Z`;
+}
+
 /** Calendar days from `now` to the plan's end in the viewer's time zone: 0 on the day itself. */
 export function planEndDays(end: PlanEnd, now = new Date()): number {
   const day = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());

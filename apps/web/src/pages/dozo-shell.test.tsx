@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -195,12 +196,12 @@ it("never offers one account's pick to the next account in the tab", async () =>
 });
 
 it("drops an answer that arrives after the shell is gone", async () => {
-  let answer: (value: typeof free) => void = () => {};
-  mocks.status.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  const answer = deferred<typeof free>();
+  mocks.status.mockReturnValue(answer.promise);
   savePlanIntent({ tier: "pro", period: "month" });
   await open("/app");
   await navigate("/onboarding");
-  await act(async () => answer(free));
+  await act(async () => answer.resolve(free));
   expect(where()).toBe("/onboarding");
   expect(readPlanIntent()).toEqual({ tier: "pro", period: "month" });
 });

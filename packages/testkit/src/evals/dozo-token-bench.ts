@@ -1,16 +1,16 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
-import { diskNoteInstruction } from "../../../adapters/src/computer-disk.js";
-import { historyWithRecall } from "../../../adapters/src/dozo-recalled-memory.js";
-import { formatRecalledMemory } from "../../../adapters/src/history-compaction.prompt.js";
-import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
 import {
+  builtinAgentTools,
   connectedPluginsInstruction,
+  diskNoteInstruction,
+  formatRecalledMemory,
+  historyWithRecall,
+  PiAgentRuntime,
   runIdentityInstruction,
+  runReplyGuidance,
   taughtSkillsInstruction,
   userTurnInstructions,
-} from "../../../adapters/src/run-instructions.prompt.js";
-import { runReplyGuidance } from "../../../adapters/src/run-replies.prompt.js";
+} from "@rakazo/adapters";
 import type { EvalPricing, MeasuredCall } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 

@@ -50,6 +50,12 @@ vi.mock("@rakazo/ui-web", () => ({
     <button type="button" {...props} />
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
+  Disclosure: ({ summary, children }: { summary: ReactNode; children: ReactNode }) => (
+    <details>
+      <summary>{summary}</summary>
+      {children}
+    </details>
+  ),
   Spinner: () => <span role="status" />,
 }));
 
@@ -153,8 +159,18 @@ it("shows each plan's price, keys, machine and members, and Free without a compu
   const text = plan("pro")?.textContent ?? "";
   expect(text).toContain("$49 / month");
   expect(text).toContain("$468 / year");
-  expect(text).toContain("key_pro_monthly · key_pro_yearly");
-  expect(text).toContain("2 vCPU · 4 GB RAM");
+  expect(text).not.toContain("·");
+  // The internal keys sit behind a fold, one per line, under "Price keys".
+  const keys = plan("pro")?.querySelector("details");
+  expect(keys?.querySelector("summary")?.textContent).toBe("Price keys");
+  expect([...(keys?.querySelectorAll("li") ?? [])].map((li) => li.textContent)).toEqual([
+    "key_pro_monthly",
+    "key_pro_yearly",
+  ]);
+  expect(text).toContain("key_pro_monthly");
+  expect(text).toContain("key_pro_yearly");
+  expect(text).toContain("2 vCPU");
+  expect(text).toContain("4 GB RAM");
   expect(text).toContain("1 member");
   const freeText = plan("standard")?.textContent ?? "";
   expect(freeText).toContain("Free");

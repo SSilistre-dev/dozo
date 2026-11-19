@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  grantEndsAt,
   PLAN_END_WARNING_DAYS,
   paymentPastDue,
   planEndDays,
@@ -59,5 +60,52 @@ describe("paymentPastDue", () => {
     expect(paymentPastDue({ ...status, hasCustomer: false })).toBe(false);
     expect(paymentPastDue(null)).toBe(false);
     expect(paymentPastDue(undefined)).toBe(false);
+  });
+});
+
+describe("grantEndsAt", () => {
+  const zone = process.env.TZ;
+  afterEach(() => {
+    process.env.TZ = zone;
+  });
+
+  // The admin picks the 26th on the 19th: every viewer sees the 26th and 7 days, early or late in
+  // the day, in zones east and west of UTC and with or without daylight saving.
+  const zones = [
+    "UTC",
+    "Europe/Istanbul",
+    "America/Los_Angeles",
+    "America/New_York",
+    "Europe/London",
+    "Asia/Kolkata",
+    "Australia/Sydney",
+  ];
+  for (const timeZone of zones) {
+    it(`counts the chosen number of days and shows the chosen date in ${timeZone}`, () => {
+      process.env.TZ = timeZone;
+      const at = grantEndsAt("2026-11-26");
+      for (const [hour, minute] of [
+        [0, 5],
+        [7, 0],
+        [23, 30],
+      ] as const) {
+        const now = new Date(2026, 10, 19, hour, minute);
+        expect(planEndDays({ at, renews: false }, now)).toBe(7);
+      }
+      expect(new Date(at).toLocaleDateString("en-CA")).toBe("2026-11-26");
+    });
+  }
+
+  it("counts across a daylight saving change", () => {
+    process.env.TZ = "America/New_York";
+    const now = new Date(2026, 9, 30, 20, 0);
+    expect(planEndDays({ at: grantEndsAt("2026-11-06"), renews: false }, now)).toBe(7);
+  });
+
+  it("is the case the old end of day got wrong", () => {
+    process.env.TZ = "Europe/Istanbul";
+    const now = new Date(2026, 10, 19, 7, 0);
+    expect(planEndDays({ at: "2026-11-26T23:59:59.000Z", renews: false }, now)).toBe(8);
+    expect(planEndDays({ at: grantEndsAt("2026-11-26"), renews: false }, now)).toBe(7);
   });
 });

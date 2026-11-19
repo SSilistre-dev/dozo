@@ -297,12 +297,12 @@ it("names sign-up and sign-in in the tab's title, and gives the title back on le
   document.title = "Dozo";
   mocks.capabilities.mockResolvedValue({ signupsOpen: true });
   await open("/sign-up");
-  expect(document.title).toBe("Sign up · Dozo");
+  expect(document.title).toBe("Sign up – Dozo");
   act(() => root?.unmount());
   expect(document.title).toBe("Dozo");
   container.remove();
   await open("/sign-in");
-  expect(document.title).toBe("Sign in · Dozo");
+  expect(document.title).toBe("Sign in – Dozo");
   act(() => root?.unmount());
   container.remove();
   await open("/forgot-password");

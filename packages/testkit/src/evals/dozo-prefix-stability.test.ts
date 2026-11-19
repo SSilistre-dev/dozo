@@ -1,7 +1,6 @@
 import type { AgentRunRequest, ConnectorTool } from "@rakazo/adapter-kit";
+import { builtinAgentTools, PiAgentRuntime } from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
-import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
-import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
 import type { BenchCall, ScriptedReply } from "./dozo-token-bench.js";
 import { BENCH_MODEL, benchInstructions, fakeModelFetch } from "./dozo-token-bench.js";
 

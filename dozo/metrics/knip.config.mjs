@@ -11,20 +11,25 @@ const DEFAULT_ENTRY = [
   `src/{index,cli,main}.{${EXTENSIONS}}!`,
 ];
 
-// dozo/ files started from a shell script, a Makefile target or an HTML page.
+// dozo/ files started from a shell script, a Makefile target, an HTML page or by hand.
 const FORK_SCRIPTS = [
   "dozo/brand/apply.mjs", // dozo/docker/build.sh, gate.sh
   "dozo/brand/check.mjs", // dozo/docker/build.sh, gate.sh
   "dozo/brand/assets/render.mjs", // dozo/brand/assets/build.sh
   "dozo/metrics/collect.mjs", // dozo/metrics/collect.sh
   "dozo/metrics/report.mjs", // dozo/metrics/olcum.sh
-  "dozo/metrics/token-kiyas.ts", // dozo/metrics/token-kiyas.sh
+  "dozo/metrics/tr-server-messages.mjs", // run by hand (dozo/metrics/README.md)
   "dozo/e2e/playwright.config.ts", // dozo/e2e/run.sh (npx playwright test)
   "dozo/e2e/auth.setup.ts", // the setup project of playwright.config.ts
   "dozo/e2e/coverage-reporter.ts", // a reporter of playwright.config.ts
   "dozo/landing/landing.js", // <script> of dozo/landing/*.html
   "dozo/desktop/ui/local.js", // <script> of dozo/desktop/ui/index.html
 ];
+
+// Fork files inside a workspace that a script starts, by workspace.
+const FORK_WORKSPACE_SCRIPTS = {
+  "packages/testkit": ["src/cli/dozo-token-kiyas.ts"], // dozo/metrics/token-kiyas.sh
+};
 
 // The workspaces of pnpm-workspace.yaml that hold dozo-* files.
 const WORKSPACES = [
@@ -37,6 +42,8 @@ const WORKSPACES = [
   "packages/contracts",
   "packages/core",
   "packages/db",
+  "packages/i18n",
+  "packages/testkit",
   "packages/ui-web",
 ];
 
@@ -54,6 +61,7 @@ export default function config() {
     const own = required
       .filter((file) => file.startsWith(`${workspace}/`))
       .map((file) => file.slice(workspace.length + 1));
+    own.push(...(FORK_WORKSPACE_SCRIPTS[workspace] ?? []));
     if (own.length) workspaces[workspace] = { entry: [...DEFAULT_ENTRY, ...own] };
   }
   const placed = Object.keys(workspaces).flatMap((ws) => (ws === "." ? [] : [ws]));

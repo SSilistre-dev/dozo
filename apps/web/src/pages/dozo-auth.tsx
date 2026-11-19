@@ -76,7 +76,8 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   useEffect(() => {
     if (!title) return;
     const before = document.title;
-    document.title = `${title} · ${before}`;
+    // A tab title is one string, so it takes the usual title separator, not a muted element.
+    document.title = `${title} – ${before}`;
     return () => {
       document.title = before;
     };

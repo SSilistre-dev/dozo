@@ -1,5 +1,5 @@
 import { isComputerAllowanceUsed, planLimitNotice } from "@rakazo/contracts";
-import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
+import { planLimitCopy } from "@rakazo/i18n/run-error";
 import { useBilling } from "../../components/SubscriptionGate";
 
 /**
