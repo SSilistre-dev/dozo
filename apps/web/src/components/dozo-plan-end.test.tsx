@@ -85,3 +85,13 @@ it("names tomorrow and today instead of a count", async () => {
   );
   expect((await line({ at: at(0), renews: false }))?.textContent).toBe("Ends Nov 19, 2026 · Today");
 });
+
+it("names the plan that follows a granted plan above a subscription, without a warning", async () => {
+  const shown = await line({
+    at: at(3),
+    renews: false,
+    fallsTo: { from: "Premium Plus", to: "Premium" },
+  });
+  expect(shown?.textContent).toBe("Ends Nov 22, 2026 · Premium Plus → Premium");
+  expect(shown?.className).not.toContain("text-warning");
+});

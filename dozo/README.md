@@ -114,6 +114,8 @@ is back on what it pays for, Free when nothing. A granted plan has no price and 
 the billing page shows no price for it. Billing (web and mobile) shows when the plan in force
 renews or ends, a grant's end included, and the days left (`planEnd` in the status, picked in
 `apps/api/src/dozo-plan-end.ts`); a plan that ends within seven days shows in the warning colour.
+A grant above a subscription shows its end and the plan that follows, without the warning, and
+the subscription keeps its own renewal line. An end already past is not sent.
 Every change is an audit event in the organization's own audit log, as the operator: the event
 names the admin only by id, never by email, and not the internal note (which stays on the grant
 row). The event is the lasting record of who gave or ended

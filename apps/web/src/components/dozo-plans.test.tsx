@@ -210,3 +210,25 @@ it("shows when a granted plan ends, with no subscription", async () => {
     /^Ends Jan 15, 2030 · /,
   );
 });
+
+it("keeps the subscription's renewal when a granted plan above it ends first", async () => {
+  await render({
+    ...free,
+    state: "active",
+    byokTier: "max",
+    byokPriceCents: offers[0]!.monthlyPriceCents,
+    hasCustomer: true,
+    currentPeriodEndsAt: "2030-02-15T12:00:00.000Z",
+    planEnd: {
+      at: "2030-01-15T12:00:00.000Z",
+      renews: false,
+      fallsTo: { from: "Premium Plus", to: "Premium" },
+    },
+  });
+  expect(container.querySelector('[data-testid="plan-end"]')?.textContent).toBe(
+    "Ends Jan 15, 2030 · Premium Plus → Premium",
+  );
+  expect(container.querySelector('[data-testid="own-key-plan"]')?.textContent).toContain(
+    "Renews Feb 15, 2030",
+  );
+});

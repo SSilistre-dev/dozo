@@ -1704,7 +1704,7 @@
     {
       "file": "packages/contracts/src/billing.ts",
       "find": "  computerHoursResetAt: z.string().nullable().optional(),\n  /** Present once",
-      "replace": "  computerHoursResetAt: z.string().nullable().optional(),\n  /** When the plan in force renews or ends; absent when it has no end. */\n  planEnd: z.object({ at: z.string(), renews: z.boolean() }).optional(),\n  /** Present once",
+      "replace": "  computerHoursResetAt: z.string().nullable().optional(),\n  /** When the plan in force renews or ends; absent when it has no end. */\n  planEnd: z\n    .object({\n      at: z.string(),\n      renews: z.boolean(),\n      fallsTo: z.object({ from: z.string(), to: z.string() }).optional(),\n    })\n    .optional(),\n  /** Present once",
       "reason": "plan end: the billing status says when the plan in force renews or ends, a granted plan included"
     },
     {
@@ -1728,7 +1728,7 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "          hasCustomer: Boolean(account),\n          computerHoursLeft:",
-      "replace": "          hasCustomer: Boolean(account),\n          planEnd: statusPlanEnd(account, freeUntil, planGrant),\n          computerHoursLeft:",
+      "replace": "          hasCustomer: Boolean(account),\n          planEnd: statusPlanEnd(account, planGrant),\n          computerHoursLeft:",
       "requires": [
         "apps/api/src/dozo-plan-end.ts"
       ],
@@ -1755,8 +1755,8 @@
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "          {ownKeyPlan.date ? (\n",
-      "replace": "          {ownKeyPlan.date && !status.planEnd ? (\n",
-      "reason": "plan end: the subscription card does not repeat the date the plan end line shows"
+      "replace": "          {ownKeyPlan.date && (!status.planEnd || status.planEnd.fallsTo) ? (\n",
+      "reason": "plan end: the subscription card does not repeat the date the plan end line shows; it keeps its own when a granted plan above it ends first"
     },
     {
       "file": "apps/mobile/app/(settings)/billing.tsx",
@@ -1770,11 +1770,11 @@
     {
       "file": "apps/mobile/app/(settings)/billing.tsx",
       "find": "        {endsAt ? (\n          <SettingsRow\n            title={status.cancelAtPeriodEnd ? t`Ends` : t`Free until`}\n",
-      "replace": "        {status.planEnd ? (\n          <DozoPlanEndRow end={status.planEnd} />\n        ) : endsAt ? (\n          <SettingsRow\n            title={status.cancelAtPeriodEnd ? t`Ends` : t`Free until`}\n",
+      "replace": "        {status.planEnd ? <DozoPlanEndRow end={status.planEnd} /> : null}\n        {status.planEnd && !status.planEnd.fallsTo ? null : endsAt ? (\n          <SettingsRow\n            title={status.cancelAtPeriodEnd ? t`Ends` : t`Free until`}\n",
       "requires": [
         "apps/mobile/components/dozo-plan-end-row.tsx"
       ],
-      "reason": "plan end: mobile Billing shows when the plan in force renews or ends, a granted plan included, in place of upstream's end rows"
+      "reason": "plan end: mobile Billing shows when the plan in force renews or ends, a granted plan included, in place of upstream's end rows, which stay for a subscription below a granted plan"
     }
   ],
   "assets": {

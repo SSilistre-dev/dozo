@@ -1,3 +1,4 @@
+import { BYOK_TIERS } from "@rakazo/contracts";
 import { tierInForce } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { statusPlanEnd } from "./dozo-plan-end.js";
@@ -25,94 +26,93 @@ const subscription = (
 const grant = (tier: string, days: number) => ({ tier, endsAt: day(days) });
 
 describe("statusPlanEnd, one source at a time", () => {
-  it("has no end without a subscription, a grant or a free period", () => {
-    expect(statusPlanEnd(null, null, null, now)).toBeUndefined();
+  it("has no end without a subscription or a grant", () => {
+    expect(statusPlanEnd(null, null, now)).toBeUndefined();
   });
 
   it("renews a subscription at the end of its period, or ends it there when cancelled", () => {
-    expect(statusPlanEnd(subscription("pro", 20), null, null, now)).toEqual({
-      at: iso(20),
-      renews: true,
-    });
-    expect(
-      statusPlanEnd(subscription("pro", 20, { cancelAtPeriodEnd: true }), null, null, now),
-    ).toEqual({ at: iso(20), renews: false });
-  });
-
-  it("takes a trial's end while it runs", () => {
-    const trial = subscription("pro", 20, { status: "trialing", trialEndsAt: day(5) });
-    expect(statusPlanEnd(trial, null, null, now)).toEqual({ at: iso(5), renews: true });
-    expect(
-      statusPlanEnd({ ...trial, trialEndsAt: null, cancelAtPeriodEnd: true }, null, null, now),
-    ).toEqual({ at: iso(20), renews: false });
-  });
-
-  it("ends a granted plan on its date, never renewing", () => {
-    expect(statusPlanEnd(null, null, grant("max", 3), now)).toEqual({ at: iso(3), renews: false });
-  });
-
-  it("ends a free period on its date", () => {
-    expect(statusPlanEnd(null, day(10), null, now)).toEqual({ at: iso(10), renews: false });
-  });
-
-  it("ignores a subscription without access or without a period end", () => {
-    expect(
-      statusPlanEnd(subscription("pro", 20, { status: "canceled" }), null, null, now),
-    ).toBeUndefined();
-    expect(
-      statusPlanEnd({ ...subscription("pro", 20), currentPeriodEndsAt: null }, null, null, now),
-    ).toBeUndefined();
-  });
-});
-
-describe("statusPlanEnd, which source wins", () => {
-  it("takes a grant above the subscription: the plan in force ends with the grant", () => {
-    expect(statusPlanEnd(subscription("pro", 20), null, grant("max", 3), now)).toEqual({
-      at: iso(3),
-      renews: false,
-    });
-    // A subscription on credits has no tier of its own, so any grant is above it.
-    expect(statusPlanEnd(subscription(null, 20), null, grant("pro", 3), now)).toEqual({
-      at: iso(3),
-      renews: false,
-    });
-  });
-
-  it("takes a subscription above the grant", () => {
-    expect(statusPlanEnd(subscription("max", 20), null, grant("pro", 3), now)).toEqual({
-      at: iso(20),
-      renews: true,
-    });
-  });
-
-  it("keeps the same tier as long as either gives it", () => {
-    expect(statusPlanEnd(subscription("pro", 20), null, grant("pro", 40), now)).toEqual({
+    expect(statusPlanEnd(subscription("pro", 20), null, now)).toEqual({
       at: iso(20),
       renews: true,
     });
     const cancelled = subscription("pro", 20, { cancelAtPeriodEnd: true });
-    expect(statusPlanEnd(cancelled, null, grant("pro", 40), now)).toEqual({
-      at: iso(40),
+    expect(statusPlanEnd(cancelled, null, now)).toEqual({ at: iso(20), renews: false });
+  });
+
+  it("takes a trial's end while it runs", () => {
+    const trial = subscription("pro", 20, { status: "trialing", trialEndsAt: day(5) });
+    expect(statusPlanEnd(trial, null, now)).toEqual({ at: iso(5), renews: true });
+    const cancelled = { ...trial, trialEndsAt: null, cancelAtPeriodEnd: true };
+    expect(statusPlanEnd(cancelled, null, now)).toEqual({ at: iso(20), renews: false });
+  });
+
+  it("ends a granted plan on its date, never renewing", () => {
+    expect(statusPlanEnd(null, grant("max", 3), now)).toEqual({ at: iso(3), renews: false });
+  });
+
+  it("ignores a subscription without access or without a period end", () => {
+    const canceled = subscription("pro", 20, { status: "canceled" });
+    expect(statusPlanEnd(canceled, null, now)).toBeUndefined();
+    const noEnd = { ...subscription("pro", 20), currentPeriodEndsAt: null };
+    expect(statusPlanEnd(noEnd, null, now)).toBeUndefined();
+  });
+
+  it("has no end once a subscription's period or trial is past, as a late webhook leaves it", () => {
+    const pastDue = subscription("pro", -1, { status: "past_due" });
+    expect(statusPlanEnd(pastDue, null, now)).toBeUndefined();
+    const trial = subscription("pro", 20, { status: "trialing", trialEndsAt: day(-2) });
+    expect(statusPlanEnd(trial, null, now)).toBeUndefined();
+  });
+});
+
+describe("statusPlanEnd, which source wins", () => {
+  it("ends a grant above the subscription on its date and names the plan that follows", () => {
+    expect(statusPlanEnd(subscription("pro", 20), grant("max", 3), now)).toEqual({
+      at: iso(3),
       renews: false,
+      fallsTo: { from: BYOK_TIERS.max.name, to: BYOK_TIERS.pro.name },
     });
-    expect(statusPlanEnd(cancelled, null, grant("pro", 3), now)).toEqual({
-      at: iso(20),
-      renews: false,
+    // Also when the subscription's own period has no date to come.
+    expect(statusPlanEnd(subscription("pro", -1), grant("max", 3), now)).toMatchObject({
+      fallsTo: { from: BYOK_TIERS.max.name, to: BYOK_TIERS.pro.name },
     });
   });
 
-  it("puts a grant before a free period", () => {
-    expect(statusPlanEnd(null, day(10), grant("pro", 3), now)).toEqual({
+  it("ends a grant above a subscription that gives no tier with nothing after it", () => {
+    // A subscription on credits has no tier of its own; an unpaid one counts for none.
+    expect(statusPlanEnd(subscription(null, 20), grant("pro", 3), now)).toEqual({
       at: iso(3),
       renews: false,
     });
+    const unpaid = subscription("pro", 20, { status: "unpaid" });
+    expect(statusPlanEnd(unpaid, grant("pro", 3), now)).toEqual({ at: iso(3), renews: false });
+  });
+
+  it("takes a subscription above the grant", () => {
+    expect(statusPlanEnd(subscription("max", 20), grant("pro", 3), now)).toEqual({
+      at: iso(20),
+      renews: true,
+    });
+    expect(statusPlanEnd(subscription("max", -1), grant("pro", 3), now)).toBeUndefined();
+  });
+
+  it("keeps the same tier as long as either gives it", () => {
+    expect(statusPlanEnd(subscription("pro", 20), grant("pro", 40), now)).toEqual({
+      at: iso(20),
+      renews: true,
+    });
+    const cancelled = subscription("pro", 20, { cancelAtPeriodEnd: true });
+    expect(statusPlanEnd(cancelled, grant("pro", 40), now)).toEqual({ at: iso(40), renews: false });
+    expect(statusPlanEnd(cancelled, grant("pro", 3), now)).toEqual({ at: iso(20), renews: false });
+    const stale = subscription("pro", -1, { cancelAtPeriodEnd: true });
+    expect(statusPlanEnd(stale, grant("pro", 3), now)).toEqual({ at: iso(3), renews: false });
   });
 });
 
 describe("a granted plan whose end has passed", () => {
   it("has no end to show and leaves the subscription's or nothing", () => {
-    expect(statusPlanEnd(null, null, grant("max", -1), now)).toBeUndefined();
-    expect(statusPlanEnd(subscription("pro", 20), null, grant("max", -1), now)).toEqual({
+    expect(statusPlanEnd(null, grant("max", -1), now)).toBeUndefined();
+    expect(statusPlanEnd(subscription("pro", 20), grant("max", -1), now)).toEqual({
       at: iso(20),
       renews: true,
     });

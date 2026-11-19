@@ -33,4 +33,9 @@ describe("planEndWarns", () => {
   it("never warns about a plan that renews", () => {
     expect(planEndWarns(end(1, true), now)).toBe(false);
   });
+
+  it("never warns about a granted plan with a paid plan after it", () => {
+    const fallsTo = { from: "Premium Plus", to: "Premium" };
+    expect(planEndWarns({ ...end(1), fallsTo }, now)).toBe(false);
+  });
 });

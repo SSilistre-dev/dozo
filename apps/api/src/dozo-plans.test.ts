@@ -562,13 +562,25 @@ describe("the end of the plan in force, in the status", () => {
     expect(ended.planEnd).toBeUndefined();
   });
 
-  it("ends with a grant above the subscription", async () => {
+  it("ends a grant above the subscription and names the plan that follows", async () => {
     const context = setup();
     await subscribe(context, "pro");
     store.grant = grant("max", 5);
     await expect(context.billing.status(actor)).resolves.toMatchObject({
       byokTier: "max",
-      planEnd: { at: store.grant.endsAt.toISOString(), renews: false },
+      planEnd: {
+        at: store.grant.endsAt.toISOString(),
+        renews: false,
+        fallsTo: { from: "Premium Plus", to: "Premium" },
+      },
     });
+  });
+
+  it("has none once the subscription's period is past and no webhook moved it", async () => {
+    const context = setup();
+    await subscribe(context);
+    store.account!.currentPeriodEndsAt = new Date(Date.now() - DAY);
+    const status = await context.billing.status(actor);
+    expect(status.planEnd).toBeUndefined();
   });
 });

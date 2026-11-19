@@ -91,3 +91,9 @@ it("names tomorrow and today instead of a count", async () => {
   expect((await row({ at: at(1), renews: false })).value).toBe("Nov 20, 2026 · Tomorrow");
   expect((await row({ at: at(0), renews: false })).value).toBe("Nov 19, 2026 · Today");
 });
+
+it("names the plan that follows a granted plan above a subscription, without a warning", async () => {
+  expect(
+    await row({ at: at(3), renews: false, fallsTo: { from: "Premium Plus", to: "Premium" } }),
+  ).toEqual({ title: "Ends", value: "Nov 22, 2026 · Premium Plus → Premium", color: "secondary" });
+});
