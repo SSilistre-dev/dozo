@@ -3818,6 +3818,18 @@
         "apps/mobile/lib/dozo-site-settings.ts"
       ],
       "reason": "announcement: the app's one live stream carries a content-free signal when the site settings change, so the mobile home re-reads the announcement at once, as the web app does"
+    },
+    {
+      "file": "apps/mobile/components/sandboxed-html-preview.tsx",
+      "find": "originWhitelist={appShell ? [\"*\"] : undefined}",
+      "replace": "originWhitelist={[\"*\"]}",
+      "reason": "bot HTML preview: every navigation reaches the preview's own check, so a link to an app scheme stays inside the preview instead of opening another screen or app"
+    },
+    {
+      "file": "apps/mobile/components/mermaid-diagram.tsx",
+      "find": "overScrollMode=\"never\"\n          onShouldStartLoadWithRequest",
+      "replace": "overScrollMode=\"never\"\n          originWhitelist={[\"*\"]}\n          onShouldStartLoadWithRequest",
+      "reason": "chat diagram: the same as the bot HTML preview, every navigation reaches the diagram's own check"
     }
   ],
   "assets": {
