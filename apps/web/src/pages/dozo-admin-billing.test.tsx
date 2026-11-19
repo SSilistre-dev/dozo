@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ComponentProps, ReactElement, ReactNode } from "react";
-import { act, Children, cloneElement, isValidElement } from "react";
+import type { ComponentProps, ComponentType, ReactElement, ReactNode } from "react";
+import { act, Children, cloneElement, isValidElement, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -80,6 +80,7 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import { DozoAdminBilling } from "./dozo-admin-billing";
+import { DOZO_ADMIN_NAV } from "./dozo-admin-nav";
 
 const summary = {
   members: 12,
@@ -123,14 +124,16 @@ const revenue = {
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-async function render() {
+async function render(Page: ComponentType = DozoAdminBilling) {
   await act(async () => {
     root.render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
         <MemoryRouter>
-          <DozoAdminBilling />
+          <Suspense fallback={null}>
+            <Page />
+          </Suspense>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -164,6 +167,13 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("is the admin page's billing section, loaded when it opens", async () => {
+  const section = DOZO_ADMIN_NAV.find((entry) => entry.path === "billing");
+  expect(section?.page).toBeTruthy();
+  await render(section?.page);
+  await vi.waitFor(() => expect(shown("billing-summary")).toBeTruthy());
 });
 
 it("shows the members, each plan and what needs attention", async () => {
