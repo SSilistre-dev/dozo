@@ -24,7 +24,7 @@ vi.mock("../lib/rpc", () => ({
 import { forgetEventServer } from "../lib/dozo-event-sender";
 import { readPlanIntent, savePlanIntent } from "../lib/dozo-plan-intent";
 import { markSignupStarted } from "../lib/dozo-signup-start";
-import { NavigateKeepingPlan, ShellPage } from "./dozo-shell";
+import { NavigateKeepingPlan, OFFER_CHECK_MS, ShellPage } from "./dozo-shell";
 
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
@@ -71,9 +71,9 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.userId = "user-a";
   mocks.me.mockReset().mockResolvedValue({ billingEnabled: true, productEvents: true });
-  forgetEventServer();
   mocks.status.mockReset().mockResolvedValue(free);
   mocks.track.mockReset().mockResolvedValue({ ok: true });
+  forgetEventServer();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -90,20 +90,6 @@ it("is upstream's shell and asks nothing without a picked plan", async () => {
   expect(container.querySelector('[data-testid="upstream-shell"]')).not.toBeNull();
   expect(where()).toBe("/app/bot-1");
   expect(mocks.me).not.toHaveBeenCalled();
-});
-
-it("offers the picked plan in Billing once setup opens the app, and forgets it when closed", async () => {
-  savePlanIntent({ tier: "pro", period: "year" });
-  await open("/app/bot-1");
-  expect(where()).toBe("/app/bot-1?settings=billing");
-  expect(readPlanIntent("user-a")).toEqual({ tier: "pro", period: "year" });
-
-  await navigate("/app/bot-1");
-  expect(where()).toBe("/app/bot-1");
-  expect(readPlanIntent()).toBeNull();
-
-  await reopen("/app/bot-1");
-  expect(where()).toBe("/app/bot-1");
 });
 
 it("reports the landing pick once, when an account claims it", async () => {
@@ -126,6 +112,20 @@ it("reports when this tab opened the sign-up form, once the account is signed in
   expect(mocks.track.mock.calls).toEqual([
     [{ name: "signup_started", startedAt: expect.any(String) }],
   ]);
+});
+
+it("offers the picked plan in Billing once setup opens the app, and forgets it when closed", async () => {
+  savePlanIntent({ tier: "pro", period: "year" });
+  await open("/app/bot-1");
+  expect(where()).toBe("/app/bot-1?settings=billing");
+  expect(readPlanIntent("user-a")).toEqual({ tier: "pro", period: "year" });
+
+  await navigate("/app/bot-1");
+  expect(where()).toBe("/app/bot-1");
+  expect(readPlanIntent()).toBeNull();
+
+  await reopen("/app/bot-1");
+  expect(where()).toBe("/app/bot-1");
 });
 
 it("counts moving to another section as the answer, and keeps the app's other parameters", async () => {
@@ -245,4 +245,20 @@ it("forgets the pick of a paid account even when it comes back from a checkout l
   await open("/app/bot-1?billing=canceled");
   expect(where()).toBe("/app/bot-1?settings=billing");
   expect(readPlanIntent()).toBeNull();
+});
+
+it("holds the app on a spinner while it checks, then opens it without the offer when the server is slow", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    mocks.status.mockReturnValue(new Promise(() => {}));
+    savePlanIntent({ tier: "pro", period: "month" });
+    await open("/app/bot-1");
+    expect(container.querySelector('[data-testid="upstream-shell"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(OFFER_CHECK_MS));
+    expect(container.querySelector('[data-testid="upstream-shell"]')).not.toBeNull();
+    expect(where()).toBe("/app/bot-1");
+    expect(readPlanIntent()).toEqual({ tier: "pro", period: "month" });
+  } finally {
+    vi.useRealTimers();
+  }
 });
