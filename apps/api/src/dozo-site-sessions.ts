@@ -8,7 +8,11 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { createRepos, recordAuditEvent } from "@rakazo/db";
-import { assertNotAnotherPersonsControl, takeComputerControl } from "./computer-control.js";
+import {
+  assertNotAnotherPersonsControl,
+  releaseComputerControl,
+  takeComputerControl,
+} from "./computer-control.js";
 import type { RouterContext } from "./routes/context.js";
 import { computerContext } from "./routes/shared.js";
 
@@ -44,8 +48,8 @@ export function dozoSiteSessionsRoutes(ctx: RouterContext) {
         return {
           sites: sites.map(({ site, since, lastUsedAt }) => ({
             site,
-            since: since.toISOString(),
-            lastUsedAt: lastUsedAt.toISOString(),
+            since: since === null ? null : new Date(since).toISOString(),
+            lastUsedAt: lastUsedAt === null ? null : new Date(lastUsedAt).toISOString(),
           })),
         };
       }),
@@ -77,13 +81,20 @@ export function dozoSiteSessionsRoutes(ctx: RouterContext) {
         if (!found) throw new ClientError("CONFLICT", "Start the computer first.");
         // The same checks as Take control: refused while someone else or the bot is using it.
         const lease = await takeComputerControl(deps, context.actor, found.bot.id);
-        await openSiteInBrowser(
-          deps.sandbox,
-          found.ref,
-          found.bot.id,
-          input.url,
-          computerContext(context.actor, found.bot.id, "site-sessions.open"),
-        );
+        try {
+          await openSiteInBrowser(
+            deps.sandbox,
+            found.ref,
+            found.bot.id,
+            input.url,
+            computerContext(context.actor, found.bot.id, "site-sessions.open"),
+          );
+        } catch (error) {
+          // Nothing opened: the screen goes back to the bot rather than waiting on this person.
+          const bot = await repos.getBot(context.actor, found.bot.id);
+          if (bot.computer) await releaseComputerControl(deps, context.actor, bot.computer, bot.id);
+          throw error;
+        }
         return lease;
       }),
     },

@@ -52,11 +52,16 @@ test("site sessions: sign in from the computer's header, then sign out", async (
   await expect(dialog.getByText("No sites yet").or(dialog.getByRole("list"))).toBeVisible();
   await shot(page, "3-dialog");
   await dialog.getByLabel("Site to sign in to").fill(SITE);
-  await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
-  // One click: the dialog closes and this person has the screen, the site opening on it.
-  await expect(page.getByRole("button", { name: "Hand back control" })).toBeVisible({
-    timeout: 60_000,
-  });
+  // One click: the dialog closes and this person has the screen, the site opening on it. The
+  // stack's own address may refuse a request for a moment after the computer starts (allowed
+  // above); the dialog then says so and the person clicks again.
+  await expect(async () => {
+    if (await dialog.isVisible())
+      await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Hand back control" })).toBeVisible({
+      timeout: 20_000,
+    });
+  }).toPass({ timeout: 90_000 });
   await expect(dialog).toBeHidden();
   await page.waitForTimeout(8_000);
   await shot(page, "4-in-control");

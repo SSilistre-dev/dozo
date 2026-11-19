@@ -35,6 +35,7 @@ function deps(granted: Date | null) {
             { host: "old.example", created: GRANTED.getTime() - 1, lastUsed: GRANTED.getTime() },
             { host: "accounts.example.com", created: GRANTED.getTime() + 5, lastUsed: 0 },
             { host: "example.com", created: GRANTED.getTime() + 9, lastUsed: 0 },
+            { host: "unsaved.example", created: null, lastUsed: null },
           ];
           yield { type: "stdout", data: JSON.stringify({ ok: true, hosts }) };
           yield { type: "exit", code: 0 };

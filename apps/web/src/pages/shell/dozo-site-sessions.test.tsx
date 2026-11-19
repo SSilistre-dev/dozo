@@ -106,9 +106,10 @@ const SITES = {
       lastUsedAt: "2026-11-19T10:00:00.000Z",
     },
     {
+      // Just signed in: the browser has not saved its times yet.
       site: "alice.github.io",
-      since: "2026-11-19T08:00:00.000Z",
-      lastUsedAt: "2026-11-19T09:00:00.000Z",
+      since: null,
+      lastUsedAt: null,
     },
   ],
 };

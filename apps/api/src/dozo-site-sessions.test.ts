@@ -8,6 +8,7 @@ import { createRouterContext } from "./routes/context.js";
 
 const spies = vi.hoisted(() => ({
   audit: vi.fn(async (_input: unknown) => undefined),
+  release: vi.fn(async (..._args: unknown[]) => true),
   take: vi.fn(async (_deps: unknown, _actor: unknown, _botId: string) => ({
     leaseId: "lease-1",
     expiresAt: "2026-11-19T12:00:00.000Z",
@@ -20,6 +21,7 @@ vi.mock("@rakazo/db", async (original) => ({
 vi.mock("./computer-control.js", async (original) => ({
   ...(await original<typeof import("./computer-control.js")>()),
   takeComputerControl: spies.take,
+  releaseComputerControl: spies.release,
 }));
 
 const HOSTS = [
@@ -46,7 +48,11 @@ function computer(over: Record<string, unknown> = {}) {
 }
 
 /** One Space's bot on a Docker computer, and a computer that answers the session script. */
-function instance(botComputer = computer()) {
+function instance(
+  botComputer: ReturnType<typeof computer> | null = computer(),
+  openReply: unknown = { ok: true },
+  hosts: { host: string; created: number | null; lastUsed: number | null }[] = HOSTS,
+) {
   const bots = [{ id: "bot-1", name: "Scout", spaceId: "space-ada", computer: botComputer }];
   const scripts: { op: string; hosts?: string[]; url?: string; botId?: string }[] = [];
   const prisma = {
@@ -67,10 +73,10 @@ function instance(botComputer = computer()) {
       scripts.push({ ...request, botId: ctx.botId });
       const reply =
         request.op === "list"
-          ? { ok: true, hosts: HOSTS.map((host) => ({ ...host, value: "session-secret" })) }
+          ? { ok: true, hosts: hosts.map((host) => ({ ...host, value: "session-secret" })) }
           : request.op === "delete"
             ? { ok: true, remaining: 0 }
-            : { ok: true };
+            : openReply;
       yield { type: "stdout", data: JSON.stringify(reply) };
       yield { type: "exit", code: 0 };
     },
@@ -81,12 +87,13 @@ function instance(botComputer = computer()) {
     createRouterClient(dozoSiteSessionsRoutes(ctx), {
       context: { actor: { userId, spaceId, email: "", isDeploymentOwner: false } },
     }).dozoSiteSessions;
-  return { as, scripts };
+  return { as, scripts, bots };
 }
 
 beforeEach(() => {
   spies.audit.mockClear();
   spies.take.mockClear();
+  spies.release.mockClear();
 });
 
 describe("who may see and end a bot's sessions", () => {
@@ -136,6 +143,14 @@ describe("the sites", () => {
     });
     expect(JSON.stringify(sites)).not.toContain("session-secret");
     expect(scripts[0]).toMatchObject({ op: "list", botId: "bot-1" });
+  });
+
+  it("gives no times for a site the browser has not saved yet", async () => {
+    const fresh = [{ host: "fresh.example", created: null, lastUsed: null }];
+    const { as } = instance(computer(), { ok: true }, fresh);
+    expect(await as("ada").list({ botId: "bot-1" })).toEqual({
+      sites: [{ site: "fresh.example", since: null, lastUsedAt: null }],
+    });
   });
 
   it("shows nothing, and asks nothing, while the computer is stopped", async () => {
@@ -215,6 +230,29 @@ describe("signing in", () => {
     expect(scripts).toEqual([
       expect.objectContaining({ op: "open", url: "https://example.com/login", botId: "bot-1" }),
     ]);
+  });
+
+  it("hands control back when the site could not be opened", async () => {
+    const { as } = instance(computer(), { ok: false, error: "no_browser" });
+    await expect(as("ada").signIn({ botId: "bot-1", url: "example.com" })).rejects.toMatchObject({
+      message: "The bot's browser is busy. Try again in a moment.",
+    });
+    expect(spies.release).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: "ada" }),
+      expect.objectContaining({ id: "computer-1" }),
+      "bot-1",
+    );
+  });
+
+  it("has nothing to hand back when the computer went away meanwhile", async () => {
+    const { as, bots } = instance(computer(), { ok: false, error: "busy" });
+    spies.take.mockImplementationOnce(async () => {
+      bots[0]!.computer = null;
+      return { leaseId: "lease-1", expiresAt: "2026-11-19T12:00:00.000Z" };
+    });
+    await expect(as("ada").signIn({ botId: "bot-1", url: "example.com" })).rejects.toThrow();
+    expect(spies.release).not.toHaveBeenCalled();
   });
 
   it("opens nothing when control is refused", async () => {

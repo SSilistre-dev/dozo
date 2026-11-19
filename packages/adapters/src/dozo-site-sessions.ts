@@ -13,7 +13,7 @@ import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
  * It runs with the computer image's own Python and its CDP client (`page_secrets.py`).
  */
 const SCRIPT = String.raw`
-import json, os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, time
+import ctypes, json, os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, time
 from urllib.parse import urlsplit
 sys.path.insert(0, "/usr/local/lib/rakazo")
 from page_secrets import CdpClient, discover_ws_url
@@ -116,9 +116,10 @@ def start_headless(profile):
          "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
          f"--user-data-dir={profile}", "about:blank"],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        # Killed with this script, so a timeout never leaves it holding the profile.
+        preexec_fn=lambda: ctypes.CDLL("libc.so.6").prctl(1, signal.SIGKILL),
     )
-    deadline = time.time() + 20
+    deadline = time.time() + 15
     while time.time() < deadline:
         if process.poll() is not None:
             raise RuntimeError("browser exited")
@@ -140,9 +141,9 @@ def stop_headless(process, client):
         except Exception:  # noqa: BLE001
             pass
     try:
-        process.wait(timeout=10)
+        process.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
+        process.kill()
         process.wait(timeout=5)
 
 
@@ -201,10 +202,11 @@ def main():
         hosts = stored_hosts(profile)
         port = live_port(profile)
         if port:
-            # Chrome writes new cookies to disk about every 30 seconds: a fresh sign-in is only live.
-            now = int(time.time() * 1000)
-            for cookie in connect(port).call("Storage.getCookies").get("cookies", []):
-                hosts.setdefault(cookie.get("domain", "").lstrip("."), [now, now])
+            # A running browser is the truth: it writes to disk about every 30 seconds, so the disk
+            # may still hold a site just signed out of and miss one just signed in to. The disk
+            # only gives the times; a host it does not know yet has none.
+            live = {c.get("domain", "").lstrip(".") for c in connect(port).call("Storage.getCookies").get("cookies", [])}
+            hosts = {host: hosts.get(host, [None, None]) for host in live}
         listed = [{"host": h, "created": c, "lastUsed": u} for h, (c, u) in hosts.items() if h]
         out({"ok": True, "hosts": listed[:5000]})
     hosts = set(request["hosts"])
@@ -227,19 +229,23 @@ def main():
 main()
 `;
 
-const TIMEOUT_MS = 45_000;
+const TIMEOUT_MS = 60_000;
 
-/** A cookie host with its oldest cookie's set time and its last use, in epoch milliseconds. */
+/**
+ * A cookie host with its oldest cookie's set time and its last use, in epoch milliseconds; null
+ * for a host the running browser has that its disk does not show yet.
+ */
 export interface CookieHost {
   host: string;
-  created: number;
-  lastUsed: number;
+  created: number | null;
+  lastUsed: number | null;
 }
 
 export interface SiteSession {
   site: string;
-  since: Date;
-  lastUsedAt: Date;
+  /** Epoch milliseconds; null when no host of the site has a known time yet. */
+  since: number | null;
+  lastUsedAt: number | null;
   hosts: string[];
 }
 
@@ -264,7 +270,13 @@ export function cookieSite(host: string): string | undefined {
   return hostSite(host.replace(/^\./, ""));
 }
 
-/** Cookie hosts grouped by site, newest use first. */
+/** The smaller or larger of two times, either of which may be unknown. */
+function either(pick: (...times: number[]) => number, a: number | null, b: number | null) {
+  const known = [a, b].filter((time): time is number => time !== null);
+  return known.length ? pick(...known) : null;
+}
+
+/** Cookie hosts grouped by site, newest use first, then those with no known use. */
 export function groupSiteSessions(hosts: CookieHost[]): SiteSession[] {
   const sites = new Map<string, SiteSession>();
   for (const { host, created, lastUsed } of hosts) {
@@ -272,19 +284,14 @@ export function groupSiteSessions(hosts: CookieHost[]): SiteSession[] {
     if (!site) continue;
     const known = sites.get(site);
     if (!known) {
-      sites.set(site, {
-        site,
-        since: new Date(created),
-        lastUsedAt: new Date(lastUsed),
-        hosts: [host],
-      });
+      sites.set(site, { site, since: created, lastUsedAt: lastUsed, hosts: [host] });
       continue;
     }
     known.hosts.push(host);
-    if (created < known.since.getTime()) known.since = new Date(created);
-    if (lastUsed > known.lastUsedAt.getTime()) known.lastUsedAt = new Date(lastUsed);
+    known.since = either(Math.min, known.since, created);
+    known.lastUsedAt = either(Math.max, known.lastUsedAt, lastUsed);
   }
-  return [...sites.values()].sort((a, b) => b.lastUsedAt.getTime() - a.lastUsedAt.getTime());
+  return [...sites.values()].sort((a, b) => (b.lastUsedAt ?? -1) - (a.lastUsedAt ?? -1));
 }
 
 async function runScript(
@@ -331,8 +338,9 @@ export async function readCookieHosts(
   const hosts = Array.isArray(result.hosts) ? result.hosts : [];
   return hosts.flatMap((entry: unknown) => {
     const { host, created, lastUsed } = (entry ?? {}) as Record<string, unknown>;
-    return typeof host === "string" && typeof created === "number" && typeof lastUsed === "number"
-      ? [{ host, created, lastUsed }]
+    const time = (value: unknown) => (typeof value === "number" ? value : null);
+    return typeof host === "string" && host
+      ? [{ host, created: time(created), lastUsed: time(lastUsed) }]
       : [];
   });
 }

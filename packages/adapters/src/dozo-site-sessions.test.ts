@@ -59,8 +59,21 @@ describe("sites from cookie hosts", () => {
       ["evil.org", ["example.com.evil.org"]],
       ["notexample.com", ["notexample.com"]],
     ]);
-    expect(sites[0]!.since).toEqual(new Date("2026-10-01"));
-    expect(sites[0]!.lastUsedAt).toEqual(new Date("2026-11-18"));
+    expect(sites[0]!.since).toBe(at("2026-10-01"));
+    expect(sites[0]!.lastUsedAt).toBe(at("2026-11-18"));
+  });
+
+  it("keeps a host the browser has not saved yet, with no time, after the ones it has", () => {
+    const sites = groupSiteSessions([
+      { host: "fresh.example", created: null, lastUsed: null },
+      { host: "www.old.example", created: null, lastUsed: null },
+      { host: "old.example", created: 5, lastUsed: 9 },
+      { host: "", created: 1, lastUsed: 1 },
+    ]);
+    expect(sites).toEqual([
+      { site: "old.example", since: 5, lastUsedAt: 9, hosts: ["www.old.example", "old.example"] },
+      { site: "fresh.example", since: null, lastUsedAt: null, hosts: ["fresh.example"] },
+    ]);
   });
 });
 
@@ -71,11 +84,16 @@ describe("the session script", () => {
       hosts: [
         { host: "example.com", created: 1, lastUsed: 2, value: "session-secret" },
         { host: 7, created: 1, lastUsed: 2 },
+        { host: "live.example", created: null, lastUsed: null },
         "junk",
+        null,
       ],
     });
     const hosts = await readCookieHosts(provider, computer, "bot-1", context);
-    expect(hosts).toEqual([{ host: "example.com", created: 1, lastUsed: 2 }]);
+    expect(hosts).toEqual([
+      { host: "example.com", created: 1, lastUsed: 2 },
+      { host: "live.example", created: null, lastUsed: null },
+    ]);
     expect(requests).toEqual([
       { request: { op: "list", profile: browserProfilePathForScreen("bot-1") }, botId: "bot-1" },
     ]);
@@ -106,6 +124,11 @@ describe("the session script", () => {
     await expect(
       endSiteSessions(stuck.provider, computer, "bot-1", [site!], context),
     ).rejects.toBeInstanceOf(SiteSessionError);
+  });
+
+  it("reads no hosts from a reply without a list", async () => {
+    const { provider } = sandbox({ ok: true });
+    expect(await readCookieHosts(provider, computer, "bot-1", context)).toEqual([]);
   });
 
   it("opens an address in the bot's browser", async () => {

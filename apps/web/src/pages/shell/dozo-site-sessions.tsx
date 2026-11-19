@@ -159,7 +159,7 @@ function SiteSessionsDialog({
                 <span className="min-w-0 truncate text-body">{entry.site}</span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="text-body-sm text-muted-foreground">
-                    {formatRelativeTime(entry.lastUsedAt)}
+                    {entry.lastUsedAt ? formatRelativeTime(entry.lastUsedAt) : null}
                   </span>
                   <Button
                     variant="ghost"

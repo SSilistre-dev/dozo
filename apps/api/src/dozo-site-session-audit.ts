@@ -48,7 +48,10 @@ export function auditSiteSessionsAfterControl(
         botId,
         computerContext(actor, botId, "site-sessions.audit"),
       );
-      const opened = groupSiteSessions(hosts.filter((host) => host.created >= since));
+      const opened = groupSiteSessions(
+        // A host with no saved time yet cannot be placed in the lease; it is left out.
+        hosts.filter((host) => host.created !== null && host.created >= since),
+      );
       for (const { site } of opened.slice(0, MAX_SITES)) {
         await recordAuditEvent({
           action: "computer.site.session_opened",

@@ -27,6 +27,7 @@ describe("the address to sign in to", () => {
   it("takes a bare site as https", () => {
     expect(DozoSignInUrl.parse(" example.com/login ")).toBe("https://example.com/login");
     expect(DozoSignInUrl.parse("http://intranet.example.com")).toBe("http://intranet.example.com");
+    expect(DozoSignInUrl.parse("localhost:3000/login")).toBe("https://localhost:3000/login");
   });
 
   it("refuses what is not a web page, or carries a user name or password", () => {

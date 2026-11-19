@@ -9,10 +9,10 @@ import { Id } from "./ids.js";
 export const DozoSiteSessionSchema = z.object({
   /** The registrable domain, such as `example.com` or `alice.github.io`. */
   site: z.string(),
-  /** When the oldest cookie the site still has was set. */
-  since: z.string(),
-  /** When the browser last sent one of its cookies. */
-  lastUsedAt: z.string(),
+  /** When the oldest cookie the site still has was set; null until the browser has saved it. */
+  since: z.string().nullable(),
+  /** When the browser last sent one of its cookies; null until the browser has saved it. */
+  lastUsedAt: z.string().nullable(),
 });
 export type DozoSiteSession = z.infer<typeof DozoSiteSessionSchema>;
 
@@ -24,7 +24,7 @@ export const DozoSignInUrl = z
   .string()
   .trim()
   .max(2048)
-  .transform((value) => (/^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`))
+  .transform((value) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`))
   .refine((value) => {
     if (!URL.canParse(value)) return false;
     const url = new URL(value);
