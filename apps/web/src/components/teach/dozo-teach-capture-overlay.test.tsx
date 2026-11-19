@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 
 import type { TaughtSkill } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./dozo-teach-capture-overlay";
 
 const computerInput = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
-vi.mock("../../lib/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
+const keys = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+vi.mock("../../lib/rpc", () => ({
+  rpc: { computer: { input: computerInput }, dozoTeach: { keys } },
+}));
 
 const skill = {
   id: "skill-1",
@@ -20,6 +24,7 @@ const skill = {
 
 afterEach(() => {
   computerInput.mockClear();
+  keys.mockClear();
   document.body.replaceChildren();
   vi.unstubAllGlobals();
 });
@@ -56,12 +61,59 @@ it("lets a focused page control go when the screen is clicked, so typing is reco
   await act(async () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
   });
-  await vi.waitFor(() => expect(computerInput).toHaveBeenCalled());
-  expect(computerInput).toHaveBeenCalledWith({
-    botId: "bot-1",
-    kind: "key",
-    payload: { key: "a" },
+  await vi.waitFor(() => expect(keys).toHaveBeenCalled());
+  expect(keys).toHaveBeenCalledWith({ botId: "bot-1", keys: ["a"] }, undefined);
+});
+
+it("sends keys typed in a row together, once, and a click between them keeps its place", async () => {
+  const { overlay } = await mount();
+  computerInput.mockClear();
+  const typed = (key: string) =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  await act(async () => {
+    typed("a");
+    typed("b");
+    overlay.dispatchEvent(
+      new MouseEvent("pointerdown", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }),
+    );
+    typed("c");
+    typed("Enter");
   });
+  await vi.waitFor(() => expect(keys).toHaveBeenCalledTimes(2));
+  expect(keys.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+    { botId: "bot-1", keys: ["a", "b"] },
+    { botId: "bot-1", keys: ["c", "Enter"] },
+  ]);
+  // Upstream's own listener never sent them one by one.
+  expect(computerInput).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "key" }));
+  expect(computerInput).toHaveBeenCalledWith(expect.objectContaining({ kind: "pointer" }));
+});
+
+it("closes the batch on a scroll or protected input, and sends what is left as the page goes", async () => {
+  const { overlay } = await mount();
+  const first = deferred<{ ok: boolean }>();
+  keys.mockImplementationOnce(() => first.promise);
+  const typed = (key: string) =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  await act(async () => {
+    typed("a");
+  });
+  await act(async () => {
+    overlay.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true }));
+    typed("b");
+    const form = document.createElement("form");
+    document.body.append(form);
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    typed("c");
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  expect(keys.mock.calls.slice(1).map((call) => call as unknown[])).toEqual([
+    [{ botId: "bot-1", keys: ["b"] }, { context: { keepalive: true } }],
+    [{ botId: "bot-1", keys: ["c"] }, { context: { keepalive: true } }],
+  ]);
+  await act(async () => first.resolve({ ok: true }));
+  // Sent as the page went: not again.
+  expect(keys).toHaveBeenCalledTimes(3);
 });
 
 it("keeps keys aimed at a focused control out of the recording until the screen is clicked", async () => {
@@ -71,6 +123,18 @@ it("keeps keys aimed at a focused control out of the recording until the screen 
     header.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
   });
   expect(computerInput).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "key" }));
+});
+
+it("takes keys typed on the page, not shortcuts with a modifier", async () => {
+  await mount();
+  const plain = document.createElement("div");
+  document.body.append(plain);
+  await act(async () => {
+    plain.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true }));
+    plain.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true }));
+  });
+  await vi.waitFor(() => expect(keys).toHaveBeenCalledOnce());
+  expect(keys).toHaveBeenCalledWith({ botId: "bot-1", keys: ["x"] }, undefined);
 });
 
 it("does nothing to focus when nothing but the page has it", async () => {

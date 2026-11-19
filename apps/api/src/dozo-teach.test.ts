@@ -6,13 +6,13 @@ import {
   buildPlaybookFromRecording,
   ClientError,
   scrubTeachEvents,
+  TEACH_SKILL_GONE,
   typedValuesFromRecording,
 } from "@rakazo/core";
-import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { SKILL_NOT_DRAFT, TEACH_RECORDING_UNREADABLE } from "./dozo-taught-skills.js";
 import type { DozoTeachInput } from "./dozo-teach.js";
-import { createDozoTeach, dozoTeachRoutes, dozoTeachWiring } from "./dozo-teach.js";
+import { createDozoTeach, dozoTeachRoutes, dozoTeachWiring, typeTeachKeys } from "./dozo-teach.js";
 import type { TeachClickLabeller } from "./dozo-teach-labels.js";
 import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
 import { createTeachValueSuggester } from "./dozo-teach-suggest.js";
@@ -165,6 +165,7 @@ function setup(
     save: vi.fn(async () => saved()),
     testRun: vi.fn(async () => ({ runId: "run-1" })),
     decideSavedValues: vi.fn(async () => saved()),
+    recordKeys: vi.fn(async () => "recorded" as const),
   };
   const suggest =
     options.suggest === null
@@ -314,11 +315,15 @@ describe("review", () => {
     expect((await other.teach.review(teacher, "skill-1")).values).toEqual([]);
   });
 
-  it("refuses a skill of another Space", async () => {
+  it("says a skill deleted, or of another Space, is gone for good", async () => {
     const { teach } = setup();
-    await expect(
-      teach.review({ ...teacher, spaceId: "space-2" }, "skill-1"),
-    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(teach.review({ ...teacher, spaceId: "space-2" }, "skill-1")).rejects.toMatchObject(
+      { kind: "NOT_FOUND", code: TEACH_SKILL_GONE },
+    );
+    await expect(teach.review(teacher, "skill-deleted")).rejects.toMatchObject({
+      kind: "NOT_FOUND",
+      code: TEACH_SKILL_GONE,
+    });
   });
 });
 
@@ -558,5 +563,73 @@ describe("dozoTeachWiring", () => {
     });
     expect(typeof wiring.dozoTeach.suggest).toBe("function");
     expect(typeof wiring.dozoTeach.label).toBe("function");
+  });
+});
+
+describe("typeTeachKeys", () => {
+  const held = {
+    id: "computer-1",
+    homeKey: "home",
+    kind: "docker",
+    providerRef: "ref",
+    controlHolder: "user",
+    controlLeaseId: "lease-1",
+    controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    controlBotId: "bot-1",
+    controlUserId: "ada",
+  };
+
+  function typing(computer: Record<string, unknown> | null, outcome = "recorded") {
+    const sendInput = vi.fn(async () => undefined);
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const enqueue = vi.fn(async () => undefined);
+    const recordKeys = vi.fn(async () => outcome as "recorded" | "idle" | "stale");
+    const run = (actor: Actor = teacher) =>
+      typeTeachKeys(
+        {
+          deps: {
+            prisma: { computer: { updateMany } },
+            sandbox: { sendInput },
+            jobs: { enqueue, cancel: vi.fn() },
+          } as never,
+          getBot: vi.fn(async () => ({ id: "bot-1", computer })) as never,
+          taughtSkills: { recordKeys },
+        },
+        actor,
+        "bot-1",
+        ["a", "b", "Enter"],
+      );
+    return { run, sendInput, updateMany, recordKeys };
+  }
+
+  it("records the keys while teaching, in one call, and keeps the computer awake", async () => {
+    const { run, sendInput, updateMany, recordKeys } = typing(held);
+    expect(await run()).toEqual({ ok: true });
+    expect(recordKeys).toHaveBeenCalledWith(teacher, "bot-1", ["a", "b", "Enter"]);
+    // Recording already sent them to the computer.
+    expect(sendInput).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("sends the keys one by one when nothing records, and nothing when the recording ended", async () => {
+    const idle = typing(held, "idle");
+    await idle.run();
+    expect(idle.sendInput.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      { kind: "clipboard", text: "a" },
+      { kind: "clipboard", text: "b" },
+      { kind: "key", key: "Return" },
+    ]);
+    const stale = typing(held, "stale");
+    await stale.run();
+    expect(stale.sendInput).not.toHaveBeenCalled();
+    expect(stale.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses anyone not holding the screen, and does nothing for a computer not running", async () => {
+    await expect(typing(held).run(member)).rejects.toMatchObject({ kind: "FORBIDDEN" });
+    await expect(typing(null).run()).rejects.toMatchObject({ kind: "FORBIDDEN" });
+    const asleep = typing({ ...held, providerRef: null });
+    expect(await asleep.run()).toEqual({ ok: true });
+    expect(asleep.recordKeys).not.toHaveBeenCalled();
   });
 });

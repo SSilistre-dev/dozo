@@ -8,6 +8,7 @@ import {
   createBackgroundJobHandlers,
   parsePlaybook,
   recordTeachingInputEvent,
+  recordTeachingKeys,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { buildPlaybookFromRecording } from "@rakazo/core";
@@ -473,6 +474,52 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     const running = await system.taughtSkill.findUniqueOrThrow({ where: { id: live.skill.id } });
     expect(running.status).toBe("recording");
     expect(await recordingText(live.skill.id)).toMatch(LEAK);
+  });
+
+  it("records keys typed in a row as one request per key would, in order", async () => {
+    const bot = await system.bot.create({
+      data: { spaceId: id, userId: id, name: "Typist", color: "test" },
+    });
+    const skill = await system.taughtSkill.create({
+      data: {
+        spaceId: id,
+        botId: bot.id,
+        userId: id,
+        goal: "Type",
+        status: "recording",
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 600_000),
+        recording: { events: [], snapshots: [] } as never,
+      },
+    });
+    expect(
+      await runAsTenant(teacher, () =>
+        recordTeachingKeys(deps(), teacher, bot.id, ["h", "i", "Tab"]),
+      ),
+    ).toBe("recorded");
+    const recorded = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect(
+      (recorded.recording as { events: Array<{ key?: string }> }).events.map((event) => event.key),
+    ).toEqual(["h", "i", "Tab"]);
+  });
+
+  it("deletes a draft with its values and pictures at once", async () => {
+    const { skill } = await recordAndStop();
+    expect(await valuesRow(skill.id)).toBeDefined();
+    const taughtSkills = createTaughtSkillsService({
+      ...deps(),
+      home: {},
+      dataDir: "/tmp",
+    } as never);
+    await runAsTenant(teacher, () => taughtSkills.remove(teacher, skill.id));
+    expect(await valuesRow(skill.id)).toBeUndefined();
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
+    await expect(runAsTenant(teacher, () => teach.review(teacher, skill.id))).rejects.toMatchObject(
+      {
+        kind: "NOT_FOUND",
+        code: "teach_skill_gone",
+      },
+    );
   });
 
   it("turns the text an older skill's steps type into inputs, nothing of it left", async () => {

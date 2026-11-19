@@ -236,14 +236,38 @@ describe("typedValuesFromRecording", () => {
     ).toEqual(["abcde"]);
   });
 
-  it("makes a run with a protected paste one protected value", () => {
-    expect(
-      typedValuesFromRecording([
-        ...typing("ab"),
-        { at, kind: "clipboard", sensitive: true },
-        ...typing("c"),
-      ]),
-    ).toEqual([{ placeholder: "{{value 1}}", text: null, secret: true }]);
+  it("starts and ends a value where protected input starts and ends", () => {
+    const events: TeachRecordingEvent[] = [
+      ...typing("ali@example.test"),
+      { at, kind: "clipboard", sensitive: true },
+      { at, kind: "key", sensitive: true },
+      ...keys("Backspace"),
+      ...typing("c"),
+    ];
+    const values = [
+      { placeholder: "{{value 1}}", text: "ali@example.test", secret: false },
+      // The edit key belongs to the protected run it follows.
+      { placeholder: "{{value 2}}", text: null, secret: true },
+      { placeholder: "{{value 3}}", text: "c", secret: false },
+    ];
+    expect(typedValuesFromRecording(events)).toEqual(values);
+    expect(buildPlaybookFromRecording("x", events).steps).toEqual([
+      "Type {{value 1}}.",
+      "Type {{value 2}}.",
+      "Type {{value 3}}.",
+    ]);
+    // Forgotten, the runs stay apart: same numbering, the protected one still secret.
+    const scrubbed = scrubTeachEvents(events);
+    expect(scrubbed).toEqual([
+      { at, kind: "key", typed: true },
+      { at, kind: "key", typed: true, sensitive: true },
+      { at, kind: "key", typed: true },
+    ]);
+    expect(typedValuesFromRecording(scrubbed).map((value) => value.secret)).toEqual([
+      false,
+      true,
+      false,
+    ]);
   });
 
   it("ends a value at Tab, Enter and any other key, which stay steps", () => {
@@ -316,7 +340,8 @@ describe("scrubTeachEvents", () => {
   it("keeps one marker per value, at its first event, protected ones marked", () => {
     const later = typing("ab").map((event, index) => ({ ...event, at: `t${index}` }));
     expect(scrubTeachEvents([...later, { at, kind: "clipboard", sensitive: true }])).toEqual([
-      { at: "t0", kind: "key", typed: true, sensitive: true },
+      { at: "t0", kind: "key", typed: true },
+      { at, kind: "key", typed: true, sensitive: true },
     ]);
     expect(scrubTeachEvents(typing("ab"))).toEqual([{ at, kind: "key", typed: true }]);
   });

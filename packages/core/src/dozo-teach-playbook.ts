@@ -183,16 +183,29 @@ function walkRecording(events: RecordedEvent[]): {
     run = null;
   }
 
-  /** Adds the event at `index` to the current run, starting one if needed. */
-  function joinRun(index: number): TypedRun {
+  /**
+   * Adds the event at `index` to the current run, starting one if needed. Protected input
+   * (`protectedInput` true) and plain typing (false) never share a run: where one starts or ends
+   * is a value boundary, so text typed right before a protected paste stays its own value. An
+   * editing key (null) belongs to whichever run it edits.
+   */
+  function joinRun(index: number, protectedInput: boolean | null): TypedRun {
     flushDrag();
-    run ??= { chars: [], cursor: 0, protected: false, unknown: false, first: index, last: index };
+    if (run && protectedInput !== null && run.protected !== protectedInput) endRun();
+    run ??= {
+      chars: [],
+      cursor: 0,
+      protected: protectedInput === true,
+      unknown: false,
+      first: index,
+      last: index,
+    };
     run.last = index;
     return run;
   }
 
   function insert(index: number, text: string) {
-    const current = joinRun(index);
+    const current = joinRun(index, false);
     // Counted in code points: an emoji is two UTF-16 units but one character typed.
     const chars = [...text];
     current.chars.splice(current.cursor, 0, ...chars);
@@ -240,9 +253,8 @@ function walkRecording(events: RecordedEvent[]): {
   function key(event: RecordedEvent, index: number) {
     if (event.typed || event.sensitive) {
       // A run whose text is already forgotten, or protected input: no text to rebuild.
-      const current = joinRun(index);
-      if (event.sensitive) current.protected = true;
-      else current.unknown = true;
+      const current = joinRun(index, event.sensitive === true);
+      if (!event.sensitive) current.unknown = true;
       return;
     }
     const name = event.key;
@@ -252,7 +264,7 @@ function walkRecording(events: RecordedEvent[]): {
       return;
     }
     if (run && (EDIT_KEYS.has(name) || BLIND_KEYS.has(name))) {
-      const current = joinRun(index);
+      const current = joinRun(index, null);
       if (BLIND_KEYS.has(name)) current.unknown = true;
       else editRun(current, name);
       return;
@@ -268,7 +280,7 @@ function walkRecording(events: RecordedEvent[]): {
       return;
     }
     if (event.kind === "clipboard") {
-      if (event.sensitive) joinRun(index).protected = true;
+      if (event.sensitive) joinRun(index, true);
       else if (event.text) insert(index, event.text);
       return;
     }
@@ -625,6 +637,9 @@ export function savedSkillLiterals(playbook: SkillPlaybook): {
   });
   return { playbook: values.length ? { ...playbook, steps } : playbook, values };
 }
+
+/** The stable code of a skill that no longer exists (deleted): final, never retried. */
+export const TEACH_SKILL_GONE = "teach_skill_gone";
 
 /** The stable code of a save or test that gives two different values one name. */
 export const TEACH_NAME_TAKEN = "teach_name_taken";

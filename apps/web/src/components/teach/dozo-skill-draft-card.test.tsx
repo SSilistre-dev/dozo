@@ -76,6 +76,21 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+const deleted = vi.hoisted(() => vi.fn());
+vi.mock("./dozo-delete-skill", () => ({
+  DeleteSkill: ({ skillId, onDeleted }: { skillId: string; onDeleted: () => void }) => (
+    <button
+      type="button"
+      onClick={() => {
+        deleted(skillId);
+        onDeleted();
+      }}
+    >
+      Delete
+    </button>
+  ),
+}));
+
 import { SkillDraftCard } from "./dozo-skill-draft-card";
 
 const playbook: SkillPlaybook = {
@@ -351,11 +366,12 @@ it("behaves as upstream's card when there are no values to decide about", async 
   expect(onAddRoutine).toHaveBeenCalledWith("Export", expect.stringContaining("Export"));
 });
 
-it("never asks for values of a saved skill and reports a failed save", async () => {
+it("shows no values of a saved skill and reports a failed save", async () => {
   api.save.mockRejectedValue(new Error("Skill could not be saved now"));
   onRefresh.mockRejectedValue(new Error("refresh failed"));
   await render("saved");
-  expect(api.review).not.toHaveBeenCalled();
+  // Read only to tell whether the skill still exists; its values are not shown.
+  expect(rows()).toHaveLength(0);
   expect(button(container, "Saved")).toBeDefined();
   await type(container.querySelector("textarea[id$='-when']") as HTMLTextAreaElement, "Weekly");
   for (const id of ["-steps", "-check", "-return", "-approval", "-failure"]) {
@@ -456,6 +472,37 @@ it("sends the removed pictures with Save and Test, and takes them off the card",
 it("shows no pictures for a skill already saved", async () => {
   api.review.mockResolvedValue({ values: [], targets });
   await render("saved");
-  expect(api.review).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(api.review).toHaveBeenCalled());
   expect(thumbs()).toHaveLength(0);
+});
+
+it("turns calm once its skill is deleted elsewhere, and never asks about it again", async () => {
+  for (const status of ["draft", "saved"] as const) {
+    const gone = { ...block(status), skillId: `gone-${status}` };
+    api.review.mockReset();
+    api.review.mockRejectedValue(
+      Object.assign(new Error("This skill was deleted"), { code: "teach_skill_gone" }),
+    );
+    await render(gone);
+    await vi.waitFor(() => expect(container.textContent).toContain("Deleted"));
+    expect(container.textContent).not.toContain("Could not load");
+    expect(container.querySelectorAll("button, textarea, input")).toHaveLength(0);
+    // A later mount of the same card knows it is gone.
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(gone);
+    expect(container.textContent).toContain("Deleted");
+    expect(api.review).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+    root = createRoot(container);
+  }
+});
+
+it("deletes the draft from the card and then shows it deleted", async () => {
+  await render({ ...block(), skillId: "skill-deleted" });
+  await vi.waitFor(() => expect(rows()).toHaveLength(4));
+  await click(button(container, "Delete"));
+  expect(deleted).toHaveBeenCalledWith("skill-deleted");
+  expect(container.textContent).toContain("Deleted");
+  expect(rows()).toHaveLength(0);
 });

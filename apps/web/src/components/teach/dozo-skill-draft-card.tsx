@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
-import { formatSkillRunPrompt, TEACH_NAME_TAKEN } from "@rakazo/core";
+import { formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
 import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorCode, errorText } from "../../lib/user-error";
 import { BuiCard } from "../ai/primitives";
+import { DeleteSkill } from "./dozo-delete-skill";
 import type { TeachValueChoice } from "./dozo-teach-value-row";
 import { defaultValueName, TeachValueRow, valueDecisionOf } from "./dozo-teach-value-row";
 
@@ -31,6 +32,9 @@ type Sent = {
   decisions: Record<string, DozoTeachValueDecision>;
   removedTargets: string[];
 };
+
+/** Skills this page learned are deleted, so their cards stop asking whenever they mount. */
+const goneSkills = new Set<string>();
 
 function fieldsOf(block: SkillDraftBlock): string {
   return JSON.stringify({ name: block.name, playbook: block.playbook });
@@ -86,12 +90,17 @@ export function SkillDraftCard({
   const [removedTargets, setRemovedTargets] = useState<string[]>([]);
   const saved = savedFields === JSON.stringify({ name, playbook });
 
-  // Only the teacher of a draft gets values back. Never kept once the card is gone.
+  // Deleted from this card, or known gone from an earlier mount: never asked about again.
+  const [deleted, setDeleted] = useState(() => goneSkills.has(block.skillId));
+  // Only the teacher of a draft gets values back. Never kept once the card is gone. Read for a
+  // saved skill too, as it tells whether the skill still exists; that answer is final.
   const review = useQuery({
     ...queries.dozoTeach.review.queryOptions({ input: { skillId: block.skillId } }),
-    enabled: block.status === "draft" && !decided,
+    enabled: !deleted,
     gcTime: 0,
   });
+  const gone = deleted || errorCode(review.error) === TEACH_SKILL_GONE;
+  if (gone) goneSkills.add(block.skillId);
   const reviewing = block.status === "draft" && !decided;
   const values = reviewing ? (review.data?.values ?? []) : [];
   const targets = (reviewing ? (review.data?.targets ?? []) : []).filter(
@@ -186,6 +195,19 @@ export function SkillDraftCard({
             : null;
 
   const skillName = name || block.name || block.goal.slice(0, 80);
+
+  if (gone) {
+    return (
+      <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
+        <div dir="auto" className="truncate text-body-lg font-medium text-foreground">
+          {block.name || block.goal}
+        </div>
+        <div className="mt-1 text-body text-muted-foreground">
+          <Trans>Deleted</Trans>
+        </div>
+      </BuiCard>
+    );
+  }
 
   return (
     <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
@@ -325,6 +347,13 @@ export function SkillDraftCard({
         >
           <Trans>Add to routine</Trans>
         </Button>
+        {reviewing ? (
+          <DeleteSkill
+            skillId={block.skillId}
+            name={skillName}
+            onDeleted={() => setDeleted(true)}
+          />
+        ) : null}
       </div>
       {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
     </BuiCard>

@@ -16,12 +16,13 @@ const api = vi.hoisted(() => ({
   list: vi.fn(),
   boot: vi.fn(),
   start: vi.fn(),
+  stop: vi.fn(),
 }));
 
 vi.mock("../../lib/rpc", () => {
   const client = {
     me: api.me,
-    skills: { list: api.list, start: api.start },
+    skills: { list: api.list, start: api.start, stop: api.stop },
     computer: { boot: api.boot },
   };
   return {
@@ -35,7 +36,12 @@ vi.mock("../../components/SubscriptionGate", () => ({
   useBilling: () => ({ status: api.billing }),
 }));
 vi.mock("./computer-panel", () => ({ ComputerPanel: () => null }));
-// Its own test covers it; here only where it sits.
+// Their own tests cover them; here only where they sit.
+vi.mock("../../components/teach/dozo-delete-skill", () => ({
+  DeleteSkill: ({ skillId }: { skillId: string }) => (
+    <span data-testid="delete" data-skill={skillId} />
+  ),
+}));
 vi.mock("./dozo-saved-values-review", () => ({
   SavedValuesReview: ({ skill }: { skill: { id: string } }) => (
     <span data-testid="review" data-skill={skill.id} />
@@ -143,11 +149,17 @@ import { ComputerPanel } from "./computer-panel";
 import { DozoBotSkillsSection } from "./dozo-bot-skills-section";
 
 const bot = { id: "bot-1", name: "Ada" } as Bot;
-const skill = (id: string, status: string, name: string) => ({
+const skill = (
+  id: string,
+  status: string,
+  name: string,
+  recording: Record<string, unknown> = { events: [], snapshots: [] },
+) => ({
   id,
   status,
   name,
   goal: `goal ${id}`,
+  recording,
 });
 
 let container: HTMLDivElement;
@@ -205,6 +217,7 @@ beforeEach(() => {
   api.list.mockReset();
   api.boot.mockReset();
   api.start.mockReset();
+  api.stop.mockReset();
   api.list.mockResolvedValue([
     skill("s1", "saved", "Weekly export"),
     skill("s2", "draft", "Half done"),
@@ -239,6 +252,48 @@ it("lists the bot's saved skills by name under Skills", async () => {
       node.getAttribute("data-skill"),
     ),
   ).toEqual(["s1", "s3"]);
+  expect(
+    [...container.querySelectorAll('[data-testid="delete"]')].map((node) =>
+      node.getAttribute("data-skill"),
+    ),
+  ).toEqual(["s1", "s3"]);
+  expect(container.querySelector('[data-testid="dozo-skills-recording"]')).toBeNull();
+});
+
+it("shows a recording in progress from the list, and its teacher can stop it", async () => {
+  api.list.mockResolvedValue([
+    skill("s4", "recording", "", { events: [], snapshots: [], controlLeaseId: "lease-1" }),
+  ]);
+  api.stop.mockResolvedValue(skill("s4", "draft", ""));
+  await render();
+  const row = () => container.querySelector('[data-testid="dozo-skills-recording"]');
+  await vi.waitFor(() => expect(row()?.textContent).toContain("Recording: goal s4"));
+  api.list.mockResolvedValue([skill("s4", "draft", "")]);
+  await click(byText("Stop teaching"));
+  await vi.waitFor(() =>
+    expect(api.stop).toHaveBeenCalledWith({ skillId: "s4" }),
+  );
+  await vi.waitFor(() => expect(row()).toBeNull());
+});
+
+it("shows someone else's recording without Stop, and why a stop failed", async () => {
+  api.list.mockResolvedValue([skill("s4", "recording", "")]);
+  await render();
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="dozo-skills-recording"]')).not.toBeNull(),
+  );
+  expect(byText("Stop teaching")).toBeUndefined();
+  api.list.mockResolvedValue([
+    skill("s5", "recording", "", { events: [], snapshots: [], controlLeaseId: "lease-1" }),
+  ]);
+  act(() => root.unmount());
+  root = createRoot(container);
+  api.stop.mockRejectedValue(new Error("Not now"));
+  await render();
+  await click(byText("Stop teaching"));
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Not now"),
+  );
 });
 
 it("shows no list when nothing is saved", async () => {

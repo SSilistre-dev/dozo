@@ -3,6 +3,7 @@ import {
   emptyRecording,
   parsePlaybook,
   parseRecording,
+  recordTeachingKeys,
   sandboxAllowanceUsedUp,
 } from "@rakazo/adapters";
 import type { Actor, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
@@ -247,6 +248,11 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
     async get(actor: Actor, skillId: string) {
       await forgetBeforeReading(deps.prisma, { spaceId: actor.spaceId, skillId });
       return upstream.get(actor, skillId);
+    },
+
+    /** Keys typed in a row while teaching, recorded with one check and one write. */
+    recordKeys(actor: Actor, botId: string, keys: string[]) {
+      return recordTeachingKeys(deps, actor, botId, keys);
     },
 
     async start(actor: Actor, botId: string, goal: string) {

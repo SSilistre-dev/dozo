@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement, useRef, useState } from "react";
 import { useBilling } from "../../components/SubscriptionGate";
+import { DeleteSkill } from "../../components/teach/dozo-delete-skill";
+import { enqueueTeachComputerInput } from "../../components/teach/teach-computer-input-chain";
 import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
@@ -41,6 +43,16 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
   const queries = useSpaceQueries();
   const skills = useQuery(queries.skills.list.queryOptions({ input: { botId } }));
   const saved = (skills.data ?? []).filter((skill) => skill.status === "saved");
+  // Shown from the list as the panel loads, also after a reload with the computer closed.
+  const recording = (skills.data ?? []).find((skill) => skill.status === "recording");
+  const stop = useSave({
+    save: async (skillId: string, rpc) => {
+      // Input still on its way is recorded first, as the computer window's Stop does.
+      await enqueueTeachComputerInput(botId, async () => undefined);
+      return rpc.skills.stop({ skillId });
+    },
+    stale: [queries.skills.list.key()],
+  });
   const [open, setOpen] = useState(false);
   const [goal, setGoal] = useState("");
   // Once recording starts, focus must not go back to the trigger: the recording ignores keys
@@ -132,6 +144,31 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
         </Popover>
       }
     >
+      {recording ? (
+        <div data-testid="dozo-skills-recording" className="mb-2 flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span dir="auto" className="min-w-0 flex-1 truncate text-body text-foreground">
+              <Trans>Recording: {recording.goal}</Trans>
+            </span>
+            {/* Only the teacher's own recording carries its control lease. */}
+            {recording.recording.controlLeaseId ? (
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={stop.pending}
+                onClick={() => stop.run(recording.id)}
+              >
+                <Trans>Stop teaching</Trans>
+              </Button>
+            ) : null}
+          </div>
+          {stop.error ? (
+            <div role="alert" className="text-body-sm text-destructive">
+              {errorText(stop.error)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {saved.length ? (
         <ul className="flex flex-col gap-1">
           {saved.map((skill) => (
@@ -140,6 +177,7 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
                 {skill.name || skill.goal}
               </span>
               <SavedValuesReview skill={skill} />
+              <DeleteSkill icon skillId={skill.id} name={skill.name || skill.goal} />
             </li>
           ))}
         </ul>

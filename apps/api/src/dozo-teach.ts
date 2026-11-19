@@ -1,5 +1,5 @@
 import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
-import { parsePlaybook } from "@rakazo/adapters";
+import { applyTeachingDesktopInput, parsePlaybook, scheduleComputerSleep } from "@rakazo/adapters";
 import type {
   Actor,
   DozoTeachTarget,
@@ -14,15 +14,12 @@ import {
   ClientError,
   clickStepIndexes,
   formatSkillRunPrompt,
+  TEACH_SKILL_GONE,
   withClickTargets,
 } from "@rakazo/core";
 import type { PrismaClient, StoredTeachValues, TeachValueSuggestions } from "@rakazo/db";
-import {
-  cacheTeachSuggestions,
-  IsolationError,
-  readTeachValues,
-  storedTeachTargets,
-} from "@rakazo/db";
+import { cacheTeachSuggestions, readTeachValues, storedTeachTargets } from "@rakazo/db";
+import { expireStaleComputerControl, holdsComputerControl } from "./computer-control.js";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
 import {
   forgetOldTeachTyping,
@@ -40,7 +37,7 @@ import type { RouterContext } from "./routes/context.js";
 
 type TaughtSkills = Pick<
   ReturnType<typeof createTaughtSkillsService>,
-  "updateDraft" | "save" | "testRun" | "decideSavedValues"
+  "updateDraft" | "save" | "testRun" | "decideSavedValues" | "recordKeys"
 >;
 
 export type DozoTeachInput = {
@@ -101,7 +98,8 @@ export function createDozoTeach(deps: {
     const skill = await deps.prisma.taughtSkill.findFirst({
       where: { id: skillId, spaceId: actor.spaceId },
     });
-    if (!skill) throw new IsolationError();
+    // Deleted, or never in this Space: the card shows it gone and stops asking.
+    if (!skill) throw new ClientError("NOT_FOUND", "This skill was deleted", TEACH_SKILL_GONE);
     return skill;
   }
 
@@ -262,6 +260,55 @@ export function createDozoTeach(deps: {
   };
 }
 
+/**
+ * Keys typed in a row on a bot's computer, as `computer.input` takes one: only the person
+ * holding the screen types on it; while they teach, the recording gets each key; otherwise the
+ * keys just reach the computer, in order.
+ */
+export async function typeTeachKeys(
+  ctx: {
+    deps: RouterDeps;
+    getBot: RouterContext["repos"]["getBot"];
+    taughtSkills: Pick<TaughtSkills, "recordKeys">;
+  },
+  actor: Actor,
+  botId: string,
+  keys: string[],
+): Promise<{ ok: true }> {
+  const bot = await ctx.getBot(actor, botId);
+  const computer = bot.computer;
+  if (!computer || !holdsComputerControl(computer, bot.id, actor)) {
+    await expireStaleComputerControl(ctx.deps, computer);
+    throw new ClientError("FORBIDDEN", "You are not controlling this computer");
+  }
+  if (!computer.providerRef) return { ok: true };
+  const outcome = await ctx.taughtSkills.recordKeys(actor, bot.id, keys);
+  if (outcome === "stale") return { ok: true };
+  if (outcome === "idle") {
+    for (const key of keys) {
+      await applyTeachingDesktopInput(
+        ctx.deps.sandbox,
+        computer,
+        { kind: "key", key, sensitive: false },
+        {
+          operationId: "input",
+          traceId: "input",
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          botId: bot.id,
+          signal: new AbortController().signal,
+        },
+      );
+    }
+  }
+  await ctx.deps.prisma.computer.updateMany({
+    where: { id: computer.id, state: "running" },
+    data: { updatedAt: new Date() },
+  });
+  scheduleComputerSleep(ctx.deps.jobs, computer.id);
+  return { ok: true };
+}
+
 /** The teach review procedures, served through the router's wrapper in `dozo-admin.ts`. */
 export function dozoTeachRoutes(ctx: RouterContext) {
   const { deps, authed, taughtSkills } = ctx;
@@ -281,6 +328,14 @@ export function dozoTeachRoutes(ctx: RouterContext) {
       test: authed.dozoTeach.test.handler(({ context, input }) => teach.test(context.actor, input)),
       decideSaved: authed.dozoTeach.decideSaved.handler(({ context, input }) =>
         taughtSkills.decideSavedValues(context.actor, input.skillId, input),
+      ),
+      keys: authed.dozoTeach.keys.handler(({ context, input }) =>
+        typeTeachKeys(
+          { deps, getBot: ctx.repos.getBot, taughtSkills },
+          context.actor,
+          input.botId,
+          input.keys,
+        ),
       ),
     },
   };
