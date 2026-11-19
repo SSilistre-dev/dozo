@@ -77,8 +77,18 @@ setInterval(async () => {{
     fake = bin_dir / "xdg-open"
     fake.write_text(f'#!/bin/sh\necho "$1" >> "{opened}"\n')
     fake.chmod(0o755)
-    env = dict(os.environ, HOME=str(work / "home"), PATH=f"{bin_dir}:{os.environ['PATH']}")
-    app = subprocess.Popen([binary], env=env, stderr=subprocess.DEVNULL)
+    home = work / "home"
+    # CI runners set the XDG folders; the app must read this test's home only.
+    env = dict(
+        os.environ,
+        HOME=str(home),
+        XDG_CONFIG_HOME=str(home / ".config"),
+        XDG_DATA_HOME=str(home / ".local/share"),
+        XDG_CACHE_HOME=str(home / ".cache"),
+        PATH=f"{bin_dir}:{os.environ['PATH']}",
+    )
+    log = work / "app.log"
+    app = subprocess.Popen([binary], env=env, stderr=log.open("w"))
 
     def wait(what, check, seconds=30):
         end = time.time() + seconds
@@ -94,6 +104,7 @@ setInterval(async () => {{
 
     def fail(message):
         print(f"FAIL: {message}\n  site A: {seen['a']}\n  site B: {seen['b']}\n  opened: {outside()}")
+        print(f"  app exit: {app.poll()}\n  app stderr:\n{log.read_text()[-3000:]}")
         app.kill()
         sys.exit(2)
 
