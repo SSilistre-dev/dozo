@@ -123,6 +123,15 @@ function hasNoComputer(tier: ByokTier): boolean {
 }
 
 /**
+ * Whether the plan in force has no computer at all (Free), by the rule the table below uses: a
+ * trial or a credit plan has one. False where the deployment does not bill.
+ */
+export function planHasNoComputer(billing: PlanLimitBilling | null | undefined): boolean {
+  if (!billing || billing.state === "trialing" || billing.funding === "credits") return false;
+  return hasNoComputer(billing.byokTier ?? "standard");
+}
+
+/**
  * The sentence and action for a limit. Without the billing status the sentence names no plan
  * action. Only a member who manages billing gets the upgrade; others are told to ask the owner.
  * Computer hours on a trial or a credit plan return null: upstream's own copy covers them.
@@ -147,7 +156,7 @@ export function planLimitNotice(
     case PLAN_LIMIT_CODES.computerHoursUsed: {
       if (!billing) return notice(PLAN_LIMIT_CODES.computerHoursUsed, copy.noComputerHours);
       if (billing.state === "trialing" || billing.funding === "credits") return null;
-      if (hasNoComputer(billing.byokTier ?? "standard"))
+      if (planHasNoComputer(billing))
         return billing.canManage
           ? notice(
               PLAN_LIMIT_CODES.computerNotInPlan,
