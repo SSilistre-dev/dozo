@@ -13,7 +13,7 @@ mod server;
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
-use server::{LOCAL, Verdict, decide, hook_verdict, is_local, outside, parse_server, reachable};
+use server::{LOCAL, Verdict, hook_verdict, is_local, outside, parse_server, reachable};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::{NewWindowResponse, PermissionResponse};
 use tauri::{
@@ -272,7 +272,7 @@ fn main() {
             frames::only_gate_the_main_frame(&window)?;
             #[cfg(target_os = "linux")]
             frames::only_gate_the_main_frame(&window, move |url| {
-                follow(decide(url, chosen(&app).as_ref()))
+                follow(server::decide(url, chosen(&app).as_ref()))
             })?;
             #[cfg(windows)]
             let _ = window;
