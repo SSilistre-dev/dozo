@@ -395,6 +395,36 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/pi-runtime-tools.ts",
+      "find": "  };\n}\n\nfunction toAgentTool(",
+      "replace": "  };\n}\n\nexport function toAgentTool(",
+      "reason": "exported for the fork's checkpoint restore of a deferred built-in (dozo-checkpoint-tools.ts)"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime.ts",
+      "find": "} from \"./pi-runtime-tools.js\";\nimport type { PiSessionHandle",
+      "replace": "} from \"./pi-runtime-tools.js\";\nimport { restoredDeferredTool } from \"./dozo-checkpoint-tools.js\";\nimport type { PiSessionHandle",
+      "requires": [
+        "packages/adapters/src/dozo-checkpoint-tools.ts"
+      ],
+      "reason": "import of the fork's checkpoint restore for deferred built-ins, used by the rule below"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime.ts",
+      "find": "                const tool = tools.find((candidate) => candidate.name === call.name);\n                if (!tool) throw new Error(\"Pending checkpoint tool is no longer available\");",
+      "replace": "                const tool =\n                  tools.find((candidate) => candidate.name === call.name) ??\n                  restoredDeferredTool(toolDefs, host, call.name);\n                if (!tool) throw new Error(\"Pending checkpoint tool is no longer available\");",
+      "requires": [
+        "packages/adapters/src/dozo-checkpoint-tools.ts"
+      ],
+      "reason": "a turn paused on a direct call to a built-in that is now deferred (schedule_create across a deploy) resumes on it instead of failing"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "    prompt,\n    historicalContext,\n    runtimeHistory,",
+      "replace": "    prompt,\n    // Recalled memory still counts as historical context: the system prompt then says its block is\n    // untrusted historical data, now that it sits next to the prompt.\n    historicalContext: [...historicalContext, ...recalledContext],\n    runtimeHistory,",
+      "reason": "the run's historical context still includes recalled memory moved out of it, so the untrusted-history line stays in the system prompt"
+    },
+    {
       "file": "packages/contracts/src/model-roles.ts",
       "find": "export const ModelRoleSchema = z.enum([\"main\", \"approval\", \"computer\"]);",
       "replace": "export const ModelRoleSchema = z.enum([\"main\", \"approval\", \"computer\", \"compaction\"]);",
@@ -403,7 +433,7 @@
     {
       "file": "packages/adapters/src/background-job-handlers.ts",
       "find": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactHistory }",
-      "replace": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactionModelResolver } from \"./dozo-compaction-model.js\";\nimport { compactHistory }",
+      "replace": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactWithRoleModel } from \"./dozo-compaction-model.js\";\nimport { compactHistory }",
       "requires": [
         "packages/adapters/src/dozo-compaction-model.ts"
       ],
@@ -411,12 +441,12 @@
     },
     {
       "file": "packages/adapters/src/background-job-handlers.ts",
-      "find": "          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),",
-      "replace": "          ...(deps.executor.resolveModel\n            ? {\n                resolveModel: compactionModelResolver(deps.prisma, {\n                  resolveModel: deps.executor.resolveModel,\n                  resolveConnectedModel: deps.executor.resolveConnectedModel,\n                }),\n              }\n            : {}),",
+      "find": "      await compactHistory(\n        {\n          prisma: deps.prisma,\n          runtime: deps.runtime,\n          jobs: deps.jobs,\n          memoryProviders: deps.memoryProviders,\n          deploymentModelKey: deps.deploymentModelKey,\n          deploymentModelConfigured: deps.deploymentModelConfigured,\n          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),\n        },\n        payload.threadId,\n        payload.userId,\n      );",
+      "replace": "      await compactWithRoleModel(deps.prisma, deps.executor, (resolveModel) =>\n        compactHistory(\n          {\n            prisma: deps.prisma,\n            runtime: deps.runtime,\n            jobs: deps.jobs,\n            memoryProviders: deps.memoryProviders,\n            deploymentModelKey: deps.deploymentModelKey,\n            deploymentModelConfigured: deps.deploymentModelConfigured,\n            ...(resolveModel ? { resolveModel } : {}),\n          },\n          payload.threadId,\n          payload.userId,\n        ),\n      );",
       "requires": [
         "packages/adapters/src/dozo-compaction-model.ts"
       ],
-      "reason": "history summaries use the compaction role's model when the member chose one, else the thread's model as before"
+      "reason": "history summaries use the compaction role's model when the member chose one and fall back to the thread's model when it fails; without a choice nothing changes"
     },
     {
       "file": "packages/adapters/src/builtin-tool-bridge.ts",

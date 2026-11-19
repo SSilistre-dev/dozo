@@ -37,6 +37,30 @@ describe("stable start of a cut history", () => {
     expect(startsHistoryWindow({ role: "user" })).toBe(startsHistoryWindow({ role: "user" }));
   });
 
+  it("judges a message by its stored id, else its text, never its images", () => {
+    const text = [{ type: "text", text: "question 7" }];
+    const plain = { role: "user", content: text };
+    const withImage = { role: "user", content: [...text, { type: "image", data: "x" }] };
+    expect(startsHistoryWindow(withImage)).toBe(startsHistoryWindow(plain));
+    expect(startsHistoryWindow(plain)).toBe(
+      startsHistoryWindow({ role: "user", content: "question 7" }),
+    );
+    const ids = Array.from({ length: 40 }, (_, i) => ({
+      role: "user",
+      content: "same text",
+      rakazoMessageId: `m${i}`,
+    }));
+    const picked = ids.filter(startsHistoryWindow).length;
+    expect(picked).toBeGreaterThan(0);
+    expect(picked).toBeLessThan(40);
+    expect(startsHistoryWindow({ role: "user", content: [{ type: "text" }] })).toBe(
+      startsHistoryWindow({ role: "user", content: "" }),
+    );
+    expect(startsHistoryWindow({ role: "user", content: 3 } as never)).toBe(
+      startsHistoryWindow({ role: "user", content: "" }),
+    );
+  });
+
   it("keeps the same first message while the cut moves by one exchange per turn", () => {
     const firsts = [0, 1, 2, 3, 4, 5].map(
       (turn) => windowStart(conversation(1 + turn, 60 + turn), 20).first,
@@ -56,13 +80,16 @@ describe("stable start of a cut history", () => {
   it("keeps protected groups while dropping the ones before the start", () => {
     const messages = conversation(1, 60);
     const groups = groupsOf(messages);
-    const selected = new Set(groups.slice(20));
-    const start = groups.findIndex(
-      (group, i) => i > 21 && startsHistoryWindow(messages[group.indexes[0]!]!),
+    // Cut at a user message that cannot start a window, with the reply after it protected.
+    const cut = messages.findIndex(
+      (m, i) => i >= 20 && m.role === "user" && !startsHistoryWindow(m),
     );
-    const dropped = alignHistoryStart(messages, groups, selected, new Set([21]), 120, 2);
-    expect(selected.has(groups[21]!)).toBe(true);
+    const start = messages.findIndex((m, i) => i > cut + 1 && startsHistoryWindow(m));
+    const selected = new Set(groups.slice(cut));
+    const dropped = alignHistoryStart(messages, groups, selected, new Set([cut + 1]), 120, 2);
+    expect(selected.has(groups[cut + 1]!)).toBe(true);
+    expect(selected.has(groups[cut]!)).toBe(false);
     expect(selected.has(groups[start]!)).toBe(true);
-    expect(dropped).toBe((start - 20 - 1) * 10);
+    expect(dropped).toBe((start - cut - 1) * 10);
   });
 });

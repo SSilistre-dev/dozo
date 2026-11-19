@@ -19,7 +19,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v5";
+export const BENCH_VERSION = "dozo-token-bench-v6";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 export const FAKE_PROVIDER = {
@@ -241,6 +241,8 @@ export function benchInstructions(
   memoryContext?: string,
   records?: BenchRecord[],
   disk?: BenchTurn["disk"],
+  /** Whether the history carries recalled memory (the bench has no compacted summaries). */
+  historicalContext = false,
 ) {
   return userTurnInstructions({
     botInstructions: runIdentityInstruction(
@@ -251,7 +253,7 @@ export function benchInstructions(
     messagingContext: undefined,
     redactedMemoryContext: memoryContext,
     redactedScratchpadContext: undefined,
-    hasHistoricalContext: true,
+    hasHistoricalContext: historicalContext,
     historyRetrievalEnabled: true,
     computerInstruction: disk
       ? (diskNoteInstruction({
@@ -308,7 +310,12 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
         ]
       : [];
     const records = task.records && listedRecords(task.records, turn.recordOrder);
-    const instructions = benchInstructions(task.memoryContext, records, turn.disk);
+    const instructions = benchInstructions(
+      task.memoryContext,
+      records,
+      turn.disk,
+      recalled.length > 0,
+    );
     let answer = "";
     for await (const event of runtime.run(
       {

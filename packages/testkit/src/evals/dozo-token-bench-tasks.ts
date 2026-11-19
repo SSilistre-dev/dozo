@@ -195,7 +195,11 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
         replies: [
           {
             builtin: "schedule_create",
-            args: { title: "Send the weekly report", runAt: "2026-01-02T09:00:00Z" },
+            args: {
+              name: "Weekly report",
+              prompt: "Remind the user to send the weekly report.",
+              runAt: "2026-01-02T09:00:00Z",
+            },
           },
           { text: "I will remind you tomorrow at 9." },
         ],
