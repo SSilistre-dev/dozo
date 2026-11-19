@@ -161,22 +161,23 @@ it("starts no checkout that names no paid plan, whatever is pressed on Free", as
     expect(["pro", "max"]).toContain((terms as { tier?: string }).tier);
 });
 
+function sharedSpaceRows() {
+  const rows = container.querySelectorAll('[data-testid="shared-space"] p');
+  return [...rows].map((row) => row.textContent);
+}
+
 it("names the plan and shows how much of its shared space is used", async () => {
   const MB = 1024 * 1024;
   await render({
     ...free,
     sharedSpace: { plan: "Free", usedBytes: 120 * MB, limitBytes: 500 * MB },
   });
-  expect(container.querySelector('[data-testid="shared-space"]')?.textContent).toBe(
-    "Free · 120 MB of 500 MB shared space",
-  );
+  expect(sharedSpaceRows()).toEqual(["Free", "120 MB of 500 MB shared space"]);
   await render({
     ...free,
     sharedSpace: { plan: "Premium", usedBytes: 1.2 * 1024 * MB, limitBytes: 2 * 1024 * MB },
   });
-  expect(container.querySelector('[data-testid="shared-space"]')?.textContent).toBe(
-    "Premium · 1.2 GB of 2 GB shared space",
-  );
+  expect(sharedSpaceRows()).toEqual(["Premium", "1.2 GB of 2 GB shared space"]);
 });
 
 it("shows no shared space where the server sends none, as one that does not bill", async () => {

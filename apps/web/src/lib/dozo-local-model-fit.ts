@@ -43,7 +43,7 @@ export type HardwareProfile = {
   source: "detected" | "chosen";
 };
 
-export type FitTier = "comfortable" | "usable" | "slow" | "no-fit";
+type FitTier = "comfortable" | "usable" | "slow" | "no-fit";
 
 export type LocalModelFit = {
   model: LocalModelEntry;

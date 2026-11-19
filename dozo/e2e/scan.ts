@@ -7,7 +7,7 @@ import type { BrowserContext, Download, Page } from "@playwright/test";
  */
 
 /** The upstream name and the places it was published. A hit anywhere a person can read is a leak. */
-export const LEAK = /rakazo|getrakazo|elie222|RWwKa2Sn7h|id6801531099/i;
+const LEAK = /rakazo|getrakazo|elie222|RWwKa2Sn7h|id6801531099/i;
 
 /**
  * Deliberately unchanged technical identifiers, allowed ONLY inside attribute and link values

@@ -19,6 +19,7 @@ NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 COMPOSE_REL=infra/compose/docker-compose.yml
 STAGED="$STAGE/stage.complete"   # written last by `stage`, removed first: a swap cut short has none
 STEP=init
+# shellcheck source=SCRIPTDIR/lock.sh
 . "$HERE/lock.sh"
 
 say() { echo "[dozo] $*"; }
@@ -27,7 +28,7 @@ die() { local c="${2:-2}"; DIED=1; echo "[dozo] FAILED at step '$STEP': $1" >&2;
 # Any other failure (a docker or git command under set -e) is also a gate failure: report it as 2.
 # One handler for exit, INT and TERM: it also removes the temp files and the containers of this run.
 cleanup() {
-  local rc=$? ids
+  local rc=$? ids f
   trap '' INT TERM; trap - EXIT   # a second signal must not cut the cleanup short
   [ $rc -eq 0 ] || [ $rc -eq 64 ] || [ "${DIED:-}" = 1 ] || echo "[dozo] FAILED at step '$STEP' (exit $rc)" >&2
   [ -z "${ENV_TMP:-}" ] || rm -f "$ENV_TMP"
@@ -37,8 +38,8 @@ cleanup() {
   # Only a step that started a container (node_run) has any to remove: stage and the compose steps
   # leave Docker alone here, so a host without Docker can still stage.
   if [ "${STARTED_CONTAINER:-}" = 1 ]; then
-    ids=$(docker ps -aq --filter "label=dozo.run=build-$$" 2>/dev/null) || ids=""
-    [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+    ids=(); while IFS= read -r f; do ids+=("$f"); done < <(docker ps -aq --filter "label=dozo.run=build-$$" 2>/dev/null)
+    [ "${#ids[@]}" -eq 0 ] || docker rm -f "${ids[@]}" >/dev/null 2>&1 || true
   fi
   [ $rc -eq 0 ] || [ $rc -eq 64 ] || rc=2
   exit $rc
@@ -307,7 +308,7 @@ CMD="${1:-all}"; VOLUMES=""
 [ $# -eq 0 ] || shift
 # Anything but the one documented flag is refused: `down --volume` (typo) must not run a plain down.
 for a in "$@"; do
-  [ "$a" = "--volumes" ] && [ "$CMD" = down ] && VOLUMES=1 || usage
+  if [ "$a" = "--volumes" ] && [ "$CMD" = down ]; then VOLUMES=1; else usage; fi
 done
 case "$CMD" in stage|brand|build|up|smoke|down|all) stage_lock "$STAGE" || die "the stage area is in use by another run" ;; esac
 case "$CMD" in

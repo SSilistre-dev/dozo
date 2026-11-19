@@ -24,7 +24,7 @@ export function NotFoundPage() {
  * body and head take the text colour and the band the brand's seal red, so both themes draw it
  * from their tokens; the cut-outs take the page background.
  */
-export function DozoDragon({ className }: { className?: string }) {
+function DozoDragon({ className }: { className?: string }) {
   return (
     <svg data-dozo-dragon="" viewBox="0 -70 990 210" className={className}>
       <defs>

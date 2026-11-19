@@ -2,8 +2,19 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
+import {
+  apply,
+  bare,
+  bareRun,
+  check,
+  configFile,
+  read,
+  shipped,
+  tempDir,
+  tree,
+  withoutFiles,
+} from "./brand.test-support.mjs";
 import { buildScanner, inScope, loadConfig, rewrite } from "./lib.mjs";
-import { tempDir, tree, read, shipped, withoutFiles, configFile, bare, apply, check, bareRun, texts } from "./brand.test-support.mjs";
 
 // The config, the command line and the shipped brand.json.
 
@@ -36,7 +47,6 @@ describe("config validation", () => {
     rejects({ ...base, allow: [] }, /`allow` must be an object/);
   });
 
-  const entry = { glob: "x/**" };
   const lists = {
     exclude: (x) => ({ exclude: x }),
     keep: (x) => ({ keep: x }),
@@ -65,10 +75,18 @@ describe("config validation", () => {
       rejects({ ...base, ...wrap([{ ...good[name], reason: "" }]) }, pattern);
       rejects({ ...base, ...wrap("x") }, /must be a list/);
       rejects({ ...base, ...wrap(["x"]) }, /must be an object/);
-      for (const field of Object.keys(good[name]).filter((f) => f !== "reason" && f !== "replace")) {
+      for (const field of Object.keys(good[name]).filter(
+        (f) => f !== "reason" && f !== "replace",
+      )) {
         const { [field]: _dropped, ...partial } = good[name];
-        rejects({ ...base, ...wrap([partial]) }, new RegExp(field === "files" ? "non-empty `files` list" : `needs ${field}`));
-        rejects({ ...base, ...wrap([{ ...good[name], [field]: field === "files" ? [] : "" }]) }, new RegExp(field === "files" ? "non-empty `files` list" : `needs ${field}`));
+        rejects(
+          { ...base, ...wrap([partial]) },
+          new RegExp(field === "files" ? "non-empty `files` list" : `needs ${field}`),
+        );
+        rejects(
+          { ...base, ...wrap([{ ...good[name], [field]: field === "files" ? [] : "" }]) },
+          new RegExp(field === "files" ? "non-empty `files` list" : `needs ${field}`),
+        );
       }
     });
   }
@@ -76,9 +94,18 @@ describe("config validation", () => {
   it("rejects bad literals, keep scopes, maps and lists", () => {
     rejects({ ...base, literals: [{ find: "a", reason: "r" }] }, /literal needs find and replace/);
     rejects({ ...base, literals: [{ replace: "b", reason: "r" }] }, /literals entry needs find/);
-    rejects({ ...base, literals: [{ find: "a", replace: "ab", reason: "r" }] }, /literal replace contains find/);
-    rejects({ ...base, literals: [{ find: "a", replace: "b", files: "x", reason: "r" }] }, /literal files must be a non-empty list/);
-    rejects({ ...base, literals: [{ find: "a", replace: "b", files: [], reason: "r" }] }, /literal files must be a non-empty list/);
+    rejects(
+      { ...base, literals: [{ find: "a", replace: "ab", reason: "r" }] },
+      /literal replace contains find/,
+    );
+    rejects(
+      { ...base, literals: [{ find: "a", replace: "b", files: "x", reason: "r" }] },
+      /literal files must be a non-empty list/,
+    );
+    rejects(
+      { ...base, literals: [{ find: "a", replace: "b", files: [], reason: "r" }] },
+      /literal files must be a non-empty list/,
+    );
     rejects({ ...base, keep: [{ text: "a", files: "x", reason: "r" }] }, /non-empty `files` list/);
     rejects({ ...base, keep: [{ text: "a", files: [1], reason: "r" }] }, /non-empty `files` list/);
     rejects({ ...base, keep: [{ text: "", files: ["x"], reason: "r" }] }, /keep entry needs text/);
@@ -94,23 +121,39 @@ describe("config validation", () => {
     rejects({ ...base, include: "src/**" }, /`include` must be a list of non-empty strings/);
     rejects({ ...base, leak: [""] }, /`leak` must be a list/);
     rejects({ ...base, leakWords: [3] }, /`leakWords` must be a list/);
-    rejects({ ...base, placeholders: ["dozo.example", ""] }, /`placeholders` must be a list of non-empty strings/);
+    rejects(
+      { ...base, placeholders: ["dozo.example", ""] },
+      /`placeholders` must be a list of non-empty strings/,
+    );
     rejects({ ...base, anchored: {} }, /`anchored` must be a list/);
     rejects({ ...base, anchored: ["x"] }, /anchored rule needs file, find, replace and reason/);
-    rejects({ ...base, anchored: [{ file: "a", find: "b", replace: "c", reason: "r", requires: "x" }] }, /requires must be a list of paths/);
+    rejects(
+      { ...base, anchored: [{ file: "a", find: "b", replace: "c", reason: "r", requires: "x" }] },
+      /requires must be a list of paths/,
+    );
     rejects({ ...base, to: "Rakazo2" }, /`to` must not contain `from`/);
   });
 
   it("allow.paths lists exact names: a wildcard is a config error, and the old allow.images key says what it became", () => {
     for (const glob of ["src/rakazo-*", "src/rakazo-?", "**/rakazo-x", "src/*"]) {
-      rejects({ ...base, allow: { paths: [{ glob, reason: "r" }] } }, /allow\.paths lists exact names, not globs/);
+      rejects(
+        { ...base, allow: { paths: [{ glob, reason: "r" }] } },
+        /allow\.paths lists exact names, not globs/,
+      );
     }
-    rejects({ ...base, allow: { images: [{ glob: "x.png", reason: "r" }] } }, /`allow\.images` was renamed `allow\.binary`/);
+    rejects(
+      { ...base, allow: { images: [{ glob: "x.png", reason: "r" }] } },
+      /`allow\.images` was renamed `allow\.binary`/,
+    );
   });
 
   it("allow.text count is a whole number of 1 or more", () => {
-    const text = (count) => ({ ...base, allow: { text: [{ file: "src/a.ts", text: "x", reason: "r", count }] } });
-    for (const count of [0, -1, 1.5, "2", null, []]) rejects(text(count), /allow\.text count must be a whole number of 1 or more/);
+    const text = (count) => ({
+      ...base,
+      allow: { text: [{ file: "src/a.ts", text: "x", reason: "r", count }] },
+    });
+    for (const count of [0, -1, 1.5, "2", null, []])
+      rejects(text(count), /allow\.text count must be a whole number of 1 or more/);
     const file = path.join(tempDir(), "brand.json");
     fs.writeFileSync(file, JSON.stringify(text(2)));
     assert.equal(loadConfig(file).allow.text[0].count, 2);
@@ -118,7 +161,10 @@ describe("config validation", () => {
 
   it("accepts an empty replace in a literal, and an absent optional section", () => {
     const file = path.join(tempDir(), "brand.json");
-    fs.writeFileSync(file, JSON.stringify({ ...base, literals: [{ find: "a", replace: "", reason: "r" }] }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ ...base, literals: [{ find: "a", replace: "", reason: "r" }] }),
+    );
     const res = check(tree({ "src/a.ts": "x" }), file);
     assert.equal(res.status, 0, res.stderr);
   });
@@ -159,7 +205,17 @@ describe("command line", () => {
         assert.equal(res.status, 2, argv.join(" "));
         assert.match(res.stderr, pattern, argv.join(" "));
       }
-      assert.equal(bareRun(script, "--root", root, "--config", config, ...(script === "apply.mjs" ? ["--check"] : ["--launch"])).status, 0);
+      assert.equal(
+        bareRun(
+          script,
+          "--root",
+          root,
+          "--config",
+          config,
+          ...(script === "apply.mjs" ? ["--check"] : ["--launch"]),
+        ).status,
+        0,
+      );
     });
   }
 
@@ -179,7 +235,10 @@ describe("command line", () => {
     // The list is capped at 50 lines and starts with the reviewed texts, which this tree lacks.
     const [entry] = shipped.allow.text;
     assert.ok(entry, "the shipped config reviews at least one text");
-    assert.ok(checked.stderr.includes(`${entry.file}: allow.text ${entry.text} occurs 0 times`), checked.stderr);
+    assert.ok(
+      checked.stderr.includes(`${entry.file}: allow.text ${entry.text} occurs 0 times`),
+      checked.stderr,
+    );
   });
 });
 
@@ -188,14 +247,27 @@ describe("command line", () => {
 describe("shipped brand.json", () => {
   it("is valid, every entry has a reason, and its keys are unique", () => {
     loadConfig();
-    for (const entry of [...shipped.exclude, ...shipped.keep, ...shipped.allow.phrases, ...shipped.allow.text, ...shipped.allow.paths, ...shipped.allow.binary, ...shipped.literals, ...shipped.anchored]) {
+    for (const entry of [
+      ...shipped.exclude,
+      ...shipped.keep,
+      ...shipped.allow.phrases,
+      ...shipped.allow.text,
+      ...shipped.allow.paths,
+      ...shipped.allow.binary,
+      ...shipped.literals,
+      ...shipped.anchored,
+    ]) {
       assert.ok(entry.reason, JSON.stringify(entry));
     }
     const anchored = shipped.anchored.map((rule) => `${rule.file}\0${rule.find}`);
     assert.equal(new Set(anchored).size, anchored.length);
     const texts = shipped.allow.text.map((e) => `${e.file}\0${e.text}`);
     assert.equal(new Set(texts).size, texts.length);
-    for (const entry of [...shipped.keep, ...shipped.allow.phrases]) assert.ok(!entry.files.some((f) => f === "**" || f === "**/*"), `${entry.text}: scoped to files`);
+    for (const entry of [...shipped.keep, ...shipped.allow.phrases])
+      assert.ok(
+        !entry.files.some((f) => f === "**" || f === "**/*"),
+        `${entry.text}: scoped to files`,
+      );
   });
 
   /** A tree with one file holding `text`, branded with the shipped rules (no anchors, assets) and gated. */
@@ -233,7 +305,11 @@ describe("shipped brand.json", () => {
       assert.equal(out, `x = "${entry.text}";\n`, entry.text);
       assert.equal(gate.status, 0, `${entry.text}: ${gate.stderr}`);
       const elsewhere = brandAndGate("apps/web/src/elsewhere.ts", `x = "${entry.text}";\n`);
-      assert.notEqual(elsewhere.out, `x = "${entry.text}";\n`, `${entry.text} is kept only in its files`);
+      assert.notEqual(
+        elsewhere.out,
+        `x = "${entry.text}";\n`,
+        `${entry.text} is kept only in its files`,
+      );
     }
   });
 
@@ -279,15 +355,18 @@ describe("the shipped rules reach the tree through a mini stage", () => {
     const file = path.join(tempDir(), "brand.json");
     fs.writeFileSync(file, JSON.stringify(withoutFiles));
     const root = tree({
-      "apps/web/src/a.ts": 'x = "Rakazo"; y = RakazoDesktop; z = "https://github.com/elie222/rakazo/blob/main/docs/x.md"; w = "@rakazo/core"; q = "RAKAZO_HOST"',
+      "apps/web/src/a.ts":
+        'x = "Rakazo"; y = RakazoDesktop; z = "https://github.com/elie222/rakazo/blob/main/docs/x.md"; w = "@rakazo/core"; q = "RAKAZO_HOST"',
     });
     const res = apply(root, file);
     assert.equal(res.status, 0, res.stderr);
-    assert.equal(read(root, "apps/web/src/a.ts"), 'x = "Dozo"; y = RakazoDesktop; z = "https://github.com/SSilistre-dev/dozo/blob/main/docs/x.md"; w = "@rakazo/core"; q = "RAKAZO_HOST"');
+    assert.equal(
+      read(root, "apps/web/src/a.ts"),
+      'x = "Dozo"; y = RakazoDesktop; z = "https://github.com/SSilistre-dev/dozo/blob/main/docs/x.md"; w = "@rakazo/core"; q = "RAKAZO_HOST"',
+    );
     assert.equal(check(root, file).status, 0);
   });
 });
-
 
 describe("the shipped config, in literal values", () => {
   const config = loadConfig();
@@ -300,77 +379,153 @@ describe("the shipped config, in literal values", () => {
     assert.deepEqual(config.placeholders, ["dozo.example", "OWNER/"]);
     const counts = {};
     const sample = "Rakazo Rakazos RAKAZO rakazo Rakazo's RakazoPro Rakazo.icon";
-    assert.equal(rewrite(sample, config, counts, "apps/web/src/x.ts"), "Dozo Dozos RAKAZO rakazo Dozo's RakazoPro Dozo.icon");
-    assert.equal(rewrite('u = "https://github.com/elie222/rakazo/blob/main/docs/x.md"', config, {}, "apps/web/src/x.ts"), 'u = "https://github.com/SSilistre-dev/dozo/blob/main/docs/x.md"');
+    assert.equal(
+      rewrite(sample, config, counts, "apps/web/src/x.ts"),
+      "Dozo Dozos RAKAZO rakazo Dozo's RakazoPro Dozo.icon",
+    );
+    assert.equal(
+      rewrite(
+        'u = "https://github.com/elie222/rakazo/blob/main/docs/x.md"',
+        config,
+        {},
+        "apps/web/src/x.ts",
+      ),
+      'u = "https://github.com/SSilistre-dev/dozo/blob/main/docs/x.md"',
+    );
     // No URL map entry may write an address that does not exist.
-    for (const target of Object.values(config.urls)) assert.ok(!config.placeholders.some((p) => target.includes(p)), target);
+    for (const target of Object.values(config.urls))
+      assert.ok(!config.placeholders.some((p) => target.includes(p)), target);
   });
 
   it("OS junk with NUL bytes under a branded path is out of scope, not a UTF-16 failure", () => {
-    const root = tree({ "packages/core/src/a.ts": "Rakazo", "packages/core/.DS_Store": "\0\0Bud1\0", "packages/core/Thumbs.db": "\0\0" });
-    const res = apply(root, bare({ include: ["packages/**"], exclude: shipped.exclude }), "--strict");
+    const root = tree({
+      "packages/core/src/a.ts": "Rakazo",
+      "packages/core/.DS_Store": "\0\0Bud1\0",
+      "packages/core/Thumbs.db": "\0\0",
+    });
+    const res = apply(
+      root,
+      bare({ include: ["packages/**"], exclude: shipped.exclude }),
+      "--strict",
+    );
     assert.equal(res.status, 0, res.stderr);
     assert.equal(read(root, "packages/core/src/a.ts"), "Dozo");
   });
 
   it("puts the scope where it is expected", () => {
-    for (const rel of ["apps/web/e2e/a.ts", "packages/testkit/index.ts", "packages/core/src/x.test.ts", "packages/core/pnpm-lock.yaml", "packages/db/prisma/schema.prisma", "apps/web/node_modules/p/i.js", "packages/adapters/src/composio-fake.ts", "apps/web/LICENSE", "packages/core/.DS_Store", "apps/web/src/Thumbs.db",
-      "apps/mobile/.maestro/smoke.yaml", "apps/mobile/e2e/README.md", "apps/mobile/assets/sounds/warm-end.m4a", "apps/mobile/modules/rakazo-notifications/android/build.gradle", "apps/mobile/lib/push.test.ts"]) {
+    for (const rel of [
+      "apps/web/e2e/a.ts",
+      "packages/testkit/index.ts",
+      "packages/core/src/x.test.ts",
+      "packages/core/pnpm-lock.yaml",
+      "packages/db/prisma/schema.prisma",
+      "apps/web/node_modules/p/i.js",
+      "packages/adapters/src/composio-fake.ts",
+      "apps/web/LICENSE",
+      "packages/core/.DS_Store",
+      "apps/web/src/Thumbs.db",
+      "apps/mobile/.maestro/smoke.yaml",
+      "apps/mobile/e2e/README.md",
+      "apps/mobile/assets/sounds/warm-end.m4a",
+      "apps/mobile/modules/rakazo-notifications/android/build.gradle",
+      "apps/mobile/lib/push.test.ts",
+    ]) {
       assert.equal(inScope(config, rel), false, `${rel} is excluded`);
     }
-    for (const rel of ["apps/web/src/App.tsx", "apps/api/src/index.ts", "apps/worker/src/main.ts", "packages/core/src/index.ts", "infra/sandboxes/computer/Dockerfile"]) {
+    for (const rel of [
+      "apps/web/src/App.tsx",
+      "apps/api/src/index.ts",
+      "apps/worker/src/main.ts",
+      "packages/core/src/index.ts",
+      "infra/sandboxes/computer/Dockerfile",
+    ]) {
       assert.equal(inScope(config, rel), true, `${rel} is in scope`);
     }
-    for (const rel of ["apps/www/src/a.astro", "apps/desktop/src/main.ts", "apps/desktop/assets/es.lproj/InfoPlist.strings", "apps/desktop/assets/README.md", "docs/a.md", "README.md"]) {
+    for (const rel of [
+      "apps/www/src/a.astro",
+      "apps/desktop/src/main.ts",
+      "apps/desktop/assets/es.lproj/InfoPlist.strings",
+      "apps/desktop/assets/README.md",
+      "docs/a.md",
+      "README.md",
+    ]) {
       assert.equal(inScope(config, rel), false, `${rel} is outside include`);
     }
     // Desktop: images only. Mobile: the whole app that the iOS build ships (dozo/mobile), ids and permission texts included.
-    for (const rel of ["apps/mobile/app/a.tsx", "apps/mobile/app.json", "apps/mobile/ios-widgets/RakazoWidgets.swift", "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift", "apps/mobile/plugins/with-app-intents.js", "apps/desktop/assets/icon.png", "apps/desktop/assets/icon.ico", "apps/desktop/assets/new.icns", "apps/mobile/assets/splash-icon.png", "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png", "apps/mobile/src/img/a.svg"]) {
+    for (const rel of [
+      "apps/mobile/app/a.tsx",
+      "apps/mobile/app.json",
+      "apps/mobile/ios-widgets/RakazoWidgets.swift",
+      "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift",
+      "apps/mobile/plugins/with-app-intents.js",
+      "apps/desktop/assets/icon.png",
+      "apps/desktop/assets/icon.ico",
+      "apps/desktop/assets/new.icns",
+      "apps/mobile/assets/splash-icon.png",
+      "apps/mobile/ios-widgets/Assets.xcassets/AppMark.imageset/app-mark.png",
+      "apps/mobile/src/img/a.svg",
+    ]) {
       assert.equal(inScope(config, rel), true, `${rel} is in scope`);
     }
   });
 
   it("flags the same leak words", () => {
-    assert.deepEqual(config.leak, ["rakazo.com", "elie222/rakazo", "elie222", "id6801531099", "RWwKa2Sn7h", "com.rakazo.app"]);
+    assert.deepEqual(config.leak, [
+      "rakazo.com",
+      "elie222/rakazo",
+      "elie222",
+      "id6801531099",
+      "RWwKa2Sn7h",
+      "com.rakazo.app",
+    ]);
     assert.deepEqual(config.leakWords, ["Elie"]);
   });
 
   it("lists the names allow.paths and allow.binary cover, and the allow.text entries that stand for more than one occurrence", () => {
-    assert.deepEqual(config.allow.paths.map((entry) => entry.glob), [
-      "infra/sandboxes/computer/rakazo-browser",
-      "infra/sandboxes/computer/rakazo-browser.desktop",
-      "infra/sandboxes/computer/rakazo-focus-or-launch",
-      "infra/sandboxes/computer/rakazo-local-bin.sh",
-      "infra/sandboxes/computer/rakazo-page-browser",
-      "packages/ui-tokens/assets/Rakazo.icon",
-      "apps/mobile/ios-intents/RakazoIntents.swift",
-      "apps/mobile/ios-widgets/RakazoWidgets.swift",
-      "apps/mobile/modules/rakazo-file-drop",
-      "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDrop.podspec",
-      "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
-      "apps/mobile/modules/rakazo-fold-regions",
-      "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegions.podspec",
-      "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegionsModule.swift",
-      "apps/mobile/modules/rakazo-list-scroll",
-      "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScroll.podspec",
-      "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift",
-      "apps/mobile/modules/rakazo-network-cache",
-      "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCache.podspec",
-      "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCacheModule.swift",
-      "apps/mobile/modules/rakazo-notifications",
-      "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift",
-      "apps/mobile/modules/rakazo-notifications/ios/RakazoNotifications.podspec",
-      "apps/mobile/modules/rakazo-notifications/ios/RakazoWorkActivities.swift",
-      "apps/mobile/modules/rakazo-pdf-view",
-      "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfView.podspec",
-      "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfViewModule.swift",
-      "apps/mobile/modules/rakazo-voice-chat",
-      "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec",
-      "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift",
-    ]);
-    assert.deepEqual(config.allow.binary, [], "every shipped image is mapped, none is only reviewed");
     assert.deepEqual(
-      config.allow.text.filter((entry) => entry.count !== undefined).map((entry) => [entry.file, entry.text, entry.count]),
+      config.allow.paths.map((entry) => entry.glob),
+      [
+        "infra/sandboxes/computer/rakazo-browser",
+        "infra/sandboxes/computer/rakazo-browser.desktop",
+        "infra/sandboxes/computer/rakazo-focus-or-launch",
+        "infra/sandboxes/computer/rakazo-local-bin.sh",
+        "infra/sandboxes/computer/rakazo-page-browser",
+        "packages/ui-tokens/assets/Rakazo.icon",
+        "apps/mobile/ios-intents/RakazoIntents.swift",
+        "apps/mobile/ios-widgets/RakazoWidgets.swift",
+        "apps/mobile/modules/rakazo-file-drop",
+        "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDrop.podspec",
+        "apps/mobile/modules/rakazo-file-drop/ios/RakazoFileDropModule.swift",
+        "apps/mobile/modules/rakazo-fold-regions",
+        "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegions.podspec",
+        "apps/mobile/modules/rakazo-fold-regions/ios/RakazoFoldRegionsModule.swift",
+        "apps/mobile/modules/rakazo-list-scroll",
+        "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScroll.podspec",
+        "apps/mobile/modules/rakazo-list-scroll/ios/RakazoListScrollModule.swift",
+        "apps/mobile/modules/rakazo-network-cache",
+        "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCache.podspec",
+        "apps/mobile/modules/rakazo-network-cache/ios/RakazoNetworkCacheModule.swift",
+        "apps/mobile/modules/rakazo-notifications",
+        "apps/mobile/modules/rakazo-notifications/ios/RakazoIncomingCalls.swift",
+        "apps/mobile/modules/rakazo-notifications/ios/RakazoNotifications.podspec",
+        "apps/mobile/modules/rakazo-notifications/ios/RakazoWorkActivities.swift",
+        "apps/mobile/modules/rakazo-pdf-view",
+        "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfView.podspec",
+        "apps/mobile/modules/rakazo-pdf-view/ios/RakazoPdfViewModule.swift",
+        "apps/mobile/modules/rakazo-voice-chat",
+        "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChat.podspec",
+        "apps/mobile/modules/rakazo-voice-chat/ios/RakazoVoiceChatModule.swift",
+      ],
+    );
+    assert.deepEqual(
+      config.allow.binary,
+      [],
+      "every shipped image is mapped, none is only reviewed",
+    );
+    assert.deepEqual(
+      config.allow.text
+        .filter((entry) => entry.count !== undefined)
+        .map((entry) => [entry.file, entry.text, entry.count]),
       [
         ["packages/core/src/bot-look.ts", 'avatarSet === "rakazo"', 2],
         ["packages/adapters/src/apple-container-sandbox.ts", "table inet rakazo", 3],
@@ -382,8 +537,12 @@ describe("the shipped config, in literal values", () => {
     );
     const { scanPath } = buildScanner(config);
     assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-local-bin.sh"), []);
-    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-evil"), ["infra/sandboxes/computer/rakazo-evil"]);
-    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-browser.desktop.bak"), ["infra/sandboxes/computer/rakazo-browser.desktop.bak"]);
+    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-evil"), [
+      "infra/sandboxes/computer/rakazo-evil",
+    ]);
+    assert.deepEqual(scanPath("infra/sandboxes/computer/rakazo-browser.desktop.bak"), [
+      "infra/sandboxes/computer/rakazo-browser.desktop.bak",
+    ]);
   });
 });
 
@@ -395,7 +554,9 @@ describe("the logo above sign-in", () => {
     const asset = source("dozo/brand/assets/logo-dark.svg");
     const component = source("packages/ui-web/src/dozo-logo.tsx");
     const css = source("packages/ui-web/src/dozo-shell.css");
-    const approved = [...asset.matchAll(/<path fill="([^"]+)"[^>]* d="([^"]+)"/g)].map(([, fill, d]) => [fill.toLowerCase(), d]);
+    const approved = [...asset.matchAll(/<path fill="([^"]+)"[^>]* d="([^"]+)"/g)].map(
+      ([, fill, d]) => [fill.toLowerCase(), d],
+    );
     assert.equal(approved.length, 9);
     const band = approved.filter(([fill]) => fill !== "#f4f3f0");
     assert.equal(band.length, 4);

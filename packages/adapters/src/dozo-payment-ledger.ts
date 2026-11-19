@@ -1,3 +1,5 @@
+import type { BillingByokPlan } from "@rakazo/adapter-kit";
+
 /** One payment, refund or failed payment as the payment provider recorded it. */
 export interface DozoLedgerEntry {
   /** The provider's id for the payer, matched against the deployment's billing accounts. */
@@ -42,4 +44,6 @@ export interface DozoPaymentLedger {
     accounts: DozoLedgerAccounts,
     signal?: AbortSignal,
   ): Promise<DozoLedger>;
+  /** The key the provider finds or creates a plan's price under, shown on the admin plans page. */
+  priceKey?(plan: BillingByokPlan): string;
 }

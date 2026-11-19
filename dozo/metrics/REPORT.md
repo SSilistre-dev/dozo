@@ -1,11 +1,11 @@
 # Code measurement (`make olcum`)
 
-Written by `dozo/metrics/report.mjs` at commit 0502eff7b; do not edit. Target: both fork scores >= 90.
+Written by `dozo/metrics/report.mjs` at commit c05d7a325; do not edit. Target: both fork scores >= 90.
 
 | Set | Quality | Readability |
 | --- | --- | --- |
-| fork (dozo/ and dozo-* files) | 87.4 | 91.3 |
-| whole repository | 86.4 | 95.5 |
+| fork (dozo/ and dozo-* files) | 91.4 | 98.4 |
+| whole repository | 87.0 | 95.7 |
 
 Fork: every file dozo/NOTICE lists as a Dozo file. Whole repository: every file git lists. Code files are
 TypeScript and JavaScript outside the directories biome.jsonc leaves out; source files are code files that are
@@ -33,36 +33,36 @@ are the tools' own defaults or a published rating, never tuned to this repositor
 | functionLength | readability | 15 | ESLint max-lines-per-function | share of functions of <= 50 lines | 50: the rule's default |
 | fileLength | readability | 10 | ESLint max-lines | share of source files of <= 300 lines | 300: the rule's default |
 | duplication | readability | 20 | jscpd (min 50 tokens, 5 lines: its defaults) | duplicated lines / lines of source, rated A-E and scored 100/75/50/25/0 | SonarQube duplication rating: A < 3 %, B < 5, C < 10, D < 20, E from 20 |
-| deadCode | readability | 10 | knip (unused files, exports, types, members) | share of source files with no knip finding | knip's defaults, no configuration |
+| deadCode | readability | 10 | knip (unused files, exports, types, members) | share of source files with no knip finding | knip's defaults plus the entry points it cannot see (dozo/metrics/knip.config.mjs) |
 | format | readability | 15 | Biome formatter and import sorting | share of code files Biome would not rewrite | the repository's biome.jsonc |
 
 ## Baseline values
 
 | Sub-measure | Fork | Fork raw | All | All raw |
 | --- | --- | --- | --- | --- |
-| types | 95.3 | files 64, dirty 3, findings 6 | 99.9 | files 4371, dirty 4, findings 7 |
-| lint | 91.5 | files 118, dirty 10, findings 42 | 99.6 | files 4375, dirty 19, findings 73 |
-| tests | 100.0 | passed 880, failed 0, skipped 19 | 100.0 | passed 29468, failed 12, skipped 1328 |
-| lineCoverage | 99.7 | covered 2373, total 2380 | 81.5 | covered 95195, total 116827 |
-| branchCoverage | 96.9 | covered 1202, total 1241 | 76.5 | covered 82835, total 108275 |
+| types | 100.0 | files 175, dirty 0, findings 0 | 100.0 | files 4484, dirty 1, findings 1 |
+| lint | 96.1 | files 232, dirty 9, findings 41 | 99.6 | files 4489, dirty 18, findings 72 |
+| tests | 100.0 | passed 1399, failed 0, skipped 19 | 100.0 | passed 29986, failed 13, skipped 1328 |
+| lineCoverage | 99.8 | covered 4243, total 4251 | 81.8 | covered 97089, total 118698 |
+| branchCoverage | 97.4 | covered 2396, total 2459 | 76.8 | covered 84081, total 109493 |
 | security | 25.0 | info 0, low 4, moderate 9, high 11, critical 0, rating D | 25.0 | info 0, low 4, moderate 9, high 11, critical 0, rating D |
-| shell | 56.3 | files 16, dirty 7, findings 36 | 67.7 | files 65, dirty 21, findings 70 |
-| checks | 96.8 | passed 92, failed 3, skipped 0 | 96.8 | passed 92, failed 3, skipped 0 |
-| complexity | 98.7 | functions 842, over 11, max 41 | 97.8 | functions 33212, over 722, max 348 |
-| functionLength | 97.5 | functions 842, over 21, max 409 | 94.7 | functions 33212, over 1746, max 1347 |
-| fileLength | 90.9 | files 66, dirty 6, findings 2737 | 80.7 | files 2386, dirty 460, findings 276426 |
-| duplication | 100.0 | lines 9004, duplicated 53, percent 0.59, rating A | 100.0 | lines 466992, duplicated 7332, percent 1.57, rating A |
-| deadCode | 51.5 | files 66, dirty 32, findings 52 | 88.9 | files 2386, dirty 266, findings 386 |
-| format | 85.6 | files 118, dirty 17, findings 22 | 99.6 | files 4375, dirty 17, findings 22 |
+| shell | 100.0 | files 17, dirty 0, findings 0 | 78.8 | files 66, dirty 14, findings 34 |
+| checks | 94.7 | passed 90, failed 5, skipped 0 | 94.7 | passed 90, failed 5, skipped 0 |
+| complexity | 98.9 | functions 1345, over 15, max 51 | 97.8 | functions 33715, over 726, max 348 |
+| functionLength | 97.0 | functions 1345, over 40, max 459 | 94.8 | functions 33715, over 1765, max 1347 |
+| fileLength | 91.9 | files 124, dirty 10, findings 4849 | 81.0 | files 2444, dirty 464, findings 278538 |
+| duplication | 100.0 | lines 15734, duplicated 245, percent 1.56, rating A | 100.0 | lines 473722, duplicated 7553, percent 1.59, rating A |
+| deadCode | 100.0 | files 124, dirty 0, findings 0 | 90.5 | files 2444, dirty 233, findings 330 |
+| format | 100.0 | files 232, dirty 0, findings 0 | 100.0 | files 4489, dirty 0, findings 0 |
 
 Cognitive complexity per function (functions in each bucket):
 
 | Set | 0 | 1-5 | 6-10 | 11-15 | 16-25 | >25 |
 | --- | --- | --- | --- | --- | --- | --- |
-| fork | 569 | 234 | 20 | 8 | 4 | 7 |
-| all | 18623 | 11766 | 1550 | 551 | 395 | 327 |
+| fork | 880 | 398 | 44 | 8 | 7 | 8 |
+| all | 18934 | 11930 | 1574 | 551 | 398 | 328 |
 
-Tracked, not scored: web startup bundle 865.5 kB of its 900 kB budget (scripts/checks/bundle-size.mjs).
+Tracked, not scored: web startup bundle 871.6 kB of its 900 kB budget (scripts/checks/bundle-size.mjs).
 
 ## Fork sub-measures under 90: the five jobs worth the most
 
@@ -76,35 +76,11 @@ Points are the sub-measure's own gain from fixing that one item; its weight carr
 - brace-expansion (high): +5.0
 - joi (high): +5.0
 
-### shell (56.3)
-
-- dozo/docker/gate.sh (23): +6.3
-- dozo/e2e/run.sh (4): +6.3
-- dozo/docker/build.sh (3): +6.3
-- dozo/desktop/build.sh (2): +6.3
-- dozo/docker/lock.sh (2): +6.3
-
-### deadCode (51.5)
-
-- dozo/brand/lib.mjs (12): +1.5
-- dozo/e2e/fixtures.ts (5): +1.5
-- dozo/e2e/support.ts (4): +1.5
-- apps/api/src/dozo-admin.ts (2): +1.5
-- dozo/e2e/ui.ts (2): +1.5
-
-### format (85.6)
-
-- dozo/brand/apply.mjs (2): +0.8
-- dozo/brand/brand.apply.test.mjs (2): +0.8
-- dozo/brand/brand.config.test.mjs (2): +0.8
-- dozo/brand/brand.gate.test.mjs (2): +0.8
-- dozo/brand/check.mjs (2): +0.8
-
 ## Known limits
 
 - Upstream's tests run on the unbranded tree, the fork's dozo-* tests on the branded one (as `gate.sh unit`); a fork test's unbranded result is dropped.
 - Tests that need Postgres, a desktop or a network service skip themselves here as they do in upstream's unit job; they count as skipped.
 - Coverage of dozo/ scripts counts only the modules a dozo/ test loads (Node's coverage lists no others). Upstream's coverage counts every source file next to its tests, loaded or not.
 - tsc does not see dozo/e2e (Playwright compiles it); `make e2e` does.
-- knip runs without a configuration, so a dozo/ script started from a shell script or a Makefile (an entry point knip cannot see) is reported as an unused file; the fork's deadCode score takes knip's word and is understated by them. Check a deadCode job before acting on it.
+- knip runs on the unbranded tree. dozo/metrics/knip.config.mjs adds the entry points it cannot see: dozo/ scripts started from a shell script or an HTML page, and the files a brand rule requires (imported only in the branded tree). knip does not report the unused exports of an entry file, so those of a brand-required file are not counted.
 - `pnpm audit` and `pnpm checks` cover the whole repository: both sets get the same value.

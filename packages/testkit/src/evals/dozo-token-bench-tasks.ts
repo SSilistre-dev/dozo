@@ -2,7 +2,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { BenchTask } from "./dozo-token-bench.js";
 
 /** Synthetic filler with a stable length; each line is distinct so no two documents share text. */
-export function filler(label: string, lines: number) {
+function filler(label: string, lines: number) {
   return Array.from(
     { length: lines },
     (_, i) =>

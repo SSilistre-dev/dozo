@@ -108,6 +108,8 @@ verify() {
     -U postgres -d postgres /db.dump
 
   restored=$(counts docker exec "$name" psql -U postgres -d postgres)
+  # The quoted command is expanded by the database container's shell, with its own variables (SC2016).
+  # shellcheck disable=SC2016
   live=$(counts docker exec "$pg" sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh)
   local tables rows
   tables=$(printf '%s\n' "$restored" | wc -l)

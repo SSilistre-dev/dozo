@@ -11,7 +11,8 @@
 # written to ~/.cargo, ~/.rustup, a shell profile or Homebrew. Needs the Xcode command line tools.
 # Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
-trap 'rc=$?; [ $rc -eq 0 ] || [ $rc -eq 64 ] || exit 2' EXIT
+on_exit() { local rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 64 ] || exit 2; }
+trap on_exit EXIT
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
@@ -78,7 +79,8 @@ notarize() {
     --timeout 30m >target/notary.log 2>&1 || true
   grep -q 'status: Accepted' target/notary.log \
     || die "the notary service did not accept $(basename "$1") (target/notary.log)"
-  xcrun stapler staple -q "$1" && xcrun stapler validate -q "$1" || die "stapling $1 failed"
+  xcrun stapler staple -q "$1" || die "stapling $1 failed"
+  xcrun stapler validate -q "$1" || die "stapling $1 failed"
 }
 
 # What Gatekeeper answers for a downloaded copy. Only the verdict is printed, not the signer.

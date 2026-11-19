@@ -29,6 +29,8 @@ function organization(
     /** A plan an admin granted. */
     grant?: { tier: string; endsAt: Date } | null;
     files?: number[];
+    /** What an admin set on the plans page, as `dozo_plan_quotas` rows. */
+    quotas?: { tier: string; sharedSpaceMb: number | null; computerHours: number | null }[];
   } = {},
 ) {
   const state = {
@@ -36,6 +38,7 @@ function organization(
     billing: null as Billing,
     grant: null as { tier: string; endsAt: Date } | null,
     files: [] as number[],
+    quotas: [] as { tier: string; sharedSpaceMb: number | null; computerHours: number | null }[],
     ...init,
   };
   const queries: string[] = [];
@@ -52,6 +55,7 @@ function organization(
             }
           : null,
     },
+    dozoPlanQuota: { findMany: async () => state.quotas },
     $queryRaw: async (query: TemplateStringsArray | Prisma.Sql) => {
       queries.push("sql" in query ? query.sql : query.join("?"));
       return [{ used: String(state.files.reduce((sum, size) => sum + size, 0)) }];
@@ -180,6 +184,41 @@ describe("shared space", () => {
     });
   });
 
+  describe("a quota an admin set on the plans page", () => {
+    const free = (sharedSpaceMb: number | null) => [
+      { tier: "standard", sharedSpaceMb, computerHours: null },
+    ];
+
+    it("replaces the plan's shared space, and only that plan's", async () => {
+      const raised = organization({ files: [500 * MB], quotas: free(600) });
+      await expect(raised.add(50 * MB)).resolves.toBe("kept");
+      await expect(raised.add(51 * MB)).rejects.toBeInstanceOf(SharedSpaceFullError);
+      const premium = organization({ billing: paid("pro"), files: [2 * GB], quotas: free(600) });
+      await expect(premium.add(1)).rejects.toBeInstanceOf(SharedSpaceFullError);
+    });
+
+    it("follows the plan's terms when it is cleared", async () => {
+      const { add } = organization({ files: [500 * MB - 1], quotas: free(null) });
+      await expect(add(1)).resolves.toBe("kept");
+      await expect(add(1)).rejects.toBeInstanceOf(SharedSpaceFullError);
+    });
+
+    it("deletes nothing when lowered below what the files take: only new files are refused", async () => {
+      const { state, add, tx } = organization({ files: [300 * MB, 100 * MB], quotas: free(200) });
+      await expect(add(1)).rejects.toBeInstanceOf(SharedSpaceFullError);
+      expect(state.files).toEqual([300 * MB, 100 * MB]);
+      expect(await sharedSpaceFull(tx as unknown as PrismaClient, "space-1")).toBeInstanceOf(
+        SharedSpaceFullError,
+      );
+      await expect(
+        sharedSpaceUsage(tx as unknown as PrismaClient, "org-1", null, null),
+      ).resolves.toEqual({ plan: "Free", usedBytes: 400 * MB, limitBytes: 200 * MB });
+      // Room made by deleting files is room again.
+      state.files = [100 * MB];
+      await expect(add(MB)).resolves.toBe("kept");
+    });
+  });
+
   it("knows a retried upload that had landed only by the caller's own word", () => {
     expect(isReplayedUpload({ row: {}, replay: true })).toBe(true);
     for (const other of [{ row: {}, replay: false }, { row: {} }, "kept", null, undefined])
@@ -204,7 +243,8 @@ describe("shared space", () => {
   });
 
   it("has no limit on a plan that names none, as upstream's do not", async () => {
-    const terms: { sharedSpaceBytes?: number } = BYOK_TIERS.standard;
+    // Read as planTerms reads it: upstream's tier type has no shared-space field.
+    const terms: { name: string; sharedSpaceBytes?: number } = BYOK_TIERS.standard;
     const { sharedSpaceBytes } = terms;
     delete terms.sharedSpaceBytes;
     try {

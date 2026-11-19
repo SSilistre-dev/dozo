@@ -30,6 +30,11 @@ export const DOZO_ADMIN_NAV: readonly DozoAdminSection[] = [
     ),
   },
   {
+    path: "plans",
+    label: msg`Plans`,
+    page: lazyComponent(() => import("./dozo-admin-plans").then((module) => module.DozoAdminPlans)),
+  },
+  {
     path: "billing",
     label: msg`Billing`,
     page: lazyComponent(() =>

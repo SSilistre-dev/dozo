@@ -1,3 +1,4 @@
+import { retry } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type Docker from "dockerode";
 import { COMPUTER_MEMORY_BUDGET_FULL } from "./dozo-memory-budget.js";
@@ -102,25 +103,29 @@ async function createInRange(
   // The network's own block counts as free: when it already exists Docker answers "already
   // exists", which the callers expect, even with every other subnet taken.
   const used = usedBlocks(await docker.listNetworks(), options.Name);
-  let refusal: unknown;
-  for (let attempt = 0; attempt < OVERLAP_TRIES; attempt++) {
-    const subnet = freeSubnet(range, used);
-    if (!subnet) {
-      getLogger().warn("computer network range is full", { variable: RANGE_ENV });
-      // The start is refused as "all computers are busy" (429), not as a fault.
-      throw new Error(COMPUTER_MEMORY_BUDGET_FULL);
-    }
-    try {
-      return await create(withSubnet(options, subnet));
-    } catch (error) {
+  let subnet = "";
+  return retry(
+    () => {
+      const free = freeSubnet(range, used);
+      if (!free) {
+        getLogger().warn("computer network range is full", { variable: RANGE_ENV });
+        // The start is refused as "all computers are busy" (429), not as a fault.
+        throw new Error(COMPUTER_MEMORY_BUDGET_FULL);
+      }
+      subnet = free;
+      return create(withSubnet(options, subnet));
+    },
+    {
+      attempts: OVERLAP_TRIES,
+      delayMs: 0,
       // Something outside this process took the subnet between the list and the create.
-      if (!/overlap/i.test(String(error))) throw error;
-      refusal = error;
-      const taken = parseBlock(subnet);
-      if (taken) used.push(taken);
-    }
-  }
-  throw refusal;
+      retryable: (error) => /overlap/i.test(String(error)),
+      onRetry: () => {
+        const taken = parseBlock(subnet);
+        if (taken) used.push(taken);
+      },
+    },
+  );
 }
 
 /**
