@@ -11,7 +11,7 @@ import {
   runTokenBench,
   tokensOf,
 } from "./dozo-token-bench.js";
-import { TOKEN_BENCH_TASKS } from "./dozo-token-bench-tasks.js";
+import { FORM_FILL_TASKS, TOKEN_BENCH_TASKS } from "./dozo-token-bench-tasks.js";
 
 const body = (text: string, extra: WireBody["messages"] = []): WireBody => ({
   tools: [{ type: "function", function: { name: "t" } }],
@@ -149,6 +149,27 @@ describe("token benchmark", () => {
     );
     const history = TOKEN_BENCH_TASKS.find((t) => t.kind === "long-history");
     expect(history?.history?.length).toBeGreaterThanOrEqual(60);
+  });
+
+  it("fills one form three ways, the two skill runs making the same calls", async () => {
+    const [none, old, current] = FORM_FILL_TASKS as [BenchTask, BenchTask, BenchTask];
+    expect(old.turns[0]?.replies).toEqual(current.turns[0]?.replies);
+    expect(none.records).toBeUndefined();
+    expect(old.records).toEqual(current.records);
+    // Old steps carry coordinates and the typed text; new ones inputs and what each click hit.
+    expect(old.turns[0]?.prompt).toContain('Type "Ada Lovelace".');
+    expect(old.turns[0]?.prompt).toContain("Click left button at (208, 206).");
+    const prompt = current.turns[0]!.prompt;
+    expect(prompt).toContain('Click "Full name field" in "Contact – Chromium" (near 208, 206).');
+    expect(prompt).toContain("Type {{full_name}}.");
+    expect(prompt).toContain('- full_name: "Ada Lovelace"');
+    expect(prompt).not.toContain('Type "Ada Lovelace".');
+    const [a, b, c] = await Promise.all(FORM_FILL_TASKS.map((task) => runBenchTask(task)));
+    expect(a!.modelCalls).toBe(9);
+    expect(b!.modelCalls).toBe(5);
+    expect(c!.modelCalls).toBe(5);
+    // A tool result that is not the page would show as an error here, not as the fixed page.
+    expect(b!.components.toolResults).toBe(c!.components.toolResults);
   });
 
   it("gives the same numbers on a second run", async () => {

@@ -1,4 +1,12 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { SkillPlaybook, TeachRecordingEvent } from "@rakazo/core";
+import {
+  applyValueDecisions,
+  buildPlaybookFromRecording,
+  formatSkillRunPrompt,
+  typedValuesFromRecording,
+  withClickTargets,
+} from "@rakazo/core";
 import type { BenchTask } from "./dozo-token-bench.js";
 
 /** Synthetic filler with a stable length; each line is distinct so no two documents share text. */
@@ -78,6 +86,165 @@ const recallTurns = (count: number, recalled: boolean) =>
       : {}),
     replies: [{ text: `Topic ${i + 1} ships after review.` }],
   }));
+
+/*
+ * One form fill on one fixed fake page, three ways: no skill, a skill in the format taught skills
+ * were saved in before (coordinates, the typed text written in), and the new format (inputs the
+ * run is given, each click named with its window). The model is scripted, so these show what each
+ * prompt costs to send, not whether better steps would need fewer retries or calls. (b) and (c)
+ * script exactly the same calls, so their difference is the prompt alone; (a) explores the page
+ * a step at a time, as a model with nothing to follow does.
+ */
+const FORM_URL = "https://form.example.test/contact";
+const FORM_GOAL = "Fill in the contact form";
+const FORM_SKILL = "Fill contact form";
+const FORM_WINDOW = "Contact – Chromium";
+const FORM_VALUES = { full_name: "Ada Lovelace", email: "ada@example.test" };
+
+/** The page as the browser tools describe it: a fixed accessibility snapshot. */
+const FORM_SNAPSHOT = [
+  `url: ${FORM_URL}`,
+  "title: Contact us",
+  "- banner:",
+  '  - link "Home" [ref=e1]',
+  '  - link "Pricing" [ref=e2]',
+  "- main:",
+  '  - heading "Contact us" [level=1]',
+  "  - paragraph: Tell us what you need and we will answer within two working days.",
+  "  - form:",
+  '    - textbox "Full name" [ref=e3]',
+  '    - textbox "Email" [ref=e4]',
+  '    - button "Send message" [ref=e5]',
+  "- contentinfo:",
+  "  - paragraph: Example Company, 1 Example Street",
+  '  - link "Privacy" [ref=e6]',
+  '  - link "Terms" [ref=e7]',
+].join("\n");
+
+const formResult = (name: string, args: Record<string, unknown>) =>
+  name === "browser_act"
+    ? { ok: true, url: FORM_URL, actions: (args.actions as unknown[]).length }
+    : { url: FORM_URL, title: "Contact us", snapshot: FORM_SNAPSHOT };
+
+const typing = (text: string): TeachRecordingEvent[] =>
+  [...text].map((key) => ({ at: "2026-01-01T00:00:00.000Z", kind: "key", key }));
+const click = (x: number, y: number): TeachRecordingEvent => ({
+  at: "2026-01-01T00:00:00.000Z",
+  kind: "pointer",
+  x,
+  y,
+  button: "left",
+  type: "click",
+});
+
+/** What the teacher did: the name field, the email field, then Send (5 steps). */
+const formRecording = [
+  click(208, 206),
+  ...typing(FORM_VALUES.full_name),
+  click(208, 262),
+  ...typing(FORM_VALUES.email),
+  click(330, 340),
+];
+const formClicks = formRecording.flatMap((event, eventIndex) =>
+  event.kind === "pointer" ? [eventIndex] : [],
+);
+
+const formSkillRecord = {
+  id: "skill-contact",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  name: FORM_SKILL,
+};
+
+/** Skills saved before: coordinates, and what was typed written into the step. */
+const oldFormPlaybook: SkillPlaybook = {
+  ...buildPlaybookFromRecording(FORM_GOAL, formRecording),
+  inputs: [FORM_GOAL],
+  steps: [
+    "Click left button at (208, 206).",
+    `Type ${JSON.stringify(FORM_VALUES.full_name)}.`,
+    "Click left button at (208, 262).",
+    `Type ${JSON.stringify(FORM_VALUES.email)}.`,
+    "Click left button at (330, 340).",
+  ],
+};
+
+/** Skills saved now: inputs the run is given, and what each click hit. */
+const newFormPlaybook: SkillPlaybook = withClickTargets(
+  applyValueDecisions(
+    buildPlaybookFromRecording(FORM_GOAL, formRecording),
+    typedValuesFromRecording(formRecording),
+    {
+      "{{value 1}}": { action: "variable", name: "full_name" },
+      "{{value 2}}": { action: "variable", name: "email" },
+    },
+  ),
+  formRecording,
+  [
+    { eventIndex: formClicks[0]!, window: FORM_WINDOW, label: "Full name field" },
+    { eventIndex: formClicks[1]!, window: FORM_WINDOW, label: "Email field" },
+    { eventIndex: formClicks[2]!, window: FORM_WINDOW, label: "Send message button" },
+  ],
+);
+
+const fillAction = (ref: string, text: string) => [
+  { kind: "click", ref },
+  { kind: "fill", ref, text },
+];
+
+/** Opening the page and reading it, then what a skill run does: all the actions in one call. */
+const formSkillReplies: BenchTask["turns"][number]["replies"] = [
+  { tool: "browser_navigate", args: { url: FORM_URL } },
+  { tool: "browser_snapshot", args: {} },
+  {
+    tool: "browser_act",
+    args: {
+      actions: [
+        ...fillAction("e3", FORM_VALUES.full_name),
+        ...fillAction("e4", FORM_VALUES.email),
+        { kind: "click", ref: "e5" },
+      ],
+    },
+  },
+  { tool: "browser_snapshot", args: {} },
+  { text: "The contact form is filled in and sent." },
+];
+
+const formTask = (id: string, prompt: string, replies: typeof formSkillReplies): BenchTask => ({
+  id,
+  kind: "multi-page",
+  ...(id === "form-fill-no-skill" ? {} : { records: [formSkillRecord] }),
+  turns: [{ prompt, replies }],
+  toolResult: formResult,
+});
+
+/** Exported for the test that holds (b) and (c) to the same calls. */
+export const FORM_FILL_TASKS: readonly BenchTask[] = [
+  formTask(
+    "form-fill-no-skill",
+    `Fill in the contact form at ${FORM_URL} with the name ${FORM_VALUES.full_name} and the email ${FORM_VALUES.email}, then send it.`,
+    [
+      { tool: "browser_navigate", args: { url: FORM_URL } },
+      { tool: "browser_snapshot", args: {} },
+      { tool: "browser_act", args: { actions: fillAction("e3", FORM_VALUES.full_name) } },
+      { tool: "browser_snapshot", args: {} },
+      { tool: "browser_act", args: { actions: fillAction("e4", FORM_VALUES.email) } },
+      { tool: "browser_snapshot", args: {} },
+      { tool: "browser_act", args: { actions: [{ kind: "click", ref: "e5" }] } },
+      { tool: "browser_snapshot", args: {} },
+      { text: "The contact form is filled in and sent." },
+    ],
+  ),
+  formTask("form-fill-old-skill", formSkillRunPrompt(oldFormPlaybook), formSkillReplies),
+  formTask(
+    "form-fill-new-skill",
+    formSkillRunPrompt(newFormPlaybook, FORM_VALUES),
+    formSkillReplies,
+  ),
+];
+
+function formSkillRunPrompt(playbook: SkillPlaybook, values?: Record<string, string>) {
+  return formatSkillRunPrompt(FORM_SKILL, playbook, false, values);
+}
 
 /** The fixed task set. Changing it changes the baseline: bump BENCH_VERSION with it. */
 export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
@@ -226,4 +393,5 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     ],
     toolResult: (_name, args) => page(String(args.url), 50),
   },
+  ...FORM_FILL_TASKS,
 ];
