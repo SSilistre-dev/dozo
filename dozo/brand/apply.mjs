@@ -23,8 +23,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   BINARY_EXT,
-  DEFAULT_CONFIG,
   countText,
+  DEFAULT_CONFIG,
   deadShapes,
   entryApplies,
   expectedCount,
@@ -43,11 +43,14 @@ import {
 
 guard();
 const args = parseArgs(process.argv.slice(2), ["check", "allow-git", "strict"]);
-if (!args.root) fail("usage: apply.mjs --root <dir> [--check] [--allow-git] [--strict] [--config <file>]");
+if (!args.root)
+  fail("usage: apply.mjs --root <dir> [--check] [--allow-git] [--strict] [--config <file>]");
 const root = path.resolve(args.root);
 if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail(`${root} is not a directory`);
 if (fs.existsSync(path.join(root, ".git")) && !args["allow-git"]) {
-  fail(`${root} contains .git: refusing to brand a real working tree (use --allow-git to override)`);
+  fail(
+    `${root} contains .git: refusing to brand a real working tree (use --allow-git to override)`,
+  );
 }
 
 const configFile = path.resolve(args.config ?? DEFAULT_CONFIG);
@@ -60,7 +63,8 @@ let anchoredApplied = 0;
 let anchoredAlready = 0;
 
 const anchoredByFile = new Map();
-for (const rule of config.anchored) anchoredByFile.set(rule.file, [...(anchoredByFile.get(rule.file) ?? []), rule]);
+for (const rule of config.anchored)
+  anchoredByFile.set(rule.file, [...(anchoredByFile.get(rule.file) ?? []), rule]);
 
 const assets = [];
 const assetsDir = path.join(config.dir, "assets");
@@ -82,14 +86,19 @@ const links = [];
 const files = listFiles(root, links);
 const fileSet = new Set(files);
 for (const file of anchoredByFile.keys()) {
-  if (links.includes(file)) errors.push(`anchored rule: ${file} is a symlink (symlinks are never rewritten); point the rule at the real file`);
+  if (links.includes(file))
+    errors.push(
+      `anchored rule: ${file} is a symlink (symlinks are never rewritten); point the rule at the real file`,
+    );
   else if (!fileSet.has(file)) errors.push(`anchored rule: ${file} does not exist`);
 }
 // A rule that redirects to a fork file lists it in `requires`: never ship a dangling import.
 for (const rule of config.anchored) {
   for (const need of rule.requires ?? []) {
     if (!fileSet.has(need)) {
-      errors.push(`anchored rule (${rule.reason}): dangling redirect, ${need} does not exist in the tree`);
+      errors.push(
+        `anchored rule (${rule.reason}): dangling redirect, ${need} does not exist in the tree`,
+      );
     }
   }
 }
@@ -102,7 +111,10 @@ for (const rel of files) {
   const read = readFile(root, rel);
   if (read.binary) {
     if (rules.length) errors.push(`anchored rule: ${rel} is binary`);
-    else if (!BINARY_EXT.test(rel)) errors.push(`${rel}: binary content (NUL byte) in a file type that is not a known binary: UTF-16 text? it cannot be branded; convert it or exclude it`);
+    else if (!BINARY_EXT.test(rel))
+      errors.push(
+        `${rel}: binary content (NUL byte) in a file type that is not a known binary: UTF-16 text? it cannot be branded; convert it or exclude it`,
+      );
     continue;
   }
   const original = read.text;
@@ -120,7 +132,11 @@ for (const rel of files) {
       }
       anchoredAlready++;
     } else {
-      const crlf = hits === 0 && rule.find.includes("\n") && !rule.find.includes("\r\n") && text.includes("\r\n");
+      const crlf =
+        hits === 0 &&
+        rule.find.includes("\n") &&
+        !rule.find.includes("\r\n") &&
+        text.includes("\r\n");
       errors.push(
         `anchored rule (${rule.reason}): ${rel} has ${hits} matches of ${JSON.stringify(rule.find)}, need exactly 1${hits === 0 ? " (replace is not there either)" : ""}${crlf ? "; the file uses CRLF line endings and find has \\n: write the line breaks as \\r\\n" : ""}`,
       );
@@ -130,33 +146,54 @@ for (const rel of files) {
     scanned++;
     text = rewrite(text, config, counts, rel);
     finalText.set(rel, text);
-    for (const hit of placeholderHits(config, text)) errors.push(`${rel}:${hit} is a placeholder and would ship (point it at a real address or remove it)`);
+    for (const hit of placeholderHits(config, text))
+      errors.push(
+        `${rel}:${hit} is a placeholder and would ship (point it at a real address or remove it)`,
+      );
   }
   if (text !== original) planned.set(rel, text);
 }
-if (scanned === 0) errors.push("no file is in scope (check `include`, `exclude` and --root): nothing was branded");
+if (scanned === 0)
+  errors.push("no file is in scope (check `include`, `exclude` and --root): nothing was branded");
 
-const dead = (kind, name) => errors.push(`dead ${kind} entry (matches nothing in the tree, delete it): ${name}`);
+const dead = (kind, name) =>
+  errors.push(`dead ${kind} entry (matches nothing in the tree, delete it): ${name}`);
 // The shape table is the shipped brand's own: only the shipped config is held to it, and whatever else fails.
 if (args.strict && configFile === DEFAULT_CONFIG) {
-  for (const { shape, stem } of deadShapes(finalText.values())) dead(stem === undefined ? "shapes" : "shapes.stems", stem === undefined ? shape : `${shape}: ${stem}`);
+  for (const { shape, stem } of deadShapes(finalText.values()))
+    dead(
+      stem === undefined ? "shapes" : "shapes.stems",
+      stem === undefined ? shape : `${shape}: ${stem}`,
+    );
 }
 
 if (args.strict && errors.length === 0) {
   for (const key of Object.keys(config.urls)) if (!counts[`url ${key}`]) dead("urls", key);
-  for (const key of Object.keys(config.variants)) if (!counts[`variant ${key}`]) dead("variants", key);
-  for (const literal of config.literals) if (!counts[`literal ${literal.find}`]) dead("literals", literal.find);
+  for (const key of Object.keys(config.variants))
+    if (!counts[`variant ${key}`]) dead("variants", key);
+  for (const literal of config.literals)
+    if (!counts[`literal ${literal.find}`]) dead("literals", literal.find);
   const found = (entry, test) =>
     [...finalText].some(([rel, text]) => test(rel) && phraseRe(entry.text).test(text));
-  for (const entry of config.keep) if (!found(entry, (rel) => entryApplies(entry, rel))) dead("keep", entry.text);
-  for (const entry of config.allow.phrases) if (!found(entry, (rel) => entryApplies(entry, rel))) dead("allow.phrases", entry.text);
+  for (const entry of config.keep)
+    if (!found(entry, (rel) => entryApplies(entry, rel))) dead("keep", entry.text);
+  for (const entry of config.allow.phrases)
+    if (!found(entry, (rel) => entryApplies(entry, rel))) dead("allow.phrases", entry.text);
   for (const entry of config.allow.text) {
     const n = countText(entry, finalText.get(entry.file) ?? "");
     if (n === 0) dead("allow.text", `${entry.file}: ${entry.text}`);
-    else if (n !== expectedCount(entry)) errors.push(`allow.text ${entry.file}: ${entry.text} occurs ${n} times, expected ${expectedCount(entry)} (review the new occurrence, then set count)`);
+    else if (n !== expectedCount(entry))
+      errors.push(
+        `allow.text ${entry.file}: ${entry.text} occurs ${n} times, expected ${expectedCount(entry)} (review the new occurrence, then set count)`,
+      );
   }
-  const paths = new Set(files.flatMap((rel) => rel.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"))));
-  for (const [name, list, res] of [["allow.paths", config.allow.paths, config.allowPathsRe], ["allow.binary", config.allow.binary, config.allowBinaryRe]]) {
+  const paths = new Set(
+    files.flatMap((rel) => rel.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"))),
+  );
+  for (const [name, list, res] of [
+    ["allow.paths", config.allow.paths, config.allowPathsRe],
+    ["allow.binary", config.allow.binary, config.allowBinaryRe],
+  ]) {
     list.forEach((entry, i) => {
       if (![...paths].some((p) => res[i].test(p))) dead(name, entry.glob);
     });

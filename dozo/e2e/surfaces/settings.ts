@@ -1,4 +1,3 @@
-import type { Page } from "@playwright/test";
 import type { Ctx, Surface } from "../fixtures";
 import { expect } from "../fixtures";
 import type { SettingsId } from "../ui";
@@ -111,15 +110,11 @@ export const settings: Surface[] = SETTINGS.map((id) => ({
     await expect(ctx.page.getByTestId("user-settings")).toBeVisible();
     await ctx.scan("page");
     const panel = ctx.page.getByTestId("user-settings");
-    await expandAll(ctx.page, panel);
+    await expandAll(panel);
     await openEachPopup(ctx.page, panel, ctx.scan, "dropdown");
     await extras[id]?.(ctx);
   },
 }));
-
-export function settingsPage(page: Page) {
-  return page.getByTestId("user-settings");
-}
 
 /** Sections the deployment hides unless it reports a flag; the flags are faked in the browser to read their copy. */
 export const hiddenSections: Surface = {

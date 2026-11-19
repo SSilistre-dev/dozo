@@ -71,7 +71,7 @@ export const bots: Surface[] = [
       await openBot(page, world.chiefId, "Chief");
       await openBotSettings(page);
       await scan("settings open");
-      await expandAll(page, page.getByTestId("bot-settings"));
+      await expandAll(page.getByTestId("bot-settings"));
     },
   },
   {

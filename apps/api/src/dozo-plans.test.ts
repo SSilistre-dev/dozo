@@ -1,6 +1,6 @@
 import type { BillingSubscriptionSnapshot, SandboxProvider } from "@rakazo/adapter-kit";
 import { BillingEmulator, sandboxAllowanceUsedUp } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, ByokTier } from "@rakazo/contracts";
 import { BYOK_TIERS, byokTierPriceCents, sandboxAllowanceHours } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
@@ -12,6 +12,12 @@ import { PlanNotOfferedError } from "./dozo-billing.js";
 import { createReferrals } from "./referrals.js";
 
 // Runs on the branded tree only: the plans exist once the brand rules are applied.
+
+/** A tier's shared-space limit, read as the server reads it: upstream's tier type has no such field. */
+function sharedSpaceBytes(tier: ByokTier) {
+  const terms: { name: string; sharedSpaceBytes?: number } = BYOK_TIERS[tier];
+  return terms.sharedSpaceBytes;
+}
 
 type Account = {
   organizationId: string;
@@ -33,6 +39,8 @@ const store = vi.hoisted(() => ({
   trialHolds: 0,
   grant: null as { tier: string; endsAt: Date } | null,
   fileBytes: 0,
+  /** What an admin set on the plans page, as `dozo_plan_quotas` rows. */
+  quotas: [] as { tier: string; sharedSpaceMb: number | null; computerHours: number | null }[],
 }));
 
 // The database helpers have upstream's own PostgreSQL tests; here one organization lives in memory.
@@ -135,6 +143,7 @@ const prisma = {
     aggregate: async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } }),
   },
   referral: { findUnique: async () => null },
+  dozoPlanQuota: { findMany: async () => store.quotas },
   member: { count: async () => 1 },
   // Two questions reach the database raw: the bytes of the organization's files, and its
   // computer hours.
@@ -184,6 +193,7 @@ beforeEach(() => {
   store.trialHolds = 0;
   store.grant = null;
   store.fileBytes = 0;
+  store.quotas = [];
   runs.length = 0;
 });
 
@@ -397,6 +407,25 @@ describe("a Premium subscriber", () => {
     });
   });
 
+  it("moves down only when this month's use fits the hours an admin set for the smaller plan", async () => {
+    const context = setup();
+    await subscribe(context, "max");
+    runs.push({ kind: "docker", hours: 50 });
+    // Premium's hours lowered below what was used: refused, whatever the plan's terms say.
+    store.quotas = [{ tier: "pro", sharedSpaceMb: null, computerHours: 10 }];
+    expect(sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents)).toBeGreaterThan(50);
+    await expect(context.billing.changeTier(actor, "pro")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    // Premium's hours raised above Premium Plus's: not a smaller plan, so no use to fit.
+    runs.length = 0;
+    runs.push({ kind: "docker", hours: 250 });
+    store.quotas = [{ tier: "pro", sharedSpaceMb: null, computerHours: 300 }];
+    expect(sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents)).toBeLessThan(250);
+    await context.billing.changeTier(actor, "pro");
+    await expect(context.billing.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
+  });
+
   it("falls back to Free when the subscription ends: bots run, the computer does not", async () => {
     const context = setup();
     await subscribe(context);
@@ -451,14 +480,14 @@ describe("a plan an admin granted", () => {
     store.grant = grant("pro", 30);
     const { billing } = setup();
     await expect(billing.status(actor)).resolves.toMatchObject({
-      sharedSpace: { plan: "Premium", usedBytes: GB, limitBytes: BYOK_TIERS.pro.sharedSpaceBytes },
+      sharedSpace: { plan: "Premium", usedBytes: GB, limitBytes: sharedSpaceBytes("pro") },
     });
     store.grant = grant("max", 30);
     await expect(billing.status(actor)).resolves.toMatchObject({
       sharedSpace: {
         plan: "Premium Plus",
         usedBytes: GB,
-        limitBytes: BYOK_TIERS.max.sharedSpaceBytes,
+        limitBytes: sharedSpaceBytes("max"),
       },
     });
     store.grant = grant("max", -1);
@@ -466,7 +495,7 @@ describe("a plan an admin granted", () => {
       sharedSpace: {
         plan: "Free",
         usedBytes: GB,
-        limitBytes: BYOK_TIERS.standard.sharedSpaceBytes,
+        limitBytes: sharedSpaceBytes("standard"),
       },
     });
   });

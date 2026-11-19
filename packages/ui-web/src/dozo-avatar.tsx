@@ -11,7 +11,6 @@ import { createElement, Fragment, memo, useEffect, useRef } from "react";
 import { cn } from "./lib/utils.js";
 import "./dozo-avatar.css";
 
-export type { DozoCharacter };
 export { DOZO_CHARACTERS, dozoCharacterForSeed };
 export type DozoAvatarState = "working" | "waiting" | "idle";
 

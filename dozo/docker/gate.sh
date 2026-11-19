@@ -6,11 +6,12 @@
 # `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
 # `qa` runs olc, stage, brand, unit, build, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail
+# shellcheck source=SCRIPTDIR/lock.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lock.sh"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SELF")/../.." && pwd)"
 PWD0="$PWD"
-cd "$ROOT"
+cd "$ROOT" || exit 2
 NODE_IMAGE="${DOZO_NODE_IMAGE:-node:24.22-slim}"
 STAGE="${DOZO_STAGE_DIR:-$ROOT/dozo/.stage}"
 # Docker reads a relative -v source as a named volume: make it absolute once (against the caller's
@@ -52,8 +53,9 @@ now() { date +%s; }
 RUN_ID="gate-$$"
 drun() { local kind="$1"; shift; docker run --init --rm --name "dozo-$kind-$$" --label "dozo.run=$RUN_ID" "$@"; }
 rm_run_containers() {
-  local ids; ids=$(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null) || return 0
-  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
+  local ids f
+  ids=(); while IFS= read -r f; do ids+=("$f"); done < <(docker ps -aq --filter "label=dozo.run=$RUN_ID" 2>/dev/null)
+  [ "${#ids[@]}" -eq 0 ] || docker rm -f "${ids[@]}" >/dev/null 2>&1 || true
 }
 # Wait until $1 is gone, however many trapped signals cut a `wait` short; the exit status is in
 # WAIT_RC. A second Ctrl-C during cleanup must not leave the child running while we report failure.
@@ -128,7 +130,9 @@ upstream_edits() {
   [ -n "$base" ] || { echo "usage: $0 upstream-edits <base-commit> [tree-ish]" >&2; return 64; }
   bad=$(git diff --name-only --no-renames --diff-filter=MDT "$base" ${tree:+"$tree"} -- . ':!dozo' ':!Makefile') || return 2
   gone=$(git diff --name-only --no-renames --diff-filter=DT "$base" ${tree:+"$tree"} -- "${OWNED_FILES[@]}") || return 2
-  bad=$(printf '%s\n' "$bad" | grep -vxF -e "$README_FILE" $(printf -- '-e %s ' "${OWNED_FILES[@]}") || true)
+  local keep=(-e "$README_FILE") f
+  for f in "${OWNED_FILES[@]}"; do keep+=(-e "$f"); done
+  bad=$(printf '%s\n' "$bad" | grep -vxF "${keep[@]}" || true)
   [ -z "$gone" ] || bad=$(printf '%s\n%s' "$bad" "$(printf '%s\n' "$gone" | sed 's/$/ (owned issue form deleted or retyped)/')")
   # The stage drops the root Makefile as the fork's own: one in upstream would be shadowed unnoticed.
   ! git cat-file -e "$base:Makefile" 2>/dev/null || bad=$(printf '%s\nMakefile (upstream has a root Makefile: the fork'"'"'s shadows it and the stage deletes it)' "$bad")
@@ -145,9 +149,9 @@ owned_naming_upstream() {
 
 # Each shell script is syntax-checked by its own interpreter (a #!/bin/sh script is not bash).
 syntax_check() { # $1 = script
-  local sh=bash
-  case "$(head -n 1 "$1")" in '#!/bin/sh'*|'#!/usr/bin/env sh'*) sh=sh ;; esac
-  "$sh" -n "$1" && echo "[olc] $sh -n $1 ok" || fail "syntax $1"
+  local sh="bash"
+  case "$(head -n 1 "$1")" in '#!/bin/sh'*|'#!/usr/bin/env sh'*) sh="sh" ;; esac
+  if "$sh" -n "$1"; then echo "[olc] $sh -n $1 ok"; else fail "syntax $1"; fi
 }
 
 olc() {
@@ -162,8 +166,9 @@ olc() {
   mjs=(); while IFS= read -r f; do mjs+=("$f"); done < <(find dozo \( -path dozo/.stage -o -name node_modules -o -path dozo/desktop/.toolchain -o -path dozo/desktop/target -o -path dozo/mobile/.toolchain -o -path dozo/mobile/.build \) -prune -o -type f -name '*.mjs' -print 2>/dev/null)
   if [ "${#mjs[@]}" -eq 0 ]; then fail "no .mjs files under dozo/: nothing to check with node"
   elif node_image; then
-    drun node-check -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'for f in "$@"; do node --check "$f" || exit 1; done' _ "${mjs[@]}" \
-      && echo "[olc] node --check ${#mjs[@]} files ok" || fail "node --check"
+    if printf '%s\0' "${mjs[@]}" | drun node-check -i -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" xargs -0 -n 1 node --check; then
+      echo "[olc] node --check ${#mjs[@]} files ok"
+    else fail "node --check"; fi
     tests=$(find dozo/brand -type f -name '*.test.*' -print -quit 2>/dev/null)  # captured: `find | grep -q` can SIGPIPE under pipefail
     if [ -n "$tests" ]; then
       # Quiet on success; on failure the whole output is the reason. Node's thresholds are global, so
@@ -171,15 +176,14 @@ olc() {
       # imports (it never appears in the table), fail even when the totals are fine. The test files
       # are split by topic (Node runs one process per file); `*.test-support.mjs` holds their shared
       # fixtures and is neither a pinned module nor in the coverage report.
-      brand_src=$(find dozo/brand -maxdepth 1 -type f -name '*.mjs' ! -name '*.test.mjs' ! -name '*.test-support.mjs' -exec basename {} \; | sort | tr '\n' ' ')
+      brand_src=(); while IFS= read -r f; do brand_src+=("$f"); done < <(find dozo/brand -maxdepth 1 -type f -name '*.mjs' ! -name '*.test.mjs' ! -name '*.test-support.mjs' -exec basename {} \; | sort)
       out=$(drun brand-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test --experimental-test-coverage \
         --test-coverage-exclude='dozo/brand/*.test-support.mjs' \
         --test-coverage-lines="$BRAND_COV_MIN" --test-coverage-branches="$BRAND_COV_MIN" --test-coverage-functions="$BRAND_COV_MIN" 'dozo/brand/*.test.mjs' 2>&1); rc=$?
       report=$(printf '%s\n' "$out" | sed -n '/start of coverage report/,/end of coverage report/p')
       low=$(printf '%s\n' "$report" | coverage_misses "$BRAND_COV_MIN")
-      # shellcheck disable=SC2086
-      missing=$(printf '%s\n' "$report" | coverage_unlisted $brand_src)
-      if [ "$rc" -eq 0 ] && [ -z "$low" ] && [ -z "$missing" ]; then echo "[olc] brand unit tests ok, coverage >= $BRAND_COV_MIN% in every file ($(echo $brand_src | wc -w | tr -d ' ') modules)"
+      missing=$(printf '%s\n' "$report" | coverage_unlisted "${brand_src[@]}")
+      if [ "$rc" -eq 0 ] && [ -z "$low" ] && [ -z "$missing" ]; then echo "[olc] brand unit tests ok, coverage >= $BRAND_COV_MIN% in every file (${#brand_src[@]} modules)"
       else
         printf '%s\n' "$out"
         [ -z "$low" ] || printf '%s\n' "$low" | sed 's/^/[olc] below floor: /'
@@ -191,36 +195,38 @@ olc() {
     # verdict): Node's own test runner on every dozo/e2e/*.test.mjs, about a second.
     if [ -f dozo/e2e/model-stub.test.mjs ]; then
       e2e_tests=(dozo/e2e/*.test.mjs)
-      out=$(drun e2e-helper-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test "${e2e_tests[@]}" 2>&1) \
-        && echo "[olc] e2e helper tests ok (${#e2e_tests[@]} files)" || { printf '%s\n' "$out"; fail "e2e helper tests"; }
+      if out=$(drun e2e-helper-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test "${e2e_tests[@]}" 2>&1); then
+        echo "[olc] e2e helper tests ok (${#e2e_tests[@]} files)"
+      else printf '%s\n' "$out"; fail "e2e helper tests"; fi
     else fail "dozo/e2e/model-stub.test.mjs missing: the e2e model stub is not tested"; fi
     # The iOS app's config: upstream's app.json after the brand rules must carry the Dozo ids and
     # nothing of upstream's Expo account, EAS project, update channel or domain. No build, no stage.
     if [ -f dozo/mobile/check-config.test.mjs ]; then
-      out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs 2>&1) \
-        && echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel)" || { printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; }
+      if out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs 2>&1); then
+        echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel)"
+      else printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; fi
     else fail "dozo/mobile/check-config.test.mjs missing: the iOS app's config is not checked"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
     # unbranded, so no rule can already be applied (that would be drift hidden by a short replace).
     if [ -f dozo/brand/apply.mjs ]; then
-      out=$(drun brand-rules --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --strict --root /r 2>&1) \
-        && echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')" \
-        || { printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; }
+      if out=$(drun brand-rules --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node dozo/brand/apply.mjs --check --allow-git --strict --root /r 2>&1); then
+        echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')"
+      else printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; fi
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
     # The leak gate of the brand step, brought forward: the working tree's apps, packages and infra
     # (tracked and untracked, not ignored) are branded in a scratch copy inside one container and
     # scanned, so the old name left in anything users see (a screen, an e-mail template, a locale
     # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds.
     if [ -f dozo/brand/check.mjs ]; then
-      out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra \
+      if out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra \
         | drun brand-leak -i --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'set -e
             mkdir -p /tmp/w; tar --null --ignore-failed-read -T - -cf - | tar -C /tmp/w -xf -
             node dozo/brand/apply.mjs --root /tmp/w --strict > /dev/null
-            node dozo/brand/check.mjs --root /tmp/w' 2>&1) \
-        && echo "[olc] $(printf '%s\n' "$out" | tail -1) (branded copy of the working tree)" \
-        || { printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; }
+            node dozo/brand/check.mjs --root /tmp/w' 2>&1); then
+        echo "[olc] $(printf '%s\n' "$out" | tail -1) (branded copy of the working tree)"
+      else printf '%s\n' "$out" | tail -60; fail "leak gate: the old brand is user-visible in the branded tree (dozo/brand/check.mjs)"; fi
     else fail "dozo/brand/check.mjs missing: the leak gate cannot run"; fi
   fi
   local files forkfiles bad base upwf
@@ -287,12 +293,15 @@ selftest() {
   check_wait "status above 128" 130 0.2 'exit 130' || ok=0
   check_wait "success" 0 0.2 'exit 0' || ok=0
   # timed_out: TERM was enough (124), KILL after the limit (137), the step's own kill before it, a plain failure.
-  timed_out 124 5 600 && timed_out 137 600 600 && timed_out 137 610 600 \
-    && ! timed_out 137 599 600 && ! timed_out 2 700 600 && ! timed_out 0 700 600 || { ok=0; echo "[olc] selftest timed_out: wrong verdict"; }
+  if ! { timed_out 124 5 600 && timed_out 137 600 600 && timed_out 137 610 600 \
+    && ! timed_out 137 599 600 && ! timed_out 2 700 600 && ! timed_out 0 700 600; }; then
+    ok=0; echo "[olc] selftest timed_out: wrong verdict"
+  fi
   selftest_owned || ok=0
   # The shell logic of build.sh and lock.sh (stage overlay, dc env, lock owner), in a scratch repo.
   out=$(bash "$ROOT/dozo/docker/build.test.sh" 2>&1) || { ok=0; printf '%s\n' "$out"; }
-  [ "$ok" = 1 ] && echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms and build.test.sh ok" || fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms or build.test.sh)"
+  if [ "$ok" = 1 ]; then echo "[olc] selftest: coverage parsers, wait_gone, timed_out, owned issue forms and build.test.sh ok"
+  else fail "selftest (coverage parsers, wait_gone, timed_out, owned issue forms or build.test.sh)"; fi
 }
 # The allowed set of the upstream-edit check, in a scratch repository. For every owned file: a
 # changed one is not listed; a deleted one and one that names upstream are; a file whose name only
@@ -370,7 +379,8 @@ unit_tests() {
   # the version of the staged tree's vitest, so the working tree's package.json is never touched.
   # In the background and waited for, so a TERM to this script is handled at once (a foreground
   # pipeline would hold the trap until the run ends) and removes the named container.
-  # shellcheck disable=SC2086
+  # The quoted script is expanded by the container's shell, not this one (SC2016).
+  # shellcheck disable=SC2086,SC2016
   ( drun unit -v "$src:/src:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p /cache/w /cache/store; cd /cache/w
@@ -421,7 +431,7 @@ TIMEOUT_BIN="${DOZO_TIMEOUT_BIN-$(command -v timeout || command -v gtimeout || t
 
 step_timeout() { # DOZO_TIMEOUT_<STEP> overrides, seconds
   local v d=600
-  v="DOZO_TIMEOUT_$(printf '%s' "$1" | tr a-z A-Z)"
+  v="DOZO_TIMEOUT_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
   case "$1" in build) d=2400 ;; unit) d=900 ;; esac
   echo "${!v:-$d}"
 }
@@ -486,7 +496,7 @@ run_step() { # name cmd...
   with_timeout "$limit" "$@" >"$log" 2>&1; rc=$?
   el=$(( $(now) - s ))
   if [ "$rc" -eq 0 ]; then echo "[qa] << $name ok ${el}s"; return 0; fi
-  if timed_out "$rc" "$el" "$limit"; then echo "[qa] << $name TIMEOUT after ${limit}s (raise DOZO_TIMEOUT_$(printf '%s' "$name" | tr a-z A-Z) if it is legitimate)"
+  if timed_out "$rc" "$el" "$limit"; then echo "[qa] << $name TIMEOUT after ${limit}s (raise DOZO_TIMEOUT_$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]') if it is legitimate)"
   else echo "[qa] << $name FAIL exit $rc ${el}s"; fi
   echo "[qa] last 40 lines of $name:"; tail -n 40 "$log" | sed 's/^/[qa]   /'
   return "$rc"
@@ -508,7 +518,8 @@ qa() {
   [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
   # A subset of the steps, or an unbranded build, is not the full gate: the verdict line says so.
   local all="olc stage brand unit build up smoke" steps="${DOZO_QA_STEPS:-olc stage brand unit build up smoke}"
-  [ "$(echo $steps)" = "$all" ] || partial "steps: $(echo $steps)"
+  local listed; read -ra listed <<< "$steps"
+  [ "${listed[*]}" = "$all" ] || partial "steps: ${listed[*]}"
   [ "${DOZO_SKIP_BRAND:-}" != 1 ] || partial "brand skipped (DOZO_SKIP_BRAND=1)"
   for st in $steps; do
     if [ "$st" = up ]; then reached_up=1; [ "$was_up" -eq 1 ] || QA_OWNS_STACK=1; fi

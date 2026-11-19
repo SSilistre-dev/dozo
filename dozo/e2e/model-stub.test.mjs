@@ -75,7 +75,10 @@ test("streams the same reply as server-sent chunks that end with usage and [DONE
   const chunks = events.slice(0, -1).map((e) => JSON.parse(e.replace(/^data: /, "")));
   assert.equal(chunks[0].choices[0].delta.role, "assistant");
   assert.equal(
-    chunks.map((c) => c.choices[0].delta.content ?? "").join("").trim(),
+    chunks
+      .map((c) => c.choices[0].delta.content ?? "")
+      .join("")
+      .trim(),
     "Hello from the offline Dozo test model.",
   );
   const last = chunks.at(-1);

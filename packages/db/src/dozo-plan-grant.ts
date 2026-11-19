@@ -2,6 +2,7 @@ import type { ByokTier } from "@rakazo/contracts";
 import { BYOK_TIERS, ByokTierSchema } from "@rakazo/contracts";
 import { hasBillingAccess } from "./billing.js";
 import type { PrismaClient } from "./client.js";
+import type { PlanLimitsByTier } from "./dozo-plan-quotas.js";
 
 /**
  * A plan an admin gave an organization by hand, kept beside its subscription and never written by
@@ -57,13 +58,18 @@ export function tierInForce(
   return rank(granted) > rank(paid) ? granted : paid;
 }
 
-/** The computer allowance in cents an unexpired grant gives; 0 without one. */
+/**
+ * The computer allowance in cents an unexpired grant gives; 0 without one. `limits` are the plans'
+ * limits as `readPlanLimits` reads them, the admin's quotas included; without them, the terms.
+ */
 export function grantedAllowanceCents(
   grant: PlanGrant | null | undefined,
   now = new Date(),
+  limits?: PlanLimitsByTier,
 ): number {
   const granted = grantInForce(grant, now);
-  return granted ? BYOK_TIERS[granted.tier].computerAllowanceCents : 0;
+  if (!granted) return 0;
+  return (limits ?? BYOK_TIERS)[granted.tier].computerAllowanceCents;
 }
 
 /** The organization's grant, expired or not; `tierInForce` decides whether it counts. */

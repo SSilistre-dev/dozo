@@ -132,6 +132,8 @@ const DEAD = ["files", "exports", "types", "enumMembers", "namespaceMembers", "c
 /** knip's unused files, exports, types and members per file. */
 export async function deadCode() {
   const { stdout } = await must(path.join(TOOLS, ".bin/knip"), [
+    "--config",
+    "dozo/metrics/knip.config.mjs",
     "--reporter",
     "json",
     "--no-exit-code",

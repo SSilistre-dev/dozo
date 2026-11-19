@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { ByokTierSchema } from "@rakazo/contracts";
 import { MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   grantInForce,
   isOwnerRole,
@@ -38,7 +39,7 @@ export type BillingRow = {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
 };
-export type GrantRow = { organizationId: string; tier: string; endsAt: Date };
+type GrantRow = { organizationId: string; tier: string; endsAt: Date };
 
 export interface SummaryInput {
   members: number;
@@ -150,6 +151,61 @@ export function revenueOf(ledger: DozoLedger) {
 }
 
 /**
+ * The billing summary, counted from the deployment's own records. The admin plans page counts its
+ * members from this too, so the two pages never disagree. Run it as system work: it crosses tenants.
+ */
+export async function readBillingSummary(prisma: PrismaClient) {
+  const now = new Date();
+  const [members, statuses, live, grants] = await Promise.all([
+    prisma.user.count({ where: people }),
+    prisma.billingAccount.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.billingAccount.findMany({
+      where: { status: { in: DOZO_ADMIN_LIVE_STATUSES } },
+      select: {
+        organizationId: true,
+        status: true,
+        byokTier: true,
+        byokInterval: true,
+        trialEndsAt: true,
+        currentPeriodEndsAt: true,
+        cancelAtPeriodEnd: true,
+      },
+    }),
+    prisma.dozoPlanGrant.findMany({
+      where: { endsAt: { gt: now } },
+      select: { organizationId: true, tier: true, endsAt: true },
+    }),
+  ]);
+  // The members of those organizations, then the organization each of them owns: the oldest
+  // live one they own, as `ownedOrganizationId` reads it for the admin list.
+  const organizations = [...new Set([...live, ...grants].map((row) => row.organizationId))];
+  const inThem = await prisma.member.findMany({
+    where: { organizationId: { in: organizations }, user: people },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  const memberships = await prisma.member.findMany({
+    where: { userId: { in: inThem.map((row) => row.userId) }, organization: LIVE_ORGANIZATION },
+    orderBy: { createdAt: "asc" },
+    select: { userId: true, organizationId: true, role: true },
+  });
+  const owned = new Map<string, string>();
+  for (const membership of memberships)
+    if (isOwnerRole(membership.role) && !owned.has(membership.userId))
+      owned.set(membership.userId, membership.organizationId);
+  return billingSummary(
+    {
+      members,
+      statuses: statuses.map((row) => ({ status: row.status, count: row._count._all })),
+      live,
+      grants,
+      owned,
+    },
+    now,
+  );
+}
+
+/**
  * The admin billing page: plans counted from the deployment's own records, and, when a payment
  * provider is configured, what it was paid. Refused unless the caller is a deployment admin.
  */
@@ -164,57 +220,6 @@ export function dozoAdminBillingRoutes(ctx: RouterContext, ledger: DozoPaymentLe
     DozoAdminRevenuePeriod,
     { until: number; value: Promise<DozoAdminRevenue> }
   >();
-
-  async function readSummary() {
-    const now = new Date();
-    const [members, statuses, live, grants] = await Promise.all([
-      prisma.user.count({ where: people }),
-      prisma.billingAccount.groupBy({ by: ["status"], _count: { _all: true } }),
-      prisma.billingAccount.findMany({
-        where: { status: { in: DOZO_ADMIN_LIVE_STATUSES } },
-        select: {
-          organizationId: true,
-          status: true,
-          byokTier: true,
-          byokInterval: true,
-          trialEndsAt: true,
-          currentPeriodEndsAt: true,
-          cancelAtPeriodEnd: true,
-        },
-      }),
-      prisma.dozoPlanGrant.findMany({
-        where: { endsAt: { gt: now } },
-        select: { organizationId: true, tier: true, endsAt: true },
-      }),
-    ]);
-    // The members of those organizations, then the organization each of them owns: the oldest
-    // live one they own, as `ownedOrganizationId` reads it for the admin list.
-    const organizations = [...new Set([...live, ...grants].map((row) => row.organizationId))];
-    const inThem = await prisma.member.findMany({
-      where: { organizationId: { in: organizations }, user: people },
-      select: { userId: true },
-      distinct: ["userId"],
-    });
-    const memberships = await prisma.member.findMany({
-      where: { userId: { in: inThem.map((row) => row.userId) }, organization: LIVE_ORGANIZATION },
-      orderBy: { createdAt: "asc" },
-      select: { userId: true, organizationId: true, role: true },
-    });
-    const owned = new Map<string, string>();
-    for (const membership of memberships)
-      if (isOwnerRole(membership.role) && !owned.has(membership.userId))
-        owned.set(membership.userId, membership.organizationId);
-    return billingSummary(
-      {
-        members,
-        statuses: statuses.map((row) => ({ status: row.status, count: row._count._all })),
-        live,
-        grants,
-        owned,
-      },
-      now,
-    );
-  }
 
   async function readRevenue(source: DozoPaymentLedger, period: DozoAdminRevenuePeriod) {
     const accounts = await runAsSystem("read billing accounts for the admin page", () =>
@@ -259,7 +264,7 @@ export function dozoAdminBillingRoutes(ctx: RouterContext, ledger: DozoPaymentLe
 
   return {
     summary: admin.dozoAdmin.billing.summary.handler(() =>
-      runAsSystem("count plans for the admin page", readSummary),
+      runAsSystem("count plans for the admin page", () => readBillingSummary(prisma)),
     ),
 
     revenue: admin.dozoAdmin.billing.revenue.handler(async ({ input }) => {

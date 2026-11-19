@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   DOZO_LEDGER_LOOKBACK_MS,
@@ -264,5 +265,29 @@ describe("the payment ledger", () => {
       );
     expect(error?.message).toBe("Payment ledger read failed (401)");
     expect(refused).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a plan's price key", () => {
+  const reader = new DozoStripeLedger({ secretKey: "sk_test_fixture" });
+
+  it("is the key the billing adapter finds or creates the price under", () => {
+    expect(reader.priceKey({ tier: "pro", interval: "month", amountCents: 4900 })).toBe(
+      "rakazo_byok_pro_monthly_4900",
+    );
+    expect(reader.priceKey({ tier: "max", interval: "year", amountCents: 94800 })).toBe(
+      "rakazo_byok_max_yearly_94800",
+    );
+    expect(reader.priceKey({ tier: "standard", interval: "month", amountCents: 1500 })).toBe(
+      "rakazo_byok_monthly_1500",
+    );
+  });
+
+  it("follows the billing adapter's own formula, which it keeps private", () => {
+    const source = readFileSync(new URL("./stripe-billing.ts", import.meta.url), "utf8");
+    expect(source).toContain('const BYOK_PRICE_KEY_PREFIX = "rakazo_byok_";');
+    expect(source).toContain('const period = interval === "year" ? "yearly" : "monthly";');
+    expect(source).toMatch(/`\$\{BYOK_PRICE_KEY_PREFIX\}\$\{period\}_\$\{amountCents\}`/);
+    expect(source).toMatch(/`\$\{BYOK_PRICE_KEY_PREFIX\}\$\{tier\}_\$\{period\}_\$\{amountCents\}`/);
   });
 });
