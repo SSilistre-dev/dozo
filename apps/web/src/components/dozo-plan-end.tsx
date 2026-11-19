@@ -24,9 +24,10 @@ export function DozoPlanEnd({ status }: { status: BillingStatus }) {
   return (
     <p
       data-testid="plan-end"
-      className={`mt-2 text-body ${planEndWarns(end) ? "text-warning" : "text-muted-foreground"}`}
+      className={`mt-2 flex flex-wrap gap-x-2 text-body ${planEndWarns(end) ? "text-warning" : "text-muted-foreground"}`}
     >
-      {end.renews ? t`Renews ${day}` : t`Ends ${day}`} · {left}
+      <span>{end.renews ? t`Renews ${day}` : t`Ends ${day}`}</span>
+      <span data-testid="plan-end-left">{left}</span>
     </p>
   );
 }

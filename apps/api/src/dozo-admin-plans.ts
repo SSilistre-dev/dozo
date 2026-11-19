@@ -20,7 +20,7 @@ import type { RouterContext } from "./routes/context.js";
 const PLAN_CURRENCY = "usd";
 
 /** A plan whose terms give it no computer hours has no hosted computer (Free). */
-export function planHasComputer(tier: ByokTier): boolean {
+function planHasComputer(tier: ByokTier): boolean {
   return codePlanLimits(tier).computerAllowanceCents > 0;
 }
 

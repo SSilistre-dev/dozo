@@ -10,11 +10,10 @@ export function DozoSignupTerms() {
   const base = getActiveUiLocale() === "tr" ? `${SITE}/tr` : SITE;
   const link = "underline-offset-4 hover:text-foreground hover:underline";
   return (
-    <p className="mt-3 text-center text-body-sm text-muted-foreground">
+    <p className="mt-3 flex justify-center gap-x-3 text-body-sm text-muted-foreground">
       <a href={`${base}/terms/`} target="_blank" rel="noopener noreferrer" className={link}>
         {t`Terms`}
       </a>
-      {" · "}
       <a href={`${base}/privacy/`} target="_blank" rel="noopener noreferrer" className={link}>
         {t`Privacy`}
       </a>

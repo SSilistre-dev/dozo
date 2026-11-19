@@ -9,9 +9,9 @@ import {
   planLimitText,
   SHARED_SPACE_FULL_MESSAGE,
 } from "@rakazo/contracts";
-import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
 import { messages as en } from "@rakazo/i18n/locales/en/messages.po";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
+import { planLimitCopy } from "@rakazo/i18n/run-error";
 import { describe, expect, it } from "vitest";
 
 // The plan-limit table (in contracts) with the copy clients pass. Runs on the branded tree only:

@@ -8,7 +8,8 @@
 # macOS app serves both Mac architectures. White space around a signature is dropped: a line
 # break left in a .sig file would make it fail to verify. Needs jq. Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
-trap 'rc=$?; [ $rc -eq 0 ] || [ $rc -eq 64 ] || exit 2' EXIT
+on_exit() { local rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 64 ] || exit 2; }
+trap on_exit EXIT
 
 [ $# -eq 3 ] || { echo "usage: $0 <version> <download-url-base> <dir>" >&2; exit 64; }
 version=$1 base=${2%/} dir=$3

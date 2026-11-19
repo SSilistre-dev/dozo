@@ -14,8 +14,23 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 vi.mock("react-native", () => ({
-  Text: ({ children, style }: { children?: ReactNode; style?: { color?: string } }) => (
-    <span data-testid="plan-end" data-color={style?.color}>
+  StyleSheet: { create: <T,>(styles: T) => styles },
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) => (
+    <div data-testid={testID}>{children}</div>
+  ),
+  Text: ({
+    children,
+    style,
+    testID,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    testID?: string;
+  }) => (
+    <span
+      data-testid={testID}
+      data-color={([style].flat() as { color?: string }[]).find((x) => x.color)?.color}
+    >
       {children}
     </span>
   ),
@@ -44,11 +59,11 @@ let root: ReturnType<typeof createRoot>;
 
 async function row(end: PlanEnd) {
   await act(async () => root.render(<DozoPlanEndRow end={end} />));
-  const value = container.querySelector<HTMLElement>('[data-testid="plan-end"]');
+  const [day, left] = [...container.querySelectorAll<HTMLElement>('[data-testid="plan-end"] span')];
   return {
     title: container.querySelector("b")?.textContent,
-    value: value?.textContent,
-    color: value?.dataset.color,
+    value: [day?.textContent, left?.textContent],
+    color: day?.dataset.color,
   };
 }
 
@@ -70,7 +85,7 @@ afterEach(() => {
 it("says when a plan renews and the days left, in the usual colour", async () => {
   expect(await row({ at: at(14), renews: true })).toEqual({
     title: "Renews",
-    value: "Dec 3, 2026 · 14 days left",
+    value: ["Dec 3, 2026", "14 days left"],
     color: "secondary",
   });
 });
@@ -82,18 +97,22 @@ it("says when a plan ends, in the warning colour from seven days before", async 
   });
   expect(await row({ at: at(7), renews: false })).toEqual({
     title: "Ends",
-    value: "Nov 26, 2026 · 7 days left",
+    value: ["Nov 26, 2026", "7 days left"],
     color: "warning",
   });
 });
 
 it("names tomorrow and today instead of a count", async () => {
-  expect((await row({ at: at(1), renews: false })).value).toBe("Nov 20, 2026 · Tomorrow");
-  expect((await row({ at: at(0), renews: false })).value).toBe("Nov 19, 2026 · Today");
+  expect((await row({ at: at(1), renews: false })).value).toEqual(["Nov 20, 2026", "Tomorrow"]);
+  expect((await row({ at: at(0), renews: false })).value).toEqual(["Nov 19, 2026", "Today"]);
 });
 
 it("names the plan that follows a granted plan above a subscription, without a warning", async () => {
   expect(
     await row({ at: at(3), renews: false, fallsTo: { from: "Premium Plus", to: "Premium" } }),
-  ).toEqual({ title: "Ends", value: "Nov 22, 2026 · Premium Plus → Premium", color: "secondary" });
+  ).toEqual({
+    title: "Ends",
+    value: ["Nov 22, 2026", "Premium Plus → Premium"],
+    color: "secondary",
+  });
 });

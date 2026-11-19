@@ -96,6 +96,11 @@ function SettingsPanel() {
   );
 }
 
+/** A language's name in the UI's language, so the announcement fields do not say "English" in Turkish. */
+function languageName(language: string, locale: string): string {
+  return new Intl.DisplayNames([locale || "en"], { type: "language" }).of(language) ?? language;
+}
+
 function SettingsForm({
   data,
   pending,
@@ -105,7 +110,7 @@ function SettingsForm({
   pending: boolean;
   onSave: (input: DozoSiteSettingsChange) => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [limit, setLimit] = useState(data.maxComputersPerUser?.toString() ?? "");
   const [en, setEn] = useState(data.announcementEn);
   const [tr, setTr] = useState(data.announcementTr);
@@ -144,14 +149,14 @@ function SettingsForm({
         </span>
         <Input
           aria-label={t`Announcement in English`}
-          placeholder="English"
+          placeholder={languageName("en", i18n.locale)}
           maxLength={DOZO_ANNOUNCEMENT_MAX}
           value={en}
           onChange={(event) => setEn(event.target.value)}
         />
         <Input
           aria-label={t`Announcement in Turkish`}
-          placeholder="Türkçe"
+          placeholder={languageName("tr", i18n.locale)}
           maxLength={DOZO_ANNOUNCEMENT_MAX}
           value={tr}
           onChange={(event) => setTr(event.target.value)}

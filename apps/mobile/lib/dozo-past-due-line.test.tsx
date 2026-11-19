@@ -26,12 +26,18 @@ vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   View: ({ children }: { children?: ReactNode }) => <div role="status">{children}</div>,
 }));
-vi.mock("./api", () => ({ rpc: api.rpc }));
 vi.mock("./billing", () => ({ openBillingPage: api.openBillingPage }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
 vi.mock("./query", () => ({
   queryClient: { setQueryData: api.setQueryData },
   rpcQuery: (proc: string) => ({ queryKey: [proc] }),
+  useSave: (options: {
+    save: (input: undefined, send: unknown) => Promise<unknown>;
+    onFailed?: (error: Error) => unknown;
+  }) => ({
+    pending: false,
+    run: () => options.save(undefined, api.rpc).catch((error: Error) => options.onFailed?.(error)),
+  }),
 }));
 vi.mock("./screen-query", () => ({
   useScreenQuery: (read: { queryKey: string[] }, options?: { enabled?: boolean }) => {

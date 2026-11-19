@@ -38,5 +38,5 @@ docker run -i --rm --cpus 3 --memory 6g --network none --user "$(id -u):$(id -g)
   ln -s /deps/w/node_modules node_modules
   for d in /deps/w/packages/*/node_modules; do p=${d#/deps/w/}; [ -d "${p%/node_modules}" ] && cp -a "$d" "$p"; done
   cp -a /deps/w/packages/db/src/generated packages/db/src/generated
-  node_modules/.bin/tsx dozo/metrics/token-kiyas.ts /out/token-baseline.json ${PRICED:+/pricing.json}
+  node_modules/.bin/tsx packages/testkit/src/cli/dozo-token-kiyas.ts /out/token-baseline.json ${PRICED:+/pricing.json}
 ' || fail "benchmark failed"

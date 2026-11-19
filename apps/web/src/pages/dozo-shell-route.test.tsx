@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AppBootstrap, Bot } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act, useLayoutEffect, useRef, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -215,12 +216,12 @@ it("offers a picked plan on the chat the app lands on", async () => {
 });
 
 it("offers a picked plan even when the server answers before the first load", async () => {
-  let loaded: (value: AppBootstrap) => void = () => {};
-  state.take.mockReturnValue(new Promise((resolve) => (loaded = resolve)));
+  const loaded = deferred<AppBootstrap>();
+  state.take.mockReturnValue(loaded.promise);
   savePlanIntent({ tier: "max", period: "month" });
   await load("/app");
   // Billing is asked for while the address is still `/app`; the repair lands afterwards.
-  await act(async () => loaded(bootstrap()));
+  await act(async () => loaded.resolve(bootstrap()));
   await act(async () => {});
   expect(address()).toBe("/app/bot-1?settings=billing");
 });

@@ -1,11 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { paymentPastDue } from "@rakazo/contracts";
-import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { rpc } from "../lib/api";
 import { openBillingPage } from "../lib/billing";
 import { useMobileTokens } from "../lib/native";
-import { queryClient, rpcQuery } from "../lib/query";
+import { queryClient, rpcQuery, useSave } from "../lib/query";
 import { useScreenQuery } from "../lib/screen-query";
 import { NativeActionButton } from "./native-action-button";
 
@@ -17,22 +15,17 @@ import { NativeActionButton } from "./native-action-button";
 export function DozoPastDueLine() {
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const [opening, setOpening] = useState(false);
   const me = useScreenQuery(rpcQuery("me")).data;
   const billing = rpcQuery("billing/status");
   const status = useScreenQuery(billing, { enabled: Boolean(me?.billingEnabled) }).data;
-  if (!me?.billingEnabled || !paymentPastDue(status)) return null;
-  const manage = async () => {
-    setOpening(true);
-    try {
-      const { url } = await rpc("billing/portal", { client: "mobile" });
+  const manage = useSave({
+    save: async (_, send) => {
+      const { url } = await send("billing/portal", { client: "mobile" });
       queryClient.setQueryData(billing.queryKey, await openBillingPage(url));
-    } catch {
-      Alert.alert(t`Could not open billing`);
-    } finally {
-      setOpening(false);
-    }
-  };
+    },
+    onFailed: () => Alert.alert(t`Could not open billing`),
+  });
+  if (!me?.billingEnabled || !paymentPastDue(status)) return null;
   return (
     <View accessibilityRole="summary" style={[styles.line, { borderColor: tokens.border }]}>
       <Text style={[styles.text, { color: tokens.warning }]} numberOfLines={2}>
@@ -42,8 +35,8 @@ export function DozoPastDueLine() {
         label={t`Manage billing`}
         prominence="secondary"
         size="compact"
-        busy={opening}
-        onPress={() => void manage()}
+        busy={manage.pending}
+        onPress={() => manage.run()}
       />
     </View>
   );

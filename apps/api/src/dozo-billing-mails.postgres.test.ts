@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { BillingEmulator, DozoJobQueue } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createPool } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -113,22 +114,16 @@ describePostgres("billing mails (PostgreSQL)", () => {
     const organizationId = await organization({ status: "active" });
     const store = sqlMailStore(prisma, { jobs: true });
     const order: string[] = [];
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let locked!: () => void;
-    const isLocked = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
+    const held = deferred();
+    const isLocked = deferred();
     const first = store.transaction(async (tx) => {
       await tx.lockNotice(organizationId);
-      locked();
-      await held;
+      isLocked.resolve();
+      await held.promise;
       await tx.saveNotice(organizationId, { pastDueTold: true, canceledSubscriptionId: null });
       order.push("first");
     });
-    await isLocked;
+    await isLocked.promise;
     const second = store.transaction(async (tx) => {
       const notice = await tx.lockNotice(organizationId);
       order.push("second");
@@ -136,7 +131,7 @@ describePostgres("billing mails (PostgreSQL)", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(order).toEqual([]);
-    release();
+    held.resolve();
     await first;
     // The second reads what the first committed.
     expect(await second).toEqual({ pastDueTold: true, canceledSubscriptionId: null });

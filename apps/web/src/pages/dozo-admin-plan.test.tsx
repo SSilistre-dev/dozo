@@ -207,16 +207,16 @@ it("gives a plan until the chosen day, and reads the list again", async () => {
   expect(api.setPlan).toHaveBeenCalledWith({
     userId: "ada",
     tier: "max",
-    endsAt: "2027-02-01T23:59:59.000Z",
+    endsAt: "2027-02-01T12:00:00.000Z",
   });
   await vi.waitFor(() => expect(container.querySelector('[role="alertdialog"]')).toBeNull());
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["users"] });
 });
 
-it("makes tomorrow, in UTC, the first day that can be chosen", async () => {
+it("makes tomorrow, on the admin's calendar, the first day that can be chosen", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   try {
-    // Late on the 31st in UTC: the day after is in the next month.
+    // Late on the 31st: the day after is in the next month.
     vi.setSystemTime(new Date("2026-12-31T23:30:00.000Z"));
     await render({ tier: "standard", grantedUntil: null });
     await click(button("Set plan"));

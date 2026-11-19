@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -1235,6 +1236,28 @@ describe("closed shape rows", () => {
     assert.doesNotMatch(
       apply(tree({ "src/a.ts": "Rakazo" }), bare(), "--strict").stderr,
       /dead shapes/,
+    );
+  });
+
+  it("a failing run's last line reaches a reader that falls behind", async () => {
+    // The tail of a long error list (the dead-shapes lines come last) was lost when the parent
+    // read late: the child's stderr is a socket, and exiting at once dropped what was queued.
+    const child = spawn(
+      process.execPath,
+      [path.join(import.meta.dirname, "apply.mjs"), "--root", tree({ "a/b.ts": "x" }), "--strict"],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const closed = new Promise((resolve) => child.on("close", resolve));
+    const busyUntil = Date.now() + 1000;
+    while (Date.now() < busyUntil);
+    assert.equal(await closed, 2);
+    assert.match(
+      stderr,
+      /dead shapes entry \(matches nothing in the tree, delete it\): windows-path\n/,
     );
   });
 });

@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { PlanEnd } from "@rakazo/contracts";
 import { planEndDays, planEndWarns } from "@rakazo/contracts";
-import { Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { dateLocaleForUi } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { SettingsRow } from "./settings-group";
@@ -27,21 +27,24 @@ export function DozoPlanEndRow({ end }: { end: PlanEnd }) {
       : count === 1
         ? t`Tomorrow`
         : t`${remaining} left`;
+  const color = planEndWarns(end) ? tokens.warning : native.secondaryLabel;
   return (
     <SettingsRow
       title={end.renews ? t`Renews` : t`Ends`}
       trailing={
-        <Text
-          testID="plan-end"
-          style={{
-            flexShrink: 1,
-            fontSize: 17,
-            color: planEndWarns(end) ? tokens.warning : native.secondaryLabel,
-          }}
-        >
-          {`${day} · ${left}`}
-        </Text>
+        <View testID="plan-end" style={styles.end}>
+          <Text style={[styles.text, { color }]}>{day}</Text>
+          <Text testID="plan-end-left" style={[styles.left, { color }]}>
+            {left}
+          </Text>
+        </View>
       }
     />
   );
 }
+
+const styles = StyleSheet.create({
+  end: { flexShrink: 1, alignItems: "flex-end" },
+  text: { fontSize: 17 },
+  left: { fontSize: 13 },
+});
