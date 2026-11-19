@@ -36,7 +36,7 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 21 | Third-party catalogs and imports naming "Grok Bot", xAI | Rejected as leak (other vendor, not Rakazo); product decision, owner action if unwanted |
 | 22 | `~/rakazo-home`, `/tmp/rakazo`, `rakazo-browser` binaries, `.rakazo-command-env` | Rejected: internal paths (out of scope per brief); `~/rakazo-home` is the most visible, revisit later |
 | 23 | Stripe account name/descriptor, OAuth consent names, Slack/Discord/Telegram apps, OpenRouter listing | Owner action |
-| 24 | `com.rakazo.app` mobile id, app-store listings | The app's id family is renamed (row 31). Still upstream's, owner action: the server's push topic and app-association file (`allow.text`), and the store listings |
+| 24 | `com.rakazo.app` mobile id, app-store listings | The app's id family is renamed (row 31), and with it the server's default push topic and the Android package in its association file (the same literal). Still upstream's, owner action: the store listings |
 | 25 | Stale-ID entries in compiled catalogs; source maps shipping | Rejected/unverified: not rendered on reachable screens |
 | 26 | OG image has no upstream equivalent | Rejected: no leak, nothing to map. `assets/og-image.png` (H1 lockup, 1200x630) is ready for the site |
 | 27 | Lowercase `rakazo` inside `.po` entries | Gate: the same rule applies to `.po` entries; the `Project-Id-Version: rakazo-web` header is the `rakazo-web` service-name shape |
