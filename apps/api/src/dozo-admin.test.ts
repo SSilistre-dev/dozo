@@ -124,6 +124,8 @@ function world(users: User[]) {
   };
   // The ban list is the fork's own table, read and written with SQL.
   const bans = new Map<string, Date>();
+  // The site settings' one row, once an admin saved one.
+  const site: Record<string, unknown>[] = [];
   const hosted = (where: Where) =>
     computers.filter(
       (row) =>
@@ -172,9 +174,11 @@ function world(users: User[]) {
       }),
     },
     $queryRaw: vi.fn(async (sql: TemplateStringsArray, keys: string[]) =>
-      sql.join("").includes('"createdAt"')
-        ? [...bans].map(([value, createdAt]) => ({ value, createdAt }))
-        : keys.filter((key) => bans.has(key)).map((value) => ({ value })),
+      sql.join("").includes("dozo_site_settings")
+        ? site
+        : sql.join("").includes('"createdAt"')
+          ? [...bans].map(([value, createdAt]) => ({ value, createdAt }))
+          : keys.filter((key) => bans.has(key)).map((value) => ({ value })),
     ),
     $executeRaw: vi.fn(async (sql: TemplateStringsArray, value: string) => {
       if (!sql.join("").includes("INSERT")) bans.delete(value);
@@ -232,7 +236,7 @@ function world(users: User[]) {
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { findMany: vi.fn(async () => []) },
   };
-  return { prisma, sessions: () => sessions, organizations, bans };
+  return { prisma, sessions: () => sessions, organizations, bans, site };
 }
 
 const people = [
@@ -248,7 +252,7 @@ function setup(
   wiring = true,
   sandboxId?: string,
 ) {
-  const { prisma, sessions, organizations, bans } = world(users);
+  const { prisma, sessions, organizations, bans, site } = world(users);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
   const steps: string[] = [];
@@ -308,7 +312,7 @@ function setup(
     };
     return createRouterClient(dozoAdminRoutes(ctx), { context: { actor } }).dozoAdmin;
   };
-  return { prisma, sessions, users, ctx, as, removePush, organizations, bans, deletion };
+  return { prisma, sessions, users, ctx, as, removePush, organizations, bans, deletion, site };
 }
 
 beforeEach(() => {
@@ -426,6 +430,12 @@ describe("listing accounts", () => {
 
   it("reads the sign-up switch as open when the wiring is absent", async () => {
     expect((await setup(undefined, false).as("admin").users({})).signupsOpen).toBe(true);
+  });
+
+  it("reads the sign-up switch an admin set over the environment's", async () => {
+    const { as, site } = setup();
+    site.push({ signupsOpen: true });
+    expect((await as("admin").users({})).signupsOpen).toBe(true);
   });
 });
 

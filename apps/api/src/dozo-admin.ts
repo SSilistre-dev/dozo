@@ -11,18 +11,20 @@ import {
   removeBan,
 } from "@rakazo/auth";
 import type { DozoAdminPlan } from "@rakazo/contracts";
-import { ClientError, MESSAGING_EMAIL_SUFFIX, signupsOpen } from "@rakazo/core";
+import { ClientError, MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import {
   DOZO_PLAN_GRANT_SELECT,
   grantInForce,
   IsolationError,
   ownedOrganizationId,
   paidTierOf,
+  readSiteSettings,
   recordAuditEvent,
   recordSecurityEvent,
   revokePlanGrant,
   runAsSystem,
   setPlanGrant,
+  signupsOpenFrom,
   tierInForce,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -60,7 +62,7 @@ export interface DozoAdminWiring {
   devices: DeviceStore;
   /** While a directory provisions accounts, it owns turning them off and on. */
   directoryProvisioning: boolean;
-  /** SIGNUPS_ENABLED as the environment has it. */
+  /** SIGNUPS_ENABLED as the environment has it; the admin's site setting wins over it. */
   signupsEnabled: string | undefined;
   /** The server's auth, whose account deletion the admin page runs for someone else. */
   auth: AccountDeletionAuth;
@@ -186,7 +188,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           });
           const page = rows.slice(0, DOZO_ADMIN_USERS_PAGE);
           const mine = { userId: { in: page.map((user) => user.id) } };
-          const [banned, total, sessions, bots, computers, planOf] = await Promise.all([
+          const [site, banned, total, sessions, bots, computers, planOf] = await Promise.all([
+            readSiteSettings(prisma),
             bannedEntries(
               prisma,
               page.map((user) => user.email),
@@ -212,7 +215,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           const botCount = new Map(bots.map((row) => [row.userId, row._count._all]));
           const computerCount = new Map(computers.map((row) => [row.userId, row._count._all]));
           return {
-            signupsOpen: signupsOpen(wiring?.signupsEnabled),
+            signupsOpen: signupsOpenFrom(site, wiring?.signupsEnabled),
             total,
             users: page.map((user) => ({
               id: user.id,
