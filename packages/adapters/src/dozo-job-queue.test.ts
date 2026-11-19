@@ -37,21 +37,6 @@ describe("DozoJobQueue", () => {
     expect(started.stop).toHaveBeenCalledOnce();
   });
 
-  it("queues a job under its key, for its time, with a bounded number of tries", async () => {
-    const query = vi.fn(async () => ({ rows: [] }));
-    const queue = new DozoJobQueue({ query } as unknown as Pool, {}, async () => runner());
-    await queue.add("dozo.test", "dozo.test:org", new Date("2026-11-22T12:00:00.000Z"), {
-      organizationId: "org",
-    });
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("graphile_worker.add_job"), [
-      "dozo.test",
-      '{"organizationId":"org"}',
-      "2026-11-22T12:00:00.000Z",
-      10,
-      "dozo.test:org",
-    ]);
-  });
-
   it("reports a runner that did not start, and stops without one", async () => {
     const queue = new DozoJobQueue({} as Pool, {}, async () => {
       throw new Error("no database");

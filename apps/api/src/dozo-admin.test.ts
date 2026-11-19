@@ -246,6 +246,8 @@ function world(users: User[]) {
       },
     }));
   const prisma = {
+    // One transaction is the same fake: what it writes is visible at once.
+    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work(prisma)),
     member: {
       findMany: vi.fn(async ({ where }: Where) =>
         memberships.filter((row) =>
@@ -407,7 +409,7 @@ function setup(
   const { prisma, sessions, organizations, bans, site, memberships, settings, computers, devices } =
     world(users);
   const disconnect = vi.fn(async () => undefined);
-  const planChanged = vi.fn(async (_organizationId: string) => undefined);
+  const planChanged = vi.fn(async (_tx: unknown, _organizationId: string) => undefined);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
   const steps: string[] = [];
@@ -914,11 +916,14 @@ describe("giving a plan by hand", () => {
     expect(planChanged).not.toHaveBeenCalled();
   });
 
-  it("tells billing's mails each time it changes a plan, so the mail before its end is queued", async () => {
-    const { as, planChanged } = setup();
+  it("queues the mail before the end in the transaction that changes the plan", async () => {
+    const { as, planChanged, prisma } = setup();
     await as("admin").setPlan({ userId: "ada", tier: "pro", endsAt: until(30) });
     await as("admin").setPlan({ userId: "ada", tier: null });
-    expect(planChanged.mock.calls).toEqual([["org-ada"], ["org-ada"]]);
+    expect(planChanged.mock.calls.map(([tx, organizationId]) => [tx, organizationId])).toEqual([
+      [prisma, "org-ada"],
+      [prisma, "org-ada"],
+    ]);
   });
 
   it("lets an admin give themselves a plan", async () => {

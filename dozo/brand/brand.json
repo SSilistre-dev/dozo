@@ -3337,15 +3337,16 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "    const live = snapshot;\n    // Measurement never decides whether a paid plan activates.\n",
-      "replace": "    const live = snapshot;\n    // Reads what was just stored and only reports its own failures: a mail never fails a sync.\n    await deps.dozoAfterSync?.(previous.organizationId);\n    // Measurement never decides whether a paid plan activates.\n",
+      "replace": "    const live = snapshot;\n    // Decides billing's mails from what was just stored; a failure fails the sync, so the\n    // provider's redelivery decides again. Sending happens after, without waiting.\n    await deps.dozoAfterSync?.(previous.organizationId);\n    // Measurement never decides whether a paid plan activates.\n",
       "reason": "billing mails: every stored subscription is checked for a failed payment, a cancellation and a plan end to mail about"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "import { createBillingService } from \"./billing.js\";\nimport { mountBillingRoutes } from \"./billing-webhook.js\";\n",
-      "replace": "import { createBillingService } from \"./billing.js\";\nimport { createBillingLifecycle } from \"./dozo-billing-lifecycle.js\";\nimport { DozoJobQueue } from \"@rakazo/adapters\";\nimport { mountBillingRoutes } from \"./billing-webhook.js\";\n",
+      "replace": "import { createBillingService } from \"./billing.js\";\nimport { createBillingLifecycle } from \"./dozo-billing-lifecycle.js\";\nimport { sqlMailStore } from \"./dozo-billing-mails.js\";\nimport { DozoJobQueue } from \"@rakazo/adapters\";\nimport { mountBillingRoutes } from \"./billing-webhook.js\";\n",
       "requires": [
         "apps/api/src/dozo-billing-lifecycle.ts",
+        "apps/api/src/dozo-billing-mails.ts",
         "packages/adapters/src/dozo-job-queue.ts"
       ],
       "reason": "billing mails: the import of the rules below"
@@ -3353,9 +3354,10 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  const billing = billingProvider\n    ? createBillingService({",
-      "replace": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  // Billing's transactional mails: none without a way to send them, and no reminder before a plan\n  // ends without the durable queue.\n  const dozoBilling =\n    billingProvider && email\n      ? createBillingLifecycle({\n          prisma,\n          email,\n          billingUrl: new URL(\"/app?settings=billing\", env.webOrigin).href,\n          queue:\n            jobPool && !inMemoryJobs ? (tasks) => new DozoJobQueue(jobPool, tasks) : undefined,\n          onError: emailErrorLogger(\"billing email failed\"),\n        })\n      : undefined;\n  const billing = billingProvider\n    ? createBillingService({",
+      "replace": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  // Billing's transactional mails: none without a way to send them. Their job runner gets a pool\n  // of its own (one listening connection, one job at a time), so it never waits on the app's.\n  const dozoJobPool =\n    billingProvider && email && !inMemoryJobs\n      ? createPool(env.databaseUrl, { poolMax: 2, applicationName: \"dozo-jobs\" })\n      : undefined;\n  const dozoBilling =\n    billingProvider && email\n      ? createBillingLifecycle({\n          store: sqlMailStore(prisma, { jobs: Boolean(dozoJobPool) }),\n          email,\n          billingUrl: new URL(\"/app?settings=billing\", env.webOrigin).href,\n          queue: dozoJobPool ? (tasks) => new DozoJobQueue(dozoJobPool, tasks) : undefined,\n          onError: emailErrorLogger(\"billing email failed\"),\n        })\n      : undefined;\n  const billing = billingProvider\n    ? createBillingService({",
       "requires": [
         "apps/api/src/dozo-billing-lifecycle.ts",
+        "apps/api/src/dozo-billing-mails.ts",
         "packages/adapters/src/dozo-job-queue.ts"
       ],
       "reason": "billing mails: the server builds them where billing and the account email are both configured"
@@ -3372,11 +3374,11 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "      await botEmail?.drain?.();\n      await email?.drain?.();\n",
-      "replace": "      await botEmail?.drain?.();\n      await dozoBilling?.stop();\n      await email?.drain?.();\n",
+      "replace": "      await botEmail?.drain?.();\n      await dozoBilling?.stop();\n      await bestEffort(\"close billing job pool\", dozoJobPool?.end());\n      await email?.drain?.();\n",
       "requires": [
         "apps/api/src/dozo-billing-lifecycle.ts"
       ],
-      "reason": "billing mails: the fork's job queue stops, finishing its running job, before the mail and the database close"
+      "reason": "billing mails: the fork's job queue stops, finishing its running job, and its pool closes, before the mail and the database close"
     },
     {
       "file": "apps/mobile/app/index.tsx",

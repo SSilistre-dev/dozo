@@ -1,207 +1,289 @@
+import { randomUUID } from "node:crypto";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { cancellationEmail, emailLocale, paymentFailedEmail, planEndingEmail } from "@rakazo/auth";
 import type { ByokTier } from "@rakazo/contracts";
 import { BYOK_TIERS } from "@rakazo/contracts";
-import type { PlanGrant, PrismaClient } from "@rakazo/db";
-import { hasBillingAccess, paidTierOf, planGrantOf, runAsSystem, tierInForce } from "@rakazo/db";
+import { MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
+import type { PlanGrant, Prisma } from "@rakazo/db";
+import { hasBillingAccess, paidTierOf, runAsSystem, tierInForce } from "@rakazo/db";
+import type {
+  BillingMailStore,
+  BillingTx,
+  ClaimedMail,
+  MailDetails,
+  MailKind,
+  Subscription,
+} from "./dozo-billing-mails.js";
 import { statusPlanEnd } from "./dozo-plan-end.js";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 /** How long before a plan ends without renewing its owners are told. */
 export const PLAN_ENDING_NOTICE_DAYS = 3;
 export const PLAN_ENDING_TASK = "dozo.plan-ending";
+export const BILLING_MAIL_TASK = "dozo.billing-mail";
+/** A claim older than this belongs to a process that died; a send is bounded well below it. */
+export const MAIL_CLAIM_MS = 5 * MINUTE_MS;
+/** The backup job fires once a claim the sending process left behind can be taken over. */
+const MAIL_BACKUP_MS = MAIL_CLAIM_MS + MINUTE_MS;
 
 /** The reminder's job: the end it was queued for, which must still be the end when it runs. */
 export type PlanEndingJob = { organizationId: string; endsAt: string };
 
-/** The fork's job queue, as the lifecycle uses it. */
-export interface LifecycleQueue {
-  add(task: string, key: string, runAt: Date, payload: PlanEndingJob): Promise<void>;
-  stop(): Promise<void>;
-}
+/** Runs the lifecycle's tasks on the durable queue until stopped. */
+export type LifecycleRunner = { stop(): Promise<void> };
 
 export interface BillingLifecycleDeps {
-  prisma: PrismaClient;
+  store: BillingMailStore;
   email: TransactionalEmailProvider;
   /** Billing in the web app, where every mail's button lands. */
   billingUrl: string;
-  /** Builds the queue that runs `tasks`; absent where there is no durable queue (no reminders). */
-  queue?: (tasks: Record<string, (payload: unknown) => Promise<void>>) => LifecycleQueue;
+  /** Starts the runner for `tasks`; absent where there is no durable queue. */
+  queue?: (tasks: Record<string, (payload: unknown) => Promise<void>>) => LifecycleRunner;
   onError: (error: unknown) => void;
   now?: () => Date;
 }
-
-const SUBSCRIPTION_SELECT = {
-  status: true,
-  subscriptionId: true,
-  byokTier: true,
-  trialEndsAt: true,
-  currentPeriodEndsAt: true,
-  cancelAtPeriodEnd: true,
-} as const;
-
-type Subscription = {
-  status: string | null;
-  subscriptionId: string | null;
-  byokTier: string | null;
-  trialEndsAt: Date | null;
-  currentPeriodEndsAt: Date | null;
-  cancelAtPeriodEnd: boolean;
-};
-
-type Owner = { id: string; email: string; name: string; locale: string | null };
 
 /** Paid up again, so the next failed payment is a new one to tell. */
 const SETTLED = new Set(["active", "trialing"]);
 
 const planName = (tier: ByokTier | null) => (tier ? BYOK_TIERS[tier].name : null);
 
+type NewMail = { kind: MailKind; occasion: string; details: MailDetails };
+
 /**
- * Billing's transactional mails to the organization's owners, the members who manage billing: a
- * failed payment, a cancellation and a plan about to end. Each is read from the stored state, not
- * from the change that led there, so a redelivered or concurrent sync finds the same answer, and
- * an `email_sends` row per owner and occasion keeps it to one mail. A failed send gives its row
- * back, so the next sync (or the job's retry) sends it.
+ * Billing's transactional mails to an organization's owners, the members who manage billing: a
+ * failed payment, a cancellation, and a plan about to end.
  *
- * - Past due: once, until the subscription is paid up again; a later failure is mailed again.
- * - Set to cancel at the end of its period: once per subscription, again only after it is resumed.
- * - The plan in force ends without renewing (a canceled subscription or a granted plan): a job
- *   queued for three days before the end, which mails only if that is still the end then.
+ * What to mail is decided in one transaction that holds the organization's notice row, from the
+ * subscription as stored then, so two syncs at once decide one after the other and a redelivered
+ * one finds nothing new. The notice remembers what was told (an overdue payment until it is paid
+ * up, the subscription that was set to cancel until it is resumed); the migration that made it
+ * counts whatever was overdue or canceled at the time as told, so only later changes are mailed.
+ * The same transaction records one mail per owner at that moment and a backup job for each; after
+ * commit the mails are sent here without the caller waiting.
+ *
+ * A send claims its mail first. Sent, it is marked and its backup job removed; refused for good
+ * (the address is rejected), it is marked failed and never tried again; any other failure gives
+ * the claim back and the backup job tries again. A process that dies holding a claim leaves it
+ * for `MAIL_CLAIM_MS`, after which the backup job takes it over. That leaves one rare double: a
+ * mail the provider accepted while the process died, or timed out on, before it was marked sent.
+ *
+ * The reminder before a plan ends without renewing is one job per organization, queued in the
+ * transaction that changed the end (a sync, or an admin's grant). When it runs it mails only if
+ * that is still the end, then queues itself for the end in force after that.
  */
 export function createBillingLifecycle(deps: BillingLifecycleDeps) {
-  const { prisma } = deps;
+  const { store } = deps;
   const now = () => deps.now?.() ?? new Date();
-  const queue = deps.queue?.({ [PLAN_ENDING_TASK]: (payload) => remindPlanEnding(payload) });
+  const sending = new Set<Promise<void>>();
+  const runner = deps.queue?.({
+    [PLAN_ENDING_TASK]: (payload) => remindPlanEnding(payload as PlanEndingJob),
+    [BILLING_MAIL_TASK]: async (payload) => {
+      const { mailId } = payload as { mailId: string };
+      // Another process holds a live claim: try again once it would have expired.
+      const outcome = await runAsSystem("send a billing mail", () => deliver(mailId));
+      if (outcome === "busy") throw new Error("Billing mail is being sent");
+    },
+  });
 
-  async function state(organizationId: string) {
-    const [account, grant, owners] = await Promise.all([
-      prisma.billingAccount.findUnique({ where: { organizationId }, select: SUBSCRIPTION_SELECT }),
-      planGrantOf(prisma, organizationId),
-      prisma.member.findMany({
-        where: { organizationId, role: { contains: "owner" }, user: { deactivatedAt: null } },
-        select: { user: { select: { id: true, email: true, name: true, locale: true } } },
-      }),
-    ]);
-    return { account, grant, owners: owners.map((member) => member.user) };
-  }
-
-  /** Mails each owner who has not had `kind` yet; the first failure is thrown after the rest. */
-  async function mailOnce(
-    owners: Owner[],
-    kind: string,
-    build: (reader: Owner & { locale: string }) => Promise<TransactionalEmail>,
-  ) {
-    const failures: unknown[] = [];
-    for (const owner of owners) {
-      const claim = await prisma.emailSend.createMany({
-        data: { userId: owner.id, kind },
-        skipDuplicates: true,
-      });
-      if (claim.count === 0) continue;
-      try {
-        await deps.email.send(await build({ ...owner, locale: emailLocale(owner.locale) }));
-      } catch (error) {
-        await prisma.emailSend.deleteMany({ where: { userId: owner.id, kind } });
-        failures.push(error);
+  /** Records `mails` for the organization's owners, each with its backup job; the new ids. */
+  async function record(tx: BillingTx, organizationId: string, mails: NewMail[]) {
+    const ids: string[] = [];
+    if (mails.length === 0) return ids;
+    const owners = await tx.owners(organizationId);
+    for (const mail of mails)
+      for (const userId of owners) {
+        const id = await tx.addMail({ organizationId, userId, ...mail });
+        if (!id) continue;
+        ids.push(id);
+        const runAt = new Date(now().getTime() + MAIL_BACKUP_MS);
+        await tx.addJob(BILLING_MAIL_TASK, `${BILLING_MAIL_TASK}:${id}`, runAt, { mailId: id });
       }
-    }
-    if (failures.length) throw failures[0];
+    return ids;
   }
 
-  /** Forgets `kind` for the owners, so it is mailed again the next time it happens. */
-  async function forget(owners: Owner[], kind: string) {
-    if (owners.length === 0) return;
-    await prisma.emailSend.deleteMany({
-      where: { kind, userId: { in: owners.map((owner) => owner.id) } },
-    });
-  }
-
-  async function paymentFailed(organizationId: string, account: Subscription, owners: Owner[]) {
-    const kind = `dozo-payment-failed:${organizationId}`;
-    if (account.status === "past_due") {
-      const plan = planName(paidTierOf(account)) ?? "Dozo";
-      await mailOnce(owners, kind, (reader) => paymentFailedEmail(reader, plan, deps.billingUrl));
-    } else if (account.status && SETTLED.has(account.status)) await forget(owners, kind);
-  }
-
-  async function canceled(account: Subscription, owners: Owner[]) {
-    if (!account.subscriptionId || !hasBillingAccess(account.status)) return;
-    const kind = `dozo-canceled:${account.subscriptionId}`;
-    if (!account.cancelAtPeriodEnd) return forget(owners, kind);
-    const end = statusPlanEnd(account, null, now());
-    const plan = planName(paidTierOf(account));
-    if (!end || !plan) return;
-    await mailOnce(owners, kind, (reader) =>
-      cancellationEmail(reader, { name: plan, endsAt: new Date(end.at) }, deps.billingUrl),
-    );
-  }
-
-  /** Queues the reminder for the plan in force when it ends without renewing, far enough ahead. */
+  /**
+   * Queues the reminder for the end of the plan in force when it does not renew: three days
+   * ahead, or, when that has passed, just after the end, to find the end that follows it.
+   */
   async function scheduleReminder(
+    tx: BillingTx,
     organizationId: string,
     account: Subscription | null,
     grant: PlanGrant | null,
   ) {
     const end = statusPlanEnd(account, grant, now());
-    if (!queue || !end || end.renews) return;
-    const runAt = new Date(Date.parse(end.at) - PLAN_ENDING_NOTICE_DAYS * DAY_MS);
-    // Too close to the end for a notice; a cancellation has already been confirmed by mail.
-    if (runAt <= now()) return;
-    await queue.add(PLAN_ENDING_TASK, `${PLAN_ENDING_TASK}:${organizationId}`, runAt, {
-      organizationId,
-      endsAt: end.at,
-    });
+    if (!end || end.renews) return;
+    const at = Date.parse(end.at);
+    const notice = at - PLAN_ENDING_NOTICE_DAYS * DAY_MS;
+    const runAt = new Date(notice > now().getTime() ? notice : at + MINUTE_MS);
+    const job: PlanEndingJob = { organizationId, endsAt: end.at };
+    await tx.addJob(PLAN_ENDING_TASK, `${PLAN_ENDING_TASK}:${organizationId}`, runAt, job);
   }
 
-  async function remindPlanEnding(payload: unknown) {
-    const job = payload as PlanEndingJob;
-    await runAsSystem("mail an organization's owners that its plan ends", async () => {
-      const { account, grant, owners } = await state(job.organizationId);
-      const at = now();
-      const end = statusPlanEnd(account, grant, at);
-      // Renewed, extended, ended or moved since it was queued: a newer job has the new end.
-      if (!end || end.renews || end.at !== job.endsAt) return;
-      const name = end.fallsTo?.from ?? planName(tierInForce(paidTierOf(account), grant, at));
-      if (!name) return;
-      const next = end.fallsTo?.to ?? BYOK_TIERS.standard.name;
-      await mailOnce(owners, `${PLAN_ENDING_TASK}:${job.organizationId}:${end.at}`, (reader) =>
-        planEndingEmail(reader, { name, endsAt: new Date(end.at), next }, deps.billingUrl),
-      );
-    });
+  /** What is new to tell, and the notice that remembers it. */
+  function decide(
+    account: Subscription | null,
+    told: { pastDueTold: boolean; canceledSubscriptionId: string | null },
+  ) {
+    const notice = { ...told };
+    const mails: NewMail[] = [];
+    if (!account) return { notice, mails };
+    if (account.status === "past_due") {
+      if (!told.pastDueTold) {
+        notice.pastDueTold = true;
+        const plan = planName(paidTierOf(account)) ?? "Dozo";
+        mails.push({
+          kind: "payment-failed",
+          occasion: `payment-failed:${randomUUID()}`,
+          details: { plan },
+        });
+      }
+    } else if (account.status && SETTLED.has(account.status)) notice.pastDueTold = false;
+    const subscriptionId = account.subscriptionId;
+    if (subscriptionId && hasBillingAccess(account.status)) {
+      if (!account.cancelAtPeriodEnd) notice.canceledSubscriptionId = null;
+      else if (told.canceledSubscriptionId !== subscriptionId) {
+        notice.canceledSubscriptionId = subscriptionId;
+        const end = statusPlanEnd(account, null, now());
+        const plan = planName(paidTierOf(account));
+        if (end && plan)
+          mails.push({
+            kind: "canceled",
+            occasion: `canceled:${subscriptionId}:${randomUUID()}`,
+            details: { plan, endsAt: end.at },
+          });
+      }
+    }
+    return { notice, mails };
   }
 
-  /** Runs `work` across tenants, reporting instead of throwing: billing never waits on a mail. */
-  async function quietly(reason: string, work: () => Promise<void>) {
+  function build(mail: ClaimedMail): Promise<TransactionalEmail> {
+    const reader = { email: mail.email, name: mail.name, locale: emailLocale(mail.locale) };
+    const { plan, endsAt, next } = mail.details;
+    if (mail.kind === "payment-failed") return paymentFailedEmail(reader, plan, deps.billingUrl);
+    const end = new Date(endsAt ?? "");
+    if (mail.kind === "canceled")
+      return cancellationEmail(reader, { name: plan, endsAt: end }, deps.billingUrl);
+    return planEndingEmail(reader, { name: plan, endsAt: end, next: next ?? "" }, deps.billingUrl);
+  }
+
+  /** Sends one recorded mail if no live claim holds it; "busy" while one does. */
+  async function deliver(id: string): Promise<"done" | "busy"> {
+    const mail = await store.claim(id, MAIL_CLAIM_MS);
+    if (mail === "busy") return "busy";
+    if (!mail) return "done";
+    const settle = async (status: "sent" | "failed" | "skipped") => {
+      await store.finish(id, status);
+      await store.removeJob(`${BILLING_MAIL_TASK}:${id}`);
+    };
+    // Turned off, unverified or turned into a messaging contact since it was recorded.
+    if (!mail.emailVerified || mail.deactivatedAt || mail.email.endsWith(MESSAGING_EMAIL_SUFFIX)) {
+      await settle("skipped");
+      return "done";
+    }
     try {
-      await runAsSystem(reason, work);
+      await deps.email.send(await build(mail));
     } catch (error) {
+      if (!(error instanceof EmailRecipientRejectedError)) {
+        await store.release(id);
+        throw error;
+      }
+      await settle("failed");
       deps.onError(error);
+      return "done";
+    }
+    await settle("sent");
+    return "done";
+  }
+
+  /** Sends after commit without the caller waiting; the backup jobs cover a failure. */
+  function deliverSoon(ids: string[]) {
+    for (const id of ids) {
+      const send = runAsSystem("send a billing mail", () => deliver(id)).then(
+        () => undefined,
+        deps.onError,
+      );
+      sending.add(send);
+      void send.finally(() => sending.delete(send));
     }
   }
 
-  return {
-    /** After a sync stored the organization's subscription. */
-    afterSync(organizationId: string): Promise<void> {
-      return quietly("mail an organization's owners about its billing", async () => {
-        const { account, grant, owners } = await state(organizationId);
-        const results = await Promise.allSettled([
-          account ? paymentFailed(organizationId, account, owners) : undefined,
-          account ? canceled(account, owners) : undefined,
-          scheduleReminder(organizationId, account, grant),
+  async function remindPlanEnding(job: PlanEndingJob) {
+    const ids = await runAsSystem("mail an organization's owners that its plan ends", () =>
+      store.transaction(async (tx) => {
+        const [account, grant] = await Promise.all([
+          tx.subscription(job.organizationId),
+          tx.grant(job.organizationId),
         ]);
-        for (const result of results) if (result.status === "rejected") deps.onError(result.reason);
-      });
+        const at = now();
+        const end = statusPlanEnd(account, grant, at);
+        const mails: NewMail[] = [];
+        // Renewed, extended, ended or moved since it was queued: only the end it was queued for.
+        if (end && !end.renews && end.at === job.endsAt) {
+          const name = end.fallsTo?.from ?? planName(tierInForce(paidTierOf(account), grant, at));
+          if (name)
+            mails.push({
+              kind: "plan-ending",
+              occasion: `plan-ending:${job.organizationId}:${end.at}`,
+              details: {
+                plan: name,
+                endsAt: end.at,
+                next: end.fallsTo?.to ?? BYOK_TIERS.standard.name,
+              },
+            });
+        }
+        const recorded = await record(tx, job.organizationId, mails);
+        await scheduleReminder(tx, job.organizationId, account, grant);
+        return recorded;
+      }),
+    );
+    deliverSoon(ids);
+  }
+
+  return {
+    /**
+     * After a sync stored the organization's subscription. A failure is thrown, so the sync fails
+     * and the provider's redelivery decides again; sending never makes the caller wait.
+     */
+    async afterSync(organizationId: string): Promise<void> {
+      const ids = await runAsSystem("decide an organization's billing mails", () =>
+        store.transaction(async (tx) => {
+          const told = await tx.lockNotice(organizationId);
+          const [account, grant] = await Promise.all([
+            tx.subscription(organizationId),
+            tx.grant(organizationId),
+          ]);
+          const { notice, mails } = decide(account, told);
+          if (
+            notice.pastDueTold !== told.pastDueTold ||
+            notice.canceledSubscriptionId !== told.canceledSubscriptionId
+          )
+            await tx.saveNotice(organizationId, notice);
+          const recorded = await record(tx, organizationId, mails);
+          await scheduleReminder(tx, organizationId, account, grant);
+          return recorded;
+        }),
+      );
+      deliverSoon(ids);
     },
-    /** After an admin gave or ended a plan by hand. */
-    afterPlanChange(organizationId: string): Promise<void> {
-      return quietly("queue the end of an organization's plan", async () => {
-        const { account, grant } = await state(organizationId);
-        await scheduleReminder(organizationId, account, grant);
-      });
+    /** Inside the transaction where an admin gave or ended a plan: queues the reminder with it. */
+    async afterPlanChange(tx: Prisma.TransactionClient, organizationId: string): Promise<void> {
+      const within = store.within(tx);
+      const [account, grant] = await Promise.all([
+        within.subscription(organizationId),
+        within.grant(organizationId),
+      ]);
+      await scheduleReminder(within, organizationId, account, grant);
     },
     remindPlanEnding,
+    deliver,
+    /** Stops the runner, then waits for the mails being sent. */
     async stop(): Promise<void> {
-      await queue?.stop();
+      await runner?.stop();
+      await Promise.allSettled([...sending]);
     },
   };
 }

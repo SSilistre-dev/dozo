@@ -131,13 +131,23 @@ Billing mails an organization's owners, the members who manage billing, in Engli
 (`packages/auth/src/dozo-billing-email.tsx`; no unsubscribe link, as they are not marketing): once
 when a payment fails (again only after it was paid up in between), once when a subscription is set
 to cancel (the day the plan lasts until), and three days before the plan in force ends without
-renewing, a canceled subscription's or a granted plan's (the plan that follows). Each is decided
-from the stored state after every sync (`apps/api/src/dozo-billing-lifecycle.ts`) and kept to one
-mail per owner and occasion by an `email_sends` row; the reminder is a Graphile job keyed per
-organization, run by the API (`packages/adapters/src/dozo-job-queue.ts`), which mails only if that
-is still the end when it runs. Without account email nothing is sent. Receipts are the payment
-provider's own mails, turned on in its settings, so none is written here. While a subscription is
-past due, web and mobile show the owner one line with Manage billing.
+renewing, a canceled subscription's or a granted plan's (the plan that follows). Only owners who
+were owners when it happened, active and with a verified address of their own, are mailed.
+`apps/api/src/dozo-billing-lifecycle.ts` decides after every sync, in one transaction that locks
+the organization's row in `dozo_billing_notices` (what was already told) and reads the
+subscription as stored then; the migration that made the table counted whatever was overdue or
+canceled at the time as told, so nothing earlier is mailed. That transaction records each mail in
+`dozo_billing_mails` with a backup job; the mail is sent after commit without the caller waiting.
+A send claims its row: sent, refused for good (never tried again), or given back for the backup
+job. A claim a dead process left is taken over after five minutes, so a mail the provider accepted
+just before a crash, or timed out on, can rarely go twice. The reminder is one Graphile job per
+organization, queued in the transaction that changed the end (a sync or an admin's grant); it
+mails only if that is still the end, then queues itself for the next one. The API runs these jobs
+(`packages/adapters/src/dozo-job-queue.ts`) on a pool of two connections of its own; Graphile
+checks once a minute for jobs that have come due, the one timed check here. Without account email
+nothing is sent. Receipts are the payment provider's own mails, turned on in its settings, so none
+is written here. While a subscription is past due, web and mobile show the owner one line with
+Manage billing.
 
 A plan picked on the landing page follows the visitor to checkout. Its sign-up links carry
 `?plan=premium|premium_plus&period=month|year`; the web sign-up page keeps a valid pick in session

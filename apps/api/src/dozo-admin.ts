@@ -14,6 +14,7 @@ import {
 } from "@rakazo/auth";
 import type { DozoAdminUsersSort } from "@rakazo/contracts";
 import { ClientError, MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   IsolationError,
   ownedOrganizationId,
@@ -79,8 +80,11 @@ export interface DozoAdminWiring {
   realtime?: RealtimeFanout;
   /** What the billing page reads payments from; absent when no payment provider is configured. */
   payments?: DozoPaymentLedger;
-  /** Queues the mail before a granted plan ends; absent when the server sends no billing mail. */
-  planChanged?: (organizationId: string) => Promise<void>;
+  /**
+   * Queues the mail before a granted plan ends, in the transaction that changed the plan; absent
+   * when the server sends no billing mail.
+   */
+  planChanged?: (tx: Prisma.TransactionClient, organizationId: string) => Promise<void>;
 }
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -341,22 +345,25 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         );
         const { organizationId } = target;
         // Setting a plan always changes it; ending one changes it only when there was one.
-        const changed = await runAsSystem("change a granted plan for the admin page", async () => {
-          if (!grant) return revokePlanGrant(prisma, organizationId);
-          await setPlanGrant(prisma, {
-            organizationId,
-            ...grant,
-            grantedById: context.actor.userId,
-            note: input.note,
-          });
-          return true;
-        });
+        const changed = await runAsSystem("change a granted plan for the admin page", () =>
+          prisma.$transaction(async (tx) => {
+            const done = grant
+              ? await setPlanGrant(tx, {
+                  organizationId,
+                  ...grant,
+                  grantedById: context.actor.userId,
+                  note: input.note,
+                }).then(() => true)
+              : await revokePlanGrant(tx, organizationId);
+            if (done) await wiring?.planChanged?.(tx, organizationId);
+            return done;
+          }),
+        );
         // The organization reads its own audit log, so the event carries neither the admin's
         // email nor the internal note (which stays on the grant row), only the admin's opaque id:
         // a new grant overwrites the row's `grantedById` and ending one deletes the row, so this
         // is the lasting record of who did it. It is a second write because the audit primitive
         // opens its own transaction and takes none.
-        if (changed) await wiring?.planChanged?.(organizationId);
         if (changed)
           await recordAuditEvent({
             action: grant ? "plan.granted" : "plan.grant_ended",
