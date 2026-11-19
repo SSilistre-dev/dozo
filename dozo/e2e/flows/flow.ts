@@ -43,11 +43,23 @@ export function watch(page: Page) {
     if (!watching || message.type() !== "error") return;
     const text = message.text();
     // The browser's own line for a failed response; the response itself is judged below.
-    if (/^Failed to load resource: the server responded with a status of/.test(text)) return;
+    // The browser's own line for a failed load names no address: the response and requestfailed
+    // listeners below record the same failure with its address.
+    if (/^Failed to load resource: /.test(text)) return;
     seen.push(`console: ${text.slice(0, 300)}`);
   });
   page.on("pageerror", (error) => {
     if (watching) seen.push(`pageerror: ${error.message.slice(0, 300)}`);
+  });
+  page.on("requestfailed", (request) => {
+    const error = request.failure()?.errorText ?? "failed";
+    // A request the page itself dropped (a navigation, an unmounted screen) is not a failure. The
+    // browser shares the host's network (run.sh, Linux), which changes whenever a container
+    // anywhere on the machine starts or stops; the app retries, it is not at fault.
+    if (!watching || /ERR_ABORTED|ERR_NETWORK_CHANGED/.test(error)) return;
+    const url = new URL(request.url());
+    if (BACKGROUND.test(url.pathname)) return;
+    seen.push(`failed: ${error} ${request.method()} ${url.host}${url.pathname}`);
   });
   page.on("response", (response) => {
     if (!watching || response.status() < 400) return;

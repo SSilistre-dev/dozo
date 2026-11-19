@@ -10,7 +10,11 @@ export const BUDGETS: Record<string, { label: string; unit: string; budget: numb
   coldAppFirstContent: { label: "Soğuk açılış, ilk içerik (FCP, /app)", unit: "ms", budget: 2500 },
   appsDialog: { label: "Uygulamalar: tıklamadan pencereye", unit: "ms", budget: 600 },
   appsFirstTile: { label: "Uygulamalar: tıklamadan ilk karta", unit: "ms", budget: 1500 },
-  modelsResponses: { label: "Ayarlar → Modeller: model kataloğu yanıt sayısı", unit: "yanıt", budget: 8 },
+  modelsResponses: {
+    label: "Ayarlar → Modeller: model kataloğu yanıt sayısı",
+    unit: "yanıt",
+    budget: 8,
+  },
 };
 
 export type BudgetVerdict = {

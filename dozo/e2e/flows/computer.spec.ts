@@ -15,8 +15,8 @@ test("computer: start from the bot panel, stop from the admin list", async ({
 }) => {
   test.setTimeout(300_000);
   guard.allow(
-    /net::ERR_(INCOMPLETE_CHUNKED_ENCODING|EMPTY_RESPONSE|CONNECTION_REFUSED)/,
-    "streams cut on purpose: the stopped computer's screen, and the live stream of each admin reload",
+    /^failed: net::ERR_(CONNECTION_REFUSED|CONNECTION_RESET|EMPTY_RESPONSE|INCOMPLETE_CHUNKED_ENCODING) [A-Z]+ [^ ]+\/(rpc|api)\//,
+    "FINDING: while a computer starts or stops, the stack's own address refuses connections for a moment (no container restarts; docker sets up the computer's network); the app retries",
   );
   const world = readWorld();
   await openBot(page, world.chiefId, "Chief");
@@ -43,9 +43,11 @@ test("computer: start from the bot panel, stop from the admin list", async ({
     await expect(admin.getByTestId("admin-status")).toBeVisible();
     await expect(mine).toHaveCount(0, { timeout: 1_000 });
   }).toPass({ timeout: 120_000 });
-  await page.reload();
-  await openBotPanel(page);
-  await expect(page.getByTestId("computer-preview-open").filter({ hasText: "Wake" })).toBeVisible({
-    timeout: 60_000,
-  });
+  // The panel shows it asleep again (read again until the stopped state arrives).
+  const wake = page.getByTestId("computer-preview-open").filter({ hasText: "Wake" });
+  await expect(async () => {
+    await page.reload();
+    await openBotPanel(page);
+    await expect(wake).toBeVisible({ timeout: 10_000 });
+  }).toPass({ timeout: 120_000 });
 });

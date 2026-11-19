@@ -54,7 +54,11 @@ test("kayıt → model adımı → 'Daha sonra' → uygulama", async ({ page, gu
   const survey = page.getByRole("heading", { name: "Dozo'ya hoş geldiniz" });
   await expect(model.or(survey)).toBeVisible();
   if (await survey.isVisible()) {
-    await page.getByRole("radio", { name: "Kişisel" }).or(page.getByText("Kişisel", { exact: true })).first().click();
+    await page
+      .getByRole("radio", { name: "Kişisel" })
+      .or(page.getByText("Kişisel", { exact: true }))
+      .first()
+      .click();
     await page.getByRole("button", { name: "Devam", exact: true }).click();
   }
   await expect(model).toBeVisible();
@@ -124,9 +128,7 @@ test("Uygulamalar penceresi açılır, logolar kendi adresimizden yüklenir", as
     }),
   );
   const origin = new URL(page.url()).origin;
-  const broken = logoState
-    .filter((logo) => logo.shown && logo.width === 0)
-    .map((logo) => logo.src);
+  const broken = logoState.filter((logo) => logo.shown && logo.width === 0).map((logo) => logo.src);
   const foreign = logoState.filter((logo) => !logo.src.startsWith(origin)).map((logo) => logo.src);
   expect(broken, "logos that did not load").toEqual([]);
   expect(foreign, "logos served from another host").toEqual([]);

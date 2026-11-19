@@ -156,7 +156,9 @@ prove the features work. Project `flows` (depends on `setup` only), light theme,
 scenario makes its own (`flows/accounts.ts`: `newAccount`, the admin's `adminBrowser`). Every
 scenario (`flows/flow.ts`):
 
-- fails on a console error, an uncaught page error or a 4xx/5xx answer, unless the scenario allows
+- fails on a console error, an uncaught page error, a request that failed (not one the page
+  dropped itself, nor `ERR_NETWORK_CHANGED`: the browser shares the host's network, which changes
+  whenever a container on the machine starts or stops) or a 4xx/5xx answer, unless the scenario allows
   that exact answer with a reason (`guard.allow`). A known defect is allowed with a reason that
   starts with `FINDING:`, so it is listed, not hidden;
 - saves its last screen to `dozo/.stage/e2e/shots/<project>--<title>.png` (run.sh copies it out
