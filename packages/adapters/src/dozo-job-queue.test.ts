@@ -24,13 +24,25 @@ describe("DozoJobQueue", () => {
     const task = vi.fn(async () => undefined);
     const started = runner();
     let options: RunnerOptions | undefined;
-    const queue = new DozoJobQueue({} as Pool, { "dozo.test": task }, async (given) => {
-      options = given;
-      return started;
-    });
+    const queue = new DozoJobQueue(
+      {} as Pool,
+      { "dozo.test": task },
+      {
+        crontab: "0 * * * * dozo.test",
+        start: async (given) => {
+          options = given;
+          return started;
+        },
+      },
+    );
     await queue.stop();
     expect(Object.keys(options?.taskList ?? {})).toEqual(["dozo.test"]);
-    expect(options).toMatchObject({ concurrency: 1, noHandleSignals: true, pollInterval: 60_000 });
+    expect(options).toMatchObject({
+      concurrency: 1,
+      noHandleSignals: true,
+      pollInterval: 60_000,
+      crontab: "0 * * * * dozo.test",
+    });
     const run = options?.taskList?.["dozo.test"] as (payload: unknown) => Promise<void>;
     await run({ id: 1 });
     expect(task).toHaveBeenCalledWith({ id: 1 });
@@ -38,8 +50,10 @@ describe("DozoJobQueue", () => {
   });
 
   it("reports a runner that did not start, and stops without one", async () => {
-    const queue = new DozoJobQueue({} as Pool, {}, async () => {
-      throw new Error("no database");
+    const queue = new DozoJobQueue({} as Pool, {}, {
+      start: async () => {
+        throw new Error("no database");
+      },
     });
     await expect(queue.stop()).resolves.toBeUndefined();
     expect(logged.error).toHaveBeenCalledWith(
@@ -49,9 +63,9 @@ describe("DozoJobQueue", () => {
   });
 
   it("reports a runner that stopped by itself", async () => {
-    const queue = new DozoJobQueue({} as Pool, {}, async () =>
-      runner(Promise.reject(new Error("fatal"))),
-    );
+    const queue = new DozoJobQueue({} as Pool, {}, {
+      start: async () => runner(Promise.reject(new Error("fatal"))),
+    });
     await queue.stop();
     await vi.waitFor(() =>
       expect(logged.error).toHaveBeenCalledWith("fork job queue stopped", new Error("fatal")),

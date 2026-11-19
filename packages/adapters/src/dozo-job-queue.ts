@@ -28,10 +28,19 @@ export class DozoJobQueue {
   constructor(
     pool: Pool,
     tasks: Readonly<Record<string, DozoTask>>,
-    start: (options: RunnerOptions) => Promise<Runner> = run,
+    options: {
+      /**
+       * Graphile's crontab lines for tasks that run on a schedule (a slow safety net); Graphile
+       * runs each scheduled time once across every process that lists it.
+       */
+      crontab?: string;
+      start?: (options: RunnerOptions) => Promise<Runner>;
+    } = {},
   ) {
+    const start = options.start ?? run;
     this.runner = start({
       pgPool: pool,
+      ...(options.crontab ? { crontab: options.crontab } : {}),
       concurrency: 1,
       pollInterval: DUE_CHECK_MS,
       // The API's own shutdown stops this runner; Graphile must not handle the signal itself.

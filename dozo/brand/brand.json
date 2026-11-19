@@ -3386,14 +3386,14 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "  partnerProgram?: PartnerProgram;\n}): BillingService {",
-      "replace": "  partnerProgram?: PartnerProgram;\n  /** Billing's mails, told each time a sync stored an organization's subscription. */\n  dozoAfterSync?: (organizationId: string) => Promise<void>;\n}): BillingService {",
+      "replace": "  partnerProgram?: PartnerProgram;\n  /** Billing's mails, told after each sync of a customer; they never throw. */\n  dozoAfterSync?: (customerId: string) => Promise<void>;\n}): BillingService {",
       "reason": "billing mails: the billing service takes the hook a sync calls"
     },
     {
       "file": "apps/api/src/billing.ts",
-      "find": "    const live = snapshot;\n    // Measurement never decides whether a paid plan activates.\n",
-      "replace": "    const live = snapshot;\n    // Decides billing's mails from what was just stored; a failure fails the sync, so the\n    // provider's redelivery decides again. Sending happens after, without waiting.\n    await deps.dozoAfterSync?.(previous.organizationId);\n    // Measurement never decides whether a paid plan activates.\n",
-      "reason": "billing mails: every stored subscription is checked for a failed payment, a cancellation and a plan end to mail about"
+      "find": "  async function sync(customerId: string): Promise<void> {\n    if (modelCredits && provider.listCreditPurchases) {\n",
+      "replace": "  /**\n   * Upstream's sync, then billing's mails. They run after every step of the sync, so a plan that\n   * was just paid is set up first, and they report their own failures instead of throwing.\n   */\n  async function sync(customerId: string): Promise<void> {\n    await syncSubscription(customerId);\n    await deps.dozoAfterSync?.(customerId);\n  }\n\n  async function syncSubscription(customerId: string): Promise<void> {\n    if (modelCredits && provider.listCreditPurchases) {\n",
+      "reason": "billing mails: decided after the whole sync (the funding of a newly paid plan, its analytics, referrals), never in the middle of it, so a mail can never cost a sync a step"
     },
     {
       "file": "apps/api/src/app.ts",
@@ -3409,7 +3409,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  const billing = billingProvider\n    ? createBillingService({",
-      "replace": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  // Billing's transactional mails: none without a way to send them. Their job runner gets a pool\n  // of its own (one listening connection, one job at a time), so it never waits on the app's.\n  const dozoJobPool =\n    billingProvider && email && !inMemoryJobs\n      ? createPool(env.databaseUrl, { poolMax: 2, applicationName: \"dozo-jobs\" })\n      : undefined;\n  const dozoBilling =\n    billingProvider && email\n      ? createBillingLifecycle({\n          store: sqlMailStore(prisma, { jobs: Boolean(dozoJobPool) }),\n          email,\n          billingUrl: new URL(\"/app?settings=billing\", env.webOrigin).href,\n          queue: dozoJobPool ? (tasks) => new DozoJobQueue(dozoJobPool, tasks) : undefined,\n          onError: emailErrorLogger(\"billing email failed\"),\n        })\n      : undefined;\n  const billing = billingProvider\n    ? createBillingService({",
+      "replace": "    (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);\n  // Billing's transactional mails: none without a way to send them. Their job runner gets a pool\n  // of its own (one listening connection, one job at a time), so it never waits on the app's.\n  const dozoJobPool =\n    billingProvider && email && !inMemoryJobs\n      ? createPool(env.databaseUrl, { poolMax: 2, applicationName: \"dozo-jobs\" })\n      : undefined;\n  const dozoBilling =\n    billingProvider && email\n      ? createBillingLifecycle({\n          store: sqlMailStore(prisma, { jobs: Boolean(dozoJobPool) }),\n          email,\n          billingUrl: new URL(\"/app?settings=billing\", env.webOrigin).href,\n          queue: dozoJobPool\n            ? (tasks, crontab) => new DozoJobQueue(dozoJobPool, tasks, { crontab })\n            : undefined,\n          onError: emailErrorLogger(\"billing email failed\"),\n        })\n      : undefined;\n  const billing = billingProvider\n    ? createBillingService({",
       "requires": [
         "apps/api/src/dozo-billing-lifecycle.ts",
         "apps/api/src/dozo-billing-mails.ts",

@@ -29,6 +29,11 @@ function fakePrisma(answers: unknown[][] = []) {
   return { prisma: prisma as unknown as PrismaClient, raw: prisma, calls };
 }
 
+/** The store's transaction reads and writes, on the fake (whose transaction is itself). */
+function inside(prisma: PrismaClient, jobs = true) {
+  return sqlMailStore(prisma, { jobs }).transaction(async (tx) => tx);
+}
+
 describe("sqlMailStore", () => {
   it("locks the organization's notice, writing a new one that has told nothing", async () => {
     const { prisma, calls } = fakePrisma([[{ pastDueTold: true, canceledSubscriptionId: null }]]);
@@ -48,7 +53,7 @@ describe("sqlMailStore", () => {
 
   it("saves the notice, reads the subscription, grant and owners", async () => {
     const { prisma, raw, calls } = fakePrisma();
-    const tx = sqlMailStore(prisma, { jobs: true }).within(prisma as never);
+    const tx = await inside(prisma);
     await tx.saveNotice("org", { pastDueTold: false, canceledSubscriptionId: "sub_1" });
     expect(calls[0]?.values).toEqual([false, "sub_1", "org"]);
     expect(await tx.subscription("org")).toEqual({ status: "active" });
@@ -70,7 +75,7 @@ describe("sqlMailStore", () => {
 
   it("records a mail once per owner and occasion", async () => {
     const { prisma, calls } = fakePrisma([[{ id: "mail-1" }], []]);
-    const tx = sqlMailStore(prisma, { jobs: true }).within(prisma as never);
+    const tx = await inside(prisma);
     const mail = {
       organizationId: "org",
       userId: "ada",
@@ -93,8 +98,7 @@ describe("sqlMailStore", () => {
   it("queues and removes jobs only where there is a queue", async () => {
     const queued = fakePrisma();
     const store = sqlMailStore(queued.prisma, { jobs: true });
-    await store
-      .within(queued.prisma as never)
+    await (await inside(queued.prisma))
       .addJob("dozo.test", "dozo.test:org", new Date("2026-11-22T12:00:00.000Z"), { id: 1 });
     await store.removeJob("dozo.test:org");
     expect(queued.calls.map((call) => [call.sql.split("(")[0], call.values])).toEqual([
@@ -106,7 +110,7 @@ describe("sqlMailStore", () => {
     ]);
     const none = fakePrisma();
     const without = sqlMailStore(none.prisma, { jobs: false });
-    await without.within(none.prisma as never).addJob("dozo.test", "k", new Date(), {});
+    await without.transaction((tx) => tx.addJob("dozo.test", "k", new Date(), {}));
     await without.removeJob("k");
     expect(none.calls).toEqual([]);
   });
@@ -136,5 +140,33 @@ describe("sqlMailStore", () => {
     await store.finish("mail-1", "sent");
     await store.release("mail-1");
     expect(calls.slice(-2).map((call) => call.values)).toEqual([["sent", "mail-1"], ["mail-1"]]);
+  });
+
+  it("finds the customer's organization", async () => {
+    const { prisma, raw } = fakePrisma();
+    raw.billingAccount.findUnique
+      .mockResolvedValueOnce({ organizationId: "org" } as never)
+      .mockResolvedValueOnce(null as never);
+    const store = sqlMailStore(prisma, { jobs: true });
+    expect(await store.organizationOf("cus_1")).toBe("org");
+    expect(await store.organizationOf("cus_2")).toBeNull();
+  });
+
+  it("sweeps only where there is a queue, and purges settled mails", async () => {
+    const { prisma, calls } = fakePrisma([[{ organizationId: "org" }], [{ id: "mail-1" }]]);
+    const store = sqlMailStore(prisma, { jobs: true });
+    expect(await store.reminderGaps("dozo.plan-ending:")).toEqual(["org"]);
+    expect(await store.failAbandoned("dozo.billing-mail:", 86_400_000)).toEqual(["mail-1"]);
+    expect(await store.purge(7_776_000_000)).toBe(1);
+    expect(calls.map((call) => call.values)).toEqual([
+      ["dozo.plan-ending:", 500],
+      [86_400, "dozo.billing-mail:"],
+      [7_776_000],
+    ]);
+    const none = fakePrisma();
+    const without = sqlMailStore(none.prisma, { jobs: false });
+    expect(await without.reminderGaps("p")).toEqual([]);
+    expect(await without.failAbandoned("p", 1)).toEqual([]);
+    expect(none.calls).toEqual([]);
   });
 });

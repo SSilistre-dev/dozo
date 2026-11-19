@@ -3,7 +3,7 @@ import { MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import type { PlanGrant, Prisma, PrismaClient } from "@rakazo/db";
 import { planGrantOf } from "@rakazo/db";
 
-// The tables behind billing's mails (migration 20261227120000_dozo_billing_mails), read and written
+// The tables behind billing's mails (migration 20261228120000_dozo_billing_mails), read and written
 // with SQL: they belong to the fork and have no model in schema.prisma.
 
 /** What billing has already told an organization's owners about. */
@@ -55,18 +55,32 @@ export interface BillingTx {
 
 export interface BillingMailStore {
   transaction<T>(work: (tx: BillingTx) => Promise<T>): Promise<T>;
-  /** The same reads and writes inside a transaction the caller opened. */
-  within(tx: Prisma.TransactionClient): BillingTx;
   /** Claims a pending mail no live claim holds; "busy" while one does, null once it is settled. */
   claim(id: string, staleMs: number): Promise<ClaimedMail | "busy" | null>;
   finish(id: string, status: "sent" | "failed" | "skipped"): Promise<void>;
   /** Gives the claim back after a send that may be tried again. */
   release(id: string): Promise<void>;
   removeJob(key: string): Promise<void>;
+  /** The organization a provider's customer bills, or null for one this server does not know. */
+  organizationOf(customerId: string): Promise<string | null>;
+  /**
+   * Organizations whose plan in force may end without renewing (an unexpired grant, a live
+   * subscription set to cancel) and that have no live job under `keyPrefix` + their id.
+   */
+  reminderGaps(keyPrefix: string): Promise<string[]>;
+  /**
+   * Marks failed the pending mails older than `olderThanMs` whose backup job (`keyPrefix` + id) is
+   * gone or out of tries; their ids.
+   */
+  failAbandoned(keyPrefix: string, olderThanMs: number): Promise<string[]>;
+  /** Deletes settled mails finished more than `olderThanMs` ago; how many. */
+  purge(olderThanMs: number): Promise<number>;
 }
 
 /** Graphile's backoff grows with each try; ten spread a failing job over a few hours. */
 const MAX_ATTEMPTS = 10;
+/** One sweep queues at most this many missing reminders; the next sweep takes the rest. */
+const GAPS_PER_SWEEP = 500;
 
 /**
  * The store on the database. `jobs` is false where there is no job queue to add to (an in-memory
@@ -144,7 +158,6 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
 
   return {
     transaction: (work) => prisma.$transaction((tx) => work(within(tx))),
-    within,
     async claim(id, staleMs) {
       const claimed = await prisma.$queryRaw<ClaimedMail[]>`
         UPDATE "dozo_billing_mails" AS mail SET "claimedAt" = CURRENT_TIMESTAMP
@@ -173,5 +186,46 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
       if (!jobs) return;
       await prisma.$executeRaw`SELECT graphile_worker.remove_job(${key}::text)`;
     },
+    async organizationOf(customerId) {
+      const account = await prisma.billingAccount.findUnique({
+        where: { customerId },
+        select: { organizationId: true },
+      });
+      return account?.organizationId ?? null;
+    },
+    async reminderGaps(keyPrefix) {
+      if (!jobs) return [];
+      const rows = await prisma.$queryRaw<{ organizationId: string }[]>`
+        SELECT ending."organizationId" FROM (
+          SELECT "organizationId" FROM "dozo_plan_grants" WHERE "endsAt" > CURRENT_TIMESTAMP
+          UNION
+          SELECT "organizationId" FROM "billing_accounts"
+          WHERE "cancelAtPeriodEnd" AND "status" IN ('trialing', 'active', 'past_due')
+            AND "currentPeriodEndsAt" > CURRENT_TIMESTAMP
+        ) AS ending
+        WHERE NOT EXISTS (
+          SELECT 1 FROM graphile_worker.jobs AS job
+          WHERE job.key = ${keyPrefix} || ending."organizationId"
+            AND job.attempts < job.max_attempts)
+        LIMIT ${GAPS_PER_SWEEP}`;
+      return rows.map((row) => row.organizationId);
+    },
+    async failAbandoned(keyPrefix, olderThanMs) {
+      if (!jobs) return [];
+      const rows = await prisma.$queryRaw<{ id: string }[]>`
+        UPDATE "dozo_billing_mails" AS mail
+        SET "status" = 'failed', "finishedAt" = CURRENT_TIMESTAMP
+        WHERE mail."status" = 'pending'
+          AND mail."createdAt" < CURRENT_TIMESTAMP - make_interval(secs => ${olderThanMs / 1000})
+          AND NOT EXISTS (
+            SELECT 1 FROM graphile_worker.jobs AS job
+            WHERE job.key = ${keyPrefix} || mail."id" AND job.attempts < job.max_attempts)
+        RETURNING mail."id"`;
+      return rows.map((row) => row.id);
+    },
+    purge: (olderThanMs) => prisma.$executeRaw`
+      DELETE FROM "dozo_billing_mails"
+      WHERE "status" <> 'pending'
+        AND "finishedAt" < CURRENT_TIMESTAMP - make_interval(secs => ${olderThanMs / 1000})`,
   };
 }

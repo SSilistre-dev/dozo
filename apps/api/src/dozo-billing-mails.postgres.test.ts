@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
-import { DozoJobQueue } from "@rakazo/adapters";
+import { BillingEmulator, DozoJobQueue } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createPool } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createBillingService } from "./billing.js";
 import { createBillingLifecycle } from "./dozo-billing-lifecycle.js";
 import { sqlMailStore } from "./dozo-billing-mails.js";
 
@@ -15,7 +16,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 const SEED = readFileSync(
   new URL(
-    "../../../packages/db/prisma/migrations/20261227120000_dozo_billing_mails/migration.sql",
+    "../../../packages/db/prisma/migrations/20261228120000_dozo_billing_mails/migration.sql",
     import.meta.url,
   ),
   "utf8",
@@ -28,7 +29,11 @@ describePostgres("billing mails (PostgreSQL)", () => {
   let close: () => Promise<void>;
 
   /** An organization with one verified owner and the given subscription. */
-  async function organization(billing: { status: string; cancelAtPeriodEnd?: boolean }) {
+  async function organization(billing: {
+    status: string | null;
+    cancelAtPeriodEnd?: boolean;
+    customerId?: string;
+  }) {
     const id = `billing-mail-${suffix}-${organizations.length}`;
     organizations.push(id);
     await prisma.user.create({
@@ -40,14 +45,15 @@ describePostgres("billing mails (PostgreSQL)", () => {
     await prisma.member.create({
       data: { id, organizationId: id, userId: id, role: "owner", createdAt: new Date() },
     });
+    const { customerId, ...subscription } = billing;
     await prisma.billingAccount.create({
       data: {
         organizationId: id,
-        customerId: `customer-${id}`,
-        subscriptionId: `sub-${id}`,
-        byokTier: "pro",
+        customerId: customerId ?? `customer-${id}`,
+        subscriptionId: customerId ? null : `sub-${id}`,
+        byokTier: customerId ? null : "pro",
         currentPeriodEndsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
-        ...billing,
+        ...subscription,
       },
     });
     return id;
@@ -88,7 +94,7 @@ describePostgres("billing mails (PostgreSQL)", () => {
   it("decides a failed payment once when many syncs run together", async () => {
     const organizationId = await organization({ status: "past_due" });
     const { billing, send } = lifecycle();
-    await Promise.all(Array.from({ length: 8 }, () => billing.afterSync(organizationId)));
+    await Promise.all(Array.from({ length: 8 }, () => billing.afterSync(`customer-${organizationId}`)));
     await billing.stop();
     expect(await mails(organizationId)).toEqual([
       expect.objectContaining({ kind: "payment-failed", status: "sent" }),
@@ -192,6 +198,65 @@ describePostgres("billing mails (PostgreSQL)", () => {
     }
   });
 
+  it("lets a sync finish every step when its mails fail on a foreign key", async () => {
+    const provider = new BillingEmulator({ modelCredits: true });
+    const { customerId } = await provider.createCustomer({ email: "a@example.test", organizationId: "x" });
+    const organizationId = await organization({ status: null, customerId });
+    await prisma.modelCreditAccount.create({ data: { organizationId } });
+    provider.byokCheckouts.set(customerId, {
+      customerId,
+      amountCents: 4900,
+      tier: "pro",
+      interval: "month",
+    } as never);
+    provider.completeByokCheckout(customerId);
+    const errors: unknown[] = [];
+    const store = sqlMailStore(prisma, { jobs: true });
+    // The organization is gone by the time the mails are decided: the notice breaks its key.
+    const mails = createBillingLifecycle({
+      store: { ...store, organizationOf: async () => `gone-${suffix}` },
+      email: { send: vi.fn(), describe: () => ({ id: "test" }) } as never,
+      billingUrl: "https://app.example.test/app?settings=billing",
+      onError: (error) => {
+        errors.push(error);
+      },
+    });
+    const billing = createBillingService({
+      prisma,
+      provider,
+      webOrigin: "https://app.example.test",
+      dozoAfterSync: mails.afterSync,
+    });
+    await expect(billing.sync(customerId)).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+    // The newly paid plan was set up: stored, and made the organization's funding.
+    expect(await prisma.billingAccount.findUnique({ where: { organizationId } })).toMatchObject({
+      status: "active",
+      byokTier: "pro",
+    });
+    expect(await prisma.modelCreditAccount.findUnique({ where: { organizationId } })).toMatchObject({
+      mode: "byok",
+    });
+  });
+
+  it("finds missing reminders, gives up on abandoned mails and purges settled ones", async () => {
+    const organizationId = await organization({ status: "active", cancelAtPeriodEnd: true });
+    const store = sqlMailStore(prisma, { jobs: true });
+    const prefix = `dozo.plan-ending-test-${suffix}:`;
+    expect(await store.reminderGaps(prefix)).toContain(organizationId);
+    await store.transaction((tx) => tx.addJob("dozo.test-none", `${prefix}${organizationId}`, new Date(Date.now() + 86_400_000), {}));
+    expect(await store.reminderGaps(prefix)).not.toContain(organizationId);
+    await prisma.$executeRaw`SELECT graphile_worker.remove_job(${`${prefix}${organizationId}`}::text)`;
+    const id = await store.transaction((tx) =>
+      tx.addMail({ organizationId, userId: organizationId, occasion: "old", kind: "payment-failed", details: { plan: "Premium" } }),
+    );
+    await prisma.$executeRaw`UPDATE "dozo_billing_mails" SET "createdAt" = CURRENT_TIMESTAMP - interval '2 days' WHERE "id" = ${id}`;
+    expect(await store.failAbandoned(`dozo.billing-mail-test-${suffix}:`, 86_400_000)).toContain(id);
+    await prisma.$executeRaw`UPDATE "dozo_billing_mails" SET "finishedAt" = CURRENT_TIMESTAMP - interval '100 days' WHERE "id" = ${id}`;
+    expect(await store.purge(90 * 86_400_000)).toBeGreaterThanOrEqual(1);
+    expect(await mails(organizationId)).toEqual([]);
+  });
+
   it("counts what was overdue or canceled when it shipped as told", async () => {
     if (!SEED) throw new Error("The migration's seed was not found");
     const overdue = await organization({ status: "past_due" });
@@ -226,7 +291,7 @@ describePostgres("billing mails (PostgreSQL)", () => {
       VALUES (${canceled}, false, ${`sub-${canceled}`})
       ON CONFLICT ("organizationId") DO UPDATE SET "canceledSubscriptionId" = EXCLUDED."canceledSubscriptionId"`;
     const { billing, send } = lifecycle();
-    await billing.afterSync(canceled);
+    await billing.afterSync(`customer-${canceled}`);
     await billing.stop();
     expect(send).not.toHaveBeenCalled();
   });

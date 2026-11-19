@@ -1,6 +1,9 @@
--- Additive: the previous release never reads these tables. Both belong to the fork: they have no
--- model in schema.prisma and are read with SQL in apps/api/src/dozo-billing-lifecycle.ts. Like
--- billing_accounts they have no row-level policy: only system work reads or writes them.
+-- Additive: the previous release never reads these tables. Both belong to the fork and, like
+-- dozo_site_settings and dozo_bans, have no model in schema.prisma: every read and write here
+-- needs SQL anyway (a row lock, an insert that returns only what was new, the job queue's
+-- functions in the same transaction), so a model would only add an upstream schema rule. They are
+-- read in apps/api/src/dozo-billing-mails.ts. Like billing_accounts they have no row-level policy:
+-- only system work reads or writes them.
 
 -- What billing has already told an organization's owners about, so a mail goes out once per
 -- occasion: a payment that is overdue, and the subscription that was set to cancel.
