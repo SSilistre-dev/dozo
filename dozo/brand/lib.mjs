@@ -164,6 +164,10 @@ export function loadConfig(file = DEFAULT_CONFIG) {
   }
   for (const literal of lists.literals) {
     need(
+      literal.file === undefined,
+      `literal has a \`file\` field, which only anchored rules use (a literal scopes with \`files\`): ${JSON.stringify(literal.find)}`,
+    );
+    need(
       !literal.replace.includes(literal.find),
       `literal replace contains find, a re-run would rewrite again: ${JSON.stringify(literal.find)}`,
     );

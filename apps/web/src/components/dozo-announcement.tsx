@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
 import { queryClient, useSpaceQueries } from "../lib/query";
 import { DozoPastDue } from "./dozo-past-due";
+import { DozoVerifyReminder } from "./dozo-verify-reminder";
 
 /**
  * The live stream's site-settings signal: whatever shows a site setting reads it again. Only
@@ -18,8 +19,8 @@ export function dozoSiteChanged(client = queryClient): Promise<void> {
 export { announcementText };
 
 /**
- * The signed-in pages, with one line below them for a failed payment and one for the admin's
- * announcement, each only when there is one.
+ * The signed-in pages, with one line below them for a failed payment, one for an address still to
+ * verify and one for the admin's announcement, each only when there is one.
  */
 export function DozoAnnouncementLayout() {
   return (
@@ -28,6 +29,7 @@ export function DozoAnnouncementLayout() {
         <Outlet />
       </div>
       <DozoPastDue />
+      <DozoVerifyReminder />
       <DozoAnnouncement />
     </div>
   );
