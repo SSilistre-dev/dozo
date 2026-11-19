@@ -1,4 +1,4 @@
-import { BYOK_TIERS, PLAN_LIMIT_CODES } from "@rakazo/contracts";
+import { BYOK_TIERS, PLAN_LIMIT_CODES, SHARED_SPACE_FULL_MESSAGE } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -11,11 +11,7 @@ import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 /** The organization's files already fill its plan's shared space, so a new one is refused. */
 export class SharedSpaceFullError extends ClientError {
   constructor() {
-    super(
-      "BAD_REQUEST",
-      "Shared space is full. Delete files or change the plan.",
-      PLAN_LIMIT_CODES.sharedSpaceFull,
-    );
+    super("BAD_REQUEST", SHARED_SPACE_FULL_MESSAGE, PLAN_LIMIT_CODES.sharedSpaceFull);
     this.name = "SharedSpaceFullError";
   }
 }

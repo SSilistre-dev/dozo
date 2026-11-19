@@ -1,6 +1,8 @@
+import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import type { BillingStatus } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
+import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   openPlanUpgrade,
@@ -134,7 +136,7 @@ describe("usePlanLimitNotice", () => {
   });
 
   it("needs no billing status for a busy host, and gives nothing for other failures", () => {
-    i18n.loadAndActivate({ locale: "tr", messages: {} });
+    i18n.loadAndActivate({ locale: "tr", messages: tr as Messages });
     expect(usePlanLimitNotice({ code: "COMPUTERS_BUSY" })).toMatchObject({
       text: "Tüm bilgisayarlar meşgul. Birazdan tekrar deneyin.",
       action: { kind: "retry", label: "Tekrar dene" },
@@ -183,8 +185,17 @@ describe("showPlanLimitAlert", () => {
     expect(buttons).toHaveLength(1);
   });
 
-  it("computer hours without a status keep the failure's own text", async () => {
+  it("computer hours without a status: no hours left, in the UI's language, no Upgrade", async () => {
     native.fetchFails = true;
+    i18n.loadAndActivate({ locale: "tr", messages: tr as Messages });
+    showPlanLimitAlert("Failed", new Error("No computer hours left."));
+    await flush();
+    expect(lastAlert()[1]).toBe("Bilgisayar saatiniz kalmadı.");
+    expect(lastAlert()[2]).toHaveLength(1);
+  });
+
+  it("computer hours on a trial keep the failure's own text, which upstream words", async () => {
+    native.billing = { ...free, state: "trialing" };
     showPlanLimitAlert("Failed", "No computer hours left.");
     await flush();
     expect(lastAlert()[1]).toBe("No computer hours left.");

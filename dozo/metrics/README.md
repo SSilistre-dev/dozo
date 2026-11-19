@@ -20,6 +20,10 @@ separate and shares nothing with it.
   upstream's unit suite with coverage. It is not part of
   `make olc` or `make qa`, and it does not touch the default stage, its lock or the `dozo-qa-deps`
   volume, so it can run beside them.
+- `tr-server-messages.mjs --root <branded tree> [--list]`: counts the server's fixed refusals
+  (API, database layer, computer adapters) a Turkish UI cannot say in Turkish: neither in the
+  branded Turkish catalog nor carried by a plan-limit code. Run it in the Node image on a staged,
+  branded tree before and after a change; `--list` names them. Separate from `make olcum`.
 
 ## What runs where
 

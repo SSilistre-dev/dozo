@@ -1,43 +1,26 @@
-import type { Messages } from "@lingui/core";
-import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
 import { Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useSpaceQueries } from "../lib/query";
 
 /**
- * Turkish for the strings below. The fork never edits the translation catalogs, so its own
- * strings carry fixed ids and their translations here, merged into the locale's catalog (a
- * catalog loaded later merges into the same object and keeps them). Compiled form: plain text is
- * a one-element array. Other languages show the English.
- */
-const TRANSLATIONS: Record<string, Messages> = {
-  tr: {
-    "dozo.cacheSavings.label": ["Önbellekten girdi"],
-    "dozo.cacheSavings.read": ["Önbellekten okunan"],
-    "dozo.cacheSavings.input": ["Toplam girdi"],
-  },
-};
-for (const [locale, messages] of Object.entries(TRANSLATIONS)) i18n.load(locale, messages);
-
-/**
  * How much of this period's model input came back from the cache, as one number; pressing it
  * shows the two counts. Nothing without input this period, or while it loads.
  */
 export function DozoCacheSavings() {
-  const { t, i18n: active } = useLingui();
+  const { t, i18n } = useLingui();
   const { data } = useQuery(useSpaceQueries().dozoUsage.cacheSavings.queryOptions());
   if (!data) return null;
-  const count = new Intl.NumberFormat(active.locale);
-  const percent = new Intl.NumberFormat(active.locale, { style: "percent" });
-  const label = t({ id: "dozo.cacheSavings.label", message: "Cached input" });
+  const count = new Intl.NumberFormat(i18n.locale);
+  const percent = new Intl.NumberFormat(i18n.locale, { style: "percent" });
+  const label = t`Cached input`;
   const details = [
     {
-      label: t({ id: "dozo.cacheSavings.read", message: "Read from cache" }),
+      label: t`Read from cache`,
       value: data.cacheReadTokens,
     },
     {
-      label: t({ id: "dozo.cacheSavings.input", message: "Total input" }),
+      label: t`Total input`,
       value: data.inputTokens,
     },
   ];
