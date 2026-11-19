@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
 import { diskNoteInstruction } from "../../../adapters/src/computer-disk.js";
+import { historyWithRecall } from "../../../adapters/src/dozo-recalled-memory.js";
 import { formatRecalledMemory } from "../../../adapters/src/history-compaction.prompt.js";
 import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
 import {
@@ -36,7 +37,7 @@ export type ScriptedReply =
 
 export type BenchTurn = {
   prompt: string;
-  /** What the server would recall for this turn: placed first in history, as it does. */
+  /** What the server would recall for this turn, placed in the history where the server puts it. */
   recalled?: string[];
   /** The model's replies for this turn, in order; an exhausted script answers "Done." */
   replies: ScriptedReply[];
@@ -293,7 +294,7 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
         runId: `bench-${task.id}-${index + 1}`,
         prompt: turn.prompt,
         instructions,
-        history: [...recalled, ...history],
+        history: historyWithRecall([], history, recalled),
         tools,
         model: BENCH_MODEL,
         executeTool: async (name, args) =>

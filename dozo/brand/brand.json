@@ -395,6 +395,30 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "import { loadBotGroupDirectory } from \"./group-handoff.js\";\nimport { formatCompactedSummary }",
+      "replace": "import { loadBotGroupDirectory } from \"./group-handoff.js\";\nimport { historyWithRecall } from \"./dozo-recalled-memory.js\";\nimport { formatCompactedSummary }",
+      "requires": [
+        "packages/adapters/src/dozo-recalled-memory.ts"
+      ],
+      "reason": "import of the fork's history order, used by the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  if (recalledMemory) {\n    historicalContext.push({",
+      "replace": "  const recalledContext: AgentRunRequest[\"history\"] = [];\n  if (recalledMemory) {\n    recalledContext.push({",
+      "reason": "memory recalled for this turn is kept apart so it can go after the conversation"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  const runtimeHistory = [...historicalContext, ...historyWithImages];",
+      "replace": "  const runtimeHistory = historyWithRecall(historicalContext, historyWithImages, recalledContext);",
+      "requires": [
+        "packages/adapters/src/dozo-recalled-memory.ts"
+      ],
+      "reason": "recalled memory changes every turn: placed last, next to the prompt, it stops the whole conversation being rewritten to the prompt cache each turn"
+    },
+    {
       "file": "packages/adapters/src/computer-disk.ts",
       "find": "  const size = free >= 1e9 ? `${Math.round(free / 1e9)} GB` : `${Math.round(free / 1e6)} MB`;\n  return `The computer's disk is ${percent}% full (${size} free).",
       "replace": "  // Coarse figures: the note is in the system prompt, and exact ones changed it, and broke the\n  // cached prompt prefix, whenever the disk was measured again.\n  const leading = (n: number) => {\n    const step = 10 ** Math.floor(Math.log10(n));\n    return Math.floor(n / step) * step;\n  };\n  const size =\n    free >= 1e9 ? `${leading(free / 1e9)} GB` : `${leading(Math.max(free / 1e6, 1))} MB`;\n  return `The computer's disk is over ${Math.floor(percent / 5) * 5}% full (about ${size} free).",
