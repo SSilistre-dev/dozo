@@ -1,7 +1,19 @@
 import { i18n } from "@lingui/core";
-import { planLimitText } from "@rakazo/contracts";
+import type { DozoClientEvent } from "@rakazo/contracts";
+import { DOZO_PLAN_LIMIT_KINDS, planLimitOf, planLimitText } from "@rakazo/contracts";
 
 /** A billing page's failure: the shared table's sentence for a refused plan, else the fallback. */
 export function billingErrorText(error: unknown, fallback: string): string {
   return planLimitText(error, i18n.locale) ?? fallback;
+}
+
+/** Reports a refusal that is a limit the member can upgrade out of, then rejects with it. */
+export function notePlanLimit(
+  client: { dozoEvents: { track(event: DozoClientEvent): Promise<unknown> } },
+  error: unknown,
+): never {
+  const kind = DOZO_PLAN_LIMIT_KINDS.find((value) => value === planLimitOf(error));
+  // Measurement only: the caller still gets the refusal.
+  if (kind) void client.dozoEvents.track({ name: "plan_limit_hit", kind }).catch(() => undefined);
+  throw error;
 }

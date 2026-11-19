@@ -1,7 +1,8 @@
-import type { BillingStatus } from "@rakazo/contracts";
+import type { BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
 import { useEffect, useRef } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
+import { reportEvent, reportSignupStarted } from "../lib/dozo-events";
 import {
   bindPlanIntent,
   clearPlanIntent,
@@ -62,7 +63,13 @@ export function useBillingOffer() {
   };
 
   useEffect(() => {
-    if (!userId || offer.current !== "none" || !bindPlanIntent(userId)) return;
+    if (userId) reportSignupStarted();
+  }, [userId]);
+
+  useEffect(() => {
+    const claimed = ({ tier, period }: { tier: ByokTier; period: ByokInterval }) =>
+      reportEvent({ name: "plan_intent", plan: tier, period });
+    if (!userId || offer.current !== "none" || !bindPlanIntent(userId, claimed)) return;
     offer.current = "checking";
     let active = true;
     void rpc

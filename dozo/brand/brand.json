@@ -1291,12 +1291,13 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "export const appContract = {\n  analytics:",
-      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-usage.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoUsage: dozoUsageContract,\n  analytics:",
+      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-analytics.js\";\nexport * from \"./dozo-usage.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoEventsContract } from \"./dozo-analytics.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoEvents: dozoEventsContract,\n  dozoUsage: dozoUsageContract,\n  analytics:",
       "requires": [
         "packages/contracts/src/dozo-admin.ts",
+        "packages/contracts/src/dozo-analytics.ts",
         "packages/contracts/src/dozo-usage.ts"
       ],
-      "reason": "hosted admin page and the cache share on Usage: their procedures join the app contract, so the server and the web client share their types"
+      "reason": "hosted admin page, the cache share on Usage and the apps' product events: their procedures join the app contract, so the server and the web client share their types"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -3308,6 +3309,132 @@
         "apps/web/src/lib/dozo-plan-intent.ts"
       ],
       "reason": "plans: the picked plan's button is the primary one"
+    },
+    {
+      "file": "packages/contracts/src/analytics.ts",
+      "find": "import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from \"./domain.js\";\nimport { RUN_ERROR_KINDS",
+      "replace": "import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from \"./domain.js\";\nimport { DOZO_ANALYTICS_EVENTS } from \"./dozo-analytics.js\";\nimport { RUN_ERROR_KINDS",
+      "requires": [
+        "packages/contracts/src/dozo-analytics.ts"
+      ],
+      "reason": "product events: the import of the fork's events below"
+    },
+    {
+      "file": "packages/contracts/src/analytics.ts",
+      "find": "export const AnalyticsEvent = z.discriminatedUnion(\"name\", [\n  SignupAttribution",
+      "replace": "export const AnalyticsEvent = z.discriminatedUnion(\"name\", [\n  ...DOZO_ANALYTICS_EVENTS,\n  SignupAttribution",
+      "requires": [
+        "packages/contracts/src/dozo-analytics.ts"
+      ],
+      "reason": "product events: sign-up started, first bot, first message, plan limit, upgrade shown, landing plan pick, failed payment, cancellation and refund join the provider-neutral event list, which is also the allowlist at the analytics boundary"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
+      "replace": "import type { RouterContext } from \"./context.js\";\nimport { dozoFirstBot } from \"../dozo-events.js\";\nimport { computerContext",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the first-bot report below"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "        const bot = await repos.createBot(context.actor, request);\n        await enqueueBotIntroRun",
+      "replace": "        const bot = await repos.createBot(context.actor, request);\n        void dozoFirstBot(deps, context.actor, bot.id);\n        await enqueueBotIntroRun",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: a member's first bot is reported once it exists, without holding up the answer"
+    },
+    {
+      "file": "apps/api/src/thread-target.ts",
+      "find": "import { cancelThreadRuns, finishThreadStop, isStopMessage } from \"./thread-stop.js\";\n\n",
+      "replace": "import { cancelThreadRuns, finishThreadStop, isStopMessage } from \"./thread-stop.js\";\nimport { dozoFirstMessage } from \"./dozo-events.js\";\n\n",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the first-message report below"
+    },
+    {
+      "file": "apps/api/src/thread-target.ts",
+      "find": "    { id: committed.message.id, at: committed.message.createdAt },\n  );\n  if (\"stop\" in committed",
+      "replace": "    { id: committed.message.id, at: committed.message.createdAt },\n  );\n  void dozoFirstMessage(deps, actor, committed.message);\n  if (\"stop\" in committed",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: a member's first message is reported beside every message's own event, which stays as it is"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "import { createReferrals } from \"./referrals.js\";\n\n",
+      "replace": "import { createReferrals } from \"./referrals.js\";\nimport { dozoBillingChange } from \"./dozo-events.js\";\n\n",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the billing report below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "        await reportPlanChange(previous, live);\n      } catch (error) {",
+      "replace": "        await reportPlanChange(previous, live);\n        await dozoBillingChange({ prisma, analytics: deps.analytics }, previous, live);\n      } catch (error) {",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: a sync that records a failed payment or a subscription set to end reports it, with upstream's own plan reports and under their failure handling"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { mountBillingRoutes } from \"./billing-webhook.js\";\nimport { clientBuildMiddleware",
+      "replace": "import { mountBillingRoutes } from \"./billing-webhook.js\";\nimport { dozoRefundReports } from \"./dozo-events.js\";\nimport { clientBuildMiddleware",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the refund report below"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "    mountBillingRoutes(app, {\n      billing,\n",
+      "replace": "    mountBillingRoutes(app, {\n      billing: dozoRefundReports(billing, {\n        prisma,\n        analytics,\n        ...(stripeBilling ? { ledger: new DozoStripeLedger(stripeBilling) } : {}),\n      }),\n",
+      "requires": [
+        "apps/api/src/dozo-events.ts"
+      ],
+      "reason": "product events: a payment webhook also reports the payer's recent refunds, read from the payment ledger the admin billing page uses; only with analytics configured"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { cn } from \"@rakazo/ui-web/lib/utils\";\nimport { Check } from \"lucide-react\";",
+      "replace": "import { cn } from \"@rakazo/ui-web/lib/utils\";\nimport { reportUpgradeViewed } from \"../lib/dozo-events\";\nimport { Check } from \"lucide-react\";",
+      "requires": [
+        "apps/web/src/lib/dozo-events.ts"
+      ],
+      "reason": "product events: the import of the upgrade report below"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  useEffect(() => {\n    if (dismissible) return;\n    void Promise.resolve()\n",
+      "replace": "  useEffect(() => {\n    reportUpgradeViewed(dismissible);\n    if (dismissible) return;\n    void Promise.resolve()\n",
+      "requires": [
+        "apps/web/src/lib/dozo-events.ts"
+      ],
+      "reason": "product events: the paid plans being shown is reported every time, with where from (required, opened in the app, or a landing pick); upstream reports only the required one"
+    },
+    {
+      "file": "apps/web/src/lib/rpc.ts",
+      "find": "import { identityLabels } from \"./identity-display\";\nimport { reportClientError }",
+      "replace": "import { identityLabels } from \"./identity-display\";\nimport { notePlanLimit } from \"./dozo-plan-limit\";\nimport { reportClientError }",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "product events: the import of the plan-limit report below"
+    },
+    {
+      "file": "apps/web/src/lib/rpc.ts",
+      "find": "    const result = await link.call(path, input, options);\n",
+      "replace": "    const result = await link\n      .call(path, input, options)\n      .catch((error: unknown) => notePlanLimit(rpc, error));\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "product events: any call the server refuses on a plan limit a member can upgrade out of is reported, on web and desktop, and still rejects as before"
     }
   ],
   "assets": {
