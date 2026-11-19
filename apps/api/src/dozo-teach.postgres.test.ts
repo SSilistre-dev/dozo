@@ -6,7 +6,9 @@ import {
   captureTeachingSnapshot,
   completeTeachingSession,
   createBackgroundJobHandlers,
+  parsePlaybook,
   recordTeachingInputEvent,
+  recordTeachingKeys,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { buildPlaybookFromRecording } from "@rakazo/core";
@@ -15,6 +17,7 @@ import { asSystem, createDb, createThreadEvents, runAsTenant } from "@rakazo/db"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTaughtSkillsService } from "./dozo-taught-skills.js";
 import { createDozoTeach } from "./dozo-teach.js";
+import type { TeachClickLabeller } from "./dozo-teach-labels.js";
 import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
 import { dozoTeachSweep } from "./dozo-teach-sweep.js";
 
@@ -28,6 +31,12 @@ const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe :
 
 const PROTECTED = "S3cret-Pass!";
 const TYPED = ["ali@example.test", "hunter2", "my secret phrase"];
+// The pictures around two clicks: the first, and the one just before the protected paste.
+const CROP = "Y3JvcC1vZi10aGUtZW1haWwtZmllbGQ";
+const SECRET_CROP = "Y3JvcC1vZi10aGUtcGFzc3dvcmQtZmllbGQ";
+// A title that shows something typed; only its application name is kept.
+const TITLE = `${TYPED[0]} - Search – Browser`;
+const WINDOW = "Browser";
 /** Window titles showing what was typed, also changed (a results page's own spelling of it). */
 const TITLES = [
   "Results: hunter2 - Search - Browser",
@@ -116,6 +125,7 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
         ...[...text].map((key): TeachComputerInput => ({ kind: "key", key })),
         { kind: "key", key: "Tab" },
       ]),
+      { kind: "pointer", x: 30, y: 40, button: "left", type: "click" },
       { kind: "clipboard", text: PROTECTED, sensitive: true, skillId: skill.id },
       { kind: "key", key: "Enter" },
     ];
@@ -130,6 +140,15 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
       FROM taught_skills WHERE id = ${skill.id}`;
     expect(live?.count).toBe(inputs.length);
     expect(live?.recording).not.toContain(PROTECTED);
+    // What the clicks hit, as the capture keeps it while recording (no computer runs here).
+    const secretClick = inputs.length - 3;
+    await system.$executeRaw`
+      UPDATE taught_skills SET recording = recording || jsonb_build_object('dozoTargets',
+        ${JSON.stringify([
+          { eventIndex: 0, window: TITLE, image: CROP },
+          { eventIndex: secretClick, window: TITLE, image: SECRET_CROP },
+        ])}::jsonb)
+      WHERE id = ${skill.id}`;
     // A snapshot while teaching, and the one at the stop, each read the window's title.
     const computer = { id: "c", kind: "docker", homeKey: bot.id, providerRef: "ref" };
     const recording = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
@@ -165,9 +184,25 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
   }
 
   async function valuesRow(skillId: string) {
-    const [row] = await system.$queryRaw<Array<{ values: string; expiresAt: Date }>>`
-      SELECT "values", "expiresAt" FROM dozo_teach_values WHERE "skillId" = ${skillId}`;
+    const [row] = await system.$queryRaw<
+      Array<{ values: string; targets: string | null; expiresAt: Date }>
+    >`
+      SELECT "values", "targets", "expiresAt" FROM dozo_teach_values WHERE "skillId" = ${skillId}`;
     return row;
+  }
+
+  /** Every row of every table that could hold a picture of the skill, as text. */
+  async function everyRow(skillId: string, threadId: string) {
+    const [raw] = await system.$queryRaw<Array<{ text: string }>>`
+      SELECT concat_ws(E'\n',
+        (SELECT string_agg(t::text, E'\n') FROM taught_skills t WHERE t.id = ${skillId}),
+        (SELECT string_agg(v::text, E'\n') FROM dozo_teach_values v WHERE v."skillId" = ${skillId}),
+        (SELECT string_agg(j::text, E'\n') FROM graphile_worker.jobs j),
+        (SELECT string_agg(m::text, E'\n') FROM messages m WHERE m."threadId" = ${threadId}),
+        (SELECT string_agg(e::text, E'\n') FROM events e WHERE e."threadId" = ${threadId}),
+        (SELECT string_agg(k::text, E'\n') FROM tasks k WHERE k."threadId" = ${threadId})
+      ) AS text`;
+    return `${raw?.text ?? ""}\n${Object.values(await storedText(skillId, threadId)).join("\n")}`;
   }
 
   it("keeps nothing typed after an abandoned draft, and forgets the values when due", async () => {
@@ -177,9 +212,14 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
 
     const stored = await storedText(skill.id, thread.id);
     expect(stored.blocks).toContain("{{value 2}}");
-    for (const text of [...TYPED, PROTECTED]) {
+    for (const text of [...TYPED, PROTECTED, CROP, SECRET_CROP]) {
       for (const place of Object.values(stored)) expect(place).not.toContain(text);
     }
+    // The clicks keep their window; their pictures left the recording.
+    const targets = (drafted.recording as { dozoTargets: Array<Record<string, unknown>> })
+      .dozoTargets;
+    expect(targets.map((target) => target.window)).toEqual([WINDOW, WINDOW]);
+    expect(targets.some((target) => "image" in target)).toBe(false);
     // Of every window title only the application is left, in the recording and the check.
     for (const place of Object.values(stored)) expect(place).not.toMatch(LEAK);
     expect((drafted.recording as { snapshots: unknown[] }).snapshots).toEqual([
@@ -201,6 +241,8 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     const row = await valuesRow(skill.id);
     expect(row?.values.startsWith("rkz1:")).toBe(true);
     for (const text of TYPED) expect(row?.values).not.toContain(text);
+    expect(row?.targets?.startsWith("rkz1:")).toBe(true);
+    expect(row?.targets).not.toContain(CROP);
     const hours = (row!.expiresAt.getTime() - Date.now()) / 3_600_000;
     expect(hours).toBeGreaterThan(23.9);
     expect(hours).toBeLessThanOrEqual(24);
@@ -216,8 +258,17 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
       home: {},
       dataDir: "/tmp",
     } as never);
-    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills, suggest });
+    const label = vi.fn<TeachClickLabeller>(async () => ({}));
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills, suggest, label });
     const review = await runAsTenant(teacher, () => teach.review(teacher, skill.id));
+    // The teacher sees the first click's picture; none was kept of the one before protected input,
+    // and no picture went to the model.
+    expect(review.targets.map((target) => target.image)).toEqual([
+      `data:image/webp;base64,${CROP}`,
+      undefined,
+    ]);
+    expect(label).not.toHaveBeenCalled();
+    expect((await runAsTenant(member, () => teach.review(member, skill.id))).targets).toEqual([]);
     expect(review.values.map((value) => [value.text, value.secret])).toEqual([
       [TYPED[0], false],
       [TYPED[1], false],
@@ -237,6 +288,25 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     ]);
     for (const text of [...TYPED, PROTECTED]) expect(seen).not.toContain(text);
 
+    // A picture the teacher removes is forgotten at once, sealed again without it; only the
+    // teacher may, and again changes nothing.
+    await expect(
+      runAsTenant(member, () => teach.removeTarget(member, { skillId: skill.id, targetId: "0" })),
+    ).rejects.toMatchObject({ kind: "FORBIDDEN" });
+    expect((await valuesRow(skill.id))?.targets).toBeTruthy();
+    for (let again = 0; again < 2; again += 1) {
+      await runAsTenant(teacher, () =>
+        teach.removeTarget(teacher, { skillId: skill.id, targetId: "0" }),
+      );
+    }
+    expect((await valuesRow(skill.id))?.targets).toBeNull();
+    expect(
+      (await runAsTenant(teacher, () => teach.review(teacher, skill.id))).targets.map(
+        (target) => target.image,
+      ),
+    ).toEqual([undefined, undefined]);
+    expect(await everyRow(skill.id, thread.id)).not.toContain(CROP);
+
     // The queue's job, once due, forgets them through the real handler.
     await system.$executeRaw`
       UPDATE dozo_teach_values SET "expiresAt" = CURRENT_TIMESTAMP - interval '1 second'
@@ -244,7 +314,14 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     const handlers = createBackgroundJobHandlers(deps() as never);
     await handlers["skill.teaching-expire"]({ skillId: skill.id });
     expect(await valuesRow(skill.id)).toBeUndefined();
-    expect((await runAsTenant(teacher, () => teach.review(teacher, skill.id))).values).toEqual([]);
+    expect(await runAsTenant(teacher, () => teach.review(teacher, skill.id))).toEqual({
+      values: [],
+      targets: [],
+    });
+    // An abandoned draft keeps no picture anywhere once due.
+    const left = await everyRow(skill.id, thread.id);
+    expect(left).not.toContain(CROP);
+    expect(left).not.toContain(SECRET_CROP);
   });
 
   it("saves the decisions and forgets the values in one transaction", async () => {
@@ -254,7 +331,9 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
       home: {},
       dataDir: "/tmp",
     } as never);
-    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
+    // Labels are asked only when the teacher asks, for the picture kept, and shown to them.
+    const label = vi.fn<TeachClickLabeller>(async () => ({ "0": "Email field" }));
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills, label });
     const drafted = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
     const draft = {
       skillId: skill.id,
@@ -272,11 +351,39 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
       kind: "FORBIDDEN",
     });
     expect(await valuesRow(skill.id)).toBeDefined();
-    await runAsTenant(teacher, () => teach.save(teacher, draft));
+    expect(label).not.toHaveBeenCalled();
+    expect(
+      await runAsTenant(member, () =>
+        teach.labelTargets(member, { skillId: skill.id, decisions: {} }),
+      ),
+    ).toEqual({ labels: {} });
+    const { labels } = await runAsTenant(teacher, () =>
+      teach.labelTargets(teacher, { skillId: skill.id, decisions: draft.decisions }),
+    );
+    expect(labels).toEqual({ "0": "Email field" });
+    expect(label).toHaveBeenCalledOnce();
+    expect(label.mock.calls[0]?.[2]).toEqual([{ id: "0", image: CROP }]);
+    // A label for a click with no picture kept is refused, and nothing is forgotten.
+    await expect(
+      runAsTenant(teacher, () => teach.save(teacher, { ...draft, labels: { "1": "Password" } })),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+    expect(await valuesRow(skill.id)).toBeDefined();
+    await runAsTenant(teacher, () => teach.save(teacher, { ...draft, labels }));
 
     expect(await valuesRow(skill.id)).toBeUndefined();
+    expect(label).toHaveBeenCalledOnce();
     const saved = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
     expect(saved.status).toBe("saved");
+    expect((saved.playbook as { steps: string[] }).steps[0]).toBe(
+      `Click "Email field" in "${WINDOW}" (near 10, 20).`,
+    );
+    expect((saved.playbook as { steps: string[] }).steps).toContain(
+      "Click left button at (30, 40).",
+    );
+    expect(saved.recording).not.toHaveProperty("dozoTargets");
+    const everything = await everyRow(skill.id, thread.id);
+    expect(everything).not.toContain(CROP);
+    expect(everything).not.toContain(SECRET_CROP);
     expect((saved.playbook as { inputs: string[] }).inputs).toEqual([
       "Sign in",
       "email",
@@ -387,6 +494,8 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     await system.$executeRaw`
       UPDATE dozo_teach_values SET "expiresAt" = CURRENT_TIMESTAMP - interval '1 second'
       WHERE "skillId" = ${due.id}`;
+    // The clicks' pictures live in the same row and go with it.
+    expect((await valuesRow(due.id))?.targets).toBeTruthy();
 
     await dozoTeachSweep(deps())(new AbortController().signal);
 
@@ -400,6 +509,121 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     const running = await system.taughtSkill.findUniqueOrThrow({ where: { id: live.skill.id } });
     expect(running.status).toBe("recording");
     expect(await recordingText(live.skill.id)).toMatch(LEAK);
+  });
+
+  it("records keys typed in a row as one request per key would, in order", async () => {
+    const bot = await system.bot.create({
+      data: { spaceId: id, userId: id, name: "Typist", color: "test" },
+    });
+    const skill = await system.taughtSkill.create({
+      data: {
+        spaceId: id,
+        botId: bot.id,
+        userId: id,
+        goal: "Type",
+        status: "recording",
+        startedAt: new Date(),
+        expiresAt: new Date(Date.now() + 600_000),
+        recording: { events: [], snapshots: [] } as never,
+      },
+    });
+    expect(
+      await runAsTenant(teacher, () =>
+        recordTeachingKeys(deps(), teacher, bot.id, ["h", "i", "Tab"]),
+      ),
+    ).toBe("recorded");
+    const recorded = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect(
+      (recorded.recording as { events: Array<{ key?: string }> }).events.map((event) => event.key),
+    ).toEqual(["h", "i", "Tab"]);
+    // As the page goes, a batch sent at once arrives before the one still on its way: it waits.
+    const order = (seq: number, after?: number) => ({ page: "page-1", seq, after });
+    const late = runAsTenant(teacher, () =>
+      recordTeachingKeys(deps(), teacher, bot.id, ["c"], order(2, 1)),
+    );
+    expect(
+      await runAsTenant(teacher, () =>
+        recordTeachingKeys(deps(), teacher, bot.id, ["a", "b"], order(1)),
+      ),
+    ).toBe("recorded");
+    expect(await late).toBe("recorded");
+    const ordered = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect(
+      (ordered.recording as { events: Array<{ key?: string }> }).events.map((event) => event.key),
+    ).toEqual(["h", "i", "Tab", "a", "b", "c"]);
+    expect(ordered.recording).toMatchObject({ dozoKeyOrder: { page: "page-1", seq: 2 } });
+  });
+
+  it("deletes a draft with its values and pictures at once", async () => {
+    const { skill } = await recordAndStop();
+    expect(await valuesRow(skill.id)).toBeDefined();
+    const taughtSkills = createTaughtSkillsService({
+      ...deps(),
+      home: {},
+      dataDir: "/tmp",
+    } as never);
+    await runAsTenant(teacher, () => taughtSkills.remove(teacher, skill.id));
+    expect(await valuesRow(skill.id)).toBeUndefined();
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
+    await expect(runAsTenant(teacher, () => teach.review(teacher, skill.id))).rejects.toMatchObject(
+      {
+        kind: "NOT_FOUND",
+        code: "teach_skill_gone",
+      },
+    );
+  });
+
+  it("turns the text an older skill's steps type into inputs, nothing of it left", async () => {
+    const { thread, skill } = await recordAndStop();
+    const taughtSkills = createTaughtSkillsService({
+      ...deps(),
+      home: {},
+      dataDir: "/tmp",
+    } as never);
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
+    const draft = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    await runAsTenant(teacher, () =>
+      teach.save(teacher, {
+        skillId: skill.id,
+        name: "Sign in",
+        playbook: draft.playbook as never,
+        decisions: {},
+      }),
+    );
+    // As an older release saved it: what was typed verbatim in the steps and the card.
+    const saved = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    const playbook = parsePlaybook(saved.playbook);
+    const steps = [...playbook.steps, `Type "${TYPED[1]}".`, `Paste or type: ${TYPED[0]}.`];
+    await runAsTenant(teacher, () =>
+      taughtSkills.updateDraft(teacher, skill.id, {
+        name: "Sign in",
+        playbook: { ...playbook, steps },
+      }),
+    );
+    expect((await storedText(skill.id, thread.id)).blocks).toContain(TYPED[1]);
+
+    // Another member decides, as upstream lets any member edit a skill.
+    await runAsTenant(member, () =>
+      taughtSkills.decideSavedValues(member, skill.id, {
+        steps,
+        decisions: {
+          "{{value 1}}": { action: "variable", name: "password" },
+          "{{value 2}}": { action: "remove" },
+        },
+      }),
+    );
+    const decided = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect((decided.playbook as { steps: string[] }).steps.slice(-1)).toEqual([
+      "Type {{password}}.",
+    ]);
+    expect(decided.userId).toBe(member.userId);
+    const stored = await storedText(skill.id, thread.id);
+    expect(stored.blocks).toContain("{{password}}");
+    for (const text of TYPED) {
+      for (const place of [stored.skill, stored.blocks, stored.payloads]) {
+        expect(place).not.toContain(text);
+      }
+    }
   });
 
   it("migrates older drafts and saved skills to one event per typed run, live ones untouched", async () => {

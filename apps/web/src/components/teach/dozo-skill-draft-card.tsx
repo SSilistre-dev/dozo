@@ -1,12 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
-import { formatSkillRunPrompt, TEACH_NAME_TAKEN } from "@rakazo/core";
-import { Button, Input, Label, Textarea, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
+import { formatSkillRunPrompt, TEACH_NAME_TAKEN, TEACH_SKILL_GONE } from "@rakazo/core";
+import { Button, Input, Label, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorCode, errorText } from "../../lib/user-error";
 import { BuiCard } from "../ai/primitives";
+import { DeleteSkill } from "./dozo-delete-skill";
+import type { TeachValueChoice } from "./dozo-teach-value-row";
+import { defaultValueName, TeachValueRow, valueDecisionOf } from "./dozo-teach-value-row";
 
 type SkillDraftBlock = {
   kind: "skill_draft";
@@ -17,16 +21,25 @@ type SkillDraftBlock = {
   status: "draft" | "saved";
 };
 
-type Action = DozoTeachValueDecision["action"];
-type Choice = { action: Action; name: string };
+type Choice = TeachValueChoice;
 
-/** What a draft is saved or tested with: its fields and a decision for each typed value. */
+/** What a draft is saved or tested with: its fields, a decision for each typed value, the
+ * clicked pictures the teacher took away, and the labels they kept. */
 type Sent = {
   fields: string;
   name: string;
   playbook: SkillPlaybook;
   decisions: Record<string, DozoTeachValueDecision>;
+  removedTargets: string[];
+  labels: Record<string, string>;
 };
+
+/** What a step may quote of a label: one line, no input braces or quotes, 60 characters. */
+const LABEL_MAX = 60;
+const plainLabel = (text: string) => text.replace(/[{}"\p{Cc}]/gu, "").slice(0, LABEL_MAX);
+
+/** Skills this page learned are deleted, so their cards stop asking whenever they mount. */
+const goneSkills = new Set<string>();
 
 function fieldsOf(block: SkillDraftBlock): string {
   return JSON.stringify({ name: block.name, playbook: block.playbook });
@@ -44,24 +57,14 @@ function fieldLabel(id: string, title: React.ReactNode) {
   );
 }
 
-/** `{{value 3}}` names its input `value_3` until the teacher or the suggestion names it. */
-function defaultName(placeholder: string): string {
-  return `value_${placeholder.replace(/\D/g, "")}`;
-}
-
 /**
  * Every value is an input by default, hidden when it was typed as protected input: nothing typed
  * is kept in the skill unless the teacher picks Fixed, since a password typed into an unprotected
  * field cannot be told apart.
  */
 function defaultChoice(value: DozoTeachValue): Choice {
-  const name = value.suggestion?.name || defaultName(value.placeholder);
+  const name = value.suggestion?.name || defaultValueName(value.placeholder);
   return { action: value.secret ? "hidden" : "variable", name };
-}
-
-function decisionOf(placeholder: string, choice: Choice): DozoTeachValueDecision {
-  if (choice.action === "fixed" || choice.action === "remove") return { action: choice.action };
-  return { action: choice.action, name: choice.name.trim() || defaultName(placeholder) };
 }
 
 /**
@@ -89,16 +92,29 @@ export function SkillDraftCard({
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   // Once saved, the server has forgotten the values and the steps hold the decisions.
   const [decided, setDecided] = useState(false);
+  const [removedTargets, setRemovedTargets] = useState<string[]>([]);
+  // Nothing about the pictures goes to the model unless the teacher turns this on; the labels it
+  // gives are shown, editable, and only those kept are saved.
+  const [nameSteps, setNameSteps] = useState(false);
+  const [labels, setLabels] = useState<Record<string, string>>({});
   const saved = savedFields === JSON.stringify({ name, playbook });
 
-  // Only the teacher of a draft gets values back. Never kept once the card is gone.
+  // Deleted from this card, or known gone from an earlier mount: never asked about again.
+  const [deleted, setDeleted] = useState(() => goneSkills.has(block.skillId));
+  // Only the teacher of a draft gets values back. Never kept once the card is gone. Read for a
+  // saved skill too, as it tells whether the skill still exists; that answer is final.
   const review = useQuery({
     ...queries.dozoTeach.review.queryOptions({ input: { skillId: block.skillId } }),
-    enabled: block.status === "draft" && !decided,
+    enabled: !deleted,
     gcTime: 0,
   });
+  const gone = deleted || errorCode(review.error) === TEACH_SKILL_GONE;
+  if (gone) goneSkills.add(block.skillId);
   const reviewing = block.status === "draft" && !decided;
   const values = reviewing ? (review.data?.values ?? []) : [];
+  const targets = (reviewing ? (review.data?.targets ?? []) : []).filter(
+    (target) => target.image && !removedTargets.includes(target.id),
+  );
   const reviewBlocked = reviewing && !review.data;
   // Until the typed values are saved with their decisions, a routine would carry `{{value N}}`.
   const undecided = reviewBlocked || values.length > 0;
@@ -127,9 +143,26 @@ export function SkillDraftCard({
 
   function sent(): Sent {
     const decisions = Object.fromEntries(
-      values.map((value) => [value.placeholder, decisionOf(value.placeholder, choiceOf(value))]),
+      values.map((value) => [
+        value.placeholder,
+        valueDecisionOf(value.placeholder, choiceOf(value)),
+      ]),
     );
-    return { fields: JSON.stringify({ name, playbook }), name, playbook, decisions };
+    const shown = new Set(targets.map((target) => target.id));
+    return {
+      fields: JSON.stringify({ name, playbook }),
+      name,
+      playbook,
+      decisions,
+      removedTargets,
+      labels: nameSteps
+        ? Object.fromEntries(
+            Object.entries(labels).flatMap(([target, label]) =>
+              shown.has(target) && label.trim() ? [[target, label.trim()]] : [],
+            ),
+          )
+        : {},
+    };
   }
 
   const draft = (input: Sent) => ({
@@ -137,6 +170,8 @@ export function SkillDraftCard({
     name: input.name,
     playbook: input.playbook,
     decisions: input.decisions,
+    removedTargets: input.removedTargets,
+    labels: input.labels,
   });
 
   // The write already succeeded, so a failed thread refresh is not reported as its failure.
@@ -164,7 +199,34 @@ export function SkillDraftCard({
     },
   });
 
-  const busy = save.pending || test.pending;
+  // A removed picture is forgotten on the server at once, not only left out of the save.
+  const removeTarget = useSave({
+    save: (target: string, rpc) =>
+      rpc.dozoTeach.removeTarget({ skillId: block.skillId, targetId: target }),
+    onSaved: (_done, target) => {
+      setRemovedTargets((current) => [...current, target]);
+      setLabels(({ [target]: _gone, ...rest }) => rest);
+    },
+  });
+
+  const nameTargets = useSave<void, { labels: Record<string, string> }>({
+    save: (_input, rpc) =>
+      rpc.dozoTeach.labelTargets({ skillId: block.skillId, decisions: sent().decisions }),
+    onSaved: (named) =>
+      setLabels(
+        Object.fromEntries(
+          Object.entries(named.labels).map(([target, label]) => [target, plainLabel(label)]),
+        ),
+      ),
+  });
+
+  function turnNameSteps(on: boolean) {
+    setNameSteps(on);
+    setLabels({});
+    if (on) nameTargets.run();
+  }
+
+  const busy = save.pending || test.pending || removeTarget.pending;
   const failed = save.error ?? test.error;
   const error =
     failed && errorCode(failed) === TEACH_NAME_TAKEN
@@ -173,11 +235,26 @@ export function SkillDraftCard({
         ? errorText(save.error, t`Could not save skill`)
         : test.error
           ? errorText(test.error)
-          : reviewing && review.isError
-            ? t`Could not load`
-            : null;
+          : removeTarget.error
+            ? errorText(removeTarget.error)
+            : (reviewing && review.isError) || nameTargets.error
+              ? t`Could not load`
+              : null;
 
   const skillName = name || block.name || block.goal.slice(0, 80);
+
+  if (gone) {
+    return (
+      <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
+        <div dir="auto" className="truncate text-body-lg font-medium text-foreground">
+          {block.name || block.goal}
+        </div>
+        <div className="mt-1 text-body text-muted-foreground">
+          <Trans>Deleted</Trans>
+        </div>
+      </BuiCard>
+    );
+  }
 
   return (
     <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
@@ -203,67 +280,15 @@ export function SkillDraftCard({
       {fieldLabel(`${id}-inputs`, <Trans>Inputs</Trans>)}
       {values.length ? (
         <div id={`${id}-inputs`} className="flex flex-col gap-2">
-          {values.map((value) => {
-            const choice = choiceOf(value);
-            // Protected input and text that could not be rebuilt are never shown or kept.
-            const hidden = value.secret || value.text === null;
-            const named = choice.action === "variable" || choice.action === "hidden";
-            return (
-              <div key={value.placeholder} data-testid="skill-draft-value">
-                <div className="flex items-center gap-2">
-                  <span
-                    dir="auto"
-                    className="w-28 shrink-0 break-words text-body-sm text-muted-foreground"
-                  >
-                    {hidden ? "••••••" : value.text}
-                  </span>
-                  {named ? (
-                    <Input
-                      aria-label={t`Name`}
-                      disabled={busy}
-                      className="min-w-0 flex-1"
-                      value={choice.name}
-                      onChange={(event) =>
-                        setChoice(value.placeholder, { ...choice, name: event.target.value })
-                      }
-                    />
-                  ) : (
-                    <span className="flex-1" />
-                  )}
-                  <ToggleGroup
-                    value={[choice.action]}
-                    disabled={busy}
-                    onValueChange={([next]) => {
-                      if (next) setChoice(value.placeholder, { ...choice, action: next as Action });
-                    }}
-                    spacing={0}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <ToggleGroupItem value="variable">
-                      <Trans>Variable</Trans>
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="hidden">
-                      <Trans>Hidden</Trans>
-                    </ToggleGroupItem>
-                    {hidden ? null : (
-                      <ToggleGroupItem value="fixed">
-                        <Trans>Fixed</Trans>
-                      </ToggleGroupItem>
-                    )}
-                    <ToggleGroupItem value="remove">
-                      <Trans>Remove</Trans>
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-                {choice.action === "fixed" ? (
-                  <p className="mt-1 text-label text-muted-foreground">
-                    <Trans>Saved in the steps, visible to everyone in this space.</Trans>
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
+          {values.map((value) => (
+            <TeachValueRow
+              key={value.placeholder}
+              value={value}
+              choice={choiceOf(value)}
+              busy={busy}
+              onChange={(choice) => setChoice(value.placeholder, choice)}
+            />
+          ))}
         </div>
       ) : (
         <Textarea
@@ -292,6 +317,63 @@ export function SkillDraftCard({
         }
         rows={5}
       />
+      {targets.length ? (
+        <>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {targets.map((target) => {
+              // What the button removes: the step the picture belongs to.
+              const label = playbook.steps[target.step] ?? "";
+              return (
+                <figure
+                  key={target.id}
+                  data-testid="skill-draft-target"
+                  className="relative m-0 flex w-40 flex-col gap-1"
+                >
+                  <img
+                    src={target.image}
+                    alt=""
+                    className="block h-auto max-h-24 w-auto max-w-40 rounded-md border border-border object-contain"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    aria-label={t`Remove ${label}`}
+                    disabled={busy}
+                    className="absolute -top-2 -right-2 size-6 rounded-full border border-border"
+                    onClick={() => removeTarget.run(target.id)}
+                  >
+                    <XIcon className="size-3" />
+                  </Button>
+                  {nameSteps && !nameTargets.pending ? (
+                    <Input
+                      aria-label={label}
+                      disabled={busy}
+                      value={labels[target.id] ?? ""}
+                      maxLength={LABEL_MAX}
+                      className="h-7 text-body-sm"
+                      onChange={(event) =>
+                        setLabels((current) => ({
+                          ...current,
+                          [target.id]: plainLabel(event.target.value),
+                        }))
+                      }
+                    />
+                  ) : null}
+                </figure>
+              );
+            })}
+          </div>
+          <Label className="mt-2 flex items-center gap-2 text-body-sm font-normal text-muted-foreground">
+            <Switch
+              size="sm"
+              checked={nameSteps}
+              disabled={busy || nameTargets.pending}
+              onCheckedChange={turnNameSteps}
+            />
+            <Trans>Send these images to the model to name the steps</Trans>
+          </Label>
+        </>
+      ) : null}
       {fieldLabel(`${id}-check`, <Trans>How to check</Trans>)}
       <Textarea
         disabled={busy}
@@ -338,6 +420,13 @@ export function SkillDraftCard({
         >
           <Trans>Add to routine</Trans>
         </Button>
+        {reviewing ? (
+          <DeleteSkill
+            skillId={block.skillId}
+            name={skillName}
+            onDeleted={() => setDeleted(true)}
+          />
+        ) : null}
       </div>
       {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
     </BuiCard>

@@ -1,11 +1,21 @@
 import type { TeachRecordingEvent, TeachSnapshot, TeachTypedValue } from "@rakazo/core";
-import { forgetTeachTyping, typedValuesFromRecording } from "@rakazo/core";
+import {
+  clicksBeforeSecrets,
+  forgetTeachTyping,
+  scrubTeachRecordingEvents,
+  teachAppName,
+  teachTypingForgotten,
+  typedValuesFromRecording,
+} from "@rakazo/core";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "./client.js";
 import { ciphertextKeyId, decryptText, encryptText } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
+import { storedTeachTargets, TEACH_TARGETS_KEY } from "./dozo-teaching-recordings.js";
 import { readJsonColumn } from "./json-column.js";
 import { runAsSystemInTransaction } from "./row-security.js";
+
+export { storedTeachTargets, TEACH_TARGETS_KEY } from "./dozo-teaching-recordings.js";
 
 /** How long the teacher has to review what was typed before it is forgotten. */
 export const TEACH_VALUES_TTL_MS = 24 * 60 * 60 * 1000;
@@ -22,16 +32,24 @@ const TABLE = "dozo_teach_values";
 /** A name the model suggested for each placeholder, cached so it is asked once per draft. */
 export type TeachValueSuggestions = Record<string, { name: string }>;
 
+/** The picture around a recorded click, by its event in the drafted recording (base64 WebP). */
+export type TeachClickImage = { eventIndex: number; image: string };
+
 export type StoredTeachValues = {
   /** The person who taught the skill: the only one who may see the values. */
   userId: string;
   values: TeachTypedValue[];
+  /** The pictures of the clicks, none of a click before protected input. */
+  images: TeachClickImage[];
   /** Null until the model was asked; an empty record when it gave nothing. */
   suggestions: TeachValueSuggestions | null;
 };
 
 const ValuesSchema = z.array(
   z.object({ placeholder: z.string(), text: z.string().nullable(), secret: z.boolean() }),
+);
+const ImagesSchema = z.array(
+  z.object({ eventIndex: z.number().int().nonnegative(), image: z.string() }),
 );
 const SuggestionsSchema = z.record(z.string(), z.object({ name: z.string() })).nullable();
 
@@ -41,38 +59,59 @@ type Row = {
   spaceId: string;
   userId: string;
   values: string;
+  targets: string | null;
   suggestions: unknown;
 };
 
-function locationOf(row: { skillId: string; userId: string }) {
-  return { table: TABLE, column: "values", rowId: row.skillId, owner: row.userId };
+type Column = "values" | "targets";
+
+function locationOf(row: { skillId: string; userId: string }, column: Column) {
+  return { table: TABLE, column, rowId: row.skillId, owner: row.userId };
 }
 
 /** Sealed with the Space's content key, as user content is; plain only where encryption is off. */
 async function seal(
   db: Db,
   row: { skillId: string; spaceId: string; userId: string },
+  column: Column,
   text: string,
 ) {
   const ring = contentEncryptionOf(db)?.ring;
   if (!ring?.encryptWrites) return text;
-  return encryptText(await ring.current(row.spaceId), locationOf(row), text);
+  return encryptText(await ring.current(row.spaceId), locationOf(row, column), text);
 }
 
-async function decode(db: Db, row: Row): Promise<StoredTeachValues> {
-  let text = row.values;
+async function open(db: Db, row: Row, column: Column, text: string): Promise<unknown> {
   const keyId = ciphertextKeyId(text);
   if (keyId) {
     const ring = contentEncryptionOf(db)?.ring;
     if (!ring) throw new Error("Teach values encryption is unavailable");
     const key = await ring.byId(keyId);
     if (key.spaceId !== row.spaceId) throw new Error("Teach values space mismatch");
-    text = decryptText(key, locationOf(row), text);
+    return JSON.parse(decryptText(key, locationOf(row, column), text));
   }
+  return JSON.parse(text);
+}
+
+async function decode(db: Db, row: Row): Promise<StoredTeachValues> {
   const at = { table: TABLE, id: row.skillId };
   return {
     userId: row.userId,
-    values: readJsonColumn(ValuesSchema, JSON.parse(text), { ...at, column: "values" }, "reject"),
+    values: readJsonColumn(
+      ValuesSchema,
+      await open(db, row, "values", row.values),
+      { ...at, column: "values" },
+      "reject",
+    ),
+    images: row.targets
+      ? readJsonColumn(
+          ImagesSchema,
+          await open(db, row, "targets", row.targets),
+          { ...at, column: "targets" },
+          // A click without its picture only keeps its window and coordinate.
+          { fallback: [] },
+        )
+      : [],
     suggestions: readJsonColumn(
       SuggestionsSchema,
       row.suggestions,
@@ -85,12 +124,13 @@ async function decode(db: Db, row: Row): Promise<StoredTeachValues> {
 
 /**
  * Called where a recording becomes a draft (stop, expiry, the end of its control), in that
- * transaction: the values typed move to a short-lived store only the teacher reads, and the
- * recording keeps none of them, not even their length or timing, and of each window title only
- * its application. Due in 24 hours, on a queue job when the queue's tables exist; reads, and the
- * API's slow sweep, also delete a due row. Written past row security: whoever ends the recording
- * (another member taking the computer's control) stores them for the teacher, who alone reads
- * them.
+ * transaction: the values typed and the pictures around the clicks move to a short-lived store
+ * only the teacher reads, and the recording keeps none of them, not even the values' length or
+ * timing, and of each window title (a click's too) only its application. A click before
+ * protected input loses its picture. Due in 24 hours, on a queue job when the queue's tables
+ * exist; reads, and the API's slow sweep, also delete a due row. Written past row security:
+ * whoever ends the recording (another member taking the computer's control) stores them for the
+ * teacher, who alone reads them.
  */
 export async function keepTeachValues<
   R extends { events: TeachRecordingEvent[]; snapshots: TeachSnapshot[] },
@@ -98,29 +138,59 @@ export async function keepTeachValues<
   tx: Prisma.TransactionClient,
   skill: { id: string; spaceId: string; userId: string },
   recording: R,
-) {
+): Promise<
+  Omit<ReturnType<typeof forgetTeachTyping<R>>, typeof TEACH_TARGETS_KEY> & {
+    [TEACH_TARGETS_KEY]?: Array<{ eventIndex: number; window?: string }>;
+  }
+> {
   const values = typedValuesFromRecording(recording.events);
-  if (values.length) {
+  // Known typed texts: a title part matching one is no application's name.
+  const typed = values.flatMap((value) => (value.text === null ? [] : [value.text]));
+  // Where each click is once typed runs are one event each; a recording already forgotten has
+  // its runs collapsed, so its clicks stay where they are.
+  const already = teachTypingForgotten(recording);
+  const { indexOf } = scrubTeachRecordingEvents(recording.events);
+  const secret = clicksBeforeSecrets(recording.events);
+  const targets: Array<{ eventIndex: number; window?: string }> = [];
+  const images: TeachClickImage[] = [];
+  for (const target of storedTeachTargets(skill.id, recording)) {
+    const eventIndex = already ? target.eventIndex : indexOf.get(target.eventIndex);
+    if (eventIndex === undefined) continue;
+    // Only the application's name: the rest of a title can show what was typed or opened.
+    const window = target.window ? teachAppName(target.window, typed) : null;
+    targets.push({ eventIndex, ...(window ? { window } : {}) });
+    if (target.image && !secret.has(target.eventIndex)) {
+      images.push({ eventIndex, image: target.image });
+    }
+  }
+  if (values.length || images.length) {
     await runAsSystemInTransaction(tx, "keep the values typed while teaching", () =>
-      storeValues(tx, skill, values),
+      storeValues(tx, skill, values, images),
     );
   }
-  return forgetTeachTyping(recording);
+  const { [TEACH_TARGETS_KEY]: _targets, ...forgotten } = forgetTeachTyping(
+    recording,
+  ) as ReturnType<typeof forgetTeachTyping<R>> & { [TEACH_TARGETS_KEY]?: unknown };
+  return { ...forgotten, ...(targets.length ? { [TEACH_TARGETS_KEY]: targets } : {}) };
 }
 
 async function storeValues(
   tx: Prisma.TransactionClient,
   skill: { id: string; spaceId: string; userId: string },
   values: TeachTypedValue[],
+  images: TeachClickImage[],
 ) {
   const row = { skillId: skill.id, spaceId: skill.spaceId, userId: skill.userId };
-  const sealed = await seal(tx, row, JSON.stringify(values));
+  const sealed = await seal(tx, row, "values", JSON.stringify(values));
+  const pictures = images.length ? await seal(tx, row, "targets", JSON.stringify(images)) : null;
   const [stored] = await tx.$queryRaw<Array<{ expiresAt: Date }>>`
-    INSERT INTO "dozo_teach_values" ("skillId", "spaceId", "userId", "values", "expiresAt")
-    VALUES (${row.skillId}, ${row.spaceId}, ${row.userId}, ${sealed},
+    INSERT INTO "dozo_teach_values"
+      ("skillId", "spaceId", "userId", "values", "targets", "expiresAt")
+    VALUES (${row.skillId}, ${row.spaceId}, ${row.userId}, ${sealed}, ${pictures},
       CURRENT_TIMESTAMP + make_interval(secs => ${TEACH_VALUES_TTL_MS / 1000}))
     ON CONFLICT ("skillId") DO UPDATE SET "spaceId" = EXCLUDED."spaceId",
-      "userId" = EXCLUDED."userId", "values" = EXCLUDED."values", "suggestions" = NULL,
+      "userId" = EXCLUDED."userId", "values" = EXCLUDED."values",
+      "targets" = EXCLUDED."targets", "suggestions" = NULL,
       "expiresAt" = EXCLUDED."expiresAt"
     RETURNING "expiresAt"`;
   const [queue] = await tx.$queryRaw<Array<{ ready: boolean }>>`
@@ -139,7 +209,8 @@ async function storeValues(
 export async function readTeachValues(db: Db, skillId: string): Promise<StoredTeachValues | null> {
   await expireTeachValues(db, skillId);
   const [row] = await db.$queryRaw<Row[]>`
-    SELECT "skillId", "spaceId", "userId", "values", "suggestions" FROM "dozo_teach_values"
+    SELECT "skillId", "spaceId", "userId", "values", "targets", "suggestions"
+    FROM "dozo_teach_values"
     WHERE "skillId" = ${skillId}`;
   return row ? decode(db, row) : null;
 }
@@ -156,10 +227,37 @@ export async function takeTeachValues(
     () =>
       tx.$queryRaw<Array<Row & { due: boolean }>>`
       DELETE FROM "dozo_teach_values" WHERE "skillId" = ${skillId}
-      RETURNING "skillId", "spaceId", "userId", "values", "suggestions",
+      RETURNING "skillId", "spaceId", "userId", "values", "targets", "suggestions",
         "expiresAt" <= CURRENT_TIMESTAMP AS "due"`,
   );
   return row && !row.due ? decode(tx, row) : null;
+}
+
+/**
+ * Forgets one click's picture at once, for the teacher only, under the row's lock so a picture
+ * removed meanwhile is not written back. Removing one already gone, or from values gone or due,
+ * does nothing.
+ */
+export async function forgetTeachImage(
+  prisma: PrismaClient,
+  skill: { id: string; userId: string },
+  eventIndex: number,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRaw<Row[]>`
+      SELECT "skillId", "spaceId", "userId", "values", "targets", "suggestions"
+      FROM "dozo_teach_values"
+      WHERE "skillId" = ${skill.id} AND "userId" = ${skill.userId}
+        AND "expiresAt" > CURRENT_TIMESTAMP
+      FOR UPDATE`;
+    if (!row?.targets) return;
+    const { images } = await decode(tx, row);
+    const kept = images.filter((image) => image.eventIndex !== eventIndex);
+    if (kept.length === images.length) return;
+    const targets = kept.length ? await seal(tx, row, "targets", JSON.stringify(kept)) : null;
+    await tx.$executeRaw`
+      UPDATE "dozo_teach_values" SET "targets" = ${targets} WHERE "skillId" = ${skill.id}`;
+  });
 }
 
 /**

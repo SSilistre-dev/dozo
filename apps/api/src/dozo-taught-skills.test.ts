@@ -23,8 +23,14 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   reportJsonColumnOnce: reported,
 }));
 
-const { createTaughtSkillsService, forgetOldTeachTyping, FORGET_PAGE, SKILL_NOT_DRAFT } =
-  await import("./dozo-taught-skills.js");
+const {
+  createTaughtSkillsService,
+  forgetOldTeachTyping,
+  FORGET_PAGE,
+  SKILL_CHANGED,
+  SKILL_NOT_DRAFT,
+  TEACH_RECORDING_UNREADABLE,
+} = await import("./dozo-taught-skills.js");
 
 const actor = { userId: "ada", spaceId: "space-1", email: "ada@example.test" } as never;
 
@@ -102,7 +108,12 @@ const member = { userId: "bob", spaceId: "space-1", email: "bob@example.test" } 
 
 /** A draft whose recording was never scrubbed (drafted by an older release), and its values. */
 function saving(
-  options: { skill?: Record<string, unknown>; stored?: Record<string, unknown> | null } = {},
+  options: {
+    skill?: Record<string, unknown>;
+    stored?: Record<string, unknown> | null;
+    cards?: Array<{ id: string; blocks: unknown[] }>;
+    events?: Array<{ id: string; payload: unknown }>;
+  } = {},
 ) {
   const skill = {
     id: "skill-1",
@@ -145,6 +156,9 @@ function saving(
     $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
       // The values are forgotten past row security: any save forgets them.
       if (/current_setting|set_config/.test(strings.join("?"))) return [{}];
+      if (strings.join("?").includes("FROM events")) {
+        return (options.events ?? []).map((event) => ({ id: event.id }));
+      }
       expect(strings.join("?")).toContain('DELETE FROM "dozo_teach_values"');
       steps.push("forget values");
       return stored ? [stored] : [];
@@ -154,6 +168,12 @@ function saving(
         where.id === skill.id && where.spaceId === skill.spaceId ? skill : null,
       ),
       update,
+    },
+    bot: { findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })) },
+    message: { findMany: vi.fn(async () => options.cards ?? []) },
+    event: {
+      findMany: vi.fn(async () => options.events ?? []),
+      update: vi.fn(async () => ({})),
     },
   };
   const append = vi.fn(async () => undefined);
@@ -178,7 +198,7 @@ function saving(
       playbook: SkillPlaybook;
       recording: { events: TeachRecordingEvent[]; snapshots: Array<{ summary: string }> };
     };
-  return { service, steps, written, append, update };
+  return { service, steps, written, append, update, tx };
 }
 
 describe("save", () => {
@@ -196,7 +216,7 @@ describe("save", () => {
     const data = written();
     expect(data).toMatchObject({ userId: "ada", status: "saved", name: "Sign in" });
     expect(data.playbook.steps).toEqual([
-      'Type "ali@example.test".',
+      'Type the text "ali@example.test".',
       "Press key: Tab.",
       "Type {{password}}.",
       "Press key: Tab.",
@@ -293,6 +313,83 @@ describe("save", () => {
     await expect(
       saving({ skill: { spaceId: "space-2" } }).service.save(actor, "skill-1"),
     ).rejects.toBeInstanceOf(IsolationError);
+  });
+
+  it("says what each kept click hit and keeps no picture, label or window of the rest", async () => {
+    const click = (x: number, y: number): TeachRecordingEvent => ({
+      at,
+      kind: "pointer",
+      x,
+      y,
+      type: "click",
+    });
+    // Clicks at 0 (before the email), 18 (before hunter2), 27 (before the protected paste), 29.
+    const clicked: TeachRecordingEvent[] = [
+      click(10, 20),
+      ...events.slice(0, 17),
+      click(30, 40),
+      ...events.slice(17, 25),
+      click(50, 60),
+      events[25]!,
+      click(70, 80),
+    ];
+    const clickedPlaybook = buildPlaybookFromRecording("Sign in", clicked);
+    const window = "Sign in – Browser";
+    const { service, written } = saving({
+      skill: {
+        playbook: clickedPlaybook,
+        recording: {
+          events: clicked,
+          snapshots: [],
+          dozoTargets: [0, 18, 27, 29].map((eventIndex) => ({ eventIndex, window })),
+        },
+      },
+      stored: {
+        values: JSON.stringify(typedValuesFromRecording(clicked)),
+        targets: JSON.stringify([0, 18, 29].map((eventIndex) => ({ eventIndex, image: "AAAA" }))),
+      },
+    });
+    await service.save(actor, "skill-1", "Sign in", {
+      playbook: clickedPlaybook,
+      decisions: { "{{value 2}}": { action: "hidden", name: "password" } },
+      removedTargets: ["29"],
+      labels: { "0": "Email field", "18": "Password field", "29": "Done" },
+    });
+    expect(written().playbook.steps.filter((step) => step.includes("near"))).toEqual([
+      `Click "Email field" in "${window}" (near 10, 20).`,
+    ]);
+    expect(written().playbook.steps).toContain("Click left button at (30, 40).");
+    expect(written().playbook.steps).toContain("Click left button at (50, 60).");
+    expect(written().playbook.steps).toContain("Click left button at (70, 80).");
+    expect(written().recording).not.toHaveProperty("dozoTargets");
+  });
+
+  it("refuses a label for a click with no picture kept, and writes nothing", async () => {
+    const pictured = { targets: JSON.stringify([{ eventIndex: 0, image: "AAAA" }]) };
+    for (const [who, labels] of [
+      [actor, { "5": "Password field" }],
+      [member, { "0": "Email field" }],
+    ] as const) {
+      const { service, update } = saving({ stored: pictured });
+      await expect(
+        service.save(who, "skill-1", "Sign in", { playbook, decisions: {}, labels }),
+      ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+      expect(update).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses, as the person can act on, a recording not in its shape, and writes nothing", async () => {
+    const broken = { events: [null, { kind: 7 }], snapshots: [] };
+    const { service, update } = saving({ skill: { recording: broken } });
+    await expect(service.save(actor, "skill-1")).rejects.toMatchObject({
+      kind: "CONFLICT",
+      code: TEACH_RECORDING_UNREADABLE,
+    });
+    expect(update).not.toHaveBeenCalled();
+    // Someone else gets the skill without the recording, so it is never read.
+    const other = saving({ skill: { recording: broken } });
+    await other.service.save(member, "skill-1");
+    expect(other.written().recording).toEqual({ events: [], snapshots: [] });
   });
 
   it("leaves a recording forgotten when drafted as it is", async () => {
@@ -423,5 +520,105 @@ describe("forgetOldTeachTyping", () => {
     ]);
     expect(upstream.list).toHaveBeenCalledWith(actor, "bot-1");
     expect(upstream.get).toHaveBeenCalledWith(actor, "skill-1");
+  });
+});
+
+describe("decideSavedValues", () => {
+  // A skill an older release saved, with what was typed verbatim in its steps.
+  const old = {
+    ...playbook,
+    inputs: ["Sign in"],
+    steps: ['Type "ali@example.test".', "Press key: Tab.", 'Type "hunter2".'],
+  };
+  const decisions = {
+    "{{value 1}}": { action: "variable" as const, name: "email" },
+    "{{value 2}}": { action: "hidden" as const, name: "password" },
+  };
+
+  it("turns the steps' text into inputs in one transaction, then updates the card", async () => {
+    const { service, steps, written } = saving({ skill: { status: "saved", playbook: old } });
+    await service.decideSavedValues(actor, "skill-1", { steps: old.steps, decisions });
+    expect(steps).toEqual(["lock", "update", "commit", "card"]);
+    expect(written().playbook.steps).toEqual([
+      "Type {{email}}.",
+      "Press key: Tab.",
+      "Type {{password}}.",
+    ]);
+    expect(written().playbook.inputs).toEqual(["Sign in", "email", "password (secret)"]);
+    expect(JSON.stringify(written())).not.toContain("hunter2");
+    // The teacher keeps the recording, with anything typed in it forgotten.
+    expect(written().recording.events.filter((event) => event.key?.length === 1)).toEqual([]);
+    expect(upstream.updateDraft).toHaveBeenCalledWith(actor, "skill-1", {
+      name: "",
+      playbook: written().playbook,
+    });
+  });
+
+  it("brings the card's earlier copies in the thread's history to the new steps", async () => {
+    const card = { kind: "skill_draft", skillId: "skill-1", name: "Old", playbook: old };
+    const other = { kind: "skill_draft", skillId: "skill-2", playbook: old };
+    const { service, tx, written } = saving({
+      skill: { status: "saved", playbook: old },
+      cards: [
+        { id: "m1", blocks: [{ kind: "text", text: "hi" }, card] },
+        { id: "m2", blocks: [{ kind: "text", text: "no card" }] },
+      ],
+      events: [
+        { id: "e1", payload: { messageId: "m1", role: "bot", blocks: [card, other] } },
+        { id: "e2", payload: "another shape" },
+      ],
+    });
+    await service.decideSavedValues(actor, "skill-1", { steps: old.steps, decisions });
+    expect(tx.event.update).toHaveBeenCalledOnce();
+    expect(tx.event.update).toHaveBeenCalledWith({
+      where: { id: "e1" },
+      data: {
+        payload: {
+          messageId: "m1",
+          role: "bot",
+          blocks: [{ ...card, playbook: written().playbook }, other],
+        },
+      },
+    });
+  });
+
+  it("rewrites no history when the thread has no card of the skill", async () => {
+    const { service, tx } = saving({
+      skill: { status: "saved", playbook: old },
+      cards: [{ id: "m2", blocks: [{ kind: "text", text: "no card" }] }],
+    });
+    await service.decideSavedValues(actor, "skill-1", { steps: old.steps, decisions });
+    expect(tx.event.findMany).not.toHaveBeenCalled();
+    const none = saving({ skill: { status: "saved", playbook: old } });
+    none.tx.bot.findUnique.mockResolvedValueOnce(null as never);
+    await none.service.decideSavedValues(actor, "skill-1", { steps: old.steps, decisions });
+    expect(none.tx.message.findMany).not.toHaveBeenCalled();
+  });
+
+  it("lets any member decide, who then owns it without the recording", async () => {
+    const { service, written } = saving({ skill: { status: "saved", playbook: old } });
+    await service.decideSavedValues(member, "skill-1", { steps: old.steps, decisions });
+    expect(written()).toMatchObject({ userId: "bob" });
+    expect(written().recording).toEqual({ events: [], snapshots: [] });
+  });
+
+  it("refuses steps that changed since they were read, a draft, and another Space", async () => {
+    const changed = saving({ skill: { status: "saved", playbook: old } });
+    await expect(
+      changed.service.decideSavedValues(actor, "skill-1", { steps: ["Other"], decisions }),
+    ).rejects.toMatchObject({ kind: "CONFLICT", code: SKILL_CHANGED });
+    expect(changed.update).not.toHaveBeenCalled();
+    await expect(
+      saving({ skill: { playbook: old } }).service.decideSavedValues(actor, "skill-1", {
+        steps: old.steps,
+        decisions,
+      }),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+    await expect(
+      saving({ skill: { spaceId: "space-2" } }).service.decideSavedValues(actor, "skill-1", {
+        steps: old.steps,
+        decisions,
+      }),
+    ).rejects.toBeInstanceOf(IsolationError);
   });
 });

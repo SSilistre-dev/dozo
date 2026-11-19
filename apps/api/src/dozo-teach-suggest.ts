@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type {
+  AgentInputImage,
+  AgentRunRequest,
+  AgentRuntime,
+  AgentRuntimeEvent,
+} from "@rakazo/adapter-kit";
+import { modelAcceptsImageInput } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { TeachTypedValue } from "@rakazo/core";
 import { deadlineSignal, teachInputName } from "@rakazo/core";
@@ -64,17 +70,19 @@ function shapeOf(value: TeachTypedValue): string {
 }
 
 /** The JSON array in a reply, also when the model wrapped it in a code fence or a sentence. */
-function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggestions | null {
+export function jsonArrayIn(text: string): unknown {
   const start = text.indexOf("[");
   const end = text.lastIndexOf("]");
-  if (start < 0 || end < start) return null;
-  let json: unknown;
+  if (start < 0 || end < start) return undefined;
   try {
-    json = JSON.parse(text.slice(start, end + 1));
+    return JSON.parse(text.slice(start, end + 1));
   } catch {
-    return null;
+    return undefined;
   }
-  const parsed = Answer.safeParse(json);
+}
+
+function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggestions | null {
+  const parsed = Answer.safeParse(jsonArrayIn(text));
   if (!parsed.success) return null;
   const suggestions: TeachValueSuggestions = {};
   for (const entry of parsed.data) {
@@ -84,13 +92,8 @@ function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggest
   return suggestions;
 }
 
-/**
- * Suggests names for the values typed while teaching, with the bot's own model connection and no
- * tools. It is given, and the model gets, the task, the steps with placeholders and each value's
- * shape: never a value, nor a window title (one can show what was typed or opened). Null when the
- * call failed, timed out or answered nothing usable; the review then simply has no suggestions.
- */
-export function createTeachValueSuggester(deps: {
+/** What a short teaching call to the bot's own model needs from the server. */
+export type TeachModelDeps = {
   prisma: PrismaClient;
   runtime: AgentRuntime;
   resolveModel: (scope: {
@@ -98,42 +101,89 @@ export function createTeachValueSuggester(deps: {
     spaceId: string;
     botId: string;
   }) => Promise<AgentRunRequest["model"]>;
-}): TeachValueSuggester {
+};
+
+/**
+ * One short call to the bot's own model connection with no tools, history or thinking, its usage
+ * recorded as setup. Images past what the model takes in one prompt are not sent, and `prompt`
+ * is written for those sent only (given how many go). Null when images are given and the model
+ * cannot see them; throws when the call fails or runs out of time.
+ */
+export async function askTeachModel(
+  deps: TeachModelDeps,
+  actor: Actor,
+  botId: string,
+  request: {
+    prompt: (imagesSent: number) => string;
+    instructions: string;
+    images?: AgentInputImage[];
+  },
+  timeoutMs: number,
+): Promise<string | null> {
+  const scope = { userId: actor.userId, spaceId: actor.spaceId, botId };
+  const id = `teach-${randomUUID()}`;
+  // Usage kinds are a fixed set; an auxiliary call like this one counts as setup.
+  const record = async (event: UsageEvent) => {
+    await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "setup" });
+  };
+  const model = await deps.resolveModel(scope);
+  const images = request.images?.slice(0, model.maxImagesPerPrompt ?? request.images.length);
+  if (
+    images &&
+    !(images.length && modelAcceptsImageInput(model.provider, model.id, model.acceptsImages))
+  ) {
+    return null;
+  }
+  let answer = "";
+  for await (const event of deps.runtime.run(
+    {
+      botId,
+      threadId: id,
+      runId: id,
+      usageOperationKind: "setup",
+      onUsage: record,
+      prompt: request.prompt(images?.length ?? 0),
+      instructions: request.instructions,
+      history: [],
+      tools: [],
+      ...(images ? { currentTurnImages: images } : {}),
+      model: { ...model, thinkingLevel: "off" },
+      allowSilentEmpty: true,
+    },
+    { operationId: id, traceId: id, ...scope, signal: deadlineSignal(timeoutMs) },
+  )) {
+    if (event.type === "usage" && !event.accounted) await record(event);
+    if (event.type === "done" && event.text) answer = event.text;
+  }
+  return answer;
+}
+
+/**
+ * Suggests names for the values typed while teaching, with the bot's own model connection and no
+ * tools. It is given, and the model gets, the task, the steps with placeholders and each value's
+ * shape: never a value, nor a window title (one can show what was typed or opened). Null when the
+ * call failed, timed out or answered nothing usable; the review then simply has no suggestions.
+ */
+export function createTeachValueSuggester(deps: TeachModelDeps): TeachValueSuggester {
   return async (actor, skill, values) => {
     if (!values.length) return {};
-    const scope = { userId: actor.userId, spaceId: actor.spaceId, botId: skill.botId };
-    const id = `teach-suggest:${randomUUID()}`;
-    // Usage kinds are a fixed set; an auxiliary call like this one counts as setup.
-    const record = async (event: UsageEvent) => {
-      await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "setup" });
-    };
     try {
-      const model = await deps.resolveModel(scope);
-      let answer = "";
-      for await (const event of deps.runtime.run(
+      const answer = await askTeachModel(
+        deps,
+        actor,
+        skill.botId,
         {
-          botId: skill.botId,
-          threadId: id,
-          runId: id,
-          usageOperationKind: "setup",
-          onUsage: record,
-          prompt: teachValueSuggestionPrompt({
-            goal: skill.goal,
-            steps: skill.steps,
-            values,
-          }),
+          prompt: () =>
+            teachValueSuggestionPrompt({
+              goal: skill.goal,
+              steps: skill.steps,
+              values,
+            }),
           instructions: teachValueSuggestionInstructions(),
-          history: [],
-          tools: [],
-          model: { ...model, thinkingLevel: "off" },
-          allowSilentEmpty: true,
         },
-        { operationId: id, traceId: id, ...scope, signal: deadlineSignal(SUGGEST_TIMEOUT_MS) },
-      )) {
-        if (event.type === "usage" && !event.accounted) await record(event);
-        if (event.type === "done" && event.text) answer = event.text;
-      }
-      return parseAnswer(answer, new Set(values.map((value) => value.placeholder)));
+        SUGGEST_TIMEOUT_MS,
+      );
+      return parseAnswer(answer ?? "", new Set(values.map((value) => value.placeholder)));
     } catch (error) {
       getLogger().warn("teach value suggestion failed", {
         reason: error instanceof Error ? error.message : String(error),

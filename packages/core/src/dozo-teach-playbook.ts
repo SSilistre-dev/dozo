@@ -1,5 +1,9 @@
 import { ClientError } from "./client-error.js";
-import { skillGivenInputs, skillInputsInstruction } from "./dozo-teach-playbook.prompt.js";
+import {
+  SKILL_CLICK_TARGETS_NOTE,
+  skillGivenInputs,
+  skillInputsInstruction,
+} from "./dozo-teach-playbook.prompt.js";
 import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "./teach-playbook.js";
 import {
   scrollDirection,
@@ -30,6 +34,24 @@ export type TeachTypedValue = {
   secret: boolean;
 };
 
+/**
+ * A click step of the recording: the event it came from (a plain click, or a press and release
+ * in place), the step as first written, and the placeholder of the value typed next, if any: the
+ * same for every click since the value before, so a second click on a field (or anywhere) before
+ * typing counts as much as the last one.
+ */
+type TeachClick = {
+  eventIndex: number;
+  step: string;
+  button: string;
+  x: number;
+  y: number;
+  value?: string;
+};
+
+/** What a recorded click hit, as the save writes it into its step. */
+export type TeachClickTarget = { eventIndex: number; window?: string; label?: string };
+
 /** What the teacher decided for one typed value; `hidden` is an input typed from a saved login. */
 export type TeachValueDecision =
   | { action: "variable"; name: string }
@@ -57,6 +79,11 @@ function placeholderOf(index: number): string {
   return `{{value ${index}}}`;
 }
 
+/** A click step as the builder writes it, before anything says what was clicked. */
+function clickStep(button: string, x: number, y: number): string {
+  return `Click ${button} button at (${x}, ${y}).`;
+}
+
 function describePointer(event: TeachRecordingEvent): string {
   const action = event.type ?? "click";
   const button = event.button ?? "left";
@@ -64,7 +91,8 @@ function describePointer(event: TeachRecordingEvent): string {
   if (action === "move") return `Move pointer to ${at}.`;
   if (action === "down") return `Press ${button} button at ${at}.`;
   if (action === "up") return `Release ${button} button at ${at}.`;
-  return `${action === "click" ? "Click" : action} ${button} button at ${at}.`;
+  if (action === "click") return clickStep(button, event.x ?? 0, event.y ?? 0);
+  return `${action} ${button} button at ${at}.`;
 }
 
 function describeScroll(event: TeachRecordingEvent): string {
@@ -113,13 +141,31 @@ function walkRecording(events: RecordedEvent[]): {
   steps: string[];
   values: TeachTypedValue[];
   runs: RunSpan[];
+  clicks: TeachClick[];
 } {
   const steps: string[] = [];
   const values: TeachTypedValue[] = [];
   const runs: RunSpan[] = [];
+  const clicks: TeachClick[] = [];
   let run: TypedRun | null = null;
-  let drag: { button: string; fromX: number; fromY: number; toX: number; toY: number } | null =
-    null;
+  let drag: {
+    eventIndex: number;
+    button: string;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+  } | null = null;
+  // The click steps since the last value, until a value is typed after them.
+  let pending: TeachClick[] = [];
+
+  function addClick(eventIndex: number, button: string, x: number, y: number) {
+    const step = clickStep(button, x, y);
+    const click = { eventIndex, step, button, x, y };
+    pending.push(click);
+    clicks.push(click);
+    steps.push(step);
+  }
 
   function endRun() {
     if (!run) return;
@@ -133,21 +179,36 @@ function walkRecording(events: RecordedEvent[]): {
       };
       values.push(value);
       steps.push(`Type ${value.placeholder}.`);
+      for (const click of pending) click.value = value.placeholder;
+      pending = [];
     }
     runs.push({ first: run.first, last: run.last, value });
     run = null;
   }
 
-  /** Adds the event at `index` to the current run, starting one if needed. */
-  function joinRun(index: number): TypedRun {
+  /**
+   * Adds the event at `index` to the current run, starting one if needed. Protected input
+   * (`protectedInput` true) and plain typing (false) never share a run: where one starts or ends
+   * is a value boundary, so text typed right before a protected paste stays its own value. An
+   * editing key (null) belongs to whichever run it edits.
+   */
+  function joinRun(index: number, protectedInput: boolean | null): TypedRun {
     flushDrag();
-    run ??= { chars: [], cursor: 0, protected: false, unknown: false, first: index, last: index };
+    if (run && protectedInput !== null && run.protected !== protectedInput) endRun();
+    run ??= {
+      chars: [],
+      cursor: 0,
+      protected: protectedInput === true,
+      unknown: false,
+      first: index,
+      last: index,
+    };
     run.last = index;
     return run;
   }
 
   function insert(index: number, text: string) {
-    const current = joinRun(index);
+    const current = joinRun(index, false);
     // Counted in code points: an emoji is two UTF-16 units but one character typed.
     const chars = [...text];
     current.chars.splice(current.cursor, 0, ...chars);
@@ -157,21 +218,23 @@ function walkRecording(events: RecordedEvent[]): {
   function flushDrag() {
     if (!drag) return;
     const moved = Math.hypot(drag.toX - drag.fromX, drag.toY - drag.fromY) >= 8;
-    steps.push(
-      moved
-        ? `Drag ${drag.button} button from (${drag.fromX}, ${drag.fromY}) to (${drag.toX}, ${drag.toY}).`
-        : `Click ${drag.button} button at (${drag.fromX}, ${drag.fromY}).`,
-    );
+    if (moved) {
+      steps.push(
+        `Drag ${drag.button} button from (${drag.fromX}, ${drag.fromY}) to (${drag.toX}, ${drag.toY}).`,
+      );
+    } else {
+      addClick(drag.eventIndex, drag.button, drag.fromX, drag.fromY);
+    }
     drag = null;
   }
 
-  function pointer(event: TeachRecordingEvent) {
+  function pointer(event: TeachRecordingEvent, eventIndex: number) {
     const action = event.type ?? "click";
     const x = event.x ?? 0;
     const y = event.y ?? 0;
     if (action === "down") {
       flushDrag();
-      drag = { button: event.button ?? "left", fromX: x, fromY: y, toX: x, toY: y };
+      drag = { eventIndex, button: event.button ?? "left", fromX: x, fromY: y, toX: x, toY: y };
       return;
     }
     if (action === "move" && drag) {
@@ -186,15 +249,15 @@ function walkRecording(events: RecordedEvent[]): {
       return;
     }
     flushDrag();
-    steps.push(describePointer(event));
+    if (action === "click") addClick(eventIndex, event.button ?? "left", x, y);
+    else steps.push(describePointer(event));
   }
 
   function key(event: RecordedEvent, index: number) {
     if (event.typed || event.sensitive) {
       // A run whose text is already forgotten, or protected input: no text to rebuild.
-      const current = joinRun(index);
-      if (event.sensitive) current.protected = true;
-      else current.unknown = true;
+      const current = joinRun(index, event.sensitive === true);
+      if (!event.sensitive) current.unknown = true;
       return;
     }
     const name = event.key;
@@ -204,7 +267,7 @@ function walkRecording(events: RecordedEvent[]): {
       return;
     }
     if (run && (EDIT_KEYS.has(name) || BLIND_KEYS.has(name))) {
-      const current = joinRun(index);
+      const current = joinRun(index, null);
       if (BLIND_KEYS.has(name)) current.unknown = true;
       else editRun(current, name);
       return;
@@ -220,13 +283,13 @@ function walkRecording(events: RecordedEvent[]): {
       return;
     }
     if (event.kind === "clipboard") {
-      if (event.sensitive) joinRun(index).protected = true;
+      if (event.sensitive) joinRun(index, true);
       else if (event.text) insert(index, event.text);
       return;
     }
     endRun();
     if (event.kind === "pointer") {
-      pointer(event);
+      pointer(event, index);
       return;
     }
     flushDrag();
@@ -234,7 +297,7 @@ function walkRecording(events: RecordedEvent[]): {
   });
   endRun();
   flushDrag();
-  return { steps, values, runs };
+  return { steps, values, runs, clicks };
 }
 
 function inputLabel(name: string, secret: boolean): string {
@@ -336,11 +399,29 @@ export function typedValuesFromRecording(events: TeachRecordingEvent[]): TeachTy
  * their numbering built from the result are the same as from the original.
  */
 export function scrubTeachEvents(events: TeachRecordingEvent[]): TeachRecordingEvent[] {
+  return scrubTeachRecordingEvents(events).events;
+}
+
+/**
+ * `scrubTeachEvents`, and where each event that is kept as it was (a click, a key step) is in
+ * the result, by its index before: the clicks' targets move with them.
+ */
+export function scrubTeachRecordingEvents(events: TeachRecordingEvent[]): {
+  events: TeachRecordingEvent[];
+  indexOf: Map<number, number>;
+} {
   const { runs } = walkRecording(events);
   const scrubbed: TeachRecordingEvent[] = [];
+  const indexOf = new Map<number, number>();
+  const keep = (from: number, to: number) => {
+    for (let index = from; index < to; index += 1) {
+      indexOf.set(index, scrubbed.length);
+      scrubbed.push(events[index]!);
+    }
+  };
   let next = 0;
   for (const run of runs) {
-    scrubbed.push(...events.slice(next, run.first));
+    keep(next, run.first);
     if (run.value) {
       const marker: RecordedEvent = {
         at: events[run.first]!.at,
@@ -352,8 +433,97 @@ export function scrubTeachEvents(events: TeachRecordingEvent[]): TeachRecordingE
     }
     next = run.last + 1;
   }
-  scrubbed.push(...events.slice(next));
-  return scrubbed;
+  keep(next, events.length);
+  return { events: scrubbed, indexOf };
+}
+
+/**
+ * The events of the clicks whose next typed value is secret: protected input, or one of
+ * `alsoSecret` (placeholders the teacher chose Hidden for). Every click since the value before it
+ * counts, not only the last: the field may have been clicked twice, or something else clicked in
+ * between. What such a click hit is never kept: no picture, no label, no window.
+ */
+export function clicksBeforeSecrets(
+  events: TeachRecordingEvent[],
+  alsoSecret: Iterable<string> = [],
+): Set<number> {
+  const { values, clicks } = walkRecording(events);
+  const secret = new Set(alsoSecret);
+  for (const value of values) if (value.secret) secret.add(value.placeholder);
+  return new Set(
+    clicks.flatMap((click) =>
+      click.value !== undefined && secret.has(click.value) ? [click.eventIndex] : [],
+    ),
+  );
+}
+
+/**
+ * Where each click's step is in `steps`, by event: matched in order by the words the builder
+ * wrote, so a step the teacher rewrote or removed has none.
+ */
+export function clickStepIndexes(
+  steps: string[],
+  events: TeachRecordingEvent[],
+): Map<number, number> {
+  const indexes = new Map<number, number>();
+  let from = 0;
+  for (const click of walkRecording(events).clicks) {
+    const at = steps.indexOf(click.step, from);
+    if (at < 0) continue;
+    indexes.set(click.eventIndex, at);
+    from = at + 1;
+  }
+  return indexes;
+}
+
+const LABEL_MAX = 60;
+const WINDOW_MAX = 80;
+/** A click step that quotes what it hit, as `describeClick` writes it. */
+const QUOTED_CLICK = /" \(near -?\d+, -?\d+\)\.$/;
+
+/** Model or window text made safe to quote in a step: one line, no input braces or quotes. */
+function quoted(text: string | undefined, max: number): string | undefined {
+  const clean = text
+    ?.replace(/[\p{Cc}{}"]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max)
+    .trim();
+  return clean ? `"${clean}"` : undefined;
+}
+
+function describeClick(click: TeachClick, target: TeachClickTarget): string {
+  const label = quoted(target.label, LABEL_MAX);
+  const window = quoted(target.window, WINDOW_MAX);
+  if (!label && !window) return click.step;
+  const verb =
+    click.button === "left"
+      ? "Click"
+      : `${click.button.charAt(0).toUpperCase()}${click.button.slice(1)}-click`;
+  return [verb, label, window && `in ${window}`, `(near ${click.x}, ${click.y}).`]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Says in each click's step what it hit, as `Click "Submit button" in "Form" (near 208, 206).`:
+ * the thing clicked is what to look for, the coordinate only a hint. A step the teacher rewrote
+ * stays as written.
+ */
+export function withClickTargets(
+  playbook: SkillPlaybook,
+  events: TeachRecordingEvent[],
+  targets: TeachClickTarget[],
+): SkillPlaybook {
+  const clicks = new Map(walkRecording(events).clicks.map((click) => [click.eventIndex, click]));
+  const indexes = clickStepIndexes(playbook.steps, events);
+  const steps = [...playbook.steps];
+  for (const target of targets) {
+    const click = clicks.get(target.eventIndex);
+    const at = indexes.get(target.eventIndex);
+    if (click && at !== undefined) steps[at] = describeClick(click, target);
+  }
+  return { ...playbook, steps };
 }
 
 /** Set on a recording once what was typed in it is forgotten, so it is never done twice. */
@@ -373,13 +543,18 @@ export function teachTypingForgotten(recording: unknown): boolean {
  * A recording with what was typed and opened in it forgotten: each typed run is one event (as
  * `scrubTeachEvents`), every window title keeps only its application's name (a snapshot whose
  * title names none is dropped, its event kept without a title so the steps stay the same), and
- * cached value suggestions go. Marked, so a recording already forgotten is left as it is: its
+ * cached value suggestions and the key batches' order go. Marked, so a recording already forgotten is left as it is: its
  * titles are already application names, which would not survive a second pass.
  */
 export function forgetTeachTyping<
   R extends { events: TeachRecordingEvent[]; snapshots: TeachSnapshot[] },
 >(recording: R, forgotten = teachTypingForgotten(recording)) {
-  const { dozoSuggestions: _cached, ...kept } = recording as R & { dozoSuggestions?: unknown };
+  // The suggestions cached by older drafts, and where the key batches stood while recording.
+  const {
+    dozoSuggestions: _cached,
+    dozoKeyOrder: _order,
+    ...kept
+  } = recording as R & { dozoSuggestions?: unknown; dozoKeyOrder?: unknown };
   if (forgotten) return { ...kept, [FORGOTTEN]: true as const };
   const typed = typedTexts(typedValuesFromRecording(recording.events));
   const events = scrubTeachEvents(recording.events).map((event) => {
@@ -412,6 +587,68 @@ export function teachInputName(name: string): string {
 function inputName(input: string): string {
   return input.endsWith(SECRET_MARK) ? input.slice(0, -SECRET_MARK.length) : input;
 }
+
+/**
+ * How a value the teacher kept as typed is written in a step: `Type the text "…".`, never the
+ * older `Type "…".`, so a skill whose steps still hold that form is one nobody decided about.
+ */
+function fixedText(text: string): string {
+  return `the text ${JSON.stringify(text)}`;
+}
+
+/** The marker upstream writes in place of protected input: no value of the teacher's. */
+const UPSTREAM_REDACTED = "[redacted input]";
+/** The two step forms upstream wrote typed and pasted text in, verbatim. */
+const UPSTREAM_TYPED = /^Type ("(?:[^"\\]|\\.)*")\.$/;
+const UPSTREAM_PASTED = /^Paste or type: (.+)\.$/;
+const PLACEHOLDER_NUMBER = /\{\{value (\d+)\}\}/g;
+
+/** The text an upstream step typed or pasted verbatim, or null for any other step. */
+function upstreamLiteral(step: string): string | null {
+  const typed = step.match(UPSTREAM_TYPED)?.[1];
+  if (typed !== undefined) {
+    let text: unknown;
+    try {
+      text = JSON.parse(typed);
+    } catch {
+      return null;
+    }
+    return typeof text === "string" && text && text !== UPSTREAM_REDACTED ? text : null;
+  }
+  const pasted = step.match(UPSTREAM_PASTED)?.[1];
+  return pasted && pasted !== UPSTREAM_REDACTED ? pasted : null;
+}
+
+/**
+ * The values a skill saved by an older release keeps verbatim in its steps (`Type "…".` and
+ * `Paste or type: ….`, read by their form alone), each step given a `{{value N}}` placeholder
+ * numbered after any the steps hold, so `applyValueDecisions` decides about them as about a
+ * draft's. None for a skill with no such step.
+ */
+export function savedSkillLiterals(playbook: SkillPlaybook): {
+  playbook: SkillPlaybook;
+  values: TeachTypedValue[];
+} {
+  let next = Math.max(
+    0,
+    ...playbook.steps.flatMap((step) =>
+      [...step.matchAll(PLACEHOLDER_NUMBER)].map((match) => Number(match[1])),
+    ),
+  );
+  const values: TeachTypedValue[] = [];
+  const steps = playbook.steps.map((step) => {
+    const text = upstreamLiteral(step);
+    if (text === null) return step;
+    next += 1;
+    const placeholder = placeholderOf(next);
+    values.push({ placeholder, text, secret: false });
+    return `Type ${placeholder}.`;
+  });
+  return { playbook: values.length ? { ...playbook, steps } : playbook, values };
+}
+
+/** The stable code of a skill that no longer exists (deleted): final, never retried. */
+export const TEACH_SKILL_GONE = "teach_skill_gone";
 
 /** The stable code of a save or test that gives two different values one name. */
 export const TEACH_NAME_TAKEN = "teach_name_taken";
@@ -450,8 +687,7 @@ export function applyValueDecisions(
       if (value.secret || value.text === null) {
         throw new ClientError("BAD_REQUEST", "This value cannot be kept in the skill");
       }
-      const text = JSON.stringify(value.text);
-      steps = steps.map((step) => step.replaceAll(value.placeholder, text));
+      steps = steps.map((step) => step.replaceAll(value.placeholder, fixedText(value.text!)));
       return;
     }
     const name = teachInputName(decision.name) || `value_${index + 1}`;
@@ -498,7 +734,12 @@ export function formatSkillRunPrompt(
   test = false,
   values?: Record<string, string>,
 ): string {
-  const prompt = upstreamFormatSkillRunPrompt(name, playbook, test);
+  const prompt = [
+    upstreamFormatSkillRunPrompt(name, playbook, test),
+    playbook.steps.some((step) => QUOTED_CLICK.test(step)) ? SKILL_CLICK_TARGETS_NOTE : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const inputs = stepInputs(playbook);
   if (!inputs.length) return prompt;
   const given = inputs.flatMap((input) => {

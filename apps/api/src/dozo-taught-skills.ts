@@ -1,29 +1,124 @@
 import { SandboxAllowanceUsedError } from "@rakazo/adapter-kit";
+import type { TeachKeyOrder } from "@rakazo/adapters";
 import {
   emptyRecording,
   parsePlaybook,
   parseRecording,
+  recordTeachingKeys,
   sandboxAllowanceUsedUp,
 } from "@rakazo/adapters";
 import type { Actor, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
 import { TeachRecordingSchema } from "@rakazo/contracts";
+import type { TeachClickTarget, TeachRecordingEvent } from "@rakazo/core";
 import {
   applyValueDecisions,
   ClientError,
+  clicksBeforeSecrets,
   forgetTeachTyping,
+  savedSkillLiterals,
   teachTypingForgotten,
+  withClickTargets,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   IsolationError,
   JsonColumnMismatchError,
   readJsonColumn,
   reportJsonColumnOnce,
+  storedMessageBlocks,
+  storedTeachTargets,
   takeTeachValues,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import * as z from "zod";
 import type { TaughtSkillsDeps } from "./taught-skills.js";
 import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "./taught-skills.js";
+
+/** How many of a thread's latest bot messages are looked through for a skill's card. */
+const CARD_MESSAGES = 100;
+
+const CardEventPayload = z
+  .object({ messageId: z.string(), blocks: z.array(z.unknown()) })
+  .passthrough()
+  .nullable();
+
+/**
+ * The thread's earlier updates of a skill's card hold the steps as they were. Once its steps no
+ * longer type text verbatim, those copies are brought to the new steps too, in the caller's
+ * transaction, so the text is left nowhere in the thread's history. A payload in another shape
+ * is left as it is.
+ */
+async function rewriteCardEvents(
+  tx: Prisma.TransactionClient,
+  skill: { id: string; botId: string },
+  playbook: SkillPlaybook,
+) {
+  const bot = await tx.bot.findUnique({ where: { id: skill.botId }, include: { thread: true } });
+  if (!bot?.thread) return;
+  const threadId = bot.thread.id;
+  const messages = await tx.message.findMany({
+    where: { threadId, role: "bot" },
+    orderBy: { seq: "desc" },
+    take: CARD_MESSAGES,
+  });
+  const cards = messages.flatMap((message) =>
+    storedMessageBlocks(message).some(
+      (block) => block.kind === "skill_draft" && block.skillId === skill.id,
+    )
+      ? [message.id]
+      : [],
+  );
+  if (!cards.length) return;
+  // The message id stays plain in a sealed payload, so it can be looked up.
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM events WHERE "threadId" = ${threadId} AND payload->>'messageId' = ANY(${cards})`;
+  const events = await tx.event.findMany({ where: { id: { in: rows.map((row) => row.id) } } });
+  for (const event of events) {
+    const payload = readJsonColumn(
+      CardEventPayload,
+      event.payload,
+      { table: "events", column: "payload", id: event.id },
+      { fallback: null },
+    );
+    if (!payload) continue;
+    const blocks = payload.blocks.map((block) => {
+      const card = SkillCard.safeParse(block);
+      return card.success && card.data.skillId === skill.id ? { ...card.data, playbook } : block;
+    });
+    await tx.event.update({
+      where: { id: event.id },
+      data: { payload: { ...payload, blocks } as never },
+    });
+  }
+}
+
+const SkillCard = z.object({ kind: z.literal("skill_draft"), skillId: z.string() }).passthrough();
+
+/** A save or test of a skill whose stored recording is not in its shape. */
+export const TEACH_RECORDING_UNREADABLE = "teach_recording_unreadable";
+
+/**
+ * A skill's recording, checked against its schema before anything walks its events: one in
+ * another shape is a refusal the person can act on (teach the skill again), not a server error.
+ */
+export function teachRecordingOf(skill: { id: string; recording: unknown }) {
+  const row = { table: "taught_skills", column: "recording", id: skill.id };
+  try {
+    // Checked item by item; the parse below keeps what the schema would strip (`typed`).
+    readJsonColumn(TeachRecordingSchema, skill.recording, row, "reject");
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    throw new ClientError(
+      "CONFLICT",
+      "This skill's recording cannot be read. Teach it again.",
+      TEACH_RECORDING_UNREADABLE,
+    );
+  }
+  return parseRecording(skill.recording);
+}
+
+/** A decision about a saved skill's values made on steps that changed since they were read. */
+export const SKILL_CHANGED = "skill_changed";
 
 /** A save or test that decides about values of a skill no longer a draft. */
 export const SKILL_NOT_DRAFT = "skill_not_draft";
@@ -32,7 +127,59 @@ export const SKILL_NOT_DRAFT = "skill_not_draft";
 export type TeachSaveEdit = {
   playbook: SkillPlaybook;
   decisions: Record<string, DozoTeachValueDecision>;
+  /** Ids of the clicks whose picture the teacher removed: their steps keep the coordinate. */
+  removedTargets?: string[];
+  /** What each kept click hit, by click id, as the teacher saw and kept it. */
+  labels?: Record<string, string>;
 };
+
+/**
+ * Refuses labels for a click with no picture kept for the teacher (removed, never taken, or
+ * values gone): a label is only ever the teacher's edit of what the model said about a picture
+ * they saw. Their text the contract already holds to plain, short, one-line text.
+ */
+export function checkTeachLabels(
+  labels: Record<string, string> | undefined,
+  images: ReadonlyArray<{ eventIndex: number }>,
+) {
+  const pictured = new Set(images.map((image) => teachTargetId(image.eventIndex)));
+  if (Object.keys(labels ?? {}).some((id) => !pictured.has(id))) {
+    throw new ClientError("BAD_REQUEST", "A label is for a picture that is no longer kept");
+  }
+}
+
+/** A recorded click's id: the index of its event in the drafted recording. */
+export const teachTargetId = (eventIndex: number) => String(eventIndex);
+
+/**
+ * The clicks whose step may say what they hit: not removed by the teacher, and not followed by
+ * a hidden value (protected input, or one the teacher chose Hidden for), whose picture, label
+ * and window are never kept. Each with its window and, when given, its label.
+ */
+export function keptTeachClicks(
+  skillId: string,
+  recording: unknown,
+  events: TeachRecordingEvent[],
+  edit: Pick<TeachSaveEdit, "decisions" | "removedTargets" | "labels">,
+): TeachClickTarget[] {
+  const hidden = Object.entries(edit.decisions).flatMap(([placeholder, decision]) =>
+    decision.action === "hidden" ? [placeholder] : [],
+  );
+  const secret = clicksBeforeSecrets(events, hidden);
+  const removed = new Set(edit.removedTargets ?? []);
+  return storedTeachTargets(skillId, recording).flatMap((target) => {
+    const id = teachTargetId(target.eventIndex);
+    if (removed.has(id) || secret.has(target.eventIndex)) return [];
+    const label = edit.labels?.[id];
+    return [
+      {
+        eventIndex: target.eventIndex,
+        ...(target.window ? { window: target.window } : {}),
+        ...(label ? { label } : {}),
+      },
+    ];
+  });
+}
 
 /** Skills one pass of `forgetOldTeachTyping` looks at. */
 export const FORGET_PAGE = 100;
@@ -101,7 +248,8 @@ function forgetBeforeReading(
  * forgets what is typed in any the previous release left with it (`forgetOldTeachTyping`),
  * teaching on a plan with no computer time left is refused before any of the person's runs is
  * cancelled, and every save, in one transaction, applies the teacher's decisions to the values
- * typed, forgets those values and keeps nothing typed in the recording.
+ * typed, says in each kept click's step what it hit, forgets the values and the clicks'
+ * pictures, and keeps nothing typed or clicked in the recording.
  */
 export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
   const upstream = createUpstreamTaughtSkillsService(deps);
@@ -116,6 +264,11 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
     async get(actor: Actor, skillId: string) {
       await forgetBeforeReading(deps.prisma, { spaceId: actor.spaceId, skillId });
       return upstream.get(actor, skillId);
+    },
+
+    /** Keys typed in a row while teaching, recorded with one check and one write, in order. */
+    recordKeys(actor: Actor, botId: string, keys: string[], order?: TeachKeyOrder) {
+      return recordTeachingKeys(deps, actor, botId, keys, order);
     },
 
     async start(actor: Actor, botId: string, goal: string) {
@@ -166,12 +319,21 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           throw new ClientError("CONFLICT", "This skill is already saved", SKILL_NOT_DRAFT);
         }
         const stored = await takeTeachValues(tx, skill.id);
-        const values =
-          teacher && skill.status === "draft" && stored?.userId === actor.userId
-            ? stored.values
-            : [];
+        const own = teacher && skill.status === "draft" && stored?.userId === actor.userId;
+        const values = own ? stored.values : [];
+        checkTeachLabels(edit?.labels, own ? stored.images : []);
         const playbook = edit?.playbook ?? parsePlaybook(skill.playbook);
-        const recording = parseRecording(skill.recording);
+        // Someone else gets the skill without the recording, so only the teacher's is read.
+        const recording = teacher ? teachRecordingOf(skill) : emptyRecording();
+        const decided = values.length ? applyValueDecisions(playbook, values, decisions) : playbook;
+        // Upstream's parse keeps only its own keys: the clicks' windows are gone with it.
+        const clicks =
+          teacher && skill.status === "draft"
+            ? keptTeachClicks(skill.id, skill.recording, recording.events, {
+                ...edit,
+                decisions,
+              })
+            : [];
         return tx.taughtSkill.update({
           where: { id: skill.id },
           data: {
@@ -182,9 +344,9 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
               : emptyRecording()) as never,
             status: "saved",
             name: name ?? (skill.name || skill.goal.slice(0, 80)),
-            playbook: (values.length
-              ? applyValueDecisions(playbook, values, decisions)
-              : playbook) as never,
+            playbook: (clicks.length
+              ? withClickTargets(decided, recording.events, clicks)
+              : decided) as never,
           },
         });
       });
@@ -207,6 +369,56 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         });
       }
       return saved;
+    },
+
+    /**
+     * Decides about the values a skill saved by an older release keeps verbatim in its steps,
+     * as the teacher of a draft does: an input, a hidden input, text kept as typed, or removed.
+     * Whoever may edit the skill may (any member of the Space, who then owns it, as upstream's
+     * edit does); its steps are already shown to all of them. `steps` are those the person saw:
+     * a skill changed since is refused, so no decision lands on another value. One transaction
+     * writes the steps and forgets anything typed left in the recording; the draft card follows
+     * the commit with what was saved.
+     */
+    async decideSavedValues(
+      actor: Actor,
+      skillId: string,
+      input: { steps: string[]; decisions: Record<string, DozoTeachValueDecision> },
+    ) {
+      const row = await deps.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          SELECT id FROM taught_skills WHERE id = ${skillId} AND "spaceId" = ${actor.spaceId}
+          FOR UPDATE`;
+        const skill = await tx.taughtSkill.findFirst({
+          where: { id: skillId, spaceId: actor.spaceId },
+        });
+        if (!skill) throw new IsolationError();
+        if (skill.status !== "saved") {
+          throw new ClientError("BAD_REQUEST", "Only a saved skill's steps are decided here");
+        }
+        const playbook = parsePlaybook(skill.playbook);
+        if (JSON.stringify(playbook.steps) !== JSON.stringify(input.steps)) {
+          throw new ClientError("CONFLICT", "This skill changed. Open it again.", SKILL_CHANGED);
+        }
+        const literals = savedSkillLiterals(playbook);
+        const teacher = skill.userId === actor.userId;
+        const decided = applyValueDecisions(literals.playbook, literals.values, input.decisions);
+        await rewriteCardEvents(tx, skill, decided);
+        return tx.taughtSkill.update({
+          where: { id: skill.id },
+          data: {
+            userId: actor.userId,
+            recording: (teacher
+              ? forgetTeachTyping(teachRecordingOf(skill), teachTypingForgotten(skill.recording))
+              : emptyRecording()) as never,
+            playbook: decided as never,
+          },
+        });
+      });
+      return upstream.updateDraft(actor, skillId, {
+        name: row.name,
+        playbook: parsePlaybook(row.playbook),
+      });
     },
   };
 }
