@@ -4,7 +4,7 @@ import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -65,8 +65,21 @@ vi.mock("../lib/user-error", () => ({
     error instanceof Error && error.message ? error.message : fallback,
 }));
 vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
-// The plan beside each account has its own test file.
+// The plan beside each account, and an account's own page, have their own test files.
 vi.mock("./dozo-admin-plan", () => ({ DozoPlanAction: () => null }));
+vi.mock("./dozo-admin-account", () => ({
+  DozoAdminAccount: ({ ownId }: { ownId: string }) => <div data-testid="account">{ownId}</div>,
+}));
+// The real sections, and one more with a page of its own, as the next section will add itself.
+vi.mock("./dozo-admin-nav", async (importOriginal) => {
+  const real = await importOriginal<typeof Nav>();
+  const extra = {
+    path: "extra",
+    label: { id: "extra", message: "Extra" },
+    page: () => <div data-testid="extra-page" />,
+  };
+  return { DOZO_ADMIN_NAV: [...real.DOZO_ADMIN_NAV, extra] };
+});
 vi.mock("./NotFound", () => ({ NotFoundPage: () => <div data-testid="not-found" /> }));
 vi.mock("../components/PageLoading", () => ({
   PageLoading: () => <div data-testid="page-loading" />,
@@ -95,7 +108,7 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
       strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
-    i18n: { locale: "en" },
+    i18n: { locale: "en", _: (descriptor: { message: string }) => descriptor.message },
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
   Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
@@ -114,6 +127,8 @@ vi.mock("@rakazo/ui-web", () => {
     ),
     buttonVariants: () => "",
     Input: (props: ComponentProps<"input">) => <input {...props} />,
+    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
+    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
     ListSearchInput: (props: {
       query: string;
       setQuery: (query: string) => void;
@@ -133,6 +148,7 @@ vi.mock("@rakazo/ui-web", () => {
 
 import type * as Query from "../lib/query";
 import { DozoAdminPage } from "./dozo-admin";
+import type * as Nav from "./dozo-admin-nav";
 
 const owner = {
   id: "admin",
@@ -164,6 +180,7 @@ const bob = {
 const page = (users: object[], nextCursor: string | null = null) => ({
   signupsOpen: false,
   total: 3,
+  matching: users.length,
   users,
   nextCursor,
 });
@@ -177,14 +194,16 @@ const computer = {
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-async function render() {
+async function render(path = "/admin") {
   await act(async () => {
     root.render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <MemoryRouter>
-          <DozoAdminPage />
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/admin/*" element={<DozoAdminPage />} />
+          </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -263,10 +282,15 @@ it("shows the status line, the running computers and the accounts", async () => 
   expect(row("bob@example.test")?.querySelector("[data-badge]")?.textContent).toBe("Suspended");
   // Nobody suspends themselves.
   expect(row("owner@example.test")?.querySelector("button")).toBeNull();
-  expect([...container.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+  expect(
+    [...container.querySelectorAll("header a")].map((link) => link.getAttribute("href")),
+  ).toEqual([
     "/app",
+    "/admin",
     "/admin/access",
     "/admin/plugins",
+    "/admin/billing",
+    "/admin/extra",
   ]);
 });
 
@@ -464,4 +488,72 @@ it("offers a retry when the page cannot be read", async () => {
   );
   await click(button("Retry"));
   await vi.waitFor(() => expect(shown("admin-users")).toBeTruthy());
+});
+
+it("lists the sections that have a page, the open one marked, and opens each", async () => {
+  await open();
+  const links = [...container.querySelectorAll("nav a")];
+  expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+    ["Members", "/admin"],
+    ["Free access", "/admin/access"],
+    ["Plugins", "/admin/plugins"],
+    ["Billing", "/admin/billing"],
+    ["Extra", "/admin/extra"],
+  ]);
+  expect(links[0]?.getAttribute("aria-current")).toBe("page");
+  await click(links[4] as HTMLElement);
+  await vi.waitFor(() => expect(shown("extra-page")).toBeTruthy());
+  expect(shown("admin-users")).toBeNull();
+});
+
+it("opens an account from its address, and sends an unknown address to the members", async () => {
+  await render("/admin/users/ada");
+  await vi.waitFor(() => expect(shown("account")?.textContent).toBe("admin"));
+  expect(api.users).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render("/admin/nothing-here");
+  await vi.waitFor(() => expect(shown("admin-users")).toBeTruthy());
+});
+
+it("links each account to its own page", async () => {
+  await open();
+  expect(userRow("ada@example.test")?.querySelector("a")?.getAttribute("href")).toBe(
+    "/admin/users/ada",
+  );
+});
+
+it("filters by plan and status and sorts on the server, and counts the matches", async () => {
+  await open();
+  expect(shown("admin-matching")).toBeNull();
+  const choose = async (label: string, value: string) => {
+    const field = container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(
+        field,
+        value,
+      );
+      field?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  api.users.mockResolvedValue(page([ada]));
+  await choose("Plan", "pro");
+  await vi.waitFor(() => expect(api.users).toHaveBeenLastCalledWith({ plan: "pro" }));
+  await vi.waitFor(() => expect(shown("admin-matching")?.textContent).toBe("1 match"));
+  await choose("Status", "suspended");
+  await vi.waitFor(() =>
+    expect(api.users).toHaveBeenLastCalledWith({ plan: "pro", status: "suspended" }),
+  );
+  await choose("Sort", "email");
+  await vi.waitFor(() =>
+    expect(api.users).toHaveBeenLastCalledWith({
+      sort: "email",
+      plan: "pro",
+      status: "suspended",
+    }),
+  );
+  await choose("Plan", "");
+  await choose("Status", "");
+  await vi.waitFor(() => expect(api.users).toHaveBeenLastCalledWith({ sort: "email" }));
+  expect(shown("admin-matching")).toBeNull();
 });

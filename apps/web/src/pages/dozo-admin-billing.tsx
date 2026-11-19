@@ -4,51 +4,25 @@ import { BYOK_TIERS } from "@rakazo/contracts";
 import {
   Badge,
   Button,
-  buttonVariants,
   SectionHeading,
   Spinner,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
-import { PageLoading } from "../components/PageLoading";
+import { errorText } from "../lib/dozo-error-text";
 import { useSpaceQueries } from "../lib/query";
-import { errorText } from "../lib/user-error";
-import { NotFoundPage } from "./NotFound";
-import { WindowChrome } from "./WindowChrome";
 
-/** The admin billing page. Anyone else sees the page an unknown address shows. */
-export function DozoAdminBillingPage() {
-  const { t } = useLingui();
-  const me = useQuery(useSpaceQueries().me.queryOptions());
-  if (me.isPending) return <PageLoading />;
-  if (!me.data?.isAdmin) return <NotFoundPage />;
+/** The admin page's billing section, at `/admin/billing`; the admin page checks who may see it. */
+export function DozoAdminBilling() {
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <WindowChrome />
-      <header className="flex items-center gap-1 border-b px-4 py-3">
-        <Link
-          to="/admin"
-          className={buttonVariants({ variant: "ghost", size: "icon" })}
-          aria-label={t`Back`}
-        >
-          <ChevronLeft />
-        </Link>
-        <h1 className="flex-1 px-2 font-medium">
-          <Trans>Billing</Trans>
-        </h1>
-      </header>
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-8 px-4 py-6">
-          <Summary />
-          <Revenue />
-        </div>
-      </main>
-    </div>
+    <>
+      <Summary />
+      <Revenue />
+    </>
   );
 }
 

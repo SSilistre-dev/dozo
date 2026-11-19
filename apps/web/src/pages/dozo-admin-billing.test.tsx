@@ -7,11 +7,10 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ me: vi.fn(), summary: vi.fn(), revenue: vi.fn() }));
+const api = vi.hoisted(() => ({ summary: vi.fn(), revenue: vi.fn() }));
 
 vi.mock("../lib/query", () => ({
   useSpaceQueries: () => ({
-    me: { queryOptions: () => ({ queryKey: ["me"], queryFn: () => api.me() }) },
     dozoAdmin: {
       billing: {
         summary: {
@@ -27,14 +26,9 @@ vi.mock("../lib/query", () => ({
     },
   }),
 }));
-vi.mock("../lib/user-error", () => ({
+vi.mock("../lib/dozo-error-text", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error && error.message ? error.message : fallback,
-}));
-vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
-vi.mock("./NotFound", () => ({ NotFoundPage: () => <div data-testid="not-found" /> }));
-vi.mock("../components/PageLoading", () => ({
-  PageLoading: () => <div data-testid="page-loading" />,
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -58,7 +52,6 @@ vi.mock("@rakazo/ui-web", () => {
     }: ComponentProps<"button"> & { variant?: string; size?: string }) => (
       <button type="button" {...props} />
     ),
-    buttonVariants: () => "",
     SectionHeading: Pass,
     Spinner: () => <span role="status" />,
     ToggleGroup: (props: {
@@ -86,7 +79,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import { DozoAdminBillingPage } from "./dozo-admin-billing";
+import { DozoAdminBilling } from "./dozo-admin-billing";
 
 const summary = {
   members: 12,
@@ -137,7 +130,7 @@ async function render() {
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
         <MemoryRouter>
-          <DozoAdminBillingPage />
+          <DozoAdminBilling />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -160,7 +153,6 @@ const click = (node: HTMLElement) => act(async () => node.click());
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   for (const mock of Object.values(api)) mock.mockReset();
-  api.me.mockResolvedValue({ isAdmin: true, userId: "admin" });
   api.summary.mockResolvedValue(summary);
   api.revenue.mockResolvedValue(revenue);
   container = document.createElement("div");
@@ -172,17 +164,6 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
-});
-
-it("shows anyone but an admin the page an unknown address shows, and reads nothing", async () => {
-  const me = deferred<{ isAdmin: boolean }>();
-  api.me.mockReturnValue(me.promise);
-  await render();
-  expect(shown("page-loading")).toBeTruthy();
-  await act(async () => me.resolve({ isAdmin: false }));
-  await vi.waitFor(() => expect(shown("not-found")).toBeTruthy());
-  expect(api.summary).not.toHaveBeenCalled();
-  expect(api.revenue).not.toHaveBeenCalled();
 });
 
 it("shows the members, each plan and what needs attention", async () => {
