@@ -19,7 +19,7 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 
 - It does not imitate upstream's desktop bridge, so the web app behaves as it does in a browser:
   no update section, no in-chat search bar, no custom window buttons. Upstream's native features
-  (the host computer, Docker management, automatic updates) are not here.
+  (the host computer, Docker management) are not here; updates are the app's own ("Updates").
 - Anything that leaves the server's origin opens in the browser. A sign-in that redirects to
   another site therefore finishes in the browser, not in the app; sign in with email and password.
   A link that asks for a new window also opens in the browser, even on the same origin.
@@ -132,6 +132,35 @@ builds: nothing about them is in this repository, and CI does not sign.
 
 Without that file the app is signed ad hoc and `build.sh` says so. It then opens without a warning
 only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
+
+## Updates
+
+- At launch and then once a day the app reads
+  `https://github.com/SSilistre-dev/dozo/releases/latest/download/latest.json`, downloads a newer
+  version in the background and keeps it only if its signature checks out against the public key
+  in `tauri.conf.json` and was made for the version the manifest names (`requireSignedVersion`).
+- Then one menu appears at the end of the menu bar, "Restart to Update" ("Güncellemek için yeniden
+  başlat" on a Turkish system), holding that one item. Nothing installs until it is picked. On
+  Windows the installer closes the app and opens the new one; on macOS and Linux the app restarts.
+- A failed check, download, signature or install changes nothing and adds a line to `updates.log`
+  in the app's log folder (`~/Library/Logs/dev.ssilistre.dozo/`,
+  `%LOCALAPPDATA%\dev.ssilistre.dozo\logs\`, `~/.local/share/dev.ssilistre.dozo/logs/`).
+- Linux: the AppImage replaces itself, so its folder must be writable; the .deb asks for an
+  administrator password through the system's prompt.
+- Release: push a `desktop-v<version>` tag whose version matches `tauri.conf.json` and
+  `Cargo.toml`. The `dozo-desktop-release` workflow builds all three systems, signs every update
+  package with the updater key (repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), writes `latest.json` (`latest-json.sh`) and checksums,
+  and leaves a draft release. Publishing the draft ships the update. The private key and its
+  password are kept only in those secrets and offline by the owner: without them no installed
+  app can be updated again.
+- Platform signing in that workflow is optional. With `APPLE_CERTIFICATE`,
+  `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` the Mac app is signed, and with
+  `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` also notarized; with `WINDOWS_CERTIFICATE` (a
+  base64 .pfx) and `WINDOWS_CERTIFICATE_PASSWORD` the Windows installer is signed. Without them
+  the packages are built unsigned (the Mac app ad hoc) and the run still succeeds: an ad-hoc Mac
+  disk image is blocked by Gatekeeper when downloaded, so replace it in the draft with one from
+  `build.sh` until the Apple secrets are set. Its disk image is not signed itself either way.
 
 ## Where it keeps things
 

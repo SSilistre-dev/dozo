@@ -1,0 +1,223 @@
+name: dozo-desktop-release
+
+# On a `desktop-v<version>` tag, builds the fork's desktop app (dozo/desktop, Tauri 2) for macOS,
+# Windows and Linux, signs each update package with the updater key and puts everything, with the
+# update manifest latest.json, on a DRAFT GitHub release. Publishing the draft is what ships it:
+# the apps read releases/latest/download/latest.json (dozo/desktop/README.md, "Updates").
+# The tag must match the version in tauri.conf.json and Cargo.toml.
+# Platform signing is optional: without the Apple or Windows certificate secrets the packages are
+# built unsigned (macOS ad hoc) and the run still succeeds; with them they are signed.
+# Asset names are fixed: the landing page links Dozo-macOS.dmg and Dozo-Windows-x64-setup.exe.
+# Versions as in the other desktop workflows; actions pinned to a full commit SHA.
+on:
+  push:
+    tags:
+      - desktop-v*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+  # Build the signed update packages next to the installers.
+  UPDATER: '{"bundle":{"createUpdaterArtifacts":true}}'
+
+jobs:
+  version:
+    name: Tag matches the app version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: |
+          tag=${GITHUB_REF_NAME#desktop-v}
+          conf=$(jq -r .version dozo/desktop/tauri.conf.json)
+          crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' dozo/desktop/Cargo.toml | head -n1)
+          [ "$tag" = "$conf" ] && [ "$tag" = "$crate" ] \
+            || { echo "tag $tag, tauri.conf.json $conf, Cargo.toml $crate: they must match"; exit 1; }
+
+  macos:
+    name: macOS
+    needs: version
+    runs-on: macos-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: dozo/desktop
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo install tauri-cli --version "$(sed -n 's/^TAURI_CLI=//p' build.sh)" --locked
+      - name: Icon and logo
+        run: |
+          cargo tauri icon ../brand/assets/desktop/icon-macos.png --output icons
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+      - name: Build
+        run: |
+          # An empty secret still sets the variable, and the bundler would try to use it.
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
+            echo "no Apple certificate: signed ad hoc"
+          fi
+          if [ -z "$APPLE_ID" ]; then
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+            echo "no notary credentials: not notarized"
+          fi
+          cargo tauri build --target universal-apple-darwin --bundles app --config "$UPDATER" -- --locked
+          out=target/universal-apple-darwin/release/bundle/macos
+          mkdir -p dist dmg
+          cp "$out/Dozo.app.tar.gz" dist/Dozo-macOS.app.tar.gz
+          cp "$out/Dozo.app.tar.gz.sig" dist/Dozo-macOS.app.tar.gz.sig
+          # A plain disk image, as build.sh makes it: the app and a link to /Applications.
+          ditto "$out/Dozo.app" dmg/Dozo.app
+          ln -s /Applications dmg/Applications
+          hdiutil create -quiet -volname Dozo -srcfolder dmg -ov -format UDZO dist/Dozo-macOS.dmg
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos
+          path: dozo/desktop/dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: dozo/desktop
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install
+          cargo install tauri-cli --version "$(sed -n 's/^TAURI_CLI=//p' build.sh)" --locked
+      - name: Icon and logo
+        run: |
+          mkdir -p icons
+          cp ../brand/assets/desktop/icon.ico icons/icon.ico
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+      # With a code signing certificate (a base64 .pfx), it goes into the runner's store and the
+      # bundler signs the app and the installer with it. Without one the installer is unsigned.
+      - name: Code signing certificate
+        if: env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'certificate.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          "WINDOWS_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+      - name: Build
+        run: |
+          config=$UPDATER
+          if [ -n "${WINDOWS_THUMBPRINT:-}" ]; then
+            config='{"bundle":{"createUpdaterArtifacts":true,"windows":{"certificateThumbprint":"'"$WINDOWS_THUMBPRINT"'","digestAlgorithm":"sha256","timestampUrl":"http://timestamp.digicert.com"}}}'
+          else
+            echo "no code signing certificate: unsigned"
+          fi
+          cargo tauri build --config "$config" -- --locked
+          mkdir -p dist
+          cp target/release/bundle/nsis/*-setup.exe dist/Dozo-Windows-x64-setup.exe
+          cp target/release/bundle/nsis/*-setup.exe.sig dist/Dozo-Windows-x64-setup.exe.sig
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows
+          path: dozo/desktop/dist/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux
+    needs: version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: dozo/desktop
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $(sed -n 's/^LINUX_PACKAGES="\(.*\)"$/\1/p' build-linux.sh)
+          rustup toolchain install
+          cargo install tauri-cli --version "$(sed -n 's/^TAURI_CLI=//p' build.sh)" --locked
+      - name: Icons and logo
+        run: |
+          cargo tauri icon ../brand/assets/desktop/icon.png --output icons --png 32,128,256,512
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+      - name: Build
+        run: |
+          cargo tauri build --config "$UPDATER" -- --locked
+          mkdir -p dist
+          for f in target/release/bundle/appimage/*.AppImage target/release/bundle/appimage/*.AppImage.sig; do
+            cp "$f" "dist/Dozo-Linux-x86_64.AppImage${f##*.AppImage}"
+          done
+          for f in target/release/bundle/deb/*.deb target/release/bundle/deb/*.deb.sig; do
+            cp "$f" "dist/Dozo-Linux-amd64.deb${f##*.deb}"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux
+          path: dozo/desktop/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Update manifest and checksums
+        run: |
+          dozo/desktop/latest-json.sh "${GITHUB_REF_NAME#desktop-v}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" dist \
+            > dist/latest.json
+          (cd dist && sha256sum Dozo-* > SHA256SUMS.txt)
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Dozo desktop ${GITHUB_REF_NAME#desktop-v}" \
+            --notes "Dozo desktop for macOS, Windows and Linux. Checksums are in SHA256SUMS.txt." \
+            dist/*
