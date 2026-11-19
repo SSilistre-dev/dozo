@@ -1,25 +1,25 @@
 {
-  "commit": "1b4f709f2",
+  "commit": "8953db7b4",
   "bundle": {
     "kb": 870.5,
     "budgetKb": 900
   },
   "sets": {
     "fork": {
-      "quality": 88.7,
-      "readability": 93.2,
+      "quality": 91.4,
+      "readability": 98.3,
       "measures": {
         "types": {
-          "score": 98.1,
+          "score": 100,
           "files": 157,
-          "dirty": 3,
-          "findings": 6
+          "dirty": 0,
+          "findings": 0
         },
         "lint": {
-          "score": 95.3,
-          "files": 213,
-          "dirty": 10,
-          "findings": 43
+          "score": 95.8,
+          "files": 214,
+          "dirty": 9,
+          "findings": 41
         },
         "tests": {
           "score": 100,
@@ -29,13 +29,13 @@
         },
         "lineCoverage": {
           "score": 99.8,
-          "covered": 3627,
-          "total": 3635
+          "covered": 4073,
+          "total": 4081
         },
         "branchCoverage": {
           "score": 97.3,
-          "covered": 2233,
-          "total": 2294
+          "covered": 2231,
+          "total": 2292
         },
         "security": {
           "score": 25,
@@ -47,143 +47,130 @@
           "rating": "D"
         },
         "shell": {
-          "score": 58.8,
+          "score": 100,
           "files": 17,
-          "dirty": 7,
-          "findings": 37
+          "dirty": 0,
+          "findings": 0
         },
         "checks": {
-          "score": 93.7,
-          "passed": 89,
-          "failed": 6,
+          "score": 95.8,
+          "passed": 91,
+          "failed": 4,
           "skipped": 0
         },
         "complexity": {
           "score": 98.8,
-          "functions": 1278,
+          "functions": 1290,
           "over": 15,
           "max": 51,
           "distribution": {
-            "0": 845,
-            "1-5": 367,
+            "0": 853,
+            "1-5": 372,
             "6-10": 42,
-            "11-15": 9,
+            "11-15": 8,
             "16-25": 7,
             ">25": 8
           }
         },
         "functionLength": {
-          "score": 96.9,
-          "functions": 1278,
+          "score": 97,
+          "functions": 1290,
           "over": 39,
           "max": 459
         },
         "fileLength": {
-          "score": 92.2,
-          "files": 116,
-          "dirty": 9,
-          "findings": 4037
+          "score": 91.5,
+          "files": 117,
+          "dirty": 10,
+          "findings": 4780
         },
         "duplication": {
           "score": 100,
-          "lines": 14392,
+          "lines": 15157,
           "duplicated": 245,
-          "percent": 1.7023346303501945,
+          "percent": 1.6164148578214685,
           "rating": "A"
         },
         "deadCode": {
-          "score": 59.5,
-          "files": 116,
-          "dirty": 47,
-          "findings": 76
+          "score": 100,
+          "files": 117,
+          "dirty": 0,
+          "findings": 0
         },
         "format": {
-          "score": 92.5,
-          "files": 213,
-          "dirty": 16,
-          "findings": 21
+          "score": 100,
+          "files": 214,
+          "dirty": 0,
+          "findings": 0
         }
       },
       "jobs": {
-        "types": [
-          {
-            "target": "apps/api/src/dozo-plans.test.ts (3)",
-            "gain": 0.6369426751592356
-          },
-          {
-            "target": "packages/db/src/dozo-shared-space.postgres.test.ts (2)",
-            "gain": 0.6369426751592356
-          },
-          {
-            "target": "packages/db/src/dozo-shared-space.test.ts (1)",
-            "gain": 0.6369426751592356
-          }
-        ],
+        "types": [],
         "lint": [
           {
             "target": "dozo/brand/brand.gate.test.mjs (27)",
-            "gain": 0.4694835680751174
+            "gain": 0.4672897196261682
           },
           {
             "target": "dozo/landing/landing.js (5)",
-            "gain": 0.4694835680751174
+            "gain": 0.4672897196261682
           },
           {
             "target": "dozo/brand/brand.apply.test.mjs (2)",
-            "gain": 0.4694835680751174
-          },
-          {
-            "target": "dozo/brand/brand.config.test.mjs (2)",
-            "gain": 0.4694835680751174
+            "gain": 0.4672897196261682
           },
           {
             "target": "dozo/brand/lib.mjs (2)",
-            "gain": 0.4694835680751174
+            "gain": 0.4672897196261682
+          },
+          {
+            "target": "dozo/brand/assets/render.mjs (1)",
+            "gain": 0.4672897196261682
           }
         ],
         "tests": [],
         "lineCoverage": [
           {
             "target": "apps/api/src/dozo-admin-account.ts (1 of 18 uncovered)",
-            "gain": 0.027510316368638238
+            "gain": 0.02450379808870375
           },
           {
             "target": "apps/api/src/dozo-admin.ts (1 of 165 uncovered)",
-            "gain": 0.027510316368638238
+            "gain": 0.02450379808870375
           },
           {
-            "target": "dozo/brand/lib.mjs (2 of 595 uncovered)",
-            "gain": 0.055020632737276476
+            "target": "dozo/brand/lib.mjs (2 of 941 uncovered)",
+            "gain": 0.0490075961774075
           },
           {
             "target": "dozo/e2e/logic.ts (2 of 65 uncovered)",
-            "gain": 0.055020632737276476
+            "gain": 0.0490075961774075
           },
           {
-            "target": "dozo/mobile/check-config.mjs (2 of 81 uncovered)",
-            "gain": 0.055020632737276476
+            "target": "dozo/mobile/check-config.mjs (2 of 106 uncovered)",
+            "gain": 0.0490075961774075
           }
         ],
         "branchCoverage": [
           {
             "target": "apps/api/src/dozo-admin-account.ts (2 of 22 uncovered)",
-            "gain": 0.08718395815170009
+            "gain": 0.08726003490401396
           },
           {
             "target": "apps/api/src/dozo-admin.ts (3 of 105 uncovered)",
-            "gain": 0.13077593722755013
+            "gain": 0.13089005235602094
           },
           {
             "target": "apps/web/src/components/dozo-plan-end.tsx (1 of 14 uncovered)",
-            "gain": 0.043591979075850044
+            "gain": 0.04363001745200698
           },
           {
             "target": "apps/web/src/lib/dozo-boot.ts (1 of 25 uncovered)",
-            "gain": 0.043591979075850044
+            "gain": 0.04363001745200698
           },
           {
             "target": "apps/web/src/pages/dozo-admin-billing.tsx (1 of 40 uncovered)",
-            "gain": 0.043591979075850044
+            "gain": 0.04363001745200698
           }
         ],
         "security": [
@@ -208,98 +195,77 @@
             "gain": 5
           }
         ],
-        "shell": [
-          {
-            "target": "dozo/docker/gate.sh (24)",
-            "gain": 5.882352941176471
-          },
-          {
-            "target": "dozo/e2e/run.sh (4)",
-            "gain": 5.882352941176471
-          },
-          {
-            "target": "dozo/docker/build.sh (3)",
-            "gain": 5.882352941176471
-          },
-          {
-            "target": "dozo/desktop/build.sh (2)",
-            "gain": 5.882352941176471
-          },
-          {
-            "target": "dozo/docker/lock.sh (2)",
-            "gain": 5.882352941176471
-          }
-        ],
+        "shell": [],
         "checks": [
           {
-            "target": "scripts/checks (6 failed)",
-            "gain": 6.315789473684211
+            "target": "scripts/checks (4 failed)",
+            "gain": 4.2105263157894735
           }
         ],
         "complexity": [
           {
             "target": "dozo/brand/lib.mjs (4 over, max 41)",
-            "gain": 0.3129890453834116
+            "gain": 0.31007751937984496
           },
           {
             "target": "apps/web/src/pages/dozo-admin-account.tsx (1 over, max 51)",
-            "gain": 0.0782472613458529
+            "gain": 0.07751937984496124
           },
           {
             "target": "apps/web/src/pages/dozo-admin.tsx (1 over, max 37)",
-            "gain": 0.0782472613458529
+            "gain": 0.07751937984496124
           },
           {
             "target": "dozo/e2e/coverage-reporter.ts (1 over, max 36)",
-            "gain": 0.0782472613458529
+            "gain": 0.07751937984496124
           },
           {
             "target": "dozo/landing/landing.js (1 over, max 32)",
-            "gain": 0.0782472613458529
+            "gain": 0.07751937984496124
           }
         ],
         "functionLength": [
           {
             "target": "apps/api/src/dozo-admin.ts (4 over, max 459)",
-            "gain": 0.3129890453834116
+            "gain": 0.31007751937984496
           },
           {
             "target": "apps/web/src/pages/dozo-admin.tsx (3 over, max 400)",
-            "gain": 0.2347417840375587
+            "gain": 0.23255813953488372
           },
           {
             "target": "packages/adapters/src/dozo-plugin-catalog.ts (2 over, max 273)",
-            "gain": 0.1564945226917058
+            "gain": 0.15503875968992248
+          },
+          {
+            "target": "dozo/brand/lib.mjs (2 over, max 160)",
+            "gain": 0.15503875968992248
           },
           {
             "target": "apps/web/src/pages/dozo-admin-billing.tsx (2 over, max 126)",
-            "gain": 0.1564945226917058
-          },
-          {
-            "target": "apps/api/src/dozo-admin-billing.ts (2 over, max 121)",
-            "gain": 0.1564945226917058
+            "gain": 0.15503875968992248
           }
         ],
         "fileLength": [
           {
-            "target": "dozo/brand/lib.mjs (595)",
-            "gain": 0.8620689655172413
+            "target": "dozo/brand/lib.mjs (941)",
+            "gain": 0.8547008547008547
           },
           {
             "target": "apps/api/src/dozo-admin.ts (557)",
-            "gain": 0.8620689655172413
+            "gain": 0.8547008547008547
           },
           {
             "target": "apps/web/src/pages/dozo-admin.tsx (511)",
-            "gain": 0.8620689655172413
+            "gain": 0.8547008547008547
           },
           {
             "target": "packages/adapters/src/dozo-plugin-catalog.ts (489)",
-            "gain": 0.8620689655172413
+            "gain": 0.8547008547008547
           },
           {
             "target": "apps/web/src/lib/dozo-local-model-catalog.ts (473)",
-            "gain": 0.8620689655172413
+            "gain": 0.8547008547008547
           }
         ],
         "duplication": [
@@ -324,83 +290,41 @@
             "gain": 0
           }
         ],
-        "deadCode": [
-          {
-            "target": "dozo/brand/lib.mjs (13)",
-            "gain": 0.8620689655172413
-          },
-          {
-            "target": "dozo/e2e/fixtures.ts (5)",
-            "gain": 0.8620689655172413
-          },
-          {
-            "target": "dozo/e2e/support.ts (4)",
-            "gain": 0.8620689655172413
-          },
-          {
-            "target": "packages/testkit/src/evals/dozo-token-bench.ts (4)",
-            "gain": 0.8620689655172413
-          },
-          {
-            "target": "packages/auth/src/dozo-email-shell.tsx (3)",
-            "gain": 0.8620689655172413
-          }
-        ],
-        "format": [
-          {
-            "target": "dozo/brand/apply.mjs (2)",
-            "gain": 0.4694835680751174
-          },
-          {
-            "target": "dozo/brand/brand.apply.test.mjs (2)",
-            "gain": 0.4694835680751174
-          },
-          {
-            "target": "dozo/brand/brand.config.test.mjs (2)",
-            "gain": 0.4694835680751174
-          },
-          {
-            "target": "dozo/brand/brand.gate.test.mjs (2)",
-            "gain": 0.4694835680751174
-          },
-          {
-            "target": "dozo/brand/check.mjs (2)",
-            "gain": 0.4694835680751174
-          }
-        ]
+        "deadCode": [],
+        "format": []
       }
     },
     "all": {
-      "quality": 86.3,
-      "readability": 95.5,
+      "quality": 87,
+      "readability": 95.7,
       "measures": {
         "types": {
-          "score": 99.9,
+          "score": 100,
           "files": 4466,
-          "dirty": 4,
-          "findings": 7
+          "dirty": 1,
+          "findings": 1
         },
         "lint": {
           "score": 99.6,
-          "files": 4470,
-          "dirty": 19,
-          "findings": 74
+          "files": 4471,
+          "dirty": 18,
+          "findings": 72
         },
         "tests": {
           "score": 100,
-          "passed": 29894,
-          "failed": 12,
+          "passed": 29893,
+          "failed": 13,
           "skipped": 1328
         },
         "lineCoverage": {
-          "score": 81.7,
-          "covered": 96469,
-          "total": 118082
+          "score": 81.8,
+          "covered": 96921,
+          "total": 118528
         },
         "branchCoverage": {
-          "score": 76.7,
-          "covered": 83906,
-          "total": 109328
+          "score": 76.8,
+          "covered": 83911,
+          "total": 109326
         },
         "security": {
           "score": 25,
@@ -412,77 +336,65 @@
           "rating": "D"
         },
         "shell": {
-          "score": 68.2,
+          "score": 78.8,
           "files": 66,
-          "dirty": 21,
-          "findings": 71
+          "dirty": 14,
+          "findings": 34
         },
         "checks": {
-          "score": 93.7,
-          "passed": 89,
-          "failed": 6,
+          "score": 95.8,
+          "passed": 91,
+          "failed": 4,
           "skipped": 0
         },
         "complexity": {
           "score": 97.8,
-          "functions": 33648,
+          "functions": 33660,
           "over": 726,
           "max": 348,
           "distribution": {
-            "0": 18899,
-            "1-5": 11899,
+            "0": 18907,
+            "1-5": 11904,
             "6-10": 1572,
-            "11-15": 552,
+            "11-15": 551,
             "16-25": 398,
             ">25": 328
           }
         },
         "functionLength": {
           "score": 94.8,
-          "functions": 33648,
+          "functions": 33660,
           "over": 1764,
           "max": 1347
         },
         "fileLength": {
           "score": 81,
-          "files": 2436,
-          "dirty": 463,
-          "findings": 277726
+          "files": 2437,
+          "dirty": 464,
+          "findings": 278469
         },
         "duplication": {
           "score": 100,
-          "lines": 472380,
+          "lines": 473145,
           "duplicated": 7553,
-          "percent": 1.5989245946060375,
+          "percent": 1.5963393885595325,
           "rating": "A"
         },
         "deadCode": {
-          "score": 88.5,
-          "files": 2436,
-          "dirty": 281,
-          "findings": 410
+          "score": 90.4,
+          "files": 2437,
+          "dirty": 233,
+          "findings": 330
         },
         "format": {
-          "score": 99.6,
-          "files": 4470,
-          "dirty": 16,
-          "findings": 21
+          "score": 100,
+          "files": 4471,
+          "dirty": 0,
+          "findings": 0
         }
       },
       "jobs": {
         "types": [
-          {
-            "target": "apps/api/src/dozo-plans.test.ts (3)",
-            "gain": 0.02239140170174653
-          },
-          {
-            "target": "packages/db/src/dozo-shared-space.postgres.test.ts (2)",
-            "gain": 0.02239140170174653
-          },
-          {
-            "target": "packages/db/src/dozo-shared-space.test.ts (1)",
-            "gain": 0.02239140170174653
-          },
           {
             "target": "packages/testkit/src/authorization.test.ts (1)",
             "gain": 0.02239140170174653
@@ -491,23 +403,23 @@
         "lint": [
           {
             "target": "dozo/brand/brand.gate.test.mjs (27)",
-            "gain": 0.02237136465324385
+            "gain": 0.02236636099306643
           },
           {
             "target": "infra/updater/src/compose-dev-proxy.test.ts (12)",
-            "gain": 0.02237136465324385
+            "gain": 0.02236636099306643
           },
           {
             "target": "infra/updater/src/compose-images.test.ts (8)",
-            "gain": 0.02237136465324385
+            "gain": 0.02236636099306643
           },
           {
             "target": "dozo/landing/landing.js (5)",
-            "gain": 0.02237136465324385
+            "gain": 0.02236636099306643
           },
           {
             "target": "apps/web/e2e/model-settings.spec.ts (3)",
-            "gain": 0.02237136465324385
+            "gain": 0.02236636099306643
           }
         ],
         "tests": [
@@ -520,60 +432,60 @@
             "gain": 0.003343810606567244
           },
           {
+            "target": "packages/core/src/page-links.test.ts (1 failed)",
+            "gain": 0.003343810606567244
+          },
+          {
             "target": "packages/testkit/src/compose-installer-smoke.test.ts (1 failed)",
             "gain": 0.003343810606567244
           },
           {
             "target": "infra/sandboxes/supervisor/src/focus-or-launch.test.ts (1 failed)",
             "gain": 0.003343810606567244
-          },
-          {
-            "target": "packages/core/src/node/desktop-runtime.test.ts (5 failed)",
-            "gain": 0.01671905303283622
           }
         ],
         "lineCoverage": [
           {
             "target": "apps/api/src/access-grants.ts (29 of 31 uncovered)",
-            "gain": 0.024559204620517944
+            "gain": 0.024466792656587473
           },
           {
             "target": "apps/api/src/account-deletion.ts (44 of 107 uncovered)",
-            "gain": 0.03726224149319964
+            "gain": 0.037122030237581
           },
           {
             "target": "apps/api/src/account-export.ts (7 of 92 uncovered)",
-            "gain": 0.005928083873918124
+            "gain": 0.005905777537796976
           },
           {
             "target": "apps/api/src/account-import.ts (353 of 492 uncovered)",
-            "gain": 0.2989448010704426
+            "gain": 0.29781992440604754
           },
           {
             "target": "apps/api/src/account-status.ts (16 of 32 uncovered)",
-            "gain": 0.013549905997527142
+            "gain": 0.013498920086393088
           }
         ],
         "branchCoverage": [
           {
             "target": "apps/api/src/access-grants.ts (28 of 28 uncovered)",
-            "gain": 0.02561100541489829
+            "gain": 0.025611473940325265
           },
           {
             "target": "apps/api/src/account-deletion.ts (23 of 39 uncovered)",
-            "gain": 0.02103761159080931
+            "gain": 0.021037996450981467
           },
           {
             "target": "apps/api/src/account-export.ts (11 of 62 uncovered)",
-            "gain": 0.010061466412995755
+            "gain": 0.010061650476556355
           },
           {
             "target": "apps/api/src/account-import.ts (225 of 303 uncovered)",
-            "gain": 0.2058027220840041
+            "gain": 0.20580648702047089
           },
           {
             "target": "apps/api/src/account-status.ts (27 of 28 uncovered)",
-            "gain": 0.02469632665008049
+            "gain": 0.024696778442456505
           }
         ],
         "security": [
@@ -600,10 +512,6 @@
         ],
         "shell": [
           {
-            "target": "dozo/docker/gate.sh (24)",
-            "gain": 1.5151515151515151
-          },
-          {
             "target": "infra/preview/start.sh (6)",
             "gain": 1.5151515151515151
           },
@@ -616,80 +524,84 @@
             "gain": 1.5151515151515151
           },
           {
-            "target": "dozo/e2e/run.sh (4)",
+            "target": "infra/compose/install-images-curl-proxy.smoke.sh (3)",
+            "gain": 1.5151515151515151
+          },
+          {
+            "target": "infra/sandboxes/computer/start.sh (3)",
             "gain": 1.5151515151515151
           }
         ],
         "checks": [
           {
-            "target": "scripts/checks (6 failed)",
-            "gain": 6.315789473684211
+            "target": "scripts/checks (4 failed)",
+            "gain": 4.2105263157894735
           }
         ],
         "complexity": [
           {
             "target": "packages/adapters/src/desktop-guard-quoted.ts (10 over, max 80)",
-            "gain": 0.029719448407037566
+            "gain": 0.029708853238265002
           },
           {
             "target": "packages/adapters/src/bot-secrets.ts (9 over, max 47)",
-            "gain": 0.02674750356633381
+            "gain": 0.026737967914438502
           },
           {
             "target": "packages/adapters/src/mcp-connector.ts (6 over, max 78)",
-            "gain": 0.01783166904422254
+            "gain": 0.017825311942959002
           },
           {
             "target": "packages/adapters/src/plugin-connectors.ts (6 over, max 64)",
-            "gain": 0.01783166904422254
+            "gain": 0.017825311942959002
           },
           {
             "target": "packages/adapters/src/context-selection.ts (6 over, max 40)",
-            "gain": 0.01783166904422254
+            "gain": 0.017825311942959002
           }
         ],
         "functionLength": [
           {
             "target": "infra/sandboxes/supervisor/src/routes.ts (11 over, max 233)",
-            "gain": 0.03269139324774132
+            "gain": 0.032679738562091505
           },
           {
             "target": "packages/adapters/src/bot-secrets.ts (10 over, max 168)",
-            "gain": 0.029719448407037566
+            "gain": 0.029708853238265002
           },
           {
             "target": "packages/adapters/src/fleet-tools.ts (10 over, max 95)",
-            "gain": 0.029719448407037566
+            "gain": 0.029708853238265002
           },
           {
             "target": "apps/api/src/routes/mcp.ts (9 over, max 629)",
-            "gain": 0.02674750356633381
+            "gain": 0.026737967914438502
           },
           {
             "target": "packages/db/src/events.ts (9 over, max 213)",
-            "gain": 0.02674750356633381
+            "gain": 0.026737967914438502
           }
         ],
         "fileLength": [
           {
             "target": "packages/adapters/src/bot-secrets.ts (2522)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
             "target": "packages/adapters/src/builtin.tool-definition.ts (2058)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
             "target": "packages/adapters/src/boat-sandbox.ts (1946)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
             "target": "packages/adapters/src/mcp-oauth.ts (1914)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
             "target": "packages/adapters/src/createos-sandbox.ts (1876)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           }
         ],
         "duplication": [
@@ -716,48 +628,27 @@
         ],
         "deadCode": [
           {
-            "target": "dozo/brand/lib.mjs (13)",
-            "gain": 0.041050903119868636
-          },
-          {
             "target": "apps/mobile/lib/vault.ts (11)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
             "target": "packages/adapters/src/run-context.ts (8)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
             "target": "packages/testkit/src/page-browser-bench/tasks.ts (6)",
-            "gain": 0.041050903119868636
+            "gain": 0.04103405826836274
           },
           {
-            "target": "dozo/e2e/fixtures.ts (5)",
-            "gain": 0.041050903119868636
+            "target": "packages/testkit/src/apps/notes.ts (5)",
+            "gain": 0.04103405826836274
+          },
+          {
+            "target": "packages/adapters/src/run-lifecycle.ts (4)",
+            "gain": 0.04103405826836274
           }
         ],
-        "format": [
-          {
-            "target": "dozo/brand/apply.mjs (2)",
-            "gain": 0.02237136465324385
-          },
-          {
-            "target": "dozo/brand/brand.apply.test.mjs (2)",
-            "gain": 0.02237136465324385
-          },
-          {
-            "target": "dozo/brand/brand.config.test.mjs (2)",
-            "gain": 0.02237136465324385
-          },
-          {
-            "target": "dozo/brand/brand.gate.test.mjs (2)",
-            "gain": 0.02237136465324385
-          },
-          {
-            "target": "dozo/brand/check.mjs (2)",
-            "gain": 0.02237136465324385
-          }
-        ]
+        "format": []
       }
     }
   }
