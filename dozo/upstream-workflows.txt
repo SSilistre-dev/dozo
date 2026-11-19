@@ -1,0 +1,27 @@
+# Upstream's GitHub workflows, as reviewed (dozo/SYNC.md, Upstream's GitHub workflows). One file
+# name per line. `make olc` fails on a workflow under .github/workflows that is not named dozo-*
+# and not listed here: a sync that brings a new one stays red until it is reviewed, disabled if it
+# must be, and added.
+ci.yml
+computer-replay.yml
+desktop-macos-screenshot.yml
+issue-triage.yml
+mobile-android-screenshots.yml
+model-catalog-bump.yml
+nightly-verification.yml
+playwright.yml
+pr-screenshots.yml
+preview-build.yml
+preview-cleanup.yml
+preview-deploy.yml
+publish-playwright-report.yml
+publish-server-image.yml
+release-android-apk.yml
+release-desktop.yml
+release-google-play.yml
+release-mobile.yml
+review-bot.yml
+topology-verification.yml
+translation-catalogs.yml
+weekly-dependencies.yml
+www-indexnow.yml

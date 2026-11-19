@@ -3941,6 +3941,27 @@
       "find": "        adaptive_pricing: { enabled: false },\n        allow_promotion_codes: true,\n",
       "replace": "        adaptive_pricing: { enabled: false },\n",
       "reason": "plans: the deployment hands out no promotion codes, so the plan checkout shows no code field"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { pluginSubmissionRoutes } from \"./plugin-submissions.js\";",
+      "replace": "import { pluginSubmissionRoutes } from \"./dozo-plugin-submissions.js\";",
+      "requires": [
+        "apps/api/src/dozo-plugin-submissions.ts"
+      ],
+      "reason": "plugin submissions: DOZO_PLUGIN_SUBMISSIONS=closed answers the public submission form with 403 in the API itself"
+    },
+    {
+      "file": "apps/mobile/components/sandboxed-html-preview.tsx",
+      "find": "originWhitelist={appShell ? [\"*\"] : undefined}",
+      "replace": "originWhitelist={[\"*\"]}",
+      "reason": "bot HTML preview: every navigation reaches the preview's own check, so a link to an app scheme stays inside the preview instead of opening another screen or app"
+    },
+    {
+      "file": "apps/mobile/components/mermaid-diagram.tsx",
+      "find": "overScrollMode=\"never\"\n          onShouldStartLoadWithRequest",
+      "replace": "overScrollMode=\"never\"\n          originWhitelist={[\"*\"]}\n          onShouldStartLoadWithRequest",
+      "reason": "chat diagram: the same as the bot HTML preview, every navigation reaches the diagram's own check"
     }
   ],
   "assets": {

@@ -65,6 +65,11 @@ services:
       # How many computers one person's live bots may have across all their Spaces (README, Bot
       # computers on a shared host). The api and the worker both create bots, so both read it.
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-2}
+      # The proxies whose client-address header is believed (README, Client addresses). Empty keeps
+      # upstream's default, the stack's own networks, which include the web container.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # closed: the public plugin submission form answers 403 (README, What the proxy does).
+      DOZO_PLUGIN_SUBMISSIONS: ${DOZO_PLUGIN_SUBMISSIONS:-closed}
     volumes: !override
       - data:/data
     # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through
@@ -78,14 +83,17 @@ services:
       traefik.http.middlewares.dozo-api-headers.headers.stsSeconds: "31536000"
       traefik.http.middlewares.dozo-api-headers.headers.contentTypeNosniff: "true"
       traefik.http.middlewares.dozo-api-headers.headers.customFrameOptionsValue: SAMEORIGIN
+      # Who may reach these routers (README, Origin behind a CDN). Unset: everyone.
+      traefik.http.middlewares.dozo-api-origin.ipallowlist.sourcerange: ${DOZO_ORIGIN_SOURCE_RANGE:-0.0.0.0/0,::/0}
       traefik.http.routers.dozo-api.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`))"
       traefik.http.routers.dozo-api.priority: "1002"
       traefik.http.routers.dozo-api.entrypoints: websecure
       traefik.http.routers.dozo-api.tls: "true"
       traefik.http.routers.dozo-api.service: dozo-api
-      traefik.http.routers.dozo-api.middlewares: dozo-api-headers
+      traefik.http.routers.dozo-api.middlewares: dozo-api-origin,dozo-api-headers
       # Closed pre-release: the one write that needs no account answers 403 to everyone. On this
-      # container, so it holds while the web container restarts. Remove these seven lines to open
+      # container, so it holds while the web container restarts; the api itself answers 403 too
+      # (DOZO_PLUGIN_SUBMISSIONS above). Remove these seven lines and set that to open to open
       # plugin submissions.
       traefik.http.middlewares.dozo-api-closed.ipallowlist.sourcerange: 127.0.0.1/32
       traefik.http.routers.dozo-api-closed.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/api/v1/plugin-submissions`)"
@@ -122,12 +130,15 @@ services:
       traefik.http.services.dozo-app.loadbalancer.server.port: "5173"
       traefik.http.middlewares.dozo-app-headers.headers.stsSeconds: "31536000"
       traefik.http.middlewares.dozo-app-headers.headers.contentTypeNosniff: "true"
+      # Shared pages (/p/) keep their stricter no-referrer below, so this is not in dozo-app-headers.
+      traefik.http.middlewares.dozo-app-referrer.headers.referrerPolicy: strict-origin-when-cross-origin
+      traefik.http.middlewares.dozo-app-origin.ipallowlist.sourcerange: ${DOZO_ORIGIN_SOURCE_RANGE:-0.0.0.0/0,::/0}
       traefik.http.routers.dozo-app.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`)"
       traefik.http.routers.dozo-app.priority: "1000"
       traefik.http.routers.dozo-app.entrypoints: websecure
       traefik.http.routers.dozo-app.tls: "true"
       traefik.http.routers.dozo-app.service: dozo-app
-      traefik.http.routers.dozo-app.middlewares: dozo-app-headers
+      traefik.http.routers.dozo-app.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-referrer
       # A shared page's link is its only key: keep it out of search results and Referer headers.
       traefik.http.middlewares.dozo-app-shared.headers.customResponseHeaders.X-Robots-Tag: "noindex, nofollow"
       traefik.http.middlewares.dozo-app-shared.headers.referrerPolicy: no-referrer
@@ -136,7 +147,7 @@ services:
       traefik.http.routers.dozo-app-shared.entrypoints: websecure
       traefik.http.routers.dozo-app-shared.tls: "true"
       traefik.http.routers.dozo-app-shared.service: dozo-app
-      traefik.http.routers.dozo-app-shared.middlewares: dozo-app-headers,dozo-app-shared
+      traefik.http.routers.dozo-app-shared.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-shared
       # Built assets in brotli: the web server compresses only with gzip, so the proxy compresses
       # instead and asks the web server for an uncompressed copy. An empty value would not do: the
       # proxy drops the header and its HTTP client then asks for gzip on its own.
@@ -147,7 +158,7 @@ services:
       traefik.http.routers.dozo-app-assets.entrypoints: websecure
       traefik.http.routers.dozo-app-assets.tls: "true"
       traefik.http.routers.dozo-app-assets.service: dozo-app
-      traefik.http.routers.dozo-app-assets.middlewares: dozo-app-headers,dozo-app-compress,dozo-app-identity
+      traefik.http.routers.dozo-app-assets.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-referrer,dozo-app-compress,dozo-app-identity
       # The proxy drops the api's router while that container is starting or unhealthy. API paths
       # then answer 502 from a port nothing listens on, instead of falling through to this
       # container's own proxy to the API (see the api service for why).
@@ -157,6 +168,7 @@ services:
       traefik.http.routers.dozo-app-noapi.entrypoints: websecure
       traefik.http.routers.dozo-app-noapi.tls: "true"
       traefik.http.routers.dozo-app-noapi.service: dozo-app-noapi
+      traefik.http.routers.dozo-app-noapi.middlewares: dozo-app-origin
 
 networks:
   default:
