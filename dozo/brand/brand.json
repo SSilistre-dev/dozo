@@ -3836,6 +3836,24 @@
       "find": "        adaptive_pricing: { enabled: false },\n        allow_promotion_codes: true,\n",
       "replace": "        adaptive_pricing: { enabled: false },\n",
       "reason": "plans: the deployment hands out no promotion codes, so the plan checkout shows no code field"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "} from \"./run-tool-selection.js\";\nimport { computerTools,",
+      "replace": "} from \"./run-tool-selection.js\";\nimport { fillGateRefusal } from \"./dozo-fill-gate.js\";\nimport { computerTools,",
+      "requires": [
+        "packages/adapters/src/dozo-fill-gate.ts"
+      ],
+      "reason": "page fills: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "bot.\"));\n  }\n  // Only offered tools reach the model",
+      "replace": "bot.\"));\n  }\n  const fillRefused = await fillGateRefusal(ctx, name, args);\n  if (fillRefused) return refuse(fillRefused);\n  // Only offered tools reach the model",
+      "requires": [
+        "packages/adapters/src/dozo-fill-gate.ts"
+      ],
+      "reason": "page fills: once a run fills a saved login or card on a page, it starts no programs on that computer for the rest of the run, refused before any approval is asked"
     }
   ],
   "assets": {
