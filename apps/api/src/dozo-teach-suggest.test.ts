@@ -51,24 +51,33 @@ describe("createTeachValueSuggester", () => {
   it("names each value from the model's JSON, sending only placeholder and text", async () => {
     const fake = runtime(() =>
       answer(
-        'Here:\n```json\n[{"placeholder":"{{value 1}}","name":"E-mail","changesEachTime":false},' +
-          '{"placeholder":"{{value 2}}","name":"district","changesEachTime":true},' +
-          '{"placeholder":"{{value 9}}","name":"other","changesEachTime":true},' +
-          '{"placeholder":"{{value 2}}","name":"!!","changesEachTime":true}]\n```',
+        'Here:\n```json\n[{"placeholder":"{{value 1}}","name":"E-mail","changesEachTime":false,"secret":false},' +
+          '{"placeholder":"{{value 2}}","name":"district","changesEachTime":true,"secret":false},' +
+          '{"placeholder":"{{value 9}}","name":"other","changesEachTime":true,"secret":true},' +
+          '{"placeholder":"{{value 2}}","name":"!!","changesEachTime":true,"secret":false},' +
+          '{"placeholder":"{{value 3}}","name":"!!","changesEachTime":false,"secret":true}]\n```',
       ),
     );
     const { suggest } = setup(fake);
-    const result = await suggest(actor, skill, values);
+    const result = await suggest(actor, skill, [
+      ...values,
+      { placeholder: "{{value 3}}", text: "4821" },
+    ]);
+    // Whether a value changes only helps the name; a secret stays one without a usable name.
     expect(result).toEqual({
-      "{{value 1}}": { name: "e_mail", variable: false },
-      "{{value 2}}": { name: "district", variable: true },
+      "{{value 1}}": { name: "e_mail", secret: false },
+      "{{value 2}}": { name: "district", secret: false },
+      "{{value 3}}": { name: "", secret: true },
     });
     const request = fake.run.mock.calls[0]![0];
     expect(request.tools).toEqual([]);
     expect(request.history).toEqual([]);
     expect(request.model.thinkingLevel).toBe("off");
     expect(request.usageOperationKind).toBe("setup");
-    expect(JSON.parse(request.prompt)).toEqual({ task: "Sign in", values });
+    expect(JSON.parse(request.prompt)).toEqual({
+      task: "Sign in",
+      values: [...values, { placeholder: "{{value 3}}", text: "4821" }],
+    });
     expect(usage.record).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ type: "usage" }),

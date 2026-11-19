@@ -16,8 +16,11 @@ const MAX_VALUE_CHARS = 200;
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
 
-/** A suggestion per placeholder: an input name, and whether the value changes from run to run. */
-export type TeachValueSuggestions = Record<string, { name: string; variable: boolean }>;
+/**
+ * A suggestion per placeholder: an input name, and whether the value looks like a secret. Whether
+ * it changes from run to run only helps the model name it: every value is an input by default.
+ */
+export type TeachValueSuggestions = Record<string, { name: string; secret: boolean }>;
 
 export type TeachValueSuggester = (
   actor: Actor,
@@ -26,7 +29,7 @@ export type TeachValueSuggester = (
 ) => Promise<TeachValueSuggestions | null>;
 
 const Answer = z.array(
-  z.object({ placeholder: z.string(), name: z.string(), changesEachTime: z.boolean() }),
+  z.object({ placeholder: z.string(), name: z.string(), secret: z.boolean() }),
 );
 
 /** The JSON array in a reply, also when the model wrapped it in a code fence or a sentence. */
@@ -45,8 +48,9 @@ function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggest
   const suggestions: TeachValueSuggestions = {};
   for (const entry of parsed.data) {
     const name = teachInputName(entry.name);
-    if (!placeholders.has(entry.placeholder) || !name) continue;
-    suggestions[entry.placeholder] = { name, variable: entry.changesEachTime };
+    // A secret is kept as one even without a usable name.
+    if (!placeholders.has(entry.placeholder) || (!name && !entry.secret)) continue;
+    suggestions[entry.placeholder] = { name, secret: entry.secret };
   }
   return suggestions;
 }

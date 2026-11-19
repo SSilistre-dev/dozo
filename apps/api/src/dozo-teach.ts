@@ -6,6 +6,7 @@ import type {
   DozoTeachValueDecision,
   SkillPlaybook,
 } from "@rakazo/contracts";
+import type { TeachTypedValue } from "@rakazo/core";
 import {
   applyValueDecisions,
   ClientError,
@@ -21,13 +22,19 @@ import { createTeachValueSuggester } from "./dozo-teach-suggest.js";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
 
-/** Where the recording keeps the model's suggestions, next to its events, until the save. */
+/**
+ * Where the recording keeps the model's suggestions, next to its events, until the save. An empty
+ * record marks a call that gave none, so a failed call is not made again on every review.
+ */
 const SUGGESTIONS_KEY = "dozoSuggestions";
 const StoredSuggestions = z.object({
   [SUGGESTIONS_KEY]: z
-    .record(z.string(), z.object({ name: z.string(), variable: z.boolean() }))
+    .record(z.string(), z.object({ name: z.string(), secret: z.boolean().default(false) }))
     .optional(),
 });
+
+/** A save or test that decides about values of a skill no longer a draft. */
+export const SKILL_NOT_DRAFT = "skill_not_draft";
 
 type TaughtSkills = Pick<
   ReturnType<typeof createTaughtSkillsService>,
@@ -78,10 +85,32 @@ export function createDozoTeach(deps: {
     return skill;
   }
 
+  function cachedSuggestions(id: string, recording: unknown): TeachValueSuggestions | undefined {
+    return readJsonColumn(
+      StoredSuggestions,
+      recording,
+      { table: "taught_skills", column: "recording", id },
+      { fallback: {} },
+    )[SUGGESTIONS_KEY];
+  }
+
   /** The typed values the actor may decide about: the teacher's, while the skill is a draft. */
   function valuesFor(actor: Actor, skill: { userId: string; status: string; recording: unknown }) {
     if (skill.userId !== actor.userId || skill.status !== "draft") return [];
     return typedValuesFromRecording(parseRecording(skill.recording).events);
+  }
+
+  /**
+   * The values with what the model said about them: a name, and a value it took for a secret is
+   * one too, never kept as text and shown only as dots. The model saw no secret value, so
+   * anything it says about one is made up and ignored.
+   */
+  function withSuggestions(values: TeachTypedValue[], suggestions: TeachValueSuggestions) {
+    return values.map((value): DozoTeachValue => {
+      const suggestion = value.secret ? undefined : suggestions[value.placeholder];
+      if (!suggestion) return value;
+      return { ...value, secret: suggestion.secret, suggestion: { name: suggestion.name } };
+    });
   }
 
   /**
@@ -96,23 +125,29 @@ export function createDozoTeach(deps: {
         "Only the person who taught this skill can decide about its values",
       );
     }
-    const values = valuesFor(actor, skill);
+    // The values are forgotten once saved: the decisions would apply to nothing, and the
+    // client's placeholders would replace the saved steps.
+    if (skill.status !== "draft" && Object.keys(input.decisions).length) {
+      throw new ClientError("CONFLICT", "This skill is already saved", SKILL_NOT_DRAFT);
+    }
+    const values = withSuggestions(
+      valuesFor(actor, skill),
+      cachedSuggestions(skill.id, skill.recording) ?? {},
+    );
     if (!values.length) return { skill, playbook: input.playbook };
     return { skill, playbook: applyValueDecisions(input.playbook, values, input.decisions) };
   }
 
-  /** Cached in the recording on the first review, so the model is asked once per skill. */
+  /**
+   * Cached in the recording on the first review, failed or not, so the model is asked once per
+   * skill. Two first reviews at once may both ask; the first to write is kept.
+   */
   async function suggestionsFor(
     actor: Actor,
     skill: { id: string; botId: string; goal: string; recording: unknown },
-    values: Array<{ placeholder: string; text: string | null; secret: boolean }>,
+    values: TeachTypedValue[],
   ): Promise<TeachValueSuggestions> {
-    const cached = readJsonColumn(
-      StoredSuggestions,
-      skill.recording,
-      { table: "taught_skills", column: "recording", id: skill.id },
-      { fallback: {} },
-    )[SUGGESTIONS_KEY];
+    const cached = cachedSuggestions(skill.id, skill.recording);
     if (cached) return cached;
     if (!deps.suggest) return {};
     // Secret and protected values never reach the model.
@@ -121,13 +156,20 @@ export function createDozoTeach(deps: {
         ? []
         : [{ placeholder: value.placeholder, text: value.text }],
     );
-    const suggestions = await deps.suggest(actor, skill, open);
-    if (!suggestions) return {};
-    await deps.prisma.$executeRaw`
-      UPDATE taught_skills
-      SET recording = recording || jsonb_build_object(${SUGGESTIONS_KEY}::text, ${JSON.stringify(suggestions)}::jsonb)
-      WHERE id = ${skill.id} AND status = 'draft'`;
-    return suggestions;
+    const suggestions = (await deps.suggest(actor, skill, open)) ?? {};
+    return deps.prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<Array<{ recording: unknown }>>`
+        SELECT recording FROM taught_skills WHERE id = ${skill.id} AND status = 'draft'
+        FOR UPDATE`;
+      if (!row) return suggestions;
+      const written = cachedSuggestions(skill.id, row.recording);
+      if (written) return written;
+      await tx.$executeRaw`
+        UPDATE taught_skills
+        SET recording = recording || jsonb_build_object(${SUGGESTIONS_KEY}::text, ${JSON.stringify(suggestions)}::jsonb)
+        WHERE id = ${skill.id}`;
+      return suggestions;
+    });
   }
 
   return {
@@ -135,13 +177,7 @@ export function createDozoTeach(deps: {
       const skill = await skillOf(actor, skillId);
       const values = valuesFor(actor, skill);
       if (!values.length) return { values: [] };
-      const suggestions = await suggestionsFor(actor, skill, values);
-      return {
-        values: values.map((value) => {
-          const suggestion = value.secret ? undefined : suggestions[value.placeholder];
-          return suggestion ? { ...value, suggestion } : value;
-        }),
-      };
+      return { values: withSuggestions(values, await suggestionsFor(actor, skill, values)) };
     },
 
     /** Saves through the taught-skills service, whose save forgets what was typed. */

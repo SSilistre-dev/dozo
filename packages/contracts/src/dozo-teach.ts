@@ -18,9 +18,10 @@ export const DozoTeachValueSchema = z.object({
   placeholder: Placeholder,
   /** Null for protected input, whose text is never stored. */
   text: z.string().nullable(),
+  /** Protected input, or text that looks like a password, PIN or key: never kept as text. */
   secret: z.boolean(),
-  /** A model's guess, when one was made: a name, and whether it changes from run to run. */
-  suggestion: z.object({ name: z.string(), variable: z.boolean() }).optional(),
+  /** A name the model suggested for it, when one was made. */
+  suggestion: z.object({ name: z.string() }).optional(),
 });
 export type DozoTeachValue = z.infer<typeof DozoTeachValueSchema>;
 

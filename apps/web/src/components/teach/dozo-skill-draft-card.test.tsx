@@ -88,13 +88,12 @@ const playbook: SkillPlaybook = {
 };
 
 const values: DozoTeachValue[] = [
-  { placeholder: "{{value 1}}", text: "ali@example.test", secret: false },
   {
-    placeholder: "{{value 2}}",
-    text: "Weekly",
+    placeholder: "{{value 1}}",
+    text: "ali.veli.uzun.adres@subdomain.example.test",
     secret: false,
-    suggestion: { name: "report", variable: false },
   },
+  { placeholder: "{{value 2}}", text: "Weekly", secret: false, suggestion: { name: "report" } },
   { placeholder: "{{value 3}}", text: "Hunter-1234", secret: true },
   { placeholder: "{{value 4}}", text: null, secret: true },
 ];
@@ -177,7 +176,10 @@ it("shows one row per typed value, never a secret's text, and no Fixed for a sec
   await renderValues();
   expect(api.review).toHaveBeenCalledWith({ skillId: "skill-1" }, expect.anything());
   expect(rows()).toHaveLength(4);
-  expect(container.textContent).toContain("ali@example.test");
+  // A long value is shown whole, wrapping instead of cut off.
+  const shown = rows()[0]?.querySelector("[dir='auto']");
+  expect(shown?.textContent).toBe("ali.veli.uzun.adres@subdomain.example.test");
+  expect(shown?.className).not.toContain("truncate");
   expect(container.textContent).not.toContain("Hunter-1234");
   expect(rows()[2]?.textContent).toContain("••••••");
   expect(rows()[3]?.textContent).toContain("••••••");
@@ -188,9 +190,10 @@ it("shows one row per typed value, never a secret's text, and no Fixed for a sec
   expect(button(first as Element, "Variable")?.getAttribute("aria-pressed")).toBe("true");
   expect((first as Element).querySelector("input")?.value).toBe("value_1");
   expect(first?.querySelector("input")?.getAttribute("aria-label")).toBe("Name");
-  // A suggestion that it does not change: kept as typed, with no name to give.
-  expect(button(second as Element, "Fixed")?.getAttribute("aria-pressed")).toBe("true");
-  expect(second?.querySelector("input")).toBeNull();
+  // A suggestion only names it: nothing is kept as typed unless the teacher picks it.
+  expect(button(second as Element, "Variable")?.getAttribute("aria-pressed")).toBe("true");
+  expect(button(second as Element, "Fixed")?.getAttribute("aria-pressed")).toBe("false");
+  expect(second?.querySelector("input")?.value).toBe("report");
   // A secret only becomes an input or goes.
   expect(button(third as Element, "Fixed")).toBeUndefined();
   expect(button(third as Element, "Variable")).toBeDefined();
@@ -206,6 +209,8 @@ it("saves with each value's decision, then shows what the server saved", async (
   await click(button(third as Element, "Remove"));
   // Pressing the chosen one again keeps it chosen.
   await click(button(fourth as Element, "Variable"));
+  // A routine would carry the placeholders until the values are decided and saved.
+  expect(button(container, "Add to routine")?.hasAttribute("disabled")).toBe(true);
   await click(button(container, "Save"));
 
   expect(api.save).toHaveBeenCalledWith({
@@ -224,6 +229,7 @@ it("saves with each value's decision, then shows what the server saved", async (
   const steps = container.querySelector("textarea[id$='-steps']") as HTMLTextAreaElement;
   expect(steps.value).toBe("Type {{email}}\nType Weekly");
   expect(onRefresh).toHaveBeenCalled();
+  expect(button(container, "Add to routine")?.hasAttribute("disabled")).toBe(false);
 
   // Once saved, nothing typed is left to decide about.
   await type(container.querySelector("input[id$='-name']") as HTMLInputElement, "Export 2");
@@ -258,11 +264,12 @@ it("offers neither Save nor Test until the values are known, nor when they could
   await render();
   expect(button(container, "Save")?.hasAttribute("disabled")).toBe(true);
   expect(button(container, "Test")?.hasAttribute("disabled")).toBe(true);
+  expect(button(container, "Add to routine")?.hasAttribute("disabled")).toBe(true);
   await act(async () => review.reject(new Error("down")));
   await vi.waitFor(() => expect(errorLine()).toBe("Could not load"));
   expect(button(container, "Save")?.hasAttribute("disabled")).toBe(true);
   expect(button(container, "Test")?.hasAttribute("disabled")).toBe(true);
-  expect(container.textContent).not.toContain("ali@example.test");
+  expect(container.textContent).not.toContain("ali.veli");
 
   // A new mount reads again.
   act(() => root.unmount());

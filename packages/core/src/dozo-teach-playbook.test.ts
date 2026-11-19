@@ -125,6 +125,16 @@ describe("buildPlaybookFromRecording", () => {
     ]);
     expect(built.steps).toEqual(["Type {{value 1}}.", "Type {{value 2}}.", "Type {{value 3}}."]);
   });
+
+  it("counts a character beyond two code units as typed, not as a key", () => {
+    const built = buildPlaybookFromRecording("x", [
+      ...typing("hi 😀𝒳"),
+      { at, kind: "key", key: "F1" },
+    ]);
+    expect(built.steps).toEqual(["Type {{value 1}}.", "Press key: F1."]);
+    expect(JSON.stringify(built)).not.toContain("😀");
+    expect(typedValuesFromRecording(typing("😀"))[0]?.text).toBe("😀");
+  });
 });
 
 describe("typedValuesFromRecording", () => {

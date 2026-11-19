@@ -49,9 +49,12 @@ function defaultName(placeholder: string): string {
   return `value_${placeholder.replace(/\D/g, "")}`;
 }
 
+/**
+ * Every value is an input by default: nothing typed is kept in the skill unless the teacher picks
+ * Fixed, since a password typed into an unprotected field cannot be told apart.
+ */
 function defaultChoice(value: DozoTeachValue): Choice {
   const name = value.suggestion?.name || defaultName(value.placeholder);
-  if (!value.secret && value.suggestion?.variable === false) return { action: "fixed", name };
   return { action: "variable", name };
 }
 
@@ -95,6 +98,8 @@ export function SkillDraftCard({
   const reviewing = block.status === "draft" && !decided;
   const values = reviewing ? (review.data?.values ?? []) : [];
   const reviewBlocked = reviewing && !review.data;
+  // Until the typed values are saved with their decisions, a routine would carry `{{value N}}`.
+  const undecided = reviewBlocked || values.length > 0;
 
   // The fields last loaded from the server, and whether this card has written since. A later
   // update to the same skill never replaces fields this card wrote or the user edited, so a
@@ -203,7 +208,7 @@ export function SkillDraftCard({
               >
                 <span
                   dir="auto"
-                  className="w-28 shrink-0 truncate text-body-sm text-muted-foreground"
+                  className="w-28 shrink-0 break-words text-body-sm text-muted-foreground"
                 >
                   {hidden ? "••••••" : value.text}
                 </span>
@@ -314,7 +319,7 @@ export function SkillDraftCard({
         </Button>
         <Button
           variant="outline"
-          disabled={busy}
+          disabled={busy || undecided}
           onClick={() => onAddRoutine(skillName, formatSkillRunPrompt(skillName, playbook))}
         >
           <Trans>Add to routine</Trans>

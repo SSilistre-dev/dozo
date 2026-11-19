@@ -147,7 +147,8 @@ function walkRecording(events: TeachRecordingEvent[]): {
       const key = event.key;
       if (!key) continue;
       flushDrag();
-      if (key.length === 1) {
+      // One character, counted in code points: an emoji is two UTF-16 units but still typed text.
+      if ([...key].length === 1) {
         flushSensitiveTyped();
         typed += key;
         continue;

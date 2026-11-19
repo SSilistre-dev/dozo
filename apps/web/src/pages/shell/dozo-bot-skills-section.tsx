@@ -4,7 +4,7 @@ import { planHasNoComputer } from "@rakazo/contracts";
 import { Button, Label, Popover, PopoverContent, PopoverTrigger, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement, useState } from "react";
+import { isValidElement, useRef, useState } from "react";
 import { useBilling } from "../../components/SubscriptionGate";
 import { runsOnUserMachine } from "../../lib/computer-sandbox";
 import { useSave, useSpaceQueries } from "../../lib/query";
@@ -17,15 +17,21 @@ import { ComputerPanel } from "./computer-panel";
  * computer the way the panel's own Wake does, which loads the recording and shows its chrome.
  * `computer` is the panel's computer section; without it, or on a plan with no computer or a
  * computer on the person's own machine, there is nothing to teach on and nothing shows.
+ * Where the deployment bills, nothing shows either until its plan is known.
  */
 export function DozoBotSkillsSection({ bot, computer }: { bot: Bot; computer: ReactNode }) {
   const billing = useBilling().status;
+  const me = useQuery(useSpaceQueries().me.queryOptions()).data;
   const panel =
     isValidElement<ComponentProps<typeof ComputerPanel>>(computer) &&
     computer.type === ComputerPanel
       ? computer.props
       : null;
-  if (!panel || planHasNoComputer(billing) || runsOnUserMachine(panel.computer)) return null;
+  // No status means no billing, or a lookup that failed: only the first may teach unchecked.
+  const planKnown = me !== undefined && (billing !== null || !me.billingEnabled);
+  if (!panel || !planKnown || planHasNoComputer(billing) || runsOnUserMachine(panel.computer)) {
+    return null;
+  }
   return <SkillsSection botId={bot.id} onOpen={panel.onOpen} />;
 }
 
@@ -36,12 +42,17 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
   const saved = (skills.data ?? []).filter((skill) => skill.status === "saved");
   const [open, setOpen] = useState(false);
   const [goal, setGoal] = useState("");
+  // Once recording starts, focus must not go back to the trigger: the recording ignores keys
+  // typed into a button, so the first text of the demonstration would be lost.
+  const started = useRef(false);
   const start = useSave({
     save: async (text: string, rpc) => {
       await rpc.computer.boot({ botId });
       return rpc.skills.start({ botId, goal: text });
     },
     onSaved: () => {
+      started.current = true;
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       setOpen(false);
       setGoal("");
       onOpen();
@@ -53,18 +64,28 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
     setOpen(false);
   }
 
+  function show() {
+    started.current = false;
+    setOpen(true);
+  }
+
   return (
     <PanelSection
       label={<Trans>Skills</Trans>}
       action={
-        <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
+        <Popover open={open} onOpenChange={(next) => (next ? show() : close())}>
           <PopoverTrigger
             data-testid="dozo-teach-start"
             render={<Button variant="ghost" size="xs" />}
           >
             <Trans>Teach a task</Trans>
           </PopoverTrigger>
-          <PopoverContent align="end" sideOffset={8} className="w-[min(360px,calc(100vw-2rem))]">
+          <PopoverContent
+            align="end"
+            sideOffset={8}
+            className="w-[min(360px,calc(100vw-2rem))]"
+            finalFocus={() => !started.current}
+          >
             <Label
               htmlFor={`dozo-teach-goal-${botId}`}
               className="text-body-sm font-normal text-muted-foreground"
