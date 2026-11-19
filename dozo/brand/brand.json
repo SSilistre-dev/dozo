@@ -851,11 +851,12 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n    }),\n    speechSummary:",
       "requires": [
-        "apps/api/src/dozo-admin.ts"
+        "apps/api/src/dozo-admin.ts",
+        "packages/adapters/src/dozo-stripe-ledger.ts"
       ],
-      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, the page shows the sign-up switch, and deleting an account runs the auth's own account deletion"
+      "reason": "hosted admin page: suspending an account ends its paired devices through the server's device sessions, defers to a directory that provisions accounts, the page shows the sign-up switch, deleting an account runs the auth's own account deletion, and the billing page reads payments from the configured provider"
     },
     {
       "file": "packages/auth/src/index.ts",
@@ -910,6 +911,43 @@
         "apps/web/src/pages/dozo-admin.tsx"
       ],
       "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "module.BoardPage));\nconst AdminPluginsPage = lazyComponent(() =>",
+      "replace": "module.BoardPage));\nconst DozoAdminBillingPage = lazyComponent(() =>\n  import(\"./pages/dozo-admin-billing\").then((module) => module.DozoAdminBillingPage),\n);\nconst AdminPluginsPage = lazyComponent(() =>",
+      "requires": [
+        "apps/web/src/pages/dozo-admin-billing.tsx"
+      ],
+      "reason": "admin billing page: loaded on demand, outside the startup bundle"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<Navigate to=\"/sign-in?next=/admin/plugins\" replace />\n                  )\n                }\n              />\n              <Route\n                path=\"/invite/:token\"",
+      "replace": "<Navigate to=\"/sign-in?next=/admin/plugins\" replace />\n                  )\n                }\n              />\n              <Route\n                path=\"/admin/billing\"\n                element={user ? <DozoAdminBillingPage /> : <NotFoundPage />}\n              />\n              <Route\n                path=\"/invite/:token\"",
+      "requires": [
+        "apps/web/src/pages/dozo-admin-billing.tsx"
+      ],
+      "reason": "admin billing page: its address; signed out it answers like an address that does not exist"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./wrapped-env.js\";\nexport * from \"./xai-voice.js\";",
+      "replace": "export * from \"./wrapped-env.js\";\nexport * from \"./dozo-payment-ledger.js\";\nexport * from \"./dozo-stripe-ledger.js\";\nexport * from \"./xai-voice.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-payment-ledger.ts",
+        "packages/adapters/src/dozo-stripe-ledger.ts"
+      ],
+      "reason": "admin billing page: the payment ledger and its provider join the package, for the server to build and the admin routes to read"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  StripeBillingProvider,\n  sandboxProviderOptionsFromEnv,",
+      "replace": "  StripeBillingProvider,\n  DozoStripeLedger,\n  sandboxProviderOptionsFromEnv,",
+      "requires": [
+        "packages/adapters/src/dozo-stripe-ledger.ts"
+      ],
+      "reason": "admin billing page: the server builds the payment ledger from the provider's own configuration"
     },
     {
       "file": "packages/contracts/src/billing.ts",

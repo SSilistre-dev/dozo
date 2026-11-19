@@ -1,7 +1,10 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 import { ByokTierSchema } from "./billing.js";
+import { dozoAdminBillingContract } from "./dozo-admin-billing.js";
 import { Id, IsoDate } from "./ids.js";
+
+export * from "./dozo-admin-billing.js";
 
 /** The plan an account has in force, and until when an admin's grant of it lasts. */
 export const DozoAdminPlanSchema = z.object({
@@ -97,4 +100,6 @@ export const dozoAdminContract = {
   /** Deletes the account and what it holds, as the account's own deletion does. Cannot be undone. */
   deleteUser: oc.input(z.object({ userId: Id })).output(z.object({ ok: z.literal(true) })),
   stopComputer: oc.input(z.object({ computerId: Id })).output(z.object({ ok: z.literal(true) })),
+  /** The billing page: `/admin/billing`. */
+  billing: dozoAdminBillingContract,
 };
