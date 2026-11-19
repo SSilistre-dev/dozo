@@ -16,7 +16,7 @@ import { AuthFrame, submitClass, PasswordResetPage as UpstreamPasswordResetPage 
  * gets one short screen. The parameters leave the address bar at once and move into the history
  * entry, so a reload shows the same screen.
  */
-export type LinkOutcome = "verified" | "expired" | "invalid" | "unknown";
+type LinkOutcome = "verified" | "expired" | "invalid" | "unknown";
 
 /** Every code the verify-email endpoint redirects with, and the screen it gets. */
 export function verifyOutcome(error: string | null | undefined): LinkOutcome {
@@ -75,7 +75,7 @@ export function VerifyEmailPage() {
   );
 }
 
-export function VerifyEmailResult({
+function VerifyEmailResult({
   outcome,
   email,
   signedInEmail,

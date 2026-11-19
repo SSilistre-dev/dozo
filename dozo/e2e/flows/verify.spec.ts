@@ -74,6 +74,10 @@ test("doğrulama bağlantısı: kayıt, hatırlatma, doğrulandı, ikinci tıkla
   await expect(reminder).toBeHidden();
 
   // Signed out, the same link says so and offers sign-in with the address filled in.
+  guard.allow(
+    /401 POST [^ ]*\/rpc\//,
+    "the open app reads once more after its cookies are cleared, before the link is opened",
+  );
   await page.context().clearCookies();
   await page.goto(link(VALID));
   await expect(page.getByRole("heading", { name: "E-posta adresiniz doğrulandı" })).toBeVisible();
@@ -91,7 +95,9 @@ test("süresi dolmuş ve geçersiz bağlantı: kısa ileti, yeni bağlantı iste
     "the stack has no mail provider, so the server refuses to send; the request itself is the point",
   );
   await serverSendsMail(page);
+  // The language a link asks for is saved once sign-in shows it; the result page then reads it.
   await page.goto("/sign-in?lang=tr");
+  await expect(page.getByRole("heading", { name: "Dozo'da oturum açın" })).toBeVisible();
   await page.goto(link(EXPIRED));
   await expect(page.getByRole("heading", { name: "Bağlantının süresi dolmuş" })).toBeVisible();
   await expect(page).toHaveURL(/\/verify-email$/);
