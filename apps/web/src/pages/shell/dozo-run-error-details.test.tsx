@@ -57,10 +57,14 @@ it("keeps a run's raw failure from people who are not admins", async () => {
 it("shows it, folded, to the deployment's admins", async () => {
   me.value = { isAdmin: true };
   await render();
-  const details = container.querySelector("details");
-  expect(details?.open).toBe(false);
-  expect(details?.querySelector("summary")?.textContent).toBe("Details");
-  expect(details?.querySelector("pre")?.textContent).toBe(raw);
+  const details = await vi.waitFor(() => {
+    const found = container.querySelector("details");
+    if (!found) throw new Error("not shown yet");
+    return found;
+  });
+  expect(details.open).toBe(false);
+  expect(details.querySelector("summary")?.textContent).toBe("Details");
+  expect(details.querySelector("pre")?.textContent).toBe(raw);
 });
 
 it("shows nothing where no query client is set up", async () => {
