@@ -4,6 +4,8 @@ import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import type { PlanGrant } from "./dozo-plan-grant.js";
 import { DOZO_PLAN_GRANT_SELECT, paidTierOf, tierInForce } from "./dozo-plan-grant.js";
+import type { PlanLimitsByTier } from "./dozo-plan-quotas.js";
+import { readPlanLimits } from "./dozo-plan-quotas.js";
 import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 
 /** The organization's files already fill its plan's shared space, so a new one is refused. */
@@ -24,13 +26,16 @@ type PlanBilling = { status: string | null; byokTier: string | null } | null | u
  * The plan an organization is on: the tier in force, a live subscription's or a plan an admin
  * granted that has not ended, whichever is higher, else the first one. So an organization whose
  * plan ended keeps its files and only stops adding to them. Every reader of the plan comes here.
+ * Its shared space is the admin's quota for the plan where one is set, else the plan's terms.
  */
 function planTerms(
   billing: PlanBilling,
   grant: PlanGrant | null | undefined,
+  limits: PlanLimitsByTier,
   now = new Date(),
-): { name: string; sharedSpaceBytes?: number } {
-  return BYOK_TIERS[tierInForce(paidTierOf(billing), grant, now) ?? "standard"];
+): { name: string; sharedSpaceBytes: number | undefined } {
+  const tier = tierInForce(paidTierOf(billing), grant, now) ?? "standard";
+  return { name: BYOK_TIERS[tier].name, sharedSpaceBytes: limits[tier].sharedSpaceBytes };
 }
 
 /** Whether the server bills. One that does not has no plans, so no limit. */
@@ -64,6 +69,7 @@ async function sharedSpaceLimit(
   const { sharedSpaceBytes } = planTerms(
     space.organization.billing,
     space.organization.dozoPlanGrant,
+    await readPlanLimits(tx),
   );
   return sharedSpaceBytes === undefined
     ? null
@@ -112,7 +118,7 @@ export async function sharedSpaceUsage(
   grant: PlanGrant | null | undefined,
 ): Promise<{ plan: string; usedBytes: number; limitBytes: number } | null> {
   if (!(await serverBills(prisma))) return null;
-  const { name, sharedSpaceBytes } = planTerms(billing, grant);
+  const { name, sharedSpaceBytes } = planTerms(billing, grant, await readPlanLimits(prisma));
   if (sharedSpaceBytes === undefined) return null;
   const used = await runAsSystem("an organization's files span its Spaces", () =>
     usedBytes(prisma, organizationId),

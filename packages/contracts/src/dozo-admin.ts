@@ -1,10 +1,13 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 import { ByokTierSchema } from "./billing.js";
+import { dozoAdminAccessContract } from "./dozo-admin-access.js";
 import { dozoAdminBillingContract } from "./dozo-admin-billing.js";
+import { dozoAdminPlansContract } from "./dozo-admin-plans.js";
 import { Id, IsoDate } from "./ids.js";
 
 export * from "./dozo-admin-billing.js";
+export * from "./dozo-admin-plans.js";
 /**
  * When the plan in force ends or renews, as the member's own billing status tells it (`PlanEnd`),
  * and what keeps it until then: the subscription's period, a trial, a plan an admin granted, or on
@@ -186,4 +189,8 @@ export const dozoAdminContract = {
   stopComputer: oc.input(z.object({ computerId: Id })).output(z.object({ ok: z.literal(true) })),
   /** The billing page: `/admin/billing`. */
   billing: dozoAdminBillingContract,
+  /** The plans page: `/admin/plans`. */
+  plans: dozoAdminPlansContract,
+  /** Free-access grants an account has not received yet, beside upstream's list, create, revoke. */
+  accessGrants: dozoAdminAccessContract,
 };
