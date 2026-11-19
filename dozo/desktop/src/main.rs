@@ -1,11 +1,15 @@
-//! Dozo for macOS and Windows: a native window around the Dozo web app. What it does and leaves
+//! Dozo for macOS, Windows and Linux: a native window around the Dozo web app. What it does and leaves
 //! out: README.md.
 // A release build on Windows opens no console window beside the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(target_os = "macos")]
 mod frames;
+#[cfg(target_os = "linux")]
+#[path = "frames_gtk.rs"]
+mod frames;
 mod server;
+mod update;
 
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
@@ -87,6 +91,24 @@ fn opener() -> Command {
     let mut command = Command::new("rundll32");
     command.arg("url.dll,FileProtocolHandler");
     command
+}
+
+/// The desktop's handler for a web or mail address, as one argument.
+#[cfg(target_os = "linux")]
+fn opener() -> Command {
+    Command::new("xdg-open")
+}
+
+/// Acts on a verdict: true when the address loads in the window.
+fn follow(verdict: Verdict) -> bool {
+    match verdict {
+        Verdict::Window => true,
+        Verdict::Browser(url) => {
+            open_outside(url);
+            false
+        }
+        Verdict::Refused => false,
+    }
 }
 
 fn show_local(window: &WebviewWindow, query: &str) {
@@ -175,9 +197,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     )
 }
 
-/// Windows draws the menu inside the window, and the web view has the editing shortcuts itself:
-/// one short menu.
-#[cfg(windows)]
+/// Windows and Linux draw the menu inside the window, and the web view has the editing shortcuts
+/// itself: one short menu.
+#[cfg(not(target_os = "macos"))]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     Menu::with_items(
         app,
@@ -195,9 +217,41 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     )
 }
 
+/// Shows the one menu item that restarts into a downloaded update: a menu of that one item at
+/// the end of the menu bar, whose title says the same. A macOS menu bar takes only menus, and a
+/// plain item in a GTK menu bar is never activated. Says whether it is shown; it is added once.
+fn offer_update(app: &AppHandle) -> bool {
+    let (shown, answer) = std::sync::mpsc::channel();
+    let handle = app.clone();
+    let asked = app.run_on_main_thread(move || {
+        let app = &handle;
+        let Some(menu) = app.menu() else {
+            let _ = shown.send(false);
+            return;
+        };
+        if menu.get(update::MENU_HOLDER_ID).is_some() {
+            let _ = shown.send(true);
+            return;
+        }
+        let label = update::label(sys_locale::get_locale().as_deref());
+        let added = MenuItem::with_id(app, update::MENU_ID, label, true, None::<&str>)
+            .and_then(|item| {
+                Submenu::with_id_and_items(app, update::MENU_HOLDER_ID, label, true, &[&item])
+            })
+            .and_then(|holder| menu.append(&holder));
+        if let Err(error) = &added {
+            eprintln!("dozo: could not show the update item: {error}");
+        }
+        let _ = shown.send(added.is_ok());
+    });
+    asked.is_ok() && answer.recv().unwrap_or(false)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -211,6 +265,7 @@ fn main() {
             match event.id().as_ref() {
                 "change-server" => show_local(&window, "?change"),
                 "reload" => reload(window),
+                update::MENU_ID => update::install(app),
                 _ => {}
             }
         })
@@ -221,6 +276,7 @@ fn main() {
                 .ok()
                 .and_then(|address| parse_server(&address).ok());
             app.manage(Server(Mutex::new(saved)));
+            update::watch(app.clone(), offer_update);
 
             let window =
                 WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
@@ -231,14 +287,7 @@ fn main() {
                     .background_color(Color(20, 20, 20, 255))
                     .on_navigation({
                         let app = app.clone();
-                        move |url| match decide(url, chosen(&app).as_ref()) {
-                            Verdict::Window => true,
-                            Verdict::Browser(url) => {
-                                open_outside(url);
-                                false
-                            }
-                            Verdict::Refused => false,
-                        }
+                        move |url| follow(decide(url, chosen(&app).as_ref()))
                     })
                     // The app has one window: a link that asks for a new one goes to the browser.
                     .on_new_window(|url, _| {
@@ -252,11 +301,15 @@ fn main() {
                     // Camera, microphone and the like: the web view grants them unless told otherwise.
                     .on_permission_request(|_, _| PermissionResponse::Deny)
                     .build()?;
-            // Only macOS needs the gate: the Windows web view asks the navigation hook about
-            // the window's own page alone, so frames load there as they do in a browser.
+            // Only macOS and Linux need the gate: the Windows web view asks the navigation hook
+            // about the window's own page alone, so frames load there as they do in a browser.
             #[cfg(target_os = "macos")]
             frames::only_gate_the_main_frame(&window)?;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "linux")]
+            frames::only_gate_the_main_frame(&window, move |url, seen| {
+                follow(frames::verdict(url, chosen(&app).as_ref(), seen))
+            })?;
+            #[cfg(windows)]
             let _ = window;
             Ok(())
         })

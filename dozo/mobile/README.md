@@ -70,11 +70,14 @@ Each is upstream's own behaviour for a build without the piece, not new code.
 
 - Push notifications: without an EAS project id the app asks for no Expo push token and registers
   none with the server. Incoming-call pushes: the app still hands its call token to the server it
-  is signed in to, but that server sends with upstream's bundle id as the topic, which a Dozo app
-  does not match, so no call push arrives.
+  is signed in to, and that server sends with the Dozo bundle id as the topic, but only once it has
+  an APNs key of the owner's team (`dozo/deploy/README.md`, Mobile app ids). Until then no call
+  push arrives.
 - Over-the-air updates: off. A new version is a new build.
-- Passkeys: the app asks for the server's domain as an associated domain, but the server's
-  association file names no Dozo app yet, so iOS offers no passkey. Password sign-in works.
+- Passkeys: the app asks for the server's domain as an associated domain. The server's association
+  files carry the Dozo ids, and exist only once the deployment sets the Apple team id and the
+  Android signing fingerprint (`dozo/deploy/README.md`, Mobile app ids); until then iOS offers no
+  passkey. Password sign-in works.
 - Crash reports: the app reports only where the server it is signed in to tells it to; nothing is
   uploaded at build time.
 - The App Store update prompt: it looks the bundle id up in the store and finds nothing.
@@ -86,9 +89,28 @@ origin (`dozo/brand/README.md`, Identifiers). An upstream app on the same phone 
 There is no store listing: the app's update fallback opens the landing page, and the privacy and
 terms links open the landing site's pages (`dozo/landing/README.md`).
 
+## Connection
+
+What the app does when it cannot talk to its server, beyond upstream's own screens (home: could
+not reach the server, session expired with Sign in, server problem; Try again where it helps):
+
+- The Server screen checks an address before saving it: https is assumed, spaces, the path and a
+  trailing slash are dropped, the server's auth capabilities must answer within 6 seconds, then its
+  health. It says which failed: no answer in time, no answer at all (a wrong name, a server that
+  is down and a refused certificate look the same to the app), or not a Dozo server. An address
+  that fails is tried once with `www.` added or removed, and the one that answers is saved.
+- The live stream reconnects by itself as before. After 20 seconds without any answer from the
+  server, one line above the chats says so until a request or the reconnect gets through.
+
+`baglanti-testi.sh <url>` makes the requests the app makes, in order, against a server and prints
+a pass/fail table: capabilities, the CORS preflight of the live stream, sign-up and sign-in with
+a bearer token, the session, the live stream for 60 seconds, and the association files. It signs
+up a throwaway account and deletes it at the end; on a server with sign-up closed it skips the
+account steps. Exit 0, 2 on any failure. It needs `curl` and `jq`.
+
 ## Phase 2
 
 Needs the owner (`dozo/LAUNCH-CHECKLIST.md`, "iOS app"): the lasting bundle id, an Apple Developer
 team with the app, its three extensions and the app group registered, signing and a TestFlight
-group, the store listing, and a decision on push: it needs an Expo project and APNs key of ours,
-and the server's push topic and app-association file changed from upstream's bundle id.
+group, the store listing, and a decision on push: it needs an Expo project and APNs key of ours. The server's push topic
+and association files already use the Dozo id.

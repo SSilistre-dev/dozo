@@ -6,11 +6,17 @@ import { formatter } from "@lingui/format-po";
 import { expect, it } from "vitest";
 
 // Runs on the branded tree: the Turkish catalog there carries the fork's block. Every string a
-// fork file of the web app or of the shared i18n package shows must have a Turkish translation, so
+// fork file of the web app, the mobile app or the shared i18n package shows must have a Turkish translation, so
 // a Turkish screen never falls back to English for the fork's own copy.
 
 const ROOT = join(import.meta.dirname, "../../..");
-const SOURCES = ["apps/web/src", "packages/i18n/src"];
+const SOURCES = [
+  "apps/web/src",
+  "apps/mobile/app",
+  "apps/mobile/components",
+  "apps/mobile/lib",
+  "packages/i18n/src",
+];
 
 async function forkFiles(dir: string): Promise<string[]> {
   const entries = await readdir(join(ROOT, dir), { recursive: true, withFileTypes: true });
@@ -24,7 +30,7 @@ async function forkFiles(dir: string): Promise<string[]> {
     .map((entry) => relative(ROOT, join(entry.parentPath, entry.name)));
 }
 
-it("translates every fork string of the web app into Turkish", async () => {
+it("translates every fork string of the web and mobile apps into Turkish", async () => {
   const linguiConfig = getConfig({ cwd: ROOT, skipValidation: true });
   const files = (await Promise.all(SOURCES.map(forkFiles))).flat().sort();
   expect(files.length).toBeGreaterThan(10);

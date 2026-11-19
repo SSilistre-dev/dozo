@@ -117,6 +117,23 @@ created. Every other upstream setting (`docs/self-host-configuration.md`) can be
 way. Model keys, sign-in providers and email are deliberately not set: the owner connects a model
 in the app. Billing is live on the hosted version.
 
+Mobile app ids (optional; each is left out until the owner has it). Without them the server
+answers 404 for the association files and the app offers no passkey, as today:
+
+```sh
+PASSKEY_APPLE_APP_IDS=<TEAM_ID>.dev.ssilistre.dozo   # serves /.well-known/apple-app-site-association
+PASSKEY_ANDROID_CERT_SHA256=<AA:BB:...>             # the release signing key's SHA-256; serves assetlinks.json
+APNS_VOIP_KEY_ID=...            # incoming-call pushes: an APNs key of the owner's Apple team
+APNS_VOIP_TEAM_ID=...
+APNS_VOIP_PRIVATE_KEY=...       # the .p8 file's text, newlines as \n
+APNS_VOIP_ENVIRONMENT=production   # sandbox for a development build
+```
+
+The Android package in `assetlinks.json` and the push topic are the app's id, `dev.ssilistre.dozo`
+(the brand overlay's one definition); `APNS_VOIP_BUNDLE_ID` overrides the topic only for another
+build. `dozo/mobile/baglanti-testi.sh <url>` checks what the app asks of a server, these files
+included.
+
 `CLIENT_IP_HEADER`: the panel's proxy reports the CDN's address, not the visitor's, so without it
 every visitor shares one sign-in rate limit. The header is believed only from the stack's own
 networks (the panel's proxy and the web container). Someone who reaches the host directly, past
