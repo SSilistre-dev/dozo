@@ -32,7 +32,8 @@ export function mountDozoCatalogImages(app: Hono, prisma: Pick<PrismaClient, "do
   app.get(`${CATALOG_IMAGE_PATH}/:file`, async (c) => {
     const body = await storedCatalogImage(prisma, c.req.param("file"));
     const headers = { "x-content-type-options": "nosniff" };
-    if (!body) return c.body(null, 404, { ...headers, "cache-control": "no-store" });
+    // A miss is cached briefly too, so the CDN answers repeats of a made-up name, not the database.
+    if (!body) return c.body(null, 404, { ...headers, "cache-control": "public, max-age=300" });
     return c.body(body, 200, {
       ...headers,
       "content-type": CATALOG_IMAGE_TYPE,

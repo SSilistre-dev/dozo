@@ -32,12 +32,12 @@ describe("catalog images route", () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
   });
 
-  it("answers 404, uncached, for an unknown hash or a name that is not one", async () => {
+  it("answers 404, cached briefly, for an unknown hash or a name that is not one", async () => {
     const { server, findFirst } = app(null);
     for (const name of [`${hash}.webp`, "logo.svg", `${hash}.png`]) {
       const response = await server.request(`${CATALOG_IMAGE_PATH}/${name}`);
       expect(response.status).toBe(404);
-      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cache-control")).toBe("public, max-age=300");
     }
     expect(findFirst).toHaveBeenCalledOnce();
   });

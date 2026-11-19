@@ -1,6 +1,6 @@
 import type { PluginMarketplaceCatalog, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
-import { LeaseHeldError } from "@rakazo/db";
+import { LeaseHeldError, LeaseLostError } from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import sharp from "sharp";
@@ -8,8 +8,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PersistentPluginMarketplaceOptions } from "./dozo-plugin-catalog.js";
 import {
   CATALOG_IMAGE_SIZE,
+  CATALOG_MAX_IMAGES,
   CATALOG_REFRESH_MS,
   CATALOG_RETRY_MS,
+  CATALOG_SHRINK_ACCEPTED_AFTER,
   catalogImage,
   createPersistentPluginMarketplace,
   imageSource,
@@ -35,19 +37,34 @@ vi.mock("@rakazo/db", async (original) => ({
       _prisma: unknown,
       _key: string,
       _options: unknown,
-      work: (lease: { signal: AbortSignal }) => unknown,
-    ) => work({ signal: new AbortController().signal }),
+      work: (lease: { key: string; fence: number; signal: AbortSignal }) => unknown,
+    ) => work(lease()),
   ),
+  // The lease row is not there; a lease whose signal aborted counts as lost.
+  assertLeaseHeld: vi.fn(async (_tx: unknown, held: { key: string; signal?: AbortSignal }) => {
+    if (held.signal?.aborted) throw new LeaseLostError(held.key);
+  }),
 }));
 
+function lease(signal = new AbortController().signal) {
+  return { key: "dozo:plugin-catalog-refresh", fence: 1, signal };
+}
+
 type ImageRow = { source: string; hash: string | null; body: Uint8Array | null; checkedAt: Date };
-type SnapshotRow = { key: string; data: unknown; refreshedAt: Date };
+type SnapshotRow = {
+  key: string;
+  data: unknown;
+  refreshedAt: Date;
+  failures: number;
+  retryAt: Date | null;
+};
 
 /** The two tables in memory, answering the queries the catalog makes. */
 function fakeStore(snapshot?: SnapshotRow) {
   const snapshots = new Map<string, SnapshotRow>(snapshot ? [[snapshot.key, snapshot]] : []);
   const images = new Map<string, ImageRow>();
   const prisma = {
+    $transaction: vi.fn(async (write: (tx: unknown) => Promise<unknown>) => write(prisma)),
     dozoCatalogSnapshot: {
       findUnique: vi.fn(async ({ where }: { where: { key: string } }) => snapshots.get(where.key)),
       upsert: vi.fn(
@@ -79,6 +96,10 @@ function fakeStore(snapshot?: SnapshotRow) {
       upsert: vi.fn(async ({ create }: { create: ImageRow }) => {
         images.set(create.source, create);
       }),
+      deleteMany: vi.fn(async ({ where }: { where: { source: { notIn: string[] } } }) => {
+        for (const source of images.keys())
+          if (!where.source.notIn.includes(source)) images.delete(source);
+      }),
     },
   };
   return { prisma, snapshots, images };
@@ -109,6 +130,8 @@ function stored(catalog: Partial<PluginMarketplaceCatalog>, refreshedAt: number)
     key: "plugin-marketplace",
     data: { entries: [], unavailableRegistries: [], skippedEntries: 0, ...catalog },
     refreshedAt: new Date(refreshedAt),
+    failures: 0,
+    retryAt: null,
   };
 }
 
@@ -161,7 +184,7 @@ function setup(
     prisma: store.prisma as never,
     read: registries(),
     imageUrl: (file) => `https://app.example.test/images/${file}`,
-    exclusive: (work) => work(new AbortController().signal),
+    exclusive: (work) => work(lease()),
     fetchImage: vi.fn(async () => png()),
     siteIcon: vi.fn(
       async () => `data:image/png;base64,${Buffer.from(await png(64)).toString("base64")}`,
@@ -257,9 +280,13 @@ describe("stored plugin catalog", () => {
     expect(sink.events).toContainEqual(
       expect.objectContaining({
         level: "warn",
-        message: "plugin catalog: registries unavailable, keeping their last listing",
+        message: "plugin catalog: refresh incomplete, keeping the last listing",
       }),
     );
+    expect(store.snapshots.get("plugin-marketplace")).toMatchObject({
+      failures: 1,
+      retryAt: new Date(T0 + CATALOG_RETRY_MS),
+    });
     const calls = read.mock.calls.length;
     await marketplace.catalog("");
     await marketplace.settled();
@@ -267,7 +294,74 @@ describe("stored plugin catalog", () => {
     advance(CATALOG_RETRY_MS);
     await marketplace.catalog("");
     await marketplace.settled();
-    expect(read.mock.calls.length).toBeGreaterThan(calls);
+    const second = read.mock.calls.length;
+    expect(second).toBeGreaterThan(calls);
+    // Each failure in a row doubles the wait.
+    expect(store.snapshots.get("plugin-marketplace")).toMatchObject({
+      failures: 2,
+      retryAt: new Date(T0 + 3 * CATALOG_RETRY_MS),
+    });
+    advance(CATALOG_RETRY_MS);
+    await marketplace.catalog("");
+    await marketplace.settled();
+    expect(read).toHaveBeenCalledTimes(second);
+  });
+
+  it("shares the wait with every process through the stored row", async () => {
+    const store = fakeStore({
+      ...stored({ entries: [entry()] }, T0 - CATALOG_REFRESH_MS),
+      failures: 4,
+      retryAt: new Date(T0 + 60_000),
+    });
+    const read = registries();
+    const { marketplace, advance } = setup(store, { read });
+    await marketplace.catalog("");
+    await marketplace.settled();
+    expect(read).not.toHaveBeenCalled();
+    advance(60_000);
+    await marketplace.catalog("");
+    await marketplace.settled();
+    expect(read).toHaveBeenCalled();
+    expect(store.snapshots.get("plugin-marketplace")).toMatchObject({ failures: 0, retryAt: null });
+  });
+
+  it("keeps the plugins a failed file read may have left out, and does not count it complete", async () => {
+    const lost = entry({ id: "Cursor:lost", name: "lost", logo: null });
+    const store = fakeStore(stored({ entries: [entry(), lost] }, T0 - CATALOG_REFRESH_MS));
+    const base = registries();
+    const read = vi.fn(async (url: string, max?: number, signal?: AbortSignal) => {
+      if (url.endsWith("tasks/.grok-plugin/plugin.json"))
+        throw new Error("Request failed: HTTP 500");
+      return base(url, max, signal);
+    });
+    const { marketplace } = setup(store, { read });
+    await marketplace.settled();
+    expect((await marketplace.catalog("")).entries.map((row) => row.name).sort()).toEqual([
+      "lost",
+      "notes",
+      "tasks",
+    ]);
+    expect(store.snapshots.get("plugin-marketplace")).toMatchObject({
+      failures: 1,
+      refreshedAt: new Date(T0 - CATALOG_REFRESH_MS),
+    });
+  });
+
+  it("keeps a registry that suddenly lists under half its plugins until the shrink repeats", async () => {
+    const old = ["a", "b", "c"].map((name) => entry({ id: `Cursor:${name}`, name, logo: null }));
+    const store = fakeStore({
+      ...stored({ entries: old }, T0 - CATALOG_REFRESH_MS),
+      failures: CATALOG_SHRINK_ACCEPTED_AFTER - 1,
+    });
+    const { marketplace, advance } = setup(store);
+    await marketplace.settled();
+    const names = async () => (await marketplace.catalog("")).entries.map((row) => row.name);
+    expect((await names()).sort()).toEqual(["a", "b", "c", "notes", "tasks"]);
+    advance(CATALOG_RETRY_MS * 2 ** CATALOG_SHRINK_ACCEPTED_AFTER);
+    await marketplace.catalog("");
+    await marketplace.settled();
+    expect((await names()).sort()).toEqual(["notes", "tasks"]);
+    expect(store.snapshots.get("plugin-marketplace")).toMatchObject({ failures: 0 });
   });
 
   it("reports a registry unavailable when it never listed anything", async () => {
@@ -298,9 +392,9 @@ describe("stored plugin catalog", () => {
   it("adopts a copy another process stored while it waited for the refresh", async () => {
     const store = fakeStore();
     const read = registries();
-    const exclusive = async <T>(work: (signal: AbortSignal) => Promise<T>) => {
+    const exclusive: PersistentPluginMarketplaceOptions["exclusive"] = async (work) => {
       store.snapshots.set("plugin-marketplace", stored({ entries: [entry()] }, T0));
-      return work(new AbortController().signal);
+      return work(lease());
     };
     const { marketplace } = setup(store, { exclusive, read });
     await marketplace.settled();
@@ -313,6 +407,8 @@ describe("stored plugin catalog", () => {
       key: "plugin-marketplace",
       data: { plugins: [] },
       refreshedAt: new Date(T0),
+      failures: 0,
+      retryAt: null,
     });
     const { marketplace } = setup(store);
     await marketplace.settled();
@@ -355,14 +451,97 @@ describe("stored plugin catalog", () => {
     expect([...store.images.values()].map((row) => row.hash)).toEqual([null, null]);
   });
 
-  it("stops fetching images once the refresh is lost", async () => {
+  it("writes nothing once the refresh is lost", async () => {
     const store = fakeStore();
     const lost = new AbortController();
     lost.abort();
     const fetchImage = vi.fn(async () => png());
-    const { marketplace } = setup(store, { exclusive: (work) => work(lost.signal), fetchImage });
+    const { marketplace } = setup(store, {
+      exclusive: (work) => work(lease(lost.signal)),
+      fetchImage,
+    });
     await marketplace.settled();
+    expect(store.snapshots.size).toBe(0);
     expect(fetchImage).not.toHaveBeenCalled();
+  });
+
+  it("does not write a snapshot when the lease is gone by the time it commits", async () => {
+    const store = fakeStore();
+    const lost = new AbortController();
+    const read = registries();
+    const { marketplace } = setup(store, {
+      exclusive: (work) => work(lease(lost.signal)),
+      read: vi.fn(async (url: string, max?: number, signal?: AbortSignal) => {
+        const text = await read(url, max, signal);
+        if (url.endsWith("plugin-index.json")) lost.abort();
+        return text;
+      }),
+    });
+    await marketplace.settled();
+    expect(store.snapshots.size).toBe(0);
+  });
+
+  it("keeps a good image through a failed fetch and records only real misses", async () => {
+    const store = fakeStore();
+    const first = setup(store);
+    await first.marketplace.settled();
+    const good = [...store.images.values()].map((row) => [row.source, row.hash]);
+    const later = T0 + 8 * 24 * 60 * 60_000;
+    store.snapshots.get("plugin-marketplace")!.refreshedAt = new Date(later - CATALOG_REFRESH_MS);
+    const second = setup(store, {
+      fetchImage: vi.fn(async () => {
+        throw new Error("Request timed out");
+      }),
+      siteIcon: vi.fn(async () => {
+        throw new Error("Site icon lookup was busy");
+      }),
+    });
+    second.advance(later - T0);
+    await second.marketplace.catalog("");
+    await second.marketplace.settled();
+    expect([...store.images.values()].map((row) => [row.source, row.hash])).toEqual(good);
+    store.snapshots.get("plugin-marketplace")!.refreshedAt = new Date(later - CATALOG_REFRESH_MS);
+    const third = setup(store, {
+      fetchImage: vi.fn(async () => {
+        throw new Error("Request failed: HTTP 404");
+      }),
+    });
+    third.advance(later - T0);
+    await third.marketplace.catalog("");
+    await third.marketplace.settled();
+    const logo = "https://raw.githubusercontent.com/cursor/plugins/HEAD/notes/logo.png";
+    expect(store.images.get(logo)?.hash).toBeNull();
+  });
+
+  it("drops images of sources the catalog no longer lists and caps how many it keeps", async () => {
+    const store = fakeStore();
+    store.images.set("https://raw.githubusercontent.com/gone/logo.png", {
+      source: "https://raw.githubusercontent.com/gone/logo.png",
+      hash: "d".repeat(64),
+      body: new Uint8Array([1]),
+      checkedAt: new Date(T0),
+    });
+    const { marketplace } = setup(store);
+    await marketplace.settled();
+    expect(store.images.has("https://raw.githubusercontent.com/gone/logo.png")).toBe(false);
+    expect(store.images.size).toBe(2);
+
+    const many = Array.from({ length: CATALOG_MAX_IMAGES + 1 }, (_, i) =>
+      entry({ id: `Cursor:${i}`, name: `p${i}`, logo: null, domains: [`p${i}.example`] }),
+    );
+    const full = fakeStore(stored({ entries: many }, T0));
+    for (const row of many) {
+      const source = imageSource(row)!;
+      full.images.set(source, {
+        source,
+        hash: "e".repeat(64),
+        body: null,
+        checkedAt: new Date(T0),
+      });
+    }
+    const capped = setup(full);
+    const logos = (await capped.marketplace.catalog("")).entries.map((row) => row.logo);
+    expect(logos.filter(Boolean)).toHaveLength(CATALOG_MAX_IMAGES);
   });
 });
 
@@ -383,7 +562,9 @@ describe("defaults", () => {
     );
     const bytes = await png();
     vi.mocked(fetchSafeWebBytes).mockResolvedValue({ body: bytes } as never);
-    const favicon = vi.fn(async () => ({ icon: null }));
+    const favicon = vi.fn(async (origin: string) =>
+      origin.includes("busy") ? { icon: null, retry: true as const } : { icon: null },
+    );
     vi.mocked(createFaviconResolver).mockReturnValue({ favicon });
     const store = fakeStore(
       stored(
@@ -391,6 +572,7 @@ describe("defaults", () => {
           entries: [
             entry({ id: "xAI:a", registry: "xAI", logo: "https://elsewhere.example/logo.png" }),
             entry({ id: "xAI:b", registry: "xAI", logo: null, domains: ["tasks.example"] }),
+            entry({ id: "xAI:c", registry: "xAI", logo: null, domains: ["busy.example"] }),
           ],
         },
         0,
@@ -410,6 +592,8 @@ describe("defaults", () => {
     expect(favicon).toHaveBeenCalledWith("https://tasks.example/");
     // Kept from the registry that failed, but not a registry file: recorded as having no image.
     expect(store.images.get("https://elsewhere.example/logo.png")?.hash).toBeNull();
+    // A busy lookup is not an answer, so nothing is recorded for it.
+    expect(store.images.has("site:https://busy.example/")).toBe(false);
     expect(
       store.images.get("https://raw.githubusercontent.com/cursor/plugins/HEAD/notes/logo.png")
         ?.hash,
@@ -474,6 +658,32 @@ describe("catalog images", () => {
     expect(await catalogImage(huge)).toBeNull();
     // Sniffs as PNG but is truncated.
     expect(await catalogImage((await png(64)).subarray(0, 40))).toBeNull();
+  });
+
+  it("refuses a PNG over the pixel limit and an SVG too large to draw, and shrinks a large SVG", async () => {
+    const wide = await sharp({
+      create: { width: 4097, height: 4097, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    expect(wide.length).toBeLessThan(512 * 1024);
+    expect(await catalogImage(new Uint8Array(wide))).toBeNull();
+    const svg = (side: number) =>
+      new TextEncoder().encode(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${side}" height="${side}"><rect width="${side}" height="${side}"/></svg>`,
+      );
+    expect(await catalogImage(svg(10_000_000))).toBeNull();
+    const large = await catalogImage(svg(5000));
+    expect((await sharp(large!).metadata()).width).toBe(CATALOG_IMAGE_SIZE);
+  });
+
+  it("refuses SVG that imports a style sheet", async () => {
+    const svg = (style: string) =>
+      new TextEncoder().encode(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><style>${style}</style></svg>`,
+      );
+    expect(await catalogImage(svg('@import "https://x.example/a.css";'))).toBeNull();
+    expect(await catalogImage(svg("@IMPORT 'a.css';"))).toBeNull();
   });
 
   it("accepts JPEG, GIF and WebP by their bytes", async () => {

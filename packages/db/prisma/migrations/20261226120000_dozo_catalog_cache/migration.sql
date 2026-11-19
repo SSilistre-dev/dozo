@@ -6,6 +6,8 @@ CREATE TABLE "dozo_catalog_snapshots" (
     "key" TEXT NOT NULL,
     "data" JSONB NOT NULL,
     "refreshedAt" TIMESTAMP(3) NOT NULL,
+    "failures" INTEGER NOT NULL DEFAULT 0,
+    "retryAt" TIMESTAMP(3),
 
     CONSTRAINT "dozo_catalog_snapshots_pkey" PRIMARY KEY ("key")
 );
