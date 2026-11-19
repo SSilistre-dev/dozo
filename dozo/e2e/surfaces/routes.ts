@@ -90,7 +90,7 @@ export const routes: Surface[] = [
   {
     name: "Dozo admin page (refused, then the admin flag and its lists faked in the browser)",
     group: "routes",
-    covers: ["route:/admin"],
+    covers: ["route:/admin/*"],
     expect5xx: [],
     async reach({ page, goto, scan, note }) {
       // The stack's account is no admin: the address answers like one that does not exist.
@@ -115,6 +115,8 @@ export const routes: Surface[] = [
         bots: 2,
         runningComputers: 0,
         suspended: false,
+        banned: false,
+        plan: { tier: "standard", grantedUntil: null, ends: null },
         ...more,
       });
       await page.route("**/rpc/dozoAdmin/users", (route) =>
@@ -123,6 +125,7 @@ export const routes: Surface[] = [
             json: {
               signupsOpen: false,
               total: 3,
+              matching: 3,
               users: [
                 account("ada", { runningComputers: 1 }),
                 account("grace", { lastSeenAt: null, bots: 0, suspended: true }),

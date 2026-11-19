@@ -1,7 +1,8 @@
+import { COMPUTERS_BUSY_MESSAGE, PLAN_LIMIT_CODES } from "@rakazo/contracts";
 import { ClientError, deadlineSignal, resolveSupervisorToken } from "@rakazo/core";
 
-export const COMPUTERS_BUSY_MESSAGE = "All computers are busy. Try again shortly.";
-export const COMPUTERS_BUSY_CODE = "COMPUTERS_BUSY";
+export { COMPUTERS_BUSY_MESSAGE };
+export const COMPUTERS_BUSY_CODE = PLAN_LIMIT_CODES.computersBusy;
 
 /** The supervisor's refusal text. The supervisor keeps its own copy; a test in each holds the line. */
 const SUPERVISOR_BUDGET_FULL = "Computer memory budget reached";

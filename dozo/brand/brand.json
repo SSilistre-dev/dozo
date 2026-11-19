@@ -450,15 +450,93 @@
     },
     {
       "file": "apps/web/index.html",
+      "find": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta name=\"theme-color\"",
+      "replace": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:type\" content=\"website\" />\n    <meta property=\"og:title\" content=\"Dozo\" />\n    <meta property=\"og:description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:image\" content=\"https://dozo-site.ssilistre.dev/og.png\" />\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"theme-color\"",
+      "reason": "a link to the app shared in a chat or a post shows the Dozo card; the image is the landing site's published one (dozo/landing/og.png)"
+    },
+    {
+      "file": "apps/web/index.html",
       "find": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\" />",
       "replace": "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\"/>\n    <link rel=\"icon\" href=\"/favicon.svg\" type=\"image/svg+xml\" />",
       "reason": "the Dozo mark switches ink with the browser colour scheme; upstream has no SVG favicon, so link the mapped favicon.svg (the PNG/ICO stay as fallbacks)"
     },
     {
       "file": "packages/auth/src/email.tsx",
-      "find": "                rakazo\n              </Text>",
-      "replace": "                dozo\n              </Text>",
-      "reason": "lowercase text wordmark in every mail header without a hero image"
+      "find": "import { webLightTokens as lightTokens, webDarkTokens } from \"@rakazo/ui-tokens\";",
+      "replace": "import {\n  DozoFooter,\n  DozoHeader,\n  EMAIL_FONT,\n  lightTokens,\n  webDarkTokens,\n} from \"./dozo-email-shell.js\";",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: every account mail takes the Dozo palette (solid hex, light and dark), font, header and footer from one fork file"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "  Hr,\n  Html,\n  Img,\n  Link,\n  render,",
+      "replace": "  Html,\n  Img,\n  render,",
+      "reason": "Dozo mail shell: the rule and the unsubscribe link moved into the shell's footer, so these two imports are unused"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "          fontFamily: \"Arial, Helvetica, sans-serif\",",
+      "replace": "          fontFamily: EMAIL_FONT,",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: the theme's sans stack, ending in the mail-safe fonts"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "            borderRadius: \"12px\",\n            border: `1px solid ${lightTokens.border}`,",
+      "replace": "            borderRadius: \"16px\",\n            border: `1px solid ${lightTokens.border}`,",
+      "reason": "Dozo mail shell: the card takes the theme's radius"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "            {image ? null : (\n              // Text, not a hosted logo: self-hosted servers send these too, and must not call out.\n              <Text\n                style={{\n                  margin: \"0 0 24px\",\n                  fontSize: \"22px\",\n                  fontWeight: 600,\n                  letterSpacing: \"-0.5px\",\n                }}\n              >\n                rakazo\n              </Text>\n            )}",
+      "replace": "            {image ? null : <DozoHeader />}",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: the header of every mail without a hero image is the mark and the lowercase wordmark; the mark is loaded only from the sending server's own public origin, never from another host"
+    },
+    {
+      "file": "packages/auth/src/email.tsx",
+      "find": "            {unsubscribeUrl ? (\n              <>\n                <Hr style={{ borderColor: lightTokens.border, marginTop: \"28px\" }} />\n                <FinePrint>\n                  <Link href={unsubscribeUrl} style={{ color: lightTokens.mutedForeground }}>\n                    {emailText(locale)(\"Unsubscribe\")}\n                  </Link>\n                </FinePrint>\n              </>\n            ) : null}",
+      "replace": "            <DozoFooter\n              locale={locale}\n              unsubscribe={\n                unsubscribeUrl\n                  ? { href: unsubscribeUrl, label: emailText(locale)(\"Unsubscribe\") }\n                  : undefined\n              }\n            />",
+      "requires": [
+        "packages/auth/src/dozo-email-shell.tsx"
+      ],
+      "reason": "Dozo mail shell: every mail ends with the same footer (unsubscribe when the mail has one, privacy and terms in the reader's language, the operator and the contact address)"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "  \"Invite a friend\": \"Bir arkadaşını davet et\",",
+      "replace": "  \"Invite a friend\": \"Bir arkadaşınızı davet edin\",",
+      "reason": "Turkish mails address the reader as siz; the referral mail mixed sen and siz"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "    \"Bir arkadaşını Rakazo'ya davet et: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da sen bir ay ücretsiz kazanırsın.\",",
+      "replace": "    \"Bir arkadaşınızı Dozo’ya davet edin: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da siz bir ay ücretsiz kazanırsınız.\",",
+      "reason": "Turkish mails address the reader as siz; the referral mail mixed sen and siz"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "  \"Your saved computer files will be deleted\": \"Kayıtlı bilgisayar dosyaların silinecek\",",
+      "replace": "  \"Your saved computer files will be deleted\": \"Kayıtlı bilgisayar dosyalarınız silinecek\",",
+      "reason": "Turkish mails address the reader as siz; the file deletion mail used sen next to its siz button"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "    \"Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.\",",
+      "replace": "    \"Yeniden abone olmazsanız kayıtlı bilgisayar dosyalarınız {date} tarihinde silinecek.\",",
+      "reason": "Turkish mails address the reader as siz; the file deletion mail used sen next to its siz button"
+    },
+    {
+      "file": "packages/auth/src/locales/tr.ts",
+      "find": "    \"Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.\",",
+      "replace": "    \"Bir plan seçmezseniz kayıtlı bilgisayar dosyalarınız {date} tarihinde silinecek.\",",
+      "reason": "Turkish mails address the reader as siz; the file deletion mail used sen next to its siz button"
     },
     {
       "file": "packages/auth/src/welcome-email.tsx",
@@ -563,6 +641,26 @@
       "reason": "eyes placed for the Dozo pill"
     },
     {
+      "file": "apps/web/src/preview-middleware.ts",
+      "find": "import { missingAssetMiddleware } from \"./missing-asset.js\";",
+      "replace": "import { missingAssetMiddleware } from \"./dozo-missing-asset.js\";",
+      "requires": ["apps/web/src/dozo-missing-asset.ts"],
+      "reason": "hashed build assets are cached for a year as immutable instead of revalidated on every load; index.html and the service worker stay no-cache"
+    },
+    {
+      "file": "apps/web/src/pwa/sw.ts",
+      "find": "import { installServiceWorker } from \"./service-worker\";",
+      "replace": "import { installServiceWorker } from \"./dozo-service-worker\";",
+      "requires": ["apps/web/src/pwa/dozo-service-worker.ts"],
+      "reason": "the service worker leaves hashed assets to the browser's HTTP cache and answers them from its own cache only for a page opened offline, since reading them from its cache slowed every warm load"
+    },
+    {
+      "file": "apps/web/src/standalone-server.ts",
+      "find": "      \"cache-control\": \"no-cache\",\n",
+      "replace": "      \"cache-control\": String(res.getHeader(\"cache-control\") ?? \"no-cache\"),\n",
+      "reason": "the server without Vite keeps the immutable cache-control the asset middleware set for a hashed build asset; other files stay no-cache"
+    },
+    {
       "file": "apps/web/src/App.tsx",
       "find": "import(\"./pages/Auth\").then((module) => module.AuthPage)",
       "replace": "import(\"./pages/dozo-auth\").then((module) => module.AuthPage)",
@@ -591,15 +689,219 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "import { encryptionKeyWarning } from \"@rakazo/core\";",
-      "replace": "import { encryptionKeyWarning, signupsOpen } from \"@rakazo/core\";",
+      "find": "import { encryptionKeyWarning } from \"@rakazo/core\";\nimport type { Pool, PrismaClient } from \"@rakazo/db\";",
+      "replace": "import { encryptionKeyWarning } from \"@rakazo/core\";\nimport { readSiteSettings, signupsOpenFrom } from \"@rakazo/db\";\nimport type { Pool, PrismaClient } from \"@rakazo/db\";",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
       "reason": "closed registration: the capabilities answer reads the same switch the sign-up policy reads"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n    } satisfies AuthCapabilities);",
-      "replace": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n      signupsOpen: signupsOpen(env.signupsEnabled),\n    } satisfies AuthCapabilities);",
+      "replace": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n      signupsOpen: signupsOpenFrom(dozoSite, env.signupsEnabled),\n    } satisfies AuthCapabilities);",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
       "reason": "closed registration: the capabilities answer carries whether sign-up is open"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./computers.js\";\nexport * from \"./content-crypto.js\";\n",
+      "replace": "export * from \"./computers.js\";\nexport * from \"./dozo-site-settings.js\";\nexport * from \"./content-crypto.js\";\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the package exports the settings an admin changes at run time"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "import { withTransactionRetry } from \"./transaction-retry.js\";\n\n",
+      "replace": "import { withTransactionRetry } from \"./transaction-retry.js\";\nimport { siteMaxComputersPerUser } from \"./dozo-site-settings.js\";\n\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  const limit = resolveMaxComputersPerUser();\n  if (limit <= 0) return;\n",
+      "replace": "  const limit = await siteMaxComputersPerUser(prisma);\n  if (limit <= 0) return;\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  const limit = resolveMaxComputersPerUser();\n\n  async function restore(",
+      "replace": "  const limit = await siteMaxComputersPerUser(prisma);\n\n  async function restore(",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  const limit = resolveMaxComputersPerUser();\n  const scopeKey = computerScopeKey(input);",
+      "replace": "  const limit = await siteMaxComputersPerUser(prisma);\n  const scopeKey = computerScopeKey(input);",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "  SpaceDeletionInProgressError,\n} from \"@rakazo/db\";\nimport { bestEffort } from \"@rakazo/logging\";",
+      "replace": "  SpaceDeletionInProgressError,\n} from \"@rakazo/db\";\nimport { siteSignupPolicy } from \"@rakazo/db\";\nimport { bestEffort } from \"@rakazo/logging\";",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "    const policy = signupPolicyFromEnv(env);\n    if (!env.singleAccount",
+      "replace": "    const policy = await siteSignupPolicy(prisma, env);\n    if (!env.singleAccount",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "              ? signupPolicyFromEnv(env)\n",
+      "replace": "              ? await siteSignupPolicy(prisma, env)\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "            const policy = signupPolicyFromEnv(env);\n            const oidcSignIn",
+      "replace": "            const policy = await siteSignupPolicy(prisma, env);\n            const oidcSignIn",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  app.get(\"/api/auth/capabilities\", (c) => {\n    return c.json({",
+      "replace": "  app.get(\"/api/auth/capabilities\", async (c) => {\n    const dozoSite = await readSiteSettings(prisma);\n    return c.json({",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the public capabilities say whether sign-up is open as the admin page or else the environment says, read on every request"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { AnalyticsScreenInput } from \"./analytics.js\";\nimport {\n",
+      "replace": "import { AnalyticsScreenInput } from \"./analytics.js\";\nexport * from \"./dozo-admin-settings.js\";\nimport { dozoSiteSettingsContract } from \"./dozo-admin-settings.js\";\nimport {\n",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the admin page's settings procedures and the announcement join the app contract"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  /** The account's spending limit for payments its bots make. */\n  spendingLimit: {\n",
+      "replace": "  /** The account's spending limit for payments its bots make. */\n  dozoSiteSettings: dozoSiteSettingsContract,\n  spendingLimit: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the admin page's settings procedures and the announcement join the app contract"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { threadsRoutes } from \"./routes/threads.js\";\nimport type { VoiceDeps } from \"./voice.js\";\n",
+      "replace": "import { threadsRoutes } from \"./routes/threads.js\";\nimport { dozoSiteSettingsRoutes } from \"./dozo-admin-settings.js\";\nimport type { VoiceDeps } from \"./voice.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the router serves the admin page's settings and the announcement"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...spendingLimitRoutes(ctx),\n  });\n",
+      "replace": "    ...spendingLimitRoutes(ctx),\n    ...dozoSiteSettingsRoutes(ctx),\n  });\n",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the router serves the admin page's settings and the announcement"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "import { SubscriptionGate } from \"./components/SubscriptionGate\";\nimport { authClient } from \"./lib/auth\";\n",
+      "replace": "import { SubscriptionGate } from \"./components/SubscriptionGate\";\nimport { DozoAnnouncementLayout } from \"./components/dozo-announcement\";\nimport { authClient } from \"./lib/auth\";\n",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app shows the admin's announcement as one line below every signed-in page"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<SubscriptionGate fallback={<PageLoading />}>\n                      <Outlet />\n                    </SubscriptionGate>",
+      "replace": "<SubscriptionGate fallback={<PageLoading />}>\n                      <DozoAnnouncementLayout />\n                    </SubscriptionGate>",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app shows the admin's announcement as one line below every signed-in page"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "import { requireAdmin } from \"../admins.js\";\nimport { aiConsentStatus",
+      "replace": "import { requireAdmin } from \"../admins.js\";\nimport { DOZO_SITE_CHANGED, dozoSiteChanges } from \"../dozo-admin-settings.js\";\nimport { aiConsentStatus",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "            spaceChanges(signal),\n          ),\n        );",
+      "replace": "            spaceChanges(signal),\n            dozoSiteChanges(deps, signal),\n          ),\n        );",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "          if (next === HEARTBEAT) yield { type: \"heartbeat\" as const };\n          else if (next === ROSTER_CHANGED)",
+      "replace": "          if (next === HEARTBEAT) yield { type: \"heartbeat\" as const };\n          else if (next === DOZO_SITE_CHANGED) yield { type: \"site\" as const };\n          else if (next === ROSTER_CHANGED)",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "type: z.enum([\"alert\", \"roster\", ...SpaceChangeKind.options, \"heartbeat\"]),",
+      "replace": "type: z.enum([\"alert\", \"roster\", ...SpaceChangeKind.options, \"site\", \"heartbeat\"]),",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "import { followStream } from \"../../lib/follow-stream\";\nimport { notificationIcon",
+      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { notificationIcon",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
     },
     {
       "file": "infra/sandboxes/computer/Dockerfile",
@@ -723,11 +1025,71 @@
       "reason": "fork feature: the model settings tab is a wrapper that adds the local-models panel to upstream's overlay and re-exports the same name"
     },
     {
+      "file": "apps/web/src/pages/SettingsOverlay.tsx",
+      "find": "import { PlanUsage } from \"../components/PlanUsage\";",
+      "replace": "import { PlanUsage } from \"../components/dozo-plan-usage\";",
+      "requires": ["apps/web/src/components/dozo-plan-usage.tsx"],
+      "reason": "fork feature: Settings > Usage shows this period's cache share under upstream's allowances, through a wrapper that re-exports the same name"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));\n  const periodStart =\n    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now\n      ? billing.currentPeriodStartsAt\n      : null;\n  const since = periodStart\n    ? // A yearly plan's allowance still renews monthly, on the day its period began.\n      billing?.byokInterval === \"year\"\n      ? latestMonthlyAnniversary(periodStart, now)\n      : periodStart\n    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));\n",
+      "replace": "  const { live, periodStart, since } = monthlyBillingPeriod(billing, now);\n",
+      "reason": "cache share on Usage: the allowance's monthly period moves, unchanged, into an exported function (below) so Usage counts the same period without a copy"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "  return anniversary <= now ? anniversary : monthlyAnniversary(start, months - 1);\n}\n\n/**\n * Hours the organization's computers ran between",
+      "replace": "  return anniversary <= now ? anniversary : monthlyAnniversary(start, months - 1);\n}\n\n/**\n * The organization's monthly period: whether its subscription is live, when the billing period\n * began (null without a live one that has begun), and when the current month of it began. A\n * yearly plan still renews monthly, on the day its period began; without a live subscription the\n * month is the calendar month in UTC. The computer allowance and the cache share on Usage both\n * count from here.\n */\nexport function monthlyBillingPeriod(\n  billing:\n    | {\n        status: string | null;\n        currentPeriodStartsAt: Date | null;\n        byokInterval: string | null;\n      }\n    | null\n    | undefined,\n  now: Date,\n): { live: boolean; periodStart: Date | null; since: Date } {\n  const live = Boolean(billing?.status && LIVE_SUBSCRIPTION_STATUSES.has(billing.status));\n  const periodStart =\n    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now\n      ? billing.currentPeriodStartsAt\n      : null;\n  const since = periodStart\n    ? // A yearly plan's allowance still renews monthly, on the day its period began.\n      billing?.byokInterval === \"year\"\n      ? latestMonthlyAnniversary(periodStart, now)\n      : periodStart\n    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));\n  return { live, periodStart, since };\n}\n\n/**\n * Hours the organization's computers ran between",
+      "reason": "cache share on Usage: the allowance's monthly period, moved here unchanged from sandboxAllowancePlan and exported through the package's existing export of this file"
+    },
+    {
+      "file": "apps/web/src/lib/space-changes.ts",
+      "find": "    [\"routines\", \"history\"],\n  ],",
+      "replace": "    [\"routines\", \"history\"],\n    [\"dozoUsage\", \"cacheSavings\"],\n  ],",
+      "reason": "cache share on Usage: a finished run records its usage, and its runs signal re-reads the share while Usage is open"
+    },
+    {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "import { ModelStep } from \"./onboarding/model-step\";",
-      "replace": "import { ModelStep } from \"./onboarding/dozo-model-step\";",
+      "replace": "import { dozoCreditsOnSale, ModelStep } from \"./onboarding/dozo-model-step\";",
       "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
-      "reason": "fork feature: the onboarding model step is a wrapper that offers local models next to upstream's step and re-exports the same name"
+      "reason": "fork feature: the onboarding model step is a wrapper (short provider list, preselection, a plain rejected-key message, local models) that re-exports the same name, and tells whether credits are on sale"
+    },
+    {
+      "file": "apps/web/src/pages/Onboarding.tsx",
+      "find": "      rpc.models.list(undefined, { signal }).catch(() => []),\n    ])\n      .then(([me, models]) => {\n        if (signal.aborted) return;\n        setBillingEnabled(me.billingEnabled);",
+      "replace": "      rpc.models.list(undefined, { signal }).catch(() => []),\n      dozoCreditsOnSale(signal),\n    ])\n      .then(([me, models, creditsOnSale]) => {\n        if (signal.aborted) return;\n        setBillingEnabled(me.billingEnabled && creditsOnSale);",
+      "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
+      "reason": "onboarding offers credits only while they are on sale; picking them otherwise went back to the same step (the flag only decides that option)"
+    },
+    {
+      "file": "apps/web/src/pages/Onboarding.tsx",
+      "find": "<ModelStep model={model} fieldId={fieldId} />",
+      "replace": "<ModelStep model={model} fieldId={fieldId} onLater={() => goTo(\"bot\")} />",
+      "requires": ["apps/web/src/pages/onboarding/dozo-model-step.tsx"],
+      "reason": "the model step can be left for later: the first bot is created as after a connection, and a send without a model links to connecting one"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "import { Check, Copy } from \"lucide-react\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "replace": "import { Check, Copy } from \"lucide-react\";\nimport { DozoKeyLink } from \"./dozo-key-link\";\nimport { FoundModelPicker } from \"../../components/FoundModelPicker\";",
+      "requires": ["apps/web/src/pages/onboarding/dozo-key-link.tsx"],
+      "reason": "the link under the API key field, placed by the next rule"
+    },
+    {
+      "file": "apps/web/src/pages/onboarding/model-step.tsx",
+      "find": "                  placeholder=\"sk-…\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n              </label>",
+      "replace": "                  placeholder=\"sk-…\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  className=\"mt-2\"\n                />\n                <DozoKeyLink provider={provider} />\n              </label>",
+      "requires": ["apps/web/src/pages/onboarding/dozo-key-link.tsx"],
+      "reason": "onboarding: where to get a key for the chosen provider, from the provider catalog"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./model-providers.js\";\nexport * from \"./model-role-settings.js\";",
+      "replace": "export * from \"./model-providers.js\";\nexport * from \"./dozo-model-providers.js\";\nexport * from \"./model-role-settings.js\";",
+      "requires": ["packages/core/src/dozo-model-providers.ts"],
+      "reason": "onboarding's featured providers and key pages, product data next to upstream's provider catalog"
     },
     {
       "file": "packages/ui-web/src/index.ts",
@@ -809,11 +1171,12 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "export const appContract = {\n  analytics:",
-      "replace": "export * from \"./dozo-admin.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  analytics:",
+      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-usage.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoUsage: dozoUsageContract,\n  analytics:",
       "requires": [
-        "packages/contracts/src/dozo-admin.ts"
+        "packages/contracts/src/dozo-admin.ts",
+        "packages/contracts/src/dozo-usage.ts"
       ],
-      "reason": "hosted admin page: its procedures join the app contract, so the server and the web client share their types"
+      "reason": "hosted admin page and the cache share on Usage: their procedures join the app contract, so the server and the web client share their types"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -822,7 +1185,7 @@
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],
-      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures"
+      "reason": "hosted admin page: the router takes these routes from a wrapper that re-exports the same name and adds the admin procedures and the cache share on Usage"
     },
     {
       "file": "apps/api/src/app.ts",
@@ -836,7 +1199,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n    }),\n    speechSummary:",
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],
@@ -890,11 +1253,11 @@
     {
       "file": "apps/web/src/App.tsx",
       "find": "              />\n              <Route\n                path=\"/admin/access\"",
-      "replace": "              />\n              <Route path=\"/admin\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
+      "replace": "              />\n              <Route path=\"/admin/*\" element={user ? <DozoAdminPage /> : <NotFoundPage />} />\n              <Route\n                path=\"/admin/access\"",
       "requires": [
         "apps/web/src/pages/dozo-admin.tsx"
       ],
-      "reason": "hosted admin page: its address; signed out it answers like an address that does not exist"
+      "reason": "hosted admin page: its address and the sections under it (upstream's own /admin pages still win); signed out it answers like an address that does not exist"
     },
     {
       "file": "packages/contracts/src/billing.ts",
@@ -1847,6 +2210,835 @@
       "find": "return c.redirect(`${integrationPageUrl(row.claim)}claim/?expired`, 303);",
       "replace": "return c.text(\"This link was already used or is invalid.\", 404);",
       "reason": "an expired claim link gets the API's existing answer for a link that no longer works; Dozo has no public claim page to send it to"
+    },
+    {
+      "file": "apps/web/src/lib/user-error.ts",
+      "find": "import {\n  authErrorMessage,\n  CALL_NOT_RINGING_ERROR,",
+      "replace": "import { dozoAuthErrorMessage } from \"./dozo-auth-error\";\nimport {\n  CALL_NOT_RINGING_ERROR,",
+      "requires": [
+        "apps/web/src/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/lib/user-error.ts",
+      "find": "  return authErrorMessage(error, {",
+      "replace": "  return dozoAuthErrorMessage(error, {",
+      "requires": [
+        "apps/web/src/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: an auth code upstream leaves to the server's English words gets copy of its own, and an unknown one the caller's copy; the server's message is never shown"
+    },
+    {
+      "file": "apps/mobile/lib/user-error.ts",
+      "find": "import {\n  authErrorMessage,\n  CALL_NOT_RINGING_ERROR,",
+      "replace": "import { dozoAuthErrorMessage } from \"./dozo-auth-error\";\nimport {\n  CALL_NOT_RINGING_ERROR,",
+      "requires": [
+        "apps/mobile/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/user-error.ts",
+      "find": "  return authErrorMessage(body, {",
+      "replace": "  return dozoAuthErrorMessage(body, {",
+      "requires": [
+        "apps/mobile/lib/dozo-auth-error.ts"
+      ],
+      "reason": "error copy: the mobile app maps the same auth codes as the web app and never shows the server's message"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "        <form\n          onSubmit={onSubmit}\n",
+      "replace": "        <form\n          noValidate\n          onSubmit={onSubmit}\n",
+      "reason": "error copy: the auth forms check their own fields and say so under the field, never in the browser's own bubble"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "  const [pending, setPending] = useState(false);\n  const entering = useRef(false);",
+      "replace": "  const [pending, setPending] = useState(false);\n  // A missing or malformed email or password is named under its own field.\n  const fieldIssue =\n    error === credentialIssueText(\"email\")\n      ? \"email\"\n      : error === credentialIssueText(\"password\")\n        ? \"password\"\n        : null;\n  const entering = useRef(false);",
+      "reason": "error copy: which field, if any, the current error is about"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "                    type=\"email\"\n                    required\n                    className={fieldClass}\n                  />\n",
+      "replace": "                    type=\"email\"\n                    required\n                    aria-invalid={fieldIssue === \"email\" || undefined}\n                    aria-describedby={fieldIssue === \"email\" ? \"email-issue\" : undefined}\n                    className={fieldClass}\n                  />\n                  {fieldIssue === \"email\" ? (\n                    <p id=\"email-issue\" role=\"alert\" className=\"mt-2 text-body-sm text-destructive\">\n                      {error}\n                    </p>\n                  ) : null}\n",
+      "reason": "error copy: an empty or malformed email is said in one line under the email field, tied to it for assistive technology"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "                    maxLength={MAX_PASSWORD_LENGTH}\n                    className={fieldClass}\n                  />\n                  {mode === \"in\" && reset?.passwordReset ? (",
+      "replace": "                    maxLength={MAX_PASSWORD_LENGTH}\n                    aria-invalid={fieldIssue === \"password\" || undefined}\n                    aria-describedby={fieldIssue === \"password\" ? \"password-issue\" : undefined}\n                    className={fieldClass}\n                  />\n                  {fieldIssue === \"password\" ? (\n                    <p id=\"password-issue\" role=\"alert\" className=\"mt-2 text-body-sm text-destructive\">\n                      {error}\n                    </p>\n                  ) : null}\n                  {mode === \"in\" && reset?.passwordReset ? (",
+      "reason": "error copy: an empty password is said in one line under the password field, tied to it for assistive technology"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "              {error ? (\n                <p role=\"alert\" className=\"mt-3 w-full text-body text-destructive\">",
+      "replace": "              {error && !fieldIssue ? (\n                <p role=\"alert\" className=\"mt-3 w-full text-body text-destructive\">",
+      "reason": "error copy: a field's error shows under that field only, not again below the form"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "import { errorText } from \"../lib/user-error\";",
+      "replace": "import { errorText, toastError } from \"../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the admin access page shows no server message as it is, in a toast or on the page"
+    },
+    {
+      "file": "apps/web/src/pages/AdminAccessPage.tsx",
+      "find": "      toast.error(\n        errorText(error, \"grant\" in input ? t`Could not grant access` : t`Could not revoke grant`),\n      ),",
+      "replace": "      toastError(\"grant\" in input ? t`Could not grant access` : t`Could not revoke grant`, error),",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/PluginSubmissionsPanel.tsx",
+      "find": "import { errorText } from \"../lib/user-error\";",
+      "replace": "import { errorText, toastError } from \"../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the plugin review panel shows no server message as it is, in a toast or on the page"
+    },
+    {
+      "file": "apps/web/src/pages/PluginSubmissionsPanel.tsx",
+      "find": "      toast.error(\n        errorText(\n          error,\n          input.decision === \"reject\" ? t`Could not reject plugin` : t`Could not approve plugin`,\n        ),\n      ),",
+      "replace": "      toastError(\n        input.decision === \"reject\" ? t`Could not reject plugin` : t`Could not approve plugin`,\n        error,\n      ),",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/McpServersOverlay.tsx",
+      "find": "import type { ErrorDetails } from \"../lib/user-error\";\nimport { errorCode, errorDetails } from \"../lib/user-error\";",
+      "replace": "import type { ErrorDetails } from \"../lib/user-error\";\nimport { toastError } from \"../lib/dozo-error-text\";\nimport { errorCode, errorDetails } from \"../lib/user-error\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/McpServersOverlay.tsx",
+      "find": "toast.error(t`${updated.name} is not working`);",
+      "replace": "toastError(t`${updated.name} is not working`);",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/space-bots-model.tsx",
+      "find": "import { useCallback, useEffect, useRef, useState } from \"react\";\nimport { useSpaceRpc } from \"../../lib/space-rpc\";",
+      "replace": "import { useCallback, useEffect, useRef, useState } from \"react\";\nimport { toastError } from \"../../lib/dozo-error-text\";\nimport { useSpaceRpc } from \"../../lib/space-rpc\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/space-bots-model.tsx",
+      "find": "toast.error(t`Could not switch ${failedNames}. Try again.`);",
+      "replace": "toastError(t`Could not switch ${failedNames}. Try again.`);",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-chat-snooze.ts",
+      "find": "import { toast } from \"@rakazo/ui-web\";",
+      "replace": "import { toastError } from \"../../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-chat-snooze.ts",
+      "find": "if (failed) toast.error(t`Could not save`);",
+      "replace": "if (failed) toastError(t`Could not save`);",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-read-aloud.ts",
+      "find": "import { toast } from \"@rakazo/ui-web\";",
+      "replace": "import { toastError } from \"../../lib/dozo-error-text\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-read-aloud.ts",
+      "find": "if (error) toast.error(error, { id: READ_ALOUD_TOAST });",
+      "replace": "if (error) toastError(error, undefined, { id: READ_ALOUD_TOAST });",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: every error toast goes through the one helper; the text is the speaker's, which the two rules in tts.ts keep free of server messages"
+    },
+    {
+      "file": "apps/web/src/lib/tts.ts",
+      "find": "import { errorText, voiceAccountErrorText } from \"./user-error.js\";",
+      "replace": "import { errorText } from \"./dozo-error-text\";\nimport { voiceAccountErrorText } from \"./user-error.js\";",
+      "requires": [
+        "apps/web/src/lib/dozo-error-text.ts"
+      ],
+      "reason": "error copy: a voice failure the server answered is told in the app's copy, not the server's words"
+    },
+    {
+      "file": "apps/web/src/lib/tts.ts",
+      "find": "throw new Error(voiceAccountErrorText(body) ?? body.error ?? \"\");",
+      "replace": "throw new Error(voiceAccountErrorText(body) ?? \"\");",
+      "reason": "error copy: the voice endpoint's own error text is not shown; an empty message becomes the generic copy"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "import { useBilling } from \"../../components/SubscriptionGate\";\n\nexport function ComposerError({",
+      "replace": "import { useBilling } from \"../../components/SubscriptionGate\";\nimport { DozoRunErrorDetails } from \"./dozo-run-error-details\";\n\nexport function ComposerError({",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-run-error-details.tsx"
+      ],
+      "reason": "error copy: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "          <details key={runError} className=\"mt-1\">\n            <summary className=\"w-fit cursor-pointer\">{t`Details`}</summary>\n            <pre className=\"mt-2 whitespace-pre-wrap break-words text-label\">\n              {normalizedRunError?.details}\n            </pre>\n          </details>",
+      "replace": "          <DozoRunErrorDetails key={runError} details={normalizedRunError?.details} />",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-run-error-details.tsx"
+      ],
+      "reason": "error copy: a run error's raw text (a provider's or server's own words) is shown to the deployment's admins only; everyone else has the summary, which says what to do"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "import(\"./pages/NotFound\").then((module) => module.NotFoundPage),",
+      "replace": "import(\"./pages/dozo-not-found\").then((module) => module.NotFoundPage),",
+      "requires": [
+        "apps/web/src/pages/dozo-not-found.tsx"
+      ],
+      "reason": "404: upstream's page with the Dozo dragon faint behind it, loaded on demand like the page itself"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "\"Plural-Forms: \\n\"\n",
+      "replace": "\"Plural-Forms: nplurals=2; plural=(n != 1);\\n\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect email or password\"\nmsgstr \"E-posta ya da parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Incorrect password\"\nmsgstr \"Parola yanlış\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Password must be at least {min} characters\"\nmsgstr \"Parola en az {min} karakter olmalı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This password appeared in a data breach. Choose another.\"\nmsgstr \"Bu parola bir veri sızıntısında görüldü. Başka bir parola seç.\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"An account with this email already exists\"\nmsgstr \"Bu e-postayla bir hesap zaten var\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This link is invalid or expired\"\nmsgstr \"Bu bağlantı geçersiz ya da süresi dolmuş\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"This account is already linked\"\nmsgstr \"Bu hesap zaten bağlı\"\n\n#: apps/web/src/lib/dozo-auth-error.ts\n#: apps/mobile/lib/dozo-auth-error.ts\nmsgid \"Keep at least one way to sign in\"\nmsgstr \"Oturum açmak için en az bir yol kalmalı\"\n",
+      "reason": "fork strings: the Turkish copy of the fork's own UI strings, which upstream's catalog cannot hold; the build compiles them with the catalog. Add new ones to this block (the header line is the anchor, so it is rewritten too)"
+    },
+    {
+      "file": "packages/contracts/src/index.ts",
+      "find": "export * from \"./billing.js\";\nexport * from \"./board.js\";\n",
+      "replace": "export * from \"./billing.js\";\nexport * from \"./dozo-plan-limits.js\";\nexport * from \"./board.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the one table of what a refused limit says and offers, shared by the server's codes, web, the desktop apps and mobile"
+    },
+    {
+      "file": "packages/db/src/spaces.ts",
+      "find": "super(\"BAD_REQUEST\", \"Space limit reached\");",
+      "replace": "super(\"BAD_REQUEST\", \"Space limit reached\", \"space_limit_reached\");",
+      "reason": "plan limits: the Space count refusal carries a stable code, so clients show their own sentence (a test holds it equal to PLAN_LIMIT_CODES.spaceLimit)"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "super(\"BAD_REQUEST\", `User computer limit (${limit}) reached`);",
+      "replace": "super(\"BAD_REQUEST\", `User computer limit (${limit}) reached`, \"computer_limit_reached\");",
+      "reason": "plan limits: the per-user computer refusal carries a stable code, so clients show their own sentence (a test holds it equal to PLAN_LIMIT_CODES.computerLimit)"
+    },
+    {
+      "file": "apps/web/src/lib/user-error.ts",
+      "find": "import { t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n} from \"@rakazo/contracts\";\n",
+      "replace": "import { i18n } from \"@lingui/core\";\nimport { t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n  planLimitText,\n} from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/lib/user-error.ts",
+      "find": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  return (\n",
+      "replace": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  const limit = planLimitText(error, i18n.locale);\n  if (limit) return limit;\n  return (\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: every failure the web app and the desktop apps show as text says a refused limit in the shared table's sentence, in English or Turkish"
+    },
+    {
+      "file": "apps/mobile/lib/user-error.ts",
+      "find": "import { ph, t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n} from \"@rakazo/contracts\";\n",
+      "replace": "import { i18n } from \"@lingui/core\";\nimport { ph, t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n  planLimitText,\n} from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/user-error.ts",
+      "find": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  return (\n",
+      "replace": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  const limit = planLimitText(error, i18n.locale);\n  if (limit) return limit;\n  return (\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: every failure the mobile app shows as text says a refused limit in the shared table's sentence, in English or Turkish"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "import { computerHoursOut } from \"@rakazo/contracts\";\n",
+      "replace": "import { computerHoursOut, planLimitNotice, planLimitOf } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "  const hoursOut = recovery === \"plan\" && billing ? computerHoursOut(billing) : null;\n",
+      "replace": "  const limit = sendError ? planLimitOf(sendError) : runError ? planLimitOf(runError) : null;\n  const limitNotice = limit ? planLimitNotice(limit, billing, i18n.locale) : null;\n  const hoursOut =\n    recovery === \"plan\" && billing && !limitNotice ? computerHoursOut(billing) : null;\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: a failed send or run that hit a limit reads its sentence and action from the shared table (Free is told its plan has no computer, Premium is offered Premium Plus, a full shared space offers Upgrade to the owner only, a busy host just says so); trials keep upstream's copy"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "(sendError ?? hoursOutSummary ?? normalizedRunError?.summary ?? null)",
+      "replace": "(limitNotice?.text ?? sendError ?? hoursOutSummary ?? normalizedRunError?.summary ?? null)",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the shared table's sentence for a send or run that hit a limit, which tells a member who cannot manage billing to ask the owner"
+    },
+    {
+      "file": "apps/web/src/pages/shell/composer-error.tsx",
+      "find": "          }\n        : hoursOut && billing?.canManage\n          ? {\n",
+      "replace": "          }\n        : limitNotice\n          ? limitNotice.action?.kind === \"upgrade\"\n            ? { label: limitNotice.action.label, onClick: onOpenBilling }\n            : null\n          : hoursOut && billing?.canManage\n          ? {\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the shared table's upgrade, shown only to a member who manages billing; the composer has no retry, and the busy sentence already says to try again"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "import type { BillingStatus } from \"@rakazo/contracts\";\nimport { computerHoursOut } from \"@rakazo/contracts\";\n",
+      "replace": "import { i18n } from \"@lingui/core\";\nimport type { BillingStatus } from \"@rakazo/contracts\";\nimport { computerHoursOut, planLimitNotice, planLimitOf } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "import type { MobileSnapshot } from \"../../lib/mobile-types\";\nimport { openModelSettings } from \"../../lib/model-settings\";\n",
+      "replace": "import type { MobileSnapshot } from \"../../lib/mobile-types\";\nimport { openPlanUpgrade } from \"../../lib/dozo-plan-limit\";\nimport { openModelSettings } from \"../../lib/model-settings\";\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "  const hoursOut = needsPlan && billing ? computerHoursOutCopy(computerHoursOut(billing)) : null;\n",
+      "replace": "  const limit = runError ? planLimitOf(runError) : null;\n  const limitNotice = limit ? planLimitNotice(limit, billing, i18n.locale) : null;\n  const hoursOut = limitNotice\n    ? {\n        summary: limitNotice.text,\n        action: limitNotice.action?.kind === \"upgrade\" ? limitNotice.action.label : null,\n      }\n    : needsPlan && billing\n      ? computerHoursOutCopy(computerHoursOut(billing))\n      : null;\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: a failed run that hit a limit reads its sentence and action from the shared table, as on the web; trials keep upstream's copy"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "          if (needsPlan) router.push(\"/billing\");\n",
+      "replace": "          if (needsPlan) openPlanUpgrade(limitNotice?.action, () => router.push(\"/billing\"));\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: Free cannot start a paid plan in the app, so its Upgrade opens the web app's Billing in the system browser; a paid plan's upgrade stays in the app"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "import { Trans, useLingui } from \"@lingui/react/macro\";\nimport type { Bot, ComputerReleaseReason, Me, Run, ThreadSnapshot } from \"@rakazo/contracts\";\nimport { isComputerAllowanceUsed } from \"@rakazo/contracts\";\n",
+      "replace": "import { i18n } from \"@lingui/core\";\nimport { Trans, useLingui } from \"@lingui/react/macro\";\nimport type { Bot, ComputerReleaseReason, Me, Run, ThreadSnapshot } from \"@rakazo/contracts\";\nimport { isComputerAllowanceUsed, planLimitNotice } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the imports of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "import { computersAreUnavailable } from \"../../components/ComputersUnavailableHint\";\nimport { runsOnUserMachine } from \"../../lib/computer-sandbox\";\n",
+      "replace": "import { computersAreUnavailable } from \"../../components/ComputersUnavailableHint\";\nimport { useBilling } from \"../../components/SubscriptionGate\";\nimport { runsOnUserMachine } from \"../../lib/computer-sandbox\";\n",
+      "reason": "plan limits: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "  const allowanceUsed = computer?.state !== \"running\" && isComputerAllowanceUsed(computerFailure);\n  const computerScreenError = computerFailure ? (\n",
+      "replace": "  const allowanceUsed = computer?.state !== \"running\" && isComputerAllowanceUsed(computerFailure);\n  const billing = useBilling().status;\n  const limitNotice = allowanceUsed\n    ? planLimitNotice(\"computer_hours\", billing, i18n.locale)\n    : null;\n  const computerScreenError = computerFailure ? (\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: a computer refused for hours reads its sentence and action from the shared table"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-computer-controls.tsx",
+      "find": "      <p className=\"text-destructive\">{computerFailure}</p>\n      {allowanceUsed ? (\n        <Button variant=\"outline\" size=\"sm\" onClick={onUpgrade}>\n          <Trans>Upgrade</Trans>\n        </Button>\n      ) : (\n",
+      "replace": "      <p className=\"text-destructive\">{limitNotice?.text ?? computerFailure}</p>\n      {allowanceUsed ? (\n        (!limitNotice || limitNotice.action) && (\n          <Button variant=\"outline\" size=\"sm\" onClick={onUpgrade}>\n            {limitNotice?.action?.label ?? <Trans>Upgrade</Trans>}\n          </Button>\n        )\n      ) : (\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: Free is told its plan has no computer, Premium is offered Premium Plus, the top plan and a member who cannot manage billing get no upgrade; the busy host keeps the retry button"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "import { isComputerAllowanceUsed } from \"@rakazo/contracts\";\n",
+      "replace": "import { isComputerAllowanceUsed, PLAN_LIMIT_CODES } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "  const allowanceUsed = computer?.state !== \"running\" && isComputerAllowanceUsed(error);\n  const canRetry = !allowanceUsed && !bootPending && (bootFailed || computer?.state === \"error\");\n",
+      "replace": "  const allowanceUsed = computer?.state !== \"running\" && isComputerAllowanceUsed(error);\n  const limitNotice = usePlanLimitNotice(error);\n  const canRetry = !allowanceUsed && !bootPending && (bootFailed || computer?.state === \"error\");\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: a refused computer start reads its sentence and action from the shared table"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "      {canRetry && computer?.state !== \"running\" ? (\n",
+      "replace": "      {canRetry &&\n      computer?.state !== \"running\" &&\n      limitNotice?.code !== PLAN_LIMIT_CODES.computersBusy ? (\n",
+      "requires": [
+        "packages/contracts/src/dozo-plan-limits.ts"
+      ],
+      "reason": "plan limits: a busy host shows its one short sentence and Try again, not the generic start failure around it"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "          {error ?? t`Something went wrong while it was starting. Try again in a moment.`}\n",
+      "replace": "          {limitNotice?.text ??\n            error ??\n            t`Something went wrong while it was starting. Try again in a moment.`}\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the shared table's sentence (Free is told its plan has no computer, a member to ask the owner)"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "      {allowanceUsed ? (\n        <NativeActionButton\n          label={t`Upgrade`}\n          prominence=\"primary\"\n          size=\"default\"\n          style={{ marginBottom: 16 }}\n          onPress={() => router.push(\"/billing\")}\n        />\n      ) : null}\n",
+      "replace": "      {allowanceUsed && (!limitNotice || limitNotice.action) ? (\n        <NativeActionButton\n          label={limitNotice?.action?.label ?? t`Upgrade`}\n          prominence=\"primary\"\n          size=\"default\"\n          style={{ marginBottom: 16 }}\n          onPress={() => openPlanUpgrade(limitNotice?.action, () => router.push(\"/billing\"))}\n        />\n      ) : null}\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the shared table's upgrade, hidden on the top plan and from a member who cannot manage billing; from Free it opens the web app's Billing, which the app's own plan choice cannot start"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "import { useAppForeground } from \"../lib/app-foreground\";\nimport {\n",
+      "replace": "import { useAppForeground } from \"../lib/app-foreground\";\nimport { openPlanUpgrade, usePlanLimitNotice } from \"../lib/dozo-plan-limit\";\nimport {\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/lib/unsent-sends.ts",
+      "find": "import { integrationsCacheScope } from \"./integrations-cache\";\nimport { askToAddModel } from \"./model-settings\";\n",
+      "replace": "import { integrationsCacheScope } from \"./integrations-cache\";\nimport { showPlanLimitAlert } from \"./dozo-plan-limit\";\nimport { askToAddModel } from \"./model-settings\";\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/unsent-sends.ts",
+      "find": "    } else if (!attempt.imageConfirmation) {\n      Alert.alert(t`Failed to send message`, attempt.error);\n",
+      "replace": "    } else if (\n      !attempt.imageConfirmation &&\n      !showPlanLimitAlert(t`Failed to send message`, attempt.error)\n    ) {\n      Alert.alert(t`Failed to send message`, attempt.error);\n",
+      "requires": [
+        "apps/mobile/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: a file refused for a full shared space says so with Upgrade for the owner, and tells a member who cannot manage billing to ask the owner"
+    },
+    {
+      "file": "apps/web/src/pages/Paywall.tsx",
+      "find": "import { formatBillingPrice } from \"../lib/billing\";\nimport type { RpcClient } from \"../lib/rpc\";\n",
+      "replace": "import { formatBillingPrice } from \"../lib/billing\";\nimport { billingErrorText } from \"../lib/dozo-plan-limit\";\nimport type { RpcClient } from \"../lib/rpc\";\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/Paywall.tsx",
+      "find": "    } catch {\n      setError(t`Could not open billing`);\n",
+      "replace": "    } catch (error) {\n      setError(billingErrorText(error, t`Could not open billing`));\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: a checkout of the free plan says why it was refused instead of a generic failure"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { desktopBridge } from \"../lib/desktop\";\nimport type { RpcClient } from \"../lib/rpc\";\n",
+      "replace": "import { desktopBridge } from \"../lib/desktop\";\nimport { billingErrorText } from \"../lib/dozo-plan-limit\";\nimport type { RpcClient } from \"../lib/rpc\";\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "    } catch {\n      setError(t`Could not open billing`);\n",
+      "replace": "    } catch (error) {\n      setError(billingErrorText(error, t`Could not open billing`));\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-limit.ts"
+      ],
+      "reason": "plan limits: a checkout of the free plan says why it was refused instead of a generic failure"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "  computerHoursResetAt: z.string().nullable().optional(),\n  /** Present once",
+      "replace": "  computerHoursResetAt: z.string().nullable().optional(),\n  /** When the plan in force renews or ends; absent when it has no end. */\n  planEnd: z\n    .object({\n      at: z.string(),\n      renews: z.boolean(),\n      fallsTo: z.object({ from: z.string(), to: z.string() }).optional(),\n    })\n    .optional(),\n  /** Present once",
+      "reason": "plan end: the billing status says when the plan in force renews or ends, a granted plan included"
+    },
+    {
+      "file": "packages/contracts/src/billing.ts",
+      "find": "export type BillingStatus = z.infer<typeof BillingStatusSchema>;\n\n/**",
+      "replace": "export type BillingStatus = z.infer<typeof BillingStatusSchema>;\n\nexport * from \"./dozo-plan-end.js\";\n\n/**",
+      "requires": [
+        "packages/contracts/src/dozo-plan-end.ts"
+      ],
+      "reason": "plan end: the days left and the warning, one helper for web and mobile"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "from \"./experiments.js\";\nimport { createPartnerSales } from \"./partner-sales.js\";\n",
+      "replace": "from \"./experiments.js\";\nimport { statusPlanEnd } from \"./dozo-plan-end.js\";\nimport { createPartnerSales } from \"./partner-sales.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plan-end.ts"
+      ],
+      "reason": "plan end: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "          hasCustomer: Boolean(account),\n          computerHoursLeft:",
+      "replace": "          hasCustomer: Boolean(account),\n          planEnd: statusPlanEnd(account, planGrant),\n          computerHoursLeft:",
+      "requires": [
+        "apps/api/src/dozo-plan-end.ts"
+      ],
+      "reason": "plan end: the status carries the end of the plan in force, a grant's included (planGrant comes from the plans rule above)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { useSignOut } from \"../lib/sign-out\";\nimport { AccountMenu }",
+      "replace": "import { useSignOut } from \"../lib/sign-out\";\nimport { DozoPlanEnd } from \"./dozo-plan-end\";\nimport { AccountMenu }",
+      "requires": [
+        "apps/web/src/components/dozo-plan-end.tsx"
+      ],
+      "reason": "plan end: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "        <DozoSharedSpace status={status} />\n        {status.canManage",
+      "replace": "        <DozoSharedSpace status={status} />\n        <DozoPlanEnd status={status} />\n        {status.canManage",
+      "requires": [
+        "apps/web/src/components/dozo-plan-end.tsx"
+      ],
+      "reason": "plan end: Billing shows when the plan renews or ends below the plan's name (anchored on the shared space line, which the plans rule above adds)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "          {ownKeyPlan.date ? (\n",
+      "replace": "          {ownKeyPlan.date && (!status.planEnd || status.planEnd.fallsTo) ? (\n",
+      "reason": "plan end: the subscription card does not repeat the date the plan end line shows; it keeps its own when a granted plan above it ends first"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "import { dateLocaleForUi } from \"../../lib/i18n\";\nimport { rememberReferral }",
+      "replace": "import { dateLocaleForUi } from \"../../lib/i18n\";\nimport { DozoPlanEndRow } from \"../../components/dozo-plan-end-row\";\nimport { rememberReferral }",
+      "requires": [
+        "apps/mobile/components/dozo-plan-end-row.tsx"
+      ],
+      "reason": "plan end: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "        {endsAt ? (\n          <SettingsRow\n            title={status.cancelAtPeriodEnd ? t`Ends` : t`Free until`}\n",
+      "replace": "        {status.planEnd ? <DozoPlanEndRow end={status.planEnd} /> : null}\n        {status.planEnd && !status.planEnd.fallsTo ? null : endsAt ? (\n          <SettingsRow\n            title={status.cancelAtPeriodEnd ? t`Ends` : t`Free until`}\n",
+      "requires": [
+        "apps/mobile/components/dozo-plan-end-row.tsx"
+      ],
+      "reason": "plan end: mobile Billing shows when the plan in force renews or ends, a granted plan included, in place of upstream's end rows, which stay for a subscription below a granted plan"
+    },
+    {
+      "file": "packages/db/prisma/schema.prisma",
+      "find": "model Lease {\n  key       String   @id\n  fence     BigInt\n  expiresAt DateTime @db.Timestamptz(3)\n\n  @@map(\"leases\")\n}\n\n/// One stretch a computer ran",
+      "replace": "model Lease {\n  key       String   @id\n  fence     BigInt\n  expiresAt DateTime @db.Timestamptz(3)\n\n  @@map(\"leases\")\n}\n\n/// The plugin catalog last read from the public registries, served at once after a restart and\n/// refreshed in the background. `refreshedAt` is the last time every registry answered;\n/// `failures` counts incomplete refreshes in a row and `retryAt` is when any process may try again.\nmodel DozoCatalogSnapshot {\n  key         String    @id\n  data        Json\n  refreshedAt DateTime\n  failures    Int       @default(0)\n  retryAt     DateTime?\n\n  @@map(\"dozo_catalog_snapshots\")\n}\n\n/// A catalog logo or site icon, drawn small once and served from our own domain under its hash.\n/// `source` is the logo's address or `site:<origin>`; a null hash records a source with no image.\nmodel DozoCatalogImage {\n  source    String   @id\n  hash      String?\n  body      Bytes?\n  checkedAt DateTime\n\n  @@index([hash])\n  @@map(\"dozo_catalog_images\")\n}\n\n/// One stretch a computer ran",
+      "requires": [
+        "packages/adapters/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the stored catalog and its logos, so the Apps page never waits on the public registries after a restart"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./plugin-marketplace.js\";\nexport * from \"./product-analytics.js\";\n",
+      "replace": "export * from \"./plugin-marketplace.js\";\nexport * from \"./dozo-plugin-catalog.js\";\nexport * from \"./product-analytics.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the package exports the stored catalog and the logo store beside the upstream marketplace"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "  applyMcpSourcePreset,\n  createPluginMarketplace,\n",
+      "replace": "  applyMcpSourcePreset,\n",
+      "reason": "plugin catalog: the routes no longer build the per-process marketplace themselves"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "import { requireAdmin } from \"../admins.js\";\nimport { searchIntegrationCatalog } from \"../integration-catalog.js\";\n",
+      "replace": "import { requireAdmin } from \"../admins.js\";\nimport { dozoPluginMarketplace } from \"../dozo-plugin-catalog.js\";\nimport { searchIntegrationCatalog } from \"../integration-catalog.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the routes read the stored catalog"
+    },
+    {
+      "file": "apps/api/src/routes/capabilities.ts",
+      "find": "  const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);\n",
+      "replace": "  const pluginMarketplace = dozoPluginMarketplace(deps);\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: browse answers from the copy kept in Postgres and warmed at startup, never from a fetch the visitor waits on, with logos from our own domain"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { cspReportRoutes } from \"./csp-report.js\";\nimport { configuredEmailProvider } from \"./email.js\";\n",
+      "replace": "import { cspReportRoutes } from \"./csp-report.js\";\nimport { mountDozoCatalogImages } from \"./dozo-plugin-catalog.js\";\nimport { configuredEmailProvider } from \"./email.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: the API serves the stored logos"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  mountScriptAssets(app);\n  mountSharedPages(app, prisma, requestClientIp);\n",
+      "replace": "  mountScriptAssets(app);\n  mountDozoCatalogImages(app, prisma);\n  mountSharedPages(app, prisma, requestClientIp);\n",
+      "requires": [
+        "apps/api/src/dozo-plugin-catalog.ts"
+      ],
+      "reason": "plugin catalog: logos and site icons are served by content hash from our own domain with a year-long immutable cache"
+    },
+    {
+      "file": "apps/api/src/routes/connections.ts",
+      "find": "              return items;\n            } catch {\n              return [];\n            }\n",
+      "replace": "              return items;\n            } catch (error) {\n              // The page still lists the other providers' apps; the failure is logged, not hidden.\n              if (!context.signal?.aborted)\n                getLogger().error(`${provider.describe().id} connection catalog failed`, error);\n              return [];\n            }\n",
+      "reason": "connections catalog: a provider whose catalog fails is still left out, but the failure is logged instead of swallowed"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-overlays.tsx",
+      "find": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport type { ShellOverlay }",
+      "replace": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport { PluginsOverlay, usePreloadPluginsOverlay } from \"../dozo-plugins-overlay\";\nimport type { ShellOverlay }",
+      "requires": [
+        "apps/web/src/pages/dozo-plugins-overlay.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): the integrations overlay comes from a wrapper that draws a placeholder dialog on the click and re-exports the same name"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-overlays.tsx",
+      "find": "const PluginsOverlay = lazyOverlay(() =>\n  import(\"../PluginsOverlay\").then((module) => module.PluginsOverlay),\n);\nconst SkillsDialog",
+      "replace": "const SkillsDialog",
+      "reason": "fork performance (Apps opens at once): upstream's own lazy integrations overlay gives way to the wrapper's"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-overlays.tsx",
+      "find": "}) {\n  const openTemplates = () => setOverlay({ kind: \"templates\" });",
+      "replace": "}) {\n  usePreloadPluginsOverlay();\n  const openTemplates = () => setOverlay({ kind: \"templates\" });",
+      "requires": [
+        "apps/web/src/pages/dozo-plugins-overlay.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): the overlay's code is fetched once the shell has settled, so the click draws it at once"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "  Input,\n  Spinner,\n} from \"@rakazo/ui-web\";",
+      "replace": "  Input,\n} from \"@rakazo/ui-web\";",
+      "reason": "fork performance (Apps opens at once): the integrations list loads behind placeholder rows, not a spinner"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "import { DomainSearch, useDomainSearch } from \"./plugins/domain-search\";\nimport { GithubImport }",
+      "replace": "import { DomainSearch, useDomainSearch } from \"./plugins/domain-search\";\nimport { IntegrationRowsSkeleton } from \"./plugins/dozo-integrations-skeleton\";\nimport { GithubImport }",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows for the integrations list"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "          <div className=\"grid flex-1 place-items-center\" aria-busy=\"true\">\n            <Spinner\n              className=\"size-5 text-muted-foreground\"\n              aria-label={t`Loading integrations…`}\n            />\n          </div>",
+      "replace": "          <div className=\"flex-1 overflow-hidden px-8 py-6\">\n            <IntegrationRowsSkeleton label={t`Loading integrations…`} rows={10} />\n          </div>",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows shaped like the list while it loads"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "          className=\"rk-scroll flex-1 overflow-y-auto px-8 py-6\"\n",
+      "replace": "          className=\"rk-scroll flex-1 overflow-y-auto px-8 py-6 [&_section>.grid>*]:[contain-intrinsic-size:auto_3.5rem] [&_section>.grid>*]:[content-visibility:auto]\"\n",
+      "reason": "fork performance (Apps opens at once): rows of the browse sections below the fold are laid out and painted only when scrolled near"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "import { Button, SectionHeading, Spinner } from \"@rakazo/ui-web\";",
+      "replace": "import { Button, SectionHeading } from \"@rakazo/ui-web\";",
+      "reason": "fork performance (Apps opens at once): the plugin sections load behind placeholder rows, not a spinner"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "} from \"../../components/integrations/plugin-marketplace\";\nimport type { TileContext } from \"./parts\";",
+      "replace": "} from \"../../components/integrations/plugin-marketplace\";\nimport { IntegrationRowsSkeleton } from \"./dozo-integrations-skeleton\";\nimport type { TileContext } from \"./parts\";",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows for the plugin sections"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "        <div className=\"grid place-items-center py-8\">\n          <Spinner className=\"size-5 text-muted-foreground\" aria-label={t`Loading plugins…`} />\n        </div>",
+      "replace": "        <div className=\"mt-8\">\n          <IntegrationRowsSkeleton label={t`Loading plugins…`} rows={6} />\n        </div>",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows where the plugin sections arrive"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
+      "find": "import { errorText } from \"../../lib/user-error\";\n\nconst NO_CATALOG",
+      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { loadIntegrations as loadDozoIntegrations } from \"./dozo-load-integrations\";\n\nconst NO_CATALOG",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-load-integrations.ts"
+      ],
+      "reason": "fork performance (Apps opens at once): the integrations reads come from a loader that sends them all at once"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
+      "find": "import { optionalCatalogFeedProbe } from \"../../lib/optional-catalog-feed\";\nimport { useSpaceQueries }",
+      "replace": "import { useSpaceQueries }",
+      "reason": "fork performance (Apps opens at once): the catalog feed probe moved into the fork's loader"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
+      "find": "  async function loadIntegrations() {\n    // The catalog call reconciles connection rows, so list them after it settles.\n    const catalog = rpc.connections.catalog({});\n    const [items, installs, rows, catalogFeed] = await Promise.all([\n      catalog,\n      rpc.capabilities.list(),\n      catalog.catch(() => undefined).then(() => rpc.connections.list()),\n      optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: \"\" })),\n    ]);\n    return {\n      catalog: items,\n      connections: rows,\n      sources: installs.filter(\n        (install) => install.kind === \"mcp\" || install.kind === \"api\" || install.kind === \"graphql\",\n      ),\n      plugins: installs.filter((install) => install.kind === \"plugin\"),\n      catalogFeedEnabled: catalogFeed.enabled,\n    };\n  }\n",
+      "replace": "  function loadIntegrations(): ReturnType<typeof loadDozoIntegrations> {\n    return loadDozoIntegrations((connections) => {\n      queryClient.setQueryData(integrationsOptions.queryKey, (current) =>\n        current ? { ...current, connections } : current,\n      );\n    });\n  }\n",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-load-integrations.ts"
+      ],
+      "reason": "fork performance (Apps opens at once): connection rows are read beside the catalog instead of after it; a re-read after the catalog's reconciliation updates them in place"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "import type { Organization } from \"../lib/organizations\";\nimport { useSidebarUpdate }",
+      "replace": "import type { Organization } from \"../lib/organizations\";\nimport { warmPluginsOverlay } from \"../pages/dozo-plugins-overlay-chunk\";\nimport { useSidebarUpdate }",
+      "requires": [
+        "apps/web/src/pages/dozo-plugins-overlay-chunk.ts"
+      ],
+      "reason": "fork performance (Apps opens at once): pointing at or focusing Connect apps fetches the overlay's code before the click"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "font-normal\"\n                onClick={onIntegrations}",
+      "replace": "font-normal\"\n                onPointerEnter={warmPluginsOverlay}\n                onFocus={warmPluginsOverlay}\n                onClick={onIntegrations}",
+      "reason": "fork performance (Apps opens at once): the account menu's Connect apps item fetches the overlay's code on pointer or focus"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "ref={pillRef}\n          onClick={onIntegrations}",
+      "replace": "ref={pillRef}\n          onPointerEnter={warmPluginsOverlay}\n          onFocus={warmPluginsOverlay}\n          onClick={onIntegrations}",
+      "reason": "fork performance (Apps opens at once): the sidebar's Connect apps pill fetches the overlay's code on pointer or focus"
+    },
+    {
+      "file": "apps/web/index.html",
+      "find": "    <script src=\"/theme.js\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n",
+      "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
+      "requires": [
+        "apps/web/public/dozo-boot.js",
+        "apps/web/src/lib/dozo-boot.ts"
+      ],
+      "reason": "cold start: until the app paints, the page shows the theme's background and, on a chat route, the sidebar, instead of an empty screen; apps/web/src/lib/dozo-boot.ts removes it in the frame the app draws"
+    },
+    {
+      "file": "apps/web/src/main.tsx",
+      "find": "import \"./monitoring-bootstrap\";\nimport { rememberSignupAttribution }",
+      "replace": "import \"./monitoring-bootstrap\";\nimport \"./lib/dozo-boot\";\nimport { rememberSignupAttribution }",
+      "requires": [
+        "apps/web/src/lib/dozo-boot.ts"
+      ],
+      "reason": "cold start: the session and capability reads start with the bootstrap instead of two waves later, the boot shell goes when the app paints, and common screens load when idle"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-mentions.ts",
+      "find": "import type { createSpaceRpc } from \"../../lib/rpc\";\n\nfunction routineListData",
+      "replace": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport { loadComposerConnections } from \"./dozo-composer-connections\";\n\nfunction routineListData",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-composer-connections.ts"
+      ],
+      "reason": "cold start: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-mentions.ts",
+      "find": "    // The catalog call reconciles connection rows, so list them after it.\n    queryFn: async () => {\n      const catalog = await rpc.connections.catalog({}).catch(() => null);\n      const connections = await rpc.connections.list().catch(() => null);\n      return { catalog, connections };\n    },\n",
+      "replace": "    queryFn: () => loadComposerConnections(rpc, queryClient, queries),\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-composer-connections.ts"
+      ],
+      "reason": "cold start: the shell no longer waits on the apps catalog (and a serial list after it) unless the account has connections; Apps loads the catalog when it opens"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "import { errorText } from \"../../lib/user-error\";\nimport { useModelConnectionForm }",
+      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { readChatCatalog } from \"./dozo-model-catalog\";\nimport { useModelConnectionForm }",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    queryFn: () => rpc.models.list(),\n",
+      "replace": "    queryFn: () => readChatCatalog(queryClient, queries, rpc),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the Models screen reads the model catalog once and derives the chat list from it, instead of one full catalog per list"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "import { spaceQueries } from \"../lib/query\";\nimport { useSpaceRpc }",
+      "replace": "import { spaceQueries } from \"../lib/query\";\nimport { readRoleCatalog } from \"./model-settings/dozo-model-catalog\";\nimport { useSpaceRpc }",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "            queryFn: () => rpc.models.forRole(catalogInput, { context: { spaceId } }),\n",
+      "replace": "            queryFn: () => readRoleCatalog(queryClient, userId, spaceId, rpc, role),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: each role list is filtered from the catalog read the screen just made, instead of its own full catalog"
     }
   ],
   "assets": {

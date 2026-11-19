@@ -295,3 +295,20 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
 - Clear space: 1/4 of the mark's height (11 units in the lockup viewBox) on every side; the SVG viewBoxes
   are tight, so the margin is the placer's job.
 - Later: the mockups show a small red seal dot beside the wordmark; the red band replaces it, so the dot is dropped.
+
+## E-mail shell
+
+- Every account and product mail (`packages/auth/src/*email*.tsx`) is drawn by one fork file,
+  `packages/auth/src/dozo-email-shell.tsx`, which anchored rules in `email.tsx` point at: the Dozo
+  palette as solid hex (light by default, dark where the client honours `prefers-color-scheme`), the
+  theme's font stack, the header (mark and lowercase wordmark) and the footer (unsubscribe when the
+  mail has one, privacy and terms on the landing site in English or Turkish, operator and contact).
+- The mark is `icon-192.png` from the sending server's own `WEB_ORIGIN`, and only when that is a
+  public https address; otherwise the wordmark stands alone. No other remote image, no tracking pixel.
+  The welcome mail keeps its hero image instead of the header.
+- The sender's name is not in the code: it is the name part of `EMAIL_FROM` (for example
+  `Dozo <no-reply@your-domain>`), set where the server runs.
+- Upstream's `email.test.ts` asserts that code mails carry no link; on the branded tree they carry
+  the footer's links. Its tests run on the pristine tree only, like the rest.
+- Turkish mails address the reader as "siz"; the referral and file deletion mails are aligned by
+  rules on `locales/tr.ts`. Mails in other languages show the footer in English.

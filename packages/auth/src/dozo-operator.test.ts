@@ -22,11 +22,18 @@ vi.mock("better-auth/adapters/prisma", async () => {
       memoryAdapter(prisma.authData),
   };
 });
-vi.mock("@rakazo/db", () => ({
-  bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
-  leaveInvitedSpaces: vi.fn(async () => ({ ownedOrganizationIds: [] })),
-  recordSecurityEvent: vi.fn(async () => undefined),
-}));
+vi.mock("@rakazo/db", async () => {
+  const { signupPolicyFromEnv } = await import("@rakazo/core");
+  return {
+    // No admin site setting here: the sign-up policy is the environment's, as before.
+    siteSignupPolicy: vi.fn(async (_db: unknown, env: Parameters<typeof signupPolicyFromEnv>[0]) =>
+      signupPolicyFromEnv(env),
+    ),
+    bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
+    leaveInvitedSpaces: vi.fn(async () => ({ ownedOrganizationIds: [] })),
+    recordSecurityEvent: vi.fn(async () => undefined),
+  };
+});
 
 /** The fork's table behind the two SQL entry points the module uses. */
 function banTable() {
