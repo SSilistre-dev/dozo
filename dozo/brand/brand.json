@@ -656,6 +656,26 @@
       "reason": "eyes placed for the Dozo pill"
     },
     {
+      "file": "apps/web/src/preview-middleware.ts",
+      "find": "import { missingAssetMiddleware } from \"./missing-asset.js\";",
+      "replace": "import { missingAssetMiddleware } from \"./dozo-missing-asset.js\";",
+      "requires": ["apps/web/src/dozo-missing-asset.ts"],
+      "reason": "hashed build assets are cached for a year as immutable instead of revalidated on every load; index.html and the service worker stay no-cache"
+    },
+    {
+      "file": "apps/web/src/pwa/sw.ts",
+      "find": "import { installServiceWorker } from \"./service-worker\";",
+      "replace": "import { installServiceWorker } from \"./dozo-service-worker\";",
+      "requires": ["apps/web/src/pwa/dozo-service-worker.ts"],
+      "reason": "the service worker leaves hashed assets to the browser's HTTP cache and answers them from its own cache only for a page opened offline, since reading them from its cache slowed every warm load"
+    },
+    {
+      "file": "apps/web/src/standalone-server.ts",
+      "find": "      \"cache-control\": \"no-cache\",\n",
+      "replace": "      \"cache-control\": String(res.getHeader(\"cache-control\") ?? \"no-cache\"),\n",
+      "reason": "the server without Vite keeps the immutable cache-control the asset middleware set for a hashed build asset; other files stay no-cache"
+    },
+    {
       "file": "apps/web/src/App.tsx",
       "find": "import(\"./pages/Auth\").then((module) => module.AuthPage)",
       "replace": "import(\"./pages/dozo-auth\").then((module) => module.AuthPage)",
