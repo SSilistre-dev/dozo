@@ -8,6 +8,7 @@ import {
 } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DOZO_ADMIN_USERS_PAGE, dozoAdminRoutes, spendingLimitRoutes } from "./dozo-admin.js";
+import type { User } from "./dozo-admin.test-support.js";
 import { inDays, people, setup, user } from "./dozo-admin.test-support.js";
 import { LIVE_BILLING_STATUSES, ownedOrganizations } from "./dozo-admin-members.js";
 import { audit, host, stops } from "./dozo-admin-mocks.test-support.js";

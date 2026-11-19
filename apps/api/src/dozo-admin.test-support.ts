@@ -27,18 +27,18 @@ export function user(id: string, email: string, day: number, more: Partial<User>
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: a Prisma double reads loosely typed filters
-export type Where = any;
+type Where = any;
 
-export type Subscription = {
+type Subscription = {
   status: string;
   byokTier: string | null;
   trialEndsAt?: Date | null;
   currentPeriodEndsAt?: Date | null;
   cancelAtPeriodEnd?: boolean;
 };
-export type Grant = { tier: string; endsAt: Date; grantedById: string | null; note: string | null };
+type Grant = { tier: string; endsAt: Date; grantedById: string | null; note: string | null };
 
-export function world(users: User[]) {
+function world(users: User[]) {
   // Everyone owns an organization of their own, except Bob, who has none.
   const memberships = users
     .filter((row) => row.id !== "bob")
