@@ -26,3 +26,8 @@ e2e:
 # with a TOKEN: line. Optional DOZO_TOKEN_PRICING=<file>. See dozo/metrics/token-kiyas.sh.
 token-kiyas:
 	@dozo/metrics/token-kiyas.sh
+.PHONY: olcum
+# Code measurement: writes dozo/metrics/baseline.json and REPORT.md (dozo/metrics/README.md). Not part
+# of olc or qa. `make olcum OLCUM_FLAGS=--gate` exits 2 when a fork score fell.
+olcum:
+	@dozo/metrics/olcum.sh $(OLCUM_FLAGS)

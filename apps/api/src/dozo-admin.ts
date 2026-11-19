@@ -1,5 +1,6 @@
 import { createRouterClient } from "@orpc/server";
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import type { DozoPaymentLedger } from "@rakazo/adapters";
 import { sandboxKindCapabilities, sandboxKindsWhere } from "@rakazo/adapters";
 import type { AccountDeletionAuth } from "@rakazo/auth";
 import {
@@ -28,6 +29,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
 import { readAccount } from "./dozo-admin-account.js";
+import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
 import { onTier, plansOf } from "./dozo-admin-members.js";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
@@ -75,6 +77,8 @@ export interface DozoAdminWiring {
   auth: AccountDeletionAuth;
   /** The fanout that tells open apps a site setting changed; absent, nobody is told. */
   realtime?: RealtimeFanout;
+  /** What the billing page reads payments from; absent when no payment provider is configured. */
+  payments?: DozoPaymentLedger;
 }
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -541,6 +545,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
         });
         return { ok: true as const };
       }),
+
+      billing: dozoAdminBillingRoutes(ctx, wiring?.payments),
     },
   };
 }
