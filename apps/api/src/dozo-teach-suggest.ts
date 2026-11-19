@@ -22,8 +22,6 @@ export type TeachSuggestionContext = {
   goal: string;
   /** The steps as recorded, with placeholders where values were typed. */
   steps: string[];
-  /** Window titles seen while teaching that show nothing typed. */
-  windowTitles: string[];
 };
 
 /** A value as the model is told about it: its placeholder and its shape, never its text. */
@@ -88,9 +86,9 @@ function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggest
 
 /**
  * Suggests names for the values typed while teaching, with the bot's own model connection and no
- * tools. It is given, and the model gets, the task, the steps with placeholders, window titles
- * that show nothing typed, and each value's shape: never a value. Null when the call failed, timed out or answered
- * nothing usable; the review then simply has no suggestions.
+ * tools. It is given, and the model gets, the task, the steps with placeholders and each value's
+ * shape: never a value, nor a window title (one can show what was typed or opened). Null when the
+ * call failed, timed out or answered nothing usable; the review then simply has no suggestions.
  */
 export function createTeachValueSuggester(deps: {
   prisma: PrismaClient;
@@ -122,7 +120,6 @@ export function createTeachValueSuggester(deps: {
           prompt: teachValueSuggestionPrompt({
             goal: skill.goal,
             steps: skill.steps,
-            windowTitles: skill.windowTitles,
             values,
           }),
           instructions: teachValueSuggestionInstructions(),

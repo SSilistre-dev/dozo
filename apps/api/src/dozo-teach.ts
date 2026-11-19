@@ -12,12 +12,11 @@ import {
   buildPlaybookFromRecording,
   ClientError,
   formatSkillRunPrompt,
-  teachWindowTitles,
 } from "@rakazo/core";
 import type { PrismaClient, StoredTeachValues, TeachValueSuggestions } from "@rakazo/db";
 import { cacheTeachSuggestions, IsolationError, readTeachValues } from "@rakazo/db";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
-import { SKILL_NOT_DRAFT } from "./dozo-taught-skills.js";
+import { forgetOldTeachTyping, SKILL_NOT_DRAFT } from "./dozo-taught-skills.js";
 import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
 import { createTeachValueSuggester, teachValueShape } from "./dozo-teach-suggest.js";
 import type { RouterDeps } from "./router.js";
@@ -92,7 +91,7 @@ export function createDozoTeach(deps: {
 
   /**
    * Asked once per draft, failed or not, and kept with the values. The model is told the task,
-   * the recorded steps and each value's shape, never a value. Two first reviews at once may both
+   * the recorded steps and each value's shape: never a value, nor a window title. Two first reviews at once may both
    * ask; the first to write is kept.
    */
   async function suggestionsFor(
@@ -109,7 +108,6 @@ export function createDozoTeach(deps: {
           botId: skill.botId,
           goal: skill.goal,
           steps: buildPlaybookFromRecording(skill.goal, recording.events).steps,
-          windowTitles: teachWindowTitles(recording.snapshots, values),
         },
         values.map(teachValueShape),
       )) ?? {};
@@ -138,6 +136,7 @@ export function createDozoTeach(deps: {
 
   return {
     async review(actor: Actor, skillId: string): Promise<{ values: DozoTeachValue[] }> {
+      await forgetOldTeachTyping(deps.prisma, { spaceId: actor.spaceId, skillId });
       const skill = await skillOf(actor, skillId);
       const stored = await valuesFor(actor, skill);
       if (!stored?.values.length) return { values: [] };

@@ -1,11 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
-import { formatSkillRunPrompt } from "@rakazo/core";
+import { formatSkillRunPrompt, TEACH_NAME_TAKEN } from "@rakazo/core";
 import { Button, Input, Label, Textarea, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
+import { errorCode, errorText } from "../../lib/user-error";
 import { BuiCard } from "../ai/primitives";
 
 type SkillDraftBlock = {
@@ -165,13 +165,17 @@ export function SkillDraftCard({
   });
 
   const busy = save.pending || test.pending;
-  const error = save.error
-    ? errorText(save.error, t`Could not save skill`)
-    : test.error
-      ? errorText(test.error)
-      : reviewing && review.isError
-        ? t`Could not load`
-        : null;
+  const failed = save.error ?? test.error;
+  const error =
+    failed && errorCode(failed) === TEACH_NAME_TAKEN
+      ? t`Each name can be used once.`
+      : save.error
+        ? errorText(save.error, t`Could not save skill`)
+        : test.error
+          ? errorText(test.error)
+          : reviewing && review.isError
+            ? t`Could not load`
+            : null;
 
   const skillName = name || block.name || block.goal.slice(0, 80);
 

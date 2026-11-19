@@ -81,6 +81,8 @@ function fakeDb(row: Row, stored: Stored | null) {
   });
   const queryRaw = vi.fn(async (strings: TemplateStringsArray, ...params: unknown[]) => {
     const text = sql(strings);
+    // Nothing the previous release left: this draft's recording was forgotten when drafted.
+    if (text.includes("FROM taught_skills")) return [];
     if (text.includes('UPDATE "dozo_teach_values"')) {
       if (!state.stored) return [];
       state.stored.suggestions ??= JSON.parse(params[0] as string);
@@ -194,15 +196,10 @@ describe("review", () => {
       { placeholder: "{{value 3}}", text: "my secret phrase", secret: false },
       { placeholder: "{{value 4}}", text: null, secret: true },
     ]);
-    // The model is told the steps, titles that show nothing typed and shapes, never a value.
+    // The model is told the steps and shapes: never a value, nor a window title.
     expect(suggest).toHaveBeenCalledWith(
       teacher,
-      {
-        botId: "bot-1",
-        goal: "Sign in",
-        steps: playbook.steps,
-        windowTitles: ["Sign in"],
-      },
+      { botId: "bot-1", goal: "Sign in", steps: playbook.steps },
       [
         { placeholder: "{{value 1}}", shape: "9-20 characters, has @" },
         { placeholder: "{{value 2}}", shape: "4-8 characters, letters and digits" },
@@ -229,7 +226,20 @@ describe("review", () => {
     expect(run).toHaveBeenCalledOnce();
     const body = JSON.stringify(run.mock.calls[0]);
     for (const typed of TYPED) expect(body).not.toContain(typed);
+    expect(body).not.toContain("Search");
     expect(body).toContain("{{value 3}}");
+  });
+
+  it("first forgets what is typed in the skill, if the previous release drafted it", async () => {
+    const { teach, db } = setup();
+    await teach.review(teacher, "skill-1");
+    const [strings, ...params] = db.queryRaw.mock.calls[0] as unknown as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    expect(strings.join("?")).toContain("FROM taught_skills");
+    expect(params).toContain("skill-1");
+    expect(params).toContain("space-1");
   });
 
   it("reads cached suggestions instead of asking again", async () => {

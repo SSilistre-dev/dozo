@@ -1,10 +1,11 @@
-import type { TeachRecordingEvent, TeachTypedValue } from "@rakazo/core";
-import { scrubTeachEvents, typedValuesFromRecording } from "@rakazo/core";
+import type { TeachRecordingEvent, TeachSnapshot, TeachTypedValue } from "@rakazo/core";
+import { forgetTeachTyping, typedValuesFromRecording } from "@rakazo/core";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "./client.js";
 import { ciphertextKeyId, decryptText, encryptText } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import { readJsonColumn } from "./json-column.js";
+import { runAsSystemInTransaction } from "./row-security.js";
 
 /** How long the teacher has to review what was typed before it is forgotten. */
 export const TEACH_VALUES_TTL_MS = 24 * 60 * 60 * 1000;
@@ -85,40 +86,53 @@ async function decode(db: Db, row: Row): Promise<StoredTeachValues> {
 /**
  * Called where a recording becomes a draft (stop, expiry, the end of its control), in that
  * transaction: the values typed move to a short-lived store only the teacher reads, and the
- * recording keeps none of them, not even their length or timing. Due in 24 hours, on a queue job
- * when the queue's tables exist; reads also skip and delete a due row.
+ * recording keeps none of them, not even their length or timing, and of each window title only
+ * its application. Due in 24 hours, on a queue job when the queue's tables exist; reads, and the
+ * API's slow sweep, also delete a due row. Written past row security: whoever ends the recording
+ * (another member taking the computer's control) stores them for the teacher, who alone reads
+ * them.
  */
-export async function keepTeachValues<R extends { events: TeachRecordingEvent[] }>(
+export async function keepTeachValues<
+  R extends { events: TeachRecordingEvent[]; snapshots: TeachSnapshot[] },
+>(
   tx: Prisma.TransactionClient,
   skill: { id: string; spaceId: string; userId: string },
   recording: R,
-): Promise<Omit<R, "dozoSuggestions">> {
-  // Suggestions an older draft cached in its recording go with the values.
-  const { dozoSuggestions: _cached, ...kept } = recording as R & { dozoSuggestions?: unknown };
+) {
   const values = typedValuesFromRecording(recording.events);
   if (values.length) {
-    const row = { skillId: skill.id, spaceId: skill.spaceId, userId: skill.userId };
-    const sealed = await seal(tx, row, JSON.stringify(values));
-    const [stored] = await tx.$queryRaw<Array<{ expiresAt: Date }>>`
-      INSERT INTO "dozo_teach_values" ("skillId", "spaceId", "userId", "values", "expiresAt")
-      VALUES (${row.skillId}, ${row.spaceId}, ${row.userId}, ${sealed},
-        CURRENT_TIMESTAMP + make_interval(secs => ${TEACH_VALUES_TTL_MS / 1000}))
-      ON CONFLICT ("skillId") DO UPDATE SET "spaceId" = EXCLUDED."spaceId",
-        "userId" = EXCLUDED."userId", "values" = EXCLUDED."values", "suggestions" = NULL,
-        "expiresAt" = EXCLUDED."expiresAt"
-      RETURNING "expiresAt"`;
-    const [queue] = await tx.$queryRaw<Array<{ ready: boolean }>>`
-      SELECT to_regnamespace('graphile_worker') IS NOT NULL AS ready`;
-    if (stored && queue?.ready) {
-      // As upstream's publisher adds a job in a transaction; the date goes as text with its zone.
-      await tx.$executeRaw`
-        SELECT graphile_worker.add_job(${EXPIRE_JOB}::text,
-          ${JSON.stringify({ skillId: skill.id })}::json,
-          run_at => ${stored.expiresAt.toISOString()}::timestamptz,
-          job_key => ${expireJobKey(skill.id)}::text)`;
-    }
+    await runAsSystemInTransaction(tx, "keep the values typed while teaching", () =>
+      storeValues(tx, skill, values),
+    );
   }
-  return { ...kept, events: scrubTeachEvents(recording.events) };
+  return forgetTeachTyping(recording);
+}
+
+async function storeValues(
+  tx: Prisma.TransactionClient,
+  skill: { id: string; spaceId: string; userId: string },
+  values: TeachTypedValue[],
+) {
+  const row = { skillId: skill.id, spaceId: skill.spaceId, userId: skill.userId };
+  const sealed = await seal(tx, row, JSON.stringify(values));
+  const [stored] = await tx.$queryRaw<Array<{ expiresAt: Date }>>`
+    INSERT INTO "dozo_teach_values" ("skillId", "spaceId", "userId", "values", "expiresAt")
+    VALUES (${row.skillId}, ${row.spaceId}, ${row.userId}, ${sealed},
+      CURRENT_TIMESTAMP + make_interval(secs => ${TEACH_VALUES_TTL_MS / 1000}))
+    ON CONFLICT ("skillId") DO UPDATE SET "spaceId" = EXCLUDED."spaceId",
+      "userId" = EXCLUDED."userId", "values" = EXCLUDED."values", "suggestions" = NULL,
+      "expiresAt" = EXCLUDED."expiresAt"
+    RETURNING "expiresAt"`;
+  const [queue] = await tx.$queryRaw<Array<{ ready: boolean }>>`
+    SELECT to_regnamespace('graphile_worker') IS NOT NULL AS ready`;
+  if (stored && queue?.ready) {
+    // As upstream's publisher adds a job in a transaction; the date goes as text with its zone.
+    await tx.$executeRaw`
+      SELECT graphile_worker.add_job(${EXPIRE_JOB}::text,
+        ${JSON.stringify({ skillId: skill.id })}::json,
+        run_at => ${stored.expiresAt.toISOString()}::timestamptz,
+        job_key => ${expireJobKey(skill.id)}::text)`;
+  }
 }
 
 /** The values of a draft, or null once they are saved, removed or due (a due row is deleted). */
@@ -135,10 +149,16 @@ export async function takeTeachValues(
   tx: Prisma.TransactionClient,
   skillId: string,
 ): Promise<StoredTeachValues | null> {
-  const [row] = await tx.$queryRaw<Array<Row & { due: boolean }>>`
-    DELETE FROM "dozo_teach_values" WHERE "skillId" = ${skillId}
-    RETURNING "skillId", "spaceId", "userId", "values", "suggestions",
-      "expiresAt" <= CURRENT_TIMESTAMP AS "due"`;
+  // Past row security: any save forgets them, also one by someone else than the teacher.
+  const [row] = await runAsSystemInTransaction(
+    tx,
+    "forget the values typed while teaching",
+    () =>
+      tx.$queryRaw<Array<Row & { due: boolean }>>`
+      DELETE FROM "dozo_teach_values" WHERE "skillId" = ${skillId}
+      RETURNING "skillId", "spaceId", "userId", "values", "suggestions",
+        "expiresAt" <= CURRENT_TIMESTAMP AS "due"`,
+  );
   return row && !row.due ? decode(tx, row) : null;
 }
 
@@ -170,4 +190,10 @@ export async function expireTeachValues(db: Db, skillId: string): Promise<void> 
   await db.$executeRaw`
     DELETE FROM "dozo_teach_values"
     WHERE "skillId" = ${skillId} AND "expiresAt" <= CURRENT_TIMESTAMP`;
+}
+
+/** Forgets every due row; the API's slow sweep calls it, as system, also where no queue runs. */
+export async function expireAllTeachValues(db: Db): Promise<number> {
+  return db.$executeRaw`
+    DELETE FROM "dozo_teach_values" WHERE "expiresAt" <= CURRENT_TIMESTAMP`;
 }

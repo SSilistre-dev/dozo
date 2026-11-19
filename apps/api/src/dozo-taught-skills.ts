@@ -6,7 +6,13 @@ import {
   sandboxAllowanceUsedUp,
 } from "@rakazo/adapters";
 import type { Actor, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
-import { applyValueDecisions, ClientError, scrubTeachEvents } from "@rakazo/core";
+import {
+  applyValueDecisions,
+  ClientError,
+  forgetTeachTyping,
+  teachTypingForgotten,
+} from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, takeTeachValues } from "@rakazo/db";
 import type { TaughtSkillsDeps } from "./taught-skills.js";
 import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "./taught-skills.js";
@@ -20,16 +26,68 @@ export type TeachSaveEdit = {
   decisions: Record<string, DozoTeachValueDecision>;
 };
 
+/** Skills one pass of `forgetOldTeachTyping` looks at. */
+export const FORGET_PAGE = 100;
+
 /**
- * Upstream's taught-skills service under the same name, with two changes: teaching on a plan with
- * no computer time left is refused before any of the person's runs is cancelled, and every save,
- * in one transaction, applies the teacher's decisions to the values typed, forgets those values
- * and keeps nothing typed in the recording.
+ * Forgets what was typed in skills whose recording still holds it: ones the previous release
+ * drafted or saved while this one was being deployed (and any the migration did not reach). As a
+ * draft does, each typed run becomes one event and each window title its application; their
+ * values are gone for good, so their review shows none. A live recording is left alone. Called
+ * where skills are read and by the API's slow sweep; the number of skills it looked at.
+ */
+export async function forgetOldTeachTyping(
+  prisma: PrismaClient,
+  scope: { spaceId?: string; botId?: string; skillId?: string },
+): Promise<number> {
+  const { spaceId = null, botId = null, skillId = null } = scope;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM taught_skills
+    WHERE status <> 'recording'
+      AND (${skillId}::text IS NULL OR id = ${skillId}::text)
+      AND (${spaceId}::text IS NULL OR "spaceId" = ${spaceId}::text)
+      AND (${botId}::text IS NULL OR "botId" = ${botId}::text)
+      AND COALESCE(recording->'dozoScrubbed', 'false'::jsonb) <> 'true'::jsonb
+      AND ((jsonb_typeof(recording->'events') = 'array'
+          AND jsonb_array_length(recording->'events') > 0)
+        OR (jsonb_typeof(recording->'snapshots') = 'array'
+          AND jsonb_array_length(recording->'snapshots') > 0))
+    LIMIT ${FORGET_PAGE}`;
+  for (const { id } of rows) {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${id} FOR UPDATE`;
+      const skill = await tx.taughtSkill.findUnique({ where: { id } });
+      if (!skill || skill.status === "recording" || teachTypingForgotten(skill.recording)) return;
+      const recording = forgetTeachTyping(parseRecording(skill.recording), false);
+      // In SQL, so the skill keeps its place in the list (ordered by its last edit).
+      await tx.$executeRaw`
+        UPDATE taught_skills SET recording = ${JSON.stringify(recording)}::jsonb WHERE id = ${id}`;
+    });
+  }
+  return rows.length;
+}
+
+/**
+ * Upstream's taught-skills service under the same name, with three changes: reading skills first
+ * forgets what is typed in any the previous release left with it (`forgetOldTeachTyping`),
+ * teaching on a plan with no computer time left is refused before any of the person's runs is
+ * cancelled, and every save, in one transaction, applies the teacher's decisions to the values
+ * typed, forgets those values and keeps nothing typed in the recording.
  */
 export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
   const upstream = createUpstreamTaughtSkillsService(deps);
   return {
     ...upstream,
+
+    async list(actor: Actor, botId: string) {
+      await forgetOldTeachTyping(deps.prisma, { spaceId: actor.spaceId, botId });
+      return upstream.list(actor, botId);
+    },
+
+    async get(actor: Actor, skillId: string) {
+      await forgetOldTeachTyping(deps.prisma, { spaceId: actor.spaceId, skillId });
+      return upstream.get(actor, skillId);
+    },
 
     async start(actor: Actor, botId: string, goal: string) {
       const bot = await deps.prisma.bot.findFirst({
@@ -91,7 +149,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
             userId: actor.userId,
             // Someone else takes the skill over without the recording, as upstream hands it over.
             recording: (teacher
-              ? { ...recording, events: scrubTeachEvents(recording.events) }
+              ? forgetTeachTyping(recording, teachTypingForgotten(skill.recording))
               : emptyRecording()) as never,
             status: "saved",
             name: name ?? (skill.name || skill.goal.slice(0, 80)),

@@ -4,10 +4,13 @@ import type { TeachRecordingEvent } from "./dozo-teach-playbook.js";
 import {
   applyValueDecisions,
   buildPlaybookFromRecording,
+  forgetTeachTyping,
   formatSkillRunPrompt,
   promptInvokesSkill,
   scrubTeachEvents,
-  teachWindowTitles,
+  TEACH_NAME_TAKEN,
+  teachAppName,
+  teachTypingForgotten,
   typedValuesFromRecording,
 } from "./dozo-teach-playbook.js";
 import * as core from "./index.js";
@@ -82,7 +85,7 @@ describe("the package export", () => {
 
 describe("buildPlaybookFromRecording", () => {
   const playbook = buildPlaybookFromRecording("Sign in", signIn, [
-    { at, summary: "Dashboard open" },
+    { at, summary: "Dashboard open - Mozilla Firefox" },
   ]);
 
   it("never puts typed or pasted text in the steps", () => {
@@ -101,20 +104,20 @@ describe("buildPlaybookFromRecording", () => {
       "value 5 (secret)",
       "value 6",
     ]);
-    expect(playbook.howToCheck).toContain("Dashboard open");
+    expect(playbook.howToCheck).toContain("Mozilla Firefox");
+    expect(playbook.howToCheck).not.toContain("Dashboard");
   });
 
-  it("leaves out a last window title that shows something typed", () => {
-    const shown = buildPlaybookFromRecording(
-      "Search",
-      [...typing("hunter2"), click(1, 1)],
-      [{ at, summary: "HUNTER2 - Search results" }],
-    );
-    expect(JSON.stringify(shown)).not.toMatch(/hunter2/i);
-    expect(shown.howToCheck).toBe(buildPlaybookFromRecording("Search", []).howToCheck);
-    // Two typed characters say nothing about a title that holds them.
-    const short = buildPlaybookFromRecording("x", typing("ab"), [{ at, summary: "About" }]);
-    expect(short.howToCheck).toContain("About");
+  it("checks against the last window's application only, never the rest of its title", () => {
+    const events = [...typing("hunter2"), click(1, 1)];
+    const named = buildPlaybookFromRecording("Search", events, [
+      { at, summary: "Hunter-2 results \u2014 Search" },
+    ]);
+    expect(named.howToCheck).toContain("Search");
+    expect(JSON.stringify(named)).not.toMatch(/hunter/i);
+    // A title that names no application says nothing at all.
+    const bare = buildPlaybookFromRecording("Search", events, [{ at, summary: "HUNTER2" }]);
+    expect(bare.howToCheck).toBe(buildPlaybookFromRecording("Search", []).howToCheck);
   });
 
   it("keeps upstream's inputs, steps and defaults without typed values", () => {
@@ -307,24 +310,63 @@ describe("scrubTeachEvents", () => {
   });
 });
 
-describe("teachWindowTitles", () => {
-  const titles = [
-    { at, summary: "Sign in" },
-    { at, summary: "hunter2 - search" },
-    { at, summary: "Sign in" },
-    { at, summary: "Dashboard" },
-  ];
+describe("teachAppName", () => {
+  it("keeps the trailing application segment of a title, or nothing", () => {
+    expect(teachAppName("ali@example.test - Inbox - Mail")).toBe("Mail");
+    expect(teachAppName("report.pdf \u2014 Viewer")).toBe("Viewer");
+    expect(teachAppName("Search \u2013 a - b \u2014 Browser")).toBe("Browser");
+    expect(teachAppName("hunter2")).toBeNull();
+    expect(teachAppName("hunter2 - ")).toBeNull();
+  });
+});
 
-  it("leaves out titles that show a value, once each", () => {
-    expect(teachWindowTitles(titles, typedValuesFromRecording(signIn))).toEqual([
-      "Sign in",
-      "Dashboard",
-    ]);
+describe("forgetTeachTyping", () => {
+  const recording = {
+    events: [
+      ...typing("hunter2"),
+      { at, kind: "snapshot" as const, summary: "hunter2 - Search - Browser" },
+      ...typing("Hunter-2"),
+      { at, kind: "snapshot" as const, summary: "HUNTER2" },
+      { at, kind: "snapshot" as const },
+    ],
+    snapshots: [
+      { at, summary: "hunter2 - Search - Browser", hash: "h" },
+      { at, summary: "HUNTER2" },
+    ],
+    controlLeaseId: "lease-1",
+    dozoSuggestions: { "{{value 1}}": { name: "x" } },
+  };
+
+  it("keeps one event per typed run and only application names, and marks it", () => {
+    const forgotten = forgetTeachTyping(recording);
+    expect(forgotten).toEqual({
+      events: [
+        { at, kind: "key", typed: true },
+        { at, kind: "snapshot", summary: "Browser" },
+        { at, kind: "key", typed: true },
+        { at, kind: "snapshot" },
+        { at, kind: "snapshot" },
+      ],
+      snapshots: [{ at, summary: "Browser", hash: "h" }],
+      controlLeaseId: "lease-1",
+      dozoScrubbed: true,
+    });
+    expect(JSON.stringify(forgotten)).not.toMatch(/hunter/i);
+    // The steps and their numbering stay.
+    expect(buildPlaybookFromRecording("x", forgotten.events).steps).toEqual(
+      buildPlaybookFromRecording("x", recording.events).steps,
+    );
   });
 
-  it("gives none when a value's text is unknown", () => {
-    const unknown = typedValuesFromRecording([...typing("ab"), ...keys("ArrowUp")]);
-    expect(teachWindowTitles(titles, unknown)).toEqual([]);
+  it("leaves a recording already forgotten as it is", () => {
+    const once = forgetTeachTyping(recording);
+    expect(teachTypingForgotten(once)).toBe(true);
+    expect(teachTypingForgotten(recording)).toBe(false);
+    expect(teachTypingForgotten(null)).toBe(false);
+    expect(forgetTeachTyping(once)).toEqual(once);
+    // Told it was forgotten, it only drops cached suggestions and marks it.
+    const { dozoSuggestions: _cached, ...rest } = recording;
+    expect(forgetTeachTyping(recording, true)).toEqual({ ...rest, dozoScrubbed: true });
   });
 });
 
@@ -339,7 +381,7 @@ describe("applyValueDecisions", () => {
       "{{value 3}}": { action: "variable", name: "pin" },
       "{{value 4}}": { action: "fixed" },
       "{{value 5}}": { action: "remove" },
-      "{{value 6}}": { action: "variable", name: "ŞİFRE" },
+      "{{value 6}}": { action: "variable", name: "Tekrar" },
     });
     expect(applied.steps).toEqual([
       "Click left button at (10, 20).",
@@ -352,11 +394,17 @@ describe("applyValueDecisions", () => {
       'Type "weekly-export.csv".',
       "Click left button at (70, 80).",
       "Press key: Tab.",
-      "Type {{sifre}}.",
+      "Type {{tekrar}}.",
       "Press key: Enter.",
     ]);
-    // The goal stays; a name shared with a hidden value is hidden; protected input stays secret.
-    expect(applied.inputs).toEqual(["Sign in", "e_posta_adresi", "sifre (secret)", "pin (secret)"]);
+    // The goal stays; a hidden value and protected input are secret.
+    expect(applied.inputs).toEqual([
+      "Sign in",
+      "e_posta_adresi",
+      "sifre (secret)",
+      "pin (secret)",
+      "tekrar",
+    ]);
     expect(JSON.stringify(applied)).not.toContain("Gizli-5678");
     expect(JSON.stringify(applied)).not.toContain("hunter2");
   });
@@ -377,13 +425,52 @@ describe("applyValueDecisions", () => {
     ]);
   });
 
-  it("keeps inputs added by hand once, and a variable named like one", () => {
+  it("keeps inputs added by hand where they are, once, and secret when either is", () => {
     const applied = applyValueDecisions(
-      { ...playbook, inputs: ["Sign in", "account", "value 1", "email (secret)"] },
-      values.slice(0, 1),
-      { "{{value 1}}": { action: "variable", name: "email" } },
+      { ...playbook, inputs: ["Sign in", "account", "value 1", "email (secret)", "Login"] },
+      values.slice(0, 2),
+      {
+        "{{value 1}}": { action: "variable", name: "email" },
+        "{{value 2}}": { action: "hidden", name: "account" },
+      },
     );
-    expect(applied.inputs).toEqual(["Sign in", "account", "email"]);
+    expect(applied.inputs).toEqual(["Sign in", "account (secret)", "email (secret)", "Login"]);
+  });
+
+  it("refuses two different values given one name, and lets one text typed twice share it", () => {
+    const refusals = [
+      { "{{value 1}}": "email", "{{value 2}}": "Email" },
+      // A protected value's text is unknown, so it is never the same as another.
+      { "{{value 3}}": "secret", "{{value 5}}": "secret" },
+    ];
+    for (const names of refusals) {
+      const decisions = Object.fromEntries(
+        Object.entries(names).map(([key, name]) => [key, { action: "variable" as const, name }]),
+      );
+      let thrown: unknown;
+      try {
+        applyValueDecisions(playbook, values, decisions);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ClientError);
+      expect(thrown).toMatchObject({ kind: "BAD_REQUEST", code: TEACH_NAME_TAKEN });
+    }
+    const twice = [...typing("ali"), click(1, 1), ...typing("ali")];
+    const applied = applyValueDecisions(
+      buildPlaybookFromRecording("x", twice),
+      typedValuesFromRecording(twice),
+      {
+        "{{value 1}}": { action: "variable", name: "name" },
+        "{{value 2}}": { action: "hidden", name: "name" },
+      },
+    );
+    expect(applied.steps).toEqual([
+      "Type {{name}}.",
+      "Click left button at (1, 1).",
+      "Type {{name}}.",
+    ]);
+    expect(applied.inputs).toEqual(["x", "name (secret)"]);
   });
 
   it("refuses to keep a protected or unknown value as text", () => {

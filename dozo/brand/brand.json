@@ -1451,12 +1451,13 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
-      "replace": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { dozoAdminWiring } from \"./dozo-admin.js\";\nimport { dozoTeachWiring } from \"./dozo-teach.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
+      "replace": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { dozoAdminWiring } from \"./dozo-admin.js\";\nimport { dozoTeachWiring } from \"./dozo-teach.js\";\nimport { dozoTeachSweep } from \"./dozo-teach-sweep.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
       "requires": [
         "apps/api/src/dozo-admin.ts",
-        "apps/api/src/dozo-teach.ts"
+        "apps/api/src/dozo-teach.ts",
+        "apps/api/src/dozo-teach-sweep.ts"
       ],
-      "reason": "hosted admin page and the teach review: the server hands their routes what the router's own dependencies do not carry"
+      "reason": "hosted admin page and teaching: the server hands their routes what the router's own dependencies do not carry, and starts teaching's slow sweep"
     },
     {
       "file": "apps/api/src/app.ts",
@@ -4033,6 +4034,24 @@
         "apps/api/src/dozo-teach.ts"
       ],
       "reason": "teaching: the value suggestion uses the bot's own model through the server's runtime, as the spoken summary does"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "\"stalled organization deletion failed\", error),\n  );\n\n",
+      "replace": "\"stalled organization deletion failed\", error),\n  );\n  const stopDozoTeachSweep = startHourlySweep(\n    dozoTeachSweep({ prisma, events, jobs, sandbox }),\n    (error) => getLogger().error(\"teaching sweep failed\", error),\n  );\n\n",
+      "requires": [
+        "apps/api/src/dozo-teach-sweep.ts"
+      ],
+      "reason": "teaching: at start and hourly, a slow safety net behind its queue jobs forgets due typed values (also where no queue runs), drafts recordings whose expiry job was lost and forgets what is typed in skills the previous release drafted"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "      await stopOrganizationDeletions();\n      await reconciler?.stop();\n",
+      "replace": "      await stopOrganizationDeletions();\n      await stopDozoTeachSweep();\n      await reconciler?.stop();\n",
+      "requires": [
+        "apps/api/src/dozo-teach-sweep.ts"
+      ],
+      "reason": "teaching: shutdown stops the sweep above and waits for a running pass"
     },
     {
       "file": "apps/api/src/routes/context.ts",

@@ -8,7 +8,8 @@ const allowance = vi.hoisted(() => ({ usedUp: vi.fn(async () => false) }));
 const upstream = vi.hoisted(() => ({
   start: vi.fn(async () => ({ id: "skill-1" })),
   updateDraft: vi.fn(async () => ({ id: "skill-1", status: "saved" })),
-  list: vi.fn(),
+  list: vi.fn(async () => ["listed"]),
+  get: vi.fn(async () => "got"),
 }));
 
 vi.mock("@rakazo/adapters", async (importOriginal) => ({
@@ -17,7 +18,8 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 }));
 vi.mock("./taught-skills.js", () => ({ createTaughtSkillsService: () => upstream }));
 
-const { createTaughtSkillsService, SKILL_NOT_DRAFT } = await import("./dozo-taught-skills.js");
+const { createTaughtSkillsService, forgetOldTeachTyping, FORGET_PAGE, SKILL_NOT_DRAFT } =
+  await import("./dozo-taught-skills.js");
 
 const actor = { userId: "ada", spaceId: "space-1", email: "ada@example.test" } as never;
 
@@ -106,7 +108,11 @@ function saving(
     goal: "Sign in",
     status: "draft",
     playbook,
-    recording: { events, snapshots: [], controlLeaseId: "lease-1" },
+    recording: {
+      events,
+      snapshots: [{ at, summary: "ali@example.test - Inbox - Mail" }],
+      controlLeaseId: "lease-1",
+    },
     ...options.skill,
   };
   const stored =
@@ -132,6 +138,8 @@ function saving(
       return 1;
     }),
     $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+      // The values are forgotten past row security: any save forgets them.
+      if (/current_setting|set_config/.test(strings.join("?"))) return [{}];
       expect(strings.join("?")).toContain('DELETE FROM "dozo_teach_values"');
       steps.push("forget values");
       return stored ? [stored] : [];
@@ -163,7 +171,7 @@ function saving(
       status: string;
       name: string;
       playbook: SkillPlaybook;
-      recording: { events: TeachRecordingEvent[] };
+      recording: { events: TeachRecordingEvent[]; snapshots: Array<{ summary: string }> };
     };
   return { service, steps, written, append, update };
 }
@@ -192,7 +200,11 @@ describe("save", () => {
     expect(data.playbook.inputs).toEqual(["Sign in", "password (secret)", "value_3 (secret)"]);
     expect(JSON.stringify(data)).not.toContain("hunter2");
     expect(data.recording.events.filter((event) => event.key?.length === 1)).toEqual([]);
-    expect(data.recording).toMatchObject({ controlLeaseId: "lease-1" });
+    expect(data.recording).toMatchObject({
+      controlLeaseId: "lease-1",
+      snapshots: [{ at, summary: "Mail" }],
+      dozoScrubbed: true,
+    });
     // The card and the thread follow the commit with what was saved.
     expect(upstream.updateDraft).toHaveBeenCalledWith(actor, "skill-1", {
       name: "Sign in",
@@ -278,7 +290,103 @@ describe("save", () => {
     ).rejects.toBeInstanceOf(IsolationError);
   });
 
+  it("leaves a recording forgotten when drafted as it is", async () => {
+    const forgotten = { events: [], snapshots: [{ at, summary: "Mail" }], dozoScrubbed: true };
+    const { service, written } = saving({ skill: { recording: forgotten } });
+    await service.save(actor, "skill-1");
+    expect(written().recording).toEqual(forgotten);
+  });
+
   it("keeps upstream's other procedures", () => {
-    expect(setup(null).service.list).toBe(upstream.list);
+    expect(setup(null).service.updateDraft).toBe(upstream.updateDraft);
+  });
+});
+
+describe("forgetOldTeachTyping", () => {
+  /** Skills as the previous release left them, by id, and what the forgetting wrote. */
+  function old(rows: Record<string, Record<string, unknown> | null>, found = Object.keys(rows)) {
+    const written: Array<{ id: unknown; recording: Record<string, unknown> }> = [];
+    const steps: string[] = [];
+    const tx = {
+      $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...params: unknown[]) => {
+        const text = strings.join("?");
+        if (text.includes("FOR UPDATE")) steps.push(`lock ${params[0]}`);
+        else written.push({ id: params[1], recording: JSON.parse(params[0] as string) });
+        return 1;
+      }),
+      taughtSkill: {
+        findUnique: vi.fn(async ({ where }: { where: { id: string } }) => rows[where.id]),
+      },
+    };
+    const prisma = {
+      $queryRaw: vi.fn(async () => found.map((id) => ({ id }))),
+      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    };
+    return { prisma, written, steps };
+  }
+
+  const left = {
+    status: "draft",
+    recording: {
+      events: [...events, { at, kind: "snapshot", summary: "hunter2 - Search - Browser" }],
+      snapshots: [
+        { at, summary: "hunter2 - Search - Browser" },
+        { at, summary: "hunter2" },
+      ],
+      controlLeaseId: "lease-1",
+      dozoSuggestions: {},
+    },
+  };
+
+  it("keeps one event per typed run and only application names, under the row lock", async () => {
+    const { prisma, written, steps } = old({ "skill-1": left });
+    expect(await forgetOldTeachTyping(prisma as never, { spaceId: "space-1" })).toBe(1);
+    expect(steps).toEqual(["lock skill-1"]);
+    expect(written).toHaveLength(1);
+    const [{ id, recording }] = written as [(typeof written)[number]];
+    expect(id).toBe("skill-1");
+    expect(JSON.stringify(recording)).not.toMatch(/hunter2|ali@example/);
+    expect(recording).toMatchObject({
+      snapshots: [{ at, summary: "Browser" }],
+      controlLeaseId: "lease-1",
+      dozoScrubbed: true,
+    });
+    expect(recording).not.toHaveProperty("dozoSuggestions");
+    expect(buildPlaybookFromRecording("x", recording.events as never).steps).toEqual(
+      buildPlaybookFromRecording("x", left.recording.events as never).steps,
+    );
+    // Only skills of the scope that still hold something, a page at a time.
+    const [strings, ...params] = prisma.$queryRaw.mock.calls[0] as unknown as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    const query = strings.join("?");
+    expect(query).toContain("status <> 'recording'");
+    expect(query).toContain("dozoScrubbed");
+    expect(params).toEqual([null, null, "space-1", "space-1", null, null, FORGET_PAGE]);
+  });
+
+  it("leaves a skill that became live, was forgotten meanwhile or went", async () => {
+    const { prisma, written } = old({
+      a: { ...left, status: "recording" },
+      b: { ...left, recording: { ...left.recording, dozoScrubbed: true } },
+      c: null,
+    });
+    expect(await forgetOldTeachTyping(prisma as never, {})).toBe(3);
+    expect(written).toEqual([]);
+  });
+
+  it("is what reading skills does first", async () => {
+    const { prisma } = old({});
+    const service = createTaughtSkillsService({ prisma } as never);
+    expect(await service.list(actor, "bot-1")).toEqual(["listed"]);
+    expect(await service.get(actor, "skill-1")).toBe("got");
+    const scopes = prisma.$queryRaw.mock.calls.map((call) => (call as unknown[]).slice(1, 7));
+    expect(scopes).toEqual([
+      [null, null, "space-1", "space-1", "bot-1", "bot-1"],
+      ["skill-1", "skill-1", "space-1", "space-1", null, null],
+    ]);
+    expect(upstream.list).toHaveBeenCalledWith(actor, "bot-1");
+    expect(upstream.get).toHaveBeenCalledWith(actor, "skill-1");
   });
 });

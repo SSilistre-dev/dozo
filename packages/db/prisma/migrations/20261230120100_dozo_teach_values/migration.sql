@@ -1,6 +1,7 @@
 -- Additive: the previous release never reads the new table, and nothing it runs reads the typed
--- keys of a recording that is no longer recording. A migration of its own: the one before it
--- (20261230120000) is already applied on databases, which never run an edited migration again.
+-- keys of a recording that is no longer recording. A draft that release makes after this runs
+-- keeps its keys until the API forgets them (on its next read or its slow sweep:
+-- apps/api/src/dozo-teach-sweep.ts).
 --
 -- What was typed while teaching is kept for the teacher's review only: from the moment a
 -- recording becomes a draft, its values live here for 24 hours, sealed with the Space's content
@@ -20,10 +21,13 @@ CREATE TABLE "dozo_teach_values" (
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tenant data, scoped like taught_skills; only the teacher's own routes read it.
+-- Tenant data, and only the teacher's: a member of the Space reads none of it. The draft writes
+-- it and any save deletes it as system, since whoever ends a recording or saves the skill may be
+-- someone else (packages/db/src/dozo-teach-values.ts).
 ALTER TABLE "dozo_teach_values" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dozo_teach_values_tenant ON "dozo_teach_values"
-  USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
+  USING ("spaceId" = NULLIF(current_setting('app.space_id', true), '')
+     AND "userId" = NULLIF(current_setting('app.user_id', true), ''));
 CREATE POLICY dozo_teach_values_system ON "dozo_teach_values"
   USING ((SELECT app_rls_bypass()));
 
@@ -32,7 +36,8 @@ CREATE POLICY dozo_teach_values_system ON "dozo_teach_values"
 -- {"at", "kind": "key", "typed": true} event, so neither its text, its length nor its timing is
 -- left. Tab, Enter and the other keys stay: they are steps. A run of edits alone holds no text and
 -- stays. Cached value suggestions go too. Playbooks are left alone: the teacher saw those steps.
--- The values of these older drafts are not kept anywhere: their review shows none.
+-- The values of these older drafts are not kept anywhere: their review shows none. Their window
+-- titles are cut to the application's name by the API's sweep when it starts.
 WITH ev AS (
   SELECT s."id", t.e, t.ord,
     jsonb_typeof(t.e) = 'object' AND (t.e->>'kind' = 'clipboard' OR (t.e->>'kind' = 'key' AND (

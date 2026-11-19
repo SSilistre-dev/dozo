@@ -113,13 +113,10 @@ function walkRecording(events: RecordedEvent[]): {
   steps: string[];
   values: TeachTypedValue[];
   runs: RunSpan[];
-  /** Every run's text as far as it is known, also where the value's text is unknown. */
-  typed: string[];
 } {
   const steps: string[] = [];
   const values: TeachTypedValue[] = [];
   const runs: RunSpan[] = [];
-  const typed: string[] = [];
   let run: TypedRun | null = null;
   let drag: { button: string; fromX: number; fromY: number; toX: number; toY: number } | null =
     null;
@@ -138,7 +135,6 @@ function walkRecording(events: RecordedEvent[]): {
       steps.push(`Type ${value.placeholder}.`);
     }
     runs.push({ first: run.first, last: run.last, value });
-    if (run.chars.length) typed.push(run.chars.join(""));
     run = null;
   }
 
@@ -238,37 +234,26 @@ function walkRecording(events: RecordedEvent[]): {
   });
   endRun();
   flushDrag();
-  return { steps, values, runs, typed };
+  return { steps, values, runs };
 }
 
 function inputLabel(name: string, secret: boolean): string {
   return secret ? `${name}${SECRET_MARK}` : name;
 }
 
-/** Typed text this short says nothing when a window title happens to hold it. */
-const TELLING_LENGTH = 3;
+/** Where a window title names its application: after the last of these. */
+const TITLE_SEPARATORS = [" - ", " \u2013 ", " \u2014 "];
 
 /**
- * Whether a window title shows something typed (a search term in a results page's title), so it
- * cannot go where anyone but the teacher sees it.
+ * The application a window title names (its trailing " - App" or " — App" segment), or null when
+ * it names none. The rest of a title can show what the person typed or opened (a search term, a
+ * document, an address), so only this part is ever kept.
  */
-function showsTyped(title: string, typed: string[]): boolean {
-  const shown = title.toLowerCase();
-  return typed.some(
-    (text) => [...text].length >= TELLING_LENGTH && shown.includes(text.toLowerCase()),
-  );
-}
-
-/**
- * The window titles seen while teaching that show none of the values, oldest first, and none
- * when a value's text is unknown, since then nothing can be checked against it.
- */
-export function teachWindowTitles(snapshots: TeachSnapshot[], values: TeachTypedValue[]): string[] {
-  if (values.some((value) => value.text === null && !value.secret)) return [];
-  const typed = values.flatMap((value) => (value.text === null ? [] : [value.text]));
-  return [...new Set(snapshots.map((snapshot) => snapshot.summary))].filter(
-    (title) => !showsTyped(title, typed),
-  );
+export function teachAppName(title: string): string | null {
+  const at = Math.max(...TITLE_SEPARATORS.map((separator) => title.lastIndexOf(separator)));
+  if (at < 0) return null;
+  const separator = TITLE_SEPARATORS.find((candidate) => title.startsWith(candidate, at))!;
+  return title.slice(at + separator.length).trim() || null;
 }
 
 /**
@@ -280,7 +265,7 @@ export function buildPlaybookFromRecording(
   events: TeachRecordingEvent[],
   snapshots: TeachSnapshot[] = [],
 ): SkillPlaybook {
-  const { steps, values, typed } = walkRecording(events);
+  const { steps, values } = walkRecording(events);
   const trimmed = goal.trim();
   const title = snapshots.at(-1)?.summary;
   return {
@@ -290,8 +275,8 @@ export function buildPlaybookFromRecording(
       ...values.map((value) => inputLabel(value.placeholder.slice(2, -2), value.secret)),
     ],
     steps: steps.length ? steps : [DEFAULT_STEP],
-    // The last window title shows the result, unless it shows something typed.
-    howToCheck: playbookHowToCheck(title && !showsTyped(title, typed) ? title : undefined),
+    // The last window's application, never the rest of its title.
+    howToCheck: playbookHowToCheck((title && teachAppName(title)) || undefined),
     whatToReturn: DEFAULT_WHAT_TO_RETURN,
     approvalBoundaries: DEFAULT_APPROVAL,
     failureHandling: DEFAULT_FAILURE,
@@ -330,6 +315,44 @@ export function scrubTeachEvents(events: TeachRecordingEvent[]): TeachRecordingE
   return scrubbed;
 }
 
+/** Set on a recording once what was typed in it is forgotten, so it is never done twice. */
+const FORGOTTEN = "dozoScrubbed";
+
+/** Whether a stored recording already had what was typed in it forgotten. */
+export function teachTypingForgotten(recording: unknown): boolean {
+  return (
+    typeof recording === "object" &&
+    recording !== null &&
+    "dozoScrubbed" in recording &&
+    recording.dozoScrubbed === true
+  );
+}
+
+/**
+ * A recording with what was typed and opened in it forgotten: each typed run is one event (as
+ * `scrubTeachEvents`), every window title keeps only its application's name (a snapshot whose
+ * title names none is dropped, its event kept without a title so the steps stay the same), and
+ * cached value suggestions go. Marked, so a recording already forgotten is left as it is: its
+ * titles are already application names, which would not survive a second pass.
+ */
+export function forgetTeachTyping<
+  R extends { events: TeachRecordingEvent[]; snapshots: TeachSnapshot[] },
+>(recording: R, forgotten = teachTypingForgotten(recording)) {
+  const { dozoSuggestions: _cached, ...kept } = recording as R & { dozoSuggestions?: unknown };
+  if (forgotten) return { ...kept, [FORGOTTEN]: true as const };
+  const events = scrubTeachEvents(recording.events).map((event) => {
+    if (event.kind !== "snapshot" || event.summary === undefined) return event;
+    const { summary, ...rest } = event;
+    const app = teachAppName(summary);
+    return app ? { ...rest, summary: app } : rest;
+  });
+  const snapshots = recording.snapshots.flatMap((snapshot) => {
+    const app = teachAppName(snapshot.summary);
+    return app ? [{ ...snapshot, summary: app }] : [];
+  });
+  return { ...kept, events, snapshots, [FORGOTTEN]: true as const };
+}
+
 /** Lowercase letters, digits and underscores, at most 40; accents are dropped, not the letter. */
 export function teachInputName(name: string): string {
   return name
@@ -348,13 +371,23 @@ function inputName(input: string): string {
   return input.endsWith(SECRET_MARK) ? input.slice(0, -SECRET_MARK.length) : input;
 }
 
+/** The stable code of a save or test that gives two different values one name. */
+export const TEACH_NAME_TAKEN = "teach_name_taken";
+
+/** Whether two values are one: the same text, known for both. */
+function sameValue(a: TeachTypedValue, b: TeachTypedValue): boolean {
+  return a.text !== null && a.text === b.text && a.secret === b.secret;
+}
+
 /**
  * Applies the teacher's decision to each typed value: an input the bot fills on each run (hidden
  * ones typed from a saved login, never asked for in chat), text kept in the steps, or the steps
  * that type it removed. A value with no decision is an input named `value_N`. A protected value
  * stays secret whatever is chosen, and one without text is never kept as text. Values the steps
- * no longer hold are left alone. The inputs already listed (the goal, ones added by hand) stay,
- * without the draft's `value N` labels; the named inputs follow.
+ * no longer hold are left alone. Two values share a name only when they are the same text;
+ * otherwise the save is refused (`TEACH_NAME_TAKEN`) rather than merging them. The inputs already
+ * listed (the goal, ones added by hand) stay, without the draft's `value N` labels; a named input
+ * follows unless one of that name is already listed, which it then marks secret if it is.
  */
 export function applyValueDecisions(
   playbook: SkillPlaybook,
@@ -362,7 +395,7 @@ export function applyValueDecisions(
   decisions: Record<string, TeachValueDecision | undefined>,
 ): SkillPlaybook {
   let steps = [...playbook.steps];
-  const variables = new Map<string, boolean>();
+  const variables = new Map<string, { value: TeachTypedValue; secret: boolean }>();
   values.forEach((value, index) => {
     // A value whose steps were edited away is no input.
     if (!steps.some((step) => step.includes(value.placeholder))) return;
@@ -381,14 +414,24 @@ export function applyValueDecisions(
     }
     const name = teachInputName(decision.name) || `value_${index + 1}`;
     const secret = value.secret || decision.action === "hidden";
-    variables.set(name, (variables.get(name) ?? false) || secret);
+    const named = variables.get(name);
+    if (named && !sameValue(named.value, value)) {
+      throw new ClientError("BAD_REQUEST", "Each name can be used once.", TEACH_NAME_TAKEN);
+    }
+    variables.set(name, { value, secret: (named?.secret ?? false) || secret });
     steps = steps.map((step) => step.replaceAll(value.placeholder, `{{${name}}}`));
   });
-  const kept = playbook.inputs.filter(
-    (input) => !PLACEHOLDER_LABEL.test(input) && !variables.has(inputName(input)),
-  );
-  const inputs = [...kept, ...[...variables].map(([name, secret]) => inputLabel(name, secret))];
-  return { ...playbook, inputs, steps: steps.length ? steps : [DEFAULT_STEP] };
+  const kept = playbook.inputs
+    .filter((input) => !PLACEHOLDER_LABEL.test(input))
+    .map((input) => {
+      const name = inputName(input);
+      return variables.get(name)?.secret ? inputLabel(name, true) : input;
+    });
+  const listed = new Set(kept.map(inputName));
+  const added = [...variables]
+    .filter(([name]) => !listed.has(name))
+    .map(([name, { secret }]) => inputLabel(name, secret));
+  return { ...playbook, inputs: [...kept, ...added], steps: steps.length ? steps : [DEFAULT_STEP] };
 }
 
 /** The `{{name}}` inputs the steps use, in order, and whether `inputs` marks each secret. */

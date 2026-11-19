@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { TeachComputerInput, TeachingSessionDeps } from "@rakazo/adapters";
 import {
+  captureTeachingSnapshot,
   completeTeachingSession,
   createBackgroundJobHandlers,
   recordTeachingInputEvent,
@@ -15,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTaughtSkillsService } from "./dozo-taught-skills.js";
 import { createDozoTeach } from "./dozo-teach.js";
 import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
+import { dozoTeachSweep } from "./dozo-teach-sweep.js";
 
 // Runs on the branded tree only, against a database migrated with `pnpm db:migrate` (DATABASE_URL
 // is the runtime login row security applies to, the job queue's schema exists) and content
@@ -26,6 +28,13 @@ const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe :
 
 const PROTECTED = "S3cret-Pass!";
 const TYPED = ["ali@example.test", "hunter2", "my secret phrase"];
+/** Window titles showing what was typed, also changed (a results page's own spelling of it). */
+const TITLES = [
+  "Results: hunter2 - Search - Browser",
+  "HUNTER-2 for ALI@EXAMPLE.TEST \u2014 Browser",
+];
+/** Anything of the typed values a title could carry, in whatever case. */
+const LEAK = /hunter|ali@example|secret phrase/i;
 const SCRUB = readFileSync(
   new URL(
     "../../../packages/db/prisma/migrations/20261230120100_dozo_teach_values/migration.sql",
@@ -50,7 +59,8 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
         enqueue: vi.fn(async () => undefined),
         cancel: vi.fn(async () => undefined),
       } as unknown as JobPublisher,
-      sandbox: {} as never,
+      // The computer's active window, as a snapshot reads it.
+      sandbox: { observe: async () => ({ activeWindow: { title: TITLES[0] } }) } as never,
     };
   }
 
@@ -120,7 +130,18 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
       FROM taught_skills WHERE id = ${skill.id}`;
     expect(live?.count).toBe(inputs.length);
     expect(live?.recording).not.toContain(PROTECTED);
-    await runAsTenant(teacher, () => completeTeachingSession(deps(), teacher, skill.id, "stopped"));
+    // A snapshot while teaching, and the one at the stop, each read the window's title.
+    const computer = { id: "c", kind: "docker", homeKey: bot.id, providerRef: "ref" };
+    const recording = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    await runAsTenant(teacher, () =>
+      captureTeachingSnapshot(deps(), teacher, { id: bot.id, computer }, recording),
+    );
+    await runAsTenant(teacher, () =>
+      completeTeachingSession(deps(), teacher, skill.id, "stopped", {
+        at: new Date().toISOString(),
+        summary: TITLES[1]!,
+      }),
+    );
     return { bot, thread, skill };
   }
 
@@ -159,6 +180,13 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     for (const text of [...TYPED, PROTECTED]) {
       for (const place of Object.values(stored)) expect(place).not.toContain(text);
     }
+    // Of every window title only the application is left, in the recording and the check.
+    for (const place of Object.values(stored)) expect(place).not.toMatch(LEAK);
+    expect((drafted.recording as { snapshots: unknown[] }).snapshots).toEqual([
+      expect.objectContaining({ summary: "Browser" }),
+      expect.objectContaining({ summary: "Browser" }),
+    ]);
+    expect((drafted.playbook as { howToCheck: string }).howToCheck).toContain("Browser");
     // One event per value: neither the characters, their number nor their timing is left.
     const events = (drafted.recording as { events: Array<Record<string, unknown>> }).events;
     expect(events.filter((event) => event.typed)).toHaveLength(4);
@@ -199,6 +227,8 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     for (const text of [...TYPED, PROTECTED]) {
       expect(JSON.stringify(suggest.mock.calls)).not.toContain(text);
     }
+    expect(JSON.stringify(suggest.mock.calls)).not.toMatch(LEAK);
+    expect(JSON.stringify(suggest.mock.calls)).not.toContain("Browser");
     expect((await runAsTenant(member, () => teach.review(member, skill.id))).values).toEqual([]);
     // Another member reads the skill without its recording, and nothing typed in it either way.
     const seen = JSON.stringify([
@@ -261,6 +291,115 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
       for (const place of Object.values(stored)) expect(place).not.toContain(text);
     }
     expect((await runAsTenant(teacher, () => teach.review(teacher, skill.id))).values).toEqual([]);
+  });
+
+  it("lets only the teacher's own context read the values, whoever drafted them", async () => {
+    const { skill } = await recordAndStop();
+    const count = () =>
+      db.prisma.$queryRaw<Array<{ n: number }>>`
+        SELECT count(*)::int AS n FROM dozo_teach_values WHERE "skillId" = ${skill.id}`;
+    expect(await runAsTenant(teacher, count)).toEqual([{ n: 1 }]);
+    // Row security itself, not only the route: a member of the Space reads none.
+    expect(await runAsTenant(member, count)).toEqual([{ n: 0 }]);
+    // Someone else's save forgets them all the same.
+    const taughtSkills = createTaughtSkillsService({
+      ...deps(),
+      home: {},
+      dataDir: "/tmp",
+    } as never);
+    await runAsTenant(member, () => taughtSkills.save(member, skill.id));
+    expect(await valuesRow(skill.id)).toBeUndefined();
+  });
+
+  /** A skill as the previous release leaves one: typing and full titles in its recording. */
+  async function leftByPreviousRelease(status: string, expiresAt?: Date) {
+    const bot = await system.bot.create({
+      data: { spaceId: id, userId: id, name: "Prev", color: "test" },
+    });
+    await system.thread.create({ data: { spaceId: id, botId: bot.id, userId: id } });
+    const at = new Date().toISOString();
+    const events = [
+      { at, kind: "pointer", x: 1, y: 1, type: "click" },
+      ...[...TYPED[1]!].map((key) => ({ at, kind: "key", key })),
+      { at, kind: "snapshot", summary: TITLES[0] },
+      { at, kind: "key", key: "Enter" },
+    ];
+    const skill = await system.taughtSkill.create({
+      data: {
+        spaceId: id,
+        botId: bot.id,
+        userId: id,
+        goal: "Search",
+        status,
+        expiresAt: expiresAt ?? null,
+        recording: { events, snapshots: [{ at, summary: TITLES[0] }] } as never,
+      },
+    });
+    return { bot, skill };
+  }
+
+  async function recordingText(skillId: string) {
+    const [raw] = await system.$queryRaw<Array<{ recording: string }>>`
+      SELECT recording::text AS recording FROM taught_skills WHERE id = ${skillId}`;
+    return raw!.recording;
+  }
+
+  it("forgets what the previous release left in a draft when it is read", async () => {
+    const { bot, skill } = await leftByPreviousRelease("draft");
+    const before = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect(await recordingText(skill.id)).toMatch(LEAK);
+    const taughtSkills = createTaughtSkillsService({
+      ...deps(),
+      home: {},
+      dataDir: "/tmp",
+    } as never);
+    const listed = await runAsTenant(teacher, () => taughtSkills.list(teacher, bot.id));
+    expect(JSON.stringify(listed)).not.toMatch(LEAK);
+    const text = await recordingText(skill.id);
+    expect(text).not.toMatch(LEAK);
+    expect(JSON.parse(text)).toMatchObject({
+      dozoScrubbed: true,
+      snapshots: [{ summary: "Browser" }],
+    });
+    // Its place in the list stays; its values are gone for good.
+    const after = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect(after.updatedAt).toEqual(before.updatedAt);
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
+    expect((await runAsTenant(teacher, () => teach.review(teacher, skill.id))).values).toEqual([]);
+
+    // get and review forget on their own too.
+    const reads: Array<(skillId: string) => Promise<unknown>> = [
+      (skillId) => taughtSkills.get(teacher, skillId),
+      (skillId) => teach.review(teacher, skillId),
+    ];
+    for (const read of reads) {
+      const left = await leftByPreviousRelease("draft");
+      await runAsTenant(teacher, () => read(left.skill.id));
+      expect(await recordingText(left.skill.id)).not.toMatch(LEAK);
+    }
+  });
+
+  it("sweeps: due values go, a recording whose job was lost is drafted, old drafts forgotten", async () => {
+    const late = await leftByPreviousRelease("recording", new Date(Date.now() - 20 * 60_000));
+    const live = await leftByPreviousRelease("recording", new Date(Date.now() + 10 * 60_000));
+    const old = await leftByPreviousRelease("saved");
+    const { skill: due } = await recordAndStop();
+    await system.$executeRaw`
+      UPDATE dozo_teach_values SET "expiresAt" = CURRENT_TIMESTAMP - interval '1 second'
+      WHERE "skillId" = ${due.id}`;
+
+    await dozoTeachSweep(deps())(new AbortController().signal);
+
+    expect(await valuesRow(due.id)).toBeUndefined();
+    const drafted = await system.taughtSkill.findUniqueOrThrow({ where: { id: late.skill.id } });
+    expect(drafted.status).toBe("draft");
+    expect(await recordingText(late.skill.id)).not.toMatch(LEAK);
+    expect(await valuesRow(late.skill.id)).toBeDefined();
+    expect(await recordingText(old.skill.id)).not.toMatch(LEAK);
+    // A recording still within its time is left to its own job.
+    const running = await system.taughtSkill.findUniqueOrThrow({ where: { id: live.skill.id } });
+    expect(running.status).toBe("recording");
+    expect(await recordingText(live.skill.id)).toMatch(LEAK);
   });
 
   it("migrates older drafts and saved skills to one event per typed run, live ones untouched", async () => {
