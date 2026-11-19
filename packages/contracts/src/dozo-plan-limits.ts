@@ -37,47 +37,31 @@ export type PlanLimitBilling = Pick<
   "canManage" | "byokTier" | "byokTiers" | "funding" | "state"
 >;
 
-const COPY = {
-  en: {
-    computerNotInPlan: "Your plan doesn't include a computer.",
-    computerNotInPlanAskOwner: "Your plan doesn't include a computer. Ask the owner to upgrade.",
-    computerHoursUsed: "This month's computer hours are used up.",
-    sharedSpaceFull: "Shared space is full. Delete files or change the plan.",
-    sharedSpaceFullUpgrade: "Shared space is full. Delete files or upgrade.",
-    sharedSpaceFullAskOwner: "Shared space is full. Delete files or ask the owner to upgrade.",
-    sharedSpaceFullTop: "Shared space is full. Delete files to make room.",
-    computersBusy: COMPUTERS_BUSY_MESSAGE,
-    computerLimit: "Computer limit reached. Archive a bot to free one.",
-    spaceLimit: "Space limit reached. Delete a Space to add another.",
-    planNotOffered: "This plan is free. Choose a paid plan to upgrade.",
-    upgrade: "Upgrade",
-    upgradeTo: "Upgrade to {plan}",
-    retry: "Try again",
-  },
-  tr: {
-    computerNotInPlan: "Planınızda bilgisayar yok.",
-    computerNotInPlanAskOwner: "Planınızda bilgisayar yok. Yükseltmesi için sahibine sorun.",
-    computerHoursUsed: "Bu ayın bilgisayar saatleri tükendi.",
-    sharedSpaceFull: "Paylaşılan alan dolu. Dosya silin ya da planı değiştirin.",
-    sharedSpaceFullUpgrade: "Paylaşılan alan dolu. Dosya silin ya da yükseltin.",
-    sharedSpaceFullAskOwner:
-      "Paylaşılan alan dolu. Dosya silin ya da yükseltmesi için sahibine sorun.",
-    sharedSpaceFullTop: "Paylaşılan alan dolu. Yer açmak için dosya silin.",
-    computersBusy: "Tüm bilgisayarlar meşgul. Birazdan tekrar deneyin.",
-    computerLimit: "Bilgisayar sınırına ulaşıldı. Yer açmak için bir botu arşivleyin.",
-    spaceLimit: "Alan sınırına ulaşıldı. Yenisi için bir alanı silin.",
-    planNotOffered: "Bu plan ücretsiz. Yükseltmek için ücretli bir plan seçin.",
-    upgrade: "Yükselt",
-    upgradeTo: "{plan} planına geç",
-    retry: "Tekrar dene",
-  },
-} satisfies Record<string, Record<string, string>>;
-type Copy = (typeof COPY)["en"];
+/**
+ * The table's sentences and labels, in the UI's language. Clients build it from their translation
+ * catalog (`planLimitCopy` in `@rakazo/i18n/dozo-plan-limits`), so this table holds no copy.
+ */
+export type PlanLimitCopy = {
+  computerNotInPlan: string;
+  computerNotInPlanAskOwner: string;
+  computerHoursUsed: string;
+  /** The hours refusal where the plan behind it is not known. */
+  noComputerHours: string;
+  sharedSpaceFull: string;
+  sharedSpaceFullUpgrade: string;
+  sharedSpaceFullAskOwner: string;
+  sharedSpaceFullTop: string;
+  computersBusy: string;
+  computerLimit: string;
+  spaceLimit: string;
+  planNotOffered: string;
+  upgrade: string;
+  upgradeTo: (plan: string) => string;
+  retry: string;
+};
 
-/** English, or Turkish for a Turkish UI. The fork's own sentences have no other catalog. */
-export function planLimitCopy(locale: string): Copy {
-  return /^tr\b/i.test(locale) ? COPY.tr : COPY.en;
-}
+/** The server's own sentence for a full shared space, for text that kept no code. */
+export const SHARED_SPACE_FULL_MESSAGE = "Shared space is full. Delete files or change the plan.";
 
 const SERVER_CODES = new Set<string>([
   PLAN_LIMIT_CODES.sharedSpaceFull,
@@ -87,31 +71,40 @@ const SERVER_CODES = new Set<string>([
   PLAN_LIMIT_CODES.planNotOffered,
 ]);
 
-/** Each server code's sentence in every language, so text that kept no code is still known. */
-const SENTENCES = new Map<string, PlanLimitCode>(
-  Object.values(COPY).flatMap((copy) => [
+/** Text that names a limit: the server's own sentences, and the copy's when the client has it. */
+function sentenceLimit(text: string, copy: PlanLimitCopy | undefined): PlanLimitCode | null {
+  if (text === COMPUTERS_BUSY_MESSAGE) return PLAN_LIMIT_CODES.computersBusy;
+  if (text === SHARED_SPACE_FULL_MESSAGE) return PLAN_LIMIT_CODES.sharedSpaceFull;
+  if (!copy) return null;
+  const sentences: [string, PlanLimitCode][] = [
     [copy.sharedSpaceFull, PLAN_LIMIT_CODES.sharedSpaceFull],
     [copy.computersBusy, PLAN_LIMIT_CODES.computersBusy],
     [copy.computerLimit, PLAN_LIMIT_CODES.computerLimit],
     [copy.spaceLimit, PLAN_LIMIT_CODES.spaceLimit],
     [copy.planNotOffered, PLAN_LIMIT_CODES.planNotOffered],
-  ]),
-);
+  ];
+  return sentences.find(([sentence]) => sentence === text)?.[1] ?? null;
+}
 
 /**
  * The limit a failure is, from an RPC error's code, or from text that kept no code: a failed
- * run's saved error (the hours refusal, the busy host) or a sentence this table already wrote,
- * such as a failed send's. Null for any other failure.
+ * run's saved error (the hours refusal, the busy host) or, given the copy, a sentence this table
+ * already wrote, such as a failed send's. Null for any other failure.
  */
-export function planLimitOf(error: unknown): "computer_hours" | PlanLimitCode | null {
+export function planLimitOf(
+  error: unknown,
+  copy?: PlanLimitCopy,
+): "computer_hours" | PlanLimitCode | null {
   const record =
     error !== null && typeof error === "object" ? (error as Record<string, unknown>) : {};
   if (typeof record.code === "string" && SERVER_CODES.has(record.code))
     return record.code as PlanLimitCode;
   const message = typeof error === "string" ? error : record.message;
   if (typeof message !== "string") return null;
-  if (isComputerAllowanceUsed(message.trim())) return "computer_hours";
-  return SENTENCES.get(message.trim()) ?? null;
+  const text = message.trim();
+  if (isComputerAllowanceUsed(text) || (copy && text === copy.noComputerHours))
+    return "computer_hours";
+  return sentenceLimit(text, copy);
 }
 
 /** The next paid plan up from the one in force, or null on the top one or where none is sold. */
@@ -133,13 +126,13 @@ function hasNoComputer(tier: ByokTier): boolean {
  * The sentence and action for a limit. Without the billing status the sentence names no plan
  * action. Only a member who manages billing gets the upgrade; others are told to ask the owner.
  * Computer hours on a trial or a credit plan return null: upstream's own copy covers them.
+ * Without the billing status they say only that no hours are left.
  */
 export function planLimitNotice(
   limit: "computer_hours" | PlanLimitCode,
   billing: PlanLimitBilling | null | undefined,
-  locale: string,
+  copy: PlanLimitCopy,
 ): PlanLimitNotice | null {
-  const copy = planLimitCopy(locale);
   const next = billing ? nextPlan(billing) : null;
   const upgrade = (label: string): PlanLimitAction | null =>
     billing?.canManage && next ? { kind: "upgrade", label, startsPaidPlan: next.fromFree } : null;
@@ -152,7 +145,8 @@ export function planLimitNotice(
     case "computer_hours":
     case PLAN_LIMIT_CODES.computerNotInPlan:
     case PLAN_LIMIT_CODES.computerHoursUsed: {
-      if (!billing || billing.state === "trialing" || billing.funding === "credits") return null;
+      if (!billing) return notice(PLAN_LIMIT_CODES.computerHoursUsed, copy.noComputerHours);
+      if (billing.state === "trialing" || billing.funding === "credits") return null;
       if (hasNoComputer(billing.byokTier ?? "standard"))
         return billing.canManage
           ? notice(
@@ -164,7 +158,7 @@ export function planLimitNotice(
       return notice(
         PLAN_LIMIT_CODES.computerHoursUsed,
         copy.computerHoursUsed,
-        next ? upgrade(copy.upgradeTo.replace("{plan}", next.name)) : null,
+        next ? upgrade(copy.upgradeTo(next.name)) : null,
       );
     }
     case PLAN_LIMIT_CODES.sharedSpaceFull: {
@@ -188,10 +182,11 @@ export function planLimitNotice(
 
 /**
  * The sentence alone, for a failure shown where no action fits (a toast, an alert). Computer
- * hours need the billing status to say why, so they keep the caller's text.
+ * hours need the billing status to say why, so they keep the caller's text: the computer screens
+ * recognise it and say why themselves.
  */
-export function planLimitText(error: unknown, locale: string): string | null {
-  const limit = planLimitOf(error);
+export function planLimitText(error: unknown, copy: PlanLimitCopy): string | null {
+  const limit = planLimitOf(error, copy);
   if (!limit || limit === "computer_hours") return null;
-  return planLimitNotice(limit, null, locale)?.text ?? null;
+  return planLimitNotice(limit, null, copy)?.text ?? null;
 }

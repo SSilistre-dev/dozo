@@ -1,4 +1,6 @@
+import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
+import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { expect, it } from "vitest";
 import { billingErrorText } from "./dozo-plan-limit";
 
@@ -9,7 +11,7 @@ it("a refused checkout of the free plan says why, in the UI's language", () => {
   expect(billingErrorText({ code: "plan_not_offered" }, "Could not open billing")).toBe(
     "This plan is free. Choose a paid plan to upgrade.",
   );
-  i18n.loadAndActivate({ locale: "tr", messages: {} });
+  i18n.loadAndActivate({ locale: "tr", messages: tr as Messages });
   expect(billingErrorText({ code: "plan_not_offered" }, "x")).toBe(
     "Bu plan ücretsiz. Yükseltmek için ücretli bir plan seçin.",
   );

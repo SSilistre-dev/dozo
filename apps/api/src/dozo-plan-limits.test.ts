@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { PlanLimitBilling } from "@rakazo/contracts";
+import type { PlanLimitBilling, PlanLimitCopy } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, planLimitNotice, planLimitOf } from "@rakazo/contracts";
 import { ComputerLimitError, SharedSpaceFullError, SpaceLimitError } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,11 @@ import { PlanNotOfferedError } from "./dozo-billing.js";
 import { handleRpcError } from "./rpc-errors.js";
 
 // Runs on the branded tree only: the codes and the table exist once the brand rules are applied.
+
+/** The clients pass translated copy; here each sentence is its own key, so the pick is visible. */
+const copy = new Proxy({} as PlanLimitCopy, {
+  get: (_, key) => (key === "upgradeTo" ? (plan: string) => `upgradeTo ${plan}` : String(key)),
+});
 
 /** What a client receives for a refusal: the RPC error the server's translation throws. */
 function answer(error: Error): ORPCError<string, unknown> {
@@ -51,14 +56,14 @@ describe("a server refusal reaches the client with its stable code and maps to a
     expect(sent.code).toBe(PLAN_LIMIT_CODES.sharedSpaceFull);
     const limit = planLimitOf(sent);
     expect(limit).toBe("shared_space_full");
-    expect(planLimitNotice(limit ?? "shared_space_full", free, "en")).toEqual({
+    expect(planLimitNotice(limit ?? "shared_space_full", free, copy)).toEqual({
       code: "shared_space_full",
-      text: "Shared space is full. Delete files or upgrade.",
-      action: { kind: "upgrade", label: "Upgrade", startsPaidPlan: true },
+      text: "sharedSpaceFullUpgrade",
+      action: { kind: "upgrade", label: "upgrade", startsPaidPlan: true },
     });
-    expect(planLimitNotice("shared_space_full", member, "en")).toEqual({
+    expect(planLimitNotice("shared_space_full", member, copy)).toEqual({
       code: "shared_space_full",
-      text: "Shared space is full. Delete files or ask the owner to upgrade.",
+      text: "sharedSpaceFullAskOwner",
       action: null,
     });
   });
@@ -69,9 +74,9 @@ describe("a server refusal reaches the client with its stable code and maps to a
     expect(sent.code).toBe(PLAN_LIMIT_CODES.spaceLimit);
     expect(sent.status).toBe(400);
     expect(sent.message).toBe("Space limit reached");
-    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, "tr")).toEqual({
+    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, copy)).toEqual({
       code: "space_limit_reached",
-      text: "Alan sınırına ulaşıldı. Yenisi için bir alanı silin.",
+      text: "spaceLimit",
       action: null,
     });
   });
@@ -81,9 +86,9 @@ describe("a server refusal reaches the client with its stable code and maps to a
     expect(sent.code).toBe(PLAN_LIMIT_CODES.computerLimit);
     expect(sent.status).toBe(400);
     expect(sent.message).toBe("User computer limit (3) reached");
-    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, "en")).toEqual({
+    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, copy)).toEqual({
       code: "computer_limit_reached",
-      text: "Computer limit reached. Archive a bot to free one.",
+      text: "computerLimit",
       action: null,
     });
   });
@@ -91,9 +96,9 @@ describe("a server refusal reaches the client with its stable code and maps to a
   it("a checkout of the free plan: a plain sentence, no action", () => {
     const sent = answer(new PlanNotOfferedError());
     expect(sent.code).toBe(PLAN_LIMIT_CODES.planNotOffered);
-    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, "en")).toEqual({
+    expect(planLimitNotice(planLimitOf(sent) ?? "computer_hours", free, copy)).toEqual({
       code: "plan_not_offered",
-      text: "This plan is free. Choose a paid plan to upgrade.",
+      text: "planNotOffered",
       action: null,
     });
   });
