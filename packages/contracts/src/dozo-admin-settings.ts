@@ -65,3 +65,11 @@ export const dozoSiteSettingsContract = {
   /** The announcement every signed-in person sees; null for a language without one. */
   announcement: oc.output(DozoAnnouncementSchema),
 };
+
+/** The announcement in the app's language, else the one there is; null when there is none. */
+export function announcementText(announcement: DozoAnnouncement | undefined, locale: string) {
+  if (!announcement) return null;
+  return locale.startsWith("tr")
+    ? (announcement.tr ?? announcement.en)
+    : (announcement.en ?? announcement.tr);
+}
