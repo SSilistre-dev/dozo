@@ -37,8 +37,8 @@ function links(locale: string) {
 
 it("links the terms and the privacy policy in one line", () => {
   expect(links("en")).toEqual([
-    ["Terms", "https://dozo-site.ssilistre.dev/terms/", "_blank", "noreferrer"],
-    ["Privacy", "https://dozo-site.ssilistre.dev/privacy/", "_blank", "noreferrer"],
+    ["Terms", "https://dozo-site.ssilistre.dev/terms/", "_blank", "noopener noreferrer"],
+    ["Privacy", "https://dozo-site.ssilistre.dev/privacy/", "_blank", "noopener noreferrer"],
   ]);
   expect(container.querySelectorAll("p")).toHaveLength(1);
 });

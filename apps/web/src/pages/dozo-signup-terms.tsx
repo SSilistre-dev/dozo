@@ -11,11 +11,11 @@ export function DozoSignupTerms() {
   const link = "underline-offset-4 hover:text-foreground hover:underline";
   return (
     <p className="mt-3 text-center text-body-sm text-muted-foreground">
-      <a href={`${base}/terms/`} target="_blank" rel="noreferrer" className={link}>
+      <a href={`${base}/terms/`} target="_blank" rel="noopener noreferrer" className={link}>
         {t`Terms`}
       </a>
       {" · "}
-      <a href={`${base}/privacy/`} target="_blank" rel="noreferrer" className={link}>
+      <a href={`${base}/privacy/`} target="_blank" rel="noopener noreferrer" className={link}>
         {t`Privacy`}
       </a>
     </p>

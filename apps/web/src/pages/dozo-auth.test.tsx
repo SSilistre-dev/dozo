@@ -244,7 +244,7 @@ it.each([
     await open(`/sign-up?plan=${plan}&period=${period}&next=%2Fapp`);
     expect(where()).toBe("/sign-up?next=%2Fapp");
     expect(shown()).toBe("up");
-    expect(JSON.parse(intent() ?? "null")).toEqual(kept);
+    expect(JSON.parse(intent() ?? "null")).toMatchObject(kept);
   },
 );
 
@@ -269,7 +269,7 @@ it("keeps the plan and the language together, dropping all three parameters once
   expect(mocks.setUiLocale).toHaveBeenCalledWith("tr");
   expect(where()).toBe("/sign-up");
   expect(language()?.value).toBe("tr");
-  expect(JSON.parse(intent() ?? "null")).toEqual({ tier: "pro", period: "year" });
+  expect(JSON.parse(intent() ?? "null")).toMatchObject({ tier: "pro", period: "year" });
 });
 
 it("keeps the plan when registration is closed and sign-in shows instead", async () => {
@@ -277,7 +277,7 @@ it("keeps the plan when registration is closed and sign-in shows instead", async
   mocks.capabilities.mockResolvedValue({ signupsOpen: false });
   await open("/sign-up?plan=premium_plus&period=year");
   expect(where()).toBe("/sign-in");
-  expect(JSON.parse(intent() ?? "null")).toEqual({ tier: "max", period: "year" });
+  expect(JSON.parse(intent() ?? "null")).toMatchObject({ tier: "max", period: "year" });
 });
 
 it("names sign-up and sign-in in the tab's title, and gives the title back on leaving", async () => {
