@@ -1,4 +1,5 @@
 import { createRouterClient } from "@orpc/server";
+import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { DozoPaymentLedger } from "@rakazo/adapters";
 import { sandboxKindCapabilities, sandboxKindsWhere } from "@rakazo/adapters";
 import type { AccountDeletionAuth } from "@rakazo/auth";
@@ -12,15 +13,17 @@ import {
   removeBan,
 } from "@rakazo/auth";
 import type { DozoAdminUsersSort } from "@rakazo/contracts";
-import { ClientError, MESSAGING_EMAIL_SUFFIX, signupsOpen } from "@rakazo/core";
+import { ClientError, MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import {
   IsolationError,
   ownedOrganizationId,
+  readSiteSettings,
   recordAuditEvent,
   recordSecurityEvent,
   revokePlanGrant,
   runAsSystem,
   setPlanGrant,
+  signupsOpenFrom,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
@@ -68,10 +71,12 @@ export interface DozoAdminWiring {
   devices: DeviceStore;
   /** While a directory provisions accounts, it owns turning them off and on. */
   directoryProvisioning: boolean;
-  /** SIGNUPS_ENABLED as the environment has it. */
+  /** SIGNUPS_ENABLED as the environment has it; the admin's site setting wins over it. */
   signupsEnabled: string | undefined;
   /** The server's auth, whose account deletion the admin page runs for someone else. */
   auth: AccountDeletionAuth;
+  /** The fanout that tells open apps a site setting changed; absent, nobody is told. */
+  realtime?: RealtimeFanout;
   /** What the billing page reads payments from; absent when no payment provider is configured. */
   payments?: DozoPaymentLedger;
 }
@@ -168,7 +173,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           ]);
           const page = rows.slice(0, DOZO_ADMIN_USERS_PAGE);
           const mine = { userId: { in: page.map((user) => user.id) } };
-          const [banned, total, sessions, bots, computers, planOf] = await Promise.all([
+          const [site, banned, total, sessions, bots, computers, planOf] = await Promise.all([
+            readSiteSettings(prisma),
             bannedEntries(
               prisma,
               page.map((user) => user.email),
@@ -195,7 +201,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           const botCount = new Map(bots.map((row) => [row.userId, row._count._all]));
           const computerCount = new Map(computers.map((row) => [row.userId, row._count._all]));
           return {
-            signupsOpen: signupsOpen(wiring?.signupsEnabled),
+            signupsOpen: signupsOpenFrom(site, wiring?.signupsEnabled),
             total,
             matching: matching ?? total,
             users: page.map((user) => ({

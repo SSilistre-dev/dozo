@@ -704,15 +704,219 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "import { encryptionKeyWarning } from \"@rakazo/core\";",
-      "replace": "import { encryptionKeyWarning, signupsOpen } from \"@rakazo/core\";",
+      "find": "import { encryptionKeyWarning } from \"@rakazo/core\";\nimport type { Pool, PrismaClient } from \"@rakazo/db\";",
+      "replace": "import { encryptionKeyWarning } from \"@rakazo/core\";\nimport { readSiteSettings, signupsOpenFrom } from \"@rakazo/db\";\nimport type { Pool, PrismaClient } from \"@rakazo/db\";",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
       "reason": "closed registration: the capabilities answer reads the same switch the sign-up policy reads"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n    } satisfies AuthCapabilities);",
-      "replace": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n      signupsOpen: signupsOpen(env.signupsEnabled),\n    } satisfies AuthCapabilities);",
+      "replace": "      crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,\n      signupsOpen: signupsOpenFrom(dozoSite, env.signupsEnabled),\n    } satisfies AuthCapabilities);",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
       "reason": "closed registration: the capabilities answer carries whether sign-up is open"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./computers.js\";\nexport * from \"./content-crypto.js\";\n",
+      "replace": "export * from \"./computers.js\";\nexport * from \"./dozo-site-settings.js\";\nexport * from \"./content-crypto.js\";\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the package exports the settings an admin changes at run time"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "import { withTransactionRetry } from \"./transaction-retry.js\";\n\n",
+      "replace": "import { withTransactionRetry } from \"./transaction-retry.js\";\nimport { siteMaxComputersPerUser } from \"./dozo-site-settings.js\";\n\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  const limit = resolveMaxComputersPerUser();\n  if (limit <= 0) return;\n",
+      "replace": "  const limit = await siteMaxComputersPerUser(prisma);\n  if (limit <= 0) return;\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  const limit = resolveMaxComputersPerUser();\n\n  async function restore(",
+      "replace": "  const limit = await siteMaxComputersPerUser(prisma);\n\n  async function restore(",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/db/src/computers.ts",
+      "find": "  const limit = resolveMaxComputersPerUser();\n  const scopeKey = computerScopeKey(input);",
+      "replace": "  const limit = await siteMaxComputersPerUser(prisma);\n  const scopeKey = computerScopeKey(input);",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the per-person computer cap is what the admin page set, else SANDBOX_MAX_COMPUTERS_PER_USER, read from the database on every check so every instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "  SpaceDeletionInProgressError,\n} from \"@rakazo/db\";\nimport { bestEffort } from \"@rakazo/logging\";",
+      "replace": "  SpaceDeletionInProgressError,\n} from \"@rakazo/db\";\nimport { siteSignupPolicy } from \"@rakazo/db\";\nimport { bestEffort } from \"@rakazo/logging\";",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "    const policy = signupPolicyFromEnv(env);\n    if (!env.singleAccount",
+      "replace": "    const policy = await siteSignupPolicy(prisma, env);\n    if (!env.singleAccount",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "              ? signupPolicyFromEnv(env)\n",
+      "replace": "              ? await siteSignupPolicy(prisma, env)\n",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "            const policy = signupPolicyFromEnv(env);\n            const oidcSignIn",
+      "replace": "            const policy = await siteSignupPolicy(prisma, env);\n            const oidcSignIn",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: whether sign-up is open is what the admin page set, else SIGNUPS_ENABLED, read from the database where a person is admitted so every API instance agrees at once"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  app.get(\"/api/auth/capabilities\", (c) => {\n    return c.json({",
+      "replace": "  app.get(\"/api/auth/capabilities\", async (c) => {\n    const dozoSite = await readSiteSettings(prisma);\n    return c.json({",
+      "requires": [
+        "packages/db/src/dozo-site-settings.ts"
+      ],
+      "reason": "site settings: the public capabilities say whether sign-up is open as the admin page or else the environment says, read on every request"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { AnalyticsScreenInput } from \"./analytics.js\";\nimport {\n",
+      "replace": "import { AnalyticsScreenInput } from \"./analytics.js\";\nexport * from \"./dozo-admin-settings.js\";\nimport { dozoSiteSettingsContract } from \"./dozo-admin-settings.js\";\nimport {\n",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the admin page's settings procedures and the announcement join the app contract"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  /** The account's spending limit for payments its bots make. */\n  spendingLimit: {\n",
+      "replace": "  /** The account's spending limit for payments its bots make. */\n  dozoSiteSettings: dozoSiteSettingsContract,\n  spendingLimit: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the admin page's settings procedures and the announcement join the app contract"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { threadsRoutes } from \"./routes/threads.js\";\nimport type { VoiceDeps } from \"./voice.js\";\n",
+      "replace": "import { threadsRoutes } from \"./routes/threads.js\";\nimport { dozoSiteSettingsRoutes } from \"./dozo-admin-settings.js\";\nimport type { VoiceDeps } from \"./voice.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the router serves the admin page's settings and the announcement"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...spendingLimitRoutes(ctx),\n  });\n",
+      "replace": "    ...spendingLimitRoutes(ctx),\n    ...dozoSiteSettingsRoutes(ctx),\n  });\n",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the router serves the admin page's settings and the announcement"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "import { SubscriptionGate } from \"./components/SubscriptionGate\";\nimport { authClient } from \"./lib/auth\";\n",
+      "replace": "import { SubscriptionGate } from \"./components/SubscriptionGate\";\nimport { DozoAnnouncementLayout } from \"./components/dozo-announcement\";\nimport { authClient } from \"./lib/auth\";\n",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app shows the admin's announcement as one line below every signed-in page"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "<SubscriptionGate fallback={<PageLoading />}>\n                      <Outlet />\n                    </SubscriptionGate>",
+      "replace": "<SubscriptionGate fallback={<PageLoading />}>\n                      <DozoAnnouncementLayout />\n                    </SubscriptionGate>",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app shows the admin's announcement as one line below every signed-in page"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "import { requireAdmin } from \"../admins.js\";\nimport { aiConsentStatus",
+      "replace": "import { requireAdmin } from \"../admins.js\";\nimport { DOZO_SITE_CHANGED, dozoSiteChanges } from \"../dozo-admin-settings.js\";\nimport { aiConsentStatus",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "            spaceChanges(signal),\n          ),\n        );",
+      "replace": "            spaceChanges(signal),\n            dozoSiteChanges(deps, signal),\n          ),\n        );",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "          if (next === HEARTBEAT) yield { type: \"heartbeat\" as const };\n          else if (next === ROSTER_CHANGED)",
+      "replace": "          if (next === HEARTBEAT) yield { type: \"heartbeat\" as const };\n          else if (next === DOZO_SITE_CHANGED) yield { type: \"site\" as const };\n          else if (next === ROSTER_CHANGED)",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "type: z.enum([\"alert\", \"roster\", ...SpaceChangeKind.options, \"heartbeat\"]),",
+      "replace": "type: z.enum([\"alert\", \"roster\", ...SpaceChangeKind.options, \"site\", \"heartbeat\"]),",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "import { followStream } from \"../../lib/follow-stream\";\nimport { notificationIcon",
+      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { notificationIcon",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
     },
     {
       "file": "infra/sandboxes/computer/Dockerfile",
@@ -1010,7 +1214,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n      ...(stripeBilling ? { payments: new DozoStripeLedger(stripeBilling) } : {}),\n    }),\n    speechSummary:",
       "requires": [
         "apps/api/src/dozo-admin.ts",
         "packages/adapters/src/dozo-stripe-ledger.ts"

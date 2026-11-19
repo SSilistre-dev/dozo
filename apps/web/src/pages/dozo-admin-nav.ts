@@ -23,6 +23,13 @@ export const DOZO_ADMIN_NAV: readonly DozoAdminSection[] = [
   { path: "access", label: msg`Free access` },
   { path: "plugins", label: msg`Plugins` },
   {
+    path: "settings",
+    label: msg`Site settings`,
+    page: lazyComponent(() =>
+      import("./dozo-admin-settings").then((module) => module.DozoAdminSettingsPage),
+    ),
+  },
+  {
     path: "billing",
     label: msg`Billing`,
     page: lazyComponent(() =>
