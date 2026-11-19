@@ -183,3 +183,37 @@ it("shows no shared space where the server sends none, as one that does not bill
   await render(free);
   expect(container.querySelector('[data-testid="shared-space"]')).toBeNull();
 });
+
+it("starts on the plan and period picked on the landing page, once, then on the first plan", async () => {
+  const { clearPlanIntent, savePlanIntent } = await import("../lib/dozo-plan-intent");
+  savePlanIntent({ tier: "max", period: "month" });
+  await render(free);
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "max" });
+
+  act(() => root.unmount());
+  root = createRoot(container);
+  savePlanIntent({ tier: "pro", period: "year" });
+  await render(free);
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({
+    interval: BYOK_TIERS.pro.annualPriceCents ? "year" : "month",
+    tier: "pro",
+  });
+
+  act(() => root.unmount());
+  root = createRoot(container);
+  clearPlanIntent();
+  await render(free);
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "pro" });
+});
+
+it("falls back to the first plan when the picked one is not on offer", async () => {
+  const { clearPlanIntent, savePlanIntent } = await import("../lib/dozo-plan-intent");
+  savePlanIntent({ tier: "max", period: "month" });
+  await render({ ...free, byokTiers: offers.filter((offer) => offer.tier === "pro") });
+  await act(async () => button(/^Subscribe for /)?.click());
+  expect(checkout).toHaveBeenLastCalledWith({ interval: "month", tier: "pro" });
+  clearPlanIntent();
+});

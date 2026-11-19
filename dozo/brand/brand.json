@@ -964,9 +964,30 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "import { desktopBridge } from \"../lib/desktop\";\nimport type { RpcClient } from \"../lib/rpc\";\n",
+      "replace": "import { desktopBridge } from \"../lib/desktop\";\nimport { readPlanIntent } from \"../lib/dozo-plan-intent\";\nimport type { RpcClient } from \"../lib/rpc\";\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the import of the two rules below"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "  const [purchaseOpen, setPurchaseOpen] = useState(false);\n  const [interval, setByokInterval] = useState<ByokInterval>(\"month\");\n",
+      "replace": "  const [purchaseOpen, setPurchaseOpen] = useState(false);\n  // A plan picked on the landing page before sign-up starts selected.\n  const [planIntent] = useState(readPlanIntent);\n  const [interval, setByokInterval] = useState<ByokInterval>(planIntent?.period ?? \"month\");\n",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: Billing starts on the period picked on the landing page, when there is one"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "useState<ByokTier>(\"standard\");",
-      "replace": "useState<ByokTier>(\n    status.byokTiers?.[0]?.tier ?? \"standard\",\n  );",
-      "reason": "plans: the plan picker starts on the first plan on offer, which is not the free one"
+      "replace": "useState<ByokTier>(\n    status.byokTiers?.find((offer) => offer.tier === planIntent?.tier)?.tier ??\n      status.byokTiers?.[0]?.tier ??\n      \"standard\",\n  );",
+      "requires": [
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the plan picker starts on the plan picked on the landing page when it is on offer, else on the first plan on offer, which is not the free one"
     },
     {
       "file": "packages/adapters/src/sandbox-allowance.ts",
@@ -1700,6 +1721,40 @@
         "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
       ],
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "import { ShellPage } from \"./pages/Shell\";",
+      "replace": "import { ShellPage } from \"./pages/dozo-shell\";",
+      "requires": [
+        "apps/web/src/pages/dozo-shell.tsx",
+        "apps/web/src/lib/dozo-plan-intent.ts"
+      ],
+      "reason": "plans: the app shell opens Billing for a plan picked before sign-up, and again after a checkout left unpaid"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "import { authErrorText, credentialIssueText } from \"../lib/user-error\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "replace": "import { authErrorText, credentialIssueText } from \"../lib/user-error\";\nimport { DozoSignupTerms } from \"./dozo-signup-terms\";\nimport { WindowChrome } from \"./WindowChrome\";\n",
+      "requires": [
+        "apps/web/src/pages/dozo-signup-terms.tsx"
+      ],
+      "reason": "sign-up: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/Auth.tsx",
+      "find": "              </Button>\n              {mode === \"in\" && !codeStep ? (\n",
+      "replace": "              </Button>\n              {mode === \"up\" && !codeStep ? <DozoSignupTerms /> : null}\n              {mode === \"in\" && !codeStep ? (\n",
+      "requires": [
+        "apps/web/src/pages/dozo-signup-terms.tsx"
+      ],
+      "reason": "sign-up: the terms and the privacy policy, one line under the button"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "            cancelUrl: client === \"mobile\" ? mobileReturnUrl : appUrl,\n          });\n        } catch (error) {\n",
+      "replace": "            cancelUrl: client === \"mobile\" ? mobileReturnUrl : `${appUrl}?billing=canceled`,\n          });\n        } catch (error) {\n",
+      "reason": "plans: a plan's checkout left unpaid says so on the way back, as a credit checkout does, so the web app reopens Billing"
     }
   ],
   "assets": {
