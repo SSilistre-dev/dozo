@@ -6,7 +6,12 @@ const mocks = vi.hoisted(() => ({
     calls.push(`draft ${id}`);
     return null;
   }),
-  forget: vi.fn(async (): Promise<number> => 0),
+  forget: vi.fn(
+    async (): Promise<{ looked: number; last: string | null }> => ({
+      looked: 0,
+      last: null,
+    }),
+  ),
   system: vi.fn(async (_reason: string, work: () => Promise<unknown>) => work()),
 }));
 vi.mock("@rakazo/adapters", () => ({ expireTaughtSkillTeaching: mocks.expire }));
@@ -37,7 +42,8 @@ describe("dozoTeachSweep", () => {
     mocks.expire.mockRejectedValueOnce(new Error("sandbox down"));
     mocks.forget.mockImplementation(async () => {
       calls.push("forget");
-      return calls.filter((call) => call === "forget").length < 3 ? 2 : 1;
+      const page = calls.filter((call) => call === "forget").length;
+      return page < 3 ? { looked: 2, last: `id-${page}` } : { looked: 1, last: "id-3" };
     });
     const { run, queryRaw, deps } = sweep(["a", "b"]);
     await run(new AbortController().signal);
@@ -51,7 +57,13 @@ describe("dozoTeachSweep", () => {
     const [strings, seconds] = queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, number];
     expect(strings.join("?")).toContain("status = 'recording'");
     expect(seconds).toBe(600);
-    expect(mocks.forget).toHaveBeenCalledWith(deps.prisma, {});
+    // Each page goes on past the last skill the one before looked at, broken ones included.
+    expect(mocks.forget.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      { after: undefined },
+      { after: "id-1" },
+      { after: "id-2" },
+    ]);
+    expect(mocks.forget).toHaveBeenCalledWith(deps.prisma, expect.anything());
   });
 
   it("stops between steps once the API is stopping", async () => {
@@ -63,7 +75,7 @@ describe("dozoTeachSweep", () => {
   });
 
   it("looks at a bounded number of pages per pass", async () => {
-    mocks.forget.mockResolvedValue(2);
+    mocks.forget.mockResolvedValue({ looked: 2, last: "z" });
     await sweep([]).run(new AbortController().signal);
     expect(mocks.forget).toHaveBeenCalledTimes(50);
   });

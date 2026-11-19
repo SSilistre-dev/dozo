@@ -17,6 +17,11 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
   sandboxAllowanceUsedUp: allowance.usedUp,
 }));
 vi.mock("./taught-skills.js", () => ({ createTaughtSkillsService: () => upstream }));
+const reported = vi.hoisted(() => vi.fn());
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  reportJsonColumnOnce: reported,
+}));
 
 const { createTaughtSkillsService, forgetOldTeachTyping, FORGET_PAGE, SKILL_NOT_DRAFT } =
   await import("./dozo-taught-skills.js");
@@ -340,7 +345,10 @@ describe("forgetOldTeachTyping", () => {
 
   it("keeps one event per typed run and only application names, under the row lock", async () => {
     const { prisma, written, steps } = old({ "skill-1": left });
-    expect(await forgetOldTeachTyping(prisma as never, { spaceId: "space-1" })).toBe(1);
+    expect(await forgetOldTeachTyping(prisma as never, { spaceId: "space-1" })).toEqual({
+      looked: 1,
+      last: "skill-1",
+    });
     expect(steps).toEqual(["lock skill-1"]);
     expect(written).toHaveLength(1);
     const [{ id, recording }] = written as [(typeof written)[number]];
@@ -363,7 +371,8 @@ describe("forgetOldTeachTyping", () => {
     const query = strings.join("?");
     expect(query).toContain("status <> 'recording'");
     expect(query).toContain("dozoScrubbed");
-    expect(params).toEqual([null, null, "space-1", "space-1", null, null, FORGET_PAGE]);
+    expect(query).toContain("ORDER BY id");
+    expect(params).toEqual([null, null, "space-1", "space-1", null, null, null, null, FORGET_PAGE]);
   });
 
   it("leaves a skill that became live, was forgotten meanwhile or went", async () => {
@@ -372,8 +381,34 @@ describe("forgetOldTeachTyping", () => {
       b: { ...left, recording: { ...left.recording, dozoScrubbed: true } },
       c: null,
     });
-    expect(await forgetOldTeachTyping(prisma as never, {})).toBe(3);
+    expect(await forgetOldTeachTyping(prisma as never, {})).toEqual({ looked: 3, last: "c" });
     expect(written).toEqual([]);
+  });
+
+  it("reports a recording not in its stored shape and goes on with the next skill", async () => {
+    const broken = { ...left, recording: { ...left.recording, snapshots: [{ at, summary: 7 }] } };
+    const { prisma, written } = old({ a: broken, b: left });
+    expect(await forgetOldTeachTyping(prisma as never, { after: "0" })).toEqual({
+      looked: 2,
+      last: "b",
+    });
+    expect(written.map(({ id }) => id)).toEqual(["b"]);
+    expect(reported).toHaveBeenCalledWith(expect.any(String), {
+      table: "taught_skills",
+      column: "recording",
+      id: "a",
+    });
+    // Paged on from the last skill looked at.
+    expect((prisma.$queryRaw.mock.calls[0] as unknown[]).slice(7, 9)).toEqual(["0", "0"]);
+  });
+
+  it("still reads skills when forgetting fails", async () => {
+    const broken = { ...left, recording: { ...left.recording, events: [{ at, kind: "key" }, 3] } };
+    const { prisma } = old({ a: broken });
+    const service = createTaughtSkillsService({ prisma } as never);
+    expect(await service.list(actor, "bot-1")).toEqual(["listed"]);
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("database gone"));
+    expect(await service.get(actor, "skill-1")).toBe("got");
   });
 
   it("is what reading skills does first", async () => {

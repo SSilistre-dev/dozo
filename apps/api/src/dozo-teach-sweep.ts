@@ -31,8 +31,12 @@ export function dozoTeachSweep(deps: TeachingSessionDeps) {
           expireTaughtSkillTeaching(deps, id),
         );
       }
+      // In id order, on past the last skill looked at, so one that cannot be forgotten is passed.
+      let after: string | undefined;
       for (let page = 0; page < FORGET_PAGES_PER_PASS && !signal.aborted; page += 1) {
-        if ((await forgetOldTeachTyping(deps.prisma, {})) < FORGET_PAGE) return;
+        const { looked, last } = await forgetOldTeachTyping(deps.prisma, { after });
+        if (looked < FORGET_PAGE || !last) return;
+        after = last;
       }
     });
 }

@@ -6,6 +6,7 @@ import {
   sandboxAllowanceUsedUp,
 } from "@rakazo/adapters";
 import type { Actor, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
+import { TeachRecordingSchema } from "@rakazo/contracts";
 import {
   applyValueDecisions,
   ClientError,
@@ -13,7 +14,14 @@ import {
   teachTypingForgotten,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, takeTeachValues } from "@rakazo/db";
+import {
+  IsolationError,
+  JsonColumnMismatchError,
+  readJsonColumn,
+  reportJsonColumnOnce,
+  takeTeachValues,
+} from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { TaughtSkillsDeps } from "./taught-skills.js";
 import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "./taught-skills.js";
 
@@ -34,37 +42,58 @@ export const FORGET_PAGE = 100;
  * drafted or saved while this one was being deployed (and any the migration did not reach). As a
  * draft does, each typed run becomes one event and each window title its application; their
  * values are gone for good, so their review shows none. A live recording is left alone. Called
- * where skills are read and by the API's slow sweep; the number of skills it looked at.
+ * where skills are read and by the API's slow sweep, which pages on with `after`: skills are
+ * looked at in id order, `FORGET_PAGE` at a time. A recording not in its stored shape is reported
+ * and left as it is, so it holds back neither the read nor the skills after it. Returns how many
+ * skills it looked at and the last one's id.
  */
 export async function forgetOldTeachTyping(
   prisma: PrismaClient,
-  scope: { spaceId?: string; botId?: string; skillId?: string },
-): Promise<number> {
-  const { spaceId = null, botId = null, skillId = null } = scope;
+  scope: { spaceId?: string; botId?: string; skillId?: string; after?: string },
+): Promise<{ looked: number; last: string | null }> {
+  const { spaceId = null, botId = null, skillId = null, after = null } = scope;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM taught_skills
     WHERE status <> 'recording'
       AND (${skillId}::text IS NULL OR id = ${skillId}::text)
       AND (${spaceId}::text IS NULL OR "spaceId" = ${spaceId}::text)
       AND (${botId}::text IS NULL OR "botId" = ${botId}::text)
+      AND (${after}::text IS NULL OR id > ${after}::text)
       AND COALESCE(recording->'dozoScrubbed', 'false'::jsonb) <> 'true'::jsonb
       AND ((jsonb_typeof(recording->'events') = 'array'
           AND jsonb_array_length(recording->'events') > 0)
         OR (jsonb_typeof(recording->'snapshots') = 'array'
           AND jsonb_array_length(recording->'snapshots') > 0))
+    ORDER BY id
     LIMIT ${FORGET_PAGE}`;
   for (const { id } of rows) {
-    await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${id} FOR UPDATE`;
-      const skill = await tx.taughtSkill.findUnique({ where: { id } });
-      if (!skill || skill.status === "recording" || teachTypingForgotten(skill.recording)) return;
-      const recording = forgetTeachTyping(parseRecording(skill.recording), false);
-      // In SQL, so the skill keeps its place in the list (ordered by its last edit).
-      await tx.$executeRaw`
-        UPDATE taught_skills SET recording = ${JSON.stringify(recording)}::jsonb WHERE id = ${id}`;
-    });
+    const row = { table: "taught_skills", column: "recording", id };
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT id FROM taught_skills WHERE id = ${id} FOR UPDATE`;
+        const skill = await tx.taughtSkill.findUnique({ where: { id } });
+        if (!skill || skill.status === "recording" || teachTypingForgotten(skill.recording)) return;
+        // Checked item by item; the parse below keeps what the schema would strip (`typed`).
+        readJsonColumn(TeachRecordingSchema, skill.recording, row, "reject");
+        const recording = forgetTeachTyping(parseRecording(skill.recording), false);
+        // In SQL, so the skill keeps its place in the list (ordered by its last edit).
+        await tx.$executeRaw`
+          UPDATE taught_skills SET recording = ${JSON.stringify(recording)}::jsonb WHERE id = ${id}`;
+      });
+    } catch (error) {
+      if (!(error instanceof JsonColumnMismatchError)) throw error;
+      reportJsonColumnOnce("A taught skill's recording cannot have its typing forgotten", row);
+    }
   }
-  return rows.length;
+  return { looked: rows.length, last: rows.at(-1)?.id ?? null };
+}
+
+/** Reading skills forgets old typing first, and still reads when that fails. */
+function forgetBeforeReading(
+  prisma: PrismaClient,
+  scope: Parameters<typeof forgetOldTeachTyping>[1],
+) {
+  return bestEffort("forget old typing before reading skills", forgetOldTeachTyping(prisma, scope));
 }
 
 /**
@@ -80,12 +109,12 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
     ...upstream,
 
     async list(actor: Actor, botId: string) {
-      await forgetOldTeachTyping(deps.prisma, { spaceId: actor.spaceId, botId });
+      await forgetBeforeReading(deps.prisma, { spaceId: actor.spaceId, botId });
       return upstream.list(actor, botId);
     },
 
     async get(actor: Actor, skillId: string) {
-      await forgetOldTeachTyping(deps.prisma, { spaceId: actor.spaceId, skillId });
+      await forgetBeforeReading(deps.prisma, { spaceId: actor.spaceId, skillId });
       return upstream.get(actor, skillId);
     },
 
