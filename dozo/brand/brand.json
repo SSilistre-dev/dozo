@@ -1700,6 +1700,79 @@
         "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
       ],
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
+    },
+    {
+      "file": "apps/web/index.html",
+      "find": "    <script src=\"/theme.js\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n",
+      "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
+      "requires": [
+        "apps/web/public/dozo-boot.js",
+        "apps/web/src/lib/dozo-boot.ts"
+      ],
+      "reason": "cold start: until the app paints, the page shows the theme's background and, on a chat route, the sidebar, instead of an empty screen; apps/web/src/lib/dozo-boot.ts removes it in the frame the app draws"
+    },
+    {
+      "file": "apps/web/src/main.tsx",
+      "find": "import \"./monitoring-bootstrap\";\nimport { rememberSignupAttribution }",
+      "replace": "import \"./monitoring-bootstrap\";\nimport \"./lib/dozo-boot\";\nimport { rememberSignupAttribution }",
+      "requires": [
+        "apps/web/src/lib/dozo-boot.ts"
+      ],
+      "reason": "cold start: the session and capability reads start with the bootstrap instead of two waves later, the boot shell goes when the app paints, and common screens load when idle"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-mentions.ts",
+      "find": "import type { createSpaceRpc } from \"../../lib/rpc\";\n\nfunction routineListData",
+      "replace": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport { loadComposerConnections } from \"./dozo-composer-connections\";\n\nfunction routineListData",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-composer-connections.ts"
+      ],
+      "reason": "cold start: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-mentions.ts",
+      "find": "    // The catalog call reconciles connection rows, so list them after it.\n    queryFn: async () => {\n      const catalog = await rpc.connections.catalog({}).catch(() => null);\n      const connections = await rpc.connections.list().catch(() => null);\n      return { catalog, connections };\n    },\n",
+      "replace": "    queryFn: () => loadComposerConnections(rpc, queryClient, queries),\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-composer-connections.ts"
+      ],
+      "reason": "cold start: the shell no longer waits on the apps catalog (and a serial list after it) unless the account has connections; Apps loads the catalog when it opens"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "import { errorText } from \"../../lib/user-error\";\nimport { useModelConnectionForm }",
+      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { readChatCatalog } from \"./dozo-model-catalog\";\nimport { useModelConnectionForm }",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/model-settings/use-model-settings.ts",
+      "find": "    queryFn: () => rpc.models.list(),\n",
+      "replace": "    queryFn: () => readChatCatalog(queryClient, queries, rpc),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the Models screen reads the model catalog once and derives the chat list from it, instead of one full catalog per list"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "import { spaceQueries } from \"../lib/query\";\nimport { useSpaceRpc }",
+      "replace": "import { spaceQueries } from \"../lib/query\";\nimport { readRoleCatalog } from \"./model-settings/dozo-model-catalog\";\nimport { useSpaceRpc }",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "            queryFn: () => rpc.models.forRole(catalogInput, { context: { spaceId } }),\n",
+      "replace": "            queryFn: () => readRoleCatalog(queryClient, userId, spaceId, rpc, role),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-catalog.ts"
+      ],
+      "reason": "models: each role list is filtered from the catalog read the screen just made, instead of its own full catalog"
     }
   ],
   "assets": {
