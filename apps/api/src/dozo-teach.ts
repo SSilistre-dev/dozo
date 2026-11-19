@@ -39,7 +39,7 @@ import type { RouterContext } from "./routes/context.js";
 
 type TaughtSkills = Pick<
   ReturnType<typeof createTaughtSkillsService>,
-  "updateDraft" | "save" | "testRun"
+  "updateDraft" | "save" | "testRun" | "decideSavedValues"
 >;
 
 export type DozoTeachInput = {
@@ -278,6 +278,9 @@ export function dozoTeachRoutes(ctx: RouterContext) {
       ),
       save: authed.dozoTeach.save.handler(({ context, input }) => teach.save(context.actor, input)),
       test: authed.dozoTeach.test.handler(({ context, input }) => teach.test(context.actor, input)),
+      decideSaved: authed.dozoTeach.decideSaved.handler(({ context, input }) =>
+        taughtSkills.decideSavedValues(context.actor, input.skillId, input),
+      ),
     },
   };
 }

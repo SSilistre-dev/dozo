@@ -71,6 +71,20 @@ export const dozoTeachContract = {
   ),
   /** Saves the draft with the decisions applied and forgets what was typed, at once. */
   save: oc.input(DraftInput).output(TaughtSkillSchema),
+  /**
+   * Decides about the values a skill saved by an older release keeps verbatim in its steps.
+   * `steps` are the steps the decisions were made on; `decisions` are keyed by the placeholders
+   * `savedSkillLiterals` gives them.
+   */
+  decideSaved: oc
+    .input(
+      z.object({
+        skillId: Id,
+        steps: z.array(z.string().max(20_000)).max(500),
+        decisions: z.record(Placeholder, DozoTeachValueDecisionSchema),
+      }),
+    )
+    .output(TaughtSkillSchema),
   /** Runs the draft safely with the decisions applied; nothing is saved or forgotten. */
   test: oc.input(DraftInput).output(z.object({ runId: Id })),
 };

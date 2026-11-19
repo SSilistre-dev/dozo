@@ -9,6 +9,7 @@ import {
   forgetTeachTyping,
   formatSkillRunPrompt,
   promptInvokesSkill,
+  savedSkillLiterals,
   scrubTeachEvents,
   scrubTeachRecordingEvents,
   TEACH_NAME_TAKEN,
@@ -473,7 +474,7 @@ describe("applyValueDecisions", () => {
       "Click left button at (30, 40).",
       "Type {{pin}}.",
       "Click left button at (50, 60).",
-      'Type "weekly-export.csv".',
+      'Type the text "weekly-export.csv".',
       "Click left button at (70, 80).",
       "Press key: Tab.",
       "Type {{tekrar}}.",
@@ -593,7 +594,10 @@ describe("applyValueDecisions", () => {
     const kept = applyValueDecisions(built, typedValuesFromRecording(typed), {
       "{{value 1}}": { action: "fixed" },
     });
-    expect(kept).toMatchObject({ inputs: ["Greet"], steps: ['Type "hi".', "Press key: Enter."] });
+    expect(kept).toMatchObject({
+      inputs: ["Greet"],
+      steps: ['Type the text "hi".', "Press key: Enter."],
+    });
     const removed = applyValueDecisions(
       buildPlaybookFromRecording("Greet", typing("hi")),
       typedValuesFromRecording(typing("hi")),
@@ -602,6 +606,59 @@ describe("applyValueDecisions", () => {
     expect(removed.inputs).toEqual(["Greet"]);
     expect(removed.steps.length).toBe(1);
     expect(removed.steps[0]).not.toContain("{{");
+  });
+});
+
+describe("savedSkillLiterals", () => {
+  // As an older release saved a sign-in: the text typed and pasted, verbatim in the steps.
+  const old = {
+    ...buildPlaybookFromRecording("Sign in", []),
+    inputs: ["Sign in"],
+    steps: [
+      "Click left button at (10, 20).",
+      'Type "ali@example.test".',
+      'Type "say \\"hi\\"".',
+      "Paste or type: weekly-export.csv.",
+      'Type "[redacted input]".',
+      "Paste or type: [redacted input].",
+      "Type {{value 1}}.",
+      'Type the text "kept".',
+      'Type "broken.',
+      "Press key: Enter.",
+    ],
+  };
+
+  it("finds the typed and pasted text by the steps' form, numbered after what they hold", () => {
+    const { playbook, values } = savedSkillLiterals(old);
+    expect(values).toEqual([
+      { placeholder: "{{value 2}}", text: "ali@example.test", secret: false },
+      { placeholder: "{{value 3}}", text: 'say "hi"', secret: false },
+      { placeholder: "{{value 4}}", text: "weekly-export.csv", secret: false },
+    ]);
+    expect(playbook.steps).toEqual([
+      old.steps[0],
+      "Type {{value 2}}.",
+      "Type {{value 3}}.",
+      "Type {{value 4}}.",
+      ...old.steps.slice(4),
+    ]);
+  });
+
+  it("decides about them as about a draft's, and a decided skill has none left", () => {
+    const { playbook, values } = savedSkillLiterals(old);
+    const decided = applyValueDecisions(playbook, values, {
+      "{{value 2}}": { action: "variable", name: "email" },
+      "{{value 3}}": { action: "fixed" },
+      "{{value 4}}": { action: "hidden", name: "file" },
+    });
+    expect(decided.steps.slice(1, 4)).toEqual([
+      "Type {{email}}.",
+      'Type the text "say \\"hi\\"".',
+      "Type {{file}}.",
+    ]);
+    expect(decided.inputs).toEqual(["Sign in", "email", "file (secret)"]);
+    expect(savedSkillLiterals(decided).values).toEqual([]);
+    expect(savedSkillLiterals(decided).playbook).toBe(decided);
   });
 });
 

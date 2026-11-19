@@ -146,23 +146,25 @@ function setup(
           ...options.stored,
         };
   const db = fakeDb(row, stored);
+  const saved = () => ({
+    id: row.id,
+    botId: row.botId,
+    name: "Sign in",
+    goal: row.goal,
+    status: "saved" as const,
+    playbook,
+    recording: { events: [], snapshots: [] },
+    startedAt: null,
+    expiresAt: null,
+    stoppedAt: null,
+    createdAt: at,
+    updatedAt: at,
+  });
   const taughtSkills = {
     updateDraft: vi.fn(async () => ({}) as never),
-    save: vi.fn(async () => ({
-      id: row.id,
-      botId: row.botId,
-      name: "Sign in",
-      goal: row.goal,
-      status: "saved" as const,
-      playbook,
-      recording: { events: [], snapshots: [] },
-      startedAt: null,
-      expiresAt: null,
-      stoppedAt: null,
-      createdAt: at,
-      updatedAt: at,
-    })),
+    save: vi.fn(async () => saved()),
     testRun: vi.fn(async () => ({ runId: "run-1" })),
+    decideSavedValues: vi.fn(async () => saved()),
   };
   const suggest =
     options.suggest === null
@@ -353,7 +355,7 @@ describe("test", () => {
     const [, , prompt] = taughtSkills.testRun.mock.calls[0] as unknown as [unknown, string, string];
     expect(prompt).toContain("Run taught skill: Saved name");
     expect(prompt).toContain("safe test run");
-    expect(prompt).toContain('Type "ali@example.test".');
+    expect(prompt).toContain('Type the text "ali@example.test".');
     expect(prompt).toContain("Secret inputs ({{password}}, {{value_4}})");
     expect(prompt).not.toContain("hunter2");
     expect(taughtSkills.save).not.toHaveBeenCalled();
@@ -531,6 +533,9 @@ describe("the routes", () => {
     await client.save({ skillId: "skill-1", playbook });
     expect(taughtSkills.save).toHaveBeenCalledOnce();
     expect(await client.test({ skillId: "skill-1", playbook })).toEqual({ runId: "run-1" });
+    const decided = { skillId: "skill-1", steps: ['Type "x".'], decisions: {} };
+    await client.decideSaved(decided);
+    expect(taughtSkills.decideSavedValues).toHaveBeenCalledWith(teacher, "skill-1", decided);
   });
 });
 

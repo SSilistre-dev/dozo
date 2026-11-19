@@ -12,13 +12,84 @@ import {
   ClientError,
   clicksBeforeSecrets,
   forgetTeachTyping,
+  savedSkillLiterals,
   teachTypingForgotten,
   withClickTargets,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, storedTeachTargets, takeTeachValues } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
+import {
+  IsolationError,
+  readJsonColumn,
+  storedMessageBlocks,
+  storedTeachTargets,
+  takeTeachValues,
+} from "@rakazo/db";
+import * as z from "zod";
 import type { TaughtSkillsDeps } from "./taught-skills.js";
 import { createTaughtSkillsService as createUpstreamTaughtSkillsService } from "./taught-skills.js";
+
+/** How many of a thread's latest bot messages are looked through for a skill's card. */
+const CARD_MESSAGES = 100;
+
+const CardEventPayload = z
+  .object({ messageId: z.string(), blocks: z.array(z.unknown()) })
+  .passthrough()
+  .nullable();
+
+/**
+ * The thread's earlier updates of a skill's card hold the steps as they were. Once its steps no
+ * longer type text verbatim, those copies are brought to the new steps too, in the caller's
+ * transaction, so the text is left nowhere in the thread's history. A payload in another shape
+ * is left as it is.
+ */
+async function rewriteCardEvents(
+  tx: Prisma.TransactionClient,
+  skill: { id: string; botId: string },
+  playbook: SkillPlaybook,
+) {
+  const bot = await tx.bot.findUnique({ where: { id: skill.botId }, include: { thread: true } });
+  if (!bot?.thread) return;
+  const threadId = bot.thread.id;
+  const messages = await tx.message.findMany({
+    where: { threadId, role: "bot" },
+    orderBy: { seq: "desc" },
+    take: CARD_MESSAGES,
+  });
+  const cards = messages.flatMap((message) =>
+    storedMessageBlocks(message).some(
+      (block) => block.kind === "skill_draft" && block.skillId === skill.id,
+    )
+      ? [message.id]
+      : [],
+  );
+  if (!cards.length) return;
+  // The message id stays plain in a sealed payload, so it can be looked up.
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM events WHERE "threadId" = ${threadId} AND payload->>'messageId' = ANY(${cards})`;
+  const events = await tx.event.findMany({ where: { id: { in: rows.map((row) => row.id) } } });
+  for (const event of events) {
+    const payload = readJsonColumn(
+      CardEventPayload,
+      event.payload,
+      { table: "events", column: "payload", id: event.id },
+      { fallback: null },
+    );
+    if (!payload) continue;
+    const blocks = payload.blocks.map((block) => {
+      const card = SkillCard.safeParse(block);
+      return card.success && card.data.skillId === skill.id ? { ...card.data, playbook } : block;
+    });
+    await tx.event.update({
+      where: { id: event.id },
+      data: { payload: { ...payload, blocks } as never },
+    });
+  }
+}
+
+const SkillCard = z.object({ kind: z.literal("skill_draft"), skillId: z.string() }).passthrough();
+
+/** A decision about a saved skill's values made on steps that changed since they were read. */
+export const SKILL_CHANGED = "skill_changed";
 
 /** A save or test that decides about values of a skill no longer a draft. */
 export const SKILL_NOT_DRAFT = "skill_not_draft";
@@ -228,6 +299,59 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         });
       }
       return saved;
+    },
+
+    /**
+     * Decides about the values a skill saved by an older release keeps verbatim in its steps,
+     * as the teacher of a draft does: an input, a hidden input, text kept as typed, or removed.
+     * Whoever may edit the skill may (any member of the Space, who then owns it, as upstream's
+     * edit does); its steps are already shown to all of them. `steps` are those the person saw:
+     * a skill changed since is refused, so no decision lands on another value. One transaction
+     * writes the steps and forgets anything typed left in the recording; the draft card follows
+     * the commit with what was saved.
+     */
+    async decideSavedValues(
+      actor: Actor,
+      skillId: string,
+      input: { steps: string[]; decisions: Record<string, DozoTeachValueDecision> },
+    ) {
+      const row = await deps.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          SELECT id FROM taught_skills WHERE id = ${skillId} AND "spaceId" = ${actor.spaceId}
+          FOR UPDATE`;
+        const skill = await tx.taughtSkill.findFirst({
+          where: { id: skillId, spaceId: actor.spaceId },
+        });
+        if (!skill) throw new IsolationError();
+        if (skill.status !== "saved") {
+          throw new ClientError("BAD_REQUEST", "Only a saved skill's steps are decided here");
+        }
+        const playbook = parsePlaybook(skill.playbook);
+        if (JSON.stringify(playbook.steps) !== JSON.stringify(input.steps)) {
+          throw new ClientError("CONFLICT", "This skill changed. Open it again.", SKILL_CHANGED);
+        }
+        const literals = savedSkillLiterals(playbook);
+        const teacher = skill.userId === actor.userId;
+        const decided = applyValueDecisions(literals.playbook, literals.values, input.decisions);
+        await rewriteCardEvents(tx, skill, decided);
+        return tx.taughtSkill.update({
+          where: { id: skill.id },
+          data: {
+            userId: actor.userId,
+            recording: (teacher
+              ? forgetTeachTyping(
+                  parseRecording(skill.recording),
+                  teachTypingForgotten(skill.recording),
+                )
+              : emptyRecording()) as never,
+            playbook: decided as never,
+          },
+        });
+      });
+      return upstream.updateDraft(actor, skillId, {
+        name: row.name,
+        playbook: parsePlaybook(row.playbook),
+      });
     },
   };
 }

@@ -1,13 +1,15 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt, TEACH_NAME_TAKEN } from "@rakazo/core";
-import { Button, Input, Label, Textarea, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
+import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorCode, errorText } from "../../lib/user-error";
 import { BuiCard } from "../ai/primitives";
+import type { TeachValueChoice } from "./dozo-teach-value-row";
+import { defaultValueName, TeachValueRow, valueDecisionOf } from "./dozo-teach-value-row";
 
 type SkillDraftBlock = {
   kind: "skill_draft";
@@ -18,8 +20,7 @@ type SkillDraftBlock = {
   status: "draft" | "saved";
 };
 
-type Action = DozoTeachValueDecision["action"];
-type Choice = { action: Action; name: string };
+type Choice = TeachValueChoice;
 
 /** What a draft is saved or tested with: its fields, a decision for each typed value, and the
  * clicked pictures the teacher took away. */
@@ -47,24 +48,14 @@ function fieldLabel(id: string, title: React.ReactNode) {
   );
 }
 
-/** `{{value 3}}` names its input `value_3` until the teacher or the suggestion names it. */
-function defaultName(placeholder: string): string {
-  return `value_${placeholder.replace(/\D/g, "")}`;
-}
-
 /**
  * Every value is an input by default, hidden when it was typed as protected input: nothing typed
  * is kept in the skill unless the teacher picks Fixed, since a password typed into an unprotected
  * field cannot be told apart.
  */
 function defaultChoice(value: DozoTeachValue): Choice {
-  const name = value.suggestion?.name || defaultName(value.placeholder);
+  const name = value.suggestion?.name || defaultValueName(value.placeholder);
   return { action: value.secret ? "hidden" : "variable", name };
-}
-
-function decisionOf(placeholder: string, choice: Choice): DozoTeachValueDecision {
-  if (choice.action === "fixed" || choice.action === "remove") return { action: choice.action };
-  return { action: choice.action, name: choice.name.trim() || defaultName(placeholder) };
 }
 
 /**
@@ -134,7 +125,10 @@ export function SkillDraftCard({
 
   function sent(): Sent {
     const decisions = Object.fromEntries(
-      values.map((value) => [value.placeholder, decisionOf(value.placeholder, choiceOf(value))]),
+      values.map((value) => [
+        value.placeholder,
+        valueDecisionOf(value.placeholder, choiceOf(value)),
+      ]),
     );
     return {
       fields: JSON.stringify({ name, playbook }),
@@ -217,67 +211,15 @@ export function SkillDraftCard({
       {fieldLabel(`${id}-inputs`, <Trans>Inputs</Trans>)}
       {values.length ? (
         <div id={`${id}-inputs`} className="flex flex-col gap-2">
-          {values.map((value) => {
-            const choice = choiceOf(value);
-            // Protected input and text that could not be rebuilt are never shown or kept.
-            const hidden = value.secret || value.text === null;
-            const named = choice.action === "variable" || choice.action === "hidden";
-            return (
-              <div key={value.placeholder} data-testid="skill-draft-value">
-                <div className="flex items-center gap-2">
-                  <span
-                    dir="auto"
-                    className="w-28 shrink-0 break-words text-body-sm text-muted-foreground"
-                  >
-                    {hidden ? "••••••" : value.text}
-                  </span>
-                  {named ? (
-                    <Input
-                      aria-label={t`Name`}
-                      disabled={busy}
-                      className="min-w-0 flex-1"
-                      value={choice.name}
-                      onChange={(event) =>
-                        setChoice(value.placeholder, { ...choice, name: event.target.value })
-                      }
-                    />
-                  ) : (
-                    <span className="flex-1" />
-                  )}
-                  <ToggleGroup
-                    value={[choice.action]}
-                    disabled={busy}
-                    onValueChange={([next]) => {
-                      if (next) setChoice(value.placeholder, { ...choice, action: next as Action });
-                    }}
-                    spacing={0}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <ToggleGroupItem value="variable">
-                      <Trans>Variable</Trans>
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="hidden">
-                      <Trans>Hidden</Trans>
-                    </ToggleGroupItem>
-                    {hidden ? null : (
-                      <ToggleGroupItem value="fixed">
-                        <Trans>Fixed</Trans>
-                      </ToggleGroupItem>
-                    )}
-                    <ToggleGroupItem value="remove">
-                      <Trans>Remove</Trans>
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-                {choice.action === "fixed" ? (
-                  <p className="mt-1 text-label text-muted-foreground">
-                    <Trans>Saved in the steps, visible to everyone in this space.</Trans>
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
+          {values.map((value) => (
+            <TeachValueRow
+              key={value.placeholder}
+              value={value}
+              choice={choiceOf(value)}
+              busy={busy}
+              onChange={(choice) => setChoice(value.placeholder, choice)}
+            />
+          ))}
         </div>
       ) : (
         <Textarea

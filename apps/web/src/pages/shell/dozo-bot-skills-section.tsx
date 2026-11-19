@@ -11,6 +11,7 @@ import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
 import { PanelSection } from "./bot-settings-sections";
 import { ComputerPanel } from "./computer-panel";
+import { SavedValuesReview } from "./dozo-saved-values-review";
 
 /**
  * The bot panel's skills: the ones taught and saved, and Teach a task. Starting opens the bot's
@@ -134,8 +135,11 @@ function SkillsSection({ botId, onOpen }: { botId: string; onOpen: () => void })
       {saved.length ? (
         <ul className="flex flex-col gap-1">
           {saved.map((skill) => (
-            <li key={skill.id} dir="auto" className="truncate text-body text-foreground">
-              {skill.name || skill.goal}
+            <li key={skill.id} className="flex items-center gap-2">
+              <span dir="auto" className="min-w-0 flex-1 truncate text-body text-foreground">
+                {skill.name || skill.goal}
+              </span>
+              <SavedValuesReview skill={skill} />
             </li>
           ))}
         </ul>

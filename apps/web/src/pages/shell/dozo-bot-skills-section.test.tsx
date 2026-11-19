@@ -35,6 +35,12 @@ vi.mock("../../components/SubscriptionGate", () => ({
   useBilling: () => ({ status: api.billing }),
 }));
 vi.mock("./computer-panel", () => ({ ComputerPanel: () => null }));
+// Its own test covers it; here only where it sits.
+vi.mock("./dozo-saved-values-review", () => ({
+  SavedValuesReview: ({ skill }: { skill: { id: string } }) => (
+    <span data-testid="review" data-skill={skill.id} />
+  ),
+}));
 vi.mock("./bot-settings-sections", () => ({
   PanelSection: ({
     label,
@@ -227,6 +233,12 @@ it("lists the bot's saved skills by name under Skills", async () => {
     "Weekly export",
     "goal s3",
   ]);
+  // Each saved skill gets its review marker beside its name, which shows only when needed.
+  expect(
+    [...container.querySelectorAll('[data-testid="review"]')].map((node) =>
+      node.getAttribute("data-skill"),
+    ),
+  ).toEqual(["s1", "s3"]);
 });
 
 it("shows no list when nothing is saved", async () => {

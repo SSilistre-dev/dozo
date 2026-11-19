@@ -6,6 +6,7 @@ import {
   captureTeachingSnapshot,
   completeTeachingSession,
   createBackgroundJobHandlers,
+  parsePlaybook,
   recordTeachingInputEvent,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -457,6 +458,8 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     await system.$executeRaw`
       UPDATE dozo_teach_values SET "expiresAt" = CURRENT_TIMESTAMP - interval '1 second'
       WHERE "skillId" = ${due.id}`;
+    // The clicks' pictures live in the same row and go with it.
+    expect((await valuesRow(due.id))?.targets).toBeTruthy();
 
     await dozoTeachSweep(deps())(new AbortController().signal);
 
@@ -470,6 +473,59 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     const running = await system.taughtSkill.findUniqueOrThrow({ where: { id: live.skill.id } });
     expect(running.status).toBe("recording");
     expect(await recordingText(live.skill.id)).toMatch(LEAK);
+  });
+
+  it("turns the text an older skill's steps type into inputs, nothing of it left", async () => {
+    const { thread, skill } = await recordAndStop();
+    const taughtSkills = createTaughtSkillsService({
+      ...deps(),
+      home: {},
+      dataDir: "/tmp",
+    } as never);
+    const teach = createDozoTeach({ prisma: db.prisma, taughtSkills });
+    const draft = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    await runAsTenant(teacher, () =>
+      teach.save(teacher, {
+        skillId: skill.id,
+        name: "Sign in",
+        playbook: draft.playbook as never,
+        decisions: {},
+      }),
+    );
+    // As an older release saved it: what was typed verbatim in the steps and the card.
+    const saved = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    const playbook = parsePlaybook(saved.playbook);
+    const steps = [...playbook.steps, `Type "${TYPED[1]}".`, `Paste or type: ${TYPED[0]}.`];
+    await runAsTenant(teacher, () =>
+      taughtSkills.updateDraft(teacher, skill.id, {
+        name: "Sign in",
+        playbook: { ...playbook, steps },
+      }),
+    );
+    expect((await storedText(skill.id, thread.id)).blocks).toContain(TYPED[1]);
+
+    // Another member decides, as upstream lets any member edit a skill.
+    await runAsTenant(member, () =>
+      taughtSkills.decideSavedValues(member, skill.id, {
+        steps,
+        decisions: {
+          "{{value 1}}": { action: "variable", name: "password" },
+          "{{value 2}}": { action: "remove" },
+        },
+      }),
+    );
+    const decided = await system.taughtSkill.findUniqueOrThrow({ where: { id: skill.id } });
+    expect((decided.playbook as { steps: string[] }).steps.slice(-1)).toEqual([
+      "Type {{password}}.",
+    ]);
+    expect(decided.userId).toBe(member.userId);
+    const stored = await storedText(skill.id, thread.id);
+    expect(stored.blocks).toContain("{{password}}");
+    for (const text of TYPED) {
+      for (const place of [stored.skill, stored.blocks, stored.payloads]) {
+        expect(place).not.toContain(text);
+      }
+    }
   });
 
   it("migrates older drafts and saved skills to one event per typed run, live ones untouched", async () => {

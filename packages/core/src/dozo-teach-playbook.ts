@@ -525,6 +525,65 @@ function inputName(input: string): string {
   return input.endsWith(SECRET_MARK) ? input.slice(0, -SECRET_MARK.length) : input;
 }
 
+/**
+ * How a value the teacher kept as typed is written in a step: `Type the text "…".`, never the
+ * older `Type "…".`, so a skill whose steps still hold that form is one nobody decided about.
+ */
+function fixedText(text: string): string {
+  return `the text ${JSON.stringify(text)}`;
+}
+
+/** The marker upstream writes in place of protected input: no value of the teacher's. */
+const UPSTREAM_REDACTED = "[redacted input]";
+/** The two step forms upstream wrote typed and pasted text in, verbatim. */
+const UPSTREAM_TYPED = /^Type ("(?:[^"\\]|\\.)*")\.$/;
+const UPSTREAM_PASTED = /^Paste or type: (.+)\.$/;
+const PLACEHOLDER_NUMBER = /\{\{value (\d+)\}\}/g;
+
+/** The text an upstream step typed or pasted verbatim, or null for any other step. */
+function upstreamLiteral(step: string): string | null {
+  const typed = step.match(UPSTREAM_TYPED)?.[1];
+  if (typed !== undefined) {
+    let text: unknown;
+    try {
+      text = JSON.parse(typed);
+    } catch {
+      return null;
+    }
+    return typeof text === "string" && text && text !== UPSTREAM_REDACTED ? text : null;
+  }
+  const pasted = step.match(UPSTREAM_PASTED)?.[1];
+  return pasted && pasted !== UPSTREAM_REDACTED ? pasted : null;
+}
+
+/**
+ * The values a skill saved by an older release keeps verbatim in its steps (`Type "…".` and
+ * `Paste or type: ….`, read by their form alone), each step given a `{{value N}}` placeholder
+ * numbered after any the steps hold, so `applyValueDecisions` decides about them as about a
+ * draft's. None for a skill with no such step.
+ */
+export function savedSkillLiterals(playbook: SkillPlaybook): {
+  playbook: SkillPlaybook;
+  values: TeachTypedValue[];
+} {
+  let next = Math.max(
+    0,
+    ...playbook.steps.flatMap((step) =>
+      [...step.matchAll(PLACEHOLDER_NUMBER)].map((match) => Number(match[1])),
+    ),
+  );
+  const values: TeachTypedValue[] = [];
+  const steps = playbook.steps.map((step) => {
+    const text = upstreamLiteral(step);
+    if (text === null) return step;
+    next += 1;
+    const placeholder = placeholderOf(next);
+    values.push({ placeholder, text, secret: false });
+    return `Type ${placeholder}.`;
+  });
+  return { playbook: values.length ? { ...playbook, steps } : playbook, values };
+}
+
 /** The stable code of a save or test that gives two different values one name. */
 export const TEACH_NAME_TAKEN = "teach_name_taken";
 
@@ -562,8 +621,7 @@ export function applyValueDecisions(
       if (value.secret || value.text === null) {
         throw new ClientError("BAD_REQUEST", "This value cannot be kept in the skill");
       }
-      const text = JSON.stringify(value.text);
-      steps = steps.map((step) => step.replaceAll(value.placeholder, text));
+      steps = steps.map((step) => step.replaceAll(value.placeholder, fixedText(value.text!)));
       return;
     }
     const name = teachInputName(decision.name) || `value_${index + 1}`;
