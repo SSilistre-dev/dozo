@@ -132,7 +132,14 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 
 - A paid plan is bought on the web, in Settings > Billing. The mobile app shows the plan and
   changes between paid plans, but upstream's mobile plan choice has no tiers, so it cannot start
-  one.
+  one: an Upgrade from Free on mobile opens the web app's Billing in the system browser. Store
+  rules on buying a digital subscription outside the app have not been checked.
+- What a refused limit says and offers (Free's missing computer, spent hours, a full shared space,
+  busy computers, the computer and Space counts, a checkout of Free) is one table,
+  `packages/contracts/src/dozo-plan-limits.ts`, in English and Turkish only (the fork's sentences
+  have no catalog). Every failure shown through `errorText` gets its sentence; the upgrade action
+  is wired in the composer, the computer screen and mobile's failed-send alert. Only a member who
+  manages billing is offered it.
 - When a subscription and a higher grant coexist, the billing status reports the granted tier, so
   the plan picker marks that tier as current while the subscription bills the lower one.
 - While a server has a free plan, a computer's saved home is never deleted for an ended plan
