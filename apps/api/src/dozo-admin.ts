@@ -83,6 +83,8 @@ export interface DozoAdminWiring {
   realtime?: RealtimeFanout;
   /** What the billing page reads payments from; absent when no payment provider is configured. */
   payments?: DozoPaymentLedger;
+  /** Queues the mail before a granted plan ends; absent when the server sends no billing mail. */
+  planChanged?: (organizationId: string) => Promise<void>;
 }
 
 /** Spread into the router's dependencies where the server builds them. */
@@ -353,6 +355,9 @@ export function dozoAdminRoutes(ctx: RouterContext) {
           });
           return true;
         });
+        // The mail before the end is queued after, and never fails the change: it reports its own
+        // failures, and the hourly sweep queues a reminder that is missing.
+        if (changed) await wiring?.planChanged?.(organizationId);
         // The organization reads its own audit log, so the event carries neither the admin's
         // email nor the internal note (which stays on the grant row), only the admin's opaque id:
         // a new grant overwrites the row's `grantedById` and ending one deletes the row, so this

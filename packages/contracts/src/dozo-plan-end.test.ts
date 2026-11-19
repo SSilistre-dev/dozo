@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_END_WARNING_DAYS, planEndDays, planEndWarns } from "./dozo-plan-end.js";
+import {
+  PLAN_END_WARNING_DAYS,
+  paymentPastDue,
+  planEndDays,
+  planEndWarns,
+} from "./dozo-plan-end.js";
 
 const now = new Date(2026, 10, 19, 15, 0);
 /** A plan end at local noon `days` calendar days after `now`. */
@@ -37,5 +42,22 @@ describe("planEndWarns", () => {
   it("never warns about a granted plan with a paid plan after it", () => {
     const fallsTo = { from: "Premium Plus", to: "Premium" };
     expect(planEndWarns({ ...end(1), fallsTo }, now)).toBe(false);
+  });
+});
+
+describe("paymentPastDue", () => {
+  const status = { state: "past_due", canManage: true, hasCustomer: true } as const;
+
+  it("holds while the subscription is past due, for a member who manages billing", () => {
+    expect(paymentPastDue(status)).toBe(true);
+  });
+
+  it("does not hold once paid, for other members, without a customer or without a status", () => {
+    expect(paymentPastDue({ ...status, state: "active" })).toBe(false);
+    expect(paymentPastDue({ ...status, state: "unpaid" })).toBe(false);
+    expect(paymentPastDue({ ...status, canManage: false })).toBe(false);
+    expect(paymentPastDue({ ...status, hasCustomer: false })).toBe(false);
+    expect(paymentPastDue(null)).toBe(false);
+    expect(paymentPastDue(undefined)).toBe(false);
   });
 });
