@@ -19,7 +19,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v3";
+export const BENCH_VERSION = "dozo-token-bench-v4";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 export const FAKE_PROVIDER = {

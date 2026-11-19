@@ -395,6 +395,24 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/context-selection.ts",
+      "find": "import type { VerbatimMcpServers } from \"./verbatim-mcp-result.js\";\nimport { isVerbatimMcpResult",
+      "replace": "import type { VerbatimMcpServers } from \"./verbatim-mcp-result.js\";\nimport { alignHistoryStart } from \"./dozo-history-window.js\";\nimport { isVerbatimMcpResult",
+      "requires": [
+        "packages/adapters/src/dozo-history-window.ts"
+      ],
+      "reason": "import of the fork's stable history window, used by the rule below"
+    },
+    {
+      "file": "packages/adapters/src/context-selection.ts",
+      "find": "    if (earlier) earlierTokens += group.tokens;\n  }\n  const selectedIndexes",
+      "replace": "    if (earlier) earlierTokens += group.tokens;\n  }\n  used -= alignHistoryStart(\n    messages,\n    groups,\n    selected,\n    protectedGroupIndexes,\n    currentStart,\n    exchangeLimit,\n  );\n  const selectedIndexes",
+      "requires": [
+        "packages/adapters/src/dozo-history-window.ts"
+      ],
+      "reason": "a cut long history started one exchange later every turn and was rewritten to the prompt cache each turn: start it at content-picked messages so it holds for several turns"
+    },
+    {
       "file": "packages/adapters/src/run-assembly-context.ts",
       "find": "import { loadBotGroupDirectory } from \"./group-handoff.js\";\nimport { formatCompactedSummary }",
       "replace": "import { loadBotGroupDirectory } from \"./group-handoff.js\";\nimport { historyWithRecall } from \"./dozo-recalled-memory.js\";\nimport { formatCompactedSummary }",

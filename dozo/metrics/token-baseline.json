@@ -1,5 +1,5 @@
 {
-  "version": "dozo-token-bench-v3",
+  "version": "dozo-token-bench-v4",
   "fakeProvider": {
     "tokenizer": "ceil(utf8 bytes / 4) per request part",
     "cache": "prefix cache per thread: a request reads the longest byte prefix it shares with an earlier request of the same thread, up to what that request wrote; every request of at least minimumTokens writes its block-aligned prefix",
@@ -8,19 +8,19 @@
   },
   "pricing": null,
   "totals": {
-    "modelCalls": 69,
-    "promptTokens": 1028086,
-    "inputTokens": 4342,
-    "outputTokens": 761,
-    "cacheReadTokens": 723712,
-    "cacheWriteTokens": 300032,
-    "cacheReadShare": 0.7039411099849624,
+    "modelCalls": 75,
+    "promptTokens": 1144601,
+    "inputTokens": 4505,
+    "outputTokens": 821,
+    "cacheReadTokens": 829440,
+    "cacheWriteTokens": 310656,
+    "cacheReadShare": 0.7246542681685583,
     "costUsd": null,
     "components": {
-      "system": 145661,
-      "tools": 615204,
-      "history": 49961,
-      "prompt": 1974,
+      "system": 158057,
+      "tools": 668700,
+      "history": 100458,
+      "prompt": 2100,
       "toolCalls": 4097,
       "toolResults": 211189
     }
@@ -246,16 +246,34 @@
       "id": "history-140",
       "kind": "long-history",
       "modelCalls": 2,
-      "inputTokens": 183,
+      "inputTokens": 79,
       "outputTokens": 20,
-      "cacheReadTokens": 10880,
-      "cacheWriteTokens": 28800,
+      "cacheReadTokens": 19840,
+      "cacheWriteTokens": 19840,
       "costUsd": null,
       "components": {
         "system": 4132,
         "tools": 17832,
-        "history": 17857,
+        "history": 17753,
         "prompt": 42,
+        "toolCalls": 0,
+        "toolResults": 0
+      }
+    },
+    {
+      "id": "history-140-6-turns",
+      "kind": "long-history",
+      "modelCalls": 6,
+      "inputTokens": 267,
+      "outputTokens": 60,
+      "cacheReadTokens": 96768,
+      "cacheWriteTokens": 19584,
+      "costUsd": null,
+      "components": {
+        "system": 12396,
+        "tools": 53496,
+        "history": 50601,
+        "prompt": 126,
         "toolCalls": 0,
         "toolResults": 0
       }

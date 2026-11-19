@@ -115,6 +115,12 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     turns: chatTurns(2),
   },
   {
+    id: "history-140-6-turns",
+    kind: "long-history",
+    history: conversation(140, "h140l"),
+    turns: chatTurns(6),
+  },
+  {
     id: "memory-in-system",
     kind: "memory-recall",
     memoryContext: `<memory>\n${filler("memory", 30)}\n</memory>`,
