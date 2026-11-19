@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { installServiceWorker } from "./dozo-service-worker";
+import { installServiceWorker, NETWORK_WAIT_MS } from "./dozo-service-worker";
 import type { ServiceWorkerScope } from "./service-worker.js";
 import { SKIP_WAITING } from "./service-worker.js";
 
@@ -148,5 +148,38 @@ describe("dozo service worker", () => {
     network = offline;
     expect(await sw.fetch("/t/1", {}, "navigate")).toBe("v1 /");
     expect(await sw.fetch("/assets/index-abc.js")).toBe("v1 /assets/index-abc.js");
+  });
+
+  it("answers from the cache when the network hangs, and waits for it when nothing is cached", async () => {
+    vi.useFakeTimers();
+    try {
+      network = async (request) => new Response(`v1 ${new URL(request.url).pathname}`);
+      const sw = setup();
+      await sw.dispatch("install", {});
+      let late: (response: Response) => void = () => {};
+      // No answer and no error: what a stalled connection looks like to the worker.
+      network = (request) =>
+        new URL(request.url).pathname === "/assets/lazy-1.js"
+          ? new Promise((resolve) => {
+              late = resolve;
+            })
+          : new Promise(() => {});
+      const precached = sw.fetch("/assets/index-abc.js", { clientId: "page" });
+      const uncached = sw.fetch("/assets/lazy-1.js", { clientId: "page" });
+      const page = sw.fetch("/t/1", { resultingClientId: "page" }, "navigate");
+      await vi.advanceTimersByTimeAsync(NETWORK_WAIT_MS);
+      expect(await precached).toBe("v1 /assets/index-abc.js");
+      expect(await page).toBe("v1 /");
+      let settled = false;
+      void uncached.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(NETWORK_WAIT_MS * 5);
+      expect(settled).toBe(false);
+      late(new Response("slow /assets/lazy-1.js"));
+      expect(await uncached).toBe("slow /assets/lazy-1.js");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

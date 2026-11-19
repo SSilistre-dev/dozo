@@ -3367,12 +3367,12 @@
     {
       "file": "apps/web/index.html",
       "find": "    <script src=\"/theme.js\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n",
-      "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
+      "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n      #dozo-boot[data-state=unreachable]{display:grid;place-items:center;pointer-events:auto}\n      #dozo-boot>section{position:relative;display:flex;flex-direction:column;align-items:center;gap:16px;padding:0 24px;text-align:center;font:14px/1.5 system-ui,sans-serif;color:var(--muted-foreground)}\n      #dozo-boot>section>p{margin:0}\n      #dozo-boot>section>button{font:inherit;color:var(--secondary-foreground);background:var(--secondary);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
       "requires": [
         "apps/web/public/dozo-boot.js",
         "apps/web/src/lib/dozo-boot.ts"
       ],
-      "reason": "cold start: until the app paints, the page shows the theme's background and, on a chat route, the sidebar, instead of an empty screen; apps/web/src/lib/dozo-boot.ts removes it in the frame the app draws"
+      "reason": "cold start: until the app paints, the page shows the theme's background and, on a chat route, the sidebar, instead of an empty screen; apps/web/src/lib/dozo-boot.ts removes it in the frame the app draws, and when the app's code never runs the shell reloads once or offers a retry"
     },
     {
       "file": "apps/web/src/main.tsx",
@@ -3382,6 +3382,60 @@
         "apps/web/src/lib/dozo-boot.ts"
       ],
       "reason": "cold start: the session and capability reads start with the bootstrap instead of two waves later, the boot shell goes when the app paints, and common screens load when idle"
+    },
+    {
+      "file": "apps/web/src/lib/rpc.ts",
+      "find": "import { CLIENT_BUILD } from \"./client-build\";\nimport { i18n } from \"./i18n\";\n",
+      "replace": "import { CLIENT_BUILD } from \"./client-build\";\nimport { bootReadSignal } from \"./dozo-boot-deadline\";\nimport { i18n } from \"./i18n\";\n",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: the import of the first screen's read deadline below"
+    },
+    {
+      "file": "apps/web/src/lib/rpc.ts",
+      "find": "        signal: options.signal,\n",
+      "replace": "        signal: options.signal ?? bootReadSignal(request.url),\n",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: the reads the first screen waits for (bootstrap, me, billing status) fail after a deadline instead of hanging, so the app's own failure path shows; a caller with its own signal keeps it"
+    },
+    {
+      "file": "apps/web/src/lib/auth.ts",
+      "find": "import { desktopBridge } from \"./desktop\";\nimport { sendUiLocale }",
+      "replace": "import { desktopBridge } from \"./desktop\";\nimport { bootReadFetch } from \"./dozo-boot-deadline\";\nimport { sendUiLocale }",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: the import of the session read deadline below"
+    },
+    {
+      "file": "apps/web/src/lib/auth.ts",
+      "find": "  fetchOptions: {\n    headers:",
+      "replace": "  fetchOptions: {\n    customFetchImpl: bootReadFetch,\n    headers:",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: a session read that hangs fails after a deadline, so the reconnect screen shows instead of an endless spinner"
+    },
+    {
+      "file": "apps/web/src/lib/i18n.ts",
+      "find": "import { desktopBridge } from \"./desktop\";\nimport { importChunk } from \"./preload-recovery\";\n",
+      "replace": "import { desktopBridge } from \"./desktop\";\nimport { bootChunk } from \"./dozo-boot-deadline\";\nimport { importChunk } from \"./preload-recovery\";\n",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: the import of the catalog deadline below"
+    },
+    {
+      "file": "apps/web/src/lib/i18n.ts",
+      "find": "  const { messages } = await importChunk(catalogLoaders[locale]);\n",
+      "replace": "  const { messages } = await bootChunk(importChunk(catalogLoaders[locale]));\n",
+      "requires": [
+        "apps/web/src/lib/dozo-boot-deadline.ts"
+      ],
+      "reason": "stalled start: a language catalog that hangs fails after a deadline, so the app falls back to English instead of staying empty"
     },
     {
       "file": "apps/web/src/pages/shell/use-composer-mentions.ts",

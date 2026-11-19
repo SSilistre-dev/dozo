@@ -70,6 +70,8 @@ export function startBootReads(pathname: string, desktop: boolean): boolean {
 
 type BootWindow = Pick<Window, "location" | "setTimeout"> & {
   navigator?: Partial<Navigator> & { connection?: { saveData?: boolean } };
+  /** Set by `public/dozo-boot.js`: stops its watch for an app whose code never runs. */
+  dozoBootStarted?: () => void;
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
   rakazoDesktop?: unknown;
 };
@@ -102,6 +104,7 @@ function signedIn(): boolean {
  * browser is idle, unless the browser asks to save data.
  */
 export function boot(view: BootWindow, doc: Document): void {
+  view.dozoBootStarted?.();
   const chatRoute = startBootReads(view.location.pathname, Boolean(view.rakazoDesktop));
   releaseBootShell(doc, 10_000, () => {
     if (!chatRoute || view.navigator?.connection?.saveData || !signedIn()) return;
