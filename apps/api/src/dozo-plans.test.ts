@@ -33,6 +33,8 @@ const store = vi.hoisted(() => ({
   trialHolds: 0,
   grant: null as { tier: string; endsAt: Date } | null,
   fileBytes: 0,
+  /** What an admin set on the plans page, as `dozo_plan_quotas` rows. */
+  quotas: [] as { tier: string; sharedSpaceMb: number | null; computerHours: number | null }[],
 }));
 
 // The database helpers have upstream's own PostgreSQL tests; here one organization lives in memory.
@@ -135,6 +137,7 @@ const prisma = {
     aggregate: async () => ({ _sum: { creditCents: null }, _min: { appliedAt: null } }),
   },
   referral: { findUnique: async () => null },
+  dozoPlanQuota: { findMany: async () => store.quotas },
   member: { count: async () => 1 },
   // Two questions reach the database raw: the bytes of the organization's files, and its
   // computer hours.
@@ -184,6 +187,7 @@ beforeEach(() => {
   store.trialHolds = 0;
   store.grant = null;
   store.fileBytes = 0;
+  store.quotas = [];
   runs.length = 0;
 });
 
@@ -395,6 +399,25 @@ describe("a Premium subscriber", () => {
     await expect(context.billing.changeTier(actor, "standard")).rejects.toMatchObject({
       code: "CONFLICT",
     });
+  });
+
+  it("moves down only when this month's use fits the hours an admin set for the smaller plan", async () => {
+    const context = setup();
+    await subscribe(context, "max");
+    runs.push({ kind: "docker", hours: 50 });
+    // Premium's hours lowered below what was used: refused, whatever the plan's terms say.
+    store.quotas = [{ tier: "pro", sharedSpaceMb: null, computerHours: 10 }];
+    expect(sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents)).toBeGreaterThan(50);
+    await expect(context.billing.changeTier(actor, "pro")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    // Premium's hours raised above Premium Plus's: not a smaller plan, so no use to fit.
+    runs.length = 0;
+    runs.push({ kind: "docker", hours: 250 });
+    store.quotas = [{ tier: "pro", sharedSpaceMb: null, computerHours: 300 }];
+    expect(sandboxAllowanceHours(BYOK_TIERS.pro.computerAllowanceCents)).toBeLessThan(250);
+    await context.billing.changeTier(actor, "pro");
+    await expect(context.billing.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
   });
 
   it("falls back to Free when the subscription ends: bots run, the computer does not", async () => {

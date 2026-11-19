@@ -96,6 +96,17 @@ lock, the count across Spaces and row security are tested in `dozo-shared-space.
 which needs a migrated database (`VERIFY_DATABASE=1` and `DATABASE_URL` of the runtime login); the
 unit gate has none and skips it, so run it by hand after changing the check.
 
+An admin can change two numbers per plan without a deploy, on the admin page's Plans section: its
+shared space and, on Premium and Premium Plus, its monthly computer hours (at least one; Free never
+gets hours). Prices stay in code: a new price is a new price at the payment provider. The values
+live in `dozo_plan_quotas` (`packages/db/src/dozo-plan-quotas.ts`); an empty one follows the
+terms in `dozo-plans.ts`. Every limit reads them from the database on each request, so a change
+holds on every instance at once: the shared space, the computer allowance, the hours Billing shows
+and the check that a move to a smaller plan fits this month's use. Each change is a
+`deployment.settings.changed` security event. Lowering a quota deletes nothing, as above. The
+landing page still shows the terms in code, so the admin page says in one line what it states
+when a value differs.
+
 An organization on Free spends nothing of the operator's. The operator's own model already needs
 credits (upstream's guard, on every model call a run or a background job makes). On top of that,
 `packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external

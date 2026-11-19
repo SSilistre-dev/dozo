@@ -268,6 +268,8 @@ function world(users: User[]) {
       findUnique: vi.fn(async ({ where }: Where) => organization(where.id) ?? null),
     },
     deploymentSettings: { findUnique: vi.fn(async () => settings) },
+    // No admin set a plan quota: the plans hold their terms.
+    dozoPlanQuota: { findMany: vi.fn(async () => []) },
     spaceMember: {
       findMany: vi.fn(async ({ where }: Where) =>
         spaces.filter((row) => row.userId === where.userId).map(({ space }) => ({ space })),
