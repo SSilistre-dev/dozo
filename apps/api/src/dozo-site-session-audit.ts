@@ -6,13 +6,17 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { Computer } from "@rakazo/db";
-import { recordAuditEvent } from "@rakazo/db";
+import { readJsonColumn, recordAuditEvent } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import * as z from "zod";
 import type { RouterDeps } from "./router.js";
 import { computerContext } from "./routes/shared.js";
 
 /** More sites than a person signs in to by hand in one go are page clutter, not sign-ins. */
 const MAX_SITES = 20;
+/** The lease that just ended is among this bot's latest grants. */
+const GRANTS_READ = 5;
+const GrantPayload = z.object({ leaseId: z.string().optional() });
 
 /**
  * After a person hands back a bot's screen, the sites whose first cookie was set while they held
@@ -32,14 +36,22 @@ export function auditSiteSessionsAfterControl(
   void bestEffort(
     "record the sites signed in to under a person's control",
     (async () => {
-      const granted = await deps.prisma.event.findFirst({
-        where: {
-          botId,
-          type: "computer.takeover.granted",
-          payload: { path: ["leaseId"], equals: leaseId },
-        },
-        select: { createdAt: true },
+      // Payloads are sealed at rest, so the lease is matched after reading, not in the query.
+      const grants = await deps.prisma.event.findMany({
+        where: { botId, type: "computer.takeover.granted" },
+        orderBy: { createdAt: "desc" },
+        take: GRANTS_READ,
+        select: { id: true, createdAt: true, payload: true },
       });
+      const granted = grants.find(
+        (event) =>
+          readJsonColumn(
+            GrantPayload,
+            event.payload,
+            { table: "events", column: "payload", id: event.id },
+            { fallback: {} },
+          ).leaseId === leaseId,
+      );
       if (!granted) return;
       const since = granted.createdAt.getTime();
       const hosts = await readCookieHosts(

@@ -22,7 +22,17 @@ function deps(granted: Date | null) {
     asked,
     deps: {
       prisma: {
-        event: { findFirst: vi.fn(async () => (granted ? { createdAt: granted } : null)) },
+        event: {
+          findMany: vi.fn(async () =>
+            granted
+              ? [
+                  { id: "e2", createdAt: new Date(0), payload: { leaseId: "other" } },
+                  { id: "e3", createdAt: new Date(0), payload: "sealed-garbage" },
+                  { id: "e1", createdAt: granted, payload: { leaseId: "lease-1" } },
+                ]
+              : [],
+          ),
+        },
       },
       sandbox: {
         async *execute(
@@ -72,7 +82,7 @@ describe("sites opened under a person's control", () => {
   it("records nothing without the grant, or on a computer that cannot tell", async () => {
     const none = deps(null);
     auditSiteSessionsAfterControl(none.deps, actor, running, "bot-1", "lease-1");
-    await vi.waitFor(() => expect(none.deps.prisma.event.findFirst).toHaveBeenCalled());
+    await vi.waitFor(() => expect(none.deps.prisma.event.findMany).toHaveBeenCalled());
     const other = deps(GRANTED);
     auditSiteSessionsAfterControl(other.deps, actor, { ...running, kind: "desktop" }, "bot-1", "l");
     auditSiteSessionsAfterControl(
