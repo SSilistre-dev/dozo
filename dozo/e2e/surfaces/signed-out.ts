@@ -76,10 +76,32 @@ export const signedOut: Surface[] = [
     covers: ["route:/reset-password"],
     async reach({ page, goto, scan }) {
       await goto("/reset-password");
-      await expect(page.getByText("This reset link is invalid or expired")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "This link is no longer valid" }),
+      ).toBeVisible();
+      await expect(page.getByRole("link", { name: "Request a new link" })).toBeVisible();
       await scan("invalid link");
       await goto("/reset-password?token=e2e-not-a-token");
       await expect(page.getByRole("button", { name: "Reset password" })).toBeVisible();
+    },
+  },
+  {
+    name: "verification link results (no word from the server, expired, not valid)",
+    group: "signed out",
+    signedOut: true,
+    covers: ["route:/verify-email"],
+    async reach({ page, goto, scan }) {
+      // The server's redirects after checking a link; flows/verify.spec.ts follows real links.
+      await goto("/verify-email?v=e2e-not-a-mark");
+      await expect(page.getByRole("heading", { name: "Sign in to continue" })).toBeVisible();
+      await scan("neutral");
+      await goto("/verify-email?v=e2e-not-a-mark&error=TOKEN_EXPIRED");
+      await expect(page.getByRole("heading", { name: "This link has expired" })).toBeVisible();
+      await scan("expired");
+      await goto("/verify-email?error=INVALID_TOKEN");
+      await expect(
+        page.getByRole("heading", { name: "This link is no longer valid" }),
+      ).toBeVisible();
     },
   },
   {
