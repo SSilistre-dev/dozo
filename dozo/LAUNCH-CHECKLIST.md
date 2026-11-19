@@ -4,13 +4,13 @@ What the owner must decide or supply before going public. This is the one list o
 placeholders. "Blocks launch" means do not open to the public without it. "Can follow" means it can
 ship after.
 
-To find every placeholder and upstream image name still in the branded tree, run the leak gate with
-`--launch` on a stage (`dozo/brand/README.md`, CLI). It is not part of any gate and fails until the
-placeholders are replaced.
+To find every upstream image name still in the branded tree, run the leak gate with `--launch` on a
+stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder addresses
+(`dozo.example`) fail every gate already.
 
-- [ ] **Domain** (blocks launch). Replace the `dozo.example` placeholders in `dozo/brand/brand.json`
-      (`urls`) with the real domain, including the app and docs subdomains. This also covers the
-      links `/discord`, `/get/ios` and `/get/android`.
+- [ ] **Domain** (blocks launch). No `dozo.example` placeholder reaches a user any more (`apply`
+      fails on one; `dozo/brand/README.md`, Known gaps). Still open: the desktop app's default
+      server address (`apps/desktop/src`, outside the brand scope).
 - [ ] **Hosted pre-release** (blocks opening it to anyone but the owner). The stack runs closed on
       the owner's host (`dozo/deploy/README.md`). Tried there: the owner's account and sign-in, a bot
       computer's screen, control and isolation, the live stream across restarts, a daily backup with
@@ -27,8 +27,7 @@ placeholders are replaced.
       the account list, one suspend and restore of a test account, and one Stop of a running
       computer have not been tried there. Mail must work first: without a provider nobody can
       verify an address or reset a password.
-- [ ] **GitHub owner and repo** (blocks launch). Replace `github.com/OWNER/dozo` in
-      `dozo/brand/brand.json` and in the fork notice in `README.md`.
+- [x] **GitHub owner and repo**. `github.com/SSilistre-dev/dozo` (`dozo/brand/brand.json`, `urls`).
 - [ ] **Publish and enable CI** (blocks launch; what is published so far: `dozo/README.md`, Status
       and known limits). Disable upstream's workflows before the first push, create `upstream-main`
       on origin, set the secret `DOZO_SYNC_TOKEN` and the required status check: `dozo/SYNC.md`.
@@ -38,10 +37,9 @@ placeholders are replaced.
       a packaged build). Still open: look at them in a real macOS build (Xcode 26 compiles the bundle),
       an Android launcher with themed icons and the iOS widget; and whether the in-app bot avatars should
       be redrawn from the approved mark. Do not reuse upstream's logo or mascot.
-- [ ] **Welcome-mail hero image** (can follow). Made and wired: `dozo/brand/assets/mail/welcome.png`,
-      served by the web app at `/email/welcome.png` and linked under the domain you set in `urls`. Open:
-      the domain must reach the web app (otherwise host the file there), and a look at the real mail in
-      a light and a dark client.
+- [ ] **Welcome-mail hero image** (can follow). The mail goes without one: the art is in
+      `dozo/brand/assets/mail/welcome.png`, but nothing hosts it on the landing site. To use it, host it
+      there and add an anchored rule linking it.
 - [ ] **Privacy policy, terms and refund pages** (blocks launch: awaiting a lawyer's review). Written
       and linked: `dozo/landing/privacy/`, `terms/` and `refunds/`, in English and Turkish, and two
       rules in `dozo/brand/brand.json` point the app's privacy and terms links at them (upstream's

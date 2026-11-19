@@ -520,27 +520,31 @@ describe("images and binaries in the gate", () => {
 });
 
 describe("launch gate", () => {
-  it("flags the url targets and upstream image names only with --launch, and only where they apply", () => {
-    const root = tree({ "src/a.ts": 'u = "https://dozo.example/x"; r = "github.com/OWNER/dozo"; i = "ghcr.io/elie222/rakazo/app"' });
-    const config = configFile({ urls: { "rakazo.com": "dozo.example", "github.com/elie222/rakazo": "github.com/OWNER/dozo" } });
+  it("flags upstream image names only with --launch, and only where they apply", () => {
+    const root = tree({ "src/a.ts": 'u = "github.com/SSilistre-dev/dozo"; i = "ghcr.io/elie222/rakazo/app"' });
+    const config = configFile({ urls: { "github.com/elie222/rakazo": "github.com/SSilistre-dev/dozo" } });
     assert.equal(check(root, config).status, 0);
     const res = check(root, config, "--launch");
     assert.equal(res.status, 2);
-    for (const text of ["dozo.example", "github.com/OWNER/dozo", "ghcr.io/elie222/rakazo"]) assert.ok(res.stderr.includes(`src/a.ts:1: ${text} (launch placeholder)`), text);
+    assert.ok(res.stderr.includes("src/a.ts:1: ghcr.io/elie222/rakazo (launch placeholder)"), res.stderr);
+    assert.doesNotMatch(res.stderr, /SSilistre-dev/, "a real url target is not a placeholder");
     const other = check(tree({ "packages/a.ts": 'i = "ghcr.io/elie222/rakazo/app"' }), config, "--launch");
     assert.equal(other.status, 2);
     assert.match(other.stderr, /packages\/a\.ts:1: elie222\/rakazo\n/, "outside the phrase's files it is a plain leak, not a launch placeholder");
     assert.doesNotMatch(other.stderr, /launch placeholder/);
   });
 
-  it("placeholders come from the url targets, whatever they are", () => {
-    const config = configFile({ urls: { "rakazo.com": "acme.example" } });
-    const root = tree({ "src/a.ts": 'u = "acme.example"; v = "dozo.example"' });
-    const res = check(root, config, "--launch");
-    assert.equal(res.status, 2);
-    assert.match(res.stderr, /src\/a\.ts:1: acme\.example \(launch placeholder\)/);
-    assert.doesNotMatch(res.stderr, /dozo\.example/);
-    const none = check(tree({ "src/a.ts": 'v = "dozo.example"' }), configFile({ urls: {} }), "--launch");
+  it("a placeholder is a finding with or without --launch, wherever it stands", () => {
+    const config = configFile({ placeholders: ["dozo.example", "OWNER/"] });
+    const root = tree({ "src/a.ts": 'u = "https://dozo.example/x";\nr = "github.com/OWNER/dozo"; v = "acme.example"' });
+    for (const flags of [[], ["--launch"]]) {
+      const res = check(root, config, ...flags);
+      assert.equal(res.status, 2);
+      assert.match(res.stderr, /src\/a\.ts:1: dozo\.example \(placeholder\)/);
+      assert.match(res.stderr, /src\/a\.ts:2: OWNER\/ \(placeholder\)/);
+      assert.doesNotMatch(res.stderr, /acme/);
+    }
+    const none = check(tree({ "src/a.ts": 'v = "dozo.example"' }), configFile({ placeholders: [] }), "--launch");
     assert.equal(none.status, 0, none.stderr);
   });
 

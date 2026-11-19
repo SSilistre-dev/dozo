@@ -83,8 +83,8 @@ Each is upstream's own behaviour for a build without the piece, not new code.
 
 Still upstream's on purpose: the `rakazo://` link scheme, which the server trusts as the app's
 origin (`dozo/brand/README.md`, Identifiers). An upstream app on the same phone claims it too.
-Store links in the app are the `dozo.example` placeholders until launch; the privacy and terms
-links open the landing site's pages (`dozo/landing/README.md`).
+There is no store listing: the app's update fallback opens the landing page, and the privacy and
+terms links open the landing site's pages (`dozo/landing/README.md`).
 
 ## Phase 2
 

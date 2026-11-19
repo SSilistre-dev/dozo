@@ -12,6 +12,9 @@
  * SHAPES row and stem must match something. Without it a re-run on an already rewritten tree is a
  * no-op.
  *
+ * A `placeholders` entry (an address that does not exist, such as `dozo.example`) left in any
+ * branded file fails, strict or not.
+ *
  * Exit 0 on success, 2 on any failure. Everything is validated before the first write, so a rule
  * failure writes nothing; the write phase replaces each file through a temp file and a rename, and
  * an I/O error during it exits 2 with "stage is partial, re-stage". --check never writes.
@@ -32,6 +35,7 @@ import {
   loadConfig,
   parseArgs,
   phraseRe,
+  placeholderHits,
   readFile,
   rewrite,
   writeAtomic,
@@ -126,6 +130,7 @@ for (const rel of files) {
     scanned++;
     text = rewrite(text, config, counts, rel);
     finalText.set(rel, text);
+    for (const hit of placeholderHits(config, text)) errors.push(`${rel}:${hit} is a placeholder and would ship (point it at a real address or remove it)`);
   }
   if (text !== original) planned.set(rel, text);
 }
