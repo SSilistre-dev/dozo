@@ -307,10 +307,13 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
   so it shows where remote images are blocked and no mail loads anything from a server: no remote
   image, no tracking pixel. Transactional mail carries it in an optional `inline` field that both
   email adapters translate (anchored rules on `adapter-kit/src/types.ts`, `smtp-email.ts`,
-  `resend-email.ts`; tested by `packages/adapters/src/dozo-email-inline.test.ts`). The welcome mail
-  keeps its hero image instead of the header.
-- A verification link lands on the web app's result page (`/verify-email`, set by
-  `packages/auth/src/dozo-email-link.ts`): verified, expired with a new link, or not valid.
+  `resend-email.ts`; tested by `packages/adapters/src/dozo-email-inline.test.ts`). Every account
+  mail, the welcome mail included (its upstream hero image is removed by a rule), has this header.
+- The verification mail is sent by `packages/auth/src/dozo-email-link.ts`, in the background like
+  the reset mail (the answer to whoever asked is the same for any address and any delivery
+  outcome), at most 3 an hour per address in the shared `rateLimit` table. Its link lands on the
+  web app's result page (`/verify-email`) with a mark the server signed for the account, never the
+  address; the page asks `/api/auth/dozo/email-link` whether that account is verified.
 - The sender's name is not in the code: it is the name part of `EMAIL_FROM` (for example
   `Dozo <no-reply@your-domain>`), set where the server runs.
 - Upstream's `email.test.ts` asserts that code mails carry no link; on the branded tree they carry

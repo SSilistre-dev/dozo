@@ -28,13 +28,11 @@ import { AuthPage as UpstreamAuthPage } from "./Auth";
  *
  * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
  * for this tab (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
- * the same way. An `email` parameter (the verification result page's link) has filled upstream's
- * field by then and leaves with them. The tab's title names the page, so it reads as sign-in or
- * sign-up, not only the app.
+ * the same way. The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
  */
 function withoutLinkParams(current: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(current);
-  for (const key of ["lang", "plan", "period", "email"]) next.delete(key);
+  for (const key of ["lang", "plan", "period"]) next.delete(key);
   return next;
 }
 
@@ -47,14 +45,13 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   const [locale, setLocale] = useState<UiLocale>(getActiveUiLocale);
   const plan = params.get("plan");
   const period = params.get("period");
-  const email = params.get("email");
   useEffect(() => {
-    if (plan === null && period === null && email === null) return;
+    if (plan === null && period === null) return;
     const intent = planIntentFromParams(plan, period);
     if (intent) savePlanIntent(intent);
     // A language in the address is dropped later, and these leave with it in one change.
     if (asked === null) setParams(withoutLinkParams, { replace: true });
-  }, [plan, period, email, asked, setParams]);
+  }, [plan, period, asked, setParams]);
   useEffect(() => {
     if (asked === null) return;
     let active = true;

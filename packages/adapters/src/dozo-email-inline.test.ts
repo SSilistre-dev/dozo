@@ -33,6 +33,9 @@ describe("inline images", () => {
     );
     await provider.send(mail);
     expect(raw).toMatch(/Content-Type: multipart\/related/);
+    // The plain text part stays, beside the HTML, for clients that show text only.
+    expect(raw).toMatch(/Content-Type: multipart\/alternative/);
+    expect(raw).toMatch(/Content-Type: text\/plain[\s\S]*\r?\n\r?\nVerify\r?\n/);
     expect(raw).toMatch(/Content-ID: <mark>/);
     expect(raw).toMatch(/Content-Disposition: inline; filename=mark\.png/);
     expect(raw).toContain(PIXEL.slice(0, 40));

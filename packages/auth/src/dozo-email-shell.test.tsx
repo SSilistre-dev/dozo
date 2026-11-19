@@ -125,19 +125,28 @@ describe("branded account mail", () => {
     }
   });
 
-  it("says in the verification mail what the link is for, in English and Turkish", async () => {
+  it("says in the verification mail what the link is for and warns under the button", async () => {
     const en = await verificationEmail("ada@example.com", "https://app.example.com/v", "en");
     expect(en.subject).toBe("Verify your Dozo email");
-    expect(en.text).toContain("Verify the email address for your Dozo account.");
-    expect(en.text).toContain("This link expires in one hour.");
-    expect(en.text).not.toContain("Then return");
+    const enText = en.text ?? "";
+    expect(enText).toContain("Verify the email address for your Dozo account.");
+    expect(enText).toContain(
+      "If you did not create this account, do not click the button and ignore this email.",
+    );
+    expect(enText).toContain("This link expires in one hour.");
+    expect(enText).not.toContain("Then return");
+    expect(enText.indexOf("Verify email")).toBeLessThan(enText.indexOf("If you did not create"));
     const tr = await verificationEmail("ada@example.com", "https://app.example.com/v", "tr");
     expect(tr.subject).toBe("Dozo e-posta adresinizi doğrulayın");
-    expect(tr.text).toContain("Dozo hesabınızın e-posta adresini doğrulayın.");
-    expect(tr.text).toContain("E-postayı doğrula");
-    expect(tr.text).not.toContain("Ardından");
-    expect(tr.html?.indexOf("hesabınızın")).toBeLessThan(
-      tr.html?.indexOf("E-postayı doğrula") ?? 0,
+    const trText = tr.text ?? "";
+    expect(trText).toContain("Dozo hesabınızın e-posta adresini doğrulayın.");
+    expect(trText).toContain(
+      "Bu hesabı siz oluşturmadıysanız düğmeye tıklamayın ve bu e-postayı yok sayın.",
     );
+    expect(trText).toContain("Bu bağlantının süresi bir saat içinde dolar.");
+    expect(trText).not.toContain("Ardından");
+    expect(trText.indexOf("hesabınızın")).toBeLessThan(trText.indexOf("E-postayı doğrula"));
+    // The warning is body text, not the muted fine print.
+    expect(tr.html).not.toMatch(/class="email-muted"[^>]*>Bu hesabı siz/);
   });
 });

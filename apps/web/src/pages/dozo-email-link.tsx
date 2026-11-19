@@ -1,30 +1,33 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, buttonVariants, Input, Label } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
-import { errorText } from "../lib/dozo-error-text";
+import { useSave } from "../lib/query";
 import { authErrorText } from "../lib/user-error";
 import { AuthFrame, submitClass, PasswordResetPage as UpstreamPasswordResetPage } from "./Auth";
 
 /**
  * Where an emailed link lands once the server has checked it. The verification link comes back
- * to `/verify-email` with the address and, when it did not verify, the auth library's `error`
- * code; a broken password reset link comes back to `/reset-password` with `error`. Each outcome
- * gets one short screen. The parameters leave the address bar at once and move into the history
- * entry, so a reload shows the same screen.
+ * to `/verify-email` with `v`, a mark the server signed for the account, and, when it did not
+ * verify, the auth library's `error` code; a broken password reset link comes back to
+ * `/reset-password` with `error`. Each outcome gets one short screen. The parameters leave the
+ * address bar at once and move into the history entry, so a reload shows the same screen.
+ *
+ * "Verified" is said only when the server confirms it: for the account the mark names
+ * (`/api/auth/dozo/email-link`, packages/auth/src/dozo-email-link.ts), or for the signed-in
+ * account. An address with no error and nothing the server confirms gets a neutral screen, so a
+ * hand-made link cannot claim a verification. No address travels in a URL: the form is filled
+ * from the server's answer and handed to sign-in in the history entry.
  */
-type LinkOutcome = "verified" | "expired" | "invalid" | "unknown";
+type LinkOutcome = "verified" | "expired" | "invalid" | "unknown" | "neutral";
 
 /** Every code the verify-email endpoint redirects with, and the screen it gets. */
-export function verifyOutcome(error: string | null | undefined): LinkOutcome {
+export function errorOutcome(error: string): Exclude<LinkOutcome, "verified" | "neutral"> {
   switch (error) {
-    case null:
-    case undefined:
-    case "":
-      return "verified";
     case "TOKEN_EXPIRED":
       return "expired";
     case "INVALID_TOKEN":
@@ -36,41 +39,57 @@ export function verifyOutcome(error: string | null | undefined): LinkOutcome {
   }
 }
 
-type LinkState = { error: string | null; email: string };
-
-type SendState =
-  | { kind: "idle" }
-  | { kind: "sending" }
-  | { kind: "sent"; to: string }
-  | { kind: "failed"; message: string };
+type LinkState = { error: string | null; mark: string };
+type MarkAnswer = { verified: boolean; email: string | null };
 
 /** The link's parameters, taken out of the address once and kept in the history entry. */
 function useLinkState(): LinkState | null {
   const [params] = useSearchParams();
   const { pathname, state: stored } = useLocation();
   const navigate = useNavigate();
-  const fromParams = params.has("error") || params.has("email");
+  const fromParams = params.has("error") || params.has("v");
   const error = params.get("error");
-  const email = params.get("email") ?? "";
+  const mark = params.get("v") ?? "";
   useEffect(() => {
-    if (fromParams) navigate(pathname, { replace: true, state: { error, email } });
-  }, [fromParams, error, email, pathname, navigate]);
-  if (fromParams) return { error, email };
+    if (fromParams) navigate(pathname, { replace: true, state: { error, mark } });
+  }, [fromParams, error, mark, pathname, navigate]);
+  if (fromParams) return { error, mark };
   const kept = stored as Partial<LinkState> | null;
-  return kept && "error" in kept ? { error: kept.error ?? null, email: kept.email ?? "" } : null;
+  return kept && "error" in kept ? { error: kept.error ?? null, mark: kept.mark ?? "" } : null;
+}
+
+async function readMark(mark: string): Promise<MarkAnswer> {
+  const response = await fetch(`/api/auth/dozo/email-link?v=${encodeURIComponent(mark)}`);
+  if (!response.ok) throw new Error(`email link answered ${response.status}`);
+  return (await response.json()) as MarkAnswer;
 }
 
 export function VerifyEmailPage() {
   const state = useLinkState();
   const session = authClient.useSession();
+  const mark = state?.mark ?? "";
+  const answer = useQuery({
+    queryKey: ["dozo-email-link", mark],
+    queryFn: () => readMark(mark),
+    enabled: Boolean(mark),
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   if (!state) return <Navigate to="/" replace />;
-  // The buttons depend on whether someone is signed in; wait for that instead of flashing.
-  if (session.isPending) return <div className="h-full bg-background" />;
+  // The buttons depend on who is signed in and what the server says; wait instead of flashing.
+  if (session.isPending || answer.isLoading) return <div className="h-full bg-background" />;
+  const user = session.data?.user ?? null;
+  const confirmed = answer.data?.verified === true || user?.emailVerified === true;
+  const outcome: LinkOutcome = state.error
+    ? errorOutcome(state.error)
+    : confirmed
+      ? "verified"
+      : "neutral";
   return (
     <VerifyEmailResult
-      outcome={verifyOutcome(state.error)}
-      email={state.email}
-      signedInEmail={session.data?.user.email ?? null}
+      outcome={outcome}
+      email={answer.data?.email ?? ""}
+      signedInEmail={user?.email ?? null}
     />
   );
 }
@@ -86,46 +105,41 @@ function VerifyEmailResult({
 }) {
   const signedIn = signedInEmail !== null;
   // Onward: into the app when signed in, else to sign-in with the address filled in.
-  const to = signedIn
-    ? "/app"
-    : email
-      ? `/sign-in/email?email=${encodeURIComponent(email)}`
-      : "/sign-in";
-  const label =
-    signedIn || outcome === "verified" ? <Trans>Continue</Trans> : <Trans>Sign in</Trans>;
-  if (outcome === "verified") {
-    return (
-      <LinkResult title={<Trans>Email verified</Trans>}>
-        <OnwardLink to={to} primary>
-          {label}
-        </OnwardLink>
-      </LinkResult>
+  const onward = (primary: boolean) =>
+    signedIn ? (
+      <OnwardLink to="/app" primary={primary}>
+        <Trans>Continue</Trans>
+      </OnwardLink>
+    ) : (
+      <OnwardLink to="/sign-in/email" state={email ? { email } : undefined} primary={primary}>
+        {outcome === "verified" ? <Trans>Continue</Trans> : <Trans>Sign in</Trans>}
+      </OnwardLink>
     );
-  }
   if (outcome === "expired") {
     return (
-      <ExpiredLink
-        email={signedInEmail ?? email}
-        signedIn={signedIn}
-        onward={<OnwardLink to={to}>{label}</OnwardLink>}
-      />
+      <ExpiredLink email={signedInEmail ?? email} signedIn={signedIn} onward={onward(false)} />
     );
   }
-  return (
-    <LinkResult
-      title={
-        outcome === "invalid" ? (
-          <Trans>This link is no longer valid</Trans>
-        ) : (
-          <Trans>Could not open this link</Trans>
-        )
-      }
-    >
-      <OnwardLink to={to} primary>
-        {label}
-      </OnwardLink>
-    </LinkResult>
-  );
+  const title =
+    outcome === "verified" ? (
+      <Trans>Email verified</Trans>
+    ) : outcome === "invalid" ? (
+      <Trans>This link is no longer valid</Trans>
+    ) : outcome === "unknown" ? (
+      <Trans>Could not open this link</Trans>
+    ) : signedIn ? (
+      <Trans>Continue to Dozo</Trans>
+    ) : (
+      <Trans>Sign in to continue</Trans>
+    );
+  return <LinkResult title={title}>{onward(true)}</LinkResult>;
+}
+
+/** An error from the auth client, kept with its code so the shared copy can name it. */
+class AuthCallError extends Error {
+  constructor(readonly body: { code?: string; status?: number; message?: string }) {
+    super(body.message ?? body.code ?? "auth call failed");
+  }
 }
 
 function ExpiredLink({
@@ -139,45 +153,38 @@ function ExpiredLink({
 }) {
   const { t } = useLingui();
   const [email, setEmail] = useState(initialEmail);
-  const [canSend, setCanSend] = useState(false);
-  // One request at a time; its answer replaces the form, or says why it failed.
-  const [send, setSend] = useState<SendState>({ kind: "idle" });
-  useEffect(() => {
-    let active = true;
-    // Only a server that sends mail can send a new link.
-    fetchAuthCapabilities().then(
-      (capabilities) => {
-        if (active) setCanSend(capabilities.emailCode === true);
-      },
-      () => undefined,
-    );
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const address = email.trim();
-    if (send.kind === "sending" || !address) return;
-    setSend({ kind: "sending" });
-    try {
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  // Only a server that sends mail can send a new link; a failed read shows no button.
+  const capabilities = useQuery({
+    queryKey: ["auth-capabilities"],
+    queryFn: fetchAuthCapabilities,
+  });
+  const send = useSave<string>({
+    save: async (address) => {
       const result = await authClient.sendVerificationEmail({ email: address });
-      setSend(
-        result.error
-          ? { kind: "failed", message: authErrorText(result.error, t`Could not send the link`) }
-          : { kind: "sent", to: address },
-      );
-    } catch (failure) {
-      setSend({ kind: "failed", message: errorText(failure, t`Could not send the link`) });
-    }
-  }
+      if (result.error) throw new AuthCallError(result.error);
+    },
+    onSaved: (_saved, address) => setSentTo(address),
+  });
+  const failure = send.error
+    ? authErrorText(
+        send.error instanceof AuthCallError ? send.error.body : send.error,
+        t`Could not send the link`,
+      )
+    : null;
 
   return (
-    <LinkResult title={<Trans>This link has expired</Trans>} onSubmit={submit}>
-      {send.kind === "sent" ? (
-        <Sent to={send.to} />
-      ) : canSend ? (
+    <LinkResult
+      title={<Trans>This link has expired</Trans>}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const address = email.trim();
+        if (address) send.run(address);
+      }}
+    >
+      {sentTo ? (
+        <Sent to={sentTo} />
+      ) : capabilities.data?.emailCode === true ? (
         <>
           {signedIn ? null : (
             <div className="w-full">
@@ -197,17 +204,12 @@ function ExpiredLink({
               />
             </div>
           )}
-          {send.kind === "failed" ? (
+          {failure ? (
             <p role="alert" className="mt-3 w-full text-body text-destructive">
-              {send.message}
+              {failure}
             </p>
           ) : null}
-          <Button
-            type="submit"
-            size="lg"
-            disabled={send.kind === "sending"}
-            className={submitClass}
-          >
+          <Button type="submit" size="lg" disabled={send.pending} className={submitClass}>
             <Trans>Send a new link</Trans>
           </Button>
         </>
@@ -266,16 +268,19 @@ function LinkResult({
 
 function OnwardLink({
   to,
+  state,
   primary = false,
   children,
 }: {
   to: string;
+  state?: { email: string };
   primary?: boolean;
   children: ReactNode;
 }) {
   return (
     <Link
       to={to}
+      state={state}
       className={primary ? buttonVariants({ size: "lg", className: submitClass }) : "font-medium"}
     >
       {children}

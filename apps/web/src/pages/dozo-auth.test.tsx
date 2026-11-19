@@ -285,13 +285,6 @@ it("keeps the plan and the language together, dropping all three parameters once
   expect(JSON.parse(intent() ?? "null")).toMatchObject({ tier: "pro", period: "year" });
 });
 
-it("drops a filled-in address once upstream's page is up, keeping the destination", async () => {
-  mocks.capabilities.mockResolvedValue({ signupsOpen: true });
-  await open("/sign-in?email=ada%40example.com&next=%2Fapp");
-  expect(where()).toBe("/sign-in?next=%2Fapp");
-  expect(shown()).toBe("in");
-});
-
 it("keeps the plan when registration is closed and sign-in shows instead", async () => {
   window.sessionStorage.clear();
   mocks.capabilities.mockResolvedValue({ signupsOpen: false });

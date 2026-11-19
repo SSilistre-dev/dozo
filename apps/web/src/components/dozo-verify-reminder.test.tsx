@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -33,8 +34,15 @@ let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 const ada: User = { id: "u1", email: "ada@example.com", emailVerified: false };
 
+let client: QueryClient;
 async function render() {
-  await act(async () => root.render(<DozoVerifyReminder />));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <DozoVerifyReminder />
+      </QueryClientProvider>,
+    ),
+  );
 }
 const line = () => container.querySelector('[role="status"]');
 const resend = () =>
@@ -49,6 +57,7 @@ beforeEach(() => {
   api.toastError.mockReset();
   api.capabilities.mockReset();
   api.capabilities.mockResolvedValue({ emailCode: true });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -84,6 +93,7 @@ describe("DozoVerifyReminder", () => {
     expect(line()).toBeNull();
     act(() => root.unmount());
     root = createRoot(container);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     api.capabilities.mockRejectedValue(new Error("offline"));
     await render();
     expect(line()).toBeNull();
@@ -106,7 +116,7 @@ describe("DozoVerifyReminder", () => {
     expect(resend()?.disabled).toBe(true);
     expect(api.send).toHaveBeenCalledWith({ email: "ada@example.com" });
     await act(async () => answer.resolve({ data: { status: true }, error: null }));
-    expect(line()?.textContent).toBe("Link sent");
+    await vi.waitFor(() => expect(line()?.textContent).toBe("Link sent"));
     expect(resend()).toBeUndefined();
   });
 
@@ -115,12 +125,14 @@ describe("DozoVerifyReminder", () => {
     await render();
     await vi.waitFor(() => expect(resend()).toBeDefined());
     await act(async () => resend()?.click());
-    expect(api.toastError).toHaveBeenCalledWith("Too many attempts");
-    expect(resend()?.disabled).toBe(false);
+    await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Too many attempts"));
+    await vi.waitFor(() => expect(resend()?.disabled).toBe(false));
     const failure = new TypeError("Failed to fetch");
     api.send.mockRejectedValueOnce(failure);
     await act(async () => resend()?.click());
-    expect(api.toastError).toHaveBeenLastCalledWith("Could not send the link", failure);
+    await vi.waitFor(() =>
+      expect(api.toastError).toHaveBeenLastCalledWith("Could not send the link", failure),
+    );
   });
 
   it("stays closed for this tab and account once dismissed", async () => {
