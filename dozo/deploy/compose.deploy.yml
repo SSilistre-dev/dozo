@@ -137,10 +137,11 @@ services:
       traefik.http.routers.dozo-app-shared.tls: "true"
       traefik.http.routers.dozo-app-shared.service: dozo-app
       traefik.http.routers.dozo-app-shared.middlewares: dozo-app-headers,dozo-app-shared
-      # Built assets in brotli: the web server compresses only with gzip. The proxy compresses
-      # instead, so the request it forwards asks for no particular encoding.
+      # Built assets in brotli: the web server compresses only with gzip, so the proxy compresses
+      # instead and asks the web server for an uncompressed copy. An empty value would not do: the
+      # proxy drops the header and its HTTP client then asks for gzip on its own.
       traefik.http.middlewares.dozo-app-compress.compress.encodings: br,gzip
-      traefik.http.middlewares.dozo-app-identity.headers.customRequestHeaders.Accept-Encoding: ""
+      traefik.http.middlewares.dozo-app-identity.headers.customRequestHeaders.Accept-Encoding: identity
       traefik.http.routers.dozo-app-assets.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && PathPrefix(`/assets/`)"
       traefik.http.routers.dozo-app-assets.priority: "1001"
       traefik.http.routers.dozo-app-assets.entrypoints: websecure

@@ -1,14 +1,19 @@
 import type { ServiceWorkerScope } from "./service-worker";
 import { installServiceWorker as upstreamInstallServiceWorker } from "./service-worker";
 
-type FetchEvent = { request: Request; clientId?: string; resultingClientId?: string };
+type FetchEvent = {
+  request: Request;
+  clientId?: string;
+  resultingClientId?: string;
+  respondWith(response: Promise<Response>): void;
+};
 
 /**
- * Upstream's worker, except that hashed assets are left to the browser's HTTP cache, where the
- * server marks them immutable: reading them from the worker's cache made every warm load slower.
- * The worker answers them from its cache only for a page it opened from the cached shell while
- * offline, which is what the precache is for. Navigations, the shell, the theme and updates keep
- * upstream's behaviour.
+ * Upstream's worker, except that hashed assets come from the network first, which the browser
+ * answers from its HTTP cache, where the server marks them immutable: reading them from the
+ * worker's cache first made every warm load slower. The worker's cache answers when the network
+ * fails, and first for a page it opened from the cached shell while offline. Navigations, the
+ * shell, the theme and updates keep upstream's behaviour.
  */
 export function installServiceWorker(
   scope: ServiceWorkerScope,
@@ -43,7 +48,14 @@ export function installServiceWorker(
         const { request, clientId = "", resultingClientId = "" } = event as FetchEvent;
         if (request.mode === "navigate") {
           if (resultingClientId) navigations.set(request, resultingClientId);
-        } else if (leftToBrowser(request) && !offlinePages.has(clientId)) {
+        } else if (networkFirst(request) && !offlinePages.has(clientId)) {
+          (event as FetchEvent).respondWith(
+            scope.fetch(request).catch(async (error: unknown) => {
+              const cached = await scope.caches.match(request);
+              if (cached) return cached;
+              throw error;
+            }),
+          );
           return;
         }
         listener(event as never);
@@ -51,7 +63,7 @@ export function installServiceWorker(
     },
   };
 
-  function leftToBrowser(request: Request): boolean {
+  function networkFirst(request: Request): boolean {
     if (request.method !== "GET") return false;
     const url = new URL(request.url);
     if (url.origin !== scope.location.origin) return false;

@@ -41,6 +41,13 @@ function setup(precache = ["/", "/assets/index-abc.js"]) {
       },
       keys: async () => [...stores.keys()],
       delete: async (name: string) => stores.delete(name),
+      match: async (request: Request) => {
+        for (const store of stores.values()) {
+          const found = await store.match(request);
+          if (found) return found;
+        }
+        return undefined;
+      },
     } as unknown as CacheStorage,
     clients: { matchAll: async () => [{}] },
     registration: { waiting: null },
@@ -82,15 +89,32 @@ function setup(precache = ["/", "/assets/index-abc.js"]) {
 }
 
 describe("dozo service worker", () => {
-  it("leaves hashed assets to the browser's HTTP cache on an online page", async () => {
-    network = async (request) => new Response(`network ${new URL(request.url).pathname}`);
+  it("takes hashed assets from the network, never the worker's cache, on an online page", async () => {
+    network = async (request) => new Response(`v1 ${new URL(request.url).pathname}`);
     const sw = setup();
     await sw.dispatch("install", {});
-    sw.scope.fetch.mockClear();
+    network = async (request) => new Response(`network ${new URL(request.url).pathname}`);
     expect(await sw.fetch("/t/1", { resultingClientId: "page" }, "navigate")).toBe("network /t/1");
-    expect(await sw.fetch("/assets/index-abc.js", { clientId: "page" })).toBeUndefined();
-    expect(await sw.fetch("/assets/lazy-1.js", { clientId: "page" })).toBeUndefined();
-    expect(sw.scope.fetch).toHaveBeenCalledTimes(1);
+    expect(await sw.fetch("/assets/index-abc.js", { clientId: "page" })).toBe(
+      "network /assets/index-abc.js",
+    );
+    expect(await sw.fetch("/assets/lazy-1.js", { clientId: "page" })).toBe(
+      "network /assets/lazy-1.js",
+    );
+  });
+
+  it("falls back to the worker's cache when an asset's network request fails", async () => {
+    network = async (request) => new Response(`v1 ${new URL(request.url).pathname}`);
+    const sw = setup();
+    await sw.dispatch("install", {});
+    network = offline;
+    // A worker restarted since the page opened, or a browser without client ids, knows no
+    // offline page: the precached copy still answers, an uncached chunk fails as the network did.
+    expect(await sw.fetch("/assets/index-abc.js", { clientId: "page" })).toBe(
+      "v1 /assets/index-abc.js",
+    );
+    expect(await sw.fetch("/assets/index-abc.js")).toBe("v1 /assets/index-abc.js");
+    await expect(sw.fetch("/assets/lazy-1.js", { clientId: "page" })).rejects.toThrow("offline");
   });
 
   it("opens offline from the cached shell and its precached assets", async () => {
@@ -104,8 +128,10 @@ describe("dozo service worker", () => {
     );
     // A lazy chunk the worker never cached still goes to the browser's network stack.
     await expect(sw.fetch("/assets/lazy-1.js", { clientId: "page" })).rejects.toThrow("offline");
-    // Another page that loaded online is not answered from the worker's cache.
-    expect(await sw.fetch("/assets/index-abc.js", { clientId: "other" })).toBeUndefined();
+    // Another page tries the network first and gets the cached copy when it fails.
+    expect(await sw.fetch("/assets/index-abc.js", { clientId: "other" })).toBe(
+      "v1 /assets/index-abc.js",
+    );
   });
 
   it("keeps upstream's handling of the theme, other requests and updates", async () => {
@@ -118,9 +144,9 @@ describe("dozo service worker", () => {
     await sw.dispatch("message", { data: SKIP_WAITING });
     expect(sw.scope.skipWaiting).toHaveBeenCalled();
     await sw.dispatch("activate", {});
-    // Without a resulting client id the shell still opens; its assets come from the HTTP cache.
+    // Without a resulting client id the shell still opens, and so do its assets.
     network = offline;
     expect(await sw.fetch("/t/1", {}, "navigate")).toBe("v1 /");
-    expect(await sw.fetch("/assets/index-abc.js")).toBeUndefined();
+    expect(await sw.fetch("/assets/index-abc.js")).toBe("v1 /assets/index-abc.js");
   });
 });
