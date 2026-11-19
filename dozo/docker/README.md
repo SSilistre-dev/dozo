@@ -141,7 +141,15 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   fails here, not only at `make qa`. About 9 seconds.
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
   inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
-  `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.
+  `dozo-*`).
+- The production compose layer (`dozo/deploy/compose.deploy.test.sh`): `docker compose config` of
+  upstream's compose file with `compose.deploy.yml`, no daemon and no `.env`, checks what the panel
+  gets: `TRUSTED_PROXIES` and `DOZO_PLUGIN_SUBMISSIONS` reach the api (closed by default), every
+  router goes through the origin allowlist (everyone unless `DOZO_ORIGIN_SOURCE_RANGE` is set), and
+  the app's Referrer-Policy. Needs `docker compose` and `jq`. About a second.
+- The upstream workflow list: a workflow file under `.github/workflows`, not named `dozo-*`, that
+  `dozo/upstream-workflows.txt` does not list fails the gate, so a sync that brings one stays red
+  until it is reviewed (`dozo/SYNC.md`, Upstream's GitHub workflows).
 - The upstream-edit check: no upstream file may differ from the merge base of `HEAD` and
   `upstream-main` (not its tip, which may be ahead after a sync), except the marked notice block at
   the top of the root `README.md` and the three issue forms the fork replaces whole

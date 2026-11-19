@@ -103,6 +103,9 @@ SANDBOX_MAX_COMPUTERS_PER_USER=2   # see Bot computers on a shared host
 RAKAZO_COMPUTER_NETWORK_RANGE=10.214.0.0/16   # optional: the range computer networks are cut from
 DOZO_STACK_SUBNET=10.213.87.0/24   # optional: the stack's own network, if this range is taken
 CLIENT_IP_HEADER=cf-connecting-ip   # only when a CDN that sets this header is in front
+TRUSTED_PROXIES=dokploy-traefik   # with CLIENT_IP_HEADER: the panel's proxy only (Client addresses)
+DOZO_ORIGIN_SOURCE_RANGE=       # optional: the CDN's ranges, comma-separated (Origin behind a CDN)
+DOZO_PLUGIN_SUBMISSIONS=closed  # optional, the default; open lets anyone submit a plugin
 POSTGRES_PASSWORD=...           # the six secrets from step 2
 POSTGRES_APP_PASSWORD=...
 BETTER_AUTH_SECRET=...
@@ -134,11 +137,44 @@ The Android package in `assetlinks.json` and the push topic are the app's id, `d
 build. `dozo/mobile/baglanti-testi.sh <url>` checks what the app asks of a server, these files
 included.
 
+### Client addresses
+
 `CLIENT_IP_HEADER`: the panel's proxy reports the CDN's address, not the visitor's, so without it
-every visitor shares one sign-in rate limit. The header is believed only from the stack's own
-networks (the panel's proxy and the web container). Someone who reaches the host directly, past
-the CDN, can send it too, which lets them pick the address their own attempts are counted under;
-that is the trade against one shared limit anyone can exhaust.
+every visitor shares one sign-in rate limit. The api believes the header only from the proxies in
+`TRUSTED_PROXIES`. Unset, those are the stack's own networks, which hold the web container as well
+as the panel's proxy; set it to the panel's proxy alone, so a request that reaches the api through
+the web container counts under that container's address. Requests from browsers reach the api
+through the panel's proxy (What the proxy does), so they keep their own address.
+
+The value is the proxy's container name, which the api resolves on the stack's network every 30
+seconds: `dokploy-traefik` on a standard panel install. Check it before setting it, on the host:
+
+```sh
+docker ps --format '{{.Names}}' | grep -i traefik            # the proxy's container name
+api=$(docker ps -q -f label=com.docker.compose.service=api | head -1)
+docker exec "$api" getent hosts dokploy-traefik             # an address in DOZO_STACK_SUBNET
+```
+
+If `getent` prints nothing, the name is wrong or the proxy is not on the stack's network; leave
+`TRUSTED_PROXIES` unset then, since a proxy the api cannot find is not believed and every visitor
+would share one limit again. After the deploy, sign in from two networks; each new session carries
+that network's address, not one shared address:
+
+```sh
+pg=$(docker ps -q -f label=com.docker.compose.service=postgres | head -1)
+docker exec "$pg" psql -U rakazo -d rakazo -c 'select "ipAddress", "createdAt" from session order by "createdAt" desc limit 2'
+```
+
+### Origin behind a CDN
+
+`DOZO_ORIGIN_SOURCE_RANGE` limits the routers in `compose.deploy.yml` to these source addresses
+(comma-separated IPs or CIDR ranges); anything else gets 403 from the proxy. Unset, everyone is let
+in, as before. Set it to the CDN's published ranges, IPv4 and IPv6, and only when every request
+comes through the CDN: the health check and `deploy.sh` reach the app by its public name, so they
+pass through the CDN too. Keep the list current when the CDN publishes new ranges. To check, after
+the deploy: the site loads as before, and a request to the host's own address that skips the CDN
+answers 403 (`curl -sk -o /dev/null -w '%{http_code}' --resolve dozo.example:443:<host IP>
+https://dozo.example/`).
 
 ## Admin page
 
@@ -166,13 +202,16 @@ and apply to the host in `RAKAZO_HOST` only, so that must be the domain the pane
 
 - `Strict-Transport-Security` and `X-Content-Type-Options` on every response, and `noindex` plus
   `Referrer-Policy: no-referrer` on shared pages (`/p/`), as upstream's own proxy sets them. The
-  CSP and `X-Frame-Options` come from the app.
+  app's other pages and assets send `Referrer-Policy: strict-origin-when-cross-origin`. The CSP
+  and `X-Frame-Options` come from the app.
 - `/api/` and `/rpc/` go to the api container directly. Through the web container a live stream
   stayed open after the API behind it restarted, and open tabs stopped following changes until
   reloaded. While the api container is starting or unhealthy these paths answer 502 (about ten
   seconds after a restart); the app retries by itself.
-- `/api/v1/plugin-submissions`, the one write that needs no account, answers 403 to everyone. To
-  open it, remove its lines from `compose.deploy.yml`.
+- `/api/v1/plugin-submissions`, the one write that needs no account, answers 403 to everyone,
+  from the proxy and from the api itself (`DOZO_PLUGIN_SUBMISSIONS=closed`, the default here). To
+  open it, set that to `open` and remove the proxy's lines from `compose.deploy.yml`.
+- With `DOZO_ORIGIN_SOURCE_RANGE` set, only those addresses reach the app (Origin behind a CDN).
 
 ## Landing page
 
