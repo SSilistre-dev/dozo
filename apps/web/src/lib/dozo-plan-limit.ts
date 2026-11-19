@@ -1,10 +1,10 @@
-import { i18n } from "@lingui/core";
 import { DOZO_PLAN_LIMIT_KINDS, planLimitOf, planLimitText } from "@rakazo/contracts";
+import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
 import { sendEvent } from "./dozo-event-sender";
 
 /** A billing page's failure: the shared table's sentence for a refused plan, else the fallback. */
 export function billingErrorText(error: unknown, fallback: string): string {
-  return planLimitText(error, i18n.locale) ?? fallback;
+  return planLimitText(error, planLimitCopy()) ?? fallback;
 }
 
 /** Reports a refusal that is a limit the member can upgrade out of, then rejects with it. */
