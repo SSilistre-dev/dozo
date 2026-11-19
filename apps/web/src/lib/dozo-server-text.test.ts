@@ -2,6 +2,7 @@ import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
+import { planLimitCopy } from "@rakazo/i18n/dozo-plan-limits";
 import {
   knownServerText,
   NO_COMPUTER_HOURS,
@@ -9,7 +10,7 @@ import {
   serverErrorText,
 } from "@rakazo/i18n/dozo-server-text";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
-import { beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 // Runs on the branded tree only: the Turkish lines are in the fork's catalog block.
 
@@ -31,6 +32,17 @@ it("says a refusal people often see in the UI's language, keyed by the server's 
   expect(knownServerText({ message: 42 })).toBeNull();
   i18n.activate("en");
   expect(knownServerText("Admins only")).toBe("Admins only");
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+it("says the English before any language is active, never throwing", () => {
+  vi.spyOn(i18n, "locale", "get").mockReturnValue("");
+  expect(knownServerText("Admins only")).toBe("Admins only");
+  expect(planLimitCopy().upgradeTo("Premium")).toBe("Upgrade to Premium");
+  expect(planLimitCopy().upgrade).toBe("Upgrade");
 });
 
 it("has a Turkish line for every sentence it knows", () => {

@@ -81,7 +81,8 @@ function messageOf(error: unknown): string | undefined {
 /** A refusal people often see, in the UI's language; null for any other text. */
 export function knownServerText(error: unknown): string | null {
   const message = messageOf(error)?.trim();
-  return message && SERVER_SENTENCES.has(message) ? i18n._({ id: message, message }) : null;
+  if (!message || !SERVER_SENTENCES.has(message)) return null;
+  return i18n.locale ? i18n._({ id: message, message }) : message;
 }
 
 /**
