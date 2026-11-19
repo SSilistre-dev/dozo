@@ -40,18 +40,22 @@ Closed pre-release state, to undo at launch:
   legal pages' `canonical` and `hreflang` links, in `dozo/e2e/landing-pages.test.mjs` and in the two
   legal-link rules in `dozo/brand/brand.json`.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
-  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the plan card's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
+  to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
   latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
   `Dozo-Windows-x64-setup.exe`), so a new release needs no edit here; renaming an asset breaks them.
   The "not signed yet" note is the one `<p>` in that block, once per language: edit that line when
   a package is signed.
-- Plans: the "Plans." section compares four ways to run Dozo. Self-hosting is the filled card and
-  the primary button; the three hosted plans link to sign-up, and buying happens in the app. The
-  two paid cards show the prices of tiers `pro` and `max` in `BYOK_TIERS`
-  (`packages/contracts/src/billing.ts`); `dozo/e2e/landing-pages.test.mjs` fails when a page and
-  that file disagree. No discount, tax line or other number: write one only once the owner has set
-  it and the code enforces it.
+- Plans: the "Plans." section shows the three hosted plans as cards, one under the other on a
+  phone, with self-hosting as one row under them. Each card holds both the monthly and the yearly
+  price; the Monthly / Yearly switch (`landing.js`, yearly first) shows one and sets `period=` on the
+  paid cards' sign-up links, which also carry `plan=premium` or `plan=premium_plus`. Without the
+  script both prices show. Premium has the ink frame. The prices, the yearly saving, computer
+  hours, file storage and each computer's vCPUs and memory are read from the code by
+  `dozo/e2e/landing-pages.test.mjs` (`BYOK_TIERS` in `packages/contracts/src/billing.ts`,
+  `dozo-plans.ts`, and the default `RAKAZO_COMPUTER_SIZES` in `dozo/deploy/compose.deploy.yml`), and
+  it fails when a page disagrees. No discount, tax line or other number: write one only once the
+  owner has set it and the code enforces it.
 - The dragon behind the plans (`.scales`) is decoration, drawn once per language page: the logo
   mark as its head, in the mark's red, kept faint. Its body path is generated, not hand-drawn:
   redraw it whole if the shape changes. The plan cards are slightly translucent so it shows

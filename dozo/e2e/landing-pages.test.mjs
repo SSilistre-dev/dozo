@@ -20,12 +20,16 @@ const token = /<!--[\s\S]*?-->|<\/([a-z][\w-]*)>|<([a-z!][\w-]*)((?:\s+[\w:-]+(?
 
 // A link resolved against its page. A page links to its own language's pages (home, privacy, terms),
 // so outside the language switcher the language directory is dropped before comparing.
-// The language a link to the app or the English switcher link carries (`?lang=`) is this page's own,
+// The language a link to the app or the English switcher link carries (`lang=`) is this page's own,
 // so it is dropped here and checked below. No other link may carry one.
 function address(value, file, lang, switcher) {
   const href = new URL(value, new URL(file, site + "/")).href;
-  const carried = switcher ? "?lang=en" : href.startsWith("https://dozo.ssilistre.dev/") ? `?lang=${lang}` : "";
-  const url = carried && href.endsWith(carried) ? href.slice(0, -carried.length) : href;
+  let url = switcher && href.endsWith("?lang=en") ? href.slice(0, -"?lang=en".length) : href;
+  if (!switcher && href.startsWith("https://dozo.ssilistre.dev/")) {
+    const app = new URL(href);
+    if (app.searchParams.get("lang") === lang) app.searchParams.delete("lang");
+    url = app.href;
+  }
   const own = site + pathOf(lang);
   return switcher || !url.startsWith(own) ? url : `${site}/${url.slice(own.length)}`;
 }
@@ -107,9 +111,14 @@ for (const lang of ["en", ...languages]) {
         ["en", ...languages].map((code) => [code, code, at(code) + (code === "en" && lang !== "en" ? "?lang=en" : "")]),
         file,
       );
-      // The app opens in the language of the page that linked it.
+      // The app opens in the language of the page that linked it; a paid plan's card also names
+      // the plan and the period the page shows first.
       for (const link of find(page, "a", (a) => a.href?.startsWith("https://dozo.ssilistre.dev/"))) {
-        assert.match(link.attrs.href, new RegExp(`^https://dozo\\.ssilistre\\.dev/sign-(in|up)\\?lang=${lang}$`), file);
+        assert.match(
+          link.attrs.href,
+          new RegExp(`^https://dozo\\.ssilistre\\.dev/sign-(in|up)\\?lang=${lang}(&plan=(premium|premium_plus)&period=year)?$`),
+          file,
+        );
       }
       assert.deepEqual(
         switcher.filter((tag) => "aria-current" in tag.attrs).map((tag) => tag.attrs.hreflang),
@@ -120,19 +129,42 @@ for (const lang of ["en", ...languages]) {
   });
 }
 
-// The prices are written by hand on each page; the code that charges them is the source.
-test("every language shows the prices the code charges and links sign-up from each hosted plan", () => {
-  const billing = readFileSync(new URL("../../packages/contracts/src/billing.ts", import.meta.url), "utf8");
-  const charged = (tier) => {
-    const [, month, year] = billing.match(new RegExp(`\\b${tier}: \\{[^}]*?monthlyPriceCents: (\\d+),\\s*annualPriceCents: (\\d+)`));
-    return [month / 100, year / 100, year / 1200];
+// The plan cards are written by hand on each page; the code that charges and limits them is the source.
+test("every language shows the plans the code sells and links sign-up from each one", () => {
+  const source = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+  const billing = source("packages/contracts/src/billing.ts");
+  const plans = source("packages/contracts/src/dozo-plans.ts");
+  const sizes = source("dozo/deploy/compose.deploy.yml").match(/RAKAZO_COMPUTER_SIZES:-([^}]*)\}/)[1];
+  const hourly = Number(billing.match(/SANDBOX_HOURLY_COST_MICROS = ([\d_]+);/)[1].replaceAll("_", ""));
+  const tier = (id) => billing.match(new RegExp(`\\b${id}: \\{([^}]*)\\}`))[1];
+  const number = (terms, key) => Number(terms.match(new RegExp(`${key}: (\\d+)`))[1]);
+  const space = (name) => {
+    const [, size, unit] = plans.match(new RegExp(`const ${name} = \\{[^}]*?sharedSpaceBytes: (\\d+) \\* (1024 \\* )?MB`));
+    return unit ? `${size} GB` : `${size} MB`;
   };
+  const paid = (id, plan) => {
+    const terms = tier(id);
+    const [month, year] = [number(terms, "monthlyPriceCents") / 100, number(terms, "annualPriceCents") / 100];
+    const [, cpus, memory] = sizes.match(new RegExp(`\\b${terms.match(/computerSize: "(\w+)"/)[1]}=(\\d+):(\\d+)`));
+    const hours = (number(terms, "computerAllowanceCents") * 10_000) / hourly;
+    return { prices: [month, year / 12, year], facts: [`${cpus} vCPU`, `${memory} GB RAM`, String(hours), space(plan)] };
+  };
+  const expected = [paid("pro", "premium"), paid("max", "premiumPlus")];
+  // The yearly saving the switch names: the smaller of the two, rounded down.
+  const saving = Math.min(...expected.map(({ prices: [month, , year] }) => Math.floor((1 - year / (month * 12)) * 100)));
   for (const lang of ["en", ...languages]) {
     const file = `${lang === "en" ? "" : `${lang}/`}index.html`;
-    const [free, ...paid] = read(file).match(/<article class="tier">.*?<\/article>/g);
-    const shown = paid.map((card) => [...card.matchAll(/<span class="status">(.*?)<\/span>/g)].flatMap(([, words]) => words.match(/\d+/g).map(Number)));
-    assert.deepEqual(shown, [charged("pro"), charged("max")], file);
-    for (const card of [free, ...paid]) assert.match(card, new RegExp(`href="https://dozo\\.ssilistre\\.dev/sign-up\\?lang=${lang}"`), file);
+    const html = read(file);
+    assert.match(html.match(/<span class="save">(.*?)<\/span>/)[1], new RegExp(`\\b${saving}\\b`), file);
+    const [free, ...cards] = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
+    assert.match(free, new RegExp(`href="https://dozo\\.ssilistre\\.dev/sign-up\\?lang=${lang}"`), file);
+    assert.ok(free.includes(space("free")), file);
+    cards.forEach((card, index) => {
+      const prices = card.match(/<p class="price">.*?<p class="bill">.*?<\/p>/)[0].match(/\d+/g).map(Number);
+      assert.deepEqual(prices, expected[index].prices, file);
+      for (const fact of expected[index].facts) assert.ok(card.includes(fact), `${file}: ${fact}`);
+      assert.match(card, new RegExp(`href="https://dozo\\.ssilistre\\.dev/sign-up\\?lang=${lang}&plan=${["premium", "premium_plus"][index]}&period=year"`), file);
+    });
   }
 });
 

@@ -30,6 +30,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
 import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
+import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
 import type { RouterContext } from "./routes/context.js";
@@ -492,7 +493,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
   };
 }
 
-/** The name the router imports: upstream's routes, plus the admin page's. */
+/** The name the router imports: upstream's routes, plus the admin page's and the cache share. */
 export function spendingLimitRoutes(ctx: RouterContext) {
-  return { ...upstreamSpendingLimitRoutes(ctx), ...dozoAdminRoutes(ctx) };
+  return { ...upstreamSpendingLimitRoutes(ctx), ...dozoAdminRoutes(ctx), ...dozoUsageRoutes(ctx) };
 }
