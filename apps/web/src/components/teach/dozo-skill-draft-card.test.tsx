@@ -223,6 +223,7 @@ it("saves with each value's decision, then shows what the server saved", async (
       "{{value 3}}": { action: "remove" },
       "{{value 4}}": { action: "variable", name: "value_4" },
     },
+    removedTargets: [],
   });
   await vi.waitFor(() => expect(button(container, "Saved")).toBeDefined());
   expect(rows()).toHaveLength(0);
@@ -292,6 +293,7 @@ it("behaves as upstream's card when there are no values to decide about", async 
     name: "Export",
     playbook: { ...playbook, inputs: ["a", "b"] },
     decisions: {},
+    removedTargets: [],
   });
   await click(button(container, "Add to routine"));
   expect(onAddRoutine).toHaveBeenCalledWith("Export", expect.stringContaining("Export"));
@@ -357,4 +359,47 @@ it("follows a later update of the skill only where this card has not written or 
   await type(name(), "");
   await click(button(container, "Add to routine"));
   expect(onAddRoutine).toHaveBeenLastCalledWith("Theirs", expect.any(String));
+});
+
+const targets = [
+  { id: "0", step: 0, window: "Form", image: "data:image/webp;base64,AAAA", label: "Email field" },
+  { id: "4", step: 2, window: "Form", image: "data:image/webp;base64,BBBB" },
+  // No picture was kept for this one: there is nothing to show.
+  { id: "6", step: 4, window: "Form" },
+];
+const thumbs = () => [...container.querySelectorAll('[data-testid="skill-draft-target"]')];
+const removes = () => [...container.querySelectorAll('button[aria-label="Remove"]')];
+
+it("shows a thumbnail per kept picture, labelled when it has a label", async () => {
+  api.review.mockResolvedValue({ values: [], targets });
+  await render();
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
+  expect(thumbs().map((node) => node.querySelector("img")?.getAttribute("src"))).toEqual([
+    "data:image/webp;base64,AAAA",
+    "data:image/webp;base64,BBBB",
+  ]);
+  expect(thumbs()[0]?.textContent).toBe("Email field");
+  expect(thumbs()[1]?.textContent).toBe("");
+  expect(removes()).toHaveLength(2);
+});
+
+it("sends the removed pictures with Save and Test, and takes them off the card", async () => {
+  api.review.mockResolvedValue({ values: [], targets });
+  await render();
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
+  await click(removes()[0]);
+  expect(thumbs()).toHaveLength(1);
+  await click(button(container, "Test"));
+  expect(api.test).toHaveBeenCalledWith(expect.objectContaining({ removedTargets: ["0"] }));
+  await click(button(container, "Save"));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ removedTargets: ["0"] }));
+  // Once saved the pictures are gone from the server and from the card.
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(0));
+});
+
+it("shows no pictures for a skill already saved", async () => {
+  api.review.mockResolvedValue({ values: [], targets });
+  await render("saved");
+  expect(api.review).not.toHaveBeenCalled();
+  expect(thumbs()).toHaveLength(0);
 });

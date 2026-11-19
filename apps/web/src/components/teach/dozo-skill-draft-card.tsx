@@ -3,6 +3,7 @@ import type { DozoTeachValue, DozoTeachValueDecision, SkillPlaybook } from "@rak
 import { formatSkillRunPrompt } from "@rakazo/core";
 import { Button, Input, Label, Textarea, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
@@ -20,12 +21,14 @@ type SkillDraftBlock = {
 type Action = DozoTeachValueDecision["action"];
 type Choice = { action: Action; name: string };
 
-/** What a draft is saved or tested with: its fields and a decision for each typed value. */
+/** What a draft is saved or tested with: its fields, a decision for each typed value, and the
+ * clicked pictures the teacher took away. */
 type Sent = {
   fields: string;
   name: string;
   playbook: SkillPlaybook;
   decisions: Record<string, DozoTeachValueDecision>;
+  removedTargets: string[];
 };
 
 function fieldsOf(block: SkillDraftBlock): string {
@@ -87,6 +90,7 @@ export function SkillDraftCard({
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   // Once saved, the server has forgotten the values and the steps hold the decisions.
   const [decided, setDecided] = useState(false);
+  const [removedTargets, setRemovedTargets] = useState<string[]>([]);
   const saved = savedFields === JSON.stringify({ name, playbook });
 
   // Only the teacher of a draft gets values back. Never kept once the card is gone.
@@ -97,6 +101,9 @@ export function SkillDraftCard({
   });
   const reviewing = block.status === "draft" && !decided;
   const values = reviewing ? (review.data?.values ?? []) : [];
+  const targets = (reviewing ? (review.data?.targets ?? []) : []).filter(
+    (target) => target.image && !removedTargets.includes(target.id),
+  );
   const reviewBlocked = reviewing && !review.data;
   // Until the typed values are saved with their decisions, a routine would carry `{{value N}}`.
   const undecided = reviewBlocked || values.length > 0;
@@ -127,7 +134,13 @@ export function SkillDraftCard({
     const decisions = Object.fromEntries(
       values.map((value) => [value.placeholder, decisionOf(value.placeholder, choiceOf(value))]),
     );
-    return { fields: JSON.stringify({ name, playbook }), name, playbook, decisions };
+    return {
+      fields: JSON.stringify({ name, playbook }),
+      name,
+      playbook,
+      decisions,
+      removedTargets,
+    };
   }
 
   const draft = (input: Sent) => ({
@@ -135,6 +148,7 @@ export function SkillDraftCard({
     name: input.name,
     playbook: input.playbook,
     decisions: input.decisions,
+    removedTargets: input.removedTargets,
   });
 
   // The write already succeeded, so a failed thread refresh is not reported as its failure.
@@ -278,6 +292,37 @@ export function SkillDraftCard({
         }
         rows={5}
       />
+      {targets.length ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {targets.map((target) => (
+            <figure key={target.id} data-testid="skill-draft-target" className="relative m-0 w-28">
+              <img
+                src={target.image}
+                alt={target.label ?? ""}
+                className="block h-14 w-28 rounded-md border border-border object-cover"
+              />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t`Remove`}
+                disabled={busy}
+                className="absolute top-0 right-0 size-5"
+                onClick={() => setRemovedTargets((current) => [...current, target.id])}
+              >
+                <XIcon className="size-3" />
+              </Button>
+              {target.label ? (
+                <figcaption
+                  dir="auto"
+                  className="mt-1 break-words text-label text-muted-foreground"
+                >
+                  {target.label}
+                </figcaption>
+              ) : null}
+            </figure>
+          ))}
+        </div>
+      ) : null}
       {fieldLabel(`${id}-check`, <Trans>How to check</Trans>)}
       <Textarea
         disabled={busy}
