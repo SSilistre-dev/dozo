@@ -1,3 +1,5 @@
+import type { BillingStatus } from "./billing.js";
+
 /**
  * When the plan in force ends, or renews when it goes on, as the billing status carries it. A
  * granted plan above a subscription names both plans in `fallsTo`: the subscription's follows.
@@ -18,4 +20,14 @@ export function planEndDays(end: PlanEnd, now = new Date()): number {
 /** A plan that ends within `PLAN_END_WARNING_DAYS` with nothing paid after it. */
 export function planEndWarns(end: PlanEnd, now = new Date()): boolean {
   return !end.renews && !end.fallsTo && planEndDays(end, now) <= PLAN_END_WARNING_DAYS;
+}
+
+/**
+ * A payment failed and this member can fix it: the subscription is past due, and they manage
+ * billing for an organization the provider knows. Web and mobile show one line while it holds.
+ */
+export function paymentPastDue(
+  status: Pick<BillingStatus, "state" | "canManage" | "hasCustomer"> | null | undefined,
+): boolean {
+  return Boolean(status?.state === "past_due" && status.canManage && status.hasCustomer);
 }

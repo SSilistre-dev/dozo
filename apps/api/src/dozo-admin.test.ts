@@ -409,6 +409,7 @@ function setup(
   const { prisma, sessions, organizations, bans, site, memberships, settings, computers, devices } =
     world(users);
   const disconnect = vi.fn(async () => undefined);
+  const planChanged = vi.fn(async (_organizationId: string) => undefined);
   const removePush = vi.fn(async () => undefined);
   // The auth's own account deletion: the hooks the server sets, and the adapter that drops the rows.
   const steps: string[] = [];
@@ -454,6 +455,7 @@ function setup(
           directoryProvisioning: false,
           signupsEnabled: "false",
           auth,
+          planChanged,
         })
       : {}),
   } as unknown as RouterDeps;
@@ -469,6 +471,7 @@ function setup(
     return createRouterClient(dozoAdminRoutes(ctx), { context: { actor } }).dozoAdmin;
   };
   return {
+    planChanged,
     prisma,
     sessions,
     users,
@@ -905,11 +908,19 @@ describe("giving a plan by hand", () => {
   });
 
   it("answers, and writes no audit record, for an end of a grant that was not there", async () => {
-    const { as } = setup();
+    const { as, planChanged } = setup();
     expect(await as("admin").setPlan({ userId: "ada", tier: null })).toEqual({
       plan: { tier: "standard", grantedUntil: null, ends: null },
     });
     expect(audit.events).toEqual([]);
+    expect(planChanged).not.toHaveBeenCalled();
+  });
+
+  it("queues the mail before the end after it changes the plan", async () => {
+    const { as, planChanged } = setup();
+    await as("admin").setPlan({ userId: "ada", tier: "pro", endsAt: until(30) });
+    await as("admin").setPlan({ userId: "ada", tier: null });
+    expect(planChanged.mock.calls).toEqual([["org-ada"], ["org-ada"]]);
   });
 
   it("lets an admin give themselves a plan", async () => {
