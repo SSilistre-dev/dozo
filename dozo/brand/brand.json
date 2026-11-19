@@ -3838,6 +3838,15 @@
       "reason": "plans: the deployment hands out no promotion codes, so the plan checkout shows no code field"
     },
     {
+      "file": "apps/api/src/app.ts",
+      "find": "import { pluginSubmissionRoutes } from \"./plugin-submissions.js\";",
+      "replace": "import { pluginSubmissionRoutes } from \"./dozo-plugin-submissions.js\";",
+      "requires": [
+        "apps/api/src/dozo-plugin-submissions.ts"
+      ],
+      "reason": "plugin submissions: DOZO_PLUGIN_SUBMISSIONS=closed answers the public submission form with 403 in the API itself"
+    },
+    {
       "file": "apps/mobile/components/sandboxed-html-preview.tsx",
       "find": "originWhitelist={appShell ? [\"*\"] : undefined}",
       "replace": "originWhitelist={[\"*\"]}",
