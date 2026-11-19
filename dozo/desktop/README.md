@@ -1,4 +1,4 @@
-# Dozo for macOS and Windows
+# Dozo for macOS, Windows and Linux
 
 A small native window around the Dozo web app, written in Rust with Tauri 2. It is the fork's own
 shell. Upstream's Electron app in `apps/desktop` is separate and is neither edited nor renamed.
@@ -40,7 +40,9 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   address must be `https://`.
 - Frames inside the server's page load as they do in a browser (a bot's screen, an embedded page).
   Tauri's navigation hook cannot tell a frame from the window's own page, so `src/frames.rs` puts
-  a small delegate in front of the web view's own to make that one distinction.
+  a small delegate in front of the web view's own to make that one distinction. On Linux
+  (`src/frames_gtk.rs`) the hook lets web addresses through and the window's own page is checked
+  when the answer arrives: a refused page never shows, but its request has been sent.
 - The local screens are plain HTML, CSS and JavaScript in `ui/`, with a CSP that allows only their
   own files and forbids framing them.
 
@@ -62,8 +64,8 @@ Output: `dist/Dozo.app` and `dist/Dozo.dmg`, one universal app for Apple silicon
 `dozo/brand/assets/` at build time and are not committed here.
 
 `make olc` does not run `check` (it runs in Docker and Rust is on the host): run it by hand after
-changing anything in this directory. It checks the macOS code only; the Windows code is compiled
-and tested by the workflow under "Windows".
+changing anything in this directory. It checks the macOS code only; the Windows and Linux code is
+compiled and tested by the workflows under "Windows" and "Linux".
 
 ## Windows
 
@@ -89,6 +91,30 @@ Windows yet, so treat everything below as untested until someone does.
   The server address and window position are kept in `%APPDATA%\dev.ssilistre.dozo\`, the web
   view's data in `%LOCALAPPDATA%\dev.ssilistre.dozo\`.
 - x64 only.
+
+## Linux
+
+The same app as an AppImage and a .deb for x86_64, built in Docker on any Linux machine and by
+the `dozo-desktop-linux` workflow (`.github/workflows/dozo-desktop-linux.yml`, on a pull request
+that touches this directory or by hand). Both build on Ubuntu 22.04, so they run on that
+release's libraries and newer.
+
+```sh
+dozo/desktop/build-linux.sh         # dist/Dozo_<version>_amd64.AppImage and .deb
+dozo/desktop/build-linux.sh check   # cargo fmt --check, clippy, cargo test
+```
+
+- The AppImage runs where it is (`chmod +x`, then open it). It brings its own libraries except
+  the system's GTK and WebKitGTK stack. The .deb installs with `sudo apt install ./Dozo_*.deb`
+  and pulls in `libwebkit2gtk-4.1-0`; both need WebKitGTK 2.40 or later.
+- Started under a virtual display, it opens the server form and the server's sign-in page, frames
+  from another origin load, and a page that sends the window to another origin stays where it was.
+  Nobody has run it on a desktop session yet.
+- Differences from macOS (`tauri.linux.conf.json`, `#[cfg(target_os = "linux")]` in `src/`): the
+  short menu Windows has, inside the window; links open with `xdg-open`; the frame gate above.
+  The server address and window position are kept in `~/.config/dev.ssilistre.dozo/`, the web
+  view's data in `~/.local/share/dev.ssilistre.dozo/`.
+- Unsigned. A Linux package needs no signature to open.
 
 ## Signing and distribution
 
