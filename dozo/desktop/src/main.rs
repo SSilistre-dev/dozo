@@ -1,9 +1,12 @@
-//! Dozo for macOS and Windows: a native window around the Dozo web app. What it does and leaves
+//! Dozo for macOS, Windows and Linux: a native window around the Dozo web app. What it does and leaves
 //! out: README.md.
 // A release build on Windows opens no console window beside the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(target_os = "macos")]
+mod frames;
+#[cfg(target_os = "linux")]
+#[path = "frames_gtk.rs"]
 mod frames;
 mod server;
 
@@ -87,6 +90,24 @@ fn opener() -> Command {
     let mut command = Command::new("rundll32");
     command.arg("url.dll,FileProtocolHandler");
     command
+}
+
+/// The desktop's handler for a web or mail address, as one argument.
+#[cfg(target_os = "linux")]
+fn opener() -> Command {
+    Command::new("xdg-open")
+}
+
+/// Acts on a verdict: true when the address loads in the window.
+fn follow(verdict: Verdict) -> bool {
+    match verdict {
+        Verdict::Window => true,
+        Verdict::Browser(url) => {
+            open_outside(url);
+            false
+        }
+        Verdict::Refused => false,
+    }
 }
 
 fn show_local(window: &WebviewWindow, query: &str) {
@@ -175,9 +196,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     )
 }
 
-/// Windows draws the menu inside the window, and the web view has the editing shortcuts itself:
-/// one short menu.
-#[cfg(windows)]
+/// Windows and Linux draw the menu inside the window, and the web view has the editing shortcuts
+/// itself: one short menu.
+#[cfg(not(target_os = "macos"))]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     Menu::with_items(
         app,
@@ -231,14 +252,7 @@ fn main() {
                     .background_color(Color(20, 20, 20, 255))
                     .on_navigation({
                         let app = app.clone();
-                        move |url| match decide(url, chosen(&app).as_ref()) {
-                            Verdict::Window => true,
-                            Verdict::Browser(url) => {
-                                open_outside(url);
-                                false
-                            }
-                            Verdict::Refused => false,
-                        }
+                        move |url| follow(decide(url, chosen(&app).as_ref()))
                     })
                     // The app has one window: a link that asks for a new one goes to the browser.
                     .on_new_window(|url, _| {
@@ -252,11 +266,15 @@ fn main() {
                     // Camera, microphone and the like: the web view grants them unless told otherwise.
                     .on_permission_request(|_, _| PermissionResponse::Deny)
                     .build()?;
-            // Only macOS needs the gate: the Windows web view asks the navigation hook about
-            // the window's own page alone, so frames load there as they do in a browser.
+            // Only macOS and Linux need the gate: the Windows web view asks the navigation hook
+            // about the window's own page alone, so frames load there as they do in a browser.
             #[cfg(target_os = "macos")]
             frames::only_gate_the_main_frame(&window)?;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "linux")]
+            frames::only_gate_the_main_frame(&window, move |url, seen| {
+                follow(frames::verdict(url, chosen(&app).as_ref(), seen))
+            })?;
+            #[cfg(windows)]
             let _ = window;
             Ok(())
         })

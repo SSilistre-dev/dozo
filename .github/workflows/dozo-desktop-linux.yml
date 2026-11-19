@@ -1,0 +1,79 @@
+name: dozo-desktop-linux
+
+# Builds the Linux packages of the fork's own desktop app (dozo/desktop, Tauri 2): an AppImage
+# and a .deb, kept as a workflow artifact. Unsigned: no secrets (dozo/desktop/README.md, "Linux").
+# Ubuntu 22.04, so the AppImage runs on that release's glibc and newer, as build-linux.sh builds it.
+# The versions come from the same files the other builds read: Rust from rust-toolchain.toml, the
+# Tauri CLI from build.sh, the system packages from build-linux.sh, the crates from Cargo.lock.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same
+# SHAs the upstream workflows use).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - dozo/desktop/**
+      - .github/workflows/dozo-desktop-linux.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-desktop-linux-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Linux packages
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: dozo/desktop
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $(sed -n 's/^LINUX_PACKAGES="\(.*\)"$/\1/p' build-linux.sh)
+
+      # The version and components in rust-toolchain.toml.
+      - name: Rust toolchain
+        run: rustup toolchain install
+
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "$(sed -n 's/^TAURI_CLI=//p' build.sh)" --locked
+
+      # Generated from the approved brand files, never committed here (as build-linux.sh does).
+      - name: Icons and logo
+        run: |
+          cargo tauri icon ../brand/assets/desktop/icon.png --output icons --png 32,128,256,512
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+
+      - name: Lint and test
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+
+      # The bundles tauri.linux.conf.json names: an AppImage and a .deb.
+      - name: Build the packages
+        run: cargo tauri build -- --locked
+
+      # The built app against two local sites under a virtual display: frames, clicked links and
+      # scripts land where src/frames_gtk.rs says.
+      - name: Frame gate
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb xdotool
+          xvfb-run -a -s "-screen 0 1280x860x24" python3 tests/linux_gate.py target/release/dozo-desktop
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dozo-linux-packages
+          path: |
+            dozo/desktop/target/release/bundle/appimage/*.AppImage
+            dozo/desktop/target/release/bundle/deb/*.deb
+          if-no-files-found: error
