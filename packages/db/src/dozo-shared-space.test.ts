@@ -204,7 +204,8 @@ describe("shared space", () => {
   });
 
   it("has no limit on a plan that names none, as upstream's do not", async () => {
-    const terms: { sharedSpaceBytes?: number } = BYOK_TIERS.standard;
+    // Read as planTerms reads it: upstream's tier type has no shared-space field.
+    const terms: { name: string; sharedSpaceBytes?: number } = BYOK_TIERS.standard;
     const { sharedSpaceBytes } = terms;
     delete terms.sharedSpaceBytes;
     try {
