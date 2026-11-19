@@ -1289,13 +1289,14 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "export const appContract = {\n  analytics:",
-      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-analytics.js\";\nexport * from \"./dozo-usage.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoEventsContract } from \"./dozo-analytics.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoEvents: dozoEventsContract,\n  dozoUsage: dozoUsageContract,\n  analytics:",
+      "replace": "export * from \"./dozo-admin.js\";\nexport * from \"./dozo-analytics.js\";\nexport * from \"./dozo-usage.js\";\nexport * from \"./dozo-teach.js\";\nimport { dozoAdminContract } from \"./dozo-admin.js\";\nimport { dozoEventsContract } from \"./dozo-analytics.js\";\nimport { dozoUsageContract } from \"./dozo-usage.js\";\nimport { dozoTeachContract } from \"./dozo-teach.js\";\nexport const appContract = {\n  dozoAdmin: dozoAdminContract,\n  dozoEvents: dozoEventsContract,\n  dozoUsage: dozoUsageContract,\n  dozoTeach: dozoTeachContract,\n  analytics:",
       "requires": [
         "packages/contracts/src/dozo-admin.ts",
         "packages/contracts/src/dozo-analytics.ts",
-        "packages/contracts/src/dozo-usage.ts"
+        "packages/contracts/src/dozo-usage.ts",
+        "packages/contracts/src/dozo-teach.ts"
       ],
-      "reason": "hosted admin page, the cache share on Usage and the apps' product events: their procedures join the app contract, so the server and the web client share their types"
+      "reason": "hosted admin page, the cache share on Usage, the apps' product events and the review of values typed while teaching: their procedures join the app contract, so the server and the web client share their types"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -1309,11 +1310,12 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
-      "replace": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { dozoAdminWiring } from \"./dozo-admin.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
+      "replace": "import { mountSharedPages } from \"./shared-pages.js\";\nimport { dozoAdminWiring } from \"./dozo-admin.js\";\nimport { dozoTeachWiring } from \"./dozo-teach.js\";\nimport { afterSpaceDeparture } from \"./space-departure.js\";",
       "requires": [
-        "apps/api/src/dozo-admin.ts"
+        "apps/api/src/dozo-admin.ts",
+        "apps/api/src/dozo-teach.ts"
       ],
-      "reason": "hosted admin page: the server hands the admin routes what the router's own dependencies do not carry"
+      "reason": "hosted admin page and the teach review: the server hands their routes what the router's own dependencies do not carry"
     },
     {
       "file": "apps/api/src/app.ts",
@@ -3764,6 +3766,33 @@
         "apps/mobile/lib/dozo-site-settings.ts"
       ],
       "reason": "announcement: the app's one live stream carries a content-free signal when the site settings change, so the mobile home re-reads the announcement at once, as the web app does"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./teach-playbook.js\";",
+      "replace": "export * from \"./dozo-teach-playbook.js\";",
+      "requires": [
+        "packages/core/src/dozo-teach-playbook.ts"
+      ],
+      "reason": "teaching: the module re-exports upstream's and replaces the playbook builder and the run prompt, so typed text never enters a skill's steps, the draft card or its events, and a skill's inputs are asked for on each run"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "    pluginMarketplaceRead,\n    cloudAgent,\n",
+      "replace": "    pluginMarketplaceRead,\n    ...dozoTeachWiring({ prisma, runtime, resolveModel: executor.resolveModel }),\n    cloudAgent,\n",
+      "requires": [
+        "apps/api/src/dozo-teach.ts"
+      ],
+      "reason": "teaching: the value suggestion uses the bot's own model through the server's runtime, as the spoken summary does"
+    },
+    {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "import { createTaughtSkillsService } from \"../taught-skills.js\";",
+      "replace": "import { createTaughtSkillsService } from \"../dozo-taught-skills.js\";",
+      "requires": [
+        "apps/api/src/dozo-taught-skills.ts"
+      ],
+      "reason": "teaching: a wrapper of the same name refuses teaching on a plan with no computer time before any run is cancelled, and every save forgets the typed keys"
     }
   ],
   "assets": {

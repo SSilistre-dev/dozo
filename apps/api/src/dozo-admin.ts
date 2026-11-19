@@ -35,6 +35,7 @@ import { dozoAdminFunnelRoutes } from "./dozo-admin-funnel.js";
 import { onTier, plansOf } from "./dozo-admin-members.js";
 import { dozoAdminPlansRoutes } from "./dozo-admin-plans.js";
 import { dozoEventsRoutes } from "./dozo-events.js";
+import { dozoTeachRoutes } from "./dozo-teach.js";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
 import { computerRoutes } from "./routes/computer.js";
@@ -564,8 +565,8 @@ export function dozoAdminRoutes(ctx: RouterContext) {
 }
 
 /**
- * The name the router imports: upstream's routes, plus the admin page's, the cache share and the
- * apps' product events.
+ * The name the router imports: upstream's routes, plus the admin page's, the cache share, the
+ * apps' product events and the review of what was typed while teaching.
  */
 export function spendingLimitRoutes(ctx: RouterContext) {
   return {
@@ -573,5 +574,6 @@ export function spendingLimitRoutes(ctx: RouterContext) {
     ...dozoAdminRoutes(ctx),
     ...dozoUsageRoutes(ctx),
     ...dozoEventsRoutes(ctx),
+    ...dozoTeachRoutes(ctx),
   };
 }
