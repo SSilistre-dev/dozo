@@ -1,5 +1,5 @@
 import type { AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
-import { parseRecording } from "@rakazo/adapters";
+import { parsePlaybook, parseRecording } from "@rakazo/adapters";
 import type {
   Actor,
   DozoTeachTarget,
@@ -7,60 +7,36 @@ import type {
   DozoTeachValueDecision,
   SkillPlaybook,
 } from "@rakazo/contracts";
-import type { TeachRecordingEvent, TeachTypedValue } from "@rakazo/core";
+import type { TeachTypedValue } from "@rakazo/core";
 import {
   applyValueDecisions,
+  buildPlaybookFromRecording,
   ClientError,
   clickStepIndexes,
-  clicksBeforeSecrets,
   formatSkillRunPrompt,
-  secretInputName,
-  typedValuesFromRecording,
+  teachWindowTitles,
   withClickTargets,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, readJsonColumn, storedTeachTargets } from "@rakazo/db";
-import * as z from "zod";
+import type { PrismaClient, StoredTeachValues, TeachValueSuggestions } from "@rakazo/db";
+import {
+  cacheTeachSuggestions,
+  IsolationError,
+  readTeachValues,
+  storedTeachTargets,
+} from "@rakazo/db";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
-import type { TeachClickLabeller, TeachClickLabels } from "./dozo-teach-labels.js";
+import { keptTeachClicks, SKILL_NOT_DRAFT, teachTargetId } from "./dozo-taught-skills.js";
+import type { TeachClickLabeller } from "./dozo-teach-labels.js";
 import { createTeachClickLabeller } from "./dozo-teach-labels.js";
-import type { TeachValueSuggester, TeachValueSuggestions } from "./dozo-teach-suggest.js";
-import { createTeachValueSuggester } from "./dozo-teach-suggest.js";
+import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
+import { createTeachValueSuggester, teachValueShape } from "./dozo-teach-suggest.js";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
-
-/**
- * Where the recording keeps what the model said, next to its events, until the save: names for
- * the typed values, and labels for the clicked things. An empty record marks a call that gave
- * none, so a failed call is not made again on every review.
- */
-const SUGGESTIONS_KEY = "dozoSuggestions";
-const LABELS_KEY = "dozoLabels";
-const StoredModelAnswers = z.object({
-  [SUGGESTIONS_KEY]: z
-    .record(z.string(), z.object({ name: z.string(), secret: z.boolean().default(false) }))
-    .optional(),
-  [LABELS_KEY]: z.record(z.string(), z.string()).optional(),
-});
-type StoredModelAnswers = z.infer<typeof StoredModelAnswers>;
-
-/** A save or test that decides about values of a skill no longer a draft. */
-export const SKILL_NOT_DRAFT = "skill_not_draft";
 
 type TaughtSkills = Pick<
   ReturnType<typeof createTaughtSkillsService>,
   "updateDraft" | "save" | "testRun"
 >;
-
-type SkillRow = {
-  id: string;
-  botId: string;
-  userId: string;
-  status: string;
-  goal: string;
-  playbook: unknown;
-  recording: unknown;
-};
 
 export type DozoTeachInput = {
   skillId: string;
@@ -74,7 +50,7 @@ export type DozoTeachInput = {
 export interface DozoTeachWiring {
   /** Absent when the server has no model runtime to ask; the review then has no suggestions. */
   suggest?: TeachValueSuggester;
-  /** Absent likewise; the clicks then have no labels. */
+  /** Absent likewise; the clicks' steps then say only their window. */
   label?: TeachClickLabeller;
 }
 
@@ -93,14 +69,22 @@ export function dozoTeachWiring(deps: {
   };
 }
 
-/** A target's id: the index of its click's event, which never changes once recorded. */
-const targetId = (eventIndex: number) => String(eventIndex);
+type Skill = {
+  id: string;
+  userId: string;
+  botId: string;
+  name: string;
+  goal: string;
+  status: string;
+  playbook: unknown;
+  recording: unknown;
+};
 
 /**
  * Reviewing what was typed and clicked while teaching, and saving or testing a draft with the
- * teacher's decision for each typed value and each click's picture. Values and clicks come from
- * the recording on the server, never from the client, and only the person who taught the skill
- * sees them or decides about them.
+ * teacher's decision for each typed value and each click's picture. The values and pictures come
+ * from the draft's short-lived store on the server, never from the client, and only the person
+ * who taught the skill sees them or decides about them.
  */
 export function createDozoTeach(deps: {
   prisma: PrismaClient;
@@ -108,7 +92,7 @@ export function createDozoTeach(deps: {
   suggest?: TeachValueSuggester;
   label?: TeachClickLabeller;
 }) {
-  async function skillOf(actor: Actor, skillId: string) {
+  async function skillOf(actor: Actor, skillId: string): Promise<Skill> {
     const skill = await deps.prisma.taughtSkill.findFirst({
       where: { id: skillId, spaceId: actor.spaceId },
     });
@@ -116,133 +100,84 @@ export function createDozoTeach(deps: {
     return skill;
   }
 
-  function cached(id: string, recording: unknown): StoredModelAnswers {
-    return readJsonColumn(
-      StoredModelAnswers,
-      recording,
-      { table: "taught_skills", column: "recording", id },
-      { fallback: {} },
-    );
-  }
-
-  const isReviewer = (actor: Actor, skill: SkillRow) =>
-    skill.userId === actor.userId && skill.status === "draft";
-
-  /** The typed values the actor may decide about: the teacher's, while the skill is a draft. */
-  function valuesFor(actor: Actor, skill: SkillRow) {
-    if (!isReviewer(actor, skill)) return [];
-    return typedValuesFromRecording(parseRecording(skill.recording).events);
+  /** The values of a draft, for the person who taught it and nobody else. */
+  async function valuesFor(actor: Actor, skill: Skill): Promise<StoredTeachValues | null> {
+    if (skill.userId !== actor.userId || skill.status !== "draft") return null;
+    const stored = await readTeachValues(deps.prisma, skill.id);
+    return stored?.userId === actor.userId ? stored : null;
   }
 
   /**
-   * The values with what the model said about them: a name, and a value it took for a secret is
-   * one too, never kept as text and shown only as dots. The model saw no secret value, so
-   * anything it says about one is made up and ignored.
+   * Asked once per draft, failed or not, and kept with the values. The model is told the task,
+   * the recorded steps and each value's shape, never a value. Two first reviews at once may both
+   * ask; the first to write is kept.
    */
-  function withSuggestions(values: TeachTypedValue[], suggestions: TeachValueSuggestions) {
-    return values.map((value): DozoTeachValue => {
-      const suggestion = value.secret ? undefined : suggestions[value.placeholder];
-      if (!suggestion) return value;
-      return { ...value, secret: suggestion.secret, suggestion: { name: suggestion.name } };
-    });
-  }
-
-  /**
-   * The recorded clicks the teacher reviews: those whose step is still in `steps`, with their
-   * window, and their picture unless a secret value was typed next. The drafting already dropped
-   * the pictures before a secret by the recording's own rule; `values` adds what the model took
-   * for one.
-   */
-  function clicksFor(
+  async function suggestionsFor(
     actor: Actor,
-    skill: SkillRow,
-    events: TeachRecordingEvent[],
-    steps: string[],
-    values: DozoTeachValue[],
-  ) {
-    if (!isReviewer(actor, skill)) return [];
-    const indexes = clickStepIndexes(steps, events);
-    const secret = clicksBeforeSecrets(
-      events,
-      values.filter((value) => value.secret).map((value) => value.placeholder),
-    );
-    return storedTeachTargets(skill.id, skill.recording).flatMap(({ image, ...target }) => {
+    skill: Skill,
+    values: TeachTypedValue[],
+  ): Promise<TeachValueSuggestions> {
+    if (!deps.suggest) return {};
+    const recording = parseRecording(skill.recording);
+    const suggestions =
+      (await deps.suggest(
+        actor,
+        {
+          botId: skill.botId,
+          goal: skill.goal,
+          steps: buildPlaybookFromRecording(skill.goal, recording.events).steps,
+          windowTitles: teachWindowTitles(recording.snapshots, values),
+        },
+        values.map(teachValueShape),
+      )) ?? {};
+    return (await cacheTeachSuggestions(deps.prisma, skill.id, suggestions)) ?? suggestions;
+  }
+
+  /** The clicks the teacher reviews: those whose step is still in the draft, with their picture. */
+  function targetsFor(skill: Skill, stored: StoredTeachValues): DozoTeachTarget[] {
+    const events = parseRecording(skill.recording).events;
+    const indexes = clickStepIndexes(parsePlaybook(skill.playbook).steps, events);
+    const images = new Map(stored.images.map((image) => [image.eventIndex, image.image]));
+    return storedTeachTargets(skill.id, skill.recording).flatMap((target) => {
       const step = indexes.get(target.eventIndex);
+      const image = images.get(target.eventIndex);
       if (step === undefined) return [];
       return [
         {
-          ...target,
-          id: targetId(target.eventIndex),
+          id: teachTargetId(target.eventIndex),
           step,
-          ...(image && !secret.has(target.eventIndex) ? { image } : {}),
+          ...(target.window ? { window: target.window } : {}),
+          ...(image ? { image: `data:image/webp;base64,${image}` } : {}),
         },
       ];
     });
   }
 
   /**
-   * The model's answer cached in the recording on the first review, failed or not, so it is asked
-   * once per skill. Two first reviews at once may both ask; the first to write is kept.
+   * What the model saw each click the teacher kept hit, asked at the save and only then: never
+   * for a removed picture, one whose step is gone, or one before a hidden value. Failures and
+   * models that cannot see pictures give no labels.
    */
-  async function cachedAnswer<K extends keyof StoredModelAnswers>(
-    skill: SkillRow,
-    key: K,
-    ask: () => Promise<NonNullable<StoredModelAnswers[K]> | null>,
-  ): Promise<NonNullable<StoredModelAnswers[K]>> {
-    const empty = {} as NonNullable<StoredModelAnswers[K]>;
-    const stored = cached(skill.id, skill.recording)[key];
-    if (stored) return stored;
-    const answer = (await ask()) ?? empty;
-    return deps.prisma.$transaction(async (tx) => {
-      const [row] = await tx.$queryRaw<Array<{ recording: unknown }>>`
-        SELECT recording FROM taught_skills WHERE id = ${skill.id} AND status = 'draft'
-        FOR UPDATE`;
-      if (!row) return answer;
-      const written = cached(skill.id, row.recording)[key];
-      if (written) return written;
-      await tx.$executeRaw`
-        UPDATE taught_skills
-        SET recording = recording || jsonb_build_object(${key}::text, ${JSON.stringify(answer)}::jsonb)
-        WHERE id = ${skill.id}`;
-      return answer;
-    });
-  }
-
-  function suggestionsFor(actor: Actor, skill: SkillRow, values: TeachTypedValue[]) {
-    const suggest = deps.suggest;
-    // With no model to ask there is nothing new to cache.
-    if (!suggest) {
-      return Promise.resolve(cached(skill.id, skill.recording)[SUGGESTIONS_KEY] ?? {});
-    }
-    return cachedAnswer(skill, SUGGESTIONS_KEY, async () => {
-      // Secret and protected values never reach the model.
-      const open = values.flatMap((value) =>
-        value.secret || value.text === null
-          ? []
-          : [{ placeholder: value.placeholder, text: value.text }],
-      );
-      return suggest(actor, skill, open);
-    });
-  }
-
-  /** Only pictures the teacher may see are sent: none of a click before a secret value. */
-  function labelsFor(actor: Actor, skill: SkillRow, clicks: Array<{ id: string; image?: string }>) {
-    const pictures = clicks.flatMap((click) =>
-      click.image ? [{ id: click.id, image: click.image }] : [],
+  async function labelsFor(actor: Actor, skill: Skill, input: DozoTeachInput) {
+    const stored = await valuesFor(actor, skill);
+    if (!deps.label || !stored?.images.length) return {};
+    const events = parseRecording(skill.recording).events;
+    const indexes = clickStepIndexes(input.playbook.steps, events);
+    const kept = new Set(
+      keptTeachClicks(skill.id, skill.recording, events, input).map((click) => click.eventIndex),
     );
-    const label = deps.label;
-    if (!label || !pictures.length) {
-      return Promise.resolve<TeachClickLabels>(cached(skill.id, skill.recording)[LABELS_KEY] ?? {});
-    }
-    return cachedAnswer(skill, LABELS_KEY, () => label(actor, skill, pictures));
+    const pictures = stored.images.flatMap(({ eventIndex, image }) =>
+      kept.has(eventIndex) && indexes.has(eventIndex)
+        ? [{ id: teachTargetId(eventIndex), image }]
+        : [],
+    );
+    if (!pictures.length) return {};
+    return (await deps.label(actor, skill, pictures)) ?? {};
   }
 
   /**
-   * The playbook with the decisions applied. Someone else than the teacher sends none: for them
-   * upstream's rules apply. Once saved, nothing typed is left to decide about. Each click the
-   * teacher kept says what it hit, from labels already made: the save never asks the model. A
-   * click before a secret value says nothing of what it hit, also when only the teacher's name
-   * for the value makes it one: its label was read off a picture of that field.
+   * The playbook with the decisions applied, for a test run. Someone else than the teacher sends
+   * none: for them upstream's rules apply. Once saved, nothing typed is left to decide about.
    */
   async function decided(actor: Actor, input: DozoTeachInput) {
     const skill = await skillOf(actor, input.skillId);
@@ -252,33 +187,21 @@ export function createDozoTeach(deps: {
         "Only the person who taught this skill can decide about its values",
       );
     }
-    // The values are forgotten once saved: the decisions would apply to nothing, and the
-    // client's placeholders would replace the saved steps.
     if (skill.status !== "draft" && Object.keys(input.decisions).length) {
       throw new ClientError("CONFLICT", "This skill is already saved", SKILL_NOT_DRAFT);
     }
-    const answers = cached(skill.id, skill.recording);
-    const values = withSuggestions(valuesFor(actor, skill), answers[SUGGESTIONS_KEY] ?? {});
+    const values = (await valuesFor(actor, skill))?.values ?? [];
     const playbook = values.length
       ? applyValueDecisions(input.playbook, values, input.decisions)
       : input.playbook;
+    if (skill.userId !== actor.userId || skill.status !== "draft") return { skill, playbook };
+    // A test never asks the model about the pictures: its clicks say only their window.
     const events = parseRecording(skill.recording).events;
-    const removed = new Set(input.removedTargets ?? []);
-    const labels = answers[LABELS_KEY] ?? {};
-    const secret = clicksBeforeSecrets(
-      events,
-      values.flatMap((value) => {
-        const decision = input.decisions[value.placeholder];
-        const named = decision?.action === "variable" && secretInputName(decision.name);
-        return value.secret || named ? [value.placeholder] : [];
-      }),
-    );
-    const kept = clicksFor(actor, skill, events, input.playbook.steps, values).flatMap((click) =>
-      removed.has(click.id) || secret.has(click.eventIndex)
-        ? []
-        : [{ eventIndex: click.eventIndex, window: click.window, label: labels[click.id] }],
-    );
-    return { skill, playbook: kept.length ? withClickTargets(playbook, events, kept) : playbook };
+    const clicks = keptTeachClicks(skill.id, skill.recording, events, input);
+    return {
+      skill,
+      playbook: clicks.length ? withClickTargets(playbook, events, clicks) : playbook,
+    };
   }
 
   return {
@@ -287,36 +210,34 @@ export function createDozoTeach(deps: {
       skillId: string,
     ): Promise<{ values: DozoTeachValue[]; targets: DozoTeachTarget[] }> {
       const skill = await skillOf(actor, skillId);
-      if (!isReviewer(actor, skill)) return { values: [], targets: [] };
-      const typed = valuesFor(actor, skill);
-      const values = typed.length
-        ? withSuggestions(typed, await suggestionsFor(actor, skill, typed))
-        : [];
-      const events = parseRecording(skill.recording).events;
-      const steps = (skill.playbook as { steps?: unknown } | null)?.steps;
-      const clicks = clicksFor(
-        actor,
-        skill,
-        events,
-        Array.isArray(steps) ? steps.map(String) : [],
-        values,
-      );
-      const labels = await labelsFor(actor, skill, clicks);
-      const targets = clicks.map(({ id, step, window, image }) => ({
-        id,
-        step,
-        ...(window ? { window } : {}),
-        ...(image ? { image: `data:image/webp;base64,${image}` } : {}),
-        ...(labels[id] ? { label: labels[id] } : {}),
-      }));
-      return { values, targets };
+      const stored = await valuesFor(actor, skill);
+      if (!stored) return { values: [], targets: [] };
+      const targets = targetsFor(skill, stored);
+      if (!stored.values.length) return { values: [], targets };
+      const suggestions = stored.suggestions ?? (await suggestionsFor(actor, skill, stored.values));
+      return {
+        values: stored.values.map((value): DozoTeachValue => {
+          const suggestion = suggestions[value.placeholder];
+          return suggestion ? { ...value, suggestion: { name: suggestion.name } } : value;
+        }),
+        targets,
+      };
     },
 
-    /** Saves through the taught-skills service, whose save forgets what was typed and clicked. */
+    /**
+     * The labels for the kept pictures are asked first, outside the transaction; then one
+     * transaction applies the decisions and the labels, saves, and forgets the values and every
+     * picture (the wrapper's save).
+     */
     async save(actor: Actor, input: DozoTeachInput) {
-      const { playbook } = await decided(actor, input);
-      await deps.taughtSkills.updateDraft(actor, input.skillId, { name: input.name, playbook });
-      return deps.taughtSkills.save(actor, input.skillId, input.name);
+      const skill = await skillOf(actor, input.skillId);
+      const labels = await labelsFor(actor, skill, input);
+      return deps.taughtSkills.save(actor, input.skillId, input.name, {
+        playbook: input.playbook,
+        decisions: input.decisions,
+        removedTargets: input.removedTargets,
+        labels,
+      });
     },
 
     /** The draft keeps its placeholders; only the test run's prompt has the decisions applied. */

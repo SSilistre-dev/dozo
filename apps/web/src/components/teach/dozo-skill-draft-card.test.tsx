@@ -95,8 +95,9 @@ const values: DozoTeachValue[] = [
     secret: false,
   },
   { placeholder: "{{value 2}}", text: "Weekly", secret: false, suggestion: { name: "report" } },
-  { placeholder: "{{value 3}}", text: "Hunter-1234", secret: true },
-  { placeholder: "{{value 4}}", text: null, secret: true },
+  // Protected input, and typing whose text could not be rebuilt.
+  { placeholder: "{{value 3}}", text: null, secret: true },
+  { placeholder: "{{value 4}}", text: null, secret: false },
 ];
 
 function block(status: "draft" | "saved" = "draft") {
@@ -173,7 +174,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows one row per typed value, never a secret's text, and no Fixed for a secret", async () => {
+it("shows one row per typed value, masks those without text, and offers them no Fixed", async () => {
   await renderValues();
   expect(api.review).toHaveBeenCalledWith({ skillId: "skill-1" }, expect.anything());
   expect(rows()).toHaveLength(4);
@@ -181,12 +182,11 @@ it("shows one row per typed value, never a secret's text, and no Fixed for a sec
   const shown = rows()[0]?.querySelector("[dir='auto']");
   expect(shown?.textContent).toBe("ali.veli.uzun.adres@subdomain.example.test");
   expect(shown?.className).not.toContain("truncate");
-  expect(container.textContent).not.toContain("Hunter-1234");
   expect(rows()[2]?.textContent).toContain("••••••");
   expect(rows()[3]?.textContent).toContain("••••••");
   expect(container.querySelector("textarea[id$='-inputs']")).toBeNull();
 
-  const [first, second, third] = rows();
+  const [first, second, third, fourth] = rows();
   // No suggestion: an input named after its number.
   expect(button(first as Element, "Variable")?.getAttribute("aria-pressed")).toBe("true");
   expect((first as Element).querySelector("input")?.value).toBe("value_1");
@@ -195,10 +195,41 @@ it("shows one row per typed value, never a secret's text, and no Fixed for a sec
   expect(button(second as Element, "Variable")?.getAttribute("aria-pressed")).toBe("true");
   expect(button(second as Element, "Fixed")?.getAttribute("aria-pressed")).toBe("false");
   expect(second?.querySelector("input")?.value).toBe("report");
-  // A secret only becomes an input or goes.
-  expect(button(third as Element, "Fixed")).toBeUndefined();
-  expect(button(third as Element, "Variable")).toBeDefined();
-  expect(button(third as Element, "Remove")).toBeDefined();
+  // Protected input is hidden by default; neither it nor unknown text can be kept as typed.
+  expect(button(third as Element, "Hidden")?.getAttribute("aria-pressed")).toBe("true");
+  expect(button(fourth as Element, "Variable")?.getAttribute("aria-pressed")).toBe("true");
+  for (const row of [third, fourth]) {
+    expect(button(row as Element, "Fixed")).toBeUndefined();
+    expect(button(row as Element, "Variable")).toBeDefined();
+    expect(button(row as Element, "Hidden")).toBeDefined();
+    expect(button(row as Element, "Remove")).toBeDefined();
+  }
+  expect(container.textContent).not.toContain("visible to everyone");
+});
+
+it("says under a Fixed value who sees it, and sends Hidden with its name", async () => {
+  await renderValues();
+  const [first, second] = rows();
+  await click(button(second as Element, "Fixed"));
+  expect(second?.querySelector("input")).toBeNull();
+  expect(second?.textContent).toContain("Saved in the steps, visible to everyone in this space.");
+  expect(first?.textContent).not.toContain("visible to everyone");
+  await click(button(first as Element, "Hidden"));
+  await type(first?.querySelector("input") as HTMLInputElement, "password");
+  await click(button(second as Element, "Variable"));
+  expect(container.textContent).not.toContain("visible to everyone");
+  await click(button(second as Element, "Fixed"));
+  await click(button(container, "Save"));
+  expect(api.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      decisions: {
+        "{{value 1}}": { action: "hidden", name: "password" },
+        "{{value 2}}": { action: "fixed" },
+        "{{value 3}}": { action: "hidden", name: "value_3" },
+        "{{value 4}}": { action: "variable", name: "value_4" },
+      },
+    }),
+  );
 });
 
 it("saves with each value's decision, then shows what the server saved", async () => {
@@ -251,7 +282,7 @@ it("tests with the same decisions and keeps the rows", async () => {
       decisions: {
         "{{value 1}}": { action: "variable", name: "value_1" },
         "{{value 2}}": { action: "remove" },
-        "{{value 3}}": { action: "variable", name: "value_3" },
+        "{{value 3}}": { action: "hidden", name: "value_3" },
         "{{value 4}}": { action: "variable", name: "value_4" },
       },
     }),
@@ -363,7 +394,7 @@ it("follows a later update of the skill only where this card has not written or 
 });
 
 const targets = [
-  { id: "0", step: 0, window: "Form", image: "data:image/webp;base64,AAAA", label: "Email field" },
+  { id: "0", step: 0, window: "Form", image: "data:image/webp;base64,AAAA" },
   { id: "4", step: 2, window: "Form", image: "data:image/webp;base64,BBBB" },
   // No picture was kept for this one: there is nothing to show.
   { id: "6", step: 4, window: "Form" },
@@ -371,7 +402,7 @@ const targets = [
 const thumbs = () => [...container.querySelectorAll('[data-testid="skill-draft-target"]')];
 const removes = () => [...container.querySelectorAll('button[aria-label^="Remove "]')];
 
-it("shows a thumbnail per kept picture, labelled when it has a label", async () => {
+it("shows a thumbnail per kept picture", async () => {
   api.review.mockResolvedValue({ values: [], targets });
   await render();
   await vi.waitFor(() => expect(thumbs()).toHaveLength(2));
@@ -379,12 +410,11 @@ it("shows a thumbnail per kept picture, labelled when it has a label", async () 
     "data:image/webp;base64,AAAA",
     "data:image/webp;base64,BBBB",
   ]);
-  expect(thumbs()[0]?.textContent).toBe("Email field");
-  expect(thumbs()[1]?.textContent).toBe("");
-  // The label is read once, under the picture; each Remove says what it removes.
+  // No text under a picture; each Remove says which step it belongs to.
+  expect(thumbs().map((node) => node.textContent)).toEqual(["", ""]);
   expect(thumbs().map((node) => node.querySelector("img")?.getAttribute("alt"))).toEqual(["", ""]);
   expect(removes().map((node) => node.getAttribute("aria-label"))).toEqual([
-    "Remove Email field",
+    "Remove Type {{value 1}}",
     "Remove Type {{value 3}}",
   ]);
 });

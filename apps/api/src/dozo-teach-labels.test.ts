@@ -21,7 +21,7 @@ function runtime(reply: (request: AgentRunRequest) => AsyncIterable<AgentRuntime
   return {
     run,
     runtime: {
-      describe: () => ({ capabilities: { compaction: true } }),
+      describe: () => ({ capabilities: {} }),
       run,
       abort: async () => undefined,
     } as unknown as AgentRuntime,
@@ -81,13 +81,10 @@ describe("createTeachClickLabeller", () => {
     expect(fake.run).not.toHaveBeenCalled();
   });
 
-  it("gives no labels for a model that cannot see pictures or none configured", async () => {
+  it("gives no labels for a model that cannot see pictures", async () => {
     const blind = runtime(() => answer("[]"));
     expect(await setup(blind, { acceptsImages: false })(actor, skill, pictures)).toBeNull();
-    const scripted = runtime(() => answer("[]"));
-    expect(await setup(scripted, { provider: "scripted" })(actor, skill, pictures)).toBeNull();
     expect(blind.run).not.toHaveBeenCalled();
-    expect(scripted.run).not.toHaveBeenCalled();
   });
 
   it("gives no labels for a malformed answer or a failed call", async () => {

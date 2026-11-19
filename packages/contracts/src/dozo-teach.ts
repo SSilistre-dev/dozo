@@ -6,9 +6,13 @@ import { Id } from "./ids.js";
 /** A value typed while teaching, as its placeholder in the steps names it (`{{value N}}`). */
 const Placeholder = z.string().regex(/^\{\{value \d+\}\}$/);
 
-/** What becomes of one typed value: an input asked for on each run, kept as typed, or dropped. */
+/**
+ * What becomes of one typed value: an input asked for on each run, an input typed from a saved
+ * login (hidden), kept as typed in the steps, or dropped.
+ */
 export const DozoTeachValueDecisionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("variable"), name: z.string().min(1).max(80) }),
+  z.object({ action: z.literal("hidden"), name: z.string().min(1).max(80) }),
   z.object({ action: z.literal("fixed") }),
   z.object({ action: z.literal("remove") }),
 ]);
@@ -16,9 +20,9 @@ export type DozoTeachValueDecision = z.infer<typeof DozoTeachValueDecisionSchema
 
 export const DozoTeachValueSchema = z.object({
   placeholder: Placeholder,
-  /** Null for protected input, whose text is never stored. */
+  /** Null for protected input, whose text is never stored, and for text that cannot be rebuilt. */
   text: z.string().nullable(),
-  /** Protected input, or text that looks like a password, PIN or key: never kept as text. */
+  /** Typed as protected input: hidden by default, never kept as text. */
   secret: z.boolean(),
   /** A name the model suggested for it, when one was made. */
   suggestion: z.object({ name: z.string() }).optional(),
@@ -26,9 +30,9 @@ export const DozoTeachValueSchema = z.object({
 export type DozoTeachValue = z.infer<typeof DozoTeachValueSchema>;
 
 /**
- * What one recorded click hit, kept in the recording beside its events until the save: the
- * window it was in and a small WebP of the screen around it (base64). `eventIndex` is the click's
- * event; a click before a secret value has no image.
+ * What one recorded click hit, kept in the recording beside its events: the window it was in
+ * and, until the recording is drafted, a small WebP of the screen around it (base64).
+ * `eventIndex` is the click's event.
  */
 export const DozoTeachStoredTargetSchema = z.object({
   eventIndex: z.number().int().nonnegative(),
@@ -45,8 +49,6 @@ export const DozoTeachTargetSchema = z.object({
   window: z.string().optional(),
   /** A data URL. */
   image: z.string().optional(),
-  /** What the model saw was clicked, in a few words, when it could tell. */
-  label: z.string().optional(),
 });
 export type DozoTeachTarget = z.infer<typeof DozoTeachTargetSchema>;
 
@@ -55,7 +57,7 @@ const DraftInput = z.object({
   name: z.string().max(200).optional(),
   playbook: SkillPlaybookSchema,
   decisions: z.record(Placeholder, DozoTeachValueDecisionSchema).default({}),
-  /** Targets the teacher removed: their steps keep only the coordinate. */
+  /** Clicks whose picture the teacher removed: their steps keep only the coordinate. */
   removedTargets: z.array(z.string().max(20)).max(1_000).default([]),
 });
 
@@ -67,7 +69,7 @@ export const dozoTeachContract = {
       targets: z.array(DozoTeachTargetSchema),
     }),
   ),
-  /** Saves the draft with the decisions applied, then forgets what was typed. */
+  /** Saves the draft with the decisions applied and forgets what was typed, at once. */
   save: oc.input(DraftInput).output(TaughtSkillSchema),
   /** Runs the draft safely with the decisions applied; nothing is saved or forgotten. */
   test: oc.input(DraftInput).output(z.object({ runId: Id })),

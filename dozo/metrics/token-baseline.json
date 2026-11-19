@@ -9,18 +9,18 @@
   "pricing": null,
   "totals": {
     "modelCalls": 99,
-    "promptTokens": 1314602,
-    "inputTokens": 5674,
+    "promptTokens": 1314847,
+    "inputTokens": 5663,
     "outputTokens": 1185,
-    "cacheReadTokens": 967552,
-    "cacheWriteTokens": 341376,
-    "cacheReadShare": 0.7360037486630935,
+    "cacheReadTokens": 967680,
+    "cacheWriteTokens": 341504,
+    "cacheReadShare": 0.7359639562625918,
     "costUsd": null,
     "components": {
       "system": 204454,
       "tools": 775566,
       "history": 97507,
-      "prompt": 4766,
+      "prompt": 5011,
       "toolCalls": 6974,
       "toolResults": 225335
     }
@@ -444,16 +444,16 @@
       "id": "form-fill-new-skill",
       "kind": "multi-page",
       "modelCalls": 5,
-      "inputTokens": 349,
+      "inputTokens": 338,
       "outputTokens": 88,
-      "cacheReadTokens": 41856,
-      "cacheWriteTokens": 10880,
+      "cacheReadTokens": 41984,
+      "cacheWriteTokens": 11008,
       "costUsd": null,
       "components": {
         "system": 10630,
         "tools": 39170,
         "history": 0,
-        "prompt": 1305,
+        "prompt": 1550,
         "toolCalls": 524,
         "toolResults": 1456
       }

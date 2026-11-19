@@ -18,6 +18,8 @@ vi.mock("../lib/query", async (importOriginal) => ({
     },
   }),
 }));
+// Its own test covers the reminder; here it would read the real session.
+vi.mock("./dozo-verify-reminder", () => ({ DozoVerifyReminder: () => null }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ i18n: { locale: api.locale } }),
   Trans: ({ children }: { children: ReactNode }) => children,

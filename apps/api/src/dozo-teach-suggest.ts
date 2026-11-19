@@ -7,8 +7,9 @@ import type {
 } from "@rakazo/adapter-kit";
 import { modelAcceptsImageInput } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import type { TeachTypedValue } from "@rakazo/core";
 import { deadlineSignal, teachInputName } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, TeachValueSuggestions } from "@rakazo/db";
 import { recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
@@ -18,25 +19,69 @@ import {
 } from "./dozo-teach-suggest.prompt.js";
 
 const SUGGEST_TIMEOUT_MS = 8_000;
-const MAX_VALUE_CHARS = 200;
 
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
 
-/**
- * A suggestion per placeholder: an input name, and whether the value looks like a secret. Whether
- * it changes from run to run only helps the model name it: every value is an input by default.
- */
-export type TeachValueSuggestions = Record<string, { name: string; secret: boolean }>;
+/** What the model is told about a skill: no character of any typed value is in it. */
+export type TeachSuggestionContext = {
+  botId: string;
+  goal: string;
+  /** The steps as recorded, with placeholders where values were typed. */
+  steps: string[];
+  /** Window titles seen while teaching that show nothing typed. */
+  windowTitles: string[];
+};
+
+/** A value as the model is told about it: its placeholder and its shape, never its text. */
+export type TeachValueShape = { placeholder: string; shape: string };
 
 export type TeachValueSuggester = (
   actor: Actor,
-  skill: { botId: string; goal: string },
-  values: Array<{ placeholder: string; text: string }>,
+  skill: TeachSuggestionContext,
+  values: TeachValueShape[],
 ) => Promise<TeachValueSuggestions | null>;
 
-const Answer = z.array(
-  z.object({ placeholder: z.string(), name: z.string(), secret: z.boolean() }),
-);
+const Answer = z.array(z.object({ placeholder: z.string(), name: z.string() }));
+
+function lengthClass(length: number): string {
+  if (length <= 3) return "1-3 characters";
+  if (length <= 8) return "4-8 characters";
+  if (length <= 20) return "9-20 characters";
+  if (length <= 60) return "21-60 characters";
+  return "over 60 characters";
+}
+
+/**
+ * What a value looks like, worked out here so the value itself is never sent: its length class
+ * and whether it is digits only, mixes letters and digits, holds an @ or spaces.
+ */
+export function teachValueShape(value: TeachTypedValue): TeachValueShape {
+  return { placeholder: value.placeholder, shape: shapeOf(value) };
+}
+
+function shapeOf(value: TeachTypedValue): string {
+  if (value.secret) return "protected input";
+  if (value.text === null) return "unknown";
+  const text = value.text;
+  const traits = [lengthClass([...text].length)];
+  if (/^\d+$/.test(text)) traits.push("digits only");
+  else if (/\p{L}/u.test(text) && /\d/.test(text)) traits.push("letters and digits");
+  if (text.includes("@")) traits.push("has @");
+  if (/\s/.test(text)) traits.push("has spaces");
+  return traits.join(", ");
+}
+
+/** The JSON array in a reply, also when the model wrapped it in a code fence or a sentence. */
+export function jsonArrayIn(text: string): unknown {
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start < 0 || end < start) return undefined;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+}
 
 function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggestions | null {
   const parsed = Answer.safeParse(jsonArrayIn(text));
@@ -44,9 +89,7 @@ function parseAnswer(text: string, placeholders: Set<string>): TeachValueSuggest
   const suggestions: TeachValueSuggestions = {};
   for (const entry of parsed.data) {
     const name = teachInputName(entry.name);
-    // A secret is kept as one even without a usable name.
-    if (!placeholders.has(entry.placeholder) || (!name && !entry.secret)) continue;
-    suggestions[entry.placeholder] = { name, secret: entry.secret };
+    if (placeholders.has(entry.placeholder) && name) suggestions[entry.placeholder] = { name };
   }
   return suggestions;
 }
@@ -64,8 +107,8 @@ export type TeachModelDeps = {
 
 /**
  * One short call to the bot's own model connection with no tools, history or thinking, its usage
- * recorded as setup. Null when there is no model to ask, or it cannot see the images given;
- * throws when the call fails or runs out of time.
+ * recorded as setup. Null when images are given and the model cannot see them; throws when the
+ * call fails or runs out of time.
  */
 export async function askTeachModel(
   deps: TeachModelDeps,
@@ -81,10 +124,6 @@ export async function askTeachModel(
     await recordUsage(deps.prisma, event, { ...scope, operationId: id, operationKind: "setup" });
   };
   const model = await deps.resolveModel(scope);
-  // "scripted" means no model is configured; it would echo canned text.
-  if (!deps.runtime.describe().capabilities.compaction || model.provider === "scripted") {
-    return null;
-  }
   const images = request.images?.slice(0, model.maxImagesPerPrompt ?? request.images.length);
   if (
     images &&
@@ -116,22 +155,11 @@ export async function askTeachModel(
   return answer;
 }
 
-/** The JSON array in a reply, also when the model wrapped it in a code fence or a sentence. */
-export function jsonArrayIn(text: string): unknown {
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start < 0 || end < start) return undefined;
-  try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Suggests names for the values typed while teaching, with the bot's own model connection and no
- * tools. Only the values given are sent: the caller leaves secret ones out. Null when no model
- * call could be made or its answer was unusable; the review then simply has no suggestions.
+ * tools. It is given, and the model gets, the task, the steps with placeholders, window titles
+ * that show nothing typed, and each value's shape: never a value. Null when the call failed,
+ * timed out or answered nothing usable; the review then simply has no suggestions.
  */
 export function createTeachValueSuggester(deps: TeachModelDeps): TeachValueSuggester {
   return async (actor, skill, values) => {
@@ -142,16 +170,17 @@ export function createTeachValueSuggester(deps: TeachModelDeps): TeachValueSugge
         actor,
         skill.botId,
         {
-          prompt: teachValueSuggestionPrompt(
-            skill.goal,
-            values.map((value) => ({ ...value, text: value.text.slice(0, MAX_VALUE_CHARS) })),
-          ),
+          prompt: teachValueSuggestionPrompt({
+            goal: skill.goal,
+            steps: skill.steps,
+            windowTitles: skill.windowTitles,
+            values,
+          }),
           instructions: teachValueSuggestionInstructions(),
         },
         SUGGEST_TIMEOUT_MS,
       );
-      if (answer === null) return null;
-      return parseAnswer(answer, new Set(values.map((value) => value.placeholder)));
+      return parseAnswer(answer ?? "", new Set(values.map((value) => value.placeholder)));
     } catch (error) {
       getLogger().warn("teach value suggestion failed", {
         reason: error instanceof Error ? error.message : String(error),
