@@ -12,7 +12,7 @@ import { jobQueueLogger } from "./wakeup.js";
  */
 const DUE_CHECK_MS = 60_000;
 
-export type DozoTask = (payload: unknown) => Promise<void>;
+type DozoTask = (payload: unknown) => Promise<void>;
 
 /**
  * Runs the fork's own jobs, on upstream's Graphile queue but in the process that holds what the

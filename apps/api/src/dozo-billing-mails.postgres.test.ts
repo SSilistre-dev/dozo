@@ -94,7 +94,9 @@ describePostgres("billing mails (PostgreSQL)", () => {
   it("decides a failed payment once when many syncs run together", async () => {
     const organizationId = await organization({ status: "past_due" });
     const { billing, send } = lifecycle();
-    await Promise.all(Array.from({ length: 8 }, () => billing.afterSync(`customer-${organizationId}`)));
+    await Promise.all(
+      Array.from({ length: 8 }, () => billing.afterSync(`customer-${organizationId}`)),
+    );
     await billing.stop();
     expect(await mails(organizationId)).toEqual([
       expect.objectContaining({ kind: "payment-failed", status: "sent" }),
@@ -200,7 +202,10 @@ describePostgres("billing mails (PostgreSQL)", () => {
 
   it("lets a sync finish every step when its mails fail on a foreign key", async () => {
     const provider = new BillingEmulator({ modelCredits: true });
-    const { customerId } = await provider.createCustomer({ email: "a@example.test", organizationId: "x" });
+    const { customerId } = await provider.createCustomer({
+      email: "a@example.test",
+      organizationId: "x",
+    });
     const organizationId = await organization({ status: null, customerId });
     await prisma.modelCreditAccount.create({ data: { organizationId } });
     provider.byokCheckouts.set(customerId, {
@@ -234,9 +239,11 @@ describePostgres("billing mails (PostgreSQL)", () => {
       status: "active",
       byokTier: "pro",
     });
-    expect(await prisma.modelCreditAccount.findUnique({ where: { organizationId } })).toMatchObject({
-      mode: "byok",
-    });
+    expect(await prisma.modelCreditAccount.findUnique({ where: { organizationId } })).toMatchObject(
+      {
+        mode: "byok",
+      },
+    );
   });
 
   it("finds missing reminders, gives up on abandoned mails and purges settled ones", async () => {
@@ -244,14 +251,29 @@ describePostgres("billing mails (PostgreSQL)", () => {
     const store = sqlMailStore(prisma, { jobs: true });
     const prefix = `dozo.plan-ending-test-${suffix}:`;
     expect(await store.reminderGaps(prefix)).toContain(organizationId);
-    await store.transaction((tx) => tx.addJob("dozo.test-none", `${prefix}${organizationId}`, new Date(Date.now() + 86_400_000), {}));
+    await store.transaction((tx) =>
+      tx.addJob(
+        "dozo.test-none",
+        `${prefix}${organizationId}`,
+        new Date(Date.now() + 86_400_000),
+        {},
+      ),
+    );
     expect(await store.reminderGaps(prefix)).not.toContain(organizationId);
     await prisma.$executeRaw`SELECT graphile_worker.remove_job(${`${prefix}${organizationId}`}::text)`;
     const id = await store.transaction((tx) =>
-      tx.addMail({ organizationId, userId: organizationId, occasion: "old", kind: "payment-failed", details: { plan: "Premium" } }),
+      tx.addMail({
+        organizationId,
+        userId: organizationId,
+        occasion: "old",
+        kind: "payment-failed",
+        details: { plan: "Premium" },
+      }),
     );
     await prisma.$executeRaw`UPDATE "dozo_billing_mails" SET "createdAt" = CURRENT_TIMESTAMP - interval '2 days' WHERE "id" = ${id}`;
-    expect(await store.failAbandoned(`dozo.billing-mail-test-${suffix}:`, 86_400_000)).toContain(id);
+    expect(await store.failAbandoned(`dozo.billing-mail-test-${suffix}:`, 86_400_000)).toContain(
+      id,
+    );
     await prisma.$executeRaw`UPDATE "dozo_billing_mails" SET "finishedAt" = CURRENT_TIMESTAMP - interval '100 days' WHERE "id" = ${id}`;
     expect(await store.purge(90 * 86_400_000)).toBeGreaterThanOrEqual(1);
     expect(await mails(organizationId)).toEqual([]);

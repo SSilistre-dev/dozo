@@ -1,9 +1,15 @@
 import type * as Logging from "@rakazo/logging";
+import type * as GraphileWorker from "graphile-worker";
 import type { Runner, RunnerOptions } from "graphile-worker";
 import type { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const logged = vi.hoisted(() => ({ error: vi.fn() }));
+const graphile = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock("graphile-worker", async (importOriginal) => ({
+  ...(await importOriginal<typeof GraphileWorker>()),
+  run: graphile.run,
+}));
 vi.mock("@rakazo/logging", async (importOriginal) => ({
   ...(await importOriginal<typeof Logging>()),
   getLogger: () => logged,
@@ -50,11 +56,15 @@ describe("DozoJobQueue", () => {
   });
 
   it("reports a runner that did not start, and stops without one", async () => {
-    const queue = new DozoJobQueue({} as Pool, {}, {
-      start: async () => {
-        throw new Error("no database");
+    const queue = new DozoJobQueue(
+      {} as Pool,
+      {},
+      {
+        start: async () => {
+          throw new Error("no database");
+        },
       },
-    });
+    );
     await expect(queue.stop()).resolves.toBeUndefined();
     expect(logged.error).toHaveBeenCalledWith(
       "fork job queue did not start",
@@ -63,12 +73,26 @@ describe("DozoJobQueue", () => {
   });
 
   it("reports a runner that stopped by itself", async () => {
-    const queue = new DozoJobQueue({} as Pool, {}, {
-      start: async () => runner(Promise.reject(new Error("fatal"))),
-    });
+    const queue = new DozoJobQueue(
+      {} as Pool,
+      {},
+      {
+        start: async () => runner(Promise.reject(new Error("fatal"))),
+      },
+    );
     await queue.stop();
     await vi.waitFor(() =>
       expect(logged.error).toHaveBeenCalledWith("fork job queue stopped", new Error("fatal")),
     );
+  });
+
+  it("starts Graphile's own runner unless told otherwise", async () => {
+    const started = runner();
+    graphile.run.mockResolvedValueOnce(started);
+    const queue = new DozoJobQueue({} as Pool, {});
+    await queue.stop();
+    expect(graphile.run).toHaveBeenCalledOnce();
+    expect(graphile.run.mock.calls[0]?.[0]).not.toHaveProperty("crontab");
+    expect(started.stop).toHaveBeenCalledOnce();
   });
 });

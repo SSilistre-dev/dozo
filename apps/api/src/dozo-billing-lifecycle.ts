@@ -22,28 +22,28 @@ import { statusPlanEnd } from "./dozo-plan-end.js";
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 /** How long before a plan ends without renewing its owners are told. */
-export const PLAN_ENDING_NOTICE_DAYS = 3;
+const PLAN_ENDING_NOTICE_DAYS = 3;
 export const PLAN_ENDING_TASK = "dozo.plan-ending";
 export const BILLING_MAIL_TASK = "dozo.billing-mail";
 export const BILLING_SWEEP_TASK = "dozo.billing-sweep";
 /** The safety net: once an hour, Graphile runs it once across every API process. */
-export const BILLING_SWEEP_CRONTAB = `17 * * * * ${BILLING_SWEEP_TASK}`;
+const BILLING_SWEEP_CRONTAB = `17 * * * * ${BILLING_SWEEP_TASK}`;
 /** A send that has not finished by then is given up on; well inside a claim. */
-export const MAIL_SEND_DEADLINE_MS = MINUTE_MS;
+const MAIL_SEND_DEADLINE_MS = MINUTE_MS;
 /** A claim older than this belongs to a process that died. */
 export const MAIL_CLAIM_MS = 5 * MINUTE_MS;
 /** The backup job fires once a claim the sending process left behind can be taken over. */
 const MAIL_BACKUP_MS = MAIL_CLAIM_MS + MINUTE_MS;
 /** A pending mail with no backup job left after this long is given up on. */
-export const MAIL_ABANDONED_MS = DAY_MS;
+const MAIL_ABANDONED_MS = DAY_MS;
 /** Settled mails are kept this long, then deleted. */
-export const MAIL_RETENTION_MS = 90 * DAY_MS;
+const MAIL_RETENTION_MS = 90 * DAY_MS;
 
 /** The reminder's job: the end it was queued for, which must still be the end when it runs. */
 export type PlanEndingJob = { organizationId: string; endsAt: string };
 
 /** Runs the lifecycle's tasks on the durable queue until stopped. */
-export type LifecycleRunner = { stop(): Promise<void> };
+type LifecycleRunner = { stop(): Promise<void> };
 
 export interface BillingLifecycleDeps {
   store: BillingMailStore;
@@ -356,5 +356,3 @@ export function createBillingLifecycle(deps: BillingLifecycleDeps) {
     },
   };
 }
-
-export type BillingLifecycle = ReturnType<typeof createBillingLifecycle>;

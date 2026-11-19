@@ -98,8 +98,12 @@ describe("sqlMailStore", () => {
   it("queues and removes jobs only where there is a queue", async () => {
     const queued = fakePrisma();
     const store = sqlMailStore(queued.prisma, { jobs: true });
-    await (await inside(queued.prisma))
-      .addJob("dozo.test", "dozo.test:org", new Date("2026-11-22T12:00:00.000Z"), { id: 1 });
+    await (await inside(queued.prisma)).addJob(
+      "dozo.test",
+      "dozo.test:org",
+      new Date("2026-11-22T12:00:00.000Z"),
+      { id: 1 },
+    );
     await store.removeJob("dozo.test:org");
     expect(queued.calls.map((call) => [call.sql.split("(")[0], call.values])).toEqual([
       [

@@ -626,7 +626,10 @@ describe("a send that does not finish", () => {
     ({ db, store } = memoryStore());
     const billing = createBillingLifecycle({
       store,
-      email: { send: () => new Promise(() => undefined), describe: () => ({ id: "test" }) } as never,
+      email: {
+        send: () => new Promise(() => undefined),
+        describe: () => ({ id: "test" }),
+      } as never,
       billingUrl: "https://app.example.com/app?settings=billing",
       onError: (error) => {
         errors.push(error);
