@@ -1,4 +1,5 @@
 import { BYOK_TIERS, sandboxAllowanceHours } from "@rakazo/contracts";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { grantedAllowanceCents } from "./dozo-plan-grant.js";
@@ -89,19 +90,37 @@ describe("reading the quotas", () => {
     });
   });
 
-  it("never guesses: a value of another shape or an unknown plan follows the terms", async () => {
-    const quotas = await readPlanQuotas(
-      table([
-        { tier: "pro", sharedSpaceMb: -1, computerHours: 1.5 },
-        { tier: "gold", sharedSpaceMb: 1, computerHours: 1 },
-      ]).client,
-    );
-    expect(quotas.pro).toEqual({ sharedSpaceMb: null, computerHours: null });
-    expect(Object.keys(quotas)).toEqual(["standard", "pro", "max"]);
+  it("never guesses: a value out of bounds or an unknown plan follows the terms, and is logged", async () => {
+    const sink = createTestSink();
+    const previous = getLogger();
+    installLogger(createLogger({ service: "test", level: "debug", sinks: [sink] }));
+    try {
+      const quotas = await readPlanQuotas(
+        table([
+          { tier: "pro", sharedSpaceMb: -1, computerHours: 1.5 },
+          // A paid plan's hours are at least one: they are what its others are compared with.
+          { tier: "max", sharedSpaceMb: null, computerHours: 0 },
+          { tier: "gold", sharedSpaceMb: 1, computerHours: 1 },
+        ]).client,
+      );
+      expect(quotas.pro).toEqual({ sharedSpaceMb: null, computerHours: null });
+      expect(quotas.max).toEqual({ sharedSpaceMb: null, computerHours: null });
+      expect(Object.keys(quotas)).toEqual(["standard", "pro", "max"]);
+      expect(sink.events.map((event) => [event.level, event.message, event.quota])).toEqual([
+        ["warn", "dozo.plan_quota.ignored", "sharedSpaceMb"],
+        ["warn", "dozo.plan_quota.ignored", "computerHours"],
+        ["warn", "dozo.plan_quota.ignored", "computerHours"],
+      ]);
+    } finally {
+      installLogger(previous);
+    }
   });
 
-  it("has no quota to read from a client without the table", async () => {
-    expect((await readPlanQuotas({})).pro).toEqual({ sharedSpaceMb: null, computerHours: null });
+  it("never gives Free computer hours, even written into the table by hand", async () => {
+    const limits = await readPlanLimits(
+      table([{ tier: "standard", sharedSpaceMb: 100, computerHours: 40 }]).client,
+    );
+    expect(limits.standard).toEqual({ sharedSpaceBytes: 100 * MB, computerAllowanceCents: 0 });
   });
 
   it("states the terms in the units the page edits", () => {

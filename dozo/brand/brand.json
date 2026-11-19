@@ -1440,6 +1440,12 @@
     },
     {
       "file": "apps/web/src/components/ModelCredits.tsx",
+      "find": "    const usage = Math.round(offer.computerHours / base.computerHours);\n",
+      "replace": "    const usage = Math.round(offer.computerHours / Math.max(base.computerHours, 1));\n",
+      "reason": "plan quotas: the hours an admin sets reach this comparison, so it never divides by zero (the server already keeps a paid plan at one hour or more)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.tsx",
       "find": "  const freeUntil = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n",
       "replace": "  const freeEnds = status.byokFreeUntil\n    ? formatBillingDate(status.byokFreeUntil, i18n.locale || \"en\")\n    : null;\n  // The free plan offers the paid ones with the controls a free period uses.\n  const freeUntil =\n    freeEnds ?? (status.funding === \"byok\" && !status.byokPriceCents ? \"free\" : null);\n",
       "reason": "plans: Billing offers the paid plans to an organization on the free plan, reusing the free period's controls"
@@ -1639,10 +1645,11 @@
     {
       "file": "packages/db/src/index.ts",
       "find": "export * from \"./deferred-migrations.js\";\nexport {\n  eventsAfter,",
-      "replace": "export * from \"./deferred-migrations.js\";\nexport * from \"./dozo-plan-grant.js\";\nexport * from \"./dozo-plan-quotas.js\";\nexport {\n  eventsAfter,",
+      "replace": "export * from \"./deferred-migrations.js\";\nexport * from \"./dozo-plan-grant.js\";\nexport * from \"./dozo-plan-quotas.js\";\nexport * from \"./dozo-admin-change.js\";\nexport {\n  eventsAfter,",
       "requires": [
         "packages/db/src/dozo-plan-grant.ts",
-        "packages/db/src/dozo-plan-quotas.ts"
+        "packages/db/src/dozo-plan-quotas.ts",
+        "packages/db/src/dozo-admin-change.ts"
       ],
       "reason": "plans: a plan an admin grants by hand counts beside the subscription: the package exports the one function every reader of the plan calls"
     },
@@ -1749,11 +1756,21 @@
     {
       "file": "apps/api/src/billing.ts",
       "find": "  syncCreditPurchases,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
-      "replace": "  syncCreditPurchases,\n  tierInForce,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
+      "replace": "  syncCreditPurchases,\n  readPlanLimits,\n  tierInForce,\n  unexpiredCreditAccount,\n} from \"@rakazo/db\";\n",
       "requires": [
-        "packages/db/src/dozo-plan-grant.ts"
+        "packages/db/src/dozo-plan-grant.ts",
+        "packages/db/src/dozo-plan-quotas.ts"
       ],
       "reason": "plans: a plan an admin grants by hand counts beside the subscription: the import of the status rules below"
+    },
+    {
+      "file": "apps/api/src/billing.ts",
+      "find": "      const allowanceCents = BYOK_TIERS[to.tier].computerAllowanceCents;\n      if (allowanceCents < BYOK_TIERS[from.tier].computerAllowanceCents && deps.sandbox) {\n",
+      "replace": "      const planLimits = await readPlanLimits(prisma);\n      const allowanceCents = planLimits[to.tier].computerAllowanceCents;\n      if (allowanceCents < planLimits[from.tier].computerAllowanceCents && deps.sandbox) {\n",
+      "requires": [
+        "packages/db/src/dozo-plan-quotas.ts"
+      ],
+      "reason": "plan quotas: a plan change is held to the hours an admin set for both plans, as the allowance it leads to is"
     },
     {
       "file": "apps/api/src/billing.ts",

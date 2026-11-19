@@ -1,6 +1,7 @@
 import type { ByokTier } from "@rakazo/contracts";
 import { PLAN_LIMIT_CODES, sandboxAllowanceHours } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { readPlanLimits, sharedSpaceUsage } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 
@@ -29,7 +30,7 @@ export async function statusSharedSpace(...read: Parameters<typeof sharedSpaceUs
  * else the plan's terms. The allowance itself reads the same quotas, so the two never disagree.
  */
 export async function withPlanHours<Offer extends { tier: ByokTier; computerHours: number }>(
-  prisma: object,
+  prisma: Pick<PrismaClient, "dozoPlanQuota">,
   offers: Offer[],
 ): Promise<Offer[]> {
   const limits = await readPlanLimits(prisma);

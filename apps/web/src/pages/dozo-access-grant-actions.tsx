@@ -18,6 +18,7 @@ import {
 import { Ellipsis } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
 
@@ -40,6 +41,7 @@ export function DozoGrantActions({
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const change = useSave({
     save: (input: Change, rpc) =>
       "update" in input
@@ -77,11 +79,23 @@ export function DozoGrantActions({
               </DropdownMenuItem>
             </>
           ) : null}
-          <DropdownMenuItem variant="destructive" onClick={() => change.run({ delete: grant.id })}>
+          <DropdownMenuItem variant="destructive" onClick={() => setDeleting(true)}>
             <Trans>Delete</Trans>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {deleting ? (
+        <ConfirmDialog
+          title={<Trans>Delete the grant for {grant.email}?</Trans>}
+          description={<Trans>This cannot be undone.</Trans>}
+          confirmLabel={<Trans>Delete</Trans>}
+          onCancel={() => setDeleting(false)}
+          onConfirm={() => {
+            setDeleting(false);
+            change.run({ delete: grant.id });
+          }}
+        />
+      ) : null}
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent>
           <DialogHeader>

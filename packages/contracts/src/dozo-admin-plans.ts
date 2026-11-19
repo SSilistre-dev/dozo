@@ -45,7 +45,8 @@ export type DozoAdminPlanRow = z.infer<typeof DozoAdminPlanRowSchema>;
 export const DozoAdminPlanQuotaChangeSchema = z.object({
   tier: ByokTierSchema,
   sharedSpaceMb: z.number().int().min(0).max(DOZO_PLAN_SHARED_SPACE_MB_MAX).nullable().optional(),
-  computerHours: z.number().int().min(0).max(DOZO_PLAN_COMPUTER_HOURS_MAX).nullable().optional(),
+  /** At least one: a paid plan's hours are what its others are compared with. */
+  computerHours: z.number().int().min(1).max(DOZO_PLAN_COMPUTER_HOURS_MAX).nullable().optional(),
 });
 export type DozoAdminPlanQuotaChange = z.infer<typeof DozoAdminPlanQuotaChangeSchema>;
 

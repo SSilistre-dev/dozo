@@ -2,12 +2,14 @@ import type { ByokTier } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   ByokTierSchema,
+  DOZO_PLAN_COMPUTER_HOURS_MAX,
+  DOZO_PLAN_SHARED_SPACE_MB_MAX,
   SANDBOX_HOURLY_COST_MICROS,
   sandboxAllowanceHours,
 } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
-import { runAsSystemInTransaction } from "./row-security.js";
-import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
+import { recordAdminChange } from "./dozo-admin-change.js";
 
 type Write = Pick<PrismaClient, "$transaction">;
 
@@ -73,8 +75,9 @@ function limitsOf(tier: ByokTier, quota: PlanQuota): PlanLimits {
   return {
     sharedSpaceBytes:
       quota.sharedSpaceMb === null ? code.sharedSpaceBytes : quota.sharedSpaceMb * MB,
+    // A plan without a computer (Free) never gets hours, whatever the table holds.
     computerAllowanceCents:
-      quota.computerHours === null
+      quota.computerHours === null || code.computerAllowanceCents === 0
         ? code.computerAllowanceCents
         : computerHoursCents(quota.computerHours),
   };
@@ -82,19 +85,39 @@ function limitsOf(tier: ByokTier, quota: PlanQuota): PlanLimits {
 
 type Row = { tier?: unknown; sharedSpaceMb?: unknown; computerHours?: unknown };
 
+const inRange = (value: unknown, min: number, max: number): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
+
+/**
+ * The quotas the rows hold. A value out of the bounds an admin can set, or hours on a plan without
+ * a computer, follows the plan's terms, never a guess, and is logged: only a hand edit of the table
+ * can put one there.
+ */
 function quotasOf(rows: Row[]): PlanQuotas {
-  // A value of another shape follows the plan's terms: never a guess.
-  const count = (value: unknown) =>
-    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
   const quotas = Object.fromEntries(
     ByokTierSchema.options.map((tier) => [tier, { ...UNSET }]),
   ) as PlanQuotas;
   for (const row of rows) {
     const tier = ByokTierSchema.safeParse(row.tier).data;
     if (!tier) continue;
+    const hasComputer = codePlanLimits(tier).computerAllowanceCents > 0;
+    const read = (quota: keyof PlanQuota, value: unknown, valid: boolean) => {
+      if (value === null || value === undefined) return null;
+      if (valid) return value as number;
+      getLogger().warn("dozo.plan_quota.ignored", { tier, quota, value: String(value) });
+      return null;
+    };
     quotas[tier] = {
-      sharedSpaceMb: count(row.sharedSpaceMb),
-      computerHours: count(row.computerHours),
+      sharedSpaceMb: read(
+        "sharedSpaceMb",
+        row.sharedSpaceMb,
+        inRange(row.sharedSpaceMb, 0, DOZO_PLAN_SHARED_SPACE_MB_MAX),
+      ),
+      computerHours: read(
+        "computerHours",
+        row.computerHours,
+        hasComputer && inRange(row.computerHours, 1, DOZO_PLAN_COMPUTER_HOURS_MAX),
+      ),
     };
   }
   return quotas;
@@ -102,19 +125,19 @@ function quotasOf(rows: Row[]): PlanQuotas {
 
 /**
  * The stored quotas, read from the database on every call: every instance answers from the same
- * rows, so a change holds everywhere at once. A client without the table (a test double of the
- * tables it reads) has no quota to read.
+ * rows, so a change holds everywhere at once.
  */
-export async function readPlanQuotas(db: object): Promise<PlanQuotas> {
-  if (!("dozoPlanQuota" in db)) return quotasOf([]);
-  const rows = await (db as Pick<PrismaClient, "dozoPlanQuota">).dozoPlanQuota.findMany({
+export async function readPlanQuotas(db: Pick<PrismaClient, "dozoPlanQuota">): Promise<PlanQuotas> {
+  const rows = await db.dozoPlanQuota.findMany({
     select: { tier: true, sharedSpaceMb: true, computerHours: true },
   });
   return quotasOf(rows);
 }
 
 /** Every plan's limits as they hold now. The one read the limits are held to. */
-export async function readPlanLimits(db: object): Promise<PlanLimitsByTier> {
+export async function readPlanLimits(
+  db: Pick<PrismaClient, "dozoPlanQuota">,
+): Promise<PlanLimitsByTier> {
   const quotas = await readPlanQuotas(db);
   return Object.fromEntries(
     ByokTierSchema.options.map((tier) => [tier, limitsOf(tier, quotas[tier])]),
@@ -151,28 +174,15 @@ export async function changePlanQuota(
         "updatedByUserId" = ${byUserId},
         "updatedAt" = CURRENT_TIMESTAMP
       WHERE "tier" = ${tier}`;
-    const caller = securityRequestCaller();
-    for (const key of DOZO_PLAN_QUOTA_KEYS) {
-      if (before[key] === after[key]) continue;
-      // The table is only ever read as system, whoever's request writes it.
-      await runAsSystemInTransaction(tx, "record a plan quota change", () =>
-        tx.securityEvent.create({
-          data: {
-            type: "deployment.settings.changed",
-            userId: byUserId,
-            ip: caller?.ip?.slice(0, 64) ?? null,
-            userAgent: caller?.userAgent?.slice(0, 512) ?? null,
-            metadata: securityEventMetadata({
-              setting: "plan_quota",
-              tier,
-              quota: key,
-              from: before[key],
-              to: after[key],
-            }),
-          },
-        }),
-      );
-    }
+    for (const key of DOZO_PLAN_QUOTA_KEYS)
+      if (before[key] !== after[key])
+        await recordAdminChange(tx, byUserId, {
+          setting: "plan_quota",
+          tier,
+          quota: key,
+          from: before[key],
+          to: after[key],
+        });
     return { before, after };
   });
 }

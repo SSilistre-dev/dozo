@@ -1,6 +1,7 @@
 import { createRouterClient } from "@orpc/server";
 import type { DozoPaymentLedger } from "@rakazo/adapters";
 import { BYOK_TIERS, sandboxAllowanceHours } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
 import { dozoAdminPlansRoutes } from "./dozo-admin-plans.js";
@@ -230,7 +231,7 @@ describe("the plans members are offered", () => {
       dozoPlanQuota: {
         findMany: async () => [{ tier: "pro", sharedSpaceMb: null, computerHours: 30 }],
       },
-    };
+    } as unknown as Pick<PrismaClient, "dozoPlanQuota">;
     const hours = sandboxAllowanceHours(BYOK_TIERS.max.computerAllowanceCents);
     expect(await withPlanHours(prisma, offers)).toEqual([
       { tier: "pro", computerHours: 30, name: "Premium" },

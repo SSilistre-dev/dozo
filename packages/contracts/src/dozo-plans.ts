@@ -11,9 +11,11 @@ import type { ByokTier, ByokTierTerms } from "./billing.js";
  * `premium` or `premiumPlus` below. Until then they keep upstream's amounts. Existing subscribers
  * keep the price they signed up at.
  *
- * It is also the one place the shared-space limit changes: `sharedSpaceBytes`, the bytes of files
- * an organization may keep on a server that bills. Upstream's tiers carry no such field, so an
- * unbranded build has no limit.
+ * The shared space (`sharedSpaceBytes`, the bytes of files an organization may keep on a server
+ * that bills) and the computer allowance set here are each plan's terms: what the landing page
+ * shows, and what holds until an admin sets another value on the admin plans page
+ * (`packages/db/src/dozo-plan-quotas.ts`). Upstream's tiers carry no shared space, so an unbranded
+ * build has no limit.
  */
 type DozoTerms = Partial<ByokTierTerms> & { sharedSpaceBytes: number };
 const MB = 1024 * 1024;

@@ -49,7 +49,7 @@ async function serverBills(tx: Pick<PrismaClient, "deploymentSettings">) {
 
 /** The bytes of files the Space's organization may keep, or null without a limit. */
 async function sharedSpaceLimit(
-  tx: Pick<PrismaClient, "deploymentSettings" | "space">,
+  tx: Pick<PrismaClient, "deploymentSettings" | "space" | "dozoPlanQuota">,
   spaceId: string,
 ): Promise<{ organizationId: string; bytes: number } | null> {
   if (!(await serverBills(tx))) return null;
@@ -94,7 +94,7 @@ async function usedBytes(db: Pick<PrismaClient, "$queryRaw">, organizationId: st
  * that work for nothing, and the write itself is still held to the limit by `holdSharedSpace`.
  */
 export async function sharedSpaceFull(
-  prisma: Pick<PrismaClient, "deploymentSettings" | "space" | "$queryRaw">,
+  prisma: Pick<PrismaClient, "deploymentSettings" | "space" | "dozoPlanQuota" | "$queryRaw">,
   spaceId: string,
 ): Promise<SharedSpaceFullError | null> {
   const limit = await sharedSpaceLimit(prisma, spaceId);
@@ -112,7 +112,7 @@ export async function sharedSpaceFull(
  * plan and count the writes are held to.
  */
 export async function sharedSpaceUsage(
-  prisma: Pick<PrismaClient, "deploymentSettings" | "$queryRaw">,
+  prisma: Pick<PrismaClient, "deploymentSettings" | "dozoPlanQuota" | "$queryRaw">,
   organizationId: string,
   billing: PlanBilling,
   grant: PlanGrant | null | undefined,

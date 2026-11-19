@@ -182,7 +182,7 @@ function Plan({
           <Row label={<Trans>Computer hours a month</Trans>}>
             <Input
               type="number"
-              min={0}
+              min={1}
               step={1}
               inputMode="numeric"
               className="w-28"

@@ -57,6 +57,27 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+vi.mock("../components/ConfirmDialog", () => ({
+  ConfirmDialog: (props: {
+    title: ReactNode;
+    description: ReactNode;
+    confirmLabel: ReactNode;
+    onCancel: () => void;
+    onConfirm: () => void;
+  }) => (
+    <div role="alertdialog">
+      <p>{props.title}</p>
+      <p>{props.description}</p>
+      <button type="button" onClick={props.onCancel}>
+        Cancel
+      </button>
+      <button type="button" onClick={props.onConfirm}>
+        Confirm {props.confirmLabel}
+      </button>
+    </div>
+  ),
+}));
+
 import type * as Query from "../lib/query";
 import { DozoGrantActions } from "./dozo-access-grant-actions";
 
@@ -121,8 +142,21 @@ it("offers a pending grant edit, revoke and delete, behind one named menu", asyn
   expect(button("Edit")).toBeTruthy();
   await click("Revoke");
   expect(onRevoke).toHaveBeenCalled();
+});
+
+it("deletes only after the confirmation, which can be cancelled", async () => {
+  await render(pending);
   await click("Delete");
+  expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+    "Delete the grant for ada@example.test?",
+  );
+  await click("Cancel");
+  expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(api.delete).not.toHaveBeenCalled();
+  await click("Delete");
+  await click("Confirm Delete");
   expect(api.delete).toHaveBeenCalledWith({ id: "g1" });
+  expect(container.querySelector('[role="alertdialog"]')).toBeNull();
 });
 
 it("offers a revoked grant only delete, and a received one nothing", async () => {
@@ -165,6 +199,7 @@ it("tells a failed save or delete, and holds the menu while the page is saving",
   api.delete.mockRejectedValue(new Error("nope"));
   await render(pending);
   await click("Delete");
+  await click("Confirm Delete");
   await vi.waitFor(() =>
     expect(api.toastError).toHaveBeenCalledWith("Could not delete grant", expect.any(Error)),
   );

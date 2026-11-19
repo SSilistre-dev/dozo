@@ -1,10 +1,12 @@
 import { ClientError } from "@rakazo/core";
-import { recordSecurityEvent } from "@rakazo/db";
+import { addressFingerprint, recordAdminChange } from "@rakazo/db";
 import { requireAdmin } from "./admins.js";
 import type { RouterContext } from "./routes/context.js";
 
 /** A grant no account has claimed or received yet. */
 const UNCLAIMED = { appliedAt: null, organizationId: null } as const;
+/** What a grant gives, recorded before and after an admin changes or deletes it. */
+const GRANT_VALUES = { email: true, creditCents: true, freeMonths: true } as const;
 
 /**
  * Changing and deleting free-access grants no account has received, beside upstream's list,
@@ -29,31 +31,55 @@ export function dozoAdminAccessRoutes(ctx: RouterContext) {
     throw new ClientError("CONFLICT", message);
   }
 
-  const record = (adminId: string, change: "updated" | "deleted", grant: string) =>
-    recordSecurityEvent({
-      type: "deployment.settings.changed",
-      userId: adminId,
-      metadata: { setting: "access_grant", change, grant },
-    });
-
   return {
     update: admin.dozoAdmin.accessGrants.update.handler(async ({ context, input }) => {
+      const pending = { id: input.id, ...UNCLAIMED, revokedAt: null };
       // Matched on its state, so a sign-up claiming it at the same moment wins or loses whole.
-      const { count } = await prisma.accessGrant.updateMany({
-        where: { id: input.id, ...UNCLAIMED, revokedAt: null },
-        data: input.grant,
+      // The record goes in the same transaction: a change it cannot record is undone.
+      const changed = await prisma.$transaction(async (tx) => {
+        const before = await tx.accessGrant.findFirst({ where: pending, select: GRANT_VALUES });
+        if (!before) return false;
+        const { count } = await tx.accessGrant.updateMany({ where: pending, data: input.grant });
+        if (count === 0) return false;
+        await recordAdminChange(tx, context.actor.userId, {
+          setting: "access_grant",
+          change: "updated",
+          grant: input.id,
+          fromAddress: addressFingerprint(before.email),
+          toAddress: addressFingerprint(input.grant.email),
+          fromCreditCents: before.creditCents,
+          toCreditCents: input.grant.creditCents,
+          fromFreeMonths: before.freeMonths,
+          toFreeMonths: input.grant.freeMonths,
+        });
+        return true;
       });
-      if (count === 0) await refusal(input.id, "Only a pending grant can be changed");
-      await record(context.actor.userId, "updated", input.id);
+      if (!changed) await refusal(input.id, "Only a pending grant can be changed");
       return { ok: true as const };
     }),
 
     delete: admin.dozoAdmin.accessGrants.delete.handler(async ({ context, input }) => {
-      const { count } = await prisma.accessGrant.deleteMany({
-        where: { id: input.id, ...UNCLAIMED },
+      const unclaimed = { id: input.id, ...UNCLAIMED };
+      const deleted = await prisma.$transaction(async (tx) => {
+        const before = await tx.accessGrant.findFirst({
+          where: unclaimed,
+          select: { ...GRANT_VALUES, revokedAt: true },
+        });
+        if (!before) return false;
+        const { count } = await tx.accessGrant.deleteMany({ where: unclaimed });
+        if (count === 0) return false;
+        await recordAdminChange(tx, context.actor.userId, {
+          setting: "access_grant",
+          change: "deleted",
+          grant: input.id,
+          status: before.revokedAt ? "revoked" : "pending",
+          address: addressFingerprint(before.email),
+          creditCents: before.creditCents,
+          freeMonths: before.freeMonths,
+        });
+        return true;
       });
-      if (count === 0) await refusal(input.id, "A received grant cannot be deleted");
-      await record(context.actor.userId, "deleted", input.id);
+      if (!deleted) await refusal(input.id, "A received grant cannot be deleted");
       return { ok: true as const };
     }),
   };
