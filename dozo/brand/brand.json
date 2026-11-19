@@ -395,6 +395,30 @@
   ],
   "anchored": [
     {
+      "file": "packages/contracts/src/model-roles.ts",
+      "find": "export const ModelRoleSchema = z.enum([\"main\", \"approval\", \"computer\"]);",
+      "replace": "export const ModelRoleSchema = z.enum([\"main\", \"approval\", \"computer\", \"compaction\"]);",
+      "reason": "a role for the model that writes history summaries, so they can run on a cheaper model; without a choice the thread's model writes them as before"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactHistory }",
+      "replace": "import type { ExpoPushProvider } from \"./expo-push.js\";\nimport { compactionModelResolver } from \"./dozo-compaction-model.js\";\nimport { compactHistory }",
+      "requires": [
+        "packages/adapters/src/dozo-compaction-model.ts"
+      ],
+      "reason": "import of the fork's summary model resolver, used by the rule below"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),",
+      "replace": "          ...(deps.executor.resolveModel\n            ? {\n                resolveModel: compactionModelResolver(deps.prisma, {\n                  resolveModel: deps.executor.resolveModel,\n                  resolveConnectedModel: deps.executor.resolveConnectedModel,\n                }),\n              }\n            : {}),",
+      "requires": [
+        "packages/adapters/src/dozo-compaction-model.ts"
+      ],
+      "reason": "history summaries use the compaction role's model when the member chose one, else the thread's model as before"
+    },
+    {
       "file": "packages/adapters/src/builtin-tool-bridge.ts",
       "find": "  \"reflect_memory\",\n  \"schedule_create\",\n  \"schedule_list\",\n  \"search_history\",",
       "replace": "  \"reflect_memory\",\n  \"search_history\",",
