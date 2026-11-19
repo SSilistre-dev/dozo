@@ -137,16 +137,15 @@ function SettingsForm({
   const [en, setEn] = useState(data.announcementEn);
   const [tr, setTr] = useState(data.announcementTr);
   const environmentLimit = data.environment.maxComputersPerUser;
+  // Empty follows the environment.
+  const maxComputersPerUser = limit.trim() === "" ? null : Number(limit);
+  // Only what this admin edited, so a save never puts back what another admin changed meanwhile.
   const input: DozoSiteSettingsChange = {
-    // Empty follows the environment.
-    maxComputersPerUser: limit.trim() === "" ? null : Number(limit),
-    announcementEn: en,
-    announcementTr: tr,
+    ...(maxComputersPerUser !== data.maxComputersPerUser ? { maxComputersPerUser } : {}),
+    ...(en !== data.announcementEn ? { announcementEn: en } : {}),
+    ...(tr !== data.announcementTr ? { announcementTr: tr } : {}),
   };
-  const dirty =
-    input.maxComputersPerUser !== data.maxComputersPerUser ||
-    en !== data.announcementEn ||
-    tr !== data.announcementTr;
+  const dirty = Object.keys(input).length > 0;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSave(input);

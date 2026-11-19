@@ -198,6 +198,14 @@ it("saves the cap and the announcement together; an empty cap follows the enviro
   expect(button("Save")).toBeUndefined();
 });
 
+it("sends only what was edited, so another admin's change to the rest stays", async () => {
+  api.get.mockResolvedValue({ ...settings, maxComputersPerUser: 2, announcementEn: "Old" });
+  await open();
+  await type("Announcement in Turkish", "Bakım");
+  await act(async () => button("Save")?.click());
+  expect(api.update).toHaveBeenCalledWith({ announcementTr: "Bakım" });
+});
+
 it("shows the memory budget read only, and a cap of none as no limit", async () => {
   api.get.mockResolvedValue({
     ...settings,

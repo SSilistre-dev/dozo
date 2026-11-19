@@ -1,10 +1,13 @@
 import { createRouterClient } from "@orpc/server";
+import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
-import type * as Db from "@rakazo/db";
-import { recordSecurityEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { dozoAdminWiring } from "./dozo-admin.js";
-import { dozoSiteSettingsRoutes } from "./dozo-admin-settings.js";
+import {
+  DOZO_SITE_CHANGED,
+  dozoSiteChanges,
+  dozoSiteSettingsRoutes,
+} from "./dozo-admin-settings.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
@@ -18,19 +21,19 @@ vi.mock("@rakazo/adapters", async (original) => {
       kind === "memory-host" ? { memory: host.memory } : real.sandboxKindCapabilities(kind),
   };
 });
-vi.mock("@rakazo/db", async (original) => ({
-  ...(await original<typeof Db>()),
-  recordSecurityEvent: vi.fn(async () => undefined),
-}));
 
 const users = [
   { id: "admin", email: "owner@example.test", emailVerified: true },
   { id: "ada", email: "ada@example.test", emailVerified: true },
 ];
 
-/** One database: the settings' row, read and written with the SQL the db package sends. */
+/**
+ * One database: the settings' row and the security events, read and written with the SQL and
+ * calls the db package sends. A transaction commits both or neither.
+ */
 function database() {
   let row: Record<string, unknown> | undefined;
+  const events: Record<string, unknown>[] = [];
   const sql = (strings: TemplateStringsArray) => strings.join("?");
   const prisma = {
     user: {
@@ -49,13 +52,33 @@ function database() {
       }
       return 1;
     }),
-    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work(prisma)),
+    securityEvent: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        events.push(data);
+        return data;
+      }),
+    },
+    $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => {
+      const [rowBefore, eventsBefore] = [row, events.length];
+      try {
+        return await work(prisma);
+      } catch (error) {
+        row = rowBefore;
+        events.length = eventsBefore;
+        throw error;
+      }
+    }),
+    events,
   };
   return prisma;
 }
 
 /** One API instance over `prisma`, as it is wired in the server. */
-function instance(prisma: ReturnType<typeof database>, more: Partial<RouterDeps> = {}) {
+function instance(
+  prisma: ReturnType<typeof database>,
+  more: Partial<RouterDeps> = {},
+  realtime?: RealtimeFanout,
+) {
   const deps = {
     prisma,
     env: { adminEmails: ["owner@example.test"] },
@@ -64,6 +87,7 @@ function instance(prisma: ReturnType<typeof database>, more: Partial<RouterDeps>
       directoryProvisioning: false,
       signupsEnabled: "false",
       auth: {} as never,
+      ...(realtime ? { realtime } : {}),
     }),
     ...more,
   } as unknown as RouterDeps;
@@ -77,7 +101,6 @@ function instance(prisma: ReturnType<typeof database>, more: Partial<RouterDeps>
 }
 
 beforeEach(() => {
-  vi.mocked(recordSecurityEvent).mockClear();
   host.memory.mockReset();
   vi.unstubAllEnvs();
 });
@@ -92,7 +115,7 @@ describe("who may read and change the site settings", () => {
     await expect(as("nobody").get()).rejects.toMatchObject(refused);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(recordSecurityEvent).not.toHaveBeenCalled();
+    expect(prisma.events).toEqual([]);
   });
 
   it("shows everyone signed in the announcement, and nothing else", async () => {
@@ -153,6 +176,13 @@ describe("the settings", () => {
   it.each([
     ["an announcement over 200 characters", { announcementEn: "x".repeat(201) }],
     ["an announcement of two lines", { announcementTr: "one\ntwo" }],
+    ["a tab", { announcementEn: "a\tb" }],
+    ["a line separator", { announcementEn: "a\u2028b" }],
+    ["a paragraph separator", { announcementEn: "a\u2029b" }],
+    ["a right-to-left override", { announcementEn: "pay \u202Eexe.txt" }],
+    ["a bidirectional isolate", { announcementTr: "a\u2066b\u2069" }],
+    ["a zero-width space", { announcementEn: "a\u200Bb" }],
+    ["a byte order mark", { announcementEn: "h\uFEFFi" }],
     ["a negative cap", { maxComputersPerUser: -1 }],
     ["a cap that is not whole", { maxComputersPerUser: 1.5 }],
     ["a cap over 1000", { maxComputersPerUser: 1001 }],
@@ -163,7 +193,7 @@ describe("the settings", () => {
       code: "BAD_REQUEST",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(recordSecurityEvent).not.toHaveBeenCalled();
+    expect(prisma.events).toEqual([]);
   });
 
   it("store an announcement trimmed, and an empty one as none", async () => {
@@ -176,29 +206,89 @@ describe("the settings", () => {
   });
 });
 
+const audited = (prisma: ReturnType<typeof database>) =>
+  prisma.events.map((event) => ({ userId: event.userId, metadata: event.metadata }));
+
 describe("the audit trail", () => {
   it("records each change: who, which setting, from and to", async () => {
-    const as = instance(database())("admin");
+    const prisma = database();
+    const as = instance(prisma)("admin");
     await as.update({ signupsOpen: false, announcementEn: "Hi" });
     await as.update({ signupsOpen: true, announcementEn: "Hi" });
-    expect(vi.mocked(recordSecurityEvent).mock.calls.map(([event]) => event)).toEqual([
-      {
-        type: "deployment.settings.changed",
-        userId: "admin",
-        metadata: { setting: "signupsOpen", from: null, to: false },
-      },
-      {
-        type: "deployment.settings.changed",
-        userId: "admin",
-        metadata: { setting: "announcementEn", from: null, to: "Hi" },
-      },
+    expect(prisma.events.every((event) => event.type === "deployment.settings.changed")).toBe(true);
+    expect(audited(prisma)).toEqual([
+      { userId: "admin", metadata: { setting: "signupsOpen", from: null, to: false } },
+      { userId: "admin", metadata: { setting: "announcementEn", from: null, to: "Hi" } },
       // The unchanged announcement is not recorded again.
-      {
-        type: "deployment.settings.changed",
-        userId: "admin",
-        metadata: { setting: "signupsOpen", from: false, to: true },
-      },
+      { userId: "admin", metadata: { setting: "signupsOpen", from: false, to: true } },
     ]);
+  });
+
+  it("keeps no change whose record cannot be written, and tells nobody", async () => {
+    const prisma = database();
+    const realtime = fanout();
+    const as = instance(prisma, {}, realtime)("admin");
+    prisma.securityEvent.create.mockRejectedValueOnce(new Error("security_events is down"));
+    await expect(as.update({ signupsOpen: true })).rejects.toBeTruthy();
+    expect((await as.get()).signupsOpen).toBeNull();
+    expect(realtime.publish).not.toHaveBeenCalled();
+  });
+});
+
+/** A fanout with one process's subscribers. */
+function fanout() {
+  const listeners = new Map<string, Set<(payload: string) => void>>();
+  return {
+    describe: () => ({ id: "memory", capabilities: { distributed: false, push: true } }),
+    publish: vi.fn(async (topic: string, payload: string) => {
+      for (const listener of listeners.get(topic) ?? []) listener(payload);
+    }),
+    subscribe: vi.fn(async (topic: string, onMessage: (payload: string) => void) => {
+      const set = listeners.get(topic) ?? new Set();
+      set.add(onMessage);
+      listeners.set(topic, set);
+      return async () => {
+        set.delete(onMessage);
+      };
+    }),
+    close: vi.fn(async () => undefined),
+  } as unknown as RealtimeFanout & {
+    publish: ReturnType<typeof vi.fn>;
+    subscribe: ReturnType<typeof vi.fn>;
+  };
+}
+
+describe("the live stream", () => {
+  it("signals open apps after a change commits, and not after a save that changed nothing", async () => {
+    const realtime = fanout();
+    const as = instance(database(), {}, realtime)("admin");
+    const deps = { dozoAdmin: { realtime } } as unknown as RouterDeps;
+    const controller = new AbortController();
+    const stream = dozoSiteChanges(deps, controller.signal);
+    // One signal when the stream opens: the reconnect is the catch-up.
+    expect((await stream.next()).value).toBe(DOZO_SITE_CHANGED);
+    await as.update({ announcementEn: "Back at 10:00" });
+    expect(realtime.publish).toHaveBeenCalledWith(expect.any(String), "");
+    expect((await stream.next()).value).toBe(DOZO_SITE_CHANGED);
+    realtime.publish.mockClear();
+    await as.update({ announcementEn: "Back at 10:00" });
+    expect(realtime.publish).not.toHaveBeenCalled();
+    controller.abort();
+    expect((await stream.next()).done).toBe(true);
+  });
+
+  it("carries nothing without a fanout, and ends the stream when following fails", async () => {
+    const quiet = dozoSiteChanges({} as RouterDeps, new AbortController().signal);
+    expect((await quiet.next()).done).toBe(true);
+    const realtime = fanout();
+    realtime.subscribe.mockRejectedValue(new Error("listener down"));
+    const controller = new AbortController();
+    controller.abort();
+    const failing = dozoSiteChanges(
+      { dozoAdmin: { realtime } } as unknown as RouterDeps,
+      controller.signal,
+    );
+    await expect(failing.next()).rejects.toBeTruthy();
   });
 });
 

@@ -2,7 +2,17 @@ import { useLingui } from "@lingui/react/macro";
 import type { DozoAnnouncement as Announcement } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
-import { useSpaceQueries } from "../lib/query";
+import { queryClient, useSpaceQueries } from "../lib/query";
+
+/**
+ * The live stream's site-settings signal: whatever shows a site setting reads it again. Only
+ * mounted screens refetch.
+ */
+export function dozoSiteChanged(client = queryClient): Promise<void> {
+  return client.invalidateQueries({
+    predicate: ({ queryKey: [path] }) => Array.isArray(path) && path.at(-2) === "dozoSiteSettings",
+  });
+}
 
 /** The text in the app's language, else the one there is. */
 export function announcementText(announcement: Announcement | undefined, locale: string) {
@@ -26,7 +36,8 @@ export function DozoAnnouncementLayout() {
 
 export function DozoAnnouncement() {
   const { i18n } = useLingui();
-  // Read once, and again whenever the window comes back: nothing here is polled.
+  // Read once, then again on the live stream's signal (it also signals on every reconnect) and
+  // when the window comes back: nothing here is polled.
   const announcement = useQuery({
     ...useSpaceQueries().dozoSiteSettings.announcement.queryOptions(),
     refetchOnWindowFocus: "always",

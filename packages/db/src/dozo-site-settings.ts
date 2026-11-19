@@ -1,6 +1,12 @@
+import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { signupPolicyFromEnv, signupsOpen } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
 import { resolveMaxComputersPerUser } from "./computers.js";
+import { retryWhileDatabaseUnavailable } from "./database-outage.js";
+import { ChangeLatch } from "./event-stream.js";
+import { runAsSystemInTransaction } from "./row-security.js";
+import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
 
 type Read = Pick<PrismaClient, "$queryRaw">;
 type Write = Pick<PrismaClient, "$transaction">;
@@ -62,7 +68,9 @@ export async function readSiteSettings(db: Read): Promise<DozoSiteSettings> {
 
 /**
  * Sets the settings `change` names (null returns one to the environment) and answers what they were
- * and are, both read under the row's lock, so two admins saving at once each see the other's.
+ * and are, both read under the row's lock, so two admins saving at once each see the other's. Each
+ * setting that changed is recorded as a `deployment.settings.changed` security event (who, which,
+ * from and to) in the same transaction: a change is never left without its record.
  */
 export async function changeSiteSettings(
   db: Write,
@@ -88,6 +96,22 @@ export async function changeSiteSettings(
         "updatedByUserId" = ${byUserId},
         "updatedAt" = CURRENT_TIMESTAMP
       WHERE "id" = 'default'`;
+    const caller = securityRequestCaller();
+    for (const key of DOZO_SITE_SETTING_KEYS) {
+      if (before[key] === after[key]) continue;
+      // The table is only ever read as system, whoever's request writes it.
+      await runAsSystemInTransaction(tx, "record a site settings change", () =>
+        tx.securityEvent.create({
+          data: {
+            type: "deployment.settings.changed",
+            userId: byUserId,
+            ip: caller?.ip?.slice(0, 64) ?? null,
+            userAgent: caller?.userAgent?.slice(0, 512) ?? null,
+            metadata: securityEventMetadata({ setting: key, from: before[key], to: after[key] }),
+          },
+        }),
+      );
+    }
     return { before, after };
   });
 }
@@ -120,4 +144,47 @@ export async function siteMaxComputersPerUser(db: object): Promise<number> {
       ? (await readSiteSettings(db as Read)).maxComputersPerUser
       : null;
   return stored ?? resolveMaxComputersPerUser();
+}
+
+const SITE_CHANGES_TOPIC = "dozo-site-changes";
+const PUBLISH_RETRY_MS = 15_000;
+const IDLE_WAIT_MS = 60_000;
+
+/**
+ * Tells every open app that the site settings changed, with no content: each re-reads what it
+ * shows through its own authorized call. Call it after the change commits. It rides out a short
+ * database outage in the background and gives up after that; apps catch up when their stream
+ * reopens.
+ */
+export function publishSiteChange(realtime: RealtimeFanout | undefined): void {
+  if (!realtime) return;
+  void retryWhileDatabaseUnavailable(() => realtime.publish(SITE_CHANGES_TOPIC, ""), {
+    source: "site settings signal",
+    waitMs: PUBLISH_RETRY_MS,
+  }).catch((error: unknown) => getLogger().warn("site settings signal not published", { error }));
+}
+
+/** Yields once when following starts, then once for each change; a burst becomes one. */
+export async function* followSiteChanges(
+  realtime: RealtimeFanout,
+  signal?: AbortSignal,
+): AsyncGenerator<void> {
+  const latch = new ChangeLatch();
+  let pending = true;
+  const unsubscribe = await realtime.subscribe(SITE_CHANGES_TOPIC, () => {
+    pending = true;
+    latch.notify();
+  });
+  try {
+    while (!signal?.aborted) {
+      const seen = latch.generation;
+      if (pending) {
+        pending = false;
+        yield;
+      }
+      await latch.waitForChange(seen, IDLE_WAIT_MS, signal);
+    }
+  } finally {
+    await unsubscribe();
+  }
 }

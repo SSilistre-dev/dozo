@@ -785,6 +785,60 @@
       "reason": "site settings: the app shows the admin's announcement as one line below every signed-in page"
     },
     {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "import { requireAdmin } from \"../admins.js\";\nimport { aiConsentStatus",
+      "replace": "import { requireAdmin } from \"../admins.js\";\nimport { DOZO_SITE_CHANGED, dozoSiteChanges } from \"../dozo-admin-settings.js\";\nimport { aiConsentStatus",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "            spaceChanges(signal),\n          ),\n        );",
+      "replace": "            spaceChanges(signal),\n            dozoSiteChanges(deps, signal),\n          ),\n        );",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "          if (next === HEARTBEAT) yield { type: \"heartbeat\" as const };\n          else if (next === ROSTER_CHANGED)",
+      "replace": "          if (next === HEARTBEAT) yield { type: \"heartbeat\" as const };\n          else if (next === DOZO_SITE_CHANGED) yield { type: \"site\" as const };\n          else if (next === ROSTER_CHANGED)",
+      "requires": [
+        "apps/api/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "type: z.enum([\"alert\", \"roster\", ...SpaceChangeKind.options, \"heartbeat\"]),",
+      "replace": "type: z.enum([\"alert\", \"roster\", ...SpaceChangeKind.options, \"site\", \"heartbeat\"]),",
+      "requires": [
+        "packages/contracts/src/dozo-admin-settings.ts"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "import { followStream } from \"../../lib/follow-stream\";\nimport { notificationIcon",
+      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { notificationIcon",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "requires": [
+        "apps/web/src/components/dozo-announcement.tsx"
+      ],
+      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+    },
+    {
       "file": "infra/sandboxes/computer/Dockerfile",
       "find": "groupadd --gid 1000 rakazo",
       "replace": "groupadd --gid 1000 dozo",
@@ -1045,7 +1099,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  const router = createRouter({\n    speechSummary:",
-      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n    }),\n    speechSummary:",
+      "replace": "  const router = createRouter({\n    ...dozoAdminWiring({\n      devices: deviceSessions,\n      directoryProvisioning: Boolean(env.scimBearerToken),\n      signupsEnabled: env.signupsEnabled,\n      auth,\n      realtime,\n    }),\n    speechSummary:",
       "requires": [
         "apps/api/src/dozo-admin.ts"
       ],

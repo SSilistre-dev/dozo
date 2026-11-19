@@ -1,4 +1,5 @@
 import { createRouterClient } from "@orpc/server";
+import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { sandboxKindCapabilities, sandboxKindsWhere } from "@rakazo/adapters";
 import type { AccountDeletionAuth } from "@rakazo/auth";
 import {
@@ -67,6 +68,8 @@ export interface DozoAdminWiring {
   signupsEnabled: string | undefined;
   /** The server's auth, whose account deletion the admin page runs for someone else. */
   auth: AccountDeletionAuth;
+  /** The fanout that tells open apps a site setting changed; absent, nobody is told. */
+  realtime?: RealtimeFanout;
 }
 
 /** Spread into the router's dependencies where the server builds them. */

@@ -24,7 +24,7 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 import type * as Query from "../lib/query";
-import { announcementText, DozoAnnouncementLayout } from "./dozo-announcement";
+import { announcementText, DozoAnnouncementLayout, dozoSiteChanged } from "./dozo-announcement";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -80,6 +80,21 @@ describe("the announcement band", () => {
     await vi.waitFor(() => expect(api.announcement).toHaveBeenCalled());
     expect(band()).toBeNull();
     expect(container.querySelector("main")?.textContent).toBe("App");
+  });
+});
+
+describe("the live stream's signal", () => {
+  it("reads the site settings again, and nothing else", async () => {
+    const client = new QueryClient();
+    const keys = [
+      [["user-1", "space-1", "dozoSiteSettings", "announcement"], { type: "query" }],
+      [["user-1", "space-1", "dozoSiteSettings", "get"], { type: "query" }],
+      [["user-1", "space-1", "runs", "list"], { type: "query" }],
+    ];
+    for (const key of keys) client.setQueryData(key, "cached");
+    await dozoSiteChanged(client);
+    const stale = keys.map((key) => client.getQueryState(key)?.isInvalidated);
+    expect(stale).toEqual([true, true, false]);
   });
 });
 
