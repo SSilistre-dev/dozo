@@ -4249,6 +4249,51 @@
         "apps/web/src/pages/shell/dozo-site-sessions.tsx"
       ],
       "reason": "site sessions: the computer's header opens the bot's signed-in sites: sign in to one with control, or sign out of one or all"
+    },
+    {
+      "file": "apps/web/src/pages/shell/message-view.tsx",
+      "find": "import { SkillDraftCard } from \"../../components/teach/SkillDraftCard\";",
+      "replace": "import { SkillDraftCard } from \"../../components/teach/dozo-skill-draft-card\";",
+      "requires": [
+        "apps/web/src/components/teach/dozo-skill-draft-card.tsx"
+      ],
+      "reason": "teaching: the draft card shows the teacher each value typed while teaching, to keep as an input, keep as typed or drop, and saves or tests with those decisions"
+    },
+    {
+      "file": "apps/web/src/pages/shell/computer-overlay.tsx",
+      "find": "import { TeachComputerOverlayControl } from \"../../components/teach/TeachComputerOverlay\";",
+      "replace": "import { TeachComputerOverlayControl } from \"../../components/teach/dozo-teach-computer-overlay\";",
+      "requires": [
+        "apps/web/src/components/teach/dozo-teach-computer-overlay.tsx"
+      ],
+      "reason": "teaching: a plan with no computer shows no Teach control in the computer header"
+    },
+    {
+      "file": "apps/web/src/pages/shell/computer-overlay.tsx",
+      "find": "import { TeachCaptureOverlay } from \"../../components/teach/TeachCaptureOverlay\";",
+      "replace": "import { TeachCaptureOverlay } from \"../../components/teach/dozo-teach-capture-overlay\";",
+      "requires": [
+        "apps/web/src/components/teach/dozo-teach-capture-overlay.tsx"
+      ],
+      "reason": "teaching: clicking the bot's screen moves focus off the page control the computer window opened on, so the text typed next is recorded"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-panel.tsx",
+      "find": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { botProfilePatch }",
+      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"./dozo-bot-skills-section\";\nimport { botProfilePatch }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-bot-skills-section.tsx"
+      ],
+      "reason": "teaching: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-panel.tsx",
+      "find": "          ) : null}\n          <PagesList botId={bot.id} preview={{ onOpenAll: () => onViewChange?.(\"pages\") }} />",
+      "replace": "          ) : null}\n          <DozoBotSkillsSection bot={bot} computer={computer} />\n          <PagesList botId={bot.id} preview={{ onOpenAll: () => onViewChange?.(\"pages\") }} />",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-bot-skills-section.tsx"
+      ],
+      "reason": "teaching: the bot panel lists the bot's saved taught skills after Routines and starts teaching from there, one click from the chat instead of five"
     }
   ],
   "assets": {
