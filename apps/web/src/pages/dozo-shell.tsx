@@ -1,6 +1,8 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BillingStatus } from "@rakazo/contracts";
-import { useEffect, useRef } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Navigate, useLocation, useSearchParams } from "react-router-dom";
+import { PageLoading } from "../components/PageLoading";
 import { authClient } from "../lib/auth";
 import {
   bindPlanIntent,
@@ -21,13 +23,20 @@ import { ShellPage as UpstreamShellPage } from "./Shell";
  * - A checkout left without paying returns with `?billing=canceled`; Billing opens again, as it was,
  *   with no error, and the parameter leaves the address.
  *
- * The shell keeps its overlay in the address (`?settings=billing`) and its own route repairs keep
- * it, so this only writes that.
+ * Billing is an overlay the shell keeps in its address (`?settings=billing`). The shell repairs a
+ * bare `/app` to a chat as soon as its first load answers, building that address from the
+ * parameters it last rendered, so an overlay written after it mounts is lost (or lands on the
+ * address it just left). So the overlay is decided and written before the shell mounts: the shell
+ * starts with Billing open, and its own repairs keep it.
  */
 export function ShellPage() {
-  useBillingOffer();
-  return <UpstreamShellPage />;
+  const { ready, redirect } = useBillingOffer();
+  if (redirect) return <Navigate to={redirect} replace />;
+  return ready ? <UpstreamShellPage /> : <PageLoading />;
 }
+
+/** How long the app waits for the server before it opens without offering the pick. */
+export const OFFER_CHECK_MS = 4000;
 
 /** Billing would show the paid plans to buy: Free, owned by this member, no granted plan. */
 function offersPaidPlans(status: BillingStatus): boolean {
@@ -39,31 +48,36 @@ function offersPaidPlans(status: BillingStatus): boolean {
   );
 }
 
-export function useBillingOffer() {
-  const [params, setParams] = useSearchParams();
+/**
+ * `ready` once the shell may mount; `redirect`, the same address with Billing open, until the
+ * address has it.
+ */
+export function useBillingOffer(): { ready: boolean; redirect?: string } {
+  const [params] = useSearchParams();
+  const { pathname } = useLocation();
   const userId = authClient.useSession().data?.user.id;
   const canceled = params.get("billing") === "canceled";
   const billingOpen = params.get("settings") === "billing";
-  // "checking" while the server is asked, "asked" once Billing is requested, "shown" once the
-  // address has it open.
-  const offer = useRef<"none" | "checking" | "asked" | "shown">("none");
-  const openBilling = useRef(() => {});
-  openBilling.current = () => {
-    offer.current = "asked";
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        next.delete("billing");
-        next.set("settings", "billing");
-        return next;
-      },
-      { replace: true },
-    );
+  // "asked" once Billing is requested, "shown" once the address has it open.
+  const offer = useRef<"none" | "asked" | "shown">("none");
+  // A pick to check before the shell mounts, claimed for this account on the first render.
+  const [checking, setChecking] = useState(() => Boolean(userId && bindPlanIntent(userId)));
+  const [opening, setOpening] = useState(false);
+  const settle = (answer: "offer" | "drop" | "wait") => {
+    if (answer === "drop") clearPlanIntent();
+    if (answer === "offer") {
+      offer.current = "asked";
+      setOpening(true);
+    }
+    setChecking(false);
   };
+  const settleRef = useRef(settle);
+  settleRef.current = settle;
+  // A slow server must not hold the app: it opens, and the pick waits for the next time.
+  useTimeout(() => settleRef.current("wait"), checking ? OFFER_CHECK_MS : null);
 
   useEffect(() => {
-    if (!userId || offer.current !== "none" || !bindPlanIntent(userId)) return;
-    offer.current = "checking";
+    if (!checking) return;
     let active = true;
     void rpc
       .me()
@@ -73,22 +87,20 @@ export function useBillingOffer() {
       // Unknown is not Free: nothing opens, and the pick waits for the next time the app opens.
       .catch(() => "wait" as const)
       .then((answer) => {
-        if (!active) return;
-        if (answer === "drop") clearPlanIntent();
-        // A checkout left unpaid may have opened Billing meanwhile; that offer stands as it is.
-        if (offer.current !== "checking") return;
-        if (answer === "offer") return openBilling.current();
-        offer.current = "none";
+        if (active) settleRef.current(answer);
       });
     return () => {
       active = false;
-      if (offer.current === "checking") offer.current = "none";
     };
-  }, [userId]);
+  }, [checking]);
 
   useEffect(() => {
-    if (canceled) return openBilling.current();
+    if (canceled) {
+      offer.current = "asked";
+      return;
+    }
     if (billingOpen) {
+      setOpening(false);
       if (offer.current === "asked") offer.current = "shown";
       return;
     }
@@ -97,6 +109,15 @@ export function useBillingOffer() {
       clearPlanIntent();
     }
   }, [canceled, billingOpen]);
+
+  if (checking) return { ready: false };
+  if (canceled || (opening && !billingOpen)) {
+    const next = new URLSearchParams(params);
+    next.delete("billing");
+    next.set("settings", "billing");
+    return { ready: false, redirect: `${pathname}?${next}` };
+  }
+  return { ready: true };
 }
 
 /**
