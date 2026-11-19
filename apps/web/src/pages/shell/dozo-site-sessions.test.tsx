@@ -35,6 +35,14 @@ vi.mock("../../lib/dozo-error-text", () => ({
     error instanceof Error && error.message ? error.message : fallback,
 }));
 vi.mock("../../lib/relative-time", () => ({ formatRelativeTime: () => "1h ago" }));
+// The one timer the dialog arms, run by hand.
+const timer = vi.hoisted(() => ({ fire: null as null | (() => void), ms: null as number | null }));
+vi.mock("@rakazo/chat-ui/hooks", () => ({
+  useTimeout: (callback: () => void, ms: number | null) => {
+    timer.fire = callback;
+    timer.ms = ms;
+  },
+}));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -192,7 +200,7 @@ it("reads the sites when opened and lists them with their last use", async () =>
   expect(container.textContent).toContain("alice.github.io");
   expect(container.textContent).toContain("1h ago");
   expect(container.textContent).not.toContain("stay signed in for everyone");
-  await click(container.querySelector("[data-close]"));
+  await click(labelled("Close"));
   expect(container.querySelector("[role=dialog]")).toBeNull();
 });
 
@@ -268,4 +276,29 @@ it("says why a sign-in could not take control", async () => {
   });
   await vi.waitFor(() => expect(container.textContent).toContain("Stop the bot first"));
   expect(signedIn).not.toHaveBeenCalled();
+});
+
+it("says a site just signed in to was used just now, and reads the list once more for its time", async () => {
+  await openDialog();
+  await vi.waitFor(() => expect(container.textContent).toContain("alice.github.io"));
+  expect(container.textContent).toContain("just now");
+  expect(timer.ms).toBe(35_000);
+  expect(api.list).toHaveBeenCalledTimes(1);
+  await act(async () => timer.fire?.());
+  await vi.waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+  // Once only: never a poll, even if a time is still unknown.
+  expect(timer.ms).toBeNull();
+});
+
+it("arms nothing when every time is known", async () => {
+  api.list.mockResolvedValue({ sites: [SITES.sites[0]] });
+  await openDialog();
+  await vi.waitFor(() => expect(container.textContent).toContain("example.com"));
+  expect(timer.ms).toBeNull();
+});
+
+it("closes on the dialog's own dismissal too, as Escape does", async () => {
+  await openDialog();
+  await click(container.querySelector("[data-close]"));
+  expect(container.querySelector("[role=dialog]")).toBeNull();
 });
