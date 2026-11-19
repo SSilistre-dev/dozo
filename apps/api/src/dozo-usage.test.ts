@@ -48,7 +48,11 @@ describe("the cache share", () => {
   });
 });
 
-type Billing = { status: string | null; currentPeriodStartsAt: Date | null } | null;
+type Billing = {
+  status: string | null;
+  currentPeriodStartsAt: Date | null;
+  byokInterval?: string | null;
+} | null;
 
 function periodPrisma(organization: string | null, billing: Billing) {
   return {
@@ -56,7 +60,9 @@ function periodPrisma(organization: string | null, billing: Billing) {
       findUnique: async () => (organization ? { organizationId: organization } : null),
     },
     member: { findUnique: async () => ({ role: "owner" }) },
-    billingAccount: { findUnique: async () => billing },
+    billingAccount: {
+      findUnique: async () => (billing ? { byokInterval: "month", ...billing } : null),
+    },
   } as unknown as RouterDeps["prisma"];
 }
 
@@ -68,6 +74,18 @@ describe("the period", () => {
   it("is the live subscription's billing period", async () => {
     expect(await start("org", { status: "active", currentPeriodStartsAt: SINCE })).toEqual(SINCE);
     expect(await start("org", { status: "trialing", currentPeriodStartsAt: SINCE })).toEqual(SINCE);
+  });
+
+  it("is the current month of a yearly plan, on the day its period began", async () => {
+    // A yearly plan that began on 5 March renews monthly: on 19 November its month began on 5 November.
+    const yearly = { status: "active", byokInterval: "year" };
+    const march = new Date("2026-03-05T00:00:00Z");
+    expect(await start("org", { ...yearly, currentPeriodStartsAt: march })).toEqual(SINCE);
+    // Before this month's anniversary, the month began on last month's.
+    const late = new Date("2026-02-25T00:00:00Z");
+    expect(await start("org", { ...yearly, currentPeriodStartsAt: late })).toEqual(
+      new Date("2026-10-25T00:00:00Z"),
+    );
   });
 
   it("is the calendar month in UTC otherwise", async () => {
@@ -96,7 +114,13 @@ type Row = {
 };
 
 function setup(rows: Row[]) {
-  type Where = { spaceId: string; userId: string; createdAt: { gte: Date } };
+  type Where = {
+    spaceId: string;
+    userId: string;
+    createdAt: { gte: Date };
+    inputTokens?: { not: null };
+    cacheReadTokens?: { not: null };
+  };
   const prisma = {
     space: { findUnique: async () => null },
     usageRecord: {
@@ -105,7 +129,9 @@ function setup(rows: Row[]) {
           (row) =>
             row.spaceId === where.spaceId &&
             row.userId === where.userId &&
-            row.createdAt >= where.createdAt.gte,
+            row.createdAt >= where.createdAt.gte &&
+            (!where.inputTokens || row.inputTokens !== null) &&
+            (!where.cacheReadTokens || row.cacheReadTokens !== null),
         );
         const sum = (field: "inputTokens" | "cacheReadTokens" | "cacheWriteTokens") => {
           const known = matched.map((row) => row[field]).filter((value) => value !== null);
@@ -161,6 +187,28 @@ describe("who sees the cache share", () => {
       cacheReadTokens: 300,
       cacheReadPercent: 75,
     });
+  });
+
+  it("leaves out records whose input or cache reads were not measured", async () => {
+    const { as } = setup([
+      row("space-ada", "ada", 300),
+      // Reads not measured: counting its input with no reads would lower the share.
+      row("space-ada", "ada", 0, { cacheReadTokens: null, inputTokens: 5000 }),
+      // Input not measured.
+      row("space-ada", "ada", 900, { inputTokens: null }),
+      // Writes not measured count as none.
+      row("space-ada", "ada", 100, { cacheWriteTokens: null }),
+    ]);
+    expect(await as("ada").cacheSavings()).toMatchObject({
+      inputTokens: 600,
+      cacheReadTokens: 400,
+      cacheReadPercent: 66,
+    });
+  });
+
+  it("is nothing when no record was measured", async () => {
+    const { as } = setup([row("space-ada", "ada", 0, { cacheReadTokens: null })]);
+    expect(await as("ada").cacheSavings()).toBeNull();
   });
 
   it("gives nothing to someone with no usage, however much others have", async () => {

@@ -4,10 +4,11 @@ import { IsoDate } from "./ids.js";
 
 /**
  * How much of the caller's model input this period was read back from a provider's prompt cache.
- * Input counts every input token: uncached, read from the cache and written to it.
+ * Input counts every input token: uncached, read from the cache and written to it. Records
+ * without a measured input or cache read count are left out.
  */
 export const DozoCacheSavingsSchema = z.object({
-  /** The start of the period: the live subscription's billing period, else the UTC month. */
+  /** The start of the period: the current month of the live billing period, else the UTC month. */
   since: IsoDate,
   inputTokens: z.number().int().positive(),
   cacheReadTokens: z.number().int().nonnegative(),
