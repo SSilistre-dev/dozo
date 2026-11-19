@@ -1784,12 +1784,6 @@
     },
     {
       "file": "apps/api/src/plugin-submissions.ts",
-      "find": "return c.redirect(`${integrationPageUrl(row.claim)}claim/?expired`, 303);",
-      "replace": "return c.redirect(new URL(integrationPageUrl(row.claim), deps.webOrigin).href, 303);",
-      "reason": "an expired claim link opens the app's integrations view; Dozo has no public claim page"
-    },
-    {
-      "file": "apps/api/src/plugin-submissions.ts",
       "find": "return c.redirect(`${integrationPageUrl(row.claim)}claim/?confirmed`, 303);",
       "replace": "return c.redirect(new URL(integrationPageUrl(row.claim), deps.webOrigin).href, 303);",
       "reason": "a confirmed claim opens the app's integrations view; Dozo has no public claim page"
@@ -1835,6 +1829,24 @@
       "find": "headers.set(\"HTTP-Referer\", \"https://rakazo.com\");",
       "replace": "headers.set(\"HTTP-Referer\", \"https://dozo-site.ssilistre.dev\");",
       "reason": "the app's public site, sent as the referer to the model provider"
+    },
+    {
+      "file": "packages/core/src/self-update.ts",
+      "find": "export function isOfficialRepoUrl(url: string): boolean {\n  const identity = repoIdentity(url);\n  return identity !== null && identity === repoIdentity(OFFICIAL_REPO_URL);\n}",
+      "replace": "// Dozo publishes no server image yet, and the published image name is still upstream's: no\n// repository counts as official, so an update builds the deployment's own checkout instead of\n// pulling upstream's image.\nexport function isOfficialRepoUrl(_url: string): boolean {\n  return false;\n}",
+      "reason": "until Dozo publishes its own images, its repository must not select the pull strategy, which would download upstream's unbranded image"
+    },
+    {
+      "file": "packages/adapters/src/run-instructions.prompt.ts",
+      "find": "    parts.agentSkillsLine &&\n      offeredBuiltinClause(\n        parts.disabledBuiltinTools,\n        \"skill_read\",\n        \"When asked how Rakazo or you work, or how to set something up (apps, the user's own computer, billing), read the Rakazo skill before answering or acting.\",\n      ),\n    parts.taughtSkillsLine,\n",
+      "replace": "    parts.taughtSkillsLine,\n",
+      "reason": "the product-docs skill it points at is removed (builtin-skills.prompt.ts rules), so the instruction would send the model to a skill that does not exist"
+    },
+    {
+      "file": "apps/api/src/plugin-submissions.ts",
+      "find": "return c.redirect(`${integrationPageUrl(row.claim)}claim/?expired`, 303);",
+      "replace": "return c.text(\"This link was already used or is invalid.\", 404);",
+      "reason": "an expired claim link gets the API's existing answer for a link that no longer works; Dozo has no public claim page to send it to"
     }
   ],
   "assets": {
@@ -1846,7 +1858,6 @@
     "apps/web/public/apple-touch-icon.png": "web/apple-touch-icon.png",
     "apps/web/public/icon-192.png": "web/icon-192.png",
     "apps/web/public/icon-512.png": "web/icon-512.png",
-    "apps/web/public/email/welcome.png": "mail/welcome.png",
     "apps/desktop/assets/icon.png": "desktop/icon.png",
     "apps/desktop/assets/icon-macos.png": "desktop/icon-macos.png",
     "apps/desktop/assets/icon.ico": "desktop/icon.ico",

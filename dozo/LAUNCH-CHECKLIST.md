@@ -37,10 +37,9 @@ stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder add
       a packaged build). Still open: look at them in a real macOS build (Xcode 26 compiles the bundle),
       an Android launcher with themed icons and the iOS widget; and whether the in-app bot avatars should
       be redrawn from the approved mark. Do not reuse upstream's logo or mascot.
-- [ ] **Welcome-mail hero image** (can follow). Made and wired: `dozo/brand/assets/mail/welcome.png`,
-      served by the web app at `/email/welcome.png` and linked under the domain you set in `urls`. Open:
-      the domain must reach the web app (otherwise host the file there), and a look at the real mail in
-      a light and a dark client.
+- [ ] **Welcome-mail hero image** (can follow). The mail goes without one: the art is in
+      `dozo/brand/assets/mail/welcome.png`, but nothing hosts it on the landing site. To use it, host it
+      there and add an anchored rule linking it.
 - [ ] **Privacy policy, terms and refund pages** (blocks launch: awaiting a lawyer's review). Written
       and linked: `dozo/landing/privacy/`, `terms/` and `refunds/`, in English and Turkish, and two
       rules in `dozo/brand/brand.json` point the app's privacy and terms links at them (upstream's

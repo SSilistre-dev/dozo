@@ -125,7 +125,7 @@ an empty `replace` or one that contains its `find`.
   redirects to `dozo-*` wrappers.
 - Add an asset: `"assets": { "apps/web/public/favicon.png": "web/favicon.png" }` copies
   `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons, `favicon.svg`, the desktop and
-  mobile icon, splash and widget images, the Icon Composer layer and the welcome-mail hero are mapped
+  mobile icon, splash and widget images and the Icon Composer layer are mapped
   (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule; the table is in
   `assets/README.md`). One source may feed several targets (the mobile favicon is the web one).
 
@@ -262,8 +262,13 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
   and its fetch list, the error help link, "Submit a plugin" (web and mobile), "Get the mobile app",
   the GitHub star prompt, and the welcome mail's store, Linux, Discord and GitHub-star links and its
   hero image. A claimed integration and its confirmation link open the app's integrations view; the
-  in-app store fallback opens the landing page. The welcome mail links only the desktop release files
-  the landing page links. `assets/mail/welcome.png` is still mapped but no mail uses it.
+  in-app store fallback opens the landing page (it has no download anchor to point at). An expired
+  claim link gets the API's existing "already used or invalid" answer. The welcome mail links only
+  the desktop release files the landing page links. `assets/mail/welcome.png` is kept as artwork but
+  no longer mapped.
+- Self-update: no repository counts as official (anchored rule in `packages/core/src/self-update.ts`,
+  held by `dozo-self-update.test.ts`), so an update builds the deployment's checkout and never pulls
+  upstream's image. Undo the rule once Dozo publishes its own images under its name.
 - `placeholders` (`dozo.example`, `OWNER/`): an address that does not exist. Any left in a branded
   file fails `apply` (so `make olc` and every stage) and the leak gate, naming file and line. Point a
   new upstream link at a real address with an anchored rule, or drop it.

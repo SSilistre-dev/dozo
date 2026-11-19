@@ -49,7 +49,6 @@ PNG/ICO are generated, do not edit by hand.
 | `apps/mobile/assets/favicon.png` | `web/favicon.png` | 128, RGBA | the web 128 px tile (same file) |
 | `apps/mobile/ios-widgets/.../app-mark.png` | `mobile/app-mark.png` | 180, RGB | `app-icon-fullbleed.svg` (the widget rounds it) |
 | `packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png` | `shared/icon-layer.png` | 1024, RGBA | `icon-layer.svg`: the mark alone, centred, on transparent. iOS and macOS Tahoe icons use it over the system-dark plate (`icon.json`); an anchored rule moves the layer from 90 points low to centred |
-| `apps/web/public/email/welcome.png` (new) | `mail/welcome.png` | 1040x546, RGB | `welcome-hero.svg`: lockup over the six avatar heads, one ink, one red; the web app serves it and the welcome mail links it |
 
 The notification and monochrome files carry only an alpha shape; their colour is not read.
 
