@@ -36,4 +36,11 @@ export const DOZO_ADMIN_NAV: readonly DozoAdminSection[] = [
       import("./dozo-admin-billing").then((module) => module.DozoAdminBilling),
     ),
   },
+  {
+    path: "funnel",
+    label: msg`Funnel`,
+    page: lazyComponent(() =>
+      import("./dozo-admin-funnel").then((module) => module.DozoAdminFunnel),
+    ),
+  },
 ];

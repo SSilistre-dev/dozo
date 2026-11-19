@@ -30,6 +30,7 @@ import { setAccountActive } from "./account-status.js";
 import { isAdmin, requireAdmin } from "./admins.js";
 import { readAccount } from "./dozo-admin-account.js";
 import { dozoAdminBillingRoutes } from "./dozo-admin-billing.js";
+import { dozoAdminFunnelRoutes } from "./dozo-admin-funnel.js";
 import { onTier, plansOf } from "./dozo-admin-members.js";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { RouterDeps } from "./router.js";
@@ -547,6 +548,7 @@ export function dozoAdminRoutes(ctx: RouterContext) {
       }),
 
       billing: dozoAdminBillingRoutes(ctx, wiring?.payments),
+      funnel: dozoAdminFunnelRoutes(ctx),
     },
   };
 }
