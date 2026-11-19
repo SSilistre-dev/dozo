@@ -169,6 +169,15 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
     })),
   },
   {
+    id: "disk-filling",
+    kind: "short-chat",
+    // A build fills the bot computer's 40 GB disk past the 85% note, a few hundred MB per turn.
+    turns: chatTurns(4).map((turn, i) => ({
+      ...turn,
+      disk: { usedGb: 35.2 + i * 0.3, freeGb: 4.8 - i * 0.3 },
+    })),
+  },
+  {
     id: "parallel-tools",
     kind: "multi-page",
     turns: [

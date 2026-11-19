@@ -1,5 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { builtinAgentTools } from "../../../adapters/src/builtin.tool-definition.js";
+import { diskNoteInstruction } from "../../../adapters/src/computer-disk.js";
 import { formatRecalledMemory } from "../../../adapters/src/history-compaction.prompt.js";
 import { PiAgentRuntime } from "../../../adapters/src/pi-runtime.js";
 import {
@@ -17,7 +18,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-export const BENCH_VERSION = "dozo-token-bench-v2";
+export const BENCH_VERSION = "dozo-token-bench-v3";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 export const FAKE_PROVIDER = {
@@ -41,6 +42,8 @@ export type BenchTurn = {
   replies: ScriptedReply[];
   /** The order the database returns the task's records in this turn (indexes into them). */
   recordOrder?: number[];
+  /** The bot computer's disk as last measured before this turn, in GB. */
+  disk?: { usedGb: number; freeGb: number };
 };
 
 /** A saved row the server lists in the system prompt: a taught skill or a connected plugin. */
@@ -210,7 +213,11 @@ export function listedRecords(records: BenchRecord[], order?: number[]) {
 }
 
 /** A typical system prompt: every built-in tool offered, rendered from fixed placeholders. */
-export function benchInstructions(memoryContext?: string, records?: BenchRecord[]) {
+export function benchInstructions(
+  memoryContext?: string,
+  records?: BenchRecord[],
+  disk?: BenchTurn["disk"],
+) {
   return userTurnInstructions({
     botInstructions: runIdentityInstruction(
       { name: "Bench", description: "Helps with research.", instructions: "Answer briefly." },
@@ -222,7 +229,12 @@ export function benchInstructions(memoryContext?: string, records?: BenchRecord[
     redactedScratchpadContext: undefined,
     hasHistoricalContext: true,
     historyRetrievalEnabled: true,
-    computerInstruction: "",
+    computerInstruction: disk
+      ? (diskNoteInstruction({
+          diskUsedBytes: BigInt(Math.round(disk.usedGb * 1e9)),
+          diskFreeBytes: BigInt(Math.round(disk.freeGb * 1e9)),
+        }) ?? "")
+      : "",
     pageBrowserAllowed: true,
     workspaceInstruction: "",
     agentEnvironmentInstruction: undefined,
@@ -272,7 +284,7 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
         ]
       : [];
     const records = task.records && listedRecords(task.records, turn.recordOrder);
-    const instructions = benchInstructions(task.memoryContext, records);
+    const instructions = benchInstructions(task.memoryContext, records, turn.disk);
     let answer = "";
     for await (const event of runtime.run(
       {

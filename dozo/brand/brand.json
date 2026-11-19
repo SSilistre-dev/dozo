@@ -395,6 +395,12 @@
   ],
   "anchored": [
     {
+      "file": "packages/adapters/src/computer-disk.ts",
+      "find": "  const size = free >= 1e9 ? `${Math.round(free / 1e9)} GB` : `${Math.round(free / 1e6)} MB`;\n  return `The computer's disk is ${percent}% full (${size} free).",
+      "replace": "  // Coarse figures: the note is in the system prompt, and exact ones changed it, and broke the\n  // cached prompt prefix, whenever the disk was measured again.\n  const leading = (n: number) => {\n    const step = 10 ** Math.floor(Math.log10(n));\n    return Math.floor(n / step) * step;\n  };\n  const size =\n    free >= 1e9 ? `${leading(free / 1e9)} GB` : `${leading(Math.max(free / 1e6, 1))} MB`;\n  return `The computer's disk is over ${Math.floor(percent / 5) * 5}% full (about ${size} free).",
+      "reason": "the disk note is in the system prompt: coarse figures keep the cached prefix while the disk fills"
+    },
+    {
       "file": "packages/adapters/src/run-assembly-records.ts",
       "find": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      select: {",
       "replace": "    deps.prisma.connection.findMany({\n      where: { userId: run.userId, spaceId: run.spaceId },\n      orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n      select: {",
