@@ -103,4 +103,13 @@ describe("noCatalog", () => {
     expect(dozoBootUnreachable).toHaveBeenCalledOnce();
     expect(settled).toBe(false);
   });
+
+  it("reads the page's own window, and does nothing where there is none", () => {
+    const dozoBootUnreachable = vi.fn();
+    vi.stubGlobal("window", { dozoBootUnreachable });
+    void noCatalog();
+    expect(dozoBootUnreachable).toHaveBeenCalledOnce();
+    vi.stubGlobal("window", undefined);
+    expect(noCatalog()).toBeInstanceOf(Promise);
+  });
 });
