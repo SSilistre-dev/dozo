@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // public/dozo-boot.js runs as a plain script before first paint; this runs the same file.
 import script from "../../public/dozo-boot.js?raw";
 import {
@@ -14,6 +14,8 @@ function runAt(path: string, viewport = 1280, saved: Record<string, string> = {}
   Object.defineProperty(window, "innerWidth", { configurable: true, value: viewport });
   for (const [key, value] of Object.entries(saved)) localStorage.setItem(key, value);
   new Function(script)();
+  // Only the sidebar is under test here: the load watch has its own tests below.
+  (window as { dozoBootStarted?: () => void }).dozoBootStarted?.();
   const root = document.documentElement;
   const side = root.style.getPropertyValue("--dozo-boot-side");
   return { chat: root.dataset.dozoBoot, side: side ? Number.parseInt(side, 10) : null };
@@ -75,5 +77,84 @@ describe("boot shell script", () => {
       "rakazo:bots-sidebar-width:u2": "400",
     };
     expect(runAt("/app", 1280, saved).side).toBe(appWidth(1280, null));
+  });
+});
+
+describe("boot shell watch", () => {
+  const reload = vi.fn();
+  type Watched = Window & { dozoBootStarted?: () => void };
+
+  function start(online = true) {
+    // A page has one watch: the one of the page before stops.
+    (window as Watched).dozoBootStarted?.();
+    document.body.innerHTML =
+      '<div id="root"></div><div id="dozo-boot" aria-hidden="true"><div></div></div>';
+    const nav = { language: "tr-TR", onLine: online };
+    new Function("location", "navigator", script)({ pathname: "/app", reload }, nav);
+  }
+  /** The entry script failed to load, as the browser reports it. */
+  function entryFails() {
+    const entry = document.createElement("script");
+    entry.type = "module";
+    document.head.append(entry);
+    entry.dispatchEvent(new Event("error"));
+    entry.remove();
+  }
+  const shell = () => document.getElementById("dozo-boot")!;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    (window as Watched).dozoBootStarted?.();
+    delete (window as Watched).dozoBootStarted;
+    vi.useRealTimers();
+    reload.mockReset();
+    sessionStorage.clear();
+  });
+
+  it("reloads once when the app's code fails to load, then offers a retry", () => {
+    start();
+    entryFails();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(shell().dataset.state).toBeUndefined();
+    // The reloaded page fails again within 30 seconds: no loop, the shell says so.
+    start();
+    entryFails();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(shell().dataset.state).toBe("unreachable");
+    expect(shell().getAttribute("aria-hidden")).toBeNull();
+    expect(shell().textContent).toContain("Sunucuya ulaşılamıyor.");
+    shell().querySelector("button")!.click();
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers a retry without reloading while the browser is offline", () => {
+    start(false);
+    entryFails();
+    expect(reload).not.toHaveBeenCalled();
+    expect(shell().dataset.state).toBe("unreachable");
+  });
+
+  it("brings the shell back with its retry when the app finds no catalog after it ran", () => {
+    start();
+    (window as Watched).dozoBootStarted?.();
+    shell().remove();
+    (window as Watched & { dozoBootUnreachable?: () => void }).dozoBootUnreachable?.();
+    expect(shell().dataset.state).toBe("unreachable");
+    expect(shell().textContent).toContain("Şimdi tekrar dene");
+  });
+
+  it("offers a retry when the app's code hangs, and stays quiet once it runs", () => {
+    start();
+    vi.advanceTimersByTime(14_999);
+    expect(shell().dataset.state).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(shell().dataset.state).toBe("unreachable");
+
+    start();
+    (window as Watched).dozoBootStarted?.();
+    vi.advanceTimersByTime(60_000);
+    entryFails();
+    expect(shell().dataset.state).toBeUndefined();
+    expect(reload).not.toHaveBeenCalled();
   });
 });

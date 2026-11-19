@@ -1,12 +1,22 @@
 import { cachedForGood } from "./budgets";
-import { expect, firstContent, measure, note, placeholderLinks, SIGNED_OUT, test } from "./live";
+import {
+  expect,
+  firstContent,
+  measure,
+  note,
+  openAndSee,
+  placeholderLinks,
+  SIGNED_OUT,
+  test,
+} from "./live";
 
 /** Screens anyone sees, without an account. */
 test.use({ storageState: SIGNED_OUT });
 
 test("soğuk açılış: /sign-in ilk içerik", async ({ page }) => {
-  await page.goto("/sign-in?lang=tr");
-  await expect(page.getByRole("heading", { name: "Dozo'da oturum açın" })).toBeVisible();
+  await openAndSee(page, "/sign-in?lang=tr", (shown) =>
+    shown.getByRole("heading", { name: "Dozo'da oturum açın" }),
+  );
   const fcp = await firstContent(page);
   expect(fcp, "first contentful paint").not.toBeNull();
   measure("coldFirstContent", fcp as number);
@@ -39,9 +49,8 @@ test("ölü bağlantı taraması: giriş, kayıt, parola sıfırlama", async ({ 
   const site = own.hostname.split(".").slice(-2).join(".");
   const links = new Set<string>();
   for (const path of ["/sign-in", "/sign-up", "/forgot-password", "/not-a-page-e2e"]) {
-    await page.goto(`${path}?lang=tr`);
     // The page has drawn its heading (the links come with the form).
-    await expect(page.getByRole("heading").first()).toBeVisible();
+    await openAndSee(page, `${path}?lang=tr`, (shown) => shown.getByRole("heading").first());
     expect(await placeholderLinks(page), `placeholder links on ${path}`).toEqual([]);
     for (const href of await page.evaluate(() =>
       [...document.querySelectorAll("a[href]")].map((a) => (a as HTMLAnchorElement).href),

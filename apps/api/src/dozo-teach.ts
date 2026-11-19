@@ -14,7 +14,6 @@ import {
   ClientError,
   clickStepIndexes,
   formatSkillRunPrompt,
-  teachWindowTitles,
   withClickTargets,
 } from "@rakazo/core";
 import type { PrismaClient, StoredTeachValues, TeachValueSuggestions } from "@rakazo/db";
@@ -25,7 +24,12 @@ import {
   storedTeachTargets,
 } from "@rakazo/db";
 import type { createTaughtSkillsService } from "./dozo-taught-skills.js";
-import { keptTeachClicks, SKILL_NOT_DRAFT, teachTargetId } from "./dozo-taught-skills.js";
+import {
+  forgetOldTeachTyping,
+  keptTeachClicks,
+  SKILL_NOT_DRAFT,
+  teachTargetId,
+} from "./dozo-taught-skills.js";
 import type { TeachClickLabeller } from "./dozo-teach-labels.js";
 import { createTeachClickLabeller } from "./dozo-teach-labels.js";
 import type { TeachValueSuggester } from "./dozo-teach-suggest.js";
@@ -109,7 +113,7 @@ export function createDozoTeach(deps: {
 
   /**
    * Asked once per draft, failed or not, and kept with the values. The model is told the task,
-   * the recorded steps and each value's shape, never a value. Two first reviews at once may both
+   * the recorded steps and each value's shape: never a value, nor a window title. Two first reviews at once may both
    * ask; the first to write is kept.
    */
   async function suggestionsFor(
@@ -126,7 +130,6 @@ export function createDozoTeach(deps: {
           botId: skill.botId,
           goal: skill.goal,
           steps: buildPlaybookFromRecording(skill.goal, recording.events).steps,
-          windowTitles: teachWindowTitles(recording.snapshots, values),
         },
         values.map(teachValueShape),
       )) ?? {};
@@ -209,6 +212,7 @@ export function createDozoTeach(deps: {
       actor: Actor,
       skillId: string,
     ): Promise<{ values: DozoTeachValue[]; targets: DozoTeachTarget[] }> {
+      await forgetOldTeachTyping(deps.prisma, { spaceId: actor.spaceId, skillId });
       const skill = await skillOf(actor, skillId);
       const stored = await valuesFor(actor, skill);
       if (!stored) return { values: [], targets: [] };

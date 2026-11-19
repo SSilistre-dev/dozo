@@ -272,6 +272,26 @@ it("saves with each value's decision, then shows what the server saved", async (
   );
 });
 
+it("says each name can be used once when two values are given one name", async () => {
+  // The server's refusal, with its stable code, whatever language its message is in.
+  api.save.mockRejectedValue(
+    Object.assign(new Error("server words"), { code: "teach_name_taken" }),
+  );
+  api.test.mockRejectedValue(
+    Object.assign(new Error("server words"), { code: "teach_name_taken" }),
+  );
+  await renderValues();
+  const [first, second] = rows();
+  await type(first?.querySelector("input") as HTMLInputElement, "email");
+  await type(second?.querySelector("input") as HTMLInputElement, "email");
+  await click(button(container, "Save"));
+  await vi.waitFor(() => expect(errorLine()).toBe("Each name can be used once."));
+  expect(rows()).toHaveLength(4);
+  await click(button(container, "Test"));
+  await vi.waitFor(() => expect(api.test).toHaveBeenCalled());
+  expect(errorLine()).toBe("Each name can be used once.");
+});
+
 it("tests with the same decisions and keeps the rows", async () => {
   await renderValues();
   await click(button(rows()[1] as Element, "Remove"));

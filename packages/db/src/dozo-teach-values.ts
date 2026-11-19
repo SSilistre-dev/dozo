@@ -1,8 +1,10 @@
-import type { TeachRecordingEvent, TeachTypedValue } from "@rakazo/core";
+import type { TeachRecordingEvent, TeachSnapshot, TeachTypedValue } from "@rakazo/core";
 import {
   clicksBeforeSecrets,
+  forgetTeachTyping,
   scrubTeachRecordingEvents,
-  teachWindowApp,
+  teachAppName,
+  teachTypingForgotten,
   typedValuesFromRecording,
 } from "@rakazo/core";
 import { z } from "zod";
@@ -11,6 +13,7 @@ import { ciphertextKeyId, decryptText, encryptText } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
 import { storedTeachTargets, TEACH_TARGETS_KEY } from "./dozo-teaching-recordings.js";
 import { readJsonColumn } from "./json-column.js";
+import { runAsSystemInTransaction } from "./row-security.js";
 
 export { storedTeachTargets, TEACH_TARGETS_KEY } from "./dozo-teaching-recordings.js";
 
@@ -123,66 +126,81 @@ async function decode(db: Db, row: Row): Promise<StoredTeachValues> {
  * Called where a recording becomes a draft (stop, expiry, the end of its control), in that
  * transaction: the values typed and the pictures around the clicks move to a short-lived store
  * only the teacher reads, and the recording keeps none of them, not even the values' length or
- * timing (each click keeps its window's application name). A click before protected input loses
- * its picture. Due in 24 hours, on a queue job when the queue's tables exist; reads also skip and
- * delete a due row.
+ * timing, and of each window title (a click's too) only its application. A click before
+ * protected input loses its picture. Due in 24 hours, on a queue job when the queue's tables
+ * exist; reads, and the API's slow sweep, also delete a due row. Written past row security:
+ * whoever ends the recording (another member taking the computer's control) stores them for the
+ * teacher, who alone reads them.
  */
-export async function keepTeachValues<R extends { events: TeachRecordingEvent[] }>(
+export async function keepTeachValues<
+  R extends { events: TeachRecordingEvent[]; snapshots: TeachSnapshot[] },
+>(
   tx: Prisma.TransactionClient,
   skill: { id: string; spaceId: string; userId: string },
   recording: R,
 ): Promise<
-  Omit<R, "dozoSuggestions" | typeof TEACH_TARGETS_KEY> & {
+  Omit<ReturnType<typeof forgetTeachTyping<R>>, typeof TEACH_TARGETS_KEY> & {
     [TEACH_TARGETS_KEY]?: Array<{ eventIndex: number; window?: string }>;
   }
 > {
-  // Suggestions an older draft cached in its recording go with the values.
-  const {
-    dozoSuggestions: _cached,
-    [TEACH_TARGETS_KEY]: _targets,
-    ...kept
-  } = recording as R & { dozoSuggestions?: unknown; [TEACH_TARGETS_KEY]?: unknown };
   const values = typedValuesFromRecording(recording.events);
-  const { events, indexOf } = scrubTeachRecordingEvents(recording.events);
+  // Where each click is once typed runs are one event each; a recording already forgotten has
+  // its runs collapsed, so its clicks stay where they are.
+  const already = teachTypingForgotten(recording);
+  const { indexOf } = scrubTeachRecordingEvents(recording.events);
   const secret = clicksBeforeSecrets(recording.events);
   const targets: Array<{ eventIndex: number; window?: string }> = [];
   const images: TeachClickImage[] = [];
   for (const target of storedTeachTargets(skill.id, recording)) {
-    const eventIndex = indexOf.get(target.eventIndex);
+    const eventIndex = already ? target.eventIndex : indexOf.get(target.eventIndex);
     if (eventIndex === undefined) continue;
-    // Only the application's name: the rest of a title can show what was typed.
-    const window = teachWindowApp(target.window);
+    // Only the application's name: the rest of a title can show what was typed or opened.
+    const window = target.window ? teachAppName(target.window) : null;
     targets.push({ eventIndex, ...(window ? { window } : {}) });
     if (target.image && !secret.has(target.eventIndex)) {
       images.push({ eventIndex, image: target.image });
     }
   }
   if (values.length || images.length) {
-    const row = { skillId: skill.id, spaceId: skill.spaceId, userId: skill.userId };
-    const sealed = await seal(tx, row, "values", JSON.stringify(values));
-    const pictures = images.length ? await seal(tx, row, "targets", JSON.stringify(images)) : null;
-    const [stored] = await tx.$queryRaw<Array<{ expiresAt: Date }>>`
-      INSERT INTO "dozo_teach_values"
-        ("skillId", "spaceId", "userId", "values", "targets", "expiresAt")
-      VALUES (${row.skillId}, ${row.spaceId}, ${row.userId}, ${sealed}, ${pictures},
-        CURRENT_TIMESTAMP + make_interval(secs => ${TEACH_VALUES_TTL_MS / 1000}))
-      ON CONFLICT ("skillId") DO UPDATE SET "spaceId" = EXCLUDED."spaceId",
-        "userId" = EXCLUDED."userId", "values" = EXCLUDED."values",
-        "targets" = EXCLUDED."targets", "suggestions" = NULL,
-        "expiresAt" = EXCLUDED."expiresAt"
-      RETURNING "expiresAt"`;
-    const [queue] = await tx.$queryRaw<Array<{ ready: boolean }>>`
-      SELECT to_regnamespace('graphile_worker') IS NOT NULL AS ready`;
-    if (stored && queue?.ready) {
-      // As upstream's publisher adds a job in a transaction; the date goes as text with its zone.
-      await tx.$executeRaw`
-        SELECT graphile_worker.add_job(${EXPIRE_JOB}::text,
-          ${JSON.stringify({ skillId: skill.id })}::json,
-          run_at => ${stored.expiresAt.toISOString()}::timestamptz,
-          job_key => ${expireJobKey(skill.id)}::text)`;
-    }
+    await runAsSystemInTransaction(tx, "keep the values typed while teaching", () =>
+      storeValues(tx, skill, values, images),
+    );
   }
-  return { ...kept, events, ...(targets.length ? { [TEACH_TARGETS_KEY]: targets } : {}) };
+  const { [TEACH_TARGETS_KEY]: _targets, ...forgotten } = forgetTeachTyping(
+    recording,
+  ) as ReturnType<typeof forgetTeachTyping<R>> & { [TEACH_TARGETS_KEY]?: unknown };
+  return { ...forgotten, ...(targets.length ? { [TEACH_TARGETS_KEY]: targets } : {}) };
+}
+
+async function storeValues(
+  tx: Prisma.TransactionClient,
+  skill: { id: string; spaceId: string; userId: string },
+  values: TeachTypedValue[],
+  images: TeachClickImage[],
+) {
+  const row = { skillId: skill.id, spaceId: skill.spaceId, userId: skill.userId };
+  const sealed = await seal(tx, row, "values", JSON.stringify(values));
+  const pictures = images.length ? await seal(tx, row, "targets", JSON.stringify(images)) : null;
+  const [stored] = await tx.$queryRaw<Array<{ expiresAt: Date }>>`
+    INSERT INTO "dozo_teach_values"
+      ("skillId", "spaceId", "userId", "values", "targets", "expiresAt")
+    VALUES (${row.skillId}, ${row.spaceId}, ${row.userId}, ${sealed}, ${pictures},
+      CURRENT_TIMESTAMP + make_interval(secs => ${TEACH_VALUES_TTL_MS / 1000}))
+    ON CONFLICT ("skillId") DO UPDATE SET "spaceId" = EXCLUDED."spaceId",
+      "userId" = EXCLUDED."userId", "values" = EXCLUDED."values",
+      "targets" = EXCLUDED."targets", "suggestions" = NULL,
+      "expiresAt" = EXCLUDED."expiresAt"
+    RETURNING "expiresAt"`;
+  const [queue] = await tx.$queryRaw<Array<{ ready: boolean }>>`
+    SELECT to_regnamespace('graphile_worker') IS NOT NULL AS ready`;
+  if (stored && queue?.ready) {
+    // As upstream's publisher adds a job in a transaction; the date goes as text with its zone.
+    await tx.$executeRaw`
+      SELECT graphile_worker.add_job(${EXPIRE_JOB}::text,
+        ${JSON.stringify({ skillId: skill.id })}::json,
+        run_at => ${stored.expiresAt.toISOString()}::timestamptz,
+        job_key => ${expireJobKey(skill.id)}::text)`;
+  }
 }
 
 /** The values of a draft, or null once they are saved, removed or due (a due row is deleted). */
@@ -200,10 +218,16 @@ export async function takeTeachValues(
   tx: Prisma.TransactionClient,
   skillId: string,
 ): Promise<StoredTeachValues | null> {
-  const [row] = await tx.$queryRaw<Array<Row & { due: boolean }>>`
-    DELETE FROM "dozo_teach_values" WHERE "skillId" = ${skillId}
-    RETURNING "skillId", "spaceId", "userId", "values", "targets", "suggestions",
-      "expiresAt" <= CURRENT_TIMESTAMP AS "due"`;
+  // Past row security: any save forgets them, also one by someone else than the teacher.
+  const [row] = await runAsSystemInTransaction(
+    tx,
+    "forget the values typed while teaching",
+    () =>
+      tx.$queryRaw<Array<Row & { due: boolean }>>`
+      DELETE FROM "dozo_teach_values" WHERE "skillId" = ${skillId}
+      RETURNING "skillId", "spaceId", "userId", "values", "targets", "suggestions",
+        "expiresAt" <= CURRENT_TIMESTAMP AS "due"`,
+  );
   return row && !row.due ? decode(tx, row) : null;
 }
 
@@ -235,4 +259,10 @@ export async function expireTeachValues(db: Db, skillId: string): Promise<void> 
   await db.$executeRaw`
     DELETE FROM "dozo_teach_values"
     WHERE "skillId" = ${skillId} AND "expiresAt" <= CURRENT_TIMESTAMP`;
+}
+
+/** Forgets every due row; the API's slow sweep calls it, as system, also where no queue runs. */
+export async function expireAllTeachValues(db: Db): Promise<number> {
+  return db.$executeRaw`
+    DELETE FROM "dozo_teach_values" WHERE "expiresAt" <= CURRENT_TIMESTAMP`;
 }

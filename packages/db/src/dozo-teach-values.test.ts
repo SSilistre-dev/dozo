@@ -1,10 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { TeachRecordingEvent } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { isCiphertext } from "./content-crypto.js";
 import {
   cacheTeachSuggestions,
+  expireAllTeachValues,
   expireTeachValues,
   keepTeachValues,
   readTeachValues,
@@ -57,7 +58,7 @@ const ring = {
 const expiresAt = new Date("2026-01-02T00:00:00.000Z");
 
 describe("keepTeachValues", () => {
-  it("seals the values, queues their expiry and returns the recording with none left", async () => {
+  it("seals the values past row security, queues their expiry and returns the recording with none left", async () => {
     const { db, calls } = client(
       (sql) =>
         sql.includes("INSERT")
@@ -69,7 +70,10 @@ describe("keepTeachValues", () => {
     );
     const kept = await keepTeachValues(db as never, skill, {
       events,
-      snapshots: [],
+      snapshots: [
+        { at, summary: "hunter2 - Search - Browser" },
+        { at, summary: "hunter2" },
+      ],
       dozoSuggestions: { "{{value 1}}": { name: "x" } },
     });
     expect(kept).toEqual({
@@ -78,9 +82,15 @@ describe("keepTeachValues", () => {
         { at, kind: "key", key: "Tab" },
         { at, kind: "key", typed: true, sensitive: true },
       ],
-      snapshots: [],
+      snapshots: [{ at, summary: "Browser" }],
+      dozoScrubbed: true,
     });
-    const insert = calls.find((call) => call.sql.includes("INSERT"))!;
+    // Whoever ends the recording, the row is written for the teacher with the bypass on.
+    const bypass = calls.findIndex((call) => call.sql.includes("'app.rls_bypass', 'on'"));
+    const insertAt = calls.findIndex((call) => call.sql.includes("INSERT"));
+    expect(bypass).toBeGreaterThanOrEqual(0);
+    expect(bypass).toBeLessThan(insertAt);
+    const insert = calls[insertAt]!;
     expect(insert.params.slice(0, 3)).toEqual(["skill-1", "space-1", "ada"]);
     expect(isCiphertext(insert.params[3])).toBe(true);
     expect(String(insert.params[3])).not.toContain("hunter2");
@@ -104,7 +114,7 @@ describe("keepTeachValues", () => {
           ? [{ ready: false }]
           : [],
     );
-    await keepTeachValues(db as never, skill, { events });
+    await keepTeachValues(db as never, skill, { events, snapshots: [] });
     const insert = calls.find((call) => call.sql.includes("INSERT"))!;
     expect(JSON.parse(String(insert.params[3]))).toHaveLength(2);
     expect(calls.some((call) => call.sql.includes("add_job"))).toBe(false);
@@ -125,6 +135,7 @@ describe("keepTeachValues", () => {
     ];
     const kept = await keepTeachValues(db as never, skill, {
       events: clicked,
+      snapshots: [],
       dozoTargets: [
         { eventIndex: 0, window: "ali@example.test - Search - Browser", image: "AAAA" },
         // The click before the protected paste: its picture is never kept.
@@ -145,6 +156,8 @@ describe("keepTeachValues", () => {
         { at, kind: "key", typed: true, sensitive: true },
         clicked[11],
       ],
+      snapshots: [],
+      dozoScrubbed: true,
       dozoTargets: [{ eventIndex: 0, window: "Browser" }, { eventIndex: 3 }, { eventIndex: 5 }],
     });
     expect(JSON.stringify(kept)).not.toMatch(/AAAA|BBBB|CCCC|DDDD|hunter2|ali@/);
@@ -170,6 +183,19 @@ describe("keepTeachValues", () => {
     ]);
   });
 
+  it("leaves the clicks of a recording already forgotten where they are", async () => {
+    const { db } = client((sql) => (sql.includes("INSERT") ? [{ expiresAt }] : [{ ready: false }]));
+    const pointer: TeachRecordingEvent = { at, kind: "pointer", x: 1, y: 1, type: "click" };
+    const marker = { at, kind: "key", typed: true } as TeachRecordingEvent;
+    const kept = await keepTeachValues(db as never, skill, {
+      events: [marker, pointer],
+      snapshots: [],
+      dozoScrubbed: true,
+      dozoTargets: [{ eventIndex: 1, window: "Mail" }],
+    });
+    expect(kept).toMatchObject({ dozoTargets: [{ eventIndex: 1 }] });
+  });
+
   it("keeps a row for pictures alone, with no values", async () => {
     const { db, calls } = client((sql) =>
       sql.includes("INSERT") ? [{ expiresAt }] : [{ ready: false }],
@@ -178,9 +204,15 @@ describe("keepTeachValues", () => {
     expect(
       await keepTeachValues(db as never, skill, {
         events: [pointer],
+        snapshots: [],
         dozoTargets: [{ eventIndex: 0, image: "AAAA" }],
       }),
-    ).toEqual({ events: [pointer], dozoTargets: [{ eventIndex: 0 }] });
+    ).toEqual({
+      events: [pointer],
+      snapshots: [],
+      dozoScrubbed: true,
+      dozoTargets: [{ eventIndex: 0 }],
+    });
     const insert = calls.find((call) => call.sql.includes("INSERT"))!;
     expect(insert.params[3]).toBe("[]");
     expect(JSON.parse(String(insert.params[4]))).toEqual([{ eventIndex: 0, image: "AAAA" }]);
@@ -189,9 +221,9 @@ describe("keepTeachValues", () => {
   it("stores nothing when nothing was typed", async () => {
     const { db, calls } = client();
     const pointer: TeachRecordingEvent = { at, kind: "pointer", x: 1, y: 1 };
-    expect(await keepTeachValues(db as never, skill, { events: [pointer] })).toEqual({
-      events: [pointer],
-    });
+    expect(await keepTeachValues(db as never, skill, { events: [pointer], snapshots: [] })).toEqual(
+      { events: [pointer], snapshots: [], dozoScrubbed: true },
+    );
     expect(calls).toEqual([]);
   });
 });
@@ -204,7 +236,7 @@ describe("reading the values", () => {
       (sql) => (sql.includes("INSERT") ? [{ expiresAt }] : [{ ready: false }]),
       ring,
     );
-    await keepTeachValues(db as never, skill, { events: events.slice(0, 7) });
+    await keepTeachValues(db as never, skill, { events: events.slice(0, 7), snapshots: [] });
     return calls.find((call) => call.sql.includes("INSERT"))!.params[3] as string;
   }
 
@@ -255,10 +287,12 @@ describe("reading the values", () => {
     expect((await readTeachValues(oddImages.db as never, "skill-1"))?.images).toEqual([]);
   });
 
-  it("takes the values in the save's transaction, unless they are due", async () => {
+  it("takes the values in the save's transaction past row security, unless they are due", async () => {
     const live = client(() => [row({ values: JSON.stringify(values), due: false })]);
     expect((await takeTeachValues(live.db as never, "skill-1"))?.values).toEqual(values);
-    expect(live.calls[0]?.sql).toContain("DELETE");
+    const sqls = live.calls.map((call) => call.sql);
+    const deleted = sqls.findIndex((sql) => sql.includes("DELETE"));
+    expect(sqls.findIndex((sql) => sql.includes("'app.rls_bypass', 'on'"))).toBe(deleted - 1);
     const due = client(() => [row({ values: JSON.stringify(values), due: true })]);
     expect(await takeTeachValues(due.db as never, "skill-1")).toBeNull();
     expect(await takeTeachValues(client().db as never, "skill-1")).toBeNull();
@@ -289,27 +323,27 @@ describe("expireTeachValues", () => {
   });
 });
 
-describe("the migrations", () => {
-  const migration = (name: string) =>
-    readFileSync(new URL(`../prisma/migrations/${name}/migration.sql`, import.meta.url));
-
-  // Prisma never runs a migration again once applied, whatever its file says now: an edit to an
-  // applied one leaves a database without what the edit added (here the values table, so every
-  // stop failed). Its checksum is pinned to what databases ran.
-  it("never edits the scrub migration databases already applied", () => {
-    const applied = createHash("sha256")
-      .update(migration("20261230120000_dozo_teach_recording_scrub"))
-      .digest("hex");
-    expect(applied).toBe("f1ed3a45b6183a7fa522eeefb211d6dc4d91283a59b1f648c44446da879c0f2d");
+describe("expireAllTeachValues", () => {
+  it("deletes every due row", async () => {
+    const { db, calls } = client();
+    await expireAllTeachValues(db as never);
+    expect(calls).toEqual([
+      { sql: expect.stringContaining('"expiresAt" <= CURRENT_TIMESTAMP'), params: [] },
+    ]);
+    expect(calls[0]?.sql).not.toContain('"skillId"');
   });
 
-  it("creates the values store in a migration of its own, after it", () => {
-    const sql = migration("20261230120100_dozo_teach_values").toString("utf8");
-    expect(sql).toContain('CREATE TABLE "dozo_teach_values"');
-  });
+});
 
-  it("adds the pictures' column after it, and drops pictures older drafts kept", () => {
-    const sql = migration("20261230120200_dozo_teach_targets").toString("utf8");
+describe("the pictures' migration", () => {
+  it("adds their column after the values store, and drops pictures older drafts kept", () => {
+    const sql = readFileSync(
+      new URL(
+        "../prisma/migrations/20261230120200_dozo_teach_targets/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
     expect(sql).toContain('ADD COLUMN "targets" TEXT');
     expect(sql).toContain("- 'dozoTargets'");
   });

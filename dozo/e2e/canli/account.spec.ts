@@ -9,6 +9,7 @@ import {
   measure,
   newProbe,
   note,
+  openAndSee,
   placeholderLinks,
   readProbe,
   STATE_FILE,
@@ -32,8 +33,9 @@ test.beforeEach(({}, info) => {
 
 /** The page's language is Turkish from the first screen: the run reads Turkish copy. */
 async function openApp(page: Page, path = "/app") {
-  await page.goto("/app");
-  await expect(page.getByRole("button", { name: "Uygulamaları bağla" })).toBeVisible();
+  await openAndSee(page, "/app", (shown) =>
+    shown.getByRole("button", { name: "Uygulamaları bağla" }),
+  );
   if (path !== "/app") await page.goto(path);
 }
 

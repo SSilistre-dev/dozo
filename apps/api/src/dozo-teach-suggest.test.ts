@@ -14,7 +14,6 @@ const skill = {
   botId: "bot-1",
   goal: "Sign in",
   steps: ["Type {{value 1}}.", "Press key: Tab.", "Type {{value 2}}."],
-  windowTitles: ["Sign in"],
 };
 const values = [
   { placeholder: "{{value 1}}", shape: "9-20 characters, has @" },
@@ -91,7 +90,6 @@ describe("createTeachValueSuggester", () => {
     expect(JSON.parse(request.prompt)).toEqual({
       task: "Sign in",
       steps: skill.steps,
-      windowTitles: ["Sign in"],
       values,
     });
     expect(usage.record).toHaveBeenCalledWith(
@@ -99,12 +97,6 @@ describe("createTeachValueSuggester", () => {
       expect.objectContaining({ type: "usage" }),
       expect.objectContaining({ userId: "ada", botId: "bot-1", operationKind: "setup" }),
     );
-  });
-
-  it("leaves window titles out of the prompt when there are none", async () => {
-    const fake = runtime(() => answer("[]"));
-    await setup(fake).suggest(actor, { ...skill, windowTitles: [] }, values);
-    expect(JSON.parse(fake.run.mock.calls[0]![0].prompt)).not.toHaveProperty("windowTitles");
   });
 
   it("has nothing to ask without values", async () => {
