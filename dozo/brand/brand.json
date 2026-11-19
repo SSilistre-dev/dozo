@@ -1700,6 +1700,129 @@
         "infra/sandboxes/supervisor/src/dozo-computer-subnet.ts"
       ],
       "reason": "computer subnets: computer networks (and the egress probe's) get an explicit subnet from the operator's range instead of a slot of the daemon's default address pools, which a shared host runs out of"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-overlays.tsx",
+      "find": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport type { ShellOverlay }",
+      "replace": "import type { createSpaceRpc } from \"../../lib/rpc\";\nimport { PluginsOverlay, usePreloadPluginsOverlay } from \"../dozo-plugins-overlay\";\nimport type { ShellOverlay }",
+      "requires": [
+        "apps/web/src/pages/dozo-plugins-overlay.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): the integrations overlay comes from a wrapper that draws a placeholder dialog on the click and re-exports the same name"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-overlays.tsx",
+      "find": "const PluginsOverlay = lazyOverlay(() =>\n  import(\"../PluginsOverlay\").then((module) => module.PluginsOverlay),\n);\nconst SkillsDialog",
+      "replace": "const SkillsDialog",
+      "reason": "fork performance (Apps opens at once): upstream's own lazy integrations overlay gives way to the wrapper's"
+    },
+    {
+      "file": "apps/web/src/pages/shell/shell-overlays.tsx",
+      "find": "}) {\n  const openTemplates = () => setOverlay({ kind: \"templates\" });",
+      "replace": "}) {\n  usePreloadPluginsOverlay();\n  const openTemplates = () => setOverlay({ kind: \"templates\" });",
+      "requires": [
+        "apps/web/src/pages/dozo-plugins-overlay.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): the overlay's code is fetched once the shell has settled, so the click draws it at once"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "  Input,\n  Spinner,\n} from \"@rakazo/ui-web\";",
+      "replace": "  Input,\n} from \"@rakazo/ui-web\";",
+      "reason": "fork performance (Apps opens at once): the integrations list loads behind placeholder rows, not a spinner"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "import { DomainSearch, useDomainSearch } from \"./plugins/domain-search\";\nimport { GithubImport }",
+      "replace": "import { DomainSearch, useDomainSearch } from \"./plugins/domain-search\";\nimport { IntegrationRowsSkeleton } from \"./plugins/dozo-integrations-skeleton\";\nimport { GithubImport }",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows for the integrations list"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "          <div className=\"grid flex-1 place-items-center\" aria-busy=\"true\">\n            <Spinner\n              className=\"size-5 text-muted-foreground\"\n              aria-label={t`Loading integrations…`}\n            />\n          </div>",
+      "replace": "          <div className=\"flex-1 overflow-hidden px-8 py-6\">\n            <IntegrationRowsSkeleton label={t`Loading integrations…`} rows={10} />\n          </div>",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows shaped like the list while it loads"
+    },
+    {
+      "file": "apps/web/src/pages/PluginsOverlay.tsx",
+      "find": "          className=\"rk-scroll flex-1 overflow-y-auto px-8 py-6\"\n",
+      "replace": "          className=\"rk-scroll flex-1 overflow-y-auto px-8 py-6 [&_section>.grid>*]:[contain-intrinsic-size:auto_3.5rem] [&_section>.grid>*]:[content-visibility:auto]\"\n",
+      "reason": "fork performance (Apps opens at once): rows of the browse sections below the fold are laid out and painted only when scrolled near"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "import { Button, SectionHeading, Spinner } from \"@rakazo/ui-web\";",
+      "replace": "import { Button, SectionHeading } from \"@rakazo/ui-web\";",
+      "reason": "fork performance (Apps opens at once): the plugin sections load behind placeholder rows, not a spinner"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "} from \"../../components/integrations/plugin-marketplace\";\nimport type { TileContext } from \"./parts\";",
+      "replace": "} from \"../../components/integrations/plugin-marketplace\";\nimport { IntegrationRowsSkeleton } from \"./dozo-integrations-skeleton\";\nimport type { TileContext } from \"./parts\";",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows for the plugin sections"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/plugin-browse.tsx",
+      "find": "        <div className=\"grid place-items-center py-8\">\n          <Spinner className=\"size-5 text-muted-foreground\" aria-label={t`Loading plugins…`} />\n        </div>",
+      "replace": "        <div className=\"mt-8\">\n          <IntegrationRowsSkeleton label={t`Loading plugins…`} rows={6} />\n        </div>",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-integrations-skeleton.tsx"
+      ],
+      "reason": "fork performance (Apps opens at once): placeholder rows where the plugin sections arrive"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
+      "find": "import { errorText } from \"../../lib/user-error\";\n\nconst NO_CATALOG",
+      "replace": "import { errorText } from \"../../lib/user-error\";\nimport { loadIntegrations as loadDozoIntegrations } from \"./dozo-load-integrations\";\n\nconst NO_CATALOG",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-load-integrations.ts"
+      ],
+      "reason": "fork performance (Apps opens at once): the integrations reads come from a loader that sends them all at once"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
+      "find": "import { optionalCatalogFeedProbe } from \"../../lib/optional-catalog-feed\";\nimport { useSpaceQueries }",
+      "replace": "import { useSpaceQueries }",
+      "reason": "fork performance (Apps opens at once): the catalog feed probe moved into the fork's loader"
+    },
+    {
+      "file": "apps/web/src/pages/plugins/use-plugin-connections.ts",
+      "find": "  async function loadIntegrations() {\n    // The catalog call reconciles connection rows, so list them after it settles.\n    const catalog = rpc.connections.catalog({});\n    const [items, installs, rows, catalogFeed] = await Promise.all([\n      catalog,\n      rpc.capabilities.list(),\n      catalog.catch(() => undefined).then(() => rpc.connections.list()),\n      optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: \"\" })),\n    ]);\n    return {\n      catalog: items,\n      connections: rows,\n      sources: installs.filter(\n        (install) => install.kind === \"mcp\" || install.kind === \"api\" || install.kind === \"graphql\",\n      ),\n      plugins: installs.filter((install) => install.kind === \"plugin\"),\n      catalogFeedEnabled: catalogFeed.enabled,\n    };\n  }\n",
+      "replace": "  function loadIntegrations(): ReturnType<typeof loadDozoIntegrations> {\n    return loadDozoIntegrations((connections) => {\n      queryClient.setQueryData(integrationsOptions.queryKey, (current) =>\n        current ? { ...current, connections } : current,\n      );\n    });\n  }\n",
+      "requires": [
+        "apps/web/src/pages/plugins/dozo-load-integrations.ts"
+      ],
+      "reason": "fork performance (Apps opens at once): connection rows are read beside the catalog instead of after it; a re-read after the catalog's reconciliation updates them in place"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "import type { Organization } from \"../lib/organizations\";\nimport { useSidebarUpdate }",
+      "replace": "import type { Organization } from \"../lib/organizations\";\nimport { warmPluginsOverlay } from \"../pages/dozo-plugins-overlay-chunk\";\nimport { useSidebarUpdate }",
+      "requires": [
+        "apps/web/src/pages/dozo-plugins-overlay-chunk.ts"
+      ],
+      "reason": "fork performance (Apps opens at once): pointing at or focusing Connect apps fetches the overlay's code before the click"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "font-normal\"\n                onClick={onIntegrations}",
+      "replace": "font-normal\"\n                onPointerEnter={warmPluginsOverlay}\n                onFocus={warmPluginsOverlay}\n                onClick={onIntegrations}",
+      "reason": "fork performance (Apps opens at once): the account menu's Connect apps item fetches the overlay's code on pointer or focus"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "ref={pillRef}\n          onClick={onIntegrations}",
+      "replace": "ref={pillRef}\n          onPointerEnter={warmPluginsOverlay}\n          onFocus={warmPluginsOverlay}\n          onClick={onIntegrations}",
+      "reason": "fork performance (Apps opens at once): the sidebar's Connect apps pill fetches the overlay's code on pointer or focus"
     }
   ],
   "assets": {
