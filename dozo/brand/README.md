@@ -38,9 +38,8 @@ a stack trace).
   lenient path is only for running `apply.mjs` by hand twice.
 - `check.mjs --root <dir> [--launch]` is the leak gate. Exit 0 prints `leak gate clean: N files
   scanned`. Exit 2 prints `path:line: match` (the first 50, then a total) and also fails when no file
-  was scanned. `--launch` also fails on the placeholders (every target of `urls`, such as
-  `dozo.example` and `github.com/OWNER/dozo`) and on the `allow.phrases` entries not marked
-  `"permanent": true` (upstream image names; a permanent one, such as an HMAC input, is never flagged).
+  was scanned. `--launch` also fails on the `allow.phrases` entries not marked `"permanent": true`
+  (upstream image names; a permanent one, such as an HMAC input, is never flagged).
   No gate passes `--launch`: it is run by hand before launch (`dozo/LAUNCH-CHECKLIST.md`).
 - Tests: `node --test "dozo/brand/*.test.mjs"`: one file per topic (`brand.apply`, `brand.gate`, `brand.config`), so
   Node runs them in parallel; the shared fixtures are in `brand.test-support.mjs`.
@@ -99,7 +98,7 @@ the native modules (no Android build is made, so an Android build of the staged 
 upstream's name in its notification channels).
 
 Keys: `from`, `to`, `variants`, `urls`, `literals`, `include`, `exclude`, `keep`, `allow`,
-`leak` (extra substrings), `leakWords` (extra case-sensitive whole words, e.g. the upstream founder's
+`leak` (extra substrings), `placeholders` (see below), `leakWords` (extra case-sensitive whole words, e.g. the upstream founder's
 first name), `anchored`, `assets`. Every entry of `exclude`, `keep`, `allow.*`, `literals` and
 `anchored` has a mandatory one-line `reason`. The file is validated when it loads and exits 2 on: an
 unknown key, a wrong type, an empty `text`, `glob`, `file` or url key, a missing or empty `reason`, a
@@ -126,7 +125,7 @@ an empty `replace` or one that contains its `find`.
   redirects to `dozo-*` wrappers.
 - Add an asset: `"assets": { "apps/web/public/favicon.png": "web/favicon.png" }` copies
   `dozo/brand/assets/web/favicon.png` into the stage. The 7 web icons, `favicon.svg`, the desktop and
-  mobile icon, splash and widget images, the Icon Composer layer and the welcome-mail hero are mapped
+  mobile icon, splash and widget images and the Icon Composer layer are mapped
   (`favicon.svg` is linked from `apps/web/index.html` by an anchored rule; the table is in
   `assets/README.md`). One source may feed several targets (the mobile favicon is the web one).
 
@@ -258,16 +257,26 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
 ## Known gaps
 
 - Tests, `apps/web/e2e` and `packages/testkit` are not rewritten; run them on the pristine tree.
-- The bot docs URLs (`dozo.example/docs/*.md`) must exist or the built-in skill has nothing to fetch.
-- The welcome mail hero is `assets/mail/welcome.png`, served by the web app at `/email/welcome.png`
-  (mapped to `apps/web/public/email/`); the mail links it under the `urls` domain, so that domain must
-  reach the web app (`dozo/LAUNCH-CHECKLIST.md`). Mail clients may block remote images; the alt text is
-  "Dozo".
+- Dozo has no docs site, plugin submission page, public integration pages, store listing, Android
+  build or community server, so anchored rules drop what linked to them: the bot's product-docs skill
+  and its fetch list, the error help link, "Submit a plugin" (web and mobile), "Get the mobile app",
+  the GitHub star prompt, and the welcome mail's store, Linux, Discord and GitHub-star links and its
+  hero image. A claimed integration and its confirmation link open the app's integrations view; the
+  in-app store fallback opens the landing page (it has no download anchor to point at). An expired
+  claim link gets the API's existing "already used or invalid" answer. The welcome mail links only
+  the desktop release files the landing page links. `assets/mail/welcome.png` is kept as artwork but
+  no longer mapped.
+- Self-update: no repository counts as official (anchored rule in `packages/core/src/self-update.ts`,
+  held by `dozo-self-update.test.ts`), so an update builds the deployment's checkout and never pulls
+  upstream's image. Undo the rule once Dozo publishes its own images under its name.
+- `placeholders` (`dozo.example`, `OWNER/`): an address that does not exist. Any left in a branded
+  file fails `apply` (so `make olc` and every stage) and the leak gate, naming file and line. Point a
+  new upstream link at a real address with an anchored rule, or drop it.
 - Desktop: only its pictures are branded. Packaging text, bundle ids, store listings and the
   `.icns` build are untouched. `Rakazo.icon/icon.json` keeps `system-dark` as the plate and is moved
   from 90 points low to centred by an anchored rule; the iOS build compiles it into the app icon.
-- Mobile: the store links in the app are the `urls` placeholders (`dozo.example/get/ios`, the paywall's
-  terms link) until launch; no Android build is made. What a Dozo iOS build has switched off:
+- Mobile: the store fallback opens the landing page, and the paywall's terms link the landing site's
+  terms; no Android build is made. What a Dozo iOS build has switched off:
   `dozo/mobile/README.md`.
 - Owner actions and the values to fill before launch: `dozo/LAUNCH-CHECKLIST.md`.
 - Details of every audit decision: `AUDIT.md`.
@@ -286,3 +295,20 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
 - Clear space: 1/4 of the mark's height (11 units in the lockup viewBox) on every side; the SVG viewBoxes
   are tight, so the margin is the placer's job.
 - Later: the mockups show a small red seal dot beside the wordmark; the red band replaces it, so the dot is dropped.
+
+## E-mail shell
+
+- Every account and product mail (`packages/auth/src/*email*.tsx`) is drawn by one fork file,
+  `packages/auth/src/dozo-email-shell.tsx`, which anchored rules in `email.tsx` point at: the Dozo
+  palette as solid hex (light by default, dark where the client honours `prefers-color-scheme`), the
+  theme's font stack, the header (mark and lowercase wordmark) and the footer (unsubscribe when the
+  mail has one, privacy and terms on the landing site in English or Turkish, operator and contact).
+- The mark is `icon-192.png` from the sending server's own `WEB_ORIGIN`, and only when that is a
+  public https address; otherwise the wordmark stands alone. No other remote image, no tracking pixel.
+  The welcome mail keeps its hero image instead of the header.
+- The sender's name is not in the code: it is the name part of `EMAIL_FROM` (for example
+  `Dozo <no-reply@your-domain>`), set where the server runs.
+- Upstream's `email.test.ts` asserts that code mails carry no link; on the branded tree they carry
+  the footer's links. Its tests run on the pristine tree only, like the rest.
+- Turkish mails address the reader as "siz"; the referral and file deletion mails are aligned by
+  rules on `locales/tr.ts`. Mails in other languages show the footer in English.

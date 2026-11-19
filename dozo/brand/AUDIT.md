@@ -27,9 +27,9 @@ reviewed text). Status below is as of the audit date, checked against `brand.jso
 | 12 | Model tool prefix `mcp__rakazo__` (Claude Code CLI provider) | Fixed: `TOOL_SERVER` constant, all uses go through it |
 | 13 | Page-kit import specifier `rakazo/page` in the model's guide | Fixed: `PAGE_KIT_MODULE` and guide text to `dozo/page` (validate/runtime use the constant) |
 | 14 | E-mails signed "Elie" (welcome, referral) | Fixed: anchored rules to "Dozo". Gate: `leakWords: ["Elie"]` |
-| 15 | Welcome mail hero image (upstream art, then broken `dozo.example` URL) | Fixed: the hero is `assets/mail/welcome.png` (lockup and the six avatar heads, 1040x546), mapped to `apps/web/public/email/` and linked by an anchored rule. Owner action: the mail links it under the `urls` domain, which must reach the web app |
-| 16 | Placeholder domains/owner `dozo.example`, `OWNER/dozo` | Owner action (`LAUNCH-CHECKLIST.md`). Gate: `check.mjs --launch` fails on them |
-| 17 | Self-update/compute image defaults pull `ghcr.io/elie222/rakazo/*` | Owner action: publish images. `--launch` fails while the allow-listed names exist. Until then disable self-update |
+| 15 | Welcome mail hero image (upstream art, then broken `dozo.example` URL) | Fixed: the mail has no hero; the landing site serves none (`assets/mail/welcome.png` kept as artwork, not mapped) |
+| 16 | Placeholder domains/owner `dozo.example`, `OWNER/dozo` | Fixed: GitHub is `SSilistre-dev/dozo`; every `dozo.example` link is pointed at a real address or dropped by an anchored rule (README, Known gaps). Gate: `placeholders`, checked by `apply` and the leak gate |
+| 17 | Self-update/compute image defaults pull `ghcr.io/elie222/rakazo/*` | Owner action: publish images. `--launch` fails while the allow-listed names exist. Until then no repository counts as official (anchored rule, `dozo-self-update.test.ts`), so self-update builds the checkout and never pulls upstream's image |
 | 18 | Mobile-only strings in web `messages-*.js` catalogs | Superseded by row 31: `apps/mobile` is in scope, so the strings are renamed at the source. The gate still cannot see build output |
 | 19 | `orange-bot.png` mascot source | Reviewed in `allow.binary`: export-script source, never shipped |
 | 20 | Vendor `originator`/`x-opencode-client`/`X-Keenable-Title` `rakazo` | Rejected: vendor-validated or operator-only; `allow.text` entries (`{file, text, reason}`) |
@@ -80,7 +80,7 @@ iOS and macOS icons.
 Closed in the desktop, mobile and mail pass: `include` now also lists the image files of `apps/desktop`
 and `apps/mobile` (their text, bundle ids and store entries stay out of scope), and every row of the
 table below is mapped to the approved mark (`assets/README.md`, map), as are the Icon Composer layer
-(`allow.binary` is empty) and the welcome-mail hero. Not looked at on a device: the `.icns` and
+(`allow.binary` is empty). Not looked at on a device: the `.icns` and
 `Assets.car` that packaging makes, the Android launcher masks, the iOS widget and the DMG window; the
 files were checked as images only.
 
@@ -99,7 +99,7 @@ The table, as the files were before the pass (all of them the orange mascot):
 Out of `include`, not shipped by the stack: `apps/www/public/**` (marketing site: favicons, `og-image.png`
 1200x630, `email/welcome.jpg` 1040x546, `brand/kit/*`, `avatars/*.svg`, `og/*.png`) and
 `packages/testkit/src/evals/fixtures/example-*.png` (eval fixtures). The welcome mail no longer points at
-`www/email/welcome.jpg`: an anchored rule links `email/welcome.png`, served by the web app.
+`www/email/welcome.jpg`: an anchored rule drops the hero.
 
 Inline SVG mascots and wordmarks (cannot be replaced by the asset map). Reviewed one by one on
 2026-11-17; on the web no upstream drawing is reachable any more. Anchored rules point the

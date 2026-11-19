@@ -21,6 +21,11 @@ down:
 # Not part of qa. See dozo/e2e/README.md.
 e2e:
 	@dozo/e2e/run.sh
+.PHONY: token-kiyas
+# Offline token benchmark against a fake model; rewrites dozo/metrics/token-baseline.json and ends
+# with a TOKEN: line. Optional DOZO_TOKEN_PRICING=<file>. See dozo/metrics/token-kiyas.sh.
+token-kiyas:
+	@dozo/metrics/token-kiyas.sh
 .PHONY: olcum
 # Code measurement: writes dozo/metrics/baseline.json and REPORT.md (dozo/metrics/README.md). Not part
 # of olc or qa. `make olcum OLCUM_FLAGS=--gate` exits 2 when a fork score fell.

@@ -16,6 +16,7 @@ what each gate runs. Brand rules and the leak gate: `dozo/brand/README.md`. Merg
 | `make up` | `build.sh all`: stage, brand, build, up. It stages again every time; `smoke` is not part of it |
 | `make down` | `build.sh down`. It cannot pass `--volumes`; call the script for that (see Reset) |
 | `make e2e` | `dozo/e2e/run.sh` against a running stack (`make up` first) |
+| `make token-kiyas` | `dozo/metrics/token-kiyas.sh`: the offline token benchmark (fixed tasks, real runtime, fake model, no network) against `dozo/metrics/token-baseline.json`; deps read-only from `dozo-qa-deps`; optional `DOZO_TOKEN_PRICING=<file>` |
 | `make olcum` | `dozo/metrics/olcum.sh`: code measurement against `dozo/metrics/baseline.json` (`dozo/metrics/README.md`); not part of `olc` or `qa` |
 
 The Makefile exports `DOZO_STAGE_WORKTREE=1` unless it is already set (an empty value turns it off).
@@ -134,6 +135,10 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   builds nothing; the check on the resolved config is `dozo/mobile/build.sh check`.
 - Every anchored brand rule against the repository tree: `apply.mjs --check --allow-git --strict`
   (writes nothing; prints the `hooks:` line).
+- The leak gate on a branded copy: the working tree's `apps`, `packages` and `infra` (tracked and
+  untracked, not ignored) are branded in a scratch copy inside one container and scanned by
+  `check.mjs`, so the old name left in a screen, an e-mail template, a locale catalogue or a prompt
+  fails here, not only at `make qa`. About 9 seconds.
 - A rules summary line (informational): the number of files under `dozo/`, of `dozo-*` fork files
   inside upstream directories, and of upstream workflow files (`.github/workflows`, not named
   `dozo-*`). A sync that brings a new upstream workflow changes the last number: see `dozo/SYNC.md`.
