@@ -533,3 +533,42 @@ describe("a server that does not bill", () => {
     await expect(sandboxAllowanceUsedUp({ prisma, sandbox }, hostedComputer)).resolves.toBe(false);
   });
 });
+
+describe("the end of the plan in force, in the status", () => {
+  it("has none on Free", async () => {
+    const status = await setup().billing.status(actor);
+    expect(status.planEnd).toBeUndefined();
+  });
+
+  it("renews a subscription at the end of its period", async () => {
+    const context = setup();
+    await subscribe(context);
+    const periodEnd = store.account!.currentPeriodEndsAt as Date;
+    expect(periodEnd).toBeInstanceOf(Date);
+    await expect(context.billing.status(actor)).resolves.toMatchObject({
+      planEnd: { at: periodEnd.toISOString(), renews: true },
+    });
+  });
+
+  it("tells a member when a granted plan ends, and nothing once it has", async () => {
+    store.grant = grant("max", 5);
+    await expect(setup().billing.status(actor)).resolves.toMatchObject({
+      byokTier: "max",
+      planEnd: { at: store.grant.endsAt.toISOString(), renews: false },
+    });
+    store.grant = grant("max", -1);
+    const ended = await setup().billing.status(actor);
+    expect(ended).toMatchObject({ byokTier: "standard", computerHoursLeft: 0 });
+    expect(ended.planEnd).toBeUndefined();
+  });
+
+  it("ends with a grant above the subscription", async () => {
+    const context = setup();
+    await subscribe(context, "pro");
+    store.grant = grant("max", 5);
+    await expect(context.billing.status(actor)).resolves.toMatchObject({
+      byokTier: "max",
+      planEnd: { at: store.grant.endsAt.toISOString(), renews: false },
+    });
+  });
+});

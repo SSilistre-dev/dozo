@@ -183,3 +183,30 @@ it("shows no shared space where the server sends none, as one that does not bill
   await render(free);
   expect(container.querySelector('[data-testid="shared-space"]')).toBeNull();
 });
+
+it("shows when the plan renews once, below the plan, not again on the subscription", async () => {
+  await render({
+    ...free,
+    state: "active",
+    byokTier: "pro",
+    byokPriceCents: offers[0]!.monthlyPriceCents,
+    hasCustomer: true,
+    currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
+    planEnd: { at: "2030-01-15T12:00:00.000Z", renews: true },
+  });
+  expect(container.querySelector('[data-testid="plan-end"]')?.textContent).toMatch(
+    /^Renews Jan 15, 2030 · /,
+  );
+  expect(container.textContent?.match(/Jan 15, 2030/g)).toHaveLength(1);
+});
+
+it("shows when a granted plan ends, with no subscription", async () => {
+  await render({
+    ...free,
+    byokTier: "max",
+    planEnd: { at: "2030-01-15T12:00:00.000Z", renews: false },
+  });
+  expect(container.querySelector('[data-testid="plan-end"]')?.textContent).toMatch(
+    /^Ends Jan 15, 2030 · /,
+  );
+});

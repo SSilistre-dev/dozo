@@ -86,7 +86,8 @@ counted. `packages/db/src/dozo-shared-space.ts` refuses the write that takes the
 (`shared_space_full`), inside the transaction that records the file and behind a lock per
 organization, so writes running together cannot pass the limit between them. Nothing is deleted
 and everything stays readable when a plan ends with more than Free allows; only new files are
-refused until enough is deleted. Only a live Premium or Premium Plus subscription raises the limit;
+refused until enough is deleted. Only Premium or Premium Plus in force raises the limit: a live
+subscription to it, or a plan an admin granted that has not ended (the higher of the two counts);
 every other organization, one that only buys credits included, has Free's. The billing status
 carries the plan's name and the bytes in use (`sharedSpace`, read with the same count), which
 Billing shows on web and mobile; a server that does not bill sends none. The test beside that
@@ -110,9 +111,12 @@ the end date and takes the higher of the paid tier and an unexpired grant's; the
 and size, the shared space, the operator's paid services and the billing status all read the plan
 through it. A grant ends by that comparison alone: nothing runs when it ends, and the organization
 is back on what it pays for, Free when nothing. A granted plan has no price and no billing row, so
-the billing page shows no price for it. Every change is an audit event in the organization's own
-audit log, as the operator: the event names the admin only by id, never by email, and not the
-internal note (which stays on the grant row). The event is the lasting record of who gave or ended
+the billing page shows no price for it. Billing (web and mobile) shows when the plan in force
+renews or ends, a grant's end included, and the days left (`planEnd` in the status, picked in
+`apps/api/src/dozo-plan-end.ts`); a plan that ends within seven days shows in the warning colour.
+Every change is an audit event in the organization's own audit log, as the operator: the event
+names the admin only by id, never by email, and not the internal note (which stays on the grant
+row). The event is the lasting record of who gave or ended
 a plan, since a new grant overwrites the row's giver and ending one deletes the row; it is written
 just after the change, as the audit primitive takes no transaction. Ending a plan that was not
 there changes and records nothing. A grant ends at the end of a UTC day, and the page offers
