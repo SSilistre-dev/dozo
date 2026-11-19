@@ -1,5 +1,5 @@
 {
-  "version": "dozo-token-bench-v6",
+  "version": "dozo-token-bench-v7",
   "fakeProvider": {
     "tokenizer": "ceil(utf8 bytes / 4) per request part",
     "cache": "prefix cache per thread: a request reads the longest byte prefix it shares with an earlier request of the same thread, up to what that request wrote; every request of at least minimumTokens writes its block-aligned prefix",
@@ -8,21 +8,21 @@
   },
   "pricing": null,
   "totals": {
-    "modelCalls": 80,
-    "promptTokens": 1113544,
-    "inputTokens": 4552,
-    "outputTokens": 898,
-    "cacheReadTokens": 800512,
-    "cacheWriteTokens": 308480,
-    "cacheReadShare": 0.7188867256255702,
+    "modelCalls": 99,
+    "promptTokens": 1314602,
+    "inputTokens": 5674,
+    "outputTokens": 1185,
+    "cacheReadTokens": 967552,
+    "cacheWriteTokens": 341376,
+    "cacheReadShare": 0.7360037486630935,
     "costUsd": null,
     "components": {
-      "system": 164996,
-      "tools": 626720,
+      "system": 204454,
+      "tools": 775566,
       "history": 97507,
-      "prompt": 2202,
-      "toolCalls": 4256,
-      "toolResults": 217863
+      "prompt": 4766,
+      "toolCalls": 6974,
+      "toolResults": 225335
     }
   },
   "tasks": [
@@ -402,6 +402,60 @@
         "prompt": 36,
         "toolCalls": 108,
         "toolResults": 5097
+      }
+    },
+    {
+      "id": "form-fill-no-skill",
+      "kind": "multi-page",
+      "modelCalls": 9,
+      "inputTokens": 455,
+      "outputTokens": 111,
+      "cacheReadTokens": 83712,
+      "cacheWriteTokens": 11136,
+      "costUsd": null,
+      "components": {
+        "system": 18198,
+        "tools": 70506,
+        "history": 0,
+        "prompt": 369,
+        "toolCalls": 1670,
+        "toolResults": 4560
+      }
+    },
+    {
+      "id": "form-fill-old-skill",
+      "kind": "multi-page",
+      "modelCalls": 5,
+      "inputTokens": 318,
+      "outputTokens": 88,
+      "cacheReadTokens": 41472,
+      "cacheWriteTokens": 10880,
+      "costUsd": null,
+      "components": {
+        "system": 10630,
+        "tools": 39170,
+        "history": 0,
+        "prompt": 890,
+        "toolCalls": 524,
+        "toolResults": 1456
+      }
+    },
+    {
+      "id": "form-fill-new-skill",
+      "kind": "multi-page",
+      "modelCalls": 5,
+      "inputTokens": 349,
+      "outputTokens": 88,
+      "cacheReadTokens": 41856,
+      "cacheWriteTokens": 10880,
+      "costUsd": null,
+      "components": {
+        "system": 10630,
+        "tools": 39170,
+        "history": 0,
+        "prompt": 1305,
+        "toolCalls": 524,
+        "toolResults": 1456
       }
     }
   ]
