@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import type { DozoCacheSavings as Savings } from "@rakazo/contracts";
+import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -9,17 +11,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 // Runs on the branded tree only: the procedure joins the app contract through a brand rule.
 
-// The macro is not compiled in tests: a descriptor goes to the real catalog, so the fork's
-// Turkish is what is checked.
-vi.mock("@lingui/react/macro", async () => {
-  const { i18n: real } = await import("@lingui/core");
-  return {
-    useLingui: () => ({
-      t: (descriptor: { id: string; message: string }) => real._(descriptor),
-      i18n: real,
-    }),
-  };
-});
 const answer = vi.hoisted(() => ({ value: null as Savings | null }));
 vi.mock("../lib/query", () => ({
   useSpaceQueries: () => ({
@@ -88,8 +79,8 @@ it("shows the share, and the two counts when pressed", async () => {
   expect(document.body.textContent).toContain("Total input1,700,000");
 });
 
-it("speaks Turkish", async () => {
-  i18n.load("tr", {});
+it("speaks Turkish with the catalog the build ships", async () => {
+  i18n.load("tr", tr as Messages);
   i18n.activate("tr");
   await show(<DozoCacheSavings />);
   const trigger = host.querySelector("button");
