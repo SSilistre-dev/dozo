@@ -744,11 +744,11 @@
     {
       "file": "packages/auth/src/index.ts",
       "find": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { createDirectory } from \"./directory.js\";",
-      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
+      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { hostedLoginCapabilities } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
-      "reason": "hosted account sign-in on a local server: the start check the API runs (rule in apps/api/src/app.ts)"
+      "reason": "hosted account sign-in on a local server: what the public capabilities say about it (rule in apps/api/src/app.ts)"
     },
     {
       "file": "packages/auth/src/index.ts",
@@ -762,20 +762,11 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  publicSignInProviders,\n} from \"@rakazo/auth\";",
-      "replace": "  publicSignInProviders,\n  hostedLoginOnly,\n  refuseUnlinkedAccounts,\n} from \"@rakazo/auth\";",
+      "replace": "  publicSignInProviders,\n  hostedLoginCapabilities,\n} from \"@rakazo/auth\";",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
       "reason": "hosted account sign-in on a local server: the import of the rule below"
-    },
-    {
-      "file": "apps/api/src/app.ts",
-      "find": "    },\n  });\n  const oauthTokenUpgrade = auth\n",
-      "replace": "    },\n  });\n  // A local server in hosted mode would lock out accounts made here before: refuse to start.\n  await refuseUnlinkedAccounts(prisma);\n  const oauthTokenUpgrade = auth\n",
-      "requires": [
-        "packages/auth/src/dozo-hosted-login.ts"
-      ],
-      "reason": "hosted account sign-in on a local server: with HOSTED_LOGIN_ISSUER set, a server that already has accounts of its own stops with a clear error instead of locking their owners out"
     },
     {
       "file": "apps/web/src/App.tsx",
@@ -5000,17 +4991,17 @@
     {
       "file": "packages/contracts/src/auth.ts",
       "find": "  signupsOpen: z.boolean().optional(),\n});",
-      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n});",
+      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n  /** Whether it still has password accounts a signed-in user may link to that account; omitted means no. */\n  hostedLink: z.boolean().optional(),\n});",
       "reason": "hosted account sign-in on a local server: the capability that tells the sign-in page to offer that one way in"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n    } satisfies AuthCapabilities);",
-      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      hostedLogin: hostedLoginOnly(),\n    } satisfies AuthCapabilities);",
+      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      ...(await hostedLoginCapabilities(prisma)),\n    } satisfies AuthCapabilities);",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
-      "reason": "hosted account sign-in on a local server: the public capabilities say when the server signs in only with the hosted account"
+      "reason": "hosted account sign-in on a local server: the public capabilities say whether the server signs in only with the hosted account, or still has password accounts a signed-in user may link"
     },
     {
       "file": "apps/mobile/app/_layout.tsx",
@@ -5370,8 +5361,8 @@
     },
     {
       "file": "packages/auth/src/index.ts",
-      "find": "export { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory }",
-      "replace": "export { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport type { RelaySessionAuth, RelaySessionPrisma } from \"./dozo-relay-session.js\";\nexport {\n  agentProofMatches,\n  forgetRelayAgentKey,\n  issueRelaySession,\n  relayAgentKey,\n  revokeRelaySession,\n} from \"./dozo-relay-session.js\";\nexport { createDirectory }",
+      "find": "export { hostedLoginCapabilities } from \"./dozo-hosted-login.js\";\nexport { createDirectory }",
+      "replace": "export { hostedLoginCapabilities } from \"./dozo-hosted-login.js\";\nexport type { RelaySessionAuth, RelaySessionPrisma } from \"./dozo-relay-session.js\";\nexport {\n  agentProofMatches,\n  forgetRelayAgentKey,\n  issueRelaySession,\n  relayAgentKey,\n  revokeRelaySession,\n} from \"./dozo-relay-session.js\";\nexport { createDirectory }",
       "requires": [
         "packages/auth/src/dozo-relay-session.ts"
       ],
@@ -6061,6 +6052,30 @@
       "requires": [
         "packages/adapters/src/dozo-computer-image.test.ts"
       ]
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { SettingsGroup",
+      "replace": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { DozoHostedLinkRow } from \"../components/dozo-hosted-link-row\";\nimport { SettingsGroup",
+      "requires": [
+        "apps/web/src/components/dozo-hosted-link-row.tsx"
+      ],
+      "reason": "hosted account sign-in on a local server: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "          <DozoActivityLogRow />\n        </SettingsGroup>",
+      "replace": "          <DozoActivityLogRow />\n          <DozoHostedLinkRow />\n        </SettingsGroup>",
+      "requires": [
+        "apps/web/src/components/dozo-hosted-link-row.tsx"
+      ],
+      "reason": "hosted account sign-in on a local server: a server with password accounts lets a signed-in user link theirs to the Dozo account from Security; elsewhere the row shows nothing"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"",
+      "replace": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Check this computer's date and time\"\nmsgstr \"Bu bilgisayarın tarih ve saatini denetleyin\"\n\n#: apps/web/src/components/dozo-hosted-link-row.tsx\nmsgid \"Dozo account\"\nmsgstr \"Dozo hesabı\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"",
+      "reason": "hosted account sign-in on a local server: the Turkish copy of the clock hint on the sign-in page and of the link row in Security"
     }
   ],
   "assets": {

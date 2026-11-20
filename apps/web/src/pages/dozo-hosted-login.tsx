@@ -59,20 +59,17 @@ export function HostedLoginPage() {
 }
 
 /**
- * The sign-in page of a server that signs in only with the hosted account: one button, which asks
- * this server to start (its own page's request only) and opens the hosted page it names. A sign-in
- * that came back refused lands here again with `error`, and says so.
+ * Asks this server to start a hosted sign-in, or with `link` to link the signed-in user's own
+ * account (its own page's request only), and opens the hosted page it names.
  */
-export function HostedSignIn() {
-  const [params] = useSearchParams();
-  const refused = params.has("error");
-  const start = useSave<void, string>({
+export function useHostedStart(link = false) {
+  return useSave<void, string>({
     save: async () => {
       const response = await fetch("/api/auth/dozo/hosted-login/start", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(link ? { link: true } : {}),
       });
       if (!response.ok) throw new Error(`hosted login start answered ${response.status}`);
       return ((await response.json()) as { url: string }).url;
@@ -80,6 +77,17 @@ export function HostedSignIn() {
     onSaved: (url) => window.location.assign(url),
     closesScreen: true,
   });
+}
+
+/**
+ * The sign-in page of a server that signs in only with the hosted account: one button. A sign-in
+ * that came back refused lands here again with `error`, and says so; when the token arrived out
+ * of time, the computer's clock is the likely cause and the one thing the person can fix.
+ */
+export function HostedSignIn() {
+  const [params] = useSearchParams();
+  const error = params.get("error");
+  const start = useHostedStart();
   return (
     <AuthFrame
       title={<Trans>Sign in</Trans>}
@@ -91,9 +99,13 @@ export function HostedSignIn() {
       <Button type="submit" size="lg" disabled={start.pending} className={submitClass}>
         <Trans>Continue</Trans>
       </Button>
-      {refused || start.error ? (
+      {error || start.error ? (
         <p role="alert" className="mt-3 w-full text-body text-destructive">
-          <Trans>Could not continue</Trans>
+          {error === "hosted_login_clock" && !start.error ? (
+            <Trans>Check this computer's date and time</Trans>
+          ) : (
+            <Trans>Could not continue</Trans>
+          )}
         </p>
       ) : null}
     </AuthFrame>
