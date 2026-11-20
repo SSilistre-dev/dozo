@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Back Up</title>
+    <link rel="stylesheet" href="backup.css" />
+    <script type="module" src="backup.js"></script>
+  </head>
+  <body>
+    <main>
+      <form id="backup" hidden>
+        <input id="password" type="password" placeholder="Password" autocomplete="new-password" aria-label="Password" />
+        <input id="again" type="password" placeholder="Password again" autocomplete="new-password" aria-label="Password again" />
+        <p class="quiet">Nobody can recover a lost password.</p>
+        <p class="problem" role="alert"></p>
+        <button class="primary">Back Up…</button>
+      </form>
+
+      <form id="restore" hidden>
+        <button type="button" id="pick">Choose Backup…</button>
+        <div id="unlock" hidden>
+          <p id="picked" class="quiet"></p>
+          <input id="key" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" />
+          <p class="quiet">This replaces the data on this computer.</p>
+          <p class="problem" role="alert"></p>
+          <button class="primary">Restore</button>
+        </div>
+      </form>
+
+      <section id="working" hidden>
+        <p id="step"></p>
+      </section>
+
+      <section id="done" hidden>
+        <p id="result"></p>
+      </section>
+    </main>
+  </body>
+</html>

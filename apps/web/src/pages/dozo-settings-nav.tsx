@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { Scale } from "lucide-react";
 import { useEffect, useState } from "react";
+import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { SettingsNavItem } from "./settings-nav";
 import type { SettingsSection } from "./shell-overlay";
 
@@ -39,21 +40,21 @@ export function dozoSettingsNavGroups(
 export const NOTICES_PAGE = "/third-party-notices.html";
 
 /**
- * Whether this server has the notices page: the local server does, a hosted one does not. Read
- * once, asking for something other than a page, so the web server's page fallback answers 404
- * when the file is missing instead of the app's own page.
+ * Whether this server ships the notices page, as its public capabilities say (`notices`, set by
+ * the local server bundle only). The app loads those once at start, so this sends no request of
+ * its own and a hosted server, which has no such page, is never asked for it.
  */
 function useNoticesPage(): boolean {
   const [present, setPresent] = useState(false);
   useEffect(() => {
     let current = true;
-    fetch(NOTICES_PAGE, { method: "HEAD", headers: { accept: "text/plain" } })
+    fetchAuthCapabilities()
       .then(
-        (response) => response.ok,
+        (capabilities) => capabilities.notices === true,
         () => false,
       )
-      .then((ok) => {
-        if (current) setPresent(ok);
+      .then((shipped) => {
+        if (current) setPresent(shipped);
       });
     return () => {
       current = false;
