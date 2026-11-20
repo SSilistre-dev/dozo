@@ -33,7 +33,9 @@ export async function takeDozoDailySend(
   send: { userId: string; botId: string },
   now = new Date(),
 ): Promise<{ full: false } | { full: true; dailySends: number }> {
-  const [account] = await db.$queryRaw<Array<{ timezone: string | null; dailySends: number | null }>>`
+  const [account] = await db.$queryRaw<
+    Array<{ timezone: string | null; dailySends: number | null }>
+  >`
     SELECT u.timezone, l."dailySends"
     FROM "user" u LEFT JOIN dozo_send_limits l ON l."userId" = u.id
     WHERE u.id = ${send.userId}`;

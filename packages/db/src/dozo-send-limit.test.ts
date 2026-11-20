@@ -26,14 +26,17 @@ describe("readDozoDailySends and saveDozoDailySends", () => {
   it("save one number per account", async () => {
     const { db, calls } = fakeDb();
     await saveDozoDailySends(db, "user-1", 25);
-    expect(calls[0]!.sql).toContain("ON CONFLICT (\"userId\") DO UPDATE");
+    expect(calls[0]!.sql).toContain('ON CONFLICT ("userId") DO UPDATE');
     expect(calls[0]!.values).toEqual(["user-1", 25]);
   });
 });
 
 describe("takeDozoDailySend", () => {
   it("counts on today's date in the member's timezone, below the account's number", async () => {
-    const { db, calls } = fakeDb([{ timezone: "Pacific/Auckland", dailySends: 10 }], [{ count: 3 }]);
+    const { db, calls } = fakeDb(
+      [{ timezone: "Pacific/Auckland", dailySends: 10 }],
+      [{ count: 3 }],
+    );
     // 20:00 UTC on 1 March is already 2 March in Auckland.
     expect(await takeDozoDailySend(db, send, new Date("2027-03-01T20:00:00Z"))).toEqual({
       full: false,

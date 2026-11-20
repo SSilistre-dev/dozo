@@ -15,7 +15,7 @@ vi.mock("./dozo-send-limit.js", async (importOriginal) => {
   return {
     ...real,
     dozoSendLimitGate: async (
-      ctx: Parameters<typeof real.dozoSendLimitGate>[0],
+      _ctx: Parameters<typeof real.dozoSendLimitGate>[0],
       call: Parameters<typeof real.dozoSendLimitGate>[1],
       plan: string,
     ) => {
@@ -111,7 +111,9 @@ describe("gateToolCall: the daily send limit", () => {
   it("tells a connector action that changes something from one that reads", async () => {
     expect(await gate("chat_post_message", { readOnly: false })).toBe("recorded");
     expect(await gate("chat_list_channels", { readOnly: true })).toBe("recorded");
-    expect(limit.calls.map(({ call }) => [call.name, call.viaConnector, call.connectorChanges])).toEqual([
+    expect(
+      limit.calls.map(({ call }) => [call.name, call.viaConnector, call.connectorChanges]),
+    ).toEqual([
       ["chat_post_message", true, true],
       ["chat_list_channels", true, false],
     ]);

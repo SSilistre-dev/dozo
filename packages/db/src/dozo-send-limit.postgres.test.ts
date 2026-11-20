@@ -58,13 +58,17 @@ describePostgres("daily sends (PostgreSQL)", () => {
     const { userId, botId, otherBotId } = await owner("Pacific/Auckland");
     await saveDozoDailySends(system, userId, 2);
     const morning = new Date("2027-03-01T20:00:00Z");
-    const take = (bot: string, at = morning) => takeDozoDailySend(system, { userId, botId: bot }, at);
+    const take = (bot: string, at = morning) =>
+      takeDozoDailySend(system, { userId, botId: bot }, at);
     expect(await take(botId)).toEqual({ full: false });
     expect(await take(botId)).toEqual({ full: false });
     expect(await take(botId)).toEqual({ full: true, dailySends: 2 });
     expect(await take(otherBotId)).toEqual({ full: false });
     // Midnight in Auckland, not in UTC.
-    expect(await take(botId, new Date("2027-03-02T10:59:00Z"))).toEqual({ full: true, dailySends: 2 });
+    expect(await take(botId, new Date("2027-03-02T10:59:00Z"))).toEqual({
+      full: true,
+      dailySends: 2,
+    });
     expect(await take(botId, new Date("2027-03-02T11:00:00Z"))).toEqual({ full: false });
     // Two days on, the old days are gone.
     await take(botId, new Date("2027-03-05T11:00:00Z"));

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-  take: vi.fn(async (): Promise<{ full: false } | { full: true; dailySends: number }> => ({
-    full: false,
-  })),
+  take: vi.fn(
+    async (): Promise<{ full: false } | { full: true; dailySends: number }> => ({
+      full: false,
+    }),
+  ),
 }));
 vi.mock("@rakazo/db", () => ({ takeDozoDailySend: db.take }));
 
