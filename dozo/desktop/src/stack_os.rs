@@ -29,7 +29,7 @@ pub enum Stop {
 
 /// Tests that stand in for a system without `PR_SET_PDEATHSIG` (macOS) turn it off, and the lock
 /// that goes with it.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub static AS_WITHOUT_PDEATHSIG: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
