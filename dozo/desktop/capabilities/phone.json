@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "phone",
+  "description": "The Connect Phone window (ui/phone.html): its code, the paired phones and removing one. Like the app's other screens it has no `remote` entry.",
+  "windows": ["phone"],
+  "permissions": ["allow-phone-code", "allow-phones", "allow-remove-phone"]
+}

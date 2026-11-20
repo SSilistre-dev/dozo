@@ -3,7 +3,8 @@
 // Usage: node dozo/server-bundle/build.mjs <branded-tree> <out-dir>
 // Runs in the tree: pnpm install, db:generate, the web build, then upstream's
 // scripts/build-server-bundle.mjs (wrapped, never edited). Then it drops the packages TRIM names
-// (never loaded by a local server), repacks, and writes to <out-dir>:
+// (never loaded by a local server), adds the relay host agent as one file
+// (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"), repacks, and writes to <out-dir>:
 //   dozo-server-<platform>-<arch>.tar.xz   one folder, rakazo-server/ (upstream's layout)
 //   dozo-server-<platform>-<arch>.json     { platform, version, file, sha256, size, ... }
 // manifest.mjs joins those fragments with runtimes.json into the manifest the desktop app reads.
@@ -26,6 +27,12 @@ const TRIM = [
     "cluster computer provider; a local server runs SANDBOX_PROVIDER=none",
   ],
 ];
+
+// The bundle's version is upstream's with this revision after it: a change to what the fork adds
+// (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
+// Raise it with every such change; the release tag is server-v<version>.
+const REVISION = 1;
+const AGENT = "dozo-relay-agent.mjs";
 
 const fail = (message, code = 2) => {
   process.stderr.write(`[server-bundle] FAILED: ${message}\n`);
@@ -136,6 +143,33 @@ step("web", () =>
 );
 
 const work = fs.mkdtempSync(path.join(tmpdir(), "dozo-server-bundle-"));
+// The relay host agent (dozo/relay/agent/README.md) as one file: plain Node runs it, no tsx. ws's
+// optional native helpers stay out; ws runs without them.
+step("relay agent", () => {
+  run("pnpm", [
+    "exec",
+    "esbuild",
+    "packages/adapters/src/dozo-relay-agent.ts",
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    "--target=node24",
+    "--external:bufferutil",
+    "--external:utf-8-validate",
+    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    `--outfile=${path.join(work, AGENT)}`,
+  ]);
+  // It loads and answers: a fresh state folder has no channels.
+  const listed = execFileSync(
+    "node",
+    [path.join(work, AGENT), "list", "--state", path.join(work, "agent-state")],
+    {
+      encoding: "utf8",
+    },
+  );
+  if (listed.trim() !== '{"channels":[]}') throw new Error(`agent list printed ${listed}`);
+  fs.rmSync(path.join(work, "agent-state"), { recursive: true, force: true });
+});
 let upstream;
 step("bundle", () => {
   run("node", ["scripts/build-server-bundle.mjs", path.join(work, "upstream")]);
@@ -159,6 +193,11 @@ step("trim", () => {
   });
   before = measure(unpacked);
   trimmed = trim(path.join(unpacked, "rakazo-server"));
+  const server = path.join(unpacked, "rakazo-server");
+  fs.copyFileSync(path.join(work, AGENT), path.join(server, AGENT));
+  const manifest = JSON.parse(fs.readFileSync(path.join(server, "manifest.json"), "utf8"));
+  manifest.entrypoints = { ...manifest.entrypoints, relay: AGENT };
+  fs.writeFileSync(path.join(server, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const [prefix] of TRIM) {
     if (!trimmed.removed.some((entry) => entry.startsWith(`${prefix}@`))) {
       say(`trim: ${prefix} is no longer in the bundle; drop it from TRIM`);
@@ -177,7 +216,7 @@ fs.rmSync(work, { recursive: true, force: true });
 
 const fragment = {
   platform,
-  version: upstream.version,
+  version: `${upstream.version}-${REVISION}`,
   file: path.basename(archive),
   sha256: sha256(archive),
   size: fs.statSync(archive).size,

@@ -2,8 +2,11 @@
 # End-to-end test of the server on this computer (src/stack.rs), without a window: the app's own
 # code installs a real server bundle from a local manifest, starts it, gets 200 from /health and
 # stops it, and in between pairs this computer with it and connects the device socket ("Let Bots
-# Use This Computer"); then starts it again from what is installed and is killed with SIGKILL.
-# After both, no process of the server may be left.
+# Use This Computer"); then starts it again from what is installed and is killed with SIGKILL;
+# then starts it once more and pairs a phone through the bundled relay agent: a dev relay and a
+# phone run in a second container on the same loopback (tests/relay_phone.mts, with the workspace
+# from the dozo-qa-deps volume, read only, and this checkout's relay files over it). After each,
+# no process of the server may be left.
 # Usage: dozo/desktop/tests/stack_e2e.sh <dist-dir>
 #   <dist-dir> holds dozo-server-linux-x64.tar.xz and its .json (dozo/server-bundle/build.sh).
 #   node-linux-x64.tar.xz and postgres-linux-x64.tar.gz in it, when there, are used instead of
@@ -17,7 +20,7 @@ verdict() { echo "DESKTOP STACK E2E: $1"; [ "$1" = PASS ] && exit 0 || exit 2; }
 DIST="$(cd "$1" && pwd)" || exit 64
 [ -f "$DIST/dozo-server-linux-x64.tar.xz" ] || { echo "no bundle in $DIST" >&2; verdict FAIL; }
 NAME="dozo-desktop-stack-e2e-$$"
-trap 'docker rm -f "$NAME" "$NAME-manifest" > /dev/null 2>&1 || true' EXIT
+trap 'docker rm -f "$NAME" "$NAME-manifest" "$NAME-phone" > /dev/null 2>&1 || true' EXIT
 trap 'exit 130' INT; trap 'exit 143' TERM
 
 # The manifest, made by the script a release uses, then pointed at the local runtimes if present.
@@ -36,12 +39,26 @@ docker run --rm --name "$NAME-manifest" --cpus 3 --memory 6g --user "$(id -u):$(
 [ "$(id -u)" != 0 ] || { echo "run it as an ordinary user" >&2; verdict FAIL; }
 mkdir -p "$HERE/target"
 printf 'root:x:0:0::/root:/bin/sh\ndozo:x:%s:%s::/tmp:/bin/sh\n' "$(id -u)" "$(id -g)" > "$HERE/target/e2e-passwd"
-docker run --rm -i --name "$NAME" --cpus 3 --memory 6g -e CARGO_BUILD_JOBS=3 -u "$(id -u):$(id -g)" \
+# The relay and the phone; the app's container joins this one's network, so both see 127.0.0.1.
+ROOT="$(cd "$HERE/../.." && pwd)"
+SHARED="$HERE/target/e2e-shared"
+rm -rf "$SHARED" && mkdir -p "$SHARED" && chmod 777 "$SHARED"
+overlay=()
+for file in "$ROOT"/packages/{core,contracts,adapters}/src/dozo-relay*.ts; do
+  case "$file" in *.test.ts) continue ;; esac
+  overlay+=(-v "$file:/d/w/${file#"$ROOT"/}:ro")
+done
+docker run -d --name "$NAME-phone" --cpus 1 --memory 1g -u "$(id -u):$(id -g)" -e HOME=/tmp \
+  -e DOZO_WORKSPACE=/d/w -v dozo-qa-deps:/d:ro "${overlay[@]}" -v "$HERE/tests:/tests:ro" \
+  -v "$SHARED:/shared" "${DOZO_NODE_IMAGE:-node:24.22-slim}" \
+  /d/w/node_modules/.bin/tsx /tests/relay_phone.mts /shared > /dev/null || verdict FAIL
+docker run --rm -i --name "$NAME" --network "container:$NAME-phone" --cpus 3 --memory 6g -e CARGO_BUILD_JOBS=3 -u "$(id -u):$(id -g)" \
   -v "$HERE/..:/dozo" -v "$DIST:/dist:ro" -v "$HERE/target/e2e-passwd:/etc/passwd:ro" -w /dozo/desktop -e HOME=/tmp \
   -e RUSTUP_HOME=/dozo/desktop/.toolchain/linux/rustup \
   -e CARGO_HOME=/dozo/desktop/.toolchain/linux/cargo \
   -e DOZO_STACK_E2E_MANIFEST=file:///dist/e2e-manifest.json -e DOZO_STACK_E2E_ROOT=/tmp/e2e/server \
-  dozo-desktop-linux:22.04 bash -s <<'EOF' || verdict FAIL
+  -e DOZO_STACK_E2E_RELAY=http://127.0.0.1:8787 -e DOZO_STACK_E2E_SHARED=/shared -v "$SHARED:/shared" \
+  dozo-desktop-linux:22.04 bash -s <<'EOF'
 set -uo pipefail
 export PATH="$CARGO_HOME/bin:$PATH"
 say() { echo "[e2e] $*"; }
@@ -77,5 +94,12 @@ say "no process left after SIGKILL of the app"
 say "data folder: $(cd "$DOZO_STACK_E2E_ROOT" && ls | tr '\n' ' ')"
 say "versions: $(ls "$DOZO_STACK_E2E_ROOT/versions" | tr '\n' ' ')"
 say "secrets: $(stat -c %a "$DOZO_STACK_E2E_ROOT/secrets"), downloads left: $(ls "$DOZO_STACK_E2E_ROOT/downloads" | wc -l)"
+say "3. start again and pair a phone through the relay agent"
+"$BIN" --ignored --exact stack::tests::e2e_pairs_a_phone --nocapture \
+  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
+[ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 EOF
+rc=$?
+docker logs "$NAME-phone" 2>&1 | tail -5
+[ $rc = 0 ] || verdict FAIL
 verdict PASS

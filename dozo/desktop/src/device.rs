@@ -163,7 +163,7 @@ fn spawn(future: impl Future<Output = ()> + Send + 'static) {
     tauri::async_runtime::spawn(future);
 }
 
-struct Window(AppHandle);
+pub struct Window(pub AppHandle);
 
 impl SignIn for Window {
     /// Read off the main thread: on Windows the web view deadlocks otherwise.

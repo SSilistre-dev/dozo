@@ -53,10 +53,14 @@ marked latest; publishing the draft makes the addresses in the manifest live.
 ```
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
-failed. The app reads the manifest of the server version it was built for
+failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
+`0.11.0-1`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
-server archive holds `rakazo-server/`; its `manifest.json` names the four entrypoints.
+server archive holds `rakazo-server/`; its `manifest.json` names the entrypoints: upstream's
+four and `relay`, the relay host agent (`dozo/relay/agent/README.md`) as one file,
+`dozo-relay-agent.mjs`, which plain Node runs.
 
 ## Start contract
 

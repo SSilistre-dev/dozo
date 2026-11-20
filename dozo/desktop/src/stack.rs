@@ -23,7 +23,7 @@ use tokio::task::JoinHandle;
 use crate::stack_fetch::{self, FetchError, Format};
 use crate::stack_manifest::{self, Part};
 use crate::stack_os::Stop;
-use crate::stack_proc::{self, Backoff, Launch, Spec, Supervisor};
+use crate::stack_proc::{self, Backoff, Launch, OnLine, Spec, Supervisor};
 use crate::stack_setup::{self, PortError, Ports, Secrets};
 
 /// The manifest of the server this app was built for. A build can name another
@@ -31,7 +31,16 @@ use crate::stack_setup::{self, PortError, Ports, Secrets};
 /// and development: an `https://`, `http://` or `file://` address, or a file's path.
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
-    None => "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0/manifest.json",
+    None => {
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-1/manifest.json"
+    }
+};
+
+/// The relay a phone reaches this computer through (`dozo/relay/agent/README.md`). A build can
+/// name another (`DOZO_RELAY_URL`), and so can the environment or the settings file (`relay=`).
+pub const RELAY: &str = match option_env!("DOZO_RELAY_URL") {
+    Some(relay) => relay,
+    None => "https://relay.dozo.bot",
 };
 
 /// Sign-in with the hosted account on this server (`packages/auth/src/dozo-hosted-login.ts`):
@@ -44,6 +53,7 @@ const LOG_MAX: u64 = 5 << 20;
 pub struct Options {
     pub manifest: String,
     pub hosted_login_issuer: Option<String>,
+    pub relay: String,
 }
 
 impl Options {
@@ -55,6 +65,7 @@ impl Options {
         Options {
             manifest: std::env::var("DOZO_SERVER_MANIFEST").unwrap_or_else(|_| MANIFEST.into()),
             hosted_login_issuer: issuer,
+            relay: std::env::var("DOZO_RELAY_URL").unwrap_or_else(|_| RELAY.into()),
         }
     }
 }
@@ -176,6 +187,7 @@ struct Running {
     task: Option<JoinHandle<()>>,
     supervisor: Supervisor,
     lock: Option<Arc<fs::File>>,
+    agent: Option<Agent>,
 }
 
 /// The server on this computer, as the app holds it. One start or stop at a time.
@@ -184,6 +196,8 @@ pub struct Local {
     running: tokio::sync::Mutex<Running>,
     checks: Arc<dyn Checks>,
     backoff: Backoff,
+    /// The channel of the phone that paired last, as the relay agent said it.
+    paired: watch::Sender<Option<String>>,
 }
 
 impl Local {
@@ -197,7 +211,18 @@ impl Local {
                 Duration::from_secs(30),
                 Duration::from_secs(60),
             ),
+            paired: watch::channel(None).0,
         })
+    }
+
+    /// The relay agent of the running server, if its bundle has one.
+    pub async fn agent(&self) -> Option<Agent> {
+        self.running.lock().await.agent.clone()
+    }
+
+    /// Changes each time a phone pairs, to its channel.
+    pub fn paired(&self) -> watch::Receiver<Option<String>> {
+        self.paired.subscribe()
     }
 
     pub fn status(&self) -> watch::Receiver<Status> {
@@ -247,6 +272,7 @@ impl Local {
         }
         let clean = running.supervisor.stop_all().await;
         running.lock = None;
+        running.agent = None;
         self.status.send_replace(Status::Off);
         clean
     }
@@ -255,6 +281,7 @@ impl Local {
         let mut running = self.running.lock().await;
         let clean = running.supervisor.stop_all().await;
         running.lock = None;
+        running.agent = None;
         clean
     }
 
@@ -301,6 +328,20 @@ impl Local {
         self.run(&plan, layout, &launch)
             .await
             .map_err(|why| failed(Failure::Start, &why))?;
+        // The phone link. A bundle without the agent (older) runs without it.
+        if let Some(agent) = plan.agent(layout, options, &launch) {
+            let paired = self.paired.clone();
+            let mut run = agent.spec("run", &["--origin", &plan.web]);
+            run.on_line = Some(OnLine(Arc::new(move |line| {
+                if let Some(channel) = paired_channel(line) {
+                    paired.send_replace(Some(channel));
+                }
+            })));
+            self.keep(run, &launch)
+                .await
+                .map_err(|why| failed(Failure::Start, &why))?;
+            self.running.lock().await.agent = Some(agent);
+        }
         launch.note(&format!("ready at {}", plan.web));
         Ok(format!("{}/", plan.web))
     }
@@ -533,6 +574,93 @@ async fn wait_until(limit: Duration, check: impl Fn() -> bool + Send + Sync + 's
     }
 }
 
+/// The relay host agent's commands (`dozo/relay/agent/README.md`) for the running server.
+#[derive(Clone)]
+pub struct Agent {
+    base: Spec,
+    state: PathBuf,
+    relay: String,
+    launch: Arc<Launch>,
+}
+
+/// A pairing offer: what the QR code holds and when it stops working.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Offer {
+    pub channel: String,
+    pub qr: String,
+    pub expires_at: Value,
+}
+
+/// A paired phone, as `list` names it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Phone {
+    pub channel: String,
+    pub paired_at: Value,
+}
+
+impl Agent {
+    fn spec(&self, command: &str, args: &[&str]) -> Spec {
+        let mut spec = self.base.clone();
+        spec.args.push(command.into());
+        spec.args.extend(args.iter().map(Into::into));
+        spec.args.push("--state".into());
+        spec.args.push(self.state.clone().into());
+        spec
+    }
+
+    async fn ask(&self, command: &str, args: &[&str]) -> Result<Value, String> {
+        let mut spec = self.spec(command, args);
+        spec.name = "relay-command";
+        let text = stack_proc::output(&spec, &self.launch, Duration::from_secs(30)).await;
+        let text = text.inspect_err(|why| self.launch.note(&format!("relay {command}: {why}")))?;
+        text.lines()
+            .rev()
+            .find_map(|line| serde_json::from_str(line).ok())
+            .ok_or_else(|| format!("relay {command} printed no JSON"))
+    }
+
+    /// A new pairing offer; it works once, for ten minutes, while `run` is connected.
+    pub async fn offer(&self) -> Result<Offer, String> {
+        let answer = self.ask("pair", &["--relay", &self.relay]).await?;
+        let text = |key: &str| answer.get(key).and_then(Value::as_str).map(str::to_owned);
+        Ok(Offer {
+            channel: text("channel").ok_or("no channel")?,
+            qr: text("qr").ok_or("no qr")?,
+            expires_at: answer.get("expiresAt").cloned().unwrap_or(Value::Null),
+        })
+    }
+
+    /// The paired phones; offers still open are left out.
+    pub async fn phones(&self) -> Result<Vec<Phone>, String> {
+        let answer = self.ask("list", &[]).await?;
+        let channels = answer.get("channels").and_then(Value::as_array);
+        Ok(channels
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry.get("state").and_then(Value::as_str) == Some("paired"))
+            .filter_map(|entry| {
+                Some(Phone {
+                    channel: entry.get("channel")?.as_str()?.to_owned(),
+                    paired_at: entry.get("pairedAt").cloned().unwrap_or(Value::Null),
+                })
+            })
+            .collect())
+    }
+
+    /// Ends a phone's pairing: on the relay when it can be reached, and its keys here always.
+    pub async fn remove(&self, channel: &str) -> Result<(), String> {
+        self.ask("revoke", &[channel]).await.map(drop)
+    }
+}
+
+/// The channel in a `run` line that says a phone paired.
+fn paired_channel(line: &[u8]) -> Option<String> {
+    let event: Value = serde_json::from_slice(line).ok()?;
+    (event.get("event")?.as_str()? == "paired")
+        .then(|| event.get("channel")?.as_str().map(str::to_owned))
+        .flatten()
+}
+
 /// Every process of one start: programs, folders and variables (the README's table).
 struct Plan {
     root: PathBuf,
@@ -655,6 +783,7 @@ impl Plan {
             env: all,
             stop: Stop::Interrupt,
             grace: Duration::from_secs(20),
+            on_line: None,
         }
     }
 
@@ -714,7 +843,20 @@ impl Plan {
             env: all,
             stop: Stop::Terminate,
             grace: Duration::from_secs(10),
+            on_line: None,
         }
+    }
+
+    /// The relay agent's commands, when the bundle has it: they run with Node from the
+    /// server's folder and keep their keys in `relay/`.
+    fn agent(&self, layout: &Layout, options: &Options, launch: &Arc<Launch>) -> Option<Agent> {
+        self.entrypoints.get("relay").and_then(Value::as_str)?;
+        Some(Agent {
+            base: self.node_spec("relay", vec![]),
+            state: layout.at("relay"),
+            relay: options.relay.clone(),
+            launch: launch.clone(),
+        })
     }
 
     fn migrate(&self) -> Spec {
@@ -823,6 +965,15 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    /// A stand-in relay agent: what each command prints.
+    const RELAY: &str = r#"case "$2" in
+      pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"rakazo://dozo-pair#x"}'; exit 0;;
+      list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
+      revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
+      run) echo '{"event":"connected","channel":"c2"}'; sleep 0.3; echo '{"event":"paired","channel":"c9"}';;
+    esac
+    trap 'exit 0' TERM INT; while :; do sleep 0.05; done"#;
+
     const LOOP: &str = "trap 'exit 0' TERM INT; while :; do sleep 0.05; done";
 
     /// An installed version whose programs are shell scripts that write what they are to `said`.
@@ -832,7 +983,8 @@ mod tests {
         script(
             &version.join("node/bin/node"),
             &format!(
-                "echo \"$1\" >> {s}; case \"$1\" in migrate.js) exit {migrate_exit};; esac; {LOOP}"
+                "case \"$1\" in relay.js) echo \"$*\" >> {s}.relay; {RELAY};; esac
+                echo \"$1\" >> {s}; case \"$1\" in migrate.js) exit {migrate_exit};; esac; {LOOP}"
             ),
         );
         let pg = version.join("postgres/bin");
@@ -849,7 +1001,7 @@ mod tests {
         fs::create_dir_all(&server).unwrap();
         fs::write(
             server.join("manifest.json"),
-            r#"{"version":"1","entrypoints":{"migrate":"migrate.js","api":"api.js","worker":"worker.js","web":"web.js"}}"#,
+            r#"{"version":"1","entrypoints":{"migrate":"migrate.js","api":"api.js","worker":"worker.js","web":"web.js","relay":"relay.js"}}"#,
         )
         .unwrap();
         fs::write(root.join("current"), "1").unwrap();
@@ -859,6 +1011,7 @@ mod tests {
         Options {
             manifest: "file:///nowhere/manifest.json".into(),
             hosted_login_issuer: None,
+            relay: "http://127.0.0.1:9".into(),
         }
     }
 
@@ -885,6 +1038,22 @@ mod tests {
         let ports = fs::read_to_string(root.join("ports")).unwrap();
         assert!(ports.contains(&format!("web={}", url[17..].trim_end_matches('/'))));
         let first = lines_of(&said);
+        // The agent starts last; its first line can come after the server is ready.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while lines_of(&root.join("said.relay")).is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            lines_of(&root.join("said.relay")),
+            [format!(
+                "relay.js run --origin http://127.0.0.1:{} --state {}",
+                url[17..].trim_end_matches('/'),
+                root.join("relay").display()
+            )]
+        );
         assert_eq!(first[..4], ["initdb", "postgres", "createdb", "migrate.js"]);
         let mut rest = first[4..].to_vec();
         rest.sort();
@@ -914,6 +1083,58 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[tokio::test]
+    async fn the_relay_agent_runs_with_the_server_and_answers_for_phones() {
+        let root = scratch("relay-agent");
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        let local = Local::new(Arc::new(Said(said.clone())));
+        let mut paired = local.paired();
+        local.start(Layout(root.clone()), options()).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        let agent = local.agent().await.expect("the bundle has an agent");
+        let offer = agent.offer().await.unwrap();
+        assert_eq!(offer.channel, "c1");
+        assert_eq!(offer.qr, "rakazo://dozo-pair#x");
+        assert_eq!(
+            agent.phones().await.unwrap(),
+            [Phone {
+                channel: "c2".into(),
+                paired_at: json!("then")
+            }]
+        );
+        assert!(
+            agent
+                .remove("c2")
+                .await
+                .unwrap_err()
+                .contains("no such channel")
+        );
+        let heard = paired.wait_for(|channel| channel.as_deref() == Some("c9"));
+        tokio::time::timeout(Duration::from_secs(5), heard)
+            .await
+            .unwrap()
+            .unwrap();
+        let commands = lines_of(&root.join("said.relay"));
+        let state = root.join("relay").display().to_string();
+        assert!(commands.contains(&format!(
+            "relay.js pair --relay http://127.0.0.1:9 --state {state}"
+        )));
+        assert!(commands.contains(&format!("relay.js revoke c2 --state {state}")));
+        assert!(local.stop().await);
+        assert!(local.agent().await.is_none());
+    }
+
+    #[test]
+    fn only_a_paired_event_names_a_channel() {
+        assert_eq!(
+            paired_channel(br#"{"event":"paired","channel":"c1","appKey":"k"}"#),
+            Some("c1".into())
+        );
+        assert_eq!(paired_channel(br#"{"event":"peer","channel":"c1"}"#), None);
+        assert_eq!(paired_channel(b"not json"), None);
     }
 
     #[tokio::test]
@@ -989,11 +1210,78 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(600)).await;
     }
 
+    /// A phone pairs through the relay agent in the real bundle: `tests/stack_e2e.sh` runs a dev
+    /// relay and a phone (`tests/relay_phone.mts`) beside it, sharing `DOZO_STACK_E2E_SHARED`.
+    /// The code goes there; the phone pairs, fetches a page of this server through the relay and
+    /// says what it got. Then the phone is listed, removed, and the server stopped.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs a built server bundle and a relay; run by tests/stack_e2e.sh"]
+    async fn e2e_pairs_a_phone() {
+        let shared = PathBuf::from(std::env::var("DOZO_STACK_E2E_SHARED").unwrap());
+        let relay = std::env::var("DOZO_STACK_E2E_RELAY").unwrap();
+        let port: u16 = relay.rsplit(':').next().unwrap().parse().unwrap();
+        assert!(
+            wait_until(Duration::from_secs(120), move || {
+                TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok()
+            })
+            .await,
+            "no relay at {relay}"
+        );
+        let (local, root, _) = e2e_ready().await;
+        let mut paired = local.paired();
+        let agent = local.agent().await.expect("the bundle has the relay agent");
+        let offer = agent.offer().await.unwrap();
+        // The offer works once the agent's socket for it is open.
+        let log = root.join("logs/relay.log");
+        let connected = format!(r#""event":"connected","channel":"{}""#, offer.channel);
+        assert!(
+            wait_until(Duration::from_secs(30), move || {
+                fs::read_to_string(&log).is_ok_and(|text| text.contains(&connected))
+            })
+            .await,
+            "the agent never connected the new channel"
+        );
+        fs::write(shared.join("qr"), &offer.qr).unwrap();
+        let channel = offer.channel.clone();
+        let heard = paired.wait_for(|paired| paired.as_deref() == Some(channel.as_str()));
+        tokio::time::timeout(Duration::from_secs(60), heard)
+            .await
+            .expect("the phone never paired")
+            .unwrap();
+        println!("E2E: a phone paired on {}", offer.channel);
+        let fetched = shared.join("fetched");
+        assert!(
+            wait_until(Duration::from_secs(30), move || fetched.exists()).await,
+            "the phone never said what it fetched"
+        );
+        let fetched = fs::read_to_string(shared.join("fetched")).unwrap();
+        assert_eq!(
+            fetched.trim(),
+            "200",
+            "the phone's request through the relay"
+        );
+        println!(
+            "E2E: the phone fetched a page through the relay: {}",
+            fetched.trim()
+        );
+        let listed = agent.phones().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].channel, offer.channel);
+        agent.remove(&offer.channel).await.unwrap();
+        assert!(agent.phones().await.unwrap().is_empty());
+        println!("E2E: listed and removed the phone");
+        assert!(local.stop().await, "a process had to be killed");
+        let left = processes_under(&root);
+        assert!(left.is_empty(), "still running after stop: {left:?}");
+        println!("E2E: stopped, relay agent included, no process left");
+    }
+
     async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
         let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
         let options = Options {
             manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
             hosted_login_issuer: None,
+            relay: std::env::var("DOZO_STACK_E2E_RELAY").unwrap_or_default(),
         };
         let local = Local::new(Arc::new(RealChecks));
         let started = std::time::Instant::now();

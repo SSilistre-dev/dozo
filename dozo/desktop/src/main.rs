@@ -14,6 +14,7 @@ mod frames;
 #[cfg(target_os = "linux")]
 #[path = "frames_gtk.rs"]
 mod frames;
+mod phone;
 mod server;
 mod settings;
 mod stack;
@@ -93,6 +94,17 @@ fn restart_for_update(app: &AppHandle) {
     start_local_if_chosen(app);
 }
 
+/// How the server on this computer starts: the build's and the environment's choices, with the
+/// relay from the settings file when it names one and the environment does not.
+fn local_options(app: &AppHandle) -> stack::Options {
+    let mut options = stack::Options::from_build_and_environment();
+    let saved = app.state::<Config>().0.lock().unwrap().relay.clone();
+    if let Some(relay) = saved.filter(|_| std::env::var_os("DOZO_RELAY_URL").is_none()) {
+        options.relay = relay;
+    }
+    options
+}
+
 /// The server on this computer (`stack.rs`), and the folder it keeps everything in.
 struct LocalServer(Arc<Local>);
 
@@ -114,9 +126,7 @@ fn start_local_if_chosen(app: &AppHandle) {
     };
     // Only marks it starting and hands the work to a task: the window, which asks next, sees it.
     let local = app.state::<LocalServer>().0.clone();
-    tauri::async_runtime::block_on(
-        local.start(layout, stack::Options::from_build_and_environment()),
-    );
+    tauri::async_runtime::block_on(local.start(layout, local_options(app)));
 }
 
 /// Once the server on this computer is ready, its address is the chosen server.
@@ -168,9 +178,7 @@ async fn use_this_computer(app: AppHandle) -> Result<(), String> {
     persist(&app).map_err(|error| format!("Could not save the choice: {error}"))?;
     let layout = local_layout(&app).map_err(|error| error.to_string())?;
     let local = app.state::<LocalServer>().0.clone();
-    local
-        .start(layout, stack::Options::from_build_and_environment())
-        .await;
+    local.start(layout, local_options(&app)).await;
     Ok(())
 }
 
@@ -327,6 +335,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     )?,
                     &separator()?,
                     &device_item(app)?,
+                    &phone::item(app)?,
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &separator()?,
@@ -394,6 +403,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &MenuItem::with_id(app, "reload", "Reload", true, Some("Ctrl+R"))?,
                 &PredefinedMenuItem::separator(app)?,
                 &device_item(app)?,
+                &phone::item(app)?,
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                 &PredefinedMenuItem::separator(app)?,
@@ -663,7 +673,10 @@ fn main() {
             set_server,
             connect,
             use_this_computer,
-            local_progress
+            local_progress,
+            phone::phone_code,
+            phone::phones,
+            phone::remove_phone
         ])
         .menu(menu)
         .on_menu_event(|app, event| {
@@ -675,6 +688,7 @@ fn main() {
                 "reload" => reload(window),
                 OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, event.id().as_ref()),
                 device::MENU_ID => device::clicked(app),
+                phone::MENU_ID => phone::open(app),
                 #[cfg(not(target_os = "macos"))]
                 QUIT_ID => app.exit(0),
                 update::MENU_ID => restart_for_update(app),
@@ -701,6 +715,7 @@ fn main() {
             app.manage(Config(Mutex::new(settings.clone())));
             app.manage(LocalServer(Local::new(Arc::new(stack::RealChecks))));
             follow_local(app.clone());
+            phone::follow(app.clone());
             start_local_if_chosen(&app);
             app.manage(device::Access::new(&app)?);
             device::select(&app, chosen(&app));

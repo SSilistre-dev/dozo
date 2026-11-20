@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Connect Phone</title>
+    <link rel="stylesheet" href="phone.css" />
+    <script type="module" src="phone.js"></script>
+  </head>
+  <body>
+    <main>
+      <section id="code" hidden>
+        <canvas id="qr" role="img" aria-label="Pairing code"></canvas>
+        <p id="account"></p>
+        <p id="expires" class="quiet"></p>
+      </section>
+
+      <section id="expired" hidden>
+        <p>This code expired.</p>
+        <button type="button" class="primary" id="again">New code</button>
+      </section>
+
+      <section id="signed-out" hidden>
+        <p>Sign in on this computer first.</p>
+      </section>
+
+      <section id="failed" hidden>
+        <p role="alert">Could not get a code.</p>
+        <button type="button" class="primary" id="retry">Try again</button>
+      </section>
+
+      <ul id="phones" hidden></ul>
+    </main>
+  </body>
+</html>
