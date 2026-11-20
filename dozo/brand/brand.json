@@ -4653,6 +4653,95 @@
         "apps/mobile/lib/dozo-own-computer.ts"
       ],
       "reason": "own computer: the switch asks first, since the bot's files and browser sign-ins move with it"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly.ts",
+      "find": "} from \"./run-assembly-capabilities.js\";\nimport { buildTurnPrompt, createRunContext } from \"./run-assembly-context.js\";\n",
+      "replace": "} from \"./run-assembly-capabilities.js\";\nimport { gateRunComputer } from \"./dozo-no-computer.js\";\nimport { buildTurnPrompt, createRunContext } from \"./run-assembly-context.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts"
+      ],
+      "reason": "no computer: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly.ts",
+      "find": "  const computer = await prepareRunComputer(hold, { records, connected, turnContext, model });\n",
+      "replace": "  const computer = await gateRunComputer(hold, saved, records.bot.computer, () =>\n    prepareRunComputer(hold, { records, connected, turnContext, model }),\n  );\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts"
+      ],
+      "reason": "no computer: a run whose organization has no computer hours left (Free has none, an overdue payment closes them) starts without its computer, decided once with the check that would refuse the computer's start, read alongside the computer's preparation"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "import { resolveDeploymentModel } from \"./deployment-model.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";\n",
+      "replace": "import { resolveDeploymentModel } from \"./deployment-model.js\";\nimport type { NoComputerReason } from \"./dozo-no-computer.js\";\nimport { withoutCloudComputerTools } from \"./dozo-no-computer.js\";\nimport { noCloudComputerInstruction } from \"./dozo-no-computer.prompt.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts",
+        "packages/adapters/src/dozo-no-computer.prompt.ts"
+      ],
+      "reason": "no computer: the imports of the rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "export type PreparedRunComputer = Awaited<ReturnType<typeof prepareRunComputer>>;\n",
+      "replace": "export type PreparedRunComputer = Awaited<ReturnType<typeof prepareRunComputer>> & {\n  cloudComputerWithheld?: NoComputerReason | false;\n};\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts"
+      ],
+      "reason": "no computer: the prepared computer says whether the run has it"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);\n",
+      "replace": "  const disabledBuiltinTools = withoutCloudComputerTools(\n    disabledBuiltinToolSet(bot.disabledBuiltinTools),\n    parts.computer.cloudComputerWithheld,\n  );\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts"
+      ],
+      "reason": "no computer: a run without its computer is not offered the tools that start it, and the guidance that names them drops out with them"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "        ? [...(bot.disabledBuiltinTools ?? []), \"handoff_to_bot\"]\n        : bot.disabledBuiltinTools,\n",
+      "replace": "        ? [...disabledBuiltinTools, \"handoff_to_bot\"]\n        : [...disabledBuiltinTools],\n",
+      "reason": "no computer: tool selection reads the run's turned-off built-ins (the bot's, plus the computer's when the run has none) instead of the bot's alone"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "    computerMode === \"team\" ? teamWorkspaceInstruction(bot.id) : PRIVATE_WORKSPACE_INSTRUCTION;\n  return { hostEnvironment, computerInstruction, workspaceInstruction };\n",
+      "replace": "    computerMode === \"team\" ? teamWorkspaceInstruction(bot.id) : PRIVATE_WORKSPACE_INSTRUCTION;\n  if (parts.computer.cloudComputerWithheld)\n    return {\n      hostEnvironment,\n      computerInstruction: noCloudComputerInstruction({\n        reason: parts.computer.cloudComputerWithheld,\n        userComputer: parts.capabilities.userComputer,\n        offered: new Set(tools.map((tool) => tool.name)),\n      }),\n      workspaceInstruction: \"\",\n    };\n  return { hostEnvironment, computerInstruction, workspaceInstruction };\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.prompt.ts"
+      ],
+      "reason": "no computer: a run without its computer is told so, instead of 'You have a persistent computer', and how a task that needs one can get it"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./dozo-job-queue.js\";\nexport * from \"./web-limits.js\";\n",
+      "replace": "export * from \"./dozo-job-queue.js\";\nexport * from \"./dozo-no-computer.js\";\nexport * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./web-limits.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts",
+        "packages/adapters/src/dozo-no-computer.prompt.ts"
+      ],
+      "reason": "no computer: the token benchmark measures a run without a computer as it ships"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-messaging.ts",
+      "find": "import { normalizeWorkspacePath, resolveBotWorkspacePath } from \"./computer-support.js\";\nimport { handoffToGroupBot } from \"./group-handoff.js\";\n",
+      "replace": "import { normalizeWorkspacePath, resolveBotWorkspacePath } from \"./computer-support.js\";\nimport { filesWithoutComputer } from \"./dozo-no-computer.js\";\nimport { handoffToGroupBot } from \"./group-handoff.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts"
+      ],
+      "reason": "no computer: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-messaging.ts",
+      "find": "  if (!paths.length) return { files: [], sharedPaths: [] };\n  if (paths.length > ATTACHMENT_MAX_COUNT) {\n",
+      "replace": "  if (!paths.length) return { files: [], sharedPaths: [] };\n  const withoutComputer = filesWithoutComputer(ctx.computer.stored);\n  if (withoutComputer) return withoutComputer;\n  if (paths.length > ATTACHMENT_MAX_COUNT) {\n",
+      "requires": [
+        "packages/adapters/src/dozo-no-computer.ts"
+      ],
+      "reason": "no computer: a message with files from a run without its computer says so, instead of trying to start the computer"
     }
   ],
   "assets": {
