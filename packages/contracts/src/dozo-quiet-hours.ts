@@ -13,6 +13,9 @@ export const DozoQuietHoursSchema = z
   .refine((hours) => hours.startMinute !== hours.endMinute, "Quiet hours need a start and an end");
 export type DozoQuietHours = z.infer<typeof DozoQuietHoursSchema>;
 
+/** What turning quiet hours on starts with: the night. */
+export const DOZO_DEFAULT_QUIET_HOURS: DozoQuietHours = { startMinute: 22 * 60, endMinute: 7 * 60 };
+
 const QuietHoursState = z.object({ hours: DozoQuietHoursSchema.nullable() });
 
 export const dozoQuietHoursContract = {

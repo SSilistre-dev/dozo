@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream, realpathSync } from "node:fs";
 import {
@@ -12,9 +11,7 @@ import {
   rmdir,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:net";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { BackupEntry, Kdf } from "./dozo-local-backup-format.js";
@@ -25,6 +22,21 @@ import {
   safeEntryPath,
   writeBackup,
 } from "./dozo-local-backup-format.js";
+import {
+  DATABASE,
+  exe,
+  exists,
+  LocalRefused,
+  ownerPassword,
+  pgTool,
+  readLine,
+  run,
+  SECRETS_FILES,
+  secretsFile,
+  serverVersion,
+  UsageError,
+  withPostgres,
+} from "./dozo-local-postgres.js";
 
 /**
  * Backs up and restores a local server's whole folder as one password-sealed file: the database
@@ -37,12 +49,9 @@ import {
 const USAGE = 64;
 const FAILED = 2;
 const MIN_PASSWORD = 8;
-const SECRETS_FILES = ["secrets", "secrets.env"];
 const FOLDERS = ["data", "relay"];
 const MANIFEST = "backup.json";
 const DUMP = "database.dump";
-/** The local server's database and the role that owns it (start contract in the README). */
-const DATABASE = "rakazo";
 
 export type BackupIo = {
   write(line: string): void;
@@ -56,170 +65,21 @@ export type BackupIo = {
 
 type Manifest = { format: 1; createdAt: string; server: string; migrations: string[] };
 
-class UsageError extends Error {}
-
 /** A refusal the person can act on, with a stable reason the app can switch on. */
-export class BackupRefused extends Error {
-  constructor(
-    readonly reason: "newer" | "not-empty" | "no-server" | "no-backup-data",
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-const exe = (name: string) => (process.platform === "win32" ? `${name}.exe` : name);
-
-function run(program: string, args: string[], env: Record<string, string> = {}): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      program,
-      args,
-      { env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (!error) return resolve(stdout);
-        const said = stderr.trim().split("\n").slice(-3).join(" ");
-        reject(new Error(`${path.basename(program)} failed: ${said || error.message}`));
-      },
-    );
-  });
-}
+export class BackupRefused extends LocalRefused<
+  "newer" | "not-empty" | "no-server" | "no-backup-data"
+> {}
 
 async function readPassword(stdin: NodeJS.ReadableStream): Promise<string> {
-  const lines = createInterface({ input: stdin, crlfDelay: Number.POSITIVE_INFINITY });
-  for await (const line of lines) {
-    lines.close();
-    if (line.length < MIN_PASSWORD) break;
-    return line;
-  }
+  const line = await readLine(stdin);
+  if (line !== undefined && line.length >= MIN_PASSWORD) return line;
   throw new UsageError(`give a password of at least ${MIN_PASSWORD} characters on standard input`);
-}
-
-async function exists(file: string): Promise<boolean> {
-  try {
-    await lstat(file);
-    return true;
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-async function secretsFile(home: string): Promise<string | undefined> {
-  for (const name of SECRETS_FILES) if (await exists(path.join(home, name))) return name;
-  return undefined;
-}
-
-async function ownerPassword(file: string): Promise<string> {
-  const text = await readFile(file, "utf8");
-  for (const line of text.split("\n")) {
-    const [key, value] = line.split("=", 2);
-    if (key === "PG_OWNER_PASSWORD" && value?.trim()) return value.trim();
-  }
-  throw new BackupRefused("no-server", "The secrets file has no PG_OWNER_PASSWORD.");
-}
-
-async function serverVersion(serverDir: string): Promise<string> {
-  const manifest = JSON.parse(await readFile(path.join(serverDir, "manifest.json"), "utf8"));
-  return String(manifest.version);
 }
 
 async function knownMigrations(serverDir: string): Promise<Set<string>> {
   const folder = path.join(serverDir, "packages/db/prisma/migrations");
   const entries = await readdir(folder, { withFileTypes: true });
   return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
-}
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      server.close(() => resolve(typeof address === "object" && address ? address.port : 0));
-    });
-  });
-}
-
-type Postgres = { port: number; password: string; pgBin: string };
-
-/** Whether the process `postmaster.pid` names is alive; a crashed app leaves the file behind. */
-function alive(pid: number): boolean {
-  if (!(pid > 0)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as { code?: string }).code === "EPERM";
-  }
-}
-
-/**
- * Runs `work` against the folder's Postgres: the one already running (the app is open; its pid
- * and port are lines 1 and 4 of `postmaster.pid`), or one started here on a free loopback port
- * and stopped after.
- */
-async function withPostgres<T>(
-  pgBin: string,
-  pgdata: string,
-  password: string,
-  work: (pg: Postgres) => Promise<T>,
-): Promise<T> {
-  const pid = await readFile(path.join(pgdata, "postmaster.pid"), "utf8").catch((error) => {
-    if ((error as { code?: string }).code === "ENOENT") return undefined;
-    throw error;
-  });
-  const [owner = 0, , , running = 0] = (pid ?? "").split("\n").map(Number);
-  if (alive(owner) && running > 0) return work({ port: running, password, pgBin });
-  const port = await freePort();
-  const log = path.join(path.dirname(pgdata), `postgres-${port}.log`);
-  // Also after a start that timed out, which can leave Postgres running.
-  const stop = async () => {
-    const failure = await run(path.join(pgBin, exe("pg_ctl")), [
-      "-D",
-      pgdata,
-      "-m",
-      "fast",
-      "-w",
-      "stop",
-    ]).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    await rm(log, { force: true });
-    return failure;
-  };
-  let result: T;
-  try {
-    await run(path.join(pgBin, exe("pg_ctl")), [
-      "-D",
-      pgdata,
-      "-w",
-      "-t",
-      "60",
-      "-l",
-      log,
-      "-o",
-      `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=`,
-      "start",
-    ]);
-    result = await work({ port, password, pgBin });
-  } catch (error) {
-    // A stop that fails after this says less than this failure, which is what propagates.
-    await stop();
-    throw error;
-  }
-  const stopped = await stop();
-  if (stopped) throw stopped;
-  return result;
-}
-
-function pgTool(pg: Postgres, name: string, args: string[]): Promise<string> {
-  return run(
-    path.join(pg.pgBin, exe(name)),
-    ["-h", "127.0.0.1", "-p", String(pg.port), "-U", DATABASE, ...args],
-    { PGPASSWORD: pg.password, PGCONNECT_TIMEOUT: "10" },
-  );
 }
 
 async function* tree(home: string, relative: string): AsyncGenerator<BackupEntry> {
@@ -441,9 +301,7 @@ export async function localBackupMain(argv: string[], io: BackupIo): Promise<num
       return USAGE;
     }
     const reason =
-      error instanceof BackupRefused || error instanceof BackupFormatError
-        ? error.reason
-        : "failed";
+      error instanceof LocalRefused || error instanceof BackupFormatError ? error.reason : "failed";
     io.write(JSON.stringify({ error: (error as Error).message, reason }));
     return FAILED;
   }
