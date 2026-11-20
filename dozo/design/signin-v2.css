@@ -4,6 +4,7 @@
   --logo-band:#c8372d;                                            /* the mark's band, as in dozo/brand/assets/mark.svg */
   --signin-waves:color-mix(in srgb,var(--text) 7%,transparent);   /* very faint, and clear behind the column */
 }
+:root[data-theme="light"]{--signin-waves:color-mix(in srgb,var(--text) 8%,transparent)}
 body.signin{background:var(--surface-1)}
 .waves{stroke:none;position:fixed;inset:0;width:1440px;height:900px;-webkit-mask-image:radial-gradient(ellipse 420px 380px at 50% 46%,transparent 40%,#000 100%);mask-image:radial-gradient(ellipse 420px 380px at 50% 46%,transparent 40%,#000 100%)}
 .waves g{stroke:var(--signin-waves);stroke-width:1}

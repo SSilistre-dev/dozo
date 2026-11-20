@@ -269,6 +269,30 @@ Accepted by the owner for now, stated here once:
   limit, a running bot, a computer someone holds) says why beside it on web; mobile keeps its
   screen's error line. A full host memory budget never refuses the switch, only a later start
   ("All computers are busy").
+- Switching moves the bot's files and browser sign-ins (`packages/adapters/src/dozo-computer-move.ts`,
+  after one confirmation line on web and mobile). Only the bot's creator or the Space owner may
+  switch it; anyone else sees the switch read-only with "Only the space owner can do that" (the
+  bot's `userId` is in the bot contract for this). Team to Own takes `bots/<id>/` and its
+  browser profile to the Own computer's home; Own to Team takes the Own computer's visible
+  entries and profile back under `bots/<id>/`. `shared/` and the Own computer's hidden entries
+  (`.config`, caches) stay. Order: copy, check sizes, change the bot's computer (in one
+  transaction with a check that the switch still holds its lease, and a lapsed
+  `dozo-computer-switch-due` row in the lease table), delete what it left, drop that row. A copy
+  or change that fails takes the copy back and leaves the bot where it was ("Couldn't move this
+  bot's files. Try again."). Whatever a switch left undone (its process died, its lease lapsed,
+  a computer could not be cleared) is finished by a one-minute sweep in the API that reads the
+  lapsed `dozo-computer-switch*` rows: it clears the Team Computer of a bot on its Own computer,
+  and clears a bot's Own computer only where the due row says its computer had changed (so a
+  copy cut short before that, which stays private there, is never mistaken for a leftover). A
+  running computer is changed through its own commands; a stopped one on the server while its
+  `maintenanceId` holds it from starting (the computer shows as starting meanwhile), so nothing
+  is started for the move. The size check walks each folder once and stops at 64 levels or a
+  million entries. Files over 12 MB (what a running computer takes in one write) refuse the
+  switch before anything is copied, naming the first three and counting the rest. Cache folders
+  the save policy skips (`node_modules`, `.cache`, browser caches) are not copied and are
+  deleted with the rest. Only kinds that declare `movesBotFiles` (Docker) move files; others
+  refuse a switch once they have run. Folders left on a Team Computer by switches before this
+  change stay there.
 - How many Own computers: `SANDBOX_MAX_COMPUTERS_PER_USER` (default 2, or the admin's value)
   counts computer rows that back a live bot, per person across their Spaces: each Space's Team
   Computer once (kept for the Space's owner), each Own computer once. With the default, a person

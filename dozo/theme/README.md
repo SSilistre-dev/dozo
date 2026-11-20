@@ -10,7 +10,8 @@ schema (`apps/web/src/instance-theme.ts`), using token names from `packages/ui-t
 - `--line` -> `border`, `sidebarBorder`
 - `--raise` -> `card`, `muted`, and `dialog` (dark)
 - `--raise2` -> `popover`, `secondary`, `chatUser`, and `dialog` (light)
-- `--muted` -> `mutedForeground`; `--quiet` -> `faintForeground`
+- `--muted` -> `mutedForeground` (light: `#5C5C5C` instead of the mockup's `#6B6B6B`, which falls to
+  3.8:1 on the open sidebar row); `--quiet` -> `faintForeground`
 - `--text` -> `primary`, `ring`; `--bg` -> `primaryForeground`: the fill of the main button is ink,
   as on the landing page (`--primary` there). The mockups' blue `--accent` is not used: the owner
   asked for no blue buttons.
@@ -29,13 +30,32 @@ show none of these surfaces, so there is no source value to map.
 
 ## What the overlay cannot express
 
-Only colours, one radius and font stacks. Pill shapes (999 px buttons and rows), the seigaiha
-sidebar pattern, the wordmark with its seal dot, the tinted active row and the chat as a narrow
-column with unboxed bot text come from `packages/ui-web/src/dozo-shell.css`, which an anchored
-rule imports into the package stylesheet. The six bot identity colours are in the avatar palette
-(`packages/core/src/dozo-avatar-art.ts`). Three more anchored rules set defaults the design
-shows: one-line sidebar rows, a 240 px sidebar, and your own bubble and the send button in the
-theme's colours instead of the bot's upstream colour.
+Only colours, one radius and font stacks. The chat window of `dozo/design/chat-v2.html` comes from
+`packages/ui-web/src/dozo-shell.css`, which an anchored rule imports into the package stylesheet:
+surfaces told apart by tone instead of lines, pill controls, two-line sidebar rows, the seigaiha
+pattern and the wordmark with its seal dot, tonal bubbles and cards, the one-pill composer and the
+bot panel on the sidebar's tone. The six bot identity colours are in the avatar palette
+(`packages/core/src/dozo-avatar-art.ts`), which also gives your own bubble and the send button the
+open bot's colour (`dozoChatUserColors`, an anchored rule in `Shell.tsx`). Other anchored rules set
+the sizes the design shows: a 288 px sidebar and a 320 px bot panel.
+
+The tone steps are named once, at the top of `dozo-shell.css`, and derived from the tokens above,
+so both themes follow this file:
+
+| Name | Value | Used for |
+| --- | --- | --- |
+| `--dozo-surface-0` | `sidebar` | sidebar, bot panel |
+| `--dozo-surface-1` | `background` | the thread |
+| `--dozo-surface-2` | `foreground` 4% over `background` | the bot's bubble |
+| `--dozo-surface-3` | `card` | cards, composer, round buttons, the name pill |
+| `--dozo-surface-4` | `popover` | a round button's hover |
+| `--dozo-row-hover`, `--dozo-row-on` | `foreground` 6% / 9% over `sidebar` | a hovered / the open sidebar row |
+| `--dozo-wash`, `--dozo-wash-strong` | `foreground` at 6% / 10% | icon hovers, the microphone, choices |
+| `--dozo-edge` | `foreground` at 6% | the half-pixel edge of cards and the composer |
+| `--dozo-ink-2`, `--dozo-ink-3` | `mutedForeground` | secondary text; icons and placeholders |
+
+`mutedForeground` holds 4.5:1 (WCAG) against every surface above in both themes; the closest is
+the open sidebar row in light (4.7:1).
 
 - `--dozo-seigaiha` (on `:root`) switches the sidebar pattern: `1` shows it, `0` hides it, a value
   between fades it.

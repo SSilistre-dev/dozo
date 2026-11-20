@@ -22,8 +22,11 @@
   --ink-3:color-mix(in srgb,var(--text) 56%,transparent);
   /* the open bot's identity colour, darkened so the ink on it holds 4.5:1 */
   --bot:var(--sora);
-  --bot-fill:color-mix(in srgb,var(--bot) 72%,black);
+  --bot-tone:color-mix(in srgb,var(--bot) 72%,black);
+  --bot-fill:var(--bot-tone);                                   /* your bubble and the send button */
   --on-bot:var(--text);
+  --accent-ui:var(--ink-1);                                     /* a theme's one accent: switches, unread dot, bars */
+  --chrome:var(--surface-3);                                    /* round buttons on the sidebar */
   --wait-text:var(--amber);
   /* the one red, derived from the seal: a word that deletes, and the fill of a delete button */
   --danger-text:color-mix(in srgb,var(--seal) 70%,var(--text));
@@ -31,17 +34,42 @@
   --on-danger:var(--text);
   --scrim:color-mix(in srgb,black 62%,transparent);
   --menu:var(--surface-4);                                      /* one step above cards, so a menu over a card keeps its edge */
+  --dialog:var(--surface-3);
   --menu-edge:color-mix(in srgb,var(--text) 8%,transparent);
   color-scheme:dark;
   --drawer:cubic-bezier(.32,.72,0,1);
   --out:cubic-bezier(.22,1,.36,1);
 }
-/* light is not designed here; these keep its small text above 4.5:1 */
-:root[data-theme="light"]{color-scheme:light;--on-danger:var(--on-accent);--on-bot:var(--on-accent);--ink-3:color-mix(in srgb,var(--text) 66%,transparent);--wait-text:color-mix(in srgb,var(--amber) 62%,black)}
+/* light: the same steps over the light palette in dozo.css. The ground is its soft off-white,
+   cards and the composer sit one tone darker, and only what floats (menus, dialogs) is lighter. */
+:root[data-theme="light"]{
+  color-scheme:light;
+  --surface-0:var(--side);                                      /* sidebar, bot panel */
+  --surface-1:var(--bg);                                        /* thread */
+  --surface-2:color-mix(in srgb,var(--text) 5%,var(--bg));      /* bot bubble */
+  --surface-3:color-mix(in srgb,var(--text) 6%,var(--bg));      /* cards, composer, pills */
+  --surface-4:color-mix(in srgb,var(--text) 10%,var(--bg));     /* controls on cards */
+  --row-hover:color-mix(in srgb,var(--text) 5%,var(--surface-0));
+  --row-on:color-mix(in srgb,var(--text) 8%,var(--surface-0));
+  --menu:var(--raise);
+  --menu-edge:color-mix(in srgb,var(--text) 10%,transparent);
+  --dialog:var(--raise);
+  --scrim:color-mix(in srgb,black 28%,transparent);
+  --seigaiha-ink:color-mix(in srgb,var(--text) 10%,transparent);
+  --ink-3:color-mix(in srgb,var(--text) 66%,transparent);
+  --on-bot:var(--on-accent);
+  --on-danger:var(--on-accent);
+  --wait-text:color-mix(in srgb,var(--amber) 62%,black);
+  --chrome:var(--raise);
+}
+/* Message color: Neutral. Dark: one surface step up with ink; light: ink fill with the ground's tone */
+:root[data-bubble="neutral"]{--bot-fill:var(--surface-4);--on-bot:var(--text)}
+:root[data-theme="light"][data-bubble="neutral"]{--bot-fill:var(--text);--on-bot:var(--bg)}
+.behind{position:fixed;inset:0;width:1440px;height:900px;border:0}   /* the chat behind a window page */
 
 .v2{display:flex;height:900px;background:var(--surface-1)}
 .v2 button:focus-visible,.v2 a:focus-visible,.v2 input:focus-visible{outline:2px solid var(--ink-3);outline-offset:2px}
-.ic{width:40px;height:40px;border-radius:50%;background:var(--surface-3);display:inline-flex;align-items:center;justify-content:center;color:var(--ink-1)}
+.ic{width:40px;height:40px;border-radius:50%;background:var(--chrome);display:inline-flex;align-items:center;justify-content:center;color:var(--ink-1)}
 .ic:hover{background:var(--surface-4)}
 
 /* sidebar */
@@ -65,15 +93,15 @@
 .txt span{font-size:13px;line-height:18px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row.unread .txt span{color:var(--ink-1)}
 .txt .wt{color:var(--wait-text)}
-.mark{position:absolute;right:12px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:var(--ink-1)}
+.mark{position:absolute;right:12px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:var(--accent-ui)}
 .mark.wait{background:var(--amber)}
 .more{position:absolute;right:6px;top:50%;margin-top:-14px;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink-2);opacity:0}
 .more:hover{background:var(--wash);color:var(--ink-1)}
 .row:hover .more,.row:focus-within .more{opacity:1}
 .row:hover .mark,.row:focus-within .mark{opacity:0}
 .rail-foot{padding:0 12px 16px;display:flex;align-items:center;gap:8px}
-.me{width:40px;height:40px;border-radius:50%;background:var(--surface-3);font-size:14px;font-weight:500}
-.apps{height:36px;padding:0 16px;border-radius:999px;background:var(--surface-3);font-size:13px;font-weight:500}
+.me{width:40px;height:40px;border-radius:50%;background:var(--chrome);font-size:14px;font-weight:500}
+.apps{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:999px;background:var(--chrome);text-decoration:none;color:inherit;font-size:13px;font-weight:500}
 .me:hover,.apps:hover{background:var(--surface-4)}
 
 /* thread */
@@ -127,7 +155,7 @@
 .plus:hover{color:var(--ink-1)}.plus svg{width:20px;height:20px}
 .mic,.go{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:transform .1s ease}
 .mic{background:var(--wash);color:var(--ink-2)}.mic:hover{background:var(--wash-strong)}
-.go{background:var(--bot-fill);color:var(--on-bot)}.go:hover{background:color-mix(in srgb,var(--bot) 64%,black)}
+.go{background:var(--bot-fill);color:var(--on-bot)}.go:hover{background:color-mix(in srgb,var(--bot-fill) 88%,var(--on-bot))}
 .mic:active,.go:active{transform:scale(.96)}
 .mic svg,.go svg{width:15px;height:15px}
 
@@ -156,7 +184,7 @@
 .li2 .v svg{width:12px;height:12px}
 .sw{position:relative;width:32px;height:20px;border-radius:999px;background:var(--wash-strong);flex:none;transition:background-color .24s var(--out)}
 .sw::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--on-accent);transition:transform .24s var(--out)}
-.sw[aria-checked=true]{background:var(--bot-fill)}
+.sw[aria-checked=true]{background:var(--bot-tone)}
 .sw[aria-checked=true]::after{transform:translateX(12px)}
 
 @media (prefers-reduced-motion:reduce){
@@ -205,7 +233,7 @@
 .scrim{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:var(--scrim);opacity:0;transition:opacity .12s ease}
 .scrim.open{opacity:1;transition-duration:.16s}
 .scrim[hidden]{display:none}
-.dlg{width:440px;border-radius:14px;background:var(--surface-3);transform:scale(.96);transition:transform .2s var(--out)}
+.dlg{width:440px;border-radius:14px;background:var(--dialog);transform:scale(.96);transition:transform .2s var(--out)}
 .scrim.open .dlg{transform:none}
 .dlg.confirm{width:360px}
 .dlg h2{font-size:15px;line-height:22px;font-weight:600;padding:16px 16px 0}

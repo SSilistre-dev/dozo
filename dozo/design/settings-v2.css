@@ -6,7 +6,7 @@
   --card:color-mix(in srgb,var(--text) 3%,transparent);         /* a settings group */
   --lift:color-mix(in srgb,var(--text) 14%,var(--surface-1));   /* chosen segment */
 }
-.behind{position:fixed;inset:0;width:1440px;height:900px;border:0}
+:root[data-theme="light"]{--lift:var(--raise2)}               /* a light chip on the darker track */
 .sheet{display:flex;width:900px;height:700px;border-radius:14px;background:var(--surface-1);overflow:hidden;transform:scale(.96);transition:transform .2s var(--out)}
 .scrim.open .sheet{transform:none}
 .sheet button:focus-visible,.sheet select:focus-visible{outline:2px solid var(--ink-3);outline-offset:2px}
@@ -52,7 +52,7 @@
 .sel select{appearance:none;height:28px;max-width:200px;padding:0 28px 0 12px;border:0;border-radius:999px;background:var(--wash);color:var(--ink-1);font:inherit;font-size:13px;cursor:pointer;outline:0}
 .sel select:hover{background:var(--wash-strong)}
 .sel svg{position:absolute;right:10px;top:9px;width:10px;height:10px;color:var(--ink-2);pointer-events:none}
-.sheet .sw[aria-checked=true]{background:var(--ink-1)}
+.sheet .sw[aria-checked=true]{background:var(--accent-ui)}
 .sheet .sw[aria-checked=true]::after{background:var(--surface-1)}
 .rm{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink-2);opacity:0}
 .rm svg{width:14px;height:14px}
@@ -63,7 +63,7 @@
 .urow{display:grid;grid-template-columns:96px 1fr 44px 128px;align-items:center;gap:14px;min-height:40px;padding:0 12px}
 .urow b{font-weight:400;font-size:14px}
 .bar{height:6px;border-radius:3px;background:var(--wash-strong);overflow:hidden}
-.bar i{display:block;height:100%;border-radius:3px;background:var(--ink-2)}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--accent-ui)}
 .pct{font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
 .rs{font-size:12.5px;color:var(--ink-2)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -76,3 +76,9 @@
 .utab th:not(:first-child),.utab td:not(:first-child){text-align:right}
 
 @media (prefers-reduced-motion:reduce){.sheet,.seg button{transition:none}.pane.enter{animation:none}}
+.tpick{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 10px 0 8px;border-radius:999px;background:var(--wash);font-size:13px}
+.tpick:hover,.tpick[aria-expanded=true]{background:var(--wash-strong)}
+.tpick svg{width:10px;height:10px;color:var(--ink-2);transition:transform .18s var(--out)}
+.tpick[aria-expanded=true] svg{transform:rotate(180deg)}
+#tmenu .tick{color:var(--accent-ui)}
+#tmenu{z-index:60}

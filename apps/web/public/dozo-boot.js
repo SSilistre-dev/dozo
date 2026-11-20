@@ -9,7 +9,7 @@
   if (!chat) return;
   const root = document.documentElement;
   root.dataset.dozoBoot = "chat";
-  const [DEFAULT, MIN, MAX, MINI, CHAT] = [240, 240, 480, 72, 320];
+  const [DEFAULT, MIN, MAX, MINI, CHAT] = [288, 240, 480, 72, 320];
   // Saved per user, and the user is not known yet: only a browser with one saved value is read.
   const saved = (prefix) => {
     const values = [];

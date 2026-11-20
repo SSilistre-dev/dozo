@@ -1,7 +1,7 @@
 // The app's own screens. Only these pages can call the app (capabilities/local.json); a page
 // loaded from a server cannot.
 const invoke = window.__TAURI_INTERNALS__.invoke;
-const DEFAULT_SERVER = "https://dozo.ssilistre.dev";
+const DEFAULT_SERVER = "https://app.dozo.bot";
 const THIS_COMPUTER = "http://127.0.0.1:5173";
 const SCREENS = ["choose", "connecting", "unreachable"];
 const el = (id) => document.getElementById(id);

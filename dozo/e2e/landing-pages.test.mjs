@@ -6,7 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const dir = new URL("../landing/", import.meta.url);
-const site = "https://dozo-site.ssilistre.dev";
+const site = "https://dozo.bot";
 const read = (path) => readFileSync(new URL(path, dir), "utf8");
 const languages = readdirSync(dir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && /^[a-z]{2}$/.test(entry.name))
@@ -26,7 +26,7 @@ const token =
 function address(value, file, lang, switcher) {
   const href = new URL(value, new URL(file, site + "/")).href;
   let url = switcher && href.endsWith("?lang=en") ? href.slice(0, -"?lang=en".length) : href;
-  if (!switcher && href.startsWith("https://dozo.ssilistre.dev/")) {
+  if (!switcher && href.startsWith("https://app.dozo.bot/")) {
     const app = new URL(href);
     if (app.searchParams.get("lang") === lang) app.searchParams.delete("lang");
     url = app.href;
@@ -150,12 +150,12 @@ for (const lang of ["en", ...languages]) {
       // The app opens in the language of the page that linked it; a paid plan's card also names
       // the plan and the period the page shows first.
       for (const link of find(page, "a", (a) =>
-        a.href?.startsWith("https://dozo.ssilistre.dev/"),
+        a.href?.startsWith("https://app.dozo.bot/"),
       )) {
         assert.match(
           link.attrs.href,
           new RegExp(
-            `^https://dozo\\.ssilistre\\.dev/sign-(in|up)\\?lang=${lang}(&plan=(premium|premium_plus)&period=year)?$`,
+            `^https://app\\.dozo\\.bot/sign-(in|up)\\?lang=${lang}(&plan=(premium|premium_plus)&period=year)?$`,
           ),
           file,
         );
@@ -219,7 +219,7 @@ test("every language shows the plans the code sells and links sign-up from each 
     const [free, ...cards] = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
     assert.match(
       free,
-      new RegExp(`href="https://dozo\\.ssilistre\\.dev/sign-up\\?lang=${lang}"`),
+      new RegExp(`href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}"`),
       file,
     );
     assert.ok(free.includes(space("free")), file);
@@ -233,7 +233,7 @@ test("every language shows the plans the code sells and links sign-up from each 
       assert.match(
         card,
         new RegExp(
-          `href="https://dozo\\.ssilistre\\.dev/sign-up\\?lang=${lang}&plan=${["premium", "premium_plus"][index]}&period=year"`,
+          `href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}&plan=${["premium", "premium_plus"][index]}&period=year"`,
         ),
         file,
       );
