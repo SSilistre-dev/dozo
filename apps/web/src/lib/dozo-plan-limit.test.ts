@@ -1,11 +1,14 @@
 import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { forgetEventServer } from "./dozo-event-sender";
 import { billingErrorText, notePlanLimit } from "./dozo-plan-limit";
 
 // Runs on the branded tree (`make qa`): the table is exported once the brand rules are applied.
+
+// Shared workers keep the module state between files: leave the next file in English.
+afterEach(() => i18n.activate("en"));
 
 it("a refused checkout of the free plan says why, in the UI's language", () => {
   i18n.loadAndActivate({ locale: "en", messages: {} });
