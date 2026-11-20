@@ -15,7 +15,18 @@ const SWITCH = "Use the next connection when one runs out";
 /** The screen with `target` scrolled into view, once it has settled. */
 async function shot(page: Page, target: Locator, name: string) {
   await target.scrollIntoViewIfNeeded();
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  // A switch's slide finishes; a spinner's loop never does, so only finite ones are waited for.
+  await page.evaluate(() =>
+    Promise.race([
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished),
+      ),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]),
+  );
   mkdirSync(`${outDir()}/shots`, { recursive: true });
   await page.screenshot({ path: `${outDir()}/shots/model-pool--${name}.png` });
 }
