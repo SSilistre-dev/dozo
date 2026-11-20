@@ -711,6 +711,51 @@
       "reason": "verification result page: the endpoint that tells the page, from the signed mark in its address, whether that account is verified and which address to fill in"
     },
     {
+      "file": "packages/auth/src/index.ts",
+      "find": "import { dozoEmailLink, sendVerificationMail } from \"./dozo-email-link.js\";\nimport { emailLocale,",
+      "replace": "import { dozoEmailLink, sendVerificationMail } from \"./dozo-email-link.js\";\nimport { dozoHostedLogin } from \"./dozo-hosted-login.js\";\nimport { emailLocale,",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the import of the rule below"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { createDirectory } from \"./directory.js\";",
+      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the start check the API runs (rule in apps/api/src/app.ts)"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "      dozoEmailLink(),\n      signedBearer,\n",
+      "replace": "      dozoEmailLink(),\n      ...dozoHostedLogin({ prisma, webOrigin: env.webOrigin }),\n      signedBearer,\n",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the hosted server issues signed login tokens (HOSTED_LOGIN_SIGNING_KEY), a local one accepts them and closes every other sign-in (HOSTED_LOGIN_ISSUER); with neither set no plugin is added"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  publicSignInProviders,\n} from \"@rakazo/auth\";",
+      "replace": "  publicSignInProviders,\n  refuseUnlinkedAccounts,\n} from \"@rakazo/auth\";",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "    },\n  });\n  const oauthTokenUpgrade = auth\n",
+      "replace": "    },\n  });\n  // A local server in hosted mode would lock out accounts made here before: refuse to start.\n  await refuseUnlinkedAccounts(prisma);\n  const oauthTokenUpgrade = auth\n",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: with HOSTED_LOGIN_ISSUER set, a server that already has accounts of its own stops with a clear error instead of locking their owners out"
+    },
+    {
       "file": "apps/web/src/App.tsx",
       "find": "const PasswordResetPage = lazyComponent(() =>\n  import(\"./pages/Auth\").then((module) => module.PasswordResetPage),\n);\n",
       "replace": "const PasswordResetPage = lazyComponent(() =>\n  import(\"./pages/dozo-email-link\").then((module) => module.PasswordResetPage),\n);\nconst VerifyEmailPage = lazyComponent(() =>\n  import(\"./pages/dozo-email-link\").then((module) => module.VerifyEmailPage),\n);\n",
@@ -4780,6 +4825,42 @@
         "packages/adapters/src/dozo-no-computer.ts"
       ],
       "reason": "no computer: a message with files from a run without its computer says so, instead of trying to start the computer"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "module.PasswordResetPage),\n);\nconst VerifyEmailPage",
+      "replace": "module.PasswordResetPage),\n);\nconst HostedLoginPage = lazyComponent(() =>\n  import(\"./pages/dozo-hosted-login\").then((module) => module.HostedLoginPage),\n);\nconst VerifyEmailPage",
+      "requires": [
+        "apps/web/src/pages/dozo-hosted-login.tsx"
+      ],
+      "reason": "hosted account sign-in on a local server: the page that asks the user to agree (route below)"
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "find": "              <Route path=\"/p/:slugToken\" element={<SharedPagePage />} />\n              <Route\n                path={MCP_OAUTH_CALLBACK_PATH}",
+      "replace": "              <Route path=\"/p/:slugToken\" element={<SharedPagePage />} />\n              <Route\n                path=\"/dozo/hosted-login\"\n                element={\n                  user ? (\n                    <HostedLoginPage />\n                  ) : (\n                    <Navigate\n                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}\n                      replace\n                    />\n                  )\n                }\n              />\n              <Route\n                path={MCP_OAUTH_CALLBACK_PATH}",
+      "requires": [
+        "apps/web/src/pages/dozo-hosted-login.tsx"
+      ],
+      "reason": "hosted account sign-in on a local server: a signed-out user signs in first and comes back to the page with its request"
+    },
+    {
+      "file": "apps/web/src/lib/sign-in-next.ts",
+      "find": "    next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`) ||\n    INVITE_PATH.test(next)",
+      "replace": "    next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`) ||\n    next.startsWith(\"/dozo/hosted-login?\") ||\n    INVITE_PATH.test(next)",
+      "reason": "hosted account sign-in on a local server: sign-in returns to the page that asks the user to agree; an in-app path, so no open redirect"
+    },
+    {
+      "file": "apps/web/src/lib/sign-in-next.ts",
+      "find": "  return next && INVITE_PATH.test(next) ? next : \"/onboarding\";",
+      "replace": "  return next && (INVITE_PATH.test(next) || next.startsWith(\"/dozo/hosted-login?\"))\n    ? next\n    : \"/onboarding\";",
+      "reason": "hosted account sign-in on a local server: an account made to sign in on a computer goes back to that request, not to onboarding"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-server-text.ts\nmsgid \"Files over 12 MB can't move\"",
+      "replace": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"\nmsgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-server-text.ts\nmsgid \"Files over 12 MB can't move\"",
+      "reason": "hosted account sign-in on a local server: the Turkish title of the page that asks the user to agree (apps/web/src/pages/dozo-hosted-login.tsx)"
     }
   ],
   "assets": {
