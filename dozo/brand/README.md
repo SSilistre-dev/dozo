@@ -257,6 +257,9 @@ output, `.map` files and files outside `include`. A stem that occurs only inside
 ## Known gaps
 
 - Tests, `apps/web/e2e` and `packages/testkit` are not rewritten; run them on the pristine tree.
+  Where an upstream test's fake lacks something only fork code reads (a fork table, `$queryRaw`,
+  `env.webOrigin`, a fork component that reads the server), an anchored rule on that test file adds
+  it as an empty or neutral default; the test's expectations are never changed.
 - Dozo has no docs site, plugin submission page, public integration pages, store listing, Android
   build or community server, so anchored rules drop what linked to them: the bot's product-docs skill
   and its fetch list, the error help link, "Submit a plugin" (web and mobile), "Get the mobile app",
