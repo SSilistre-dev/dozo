@@ -29,11 +29,15 @@ export function DozoComputerSignIn({ apiBase }: { apiBase: string }) {
   useEffect(() => {
     if (!foreground || gone) return;
     let active = true;
-    void askComputerForSignIn().then((result) => {
-      if (!active) return;
-      if (result === "signed-in") router.replace("/");
-      else setAnswer(result);
-    });
+    void askComputerForSignIn()
+      // A failure that is not the network's (an unreadable answer, a sign-in that could not be
+      // saved) still leaves the screen with something true to say.
+      .catch((): ComputerSignIn => "unreachable")
+      .then((result) => {
+        if (!active) return;
+        if (result === "signed-in") router.replace("/");
+        else setAnswer(result);
+      });
     return () => {
       active = false;
     };

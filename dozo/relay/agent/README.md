@@ -61,6 +61,17 @@ environment for `run` and `revoke`; without it, phones get no sign-in from this 
   longer knows the channel (an `error` event if the server could not be reached). It also ends
   when the user signs out on the computer, or when the phone signs out. A removed phone pairs
   again to get a new one.
+- Limits, on purpose:
+  - If the local server cannot be reached when a phone is removed, the session stays in its
+    database. The phone still cannot use it: the channel is gone, and the server answers loopback
+    only.
+  - The phone's session is a full session of that account, like one from a password sign-in on
+    the phone.
+  - Anything holding the key can ask for sessions. The key is a secret of the user's own account
+    on that computer (a 0600 file); it is checked, not tied to a channel the agent knows.
+- The desktop app makes the key with the server's other secrets and gives it to the API
+  (`DOZO_RELAY_AGENT_KEY`) and to `run` and `revoke`, and passes `revoke` the server's
+  `--origin`.
 
 ## Events from `run`
 

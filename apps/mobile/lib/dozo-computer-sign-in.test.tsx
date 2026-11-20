@@ -98,6 +98,12 @@ it("asks again when the app comes back to the front, and not while it is away", 
   expect(app.ask).toHaveBeenCalledOnce();
 });
 
+it("says the computer could not be reached when asking fails outright", async () => {
+  app.ask.mockRejectedValue(new Error("unreadable"));
+  await render();
+  expect(container.textContent).toContain("Could not reach your computer.");
+});
+
 it("drops an answer that arrives after it left", async () => {
   const held = deferred<ComputerSignIn>();
   app.ask.mockReturnValue(held.promise);

@@ -74,14 +74,15 @@ export async function issueRelaySession(
   if (users.length > 1) return { refused: "one-account" };
   const userId = users[0]?.id;
   if (!userId) return { refused: "sign-in-on-computer" };
-  const signedIn = await prisma.session.count({
-    where: {
-      userId,
-      expiresAt: { gt: now },
-      OR: [{ userAgent: null }, { userAgent: { not: RELAY_SESSION_USER_AGENT } }],
-    },
-  });
-  if (signedIn === 0) return { refused: "sign-in-on-computer" };
+  const signedIn = () =>
+    prisma.session.count({
+      where: {
+        userId,
+        expiresAt: { gt: now },
+        OR: [{ userAgent: null }, { userAgent: { not: RELAY_SESSION_USER_AGENT } }],
+      },
+    });
+  if ((await signedIn()) === 0) return { refused: "sign-in-on-computer" };
 
   const identifier = `${RECORD_PREFIX}${channel}`;
   const claimed = await prisma.$transaction(async (tx) => {
@@ -107,6 +108,12 @@ export async function issueRelaySession(
     where: { id: claimed },
     data: { value: JSON.stringify({ userId, sessionId: session.id }) },
   });
+  // A sign-out on the computer from here on finds this session by its record; one that came
+  // between the check above and the record would have missed it, so look again.
+  if ((await signedIn()) === 0) {
+    await prisma.session.deleteMany({ where: { id: session.id } });
+    return { refused: "sign-in-on-computer" };
+  }
   return { token: session.token };
 }
 

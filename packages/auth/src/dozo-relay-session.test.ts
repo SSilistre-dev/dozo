@@ -253,6 +253,31 @@ describe("a phone's sign-in", () => {
     expect(await issueRelaySession(deps, OTHER)).toEqual({ refused: "sign-in-on-computer" });
   });
 
+  it("ends a session made while the user signed out on the computer", async () => {
+    const { deps, account, prisma, call } = server();
+    const computer = await account();
+    // The sign-out lands after the first check and before the session's record is written.
+    prisma.verification.update.mockImplementationOnce(async ({ where, data }) => {
+      await call("/sign-out", { token: computer, body: {} });
+      const row = prisma.authData.verification.find((item) => item.id === where.id) as Row;
+      Object.assign(row, data);
+      return row;
+    });
+    expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "sign-in-on-computer" });
+    expect(
+      prisma.authData.session.filter((row) => row.userAgent === RELAY_SESSION_USER_AGENT),
+    ).toEqual([]);
+  });
+
+  it("ends the phones' sign-ins when the user signs out everywhere", async () => {
+    const { deps, account, whoIs, call } = server();
+    const computer = await account();
+    const phone = await issueRelaySession(deps, CHANNEL);
+    if (!("token" in phone)) throw new Error("refused");
+    await call("/revoke-sessions", { token: computer, body: {} });
+    expect(await whoIs(phone.token)).toBeNull();
+  });
+
   it("refuses a computer with more than one account", async () => {
     const { deps, account, prisma } = server();
     await account();
