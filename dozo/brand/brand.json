@@ -3586,6 +3586,42 @@
       "reason": "hosted docs: the end of the rule above"
     },
     {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "import { useSidebarUpdate } from \"./DesktopUpdates\";\nimport { DozoSelfHostOnly } from \"./dozo-self-host-only\";\n",
+      "replace": "import { useSidebarUpdate } from \"./DesktopUpdates\";\nimport { DozoFeedbackHost, DozoFeedbackItem } from \"./dozo-feedback\";\nimport { DozoSelfHostOnly } from \"./dozo-self-host-only\";\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "feedback: the import of the two rules below"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "            </DozoSelfHostOnly>\n            <div className=\"my-1 border-t border-border\" />\n",
+      "replace": "            </DozoSelfHostOnly>\n            <DozoFeedbackItem onOpen={() => onOpenChange(false)} />\n            <div className=\"my-1 border-t border-border\" />\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "feedback: one Send feedback item above Log out, shown only when the server has an address for it"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "      </Popover>\n      {!mini ? (\n",
+      "replace": "      </Popover>\n      <DozoFeedbackHost />\n      {!mini ? (\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "feedback: the dialog is held outside the account menu, which unmounts as it closes"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.test.tsx",
+      "find": "import { SidebarFooter, sidebarMarkCount } from \"./SidebarFooter\";\n\nvi.mock(\"@lingui/react/macro\"",
+      "replace": "import { SidebarFooter, sidebarMarkCount } from \"./SidebarFooter\";\n\nvi.mock(\"./dozo-feedback\", () => ({ DozoFeedbackItem: () => null, DozoFeedbackHost: () => null }));\n\nvi.mock(\"@lingui/react/macro\"",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "upstream test of the account menu: the fork's feedback item reads the server, which this test does not provide, so it is replaced as other tests replace the fork's panels (dozo-feedback.test.tsx covers it)"
+    },
+    {
       "file": "apps/web/index.html",
       "find": "    <script src=\"/theme.js\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n",
       "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n      #dozo-boot[data-state=unreachable]{display:grid;place-items:center;pointer-events:auto}\n      #dozo-boot>section{position:relative;display:flex;flex-direction:column;align-items:center;gap:16px;padding:0 24px;text-align:center;font:14px/1.5 system-ui,sans-serif;color:var(--muted-foreground)}\n      #dozo-boot>section>p{margin:0}\n      #dozo-boot>section>button{font:inherit;color:var(--secondary-foreground);background:var(--secondary);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
@@ -4567,6 +4603,42 @@
       "reason": "chat export: the router renders a chat as Markdown with the transcript's own access check and page reader"
     },
     {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { dozoChatExportContract } from \"./dozo-chat-export.js\";\n\nconst botId",
+      "replace": "import { dozoChatExportContract } from \"./dozo-chat-export.js\";\nexport * from \"./dozo-feedback.js\";\nimport { dozoFeedbackContract } from \"./dozo-feedback.js\";\n\nconst botId",
+      "requires": [
+        "packages/contracts/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  dozoChatExport: dozoChatExportContract,\n  export: {\n",
+      "replace": "  dozoChatExport: dozoChatExportContract,\n  dozoFeedback: dozoFeedbackContract,\n  export: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: where a person's report goes and the sending of it join the app contract"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { dozoChatExportRoutes } from \"./dozo-chat-export.js\";\nimport { paymentWalletRoutes }",
+      "replace": "import { dozoChatExportRoutes } from \"./dozo-chat-export.js\";\nimport { dozoFeedbackRoutes } from \"./dozo-feedback.js\";\nimport { paymentWalletRoutes }",
+      "requires": [
+        "apps/api/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...dozoChatExportRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "replace": "    ...dozoChatExportRoutes(ctx),\n    ...dozoFeedbackRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: the router mails a signed-in person's report to the operator's address"
+    },
+    {
       "file": "apps/web/src/pages/BotContextMenu.tsx",
       "find": "import type { Bot, BotSection } from \"@rakazo/contracts\";\nimport type { SnoozePreset }",
       "replace": "import type { Bot, BotSection } from \"@rakazo/contracts\";\nimport type { DozoChatExportMenuProps } from \"./shell/dozo-chat-export-menu\";\nimport { DozoChatExportMenu } from \"./shell/dozo-chat-export-menu\";\nimport type { SnoozePreset }",
@@ -5051,6 +5123,15 @@
       "find": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#. js-lingui-explicit-id\n",
       "replace": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#: apps/mobile/app/server.tsx\nmsgid \"Connect to your computer\"\nmsgstr \"Bilgisayarınıza bağlanın\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Pairing code\"\nmsgstr \"Eşleştirme kodu\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"That is not a pairing code.\"\nmsgstr \"Bu bir eşleştirme kodu değil.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code has expired. Show a new one on your computer.\"\nmsgstr \"Bu kodun süresi doldu. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code was already used. Show a new one on your computer.\"\nmsgstr \"Bu kod zaten kullanıldı. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Could not reach your computer.\"\nmsgstr \"Bilgisayarınıza ulaşılamadı.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Connect to this computer?\"\nmsgstr \"Bu bilgisayara bağlanılsın mı?\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Only connect to a computer you own.\"\nmsgstr \"Yalnızca size ait bir bilgisayara bağlanın.\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Your computer\"\nmsgstr \"Bilgisayarınız\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Background notifications need a direct connection to the server.\"\nmsgstr \"Arka plan bildirimleri sunucuya doğrudan bağlantı gerektirir.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Uses the relay at {0}.\"\nmsgstr \"{0} aktarıcısını kullanır.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"You will be signed out of {0}.\"\nmsgstr \"{0} oturumunuz kapanacak.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Sign in on your computer to use it here.\"\nmsgstr \"Burada kullanmak için bilgisayarınızda oturum açın.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"This phone was removed from your computer.\"\nmsgstr \"Bu telefon bilgisayarınızdan kaldırıldı.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Pair again\"\nmsgstr \"Yeniden eşleştir\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Use another server\"\nmsgstr \"Başka bir sunucu kullanın\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Approve this phone on your computer.\"\nmsgstr \"Bu telefonu bilgisayarınızda onaylayın.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"This phone was not approved in time.\"\nmsgstr \"Bu telefon zamanında onaylanmadı.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Pair again to sign in on this phone.\"\nmsgstr \"Bu telefonda oturum açmak için yeniden eşleştirin.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Your computer has more than one account, so it cannot sign this phone in.\"\nmsgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#. js-lingui-explicit-id\n",
       "reason": "own computer over the relay: the Turkish copy of the mobile pairing screen, the Server screen's way to it, and the lines shown for a paired computer"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#. js-lingui-explicit-id\n",
+      "replace": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#: apps/web/src/components/dozo-feedback.tsx\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Send feedback\"\nmsgstr \"Geri bildirim gönder\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Feedback\"\nmsgstr \"Geri bildirim\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What happened?\"\nmsgstr \"Ne oldu?\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Include diagnostics\"\nmsgstr \"Tanılama bilgisini ekle\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What's sent\"\nmsgstr \"Gönderilecekler\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Could not send\"\nmsgstr \"Gönderilemedi\"\n\n#. js-lingui-explicit-id\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback-dialog.tsx"
+      ],
+      "reason": "feedback: the Turkish copy of the account menu's Send feedback item and its dialog"
     },
     {
       "file": "apps/mobile/app/sign-in.tsx",

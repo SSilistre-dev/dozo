@@ -70,6 +70,8 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       # closed: the public plugin submission form answers 403 (README, What the proxy does).
       DOZO_PLUGIN_SUBMISSIONS: ${DOZO_PLUGIN_SUBMISSIONS:-closed}
+      # Where in-app feedback goes (dozo/README.md, Feedback). Empty: the app offers none.
+      DOZO_FEEDBACK_EMAIL: ${DOZO_FEEDBACK_EMAIL:-}
     volumes: !override
       - data:/data
     # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through
