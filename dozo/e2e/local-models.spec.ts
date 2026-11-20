@@ -1,10 +1,17 @@
+import type { Page } from "@playwright/test";
 import { expect, readWorld, test } from "./fixtures";
 import { openBot, openUserSettings } from "./ui";
 
 const PANEL = "Run on this computer";
+// The stack runs on the owner's own computer, so the server looks for model servers there. None
+// runs on the default addresses in this suite, unless the person running it has one open.
+const FOUND = (page: Page) =>
+  page
+    .getByText("No model server is running", { exact: true })
+    .or(page.getByRole("button", { name: /^Connect / }).first());
 
 // Both the onboarding model step and account Models settings, now reachable with the offline model.
-test("no local-model panel while the published list is empty, upstream form still works", async ({
+test("the local-model panel looks on this computer, upstream form still works", async ({
   page,
   theme,
 }) => {
@@ -14,19 +21,11 @@ test("no local-model panel while the published list is empty, upstream form stil
   await page.getByRole("combobox", { name: "Provider" }).click();
   await expect(page.getByRole("option").first(), "provider list shows options").toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByText(PANEL, { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: PANEL })).toHaveCount(0);
+  await page.getByRole("button", { name: PANEL }).click();
+  await expect(FOUND(page)).toBeVisible();
 
   await openBot(page, readWorld().chiefId, "Chief");
   const settings = await openUserSettings(page, "models");
-  await expect(settings.getByText(PANEL, { exact: true })).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: PANEL })).toHaveCount(0);
-});
-
-test("the local-model panel appears once a published list exists", async ({ page }) => {
-  test.fixme(true, "published model list is empty until tool-calling checks are recorded");
-  await page.goto("/onboarding/model");
-  await expect(page.getByText(PANEL, { exact: true })).toBeVisible();
-  const settings = await openUserSettings(page, "models");
-  await expect(settings.getByText(PANEL, { exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: PANEL }).click();
+  await expect(FOUND(page)).toBeVisible();
 });

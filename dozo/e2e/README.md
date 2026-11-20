@@ -104,8 +104,8 @@ that resolves to a private address).
     of `dozo-shell.css` still match (pills, wordmark, pattern, tinted row), and a first visit is dark.
     Every crawled surface also fails when it shows an element of upstream's avatar drawings
     (`UPSTREAM_AVATAR_ART` in `fixtures.ts`).
-  - `local-models.spec.ts` checks that the local-model panel is absent while the published model list
-    is empty and the upstream form still works; its second test is `fixme` until a list is published.
+  - `local-models.spec.ts` checks that the local-model panel shows on the stack, which may reach this
+    computer, says what it found there, and that the upstream form still works.
 - `surfaces.ts` + `surfaces/*.ts`: the crawl as data. A surface is a `name`, a `group`, `covers`
   (inventory keys) and `reach(ctx)`; `ctx.scan(label)` scans the current state. Optional: `once` (light
   theme only, it creates data), `slow` (longer timeout), `signedOut` (starts without a session),
