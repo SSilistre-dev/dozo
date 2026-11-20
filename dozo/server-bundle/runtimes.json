@@ -1,0 +1,52 @@
+{
+  "node": {
+    "version": "24.22.0",
+    "platforms": {
+      "linux-x64": {
+        "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.xz",
+        "sha256": "cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008",
+        "size": 32015600
+      },
+      "darwin-arm64": {
+        "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-darwin-arm64.tar.xz",
+        "sha256": "75ddfb875bbd868ebe57536f4442225f54dd10f6d2178dd439de869a5c648dc3",
+        "size": 27503188
+      },
+      "darwin-x64": {
+        "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-darwin-x64.tar.xz",
+        "sha256": "b890d687983ddc811641f6739c3ce99d2912c58f9e44b68aa25944037b425305",
+        "size": 29235424
+      },
+      "win-x64": {
+        "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-win-x64.zip",
+        "sha256": "f9683a19877e12a9b167305c8db71040d812876359de21f0d2e97c3f321f80c3",
+        "size": 37733703
+      }
+    }
+  },
+  "postgres": {
+    "version": "16.16.0",
+    "platforms": {
+      "linux-x64": {
+        "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.16.0/postgresql-16.16.0-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "f668fbc685cdcb71d6a82f57035bed7d97b059e2d8a1d3adf317ec36c5e861d2",
+        "size": 39431025
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.16.0/postgresql-16.16.0-aarch64-apple-darwin.tar.gz",
+        "sha256": "b7f002d554cd8a916d189e24b8f885d088b7909bb6d2de092f82c10274cb8251",
+        "size": 89018605
+      },
+      "darwin-x64": {
+        "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.16.0/postgresql-16.16.0-x86_64-apple-darwin.tar.gz",
+        "sha256": "6bcc3f98c76fdb4b52bf4e59781308ea996058941566579a0961b3a25626b6bb",
+        "size": 92163354
+      },
+      "win-x64": {
+        "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/16.16.0/postgresql-16.16.0-x86_64-pc-windows-msvc.tar.gz",
+        "sha256": "4557b8251bb967c1c09eab57439fb2f1179d35c70debfc692fe637bb08d2f20c",
+        "size": 48702594
+      }
+    }
+  }
+}

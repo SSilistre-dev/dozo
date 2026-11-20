@@ -1,0 +1,160 @@
+name: dozo-server-bundle
+
+# Builds the local server bundle (dozo/server-bundle/README.md) from the branded tree, one per
+# platform, and runs the end-to-end smoke test on linux-x64. linux-x64 is the platform this has to
+# pass on; macOS and Windows are built to see that they build, and do not fail the run.
+# On a `server-v<anything>` tag, or a manual run given a tag, the bundles and manifest.json go on a
+# DRAFT release with that tag, never marked latest (the desktop app's own updates read the latest
+# release). Pull requests only build and smoke.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same SHAs
+# the upstream workflows use).
+on:
+  pull_request:
+    paths:
+      - dozo/server-bundle/**
+      - .github/workflows/dozo-server-bundle.yml
+      - scripts/build-server-bundle.mjs
+      - scripts/build-server.mjs
+      - pnpm-lock.yaml
+  push:
+    tags:
+      - server-v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to put the bundles on (empty = build and smoke only)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-server-bundle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage:
+    name: Branded tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      # The same stage and brand steps as the image build: the tree the bundle is built from
+      # never holds an unbranded user-visible string.
+      - name: Stage and brand
+        run: |
+          dozo/docker/build.sh stage
+          dozo/docker/build.sh brand
+          tar -C dozo/.stage/src -czf "$RUNNER_TEMP/tree.tar.gz" .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: branded-tree
+          path: ${{ runner.temp }}/tree.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  bundle:
+    name: Bundle ${{ matrix.platform }}
+    needs: stage
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04: anything compiled during install links against an older glibc.
+          - { platform: linux-x64, os: ubuntu-22.04 }
+          - { platform: darwin-arm64, os: macos-latest }
+          - { platform: darwin-x64, os: macos-15-intel }
+          - { platform: win-x64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.platform != 'linux-x64' }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            dozo/server-bundle
+            package.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: branded-tree
+          path: ${{ runner.temp }}
+      - name: Unpack the tree
+        run: mkdir "$RUNNER_TEMP/tree" && tar -C "$RUNNER_TEMP/tree" -xzf "$RUNNER_TEMP/tree.tar.gz"
+      # The pnpm version from package.json; the Node version is the one runtimes.json ships.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      - name: Build
+        run: node dozo/server-bundle/build.mjs "$RUNNER_TEMP/tree" dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: dist/dozo-server-${{ matrix.platform }}.*
+          retention-days: 7
+          if-no-files-found: error
+
+  smoke:
+    name: Smoke linux-x64
+    needs: bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: dozo/server-bundle
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: bundle-linux-x64
+          path: dist
+      - name: Smoke test
+        run: dozo/server-bundle/smoke.sh dist dist/smoke-logs
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-logs
+          path: dist/smoke-logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+  release:
+    name: Draft release
+    needs: smoke
+    if: startsWith(github.ref, 'refs/tags/server-v') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: dozo/server-bundle
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: bundle-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      - name: Manifest
+        run: node dozo/server-bundle/manifest.mjs dist "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --latest=false \
+              --target "$GITHUB_SHA" --title "Local server $TAG" --notes "Local server bundles and manifest.json."
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber dist/dozo-server-*.tar.xz dist/manifest.json
