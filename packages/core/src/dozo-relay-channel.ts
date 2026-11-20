@@ -366,6 +366,21 @@ export async function relayAppToken(crypto: RelayCrypto, pairingKey: Uint8Array)
   );
 }
 
+/**
+ * The six digits both ends show while the user approves the phone on the computer. From the
+ * pairing key, which only the two ends hold, so a code that matches proves it is this phone.
+ */
+export async function relayApprovalCode(crypto: RelayCrypto, pairingKey: Uint8Array) {
+  const bytes = await crypto.hkdf(
+    pairingKey,
+    new Uint8Array(0),
+    concat(LABEL, utf8(" approval code")),
+    4,
+  );
+  const value = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
+  return String(value % 1_000_000).padStart(6, "0");
+}
+
 /** What the relay stores for a token: its SHA-256, base64url. */
 export async function relayVerifier(crypto: RelayCrypto, token: string) {
   return encodeRelayBytes(await crypto.sha256(utf8(token)));
@@ -399,13 +414,15 @@ export function parseRelayPairingOffer(text: string, now: number): RelayPairingO
 }
 
 /** The channel's primitives on WebCrypto (Node, browsers, Electron). */
-export function webRelayCrypto(crypto: Crypto = globalThis.crypto): RelayCrypto {
+export function webRelayCrypto(crypto: typeof globalThis.crypto = globalThis.crypto): RelayCrypto {
   const { subtle } = crypto;
   const X25519 = { name: "X25519" };
   return {
     randomBytes: (length) => crypto.getRandomValues(new Uint8Array(length)),
     async generateKeyPair() {
-      const pair = (await subtle.generateKey(X25519, true, ["deriveBits"])) as CryptoKeyPair;
+      const pair = (await subtle.generateKey(X25519, true, ["deriveBits"])) as {
+        privateKey: Parameters<typeof subtle.exportKey>[1];
+      };
       const jwk = await subtle.exportKey("jwk", pair.privateKey);
       return {
         publicKey: decodeRelayBytes(String(jwk.x)),

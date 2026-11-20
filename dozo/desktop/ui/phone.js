@@ -2,6 +2,7 @@
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const SCREENS = ["code", "ask", "expired", "signed-out", "failed"];
 const el = (id) => document.getElementById(id);
+const PLATFORMS = { ios: "iPhone", android: "Android" };
 let ticking;
 let asking = "";
 
@@ -57,7 +58,9 @@ async function ask(channel) {
   asking = channel;
   const phone = await invoke("phone_wait", { channel }).catch(() => null);
   if (!phone || asking !== channel) return;
-  el("device").textContent = phone.name || phone.platform || "";
+  // Not allowed within 5 minutes: the agent dropped the pairing.
+  if (phone.event === "expired") return show("expired");
+  el("device").textContent = PLATFORMS[phone.platform] ?? "";
   el("check").textContent = String(phone.code ?? "").replace(/^(\d{3})(\d{3})$/, "$1 $2");
   show("ask");
 }

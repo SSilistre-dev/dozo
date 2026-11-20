@@ -43,8 +43,11 @@ pub fn prepare(command: &mut Command, stop: Stop, lock: Option<&File>) {
         return;
     }
     let lock = lock.map(AsRawFd::as_raw_fd);
+    // With the app gone there is nobody to wait for a graceful stop, and Node may not end on one
+    // TERM (the worker drains first): it is killed. Postgres gets its fast shutdown, which ends
+    // its own processes.
     let signal = match stop {
-        Stop::Terminate => libc::SIGTERM,
+        Stop::Terminate => libc::SIGKILL,
         Stop::Interrupt => libc::SIGINT,
     };
     let app = std::process::id() as libc::pid_t;

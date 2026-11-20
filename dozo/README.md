@@ -233,12 +233,21 @@ as before and never moves to another connection of the pool, and a run stays on 
   `dozo-model-pool-capabilities.ts` (keys and own endpoints yes, subscription sign-ins no).
 - The pool lives in two fork tables with no model in `schema.prisma` (`dozo_model_pool_members`,
   `dozo_model_connection_cooldowns`, `packages/db/src/dozo-model-pool-store.ts`). A connection
-  without a row runs exactly as upstream's does. Nothing writes a membership yet: the setting
-  arrives with its own change. The store's SQL and row security are tested in
+  without a row runs exactly as upstream's does. The store's SQL and row security are tested in
   `dozo-model-pool-store.postgres.test.ts`, which needs a migrated database (see Hosted plans).
 - When every connection rests, the run tries the one that opens first and fails with the
   provider's own message. A pinned run keeps the connection it asked for. Moving to another
   connection mid-run rebuilds the provider's prompt cache, so that call costs more.
+- Settings: where two or more of one provider's connections may join (the first five added), each
+  of their pages in Models has one switch that pools all of them or none
+  (`apps/web/src/pages/model-settings/dozo-model-pool.tsx`, procedures `dozoModelPool.get` and
+  `dozoModelPool.set` in `apps/api/src/dozo-model-pool.ts`, the offer in
+  `packages/adapters/src/dozo-model-pool-settings.ts`). The server refuses any other connection,
+  records each change in the activity log (`model.pool.changed`) and sends the person's roster
+  signal. A resting connection's row shows when it opens; a rest that starts while Models is open
+  shows when it is opened again or the window gets focus. A connection added later joins when the
+  switch is turned on again. Mobile shows the connections as before, without the switch or the
+  time: the pool still runs there.
 
 ## Editing and regenerating
 
@@ -262,6 +271,69 @@ the finished turn keeps it: providers forget per chat, not per turn, so only cle
 removes it. Old clients drop the removed reply on their next read instead of at once.
 
 Mobile shows the result of an edit or regenerate made elsewhere, but has no menu entry yet.
+
+## Pinned messages
+
+Any message in a bot's or a group's chat can be pinned from its More menu
+(`apps/api/src/dozo-message-pins.ts`, table `dozo_message_pins`). A pin belongs to the person who
+made it, like their read state: other members of the Space who share the chat never see it, since
+a pin marks what one person wants to find again, not a decision for everyone. Leaving the Space
+drops that person's pins there. While a chat has pins, a pin in its header lists them, newest first,
+and opens the chat at the one chosen. A chat keeps the 50 newest pins.
+
+A deleted message takes its pins with it: a regenerated reply, a cleared chat. An edited message
+keeps its pin with the new text. A pin change sends the person's own roster signal; the web app
+reads the open chat's pins again on every roster signal, so a pin made on another device and a
+message deleted elsewhere both show within the roster's signal spacing (10 seconds). Chat export
+leaves pins out.
+
+Mobile has no pin yet: pins made on the web stay, but the app neither shows nor sets them.
+
+## Commands on your own computer
+
+Upstream asks once per Space before a bot first runs a command on the member's own computer (the
+desktop app's "Let bots use this computer"), and after "Allow in this space" runs every later
+command there unasked. The fork keeps that first card and then reads each command
+(`packages/adapters/src/dozo-user-computer-gate.ts`, `packages/core/src/dozo-shell-command.ts`):
+
+- A command that only reads (`ls`, `cat`, `grep`, `find` without `-exec` or `-delete`, and a few
+  more in `READ_ONLY_PROGRAMS`) goes ahead.
+- Any other command asks with Allow once, Always allow this command and Deny. Always allow saves
+  the exact words for that bot, in that folder (table `dozo_command_rules`); Settings > Approvals
+  lists them under Commands, with Remove.
+- Never ask keeps upstream's behaviour: the first card alone. Auto asks like Ask; no approval model
+  reads commands yet. A block rule on the tool still refuses every command.
+- Commands on a bot's own cloud computer never ask, as upstream: it is the bot's isolated machine.
+- Only the owner's own chats reach their computer, never routines, webhooks or chat apps, so no
+  card waits on a run nobody watches.
+
+How a command is read, and what that does not cover:
+
+- The server does not know which shell runs it (the computer's login shell, or PowerShell on
+  Windows), so it reads only what is plain in zsh, bash, fish and PowerShell: one program and its
+  words, each bare or wholly quoted. Other shells (tcsh, nushell) were not considered. Two
+  commands, pipes, redirections, variables, globs, `~`, braces, subshells, backslashes, an
+  assignment before the program, `//` anywhere in a word (a Windows network share), curly quotes,
+  control characters and invisible format marks make it unreadable. An unreadable command always
+  asks, and offers no Always allow.
+- The read-only list names what may pass, never what must ask, so a script, an interpreter or a
+  copy of a program under another name asks. A program is matched by its bare name; a path asks.
+- What a program does is not checked. An alias or function in the member's login profile can
+  make `ls` do anything; a command allowed by a rule (`npm test`) runs whatever its files say
+  today; a program put earlier on `PATH` by a command the member allowed runs under the name of a
+  read-only one. Reading does not ask, including files that hold secrets. A Mac can
+  reach the network through `/net/<host>` paths, which a read-only command may list.
+- A rule is the member's for that bot on any of their own computers, not one device, and stays
+  when a computer is removed and paired again (the Space's first card does not). It matches the
+  exact words and the folder as the bot wrote it; `~/app` and the same folder by its full path
+  are two rules. The card offers Always allow only when it shows the whole command
+  (nothing hidden as a secret, nothing cut off).
+- Deny on any command makes the rest of that reply refuse commands on the computer, as upstream
+  does for a denied tool; the next message starts afresh.
+
+Not done yet: the mobile app shows the card with Always allow this command but has no Commands
+list; screen control on the member's computer keeps upstream's approval per app; browser actions
+and a daily limit on what a bot sends are later work.
 
 ## Status and known limits
 

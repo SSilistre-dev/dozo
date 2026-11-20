@@ -805,7 +805,9 @@ fn main() {
                             return;
                         };
                         match background::on_close(keep, can_reopen(&app)) {
-                            Close::Quit => {}
+                            // The app ends with its main window: Connect Phone closes too, or
+                            // it would keep the app running on its own.
+                            Close::Quit => phone::close(&app),
                             Close::Hide => {
                                 api.prevent_close();
                                 let _ = window.hide();

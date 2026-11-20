@@ -130,3 +130,43 @@ export const RelaySetAppRequestSchema = z.object({ appVerifier: RelayKey });
 /** A text message the relay sends on a socket: whether the other end is connected now. */
 export const RelayPeerMessageSchema = z.object({ type: z.literal("peer"), present: z.boolean() });
 export type RelayPeerMessage = z.infer<typeof RelayPeerMessageSchema>;
+
+/**
+ * A paired phone's sign-in from its computer (`dozo/relay/agent/README.md`, Phone sign-in). The
+ * phone asks at this path through the relay. The computer's agent holds the request until the user
+ * approved the phone on the computer, then adds the channel the request came on and its proof of
+ * the key it shares with the local server; it removes these headers from every other request it
+ * forwards. The local server answers with a session for its account, once per channel.
+ */
+export const RELAY_SESSION_PATH = "/api/auth/dozo/relay-session";
+/** Where the agent ends a phone's sign-in when the phone is removed. */
+export const RELAY_SESSION_REVOKE_PATH = "/api/auth/dozo/relay-session/revoke";
+/** `<milliseconds>.<hex HMAC-SHA-256 of relayAgentProofMessage under the shared key>`. */
+export const RELAY_AGENT_PROOF_HEADER = "x-dozo-relay-agent-proof";
+export const RELAY_CHANNEL_HEADER = "x-dozo-relay-channel";
+
+/** What the agent's proof covers, so a proof fits one request kind, one channel and one minute. */
+export function relayAgentProofMessage(request: {
+  method: string;
+  path: string;
+  channel: string;
+  time: number;
+}) {
+  return `dozo-relay/${RELAY_PROTOCOL_VERSION} agent ${request.method.toUpperCase()} ${request.path} ${request.channel} ${request.time}`;
+}
+
+/** What the phone says about itself when it asks: shown on the computer beside the code. */
+export const RelaySessionRequestSchema = z.object({
+  platform: z.enum(["ios", "android", "web"]).optional(),
+});
+
+/** The session the computer gives: the bearer token the app signs in with. */
+export const RelaySessionSchema = z.object({ token: z.string().min(1).max(2048) });
+/**
+ * Why the computer gave none: nobody signed in there, more than one account, given before, or the
+ * phone was not approved on the computer in time.
+ */
+export const RelaySessionRefusalSchema = z.object({
+  reason: z.enum(["sign-in-on-computer", "one-account", "used", "not-approved"]),
+});
+export type RelaySessionRefusal = z.infer<typeof RelaySessionRefusalSchema>["reason"];

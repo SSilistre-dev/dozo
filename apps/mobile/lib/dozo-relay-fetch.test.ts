@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { RelayHttpError } from "@rakazo/core";
+import { decodeRelayBytes, RelayHttpError, relayApprovalCode, webRelayCrypto } from "@rakazo/core";
 import { flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { relayWorld } from "./dozo-relay.test-support";
@@ -18,6 +18,7 @@ import {
   installRelayFetch,
   isRelayGone,
   keepOnlyRelayConnection,
+  relayApprovalCodeOf,
   relayDeps,
   relayPairingStore,
   resetRelayConnections,
@@ -284,6 +285,26 @@ describe("installRelayFetch", () => {
     connection.onGone?.();
     await flush();
     expect(store.cleared).toBe(false);
+  });
+
+  it("gives the approval code of a paired computer, as the computer derives it", async () => {
+    world.startHost();
+    const { connection, pairing } = await pairRelay(
+      readPairingOffer(await world.offer(), Date.now()),
+      world.deps(),
+    );
+    connection.close();
+    const code = await relayApprovalCodeOf(
+      relayOrigin(pairing.originId),
+      memory(pairing),
+      world.deps(),
+    );
+    expect(code).toBe(
+      await relayApprovalCode(webRelayCrypto(), decodeRelayBytes(pairing.pairingKey)),
+    );
+    expect(
+      await relayApprovalCodeOf("https://other.example.invalid", memory(null), world.deps()),
+    ).toBeNull();
   });
 
   it("ends a connection whose server switch failed", async () => {
