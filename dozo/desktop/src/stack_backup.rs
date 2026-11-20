@@ -22,6 +22,9 @@ use crate::stack_os::{self, Stop};
 /// What a restore replaces.
 const DATA: [&str; 4] = ["pgdata", "data", "relay", "secrets"];
 const ASIDE: &str = "before-restore";
+/// Names the set moved aside while a restore is under way, so a restore cut off (the app killed)
+/// is undone at the next start instead of that start finding no data and making a new server.
+const JOURNAL: &str = "restore";
 
 /// Why a backup or a restore did not happen, as the command says it (`reason`).
 #[derive(Clone, Debug, PartialEq)]
@@ -158,8 +161,19 @@ impl Tool {
         password: &str,
         stamp: u64,
     ) -> Result<PathBuf, Refusal> {
-        let aside = move_aside(&self.root, stamp).map_err(|_| Refusal::Failed)?;
-        match self.run("restore", file, password).await {
+        // An update a start left unfinished is settled first, so it cannot later put its copy
+        // over the restored data.
+        crate::stack_update::recover(&self.root).map_err(|_| Refusal::Failed)?;
+        let aside = match move_aside(&self.root, stamp) {
+            Ok(aside) => aside,
+            // Some moved, then one could not: those come back. If even that fails the journal
+            // stays, and the next start puts them back before anything else.
+            Err(_) => {
+                let _ = recover_restore(&self.root);
+                return Err(Refusal::Failed);
+            }
+        };
+        let done = match self.run("restore", file, password).await {
             Ok(_) => {
                 prune_aside(&self.root, &aside);
                 Ok(aside)
@@ -168,7 +182,9 @@ impl Tool {
                 put_back(&self.root, &aside).map_err(|_| Refusal::Failed)?;
                 Err(refusal)
             }
-        }
+        };
+        fs::remove_file(self.root.join(JOURNAL)).map_err(|_| Refusal::Failed)?;
+        done
     }
 }
 
@@ -195,6 +211,8 @@ fn move_aside(root: &Path, stamp: u64) -> io::Result<PathBuf> {
         .find(|path| !path.exists())
         .expect("a free name");
     fs::create_dir_all(&aside)?;
+    let name = aside.file_name().unwrap_or_default().to_string_lossy();
+    crate::stack_setup::write_private(&root.join(JOURNAL), name.as_bytes())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -225,6 +243,20 @@ fn put_back(root: &Path, aside: &Path) -> io::Result<()> {
         fs::rename(&kept, &target)?;
     }
     fs::remove_dir_all(aside)
+}
+
+/// A restore the app did not see finish (it was killed): what it left goes, and the data moved
+/// aside comes back. Run before anything starts; true when there was one.
+pub fn recover_restore(root: &Path) -> io::Result<bool> {
+    let Ok(name) = fs::read_to_string(root.join(JOURNAL)) else {
+        return Ok(false);
+    };
+    let aside = root.join(ASIDE).join(name.trim());
+    if aside.is_dir() {
+        put_back(root, &aside)?;
+    }
+    fs::remove_file(root.join(JOURNAL))?;
+    Ok(true)
 }
 
 /// A restore that worked but whose server does not start: the restored data goes aside too,
@@ -353,6 +385,44 @@ mod tests {
         undo_restore(&root, &aside, 6).unwrap();
         assert_eq!(read(&root, "pgdata/table"), "rows now");
         assert_eq!(read(&root, "before-restore/6-0/pgdata/table"), "restored\n");
+    }
+
+    #[tokio::test]
+    async fn a_restore_cut_off_is_undone_at_the_next_start() {
+        // The app was killed while the command wrote the restored data.
+        let root = installed("restore-cut", "");
+        let aside = move_aside(&root, 5).unwrap();
+        fs::create_dir_all(root.join("pgdata")).unwrap();
+        fs::write(root.join("pgdata/table"), "half").unwrap();
+        assert!(aside.join("pgdata/table").exists());
+        assert!(recover_restore(&root).unwrap());
+        assert_eq!(read(&root, "pgdata/table"), "rows now");
+        assert_eq!(read(&root, "secrets"), "KEY=now");
+        assert!(!root.join("restore").exists());
+        assert!(!recover_restore(&root).unwrap(), "nothing the second time");
+    }
+
+    #[tokio::test]
+    async fn an_unfinished_update_cannot_later_undo_a_restore() {
+        let restore = r#"mkdir "$5/pgdata"; echo restored > "$5/pgdata/table"
+            echo '{"restored":"f","server":"1","migrate":false}'"#;
+        let root = installed("restore-after-update", restore);
+        fs::create_dir_all(root.join("versions/2")).unwrap();
+        // An update to 2 was cut off after the switch: its journal waits for the next start.
+        crate::stack_update::begin(&root, "1", "2", 1).unwrap();
+        fs::write(root.join("current"), "2").unwrap();
+        let tool = Tool::of(&root).unwrap_or(Tool {
+            node: root.join("versions/1/node/bin/node"),
+            entry: root.join("versions/1/server/rakazo-server/backup.mjs"),
+            root: root.clone(),
+        });
+        tool.restore(&root.join("f"), "password1", 5).await.unwrap();
+        assert!(crate::stack_update::journal(&root).is_none());
+        assert_eq!(
+            crate::stack_update::recover(&root).unwrap(),
+            crate::stack_update::Recovered::Nothing
+        );
+        assert_eq!(read(&root, "pgdata/table"), "restored\n");
     }
 
     #[tokio::test]

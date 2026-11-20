@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::menu::MenuItem;
@@ -23,6 +24,27 @@ pub const RESTORE_ID: &str = "restore";
 const WINDOW: &str = "backup";
 const EXTENSION: &str = "dozobackup";
 const SHORT: &str = "Use at least 8 characters.";
+
+/// One backup or restore at a time.
+static BUSY: AtomicBool = AtomicBool::new(false);
+
+/// Holds `BUSY` for as long as it lives.
+struct Busy;
+
+impl Busy {
+    fn take() -> Result<Busy, String> {
+        if BUSY.swap(true, Ordering::SeqCst) {
+            return Err("Another backup or restore is under way.".into());
+        }
+        Ok(Busy)
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::SeqCst);
+    }
+}
 
 /// The two menu items, kept to switch them on and off.
 pub struct Items(pub MenuItem<Wry>, pub MenuItem<Wry>);
@@ -60,6 +82,11 @@ pub fn follow(app: AppHandle) {
 /// Opens the window for `mode` (`backup` or `restore`), or brings it forward in that mode.
 pub fn open(app: &AppHandle, mode: &str) {
     if let Some(window) = app.get_webview_window(WINDOW) {
+        // A backup or a restore under way keeps its window: it is only brought forward.
+        if BUSY.load(Ordering::SeqCst) {
+            let _ = window.set_focus();
+            return;
+        }
         let _ = window.close();
     }
     let page = format!("backup.html?{mode}");
@@ -98,6 +125,7 @@ pub async fn back_up(app: AppHandle, password: String) -> Result<bool, String> {
     if password.chars().count() < 8 {
         return Err(SHORT.into());
     }
+    let _busy = Busy::take()?;
     let tool = tool(&app)?;
     let dialog = app
         .dialog()
@@ -143,6 +171,7 @@ pub async fn restore(app: AppHandle, password: String) -> Result<(), String> {
         .unwrap()
         .clone()
         .ok_or("Choose a backup first.")?;
+    let _busy = Busy::take()?;
     let tool = tool(&app)?;
     let layout = local_layout(&app).map_err(|error| error.to_string())?;
     let local = app.state::<LocalServer>().0.clone();
@@ -161,17 +190,18 @@ pub async fn restore(app: AppHandle, password: String) -> Result<(), String> {
         let (app, layout) = (app.clone(), layout.clone());
         async move {
             local.start(layout, local_options(&app)).await;
+            // However long it takes (an update may run first): a start always ends one way.
             let mut status = local.status();
-            let settled =
-                status.wait_for(|status| matches!(status, Status::Ready(_) | Status::Failed(_)));
-            matches!(
-                tokio::time::timeout(Duration::from_secs(600), settled)
-                    .await
-                    .ok()
-                    .and_then(Result::ok)
-                    .as_deref(),
-                Some(Status::Ready(_))
-            )
+            let settled = status
+                .wait_for(|status| matches!(status, Status::Ready(_) | Status::Failed(_)))
+                .await
+                .map(|status| status.clone());
+            match settled {
+                // The restored data is fine; an update on it was put back and says so itself.
+                Ok(Status::Failed(crate::stack::Failure::UpdateRolledBack)) => true,
+                Ok(status) => matches!(status, Status::Ready(_)),
+                Err(_) => false,
+            }
         }
     };
     let message = match restored {

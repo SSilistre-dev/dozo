@@ -369,6 +369,12 @@ impl Local {
         if !stack_setup::has_libssl3() {
             return Err(failed(Failure::NoLibssl, "no libssl.so.3"));
         }
+        // A restore cut off last time (Back Up and Restore) is undone first.
+        match crate::stack_backup::recover_restore(&layout.0) {
+            Ok(true) => launch.note("a restore did not finish: the data before it is back"),
+            Ok(false) => {}
+            Err(error) => return Err(failed(Failure::Start, &format!("restore: {error}"))),
+        }
         // An update cut off last time (the app ended, the disk filled) is undone first.
         match stack_update::recover(&layout.0) {
             Ok(stack_update::Recovered::RolledBack { from, to }) => {
