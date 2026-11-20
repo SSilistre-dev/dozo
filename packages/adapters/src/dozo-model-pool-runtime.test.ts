@@ -213,6 +213,21 @@ describe("a short rate limit on a pooled connection", () => {
     expect(runPool.recordOut).not.toHaveBeenCalled();
   });
 
+  it("still hands over when the same connection then runs out", async () => {
+    const runPool = pool();
+    providerState.stream
+      .mockImplementationOnce(() => stream(reply([], rateLimit)))
+      .mockImplementationOnce(() =>
+        stream(reply([], "402 Insufficient credits. Add more credits to continue.")),
+      )
+      .mockImplementation((_target: unknown, _context: unknown, options: { apiKey?: string }) =>
+        stream(reply([{ type: "text", text: `answered with ${options.apiKey}` }])),
+      );
+    expect(text(await run(withRunModelPool(request(), runPool)))).toBe("answered with key-b");
+    expect(keysUsed()).toEqual(["key-a", "key-a", "key-b"]);
+    expect(runPool.recordOut).toHaveBeenCalledOnce();
+  });
+
   it("moves to the person's own backup as before, passing the pool over", async () => {
     const runPool = pool();
     answer({ "key-a": rateLimit });

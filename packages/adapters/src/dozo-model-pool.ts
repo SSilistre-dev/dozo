@@ -177,6 +177,11 @@ export function withPoolMembers(
 const runPools = new WeakMap<AgentRunRequest, RunModelPool>();
 /** Fallback streams whose current move to a backup follows a connection that ran out. */
 const movingOut = new WeakSet<object>();
+/** Per fallback stream, the first place in its backup chain where a pool connection was passed over. */
+const passedOver = new WeakMap<object, number>();
+
+/** The part of the runtime's fallback stream state the pool reads and moves. */
+type FallbackState = { request: AgentRunRequest; nextIndex: number };
 
 /** Hands the run's pool to the model runtime with its request. */
 export function withRunModelPool(
@@ -187,22 +192,31 @@ export function withRunModelPool(
   return request;
 }
 
+/** Words or a status with which a provider says the account's quota or credit is spent. */
+const SPENT =
+  /insufficient_quota|exceeded your current quota|quota (?:exceeded|exhausted)|usage limit|credit balance|insufficient (?:funds|balance|credits?)|out of (?:budget|credits?)|add more credits|\b40[023]\b/i;
+
 /**
  * Whether a failure means the connection ran out: its quota or credit is spent, or its key was
  * refused. A short rate limit, an overload or a dropped connection is not: those retry as before.
+ * A limit that does not say it is spent, and gives no reset hours away, counts as short.
  */
-export function connectionOutReason(error: unknown): PoolCooldownReason | undefined {
+export function connectionOutReason(error: {
+  errorMessage?: string;
+}): PoolCooldownReason | undefined {
   if (isModelCredentialRejected(error)) return "rejected";
-  if (isRetryableProviderUnavailable(error) && !isTransientModelError(error)) return "exhausted";
-  return undefined;
+  if (!isRetryableProviderUnavailable(error) || isTransientModelError(error)) return undefined;
+  const text = error.errorMessage ?? "";
+  return providerQuotaResetAt(text) !== undefined || SPENT.test(text) ? "exhausted" : undefined;
 }
 
 /**
  * Moves a failed call to the next backup. When the connection ran out, it rests first and the
- * pool's other connections may take the call; after any other failure they are passed over.
+ * pool's other connections may take the call, those passed over after an earlier failure of this
+ * run included; after any other failure they are passed over.
  */
 export async function switchAfterFailure(
-  state: { request: AgentRunRequest },
+  state: FallbackState,
   failed: { id: string; connectionId?: string },
   error: AssistantMessage,
   switchToNext: () => Promise<boolean>,
@@ -220,6 +234,10 @@ export async function switchAfterFailure(
         providerQuotaResetAt(error.errorMessage ?? ""),
       ),
     );
+  // Everything before that place was tried or ruled out, so the chain can go back to it.
+  const from = passedOver.get(state);
+  if (from !== undefined) state.nextIndex = Math.min(state.nextIndex, from);
+  passedOver.delete(state);
   movingOut.add(state);
   try {
     return await switchToNext();
@@ -228,12 +246,15 @@ export async function switchAfterFailure(
   }
 }
 
-/** Whether the next backup is one of the pool's connections the current failure may not move to. */
-export function skipsPoolMember(
-  state: { request: AgentRunRequest },
-  choice: { connectionId?: string },
-): boolean {
+/**
+ * Whether the backup just taken from the chain (at `state.nextIndex - 1`) is one of the pool's
+ * connections the current failure may not move to. It is kept for a later failure that ran out.
+ */
+export function skipsPoolMember(state: FallbackState, choice: { connectionId?: string }): boolean {
   const pool = runPools.get(state.request);
   if (!pool || !choice.connectionId || movingOut.has(state)) return false;
-  return pool.members.includes(choice.connectionId);
+  if (!pool.members.includes(choice.connectionId)) return false;
+  const index = state.nextIndex - 1;
+  passedOver.set(state, Math.min(passedOver.get(state) ?? index, index));
+  return true;
 }

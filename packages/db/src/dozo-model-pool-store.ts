@@ -42,8 +42,8 @@ export async function setModelPoolMember(
 }
 
 /**
- * Which of `credentialIds` are pooled, each with its latest rest for `modelId`. A rest observed
- * before the connection was last saved is left out: a new key ends it.
+ * Which of `credentialIds` are pooled, each with its latest rest for `modelId`. A rest recorded
+ * for an earlier secret of the connection is left out: saving a new key ends it.
  */
 export async function readModelPool(
   db: Db,
@@ -57,7 +57,7 @@ export async function readModelPool(
     LEFT JOIN "dozo_model_connection_cooldowns" cd
       ON cd."credentialId" = m."credentialId"
       AND cd."modelId" IN ('', ${scope.modelId})
-      AND cd."observedAt" >= c."updatedAt"
+      AND cd."secretId" = c."secretId"
     WHERE m."userId" = ${scope.userId} AND m."credentialId" = ANY(${[...scope.credentialIds]})
     GROUP BY m."credentialId"`;
 }
@@ -80,12 +80,14 @@ export async function recordModelConnectionCooldown(
 ): Promise<boolean> {
   const written = await db.$executeRaw`
     INSERT INTO "dozo_model_connection_cooldowns"
-      ("credentialId", "userId", "modelId", "reason", "resetsAt", "observedAt")
-    SELECT m."credentialId", m."userId", ${rest.modelId ?? ""}, ${rest.reason}, ${rest.resetsAt},
-      ${rest.observedAt}
+      ("credentialId", "userId", "modelId", "secretId", "reason", "resetsAt", "observedAt")
+    SELECT m."credentialId", m."userId", ${rest.modelId ?? ""}, c."secretId", ${rest.reason},
+      ${rest.resetsAt}, ${rest.observedAt}
     FROM "dozo_model_pool_members" m
+    JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
     WHERE m."credentialId" = ${rest.credentialId} AND m."userId" = ${rest.userId}
     ON CONFLICT ("credentialId", "modelId") DO UPDATE SET
+      "secretId" = EXCLUDED."secretId",
       "reason" = EXCLUDED."reason",
       "resetsAt" = EXCLUDED."resetsAt",
       "observedAt" = EXCLUDED."observedAt"

@@ -234,6 +234,13 @@ describe("connectionOutReason", () => {
       undefined,
     );
     expect(connectionOutReason(failure("503 Service unavailable"))).toBeUndefined();
+    // A limit that names billing but neither says it is spent nor gives a far reset is short.
+    expect(
+      connectionOutReason(failure("429 Rate limit reached. See billing for your limits.")),
+    ).toBeUndefined();
+    expect(connectionOutReason(failure('429 Limit reached {"retry-after":"7200"}'))).toBe(
+      "exhausted",
+    );
   });
 });
 
@@ -242,7 +249,7 @@ describe("switchAfterFailure and skipsPoolMember", () => {
 
   it("rests the connection that ran out and lets the pool take the call", async () => {
     const runPool = pool(["b"]);
-    const state = { request: withRunModelPool(request(), runPool) };
+    const state = { request: withRunModelPool(request(), runPool), nextIndex: 1 };
     const seen: boolean[] = [];
     const switched = await switchAfterFailure(
       state,
@@ -262,7 +269,7 @@ describe("switchAfterFailure and skipsPoolMember", () => {
 
   it("passes the pool over after a failure that clears on its own", async () => {
     const runPool = pool(["b"]);
-    const state = { request: withRunModelPool(request(), runPool) };
+    const state = { request: withRunModelPool(request(), runPool), nextIndex: 1 };
     const seen: boolean[] = [];
     await switchAfterFailure(state, { id: MODEL, connectionId: "a" }, failure("503"), async () => {
       seen.push(skipsPoolMember(state, { connectionId: "b" }));
@@ -274,8 +281,31 @@ describe("switchAfterFailure and skipsPoolMember", () => {
     expect(skipsPoolMember(state, {})).toBe(false);
   });
 
+  it("goes back to a pool connection it passed over once the connection runs out", async () => {
+    const runPool = pool(["b", "c"]);
+    const state = { request: withRunModelPool(request(), runPool), nextIndex: 0 };
+    // A short failure takes b and c from the chain and passes both over.
+    await switchAfterFailure(state, { id: MODEL, connectionId: "a" }, failure("503"), async () => {
+      for (const connectionId of ["b", "c"]) {
+        state.nextIndex += 1;
+        expect(skipsPoolMember(state, { connectionId })).toBe(true);
+      }
+      return false;
+    });
+    expect(state.nextIndex).toBe(2);
+    await switchAfterFailure(
+      state,
+      { id: MODEL, connectionId: "a" },
+      failure("402 Insufficient credits"),
+      async () => {
+        expect(state.nextIndex).toBe(0);
+        return true;
+      },
+    );
+  });
+
   it("changes nothing for a run without a pool", async () => {
-    const state = { request: withRunModelPool(request(), undefined) };
+    const state = { request: withRunModelPool(request(), undefined), nextIndex: 1 };
     const next = vi.fn(async () => true);
     expect(
       await switchAfterFailure(state, { id: MODEL }, failure("402 insufficient credits"), next),
@@ -286,7 +316,7 @@ describe("switchAfterFailure and skipsPoolMember", () => {
 
   it("moves on without a record for a failed call that names no connection", async () => {
     const runPool = pool(["b"]);
-    const state = { request: withRunModelPool(request(), runPool) };
+    const state = { request: withRunModelPool(request(), runPool), nextIndex: 1 };
     await switchAfterFailure(
       state,
       { id: MODEL },

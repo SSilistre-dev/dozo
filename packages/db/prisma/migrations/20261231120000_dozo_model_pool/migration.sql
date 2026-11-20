@@ -17,12 +17,14 @@ CREATE TABLE "dozo_model_pool_members" (
 
 -- The last time a pooled connection ran out, and until when it rests. Whether it still rests is
 -- read against the clock when a run starts; nothing wakes it. "modelId" is '' when the whole
--- connection rests (a refused key), else the model whose quota ran out. A rest observed before the
--- connection was last saved no longer counts: saving a new key ends it.
+-- connection rests (a refused key), else the model whose quota ran out. "secretId" is the
+-- connection's secret when it ran out: saving a new key gives the connection a new secret, which
+-- ends the rest; renaming it does not.
 CREATE TABLE "dozo_model_connection_cooldowns" (
   "credentialId" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
   "modelId" TEXT NOT NULL DEFAULT '',
+  "secretId" TEXT NOT NULL,
   "reason" TEXT NOT NULL CHECK ("reason" IN ('exhausted', 'rejected')),
   "resetsAt" TIMESTAMPTZ(3) NOT NULL,
   "observedAt" TIMESTAMPTZ(3) NOT NULL,

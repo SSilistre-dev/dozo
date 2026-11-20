@@ -32,13 +32,11 @@ describePostgres("the model pool store (PostgreSQL)", () => {
       runAsTenant({ spaceId: `space-${suffix}`, userId: id }, work);
   const me = asUser(userId);
 
-  async function connection(user = userId, updatedAt = new Date()) {
+  async function connection(user = userId) {
     const id = `pool-connection-${suffix}-${count++}`;
     await owner.userModelCredential.create({
       data: { id, userId: user, provider: "provider-a", label: id, secretId: `secret-${id}` },
     });
-    await owner.$executeRaw`
-      UPDATE "user_model_credentials" SET "updatedAt" = ${updatedAt} WHERE "id" = ${id}`;
     return id;
   }
 
@@ -111,7 +109,7 @@ describePostgres("the model pool store (PostgreSQL)", () => {
   });
 
   it("keeps the newest observation when two runs record the same connection at once", async () => {
-    const id = await connection(userId, new Date(Date.now() - HOUR));
+    const id = await connection();
     await me(() => setModelPoolMember(prisma, { userId, credentialId: id }, true));
     const now = Date.now();
     const written = await Promise.all([
@@ -130,7 +128,7 @@ describePostgres("the model pool store (PostgreSQL)", () => {
   });
 
   it("reads a rest of the whole connection or of the model, never of another model", async () => {
-    const id = await connection(userId, new Date(Date.now() - HOUR));
+    const id = await connection();
     await me(() => setModelPoolMember(prisma, { userId, credentialId: id }, true));
     const now = Date.now();
     await rest(id, new Date(now), new Date(now + 3 * HOUR), "model-2");
@@ -144,15 +142,21 @@ describePostgres("the model pool store (PostgreSQL)", () => {
     ]);
   });
 
-  it("ends a rest when the connection is saved again, and writes none for one not pooled", async () => {
-    const id = await connection(userId, new Date(Date.now() - HOUR));
+  it("ends a rest when a new key is saved, not when the connection is renamed", async () => {
+    const id = await connection();
     await me(() => setModelPoolMember(prisma, { userId, credentialId: id }, true));
     const now = Date.now();
-    await rest(id, new Date(now - 1000), new Date(now + HOUR), null);
-    await owner.userModelCredential.update({ where: { id }, data: { label: "renewed" } });
-    expect(
-      await me(() => readModelPool(prisma, { userId, credentialIds: [id], modelId: model })),
-    ).toEqual([{ credentialId: id, resetsAt: null }]);
+    await rest(id, new Date(now), new Date(now + HOUR), null);
+    const read = () =>
+      me(() => readModelPool(prisma, { userId, credentialIds: [id], modelId: model }));
+    await owner.userModelCredential.update({ where: { id }, data: { label: "renamed" } });
+    expect(await read()).toEqual([{ credentialId: id, resetsAt: new Date(now + HOUR) }]);
+    await owner.userModelCredential.update({ where: { id }, data: { secretId: `new-${id}` } });
+    expect(await read()).toEqual([{ credentialId: id, resetsAt: null }]);
+  });
+
+  it("writes no rest for a connection that is not pooled", async () => {
+    const now = Date.now();
     const alone = await connection();
     expect(await rest(alone, new Date(now), new Date(now + HOUR), null)).toBe(false);
   });

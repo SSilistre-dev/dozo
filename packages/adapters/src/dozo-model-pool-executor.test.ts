@@ -234,7 +234,7 @@ describe("a run whose main model is on a pooled connection", () => {
       apiKey: "fake-key-a",
     });
     expect(request?.fallbackModels).toEqual([]);
-    expect(request && skipsPoolMember({ request }, { connectionId: "credential-b" })).toBe(false);
+    expect(request && skipsPoolMember({ request, nextIndex: 1 }, { connectionId: "credential-b" })).toBe(false);
   });
 
   it("starts on the chosen connection with the next one of its pool as the first backup", async () => {
@@ -248,7 +248,7 @@ describe("a run whose main model is on a pooled connection", () => {
       { provider: MAIN.provider, id: MAIN.modelId, connectionId: "credential-b" },
     ]);
     // Only a connection that ran out may hand the call to it.
-    expect(request && skipsPoolMember({ request }, { connectionId: "credential-b" })).toBe(true);
+    expect(request && skipsPoolMember({ request, nextIndex: 1 }, { connectionId: "credential-b" })).toBe(true);
   });
 
   it("starts on the next connection while the chosen one rests, and never falls back to it", async () => {
