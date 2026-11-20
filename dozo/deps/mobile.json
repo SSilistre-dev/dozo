@@ -1,5 +1,8 @@
 {
   "importer": "apps/mobile",
-  "add": [],
-  "integrity": {}
+  "add": ["@noble/curves@2.4.0", "@noble/ciphers@2.3.0", "@noble/hashes@2.3.0", "expo-crypto@58.0.8"],
+  "integrity": {
+    "@noble/curves@2.4.0": "sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==",
+    "expo-crypto@58.0.8": "sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA=="
+  }
 }

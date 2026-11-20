@@ -376,6 +376,14 @@ export function encodeRelayPairingOffer(offer: RelayPairingOffer) {
   return encodeRelayBytes(utf8(JSON.stringify(RelayPairingOfferSchema.parse(offer))));
 }
 
+/**
+ * What the QR code holds: a link the phone's camera opens in the app. The offer travels after `#`,
+ * which no browser or server receives, so it never lands in a log or a referrer.
+ */
+export function relayPairingLink(offerText: string) {
+  return `rakazo://dozo-pair#${offerText}`;
+}
+
 /** Throws on a malformed or expired offer. */
 export function parseRelayPairingOffer(text: string, now: number): RelayPairingOffer {
   let json: unknown;

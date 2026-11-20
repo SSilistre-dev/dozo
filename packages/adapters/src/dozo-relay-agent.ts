@@ -10,6 +10,7 @@ import {
   pairRelayHost,
   parseRetryAfter,
   RelayHttpError,
+  relayPairingLink,
   revokeRelayChannel,
   runRelayHost,
   webRelayCrypto,
@@ -65,7 +66,7 @@ export async function relayAgentMain(argv: string[], io: RelayAgentIo): Promise<
           channel: offer.channel,
           relay: offer.relay,
           expiresAt: offer.expiresAt,
-          qr: offer.offer,
+          qr: relayPairingLink(offer.offer),
         });
         return 0;
       }
