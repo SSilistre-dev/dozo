@@ -51,6 +51,15 @@ describe("your own bubble in a bot's chat", () => {
     );
   });
 
+  it("still gives a pair of fills for a value that is not a colour, an empty one or an unknown kind", () => {
+    for (const value of ["nonsense", "", "#zzz", "rgb(1, 2, 3)"]) {
+      const colors = dozoChatUserColors(value, "bot-1");
+      expect(colors?.background).toMatch(/^light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/);
+      expect(colors?.foreground).toBe("#ffffff");
+    }
+    expect(dozoChatUserColors("", "")?.background).toMatch(/^light-dark\(/);
+  });
+
   it("measures contrast as WCAG does", () => {
     expect(dozoContrast("#000000", "#ffffff")).toBeCloseTo(21, 5);
     expect(dozoContrast("#777777", "#ffffff")).toBeCloseTo(4.48, 2);

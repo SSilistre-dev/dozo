@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, readWorld, test, UPSTREAM_AVATAR_ART } from "./fixtures";
+import { expect, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
 import { gotoStable, openBot } from "./ui";
 
 // The Dozo look on the screens the design mockups cover (dozo/design, the chat window from
@@ -22,6 +22,18 @@ function styleOf(page: Page, selector: string, property: string, pseudo?: string
     },
     [selector, property, pseudo ?? null],
   );
+}
+
+/** A theme token as the browser resolves it to a computed colour. */
+function tokenColor(page: Page, token: string) {
+  return page.evaluate((name) => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = `var(${name})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  }, token);
 }
 
 test("the theme file is loaded and follows the chosen appearance", async ({ page, theme }) => {
@@ -124,9 +136,68 @@ test("the chat header and the bot panel show the bot's character", async ({ page
   await expect(profile.locator(".dozo-avatar").first()).toBeVisible();
   await expect(page.locator(UPSTREAM_AVATAR_ART)).toHaveCount(0);
   // The panel stands on the sidebar's tone.
-  expect(await styleOf(page, '[data-testid="side-panel"]', "background-color")).toBe(
-    await styleOf(page, INNER, "background-color"),
+  await expect(page.getByTestId("side-panel")).toHaveCSS(
+    "background-color",
+    await tokenColor(page, "--sidebar"),
   );
+});
+
+test("tables, files and questions in the thread share the card surface", async ({ page }) => {
+  // A bot of its own: the question it asks leaves it waiting, which no other check should see.
+  const name = `Cards ${Math.random().toString(36).slice(2, 7)}`;
+  const bot = await rpc<{ id: string }>(page, "bots/create", {
+    name,
+    title: "",
+    description: "",
+    notifyOnFinish: true,
+    computerMode: "team",
+  });
+  try {
+    await openBot(page, bot.id, name);
+    const composer = page.getByRole("combobox", { name: `Message ${name}` });
+    const card = await tokenColor(page, "--card");
+    await composer.fill("Open tickets [e2e-table]");
+    await composer.press("Enter");
+    const table = page.getByTestId("table-card").first();
+    await expect(table).toBeVisible({ timeout: 60_000 });
+    await expect(table).toHaveCSS("background-color", card);
+    await expect(table).toHaveCSS("border-radius", "20px");
+    await expect(table).toHaveCSS("border-top-width", "0px");
+
+    await page
+      .locator('input[type="file"]')
+      .first()
+      .setInputFiles({
+        name: "list.csv",
+        mimeType: "text/csv",
+        buffer: Buffer.from("topic,open\nBilling,3\n"),
+      });
+    await composer.fill("The list");
+    await composer.press("Enter");
+    const file = page.getByRole("button", { name: "Preview list.csv" }).locator("..");
+    await expect(file).toBeVisible({ timeout: 30_000 });
+    await expect(file).toHaveCSS("background-color", card);
+    await expect(file).toHaveCSS("border-radius", "22px");
+    await expect(page.getByRole("button", { name: "Download list.csv" })).toHaveCSS(
+      "border-left-width",
+      "0px",
+    );
+
+    const args = Buffer.from(
+      JSON.stringify({ question: "Reply now?", options: ["Yes", "Not now"] }),
+    ).toString("base64");
+    await composer.fill(`Ask me [e2e-tool:ask_user b64:${args}]`);
+    await composer.press("Enter");
+    const question = page.getByTestId("question-card");
+    await expect(question).toBeVisible({ timeout: 60_000 });
+    await expect(question).toHaveCSS("background-color", card);
+    const choice = question.getByRole("button", { name: "Not now" });
+    await expect(choice).toHaveCSS("border-radius", "14px");
+    expect(await choice.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(CLEAR);
+    await expect(choice.locator("span[aria-hidden]").first()).toBeHidden();
+  } finally {
+    await rpc(page, "bots/remove", { botId: bot.id, deleteMemories: true });
+  }
 });
 
 test.describe("signed out", () => {
