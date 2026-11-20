@@ -229,6 +229,12 @@ olc() {
         echo "[olc] fork dependency step ok (upstream's locked versions kept, new packages listed with their integrity)"
       else printf '%s\n' "$out"; fail "fork dependency step (dozo/deps/apply.test.mjs)"; fi
     else fail "dozo/deps/apply.test.mjs missing: the fork's dependency step is not tested"; fi
+    # The `dozo` command (dozo/cli): offline, against a local HTTP server that stands in for the API.
+    if [ -f dozo/cli/dozo.test.mjs ]; then
+      if out=$(drun cli-test --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/cli/dozo.test.mjs 2>&1); then
+        echo "[olc] dozo command ok (dozo/cli/dozo.test.mjs)"
+      else printf '%s\n' "$out"; fail "dozo command (dozo/cli/dozo.test.mjs)"; fi
+    else fail "dozo/cli/dozo.test.mjs missing: the dozo command is not tested"; fi
     # The server bundle's licence notices and runtime copies (dozo/server-bundle): which licences
     # pass, what the notices hold, and that no manifest points at a runtime it does not carry.
     # Offline: a local HTTP server stands in for the downloads.
