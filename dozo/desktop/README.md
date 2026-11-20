@@ -25,7 +25,8 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   A link that asks for a new window also opens in the browser, even on the same origin.
 - The server address must be the one the pages are served from. An address that redirects to
   another host (a bare domain to `www.`) opens the browser and ends on the "Can't reach" screen.
-- Camera, microphone and similar requests from a page are denied.
+- Camera, microphone, location and similar requests from a page are denied. Notifications are
+  allowed for the server's own origin only (below).
 - Links to the browser are limited to one a second, so a page cannot flood it.
 - Menus and the local screens are English only.
 
@@ -64,9 +65,43 @@ command was added and `capabilities/local.json` is unchanged.
 - Linux needs `libayatana-appindicator3` for the tray: the .deb depends on it, the AppImage carries it.
 - macOS and Windows: compiled, not tried by hand. Only Linux runs under `tests/linux_gate.py`.
 
+## Notifications and the unread badge
+
+The web app's own notifications (a bot finished, asks a question or waits for approval, a run
+failed) show as system notifications, and the number of unread chats sits on the app icon. The
+page still cannot call the app: the system web view shows its notifications, and the count is
+read from the page title, where the web app puts it as `(3) Dozo` (only the number; the rule in
+`dozo/brand/brand.json` points `Shell.tsx` at `apps/web/src/lib/dozo-desktop-badge.ts`). No
+setting, menu item, sound or text was added: the system's own notification settings apply.
+
+- Permission: only for a page whose origin is exactly the chosen server's (scheme, host and port),
+  decided by `answer` in `src/alerts.rs` at the moment the page asks, so after Change Server the
+  new origin is the one that counts. The web view asks only for the window's own page: WebKitGTK
+  and WebView2 refuse a frame from another origin themselves, and WebKitGTK also wants a click or
+  key press behind the request (the web app asks when a message is sent). Every other permission
+  stays denied.
+- Badge: capped at `99+` on the Dock, at `9+` in the Windows taskbar overlay (an ink disc with
+  white digits, drawn in `src/alerts.rs`), at 99 in a Linux launcher; cleared at 0, and when the
+  window leaves the server (the local screens have no count).
+- A click on a notification brings the window back on Linux, hidden or minimized (`reveal_on_click`).
+
+| | Notifications | Click shows the window | Badge |
+|---|---|---|---|
+| Linux (WebKitGTK) | tried: `tests/linux_gate.py` | tried: `tests/linux_gate.py` | compiled; shows only where the desktop runs a launcher that reads libunity counts (Ubuntu Dock, KDE, Plank); not seen |
+| Windows (WebView2) | compiled, not tried | not done: WebView2 shows the notification itself and does not tell the app about a click; the page gets it | compiled, not tried (taskbar overlay) |
+| macOS (WKWebView) | not done: WKWebView has no public way to grant a page notifications, so it refuses them; doing it would need private WebKit API or a bridge into the page | not done (nothing to click) | written, not compiled on a Mac yet (`set_badge_label`); built by the release workflow |
+
+Known limits:
+
+- Linux keeps the grant only for the life of the web view's process: after a restart the page
+  asks again with the next message sent, and nothing notifies before that.
+- Windows keeps the grant in the web view's profile. An origin granted before Change Server keeps
+  it there, though it can no longer be the window's page.
+
 ## Security
 
-- A page loaded from a server can call nothing in the app. The three commands are under Tauri's
+- A page loaded from a server can call nothing in the app. What reaches the app from it is the
+  title (read for the unread count only) and the notifications the web view itself shows. The three commands are under Tauri's
   ACL (`build.rs`), and the only capability (`capabilities/local.json`) grants them to the app's
   own screens. It has no `remote` entry and must never get one.
 - Only the chosen server's origin and the app's own screens load in the window. Every other web
@@ -149,7 +184,10 @@ dozo/desktop/build-linux.sh check   # cargo fmt --check, clippy, cargo test
   another site loads, a clicked link to it opens in the browser without the app requesting it, a
   frame cannot open a mail link on its own, a page sent elsewhere by its script stays, a second
   launch shows the first window, and closing the window ends the app, or with Keep Running in
-  Background and no tray keeps it minimized. Nobody has run the app on a desktop session yet.
+  Background and no tray keeps it minimized. It also checks that the server's page gets
+  notifications and a frame from another origin does not, that one reaches a stand-in for the
+  desktop's notification service (`tests/fake_notifications.py`), that a click on it brings the
+  window back, and that titles with and without a count leave the app running. Nobody has run the app on a desktop session yet.
 - Differences from macOS (`tauri.linux.conf.json`, `#[cfg(target_os = "linux")]` in `src/`): the
   short menu Windows has, inside the window; links open with `xdg-open`; the frame gate above.
   The server address and window position are kept in `~/.config/dev.ssilistre.dozo/`, the web

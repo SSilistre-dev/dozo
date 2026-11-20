@@ -5,6 +5,8 @@ Needs xdotool, xprop, openbox and wmctrl. The app's server is site A; site B is 
 xdg-open records what the app hands the browser. A second part runs the app under a window manager
 and checks what a second launch and closing the window do (src/background.rs). The session bus is
 a fresh one without a tray host, which is the case where a hidden window could not come back.
+A third part checks notifications and the unread badge (src/alerts.rs) against a stand-in for the
+desktop's notification service (tests/fake_notifications.py, which needs python3-gi).
 Exit 0 pass, 2 fail.
 """
 
@@ -149,6 +151,108 @@ def background_gate(binary, server):
         wm.kill()
 
 
+def notify_gate(binary):
+    """Only the server's origin may notify, a click on a notification brings the window back, and
+    titles with or without a count leave the app running with its own title."""
+    report = {"a": [], "b": []}
+    titles = {"now": ""}
+
+    def reporting(name, pages):
+        def page(path):
+            return pages.get(path)
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                path, _, query = self.path.partition("?")
+                if path == "/report":
+                    report[name].append(query)
+                body = titles["now"] if path == "/title" else page(path) or ""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body.encode())
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    # Asks for permission on a click anywhere (WebKitGTK wants one), says what it got, and shows one
+    # notification if it may. The frame asks without one: being another origin refuses it first.
+    ask = """<body style="margin:0;height:100vh"><script>{when}(async () => {{
+  const before = Notification.permission;
+  const result = await Notification.requestPermission();
+  document.title = 'permission ' + result;
+  await fetch('/report?before=' + before + '&result=' + result);
+  if (result === 'granted') {{
+    const shown = new Notification('{summary}', {{ body: 'gate' }});
+    shown.onclick = () => fetch('/report?clicked');
+  }}
+}})();</script>"""
+    other = reporting("b", {"/frame": ask.format(when="", summary="from-the-frame")})
+    server = reporting("a", {
+        "/": ask.format(when="document.body.onclick = () => ", summary="from-the-server")
+        + f"""<iframe src="{other}/frame" style="position:fixed;top:0;left:0;width:50px;height:50px"></iframe>
+<script>setInterval(async () => {{
+  const next = await (await fetch('/title')).text();
+  if (next && document.title !== next) document.title = next;
+}}, 200);</script>""",
+    })
+
+    service = pathlib.Path(tempfile.mkdtemp(prefix="dozo-notify-"))
+    fake = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("fake_notifications.py")), str(service)])
+    wm = subprocess.Popen(["openbox"], stderr=subprocess.DEVNULL)
+    work, _, env = sandbox(server, "keep_running=true\n")
+    app = None
+    try:
+        until("the stand-in notification service is up", lambda: (service / "ready").exists())
+        app = subprocess.Popen([binary], env=env, stderr=(work / "app.log").open("w"))
+
+        def shown():
+            return (service / "shown").read_text().split("\n") if (service / "shown").exists() else []
+
+        def check(what, condition):
+            if not condition:
+                print(f"FAIL: {what}\n  server: {report['a']}\n  frame: {report['b']}\n  shown: {shown()}")
+                print(f"  app stderr:\n{(work / 'app.log').read_text()[-3000:]}")
+                sys.exit(2)
+            print(f"ok: {what}")
+
+        until("the frame from another origin asked", lambda: report["b"])
+        check("another origin's frame is denied notifications", report["b"][0].endswith("result=denied"))
+        until("the window is on screen", lambda: len(windows()) == 1)
+        time.sleep(1)  # the page has loaded and listens for the click
+        subprocess.run(["xdotool", "mousemove", "--window", windows()[0], "400", "300", "click", "1"], check=True)
+        until("the server's page asked", lambda: report["a"])
+        check("the server's origin is granted them", report["a"][0] == "before=default&result=granted")
+        until("the server's notification reaches the desktop", lambda: any(" from-the-server" in line for line in shown()))
+        check("and nothing from the frame does", not any("from-the-frame" in line for line in shown()))
+
+        # Closing with Keep Running in Background and no tray takes the window off the screen;
+        # a click on the notification brings it back, and the page hears the click.
+        wmctrl_close()
+        until("closing the window takes it off the screen", lambda: not windows())
+        ident = next(line.split()[0] for line in shown() if line.endswith(" from-the-server"))
+        (service / "click").write_text(ident)
+        until("a click on the notification brings the window back", lambda: len(windows()) == 1)
+        until("and the page hears the click", lambda: "clicked" in report["a"])
+
+        # The count in front of the title, broken titles and none: the app keeps running and the
+        # window keeps its own title.
+        for title in ["(3) Gate", "(9999+) Gate", "(99999999999999999999) Gate", "(abc) Gate", "(3 Gate", "(0) Gate", "Gate"]:
+            titles["now"] = title
+            time.sleep(0.6)
+        stays("titles with and without a count leave the app running as Dozo", lambda: app.poll() is None and len(windows()) == 1)
+    finally:
+        if app:
+            app.kill()
+        fake.kill()
+        wm.kill()
+
+
 def wmctrl_close():
     subprocess.run(["wmctrl", "-c", "Dozo"], check=True)
 
@@ -224,6 +328,7 @@ setInterval(async () => {{
         app.kill()
         app.wait()
         background_gate(binary, a)
+        notify_gate(binary)
         print("linux gate: PASS")
     finally:
         app.kill()
