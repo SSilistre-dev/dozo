@@ -10,6 +10,8 @@ Serve this folder with any static server (for example `python3 -m http.server`)
 and open a page. The pages are fixed at 1440x900.
 - `bots.html`: bot list and the six avatars at 28, 36 and 72 px
 - `chat.html`: a chat with a working bot, approval ask and composer
+- `chat-v2.html`: proposal for a calmer chat window (tone instead of lines, bot panel open; add
+  `?panel=closed` to start with it closed); not approved yet
 - `computer.html`: the bot's computer view
 - `logos.html`: logo and wordmark studies
 - add `?theme=light` to any page for the light theme (dark is the default)
