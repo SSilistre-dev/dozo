@@ -216,6 +216,16 @@ describe("a due routine", () => {
     expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(false);
   });
 
+  it("runs as before when its quiet hours cannot be read", async () => {
+    const db = fakeDatabase();
+    db.quiet.set("user-1", NIGHT);
+    const routine = db.addRoutine({ nextRunAt: NOW });
+    const prisma = db.deps.prisma as unknown as { $queryRaw: ReturnType<typeof vi.fn> };
+    prisma.$queryRaw.mockRejectedValueOnce(new Error("database unavailable"));
+    expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(false);
+    expect(routine.nextRunAt).toEqual(NOW);
+  });
+
   it("waits until quiet hours end, remembering when it was due", async () => {
     const db = fakeDatabase();
     db.quiet.set("user-1", NIGHT);

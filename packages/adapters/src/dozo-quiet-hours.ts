@@ -115,7 +115,10 @@ export async function saveDozoQuietHours(
     }),
   );
   for (const spaceId of new Set(released.map((hold) => hold.spaceId)))
-    await bestEffort("quiet hours routine change", deps.events?.publishSpaceChange?.(spaceId, "routines"));
+    await bestEffort(
+      "quiet hours routine change",
+      deps.events?.publishSpaceChange?.(spaceId, "routines"),
+    );
   // After the commit, like every routine write; a failed enqueue is repaired by the reconciler.
   for (const hold of released)
     await bestEffort(
@@ -156,20 +159,27 @@ export async function dozoHoldRoutine<Deps extends WakeDeps>(
   scheduledAt: Date,
   wake: (deps: Deps, routineId: string, scheduledFor: string) => Promise<void>,
 ): Promise<boolean> {
-  const [state] = await deps.prisma.$queryRaw<
-    Array<{
-      dueAt: Date | null;
-      heldUntil: Date | null;
-      startMinute: number | null;
-      endMinute: number | null;
-      timezone: string | null;
-    }>
-  >`
+  // Optional, like a run's lateness: a failed read leaves the routine to run as it always did.
+  const rows = await bestEffort(
+    "routine quiet hours",
+    (async () =>
+      deps.prisma.$queryRaw<
+        Array<{
+          dueAt: Date | null;
+          heldUntil: Date | null;
+          startMinute: number | null;
+          endMinute: number | null;
+          timezone: string | null;
+        }>
+      >`
     SELECT h."dueAt", h."heldUntil", q."startMinute", q."endMinute", u.timezone
     FROM "user" u
     LEFT JOIN dozo_quiet_hours q ON q."userId" = u.id
     LEFT JOIN dozo_routine_holds h ON h."routineId" = ${routine.id}
-    WHERE u.id = ${routine.userId}`;
+    WHERE u.id = ${routine.userId}`)(),
+  );
+  if (!rows) return false;
+  const [state] = rows;
   const now = new Date();
   const changed = (spaceId: string) =>
     bestEffort("routine hold change", deps.events.publishSpaceChange?.(spaceId, "routines"));
@@ -191,8 +201,12 @@ export async function dozoHoldRoutine<Deps extends WakeDeps>(
     const windowStart = new Date(now.getTime() - DOZO_ROUTINE_CATCH_UP_MS);
     const recent =
       now.getTime() - dueFrom <= DOZO_ROUTINE_CATCH_UP_MS ||
-      (nextRoutineRunDateAcross(routine.crons, scheduledAt, windowStart, routine.timezone)
-        ?.getTime() ?? Number.POSITIVE_INFINITY) <= now.getTime();
+      (nextRoutineRunDateAcross(
+        routine.crons,
+        scheduledAt,
+        windowStart,
+        routine.timezone,
+      )?.getTime() ?? Number.POSITIVE_INFINITY) <= now.getTime();
     if (!recent) {
       const nextRunAt = isOneShotRoutineCrons(routine.crons)
         ? null

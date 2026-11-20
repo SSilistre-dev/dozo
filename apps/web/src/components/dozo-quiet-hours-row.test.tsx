@@ -34,7 +34,11 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
-  Label: (props: ComponentProps<"label">) => <label {...props} />,
+  Label: ({ htmlFor, children, className }: ComponentProps<"label">) => (
+    <label htmlFor={htmlFor} className={className}>
+      {children}
+    </label>
+  ),
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Switch: ({
@@ -165,7 +169,9 @@ it("says so when the save fails, and shows the saved hours again", async () => {
   api.set.mockRejectedValue(new Error("down"));
   await loaded();
   await act(async () => toggle()?.click());
-  await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Couldn't update quiet hours"));
+  await vi.waitFor(() =>
+    expect(api.toastError).toHaveBeenCalledWith("Couldn't update quiet hours"),
+  );
   await vi.waitFor(() => expect(toggle()?.checked).toBe(false));
 });
 

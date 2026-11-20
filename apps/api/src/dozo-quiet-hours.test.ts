@@ -30,7 +30,12 @@ function client(userId: string | null) {
   return createRouterClient(dozoQuietHoursRoutes(ctx), {
     context: {
       actor: userId
-        ? { userId, spaceId: `space-${userId}`, email: `${userId}@example.test`, isDeploymentOwner: false }
+        ? {
+            userId,
+            spaceId: `space-${userId}`,
+            email: `${userId}@example.test`,
+            isDeploymentOwner: false,
+          }
         : null,
     },
   }).dozoQuietHours;
