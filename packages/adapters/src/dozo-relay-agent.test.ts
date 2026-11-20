@@ -180,7 +180,7 @@ function runAgent(env: NodeJS.ProcessEnv = {}): Agent {
 
 /** The offer inside the QR code's link. */
 function offerOf(qr: string) {
-  expect(qr.startsWith("rakazo://dozo-pair#")).toBe(true);
+  expect(qr.startsWith("dozo://pair#")).toBe(true);
   return qr.slice(qr.indexOf("#") + 1);
 }
 

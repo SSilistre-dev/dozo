@@ -159,7 +159,9 @@ Renamed on purpose (each is a rule in `brand.json`):
 
 Kept in the mobile app, each a stem or a reviewed text: the `rakazo://` deep-link scheme (the API trusts
 it as the app's origin and writes it into notification links, so it can only change together with the
-server; an upstream app on the same phone claims the same scheme), the secure-store and defaults keys
+server; an upstream app on the same phone claims the same scheme). An anchored rule registers
+`dozo://` after it, for pairing links (`dozo://pair#<offer>`, which `+native-intent.tsx` routes to
+the pairing screen); links the app makes keep using the first scheme. Also kept: the secure-store and defaults keys
 (`rakazo.session_token`), the names of the local native modules (`RakazoNotifications`,
 `modules/rakazo-notifications`), Swift type and file names, and the Xcode widget target `RakazoWidgets`.
 None is shown. The server side still names upstream's bundle id (`app-association.ts`,

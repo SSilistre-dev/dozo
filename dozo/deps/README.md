@@ -1,8 +1,10 @@
 # Fork dependencies
 
-A fork feature that needs a package upstream does not ship lists it in `mobile.json`. The upstream
-`package.json` and `pnpm-lock.yaml` stay untouched; the brand step (`dozo/docker/build.sh brand`)
-adds the list to the staged tree, so every frozen install after it gets the packages: the unit
+A fork feature that needs a package upstream does not ship lists it here, one file per workspace
+directory: `mobile.json` (`apps/mobile`) and `web.json` (`packages/chat-ui`, the chat's math). The
+upstream `package.json` and `pnpm-lock.yaml` stay untouched; the brand step
+(`dozo/docker/build.sh brand`) adds each list to the staged tree in name order, every list seeing
+the lockfile the one before wrote, so every frozen install after it gets the packages: the unit
 gate, the images and the iOS build (`dozo/mobile/build.sh`).
 
 ```json
