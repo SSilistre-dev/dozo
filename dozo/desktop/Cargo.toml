@@ -31,6 +31,13 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = [
 ] }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 sha2 = "0.10"
+# The server on this computer (stack*.rs): its downloads are .tar.xz and .tar.gz archives (tar and
+# flate2 are the versions the app already builds; xz2 with liblzma built in, so no system library),
+# and its secrets come from the system's random source.
+tar = "0.4"
+flate2 = "1"
+xz2 = { version = "0.1", features = ["static"] }
+getrandom = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 # Stops a command's whole process group (device_run.rs).
@@ -75,6 +82,8 @@ webkit2gtk = { version = "2.0", features = ["v2_40"] }
 [dev-dependencies]
 # Unit tests of the update check (update.rs) run against a mock app.
 tauri = { version = "2.12", features = ["test"] }
+# The end-to-end test of the server on this computer (stack.rs) runs on more than one thread.
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [profile.release]
 codegen-units = 1
