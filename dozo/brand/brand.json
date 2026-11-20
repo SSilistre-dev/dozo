@@ -2912,12 +2912,14 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./user-device-client.js\";\nexport * from \"./user-error.js\";",
-      "replace": "export * from \"./user-device-client.js\";\nexport * from \"./dozo-relay-channel.js\";\nexport * from \"./dozo-relay-mux.js\";\nexport * from \"./user-error.js\";",
+      "replace": "export * from \"./user-device-client.js\";\nexport * from \"./dozo-relay-channel.js\";\nexport * from \"./dozo-relay-mux.js\";\nexport * from \"./dozo-relay-ws.js\";\nexport * from \"./dozo-relay-host.js\";\nexport * from \"./user-error.js\";",
       "requires": [
         "packages/core/src/dozo-relay-channel.ts",
-        "packages/core/src/dozo-relay-mux.ts"
+        "packages/core/src/dozo-relay-mux.ts",
+        "packages/core/src/dozo-relay-ws.ts",
+        "packages/core/src/dozo-relay-host.ts"
       ],
-      "reason": "relay protocol: the sealed channel and the multiplexer one implementation serves on the phone and on the computer (dozo/relay/PROTOCOL.md)"
+      "reason": "relay protocol: the sealed channel, the multiplexer, the relay socket layer and the computer's agent loop, one implementation on the phone and on the computer (dozo/relay/PROTOCOL.md, dozo/relay/agent/README.md)"
     },
     {
       "file": "packages/db/src/spaces.ts",
