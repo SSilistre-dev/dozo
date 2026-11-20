@@ -1,4 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
+import { Scale } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { SettingsNavItem } from "./settings-nav";
 import type { SettingsSection } from "./shell-overlay";
 
@@ -33,6 +35,33 @@ export function dozoSettingsNavGroups(
     .filter((group) => group.items.length > 0);
 }
 
+/** The third-party notices the local server bundle carries (`dozo/server-bundle/notices.mjs`). */
+export const NOTICES_PAGE = "/third-party-notices.html";
+
+/**
+ * Whether this server has the notices page: the local server does, a hosted one does not. Read
+ * once, asking for something other than a page, so the web server's page fallback answers 404
+ * when the file is missing instead of the app's own page.
+ */
+function useNoticesPage(): boolean {
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    let current = true;
+    fetch(NOTICES_PAGE, { method: "HEAD", headers: { accept: "text/plain" } })
+      .then(
+        (response) => response.ok,
+        () => false,
+      )
+      .then((ok) => {
+        if (current) setPresent(ok);
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return present;
+}
+
 /** The settings nav's buttons, upstream's markup and behaviour, grouped under their headings. */
 export function DozoSettingsNavGroups({
   items,
@@ -46,12 +75,13 @@ export function DozoSettingsNavGroups({
   onSectionChange: (section: SettingsSection) => void;
 }) {
   const { t } = useLingui();
+  const notices = useNoticesPage();
   const labels: Record<DozoSettingsNavGroupId, string> = {
     account: t`Account`,
     bots: t`Bots`,
     app: t`App`,
   };
-  return dozoSettingsNavGroups(items).map((group) => (
+  const groups = dozoSettingsNavGroups(items).map((group) => (
     <fieldset
       key={group.id}
       aria-labelledby={`dozo-settings-nav-${group.id}`}
@@ -90,4 +120,19 @@ export function DozoSettingsNavGroups({
       })}
     </fieldset>
   ));
+  if (!notices) return groups;
+  return [
+    ...groups,
+    <a
+      key="licenses"
+      href={NOTICES_PAGE}
+      target="_blank"
+      rel="noreferrer"
+      data-testid="settings-nav-licenses"
+      className="flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    >
+      <Scale className="size-4 shrink-0" strokeWidth={1.75} />
+      <span className="whitespace-nowrap">{t`Licenses`}</span>
+    </a>,
+  ];
 }

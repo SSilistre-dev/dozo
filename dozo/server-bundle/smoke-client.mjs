@@ -5,9 +5,14 @@
 // With `restored`, against a server restored from a backup of that one: sign in with the same
 // password, find the bot and its earlier answer, and get a new answer through the restored model
 // connection (its key sealed with the restored encryption key).
+// With `reset <reset-password.mjs> <server folder>`: sign in, set a new password with the bundle's
+// reset command while the server runs, then check that the old session and password are refused
+// and the new password signs in.
 // Usage: SMOKE_REPLY=<the fake model's answer> node smoke-client.mjs <web-url> <model-base-url> [restored]
+//        node smoke-client.mjs <web-url> - reset <reset-password.mjs> <server folder>
+import { spawnSync } from "node:child_process";
 
-const [base, modelUrl, mode] = process.argv.slice(2);
+const [base, modelUrl, mode, resetCommand, home] = process.argv.slice(2);
 const restored = mode === "restored";
 const REPLY = process.env.SMOKE_REPLY;
 const step = (line) => process.stdout.write(`[client] ${line}\n`);
@@ -35,6 +40,48 @@ async function rpc(path, input) {
   return JSON.parse(text).json;
 }
 
+const signIn = (password) =>
+  call("/api/auth/sign-in/email", {
+    method: "POST",
+    body: JSON.stringify({ email: "owner@example.test", password }),
+  });
+const cookieOf = (answer) =>
+  answer.res.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .join("; ");
+
+if (mode === "reset") {
+  const NEW = "smoke-New-password-456";
+  const before = await signIn("smoke-Password-123");
+  if (before.status !== 200) fail(`sign-in before the reset answered ${before.status}`);
+  cookie = cookieOf(before);
+  const reset = spawnSync(process.execPath, [resetCommand, "--home", home], {
+    input: `${NEW}\n`,
+    encoding: "utf8",
+  });
+  if (reset.status !== 0) fail(`reset-password exited ${reset.status}: ${reset.stdout}`);
+  const said = JSON.parse(reset.stdout);
+  if (said.reset !== true || !(said.sessionsEnded >= 1))
+    fail(`reset-password said ${reset.stdout}`);
+  step(`reset-password: ${said.sessionsEnded} session(s) ended`);
+  const old = await call("/api/auth/get-session");
+  if (old.text.includes("owner@example.test"))
+    fail("the session from before the reset still works");
+  step("old session refused");
+  cookie = "";
+  if ((await signIn("smoke-Password-123")).status === 200) fail("the old password still signs in");
+  step("old password refused");
+  const after = await signIn(NEW);
+  if (after.status !== 200)
+    fail(`the new password answered ${after.status}: ${after.text.slice(0, 200)}`);
+  cookie = cookieOf(after);
+  const session = await call("/api/auth/get-session");
+  if (!session.text.includes("owner@example.test")) fail("no session after signing in anew");
+  step("new password signs in");
+  process.exit(0);
+}
+
 const started = Date.now();
 const signup = await call(`/api/auth/${restored ? "sign-in" : "sign-up"}/email`, {
   method: "POST",
@@ -45,10 +92,7 @@ const signup = await call(`/api/auth/${restored ? "sign-in" : "sign-up"}/email`,
   }),
 });
 if (signup.status !== 200) fail(`sign-in answered ${signup.status}: ${signup.text.slice(0, 300)}`);
-cookie = signup.res.headers
-  .getSetCookie()
-  .map((value) => value.split(";")[0])
-  .join("; ");
+cookie = cookieOf(signup);
 step(`${restored ? "sign-in" : "sign-up"} 200`);
 const session = await call("/api/auth/get-session");
 if (session.status !== 200 || !session.text.includes("owner@example.test")) {

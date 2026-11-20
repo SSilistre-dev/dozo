@@ -183,7 +183,7 @@
       { "file": "packages/adapters/src/remote-desktop-sandbox.ts", "text": "rakazo: \"computer\"", "reason": "metadata key on the vendor's sandbox, operator-visible only, existing sandboxes carry it" },
       { "file": "packages/adapters/src/hindsight-memory-provider.ts", "text": "/^rakazo-/i", "reason": "reserved bank prefix regex over stored namespaces (AUDIT 6)" },
       { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
-      { "file": "packages/adapters/src/dozo-local-backup.ts", "text": "const DATABASE = \"rakazo\"", "reason": "the local server's database and owner role names (server-bundle start contract), never displayed" },
+      { "file": "packages/adapters/src/dozo-local-postgres.ts", "text": "export const DATABASE = \"rakazo\"", "reason": "the local server's database and owner role names (server-bundle start contract), never displayed" },
       { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobIoCounters\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
       { "file": "packages/adapters/src/desktop-process-tree.ts", "text": "\"RakazoJobExtendedLimits\"", "reason": "Windows job-object struct type name (a code identifier), not displayed" },
       { "file": "packages/adapters/src/infisical-secret-store.ts", "text": "/rakazo_start_check", "reason": "key of the secret-store health probe, never displayed" },
