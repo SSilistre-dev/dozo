@@ -240,7 +240,10 @@ function eventOutcome(event: ProductEvent, runId: string): WaitOutcome | undefin
   }
 }
 
-/** What the bot said in the run, as the chat shows it, within the reply's size limit. */
+/**
+ * What the bot said in the run, as the chat shows it, within the reply's size limit. Only the
+ * newest page is read: a run that wrote more than a page loses its start here, not in the chat.
+ */
 async function reply(
   client: RouterClient,
   botId: string,
