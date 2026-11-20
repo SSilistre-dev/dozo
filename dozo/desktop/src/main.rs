@@ -52,7 +52,7 @@ fn chosen(app: &AppHandle) -> Option<Url> {
 }
 
 fn settings_file(app: &AppHandle) -> tauri::Result<PathBuf> {
-    Ok(app.path().app_config_dir()?.join("server"))
+    Ok(app.path().app_config_dir()?.join(settings::FILE))
 }
 
 /// Saves what the user chose, as it is when this turn comes: changes made at the same moment on
@@ -109,9 +109,10 @@ fn local_options(app: &AppHandle) -> stack::Options {
 struct LocalServer(Arc<Local>);
 
 fn local_layout(app: &AppHandle) -> tauri::Result<stack::Layout> {
-    Ok(stack::Layout(
-        app.path().app_local_data_dir()?.join("server"),
-    ))
+    // On macOS this is the config folder too, beside the settings file (`stack::FOLDER`).
+    Ok(stack::Layout(stack::folder_in(
+        &app.path().app_local_data_dir()?,
+    )))
 }
 
 /// Starts the server on this computer when it is the chosen one. Does nothing while it is
