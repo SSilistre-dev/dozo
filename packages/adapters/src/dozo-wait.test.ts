@@ -10,9 +10,11 @@ import {
   dozoWatchNextRunAt,
 } from "./dozo-wait.js";
 import { DOZO_WAIT_MAX_MINUTES } from "./dozo-wait.tool-definition.js";
+import type { ExecutorDeps } from "./executor-deps.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { normalizeOpenAiToolParameters } from "./openai-tool-parameters.js";
 import type { tickRoutineWatch } from "./routine-watch.js";
+import { wakeRoutine } from "./run-routines.js";
 import type { createScheduleFromTool } from "./schedule-tools.js";
 
 const MINUTE = 60_000;
@@ -34,7 +36,7 @@ function fakeDatabase() {
       if (text.includes("count(*)")) {
         const waiting = [...waits.keys()].filter((id) => {
           const routine = routines.get(id);
-          return routine?.botId === values[0] && routine.active;
+          return routine !== undefined && routine.botId === values[0] && routine.active;
         });
         return [{ waits: waiting.length }];
       }
@@ -388,5 +390,89 @@ describe("a wait's wake", () => {
     db.publishSpaceChange.mockClear();
     expect(await wake(db, changed, endsAt)).toEqual({ run: false });
     expect(db.publishSpaceChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("a wait woken by its routine", () => {
+  /** Just the rows wakeRoutine reads and writes for one watching routine. */
+  function routineDatabase(wait: Wait) {
+    const routine = {
+      id: "routine-1",
+      spaceId: "space-1",
+      userId: "user-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      name: "Deploy",
+      prompt: "Report the deploy",
+      crons: [] as string[],
+      timezone: "UTC",
+      watch: { ...WATCH, everyMinutes: 15, loud: false },
+      watchState: null,
+      active: true,
+      nextRunAt: wait.endsAt as Date | null,
+      lastRunAt: null as Date | null,
+    };
+    const runs: Array<Record<string, unknown>> = [];
+    const client = {
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray | object) => {
+        const text = Array.isArray(strings) ? strings.join("?") : "";
+        if (text.includes("FROM dozo_routine_waits")) return [wait];
+        if (text.includes('FROM "user" u'))
+          return [
+            { dueAt: null, heldUntil: null, startMinute: null, endMinute: null, timezone: null },
+          ];
+        return [];
+      }),
+      user: { findUnique: async () => ({ deactivatedAt: null }) },
+      bot: {
+        findUnique: async () => ({ id: "bot-1", archivedAt: null, thread: { id: "thread-0" } }),
+      },
+      thread: { findFirst: async () => ({ id: "thread-1" }) },
+      agentSkill: { findMany: async () => [] },
+      space: { findUnique: async () => ({ deletingAt: null }) },
+      routine: {
+        findUnique: async () => ({ ...routine, space: { deletingAt: null } }),
+        updateMany: async ({ where, data }: { where: { nextRunAt?: Date }; data: object }) => {
+          if (!routine.active || routine.nextRunAt?.getTime() !== where.nextRunAt?.getTime())
+            return { count: 0 };
+          Object.assign(routine, data);
+          return { count: 1 };
+        },
+      },
+      task: { create: async () => ({ id: "task-1" }) },
+      run: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          runs.push(data);
+          return { id: "run-1", ...data };
+        },
+      },
+      $transaction: async <T>(work: (tx: unknown) => Promise<T>) => work(client),
+    };
+    const enqueued: BackgroundJob[] = [];
+    const deps = {
+      prisma: client,
+      jobs: {
+        enqueue: async (job: BackgroundJob) => {
+          enqueued.push(job);
+        },
+        cancel: async () => undefined,
+      },
+      events: {
+        append: vi.fn(async () => ({ seq: 1 })),
+        notify: async () => undefined,
+        publishSpaceChange: async () => undefined,
+      },
+    };
+    return { routine, runs, enqueued, deps };
+  }
+
+  it("starts one run in the chat it was asked in at its deadline, and ends", async () => {
+    const db = routineDatabase({ endsAt: NOW, minutes: 30 });
+    await wakeRoutine(db.deps as unknown as ExecutorDeps, "routine-1", NOW.toISOString());
+    expect(db.runs).toEqual([
+      expect.objectContaining({ threadId: "thread-1", trigger: "routine", routineId: "routine-1" }),
+    ]);
+    expect(db.routine).toMatchObject({ active: false, nextRunAt: null });
+    expect(db.enqueued.map((job) => job.name)).not.toContain("routine.wakeup");
   });
 });

@@ -47,7 +47,7 @@ export async function dozoCreateSchedule(
   rawMinutes: unknown,
   deps: CreateDeps,
   input: CreateInput,
-): ReturnType<CreateSchedule> {
+) {
   const minutes = readWaitMinutes(rawMinutes);
   if (minutes === undefined) return create(deps, input);
   if (typeof minutes !== "number") return minutes;
@@ -64,20 +64,21 @@ export async function dozoCreateSchedule(
       error: `You already have ${DOZO_MAX_WAITS_PER_BOT} waits going. Cancel one with schedule_cancel before adding another.`,
     };
   const created = await create(deps, input);
-  if (!("ok" in created)) return created;
+  const routineId = "ok" in created ? created.routineId : undefined;
+  if (!routineId) return created;
   const endsAt = new Date(Date.now() + minutes * 60_000);
   try {
     await deps.prisma.$executeRaw`
       INSERT INTO dozo_routine_waits ("routineId", "endsAt", minutes)
-      VALUES (${created.routineId}, ${endsAt.toISOString()}::timestamptz, ${minutes})`;
+      VALUES (${routineId}, ${endsAt.toISOString()}::timestamptz, ${minutes})`;
   } catch (error) {
     // Without its row the watch would repeat for good: take it back.
-    getLogger().warn("routine.wait_failed", { "routine.id": created.routineId, error });
+    getLogger().warn("routine.wait_failed", { "routine.id": routineId, error });
     await deps.prisma.routine.updateMany({
-      where: { id: created.routineId },
+      where: { id: routineId },
       data: { active: false, nextRunAt: null },
     });
-    await bestEffort("wait job", deps.jobs.cancel(routineJobKey(created.routineId)));
+    await bestEffort("wait job", deps.jobs.cancel(routineJobKey(routineId)));
     await bestEffort("wait change", deps.events.publishSpaceChange?.(input.spaceId, "routines"));
     return { error: "Could not start the wait. Try again." };
   }

@@ -25,7 +25,9 @@ export function dozoWaitInputSchema<Schema extends { oneOf: Branch[] }>(schema: 
   return {
     ...schema,
     oneOf: schema.oneOf.map((branch) => {
-      const watch = (branch.properties.watch as { type?: string } | undefined)?.type === "object";
+      const spec = branch.properties.watch;
+      const watch =
+        typeof spec === "object" && spec !== null && "type" in spec && spec.type === "object";
       return {
         ...branch,
         properties: {
