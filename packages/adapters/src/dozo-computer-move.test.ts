@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { teamBrowserProfileName } from "./computer-workspace.js";
 import type { MovingComputer } from "./dozo-computer-move.js";
 import {
+  absentPath,
   BOT_FILES_NOT_MOVED,
   BOT_FILES_TOO_LARGE,
   BOT_FILES_UNMOVABLE,
@@ -647,5 +648,20 @@ describe("finishing a switch that stopped part way", () => {
     await expect(recover()).resolves.toBe(true);
     delete bots[A];
     await expect(recover()).resolves.toBe(true);
+  });
+});
+
+describe("absentPath", () => {
+  const failure = (code: string) => Object.assign(new Error(code), { code });
+
+  it("answers null for a path that is gone, not a folder, or a link loop", () => {
+    for (const code of ["ENOENT", "ENOTDIR", "ELOOP"]) expect(absentPath(failure(code))).toBeNull();
+  });
+
+  it("lets any other failure reach the caller", () => {
+    const denied = failure("EACCES");
+    expect(() => absentPath(denied)).toThrow(denied);
+    const unknown = new Error("no code");
+    expect(() => absentPath(unknown)).toThrow(unknown);
   });
 });

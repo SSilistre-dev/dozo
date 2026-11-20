@@ -62,7 +62,12 @@ test("site sessions: sign in from the computer's header with control", async ({ 
     });
   }).toPass({ timeout: 90_000 });
   await expect(dialog).toBeHidden();
-  await page.waitForTimeout(8_000);
+  // The bot's screen has drawn: its viewer page holds a canvas once it is up.
+  await expect(
+    page.frameLocator('iframe[title="Bot screen"]').locator("canvas").first(),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
   await shot(page, "4-in-control");
   await page.getByRole("button", { name: "Hand back control" }).click();
   await expect(page.getByRole("button", { name: "Take control" })).toBeVisible({
