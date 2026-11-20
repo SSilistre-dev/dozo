@@ -5266,17 +5266,27 @@
     {
       "file": "packages/contracts/src/auth.ts",
       "find": "  signupsOpen: z.boolean().optional(),\n});",
-      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n  /** Whether it still has password accounts a signed-in user may link to that account; omitted means no. */\n  hostedLink: z.boolean().optional(),\n});",
+      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n  /** Whether it still has password accounts a signed-in user may link to that account; omitted means no. */\n  hostedLink: z.boolean().optional(),\n  /** Whether it serves the third-party notices page (the local server); omitted means no. */\n  notices: z.boolean().optional(),\n});",
       "reason": "hosted account sign-in on a local server: the capability that tells the sign-in page to offer that one way in"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n    } satisfies AuthCapabilities);",
-      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      ...(await hostedLoginCapabilities(prisma)),\n    } satisfies AuthCapabilities);",
+      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      ...(await hostedLoginCapabilities(prisma)),\n      notices: shipsNotices(),\n    } satisfies AuthCapabilities);",
       "requires": [
-        "packages/auth/src/dozo-hosted-login.ts"
+        "packages/auth/src/dozo-hosted-login.ts",
+        "apps/api/src/dozo-notices.ts"
       ],
-      "reason": "hosted account sign-in on a local server: the public capabilities say whether the server signs in only with the hosted account, or still has password accounts a signed-in user may link"
+      "reason": "hosted account sign-in on a local server: the public capabilities say whether the server signs in only with the hosted account, or still has password accounts a signed-in user may link; and whether it ships the third-party notices page (`notices`, local server bundle only)"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { healthRoutes } from \"./health.js\";\nimport { homeRetentionSweep }",
+      "replace": "import { healthRoutes } from \"./health.js\";\nimport { shipsNotices } from \"./dozo-notices.js\";\nimport { homeRetentionSweep }",
+      "requires": [
+        "apps/api/src/dozo-notices.ts"
+      ],
+      "reason": "third-party notices on a local server: the import for the capability below, which lets the web app link the notices page only where the server ships it, with no request of its own"
     },
     {
       "file": "apps/mobile/app/_layout.tsx",

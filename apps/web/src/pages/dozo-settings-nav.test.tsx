@@ -8,6 +8,11 @@ import { DozoSettingsNavGroups, dozoSettingsNavGroups, NOTICES_PAGE } from "./do
 import type { SettingsNavItem } from "./settings-nav";
 import type { SettingsSection } from "./shell-overlay";
 
+const capabilities = vi.hoisted(() => ({
+  fetchAuthCapabilities: vi.fn<() => Promise<{ notices?: boolean }>>(async () => ({})),
+}));
+vi.mock("../lib/auth-capabilities", () => capabilities);
+
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
 }));
@@ -73,12 +78,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The notices page's answer: hosted servers have none. */
-const fetchNotices = vi.fn<typeof fetch>(async () => new Response(null, { status: 404 }));
+/** No request of its own: the nav reads the capabilities the app already loaded. */
+const fetchSpy = vi.fn<typeof fetch>(async () => new Response(null, { status: 500 }));
 
 function render(section: SettingsSection, disabled = false) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("fetch", fetchNotices);
+  vi.stubGlobal("fetch", fetchSpy);
   const container = document.createElement("nav");
   document.body.append(container);
   const root = createRoot(container);
@@ -127,8 +132,8 @@ it("marks General while a space's page is open, and disables every button while 
   expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
 });
 
-it("links the third-party notices only where the server has them", async () => {
-  fetchNotices.mockResolvedValueOnce(new Response(null, { status: 200 }));
+it("links the third-party notices only where the server says it has them", async () => {
+  capabilities.fetchAuthCapabilities.mockResolvedValueOnce({ notices: true });
   const local = render("general");
   await act(async () => {});
   const link = local.container.querySelector<HTMLAnchorElement>(
@@ -137,28 +142,25 @@ it("links the third-party notices only where the server has them", async () => {
   expect(link?.getAttribute("href")).toBe(NOTICES_PAGE);
   expect(link?.textContent).toBe("Licenses");
   expect(link?.target).toBe("_blank");
-  // Asked as something other than a page, so the page fallback cannot answer for a missing file.
-  expect(fetchNotices).toHaveBeenCalledWith(NOTICES_PAGE, {
-    method: "HEAD",
-    headers: { accept: "text/plain" },
-  });
 
-  fetchNotices.mockClear();
+  // A hosted server says nothing (or no): no link, and no request for a page it does not have.
   const hosted = render("general");
-  await act(async () => {});
-  expect(fetchNotices).toHaveBeenCalled();
-  fetchNotices.mockRejectedValueOnce(new TypeError("offline"));
+  capabilities.fetchAuthCapabilities.mockResolvedValueOnce({ notices: false });
+  const refused = render("general");
+  capabilities.fetchAuthCapabilities.mockRejectedValueOnce(new TypeError("offline"));
   const offline = render("general");
   await act(async () => {});
-  expect(hosted.container.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
-  expect(offline.container.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
+  for (const nav of [hosted, refused, offline]) {
+    expect(nav.container.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
+  }
+  expect(fetchSpy).not.toHaveBeenCalled();
 });
 
 it("ignores an answer that arrives after the nav closed", async () => {
-  const late = deferred<Response>();
-  fetchNotices.mockReturnValueOnce(late.promise);
+  const late = deferred<{ notices?: boolean }>();
+  capabilities.fetchAuthCapabilities.mockReturnValueOnce(late.promise);
   render("general");
   for (const unmount of mounted.splice(0)) unmount();
-  await act(async () => late.resolve(new Response(null, { status: 200 })));
+  await act(async () => late.resolve({ notices: true }));
   expect(document.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
 });
