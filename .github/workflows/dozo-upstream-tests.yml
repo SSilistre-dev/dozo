@@ -1,0 +1,40 @@
+name: dozo-upstream-tests
+
+# Upstream's own tests on the branded tree, held to the reviewed list of the ones the brand step may
+# turn red (dozo/brand/upstream-tests-known.tsv): a new red, or a listed test that is green again,
+# fails. About 20 minutes, so it runs beside dozo-gate instead of inside it. What it runs:
+# dozo/docker/README.md, Upstream tests. Needs only Docker, which stock GitHub runners have.
+# Third-party actions are pinned to a full commit SHA with the version in a comment.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-upstream-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  upstream-tests:
+    name: upstream tests on the branded tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Pull the Node image
+        run: docker pull node:24.22-slim
+
+      # Not DOZO_STAGE_WORKTREE: the PR checkout is committed content, stage exports HEAD.
+      - name: Stage tree
+        run: dozo/docker/build.sh stage
+
+      - name: Apply brand and run leak gate
+        run: dozo/docker/build.sh brand
+
+      - name: Upstream tests against the list
+        run: dozo/docker/upstream-tests.sh
