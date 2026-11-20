@@ -203,7 +203,7 @@
       { "file": "infra/sandboxes/supervisor/src/identity.ts", "text": "inspect with the same managed rule as isRakazoContainer.", "reason": "developer comment naming a function" },
       { "file": "packages/ui-web/src/bot-avatar.tsx", "text": "rakazo-bot-avatar-ring rakazo-bot-avatar-ring-working absolute", "reason": "second class of a className list; the avatar CSS names stay" },
       { "file": "apps/mobile/app.json", "text": "\"RakazoWidgets\"", "reason": "widget target name in Xcode; never shown" },
-      { "file": "apps/mobile/app.json", "text": "\"scheme\": \"rakazo\"", "reason": "deep-link scheme: the API trusts it as the app's origin and builds notification links with it, so it changes only together with the server (README, Identifiers)" },
+      { "file": "apps/mobile/app.json", "text": "\"scheme\": [\"rakazo\", \"dozo\"]", "reason": "deep-link scheme: the API trusts it as the app's origin and builds notification links with it, so it changes only together with the server (README, Identifiers); the fork's own scheme comes after it" },
       { "file": "apps/mobile/app/(settings)/general.tsx", "text": "value: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/mobile/app/bot-settings.tsx", "text": "key: \"rakazo\"", "reason": "stored avatar-set enum value, never displayed" },
       { "file": "apps/mobile/app/new-bot.tsx", "text": "set === \"rakazo\"", "reason": "stored avatar-set enum value" },
@@ -566,6 +566,27 @@
       "find": "\"updates\": {\n      \"url\": \"https://u.expo.dev/07f7eb04-45e3-47fe-9374-99a2f991131e\"\n    }",
       "replace": "\"updates\": {\n      \"enabled\": false\n    }",
       "reason": "upstream's over-the-air update channel: a Dozo build must never fetch code from it, so updates are off"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"scheme\": \"rakazo\",",
+      "replace": "\"scheme\": [\"rakazo\", \"dozo\"],",
+      "reason": "pairing links use the fork's own scheme (dozo://pair), which an upstream app on the same phone cannot claim; the upstream scheme stays first, because links the app makes and the origin the server trusts use the first one"
+    },
+    {
+      "file": "apps/mobile/app/+native-intent.tsx",
+      "find": "from \"../lib/settings-sheet\";\n\n/** A link to a screen",
+      "replace": "from \"../lib/settings-sheet\";\nimport { pairingRoute } from \"../lib/dozo-pair-link\";\n\n/** A link to a screen",
+      "requires": [
+        "apps/mobile/lib/dozo-pair-link.ts"
+      ],
+      "reason": "the pairing link dozo://pair opens the pairing screen"
+    },
+    {
+      "file": "apps/mobile/app/+native-intent.tsx",
+      "find": "  return isShare ? \"/share\" : path;",
+      "replace": "  return isShare ? \"/share\" : pairingRoute(path);",
+      "reason": "the pairing link dozo://pair opens the pairing screen (the router would read its host as a route named pair)"
     },
     {
       "file": "apps/web/index.html",

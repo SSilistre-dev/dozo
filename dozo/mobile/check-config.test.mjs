@@ -103,6 +103,7 @@ describe("the mobile app's config after the brand rules", () => {
       "projectId is set",
       "updates.url is set",
       "updates.enabled",
+      "scheme is",
       "com\\.rakazo",
       "u\\.expo\\.dev",
       "inbox-zero",
@@ -112,7 +113,7 @@ describe("the mobile app's config after the brand rules", () => {
     }
   });
 
-  it("an extension or app group outside the id family, a foreign associated domain and a new use of the old name fail", () => {
+  it("an extension or app group outside the id family, a foreign associated domain, no Dozo scheme and a new use of the old name fail", () => {
     const expo = structuredClone(config.expo);
     const [first, share] = expo.extra.eas.build.experimental.ios.appExtensions;
     first.bundleIdentifier = "com.example.widgets";
@@ -121,6 +122,7 @@ describe("the mobile app's config after the brand rules", () => {
       "webcredentials:dozo.example",
       "webcredentials:other.example?mode=developer",
     ];
+    expo.scheme = ["rakazo"];
     expo.description = "Made by rakazo";
     const found = problems({ expo }, "https://dozo.example").join("\n");
     for (const part of [
@@ -128,6 +130,7 @@ describe("the mobile app's config after the brand rules", () => {
       "uses app group group.com.example",
       "other.example",
       "Made by rakazo",
+      "pairing links",
     ])
       assert.ok(found.includes(part), `${part}\n${found}`);
     assert.ok(!found.includes("webcredentials:dozo.example is not"), found);
