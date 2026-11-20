@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
-import { gotoStable, openBot } from "./ui";
+import { gotoStable, openAccountMenu, openBot, openUserSettings } from "./ui";
 
 // The Dozo look on the screens the design mockups cover (dozo/design, the chat window from
 // chat-v2.html), in both themes. Each check
@@ -198,6 +198,62 @@ test("tables, files and questions in the thread share the card surface", async (
   } finally {
     await rpc(page, "bots/remove", { botId: bot.id, deleteMemories: true });
   }
+});
+
+test("settings sit on one tonal sheet with the nav in three groups", async ({ page }) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  const settings = await openUserSettings(page);
+  await expect(settings).toHaveCSS("border-radius", "14px");
+  await expect(settings).toHaveCSS("background-color", await tokenColor(page, "--background"));
+  const groups = settings.locator("[data-dozo-settings-group]");
+  expect(await groups.count()).toBeGreaterThanOrEqual(2);
+  await expect(settings.getByRole("group", { name: "Account" })).toContainText("General");
+  await expect(settings.getByRole("group", { name: "Bots" })).toContainText("Models");
+  const current = settings.getByTestId("settings-nav-general");
+  await expect(current).toHaveAttribute("aria-current", "page");
+  expect(await current.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(CLEAR);
+  await expect(settings.getByTestId("settings-nav")).toHaveCSS("border-right-width", "0px");
+  await expect(settings.getByTestId("settings-header")).toHaveCSS("border-bottom-width", "0px");
+  const group = settings.locator("section > .divide-y.border").first();
+  await expect(group).toHaveCSS("border-top-width", "0px");
+  await expect(group).toHaveCSS("border-radius", "14px");
+});
+
+test("menus share one surface and a destructive item is a red word", async ({ page }) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  const popover = await tokenColor(page, "--popover");
+  const account = await openAccountMenu(page);
+  await expect(account).toHaveCSS("border-radius", "16px");
+  await expect(account).toHaveCSS("background-color", popover);
+  expect(await account.evaluate((el) => getComputedStyle(el).boxShadow)).toContain("inset");
+  await page.keyboard.press("Escape");
+
+  await page.locator(`${ROW}[aria-current="page"]`).click({ button: "right" });
+  const menu = page.locator('[data-slot="context-menu-content"]').first();
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveCSS("border-radius", "16px");
+  await expect(menu).toHaveCSS("background-color", popover);
+  const remove = menu.locator('[data-variant="destructive"]').first();
+  await remove.hover();
+  // Washed like any item where the pointer is, never a red panel; the word is the red.
+  await expect(remove).toHaveCSS("background-color", await tokenColor(page, "--dozo-wash"));
+  await expect(remove).toHaveCSS("color", await tokenColor(page, "--dozo-danger-text"));
+  await expect(
+    menu.locator('[data-slot="context-menu-item"] > svg:first-child').first(),
+  ).toBeHidden();
+
+  // The delete confirmation: one tonal sheet, footer without a line; cancelled, nothing deleted.
+  await remove.click();
+  const dialog = page.locator('[data-slot="alert-dialog-content"]');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS("border-radius", "14px");
+  await expect(dialog).toHaveCSS("box-shadow", "none");
+  await expect(dialog.locator('[data-slot="alert-dialog-footer"]')).toHaveCSS(
+    "border-top-width",
+    "0px",
+  );
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test.describe("signed out", () => {
