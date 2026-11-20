@@ -129,5 +129,9 @@ describe("fileRelayStore", () => {
       throw busy("ENOENT");
     });
     await expect(missing).rejects.toThrow("ENOENT");
+    const odd = replaceFile("c.tmp", "c.json", async () => {
+      throw new Error("no code");
+    });
+    await expect(odd).rejects.toThrow("no code");
   });
 });
