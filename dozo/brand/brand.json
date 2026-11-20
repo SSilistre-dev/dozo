@@ -810,6 +810,12 @@
       "reason": "text inserted into the model's history: emit the Dozo prefix"
     },
     {
+      "file": "packages/adapters/src/computer-support.prompt.ts",
+      "find": "Other bots' folders are visible under bots/; treat them as their working areas.`;",
+      "replace": "Other bots' folders are visible under bots/; treat them as their working areas. Other bots here run as the same Linux user, so they can read and change your files and browser sign-ins, and you theirs: store nothing here that must stay private from them, and when privacy is needed, suggest turning on Own computer in your settings.`;",
+      "reason": "bots told people they had separate users on the Team Computer; they share one, and the bot should say so and point to the setting that isolates it (dozo-team-computer-prompt.test.ts)"
+    },
+    {
       "file": "packages/adapters/src/runtime-context.ts",
       "find": "(text(message).startsWith(\"Rakazo-owned compacted context through message sequence \") ||",
       "replace": "(text(message).startsWith(\"Dozo-owned compacted context through message sequence \") ||\n          text(message).startsWith(\"Rakazo-owned compacted context through message sequence \") ||",
