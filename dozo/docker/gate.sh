@@ -223,6 +223,12 @@ olc() {
         echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel)"
       else printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; fi
     else fail "dozo/mobile/check-config.test.mjs missing: the iOS app's config is not checked"; fi
+    # The fork's dependency step (dozo/deps): which lockfiles it accepts, offline with a fake pnpm.
+    if [ -f dozo/deps/apply.test.mjs ]; then
+      if out=$(drun deps-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/deps/apply.test.mjs 2>&1); then
+        echo "[olc] fork dependency step ok (upstream's locked versions kept, new packages listed with their integrity)"
+      else printf '%s\n' "$out"; fail "fork dependency step (dozo/deps/apply.test.mjs)"; fi
+    else fail "dozo/deps/apply.test.mjs missing: the fork's dependency step is not tested"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
