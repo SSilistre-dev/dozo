@@ -186,10 +186,9 @@
 [data-testid="bots-sidebar"] .group\/row:hover > [data-slot="context-menu-trigger"] {
   background: var(--dozo-row-hover);
 }
-[data-testid="bots-sidebar"] .group\/row > [data-slot="context-menu-trigger"]:is(
-    [aria-current="page"],
-    [data-roster-drop="true"]
-  ) {
+[data-testid="bots-sidebar"]
+  .group\/row
+  > [data-slot="context-menu-trigger"]:is([aria-current="page"], [data-roster-drop="true"]) {
   background: var(--dozo-row-on);
 }
 /* The two-line row's avatar is drawn at 40px (upstream lays it out at 38). */
@@ -213,7 +212,10 @@
   color: var(--sidebar-foreground);
 }
 /* Room at the row's end for its dot. */
-[data-testid="bots-sidebar"] .group\/row > [data-slot="context-menu-trigger"]:not([aria-label]) > .min-w-0 {
+[data-testid="bots-sidebar"]
+  .group\/row
+  > [data-slot="context-menu-trigger"]:not([aria-label])
+  > .min-w-0 {
   padding-inline-end: 18px;
 }
 /* Unread: an ink dot at the row's end. Waiting for you: the same dot in the waiting colour. */
@@ -223,7 +225,9 @@
   [data-roster-unread-dot],
 [data-testid="bots-sidebar"]
   .group\/row
-  > [data-slot="context-menu-trigger"]:not([aria-label]):has(> .dozo-avatar[data-state="waiting"])::after {
+  > [data-slot="context-menu-trigger"]:not([aria-label]):has(
+    > .dozo-avatar[data-state="waiting"]
+  )::after {
   position: absolute;
   inset-inline-end: 12px;
   top: 50%;
@@ -235,7 +239,9 @@
 }
 [data-testid="bots-sidebar"]
   .group\/row
-  > [data-slot="context-menu-trigger"]:not([aria-label]):has(> .dozo-avatar[data-state="waiting"])::after {
+  > [data-slot="context-menu-trigger"]:not([aria-label]):has(
+    > .dozo-avatar[data-state="waiting"]
+  )::after {
   content: "";
   background: var(--warning);
 }
@@ -283,7 +289,10 @@
   font-size: 13px;
   font-weight: 500;
 }
-:is([data-testid="user-menu-trigger"], [data-testid="sidebar-footer"] > [data-slot="button"].flex-1):hover {
+:is(
+  [data-testid="user-menu-trigger"],
+  [data-testid="sidebar-footer"] > [data-slot="button"].flex-1
+):hover {
   background: var(--dozo-surface-4);
 }
 
@@ -316,7 +325,8 @@
   width: 12px;
   height: 12px;
   background: var(--dozo-ink-2);
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 4l4 4-4 4'/%3E%3C/svg%3E")
+  mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 4l4 4-4 4'/%3E%3C/svg%3E")
     center / contain no-repeat;
 }
 [data-testid="bot-settings-trigger"][aria-expanded="false"]::after {
@@ -413,10 +423,17 @@
   line-height: 20px;
 }
 [data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"]:hover,
-[data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"][aria-pressed="true"] {
+[data-testid="transcript"]
+  .rounded-2xl.bg-card
+  .space-y-0\.5
+  > [data-slot="button"][aria-pressed="true"] {
   background: var(--dozo-wash-strong);
 }
-[data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"] > span[aria-hidden]:first-child {
+[data-testid="transcript"]
+  .rounded-2xl.bg-card
+  .space-y-0\.5
+  > [data-slot="button"]
+  > span[aria-hidden]:first-child {
   display: none;
 }
 

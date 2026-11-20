@@ -340,7 +340,8 @@ export function dozoChatUserColors(
   identity: string,
 ): { background: string; foreground: string } | undefined {
   if (parseBotAvatarValue(avatarValue).kind === "image") return undefined;
-  const [light, dark] = DOZO_BOT_PALETTE[dozoCharacterForLook(identity || avatarValue, avatarValue)];
+  const [light, dark] =
+    DOZO_BOT_PALETTE[dozoCharacterForLook(identity || avatarValue, avatarValue)];
   return { background: `light-dark(${botFill(light)}, ${botFill(dark)})`, foreground: ON_BOT_INK };
 }
 

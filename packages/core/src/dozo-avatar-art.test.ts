@@ -7,9 +7,9 @@ import {
   DOZO_CHARACTERS,
   dozoAvatarSvg,
   dozoCharacterForLook,
+  dozoCharacterForSeed,
   dozoChatUserColors,
   dozoContrast,
-  dozoCharacterForSeed,
   dozoHashSeed,
   notificationAvatarSource,
 } from "./dozo-avatar-art.js";
@@ -179,8 +179,10 @@ describe("your own bubble in a bot's chat", () => {
       }
       // Still the character's hue: the darkest channel of the palette colour stays the darkest.
       const [paletteLight] = DOZO_BOT_PALETTE[character];
-      const channels = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
-      const order = (hex: string) => channels(hex).map((v, _, all) => all.filter((o) => o < v).length);
+      const channels = (hex: string) =>
+        [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+      const order = (hex: string) =>
+        channels(hex).map((v, _, all) => all.filter((o) => o < v).length);
       expect(order(light)).toEqual(order(paletteLight));
     }
   });
