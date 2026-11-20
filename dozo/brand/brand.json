@@ -4825,6 +4825,12 @@
       "find": "  return next && INVITE_PATH.test(next) ? next : \"/onboarding\";",
       "replace": "  return next && (INVITE_PATH.test(next) || next.startsWith(\"/dozo/hosted-login?\"))\n    ? next\n    : \"/onboarding\";",
       "reason": "hosted account sign-in on a local server: an account made to sign in on a computer goes back to that request, not to onboarding"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-server-text.ts\nmsgid \"Files over 12 MB can't move\"",
+      "replace": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"\nmsgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-server-text.ts\nmsgid \"Files over 12 MB can't move\"",
+      "reason": "hosted account sign-in on a local server: the Turkish title of the page that asks the user to agree (apps/web/src/pages/dozo-hosted-login.tsx)"
     }
   ],
   "assets": {
