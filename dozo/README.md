@@ -219,6 +219,27 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
   upstream's plans.
 
+## Model pool
+
+A person's own connections to the same provider can stand in for each other. When the one a run is
+on runs out of quota or credit, or its key is refused, before anything is shown, the call moves to
+the next open connection of the pool, and the one that ran out rests until the provider's reset
+(else an hour, at most a week). The next runs skip it until then and go back to it after. It is a
+handover, not a way around rate limits: a short rate limit, an overload or an empty reply retries
+as before and never moves to another connection of the pool, and a run stays on one connection.
+
+- The rule is `packages/core/src/dozo-model-pool.ts`; the runtime side and the anchored rules it
+  needs are in `packages/adapters/src/dozo-model-pool.ts`; which kinds of connection may join is
+  `dozo-model-pool-capabilities.ts` (keys and own endpoints yes, subscription sign-ins no).
+- The pool lives in two fork tables with no model in `schema.prisma` (`dozo_model_pool_members`,
+  `dozo_model_connection_cooldowns`, `packages/db/src/dozo-model-pool-store.ts`). A connection
+  without a row runs exactly as upstream's does. Nothing writes a membership yet: the setting
+  arrives with its own change. The store's SQL and row security are tested in
+  `dozo-model-pool-store.postgres.test.ts`, which needs a migrated database (see Hosted plans).
+- When every connection rests, the run tries the one that opens first and fails with the
+  provider's own message. A pinned run keeps the connection it asked for. Moving to another
+  connection mid-run rebuilds the provider's prompt cache, so that call costs more.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:

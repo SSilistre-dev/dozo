@@ -4894,6 +4894,82 @@
         "packages/auth/src/dozo-hosted-login.ts"
       ],
       "reason": "hosted account sign-in on a local server: the public capabilities say when the server signs in only with the hosted account"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./model-oauth.js\";\nexport * from \"./model-probe.js\";",
+      "replace": "export * from \"./model-oauth.js\";\nexport * from \"./dozo-model-pool.js\";\nexport * from \"./model-probe.js\";",
+      "requires": ["packages/core/src/dozo-model-pool.ts"],
+      "reason": "model pool: the package exports the rule for which pooled connection a run starts on and how long one that ran out rests"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./model-credentials.js\";\nexport * from \"./model-credit-cap.js\";",
+      "replace": "export * from \"./model-credentials.js\";\nexport * from \"./dozo-model-pool-store.js\";\nexport * from \"./model-credit-cap.js\";",
+      "requires": ["packages/db/src/dozo-model-pool-store.ts"],
+      "reason": "model pool: the package exports the store of pooled connections and their rests"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "import { loadGroupContext } from \"./group-handoff.js\";\nimport { selectConfiguredModel } from \"./model-roles.js\";",
+      "replace": "import { loadGroupContext } from \"./group-handoff.js\";\nimport { loadRunModelPool, withPoolMembers } from \"./dozo-model-pool.js\";\nimport { selectConfiguredModel } from \"./model-roles.js\";",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: the import of the three rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const started = await startRunModel(\n    deps,\n    run,\n    {\n      provider: selectedProvider,\n      id: selectedModelId,\n      credential: selected.credential,\n",
+      "replace": "  const pool = pinnedComputerModels ? undefined : await loadRunModelPool(deps, run, selected);\n  const started = await startRunModel(\n    deps,\n    run,\n    {\n      provider: selectedProvider,\n      id: selectedModelId,\n      credential: pool?.credential ?? selected.credential,\n",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: a run whose chosen connection is pooled and resting starts on the next open connection of its pool; without a pool it starts as before"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  return { scripted, backups, runModelProvider, runModelId, credential, thinkingLevel, resolved };\n",
+      "replace": "  return {\n    scripted,\n    backups,\n    runModelProvider,\n    runModelId,\n    credential,\n    thinkingLevel,\n    resolved,\n    pool,\n  };\n",
+      "reason": "model pool: the started model carries its pool to the backup chain and the runtime"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const fallbackModels = (await backups.load()).filter(\n",
+      "replace": "  const fallbackModels = withPoolMembers(\n    parts.model.pool,\n    { provider: runModelProvider, modelId: runModelId, connectionId: mainRunModel.connectionId },\n    parts.model.thinkingLevel,\n    await backups.load(),\n  ).filter(\n",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: the pool's other open connections come first in the backup chain, on the same model; they are passed over unless the running one ran out"
+    },
+    {
+      "file": "packages/adapters/src/run-model-turn.ts",
+      "find": "import { builtinAgentTools } from \"./builtin.tool-definition.js\";\nimport { personSpeaker } from \"./history-speakers.js\";",
+      "replace": "import { builtinAgentTools } from \"./builtin.tool-definition.js\";\nimport { withRunModelPool } from \"./dozo-model-pool.js\";\nimport { personSpeaker } from \"./history-speakers.js\";",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-model-turn.ts",
+      "find": "    const runtimeEvents = deps.runtime.run(modelTurnRequest(services, hold, turn), {\n",
+      "replace": "    const runtimeEvents = deps.runtime.run(\n      withRunModelPool(modelTurnRequest(services, hold, turn), turn.model.pool),\n      {\n",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: the runtime gets the run's pool with its request, to rest a connection that ran out"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-fallback.ts",
+      "find": "import { ContextBudgetError } from \"./context-selection.js\";\nimport { groqRequestContextWindow } from \"./groq-request-budget.js\";",
+      "replace": "import { ContextBudgetError } from \"./context-selection.js\";\nimport { skipsPoolMember, switchAfterFailure } from \"./dozo-model-pool.js\";\nimport { groqRequestContextWindow } from \"./groq-request-budget.js\";",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-fallback.ts",
+      "find": "terminalEvent.error.errorMessage ?? \"Model request failed.\",\n              );\n              const switched = await switchToNext(target);\n",
+      "replace": "terminalEvent.error.errorMessage ?? \"Model request failed.\",\n              );\n              const switched = await switchAfterFailure(state, target.config, event.error, () =>\n                switchToNext(target),\n              );\n",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: a connection whose quota or credit ran out, or whose key was refused, rests before the call moves on, and only then may the pool's other connections take it"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-fallback.ts",
+      "find": "      if (state.attempted.has(key)) continue;\n      state.attempted.add(key);\n",
+      "replace": "      if (state.attempted.has(key)) continue;\n      if (skipsPoolMember(state, choice)) continue;\n      state.attempted.add(key);\n",
+      "requires": ["packages/adapters/src/dozo-model-pool.ts"],
+      "reason": "model pool: a short rate limit, an overload or an empty reply never moves the call to another connection of the pool, so the pool is a handover and not a way around rate limits"
     }
   ],
   "assets": {
