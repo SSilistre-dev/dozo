@@ -5528,6 +5528,15 @@
       "reason": "daily sends: the account's number sits under its approval mode, which it bounds"
     },
     {
+      "file": "packages/adapters/src/executor-readonly-approval.test.ts",
+      "find": "  const transactionalPrisma = Object.assign(prisma, {\n    $executeRaw: vi.fn(async () => 0),\n    $queryRaw: vi.fn(async () => []),\n",
+      "replace": "  const transactionalPrisma = Object.assign(prisma, {\n    $executeRaw: vi.fn(async () => 0),\n    // The fork's daily send counter: a first send of the day counts 1, as Postgres would.\n    $queryRaw: vi.fn(async (...values: unknown[]) =>\n      String(values[0]).includes(\"INSERT INTO dozo_daily_sends\") ? [{ count: 1 }] : [],\n    ),\n",
+      "requires": [
+        "packages/adapters/src/dozo-send-limit.ts"
+      ],
+      "reason": "daily sends: the test's fake database answers the fork's send counter with a first count, as Postgres would, so upstream's approval tests see upstream's plan"
+    },
+    {
       "file": "packages/contracts/src/rpc.ts",
       "find": "from \"./agent-import-setup.js\";\nimport { AiConsentQuerySchema",
       "replace": "from \"./agent-import-setup.js\";\nexport * from \"./dozo-command-rules.js\";\nimport { dozoCommandRulesContract } from \"./dozo-command-rules.js\";\nimport { AiConsentQuerySchema",
