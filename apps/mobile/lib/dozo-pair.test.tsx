@@ -261,6 +261,11 @@ it("acts on the pairing link once, and on no other link", async () => {
     "https://dozo-pair#offer-4",
     "rakazo://dozo-pair",
     "rakazo://dozo-pair#bad offer",
+    "rakazo://pair#offer-6",
+    "dozo://dozo-pair#offer-7",
+    "dozo://pair/more#offer-8",
+    "dozo://pairing#offer-9",
+    "https://dozo.bot/pair#offer-10",
   ]) {
     state.link = link;
     await render();
@@ -269,4 +274,15 @@ it("acts on the pairing link once, and on no other link", async () => {
   state.link = "rakazo://dozo-pair/#offer-5";
   await render();
   expect(state.alerts).toHaveLength(2);
+  await answer("Cancel");
+  state.link = "dozo://pair/#offer-11";
+  await render();
+  expect(state.alerts).toHaveLength(3);
+});
+
+it("acts on the link the computer writes", async () => {
+  state.link = "dozo://pair#offer-12";
+  await render();
+  expect(state.alerts).toHaveLength(1);
+  expect(relay.read).toHaveBeenCalledWith("offer-12", expect.any(Number));
 });

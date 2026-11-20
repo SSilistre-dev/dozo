@@ -1222,7 +1222,7 @@ mod tests {
 
     /// A stand-in relay agent: what each command prints.
     const RELAY: &str = r#"case "$2" in
-      pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"rakazo://dozo-pair#x"}'; exit 0;;
+      pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"dozo://pair#x"}'; exit 0;;
       list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
       revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
       approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
@@ -1362,7 +1362,7 @@ mod tests {
         let agent = local.agent().await.expect("the bundle has an agent");
         let offer = agent.offer().await.unwrap();
         assert_eq!(offer.channel, "c1");
-        assert_eq!(offer.qr, "rakazo://dozo-pair#x");
+        assert_eq!(offer.qr, "dozo://pair#x");
         assert_eq!(
             agent.phones().await.unwrap(),
             [Phone {

@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn the_code_is_a_square_of_modules() {
-        let (size, cells) = qr("rakazo://dozo-pair#eyJ2IjoxfQ").unwrap();
+        let (size, cells) = qr("dozo://pair#eyJ2IjoxfQ").unwrap();
         assert_eq!(cells.len(), size * size);
         assert!(cells.chars().all(|cell| cell == '0' || cell == '1'));
         // A finder pattern's top row in the corner.
