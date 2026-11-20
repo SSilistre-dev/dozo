@@ -5372,6 +5372,78 @@
       "reason": "quiet hours: a due routine waits out its owner's quiet hours, and a scheduled run missed by more than 12 hours is skipped instead of run"
     },
     {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "import { protectedComputerLifecycleRefusal } from \"./desktop-command-guard.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";",
+      "replace": "import { protectedComputerLifecycleRefusal } from \"./desktop-command-guard.js\";\nimport { dozoTickWait, dozoWatchNextRunAt } from \"./dozo-wait.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "      : await tickRoutineWatch(\n          { ...deps, commandRefusal: protectedComputerLifecycleRefusal },",
+      "replace": "      : await dozoTickWait(\n          tickRoutineWatch,\n          { ...deps, commandRefusal: protectedComputerLifecycleRefusal },",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: a watching routine that is a wait wakes its bot at the first change or at its deadline, whichever comes first"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "  const nextRunAt = watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt);",
+      "replace": "  const nextRunAt = watchTick?.run\n    ? dozoWatchNextRunAt(watchTick)\n    : nextScheduledRunAt(routine, scheduledAt);",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: the run a wait starts ends the wait, so the routine is not checked again"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "} from \"./desktop-command-guard.js\";\nimport type { RunContext } from \"./run-context.js\";",
+      "replace": "} from \"./desktop-command-guard.js\";\nimport { dozoCreateSchedule, dozoWaitRefusal } from \"./dozo-wait.js\";\nimport type { RunContext } from \"./run-context.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "    const created = await createScheduleFromTool(deps, {\n      spaceId: run.spaceId,",
+      "replace": "    const created = await dozoCreateSchedule(createScheduleFromTool, args.waitMinutes, deps, {\n      spaceId: run.spaceId,",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: schedule_create with a watch and waitMinutes records the wait, within the per-bot limit"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "      ...scheduleCreateFields(args),\n    }));\n  return error ? { error } : undefined;",
+      "replace": "      ...scheduleCreateFields(args),\n    })) ??\n    (await dozoWaitRefusal(deps.prisma, args.waitMinutes, { botId: bot.id, watch: args.watch }));\n  return error ? { error } : undefined;",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: a wait that cannot start (bad length, no watch, the bot's waits all in use) is refused before the approval card, like the rest of schedule_create"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "import { BROWSER_ACT_KINDS } from \"./browser-tools.js\";\nimport { SCHEDULE_TIMING_FIELDS }",
+      "replace": "import { BROWSER_ACT_KINDS } from \"./browser-tools.js\";\nimport { dozoWaitInputSchema } from \"./dozo-wait.tool-definition.js\";\nimport { SCHEDULE_TIMING_FIELDS }",
+      "requires": [
+        "packages/adapters/src/dozo-wait.tool-definition.ts"
+      ],
+      "reason": "one-time waits: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "    inputSchema: scheduleCreateInputSchema,\n  },\n  {\n    name: \"schedule_list\",",
+      "replace": "    inputSchema: dozoWaitInputSchema(scheduleCreateInputSchema),\n  },\n  {\n    name: \"schedule_list\",",
+      "requires": [
+        "packages/adapters/src/dozo-wait.tool-definition.ts"
+      ],
+      "reason": "one-time waits: schedule_create's watch takes waitMinutes, which makes it wake the bot once and end"
+    },
+    {
       "file": "packages/adapters/src/index.ts",
       "find": "export * from \"./destination-emulator.js\";\nexport * from \"./docker-sandbox.js\";",
       "replace": "export * from \"./destination-emulator.js\";\nexport * from \"./dozo-quiet-hours.js\";\nexport * from \"./docker-sandbox.js\";",
