@@ -12,7 +12,13 @@ import { deadlineSignal, MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { BetterAuthPlugin, GenericEndpointContext, User } from "better-auth";
-import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
+import {
+  APIError,
+  createAuthEndpoint,
+  createAuthMiddleware,
+  getSessionFromCtx,
+  sessionMiddleware,
+} from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 
 /**
@@ -22,9 +28,17 @@ import { setSessionCookie } from "better-auth/cookies";
  * short-lived login token signed with Ed25519 and publishes the public key. A local server
  * (`HOSTED_LOGIN_ISSUER` set to the hosted server's origin) asks for one, checks it and signs its
  * own user in: the local account is found by the hosted account's id, so a changed address keeps
- * the same user, and every other way to sign in or to add a credential is closed there. A local
- * server that already has accounts of its own refuses to start in that mode. With neither
- * variable set nothing changes.
+ * the same user, and every other way to sign in or to add a credential is closed there. With
+ * neither variable set nothing changes.
+ *
+ * A local server that already has users of its own never refuses to start: until each is linked
+ * it keeps password and passkey sign-in, makes no new account and offers no hosted sign-in
+ * ("legacy" mode). A signed-in user links their account from the settings with the same flow
+ * (`start` with `link`, proven by their own session); the password goes with it, and once no
+ * such user is left the server is in hosted mode. Each existing user links their own hosted
+ * account; once any is linked, a hosted account that is not linked is refused, as a new account
+ * would be. A user marked for it (`ADOPT_PREFIX`) is linked by the next hosted sign-in. Sessions
+ * there last `LOCAL_SESSION_DAYS`, so a computer left offline keeps its user.
  *
  * The flow, in one browser:
  * 1. local `POST /api/auth/dozo/hosted-login/start`, from the local sign-in page only (its own
@@ -60,6 +74,14 @@ export const KEY_RETRY_SECONDS = 5;
 export const MAX_KEYS_BYTES = 64 * 1024;
 /** The account provider id a hosted account is linked under on the local server. */
 export const HOSTED_PROVIDER_ID = "dozo-hosted";
+/** How long a session on a local server lasts, renewed by use (the library's default is a week). */
+export const LOCAL_SESSION_DAYS = 90;
+const LOCAL_SESSION_SECONDS = LOCAL_SESSION_DAYS * 24 * 60 * 60;
+/** Where a refused sign-in comes back, with why when the person can act on it. */
+export const SIGN_IN_ERRORS = {
+  failed: "hosted_login_failed",
+  clock: "hosted_login_clock",
+} as const;
 
 const NONCE_COOKIE = "dozo_hosted_login";
 const NONCE_PREFIX = "dozo-hosted-login:";
@@ -91,12 +113,26 @@ const CLOSED_PATHS = new Set([
   "/verify-email",
 ]);
 
+/**
+ * What stays open while the server is in legacy mode: signing in with a password or a passkey,
+ * and the owner's own password upkeep. Making new accounts and every other way in stay closed.
+ */
+export function openInLegacyMode(path: string): boolean {
+  return (
+    path === "/sign-in/email" ||
+    path === "/request-password-reset" ||
+    path === "/change-password" ||
+    path.startsWith("/reset-password") ||
+    path.startsWith("/passkey/")
+  );
+}
+
 export function closedOnLocalServer(path: string): boolean {
   return CLOSED_PATHS.has(path) || CLOSED_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
 export type HostedLoginConfig =
-  | { mode: "issuer"; signingKey: KeyObject }
+  | { mode: "issuer"; signingKey: KeyObject; overlapKey?: KeyObject }
   | { mode: "verifier"; issuer: string }
   | null;
 
@@ -106,7 +142,13 @@ export function hostedLoginConfig(source: NodeJS.ProcessEnv = process.env): Host
   const issuer = source.HOSTED_LOGIN_ISSUER?.trim();
   if (key && issuer)
     throw new Error("Set HOSTED_LOGIN_SIGNING_KEY or HOSTED_LOGIN_ISSUER, not both");
-  if (key) return { mode: "issuer", signingKey: signingKeyFrom(key) };
+  const overlap = source.HOSTED_LOGIN_OVERLAP_KEY?.trim();
+  if (key)
+    return {
+      mode: "issuer",
+      signingKey: signingKeyFrom(key),
+      ...(overlap ? { overlapKey: signingKeyFrom(overlap) } : {}),
+    };
   if (issuer) return { mode: "verifier", issuer: issuerOrigin(issuer) };
   return null;
 }
@@ -118,7 +160,7 @@ export function signingKeyFrom(value: string): KeyObject {
     ? createPrivateKey(pem)
     : createPrivateKey({ key: Buffer.from(value, "base64"), format: "der", type: "pkcs8" });
   if (key.asymmetricKeyType !== "ed25519")
-    throw new Error("HOSTED_LOGIN_SIGNING_KEY must be an Ed25519 private key");
+    throw new Error("HOSTED_LOGIN_SIGNING_KEY and HOSTED_LOGIN_OVERLAP_KEY must be Ed25519 keys");
   return key;
 }
 
@@ -326,7 +368,7 @@ export function issuerKeys(issuer: string, fetcher?: typeof fetch) {
 const nonceIdentifier = (nonce: string) =>
   `${NONCE_PREFIX}${createHash("sha256").update(nonce).digest("hex")}`;
 
-type HostedLoginPrisma = Pick<PrismaClient, "$transaction">;
+type HostedLoginPrisma = Pick<PrismaClient, "$transaction" | "user" | "verification">;
 type Locked = <T>(work: () => Promise<T>) => Promise<T>;
 
 /**
@@ -346,30 +388,69 @@ export function installLock(prisma: Pick<PrismaClient, "$transaction">): Locked 
     );
 }
 
+type ModePrisma = Pick<PrismaClient, "user" | "verification">;
+
 /**
- * A local server in hosted mode signs in only hosted accounts, so an account made here before
- * would be locked out. Refuses to start instead, before anything is served.
+ * Marks a user the next hosted sign-in links, whichever hosted account it is (`user:<id>`, left by
+ * `dozo-unlink-hosted`), or the user made for an address whose first sign-in may not have reached
+ * its link (`email:<address>`, written before that user is made). Nothing else makes a user
+ * adoptable, so a user the server made any other way is never handed to a hosted account.
  */
-export async function refuseUnlinkedAccounts(
-  prisma: Pick<PrismaClient, "user">,
-  config: HostedLoginConfig = hostedLoginConfig(),
-): Promise<void> {
-  if (config?.mode !== "verifier") return;
-  const unlinked = await prisma.user.count({
-    where: {
-      NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
-      accounts: { none: { providerId: HOSTED_PROVIDER_ID } },
-    },
-  });
-  if (unlinked > 0)
-    throw new Error(
-      `HOSTED_LOGIN_ISSUER is set, but this server has ${unlinked} account(s) that do not sign in with the hosted account. Unset it, or start from an empty database.`,
-    );
+export const ADOPT_PREFIX = "dozo-hosted-adopt:";
+const adoptUser = (id: string) => `${ADOPT_PREFIX}user:${id}`;
+const adoptEmail = (email: string) => `${ADOPT_PREFIX}email:${email}`;
+
+type Unlinked = { id: string; email: string; adopt: "user" | "email" | null };
+
+/** The users not linked to a hosted account, each with whether a hosted sign-in may link it. */
+async function unlinkedUsers(prisma: ModePrisma): Promise<Unlinked[]> {
+  const [users, marks] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        accounts: { none: { providerId: HOSTED_PROVIDER_ID } },
+        NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
+      },
+      select: { id: true, email: true, accounts: { select: { id: true }, take: 1 } },
+      take: 50,
+    }),
+    prisma.verification.findMany({
+      where: { identifier: { startsWith: ADOPT_PREFIX } },
+      select: { identifier: true },
+    }),
+  ]);
+  const marked = new Set(marks.map((mark) => mark.identifier));
+  return users.map((user) => ({
+    id: user.id,
+    email: user.email,
+    adopt: marked.has(adoptUser(user.id))
+      ? "user"
+      : // Only a user still without any account: one with a password is the owner's own.
+        user.accounts.length === 0 && marked.has(adoptEmail(user.email))
+        ? "email"
+        : null,
+  }));
 }
 
-/** Whether this server signs in only with the hosted account, for its public capabilities. */
-export function hostedLoginOnly(config: HostedLoginConfig = hostedLoginConfig()): boolean {
-  return config?.mode === "verifier";
+/**
+ * Whether a local server still has a user of its own, not linked to a hosted account and not
+ * marked to be: it then keeps password and passkey sign-in and offers linking instead of hosted
+ * sign-in ("legacy" mode).
+ */
+export async function legacyAccounts(prisma: ModePrisma): Promise<boolean> {
+  return (await unlinkedUsers(prisma)).some((user) => user.adopt === null);
+}
+
+/**
+ * The public capabilities for this server: `hostedLogin`, it signs in only with the hosted
+ * account; `hostedLink`, it still has password accounts, which a signed-in user may link.
+ */
+export async function hostedLoginCapabilities(
+  prisma: ModePrisma,
+  config: HostedLoginConfig = hostedLoginConfig(),
+): Promise<{ hostedLogin: boolean; hostedLink: boolean }> {
+  if (config?.mode !== "verifier") return { hostedLogin: false, hostedLink: false };
+  const legacy = await legacyAccounts(prisma);
+  return { hostedLogin: !legacy, hostedLink: legacy };
 }
 
 export type HostedLoginDeps = {
@@ -394,18 +475,18 @@ export function dozoHostedLogin(deps: HostedLoginDeps): BetterAuthPlugin[] {
     max,
   });
   const rateLimit = [per("start", 10), per("issue", 10), per("keys", 10), per("callback", 60)];
-  if (config.mode === "issuer") return [issuerPlugin(config.signingKey, deps, rateLimit)];
+  if (config.mode === "issuer") return [issuerPlugin(config, deps, rateLimit)];
   return [verifierPlugin(config.issuer, deps, rateLimit)];
 }
 
 type RateLimit = NonNullable<BetterAuthPlugin["rateLimit"]>;
 
 function issuerPlugin(
-  signingKey: KeyObject,
+  { signingKey, overlapKey }: { signingKey: KeyObject; overlapKey?: KeyObject },
   deps: HostedLoginDeps,
   rateLimit: RateLimit,
 ): BetterAuthPlugin {
-  const jwk = publicJwk(signingKey);
+  const keys = [signingKey, ...(overlapKey ? [overlapKey] : [])].map(publicJwk);
   const webOrigin = new URL(deps.webOrigin).origin;
   return {
     id: "dozo-hosted-login-issuer",
@@ -415,8 +496,9 @@ function issuerPlugin(
         `${HOSTED_LOGIN_PATH}/keys`,
         { method: "GET" },
         async (ctx) => {
-          ctx.setHeader("Cache-Control", "public, max-age=300");
-          return ctx.json({ keys: [jwk] });
+          // Short, so a key published ahead of a change reaches every cache well before it signs.
+          ctx.setHeader("Cache-Control", "public, max-age=60");
+          return ctx.json({ keys });
         },
       ),
       // Only the web app's own page, after the user agreed, with their session: a request from
@@ -458,27 +540,50 @@ function verifierPlugin(
   const keyFor = issuerKeys(issuer, deps.fetcher);
   const lock = deps.lock ?? installLock(deps.prisma);
   const webOrigin = new URL(deps.webOrigin).origin;
-  const failed = new URL("/sign-in?error=hosted_login_failed", webOrigin).href;
+  const back = (error?: keyof typeof SIGN_IN_ERRORS) =>
+    new URL(error ? `/sign-in?error=${SIGN_IN_ERRORS[error]}` : "/", webOrigin).href;
   return {
     id: "dozo-hosted-login",
     rateLimit,
+    // New sessions (the options the library's adapter reads) and their renewal and cookie (the
+    // context's session settings) both take the local lifetime.
+    init: (context) => ({
+      options: { session: { expiresIn: LOCAL_SESSION_SECONDS } },
+      context: { sessionConfig: { ...context.sessionConfig, expiresIn: LOCAL_SESSION_SECONDS } },
+    }),
     hooks: {
       before: [
         {
+          // Closed, but for password and passkey sign-in while legacy accounts are left.
           matcher: (ctx) => closedOnLocalServer(ctx.path ?? ""),
-          handler: async () => {
+          handler: createAuthMiddleware(async (ctx) => {
+            if (openInLegacyMode(ctx.path ?? "") && (await legacyAccounts(deps.prisma))) return;
             throw new APIError("NOT_FOUND");
-          },
+          }),
         },
       ],
     },
     endpoints: {
-      // Only the local sign-in page's own request: a page elsewhere cannot start one.
+      // Only the local page's own request: a page elsewhere cannot start one. `link` links the
+      // signed-in user's own account instead of signing in, which is how a server with password
+      // accounts moves to the hosted account; plain sign-in waits until none is left.
       dozoHostedLoginStart: createAuthEndpoint(
         `${HOSTED_LOGIN_PATH}/start`,
         { method: "POST" },
         async (ctx) => {
           if (ctx.headers?.get("origin") !== webOrigin) throw new APIError("FORBIDDEN");
+          const link = (ctx.body as { link?: unknown } | undefined)?.link === true;
+          let purpose = "1";
+          if (link) {
+            const session = await getSessionFromCtx(ctx);
+            if (!session) throw new APIError("UNAUTHORIZED");
+            const accounts = await ctx.context.internalAdapter.findAccounts(session.user.id);
+            if (accounts.some((account) => account.providerId === HOSTED_PROVIDER_ID))
+              throw new APIError("CONFLICT");
+            purpose = `link:${session.user.id}`;
+          } else if (await legacyAccounts(deps.prisma)) {
+            throw new APIError("FORBIDDEN");
+          }
           const now = new Date();
           // Started sign-ins nobody finished go, so asking again and again keeps no rows.
           await ctx.context.adapter.deleteMany({
@@ -491,7 +596,7 @@ function verifierPlugin(
           const nonce = randomBytes(32).toString("base64url");
           await ctx.context.internalAdapter.createVerificationValue({
             identifier: nonceIdentifier(nonce),
-            value: "1",
+            value: purpose,
             expiresAt: new Date(now.getTime() + NONCE_LIFETIME_SECONDS * 1000),
           });
           const cookie = ctx.context.createAuthCookie(NONCE_COOKIE, {
@@ -512,7 +617,7 @@ function verifierPlugin(
           const cookie = ctx.context.createAuthCookie(NONCE_COOKIE);
           const nonce = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
           const token = typeof ctx.query?.token === "string" ? ctx.query.token : "";
-          if (!nonce || !NONCE.test(nonce) || !token) throw ctx.redirect(failed);
+          if (!nonce || !NONCE.test(nonce) || !token) throw ctx.redirect(back("failed"));
           let claims: HostedLoginClaims;
           try {
             claims = await verifyLoginToken(token, { issuer, audience: nonce, keyFor });
@@ -520,29 +625,35 @@ function verifierPlugin(
             ctx.context.logger.warn(
               error instanceof HostedLoginError ? error.message : "Hosted login keys unavailable",
             );
-            throw ctx.redirect(failed);
+            // A token signed for this sign-in but out of time: the computer's clock is off.
+            const clock = error instanceof HostedLoginError && error.reason === "expired";
+            throw ctx.redirect(back(clock ? "clock" : "failed"));
           }
           // Only a token made for this browser's sign-in ends it; anything else leaves it waiting.
           ctx.setCookie(cookie.name, "", { ...cookie.attributes, maxAge: 0 });
+          const identifier = nonceIdentifier(nonce);
+          const purpose = (await ctx.context.internalAdapter.findVerificationValue(identifier))
+            ?.value;
           // Single use, across instances: only the request that deletes the row goes on.
           const used = await ctx.context.adapter.deleteMany({
             model: "verification",
             where: [
-              { field: "identifier", value: nonceIdentifier(nonce) },
+              { field: "identifier", value: identifier },
               { field: "expiresAt", operator: "gt", value: new Date() },
             ],
           });
-          if (used !== 1) throw ctx.redirect(failed);
-          let signedIn: boolean;
+          if (used !== 1 || !purpose) throw ctx.redirect(back("failed"));
+          let done: boolean;
           try {
-            signedIn = await signInHostedUser(ctx, claims, lock);
+            done = purpose.startsWith("link:")
+              ? await linkSignedInUser(ctx, claims, purpose.slice("link:".length), lock)
+              : await signInHostedUser(ctx, claims, lock, deps.prisma);
           } catch (error) {
             // A refusal from the auth library: answered like any other, never as a raw error.
             if (!(error instanceof APIError)) throw error;
-            signedIn = false;
+            done = false;
           }
-          if (!signedIn) throw ctx.redirect(failed);
-          throw ctx.redirect(new URL("/", webOrigin).href);
+          throw ctx.redirect(back(done ? undefined : "failed"));
         },
       ),
     },
@@ -550,19 +661,55 @@ function verifierPlugin(
 }
 
 /**
- * The local user linked to the hosted account, created with its link when there is none, under the
- * install lock. The install keeps the first hosted account that signs in and refuses any other; a
- * local account that only shares the address is never taken over.
+ * Links the signed-in user's own account to the hosted account, as the start asked: the session
+ * that finishes must be the one that started, and neither side may be linked already. Their
+ * password goes, so once every account is linked the server signs in only with the hosted one.
+ */
+async function linkSignedInUser(
+  ctx: GenericEndpointContext,
+  claims: HostedLoginClaims,
+  userId: string,
+  lock: Locked,
+): Promise<boolean> {
+  const session = await getSessionFromCtx(ctx);
+  if (session?.user.id !== userId) return false;
+  const adapter = ctx.context.internalAdapter;
+  return lock(async () => {
+    const owner = await adapter.findAccountOwnerByKey({
+      providerId: HOSTED_PROVIDER_ID,
+      accountId: claims.sub,
+    });
+    if (owner) return false;
+    const accounts = await adapter.findAccounts(userId);
+    if (accounts.some((account) => account.providerId === HOSTED_PROVIDER_ID)) return false;
+    await adapter.linkAccount({ userId, providerId: HOSTED_PROVIDER_ID, accountId: claims.sub });
+    await ctx.context.adapter.deleteMany({
+      model: "account",
+      where: [
+        { field: "userId", value: userId },
+        { field: "providerId", value: "credential" },
+      ],
+    });
+    return true;
+  });
+}
+
+/**
+ * The local user the hosted account signs in as, under the install lock: the one linked to it;
+ * else, while no hosted account is linked and no user of the server's own is left, a user marked
+ * to be linked (`ADOPT_PREFIX`: one unlinked on the computer, whichever account signs in, or one
+ * a first sign-in of this address left without its link); else a new user. The install keeps
+ * the first hosted account that signs in and refuses any other.
  *
- * The user and its link are two writes (the auth library's database adapter runs without
- * transactions here). A crash between them leaves a user with no account at all, and only this
- * code can have made it: the server refuses to start with accounts of its own and closes every
- * other way to make one. The next sign-in of that address links it instead of being refused.
+ * A new user and its link are two writes (the auth library's database adapter runs without
+ * transactions here), so the address is marked first: a crash between them leaves a user the next
+ * sign-in of that address links instead of refusing.
  */
 async function hostedUser(
   ctx: GenericEndpointContext,
   claims: HostedLoginClaims,
   lock: Locked,
+  prisma: HostedLoginPrisma,
 ): Promise<{ user: User; created: boolean } | null> {
   const adapter = ctx.context.internalAdapter;
   const email = claims.email.toLowerCase();
@@ -571,36 +718,55 @@ async function hostedUser(
       providerId: HOSTED_PROVIDER_ID,
       accountId: claims.sub,
     });
-    if (owner?.kind === "owned") {
-      let { user } = owner;
-      if (user.email !== email || user.name !== claims.name) {
-        const taken = user.email !== email && Boolean(await adapter.findUserByEmail(email));
-        user = await adapter.updateUser(user.id, {
-          ...(taken ? {} : { email, emailVerified: claims.email_verified }),
-          name: claims.name,
-        });
-      }
-      return { user, created: false };
-    }
+    if (owner?.kind === "owned")
+      return { user: await refreshed(ctx, owner.user, claims), created: false };
     const hostedAccounts = await ctx.context.adapter.count({
       model: "account",
       where: [{ field: "providerId", value: HOSTED_PROVIDER_ID }],
     });
     if (hostedAccounts > 0) return null;
-    const existing = await adapter.findUserByEmail(email, { includeAccounts: true });
-    if (existing && existing.accounts.length > 0) return null;
-    const user =
-      existing?.user ??
-      (await adapter.createUser(
+    // Read again under the lock: a legacy account keeps hosted sign-in closed.
+    const unlinked = await unlinkedUsers(prisma);
+    if (unlinked.some((user) => user.adopt === null)) return null;
+    const adopt =
+      unlinked.find((user) => user.adopt === "user") ??
+      unlinked.find((user) => user.adopt === "email" && user.email === email);
+    let user: User | null;
+    if (adopt) {
+      user = await adapter.findUserById(adopt.id);
+    } else {
+      if (await adapter.findUserByEmail(email)) return null;
+      await adapter.createVerificationValue({
+        identifier: adoptEmail(email),
+        value: "1",
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      });
+      user = await adapter.createUser(
         { email, name: claims.name, emailVerified: claims.email_verified },
         { method: "oauth", oauth: { providerId: HOSTED_PROVIDER_ID } },
-      ));
+      );
+    }
+    if (!user) return null;
     await adapter.linkAccount({
       userId: user.id,
       providerId: HOSTED_PROVIDER_ID,
       accountId: claims.sub,
     });
-    return { user, created: !existing };
+    for (const identifier of [adoptUser(user.id), adoptEmail(email)])
+      await adapter.deleteVerificationByIdentifier(identifier);
+    return { user: adopt ? await refreshed(ctx, user, claims) : user, created: !adopt };
+  });
+}
+
+/** The user with the hosted account's current address and name, unless another user has it. */
+async function refreshed(ctx: GenericEndpointContext, user: User, claims: HostedLoginClaims) {
+  const email = claims.email.toLowerCase();
+  if (user.email === email && user.name === claims.name) return user;
+  const adapter = ctx.context.internalAdapter;
+  const taken = user.email !== email && Boolean(await adapter.findUserByEmail(email));
+  return adapter.updateUser(user.id, {
+    ...(taken ? {} : { email, emailVerified: claims.email_verified }),
+    name: claims.name,
   });
 }
 
@@ -612,8 +778,9 @@ async function signInHostedUser(
   ctx: GenericEndpointContext,
   claims: HostedLoginClaims,
   lock: Locked,
+  prisma: HostedLoginPrisma,
 ): Promise<boolean> {
-  const found = await hostedUser(ctx, claims, lock);
+  const found = await hostedUser(ctx, claims, lock, prisma);
   if (!found) return false;
   const { user, created } = found;
   try {

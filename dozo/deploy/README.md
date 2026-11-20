@@ -177,6 +177,43 @@ the deploy: the site loads as before, and a request to the host's own address th
 answers 403 (`curl -sk -o /dev/null -w '%{http_code}' --resolve dozo.example:443:<host IP>
 https://dozo.example/`).
 
+### Turning on hosted login
+
+The hosted server can sign people in on their own computer's Dozo server with the account they
+have here (`packages/auth/src/dozo-hosted-login.ts`). It is off until the api has a signing key;
+the panel variable reaches the api and nothing else (`compose.deploy.yml`, held by
+`compose.deploy.test.sh`).
+
+1. Make an Ed25519 key on a trusted machine and keep the output only in the panel's secret store:
+   `openssl genpkey -algorithm ed25519 -outform DER | base64 -w0`.
+2. Set `HOSTED_LOGIN_SIGNING_KEY` to that one line in the panel and deploy.
+3. Check `https://dozo.example/api/auth/dozo/hosted-login/keys`: one key, `Cache-Control:
+   public, max-age=60`. A CDN in front must pass this path through (no challenge page, no
+   rewrite): every computer reads the keys from it. It may cache the answer for its 60 seconds.
+4. `WEB_ORIGIN` must be exactly the origin computers are configured with (`HOSTED_LOGIN_ISSUER`,
+   built into the desktop app): it is the token's issuer and the one origin the confirmation page
+   accepts a request from. A second name for the site, or a trailing path, fails every sign-in.
+
+Changing the key, with no sign-in failing:
+
+1. Make a new key as above. Set it as `HOSTED_LOGIN_OVERLAP_KEY` (published, not used to sign)
+   and deploy. Wait at least two minutes: caches and computers then know it.
+2. Swap: the new key in `HOSTED_LOGIN_SIGNING_KEY`, the old one in `HOSTED_LOGIN_OVERLAP_KEY`.
+   Deploy. Tokens signed by the old key in the last minute still check out.
+3. After a few minutes remove `HOSTED_LOGIN_OVERLAP_KEY` and deploy.
+
+A leaked key: skip the overlap. Put a new key in `HOSTED_LOGIN_SIGNING_KEY`, remove the overlap
+variable and deploy at once; computers pick the new key up on their next sign-in.
+
+To watch: the api log line `Hosted login refused: <reason>` is on the computer's side, so here
+watch the rate of `/api/auth/dozo/hosted-login/issue` answers (200 versus 4xx) and `/keys`
+errors at the CDN.
+
+To turn it off: remove `HOSTED_LOGIN_SIGNING_KEY` (and any overlap key) and deploy. `/keys` and
+`/issue` then answer 404, and computers' sign-in fails with "Could not continue" until it is back;
+people already signed in on a computer stay signed in (sessions there last 90 days, renewed by
+use).
+
 ## Admin page
 
 `/admin`, in the web app: the accounts (search, suspend, restore), the bot computers that are

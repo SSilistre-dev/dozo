@@ -259,8 +259,8 @@ as before and never moves to another connection of the pool, and a run stays on 
   records each change in the activity log (`model.pool.changed`) and sends the person's roster
   signal. A resting connection's row shows when it opens; a rest that starts while Models is open
   shows when it is opened again or the window gets focus. A connection added later joins when the
-  switch is turned on again. Mobile shows the connections as before, without the switch or the
-  time: the pool still runs there.
+  switch is turned on again. Mobile has the same switch and time on a connection's page
+  (`apps/mobile/components/dozo-model-pool-switch.tsx`), read again on each roster signal.
 
 ## Editing and regenerating
 
@@ -283,7 +283,9 @@ message's text. The old run row stays for usage. A server-side memory provider t
 the finished turn keeps it: providers forget per chat, not per turn, so only clearing the chat
 removes it. Old clients drop the removed reply on their next read instead of at once.
 
-Mobile shows the result of an edit or regenerate made elsewhere, but has no menu entry yet.
+Mobile offers the same two in a message's long-press menu (`apps/mobile/lib/dozo-message-actions.ts`);
+Edit opens its own screen. The iOS menu is built before it opens, so the open chat reads what may
+change again whenever its newest message or a run changes (`apps/mobile/lib/dozo-thread-menus.ts`).
 
 ## Pinned messages
 
@@ -300,7 +302,9 @@ reads the open chat's pins again on every roster signal, so a pin made on anothe
 message deleted elsewhere both show within the roster's signal spacing (10 seconds). Chat export
 leaves pins out.
 
-Mobile has no pin yet: pins made on the web stay, but the app neither shows nor sets them.
+Mobile pins from the same long-press menu, and lists a chat's pins from the bot profile's menu or
+group settings, only while there are some; choosing one opens the chat at it. The app reads a
+chat's pins again on every roster signal.
 
 ## Feedback
 
@@ -361,8 +365,8 @@ How a command is read, and what that does not cover:
 - Deny on any command makes the rest of that reply refuse commands on the computer, as upstream
   does for a denied tool; the next message starts afresh.
 
-Not done yet: the mobile app shows the card with Always allow this command but has no Commands
-list; screen control on the member's computer keeps upstream's approval per app; browser actions
+The mobile app lists them too, from a Commands row beside approval Rules that shows only while
+there is one (`apps/mobile/app/(settings)/dozo-commands.tsx`). Not done yet: screen control on the member's computer keeps upstream's approval per app; browser actions
 and a daily limit on what a bot sends are later work.
 
 ## Status and known limits
@@ -399,8 +403,8 @@ Accepted by the owner for now, stated here once:
   runtime.
 - The cache share on Settings > Usage (`apps/web/src/components/dozo-cache-savings.tsx`) is
   translated to Turkish only, by fixed ids merged into the catalog there, since the fork never edits
-  `messages.po`; other languages show the English. The mobile app does not show it: it has no usage
-  screen to put it beside.
+  `messages.po`; other languages show the English. The mobile app does not show it: its Usage
+  screen (`apps/mobile/app/(settings)/dozo-usage.tsx`) has the grouped spend and the CSV only.
 - Sites with cookies (the key button in a bot computer's header, `apps/api/src/dozo-site-sessions.ts`):
   sessions stay in the bot's browser profile on its computer; only site names, times and storage
   keys reach the server. A site is listed only when one of its pages was opened at the top level,
@@ -473,7 +477,8 @@ Accepted by the owner for now, stated here once:
   it shows as late. A scheduled run missed by more than 12 hours (a server that was off) is skipped
   without a note in the chat; only the server log names it (`routine.missed`). Quiet hours stop
   routines from starting, not a run already going or its one retry, and webhook, email and chat
-  triggers run at once. The mobile app does not set them: it has no timezone setting either.
+  triggers run at once. The mobile app sets them in General too, in the account's timezone,
+  which it does not show.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and

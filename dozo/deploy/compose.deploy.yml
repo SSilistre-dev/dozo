@@ -70,6 +70,11 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       # closed: the public plugin submission form answers 403 (README, What the proxy does).
       DOZO_PLUGIN_SUBMISSIONS: ${DOZO_PLUGIN_SUBMISSIONS:-closed}
+      # Signs the login tokens a computer's own Dozo server accepts, and an optional second key
+      # published beside it while one replaces the other (README, Turning on hosted login). The
+      # api only; unset, nothing changes.
+      HOSTED_LOGIN_SIGNING_KEY:
+      HOSTED_LOGIN_OVERLAP_KEY:
       # Where in-app feedback goes (dozo/README.md, Feedback). Empty: the app offers none.
       DOZO_FEEDBACK_EMAIL: ${DOZO_FEEDBACK_EMAIL:-}
     volumes: !override
