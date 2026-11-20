@@ -294,6 +294,7 @@ impl Local {
         let launch = Arc::new(Launch {
             events: stack_proc::events_log(&logs, LOG_MAX),
             logs,
+            run: layout.at("run"),
             lock: Some(lock),
             backoff: self.backoff.clone(),
             log_max: LOG_MAX,
@@ -302,6 +303,14 @@ impl Local {
             launch.note(&format!("start failed: {why}"));
             failure
         };
+        // Where nothing ended them with a crashed app (macOS), what it left still runs: holding
+        // the ports and the database. It ends first, before anything is started.
+        let versions = layout.at("versions");
+        let leftovers = {
+            let launch = launch.clone();
+            tokio::task::spawn_blocking(move || stack_proc::end_leftovers(&launch, &versions))
+        };
+        let _ = leftovers.await;
         if !stack_setup::has_libssl3() {
             return Err(failed(Failure::NoLibssl, "no libssl.so.3"));
         }
@@ -1360,6 +1369,40 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(password.status(), 404, "password sign-in");
+        assert!(local.stop().await, "a process had to be killed");
+        let left = processes_under(&root);
+        assert!(left.is_empty(), "still running after stop: {left:?}");
+        println!("E2E: stopped, no process left");
+    }
+
+    /// As `e2e_hold_until_killed`, but started as on a system where nothing ends the server's
+    /// processes with the app (macOS): after the SIGKILL they keep running.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs a built server bundle; run by tests/stack_e2e.sh"]
+    async fn e2e_hold_as_on_macos_until_killed() {
+        crate::stack_os::AS_WITHOUT_PDEATHSIG.store(true, std::sync::atomic::Ordering::SeqCst);
+        let (_local, _root, _ports) = e2e_ready().await;
+        println!("E2E: holding");
+        tokio::time::sleep(Duration::from_secs(600)).await;
+    }
+
+    /// The next start after that: it ends what was left, then starts as usual, and stops clean.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs a built server bundle; run by tests/stack_e2e.sh"]
+    async fn e2e_ends_what_a_crashed_app_left() {
+        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
+        assert!(
+            !processes_under(&root).is_empty(),
+            "nothing was left to end"
+        );
+        let (local, root, ports) = e2e_ready().await;
+        assert!(answers_200(ports.api, "/health"));
+        let events = fs::read_to_string(root.join("logs/manager.log")).unwrap();
+        let ended = events
+            .matches("ended a process left from an earlier start")
+            .count();
+        assert!(ended >= 4, "{events}");
+        println!("E2E: ended {ended} processes left by the killed app, then started");
         assert!(local.stop().await, "a process had to be killed");
         let left = processes_under(&root);
         assert!(left.is_empty(), "still running after stop: {left:?}");

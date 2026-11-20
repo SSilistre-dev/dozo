@@ -6,7 +6,8 @@
 # then starts it once more and pairs a phone through the bundled relay agent: a dev relay and a
 # phone run in a second container on the same loopback (tests/relay_phone.mts, with the workspace
 # from the dozo-qa-deps volume, read only, and this checkout's relay files over it). After each,
-# no process of the server may be left. Last, a server of its own signs in with the hosted account
+# no process of the server may be left. Then the same as on macOS, where nothing ends the
+# processes with the app: they stay after the SIGKILL, and the next start ends them. Last, a server of its own signs in with the hosted account
 # against a stand-in hosted server (tests/fake_issuer.mjs, in the same second container).
 # Usage: dozo/desktop/tests/stack_e2e.sh <dist-dir>
 #   <dist-dir> holds dozo-server-linux-x64.tar.xz and its .json (dozo/server-bundle/build.sh).
@@ -96,6 +97,16 @@ say "no process left after SIGKILL of the app"
 say "data folder: $(cd "$DOZO_STACK_E2E_ROOT" && ls | tr '\n' ' ')"
 say "versions: $(ls "$DOZO_STACK_E2E_ROOT/versions" | tr '\n' ' ')"
 say "secrets: $(stat -c %a "$DOZO_STACK_E2E_ROOT/secrets"), downloads left: $(ls "$DOZO_STACK_E2E_ROOT/downloads" | wc -l)"
+say "2b. as on macOS (no PDEATHSIG): SIGKILL the app, then the next start ends what it left"
+"$BIN" --ignored --exact stack::tests::e2e_hold_as_on_macos_until_killed --nocapture > /tmp/e2e/hold2.log 2>&1 &
+app=$!
+for _ in $(seq 240); do grep -q 'E2E: holding' /tmp/e2e/hold2.log && break; kill -0 $app 2>/dev/null || break; sleep 0.5; done
+grep -q 'E2E: holding' /tmp/e2e/hold2.log || { say "FAILED: the start did not get ready"; tail -5 /tmp/e2e/hold2.log; exit 2; }
+kill -KILL $app; wait $app 2>/dev/null; sleep 2
+say "left running after SIGKILL, as on macOS: $(left | wc -l) processes"
+"$BIN" --ignored --exact stack::tests::e2e_ends_what_a_crashed_app_left --nocapture \
+  2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/manager.log; exit 2; }
+[ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 say "3. start again and pair a phone through the relay agent"
 "$BIN" --ignored --exact stack::tests::e2e_pairs_a_phone --nocapture \
   2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
