@@ -4624,6 +4624,120 @@
       "reason": "chat export: the bot profile's menu gains Export, which hands the chat as Markdown to the system share sheet"
     },
     {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "import { MessageContextMenu } from \"../message-context-menu\";\nimport { ReplyLine }",
+      "replace": "import { MessageContextMenu } from \"../message-context-menu\";\nimport { dozoMenuEntries, dozoSheetGroups, useDozoMessageActions } from \"../../lib/dozo-message-actions\";\nimport { ReplyLine }",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
+      "replace": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const dozoActions = useDozoMessageActions(message, readOnly, inGroup);\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: Edit, Regenerate and Pin for this message, as the server allows them (the web More menu's)"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...(codeBlocks.length === 1\n",
+      "replace": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...dozoActions,\n      ...(codeBlocks.length === 1\n",
+      "reason": "message actions on mobile: the same actions for VoiceOver and TalkBack"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "    });\n    const openSheet = (event: GestureResponderEvent) =>\n",
+      "replace": "    });\n    menu.push(...dozoMenuEntries(dozoActions));\n    const openSheet = (event: GestureResponderEvent) =>\n",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: their own section at the end of the iOS menu"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "              : []),\n          ],\n        ],\n      });\n    return {\n      menu,\n",
+      "replace": "              : []),\n          ],\n          ...dozoSheetGroups(dozoActions),\n        ],\n      });\n    return {\n      menu,\n",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: their own group at the end of the Android menu"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "        if (id === \"unread\") markUnread();\n      },\n",
+      "replace": "        if (id === \"unread\") markUnread();\n        dozoActions.find((action) => action.name === id)?.onPress();\n      },\n",
+      "reason": "message actions on mobile: an iOS menu choice runs its action"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "    hasLike,\n    optimisticLike,\n  ]);\n",
+      "replace": "    hasLike,\n    optimisticLike,\n    dozoActions,\n  ]);\n",
+      "reason": "message actions on mobile: the menus are built again when what the server allows changes"
+    },
+    {
+      "file": "apps/mobile/components/message-context-menu.tsx",
+      "find": "    image: entry.symbol ? symbols[entry.symbol] : undefined,\n",
+      "replace": "    image: entry.symbol ? symbols[entry.symbol] : (entry as Pick<MenuAction, \"image\">).image,\n",
+      "reason": "message actions on mobile: an entry outside upstream's symbol table brings its own SF Symbol"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "import { useThreadHeader } from \"./thread-header\";\nimport { LoadEarlierButton",
+      "replace": "import { useThreadHeader } from \"./thread-header\";\nimport { useDozoThreadMenus } from \"../../lib/dozo-thread-menus\";\nimport { LoadEarlierButton",
+      "requires": [
+        "apps/mobile/lib/dozo-thread-menus.ts"
+      ],
+      "reason": "message actions on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "  const { snap, composingBots, showingSaved } = history;\n  const [agentSkills",
+      "replace": "  const { snap, composingBots, showingSaved } = history;\n  useDozoThreadMenus(snap, readOnly);\n  const [agentSkills",
+      "requires": [
+        "apps/mobile/lib/dozo-thread-menus.ts"
+      ],
+      "reason": "message actions on mobile: the iOS menu is built before it opens, so the chat reads what Edit and Regenerate apply to again when a message or run changes, and its pins on each roster signal"
+    },
+    {
+      "file": "apps/mobile/app/group-settings.tsx",
+      "find": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { rpc, selectedSpaceId }",
+      "replace": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { DozoGroupChatActions } from \"../components/dozo-group-chat-actions\";\nimport { rpc, selectedSpaceId }",
+      "requires": [
+        "apps/mobile/components/dozo-group-chat-actions.tsx"
+      ],
+      "reason": "group chat export and pins on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/group-settings.tsx",
+      "find": "            onPress={() => router.push({ pathname: \"/pages\", params: { groupId } })}\n            style={{ marginTop: 16 }}\n          />\n        ) : null}\n        <NativeActionButton\n          label={t`Delete group`}",
+      "replace": "            onPress={() => router.push({ pathname: \"/pages\", params: { groupId } })}\n            style={{ marginTop: 16 }}\n          />\n        ) : null}\n        {groupId && group ? <DozoGroupChatActions groupId={groupId} name={group.name} /> : null}\n        <NativeActionButton\n          label={t`Delete group`}",
+      "requires": [
+        "apps/mobile/components/dozo-group-chat-actions.tsx"
+      ],
+      "reason": "group chat export and pins on mobile: Export with its period, and Pinned while the group's chat has pins"
+    },
+    {
+      "file": "apps/mobile/lib/bot-profile.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./api-server\"",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./dozo-message-actions\", () => ({ useDozoChatPins: () => ({}) }));\nvi.mock(\"./dozo-chat-export\", () => ({ useChatExport: () => () => undefined }));\nvi.mock(\"./api-server\"",
+      "reason": "mobile export and pins: the bot profile's menu reads the chat's pins and loads the export sheet, neither of which this test stubs; they are tested in dozo-message-actions.test.tsx and dozo-chat-export.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/bot-member-picker.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./session\"",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./dozo-message-actions\", () => ({ useDozoChatPins: () => ({}) }));\nvi.mock(\"./dozo-chat-export\", () => ({ useChatExport: () => () => undefined }));\nvi.mock(\"./session\"",
+      "reason": "mobile export and pins: group settings reads the chat's pins and loads the export sheet, neither of which this test stubs; they are tested in dozo-message-actions.test.tsx and dozo-chat-export.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/inbox-archived.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./thread-edges\"",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./dozo-message-actions\", () => ({ useDozoChatPins: () => ({}) }));\nvi.mock(\"./dozo-chat-export\", () => ({ useChatExport: () => () => undefined }));\nvi.mock(\"./thread-edges\"",
+      "reason": "mobile export and pins: group settings reads the chat's pins and loads the export sheet, neither of which this test stubs; they are tested in dozo-message-actions.test.tsx and dozo-chat-export.test.tsx"
+    },
+    {
       "file": "packages/adapters/src/computer-control.ts",
       "find": "import { toComputerRef } from \"./computer-support.js\";\nimport { isSandboxGoneError }",
       "replace": "import { toComputerRef } from \"./computer-support.js\";\nimport { auditSiteSessionsAfterControl } from \"./dozo-site-session-audit.js\";\nimport { isSandboxGoneError }",
