@@ -1,16 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoUsageGroup, DozoUsageGrouping, UsageSummary } from "@rakazo/contracts";
+import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import {
-  Button,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@rakazo/ui-web";
+} from "@rakazo/ui-web/components/ui/table";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import type { RefObject } from "react";

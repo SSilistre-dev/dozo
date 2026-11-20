@@ -40,7 +40,16 @@ const digest = {
 
 describe("grouping usage", () => {
   const cells = [
-    cell({ ...digest, model: "small", costUsd: 1, calls: 2, inputCount: 2, outputCount: 2 }),
+    cell({
+      ...digest,
+      model: "small",
+      costUsd: 1,
+      calls: 2,
+      inputCount: 2,
+      outputCount: 2,
+      totalCount: 2,
+      costCount: 2,
+    }),
     cell({ ...digest, model: "large", costUsd: 3 }),
     cell({ ...chef, model: "large", costUsd: 2 }),
     cell({ botId: "bot-gone", deletedBotName: "Old helper", costUsd: 0.25 }),
