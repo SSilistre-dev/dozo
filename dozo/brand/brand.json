@@ -3600,6 +3600,42 @@
       "reason": "hosted docs: the end of the rule above"
     },
     {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "import { useSidebarUpdate } from \"./DesktopUpdates\";\nimport { DozoSelfHostOnly } from \"./dozo-self-host-only\";\n",
+      "replace": "import { useSidebarUpdate } from \"./DesktopUpdates\";\nimport { DozoFeedbackHost, DozoFeedbackItem } from \"./dozo-feedback\";\nimport { DozoSelfHostOnly } from \"./dozo-self-host-only\";\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "feedback: the import of the two rules below"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "            </DozoSelfHostOnly>\n            <div className=\"my-1 border-t border-border\" />\n",
+      "replace": "            </DozoSelfHostOnly>\n            <DozoFeedbackItem onOpen={() => onOpenChange(false)} />\n            <div className=\"my-1 border-t border-border\" />\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "feedback: one Send feedback item above Log out, shown only when the server has an address for it"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.tsx",
+      "find": "      </Popover>\n      {!mini ? (\n",
+      "replace": "      </Popover>\n      <DozoFeedbackHost />\n      {!mini ? (\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "feedback: the dialog is held outside the account menu, which unmounts as it closes"
+    },
+    {
+      "file": "apps/web/src/components/SidebarFooter.test.tsx",
+      "find": "import { SidebarFooter, sidebarMarkCount } from \"./SidebarFooter\";\n\nvi.mock(\"@lingui/react/macro\"",
+      "replace": "import { SidebarFooter, sidebarMarkCount } from \"./SidebarFooter\";\n\nvi.mock(\"./dozo-feedback\", () => ({ DozoFeedbackItem: () => null, DozoFeedbackHost: () => null }));\n\nvi.mock(\"@lingui/react/macro\"",
+      "requires": [
+        "apps/web/src/components/dozo-feedback.tsx"
+      ],
+      "reason": "upstream test of the account menu: the fork's feedback item reads the server, which this test does not provide, so it is replaced as other tests replace the fork's panels (dozo-feedback.test.tsx covers it)"
+    },
+    {
       "file": "apps/web/index.html",
       "find": "    <script src=\"/theme.js\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n",
       "replace": "    <script src=\"/theme.js\"></script>\n    <script src=\"/dozo-boot.js\"></script>\n    <style>\n      #dozo-boot{position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--background)}\n      #dozo-boot>div{display:none;position:absolute;inset-block:0;inset-inline-start:0;width:var(--dozo-boot-side,240px);background:var(--sidebar);border-inline-end:1px solid var(--sidebar-border)}\n      @media (min-width:768px){[data-dozo-boot=chat] #dozo-boot>div{display:block}}\n      #dozo-boot[data-state=unreachable]{display:grid;place-items:center;pointer-events:auto}\n      #dozo-boot>section{position:relative;display:flex;flex-direction:column;align-items:center;gap:16px;padding:0 24px;text-align:center;font:14px/1.5 system-ui,sans-serif;color:var(--muted-foreground)}\n      #dozo-boot>section>p{margin:0}\n      #dozo-boot>section>button{font:inherit;color:var(--secondary-foreground);background:var(--secondary);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer}\n    </style>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <div id=\"dozo-boot\" aria-hidden=\"true\"><div></div></div>\n",
@@ -4670,6 +4706,42 @@
       "reason": "chat export: the router renders a chat as Markdown with the transcript's own access check and page reader"
     },
     {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { dozoChatExportContract } from \"./dozo-chat-export.js\";\n\nconst botId",
+      "replace": "import { dozoChatExportContract } from \"./dozo-chat-export.js\";\nexport * from \"./dozo-feedback.js\";\nimport { dozoFeedbackContract } from \"./dozo-feedback.js\";\n\nconst botId",
+      "requires": [
+        "packages/contracts/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  dozoChatExport: dozoChatExportContract,\n  export: {\n",
+      "replace": "  dozoChatExport: dozoChatExportContract,\n  dozoFeedback: dozoFeedbackContract,\n  export: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: where a person's report goes and the sending of it join the app contract"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { dozoChatExportRoutes } from \"./dozo-chat-export.js\";\nimport { paymentWalletRoutes }",
+      "replace": "import { dozoChatExportRoutes } from \"./dozo-chat-export.js\";\nimport { dozoFeedbackRoutes } from \"./dozo-feedback.js\";\nimport { paymentWalletRoutes }",
+      "requires": [
+        "apps/api/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...dozoChatExportRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "replace": "    ...dozoChatExportRoutes(ctx),\n    ...dozoFeedbackRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-feedback.ts"
+      ],
+      "reason": "feedback: the router mails a signed-in person's report to the operator's address"
+    },
+    {
       "file": "apps/web/src/pages/BotContextMenu.tsx",
       "find": "import type { Bot, BotSection } from \"@rakazo/contracts\";\nimport type { SnoozePreset }",
       "replace": "import type { Bot, BotSection } from \"@rakazo/contracts\";\nimport type { DozoChatExportMenuProps } from \"./shell/dozo-chat-export-menu\";\nimport { DozoChatExportMenu } from \"./shell/dozo-chat-export-menu\";\nimport type { SnoozePreset }",
@@ -5270,6 +5342,15 @@
       "reason": "own computer over the relay: the Turkish copy of the mobile pairing screen, the Server screen's way to it, and the lines shown for a paired computer"
     },
     {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#. js-lingui-explicit-id\n",
+      "replace": "msgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#: apps/web/src/components/dozo-feedback.tsx\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Send feedback\"\nmsgstr \"Geri bildirim gönder\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Feedback\"\nmsgstr \"Geri bildirim\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What happened?\"\nmsgstr \"Ne oldu?\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Include diagnostics\"\nmsgstr \"Tanılama bilgisini ekle\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"What's sent\"\nmsgstr \"Gönderilecekler\"\n\n#: apps/web/src/components/dozo-feedback-dialog.tsx\nmsgid \"Could not send\"\nmsgstr \"Gönderilemedi\"\n\n#. js-lingui-explicit-id\n",
+      "requires": [
+        "apps/web/src/components/dozo-feedback-dialog.tsx"
+      ],
+      "reason": "feedback: the Turkish copy of the account menu's Send feedback item and its dialog"
+    },
+    {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "  if (hasSession) return <Redirect href={hasIncomingShare() ? \"/share\" : \"/\"} />;\n\n  const providers =",
       "replace": "  if (hasSession) return <Redirect href={hasIncomingShare() ? \"/share\" : \"/\"} />;\n  if (isRelayServer(apiBase)) return <DozoComputerSignIn apiBase={apiBase} />;\n\n  const providers =",
@@ -5372,6 +5453,78 @@
         "packages/adapters/src/dozo-quiet-hours.ts"
       ],
       "reason": "quiet hours: a due routine waits out its owner's quiet hours, and a scheduled run missed by more than 12 hours is skipped instead of run"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "import { protectedComputerLifecycleRefusal } from \"./desktop-command-guard.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";",
+      "replace": "import { protectedComputerLifecycleRefusal } from \"./desktop-command-guard.js\";\nimport { dozoTickWait, dozoWatchNextRunAt } from \"./dozo-wait.js\";\nimport type { ExecutorDeps } from \"./executor-deps.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "      : await tickRoutineWatch(\n          { ...deps, commandRefusal: protectedComputerLifecycleRefusal },",
+      "replace": "      : await dozoTickWait(\n          tickRoutineWatch,\n          { ...deps, commandRefusal: protectedComputerLifecycleRefusal },",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: a watching routine that is a wait wakes its bot at the first change or at its deadline, whichever comes first"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "  const nextRunAt = watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt);",
+      "replace": "  const nextRunAt = watchTick?.run\n    ? dozoWatchNextRunAt(watchTick)\n    : nextScheduledRunAt(routine, scheduledAt);",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: the run a wait starts ends the wait, so the routine is not checked again"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "} from \"./desktop-command-guard.js\";\nimport type { RunContext } from \"./run-context.js\";",
+      "replace": "} from \"./desktop-command-guard.js\";\nimport { dozoCreateSchedule, dozoWaitRefusal } from \"./dozo-wait.js\";\nimport type { RunContext } from \"./run-context.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "    const created = await createScheduleFromTool(deps, {\n      spaceId: run.spaceId,",
+      "replace": "    const created = await dozoCreateSchedule(createScheduleFromTool, args.waitMinutes, deps, {\n      spaceId: run.spaceId,",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: schedule_create with a watch and waitMinutes records the wait, within the per-bot limit"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "      ...scheduleCreateFields(args),\n    }));\n  return error ? { error } : undefined;",
+      "replace": "      ...scheduleCreateFields(args),\n    })) ??\n    (await dozoWaitRefusal(deps.prisma, args.waitMinutes, { botId: bot.id, watch: args.watch }));\n  return error ? { error } : undefined;",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: a wait that cannot start (bad length, no watch, the bot's waits all in use) is refused before the approval card, like the rest of schedule_create"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "import { BROWSER_ACT_KINDS } from \"./browser-tools.js\";\nimport { SCHEDULE_TIMING_FIELDS }",
+      "replace": "import { BROWSER_ACT_KINDS } from \"./browser-tools.js\";\nimport { dozoWaitInputSchema } from \"./dozo-wait.tool-definition.js\";\nimport { SCHEDULE_TIMING_FIELDS }",
+      "requires": [
+        "packages/adapters/src/dozo-wait.tool-definition.ts"
+      ],
+      "reason": "one-time waits: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "    inputSchema: scheduleCreateInputSchema,\n  },\n  {\n    name: \"schedule_list\",",
+      "replace": "    inputSchema: dozoWaitInputSchema(scheduleCreateInputSchema),\n  },\n  {\n    name: \"schedule_list\",",
+      "requires": [
+        "packages/adapters/src/dozo-wait.tool-definition.ts"
+      ],
+      "reason": "one-time waits: schedule_create's watch takes waitMinutes, which makes it wake the bot once and end"
     },
     {
       "file": "packages/adapters/src/index.ts",
