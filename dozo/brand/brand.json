@@ -4894,6 +4894,87 @@
         "packages/auth/src/dozo-hosted-login.ts"
       ],
       "reason": "hosted account sign-in on a local server: the public capabilities say when the server signs in only with the hosted account"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "} from \"./routine-watch.js\";\nimport { notifyRun } from \"./run-notifications.js\";",
+      "replace": "} from \"./routine-watch.js\";\nimport { dozoHoldRoutine } from \"./dozo-quiet-hours.js\";\nimport { notifyRun } from \"./run-notifications.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "  if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;\n  if (await accountDeactivated(",
+      "replace": "  if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;\n  if (await dozoHoldRoutine(deps, routine, scheduledAt, wakeRoutine)) return;\n  if (await accountDeactivated(",
+      "requires": [
+        "packages/adapters/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: a due routine waits out its owner's quiet hours, and a scheduled run missed by more than 12 hours is skipped instead of run"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./destination-emulator.js\";\nexport * from \"./docker-sandbox.js\";",
+      "replace": "export * from \"./destination-emulator.js\";\nexport * from \"./dozo-quiet-hours.js\";\nexport * from \"./docker-sandbox.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: the API reads and saves an account's quiet hours through the adapters package"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "from \"./ai-consent.js\";\nimport { AnalyticsScreenInput }",
+      "replace": "from \"./ai-consent.js\";\nexport * from \"./dozo-quiet-hours.js\";\nimport { dozoQuietHoursContract } from \"./dozo-quiet-hours.js\";\nimport { AnalyticsScreenInput }",
+      "requires": [
+        "packages/contracts/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "    disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),\n  },\n  routines: {",
+      "replace": "    disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),\n  },\n  dozoQuietHours: dozoQuietHoursContract,\n  routines: {",
+      "requires": [
+        "packages/contracts/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: the account's quiet hours join the app contract, so the server and the web client share their types"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { routinesRoutes } from \"./routes/routines.js\";\nimport { spacesRoutes }",
+      "replace": "import { routinesRoutes } from \"./routes/routines.js\";\nimport { dozoQuietHoursRoutes } from \"./dozo-quiet-hours.js\";\nimport { spacesRoutes }",
+      "requires": [
+        "apps/api/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...routinesRoutes(ctx),\n    ...boardsRoutes(ctx),",
+      "replace": "    ...routinesRoutes(ctx),\n    ...dozoQuietHoursRoutes(ctx),\n    ...boardsRoutes(ctx),",
+      "requires": [
+        "apps/api/src/dozo-quiet-hours.ts"
+      ],
+      "reason": "quiet hours: the router serves the signed-in account's quiet hours"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { SettingsGroup, SettingsRow } from \"../components/SettingsRows\";\nimport { TrustedLinkSitesSettings }",
+      "replace": "import { SettingsGroup, SettingsRow } from \"../components/SettingsRows\";\nimport { DozoQuietHoursRow } from \"../components/dozo-quiet-hours-row\";\nimport { TrustedLinkSitesSettings }",
+      "requires": [
+        "apps/web/src/components/dozo-quiet-hours-row.tsx"
+      ],
+      "reason": "quiet hours: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "          </div>\n        ) : null}\n      </SettingsGroup>\n\n      <SettingsGroup title={<Trans>Chat</Trans>}>\n",
+      "replace": "          </div>\n        ) : null}\n        {onTimezoneChange ? <DozoQuietHoursRow /> : null}\n      </SettingsGroup>\n\n      <SettingsGroup title={<Trans>Chat</Trans>}>\n",
+      "requires": [
+        "apps/web/src/components/dozo-quiet-hours-row.tsx"
+      ],
+      "reason": "quiet hours: General settings set the account's quiet hours under its timezone, where a signed-in account sets that"
     }
   ],
   "assets": {
