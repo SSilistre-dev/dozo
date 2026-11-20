@@ -17,6 +17,8 @@ and open a page. The pages are fixed at 1440x900.
 - `settings-v2.html`: the settings window over chat-v2 (`?section=general|approvals|usage`, the three
   sections filled in). Proposal, not in the app: the 14 sections are grouped under Account, Bots and
   App, where the app shows one flat list
+- `signin-v2.html`: email-first sign-in proposal: email, then a six-digit code (000000 is the wrong
+  code here), with a password as the way round; one flow for new and returning addresses
 - `computer.html`: the bot's computer view
 - `logos.html`: logo and wordmark studies
 - add `?theme=light` to any page for the light theme (dark is the default)
