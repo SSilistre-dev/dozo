@@ -4876,6 +4876,61 @@
         "packages/auth/src/dozo-hosted-login.ts"
       ],
       "reason": "hosted account sign-in on a local server: the public capabilities say when the server signs in only with the hosted account"
+    },
+    {
+      "file": "apps/mobile/app/_layout.tsx",
+      "find": "import { i18n } from \"@lingui/core\";\n",
+      "replace": "import { i18n } from \"../lib/dozo-relay-install\";\n",
+      "requires": [
+        "apps/mobile/lib/dozo-relay-install.ts",
+        "apps/mobile/lib/dozo-relay-fetch.ts",
+        "apps/mobile/lib/dozo-relay-connection.ts",
+        "apps/mobile/lib/dozo-relay-crypto.ts",
+        "apps/mobile/lib/dozo-relay-web.ts"
+      ],
+      "reason": "own computer over the relay: fetch for a paired computer's address goes through the relay; the layout's first import comes through the module that installs it, so every later fetch call reads it"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "import { displayApiHost, usesCustomApiBase } from \"../lib/endpoint\";\n",
+      "replace": "import { displayApiHost, usesCustomApiBase } from \"../lib/dozo-relay-endpoint\";\n",
+      "requires": [
+        "apps/mobile/lib/dozo-relay-endpoint.ts"
+      ],
+      "reason": "own computer over the relay: sign-in names a paired computer \"Your computer\", not its internal address"
+    },
+    {
+      "file": "apps/mobile/lib/live-notifications.ts",
+      "find": "import { apiBaseWarning, normalizeApiBase } from \"./endpoint\";\n",
+      "replace": "import { apiBaseWarning, normalizeApiBase } from \"./dozo-relay-endpoint\";\n",
+      "requires": [
+        "apps/mobile/lib/dozo-relay-endpoint.ts"
+      ],
+      "reason": "own computer over the relay: Android's notification service calls the server itself and cannot use the relay, so it stays off for a paired computer and says why"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "  embeddableScreenUrl,\n  fromScreenPage,\n",
+      "replace": "  fromScreenPage,\n",
+      "reason": "own computer over the relay: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/computer.tsx",
+      "find": "import { currentApiBase, rpc } from \"../lib/api\";\nimport { useAppForeground }",
+      "replace": "import { currentApiBase, rpc } from \"../lib/api\";\nimport { embeddableScreenUrl } from \"../lib/dozo-relay-endpoint\";\nimport { useAppForeground }",
+      "requires": [
+        "apps/mobile/lib/dozo-relay-endpoint.ts"
+      ],
+      "reason": "own computer over the relay: a computer's live screen loads in a web view, which cannot use the relay, so the screen shows its existing cannot-reach line instead of a dead preview"
+    },
+    {
+      "file": "apps/mobile/app/server.tsx",
+      "find": "          ) : null}\n        </ScrollView>",
+      "replace": "          ) : null}\n          <NativeActionButton\n            disabled={pending}\n            label={t`Connect to your computer`}\n            onPress={() => router.push(\"/dozo-pair\")}\n            prominence=\"plain\"\n            style={{ marginTop: 16, alignSelf: \"center\" }}\n          />\n        </ScrollView>",
+      "requires": [
+        "apps/mobile/app/dozo-pair.tsx"
+      ],
+      "reason": "own computer over the relay: the way to pair with a code pasted by hand; a QR code opens the same screen from the phone's camera"
     }
   ],
   "assets": {

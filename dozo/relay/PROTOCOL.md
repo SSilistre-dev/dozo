@@ -49,6 +49,14 @@ under its own path. An end refuses an offer or a handshake of a version it does 
 
 A verifier is `base64url(SHA-256(token))`, the token taken as its ASCII text.
 
+### Pairing link
+
+The QR code holds the link `rakazo://dozo-pair#<offer>`, `<offer>` being the offer text above. The
+phone's own camera opens it in the app, which needs no camera permission of its own. The offer sits
+in the fragment, which no browser or server receives, so it never reaches a log or a referrer. A
+link can come from anywhere, so the app parses the offer, asks the user once whether to connect,
+and sends nothing before that answer. The offer text alone, pasted by hand, is accepted too.
+
 ## Relay contract
 
 ### HTTP
@@ -224,6 +232,8 @@ own `RelayCrypto` with the same algorithms, built on an audited pure-JavaScript 
 `@noble` curves, hashes and ciphers packages are the expected choice). The protocol code is the
 same on both ends; only these six primitives are swapped.
 
-The multiplexer's client also needs the web globals `ReadableStream`, `Request` and `Response`
-with stream bodies, `AbortSignal`, `TextEncoder` and `TextDecoder`. On the phone these come from
-the app's fetch runtime or polyfills; the phone's adapter checks them before it opens a channel.
+The multiplexer's client also needs `ReadableStream`, `Request` and `Response` with stream
+bodies, `AbortSignal`, `TextEncoder` and `TextDecoder`. React Native's `Request` and `Response`
+come from a fetch polyfill without stream bodies, so the phone passes its own to `relayClient`
+(`apps/mobile/lib/dozo-relay-web.ts`); `ReadableStream` is Expo's, and its random bytes come from
+the system (`expo-crypto`), since React Native has no `crypto.getRandomValues` either.
