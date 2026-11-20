@@ -69,9 +69,16 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
 
 - **Free** (tier `standard`): permanent, no card, no trial. Bots run on the member's own model
   connection. No hosted computer: the server refuses to start one, and a computer on the member's
-  own machine still works. A bot still answers; a run that reaches for the computer fails and
-  offers the paid plans. A new organization starts here, and one whose subscription ends returns
-  here.
+  own machine still works. A bot still answers. A run is not offered the tools that need the
+  hosted computer and is told it has none, so it works with web lookups and connected apps and,
+  when a task truly needs a computer, says the member can connect their own from the desktop app or
+  upgrade (`packages/adapters/src/dozo-no-computer.ts`). The same holds for a paid plan whose hours
+  for the period are spent, and for an overdue payment, where the bot names the payment instead.
+  It is decided once at the start of the run, with the allowance the computer's start checks, read
+  alongside the run's other setup; if that read fails the run keeps its computer. A turn paused in
+  computer mode, for a takeover or after using the computer keeps it; a message with files from a
+  run without it is refused plainly. A server that does not bill never withholds the computer. A
+  new organization starts here, and one whose subscription ends returns here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
 
@@ -184,7 +191,8 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   `packages/contracts/src/dozo-plan-limits.ts`, in English and Turkish only (the fork's sentences
   have no catalog). Every failure shown through `errorText` gets its sentence; the upgrade action
   is wired in the composer, the computer screen and mobile's failed-send alert. Only a member who
-  manages billing is offered it.
+  manages billing is offered it. The run error's Details, shown to admins only on the web, give a
+  limit's code (`computer_not_in_plan`, ...) instead of the server's English sentence.
 - When a subscription and a higher grant coexist, the billing status reports the granted tier, so
   the plan picker marks that tier as current while the subscription bills the lower one.
 - While a server has a free plan, a computer's saved home is never deleted for an ended plan
@@ -238,7 +246,7 @@ Accepted by the owner for now, stated here once:
   out of all" ends every site with cookies, unlisted ones included. The list needs a running
   computer, and only Docker computers declare it. The mobile app has no such view yet.
 - Signing out and signing in hold the bot's execution lease so the script never runs a browser
-  beside the bot's; a bot waiting for someone on its screen is not held up. A Private computer has
+  beside the bot's; a bot waiting for someone on its screen is not held up. An Own computer has
   no such lease (upstream's lease covers Team computers only), so there a sign-out the bot races
   can still meet its browser starting.
 - What it makes visible: every member of the Space sees, for every bot there, which sites its
@@ -248,8 +256,26 @@ Accepted by the owner for now, stated here once:
   the same home, so any bot there (through its shell) can read another bot's profile, cookies
   included: a site one person signs in to through one bot is usable by every bot on that computer
   and by everyone who can direct them. Upstream's `docs/computer.md` says sign-ins are "carried
-  over"; that is wrong about the mechanism and right about the reach. Use a Private computer for a
+  over"; that is wrong about the mechanism and right about the reach. Use an Own computer for a
   sign-in that must not be shared.
+- Own computer is the one name for a bot's computer of its own (`computerMode` `dedicated`): the
+  bot settings switch, the Team / Own computer picker (agent import, mobile computer screen) and
+  the shell tool's description say it. Upstream's `docs/computer.md` calls it "Private"; Dozo
+  ships no docs site, so that page is not changed. A Team Computer bot is told in its instructions
+  that the other bots there share its files and sign-ins, and to suggest Own computer when
+  something must stay private. Under the switch, while it is off: on Free, that the plan has no
+  computer (the switch is disabled, with Upgrade for a member who manages billing); otherwise that
+  the Team Computer is shared with the Space's other bots. A switch the server refuses (computer
+  limit, a running bot, a computer someone holds) says why beside it on web; mobile keeps its
+  screen's error line. A full host memory budget never refuses the switch, only a later start
+  ("All computers are busy").
+- How many Own computers: `SANDBOX_MAX_COMPUTERS_PER_USER` (default 2, or the admin's value)
+  counts computer rows that back a live bot, per person across their Spaces: each Space's Team
+  Computer once (kept for the Space's owner), each Own computer once. With the default, a person
+  with bots on their Team Computer can give one bot an Own computer; with every bot switched off
+  the Team Computer, two. Premium's computer is 2 GB (`large=2:2`), so a 4 GB host budget runs
+  two at once for the whole host, whoever owns them: a third start waits for one to sleep
+  (`SANDBOX_IDLE_MS`).
 - `browser_act`, `computer_act` and `shell` never ask for approval (`packages/core/src/action-approval.ts`),
   and outside-content gating applies only to webhook runs: on a signed-in site, a page that tricks
   the bot can make it post, delete or change settings unasked. Only payment presses and saved
