@@ -188,28 +188,37 @@ pub fn user_environment() -> Vec<(&'static str, String)> {
 }
 
 /// `PATH` as the login shell sets it: what the shell prints after a marker, so a profile that
-/// prints something of its own does not matter. Gives up after 5 seconds.
+/// prints something of its own does not matter. Its output is read as it comes, and after 5
+/// seconds the shell and what its profile started in its process group are ended: a profile that
+/// leaves something holding the output open cannot hold up the start.
 pub fn login_path(shell: &Path) -> Option<String> {
     const MARK: &str = "__DOZO_PATH__";
-    let mut child = std::process::Command::new(shell)
+    let mut command = std::process::Command::new(shell);
+    command
         .args(["-l", "-c", &format!("printf '\\n{MARK}%s' \"$PATH\"")])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while child.try_wait().ok()?.is_none() {
-        if std::time::Instant::now() > deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut child = command.spawn().ok()?;
+    let mut out = child.stdout.take()?;
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = std::io::Read::read_to_string(&mut out, &mut text);
+        let _ = send.send(text);
+    });
+    let text = receive.recv_timeout(std::time::Duration::from_secs(5)).ok();
+    #[cfg(unix)]
+    // SAFETY: a plain kill(2) on the group the shell leads.
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
     }
-    let mut out = String::new();
-    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut out).ok()?;
-    let path = out.rsplit_once(MARK)?.1.trim();
+    let _ = child.kill();
+    let _ = child.wait();
+    let text = text?;
+    let path = text.rsplit_once(MARK)?.1.trim();
     (!path.is_empty()).then(|| path.to_owned())
 }
 
@@ -414,6 +423,11 @@ mod tests {
         write("exit 1");
         assert_eq!(login_path(&shell), None);
         write("sleep 30");
+        let started = std::time::Instant::now();
+        assert_eq!(login_path(&shell), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        // A profile that leaves something behind holding the output open.
+        write("sleep 30 & eval \"$3\"");
         let started = std::time::Instant::now();
         assert_eq!(login_path(&shell), None);
         assert!(started.elapsed() < std::time::Duration::from_secs(10));
