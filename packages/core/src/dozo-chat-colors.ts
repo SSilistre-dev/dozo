@@ -26,7 +26,7 @@ export function dozoContrast(a: string, b: string): number {
  * The character's colour mixed with black, as the design does (72% colour), and darkened further
  * only as far as white text on it needs for 4.5:1.
  */
-function botFill(hex: string): string {
+export function dozoBotFill(hex: string): string {
   for (let share = 0.72; ; share -= 0.02) {
     const fill = `#${[1, 3, 5]
       .map((i) =>
@@ -51,5 +51,5 @@ export function dozoChatUserColors(
   if (parseBotAvatarValue(avatarValue).kind === "image") return undefined;
   const [light, dark] =
     DOZO_BOT_PALETTE[dozoCharacterForLook(identity || avatarValue, avatarValue)];
-  return { background: `light-dark(${botFill(light)}, ${botFill(dark)})`, foreground: ON_BOT_INK };
+  return { background: `light-dark(${dozoBotFill(light)}, ${dozoBotFill(dark)})`, foreground: ON_BOT_INK };
 }

@@ -1,7 +1,7 @@
 import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { DOZO_BOT_PALETTE, DOZO_CHARACTERS, dozoCharacterForLook } from "./dozo-avatar-art.js";
-import { dozoChatUserColors, dozoContrast } from "./dozo-chat-colors.js";
+import { dozoBotFill, dozoChatUserColors, dozoContrast } from "./dozo-chat-colors.js";
 import * as core from "./index.js";
 
 const hexOf = (id: string) => BOT_COLOR_LIST.find((color) => color.id === id)?.hex as string;
@@ -36,6 +36,19 @@ describe("your own bubble in a bot's chat", () => {
       dozoChatUserColors(sameCharacter, "bot-2"),
     );
     expect(dozoChatUserColors(PHOTO, "bot-1")).toBeUndefined();
+  });
+
+  it("darkens a light colour past the design's mix until white text holds 4.5:1", () => {
+    const fill = dozoBotFill("#ffff66");
+    expect(fill).not.toBe("#b8b849");
+    expect(dozoContrast(fill, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(dozoContrast(dozoBotFill("#4f8fd8"), "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("falls back to the avatar value as the seed when the bot has no id yet", () => {
+    expect(dozoChatUserColors(hexOf("blue"), "")).toEqual(
+      dozoChatUserColors(hexOf("blue"), hexOf("blue")),
+    );
   });
 
   it("measures contrast as WCAG does", () => {
