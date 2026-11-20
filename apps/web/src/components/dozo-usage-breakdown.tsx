@@ -111,8 +111,9 @@ export function DozoUsageBreakdown() {
         <Table className="text-body">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="text-muted-foreground">
-                {groupings.find(([value]) => value === by)?.[1]}
+              {/* The selected grouping above already names this column on screen. */}
+              <TableHead>
+                <span className="sr-only">{groupings.find(([value]) => value === by)?.[1]}</span>
               </TableHead>
               <TableHead className="text-right text-muted-foreground">
                 {t`Calls`}
