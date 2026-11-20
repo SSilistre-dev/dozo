@@ -52,13 +52,15 @@ pub async fn download(
         return Ok(done);
     }
     let partial = dir.join(format!("{}.part", part.sha256));
+    // Written at its end, not opened to append: Windows refuses to cut an append-only file.
     let mut file = OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(false)
         .open(&partial)?;
-    let mut have = file.metadata()?.len();
+    let mut have = file.seek(SeekFrom::End(0))?;
     if have > part.size {
-        file.set_len(0)?;
+        start_over(&mut file)?;
         have = 0;
     }
     arrived(have);
@@ -129,7 +131,7 @@ async fn fetch(
         206 if have > 0 => have,
         // The server sent the whole file: start over.
         200 => {
-            file.set_len(0)?;
+            start_over(file)?;
             0
         }
         status => return Err(FetchError::Network(format!("HTTP {status}"))),
@@ -137,7 +139,7 @@ async fn fetch(
     while let Some(chunk) = response.chunk().await.map_err(network)? {
         total += chunk.len() as u64;
         if total > size {
-            file.set_len(0)?;
+            start_over(file)?;
             return Err(FetchError::Damaged);
         }
         file.write_all(&chunk)?;
@@ -147,6 +149,11 @@ async fn fetch(
         return Err(FetchError::Network("the connection ended early".into()));
     }
     Ok(())
+}
+
+fn start_over(file: &mut File) -> io::Result<()> {
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0)).map(drop)
 }
 
 fn sha256_of(path: &Path) -> io::Result<String> {
