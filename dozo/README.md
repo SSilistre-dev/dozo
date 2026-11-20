@@ -370,7 +370,10 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
   asking sooner. A run resumed after a crash may count a call twice for the same reason.
 - Per member, per bot, per day of the member's timezone (UTC until one is set). One conditional
   upsert per send (table `dozo_daily_sends`), so concurrent sends on any number of instances never
-  count past the number. Rows older than yesterday go when that bot next sends.
+  count past the number. Rows older than yesterday go when that bot next sends. A bot that
+  changes the member's timezone (`update_preferences`, offered in the member's own chats only)
+  can move to a date that has not started elsewhere: the timezones in use span at most three
+  dates at once, so that is at most three days' sends in one real day.
 - It asks in every mode, Never ask included; a block rule still refuses. Where a card cannot wait,
   upstream's rules hold: a background helper refuses instead. Webhook and routine runs post the
   card as they do for any other gated action.
