@@ -9,8 +9,8 @@
 //! every start therefore happens on one thread that lives as long as the app (`spawn`).
 //! Everywhere else nothing ends them with a crashed app, so each start also leaves its pid in
 //! `run/` and the next start ends what is still running from an earlier one (`leftovers`).
-//! Windows: compiled, not run yet; a stop ends the process itself only (a job object that ends
-//! the whole tree with the app comes with the Windows server).
+//! Windows: each process runs in a job object of its own, which ends it with what it started, and
+//! with the app however the app ends (`stack_windows.rs`).
 
 use std::fs::File;
 use std::io;
@@ -19,6 +19,10 @@ use std::sync::{Mutex, OnceLock, mpsc};
 use tokio::process::{Child, Command};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
+
+#[cfg(windows)]
+#[path = "stack_windows.rs"]
+mod windows;
 
 /// How a process is asked to stop: Node takes TERM; Postgres takes INT, its fast shutdown.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -79,8 +83,18 @@ pub fn prepare(command: &mut Command, _stop: Stop, _lock: Option<&File>) {
 
 #[cfg(windows)]
 pub fn prepare(command: &mut Command, _stop: Stop, _lock: Option<&File>) {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
+    command.creation_flags(windows::CREATION_FLAGS);
+}
+
+/// What `spawn` does with a process it started: on Windows it goes into its job, then runs.
+#[cfg(unix)]
+fn started(child: Child) -> io::Result<Child> {
+    Ok(child)
+}
+
+#[cfg(windows)]
+fn started(mut child: Child) -> io::Result<Child> {
+    windows::contain(&mut child).map(|()| child)
 }
 
 /// Asks the process (and its group) to stop.
@@ -95,7 +109,7 @@ pub fn ask_to_stop(child: &mut Child, stop: Stop) {
 
 #[cfg(windows)]
 pub fn ask_to_stop(child: &mut Child, _stop: Stop) {
-    let _ = child.start_kill();
+    windows::end(child);
 }
 
 /// Ends the process (and its group) at once.
@@ -107,7 +121,7 @@ pub fn kill(child: &mut Child) {
 
 #[cfg(windows)]
 pub fn kill(child: &mut Child) {
-    let _ = child.start_kill();
+    windows::end(child);
 }
 
 #[cfg(unix)]
@@ -172,6 +186,31 @@ pub fn end_leftover(_pid: u32, _grace: std::time::Duration) -> bool {
     true
 }
 
+/// Makes the link `at` to `to`, which `target` names from the link's folder
+/// (`stack_fetch::make_links`): a symbolic link; on Windows a junction to a folder, or a copy of
+/// a file.
+#[cfg(unix)]
+pub fn make_link(
+    at: &std::path::Path,
+    _to: &std::path::Path,
+    target: &std::path::Path,
+) -> io::Result<()> {
+    std::os::unix::fs::symlink(target, at)
+}
+
+#[cfg(windows)]
+pub fn make_link(
+    at: &std::path::Path,
+    to: &std::path::Path,
+    _target: &std::path::Path,
+) -> io::Result<()> {
+    if to.is_dir() {
+        windows::junction(at, to)
+    } else {
+        std::fs::copy(to, at).map(drop)
+    }
+}
+
 type Request = (Command, Handle, oneshot::Sender<io::Result<Child>>);
 
 /// Starts `command` on the one thread that starts them all, in the caller's runtime.
@@ -184,7 +223,7 @@ pub async fn spawn(command: Command) -> io::Result<Child> {
             .spawn(move || {
                 for (mut command, runtime, answer) in receive {
                     let _inside = runtime.enter();
-                    let _ = answer.send(command.spawn());
+                    let _ = answer.send(command.spawn().and_then(started));
                 }
             })
             .expect("a thread for starting the server's processes");

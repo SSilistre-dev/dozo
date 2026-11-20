@@ -9,18 +9,17 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 
 const workspace = process.env.DOZO_WORKSPACE ?? "/w";
 const shared = process.argv[2] ?? "";
 const say = (line: string) => process.stdout.write(`[phone] ${line}\n`);
 
-const core = await import(path.join(workspace, "packages/core/src/index.ts"));
-const { startDevRelay } = await import(
-  path.join(workspace, "packages/adapters/src/dozo-relay-dev-relay.ts")
-);
-const { connectRelaySocket } = await import(
-  path.join(workspace, "packages/adapters/src/dozo-relay-agent.ts")
-);
+// As file URLs: an absolute Windows path is not a module address.
+const from = (file: string) => pathToFileURL(path.join(workspace, file)).href;
+const core = await import(from("packages/core/src/index.ts"));
+const { startDevRelay } = await import(from("packages/adapters/src/dozo-relay-dev-relay.ts"));
+const { connectRelaySocket } = await import(from("packages/adapters/src/dozo-relay-agent.ts"));
 
 const relay = await startDevRelay({ port: 8787 });
 say(`relay at ${relay.url}`);

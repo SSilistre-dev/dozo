@@ -1018,7 +1018,9 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "webkit2gtk",
+ "windows-sys 0.61.2",
  "xz2",
+ "zip",
 ]
 
 [[package]]
@@ -6237,6 +6239,7 @@ checksum = "18d355ef4ea6fc9eaad04cae82d07c1329f643a5f94d10f35fc55b265f577829"
 dependencies = [
  "constant_time_eq",
  "crc32fast",
+ "flate2",
  "getrandom 0.4.3",
  "indexmap 2.14.2",
  "libc",

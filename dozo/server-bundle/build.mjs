@@ -12,6 +12,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -169,19 +170,22 @@ const work = fs.mkdtempSync(path.join(tmpdir(), "dozo-server-bundle-"));
 // The relay host agent (dozo/relay/agent/README.md) as one file: plain Node runs it, no tsx. ws's
 // optional native helpers stay out; ws runs without them.
 step("relay agent", () => {
-  run("pnpm", [
-    "exec",
-    "esbuild",
-    "packages/adapters/src/dozo-relay-agent.ts",
-    "--bundle",
-    "--platform=node",
-    "--format=esm",
-    "--target=node24",
-    "--external:bufferutil",
-    "--external:utf-8-validate",
-    "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
-    `--outfile=${path.join(work, AGENT)}`,
-  ]);
+  // Through esbuild's own API, not its command line: on Windows that goes through a shell, which
+  // splits the banner at its spaces.
+  createRequire(path.join(tree, "package.json"))("esbuild").buildSync({
+    absWorkingDir: tree,
+    entryPoints: ["packages/adapters/src/dozo-relay-agent.ts"],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node24",
+    external: ["bufferutil", "utf-8-validate"],
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
+    outfile: path.join(work, AGENT),
+    logLevel: "warning",
+  });
   // It loads and answers: a fresh state folder has no channels. By its real path, as the app
   // runs it: the agent runs its command only when Node's path for it is the file it loaded
   // (macOS's temporary folder is behind a link).

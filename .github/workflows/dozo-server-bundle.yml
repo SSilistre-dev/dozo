@@ -1,8 +1,9 @@
 name: dozo-server-bundle
 
 # Builds the local server bundle (dozo/server-bundle/README.md) from the branded tree, one per
-# platform, and runs the end-to-end smoke test on linux-x64. linux-x64 is the platform this has to
-# pass on; macOS and Windows are built to see that they build, and do not fail the run.
+# platform, runs the end-to-end smoke test on linux-x64, and on Windows the desktop app's own code
+# installs, starts and stops the bundle (dozo/desktop/tests/stack_e2e_windows.ps1). linux-x64 and
+# win-x64 have to pass; macOS is built to see that it builds, and does not fail the run.
 # On a `server-v<anything>` tag, or a manual run given a tag, the bundles and manifest.json go on a
 # DRAFT release with that tag, never marked latest (the desktop app's own updates read the latest
 # release). Pull requests only build and smoke.
@@ -16,6 +17,8 @@ on:
       - scripts/build-server-bundle.mjs
       - scripts/build-server.mjs
       - pnpm-lock.yaml
+      - dozo/desktop/src/stack*.rs
+      - dozo/desktop/tests/stack_e2e_windows.ps1
   push:
     tags:
       - server-v*
@@ -127,9 +130,68 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  stack-e2e-windows:
+    name: Desktop stack e2e windows
+    needs: bundle
+    runs-on: windows-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            dozo/desktop
+            dozo/server-bundle
+            dozo/brand/assets
+            package.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: bundle-win-x64
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: branded-tree
+          path: ${{ runner.temp }}
+      # The relay, the phone and the stand-in issuer run from the branded tree's packages.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      - name: Unpack and install the tree
+        working-directory: ${{ runner.temp }}
+        run: |
+          New-Item -ItemType Directory tree | Out-Null
+          tar -C tree -xzf tree.tar.gz
+          Set-Location tree
+          pnpm install --frozen-lockfile
+      # The version and components in rust-toolchain.toml; the icon and logo as the installer job
+      # makes them (dozo-desktop-windows).
+      - name: Rust toolchain
+        working-directory: dozo/desktop
+        run: |
+          rustup toolchain install
+          New-Item -ItemType Directory -Force icons | Out-Null
+          Copy-Item ../brand/assets/desktop/icon.ico icons/icon.ico
+          Copy-Item ../brand/assets/logo-dark.svg ui/logo.svg
+      - name: End to end
+        run: dozo/desktop/tests/stack_e2e_windows.ps1 -Dist dist -Workspace "$env:RUNNER_TEMP/tree"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: stack-e2e-windows-logs
+          path: |
+            ${{ runner.temp }}/e2e-*
+            ~/AppData/Local/dev.ssilistre.dozo/server/logs
+            ~/AppData/Local/dev.ssilistre.dozo-hosted/server/logs
+          retention-days: 7
+          if-no-files-found: ignore
+
   release:
     name: Draft release
-    needs: smoke
+    needs: [smoke, stack-e2e-windows]
     if: startsWith(github.ref, 'refs/tags/server-v') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-latest
     timeout-minutes: 15
