@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
+  # TEMPORARY: one run from the pull request's branch, as a new workflow cannot be dispatched
+  # before it is on main. Removed before merge.
+  push:
+    branches: [bb/key1-os-do-al-e2e-canl-kanarya-thr_4yhjchzupg]
 
 permissions:
   contents: read
