@@ -36,7 +36,7 @@ case "$name" in
   pg_dump) for a in "$@"; do [ "$prev" = -f ] && cp "$FAKE_PG_DB" "$a"; prev="$a"; done ;;
   pg_restore) cp "$last" "$FAKE_PG_DB.restored" ;;
   psql) case "$*" in *_prisma_migrations*) printf '%s\\n' $FAKE_PG_MIGRATIONS ;; esac ;;
-  pg_ctl) [ -n "$FAKE_PG_FAIL" ] && [ "$last" = start ] && { echo "could not start" >&2; exit 1; } ;;
+  pg_ctl) [ "$last" = "$FAKE_PG_FAIL" ] && { echo "could not $last" >&2; exit 1; } ;;
 esac
 exit 0
 `;
@@ -97,7 +97,7 @@ async function usedHome(home: string, { running = false } = {}) {
   await mkdir(path.join(home, "pgdata"), { recursive: true });
   await writeFile(path.join(home, "pgdata/PG_VERSION"), "16\n");
   if (running) {
-    await writeFile(path.join(home, "pgdata/postmaster.pid"), "123\n/x\n0\n54321\n");
+    await writeFile(path.join(home, "pgdata/postmaster.pid"), `${process.pid}\n/x\n0\n54321\n`);
   }
   await mkdir(path.join(home, "data/uploads"), { recursive: true });
   await writeFile(path.join(home, "data/uploads/photo.jpg"), "jpeg bytes");
@@ -215,7 +215,7 @@ describe("local backup command", () => {
 
     const odd = path.join(root, "odd.dozo");
     async function* noDescription() {
-      const body = Buffer.from("[]");
+      const body = Buffer.from("not json");
       yield {
         path: "backup.json",
         kind: "file" as const,
@@ -236,7 +236,7 @@ describe("local backup command", () => {
     expect(last()).toMatchObject({ reason: "no-server" });
     const home = path.join(root, "home");
     await usedHome(home);
-    vi.stubEnv("FAKE_PG_FAIL", "1");
+    vi.stubEnv("FAKE_PG_FAIL", "start");
     expect(await main(["create", path.join(root, "x.dozo"), "--home", home])).toBe(2);
     expect(last()).toMatchObject({ reason: "failed", error: "pg_ctl failed: could not start" });
     expect((await readdir(root)).filter((name) => name.endsWith(".partial"))).toEqual([]);
@@ -244,6 +244,27 @@ describe("local backup command", () => {
     vi.stubEnv("FAKE_PG_FAIL", "");
     expect(await main(["create", path.join(root, "x.dozo"), "--home", home])).toBe(2);
     expect(last()).toMatchObject({ reason: "no-server" });
+  });
+
+  it("starts its own Postgres when the app left a stale pid file, and reports a failed stop", async () => {
+    const home = path.join(root, "home");
+    await usedHome(home);
+    // A process that no longer exists: what a crashed app leaves.
+    await writeFile(path.join(home, "pgdata/postmaster.pid"), "2147483646\n/x\n0\n54321\n");
+    expect(await main(["create", path.join(root, "a.dozo"), "--home", home])).toBe(0);
+    expect((await log())[0]).toMatch(/^pg_ctl .*start$/);
+    vi.stubEnv("FAKE_PG_FAIL", "stop");
+    expect(await main(["create", path.join(root, "b.dozo"), "--home", home])).toBe(2);
+    expect(last()).toMatchObject({ error: "pg_ctl failed: could not stop" });
+  });
+
+  it("refuses to back up a file name a restore could not take", async () => {
+    const home = path.join(root, "home");
+    await usedHome(home, { running: true });
+    await writeFile(path.join(home, "data", "a\\b"), "x");
+    expect(await main(["create", path.join(root, "a.dozo"), "--home", home])).toBe(2);
+    expect(last().error).toContain("cannot be stored");
+    expect((await readdir(root)).filter((name) => name.endsWith(".partial"))).toEqual([]);
   });
 
   it("answers usage errors with 64", async () => {

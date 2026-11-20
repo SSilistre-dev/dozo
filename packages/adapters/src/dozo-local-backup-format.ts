@@ -114,7 +114,7 @@ function readHeader(bytes: Buffer): { kdf: Kdf; salt: Buffer } {
     );
   }
   // Bounds, so a crafted header cannot ask for gigabytes of memory.
-  if (logN === undefined || logN < 15 || logN > 20 || r !== 8 || p !== 1) throw damaged();
+  if (logN === undefined || logN < 15 || logN > 18 || r !== 8 || p !== 1) throw damaged();
   return { kdf: { logN, r, p }, salt: bytes.subarray(MAGIC.length + 4, HEADER_BYTES) };
 }
 

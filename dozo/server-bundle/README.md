@@ -137,14 +137,17 @@ One JSON line on stdout: `{"created": <path>, "server": <version>}`, `{"restored
 - `create` works with the app open or closed: it uses the running Postgres (its port is line 4 of
   `pgdata/postmaster.pid`) or starts one on a free loopback port and stops it after. The file is
   written next to its name as `<name>.<random>.partial`, mode 0600, and renamed when complete.
-  Symbolic links and special files under `data/` and `relay/` are left out.
+  Symbolic links and special files under `data/` and `relay/` are left out. A file that changes
+  size while it is read fails the backup (`failed`); run it again. A name with a backslash fails
+  it too.
 - `restore` goes into a new installation only: no `pgdata/` and an empty or missing `data/`
   (`not-empty` otherwise). It opens the file into a fresh folder beside the target, refuses a
   backup whose database has a migration this server does not know (`newer`) as soon as the first
   entry is read, then makes a new cluster with the backup's owner password, creates the
   `rakazo_app` role the dump's grants name, loads the dump in one transaction, and moves
-  `data/`, `relay/`, the secrets file and, last, `pgdata/` into place. A failure before that leaves
-  the target as it was. `migrate: true` means the backup is older: the next start's migration
+  `pgdata/`, then `data/` and `relay/`, and last the secrets file into place. A failure before
+  that leaves the target as it was. A process stopped midway leaves a `backup-*` or `restore-*`
+  folder (private, inside the server folder) holding plaintext; delete it. `migrate: true` means the backup is older: the next start's migration
   brings it up to date and gives `rakazo_app` its login, as every start does.
 - Other reasons: `wrong-password` (or the first chunk was changed), `damaged`, `not-a-backup`,
   `no-server` (nothing to back up), `no-backup-data`, `failed` (a Postgres program failed; its
@@ -160,7 +163,7 @@ file of any size streams through memory.
 | ------------ | -------------------------------------------------------------------------- |
 | 0–7          | `DOZOBAK\n`                                                                |
 | 8            | format, `1`; a higher one is refused as from a newer Dozo                  |
-| 9, 10, 11    | scrypt log2(N), r, p: written as 17, 8, 1 (128 MiB); read only 15–20, 8, 1 |
+| 9, 10, 11    | scrypt log2(N), r, p: written as 17, 8, 1 (128 MiB); read only 15–18, 8, 1 |
 | 12–27        | salt, random per file; key = scrypt(NFC password, salt), 32 bytes          |
 | 28–          | chunks: AES-256-GCM of 64 KiB of plaintext (the last 0–64 KiB), 16-byte tag |
 

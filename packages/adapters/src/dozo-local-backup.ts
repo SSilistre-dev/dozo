@@ -22,6 +22,7 @@ import {
   BackupFormatError,
   DEFAULT_KDF,
   extractBackup,
+  safeEntryPath,
   writeBackup,
 } from "./dozo-local-backup-format.js";
 
@@ -142,9 +143,21 @@ function freePort(): Promise<number> {
 
 type Postgres = { port: number; password: string; pgBin: string };
 
+/** Whether the process `postmaster.pid` names is alive; a crashed app leaves the file behind. */
+function alive(pid: number): boolean {
+  if (!(pid > 0)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as { code?: string }).code === "EPERM";
+  }
+}
+
 /**
- * Runs `work` against the folder's Postgres: the one already running (the app is open; its port
- * is line 4 of `postmaster.pid`), or one started here on a free loopback port and stopped after.
+ * Runs `work` against the folder's Postgres: the one already running (the app is open; its pid
+ * and port are lines 1 and 4 of `postmaster.pid`), or one started here on a free loopback port
+ * and stopped after.
  */
 async function withPostgres<T>(
   pgBin: string,
@@ -156,27 +169,49 @@ async function withPostgres<T>(
     if ((error as { code?: string }).code === "ENOENT") return undefined;
     throw error;
   });
-  const running = Number(pid?.split("\n")[3]);
-  if (running > 0) return work({ port: running, password, pgBin });
+  const [owner = 0, , , running = 0] = (pid ?? "").split("\n").map(Number);
+  if (alive(owner) && running > 0) return work({ port: running, password, pgBin });
   const port = await freePort();
-  await run(path.join(pgBin, exe("pg_ctl")), [
-    "-D",
-    pgdata,
-    "-w",
-    "-t",
-    "60",
-    "-l",
-    path.join(path.dirname(pgdata), `postgres-${port}.log`),
-    "-o",
-    `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=`,
-    "start",
-  ]);
+  const log = path.join(path.dirname(pgdata), `postgres-${port}.log`);
+  // Also after a start that timed out, which can leave Postgres running.
+  const stop = async () => {
+    const failure = await run(path.join(pgBin, exe("pg_ctl")), [
+      "-D",
+      pgdata,
+      "-m",
+      "fast",
+      "-w",
+      "stop",
+    ]).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await rm(log, { force: true });
+    return failure;
+  };
+  let result: T;
   try {
-    return await work({ port, password, pgBin });
-  } finally {
-    await run(path.join(pgBin, exe("pg_ctl")), ["-D", pgdata, "-m", "fast", "-w", "stop"]);
-    await rm(path.join(path.dirname(pgdata), `postgres-${port}.log`), { force: true });
+    await run(path.join(pgBin, exe("pg_ctl")), [
+      "-D",
+      pgdata,
+      "-w",
+      "-t",
+      "60",
+      "-l",
+      log,
+      "-o",
+      `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=`,
+      "start",
+    ]);
+    result = await work({ port, password, pgBin });
+  } catch (error) {
+    // A stop that fails after this says less than this failure, which is what propagates.
+    await stop();
+    throw error;
   }
+  const stopped = await stop();
+  if (stopped) throw stopped;
+  return result;
 }
 
 function pgTool(pg: Postgres, name: string, args: string[]): Promise<string> {
@@ -194,6 +229,11 @@ async function* tree(home: string, relative: string): AsyncGenerator<BackupEntry
     throw error;
   });
   if (!info) return;
+  try {
+    safeEntryPath(relative);
+  } catch {
+    throw new Error(`${relative}: this file name cannot be stored in a backup; rename it`);
+  }
   if (info.isFile()) {
     yield {
       path: relative,
@@ -286,8 +326,13 @@ async function restore(file: string, home: string, password: string, io: BackupI
       path.join(work, "files"),
       async (entry) => {
         if (entry !== MANIFEST || manifest) return;
-        manifest = JSON.parse(await readFile(path.join(work, "files", MANIFEST), "utf8"));
-        if (manifest?.format !== 1 || !Array.isArray(manifest.migrations)) {
+        const text = await readFile(path.join(work, "files", MANIFEST), "utf8");
+        try {
+          manifest = JSON.parse(text);
+        } catch {
+          manifest = undefined;
+        }
+        if (manifest?.format !== 1 || !Array.isArray(manifest?.migrations)) {
           throw new BackupRefused("no-backup-data", "The backup has no description of itself.");
         }
         if (manifest.migrations.some((name) => !known.has(name))) {
@@ -340,7 +385,16 @@ async function restore(file: string, home: string, password: string, io: BackupI
         path.join(files, DUMP),
       ]);
     });
-    // Everything is checked and the database loaded: move it in, the database last.
+    // Everything is checked and the database loaded. Move it in, the database first: if an app
+    // started on the folder meanwhile, that fails and nothing of the target has changed. The
+    // secrets go last, so the target's own stay until the rest is in place.
+    if (await exists(path.join(home, "pgdata"))) {
+      throw new BackupRefused(
+        "not-empty",
+        "This Dozo already has data. Restore into a new installation.",
+      );
+    }
+    await rename(pgdata, path.join(home, "pgdata"));
     for (const folder of FOLDERS) {
       if (!(await exists(path.join(files, folder)))) continue;
       if (await exists(path.join(home, folder))) await removeEmptyOrRefuse(path.join(home, folder));
@@ -348,7 +402,6 @@ async function restore(file: string, home: string, password: string, io: BackupI
     }
     for (const name of SECRETS_FILES) await rm(path.join(home, name), { force: true });
     await rename(path.join(files, secrets), path.join(home, secrets));
-    await rename(pgdata, path.join(home, "pgdata"));
     const pending = [...known].some((name) => !manifest?.migrations.includes(name));
     io.write(
       JSON.stringify({ restored: path.resolve(file), server: manifest.server, migrate: pending }),
