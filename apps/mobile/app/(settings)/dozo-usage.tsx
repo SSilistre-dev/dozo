@@ -7,7 +7,6 @@ import { Alert, ScrollView, Share, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
@@ -44,7 +43,10 @@ export default function DozoUsage() {
 
   async function exportCsv() {
     try {
-      const { csv } = await rpc("dozoUsage/csv", { by });
+      const { csv } = await queryClient.fetchQuery({
+        ...rpcQuery("dozoUsage/csv", { by }),
+        staleTime: 0,
+      });
       const day = new Date().toISOString().slice(0, 10);
       await Share.share({ message: csv, title: `usage-${by}-${day}.csv` });
     } catch (error) {

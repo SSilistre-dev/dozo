@@ -54,7 +54,7 @@ export default function DozoCommands() {
                   onAccessibilityAction={() => remove.run(rule.id)}
                   dimmed={remove.pending}
                   title={label}
-                  detail={[rule.botName, rule.cwd].filter(Boolean).join(" · ")}
+                  detail={[rule.botName, rule.cwd].filter(Boolean).join(", ")}
                 />
               </MenuView>
             );

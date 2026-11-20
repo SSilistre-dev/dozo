@@ -36,7 +36,7 @@ export default function DozoActivity() {
           .join(" ")}
         detail={[event.actorLabel, event.spaceName, outcome, when.format(new Date(event.createdAt))]
           .filter(Boolean)
-          .join(" · ")}
+          .join(", ")}
       />
     );
   };

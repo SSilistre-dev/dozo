@@ -344,7 +344,7 @@ describe("commands on mobile", () => {
     await render(<DozoCommands />);
     await settle(() => expect(text()).toContain("npm test"));
     expect(ui.header?.title).toBe("Commands");
-    expect(text()).toContain("Ada · ~/app");
+    expect(text()).toContain("Ada, ~/app");
     expect(ui.menus.at(-1)!.actions).toEqual([
       { id: "remove", title: "Remove", attributes: { destructive: true } },
     ]);
@@ -448,7 +448,7 @@ describe("general settings on mobile", () => {
     await settle(() => expect(text()).toContain("Signed in"));
     expect(ui.header?.title).toBe("Activity");
     expect(text()).toContain("Changed devices Phone");
-    expect(text()).toContain("Ada · Home · Denied ·");
+    expect(text()).toContain("Ada, Home, Denied, ");
     act(() => button("Load older")!.click());
     await settle(() => expect(text()).toContain("custom.thing"));
     expect(button("Load older")).toBeUndefined();
