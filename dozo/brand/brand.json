@@ -1344,8 +1344,8 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./notification-avatar.js\";",
-      "replace": "export * from \"./dozo-avatar-art.js\";",
-      "requires": ["packages/core/src/dozo-avatar-art.ts"],
+      "replace": "export * from \"./dozo-avatar-art.js\";\nexport * from \"./dozo-chat-colors.js\";",
+      "requires": ["packages/core/src/dozo-avatar-art.ts", "packages/core/src/dozo-chat-colors.ts"],
       "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body"
     },
     {
@@ -1360,12 +1360,6 @@
       "find": "let preference = \"system\";",
       "replace": "let preference = \"dark\";",
       "reason": "Dozo is dark by default: with no stored choice the page starts dark; System and Light still work once chosen"
-    },
-    {
-      "file": "apps/web/src/lib/bots-sidebar-density-pref.ts",
-      "find": "return raw?.trim().toLowerCase() === \"compact\" ? \"compact\" : \"comfortable\";",
-      "replace": "return raw?.trim().toLowerCase() === \"comfortable\" ? \"comfortable\" : \"compact\";",
-      "reason": "Dozo look: sidebar rows are one line with a small avatar, as in the design; upstream's two-line rows stay one setting away"
     },
     {
       "file": "packages/ui-tokens/src/index.ts",
@@ -1412,14 +1406,28 @@
     {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "(active ? chatUserBubbleColors(active.color, active.id) : undefined)",
-      "replace": "(undefined as ReturnType<typeof chatUserBubbleColors>)",
-      "reason": "Dozo look: your own bubble and the send button keep the theme's colours; upstream paints both in the bot's upstream colour, which no Dozo avatar shows any more"
+      "replace": "(active ? dozoChatUserColors(active.color, active.id) : undefined)",
+      "requires": ["packages/core/src/dozo-chat-colors.ts"],
+      "reason": "Dozo look: your own bubble and the send button wear the open bot's Dozo identity colour (the colour its avatar's accessory shows), darkened until white text holds 4.5:1; upstream's colour is one no Dozo avatar shows"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "  chatUserBubbleColors,\n  chatWoke,\n  dismissableAskMessageIds,\n",
+      "replace": "  chatWoke,\n  dismissableAskMessageIds,\n  dozoChatUserColors,\n",
+      "requires": ["packages/core/src/dozo-chat-colors.ts"],
+      "reason": "Dozo look: the import of the rule above, in place of upstream's bubble colours"
     },
     {
       "file": "apps/web/src/lib/bots-sidebar-pref.ts",
       "find": "export const BOTS_SIDEBAR_DEFAULT_WIDTH = 316;",
-      "replace": "export const BOTS_SIDEBAR_DEFAULT_WIDTH = 240;",
-      "reason": "Dozo look: the sidebar starts at the design's width, which is upstream's own minimum; dragging it wider still works"
+      "replace": "export const BOTS_SIDEBAR_DEFAULT_WIDTH = 288;",
+      "reason": "Dozo look: the sidebar starts at the chat design's width (dozo/design/chat-v2.html), room for the wordmark, its kana and two round buttons; dragging it still works"
+    },
+    {
+      "file": "apps/web/src/pages/ResizableSidePanel.tsx",
+      "find": "const DEFAULT_WIDTH = 384;",
+      "replace": "const DEFAULT_WIDTH = 320;",
+      "reason": "Dozo look: the bot panel starts at the chat design's width (dozo/design/chat-v2.html), upstream's own minimum; dragging it wider still works"
     },
     {
       "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
