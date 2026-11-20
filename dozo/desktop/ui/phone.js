@@ -1,8 +1,9 @@
 // The Connect Phone window. Only this page can call the phone commands (capabilities/phone.json).
 const invoke = window.__TAURI_INTERNALS__.invoke;
-const SCREENS = ["code", "expired", "signed-out", "failed"];
+const SCREENS = ["code", "ask", "expired", "signed-out", "failed"];
 const el = (id) => document.getElementById(id);
 let ticking;
+let asking = "";
 
 function show(screen) {
   clearInterval(ticking);
@@ -47,7 +48,34 @@ async function newCode() {
   el("account").textContent = `Signs in as ${code.account}`;
   show("code");
   countdown(code.expiresAt);
+  ask(code.channel);
 }
+
+// Once the phone scanned the code, it asks to connect: its name and the code it shows, which the
+// person compares before allowing it. The answer arrives when it does; nothing is polled.
+async function ask(channel) {
+  asking = channel;
+  const phone = await invoke("phone_wait", { channel }).catch(() => null);
+  if (!phone || asking !== channel) return;
+  el("device").textContent = phone.name || phone.platform || "";
+  el("check").textContent = String(phone.code ?? "").replace(/^(\d{3})(\d{3})$/, "$1 $2");
+  show("ask");
+}
+
+el("allow").addEventListener("click", async () => {
+  el("allow").disabled = true;
+  try {
+    await invoke("approve_phone", { channel: asking });
+  } catch {
+    show("failed");
+  }
+  el("allow").disabled = false;
+});
+el("reject").addEventListener("click", async () => {
+  await invoke("remove_phone", { channel: asking }).catch(() => undefined);
+  newCode();
+  listPhones();
+});
 
 async function listPhones() {
   const list = el("phones");

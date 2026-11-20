@@ -1,7 +1,8 @@
 //! Connect Phone: a small window with a QR code that pairs a phone with the server on this
 //! computer through the relay agent (`stack.rs`), the account it signs in as, and the phones
-//! already paired. The item in the Dozo menu is on only while that server runs with an agent; the
-//! window closes once a phone pairs. Its page is `ui/phone.html`, which only this window loads
+//! already paired. Once a phone scans the code, the window asks whether to connect it, with the
+//! phone's name and the code it shows; the phone gets its sign-in only after Allow, and the
+//! window closes. The item in the Dozo menu is on only while that server runs with an agent. Its page is `ui/phone.html`, which only this window loads
 //! and whose commands only it may call (`capabilities/phone.json`).
 
 use std::time::Duration;
@@ -13,7 +14,7 @@ use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder, Wry};
 use crate::device::Window;
 use crate::device_pairing::SignIn;
 use crate::server::is_local;
-use crate::stack::{Agent, Status};
+use crate::stack::{Agent, Status, event_channel};
 use crate::{LocalServer, chosen};
 
 pub const MENU_ID: &str = "connect-phone";
@@ -28,12 +29,10 @@ pub fn item(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
     Ok(item)
 }
 
-/// Keeps the menu item in step with the server, and closes the window when a phone pairs or the
-/// server stops.
+/// Keeps the menu item in step with the server, and closes the window when the server stops.
 pub fn follow(app: AppHandle) {
     let local = app.state::<LocalServer>().0.clone();
     let mut status = local.status();
-    let mut paired = local.paired();
     tauri::async_runtime::spawn(async move {
         loop {
             let ready = matches!(*status.borrow_and_update(), Status::Ready(_));
@@ -44,14 +43,8 @@ pub fn follow(app: AppHandle) {
             if !on {
                 close(&app);
             }
-            tokio::select! {
-                changed = status.changed() => if changed.is_err() { return },
-                changed = paired.changed() => {
-                    if changed.is_err() {
-                        return;
-                    }
-                    close(&app);
-                }
+            if status.changed().await.is_err() {
+                return;
             }
         }
     });
@@ -108,6 +101,7 @@ pub async fn phone_code(app: AppHandle) -> Result<Value, String> {
     let (size, cells) = qr(&offer.qr)?;
     Ok(json!({
         "state": "code",
+        "channel": offer.channel,
         "account": account,
         "expiresAt": offer.expires_at,
         "size": size,
@@ -125,9 +119,34 @@ pub async fn phones(app: AppHandle) -> Result<Value, String> {
         .collect())
 }
 
+/// Removes a paired phone, or refuses the one that just scanned the code.
 #[tauri::command]
 pub async fn remove_phone(app: AppHandle, channel: String) -> Result<(), String> {
     agent(&app).await?.remove(&channel).await
+}
+
+/// Waits until the phone that scanned the code on `channel` asks to be allowed: its name,
+/// platform and the code it shows. Nothing is asked on a timer.
+#[tauri::command]
+pub async fn phone_wait(app: AppHandle, channel: String) -> Result<Value, String> {
+    let mut events = app.state::<LocalServer>().0.phone_events();
+    let asked = events
+        .wait_for(|event| {
+            event.as_ref().is_some_and(|event| {
+                event["event"] == "approval" && event_channel(event) == Some(channel.as_str())
+            })
+        })
+        .await
+        .map_err(|_| "off".to_owned())?;
+    Ok(asked.clone().unwrap_or(Value::Null))
+}
+
+/// The person allowed the phone: it gets its sign-in, and the window closes.
+#[tauri::command]
+pub async fn approve_phone(app: AppHandle, channel: String) -> Result<(), String> {
+    agent(&app).await?.approve(&channel).await?;
+    close(&app);
+    Ok(())
 }
 
 /// The email of the account signed in to `server` in the main window. The phone gets a session
