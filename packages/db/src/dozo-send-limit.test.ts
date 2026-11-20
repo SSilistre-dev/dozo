@@ -15,7 +15,7 @@ function fakeDb(...answers: unknown[][]) {
   return { db: db as unknown as Prisma.TransactionClient, calls };
 }
 
-const send = { userId: "user-1", botId: "bot-1" };
+const send = { userId: "user-1", botId: "bot-1", sends: 1 };
 
 describe("readDozoDailySends and saveDozoDailySends", () => {
   it("read the account's number, or the default without one", async () => {
@@ -44,8 +44,8 @@ describe("takeDozoDailySend", () => {
     const [, cleanup, upsert] = calls;
     expect(cleanup!.sql).toContain("DELETE FROM dozo_daily_sends");
     expect(cleanup!.values).toEqual(["user-1", "bot-1", "2027-03-02"]);
-    expect(upsert!.sql).toContain("WHERE dozo_daily_sends.count <");
-    expect(upsert!.values).toEqual(["user-1", "bot-1", "2027-03-02", 10]);
+    expect(upsert!.sql).toContain("WHERE dozo_daily_sends.count + ? <= ?");
+    expect(upsert!.values).toEqual(["user-1", "bot-1", "2027-03-02", 1, 1, 10, 1, 1, 10]);
   });
 
   it("is full when the upsert counts nothing, and names the number", async () => {
@@ -61,6 +61,7 @@ describe("takeDozoDailySend", () => {
     }
     const missing = fakeDb([], [{ count: 1 }]);
     await takeDozoDailySend(missing.db, send, new Date("2027-03-01T20:00:00Z"));
-    expect(missing.calls[2]!.values).toEqual(["user-1", "bot-1", "2027-03-01", 50]);
+    expect(missing.calls[2]!.values.slice(0, 3)).toEqual(["user-1", "bot-1", "2027-03-01"]);
+    expect(missing.calls[2]!.values.at(-1)).toBe(50);
   });
 });

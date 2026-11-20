@@ -59,7 +59,7 @@ describePostgres("daily sends (PostgreSQL)", () => {
     await saveDozoDailySends(system, userId, 2);
     const morning = new Date("2027-03-01T20:00:00Z");
     const take = (bot: string, at = morning) =>
-      takeDozoDailySend(system, { userId, botId: bot }, at);
+      takeDozoDailySend(system, { userId, botId: bot, sends: 1 }, at);
     expect(await take(botId)).toEqual({ full: false });
     expect(await take(botId)).toEqual({ full: false });
     expect(await take(botId)).toEqual({ full: true, dailySends: 2 });
@@ -81,7 +81,7 @@ describePostgres("daily sends (PostgreSQL)", () => {
     const { userId, botId } = await owner();
     await saveDozoDailySends(system, userId, 5);
     const results = await Promise.all(
-      Array.from({ length: 40 }, () => takeDozoDailySend(system, { userId, botId })),
+      Array.from({ length: 40 }, () => takeDozoDailySend(system, { userId, botId, sends: 1 })),
     );
     expect(results.filter((result) => !result.full)).toHaveLength(5);
     const [row] = await system.$queryRaw<Array<{ count: number }>>`
@@ -89,9 +89,20 @@ describePostgres("daily sends (PostgreSQL)", () => {
     expect(row?.count).toBe(5);
   });
 
+  it("takes a batch's sends together, or none of them when they do not fit", async () => {
+    const { userId, botId } = await owner();
+    await saveDozoDailySends(system, userId, 5);
+    const take = (sends: number) => takeDozoDailySend(system, { userId, botId, sends });
+    expect(await take(6)).toEqual({ full: true, dailySends: 5 });
+    expect(await take(3)).toEqual({ full: false });
+    expect(await take(3)).toEqual({ full: true, dailySends: 5 });
+    expect(await take(2)).toEqual({ full: false });
+    expect(await take(1)).toEqual({ full: true, dailySends: 5 });
+  });
+
   it("goes with its bot and its account", async () => {
     const { userId, botId } = await owner();
-    await takeDozoDailySend(system, { userId, botId });
+    await takeDozoDailySend(system, { userId, botId, sends: 1 });
     await system.bot.delete({ where: { id: botId } });
     const left = await system.$queryRaw<unknown[]>`
       SELECT 1 FROM dozo_daily_sends WHERE "userId" = ${userId}`;

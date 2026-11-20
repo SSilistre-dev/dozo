@@ -23,14 +23,14 @@ export async function saveDozoDailySends(
 }
 
 /**
- * Counts one send the bot makes for the member without asking, on today's date in the member's
- * timezone. Full when the bot already made the account's number of them today: then nothing is
- * counted and the send asks instead. One conditional upsert, so concurrent sends on any instance
- * never count past the number.
+ * Counts the sends one call makes for the member without asking (a batch can make several), on
+ * today's date in the member's timezone. Full when they would take the bot past the account's
+ * number for today: then nothing is counted and the call asks instead. One conditional upsert, so
+ * concurrent sends on any instance never count past the number.
  */
 export async function takeDozoDailySend(
   db: Db,
-  send: { userId: string; botId: string },
+  send: { userId: string; botId: string; sends: number },
   now = new Date(),
 ): Promise<{ full: false } | { full: true; dailySends: number }> {
   const [account] = await db.$queryRaw<
@@ -46,9 +46,10 @@ export async function takeDozoDailySend(
     WHERE "userId" = ${send.userId} AND "botId" = ${send.botId} AND day < ${day}::date - 1`;
   const counted = await db.$queryRaw<Array<{ count: number }>>`
     INSERT INTO dozo_daily_sends ("userId", "botId", day, count)
-    VALUES (${send.userId}, ${send.botId}, ${day}::date, 1)
-    ON CONFLICT ("userId", "botId", day) DO UPDATE SET count = dozo_daily_sends.count + 1
-    WHERE dozo_daily_sends.count < ${dailySends}
+    SELECT ${send.userId}, ${send.botId}, ${day}::date, ${send.sends}
+    WHERE ${send.sends} <= ${dailySends}
+    ON CONFLICT ("userId", "botId", day) DO UPDATE SET count = dozo_daily_sends.count + ${send.sends}
+    WHERE dozo_daily_sends.count + ${send.sends} <= ${dailySends}
     RETURNING count`;
   return counted.length ? { full: false } : { full: true, dailySends };
 }

@@ -100,7 +100,7 @@ describe("gateToolCall: the daily send limit", () => {
         call: expect.objectContaining({
           name: "send_email",
           viaConnector: false,
-          connectorChanges: false,
+          connectorChanges: 0,
           approved: false,
         }),
         plan: "allow",
@@ -114,8 +114,8 @@ describe("gateToolCall: the daily send limit", () => {
     expect(
       limit.calls.map(({ call }) => [call.name, call.viaConnector, call.connectorChanges]),
     ).toEqual([
-      ["chat_post_message", true, true],
-      ["chat_list_channels", true, false],
+      ["chat_post_message", true, 1],
+      ["chat_list_channels", true, 0],
     ]);
   });
 

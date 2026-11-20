@@ -362,13 +362,17 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
 
 - A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
   something (declared not read-only, or named like a change, the same test that makes it ask in
-  Ask mode). Page browser presses, including form submits, are not counted yet: telling a submit
-  from another click needs a new probe in the computer's page browser.
+  Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
+  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
+  including form submits, are not counted yet: telling a submit from another click needs a new
+  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
+  the member's own cloud coding agents are not sends here.
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
   rule, or left to the approval model. A send a person approves on its card is not counted. One
   the approval model then asks about, or that fails, still counts, so the number errs towards
   asking sooner. A run resumed after a crash may count a call twice for the same reason.
-- Per member, per bot, per day of the member's timezone (UTC until one is set). One conditional
+- Per member, per bot, per day of the member's timezone (UTC until one is set), so each new bot
+  has its own number. One conditional
   upsert per send (table `dozo_daily_sends`), so concurrent sends on any number of instances never
   count past the number. Rows older than yesterday go when that bot next sends. A bot that
   changes the member's timezone (`update_preferences`, offered in the member's own chats only)
