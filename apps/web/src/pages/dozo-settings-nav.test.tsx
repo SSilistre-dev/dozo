@@ -95,7 +95,7 @@ function render(section: SettingsSection, disabled = false) {
 
 it("labels each group with its heading and keeps upstream's buttons, ids and current page", () => {
   const { container, onSectionChange } = render("usage");
-  const groups = [...container.querySelectorAll('[role="group"]')];
+  const groups = [...container.querySelectorAll("fieldset[data-dozo-settings-group]")];
   expect(
     groups.map(
       (group) => document.getElementById(group.getAttribute("aria-labelledby") ?? "")?.textContent,
