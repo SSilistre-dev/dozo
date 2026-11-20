@@ -5,6 +5,10 @@
 
 mod alerts;
 mod background;
+mod device;
+mod device_pairing;
+mod device_run;
+mod device_socket;
 #[cfg(target_os = "macos")]
 mod frames;
 #[cfg(target_os = "linux")]
@@ -21,7 +25,7 @@ use background::{Close, OS};
 use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
 use settings::Settings;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{
     AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
     Wry, window::Color,
@@ -97,6 +101,7 @@ fn set_server(app: AppHandle, address: String) -> Result<String, String> {
         app.state::<Config>().0.lock().unwrap().server = previous;
         format!("Could not save the address: {error}")
     })?;
+    device::select(&app, Some(server.clone()));
     Ok(server.into())
 }
 
@@ -200,6 +205,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                         Some("Cmd+,"),
                     )?,
                     &separator()?,
+                    &device_item(app)?,
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &separator()?,
@@ -266,6 +272,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &MenuItem::with_id(app, "change-server", "Change Server…", true, Some("Ctrl+,"))?,
                 &MenuItem::with_id(app, "reload", "Reload", true, Some("Ctrl+R"))?,
                 &PredefinedMenuItem::separator(app)?,
+                &device_item(app)?,
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                 &PredefinedMenuItem::separator(app)?,
@@ -279,6 +286,14 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 #[cfg(not(target_os = "macos"))]
 const QUIT_ID: &str = "quit";
+
+/// "Let Bots Use This Computer", checked while this computer is allowed for the chosen server.
+fn device_item(app: &AppHandle) -> tauri::Result<CheckMenuItem<Wry>> {
+    let label = device::words(sys_locale::get_locale().as_deref()).menu;
+    let item = switch(app, device::MENU_ID, label)?;
+    app.manage(device::Item(item.clone()));
+    Ok(item)
+}
 
 /// A switch in the menu; it starts off and `show_switches` sets it once the saved choice is read.
 fn switch(app: &AppHandle, id: &str, label: &str) -> tauri::Result<CheckMenuItem<Wry>> {
@@ -514,6 +529,7 @@ fn main() {
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("Dozo")
@@ -535,6 +551,7 @@ fn main() {
                 "change-server" => show_local(&window, "?change"),
                 "reload" => reload(window),
                 OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, event.id().as_ref()),
+                device::MENU_ID => device::clicked(app),
                 #[cfg(not(target_os = "macos"))]
                 QUIT_ID => app.exit(0),
                 update::MENU_ID => restart_for_update(app),
@@ -559,6 +576,8 @@ fn main() {
             }
             show_switches(&app, &settings);
             app.manage(Config(Mutex::new(settings.clone())));
+            app.manage(device::Access::new(&app)?);
+            device::select(&app, chosen(&app));
             #[cfg(not(target_os = "macos"))]
             add_tray(&app);
             update::watch(app.clone(), offer_update);
@@ -620,12 +639,23 @@ fn main() {
                             if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
                                 alerts::show_unread(&window, 0);
                             }
+                            // A page of the server loaded, as after signing in again: pair if
+                            // allowed.
+                            let server = chosen(&app).map(|server| server.origin());
+                            if load.event() == PageLoadEvent::Finished
+                                && server == Some(load.url().origin())
+                            {
+                                device::wake(&app);
+                            }
                         }
                     })
                     .build()?;
             window.on_window_event({
                 let app = app.clone();
                 move |event| {
+                    if let WindowEvent::Focused(true) = event {
+                        device::wake(&app);
+                    }
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         let keep = app.state::<Config>().0.lock().unwrap().keep_running;
                         let Some(window) = app.get_webview_window("main") else {
@@ -662,12 +692,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("the app failed to start")
         .run(|app, event| {
+            // Commands a bot started on this computer end with the app.
+            if let tauri::RunEvent::Exit = event {
+                device::quit(app);
+            }
             // The Dock icon was clicked while the window was hidden.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 reveal(app);
             }
-            #[cfg(not(target_os = "macos"))]
-            let _ = (app, event);
         });
 }

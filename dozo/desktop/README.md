@@ -11,6 +11,8 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 - A server that cannot be reached gives a screen with Try again and Change server, not a blank page.
 - Standard macOS menus (About, Change Server…, Reload, Quit, and the Edit menu's shortcuts). The
   window comes back at its last size and position.
+- Let Bots Use This Computer (in the Dozo menu): the person's own bots can run commands on this
+  computer instead of a hosted one. See "Bots on this computer" below.
 - Links to other sites open in the default browser. Downloads go to the Downloads folder. File
   inputs open the system file dialog. The session survives a restart: cookies and site storage are
   kept by the system web view.
@@ -19,7 +21,9 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 
 - It does not imitate upstream's desktop bridge, so the web app behaves as it does in a browser:
   no update section, no in-chat search bar, no custom window buttons. Upstream's native features
-  (the host computer, Docker management) are not here; updates are the app's own ("Updates").
+  (running its own server on this computer, Docker management) are not here; updates are the
+  app's own ("Updates"). Bots using this computer is the app's own too (below), with a menu item
+  rather than a switch in the web app's settings, which only that bridge would show.
 - Anything that leaves the server's origin opens in the browser. A sign-in that redirects to
   another site therefore finishes in the browser, not in the app; sign in with email and password.
   A link that asks for a new window also opens in the browser, even on the same origin.
@@ -112,7 +116,11 @@ Known limits:
 - A page loaded from a server can call nothing in the app. What reaches the app from it is the title
   (read for the unread count only) and the notifications the web view itself shows. The three
   commands are under Tauri's ACL (`build.rs`), and the only capability (`capabilities/local.json`)
-  grants them to the app's own screens. It has no `remote` entry and must never get one.
+  grants them to the app's own screens. It has no `remote` entry and must never get one. The
+  dialog plugin's commands are granted to no page: only the app's Rust code opens its dialogs.
+- Bots reach this computer only after the person allows it in the system dialog, which names the
+  server and which no page can answer. The device token is kept in the system keyring, never in
+  a file.
 - Only the chosen server's origin and the app's own screens load in the window. Every other web
   address goes to the browser; `file:`, `data:` and unknown schemes are refused (`src/server.rs`).
 - `http://` is accepted only for this computer (`localhost`, `127.0.0.0/8`, `::1`). Any other
@@ -127,6 +135,70 @@ Known limits:
   Without a click, nothing but a web address can be handed outside the app.
 - The local screens are plain HTML, CSS and JavaScript in `ui/`, with a CSP that allows only their
   own files and forbids framing them.
+
+## Bots on this computer
+
+Turning on Let Bots Use This Computer asks "Allow bots to use this computer?" in a system dialog
+with the warning "A bot on <server> can read your files on this computer and run programs as
+you." (Turkish on a Turkish system). Allow pairs this computer with the chosen server under the signed-in
+account and connects to it; the web app's settings then list it under Computers as Connected.
+
+- Protocol: upstream's paired computer, unchanged, so the server needs nothing new. The app posts
+  the web view's sign-in cookie to `/api/devices/pair` (only to the chosen server's origin) and
+  keeps the device token it gets back in the system keyring (`src/device_pairing.rs`). It then holds one outbound WebSocket to
+  `/api/devices/connect` with that token (`src/device_socket.rs`); the server never connects in.
+  Lost connections come back with backoff; a ping every 30 seconds notices a silent drop. A
+  dropped connection stops the commands in flight (their answers could not arrive), and what
+  they left running gets 60 seconds to see it come back before its process groups stop.
+- What a bot can do (`src/device_run.rs`): run commands and, through them, work with files.
+  Commands arrive as an argument list and start without a shell in between (the server's own
+  shell tool sends `<shell> -lc <command>`, as upstream does). They run as this user, in the
+  bot's own folder or anywhere in the home folder; any other working folder is refused. They get
+  only the usual shell variables of this app's environment, stop at their timeout, and each one
+  leads its own process group. Screen control is not offered: a bot asking to use an app on
+  screen is told it is not available here.
+- What stopping a command reaches: its process group. On Linux each command also carries its own
+  mark in its environment, so what it started in a new session or group (`setsid`, a double
+  fork) is found in `/proc`; that is stopped only by an explicit stop (a run's cancel, the bot's
+  stop, turning access off, quitting the app). A timeout or a dropped connection stops the group
+  only and keeps tracking the rest, so turning access off or quitting later still stops it. A
+  group is signalled only while a marked process is still in it. The limit: an app a command
+  starts inherits the mark too, so a browser a bot opened (`xdg-open`, `firefox`) when none was
+  running closes on such a stop; one that was already running only gets a new window and is not
+  touched. There is no reliable way to tell an app the person now uses from a bot's own process.
+  What a command hands to another manager is out of reach on every system: `systemd-run --user`,
+  launchd, cron, `at`, a login item, or a process that clears its environment and leaves the group.
+  On macOS, `setsid` and a double fork escape as well; on Windows, the process tree is stopped only
+  while the command itself still runs. A finished command's leftovers are tracked (at most 256)
+  and forgotten within a second of ending.
+- The server's rules stay upstream's: only chats the person starts with their own bots reach this
+  computer, never routines or other people's messages, and the first command in each Space asks
+  in the chat first.
+- Ends: turning the item off (at once: the connection and running commands stop and the answer
+  is gone; then the token is revoked on the server and deleted here; if the server cannot be
+  reached, the app says so and retries with backoff, at every launch and before turning it on
+  again, which cannot pair until it succeeds; a server that no longer knows the token counts as
+  done, and without the token the person's sign-in ends the pairing by its device id); removing the computer in the web app's settings; signing out or a password
+  reset (the pairing ends; the same account's next sign-in pairs again on the next page load or
+  when the window comes forward, another account is asked again); quitting the app (commands
+  stop).
+- The answer holds for one server and one account; another server starts switched off. Changes
+  to the pairing run one at a time, each step bounded (network calls time out after 15 seconds,
+  keyring calls after 10); the person is never asked while one runs. While another account's
+  answer is asked for, its new pairing is held as a pending revoke. The menu's check mark always
+  shows the saved answer.
+- Keyring: macOS Keychain, Windows Credential Manager, the Secret Service on Linux (GNOME
+  Keyring, KWallet). On Windows, Credential Manager does not separate apps: any program running as
+  the same user can read the token. Without one, the app does not pair and says so, as upstream's app refuses to
+  without secure storage; a plain file is never used for the token.
+- While connected, the menu's check mark is the only sign in the app; the web app's settings
+  show the computer as Connected. No extra indicator (a tray badge or a title): it would be one
+  more always-visible element for a state the person turned on themselves. With Keep Running in
+  Background, bots can still use this computer while the window is hidden.
+- Plans: a paired computer is not a hosted one, so Free's missing computer hours do not affect it.
+- Not done yet: screen control (macOS needs the Accessibility and Screen Recording permissions,
+  which this app does not ask for). Only the Linux app has been run against a server; the
+  Windows code compiles and runs its tests in CI, the macOS code is not built on a pull request.
 
 ## Build
 
@@ -257,6 +329,10 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
 
 ## Where it keeps things
 
-- `~/Library/Application Support/dev.ssilistre.dozo/`: the server address, the two switches and the window position.
+- `~/Library/Application Support/dev.ssilistre.dozo/`: the server address, the two switches and the
+  window position; under `devices/`, per server, the account this computer is allowed for and
+  whether a revoke is pending (Windows and Linux: the config folders named above). The device
+  token is in the system keyring under `dev.ssilistre.dozo`. Each bot's own folder is under
+  `computers/` in the app's data folder (the same folder on macOS, `~/.local/share/dev.ssilistre.dozo/` on Linux).
 - `~/Library/WebKit/dev.ssilistre.dozo/` and `~/Library/HTTPStorages/dev.ssilistre.dozo.binarycookies`:
   the web view's site data and cookies.
