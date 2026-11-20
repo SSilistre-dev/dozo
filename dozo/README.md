@@ -238,7 +238,7 @@ Accepted by the owner for now, stated here once:
   out of all" ends every site with cookies, unlisted ones included. The list needs a running
   computer, and only Docker computers declare it. The mobile app has no such view yet.
 - Signing out and signing in hold the bot's execution lease so the script never runs a browser
-  beside the bot's; a bot waiting for someone on its screen is not held up. A Private computer has
+  beside the bot's; a bot waiting for someone on its screen is not held up. An Own computer has
   no such lease (upstream's lease covers Team computers only), so there a sign-out the bot races
   can still meet its browser starting.
 - What it makes visible: every member of the Space sees, for every bot there, which sites its
@@ -248,8 +248,26 @@ Accepted by the owner for now, stated here once:
   the same home, so any bot there (through its shell) can read another bot's profile, cookies
   included: a site one person signs in to through one bot is usable by every bot on that computer
   and by everyone who can direct them. Upstream's `docs/computer.md` says sign-ins are "carried
-  over"; that is wrong about the mechanism and right about the reach. Use a Private computer for a
+  over"; that is wrong about the mechanism and right about the reach. Use an Own computer for a
   sign-in that must not be shared.
+- Own computer is the one name for a bot's computer of its own (`computerMode` `dedicated`): the
+  bot settings switch, the Team / Own computer picker (agent import, mobile computer screen) and
+  the shell tool's description say it. Upstream's `docs/computer.md` calls it "Private"; Dozo
+  ships no docs site, so that page is not changed. A Team Computer bot is told in its instructions
+  that the other bots there share its files and sign-ins, and to suggest Own computer when
+  something must stay private. Under the switch, while it is off: on Free, that the plan has no
+  computer (the switch is disabled, with Upgrade for a member who manages billing); otherwise that
+  the Team Computer is shared with the Space's other bots. A switch the server refuses (computer
+  limit, a running bot, a computer someone holds) says why beside it on web; mobile keeps its
+  screen's error line. A full host memory budget never refuses the switch, only a later start
+  ("All computers are busy").
+- How many Own computers: `SANDBOX_MAX_COMPUTERS_PER_USER` (default 2, or the admin's value)
+  counts computer rows that back a live bot, per person across their Spaces: each Space's Team
+  Computer once (kept for the Space's owner), each Own computer once. With the default, a person
+  with bots on their Team Computer can give one bot an Own computer; with every bot switched off
+  the Team Computer, two. Premium's computer is 2 GB (`large=2:2`), so a 4 GB host budget runs
+  two at once for the whole host, whoever owns them: a third start waits for one to sleep
+  (`SANDBOX_IDLE_MS`).
 - `browser_act`, `computer_act` and `shell` never ask for approval (`packages/core/src/action-approval.ts`),
   and outside-content gating applies only to webhook runs: on a signed-in site, a page that tricks
   the bot can make it post, delete or change settings unasked. Only payment presses and saved

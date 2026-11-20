@@ -1,5 +1,6 @@
 import type { BillingStatus, ByokTier } from "./billing.js";
 import { BYOK_TIERS } from "./billing.js";
+import type { ComputerMode } from "./computer.js";
 import { isComputerAllowanceUsed } from "./runs.js";
 
 /**
@@ -198,4 +199,19 @@ export function planLimitText(error: unknown, copy: PlanLimitCopy): string | nul
   const limit = planLimitOf(error, copy);
   if (!limit || limit === "computer_hours") return null;
   return planLimitNotice(limit, null, copy)?.text ?? null;
+}
+
+/**
+ * What shows under a bot's Own computer switch while it is off: on a plan with no computer (Free)
+ * the table's refusal, since the switch cannot give the bot one; otherwise `"shared"`, the hint
+ * that a Team Computer is shared with the Space's other bots. Nothing while it is on.
+ */
+export function ownComputerNote(
+  mode: ComputerMode,
+  billing: PlanLimitBilling | null | undefined,
+  copy: PlanLimitCopy,
+): PlanLimitNotice | "shared" | null {
+  if (mode !== "team") return null;
+  if (!planHasNoComputer(billing)) return "shared";
+  return planLimitNotice(PLAN_LIMIT_CODES.computerNotInPlan, billing, copy);
 }
