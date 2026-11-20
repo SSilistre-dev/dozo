@@ -1,0 +1,19 @@
+/* themes-v2: six named themes on top of dozo.css and chat-v2.css. A theme sets only the palette
+   that every surface and ink step is derived from (--side, --bg, --raise, --raise2, --text) and one
+   accent (--accent-ui). Bot identity colours never change. Light themes also carry data-theme="light"
+   (set by themes-v2.js), so they use the light bot colours and the light steps in chat-v2.css.
+   The same block applies to a [data-t] swatch, so the picker previews read the theme itself. */
+:root[data-skin="sumi"],[data-t="sumi"]{--side:#070708;--bg:#0e0e10;--raise:#18181b;--raise2:#202024;--text:#e8e8ea;--accent-ui:#8e9be0}       /* ink */
+:root[data-skin="yoru"],[data-t="yoru"]{--side:#0b0e15;--bg:#111621;--raise:#1a2030;--raise2:#222a3c;--text:#e6e9f0;--accent-ui:#d9c98f}       /* night */
+:root[data-skin="hoji"],[data-t="hoji"]{--side:#110d0a;--bg:#18130f;--raise:#231c17;--raise2:#2b231d;--text:#efe7de;--accent-ui:#d39467}       /* roasted tea */
+:root[data-skin="washi"],[data-t="washi"]{--side:#ece5d6;--bg:#f5f0e6;--raise:#fbf8f2;--raise2:#fffdf8;--text:#2a2420;--accent-ui:#a5542b}     /* paper */
+:root[data-skin="matcha"],[data-t="matcha"]{--side:#e3e8dc;--bg:#eff2ea;--raise:#f8faf5;--raise2:#fdfefb;--text:#1e2a20;--accent-ui:#3e6b46}   /* green tea */
+:root[data-skin="kasumi"],[data-t="kasumi"]{--side:#e3e7ec;--bg:#eff2f5;--raise:#f9fafc;--raise2:#fdfeff;--text:#1d2530;--accent-ui:#3b5d88}   /* mist */
+/* ink steps where a palette needs them to keep every step at 4.5:1 on its worst surface */
+:root[data-skin="yoru"]{--ink-2:color-mix(in srgb,var(--text) 72%,transparent);--ink-3:color-mix(in srgb,var(--text) 60%,transparent)}
+:root[data-skin="hoji"]{--ink-3:color-mix(in srgb,var(--text) 59%,transparent)}
+:root[data-skin="washi"],:root[data-skin="matcha"],:root[data-skin="kasumi"]{--ink-2:color-mix(in srgb,var(--text) 80%,transparent);--ink-3:color-mix(in srgb,var(--text) 71%,transparent)}
+/* the two defaults, for their swatches only (the page itself takes them from dozo.css) */
+[data-t="dark"]{--bg:#141414;--accent-ui:#ededed}[data-t="light"]{--bg:#f5f5f3;--accent-ui:#1a1a1a}
+.swatch{width:16px;height:16px;border-radius:50%;flex:none;background:linear-gradient(135deg,var(--bg) 50%,var(--accent-ui) 50%);box-shadow:inset 0 0 0 .5px var(--menu-edge)}
+.swatch[data-t="system"]{background:linear-gradient(135deg,#141414 50%,#f5f5f3 50%)}

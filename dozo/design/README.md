@@ -19,9 +19,15 @@ and open a page. The pages are fixed at 1440x900.
   App, where the app shows one flat list
 - `signin-v2.html`: email-first sign-in proposal: email, then a six-digit code (000000 is the wrong
   code here), with a password as the way round; one flow for new and returning addresses
+- `apps-v2.html`: the Integrations window over chat-v2 ("Connect apps" opens it); app marks are
+  initials and the app names are placeholders
 - `computer.html`: the bot's computer view
 - `logos.html`: logo and wordmark studies
 - add `?theme=light` to any page for the light theme (dark is the default)
+- the v2 pages also take `?theme=system|sumi|yoru|hoji|washi|matcha|kasumi` (six proposed named
+  themes in `themes-v2.css`: Sumi, Yoru and Hoji dark, Washi, Matcha and Kasumi light) and
+  `?bubble=neutral` (your bubble and the send button in a neutral tone); Settings > Appearance and
+  Message color switch them live
 
 ## Decisions they fix
 
