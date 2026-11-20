@@ -43,6 +43,10 @@ else
   echo "usage: $0 <dist-dir> <workspace> | --relay <https url> <workspace>" >&2
   exit 64
 fi
+# Absolute, as the steps below run from this directory.
+absolute() { [ "$1" = - ] && echo - || (cd "$1" && pwd); }
+WORKSPACE="$(absolute "$WORKSPACE")" || exit 64
+[ -z "$DIST" ] || DIST="$(absolute "$DIST")" || exit 64
 LABEL="DESKTOP STACK E2E ($OS)"
 [ -z "$RELAY" ] || LABEL="RELAY CANARY"
 say() { echo "[e2e] $*"; }
@@ -84,7 +88,6 @@ took() { say "$1 took $((SECONDS - clock)) s"; clock=$SECONDS; }
 if [ -n "$RELAY" ]; then
   say "the released server, the relay at $RELAY"
 elif [ -z "${DOZO_STACK_E2E_MANIFEST:-}" ]; then
-  DIST="$(cd "$DIST" && pwd)" || exit 64
   node "$HERE/../server-bundle/manifest.mjs" "$DIST" "file://$DIST" || fail "manifest.mjs"
   export DOZO_STACK_E2E_MANIFEST="file://$DIST/manifest.json"
 fi
@@ -172,7 +175,6 @@ fi
 
 say "3. start again and pair a phone through the relay agent ($DOZO_STACK_E2E_RELAY)"
 if [ "$WORKSPACE" != - ]; then
-  WORKSPACE="$(cd "$WORKSPACE" && pwd)" || exit 64
   phone_args=("$HERE/tests/relay_phone.mts" "$DOZO_STACK_E2E_SHARED")
   [ -z "$RELAY" ] || phone_args+=(--no-dev-relay)
   DOZO_WORKSPACE="$WORKSPACE" node "$WORKSPACE/node_modules/tsx/dist/cli.mjs" "${phone_args[@]}" \
