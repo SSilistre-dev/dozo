@@ -45,7 +45,7 @@ export interface RunModelPool {
   ): Promise<unknown>;
 }
 
-type PoolDeps = Pick<ExecutorDeps, "prisma" | "secretStore">;
+export type PoolDeps = Pick<ExecutorDeps, "prisma" | "secretStore">;
 type PoolRun = { userId: string; modelPinned: boolean };
 type SelectedModel = {
   provider?: string | null;
@@ -130,7 +130,7 @@ async function readRunModelPool(
 }
 
 /** Whether a stored connection is of a kind that may join a pool; one that cannot be read is not. */
-async function poolable(deps: PoolDeps, userId: string, secretId: string): Promise<boolean> {
+export async function poolable(deps: PoolDeps, userId: string, secretId: string): Promise<boolean> {
   const secret = await loadStoredModelSecret(deps.prisma, deps.secretStore, userId, secretId);
   if (secret.status !== "loaded") return false;
   try {
