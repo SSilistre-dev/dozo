@@ -1,9 +1,11 @@
+import { createHmac } from "node:crypto";
 import {
-  RELAY_AGENT_KEY_HEADER,
+  RELAY_AGENT_PROOF_HEADER,
   RELAY_CHANNEL_HEADER,
   RELAY_PAIRING_TTL_MS,
   RELAY_SESSION_PATH,
   RELAY_SESSION_REVOKE_PATH,
+  relayAgentProofMessage,
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RelayKeyPair } from "./dozo-relay-channel.js";
@@ -18,11 +20,14 @@ import {
 } from "./dozo-relay-channel.js";
 import type { RelayHostChannel, RelayHostEvent, RelayHostStore } from "./dozo-relay-host.js";
 import {
+  approveRelayChannel,
   listRelayChannels,
   pairRelayHost,
   phoneRequest,
+  RELAY_APPROVAL_MS,
   RelayHostError,
   RelayHttpError,
+  relayAgentProof,
   revokePhoneSession,
   revokeRelayChannel,
   runRelayHost,
@@ -112,6 +117,7 @@ async function paired(overrides: Partial<RelayHostChannel> = {}): Promise<RelayH
       pairingKey: encodeRelayBytes(crypto.randomBytes(32)),
       verifierSet: true,
       pairedAt: 2,
+      approvedAt: 3,
     },
     ...overrides,
   };
@@ -235,6 +241,7 @@ describe("listRelayChannels", () => {
         state: "paired",
         appKey: done.app?.key,
         pairedAt: 2,
+        approved: true,
       },
       { channel: waiting.channel, relay: RELAY, state: "pairing", expiresAt: 99 },
     ]);
@@ -248,6 +255,7 @@ describe("revokeRelayChannel", () => {
     const fetch = vi.fn(async () => response(204)) as unknown as typeof globalThis.fetch;
     expect(await revokeRelayChannel({ store, crypto, fetch, channel: CHANNEL })).toEqual({
       relay: "deleted",
+      session: "skipped",
     });
     expect(fetch).toHaveBeenCalledWith(
       `${RELAY}/v1/channels/${CHANNEL}`,
@@ -271,7 +279,7 @@ describe("revokeRelayChannel", () => {
       channel: CHANNEL,
       attempts: 2,
     });
-    expect(result).toEqual({ relay: "unreachable" });
+    expect(result).toEqual({ relay: "unreachable", session: "skipped" });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(store.channels.size).toBe(0);
 
@@ -279,13 +287,13 @@ describe("revokeRelayChannel", () => {
     const notFound = vi.fn(async () => response(404)) as unknown as typeof globalThis.fetch;
     expect(
       await revokeRelayChannel({ store: gone, crypto, fetch: notFound, channel: CHANNEL }),
-    ).toEqual({ relay: "deleted" });
+    ).toEqual({ relay: "deleted", session: "skipped" });
   });
 
   it("ends the phone's sign-in on the local server too, when given its address and the key", async () => {
     const store = memoryStore([await paired()]);
     const calls: Request[] = [];
-    const fetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       calls.push(new Request(input, init));
       return response(204);
     }) as unknown as typeof globalThis.fetch;
@@ -299,12 +307,13 @@ describe("revokeRelayChannel", () => {
     });
     expect(result).toEqual({ relay: "deleted", session: "revoked" });
     const revoke = calls.find((call) => call.url === `${ORIGIN}${RELAY_SESSION_REVOKE_PATH}`);
-    expect(revoke?.headers.get(RELAY_AGENT_KEY_HEADER)).toBe(KEY);
+    expect(revoke?.headers.get(RELAY_AGENT_PROOF_HEADER)).toMatch(/^\d{13}\.[a-f0-9]{64}$/);
+    expect(revoke?.headers.get(RELAY_AGENT_PROOF_HEADER)).not.toContain(KEY);
     expect(revoke?.headers.get(RELAY_CHANNEL_HEADER)).toBe(CHANNEL);
 
     const down = memoryStore([await paired()]);
-    const refused = vi.fn(async (input: string | URL) => {
-      if (String(input).startsWith(ORIGIN)) throw new TypeError("fetch failed");
+    const refused = vi.fn(async (input: string | URL | Request) => {
+      if (input instanceof Request) throw new TypeError("fetch failed");
       return response(204);
     }) as unknown as typeof globalThis.fetch;
     expect(
@@ -330,25 +339,26 @@ describe("a phone's request on its way to the local server", () => {
   const post = (path: string, headers: Record<string, string> = {}) =>
     new Request(`${ORIGIN}${path}`, { method: "POST", headers, body: "{}" });
 
-  it("carries the agent's key and its own channel on the sign-in request only", async () => {
-    const forged = { [RELAY_AGENT_KEY_HEADER]: "f".repeat(64), [RELAY_CHANNEL_HEADER]: "other" };
-    const signIn = phoneRequest(post(RELAY_SESSION_PATH, forged), CHANNEL, KEY);
-    expect(signIn.headers.get(RELAY_AGENT_KEY_HEADER)).toBe(KEY);
-    expect(signIn.headers.get(RELAY_CHANNEL_HEADER)).toBe(CHANNEL);
-    expect(await signIn.text()).toBe("{}");
-    for (const request of [
-      phoneRequest(post("/rpc/x", forged), CHANNEL, KEY),
-      phoneRequest(post(RELAY_SESSION_REVOKE_PATH, forged), CHANNEL, KEY),
-      phoneRequest(
-        new Request(`${ORIGIN}${RELAY_SESSION_PATH}`, { headers: forged }),
-        CHANNEL,
-        KEY,
-      ),
-      phoneRequest(post(RELAY_SESSION_PATH, forged), CHANNEL, undefined),
-    ]) {
-      expect(request.headers.get(RELAY_AGENT_KEY_HEADER)).toBeNull();
+  it("never carries the agent's headers as the phone sent them", async () => {
+    const forged = {
+      [RELAY_AGENT_PROOF_HEADER]: `${Date.now()}.${"f".repeat(64)}`,
+      [RELAY_CHANNEL_HEADER]: "other",
+    };
+    for (const path of [RELAY_SESSION_PATH, RELAY_SESSION_REVOKE_PATH, "/rpc/x"]) {
+      const request = phoneRequest(post(path, forged));
+      expect(request.headers.get(RELAY_AGENT_PROOF_HEADER)).toBeNull();
       expect(request.headers.get(RELAY_CHANNEL_HEADER)).toBeNull();
+      expect(await request.text()).toBe("{}");
     }
+  });
+
+  it("proves the key with the HMAC the local server checks, and never sends the key", async () => {
+    const request = { method: "POST", path: RELAY_SESSION_PATH, channel: CHANNEL };
+    const proof = await relayAgentProof(KEY, request, 1_800_000_000_000);
+    const expected = createHmac("sha256", KEY)
+      .update(relayAgentProofMessage({ ...request, time: 1_800_000_000_000 }))
+      .digest("hex");
+    expect(proof).toBe(`1800000000000.${expected}`);
   });
 
   it("says whether the local server ended a sign-in, and passes on other failures", async () => {
@@ -374,6 +384,72 @@ describe("a phone's request on its way to the local server", () => {
   });
 });
 
+describe("approving a phone", () => {
+  it("records the approval once, for a paired phone only", async () => {
+    const store = memoryStore([
+      await paired({ app: { ...(await paired()).app!, approvedAt: null } }),
+    ]);
+    await approveRelayChannel({ store, channel: CHANNEL, now: () => 42 });
+    expect(store.channels.get(CHANNEL)?.app?.approvedAt).toBe(42);
+    await approveRelayChannel({ store, channel: CHANNEL, now: () => 99 });
+    expect(store.channels.get(CHANNEL)?.app?.approvedAt).toBe(42);
+    expect((await listRelayChannels(store))[0]).toMatchObject({ approved: true });
+    await expect(approveRelayChannel({ store, channel: "other" })).rejects.toThrow(
+      "no such channel",
+    );
+    const offer = memoryStore([await paired({ app: null, pairing: { psk: "x", expiresAt: 9 } })]);
+    await expect(approveRelayChannel({ store: offer, channel: CHANNEL })).rejects.toThrow(
+      "no phone has paired",
+    );
+  });
+
+  it("drops a pairing nobody approved within five minutes, and keeps an approved one", async () => {
+    const unapproved = await paired();
+    const app = { ...unapproved.app!, pairedAt: 1_000, approvedAt: null };
+    const store = memoryStore([{ ...unapproved, app }]);
+    const fetch = vi.fn(async () => response(204)) as unknown as typeof globalThis.fetch;
+    let now = 1_000 + RELAY_APPROVAL_MS - 1;
+    const host = start({ store, connect: async () => fakeSocket(), fetch, now: () => now });
+    await vi.waitFor(() =>
+      expect(host.events).toContainEqual({ event: "connected", channel: CHANNEL }),
+    );
+    expect(store.channels.size).toBe(1);
+    now += 2;
+    await vi.waitFor(() => expect(store.channels.size).toBe(0), { timeout: 3000 });
+    expect(host.events).toContainEqual({ event: "expired", channel: CHANNEL });
+    expect(fetch).toHaveBeenCalledWith(
+      `${RELAY}/v1/channels/${CHANNEL}`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    host.stop();
+    await host.done;
+
+    const approved = memoryStore([await paired()]);
+    const kept = start({ store: approved, connect: async () => fakeSocket(), now: () => 1e15 });
+    await vi.waitFor(() =>
+      expect(kept.events).toContainEqual({ event: "connected", channel: CHANNEL }),
+    );
+    expect(approved.channels.size).toBe(1);
+    kept.stop();
+    await kept.done;
+  });
+
+  it("drops the keys even when the relay cannot be told", async () => {
+    const unapproved = await paired();
+    const store = memoryStore([{ ...unapproved, app: { ...unapproved.app!, approvedAt: null } }]);
+    const fetch = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof globalThis.fetch;
+    const host = start({ store, connect: async () => fakeSocket(), fetch, now: () => 1e15 });
+    await vi.waitFor(() => expect(store.channels.size).toBe(0), { timeout: 3000 });
+    expect(host.events).toContainEqual(
+      expect.objectContaining({ event: "error", channel: CHANNEL }),
+    );
+    host.stop();
+    await host.done;
+  });
+});
+
 describe("runRelayHost", () => {
   it("ends the phone's sign-in on the local server when the relay no longer knows its channel", async () => {
     for (const status of [204, 503]) {
@@ -386,10 +462,11 @@ describe("runRelayHost", () => {
       await vi.waitFor(() =>
         expect(host.events).toContainEqual({ event: "revoked", channel: CHANNEL }),
       );
-      expect(fetch).toHaveBeenCalledWith(
-        new URL(RELAY_SESSION_REVOKE_PATH, ORIGIN),
-        expect.anything(),
-      );
+      const revoke = vi
+        .mocked(fetch)
+        .mock.calls.map(([input]) => input as Request)
+        .find((input) => input instanceof Request);
+      expect(revoke?.url).toBe(`${ORIGIN}${RELAY_SESSION_REVOKE_PATH}`);
       if (status !== 204) {
         expect(host.events).toContainEqual(
           expect.objectContaining({ event: "error", channel: CHANNEL }),

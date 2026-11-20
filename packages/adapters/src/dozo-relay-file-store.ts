@@ -26,6 +26,8 @@ const ChannelSchema = z.object({
       pairingKey: RelayKey,
       verifierSet: z.boolean(),
       pairedAt: z.number(),
+      /** When the user approved the phone on the computer (`approve`). */
+      approvedAt: z.number().nullable().optional(),
     })
     .nullable(),
 });

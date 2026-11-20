@@ -366,6 +366,21 @@ export async function relayAppToken(crypto: RelayCrypto, pairingKey: Uint8Array)
   );
 }
 
+/**
+ * The six digits both ends show while the user approves the phone on the computer. From the
+ * pairing key, which only the two ends hold, so a code that matches proves it is this phone.
+ */
+export async function relayApprovalCode(crypto: RelayCrypto, pairingKey: Uint8Array) {
+  const bytes = await crypto.hkdf(
+    pairingKey,
+    new Uint8Array(0),
+    concat(LABEL, utf8(" approval code")),
+    4,
+  );
+  const value = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0);
+  return String(value % 1_000_000).padStart(6, "0");
+}
+
 /** What the relay stores for a token: its SHA-256, base64url. */
 export async function relayVerifier(crypto: RelayCrypto, token: string) {
   return encodeRelayBytes(await crypto.sha256(utf8(token)));

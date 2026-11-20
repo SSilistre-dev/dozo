@@ -6,6 +6,7 @@ import { RELAY_MAX_MESSAGE_BYTES } from "@rakazo/contracts";
 import { isLoopbackHost } from "@rakazo/contracts/network-host";
 import type { RelayWebSocket } from "@rakazo/core";
 import {
+  approveRelayChannel,
   listRelayChannels,
   pairRelayHost,
   parseRetryAfter,
@@ -109,12 +110,18 @@ export async function relayAgentMain(argv: string[], io: RelayAgentIo): Promise<
           event: "revoked",
           channel,
           relay: result.relay,
-          ...(result.session ? { session: result.session } : {}),
+          session: result.session,
         });
         return 0;
       }
+      case "approve": {
+        if (!channel) throw new UsageError("approve needs a channel id");
+        await approveRelayChannel({ store, channel, now });
+        emit({ event: "approved", channel });
+        return 0;
+      }
       default:
-        throw new UsageError("commands: pair, run, list, revoke");
+        throw new UsageError("commands: pair, run, list, approve, revoke");
     }
   } catch (error) {
     emit({ event: "error", reason: (error as Error).message });

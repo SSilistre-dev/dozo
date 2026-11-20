@@ -16,6 +16,7 @@ const calls = vi.hoisted(() => ({
   deliver: vi.fn(async () => undefined),
 }));
 
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("./api", () => ({
   currentApiBase: () => state.base,
   endpointChangeInProgress: () => state.switching,
@@ -47,14 +48,14 @@ it("saves the session the computer gives, asked at the computer's sign-in addres
   expect(await askComputerForSignIn()).toBe("signed-in");
   expect(fetch).toHaveBeenCalledWith(
     `${state.base}${RELAY_SESSION_PATH}`,
-    expect.objectContaining({ method: "POST" }),
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ platform: "ios" }) }),
   );
   expect(calls.save).toHaveBeenCalledWith("session.signature");
 });
 
 it("passes on why the computer gave none", async () => {
-  for (const reason of ["sign-in-on-computer", "one-account", "used"]) {
-    answer(reason === "used" ? 410 : 409, { reason });
+  for (const reason of ["sign-in-on-computer", "one-account", "used", "not-approved"]) {
+    answer(reason === "used" ? 410 : reason === "not-approved" ? 403 : 409, { reason });
     expect(await askComputerForSignIn()).toBe(reason);
   }
   answer(404, "");

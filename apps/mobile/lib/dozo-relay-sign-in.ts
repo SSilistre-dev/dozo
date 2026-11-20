@@ -4,6 +4,7 @@ import {
   RelaySessionRefusalSchema,
   RelaySessionSchema,
 } from "@rakazo/contracts";
+import { Platform } from "react-native";
 import type { PendingSignOut } from "./api";
 import {
   currentApiBase,
@@ -17,8 +18,9 @@ import { currentSessionGeneration, saveSessionToken } from "./session";
 /**
  * A paired phone's sign-in, asked of the computer it is paired with
  * (`packages/auth/src/dozo-relay-session.ts`). The computer gives one only while its account is
- * signed in there, and only once per pairing, so the phone asks whenever the sign-in screen shows
- * or comes back to the front.
+ * signed in there, only once per pairing, and only after the user approved this phone on the
+ * computer; the computer holds the request until then. The phone asks whenever the sign-in screen
+ * shows or comes back to the front.
  */
 export type ComputerSignIn = "signed-in" | RelaySessionRefusal | "unreachable";
 
@@ -39,7 +41,10 @@ export async function askComputerForSignIn(): Promise<ComputerSignIn> {
     response = await fetch(`${apiBase}${RELAY_SESSION_PATH}`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: "rakazo://" },
-      body: "{}",
+      // Shown on the computer beside the code, so the user knows which phone asks.
+      body: JSON.stringify({
+        platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : undefined,
+      }),
     });
   } catch (error) {
     if (error instanceof TypeError) return "unreachable";

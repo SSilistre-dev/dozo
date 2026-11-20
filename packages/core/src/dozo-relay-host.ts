@@ -1,5 +1,5 @@
 import {
-  RELAY_AGENT_KEY_HEADER,
+  RELAY_AGENT_PROOF_HEADER,
   RELAY_CHANNEL_HEADER,
   RELAY_PAIRING_TTL_MS,
   RELAY_PROTOCOL_VERSION,
@@ -7,6 +7,8 @@ import {
   RELAY_SESSION_REVOKE_PATH,
   RelayPairingOfferSchema,
   RelayRegisterResponseSchema,
+  RelaySessionRequestSchema,
+  relayAgentProofMessage,
 } from "@rakazo/contracts";
 import { abortableDelay } from "./async.js";
 import type { RelayChannel, RelayCrypto, RelayDuplex, RelayKeyPair } from "./dozo-relay-channel.js";
@@ -15,6 +17,7 @@ import {
   decodeRelayBytes,
   encodeRelayBytes,
   encodeRelayPairingOffer,
+  relayApprovalCode,
   relayAppToken,
   relayPairingSecrets,
   relayVerifier,
@@ -40,7 +43,14 @@ export type RelayHostChannel = {
   /** While the offer is open: the first session's key and when the offer ends. */
   pairing: { psk: string; expiresAt: number } | null;
   /** After pairing: the phone's public key and the key of every later session. */
-  app: { key: string; pairingKey: string; verifierSet: boolean; pairedAt: number } | null;
+  app: {
+    key: string;
+    pairingKey: string;
+    verifierSet: boolean;
+    pairedAt: number;
+    /** When the user approved the phone on the computer; until then it gets no sign-in. */
+    approvedAt?: number | null;
+  } | null;
 };
 
 /** Where the host keeps its key pair and channels; a file today, the OS key store later. */
@@ -65,6 +75,8 @@ export type RelayHostEvent =
   | { event: "connected"; channel: string }
   | { event: "peer"; channel: string; present: boolean }
   | { event: "paired"; channel: string; appKey: string }
+  | { event: "approval"; channel: string; code: string; platform: string | null }
+  | { event: "approved"; channel: string }
   | { event: "disconnected"; channel: string; reason: string; retryInMs: number }
   | { event: "refused"; channel: string; reason: string }
   | { event: "revoked"; channel: string }
@@ -157,6 +169,7 @@ export async function listRelayChannels(store: RelayHostStore) {
           state: "paired" as const,
           appKey: entry.app.key,
           pairedAt: entry.app.pairedAt,
+          approved: Boolean(entry.app.approvedAt),
         }
       : {
           channel: entry.channel,
@@ -167,22 +180,48 @@ export async function listRelayChannels(store: RelayHostStore) {
   );
 }
 
-/**
- * What reaches the local server for a phone's request: never the agent's own headers as the phone
- * sent them, and the agent's key with the request's channel only on the sign-in request.
- */
-export function phoneRequest(request: Request, channel: string, sessionKey: string | undefined) {
+/** How long a paired phone waits for the user's approval before the pairing is dropped. */
+export const RELAY_APPROVAL_MS = 5 * 60_000;
+
+/** A phone's request as it reaches the local server: never with the agent's headers it sent. */
+export function phoneRequest(request: Request) {
   const headers = new Headers(request.headers);
-  headers.delete(RELAY_AGENT_KEY_HEADER);
+  headers.delete(RELAY_AGENT_PROOF_HEADER);
   headers.delete(RELAY_CHANNEL_HEADER);
-  if (
-    sessionKey &&
-    request.method === "POST" &&
-    new URL(request.url).pathname === RELAY_SESSION_PATH
-  ) {
-    headers.set(RELAY_AGENT_KEY_HEADER, sessionKey);
-    headers.set(RELAY_CHANNEL_HEADER, channel);
-  }
+  return new Request(request, { headers, duplex: "half" } as RequestInit);
+}
+
+/**
+ * The agent's proof for one request: the time and an HMAC of the request kind, the channel and
+ * the time under the key it shares with the local server. The key itself never travels.
+ */
+export async function relayAgentProof(
+  sessionKey: string,
+  request: { method: string; path: string; channel: string },
+  now: number,
+) {
+  const subtle = globalThis.crypto.subtle;
+  const key = await subtle.importKey(
+    "raw",
+    new TextEncoder().encode(sessionKey),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = new TextEncoder().encode(relayAgentProofMessage({ ...request, time: now }));
+  const mac = new Uint8Array(await subtle.sign("HMAC", key, message));
+  return `${now}.${[...mac].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The agent's own request to the local server about `channel`. */
+async function agentRequest(request: Request, channel: string, sessionKey: string, now: number) {
+  const headers = new Headers(request.headers);
+  const path = new URL(request.url).pathname;
+  headers.set(RELAY_CHANNEL_HEADER, channel);
+  headers.set(
+    RELAY_AGENT_PROOF_HEADER,
+    await relayAgentProof(sessionKey, { method: request.method, path, channel }, now),
+  );
   return new Request(request, { headers, duplex: "half" } as RequestInit);
 }
 
@@ -192,18 +231,35 @@ export async function revokePhoneSession(deps: {
   sessionKey: string;
   channel: string;
   fetch?: typeof fetch;
+  now?: () => number;
 }): Promise<boolean> {
+  const request = await agentRequest(
+    new Request(new URL(RELAY_SESSION_REVOKE_PATH, deps.origin), { method: "POST" }),
+    deps.channel,
+    deps.sessionKey,
+    (deps.now ?? Date.now)(),
+  );
   try {
-    const response = await (deps.fetch ?? fetch)(new URL(RELAY_SESSION_REVOKE_PATH, deps.origin), {
-      method: "POST",
-      headers: { [RELAY_AGENT_KEY_HEADER]: deps.sessionKey, [RELAY_CHANNEL_HEADER]: deps.channel },
-    });
+    const response = await (deps.fetch ?? fetch)(request);
     await response.body?.cancel();
     return response.ok;
   } catch (error) {
     if (error instanceof TypeError) return false;
     throw error;
   }
+}
+
+/** Records the user's approval of the phone on `channel`; a running agent picks it up. */
+export async function approveRelayChannel(deps: {
+  store: RelayHostStore;
+  channel: string;
+  now?: () => number;
+}) {
+  const entry = (await deps.store.list()).find((item) => item.channel === deps.channel);
+  if (!entry) throw new RelayHostError("no such channel");
+  if (!entry.app) throw new RelayHostError("no phone has paired on this channel yet");
+  if (entry.app.approvedAt) return;
+  await deps.store.put({ ...entry, app: { ...entry.app, approvedAt: (deps.now ?? Date.now)() } });
 }
 
 /**
@@ -218,7 +274,7 @@ export async function revokeRelayChannel(
     origin?: string;
     sessionKey?: string;
   },
-): Promise<{ relay: "deleted" | "unreachable"; session?: "revoked" | "unreachable" }> {
+): Promise<{ relay: "deleted" | "unreachable"; session: "revoked" | "unreachable" | "skipped" }> {
   const entry = (await deps.store.list()).find((item) => item.channel === deps.channel);
   if (!entry) throw new RelayHostError("no such channel");
   let relay: "deleted" | "unreachable" = "deleted";
@@ -238,7 +294,8 @@ export async function revokeRelayChannel(
     if (!(error instanceof RelayHttpError && error.status === 404)) relay = "unreachable";
   }
   await deps.store.remove(entry.channel);
-  if (!deps.origin || !deps.sessionKey) return { relay };
+  // Said, not left out: a phone's sign-in that was not ended is the caller's to know about.
+  if (!deps.origin || !deps.sessionKey) return { relay, session: "skipped" };
   const ended = await revokePhoneSession({
     origin: deps.origin,
     sessionKey: deps.sessionKey,
@@ -285,9 +342,11 @@ export async function runRelayHost(options: RelayHostOptions) {
             loops.delete(id);
           }
         }
-        // A channel's file changes only through its own loop after it starts (pair adds files,
-        // revoke removes them), so a running loop keeps its own copy, never an older read.
+        // A channel's file changes through its own loop after it starts (pair adds files, revoke
+        // removes them), so a running loop keeps its own copy; the one outside change it takes up
+        // is the user's approval (`approve`).
         for (const entry of entries) {
+          loops.get(entry.channel)?.refresh(entry);
           if (!loops.has(entry.channel)) {
             const started = new ChannelLoop(options, hostKey, entry, () => {
               if (loops.get(entry.channel) === started) loops.delete(entry.channel);
@@ -340,7 +399,99 @@ class ChannelLoop {
   }
 
   start() {
-    this.done = Promise.all([this.connectLoop(), this.expiry()]).then(() => this.onEnd());
+    this.done = Promise.all([this.connectLoop(), this.expiry(), this.approvalExpiry()]).then(() =>
+      this.onEnd(),
+    );
+  }
+
+  /** Takes up an approval given from outside (`approve`), the one change not made by this loop. */
+  refresh(stored: RelayHostChannel) {
+    const approvedAt = stored.app?.approvedAt;
+    if (!approvedAt || !this.entry.app || this.entry.app.approvedAt) return;
+    this.entry = { ...this.entry, app: { ...this.entry.app, approvedAt } };
+    this.options.onEvent({ event: "approved", channel: this.id });
+    for (const waiter of [...this.approvalWaiters]) waiter();
+  }
+
+  private readonly approvalWaiters = new Set<() => void>();
+
+  /** Drops a pairing the user did not approve within five minutes: its channel goes too. */
+  private async approvalExpiry() {
+    const { signal } = this.controller;
+    while (!signal.aborted && !this.entry.app?.approvedAt) {
+      const app = this.entry.app;
+      const left = app ? app.pairedAt + RELAY_APPROVAL_MS - this.now() : 1000;
+      if (left <= 0) {
+        this.controller.abort();
+        try {
+          await relayHttp(
+            this.options,
+            this.entry.relay,
+            "DELETE",
+            `/v1/channels/${this.id}`,
+            this.entry.hostToken,
+          );
+        } catch (error) {
+          // The relay drops a channel nobody uses on its own; the keys go here either way.
+          this.options.onEvent({ event: "error", channel: this.id, reason: message(error) });
+        }
+        await this.options.store.remove(this.id);
+        this.options.onEvent({ event: "expired", channel: this.id });
+        return;
+      }
+      await abortableDelay(Math.min(left, 1000), signal);
+    }
+  }
+
+  /**
+   * A phone's request to the local server. Its sign-in request waits for the user's approval on
+   * the computer, then goes with the agent's proof; every other request goes as the phone sent it,
+   * less the agent's headers.
+   */
+  private async forwardPhone(request: Request) {
+    const forward = this.options.forward ?? fetch;
+    const clean = phoneRequest(request);
+    const { sessionKey } = this.options;
+    const signIn = clean.method === "POST" && new URL(clean.url).pathname === RELAY_SESSION_PATH;
+    if (!sessionKey || !signIn) return forward(clean);
+    const body = await clean.text();
+    if (!(await this.approved(body))) {
+      return Response.json({ reason: "not-approved" }, { status: 403 });
+    }
+    const signed = await agentRequest(
+      new Request(clean, { body }),
+      this.id,
+      sessionKey,
+      this.now(),
+    );
+    return forward(signed);
+  }
+
+  /** Whether the user approved this phone, asking them (an `approval` event) and waiting if not. */
+  private async approved(body: string) {
+    const app = this.entry.app;
+    if (!app) return false;
+    if (app.approvedAt) return true;
+    let platform: string | null = null;
+    try {
+      const parsed = RelaySessionRequestSchema.safeParse(JSON.parse(body));
+      platform = parsed.success ? (parsed.data.platform ?? null) : null;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+    const code = await relayApprovalCode(this.options.crypto, decodeRelayBytes(app.pairingKey));
+    this.options.onEvent({ event: "approval", channel: this.id, code, platform });
+    const { signal } = this.controller;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        this.approvalWaiters.delete(done);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      this.approvalWaiters.add(done);
+      signal.addEventListener("abort", done, { once: true });
+    });
+    return Boolean(this.entry.app?.approvedAt);
   }
 
   stop() {
@@ -476,10 +627,7 @@ class ChannelLoop {
         const transport = app ? channel : this.firstRecord(channel);
         serveRelay(transport, {
           origin: this.options.origin,
-          forward: (request) =>
-            (this.options.forward ?? fetch)(
-              phoneRequest(request, this.id, this.options.sessionKey),
-            ),
+          forward: (request) => this.forwardPhone(request),
         });
       },
       (error: unknown) =>

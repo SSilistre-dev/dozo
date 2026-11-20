@@ -191,10 +191,13 @@ timer, so a stream's events are not held back.
   response body already decoded.
 - When the response ends before the request body did, the host stops reading the request body.
 - The tunnel is transport, not authorization: the loopback server authenticates every request the
-  way it would without the relay.
-- One exception the host adds: on a phone's sign-in request (`POST /api/auth/dozo/relay-session`)
-  it adds its own key and the channel's id, and it removes those headers from every other request
-  (`dozo/relay/agent/README.md`, Phone sign-in).
+  way it would without the relay. The one request it treats differently is a phone's sign-in
+  (`POST /api/auth/dozo/relay-session`). There the authorization is the user's: the host holds that
+  request until the user approved the phone on the computer, comparing a code both ends derive from
+  `pairingKey`. Only then does it add the channel's id and its proof of a key it shares with the
+  loopback server. It removes those headers from every other request
+  (`dozo/relay/agent/README.md`, Phone sign-in). Pairing alone, holding the QR code for 10 minutes,
+  gives no sign-in.
 
 ### Overhead
 

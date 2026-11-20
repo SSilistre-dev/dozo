@@ -10,7 +10,11 @@ import type { ComputerSignIn } from "./dozo-relay-sign-in";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 const gone = vi.hoisted(() => ({ origins: new Set<string>(), listener: () => {} }));
-const app = vi.hoisted(() => ({ foreground: true, ask: vi.fn() }));
+const app = vi.hoisted(() => ({
+  foreground: true,
+  ask: vi.fn(),
+  code: vi.fn(async (): Promise<string | null> => null),
+}));
 
 vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
@@ -32,6 +36,7 @@ vi.mock("../components/native-action-button", () => ({
 }));
 vi.mock("../lib/dozo-relay-fetch", () => ({
   isRelayGone: (origin: string) => gone.origins.has(origin),
+  relayApprovalCodeOf: app.code,
   subscribeRelayGone: (listener: () => void) => {
     gone.listener = listener;
     return () => undefined;
@@ -51,6 +56,8 @@ beforeEach(() => {
   app.foreground = true;
   app.ask.mockReset();
   app.ask.mockResolvedValue("sign-in-on-computer");
+  app.code.mockReset();
+  app.code.mockResolvedValue(null);
   router.push.mockClear();
   router.replace.mockClear();
 });
@@ -71,6 +78,26 @@ it("asks the computer for a sign-in and goes home with it, with no password aske
   expect(container.querySelector("input")).toBeNull();
 });
 
+it("shows the code to compare while the computer waits for the user's approval", async () => {
+  const held = deferred<ComputerSignIn>();
+  app.ask.mockReturnValue(held.promise);
+  app.code.mockResolvedValue("012345");
+  await render();
+  expect(container.textContent).toContain("Approve this phone on your computer.");
+  expect(container.textContent).toContain("012 345");
+  await act(async () => held.resolve("signed-in"));
+  expect(router.replace).toHaveBeenCalledWith("/");
+});
+
+it("drops a code that arrives after it left", async () => {
+  const code = deferred<string | null>();
+  app.code.mockReturnValue(code.promise);
+  await render();
+  act(() => root.unmount());
+  await act(async () => code.resolve("012345"));
+  root = createRoot(container);
+});
+
 it.each<[ComputerSignIn, string, boolean]>([
   ["sign-in-on-computer", "Sign in on your computer to use it here.", false],
   [
@@ -79,6 +106,7 @@ it.each<[ComputerSignIn, string, boolean]>([
     false,
   ],
   ["used", "Pair again to sign in on this phone.", true],
+  ["not-approved", "This phone was not approved in time.", true],
   ["unreachable", "Could not reach your computer.", false],
 ])("says what the computer answered (%s)", async (result, text, pairAgain) => {
   app.ask.mockResolvedValue(result);

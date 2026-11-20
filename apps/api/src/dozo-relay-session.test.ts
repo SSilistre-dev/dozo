@@ -1,14 +1,17 @@
+import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
-import { issueRelaySession, revokeRelaySession } from "@rakazo/auth";
+import { forgetRelayAgentKey, issueRelaySession, revokeRelaySession } from "@rakazo/auth";
 import {
-  RELAY_AGENT_KEY_HEADER,
+  RELAY_AGENT_PROOF_HEADER,
   RELAY_CHANNEL_HEADER,
   RELAY_SESSION_PATH,
   RELAY_SESSION_REVOKE_PATH,
+  relayAgentProofMessage,
 } from "@rakazo/contracts";
+import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { dozoRelaySessionRoutes } from "./dozo-relay-session.js";
+import { dozoRelaySessionRoutes, mountDozoRelaySessions } from "./dozo-relay-session.js";
 
 vi.mock("@rakazo/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/auth")>()),
@@ -18,24 +21,42 @@ vi.mock("@rakazo/auth", async (importOriginal) => ({
 
 const KEY = "c".repeat(64);
 const CHANNEL = "A".repeat(22);
+const NOW = 1_800_000_000_000;
 const deps = { auth: {} as never, prisma: {} as never };
 
-function routes(options: { key?: string | null; socket?: string } = {}) {
+function routes(options: { socket?: string; now?: number } = {}) {
   return dozoRelaySessionRoutes({
     ...deps,
-    key: options.key === undefined ? KEY : options.key,
+    key: KEY,
     socketAddress: () => options.socket ?? "127.0.0.1",
+    now: () => options.now ?? NOW,
   });
 }
 
+/** The agent's request: its proof for this path and channel, made at `time`. */
 function ask(
-  app: ReturnType<typeof routes>,
+  app: Hono,
   headers: Record<string, string> = {},
   path = RELAY_SESSION_PATH,
+  proved: { channel?: string; path?: string; time?: number; key?: string } = {},
 ) {
+  const time = proved.time ?? NOW;
+  const message = relayAgentProofMessage({
+    method: "POST",
+    path: proved.path ?? path,
+    channel: proved.channel ?? CHANNEL,
+    time,
+  });
+  const mac = createHmac("sha256", proved.key ?? KEY)
+    .update(message)
+    .digest("hex");
   return app.request(path, {
     method: "POST",
-    headers: { [RELAY_AGENT_KEY_HEADER]: KEY, [RELAY_CHANNEL_HEADER]: CHANNEL, ...headers },
+    headers: {
+      [RELAY_AGENT_PROOF_HEADER]: `${time}.${mac}`,
+      [RELAY_CHANNEL_HEADER]: CHANNEL,
+      ...headers,
+    },
   });
 }
 
@@ -47,10 +68,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  forgetRelayAgentKey();
 });
 
 describe("a phone's sign-in, asked by the computer's agent", () => {
-  it("gives the session to the agent on this computer, for the channel it names", async () => {
+  it("gives the session to the agent on this computer, for the channel it proves", async () => {
     const response = await ask(routes());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ token: "session.signature" });
@@ -70,20 +92,22 @@ describe("a phone's sign-in, asked by the computer's agent", () => {
   });
 
   it.each([
-    ["a server without the agent's key", { key: null }, {}],
-    ["another machine", { socket: "192.0.2.7" }, {}],
-    ["no socket address", { socket: "" }, {}],
-    ["a proxy forwarding another machine", {}, { "x-forwarded-for": "127.0.0.1, 203.0.113.5" }],
-    ["a forwarded header naming another machine", {}, { forwarded: 'for="[2001:db8::1]"' }],
-    ["a wrong key", {}, { [RELAY_AGENT_KEY_HEADER]: "d".repeat(64) }],
-    ["a key of the wrong shape", {}, { [RELAY_AGENT_KEY_HEADER]: "short" }],
-    ["no key", {}, { [RELAY_AGENT_KEY_HEADER]: "" }],
-    ["a channel of the wrong shape", {}, { [RELAY_CHANNEL_HEADER]: "../x" }],
-    ["no channel", {}, { [RELAY_CHANNEL_HEADER]: "" }],
-  ])("answers 404, as without the feature, to %s", async (_name, options, headers) => {
-    const app = routes(options as { key?: string | null; socket?: string });
-    expect((await ask(app, headers)).status).toBe(404);
-    expect((await ask(app, headers, RELAY_SESSION_REVOKE_PATH)).status).toBe(404);
+    ["another machine", { socket: "192.0.2.7" }, {}, {}],
+    ["no socket address", { socket: "" }, {}, {}],
+    ["a proxy forwarding another machine", {}, { "x-forwarded-for": "127.0.0.1, 203.0.113.5" }, {}],
+    ["a forwarded header naming another machine", {}, { forwarded: 'for="[2001:db8::1]"' }, {}],
+    ["a proof under another key", {}, {}, { key: "d".repeat(64) }],
+    ["a proof for another channel", {}, {}, { channel: "B".repeat(22) }],
+    ["a proof for another request", {}, {}, { path: "/api/auth/other" }],
+    ["a proof over a minute old (a replay)", {}, {}, { time: NOW - 61_000 }],
+    ["the key itself instead of a proof", {}, { [RELAY_AGENT_PROOF_HEADER]: KEY }, {}],
+    ["no proof", {}, { [RELAY_AGENT_PROOF_HEADER]: "" }, {}],
+    ["a channel of the wrong shape", {}, { [RELAY_CHANNEL_HEADER]: "../x" }, {}],
+    ["no channel", {}, { [RELAY_CHANNEL_HEADER]: "" }, {}],
+  ])("answers 404, as without the feature, to %s", async (_name, options, headers, proved) => {
+    const app = routes(options);
+    expect((await ask(app, headers, RELAY_SESSION_PATH, proved)).status).toBe(404);
+    expect((await ask(app, headers, RELAY_SESSION_REVOKE_PATH, proved)).status).toBe(404);
     expect(issueRelaySession).not.toHaveBeenCalled();
     expect(revokeRelaySession).not.toHaveBeenCalled();
   });
@@ -93,17 +117,40 @@ describe("a phone's sign-in, asked by the computer's agent", () => {
     expect(response.status).toBe(204);
     expect(revokeRelaySession).toHaveBeenCalledWith(deps.prisma, CHANNEL);
   });
+});
+
+describe("mounting", () => {
+  it("adds nothing to a server without the agent's key", async () => {
+    const app = new Hono();
+    mountDozoRelaySessions(app, deps);
+    expect(app.routes).toEqual([]);
+    expect((await ask(app)).status).toBe(404);
+    mountDozoRelaySessions(app, { ...deps, key: null });
+    expect(app.routes).toEqual([]);
+  });
 
   it("reads the key from the environment, and the socket from Node's server", async () => {
     vi.stubEnv("DOZO_RELAY_AGENT_KEY", KEY);
-    const app = dozoRelaySessionRoutes(deps);
+    const app = new Hono();
+    mountDozoRelaySessions(app, deps);
     const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
     try {
       await new Promise<void>((resolve) => server.once("listening", () => resolve()));
       const { port } = server.address() as AddressInfo;
+      const time = Date.now();
+      const mac = createHmac("sha256", KEY)
+        .update(
+          relayAgentProofMessage({
+            method: "POST",
+            path: RELAY_SESSION_PATH,
+            channel: CHANNEL,
+            time,
+          }),
+        )
+        .digest("hex");
       const response = await fetch(`http://127.0.0.1:${port}${RELAY_SESSION_PATH}`, {
         method: "POST",
-        headers: { [RELAY_AGENT_KEY_HEADER]: KEY, [RELAY_CHANNEL_HEADER]: CHANNEL },
+        headers: { [RELAY_AGENT_PROOF_HEADER]: `${time}.${mac}`, [RELAY_CHANNEL_HEADER]: CHANNEL },
       });
       expect(response.status).toBe(200);
     } finally {

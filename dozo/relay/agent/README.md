@@ -22,6 +22,7 @@ unit gate cover it:
 dozo-relay-agent pair --relay <https address> [--state <dir>]
 dozo-relay-agent run --origin http://127.0.0.1:<port> [--state <dir>]
 dozo-relay-agent list [--state <dir>]
+dozo-relay-agent approve <channel> [--state <dir>]
 dozo-relay-agent revoke <channel> [--origin http://127.0.0.1:<port>] [--state <dir>]
 ```
 
@@ -31,10 +32,13 @@ dozo-relay-agent revoke <channel> [--origin http://127.0.0.1:<port>] [--state <d
   is connected: `run` notices the new channel by itself.
 - `run` stays connected until SIGINT or SIGTERM, then closes every socket and prints
   `{"event":"stopped"}`. `--origin` must be a loopback address; the agent forwards nowhere else.
-- `list` prints `{"channels":[{"channel","relay","state":"paired","appKey","pairedAt"} |
+- `list` prints `{"channels":[{"channel","relay","state":"paired","appKey","pairedAt","approved"} |
   {"channel","relay","state":"pairing","expiresAt"}]}`, never a key or token.
+- `approve` records that the user approved the phone on a channel (Phone sign-in):
+  `{"event":"approved","channel"}`.
 - `revoke` deletes the channel on the relay (both sockets close) and forgets its keys, which go
-  even when the relay cannot be reached: `{"event":"revoked","channel","relay":"deleted"|"unreachable"}`.
+  even when the relay cannot be reached:
+  `{"event":"revoked","channel","relay":"deleted"|"unreachable","session":"revoked"|"unreachable"|"skipped"}`.
 
 Exit codes: 0 done, 2 failed, 64 usage error. Every stdout line is one JSON object; a failure is
 `{"event":"error","reason"}` before the exit code.
@@ -44,34 +48,62 @@ The relay address has no default: https, or http on a loopback address for local
 ## Phone sign-in
 
 A local server with `DOZO_RELAY_AGENT_KEY` set (64 hexadecimal digits, random, kept with the
-server's other secrets) signs a paired phone in as its one account, while that account is signed
-in on the computer. The phone never sees a password. The agent gets the same value in its
-environment for `run` and `revoke`; without it, phones get no sign-in from this computer.
+server's other secrets) signs a paired phone in as its one account, once the user approved that
+phone on the computer. The phone never sees a password. The agent gets the same value in its
+environment for `run` and `revoke`; without it, phones get no sign-in from this computer, and the
+local server wires none of this (no route, no hook), exactly as before. The server reads the key
+once at start and removes it from its environment, so nothing it starts (a bot's command, a tool)
+inherits it.
 
-- The phone asks with `POST /api/auth/dozo/relay-session` through the relay. On that request only,
-  `run` adds `x-dozo-relay-agent-key` and `x-dozo-relay-channel` (the channel the request came
-  on). It removes both headers from every request a phone sends, so a phone can neither name
-  another channel nor carry a key of its own.
-- The local server answers only a request from this computer with the key, compared in constant
-  time; anyone else gets 404. It gives each channel one session, ever: `200 { token }`, or `409
-  { reason: "sign-in-on-computer" | "one-account" }`, or `410 { reason: "used" }`. The token
-  crosses only inside the sealed channel and is never logged.
-- The session ends when the phone is removed: `revoke --origin` ends it on the local server
-  (`"session": "revoked" | "unreachable"` in its line), and so does `run` when the relay no
-  longer knows the channel (an `error` event if the server could not be reached). It also ends
-  when the user signs out on the computer, or when the phone signs out. A removed phone pairs
-  again to get a new one.
-- Limits, on purpose:
-  - If the local server cannot be reached when a phone is removed, the session stays in its
-    database. The phone still cannot use it: the channel is gone, and the server answers loopback
-    only.
-  - The phone's session is a full session of that account, like one from a password sign-in on
-    the phone.
-  - Anything holding the key can ask for sessions. The key is a secret of the user's own account
-    on that computer (a 0600 file); it is checked, not tied to a channel the agent knows.
-- The desktop app makes the key with the server's other secrets and gives it to the API
-  (`DOZO_RELAY_AGENT_KEY`) and to `run` and `revoke`, and passes `revoke` the server's
-  `--origin`.
+1. Right after pairing, the phone asks with `POST /api/auth/dozo/relay-session` through the relay
+   (body `{ "platform": "ios" | "android" }`) and shows a six-digit code derived from the pairing
+   key (`relayApprovalCode`), which only the two ends hold.
+2. `run` holds that request and prints `{"event":"approval","channel","code","platform"}`. The
+   desktop app shows the code and the platform and asks the user; `approve <channel>` records the
+   answer (the user compares the codes). A running agent picks the approval up from its state and
+   prints `{"event":"approved","channel"}`.
+3. Only then does `run` forward the request, with `x-dozo-relay-channel` (the channel it came on)
+   and `x-dozo-relay-agent-proof` (`<ms>.<hex HMAC-SHA-256>` of `relayAgentProofMessage` under the
+   key). The key itself never travels, so whatever listens on `--origin` learns nothing it can use
+   for long: a proof fits one request kind, one channel and one minute. `run` removes both headers
+   from every request a phone sends.
+4. The local server answers only a request from this computer with a valid proof; anyone else gets
+   404. It gives each channel one session, ever: `200 { token }`, or `409 { reason:
+   "sign-in-on-computer" | "one-account" }`, or `410 { reason: "used" }`. A pairing that was not
+   approved within 5 minutes is dropped (its channel deleted, `{"event":"expired"}`), and a request
+   still waiting gets `403 { reason: "not-approved" }`. The token crosses only inside the sealed
+   channel and is never logged.
+
+"Signed in on the computer" means: the account has a session that is not a phone's, still valid and
+used in the last 30 days. It is not proof of who sits at the computer, which is why the approval
+above is the real gate.
+
+The session ends:
+- when the phone is removed (`revoke --origin`, or `run` when the relay no longer knows the
+  channel), and `revoke` says what happened to it: `"session": "revoked" | "unreachable" |
+  "skipped"`. "skipped" means `--origin` or the key was not given, so the session was left;
+- when the user signs out on the computer (one session or all), or when their last computer
+  session ends by any other way (revoked from another browser, deleted when found expired);
+- when the phone signs out, or the app switches to another server (it signs out of the one it
+  leaves, through the relay while the old pairing still answers).
+
+A phone's session may not end other sessions, change or set the password, change the address,
+delete the account, or add a passkey or another sign-in: those answer 403 and are done on the
+computer. A removed phone pairs again to get a new session.
+
+Limits, on purpose:
+- If the local server cannot be reached when a phone is removed, the session stays in its database.
+  The phone still cannot use it: the channel is gone, and the server answers loopback only.
+- A computer session that expires without being deleted does not end the phones until it is
+  deleted (the server deletes an expired session when it next sees it).
+- Anything holding the key can ask for sessions. The key is a secret of the user's own account on
+  that computer (a 0600 file); the server checks it, not that the agent knows the channel.
+- The "one session per channel" record lives in the `verification` table under a far-future expiry;
+  nothing in the server deletes those rows.
+
+The desktop app makes the key with the server's other secrets, gives it to the API
+(`DOZO_RELAY_AGENT_KEY`) and to `run`, `approve` and `revoke`, passes `revoke` the server's
+`--origin`, and shows the `approval` event to the user.
 
 ## Events from `run`
 
@@ -82,10 +114,12 @@ One JSON object per line, for the desktop app to show state:
 | `connected` | `channel` | the relay socket is open |
 | `peer` | `channel`, `present` | the phone connected to the relay or went away |
 | `paired` | `channel`, `appKey` | the phone's first record opened; the offer is used up |
+| `approval` | `channel`, `code`, `platform` | the phone asks for its sign-in; the user approves with `approve` (Phone sign-in) |
+| `approved` | `channel` | the user approved the phone |
 | `disconnected` | `channel`, `reason`, `retryInMs` | the socket could not open or closed; the next try is in `retryInMs` |
 | `refused` | `channel`, `reason` | a session failed its handshake (not the paired phone, expired offer) |
 | `revoked` | `channel` | the relay no longer knows the channel (the phone removed it); its keys are gone |
-| `expired` | `channel` | an offer ran out unused; its channel is gone |
+| `expired` | `channel` | an offer ran out unused, or a paired phone was not approved within 5 minutes; its channel is gone |
 | `error` | `reason`, maybe `channel` | storage or the relay failed; the agent keeps trying |
 | `stopped` | | `run` closed everything and is about to exit |
 
@@ -103,7 +137,7 @@ into place.
 - `host-key.json`: `{ publicKey, privateKey }`, the host's X25519 key pair (base64url), made once.
 - `channels/<channel>.json`: `{ channel, relay, hostToken, createdAt, pairing, app }`.
   `pairing` is `{ psk, expiresAt }` while the offer is open; `app` is
-  `{ key, pairingKey, verifierSet, pairedAt }` after pairing. The pairing secret itself is never
+  `{ key, pairingKey, verifierSet, pairedAt, approvedAt }` after pairing. The pairing secret itself is never
   stored.
 
 One file per channel lets `pair`, `run` and `revoke` work at the same time without a lock. The

@@ -1,7 +1,12 @@
+import { createHmac } from "node:crypto";
+import { relayAgentProofMessage } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  agentKeyMatches,
+  agentProofMatches,
+  forgetRelayAgentKey,
   issueRelaySession,
+  parseRelayAgentKey,
+  RECENT_SESSION_MS,
   RELAY_SESSION_USER_AGENT,
   relayAgentKey,
   revokeRelaySession,
@@ -42,8 +47,10 @@ const PASSWORD = "offline-password-1234";
 const KEY = "a".repeat(64);
 const CHANNEL = "A".repeat(22);
 const OTHER = "B".repeat(22);
+const DAY = 24 * 60 * 60 * 1000;
 
 type Row = Record<string, unknown>;
+type Where = { id?: string; identifier?: string | { startsWith: string } };
 
 /** What the phone sign-in and createAuth ask Prisma for, over the adapter's own rows. */
 function fakePrisma() {
@@ -54,7 +61,12 @@ function fakePrisma() {
     verification: [],
   };
   let lock = Promise.resolve();
-  const live = (row: Row, now: Date) => (row.expiresAt as Date) > now;
+  const matches = (row: Row, where: Where) =>
+    (where.id === undefined || row.id === where.id) &&
+    (where.identifier === undefined ||
+      (typeof where.identifier === "string"
+        ? row.identifier === where.identifier
+        : String(row.identifier).startsWith(where.identifier.startsWith)));
   const prisma = {
     authData,
     $queryRaw: vi.fn(async () => []),
@@ -94,13 +106,15 @@ function fakePrisma() {
           where: {
             userId: string;
             expiresAt: { gt: Date };
+            updatedAt: { gt: Date };
             OR: { userAgent?: null | { not: string } }[];
           };
         }) =>
           authData.session.filter(
             (row) =>
               row.userId === where.userId &&
-              live(row, where.expiresAt.gt) &&
+              (row.expiresAt as Date) > where.expiresAt.gt &&
+              (row.updatedAt as Date) > where.updatedAt.gt &&
               where.OR.some((clause) =>
                 clause.userAgent === null
                   ? row.userAgent == null
@@ -118,13 +132,11 @@ function fakePrisma() {
     },
     verification: {
       findFirst: vi.fn(
-        async ({ where }: { where: { identifier: string } }) =>
-          authData.verification.find((row) => row.identifier === where.identifier) ?? null,
+        async ({ where }: { where: Where }) =>
+          authData.verification.find((row) => matches(row, where)) ?? null,
       ),
-      findMany: vi.fn(async ({ where }: { where: { identifier: { startsWith: string } } }) =>
-        authData.verification.filter((row) =>
-          String(row.identifier).startsWith(where.identifier.startsWith),
-        ),
+      findMany: vi.fn(async ({ where }: { where: Where }) =>
+        authData.verification.filter((row) => matches(row, where)),
       ),
       create: vi.fn(async ({ data }: { data: Row }) => {
         authData.verification.push({ ...data });
@@ -140,7 +152,10 @@ function fakePrisma() {
   return prisma;
 }
 
-function server() {
+/** A local server: with the relay agent's key, as the brand rule wires it, unless `keyed` is false. */
+function server(keyed = true) {
+  forgetRelayAgentKey();
+  if (keyed) vi.stubEnv("DOZO_RELAY_AGENT_KEY", KEY);
   const prisma = fakePrisma();
   const auth = createAuth(prisma as never, {
     secret: SECRET,
@@ -168,57 +183,98 @@ function server() {
     const body = (await response.json()) as { user?: { email: string } } | null;
     return body?.user?.email ?? null;
   };
-  /** The account, signed in on the computer: its session's bearer token. */
-  const account = async (email = "owner@example.com") => {
-    const signedUp = await call("/sign-up/email", {
-      body: { email, password: PASSWORD, name: "Owner" },
-    });
-    expect(signedUp.status).toBe(200);
-    // A local server's account has its address confirmed; sessions need that.
-    for (const user of prisma.authData.user) user.emailVerified = true;
+  /** A computer session of the account (made on first use): its bearer token. */
+  const account = async (email = "owner@example.com", keepOthers = false) => {
+    if (!prisma.authData.user.length) {
+      const signedUp = await call("/sign-up/email", {
+        body: { email, password: PASSWORD, name: "Owner" },
+      });
+      expect(signedUp.status).toBe(200);
+      // A local server's account has its address confirmed; sessions need that.
+      for (const user of prisma.authData.user) user.emailVerified = true;
+    }
     const signedIn = await call("/sign-in/email", { body: { email, password: PASSWORD } });
     expect(signedIn.status).toBe(200);
     const token = signedIn.headers.get("set-auth-token") as string;
-    // One session on the computer: the sign-up's own is not the one the user keeps.
-    prisma.authData.session = prisma.authData.session.filter(
-      (row) => row.token === token.split(".")[0],
-    );
+    if (!keepOthers) {
+      // One session on the computer: the sign-up's own is not one the user keeps.
+      prisma.authData.session = prisma.authData.session.filter(
+        (row) => row.token === token.split(".")[0],
+      );
+    }
     return token;
   };
-  return { prisma, auth, deps, call, whoIs, account };
+  /** A phone's session on `channel`, which must be given. */
+  const phone = async (channel = CHANNEL) => {
+    const result = await issueRelaySession(deps, channel);
+    if (!("token" in result)) throw new Error(`refused: ${result.refused}`);
+    return result.token;
+  };
+  return { prisma, auth, deps, call, whoIs, account, phone };
 }
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  forgetRelayAgentKey();
 });
 
-describe("the agent's key", () => {
-  it("is read from the environment and must be 64 hexadecimal digits", () => {
-    expect(relayAgentKey({})).toBeNull();
-    expect(relayAgentKey({ DOZO_RELAY_AGENT_KEY: ` ${KEY} ` })).toBe(KEY);
-    expect(() => relayAgentKey({ DOZO_RELAY_AGENT_KEY: "short" })).toThrow("64 hexadecimal");
+const proof = (request: { method: string; path: string; channel: string }, time: number) =>
+  `${time}.${createHmac("sha256", KEY)
+    .update(relayAgentProofMessage({ ...request, time }))
+    .digest("hex")}`;
+
+describe("the agent's key and proof", () => {
+  it("is read once, must be 64 hexadecimal digits, and leaves the environment", () => {
+    expect(parseRelayAgentKey(undefined)).toBeNull();
+    expect(parseRelayAgentKey(` ${KEY} `)).toBe(KEY);
+    expect(() => parseRelayAgentKey("short")).toThrow("64 hexadecimal");
+    vi.stubEnv("DOZO_RELAY_AGENT_KEY", KEY);
+    expect(relayAgentKey()).toBe(KEY);
+    // Nothing this server starts inherits it.
+    expect(process.env.DOZO_RELAY_AGENT_KEY).toBeUndefined();
+    expect(relayAgentKey()).toBe(KEY);
   });
 
-  it("matches only the agent's own key", () => {
-    expect(agentKeyMatches(KEY, KEY)).toBe(true);
-    expect(agentKeyMatches(KEY, "b".repeat(64))).toBe(false);
-    expect(agentKeyMatches(KEY, "a".repeat(63))).toBe(false);
-    expect(agentKeyMatches(KEY, `${"a".repeat(63)}A`)).toBe(false);
-    expect(agentKeyMatches(KEY, undefined)).toBe(false);
-    expect(agentKeyMatches(null, KEY)).toBe(false);
+  it("accepts the agent's proof for this request, channel and minute only", () => {
+    const request = { method: "POST", path: "/api/auth/dozo/relay-session", channel: CHANNEL };
+    const now = 1_800_000_000_000;
+    expect(agentProofMatches(KEY, proof(request, now), request, now)).toBe(true);
+    expect(agentProofMatches(KEY, proof(request, now - 59_000), request, now)).toBe(true);
+    expect(agentProofMatches(KEY, proof(request, now - 61_000), request, now)).toBe(false);
+    expect(agentProofMatches(KEY, proof(request, now), { ...request, channel: OTHER }, now)).toBe(
+      false,
+    );
+    expect(agentProofMatches(KEY, proof(request, now), { ...request, path: "/x" }, now)).toBe(
+      false,
+    );
+    expect(agentProofMatches("b".repeat(64), proof(request, now), request, now)).toBe(false);
+    expect(agentProofMatches(KEY, `${now}.${"0".repeat(64)}`, request, now)).toBe(false);
+    expect(agentProofMatches(KEY, KEY, request, now)).toBe(false);
+    expect(agentProofMatches(KEY, undefined, request, now)).toBe(false);
+    expect(agentProofMatches(null, proof(request, now), request, now)).toBe(false);
+  });
+});
+
+describe("a server without the agent's key", () => {
+  it("is as before: no phone sign-in endpoint, and signing out reads nothing of it", async () => {
+    const { auth, account, call, prisma } = server(false);
+    expect((auth.api as Record<string, unknown>).dozoRelaySessionCreate).toBeUndefined();
+    const token = await account();
+    await call("/sign-out", { token, body: {} });
+    expect(prisma.verification.findMany).not.toHaveBeenCalled();
   });
 });
 
 describe("a phone's sign-in", () => {
   it("signs the phone in as the computer's account, with a token the server accepts", async () => {
-    const { deps, account, whoIs, prisma } = server();
+    const { account, whoIs, prisma, phone } = server();
     await account();
-    const result = await issueRelaySession(deps, CHANNEL);
-    if (!("token" in result)) throw new Error(`refused: ${result.refused}`);
-    expect(await whoIs(result.token)).toBe("owner@example.com");
-    expect(await whoIs(result.token.slice(0, -2))).toBeNull();
-    const phone = prisma.authData.session.find((row) => row.userAgent === RELAY_SESSION_USER_AGENT);
-    expect(phone).toBeTruthy();
+    const token = await phone();
+    expect(await whoIs(token)).toBe("owner@example.com");
+    expect(await whoIs(token.slice(0, -2))).toBeNull();
+    expect(
+      prisma.authData.session.filter((row) => row.userAgent === RELAY_SESSION_USER_AGENT),
+    ).toHaveLength(1);
   });
 
   it("gives each channel one sign-in, ever, even when asked twice at once", async () => {
@@ -234,48 +290,27 @@ describe("a phone's sign-in", () => {
     expect("token" in (await issueRelaySession(deps, OTHER))).toBe(true);
   });
 
-  it("gives none while nobody is signed in on the computer", async () => {
-    const { deps, account, call } = server();
+  it("gives none while nobody is signed in on the computer, or only long ago", async () => {
+    const { deps, account, call, prisma } = server();
     expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "sign-in-on-computer" });
     const token = await account();
-    await call("/sign-out", { token, body: {} });
+    for (const row of prisma.authData.session) {
+      row.updatedAt = new Date(Date.now() - RECENT_SESSION_MS - DAY);
+    }
     expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "sign-in-on-computer" });
-  });
-
-  it("does not count a phone's own sign-in as the computer's", async () => {
-    const { deps, account, call, whoIs } = server();
-    const computer = await account();
-    const phone = await issueRelaySession(deps, CHANNEL);
-    if (!("token" in phone)) throw new Error("refused");
-    // Ending one computer session by itself (not signing out) leaves the phone signed in.
-    await call("/revoke-session", { token: computer, body: { token: computer.split(".")[0] } });
-    expect(await whoIs(phone.token)).toBe("owner@example.com");
+    for (const row of prisma.authData.session) row.updatedAt = new Date();
+    await call("/sign-out", { token, body: {} });
     expect(await issueRelaySession(deps, OTHER)).toEqual({ refused: "sign-in-on-computer" });
   });
 
-  it("ends a session made while the user signed out on the computer", async () => {
-    const { deps, account, prisma, call } = server();
-    const computer = await account();
-    // The sign-out lands after the first check and before the session's record is written.
-    prisma.verification.update.mockImplementationOnce(async ({ where, data }) => {
-      await call("/sign-out", { token: computer, body: {} });
-      const row = prisma.authData.verification.find((item) => item.id === where.id) as Row;
-      Object.assign(row, data);
-      return row;
-    });
-    expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "sign-in-on-computer" });
-    expect(
-      prisma.authData.session.filter((row) => row.userAgent === RELAY_SESSION_USER_AGENT),
-    ).toEqual([]);
-  });
-
-  it("ends the phones' sign-ins when the user signs out everywhere", async () => {
-    const { deps, account, whoIs, call } = server();
-    const computer = await account();
-    const phone = await issueRelaySession(deps, CHANNEL);
-    if (!("token" in phone)) throw new Error("refused");
-    await call("/revoke-sessions", { token: computer, body: {} });
-    expect(await whoIs(phone.token)).toBeNull();
+  it("does not count a phone's own sign-in as the computer's", async () => {
+    const { deps, account, prisma, phone } = server();
+    await account();
+    await phone();
+    prisma.authData.session = prisma.authData.session.filter(
+      (row) => row.userAgent === RELAY_SESSION_USER_AGENT,
+    );
+    expect(await issueRelaySession(deps, OTHER)).toEqual({ refused: "sign-in-on-computer" });
   });
 
   it("refuses a computer with more than one account", async () => {
@@ -284,41 +319,111 @@ describe("a phone's sign-in", () => {
     prisma.authData.user.push({ id: "second", email: "second@example.com" });
     expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "one-account" });
   });
+
+  it("lets a phone do nothing that ends other sessions or changes how the account signs in", async () => {
+    const { account, whoIs, call, phone } = server();
+    const computer = await account();
+    const token = await phone();
+    for (const [path, body] of [
+      ["/revoke-other-sessions", {}],
+      ["/revoke-sessions", {}],
+      ["/revoke-session", { token: computer.split(".")[0] }],
+      ["/change-password", { currentPassword: PASSWORD, newPassword: "another-password-1234" }],
+      ["/delete-user", {}],
+    ] as const) {
+      expect((await call(path, { token, body })).status, path).toBe(403);
+    }
+    // Under any prefix of the rule, and with the token written as a header may encode it.
+    expect((await call("/passkey/generate-register-options", { token })).status).toBe(403);
+    expect(
+      (await call("/revoke-other-sessions", { token: encodeURIComponent(token), body: {} })).status,
+    ).toBe(403);
+    // A request with no bearer token is the server's own rules' to answer.
+    expect((await call("/revoke-other-sessions", { body: {} })).status).toBe(401);
+    expect(await whoIs(computer)).toBe("owner@example.com");
+    expect(await whoIs(token)).toBe("owner@example.com");
+    // The computer still may.
+    expect((await call("/revoke-other-sessions", { token: computer, body: {} })).status).toBe(200);
+    expect(await whoIs(token)).toBeNull();
+  });
 });
 
 describe("ending a phone's sign-in", () => {
   it("ends it when the phone is removed, and the channel gets no new one", async () => {
-    const { deps, account, whoIs, prisma } = server();
+    const { deps, account, whoIs, prisma, phone } = server();
     await account();
-    const first = await issueRelaySession(deps, CHANNEL);
-    const other = await issueRelaySession(deps, OTHER);
-    if (!("token" in first) || !("token" in other)) throw new Error("refused");
+    const first = await phone(CHANNEL);
+    const other = await phone(OTHER);
     await revokeRelaySession(prisma as never, CHANNEL);
-    expect(await whoIs(first.token)).toBeNull();
-    expect(await whoIs(other.token)).toBe("owner@example.com");
+    expect(await whoIs(first)).toBeNull();
+    expect(await whoIs(other)).toBe("owner@example.com");
     expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "used" });
     // A channel that never had one, and a record this code did not write, end nothing.
     await revokeRelaySession(prisma as never, "C".repeat(22));
     prisma.authData.verification.push({
+      id: "x",
       identifier: `dozo-relay-session:${"D".repeat(22)}`,
       value: "{",
     });
     await revokeRelaySession(prisma as never, "D".repeat(22));
-    expect(await whoIs(other.token)).toBe("owner@example.com");
+    expect(await whoIs(other)).toBe("owner@example.com");
   });
 
-  it("ends the phones' sign-ins when the user signs out on the computer, not when a phone does", async () => {
-    const { deps, account, whoIs, call } = server();
+  it("ends the phones when the user signs out on the computer, not when a phone does", async () => {
+    const { account, whoIs, call, phone } = server();
     const computer = await account();
-    const first = await issueRelaySession(deps, CHANNEL);
-    const second = await issueRelaySession(deps, OTHER);
-    if (!("token" in first) || !("token" in second)) throw new Error("refused");
-    await call("/sign-out", { token: first.token, body: {} });
-    expect(await whoIs(first.token)).toBeNull();
-    expect(await whoIs(second.token)).toBe("owner@example.com");
-    expect(await whoIs(computer)).toBe("owner@example.com");
+    const first = await phone(CHANNEL);
+    const second = await phone(OTHER);
+    await call("/sign-out", { token: first, body: {} });
+    expect(await whoIs(first)).toBeNull();
+    expect(await whoIs(second)).toBe("owner@example.com");
     await call("/sign-out", { token: computer, body: {} });
-    expect(await whoIs(second.token)).toBeNull();
+    expect(await whoIs(second)).toBeNull();
+  });
+
+  it("ends the phones when the computer's last session ends by any way, not while one is left", async () => {
+    const { account, whoIs, call, phone } = server();
+    const computer = await account();
+    const browser = await account("owner@example.com", true);
+    const token = await phone();
+    await call("/revoke-session", { token: computer, body: { token: browser.split(".")[0] } });
+    expect(await whoIs(token)).toBe("owner@example.com");
+    await call("/revoke-session", { token: computer, body: { token: computer.split(".")[0] } });
+    expect(await whoIs(token)).toBeNull();
+  });
+
+  it("ends the phones when the user signs out everywhere", async () => {
+    const { account, whoIs, call, phone } = server();
+    const computer = await account();
+    const token = await phone();
+    await call("/revoke-sessions", { token: computer, body: {} });
+    expect(await whoIs(token)).toBeNull();
+  });
+
+  it.each([
+    ["the only computer session", false],
+    ["one of two computer sessions", true],
+  ])("ends a session made while the user signed out of %s", async (_name, twoSessions) => {
+    const { auth, account, call, prisma } = server();
+    const computer = await account();
+    if (twoSessions) await account("owner@example.com", true);
+    // The sign-out lands after the channel is claimed and before the session's record is written.
+    const racing = {
+      prisma: prisma as never,
+      auth: {
+        api: {
+          dozoRelaySessionCreate: async (input: { query: { userId: string } }) => {
+            const made = await auth.api.dozoRelaySessionCreate(input);
+            await call("/sign-out", { token: computer, body: {} });
+            return made;
+          },
+        },
+      },
+    };
+    expect(await issueRelaySession(racing, CHANNEL)).toEqual({ refused: "sign-in-on-computer" });
+    expect(
+      prisma.authData.session.filter((row) => row.userAgent === RELAY_SESSION_USER_AGENT),
+    ).toEqual([]);
   });
 
   it("leaves other users' phones alone and skips records it cannot read", async () => {
@@ -326,19 +431,27 @@ describe("ending a phone's sign-in", () => {
     prisma.authData.session.push({ id: "s1", userId: "u1" }, { id: "s2", userId: "u2" });
     prisma.authData.verification.push(
       {
+        id: "1",
         identifier: "dozo-relay-session:x",
         value: JSON.stringify({ userId: "u1", sessionId: "s1" }),
       },
       {
+        id: "2",
         identifier: "dozo-relay-session:y",
         value: JSON.stringify({ userId: "u2", sessionId: "s2" }),
       },
-      { identifier: "dozo-relay-session:z", value: JSON.stringify({ userId: "u1" }) },
-      { identifier: "dozo-relay-session:w", value: "[]" },
-      { identifier: "dozo-relay-session:v", value: "nope" },
+      { id: "3", identifier: "dozo-relay-session:z", value: JSON.stringify({ userId: "u1" }) },
+      { id: "4", identifier: "dozo-relay-session:w", value: "[]" },
+      { id: "5", identifier: "dozo-relay-session:v", value: "nope" },
+      { id: "6", identifier: "dozo-relay-session:u", value: "null" },
     );
     await revokeRelaySessionsOf(prisma as never, "u1");
     expect(prisma.authData.session.map((row) => row.id)).toEqual(["s2"]);
+    // The record of a session still being made is marked, so it cannot survive.
+    expect(JSON.parse(String(prisma.authData.verification[2]?.value))).toEqual({
+      userId: "u1",
+      revoked: true,
+    });
     await revokeRelaySessionsOf(prisma as never, "u3");
     expect(prisma.authData.session).toHaveLength(1);
   });
