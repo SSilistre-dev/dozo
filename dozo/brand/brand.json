@@ -5752,6 +5752,15 @@
       "reason": "daily sends: the test's fake database answers the fork's send counter with a first count, as Postgres would, so upstream's approval tests see upstream's plan"
     },
     {
+      "file": "packages/testkit/src/executor-turn-checkpoint.test.ts",
+      "find": "      $queryRaw: async () => [],\n      $executeRaw: async () => 0,\n      $transaction: async (action: (tx: unknown) => Promise<unknown>) => action(prisma),\n",
+      "replace": "      // The fork's daily send counter: a first send of the day counts 1, as Postgres would.\n      $queryRaw: async (...values: unknown[]) =>\n        String(values[0]).includes(\"INSERT INTO dozo_daily_sends\") ? [{ count: 1 }] : [],\n      $executeRaw: async () => 0,\n      $transaction: async (action: (tx: unknown) => Promise<unknown>) => action(prisma),\n",
+      "requires": [
+        "packages/adapters/src/dozo-send-limit.ts"
+      ],
+      "reason": "daily sends: the test's fake database answers the fork's send counter with a first count, as Postgres would, so upstream's checkpoint tests see upstream's plan"
+    },
+    {
       "file": "apps/web/src/components/ApprovalRulesSettings.test.tsx",
       "find": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nconst rpcMock = vi.hoisted(() => ({\n",
       "replace": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-send-limit-row\", () => ({ DozoSendLimitRow: () => null }));\n\nconst rpcMock = vi.hoisted(() => ({\n",
