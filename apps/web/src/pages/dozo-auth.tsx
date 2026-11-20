@@ -1,6 +1,6 @@
-import { useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
-import { OptionSelect } from "@rakazo/ui-web";
+import { Button, OptionSelect } from "@rakazo/ui-web";
 import type { ComponentProps } from "react";
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
@@ -10,7 +10,7 @@ import { markSignupStarted } from "../lib/dozo-signup-start";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import type { UiLocale } from "../lib/ui-locale";
 import { UI_LOCALES } from "../lib/ui-locale";
-import { AuthPage as UpstreamAuthPage } from "./Auth";
+import { AuthFrame, submitClass, AuthPage as UpstreamAuthPage } from "./Auth";
 import { HostedSignIn } from "./dozo-hosted-login";
 
 /**
@@ -29,11 +29,17 @@ import { HostedSignIn } from "./dozo-hosted-login";
  *
  * A server that signs in only with an account kept on the hosted server (`hostedLogin` in the same
  * capabilities) shows one way in instead, at the sign-in address; the other addresses lead there.
+ * Such a server runs on the person's own computer (`ownComputer`). There a lost capabilities
+ * answer shows that the server could not be reached, with a way to ask again, never a password
+ * form its endpoints may no longer answer; and sign-in waits for the answer instead of flashing one.
  *
  * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
  * for this tab (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
  * the same way. The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
  */
+/** A server on the person's own computer: the desktop app and the server bundle serve it here. */
+const ownComputer = () => ["127.0.0.1", "[::1]"].includes(window.location.hostname);
+
 function withoutLinkParams(current: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(current);
   for (const key of ["lang", "plan", "period"]) next.delete(key);
@@ -88,27 +94,49 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   }, [title]);
   const [signups, setSignups] = useState<"pending" | "open" | "closed">("pending");
   const [hosted, setHosted] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
+    void attempt;
     fetchAuthCapabilities().then(
       (capabilities) => {
         if (!active) return;
+        setUnreachable(false);
         setHosted(capabilities.hostedLogin === true);
         setSignups(capabilities.signupsOpen === false ? "closed" : "open");
       },
       () => {
-        if (active) setSignups("open");
+        if (!active) return;
+        if (ownComputer()) setUnreachable(true);
+        else setSignups("open");
       },
     );
     return () => {
       active = false;
     };
-  }, []);
+  }, [attempt]);
   const signingUp = props.mode === "up" && signups === "open";
   useEffect(() => {
     if (signingUp) markSignupStarted();
   }, [signingUp]);
   if (hosted && props.mode !== "in") return <Navigate to={`/sign-in${search}`} replace />;
+  if (unreachable)
+    return (
+      <AuthFrame
+        title={<Trans>Could not reach the server</Trans>}
+        onSubmit={(event) => {
+          event.preventDefault();
+          setUnreachable(false);
+          setAttempt((count) => count + 1);
+        }}
+      >
+        <Button type="submit" size="lg" className={submitClass}>
+          <Trans>Try again</Trans>
+        </Button>
+      </AuthFrame>
+    );
+  if (signups === "pending" && ownComputer()) return null;
   if (props.mode === "up" && signups !== "open") {
     return signups === "closed" ? <Navigate to={`/sign-in${search}`} replace /> : null;
   }
