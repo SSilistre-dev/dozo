@@ -108,7 +108,8 @@ function fakeDatabase() {
       if (text.includes("FROM dozo_routine_holds h JOIN")) {
         return [...holds.entries()].flatMap(([routineId, hold]) => {
           const routine = routines.get(routineId);
-          return routine?.userId === values[0] && routine.active && hold.heldUntil > new Date()
+          if (!routine) return [];
+          return routine.userId === values[0] && routine.active && hold.heldUntil > new Date()
             ? [{ routineId, spaceId: routine.spaceId, ...hold }]
             : [];
         });
