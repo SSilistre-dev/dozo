@@ -1,47 +1,75 @@
 /* Dozo shell: what the theme file (dozo/theme/theme.json) cannot express. An anchored rule imports
    it from styles.css after the design tokens. It is unlayered on purpose, so it outranks Tailwind's
-   utility layer on its own. It holds only what the approved mockups (dozo/design) show:
-   pill controls and sidebar rows, the seigaiha sidebar pattern, the wordmark with its seal dot,
-   the active sidebar row tinted with its bot's colour, and the chat as a narrow column where the
-   bot's words stand without a bubble. Upstream elements are reached through
-   their data attributes; dozo/e2e checks that each hook still matches after an upstream merge. */
+   utility layer on its own. It holds only what the approved mockups (dozo/design, the chat window
+   from chat-v2.html) show: surfaces told apart by tone instead of lines, pill controls, two-line
+   sidebar rows, the seigaiha sidebar pattern, the wordmark with its seal dot, tonal bubbles and
+   cards, the one-pill composer and the bot panel on the sidebar's tone. Upstream elements are
+   reached through their data attributes; dozo/e2e checks that each hook still matches after an
+   upstream merge. */
 
 :root {
   /* The one red of the brand, the seal dot. No semantic token carries it, so it is written here. */
   --dozo-seal: light-dark(#d93f3f, #e5484d);
   /* The sidebar wave pattern: 1 shows it, 0 hides it, a value between fades it. */
   --dozo-seigaiha: 1;
+  --dozo-seigaiha-ink: color-mix(in srgb, var(--sidebar-foreground) 15%, transparent);
+
+  /* Tone steps of the chat window (chat-v2.css), named once and derived from the theme's tokens,
+     so both themes follow theme.json. Lowest to highest: */
+  --dozo-surface-0: var(--sidebar); /* sidebar, bot panel */
+  --dozo-surface-1: var(--background); /* the thread */
+  --dozo-surface-2: color-mix(in srgb, var(--foreground) 4%, var(--background)); /* bot bubble */
+  --dozo-surface-3: var(--card); /* cards, composer, pills */
+  --dozo-surface-4: var(--popover); /* a pill's hover, controls on cards */
+  --dozo-pill-hover: color-mix(in srgb, var(--foreground) 6%, var(--card));
+  --dozo-row-hover: color-mix(in srgb, var(--foreground) 6%, var(--sidebar));
+  --dozo-row-on: color-mix(in srgb, var(--foreground) 9%, var(--sidebar));
+  --dozo-wash: color-mix(in srgb, var(--foreground) 6%, transparent);
+  --dozo-wash-strong: color-mix(in srgb, var(--foreground) 10%, transparent);
+  /* The only line: half a pixel around cards and the composer. */
+  --dozo-edge: color-mix(in srgb, var(--foreground) 6%, transparent);
+  /* Second and third ink: secondary text, then icons and placeholders (each >= 4.5:1, see
+     dozo/theme/README.md). */
+  --dozo-ink-2: var(--muted-foreground);
+  --dozo-ink-3: var(--muted-foreground);
+  /* Motion of the design: drawers and the reveal of controls. */
+  --dozo-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dozo-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Pill controls. A segmented group keeps its own joined corners, and a button that grows with
    its content (several lines) keeps the corners it was given. */
-[data-slot="button"]:not([data-slot="button-group"] *, .h-auto),
-[data-slot="sidebar-inner"] [data-slot="context-menu-trigger"] {
+[data-slot="button"]:not([data-slot="button-group"] *, .h-auto) {
   border-radius: 999px;
 }
 
+/* ---- Sidebar ---------------------------------------------------------------------------- */
+
 /* The sidebar is the stacking context of its pattern, and a container, so the wordmark can step
-   aside when the sidebar is narrowed. */
+   aside when the sidebar is narrowed. No line between it and the thread: the tones part them. */
 [data-slot="sidebar-inner"] {
   position: relative;
   isolation: isolate;
   container-type: inline-size;
 }
+[data-slot="sidebar-container"] {
+  border-inline: 0;
+}
 
-/* Seigaiha: concentric-wave scales behind the top of the sidebar, fading out downward. The tile
-   is a mask (its strokes are the only opaque part), so the ink is a token mix, not a colour. */
+/* Seigaiha: concentric-wave scales behind the wordmark, strongest at the top and gone by the bot
+   list. The tile is a mask (its strokes are the only opaque part), so the ink is a token mix. */
 [data-slot="sidebar-inner"]::before {
   content: "";
   position: absolute;
   z-index: -1;
   inset: 0 0 auto;
-  height: min(460px, 100%);
+  height: min(200px, 100%);
   pointer-events: none;
-  background: color-mix(in srgb, var(--sidebar-foreground) 5.5%, transparent);
+  background: var(--dozo-seigaiha-ink);
   opacity: var(--dozo-seigaiha);
   mask-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cdefs%3E%3Cg id='s'%3E%3Ccircle r='20'/%3E%3Ccircle r='14'/%3E%3Ccircle r='8'/%3E%3C/g%3E%3Cmask id='m'%3E%3Cg fill='black' stroke='white'%3E%3Cuse href='%23s' x='20' y='-10'/%3E%3Cuse href='%23s'/%3E%3Cuse href='%23s' x='40'/%3E%3Cuse href='%23s' x='20' y='10'/%3E%3Cuse href='%23s' y='20'/%3E%3Cuse href='%23s' x='40' y='20'/%3E%3Cuse href='%23s' x='20' y='30'/%3E%3C/g%3E%3C/mask%3E%3C/defs%3E%3Crect width='40' height='20' mask='url(%23m)'/%3E%3C/svg%3E"),
-    linear-gradient(black, transparent);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cdefs%3E%3Cg id='s'%3E%3Ccircle r='20'/%3E%3Ccircle r='14'/%3E%3Ccircle r='8'/%3E%3C/g%3E%3Cmask id='m'%3E%3Cg fill='black' stroke='white' stroke-width='1.2'%3E%3Cuse href='%23s' x='20' y='-10'/%3E%3Cuse href='%23s'/%3E%3Cuse href='%23s' x='40'/%3E%3Cuse href='%23s' x='20' y='10'/%3E%3Cuse href='%23s' y='20'/%3E%3Cuse href='%23s' x='40' y='20'/%3E%3Cuse href='%23s' x='20' y='30'/%3E%3C/g%3E%3C/mask%3E%3C/defs%3E%3Crect width='40' height='20' mask='url(%23m)'/%3E%3C/svg%3E"),
+    linear-gradient(black 25%, transparent);
   mask-size:
     40px 20px,
     100% 100%;
@@ -72,10 +100,15 @@
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+[data-slot="sidebar-inner"] > .app-drag:first-child {
+  min-height: 60px;
+  padding-block: 12px 0;
+  padding-inline: 20px 16px;
+}
 [data-slot="sidebar-inner"] > .app-drag:first-child::before {
   content: "dozo";
   order: 1;
-  margin-inline-start: 8px;
+  font-size: 16px;
 }
 [data-slot="sidebar-inner"] > .app-drag:first-child::after {
   content: "どうぞ";
@@ -83,7 +116,7 @@
   flex: 0 1 auto;
   overflow: hidden;
   margin-inline: 12px auto;
-  color: var(--faint-foreground);
+  color: var(--dozo-ink-2);
   font:
     400 11.5px / 24px "Hiragino Sans",
     "Hiragino Kaku Gothic ProN",
@@ -95,6 +128,7 @@
 }
 [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child {
   order: 2;
+  gap: 8px;
 }
 @container (max-width: 280px) {
   [data-slot="sidebar-inner"] > .app-drag:first-child::after {
@@ -107,38 +141,363 @@
   }
 }
 
-/* The open bot's row is tinted with that bot's tile colour. The colour is a variable set on the
-   avatar inside the row, which a parent cannot read, so the avatar paints the row's background:
-   its ::before fills the row (the row is its containing block; the avatar itself must stay
-   unpositioned). A row whose avatar is a photo keeps upstream's neutral highlight. */
-[data-roster-bot-id] {
-  position: relative;
-  isolation: isolate;
+/* Search and Create are the header's two round buttons. Activity and Minimize step in while the
+   pointer is over the header or focus is in it (Activity stays while it is on), so at rest the
+   wordmark and its kana have the row. */
+:is([data-testid="sidebar-search-trigger"], [data-testid="create-menu-trigger"]) {
+  width: 40px;
+  height: 40px;
+  background: var(--dozo-surface-3);
+  color: var(--sidebar-foreground);
 }
-[data-roster-bot-id][aria-current="page"]:has(> .dozo-avatar) {
-  background: transparent;
+:is([data-testid="sidebar-search-trigger"], [data-testid="create-menu-trigger"]):hover {
+  background: var(--dozo-surface-4);
 }
-[data-roster-bot-id][aria-current="page"] > .dozo-avatar::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: 999px;
-  pointer-events: none;
-  background: color-mix(in srgb, var(--dozo-tile) 14%, transparent);
+@media (hover: hover) and (min-width: 768px) {
+  [data-slot="sidebar-inner"]
+    > .app-drag:first-child
+    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"]) {
+    width: 0;
+    min-width: 0;
+    margin-inline-end: -8px;
+    overflow: hidden;
+    opacity: 0;
+  }
+  [data-slot="sidebar-inner"]
+    > .app-drag:first-child:is(:hover, :focus-within)
+    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"]) {
+    width: 32px;
+    margin-inline-end: 0;
+    opacity: 1;
+  }
+  [data-slot="sidebar-inner"] > .app-drag:first-child:is(:hover, :focus-within)::after {
+    opacity: 0;
+  }
 }
 
-/* The chat is one narrow column, and the bot's words stand in it without a bubble. */
-[data-testid="message-bot-bubble"] {
-  padding-inline: 0;
-  background: transparent;
+/* Rows: two lines (name, then the last message), told apart by tone. The open chat's row is one
+   step lighter, the hovered one half a step. Mini rows (an avatar only) keep their square. */
+[data-testid="bots-sidebar"] .group\/row > [data-slot="context-menu-trigger"] {
+  position: relative;
+  isolation: isolate;
+  border-radius: 12px;
+  gap: 10px;
 }
+[data-testid="bots-sidebar"] .group\/row:hover > [data-slot="context-menu-trigger"] {
+  background: var(--dozo-row-hover);
+}
+[data-testid="bots-sidebar"] .group\/row > [data-slot="context-menu-trigger"]:is(
+    [aria-current="page"],
+    [data-roster-drop="true"]
+  ) {
+  background: var(--dozo-row-on);
+}
+/* The two-line row's avatar is drawn at 40px (upstream lays it out at 38). */
+[data-testid="bots-sidebar"] [data-roster-bot-id] > .dozo-avatar[style*="width: 38px"] {
+  scale: calc(40 / 38);
+}
+[data-roster-bot-name] {
+  font-size: 14px;
+  line-height: 20px;
+}
+[data-testid="bots-sidebar"] [data-roster-time] {
+  display: none;
+}
+[data-testid="bots-sidebar"] .group\/row [data-roster-preview] {
+  margin-top: 2px;
+  color: var(--dozo-ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+[data-testid="bots-sidebar"] [data-roster-unread="true"] [data-roster-preview] {
+  color: var(--sidebar-foreground);
+}
+/* Room at the row's end for its dot. */
+[data-testid="bots-sidebar"] .group\/row > [data-slot="context-menu-trigger"]:not([aria-label]) > .min-w-0 {
+  padding-inline-end: 18px;
+}
+/* Unread: an ink dot at the row's end. Waiting for you: the same dot in the waiting colour. */
+[data-testid="bots-sidebar"]
+  .group\/row
+  > [data-slot="context-menu-trigger"]:not([aria-label])
+  [data-roster-unread-dot],
+[data-testid="bots-sidebar"]
+  .group\/row
+  > [data-slot="context-menu-trigger"]:not([aria-label]):has(> .dozo-avatar[data-state="waiting"])::after {
+  position: absolute;
+  inset-inline-end: 12px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--sidebar-foreground);
+}
+[data-testid="bots-sidebar"]
+  .group\/row
+  > [data-slot="context-menu-trigger"]:not([aria-label]):has(> .dozo-avatar[data-state="waiting"])::after {
+  content: "";
+  background: var(--warning);
+}
+/* Working: a small green dot on the avatar, ringed in the row's tone. */
+[data-testid="bots-sidebar"] [data-roster-bot-id] > .dozo-avatar[data-state="working"] {
+  position: relative;
+}
+[data-testid="bots-sidebar"] [data-roster-bot-id] > .dozo-avatar[data-state="working"]::after {
+  content: "";
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--status-working);
+  box-shadow: 0 0 0 2px var(--dozo-surface-0);
+}
+[data-testid="bots-sidebar"]
+  .group\/row:hover
+  [data-roster-bot-id]
+  > .dozo-avatar[data-state="working"]::after {
+  box-shadow: 0 0 0 2px var(--dozo-row-hover);
+}
+[data-testid="bots-sidebar"]
+  [data-roster-bot-id][aria-current="page"]
+  > .dozo-avatar[data-state="working"]::after {
+  box-shadow: 0 0 0 2px var(--dozo-row-on);
+}
+
+/* Footer: the account button and "Connect apps", both round on the card tone, no outline. */
+[data-testid="user-menu-trigger"] {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: var(--dozo-surface-3);
+  font-size: 14px;
+}
+[data-testid="sidebar-footer"] > [data-slot="button"].flex-1 {
+  flex: 0 1 auto;
+  height: 36px;
+  padding-inline: 16px 8px;
+  border: 0;
+  background: var(--dozo-surface-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+:is([data-testid="user-menu-trigger"], [data-testid="sidebar-footer"] > [data-slot="button"].flex-1):hover {
+  background: var(--dozo-surface-4);
+}
+
+/* ---- Thread ----------------------------------------------------------------------------- */
+
+/* The chat's name is a floating pill centred over the thread, on the card tone; its chevron says
+   which way the bot panel goes. */
+[data-testid="bot-settings-trigger"] {
+  height: 39px;
+  gap: 8px;
+  padding-inline: 8px 13px;
+  border: 0;
+  background: var(--dozo-surface-3);
+  backdrop-filter: none;
+  color: var(--foreground);
+}
+[data-testid="bot-settings-trigger"]:hover {
+  background: var(--dozo-pill-hover);
+}
+[data-testid="bot-settings-trigger"] > .min-w-0 > span {
+  font-size: 14px;
+  line-height: 20px;
+}
+[data-testid="bot-settings-trigger"] > .dozo-avatar {
+  scale: calc(24 / 26);
+}
+[data-testid="bot-settings-trigger"]::after {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: var(--dozo-ink-2);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 4l4 4-4 4'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+[data-testid="bot-settings-trigger"][aria-expanded="false"]::after {
+  rotate: 180deg;
+}
+[data-testid="call-button"] {
+  border: 0;
+  background: var(--dozo-surface-3);
+  backdrop-filter: none;
+}
+
+/* The chat is one column, 680px at most. */
 @media (min-width: 768px) {
   [data-testid="transcript"] {
-    padding-inline: max(1.75rem, calc((100% - 45rem) / 2));
+    padding-inline: max(2rem, calc((100% - 680px) / 2));
   }
   fieldset:has(> [data-testid="composer-bar"]) {
-    padding-inline: max(1.5rem, calc((100% - 45rem) / 2));
+    padding-inline: max(2rem, calc((100% - 680px) / 2));
+  }
+}
+
+/* Bubbles: the bot's on a faint tone, yours in the bot's colour (set by the app from the bot's
+   character), both 18px round. */
+[data-testid="message-bot-bubble"],
+[data-testid="message-user-bubble"] {
+  padding: 8px 14px;
+  border-radius: 18px;
+}
+[data-testid="message-bot-bubble"] {
+  background: var(--dozo-surface-2);
+}
+[data-testid="time-separator"] {
+  padding-bottom: 6px;
+  color: var(--dozo-ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* A message's actions: small round icons in the third ink, washed on hover. */
+[data-testid="message-hover-actions"] :is(button, [data-slot="button"]) {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--dozo-ink-3);
+}
+[data-testid="message-hover-actions"] :is(button, [data-slot="button"]):hover {
+  background: var(--dozo-wash);
+  color: var(--foreground);
+}
+
+/* Cards in the thread (questions, approvals, files: upstream's BuiCard, which has no data hook) and
+   tables share one surface: the card tone
+   with a half-pixel edge, no border. */
+[data-testid="transcript"] .rounded-2xl.bg-card,
+.rk-chat-markdown .rk-table-card.rk-table-box {
+  border: 0;
+  background: var(--dozo-surface-3);
+  box-shadow: inset 0 0 0 0.5px var(--dozo-edge);
+}
+[data-testid="transcript"] .rounded-2xl.bg-card {
+  border-radius: 22px;
+}
+.rk-chat-markdown .rk-table-card.rk-table-box {
+  border-radius: 20px;
+}
+.rk-chat-markdown .rk-table-card > .rk-table-head,
+.rk-chat-markdown .rk-table-card .rk-table :is(th, td),
+.rk-chat-markdown .rk-table-card .rk-table-footer {
+  border: 0;
+}
+.rk-chat-markdown .rk-table-card .rk-table thead th,
+.rk-chat-markdown .rk-table-card .rk-table .rk-table-gutter {
+  background: var(--dozo-surface-3);
+}
+.rk-chat-markdown .rk-table-card .rk-table .rk-table-gutter {
+  border: 0;
+}
+/* A file card's download stands in the card, with no line before it. */
+[data-testid="transcript"] .rounded-2xl.bg-card .border-l {
+  border: 0;
+}
+.rk-chat-markdown .rk-table-card .rk-table td {
+  font-family: inherit;
+}
+/* A question's choices: soft washed rows inside the card, without the letter badges. */
+[data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"] {
+  width: 100%;
+  min-height: 40px;
+  margin: 0 0 6px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  background: var(--dozo-wash);
+  font-size: 14px;
+  line-height: 20px;
+}
+[data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"]:hover,
+[data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"][aria-pressed="true"] {
+  background: var(--dozo-wash-strong);
+}
+[data-testid="transcript"] .rounded-2xl.bg-card .space-y-0\.5 > [data-slot="button"] > span[aria-hidden]:first-child {
+  display: none;
+}
+
+/* ---- Composer --------------------------------------------------------------------------- */
+
+/* One thin pill: "+" at the start, the field without a border, the microphone and Send at the end. */
+[data-testid="composer-bar"] {
+  border: 0;
+  border-radius: 22px;
+  background: var(--dozo-surface-3);
+  box-shadow: inset 0 0 0 0.5px var(--dozo-edge);
+}
+[data-testid="composer-bar"]:focus-within {
+  box-shadow: inset 0 0 0 0.5px var(--dozo-wash-strong);
+}
+[data-testid="composer-bar"][data-expanded="true"] {
+  border-radius: 22px;
+}
+[data-testid="composer-bar"] > [data-slot="button"].col-start-1 {
+  border: 0;
+  background: transparent;
+  color: var(--dozo-ink-2);
+}
+[data-testid="composer-bar"] > [data-slot="button"].col-start-1:hover {
+  background: transparent;
+  color: var(--foreground);
+}
+[data-testid="composer-bar"] > .col-start-3 {
+  gap: 6px;
+}
+[data-testid="composer-bar"] > .col-start-3 [data-slot="button"] {
+  width: 28px;
+  height: 28px;
+}
+[data-testid="composer-bar"] > .col-start-3 > span [data-slot="button"]:not(.scale-125),
+[data-testid="composer-bar"] > .col-start-3 > [data-slot="button"].shadow-sm {
+  border: 0;
+  background: var(--dozo-wash);
+  box-shadow: none;
+  color: var(--dozo-ink-2);
+}
+[data-testid="composer-bar"] > .col-start-3 > span [data-slot="button"]:not(.scale-125):hover,
+[data-testid="composer-bar"] > .col-start-3 > [data-slot="button"].shadow-sm:hover {
+  background: var(--dozo-wash-strong);
+}
+
+/* ---- Bot panel -------------------------------------------------------------------------- */
+
+/* The bot panel stands on the sidebar's tone with no line before it; its cards are on the card
+   tone. What it holds and in which order stays upstream's. */
+[data-testid="side-panel"] {
+  border-inline-start: 0;
+  background: var(--dozo-surface-0);
+}
+[data-testid="side-panel"] .rounded-xl.bg-muted\/50 {
+  border-radius: 12px;
+  background: var(--dozo-surface-3);
+  box-shadow: inset 0 0 0 0.5px var(--dozo-edge);
+}
+
+/* ---- Motion ----------------------------------------------------------------------------- */
+
+/* The design's timings, only for those who have not asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-testid="bot-settings-trigger"] {
+    transition: background-color 0.12s var(--dozo-out);
+  }
+  [data-testid="bot-settings-trigger"]::after {
+    transition: rotate 0.34s var(--dozo-drawer);
+  }
+  [data-testid="message-hover-actions"] {
+    transition: opacity 0.15s ease;
+  }
+  [data-slot="sidebar-inner"]
+    > .app-drag:first-child
+    :is([data-activity-mode="off"], [data-testid="minimize-bots-sidebar"]),
+  [data-slot="sidebar-inner"] > .app-drag:first-child::after {
+    transition:
+      width 0.12s var(--dozo-out),
+      margin 0.12s var(--dozo-out),
+      opacity 0.12s var(--dozo-out);
   }
 }
 

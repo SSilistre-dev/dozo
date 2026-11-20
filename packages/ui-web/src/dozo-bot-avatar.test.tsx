@@ -242,12 +242,23 @@ describe("dozo-shell.css", () => {
     );
   });
 
-  it("writes the brand's two reds, the seal and the logo band, and takes every other colour from a token or the avatar", () => {
+  it("writes the brand's two reds, the seal and the logo band, and takes every other colour from a token", () => {
     const hex = css.match(/#[0-9a-f]{3,8}\b/gi) ?? [];
     expect(hex).toHaveLength(3);
     expect(css).toMatch(/\.dozo-logo-band \{\s*fill: #c8372d;\s*\}/);
     expect(css).toMatch(/--dozo-seal: light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\);/i);
-    expect(css).toContain("var(--dozo-tile)");
+  });
+
+  it("names each tone step once and uses the names, not loose mixes, in its rules", () => {
+    const declared = [...css.matchAll(/^\s*(--dozo-[a-z0-9-]+):/gm)].map(([, name]) => name);
+    expect(new Set(declared).size).toBe(declared.length);
+    for (const step of ["surface-0", "surface-1", "surface-2", "surface-3", "surface-4"]) {
+      expect(declared).toContain(`--dozo-${step}`);
+    }
+    // Outside the :root block that names them, no rule mixes a colour of its own.
+    const rules = css.slice(css.indexOf("}", css.indexOf(":root")));
+    expect(rules).not.toContain("color-mix(");
+    expect(rules).not.toMatch(/\[var\(--/);
   });
 
   it("switches the sidebar pattern with one variable", () => {
@@ -255,14 +266,17 @@ describe("dozo-shell.css", () => {
     expect(css).toContain("opacity: var(--dozo-seigaiha);");
   });
 
-  it("adds no motion and no !important", () => {
-    expect(css).not.toMatch(/\b(?:animation|transition)\b\s*:/);
+  it("moves only for those who have not asked for less motion, and uses no !important", () => {
+    const quiet = "@media (prefers-reduced-motion: no-preference) {";
+    const start = css.indexOf(quiet);
+    expect(start).toBeGreaterThan(-1);
+    // The block ends at the first line that closes a rule at the top level.
+    const end = css.indexOf("\n}\n", start);
+    const outside = css.slice(0, start) + css.slice(end);
+    expect(outside).not.toMatch(/\b(?:animation|transition)\b\s*:/);
+    expect(css.slice(start, end)).toMatch(/transition:/);
+    expect(css).not.toMatch(/\banimation\s*:/);
     expect(css).not.toContain("!important");
-  });
-
-  it("leaves the avatar unpositioned, which the tinted row relies on", () => {
-    const avatar = readFileSync(join(import.meta.dirname, "dozo-avatar.css"), "utf8");
-    expect(avatar).not.toMatch(/\.dozo-avatar\s*\{[^}]*position\s*:/);
   });
 });
 
