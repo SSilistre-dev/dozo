@@ -5,6 +5,7 @@
 
 mod alerts;
 mod background;
+mod backup;
 mod device;
 mod device_pairing;
 mod device_run;
@@ -18,6 +19,7 @@ mod phone;
 mod server;
 mod settings;
 mod stack;
+mod stack_backup;
 mod stack_fetch;
 mod stack_manifest;
 mod stack_os;
@@ -316,6 +318,7 @@ fn reload(window: WebviewWindow) {
 
 #[cfg(target_os = "macos")]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let backup_items = backup::items(app)?;
     let separator = || PredefinedMenuItem::separator(app);
     Menu::with_items(
         app,
@@ -338,6 +341,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     &separator()?,
                     &device_item(app)?,
                     &phone::item(app)?,
+                    &backup_items.0,
+                    &backup_items.1,
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &separator()?,
@@ -393,6 +398,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 /// itself: one short menu.
 #[cfg(not(target_os = "macos"))]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let backup_items = backup::items(app)?;
     Menu::with_items(
         app,
         &[&Submenu::with_id_and_items(
@@ -406,6 +412,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &PredefinedMenuItem::separator(app)?,
                 &device_item(app)?,
                 &phone::item(app)?,
+                &backup_items.0,
+                &backup_items.1,
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                 &PredefinedMenuItem::separator(app)?,
@@ -680,7 +688,10 @@ fn main() {
             phone::phones,
             phone::remove_phone,
             phone::phone_wait,
-            phone::approve_phone
+            phone::approve_phone,
+            backup::back_up,
+            backup::restore_pick,
+            backup::restore
         ])
         .menu(menu)
         .on_menu_event(|app, event| {
@@ -693,6 +704,8 @@ fn main() {
                 OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, event.id().as_ref()),
                 device::MENU_ID => device::clicked(app),
                 phone::MENU_ID => phone::open(app),
+                backup::BACK_UP_ID => backup::open(app, "backup"),
+                backup::RESTORE_ID => backup::open(app, "restore"),
                 #[cfg(not(target_os = "macos"))]
                 QUIT_ID => app.exit(0),
                 update::MENU_ID => restart_for_update(app),
@@ -720,6 +733,7 @@ fn main() {
             app.manage(LocalServer(Local::new(Arc::new(stack::RealChecks))));
             follow_local(app.clone());
             phone::follow(app.clone());
+            backup::follow(app.clone());
             start_local_if_chosen(&app);
             app.manage(device::Access::new(&app)?);
             device::select(&app, chosen(&app));
