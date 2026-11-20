@@ -4516,6 +4516,87 @@
       "reason": "site sessions: the router serves the signed-in sites of a bot's browser"
     },
     {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { VaultImportInput, VaultImportResult } from \"./vault-import.js\";\n\nconst botId",
+      "replace": "import { VaultImportInput, VaultImportResult } from \"./vault-import.js\";\nexport * from \"./dozo-chat-export.js\";\nimport { dozoChatExportContract } from \"./dozo-chat-export.js\";\n\nconst botId",
+      "requires": [
+        "packages/contracts/src/dozo-chat-export.ts"
+      ],
+      "reason": "chat export: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  },\n  export: {\n",
+      "replace": "  },\n  dozoChatExport: dozoChatExportContract,\n  export: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-chat-export.ts"
+      ],
+      "reason": "chat export: one chat as Markdown joins the app contract, beside the account and bot exports"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { pagesRoutes } from \"./routes/pages.js\";\nimport { paymentWalletRoutes }",
+      "replace": "import { pagesRoutes } from \"./routes/pages.js\";\nimport { dozoChatExportRoutes } from \"./dozo-chat-export.js\";\nimport { paymentWalletRoutes }",
+      "requires": [
+        "apps/api/src/dozo-chat-export.ts"
+      ],
+      "reason": "chat export: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...pagesRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "replace": "    ...pagesRoutes(ctx),\n    ...dozoChatExportRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-chat-export.ts"
+      ],
+      "reason": "chat export: the router renders a chat as Markdown with the transcript's own access check and page reader"
+    },
+    {
+      "file": "apps/web/src/pages/BotContextMenu.tsx",
+      "find": "import type { Bot, BotSection } from \"@rakazo/contracts\";\nimport type { SnoozePreset }",
+      "replace": "import type { Bot, BotSection } from \"@rakazo/contracts\";\nimport type { DozoChatExportMenuProps } from \"./shell/dozo-chat-export-menu\";\nimport { DozoChatExportMenu } from \"./shell/dozo-chat-export-menu\";\nimport type { SnoozePreset }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-chat-export-menu.tsx"
+      ],
+      "reason": "chat export: the import of the two rules below; the menu is loaded lazily, so the startup bundle does not grow"
+    },
+    {
+      "file": "apps/web/src/pages/BotContextMenu.tsx",
+      "find": "  onDelete,\n}: {\n  bot: ChatMenuTarget;\n",
+      "replace": "  onDelete,\n  dozoExport,\n}: {\n  bot: ChatMenuTarget;\n  /** What the Export submenu needs; absent, the menu has none. */\n  dozoExport?: DozoChatExportMenuProps;\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-chat-export-menu.tsx"
+      ],
+      "reason": "chat export: the roster menu takes what its Export submenu needs"
+    },
+    {
+      "file": "apps/web/src/pages/BotContextMenu.tsx",
+      "find": "        {t`Duplicate`}\n      </ContextMenuItem>\n      <ContextMenuSeparator />\n      <ContextMenuItem onClick={onClear}>",
+      "replace": "        {t`Duplicate`}\n      </ContextMenuItem>\n      {dozoExport ? <DozoChatExportMenu {...dozoExport} /> : null}\n      <ContextMenuSeparator />\n      <ContextMenuItem onClick={onClear}>",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-chat-export-menu.tsx"
+      ],
+      "reason": "chat export: one Export submenu in a chat's roster menu copies or saves the chat as Markdown"
+    },
+    {
+      "file": "apps/web/src/pages/shell/chat-context-menu.tsx",
+      "find": "        });\n      }}\n      onClear={() => {\n",
+      "replace": "        });\n      }}\n      dozoExport={{\n        rpc,\n        target: bot ? { botId: bot.id } : { groupId: group!.id },\n        name: chat.name,\n        onClose,\n      }}\n      onClear={() => {\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-chat-export-menu.tsx"
+      ],
+      "reason": "chat export: the roster and search results hand the menu the chat and the Space's client"
+    },
+    {
+      "file": "apps/mobile/app/bot-profile.tsx",
+      "find": "import { botProfileMenuOptions, useBotProfileActions } from \"../components/bot-profile-menu\";",
+      "replace": "import { botProfileMenuOptions, useBotProfileActions } from \"../components/dozo-bot-profile-menu\";",
+      "requires": [
+        "apps/mobile/components/dozo-bot-profile-menu.tsx"
+      ],
+      "reason": "chat export: the bot profile's menu gains Export, which hands the chat as Markdown to the system share sheet"
+    },
+    {
       "file": "packages/adapters/src/computer-control.ts",
       "find": "import { toComputerRef } from \"./computer-support.js\";\nimport { isSandboxGoneError }",
       "replace": "import { toComputerRef } from \"./computer-support.js\";\nimport { auditSiteSessionsAfterControl } from \"./dozo-site-session-audit.js\";\nimport { isSandboxGoneError }",
