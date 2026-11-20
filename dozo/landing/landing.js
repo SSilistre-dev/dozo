@@ -1,9 +1,8 @@
-/* Dozo landing script. Theme: ?theme=light (default dark) plus the header toggle.
+/* Dozo landing script. The theme is theme.js.
    ?still shows every scene in its final state (also the prefers-reduced-motion behaviour).
    Avatars: same symbols and eye-tracking as design/d/dozo.js, plus an idle life. */
 const root = document.documentElement;
 const qs = new URLSearchParams(location.search);
-if (qs.get("theme") === "light") root.dataset.theme = "light";
 const SYMBOLS = `<symbol id="a-sora" viewBox="0 0 64 64"><g class="head"><path class="b" d="M32 24L43 24C50.04 24 54 27.96 54 35L54 38C54 52.08 46.08 60 32 60L21 60C13.96 60 10 56.04 10 49L10 46C10 31.92 17.92 24 32 24ZM21.76 38.71L40.66 36.39A5.98 5.98 0 0 1 47.32 41.59L47.45 42.63A5.98 5.98 0 0 1 42.24 49.29L23.34 51.61A5.98 5.98 0 0 1 16.68 46.41L16.55 45.37A5.98 5.98 0 0 1 21.76 38.71Z"/><g class="feature"><path class="t1" d="M29.57 7.26Q32 5.5 34.43 7.26L58.57 24.74Q61 26.5 58 26.5L6 26.5Q3 26.5 5.43 24.74Z" transform="rotate(-6 32 24)"/></g><g class="eyes"><circle class="b" cx="26.64" cy="44.66" r="2.9"/><circle class="b" cx="37.36" cy="43.34" r="2.9"/></g></g></symbol>
   <symbol id="a-kumo" viewBox="0 0 64 64"><g class="head"><g class="feature"><path class="b" d="M12.9 36.34Q10.4 38 10.55 35L11.85 9.5Q12 6.5 14.23 8.5L29.27 22Q31.5 24 29 25.66Z"/><path class="b" d="M51.1 36.34Q53.6 38 53.45 35L52.15 9.5Q52 6.5 49.77 8.5L34.73 22Q32.5 24 35 25.66Z"/><path class="t2" d="M16.08 24.38Q14.6 25 14.68 23.4L15.12 15.1Q15.2 13.5 16.32 14.65L21.88 20.35Q23 21.5 21.52 22.12Z"/><path class="t2" d="M47.92 24.38Q49.4 25 49.32 23.4L48.88 15.1Q48.8 13.5 47.68 14.65L42.12 20.35Q41 21.5 42.48 22.12Z"/></g><path class="b" d="M22 21L42 21C49.68 21 54 25.32 54 33L54 37C54 51.08 46.08 59 32 59L26 59C15.76 59 10 53.24 10 43L10 33C10 25.32 14.32 21 22 21ZM21.76 36.21L40.66 33.89A5.98 5.98 0 0 1 47.32 39.09L47.45 40.13A5.98 5.98 0 0 1 42.24 46.79L23.34 49.11A5.98 5.98 0 0 1 16.68 43.91L16.55 42.87A5.98 5.98 0 0 1 21.76 36.21Z"/><g class="eyes"><ellipse class="b" cx="26.64" cy="42.16" rx="2.4" ry="3.4" transform="rotate(-7 26.64 42.16)"/><ellipse class="b" cx="37.36" cy="40.84" rx="2.4" ry="3.4" transform="rotate(-7 37.36 40.84)"/></g></g></symbol>
   <symbol id="a-hana" viewBox="0 0 64 64"><g class="head"><rect class="t3" x="38" y="15.6" width="21" height="2.8" rx="1.4" transform="rotate(-38 38 17)"/><g class="feature"><circle class="t3" cx="55" cy="3" r="2.5"/><circle class="t3" cx="58.04" cy="5.21" r="2.5"/><circle class="t3" cx="56.88" cy="8.79" r="2.5"/><circle class="t3" cx="53.12" cy="8.79" r="2.5"/><circle class="t3" cx="51.96" cy="5.21" r="2.5"/><circle class="b" cx="55" cy="6.2" r="1.5"/></g><circle class="b" cx="41.5" cy="16.5" r="7.6"/><path class="b" d="M31 21L35 21C45.88 21 52 27.12 52 38L52 37C52 51.72 43.72 60 29 60L25 60C14.12 60 8 53.88 8 43L8 44C8 29.28 16.28 21 31 21ZM19.76 36.21L38.66 33.89A5.98 5.98 0 0 1 45.32 39.09L45.45 40.13A5.98 5.98 0 0 1 40.24 46.79L21.34 49.11A5.98 5.98 0 0 1 14.68 43.91L14.55 42.87A5.98 5.98 0 0 1 19.76 36.21Z"/><g class="eyes"><circle class="b" cx="24.64" cy="42.16" r="2.9"/><circle class="b" cx="35.36" cy="40.84" r="2.9"/></g></g></symbol>
@@ -19,10 +18,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 addEventListener("DOMContentLoaded", () => {
-  $("#theme").addEventListener("click", () => {
-    if (root.dataset.theme === "light") delete root.dataset.theme;
-    else root.dataset.theme = "light";
-  });
   $("#sym").innerHTML = SYMBOLS;
   // plans: the cards hold both prices (both show without the script); the switch shows one and
   // carries the period to the sign-up links. Yearly first.

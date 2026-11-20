@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 
 const dir = new URL("../landing/", import.meta.url);
 const site = "https://dozo.bot";
@@ -149,9 +150,7 @@ for (const lang of ["en", ...languages]) {
       );
       // The app opens in the language of the page that linked it; a paid plan's card also names
       // the plan and the period the page shows first.
-      for (const link of find(page, "a", (a) =>
-        a.href?.startsWith("https://app.dozo.bot/"),
-      )) {
+      for (const link of find(page, "a", (a) => a.href?.startsWith("https://app.dozo.bot/"))) {
         assert.match(
           link.attrs.href,
           new RegExp(
@@ -217,11 +216,7 @@ test("every language shows the plans the code sells and links sign-up from each 
       file,
     );
     const [free, ...cards] = html.match(/<article class="tier[^"]*">.*?<\/article>/g);
-    assert.match(
-      free,
-      new RegExp(`href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}"`),
-      file,
-    );
+    assert.match(free, new RegExp(`href="https://app\\.dozo\\.bot/sign-up\\?lang=${lang}"`), file);
     assert.ok(free.includes(space("free")), file);
     cards.forEach((card, index) => {
       const prices = card
@@ -262,4 +257,122 @@ test("the server remembers only the languages the site has", () => {
       /sets one cookie|tek bir çerez/,
     );
   }
+});
+
+// Every page follows the theme the visitor picked on the one before: theme.js, the one copy of the
+// theme logic, runs in <head> (before the first paint) on each page, and each page has its button.
+const htmlFiles = (sub = "") =>
+  readdirSync(new URL(sub, dir), { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? htmlFiles(`${sub}${entry.name}/`)
+      : entry.name.endsWith(".html")
+        ? [`${sub}${entry.name}`]
+        : [],
+  );
+
+test("every page applies the theme before it paints and has the theme button", () => {
+  const files = htmlFiles();
+  assert.ok(files.length >= 10, files.join(" "));
+  for (const file of files) {
+    const html = read(file);
+    const head = html.slice(0, html.indexOf("</head>"));
+    const scripts = [...head.matchAll(/<script([^>]*)><\/script>/g)].map(([, attrs]) => attrs);
+    const theme = scripts.find((attrs) => /src="[^"]*theme\.js"/.test(attrs));
+    assert.ok(theme, `${file}: no theme.js in <head>`);
+    assert.doesNotMatch(theme, /\b(defer|async|type=)/, `${file}: theme.js must run before paint`);
+    const src = theme.match(/src="([^"]*)"/)[1];
+    assert.equal(new URL(src, new URL(file, `${site}/`)).href, `${site}/theme.js`, file);
+    assert.match(html, /<button class="tgl" id="theme" type="button" aria-label="[^"]+">/, file);
+  }
+  assert.ok(
+    !read("landing.js").includes("dataset.theme"),
+    "landing.js: the theme lives in theme.js",
+  );
+});
+
+// theme.js against a minimal page: the address carries the choice, the button flips it and every
+// link to another page of the site carries it on. Nothing is stored.
+function runTheme(href, links) {
+  let ready;
+  let click;
+  const anchors = links.map((link) => ({ href: new URL(link, href).href }));
+  const page = {
+    location: new URL(href),
+    history: { state: null, replaceState: (_s, _t, url) => (page.location = new URL(url)) },
+    root: { dataset: {} },
+  };
+  const context = {
+    URL,
+    URLSearchParams,
+    get location() {
+      return page.location;
+    },
+    history: page.history,
+    addEventListener: (type, listener) => {
+      if (type === "DOMContentLoaded") ready = listener;
+    },
+    document: {
+      documentElement: page.root,
+      querySelectorAll: () => anchors,
+      getElementById: (id) =>
+        id === "theme"
+          ? {
+              addEventListener: (_type, listener) => {
+                click = listener;
+              },
+            }
+          : null,
+    },
+  };
+  runInNewContext(read("theme.js"), context);
+  return { page, anchors, ready: () => ready(), click: () => click() };
+}
+
+test("theme.js: applies ?theme=light at once and carries it to the site's other pages", () => {
+  const { page, anchors, ready } = runTheme("https://dozo.bot/privacy/?theme=light", [
+    "../",
+    "../tr/privacy/",
+    "./",
+    "#main",
+    "https://app.dozo.bot/sign-in?lang=en",
+  ]);
+  assert.equal(page.root.dataset.theme, "light");
+  ready();
+  assert.deepEqual(
+    anchors.map((a) => a.href),
+    [
+      "https://dozo.bot/?theme=light",
+      "https://dozo.bot/tr/privacy/?theme=light",
+      "https://dozo.bot/privacy/?theme=light",
+      "https://dozo.bot/privacy/?theme=light#main",
+      "https://app.dozo.bot/sign-in?lang=en",
+    ],
+  );
+});
+
+test("theme.js: dark by default; the button switches the page, its address and its links", () => {
+  const { page, anchors, ready, click } = runTheme("https://dozo.bot/tr/terms/", [
+    "../../terms/?lang=en",
+    "../",
+  ]);
+  assert.equal(page.root.dataset.theme, undefined);
+  ready();
+  assert.deepEqual(
+    anchors.map((a) => a.href),
+    ["https://dozo.bot/terms/?lang=en", "https://dozo.bot/tr/"],
+  );
+  click();
+  assert.equal(page.root.dataset.theme, "light");
+  assert.equal(page.location.href, "https://dozo.bot/tr/terms/?theme=light");
+  assert.deepEqual(
+    anchors.map((a) => a.href),
+    ["https://dozo.bot/terms/?lang=en&theme=light", "https://dozo.bot/tr/?theme=light"],
+  );
+  click();
+  assert.equal(page.root.dataset.theme, undefined);
+  assert.equal(page.location.href, "https://dozo.bot/tr/terms/");
+  assert.deepEqual(
+    anchors.map((a) => a.href),
+    ["https://dozo.bot/terms/?lang=en", "https://dozo.bot/tr/"],
+  );
 });
