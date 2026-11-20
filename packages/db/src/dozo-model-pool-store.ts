@@ -94,3 +94,22 @@ export async function recordModelConnectionCooldown(
     WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"`;
   return written > 0;
 }
+
+/**
+ * Which of `credentialIds` are pooled, each with the end of its latest rest for any model, as
+ * settings show it. Like `readModelPool`, a rest from an earlier secret of the connection is left out.
+ */
+export async function readModelPoolMembers(
+  db: Db,
+  scope: { userId: string; credentialIds: readonly string[] },
+): Promise<StoredPoolMember[]> {
+  if (!scope.credentialIds.length) return [];
+  return db.$queryRaw<StoredPoolMember[]>`
+    SELECT m."credentialId", max(cd."resetsAt") AS "resetsAt"
+    FROM "dozo_model_pool_members" m
+    JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
+    LEFT JOIN "dozo_model_connection_cooldowns" cd
+      ON cd."credentialId" = m."credentialId" AND cd."secretId" = c."secretId"
+    WHERE m."userId" = ${scope.userId} AND m."credentialId" = ANY(${[...scope.credentialIds]})
+    GROUP BY m."credentialId"`;
+}

@@ -7,11 +7,14 @@
 // offers a tool of that name, the answer is that one tool call; once the newest message is the
 // tool's result, the answer is TOOL_DONE. A tool the request does not offer is said so in text.
 // `[e2e-table]` asks for a reply that is a markdown table (TABLE).
+// A request whose key is SPENT_KEY is told its quota ran out (429, `insufficient_quota`), as a
+// provider says it; any other key, or none, is answered as above.
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const MODEL = "dozo-e2e-model";
 const REPLY = "Hello from the offline Dozo test model.";
+export const SPENT_KEY = "e2e-spent-key";
 export const TOOL_DONE = "The offline test model saw the tool finish.";
 // `[e2e-table]` in the newest user message: a reply with a markdown table, for the look spec.
 export const TABLE = "| Topic | Open |\n| --- | --- |\n| Billing | 3 |\n| Export | 2 |";
@@ -71,6 +74,20 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (request.method === "POST" && path.endsWith("/chat/completions")) {
+    if (request.headers.authorization === `Bearer ${SPENT_KEY}`) {
+      await readBody(request);
+      response.writeHead(429, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message: "You exceeded your current quota.",
+            type: "insufficient_quota",
+            code: "insufficient_quota",
+          },
+        }),
+      );
+      return;
+    }
     let body = {};
     try {
       body = JSON.parse(await readBody(request));
