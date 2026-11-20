@@ -118,8 +118,8 @@ fn signal_group(child: &Child, signal: libc::c_int) {
 }
 
 /// The program a running process was started from, when it can be told: on Linux its
-/// executable, elsewhere the first word of its command line (the server's processes are started
-/// by absolute path). `None` when it is not running.
+/// executable, elsewhere its whole command line, which starts with it (the server's processes
+/// are started by absolute path; the path may hold spaces). `None` when it is not running.
 #[cfg(target_os = "linux")]
 pub fn program_of(pid: u32) -> Option<String> {
     let program = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
@@ -132,8 +132,8 @@ pub fn program_of(pid: u32) -> Option<String> {
         .args(["-o", "command=", "-p", &pid.to_string()])
         .output()
         .ok()?;
-    let line = String::from_utf8_lossy(&out.stdout);
-    line.split_whitespace().next().map(str::to_owned)
+    let line = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (!line.is_empty()).then_some(line)
 }
 
 #[cfg(windows)]

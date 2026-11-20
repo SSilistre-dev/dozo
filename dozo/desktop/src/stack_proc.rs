@@ -105,6 +105,18 @@ pub struct Launch {
 }
 
 impl Launch {
+    /// The same, for processes that must not hold the folder's lock.
+    pub fn without_lock(&self) -> Launch {
+        Launch {
+            logs: self.logs.clone(),
+            run: self.run.clone(),
+            lock: None,
+            backoff: self.backoff.clone(),
+            log_max: self.log_max,
+            events: self.events.clone(),
+        }
+    }
+
     pub fn note(&self, line: &str) {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -343,9 +355,12 @@ pub fn end_leftovers(launch: &Launch, programs: &Path) -> usize {
         let pid = fs::read_to_string(&path)
             .ok()
             .and_then(|text| text.trim().parse::<u32>().ok());
+        // By text: the folder has a space on macOS ("Application Support"), and there the
+        // program is the start of a command line rather than a path of its own.
+        let prefix = format!("{}/", programs.display());
         let ours = pid
             .and_then(stack_os::program_of)
-            .is_some_and(|program| Path::new(&program).starts_with(programs));
+            .is_some_and(|program| program.starts_with(&prefix));
         if let (true, Some(pid)) = (ours, pid) {
             let gone = stack_os::end_leftover(pid, Duration::from_secs(10));
             launch.note(&format!(
@@ -562,6 +577,8 @@ mod tests {
         assert!(error.ends_with(r#"{"event":"error"}"#), "{error}");
     }
 
+    // It reads /proc to see what is still running.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn what_an_earlier_start_left_running_is_ended_and_nothing_else() {
         use std::os::unix::process::CommandExt;
@@ -569,7 +586,8 @@ mod tests {
         let launch = launch(&dir);
         // A program "of the server": a copy of sh in the versions folder, started outside any
         // supervisor and with a child of its own, as an orphan from a crashed app would be.
-        let programs = dir.join("versions");
+        // Under a folder with a space, as macOS's "Application Support" is.
+        let programs = dir.join("Application Support/versions");
         fs::create_dir_all(&programs).unwrap();
         let ours = programs.join("sh");
         fs::copy("/bin/sh", &ours).unwrap();
