@@ -293,7 +293,7 @@
 /* ---- Settings window -------------------------------------------------------------------- */
 
 /* 900 x 700 at most, on the thread's tone; the nav shares the sheet, no lines anywhere. */
-[data-testid="user-settings"] {
+[data-slot="dialog-content"][data-testid="user-settings"] {
   width: min(900px, calc(100% - 2rem));
   max-width: min(900px, calc(100% - 2rem));
   height: min(700px, calc(100% - 2rem));

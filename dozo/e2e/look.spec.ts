@@ -227,7 +227,11 @@ test("menus share one surface and a destructive item is a red word", async ({ pa
   await expect(account).toHaveCSS("background-color", popover);
   // The edge is an outline, drawn over the content; the separator is a half-pixel line.
   await expect(account).toHaveCSS("outline-style", "solid");
-  await expect(account.locator("> .border-t").first()).toHaveCSS("border-top-width", "0.5px");
+  const separator = account.locator("> .border-t").first();
+  await expect(separator).toHaveCSS(
+    "border-top-color",
+    await tokenColor(page, "--dozo-wash-strong"),
+  );
   await page.keyboard.press("Escape");
 
   await page.locator(`${ROW}[aria-current="page"]`).click({ button: "right" });
@@ -300,13 +304,15 @@ test("keyboard focus and errors stay visible in the quiet controls", async ({ pa
   const focusRing = async () =>
     page.evaluate(() => {
       const cs = getComputedStyle(document.activeElement as HTMLElement);
-      return `${cs.outlineStyle} ${cs.outlineWidth}`;
+      return `${cs.outlineStyle} ${cs.outlineWidth} ${cs.outlineColor}`;
     });
   // A field (the language picker) and a button (Edit), reached with Tab.
+  // Upstream's controls transition every property, so the ring is read once it has settled.
+  const ring = `solid 2px ${await tokenColor(page, "--dozo-focus")}`;
   await tabTo(page, '[data-slot="select-trigger"]');
-  expect(await focusRing()).toBe("solid 2px");
+  await expect.poll(focusRing).toBe(ring);
   await tabTo(page, '[data-slot="switch"]');
-  expect(await focusRing()).toBe("solid 2px");
+  await expect.poll(focusRing).toBe(ring);
 
   // A field the app marks invalid is drawn in the destructive colour.
   await settings.getByRole("button", { name: "Edit" }).first().click();
@@ -328,10 +334,11 @@ test("a selected option keeps the room upstream leaves for its tick", async ({ p
   await expect(item).toHaveCSS("padding-right", "32px");
   const boxes = await item.evaluate((el) => {
     const tick = el.querySelector("span.absolute")?.getBoundingClientRect();
+    const words = [...el.querySelectorAll("*"), el]
+      .flatMap((node) => [...node.childNodes])
+      .find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
     const range = document.createRange();
-    range.selectNodeContents(
-      el.querySelector("[data-slot='select-item-text'], span:not(.absolute)") ?? el,
-    );
+    if (words) range.selectNodeContents(words);
     const text = range.getBoundingClientRect();
     return { textEnd: text.right, tickStart: tick?.left ?? Number.POSITIVE_INFINITY };
   });
