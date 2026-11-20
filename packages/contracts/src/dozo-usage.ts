@@ -17,7 +17,37 @@ export const DozoCacheSavingsSchema = z.object({
 });
 export type DozoCacheSavings = z.infer<typeof DozoCacheSavingsSchema>;
 
+/** What the Usage table groups the caller's spend by. */
+export const DozoUsageGroupingSchema = z.enum(["model", "bot", "routine"]);
+export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
+
+/**
+ * One group of the caller's usage. `state` says what `name` is: a bot or routine that exists,
+ * a deleted bot (its name kept), no bot or routine at all, or one the records cannot tell any
+ * more (a routine since deleted, a run that is gone). Totals are null when a record in the group
+ * lacks the count, so they never understate spend.
+ */
+export const DozoUsageGroupSchema = z.object({
+  key: z.string(),
+  name: z.string().nullable(),
+  /** The provider of a model, the bot of a routine; null otherwise. */
+  detail: z.string().nullable(),
+  state: z.enum(["live", "deleted", "none", "unknown"]),
+  modelCalls: z.number().int().nonnegative(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  totalTokens: z.number().nullable(),
+  costUsd: z.number().nullable(),
+});
+export type DozoUsageGroup = z.infer<typeof DozoUsageGroupSchema>;
+
+const GroupingInput = z.object({ by: DozoUsageGroupingSchema });
+
 export const dozoUsageContract = {
   /** The caller's own usage in the current Space; null when it has no input this period. */
   cacheSavings: oc.output(DozoCacheSavingsSchema.nullable()),
+  /** The caller's own usage in the current Space, as the Usage summary counts it, grouped. */
+  breakdown: oc.input(GroupingInput).output(z.array(DozoUsageGroupSchema)),
+  /** The same groups as a CSV file, rendered on the server. */
+  csv: oc.input(GroupingInput).output(z.object({ csv: z.string() })),
 };
