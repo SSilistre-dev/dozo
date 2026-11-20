@@ -711,6 +711,24 @@
       "reason": "verification result page: the endpoint that tells the page, from the signed mark in its address, whether that account is verified and which address to fill in"
     },
     {
+      "file": "packages/auth/src/index.ts",
+      "find": "import { dozoEmailLink, sendVerificationMail } from \"./dozo-email-link.js\";\nimport { emailLocale,",
+      "replace": "import { dozoEmailLink, sendVerificationMail } from \"./dozo-email-link.js\";\nimport { dozoHostedLogin, hostedPlanOf } from \"./dozo-hosted-login.js\";\nimport { emailLocale,",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the import of the rule below"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "      dozoEmailLink(),\n      signedBearer,\n",
+      "replace": "      dozoEmailLink(),\n      ...dozoHostedLogin({\n        webOrigin: env.webOrigin,\n        planOf: (userId) => hostedPlanOf(prisma, userId),\n      }),\n      signedBearer,\n",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the hosted server issues signed login tokens (HOSTED_LOGIN_SIGNING_KEY), a local one accepts them and closes password sign-in (HOSTED_LOGIN_ISSUER); with neither set no plugin is added"
+    },
+    {
       "file": "apps/web/src/App.tsx",
       "find": "const PasswordResetPage = lazyComponent(() =>\n  import(\"./pages/Auth\").then((module) => module.PasswordResetPage),\n);\n",
       "replace": "const PasswordResetPage = lazyComponent(() =>\n  import(\"./pages/dozo-email-link\").then((module) => module.PasswordResetPage),\n);\nconst VerifyEmailPage = lazyComponent(() =>\n  import(\"./pages/dozo-email-link\").then((module) => module.VerifyEmailPage),\n);\n",
