@@ -6609,8 +6609,8 @@
     },
     {
       "file": "apps/api/src/router.ts",
-      "find": "import { contentRoutes } from \"./routes/content.js\";\nimport { createRouterContext }",
-      "replace": "import { contentRoutes } from \"./routes/content.js\";\nimport { dozoAccessTokensRoutes } from \"./dozo-access-tokens.js\";\nimport { createRouterContext }",
+      "find": "import { dozoSendLimitRoutes } from \"./dozo-send-limit.js\";\nimport { createRouterContext }",
+      "replace": "import { dozoSendLimitRoutes } from \"./dozo-send-limit.js\";\nimport { dozoAccessTokensRoutes } from \"./dozo-access-tokens.js\";\nimport { createRouterContext }",
       "requires": [
         "apps/api/src/dozo-access-tokens.ts"
       ],
@@ -6705,21 +6705,21 @@
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
-      "find": "  const plan = USER_COMPUTER_TOOLS.has(name)\n    ? await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args)\n    : planActionGate({\n",
-      "replace": "  const plan = await dozoTokenRunPlan(\n    ctx,\n    requiresApprovalByDefault,\n    USER_COMPUTER_TOOLS.has(name)\n    ? await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args)\n    : planActionGate({\n",
+      "find": "    ? await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args)\n    : await dozoSendLimitGate(",
+      "replace": "    ? await dozoTokenRunPlan(\n        ctx,\n        requiresApprovalByDefault,\n        await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args),\n      )\n    : await dozoSendLimitGate(",
       "requires": [
         "packages/adapters/src/dozo-token-run.ts"
       ],
-      "reason": "token gate: in a run a message sent with an access token reached, every action with an outside effect asks the person, even in Never ask or Auto review"
+      "reason": "token gate: in a run a message sent with an access token reached, every action with an outside effect asks the person, even in Never ask or Auto review; here a command on the user's own computer"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
-      "find": "        purchase: paying,\n      });\n  // Nobody is there",
-      "replace": "        purchase: paying,\n      }),\n  );\n  // Nobody is there",
+      "find": "        planActionGate({\n          resolved: approvalResolved,",
+      "replace": "        await dozoTokenRunPlan(ctx, requiresApprovalByDefault, planActionGate({\n          resolved: approvalResolved,",
       "requires": [
         "packages/adapters/src/dozo-token-run.ts"
       ],
-      "reason": "token gate: closes the call the rule above opens"
+      "reason": "token gate: the same for every other tool, inside the daily send limit, so a send that asks takes none of the day's sends"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -6810,6 +6810,15 @@
         "apps/web/src/pages/shell/dozo-token-mark.tsx"
       ],
       "reason": "token gate: a message sent with an access token shows a small named key above it, no words"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "          purchase: paying,\n        }),\n      );\n  // Nobody is there",
+      "replace": "          purchase: paying,\n        })),\n      );\n  // Nobody is there",
+      "requires": [
+        "packages/adapters/src/dozo-token-run.ts"
+      ],
+      "reason": "token gate: closes the call the rule above opens"
     }
   ],
   "assets": {
