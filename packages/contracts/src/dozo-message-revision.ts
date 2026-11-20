@@ -1,7 +1,10 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./domain.js";
+import { dozoMessagePinsContract } from "./dozo-message-pins.js";
 import { Id } from "./ids.js";
+
+export * from "./dozo-message-pins.js";
 
 /**
  * Editing the last message and regenerating the last reply in a person's own chat with a bot.
@@ -31,4 +34,5 @@ export const dozoMessagesContract = {
     .output(RevisedOutput),
   /** Removes the bot's last reply and runs the bot again on the message it answered. */
   regenerate: oc.input(ThreadInput.extend({ messageId: Id })).output(RevisedOutput),
+  ...dozoMessagePinsContract,
 };
