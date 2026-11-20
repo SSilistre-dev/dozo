@@ -16,7 +16,7 @@ async function openExport(page: Page) {
   const menu = page.locator('[data-slot="context-menu-content"]').first();
   await expect(menu).toBeVisible();
   await menu.getByRole("menuitem", { name: "Export" }).hover();
-  const sub = page.locator('[data-slot="context-menu-content"]').nth(1);
+  const sub = page.getByRole("menu", { name: "Export" });
   await expect(sub.getByRole("menuitem", { name: "Download Markdown" })).toBeVisible();
   return sub;
 }
@@ -30,6 +30,7 @@ test("chat export: download and copy a chat as Markdown from the roster menu", a
 }) => {
   const world = readWorld();
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript((key) => localStorage.setItem(key, "light"), APPEARANCE_KEY);
   await openBot(page, world.chiefId, "Chief");
   await expect(page.getByText("Hello from the offline Dozo test model.").first()).toBeVisible();
 
@@ -54,10 +55,9 @@ test("chat export: download and copy a chat as Markdown from the roster menu", a
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("Hello from the offline Dozo test model.");
 
-  await page.evaluate((key) => localStorage.setItem(key, "dark"), APPEARANCE_KEY);
+  await page.addInitScript((key) => localStorage.setItem(key, "dark"), APPEARANCE_KEY);
   await openBot(page, world.chiefId, "Chief");
   await openExport(page);
   await shot(page, "2-dark");
   await page.keyboard.press("Escape");
-  await page.evaluate((key) => localStorage.removeItem(key), APPEARANCE_KEY);
 });
