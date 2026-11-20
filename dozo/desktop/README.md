@@ -27,7 +27,36 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   another host (a bare domain to `www.`) opens the browser and ends on the "Can't reach" screen.
 - Camera, microphone and similar requests from a page are denied.
 - Links to the browser are limited to one a second, so a page cannot flood it.
-- Closing the window quits the app. Menus and the local screens are English only.
+- Menus and the local screens are English only.
+
+## Open at Login and Keep Running in Background
+
+Two switches in the Dozo menu, both off until chosen. Each is saved in the same file as the server
+address (`server`, in the app's config folder): the address on the first line, then
+`open_at_login=` and `keep_running=` lines. A file with the address alone, as older versions
+wrote it, still reads, and a missing switch is off. They are menu events handled in Rust: no
+command was added and `capabilities/local.json` is unchanged.
+
+- Open at Login uses the system's own entry (a macOS launch agent, the Windows `Run` key, a Linux
+  XDG autostart file), started with `--from-login`. The entry is the system's: at every launch the
+  menu and the file are set to what it says, so one removed from outside shows as off.
+- Keep Running in Background off: closing the window quits, as it always did.
+- On: closing hides the window on macOS (the Dock icon shows it again). On Windows and Linux it
+  hides to a tray icon (Open Dozo, Quit Dozo; a click on Windows shows the window). Where no tray
+  icon can be clicked, the window is minimized instead and never hidden. Linux counts a tray as
+  there only when something on the desktop hosts tray icons (GNOME needs an extension), and asks
+  again at each close.
+- A start from the login entry has no window only when the switch is on and the window can be
+  brought back (the Dock, or a tray that shows); otherwise the window opens as usual. The window's
+  last visible state is never restored, so a hidden exit never makes the next start hidden.
+- Quit in the menu ends the app on every system, and so does Quit Dozo in the tray.
+- A second launch starts no process: the running app shows its window and brings it forward, hidden
+  or minimized (one started by the login entry is ignored). Without a session bus on Linux, a
+  second app simply starts.
+- The update check and Restart to Update work with the window hidden, except that the item is in
+  the window's menu: open the window first.
+- Linux needs `libayatana-appindicator3` for the tray: the .deb depends on it, the AppImage carries it.
+- macOS and Windows: compiled, not tried by hand. Only Linux runs under `tests/linux_gate.py`.
 
 ## Security
 
@@ -112,8 +141,9 @@ dozo/desktop/build-linux.sh check   # cargo fmt --check, clippy, cargo test
   and requires `libwebkit2gtk-4.1-0` 2.40 or later; the AppImage needs that too.
 - `tests/linux_gate.py` (run by the workflow under a virtual display) checks that a frame from
   another site loads, a clicked link to it opens in the browser without the app requesting it, a
-  frame cannot open a mail link on its own, and a page sent elsewhere by its script stays. Nobody
-  has run the app on a desktop session yet.
+  frame cannot open a mail link on its own, a page sent elsewhere by its script stays, a second
+  launch shows the first window, and closing the window ends the app, or with Keep Running in
+  Background and no tray keeps it minimized. Nobody has run the app on a desktop session yet.
 - Differences from macOS (`tauri.linux.conf.json`, `#[cfg(target_os = "linux")]` in `src/`): the
   short menu Windows has, inside the window; links open with `xdg-open`; the frame gate above.
   The server address and window position are kept in `~/.config/dev.ssilistre.dozo/`, the web
@@ -173,6 +203,6 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
 
 ## Where it keeps things
 
-- `~/Library/Application Support/dev.ssilistre.dozo/`: the server address and the window position.
+- `~/Library/Application Support/dev.ssilistre.dozo/`: the server address, the two switches and the window position.
 - `~/Library/WebKit/dev.ssilistre.dozo/` and `~/Library/HTTPStorages/dev.ssilistre.dozo.binarycookies`:
   the web view's site data and cookies.

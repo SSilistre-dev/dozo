@@ -3,34 +3,50 @@
 // A release build on Windows opens no console window beside the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod background;
 #[cfg(target_os = "macos")]
 mod frames;
 #[cfg(target_os = "linux")]
 #[path = "frames_gtk.rs"]
 mod frames;
 mod server;
+mod settings;
 mod update;
 
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
+use background::{Close, OS};
 use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use settings::Settings;
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::webview::{NewWindowResponse, PermissionResponse};
 use tauri::{
-    AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
-    window::Color,
+    AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    Wry, window::Color,
 };
+use tauri_plugin_autostart::ManagerExt;
 
-/// The server the user chose. Only its origin loads in the window.
-struct Server(Mutex<Option<Url>>);
+const MENU_ID: &str = "dozo-menu";
+const OPEN_AT_LOGIN_ID: &str = "open-at-login";
+const KEEP_RUNNING_ID: &str = "keep-running";
+
+/// What the user chose: the server (only its origin loads in the window) and the two switches.
+struct Config(Mutex<Settings>);
 
 fn chosen(app: &AppHandle) -> Option<Url> {
-    app.state::<Server>().0.lock().unwrap().clone()
+    app.state::<Config>().0.lock().unwrap().server.clone()
 }
 
-fn server_file(app: &AppHandle) -> tauri::Result<PathBuf> {
+fn settings_file(app: &AppHandle) -> tauri::Result<PathBuf> {
     Ok(app.path().app_config_dir()?.join("server"))
+}
+
+fn write_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
+    let file = settings_file(app).map_err(|error| error.to_string())?;
+    fs::create_dir_all(file.parent().unwrap_or(&file))
+        .and_then(|()| fs::write(&file, settings::render(settings)))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -42,11 +58,14 @@ fn current_server(app: AppHandle) -> Option<String> {
 #[tauri::command]
 fn set_server(app: AppHandle, address: String) -> Result<String, String> {
     let server = parse_server(&address)?;
-    let file = server_file(&app).map_err(|error| error.to_string())?;
-    fs::create_dir_all(file.parent().unwrap_or(&file))
-        .and_then(|()| fs::write(&file, server.as_str()))
-        .map_err(|error| format!("Could not save the address: {error}"))?;
-    *app.state::<Server>().0.lock().unwrap() = Some(server.clone());
+    let state = app.state::<Config>();
+    let mut config = state.0.lock().unwrap();
+    let next = Settings {
+        server: Some(server.clone()),
+        ..config.clone()
+    };
+    write_settings(&app, &next).map_err(|error| format!("Could not save the address: {error}"))?;
+    *config = next;
     Ok(server.into())
 }
 
@@ -134,8 +153,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     Menu::with_items(
         app,
         &[
-            &Submenu::with_items(
+            &Submenu::with_id_and_items(
                 app,
+                MENU_ID,
                 "Dozo",
                 true,
                 &[
@@ -148,6 +168,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                         true,
                         Some("Cmd+,"),
                     )?,
+                    &separator()?,
+                    &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
+                    &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &separator()?,
                     &PredefinedMenuItem::services(app, None)?,
                     &separator()?,
@@ -203,18 +226,181 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     Menu::with_items(
         app,
-        &[&Submenu::with_items(
+        &[&Submenu::with_id_and_items(
             app,
+            MENU_ID,
             "Dozo",
             true,
             &[
                 &MenuItem::with_id(app, "change-server", "Change Server…", true, Some("Ctrl+,"))?,
                 &MenuItem::with_id(app, "reload", "Reload", true, Some("Ctrl+R"))?,
                 &PredefinedMenuItem::separator(app)?,
-                &PredefinedMenuItem::quit(app, None)?,
+                &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
+                &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
+                &PredefinedMenuItem::separator(app)?,
+                // Ends the app whatever the window does, and does not depend on the menu
+                // toolkit's own handling of a quit item.
+                &MenuItem::with_id(app, QUIT_ID, "Quit", true, None::<&str>)?,
             ],
         )?],
     )
+}
+
+#[cfg(not(target_os = "macos"))]
+const QUIT_ID: &str = "quit";
+
+/// A switch in the menu; it starts off and `show_switches` sets it once the saved choice is read.
+fn switch(app: &AppHandle, id: &str, label: &str) -> tauri::Result<CheckMenuItem<Wry>> {
+    CheckMenuItem::with_id(app, id, label, true, false, None::<&str>)
+}
+
+fn switch_item(app: &AppHandle, id: &str) -> Option<CheckMenuItem<Wry>> {
+    match app.menu()?.get(MENU_ID)? {
+        MenuItemKind::Submenu(menu) => match menu.get(id)? {
+            MenuItemKind::Check(item) => Some(item),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn show_switches(app: &AppHandle, settings: &Settings) {
+    for (id, on) in [
+        (OPEN_AT_LOGIN_ID, settings.open_at_login),
+        (KEEP_RUNNING_ID, settings.keep_running),
+    ] {
+        if let Some(item) = switch_item(app, id) {
+            let _ = item.set_checked(on);
+        }
+    }
+}
+
+/// The user picked a switch: the item has already flipped, so it holds the new choice. The login
+/// entry is the system's, so what it ends up as is what the menu and the file show.
+fn flip(app: &AppHandle, id: &str) {
+    let Some(item) = switch_item(app, id) else {
+        return;
+    };
+    let wanted = item.is_checked().unwrap_or(false);
+    let state = app.state::<Config>();
+    let mut config = state.0.lock().unwrap();
+    let mut next = config.clone();
+    if id == OPEN_AT_LOGIN_ID {
+        let login = app.autolaunch();
+        let changed = if wanted {
+            login.enable()
+        } else {
+            login.disable()
+        };
+        if let Err(error) = &changed {
+            eprintln!("dozo: could not change the login entry: {error}");
+        }
+        next.open_at_login = login.is_enabled().unwrap_or(config.open_at_login);
+        let _ = item.set_checked(next.open_at_login);
+    } else {
+        next.keep_running = wanted;
+    }
+    if let Err(error) = write_settings(app, &next) {
+        eprintln!("dozo: could not save the choice: {error}");
+    }
+    *config = next;
+}
+
+/// Brings the window back: shown, restored from the taskbar and in front.
+fn reveal(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// The tray icon is the way back to a hidden window on Windows and Linux. Linux draws it only
+/// when something on the desktop hosts tray icons (GNOME needs an extension for it), so that is
+/// asked too; without a host the icon exists but nobody can click it.
+#[cfg(not(target_os = "macos"))]
+fn tray_showing(app: &AppHandle) -> bool {
+    app.try_state::<tauri::tray::TrayIcon>().is_some() && tray_host()
+}
+
+#[cfg(windows)]
+fn tray_host() -> bool {
+    true
+}
+
+#[cfg(target_os = "linux")]
+fn tray_host() -> bool {
+    use webkit2gtk::gio::{self, Cancellable};
+    use webkit2gtk::glib::ToVariant;
+    gio::bus_get_sync(gio::BusType::Session, Cancellable::NONE)
+        .and_then(|bus| {
+            bus.call_sync(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "NameHasOwner",
+                Some(&("org.kde.StatusNotifierWatcher",).to_variant()),
+                None,
+                gio::DBusCallFlags::NONE,
+                1000,
+                Cancellable::NONE,
+            )
+        })
+        .ok()
+        .and_then(|reply| reply.child_value(0).get::<bool>())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn tray_showing(_: &AppHandle) -> bool {
+    false
+}
+
+fn can_reopen(app: &AppHandle) -> bool {
+    background::can_reopen(OS, tray_showing(app))
+}
+
+/// Adds the tray icon: Open Dozo and Quit Dozo, and a click shows the window. A failure leaves
+/// the app without one, which `can_reopen` then reports.
+#[cfg(not(target_os = "macos"))]
+fn add_tray(app: &AppHandle) {
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let built = (|| -> tauri::Result<()> {
+        let menu = Menu::with_items(
+            app,
+            &[
+                &MenuItem::with_id(app, "tray-open", "Open Dozo", true, None::<&str>)?,
+                &MenuItem::with_id(app, "tray-quit", "Quit Dozo", true, None::<&str>)?,
+            ],
+        )?;
+        let mut tray = TrayIconBuilder::with_id("dozo")
+            .tooltip("Dozo")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, event| match event.id().as_ref() {
+                "tray-open" => reveal(app),
+                "tray-quit" => app.exit(0),
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    reveal(tray.app_handle());
+                }
+            });
+        if let Some(icon) = app.default_window_icon() {
+            tray = tray.icon(icon.clone());
+        }
+        app.manage(tray.build(app)?);
+        Ok(())
+    })();
+    if let Err(error) = built {
+        eprintln!("dozo: no tray icon: {error}");
+    }
 }
 
 /// Shows the one menu item that restarts into a downloaded update: a menu of that one item at
@@ -249,8 +435,30 @@ fn offer_update(app: &AppHandle) -> bool {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // First: a second launch hands over to the running app before anything else starts, and
+        // the running app shows its window, hidden or not. A login start never does.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if !background::from_login(&args) {
+                reveal(app);
+            }
+        }))
+        // Whether the window is shown is decided here, not restored: a window hidden when the
+        // app last ended must not make the next start hidden.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("Dozo")
+                .arg(background::LOGIN_ARG)
+                .build(),
+        )
         .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
@@ -265,22 +473,44 @@ fn main() {
             match event.id().as_ref() {
                 "change-server" => show_local(&window, "?change"),
                 "reload" => reload(window),
+                OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, event.id().as_ref()),
+                #[cfg(not(target_os = "macos"))]
+                QUIT_ID => app.exit(0),
                 update::MENU_ID => update::install(app),
                 _ => {}
             }
         })
         .setup(|app| {
             let app = app.handle().clone();
-            // A saved address is checked again: the file may have been edited by hand.
-            let saved = fs::read_to_string(server_file(&app)?)
-                .ok()
-                .and_then(|address| parse_server(&address).ok());
-            app.manage(Server(Mutex::new(saved)));
+            let mut settings = fs::read_to_string(settings_file(&app)?)
+                .map(|text| settings::parse(&text))
+                .unwrap_or_default();
+            // The login entry is the system's and the user may have removed it from outside:
+            // what it says now is what the menu shows.
+            let saved = settings.open_at_login;
+            if let Ok(actual) = app.autolaunch().is_enabled() {
+                settings.open_at_login = actual;
+            }
+            if settings.open_at_login != saved
+                && let Err(error) = write_settings(&app, &settings)
+            {
+                eprintln!("dozo: could not save the login entry: {error}");
+            }
+            show_switches(&app, &settings);
+            app.manage(Config(Mutex::new(settings.clone())));
             update::watch(app.clone(), offer_update);
+            #[cfg(not(target_os = "macos"))]
+            add_tray(&app);
+            let hidden = background::start_hidden(
+                background::from_login(std::env::args()),
+                settings.keep_running,
+                can_reopen(&app),
+            );
 
             let window =
                 WebviewWindowBuilder::new(&app, "main", WebviewUrl::App("index.html".into()))
                     .title("Dozo")
+                    .visible(!hidden)
                     .inner_size(1200.0, 800.0)
                     .min_inner_size(420.0, 520.0)
                     .theme(Some(Theme::Dark))
@@ -301,6 +531,28 @@ fn main() {
                     // Camera, microphone and the like: the web view grants them unless told otherwise.
                     .on_permission_request(|_, _| PermissionResponse::Deny)
                     .build()?;
+            window.on_window_event({
+                let app = app.clone();
+                move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        let keep = app.state::<Config>().0.lock().unwrap().keep_running;
+                        let Some(window) = app.get_webview_window("main") else {
+                            return;
+                        };
+                        match background::on_close(keep, can_reopen(&app)) {
+                            Close::Quit => {}
+                            Close::Hide => {
+                                api.prevent_close();
+                                let _ = window.hide();
+                            }
+                            Close::Minimize => {
+                                api.prevent_close();
+                                let _ = window.minimize();
+                            }
+                        }
+                    }
+                }
+            });
             // Only macOS and Linux need the gate: the Windows web view asks the navigation hook
             // about the window's own page alone, so frames load there as they do in a browser.
             #[cfg(target_os = "macos")]
@@ -313,6 +565,15 @@ fn main() {
             let _ = window;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("the app failed to start");
+        .build(tauri::generate_context!())
+        .expect("the app failed to start")
+        .run(|app, event| {
+            // The Dock icon was clicked while the window was hidden.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                reveal(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
