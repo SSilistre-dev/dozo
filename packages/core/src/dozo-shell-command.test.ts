@@ -74,6 +74,11 @@ describe("literalCommandWords", () => {
     ["a program that starts with a dash", "- rm -rf build"],
     ["a network share", "ls //attacker.example/share"],
     ["a quoted network share", "cat '//attacker.example/share'"],
+    ["a network share bound to a parameter", "ls -Path://attacker.example/share"],
+    ["a URL", "cat file://attacker.example/share"],
+    ["a right-to-left override in quotes", "echo 'abc\u202e'"],
+    ["a zero-width space", "ls\u200b -la"],
+    ["a line separator in quotes", "echo 'a\u2028b'"],
     ["a bang", "! ls"],
     ["a caret", "ls ^a"],
   ])("does not read %s", (_name, command) => {

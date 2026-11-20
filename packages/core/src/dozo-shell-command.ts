@@ -13,8 +13,15 @@ const PLAIN = /^[\p{L}\p{N}_\-./:@+=%]$/u;
 const NOT_FIRST = new Set(["=", "@", "%"]);
 /** Inside double quotes, the characters some shell expands or escapes. */
 const DOUBLE_QUOTED_SPECIAL = new Set(["$", "`", "\\", "!"]);
-/** Control characters other than a tab, and the curly quotes PowerShell reads as quotes. */
+/** Invisible marks that can make a card show text other than what runs (U+202E, for one). */
+const FORMAT = /[\p{Cf}\u2028\u2029]/u;
+
+/**
+ * Control characters other than a tab, the curly quotes PowerShell reads as quotes, and invisible
+ * format marks.
+ */
 function hasNeverCharacter(command: string): boolean {
+  if (FORMAT.test(command)) return true;
   for (const char of command) {
     const code = char.codePointAt(0)!;
     if ((code < 0x20 && char !== "\t") || (code >= 0x7f && code <= 0x9f)) return true;
@@ -62,8 +69,9 @@ export function literalCommandWords(command: string): string[] | undefined {
   const program = words[0];
   // `NAME=value cmd` runs cmd with a changed environment (PATH, for one); zsh reads `- cmd`.
   if (!program || program.includes("=") || program.startsWith("-")) return undefined;
-  // Windows reaches //host/share over the network, signing in as the user.
-  if (words.some((each) => each.startsWith("//"))) return undefined;
+  // Windows reaches //host/share over the network, signing in as the user, also from inside a
+  // word such as PowerShell's `-Path://host/share`.
+  if (words.some((each) => each.includes("//"))) return undefined;
   return words;
 }
 

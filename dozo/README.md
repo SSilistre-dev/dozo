@@ -303,13 +303,16 @@ How a command is read, and what that does not cover:
 - The server does not know which shell runs it (zsh, bash, fish or PowerShell), so it reads only
   what is plain in all of them: one program and its words, each bare or wholly quoted. Two
   commands, pipes, redirections, variables, globs, `~`, braces, subshells, backslashes, an
-  assignment before the program, curly quotes and control characters make it unreadable. An
+  assignment before the program, `//` anywhere in a word (a Windows network share), curly quotes,
+  control characters and invisible format marks make it unreadable. An
   unreadable command always asks, and offers no Always allow.
 - The read-only list names what may pass, never what must ask, so a script, an interpreter or a
   copy of a program under another name asks. A program is matched by its bare name; a path asks.
 - What a program does is not checked: an alias or function in the member's login profile can
   make `ls` do anything, and a command allowed by a rule (`npm test`) runs whatever its files say
-  today. Reading does not ask, including files that hold secrets.
+  today, and a program put earlier on `PATH` by a command the member allowed runs under the
+  name of a read-only one. Reading does not ask, including files that hold secrets. A Mac can
+  reach the network through `/net/<host>` paths, which a read-only command may list.
 - A rule matches the exact words and the folder as the bot wrote it; `~/app` and the same folder
   by its full path are two rules. The card offers Always allow only when it shows the whole command
   (nothing hidden as a secret, nothing cut off).
