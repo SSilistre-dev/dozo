@@ -21,10 +21,19 @@ const HOUR = 60 * 60_000;
 const USER = "user-1";
 
 const key = (id: string) => serializeModelSecret({ kind: "api_key", key: `fake-key-${id}` });
-const signIn = serializeModelSecret({
-  kind: "oauth",
-  credential: { type: "oauth", access: "fake-access", refresh: "fake-refresh", expires: 1 },
-});
+const signInAs = (accountId: string) =>
+  serializeModelSecret({
+    kind: "oauth",
+    credential: {
+      type: "oauth",
+      access: "fake-access",
+      refresh: "fake-refresh",
+      expires: 1,
+      accountId,
+    },
+  });
+const signIn = signInAs("account-1");
+const signedOut = JSON.stringify({ kind: "oauth", reconnectRequired: true });
 
 /** Connections in the order added: provider-a's a, b, s (a subscription sign-in), then others. */
 function deps(
@@ -82,25 +91,37 @@ beforeEach(() => {
 });
 
 describe("readDozoModelPool", () => {
-  it("offers a pool only where two connections of one provider may join one", async () => {
+  it("offers a pool where two connections of one provider may join one, sign-ins included", async () => {
     expect(await readDozoModelPool(deps().deps, USER, now)).toEqual({
       connections: [
         { credentialId: "a", pooled: false },
         { credentialId: "b", pooled: false },
+        { credentialId: "s", pooled: false },
       ],
     });
     expect(db.readModelPoolMembers).toHaveBeenCalledWith(expect.anything(), {
       userId: USER,
-      credentialIds: ["a", "b"],
+      credentialIds: ["a", "b", "s"],
+      accounts: new Map([["s", expect.stringMatching(/^account:[0-9a-f]{32}$/)]]),
     });
   });
 
-  it("offers nothing for one key and a sign-in", async () => {
-    const one = deps([
+  it("offers one sign-in per account, and none that must be made again", async () => {
+    const twice = deps([
       { id: "a", provider: "provider-a" },
       { id: "s", provider: "provider-a", secret: signIn },
+      { id: "t", provider: "provider-a", secret: signIn },
+      { id: "u", provider: "provider-a", secret: signedOut },
+      { id: "v", provider: "provider-a", secret: signInAs("account-2") },
     ]);
-    expect(await readDozoModelPool(one.deps, USER, now)).toEqual({ connections: [] });
+    expect(
+      (await readDozoModelPool(twice.deps, USER, now)).connections.map(
+        (entry) => entry.credentialId,
+      ),
+    ).toEqual(["a", "s", "v"]);
+    await expect(
+      setDozoModelPool(twice.deps, USER, { credentialId: "t", pooled: true }, now),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
   });
 
   it("shows when a resting member opens, and nothing for a rest that ended", async () => {
@@ -112,6 +133,7 @@ describe("readDozoModelPool", () => {
       connections: [
         { credentialId: "a", pooled: true, opensAt: new Date(now + 2 * HOUR).toISOString() },
         { credentialId: "b", pooled: true },
+        { credentialId: "s", pooled: false },
       ],
     });
   });
@@ -122,6 +144,7 @@ describe("readDozoModelPool", () => {
       connections: [
         { credentialId: "a", pooled: false },
         { credentialId: "b", pooled: false },
+        { credentialId: "s", pooled: false },
       ],
     });
   });
@@ -147,7 +170,12 @@ describe("readDozoModelPool", () => {
 
 describe("setDozoModelPool", () => {
   it("pools every offered connection of the provider in one transaction", async () => {
-    const { deps: poolDeps, tx } = deps();
+    const { deps: poolDeps, tx } = deps([
+      { id: "a", provider: "provider-a" },
+      { id: "b", provider: "provider-a" },
+      { id: "s", provider: "provider-a", secret: signedOut },
+      { id: "z", provider: "provider-z" },
+    ]);
     const result = await setDozoModelPool(poolDeps, USER, { credentialId: "b", pooled: true }, now);
     expect(result).toEqual({
       provider: "provider-a",
@@ -181,9 +209,6 @@ describe("setDozoModelPool", () => {
   });
 
   it("refuses a connection that may not join, and one that is not the person's", async () => {
-    await expect(
-      setDozoModelPool(deps().deps, USER, { credentialId: "s", pooled: true }, now),
-    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
     await expect(
       setDozoModelPool(deps().deps, USER, { credentialId: "z", pooled: true }, now),
     ).rejects.toMatchObject({ kind: "BAD_REQUEST" });

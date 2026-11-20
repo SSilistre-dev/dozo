@@ -42,23 +42,43 @@ export async function setModelPoolMember(
 }
 
 /**
- * Which of `credentialIds` are pooled, each with its latest rest for `modelId`. A rest recorded
- * for an earlier secret of the connection is left out: saving a new key ends it.
+ * The current holder of each connection a rest may belong to: its subscription account, when the
+ * caller knows one (see `holder` on a rest), else nothing beyond its secret.
+ */
+export type PoolAccounts = ReadonlyMap<string, string>;
+
+/** `credentialIds` paired with their accounts, '' for none, for an `unnest` join. */
+function accountColumns(credentialIds: readonly string[], accounts?: PoolAccounts) {
+  return { ids: [...credentialIds], keys: credentialIds.map((id) => accounts?.get(id) ?? "") };
+}
+
+/**
+ * Which of `credentialIds` are pooled, each with its latest rest for `modelId`. A rest belongs to
+ * the secret the connection had when it ran out, so saving a new key ends it; one recorded for a
+ * subscription account (`holder`) belongs to that account instead, which a token refresh or a new
+ * sign-in with the same account keeps.
  */
 export async function readModelPool(
   db: Db,
-  scope: { userId: string; credentialIds: readonly string[]; modelId: string },
+  scope: {
+    userId: string;
+    credentialIds: readonly string[];
+    modelId: string;
+    accounts?: PoolAccounts;
+  },
 ): Promise<StoredPoolMember[]> {
   if (!scope.credentialIds.length) return [];
+  const { ids, keys } = accountColumns(scope.credentialIds, scope.accounts);
   return db.$queryRaw<StoredPoolMember[]>`
     SELECT m."credentialId", max(cd."resetsAt") AS "resetsAt"
     FROM "dozo_model_pool_members" m
     JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
+    JOIN unnest(${ids}::text[], ${keys}::text[]) AS a("id", "account") ON a."id" = m."credentialId"
     LEFT JOIN "dozo_model_connection_cooldowns" cd
       ON cd."credentialId" = m."credentialId"
       AND cd."modelId" IN ('', ${scope.modelId})
-      AND cd."secretId" = c."secretId"
-    WHERE m."userId" = ${scope.userId} AND m."credentialId" = ANY(${[...scope.credentialIds]})
+      AND (cd."holder" IS NULL AND cd."secretId" = c."secretId" OR cd."holder" = a."account")
+    WHERE m."userId" = ${scope.userId}
     GROUP BY m."credentialId"`;
 }
 
@@ -76,18 +96,21 @@ export async function recordModelConnectionCooldown(
     reason: PoolCooldownReason;
     resetsAt: Date;
     observedAt: Date;
+    /** The subscription account the rest belongs to; absent: the connection's current secret. */
+    holder?: string;
   },
 ): Promise<boolean> {
   const written = await db.$executeRaw`
     INSERT INTO "dozo_model_connection_cooldowns"
-      ("credentialId", "userId", "modelId", "secretId", "reason", "resetsAt", "observedAt")
-    SELECT m."credentialId", m."userId", ${rest.modelId ?? ""}, c."secretId", ${rest.reason},
-      ${rest.resetsAt}, ${rest.observedAt}
+      ("credentialId", "userId", "modelId", "secretId", "holder", "reason", "resetsAt", "observedAt")
+    SELECT m."credentialId", m."userId", ${rest.modelId ?? ""}, c."secretId", ${rest.holder ?? null},
+      ${rest.reason}, ${rest.resetsAt}, ${rest.observedAt}
     FROM "dozo_model_pool_members" m
     JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
     WHERE m."credentialId" = ${rest.credentialId} AND m."userId" = ${rest.userId}
     ON CONFLICT ("credentialId", "modelId") DO UPDATE SET
       "secretId" = EXCLUDED."secretId",
+      "holder" = EXCLUDED."holder",
       "reason" = EXCLUDED."reason",
       "resetsAt" = EXCLUDED."resetsAt",
       "observedAt" = EXCLUDED."observedAt"
@@ -97,19 +120,22 @@ export async function recordModelConnectionCooldown(
 
 /**
  * Which of `credentialIds` are pooled, each with the end of its latest rest for any model, as
- * settings show it. Like `readModelPool`, a rest from an earlier secret of the connection is left out.
+ * settings show it. A rest belongs to its secret or account as in `readModelPool`.
  */
 export async function readModelPoolMembers(
   db: Db,
-  scope: { userId: string; credentialIds: readonly string[] },
+  scope: { userId: string; credentialIds: readonly string[]; accounts?: PoolAccounts },
 ): Promise<StoredPoolMember[]> {
   if (!scope.credentialIds.length) return [];
+  const { ids, keys } = accountColumns(scope.credentialIds, scope.accounts);
   return db.$queryRaw<StoredPoolMember[]>`
     SELECT m."credentialId", max(cd."resetsAt") AS "resetsAt"
     FROM "dozo_model_pool_members" m
     JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
+    JOIN unnest(${ids}::text[], ${keys}::text[]) AS a("id", "account") ON a."id" = m."credentialId"
     LEFT JOIN "dozo_model_connection_cooldowns" cd
-      ON cd."credentialId" = m."credentialId" AND cd."secretId" = c."secretId"
-    WHERE m."userId" = ${scope.userId} AND m."credentialId" = ANY(${[...scope.credentialIds]})
+      ON cd."credentialId" = m."credentialId"
+      AND (cd."holder" IS NULL AND cd."secretId" = c."secretId" OR cd."holder" = a."account")
+    WHERE m."userId" = ${scope.userId}
     GROUP BY m."credentialId"`;
 }

@@ -67,10 +67,26 @@ describe("readModelPool", () => {
       }),
     ).toBe(rows);
     expect(db.$queryRaw.mock.calls[0]?.slice(1)).toEqual([
+      ["connection-a", "connection-b"],
+      ["", ""],
       "model-1",
       "user-1",
-      ["connection-a", "connection-b"],
     ]);
+  });
+
+  it("pairs each connection with its subscription account, '' for none", async () => {
+    const db = fakeDb();
+    await readModelPool(db as never, {
+      userId: "user-1",
+      credentialIds: ["connection-a", "connection-b"],
+      modelId: "model-1",
+      accounts: new Map([["connection-b", "account:abc"]]),
+    });
+    expect(db.$queryRaw.mock.calls[0]?.slice(1, 3)).toEqual([
+      ["connection-a", "connection-b"],
+      ["", "account:abc"],
+    ]);
+    expect(db.$queryRaw.mock.calls[0]?.[0].join("?")).toContain('cd."holder" = a."account"');
   });
 });
 
@@ -94,8 +110,9 @@ describe("readModelPoolMembers", () => {
     ).toBe(rows);
     expect(db.$queryRaw.mock.calls[0]?.[0].join("?")).not.toContain('"modelId" IN');
     expect(db.$queryRaw.mock.calls[0]?.slice(1)).toEqual([
-      "user-1",
       ["connection-a", "connection-b"],
+      ["", ""],
+      "user-1",
     ]);
   });
 });
@@ -114,6 +131,7 @@ describe("recordModelConnectionCooldown", () => {
     expect(await recordModelConnectionCooldown(db as never, { ...rest, modelId: null })).toBe(true);
     expect(db.$executeRaw.mock.calls[0]?.slice(1)).toEqual([
       "",
+      null,
       "rejected",
       rest.resetsAt,
       rest.observedAt,
@@ -132,5 +150,20 @@ describe("recordModelConnectionCooldown", () => {
       }),
     ).toBe(false);
     expect(db.$executeRaw.mock.calls[0]?.[1]).toBe("model-1");
+  });
+
+  it("writes the account a subscription's rest belongs to", async () => {
+    const db = fakeDb({ execute: 1 });
+    await recordModelConnectionCooldown(db as never, {
+      ...rest,
+      modelId: "model-1",
+      reason: "exhausted",
+      holder: "account:abc",
+    });
+    expect(db.$executeRaw.mock.calls[0]?.slice(1, 4)).toEqual([
+      "model-1",
+      "account:abc",
+      "exhausted",
+    ]);
   });
 });

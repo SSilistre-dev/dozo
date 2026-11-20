@@ -34,6 +34,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 
 import type { RunModelPool } from "./dozo-model-pool.js";
 import { withRunModelPool } from "./dozo-model-pool.js";
+import { OAUTH_RECONNECT_REQUIRED_ERROR } from "./pi-oauth.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 
 const pooled: Model<"openai-completions"> = {
@@ -175,6 +176,31 @@ describe("a pooled connection that runs out mid-run", () => {
   it("hands over when the provider refuses the connection's key", async () => {
     const runPool = pool();
     answer({ "key-a": "401 invalid_api_key: Incorrect API key provided" });
+    expect(text(await run(withRunModelPool(request(), runPool)))).toBe("answered with key-b");
+    expect(runPool.recordOut).toHaveBeenCalledWith("a", pooled.id, "rejected", undefined);
+  });
+
+  it("hands a subscription whose usage window ran out to the next, resting it until the window resets", async () => {
+    const before = Date.now();
+    const runPool = pool();
+    answer({
+      "key-a": "You have hit your ChatGPT usage limit (plus plan). Try again in ~90 min.",
+    });
+    expect(text(await run(withRunModelPool(request(), runPool)))).toBe("answered with key-b");
+    expect(keysUsed()).toEqual(["key-a", "key-b"]);
+    const resetAt = vi.mocked(runPool.recordOut).mock.calls[0]?.[3] ?? 0;
+    expect(vi.mocked(runPool.recordOut).mock.calls[0]?.slice(0, 3)).toEqual([
+      "a",
+      pooled.id,
+      "exhausted",
+    ]);
+    expect(resetAt - before).toBeGreaterThanOrEqual(90 * 60_000);
+    expect(resetAt - Date.now()).toBeLessThanOrEqual(90 * 60_000);
+  });
+
+  it("hands over when the sign-in must be made again", async () => {
+    const runPool = pool();
+    answer({ "key-a": OAUTH_RECONNECT_REQUIRED_ERROR });
     expect(text(await run(withRunModelPool(request(), runPool)))).toBe("answered with key-b");
     expect(runPool.recordOut).toHaveBeenCalledWith("a", pooled.id, "rejected", undefined);
   });
