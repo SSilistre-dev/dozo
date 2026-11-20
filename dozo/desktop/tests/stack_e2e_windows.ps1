@@ -38,6 +38,7 @@ $Root = Join-Path $env:LOCALAPPDATA 'dev.ssilistre.dozo\server'
 $Hosted = Join-Path $env:LOCALAPPDATA 'dev.ssilistre.dozo-hosted\server'
 $Shared = Join-Path $env:RUNNER_TEMP 'e2e-shared'
 $started = @()
+$failed = $false
 
 # Processes whose program or command line is in a folder (as processes_under in stack_e2e.rs).
 function Left([string]$folder) {
@@ -149,8 +150,15 @@ try {
   Assert-None-Left $Hosted 'after stop'
 } catch {
   Say "FAILED: $_"
-  $started | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
-  Verdict FAIL
+  $failed = $true
 }
 $started | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+# The servers' logs beside the others in RUNNER_TEMP, for the workflow to keep (one drive).
+foreach ($folder in @($Root, $Hosted)) {
+  $logs = Join-Path $folder 'logs'
+  if (Test-Path $logs) {
+    Copy-Item -Recurse $logs (Join-Path $env:RUNNER_TEMP "e2e-logs-$(Split-Path -Leaf (Split-Path $folder))") -ErrorAction SilentlyContinue
+  }
+}
+if ($failed) { Verdict FAIL }
 Verdict PASS

@@ -144,11 +144,17 @@ pub struct RealChecks;
 
 impl Checks for RealChecks {
     fn postgres(&self, bin: &Path, port: u16) -> bool {
-        std::process::Command::new(bin.join(exe("pg_isready")))
+        let mut command = std::process::Command::new(bin.join(exe("pg_isready")));
+        command
             .args(["-q", "-t", "2", "-h", "127.0.0.1", "-p", &port.to_string()])
-            .env_clear()
-            .status()
-            .is_ok_and(|status| status.success())
+            .env_clear();
+        // Windows opens no socket without it.
+        if let Some(root) = std::env::var_os("SystemRoot").filter(|_| cfg!(windows)) {
+            command.env("SystemRoot", root);
+        }
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+        command.status().is_ok_and(|status| status.success())
     }
 
     fn server(&self, ports: Ports) -> bool {
