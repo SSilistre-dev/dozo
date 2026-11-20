@@ -7,6 +7,7 @@ const SCREENS = ["choose", "connecting", "setting-up", "failed", "unreachable"];
 const STEPS = {
   downloading: ({ percent }) => `Downloading ${percent}%`,
   preparing: () => "Preparing",
+  updating: () => "Updating…",
   starting: () => "Starting",
 };
 const el = (id) => document.getElementById(id);

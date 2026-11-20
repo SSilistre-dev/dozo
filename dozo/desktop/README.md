@@ -269,9 +269,52 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   pages, like the server's, can call nothing in the app. A server that already has accounts of
   its own refuses to start in that mode.
 - Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
-- Not here yet: updating the installed server, backups and going back (the folder is laid out
-  for them). An installed version is kept: a newer app finds it and does not install the newer
-  one (so an install from before the phone link has none until updates exist).
+
+### Updating the server
+
+The app expects one server version (`SERVER_VERSION` in `src/stack.rs`, the one its manifest
+names). When the installed one (`current`) is older, the next start updates it
+(`src/stack_update.rs`); when it is the same, no manifest is read. The window says "Updating…"
+in its one line.
+
+1. With nothing running, the server's data (`pgdata/`, `data/`, `relay/`, `secrets`) is copied as
+   files to `before-update/<old version>-<time>/` (this user only), and the `update` journal
+   records it. A copy that cannot be made (a full disk) is dropped and the old version starts.
+2. The new version is downloaded, checked and installed beside the old one in `versions/`, and
+   only then made `current`. A download that fails starts the old version instead.
+3. The server starts on it: the migrations run, then the health checks. Ready: the journal goes,
+   two copies and two versions (the current and the one before) are kept.
+
+If the new version does not start, the copy and the old version come back, and the window says
+"The update did not start, so the server is back as it was." That version is not tried again on
+its own (`update-skip`), until the app expects a newer one. An update cut off at any point (the app
+killed, the disk full) is finished the same way at the next start, from the journal. A manifest
+naming an older version than the installed one is never followed.
+
+Why a file copy and not a `pg_dump`: the server is stopped, so the files are consistent; going
+back is a rename; it needs no running Postgres of either version; and the secrets and the relay
+keys come back with the database they belong to. Migrations cannot be undone, so going back is
+always the copy.
+
+### Back Up and Restore
+
+Back Up… and Restore… in the Dozo menu are on while the server on this computer runs. They use the
+bundle's own command (`dozo/server-bundle/README.md`, "Backup and restore"; `src/stack_backup.rs`)
+from a small window (`ui/backup.html`, `src/backup.rs`):
+
+- Back Up asks for a password twice ("Nobody can recover a lost password." is said once, there),
+  then the system's save dialog picks the file (`Dozo <date>.dozobackup`). The running server is
+  backed up as it is.
+- Restore picks a file with the system's open dialog, then asks its password ("This replaces the
+  data on this computer."). The command restores into an empty installation only, so the server
+  stops and its data (`pgdata/`, `data/`, `relay/`, `secrets`) is moved aside into
+  `before-restore/<time>/`; the backup goes into the emptied folder and the server starts on it.
+  A restore that fails (a wrong password, a damaged file, a backup from a newer Dozo) puts the
+  data back with renames and starts the server as it was ("… Nothing changed."); a restored
+  server that does not start is swapped back the same way. The newest set moved aside is kept.
+- The page sees a file's name, never its path: the path stays in the app. The password goes to
+  the command's standard input only, never an argument, a variable or a log line.
+- A bundle without the command (before 0.11.0-2) is told "Update the server first."
 
 ### Connect Phone
 
@@ -304,7 +347,7 @@ Its folder is `local-server/` in the app's local data folder (`~/.local/share/de
 `%LOCALAPPDATA%\dev.ssilistre.dozo\`, `~/Library/Application Support/dev.ssilistre.dozo/`):
 `versions/<version>/` (node, postgres, server) and `current`, `pgdata/`, `data/` (the server's
 files), `relay/` (the relay agent's keys), `secrets`, `ports`, `stack.lock`, `db-created`,
-`downloads/`, `logs/`, `run/`. On macOS the local data folder is also the
+`downloads/`, `logs/`, `run/`, and for updates `before-update/`, `update` and `update-skip`. On macOS the local data folder is also the
 config folder, where the settings file is `server`, so the two never share a name; a folder left
 as `server/` by an earlier Linux or Windows build moves to `local-server/` once (one rename, and
 only when `local-server/` is not there yet).
