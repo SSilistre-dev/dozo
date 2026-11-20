@@ -6279,6 +6279,35 @@
       "find": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"",
       "replace": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Check this computer's date and time\"\nmsgstr \"Bu bilgisayarın tarih ve saatini denetleyin\"\n\n#: apps/web/src/components/dozo-hosted-link-row.tsx\nmsgid \"Dozo account\"\nmsgstr \"Dozo hesabı\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"",
       "reason": "hosted account sign-in on a local server: the Turkish copy of the clock hint on the sign-in page and of the link row in Security"
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.web.tsx",
+      "find": "\"./mermaid.web\";\nimport { PAGE_ICON }",
+      "replace": "\"./mermaid.web\";\nimport { mathComponents, mathSource, remarkChatMath } from \"./dozo-markdown-math.web\";\nimport { PAGE_ICON }",
+      "reason": "chat math: import of the fork's math parsing and lazy KaTeX formula, used by the three rules below",
+      "requires": [
+        "packages/chat-ui/src/dozo-markdown-math.ts",
+        "packages/chat-ui/src/dozo-markdown-math.web.tsx",
+        "packages/chat-ui/src/dozo-markdown-math.css"
+      ]
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.web.tsx",
+      "find": "  pre: MarkdownPre,\n  table({",
+      "replace": "  pre: MarkdownPre,\n  ...mathComponents,\n  table({",
+      "reason": "chat math: draws each formula element the math plugins produce"
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.web.tsx",
+      "find": "const remarkPlugins = [remarkGfm];",
+      "replace": "const remarkPlugins = [remarkGfm, ...remarkChatMath];",
+      "reason": "chat math: reads $…$ and $$…$$ as math through the renderer's own plugin list"
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.web.tsx",
+      "find": "  const parsed = streaming ? closeUnterminatedFence(source) : source;",
+      "replace": "  const parsed = mathSource(streaming ? closeUnterminatedFence(source) : source);",
+      "reason": "chat math: dollars that are prices, not math delimiters, stay text; same length, so parser offsets still match the source"
     }
   ],
   "assets": {
