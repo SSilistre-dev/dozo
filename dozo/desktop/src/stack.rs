@@ -3,7 +3,7 @@
 //! the migrations, then the API, the worker and the web server, ready once the API's `/health`
 //! and the web page answer. It stops in reverse. What the window shows is `Status`.
 //!
-//! Its folder (`<app data>/server`):
+//! Its folder (`<app local data>/local-server`, `FOLDER`):
 //! - `versions/<version>/{node,postgres,server}`: what was installed, and `current`, its name
 //! - `pgdata/`: the database; `data/`: the server's files (`DATA_DIR`)
 //! - `secrets` (this user only), `ports`, `stack.lock`, `db-created`
@@ -119,6 +119,28 @@ impl Failure {
             Failure::Start => "The server on this computer did not start.".into(),
         }
     }
+}
+
+/// The server's folder in the app's local data folder. On macOS that is also the config folder,
+/// where the settings file is `server` (`settings::FILE`): the two never share a name.
+pub const FOLDER: &str = "local-server";
+
+/// The name the folder had before; only a Linux or Windows build could have made it there.
+const OLD_FOLDER: &str = "server";
+
+/// The server's folder in `data`, the app's local data folder. A folder left under the old name
+/// moves once, in one rename, unless the new one exists; a file of that name (the settings, on
+/// macOS) is never touched.
+pub fn folder_in(data: &Path) -> PathBuf {
+    let folder = data.join(FOLDER);
+    let old = data.join(OLD_FOLDER);
+    if old.is_dir()
+        && !folder.exists()
+        && let Err(error) = fs::rename(&old, &folder)
+    {
+        eprintln!("dozo: could not move the server's folder: {error}");
+    }
+    folder
 }
 
 /// The folder and the names in it.
@@ -1106,7 +1128,7 @@ mod tests {
 
     /// A stand-in relay agent: what each command prints.
     const RELAY: &str = r#"case "$2" in
-      pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"rakazo://dozo-pair#x"}'; exit 0;;
+      pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"dozo://pair#x"}'; exit 0;;
       list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
       revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
       approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
@@ -1244,7 +1266,7 @@ mod tests {
         let agent = local.agent().await.expect("the bundle has an agent");
         let offer = agent.offer().await.unwrap();
         assert_eq!(offer.channel, "c1");
-        assert_eq!(offer.qr, "rakazo://dozo-pair#x");
+        assert_eq!(offer.qr, "dozo://pair#x");
         assert_eq!(
             agent.phones().await.unwrap(),
             [Phone {
@@ -1306,6 +1328,55 @@ mod tests {
     fn local_web(root: &Path) -> String {
         let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
         format!("http://127.0.0.1:{}", ports.web)
+    }
+
+    /// On macOS the app's config and local data folders are one folder: the settings file and
+    /// the server's folder sit side by side there and must not share a name.
+    #[tokio::test]
+    async fn it_starts_where_the_settings_file_lives_too() {
+        let both = scratch("one-folder");
+        let settings = crate::settings::Settings {
+            this_computer: true,
+            ..Default::default()
+        };
+        crate::settings::save(&both.join(crate::settings::FILE), &settings).unwrap();
+        let root = folder_in(&both);
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        let local = Local::new(Arc::new(Said(said)));
+        local.start(Layout(root), options()).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(local.stop().await);
+        let saved = fs::read_to_string(both.join(crate::settings::FILE)).unwrap();
+        assert_eq!(crate::settings::parse(&saved), settings);
+    }
+
+    #[test]
+    fn a_folder_under_the_old_name_moves_once_and_nothing_else_does() {
+        // An old server folder moves, with what is in it.
+        let data = scratch("old-folder");
+        fs::create_dir_all(data.join("server/pgdata")).unwrap();
+        fs::write(data.join("server/secrets"), "kept").unwrap();
+        let folder = folder_in(&data);
+        assert_eq!(folder, data.join("local-server"));
+        assert_eq!(fs::read_to_string(folder.join("secrets")).unwrap(), "kept");
+        assert!(!data.join("server").exists());
+        // With the new one there, the old one is left alone.
+        let both = scratch("both-folders");
+        fs::create_dir_all(both.join("server")).unwrap();
+        fs::create_dir_all(both.join("local-server")).unwrap();
+        fs::write(both.join("local-server/secrets"), "new").unwrap();
+        folder_in(&both);
+        assert!(both.join("server").is_dir());
+        assert_eq!(
+            fs::read_to_string(both.join("local-server/secrets")).unwrap(),
+            "new"
+        );
+        // The settings file of that name stays where it is.
+        let mac = scratch("settings-file");
+        fs::write(mac.join("server"), "https://dozo.example.com/\n").unwrap();
+        assert_eq!(folder_in(&mac), mac.join("local-server"));
+        assert!(mac.join("server").is_file());
     }
 
     #[tokio::test]

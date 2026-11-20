@@ -257,7 +257,8 @@ end to end (below); the code builds for macOS, where it has run by hand only.
 - Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server,
   `packages/auth/src/dozo-hosted-login.ts`) is off: a build or the environment turns it on with
   `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). Without it the
-  server opens with its own single account, as a self-hosted one does. With it, the local
+  server opens with its own single account, as a self-hosted one does: its first page is the sign-up
+  page, and the account made there is the only one it will ever have. With it, the local
   sign-in page's one button opens the hosted page that asks the person to agree in the app's own
   window, and its answer comes back to the local server's callback, which is the chosen server.
   Only while the chosen server is the one on this computer, and only that origin's
@@ -299,11 +300,14 @@ Linux), with its keys in `relay/`.
 - The code is drawn by the page from the modules `qrcode` (Rust, no image features) computes.
 - The window follows the system's light or dark appearance; the code is always dark on white.
 
-Its folder is `server/` in the app's local data folder (`~/.local/share/dev.ssilistre.dozo/`,
+Its folder is `local-server/` in the app's local data folder (`~/.local/share/dev.ssilistre.dozo/`,
 `%LOCALAPPDATA%\dev.ssilistre.dozo\`, `~/Library/Application Support/dev.ssilistre.dozo/`):
 `versions/<version>/` (node, postgres, server) and `current`, `pgdata/`, `data/` (the server's
 files), `relay/` (the relay agent's keys), `secrets`, `ports`, `stack.lock`, `db-created`,
-`downloads/`, `logs/`, `run/`.
+`downloads/`, `logs/`, `run/`. On macOS the local data folder is also the
+config folder, where the settings file is `server`, so the two never share a name; a folder left
+as `server/` by an earlier Linux or Windows build moves to `local-server/` once (one rename, and
+only when `local-server/` is not there yet).
 
 Tests: unit tests in each `src/stack*.rs` (stand-in processes for order, restarts and stops). The
 end-to-end test needs a bundle built by `dozo/server-bundle/build.sh`, and runs in the Linux build
@@ -474,7 +478,7 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
   whether a revoke is pending (Windows and Linux: the config folders named above). The device
   token is in the system keyring under `dev.ssilistre.dozo`. Each bot's own folder is under
   `computers/` in the app's data folder (the same folder on macOS, `~/.local/share/dev.ssilistre.dozo/` on Linux).
-- `server/` in the app's local data folder: the server on this computer, installed and with its
+- `local-server/` in the app's local data folder: the server on this computer, installed and with its
   database ("The server on this computer").
 - `~/Library/WebKit/dev.ssilistre.dozo/` and `~/Library/HTTPStorages/dev.ssilistre.dozo.binarycookies`:
   the web view's site data and cookies.

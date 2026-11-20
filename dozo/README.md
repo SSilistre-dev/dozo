@@ -369,9 +369,17 @@ Accepted by the owner for now, stated here once:
   (`KUBERNETES_SANDBOX_COMPUTER_IMAGE`, `INCUS_SANDBOX_COMPUTER_IMAGE`, `LOCAL_VM_COMPUTER_IMAGE`):
   upstream's published image, their default, keeps its home at `/home/rakazo`. Without one their
   computers stay unavailable, naming the setting.
-- The local model panel ships with an empty catalog (`LOCAL_MODELS` in
+- The local model panel ("Run on this computer", web and desktop) lists the model servers running
+  on the server's own computer at their default addresses (`DOZO_LOCAL_MODEL_SERVERS` in
+  `packages/core/src/dozo-model-providers.ts`) and the models each one's `/v1/models` lists; a
+  model connects in one click as an OpenAI-compatible connection without a key. It shows only where
+  `MCP_ALLOW_PRIVATE_ENDPOINT=true` (the desktop app and the server bundle); a hosted server answers
+  that nothing is available without sending a request. A server on another port or machine is
+  connected by address under OpenAI-compatible, also on mobile. Whether a model calls tools is not
+  read from the server: images and thinking stay the connection's own switches. Its hardware
+  estimator still has an empty catalog (`LOCAL_MODELS` in
   `apps/web/src/lib/dozo-local-model-catalog.ts`) until tool calling has been tried against a real
-  runtime; no model is downloaded or tested before then.
+  runtime.
 - The cache share on Settings > Usage (`apps/web/src/components/dozo-cache-savings.tsx`) is
   translated to Turkish only, by fixed ids merged into the catalog there, since the fork never edits
   `messages.po`; other languages show the English. The mobile app does not show it: it has no usage

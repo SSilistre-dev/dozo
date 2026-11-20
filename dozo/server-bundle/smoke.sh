@@ -8,7 +8,8 @@
 # Steps: without libssl3 the start refuses with a clear message; then, with it: Node, Postgres and
 # the bundle downloaded from the manifest and checked against its sha256, initdb, migrate, api,
 # worker and web up, /health 200, sign-up without an email sender, a bot, an answer from a fake
-# local model, and a clean stop (no process needed KILL).
+# local model, a backup while it runs restored into a new folder that signs in and answers again,
+# and a clean stop (no process needed KILL).
 # Last line: SERVER-BUNDLE SMOKE: PASS|FAIL. Exit 0 pass, 2 fail, 64 usage.
 # Containers: --cpus 3 --memory 6g, named dozo-server-smoke-<pid>[-pre], removed at exit.
 set -uo pipefail
@@ -57,7 +58,18 @@ if [ "${1:-}" = --as-user ]; then
   rc=0
   bash /bundle/run.sh start || rc=$?
   [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 http://127.0.0.1:8001/v1 || rc=$?
+  # Backup while it runs, then restore into a new folder and use it: same sign-in, bot, history
+  # and model key (README.md, "Backup and restore").
+  backup() { echo "smoke-backup-password" | node "$R/server/rakazo-server/dozo-local-backup.mjs" "$@"; }
+  [ $rc != 0 ] || { t=$(ms); backup create "$HOME/smoke.dozo" --home "$H" || rc=2; say "backup: $(( $(ms) - t )) ms"; }
   bash /bundle/run.sh stop || rc=2
+  if [ $rc = 0 ]; then
+    t=$(ms); backup restore "$HOME/smoke.dozo" --home "$H.restored" || rc=2; say "restore: $(( $(ms) - t )) ms"
+    H="$H.restored"; export DOZO_HOME="$H"
+    [ $rc != 0 ] || bash /bundle/run.sh start || rc=$?
+    [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 http://127.0.0.1:8001/v1 restored || rc=$?
+    bash /bundle/run.sh stop || rc=2
+  fi
   # No ps in a bare Debian: read the command lines from /proc.
   left=$(for p in /proc/[0-9]*; do tr '\0' ' ' < "$p/cmdline" 2> /dev/null; echo; done \
     | grep -E '^([^ ]*/)?node [^ ]*dist|^([^ ]*/)?postgres[ :]' || true)

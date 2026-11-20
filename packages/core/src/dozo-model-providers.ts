@@ -39,3 +39,15 @@ const KEY_PAGES: Readonly<Record<string, string>> = {
 export function dozoModelKeyPage(provider: string): string | undefined {
   return Object.hasOwn(KEY_PAGES, provider) ? KEY_PAGES[provider] : undefined;
 }
+
+/**
+ * Model servers people run on their own computer, at the address each one listens on by default.
+ * The server looks for them only where it may reach private addresses: on the person's own computer,
+ * or where the operator allowed it. Each serves the standard models list under `/v1`.
+ */
+export const DOZO_LOCAL_MODEL_SERVERS: readonly { name: string; baseUrl: string }[] = [
+  { name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1" },
+  { name: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1" },
+  { name: "llama.cpp", baseUrl: "http://127.0.0.1:8080/v1" },
+  { name: "vLLM", baseUrl: "http://127.0.0.1:8000/v1" },
+];

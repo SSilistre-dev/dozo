@@ -1,7 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
-import type { SettingsScope } from "@rakazo/contracts";
+import type { DozoLocalModelServer, SettingsScope } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import {
+  Button,
   Disclosure,
   Input,
   Select,
@@ -10,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { LOCAL_HARDWARE, LOCAL_MODELS, LOCAL_RUNTIME } from "../lib/dozo-local-model-catalog";
 import type { HardwareEntry, LocalModelEntry } from "../lib/dozo-local-model-fit";
@@ -20,6 +22,7 @@ import {
   rankLocalModels,
 } from "../lib/dozo-local-model-fit";
 import { useSave, useSpaceQueries } from "../lib/query";
+import { errorText } from "../lib/user-error";
 import { connectionKey, LocalModelRows } from "./dozo-local-model-rows";
 
 const MAX_ROWS = 3;
@@ -225,7 +228,98 @@ function LocalModelsBody({
   );
 }
 
-/** Local open-weight models that fit this computer, connected in one click. */
+/** The model servers running on this computer, each model connected in one click. */
+function LocalServers({
+  servers,
+  onConnected,
+  scope,
+  makeDefault,
+}: {
+  servers: readonly DozoLocalModelServer[];
+  onConnected?: () => void;
+  scope?: SettingsScope;
+  makeDefault?: boolean;
+}) {
+  const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const [connectedKeys, setConnectedKeys] = useState<readonly string[]>([]);
+  const save = useSave({
+    save: (input: { server: DozoLocalModelServer; modelId: string }, rpc) =>
+      rpc.models.connect({
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        baseUrl: input.server.baseUrl,
+        modelId: input.modelId,
+        label: input.server.name,
+        // A new connection, so one already saved is never overwritten.
+        credentialId: null,
+        ...(scope === undefined ? {} : { scope }),
+        ...(makeDefault === undefined ? {} : { makeDefault }),
+      }),
+    stale: [
+      queries.models.list.queryKey(),
+      queries.models.credentials.queryKey(),
+      queries.me.queryKey(),
+    ],
+    onSaved: (_saved, input) => {
+      setConnectedKeys((keys) => [...keys, connectionKey(input.server.baseUrl, input.modelId)]);
+      onConnected?.();
+    },
+  });
+
+  if (servers.length === 0) {
+    return <p className="mt-3 text-body text-muted-foreground">{t`No model server is running`}</p>;
+  }
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      {servers.map((server) => (
+        <section key={server.baseUrl} aria-label={server.name} className="flex flex-col gap-2">
+          <p className="text-body text-muted-foreground">{server.name}</p>
+          {server.models.length === 0 ? (
+            <p className="text-body text-muted-foreground">{t`No models listed.`}</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {server.models.map((modelId) => {
+                // Named as the estimator's rows name it, so both share their translated copy.
+                const label = modelId;
+                const connected = connectedKeys.includes(connectionKey(server.baseUrl, modelId));
+                const failed =
+                  Boolean(save.error) &&
+                  save.input?.server.baseUrl === server.baseUrl &&
+                  save.input.modelId === modelId;
+                return (
+                  <li key={modelId} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 truncate text-body text-foreground">{label}</span>
+                      <Button
+                        size="sm"
+                        className="ml-auto rounded-full"
+                        aria-label={connected ? t`Connected ${label}` : t`Connect ${label}`}
+                        disabled={connected || save.pending}
+                        onClick={() => save.run({ server, modelId })}
+                      >
+                        {connected ? t`Connected` : t`Connect`}
+                      </Button>
+                    </div>
+                    {failed ? (
+                      <p className="text-body text-destructive" role="alert">
+                        {errorText(save.error, t`Could not connect this provider`)}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The models on this computer: the model servers running here, and open-weight models that would
+ * fit it. Only a server that may reach this computer's addresses shows it; a hosted one never does.
+ */
 export function DozoLocalModels({
   onConnected,
   scope,
@@ -245,10 +339,15 @@ export function DozoLocalModels({
   models?: readonly LocalModelEntry[];
 }) {
   const { t } = useLingui();
-  // Nothing detects or reads until the first open; after that it keeps its state while folded.
+  const queries = useSpaceQueries();
+  // Read again on focus: a server started in another window shows when the person comes back.
+  const found = useQuery({
+    ...queries.dozoLocalModels.servers.queryOptions(),
+    refetchOnWindowFocus: "always",
+  });
+  // The estimator detects nothing until the first open; after that it keeps its state while folded.
   const [opened, setOpened] = useState(false);
-  // Until a person has recorded a tool-calling check there is nothing to offer, so nothing shows.
-  if (models.length === 0) return null;
+  if (!found.data?.available) return null;
   return (
     <Disclosure
       className="text-body text-foreground"
@@ -257,7 +356,14 @@ export function DozoLocalModels({
         if (open) setOpened(true);
       }}
     >
-      {opened ? (
+      <LocalServers
+        servers={found.data.servers}
+        onConnected={onConnected}
+        scope={scope}
+        makeDefault={makeDefault}
+      />
+      {/* Until a person has recorded a tool-calling check there is nothing to suggest. */}
+      {opened && models.length > 0 ? (
         <LocalModelsBody
           onConnected={onConnected}
           scope={scope}
