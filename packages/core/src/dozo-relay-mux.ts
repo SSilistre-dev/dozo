@@ -41,6 +41,11 @@ const BODY_HEADERS = new Set(["content-encoding", "content-length"]);
 
 type Frame = { type: number; stream: number; payload: Uint8Array };
 
+/** Runs after the current event-loop turn: `setImmediate` where the runtime has it (Node). */
+const nextTurn: (callback: () => void) => unknown =
+  (globalThis as { setImmediate?: (callback: () => void) => unknown }).setImmediate ??
+  ((callback) => setTimeout(callback, 0));
+
 /** Writes one frame: type, stream id, payload length, payload. */
 export function encodeRelayFrame(
   type: number,
@@ -460,7 +465,7 @@ class ServerMux extends Mux {
    * out as soon as they are read.
    */
   protected override schedule(flush: () => void) {
-    setImmediate(flush);
+    nextTurn(flush);
   }
 
   protected onHead(stream: Stream) {
