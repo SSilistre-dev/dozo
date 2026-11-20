@@ -569,7 +569,7 @@
     {
       "file": "apps/web/index.html",
       "find": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta name=\"theme-color\"",
-      "replace": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:type\" content=\"website\" />\n    <meta property=\"og:title\" content=\"Dozo\" />\n    <meta property=\"og:description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:image\" content=\"https://dozo-site.ssilistre.dev/og.png\" />\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"theme-color\"",
+      "replace": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:type\" content=\"website\" />\n    <meta property=\"og:title\" content=\"Dozo\" />\n    <meta property=\"og:description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:image\" content=\"https://dozo.bot/og.png\" />\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"theme-color\"",
       "reason": "a link to the app shared in a chat or a post shows the Dozo card; the image is the landing site's published one (dozo/landing/og.png)"
     },
     {
@@ -770,13 +770,13 @@
     {
       "file": "packages/contracts/src/ai-consent.ts",
       "find": "export const AI_PRIVACY_URL = \"https://rakazo.com/privacy/\";",
-      "replace": "export const AI_PRIVACY_URL = \"https://dozo-site.ssilistre.dev/privacy/\";",
+      "replace": "export const AI_PRIVACY_URL = \"https://dozo.bot/privacy/\";",
       "reason": "the privacy link in the AI data sharing prompt and settings and on the mobile paywall must open our policy (dozo/landing/privacy/), which is served by the landing site, not by the app's domain"
     },
     {
       "file": "apps/mobile/app/paywall.tsx",
       "find": "const TERMS_URL = \"https://rakazo.com/terms/\";",
-      "replace": "const TERMS_URL = \"https://dozo-site.ssilistre.dev/terms/\";",
+      "replace": "const TERMS_URL = \"https://dozo.bot/terms/\";",
       "reason": "the mobile paywall's terms link must open our terms (dozo/landing/terms/), which are served by the landing site, not by the app's domain"
     },
     {
@@ -2481,7 +2481,7 @@
     {
       "file": "packages/contracts/src/client-build.ts",
       "find": "export const IOS_APP_STORE_URL = \"https://apps.apple.com/app/rakazo/id6801531099\";\nexport const ANDROID_APK_URL =\n  \"https://github.com/elie222/rakazo/releases/download/android/rakazo.apk\";\nexport const ANDROID_APP_STORE_URL = \"https://play.google.com/store/apps/details?id=com.rakazo.app\";\n",
-      "replace": "export const IOS_APP_STORE_URL = \"https://dozo-site.ssilistre.dev/\";\nexport const ANDROID_APK_URL = \"https://dozo-site.ssilistre.dev/\";\nexport const ANDROID_APP_STORE_URL = \"https://dozo-site.ssilistre.dev/\";\n",
+      "replace": "export const IOS_APP_STORE_URL = \"https://dozo.bot/\";\nexport const ANDROID_APK_URL = \"https://dozo.bot/\";\nexport const ANDROID_APP_STORE_URL = \"https://dozo.bot/\";\n",
       "reason": "Dozo has no App Store or Play listing and no APK: the app's update fallback opens the landing page"
     },
     {
@@ -2589,7 +2589,7 @@
     {
       "file": "packages/adapters/src/openrouter-usage.ts",
       "find": "headers.set(\"HTTP-Referer\", \"https://rakazo.com\");",
-      "replace": "headers.set(\"HTTP-Referer\", \"https://dozo-site.ssilistre.dev\");",
+      "replace": "headers.set(\"HTTP-Referer\", \"https://dozo.bot\");",
       "reason": "the app's public site, sent as the referer to the model provider"
     },
     {

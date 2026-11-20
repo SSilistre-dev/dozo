@@ -38,7 +38,7 @@ is not needed. Xcode and the simulator service keep their own state under `~/Lib
 logs); `clean` deletes the device.
 
 Variables: `DOZO_MOBILE_API_URL` is the server the app opens with (default
-`https://dozo.ssilistre.dev`; the sign-in screen can still name another). `DOZO_MOBILE_DEVICE` is
+`https://app.dozo.bot`; the sign-in screen can still name another). `DOZO_MOBILE_DEVICE` is
 the simulator device type (default `iPhone 17`).
 
 There is no CI job: an iOS build needs a macOS runner.

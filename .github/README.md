@@ -5,7 +5,7 @@
 <p align="center">Persistent AI bots, each with its own computer.</p>
 
 <p align="center">
-  <a href="https://dozo-site.ssilistre.dev">Hosted</a> ·
+  <a href="https://dozo.bot">Hosted</a> ·
   <a href="https://github.com/SSilistre-dev/dozo/releases/latest">Desktop app</a> ·
   <a href="#run-it-yourself">Run it yourself</a> ·
   <a href="/dozo/NOTICE">Licence</a>
@@ -58,7 +58,7 @@ Every bot has a face you can tell apart at a glance. Pick the shape and the colo
 
 ## Use it
 
-**Hosted.** [dozo-site.ssilistre.dev](https://dozo-site.ssilistre.dev), in closed preview.
+**Hosted.** [dozo.bot](https://dozo.bot), in closed preview.
 
 **Desktop app.** [Latest release](https://github.com/SSilistre-dev/dozo/releases/latest), a preview
 for macOS and Windows.

@@ -34,8 +34,8 @@ describe("DozoHeader", () => {
 describe("DozoFooter", () => {
   it("links the English policies and names the operator", async () => {
     const html = await render(<DozoFooter locale="en" />);
-    expect(html).toContain('href="https://dozo-site.ssilistre.dev/privacy/"');
-    expect(html).toContain('href="https://dozo-site.ssilistre.dev/terms/"');
+    expect(html).toContain('href="https://dozo.bot/privacy/"');
+    expect(html).toContain('href="https://dozo.bot/terms/"');
     expect(html).toContain('href="mailto:info@ssilistre.dev"');
     expect(html).toContain("SSilistre.dev");
     expect(html).not.toContain("unsubscribe");
@@ -48,7 +48,7 @@ describe("DozoFooter", () => {
         unsubscribe={{ href: "https://app.example.com/unsubscribe", label: "Abonelikten çık" }}
       />,
     );
-    expect(html).toContain('href="https://dozo-site.ssilistre.dev/tr/privacy/"');
+    expect(html).toContain('href="https://dozo.bot/tr/privacy/"');
     expect(html).toContain("Gizlilik");
     expect(html).toContain("Koşullar");
     expect(html.indexOf("Abonelikten")).toBeLessThan(html.indexOf("Gizlilik"));
@@ -68,7 +68,7 @@ describe("branded account mail", () => {
     expect(mail.inline).toEqual([DOZO_MARK]);
     expect(mail.html).toContain("#1F1F1F");
     expect(mail.html).not.toContain("Arial, Helvetica, sans-serif;");
-    expect(mail.text).toContain("Gizlilik https://dozo-site.ssilistre.dev/tr/privacy/");
+    expect(mail.text).toContain("Gizlilik https://dozo.bot/tr/privacy/");
     expect(mail.text).toContain("info@ssilistre.dev");
   });
 

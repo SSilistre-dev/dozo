@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { getActiveUiLocale } from "../lib/i18n";
 
-const SITE = "https://dozo-site.ssilistre.dev";
+const SITE = "https://dozo.bot";
 
 /** The terms and privacy policy, one line under the sign-up button, in the page's language. */
 export function DozoSignupTerms() {

@@ -33,7 +33,7 @@ export const webDarkTokens = {
 export const EMAIL_FONT =
   '-apple-system, "SF Pro Text", Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
-const SITE = "https://dozo-site.ssilistre.dev";
+const SITE = "https://dozo.bot";
 const CONTACT = "info@ssilistre.dev";
 const OPERATOR = "SSilistre.dev";
 
