@@ -57,7 +57,7 @@ function gate(name: string, options: { readOnly?: boolean; approved?: boolean } 
     loginUse: undefined,
   };
   const ctx = {
-    deps: { prisma: {} },
+    deps: { prisma: { attempt: { count: async () => 1 } } },
     run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "user" },
     runId: "run-1",
     bot: { id: "bot-1", name: "Helper" },
@@ -78,6 +78,7 @@ function gate(name: string, options: { readOnly?: boolean; approved?: boolean } 
       loadApprovalRules: async () => [],
       loadAutoReviewPreference: async () => ({ enabled: false, skipApprovals: true }),
       loadTrustedConnectors: async () => new Set(),
+      receivedOutsideMessage: async () => false,
     },
   };
   return gateToolCall(ctx as never, request, undefined).then(
@@ -108,8 +109,8 @@ describe("gateToolCall: the daily send limit", () => {
   });
 
   it("tells a connector action that changes something from one that reads", async () => {
-    await gate("chat_post_message", { readOnly: false });
-    await gate("chat_list_channels", { readOnly: true });
+    expect(await gate("chat_post_message", { readOnly: false })).toBe("recorded");
+    expect(await gate("chat_list_channels", { readOnly: true })).toBe("recorded");
     expect(limit.calls.map(({ call }) => [call.name, call.viaConnector, call.connectorChanges])).toEqual([
       ["chat_post_message", true, true],
       ["chat_list_channels", true, false],
