@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { APPEARANCE_KEY, rpc } from "../fixtures";
 import { outDir } from "../scan";
 import { connectModelThroughOnboarding } from "../support";
@@ -12,7 +12,10 @@ const REPLY = "Hello from the offline Dozo test model.";
 const SPENT_KEY = "e2e-spent-key";
 const SWITCH = "Use the next connection when one runs out";
 
-async function shot(page: Page, name: string) {
+/** The screen with `target` scrolled into view, once it has settled. */
+async function shot(page: Page, target: Locator, name: string) {
+  await target.scrollIntoViewIfNeeded();
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
   mkdirSync(`${outDir()}/shots`, { recursive: true });
   await page.screenshot({ path: `${outDir()}/shots/model-pool--${name}.png` });
 }
@@ -57,7 +60,6 @@ test("model pool: a run moves to the next connection when one runs out", async (
     await expect(toggle).not.toBeChecked();
     await toggle.click();
     await expect(toggle).toBeChecked();
-    await shot(page, "connection-light");
 
     await openBot(page, botId, "Chief");
     const replies = page.getByText(REPLY);
@@ -71,18 +73,19 @@ test("model pool: a run moves to the next connection when one runs out", async (
     const resting = list.locator("li", { has: page.getByTestId("dozo-opens-at") });
     await expect(resting.getByTestId("dozo-opens-at")).toHaveText(/^Opens at /);
     await expect(resting.getByTestId("provider-row-name")).toContainText("Second key");
-    await shot(page, "list-light");
+    await shot(page, resting, "list-light");
+    const pooled = (await openConnection(page, "Second key")).getByRole("switch", { name: SWITCH });
+    await expect(pooled).toBeChecked();
+    await shot(page, pooled, "connection-light");
 
     await page.evaluate((key) => localStorage.setItem(key, "dark"), APPEARANCE_KEY);
     await page.reload();
-    await expect(
-      (await openUserSettings(page, "models")).getByTestId("dozo-opens-at"),
-    ).toBeVisible();
-    await shot(page, "list-dark");
-    await expect(
-      (await openConnection(page, "Second key")).getByRole("switch", { name: SWITCH }),
-    ).toBeChecked();
-    await shot(page, "connection-dark");
+    const opens = (await openUserSettings(page, "models")).getByTestId("dozo-opens-at");
+    await expect(opens).toBeVisible();
+    await shot(page, opens, "list-dark");
+    const dark = (await openConnection(page, "Second key")).getByRole("switch", { name: SWITCH });
+    await expect(dark).toBeChecked();
+    await shot(page, dark, "connection-dark");
   } finally {
     await context.close();
   }
