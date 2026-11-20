@@ -311,6 +311,17 @@ describe("the computer a granted plan gives", () => {
     expect(await limit(pool.prisma)).toBe(share(big));
   });
 
+  it("gives an ended monthly credit plan no hours, a grant's aside", async () => {
+    // Its amount stays on the account after cancellation, and Free still lets it run bots.
+    const ended = organization({
+      mode: "credits",
+      billing: { ...credits(1_000_000), status: "canceled" },
+    });
+    expect(await limit(ended.prisma)).toBe(0);
+    ended.state.grant = { tier: "pro", endsAt: later };
+    expect(await limit(ended.prisma)).toBe(BYOK_TIERS.pro.computerAllowanceCents);
+  });
+
   it("changes nothing without a grant, or with an ended one", async () => {
     expect(await limit(organization({ billing: trial(false) }).prisma)).toBe(
       TRIAL_SANDBOX_ALLOWANCE_CENTS,

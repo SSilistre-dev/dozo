@@ -5984,6 +5984,48 @@
       "find": "  thinkingLevels: [\"low\", \"medium\", \"high\"],\n}));\n\nvi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));",
       "replace": "  thinkingLevels: [\"low\", \"medium\", \"high\"],\n}));\n\nvi.mock(\"./dozo-own-computer\", async (original) => ({\n  ...(await original<object>()),\n  useOwnComputerSwitch: () => ({ detail: undefined, disabled: false }),\n}));\n\nvi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));",
       "reason": "upstream test fixture: the fork's line under the Own computer switch reads the plan and the Space's members from the server, which this test does not provide; here it shows nothing and leaves the switch on, as upstream's does (dozo-own-computer.test.ts covers it); the fork's confirmation before a move stays real"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "        : creditShare(billing?.creditAmountCents ?? 0);",
+      "replace": "        : // Free lets every organization run bots, so a monthly credit plan's share counts only\n          // while its subscription is live; upstream relied on runs being refused once it ended.\n          creditShare(live ? (billing?.creditAmountCents ?? 0) : 0);",
+      "reason": "plans: an ended monthly credit plan opens no computer hours; its stored amount stays on the billing account after cancellation, and with Free's model access the organization would otherwise get the plan's computer share every month without paying"
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "    case \"kubernetes\":\n      return new KubernetesSandboxProvider({",
+      "replace": "    case \"kubernetes\":\n      if (!opts.kubernetesComputerImage?.trim())\n        return missingRemoteKey(\"kubernetes\", \"KUBERNETES_SANDBOX_COMPUTER_IMAGE\");\n      return new KubernetesSandboxProvider({",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "      return new IncusSandboxProvider({\n        url: opts.incusUrl ?? \"\",",
+      "replace": "      // The address and certificates are checked first, as upstream's constructor does.\n      const incus = new IncusSandboxProvider({\n        url: opts.incusUrl ?? \"\",",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "        unreferencedMachines: opts.unreferencedMachines,\n      });\n    }\n    case \"local-vm\": {",
+      "replace": "        unreferencedMachines: opts.unreferencedMachines,\n      });\n      if (!opts.incusComputerImage?.trim())\n        return missingRemoteKey(\"incus\", \"INCUS_SANDBOX_COMPUTER_IMAGE\");\n      return incus;\n    }\n    case \"local-vm\": {",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "    case \"local-vm\": {\n      const { AppleContainerSandboxProvider }",
+      "replace": "    case \"local-vm\": {\n      if (!opts.localVmComputerImage?.trim())\n        return missingRemoteKey(\"local-vm\", \"LOCAL_VM_COMPUTER_IMAGE\");\n      const { AppleContainerSandboxProvider }",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
     }
   ],
   "assets": {
