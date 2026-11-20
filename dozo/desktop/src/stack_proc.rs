@@ -103,6 +103,17 @@ pub struct Launch {
 }
 
 impl Launch {
+    /// The same, for processes that must not hold the folder's lock.
+    pub fn without_lock(&self) -> Launch {
+        Launch {
+            logs: self.logs.clone(),
+            lock: None,
+            backoff: self.backoff.clone(),
+            log_max: self.log_max,
+            events: self.events.clone(),
+        }
+    }
+
     pub fn note(&self, line: &str) {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
