@@ -192,6 +192,9 @@ timer, so a stream's events are not held back.
 - When the response ends before the request body did, the host stops reading the request body.
 - The tunnel is transport, not authorization: the loopback server authenticates every request the
   way it would without the relay.
+- One exception the host adds: on a phone's sign-in request (`POST /api/auth/dozo/relay-session`)
+  it adds its own key and the channel's id, and it removes those headers from every other request
+  (`dozo/relay/agent/README.md`, Phone sign-in).
 
 ### Overhead
 

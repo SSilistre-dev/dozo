@@ -22,7 +22,7 @@ unit gate cover it:
 dozo-relay-agent pair --relay <https address> [--state <dir>]
 dozo-relay-agent run --origin http://127.0.0.1:<port> [--state <dir>]
 dozo-relay-agent list [--state <dir>]
-dozo-relay-agent revoke <channel> [--state <dir>]
+dozo-relay-agent revoke <channel> [--origin http://127.0.0.1:<port>] [--state <dir>]
 ```
 
 - `pair` registers a channel on the relay and prints one line,
@@ -40,6 +40,27 @@ Exit codes: 0 done, 2 failed, 64 usage error. Every stdout line is one JSON obje
 `{"event":"error","reason"}` before the exit code.
 
 The relay address has no default: https, or http on a loopback address for local runs.
+
+## Phone sign-in
+
+A local server with `DOZO_RELAY_AGENT_KEY` set (64 hexadecimal digits, random, kept with the
+server's other secrets) signs a paired phone in as its one account, while that account is signed
+in on the computer. The phone never sees a password. The agent gets the same value in its
+environment for `run` and `revoke`; without it, phones get no sign-in from this computer.
+
+- The phone asks with `POST /api/auth/dozo/relay-session` through the relay. On that request only,
+  `run` adds `x-dozo-relay-agent-key` and `x-dozo-relay-channel` (the channel the request came
+  on). It removes both headers from every request a phone sends, so a phone can neither name
+  another channel nor carry a key of its own.
+- The local server answers only a request from this computer with the key, compared in constant
+  time; anyone else gets 404. It gives each channel one session, ever: `200 { token }`, or `409
+  { reason: "sign-in-on-computer" | "one-account" }`, or `410 { reason: "used" }`. The token
+  crosses only inside the sealed channel and is never logged.
+- The session ends when the phone is removed: `revoke --origin` ends it on the local server
+  (`"session": "revoked" | "unreachable"` in its line), and so does `run` when the relay no
+  longer knows the channel (an `error` event if the server could not be reached). It also ends
+  when the user signs out on the computer, or when the phone signs out. A removed phone pairs
+  again to get a new one.
 
 ## Events from `run`
 

@@ -399,13 +399,15 @@ export function parseRelayPairingOffer(text: string, now: number): RelayPairingO
 }
 
 /** The channel's primitives on WebCrypto (Node, browsers, Electron). */
-export function webRelayCrypto(crypto: Crypto = globalThis.crypto): RelayCrypto {
+export function webRelayCrypto(crypto: typeof globalThis.crypto = globalThis.crypto): RelayCrypto {
   const { subtle } = crypto;
   const X25519 = { name: "X25519" };
   return {
     randomBytes: (length) => crypto.getRandomValues(new Uint8Array(length)),
     async generateKeyPair() {
-      const pair = (await subtle.generateKey(X25519, true, ["deriveBits"])) as CryptoKeyPair;
+      const pair = (await subtle.generateKey(X25519, true, ["deriveBits"])) as {
+        privateKey: Parameters<typeof subtle.exportKey>[1];
+      };
       const jwk = await subtle.exportKey("jwk", pair.privateKey);
       return {
         publicKey: decodeRelayBytes(String(jwk.x)),

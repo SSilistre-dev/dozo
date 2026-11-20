@@ -1,4 +1,10 @@
-import { RELAY_PAIRING_TTL_MS } from "@rakazo/contracts";
+import {
+  RELAY_AGENT_KEY_HEADER,
+  RELAY_CHANNEL_HEADER,
+  RELAY_PAIRING_TTL_MS,
+  RELAY_SESSION_PATH,
+  RELAY_SESSION_REVOKE_PATH,
+} from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RelayKeyPair } from "./dozo-relay-channel.js";
 import {
@@ -14,8 +20,10 @@ import type { RelayHostChannel, RelayHostEvent, RelayHostStore } from "./dozo-re
 import {
   listRelayChannels,
   pairRelayHost,
+  phoneRequest,
   RelayHostError,
   RelayHttpError,
+  revokePhoneSession,
   revokeRelayChannel,
   runRelayHost,
 } from "./dozo-relay-host.js";
@@ -26,6 +34,7 @@ const crypto = webRelayCrypto();
 const RELAY = "https://relay.test";
 const CHANNEL = "Q2hhbm5lbC1pZC0xMjM0NQ";
 const ORIGIN = "http://127.0.0.1:3000";
+const KEY = "e".repeat(64);
 
 function memoryStore(initial: RelayHostChannel[] = []) {
   const channels = new Map(initial.map((entry) => [entry.channel, entry]));
@@ -113,6 +122,7 @@ function start(options: {
   connect: (url: string, token: string, signal: AbortSignal) => Promise<RelayWebSocket>;
   fetch?: typeof fetch;
   now?: () => number;
+  sessionKey?: string;
 }) {
   const events: RelayHostEvent[] = [];
   const controller = new AbortController();
@@ -272,6 +282,43 @@ describe("revokeRelayChannel", () => {
     ).toEqual({ relay: "deleted" });
   });
 
+  it("ends the phone's sign-in on the local server too, when given its address and the key", async () => {
+    const store = memoryStore([await paired()]);
+    const calls: Request[] = [];
+    const fetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      calls.push(new Request(input, init));
+      return response(204);
+    }) as unknown as typeof globalThis.fetch;
+    const result = await revokeRelayChannel({
+      store,
+      crypto,
+      fetch,
+      channel: CHANNEL,
+      origin: ORIGIN,
+      sessionKey: KEY,
+    });
+    expect(result).toEqual({ relay: "deleted", session: "revoked" });
+    const revoke = calls.find((call) => call.url === `${ORIGIN}${RELAY_SESSION_REVOKE_PATH}`);
+    expect(revoke?.headers.get(RELAY_AGENT_KEY_HEADER)).toBe(KEY);
+    expect(revoke?.headers.get(RELAY_CHANNEL_HEADER)).toBe(CHANNEL);
+
+    const down = memoryStore([await paired()]);
+    const refused = vi.fn(async (input: string | URL) => {
+      if (String(input).startsWith(ORIGIN)) throw new TypeError("fetch failed");
+      return response(204);
+    }) as unknown as typeof globalThis.fetch;
+    expect(
+      await revokeRelayChannel({
+        store: down,
+        crypto,
+        fetch: refused,
+        channel: CHANNEL,
+        origin: ORIGIN,
+        sessionKey: KEY,
+      }),
+    ).toEqual({ relay: "deleted", session: "unreachable" });
+  });
+
   it("names a channel it does not hold", async () => {
     await expect(
       revokeRelayChannel({ store: memoryStore(), crypto, channel: CHANNEL }),
@@ -279,7 +326,80 @@ describe("revokeRelayChannel", () => {
   });
 });
 
+describe("a phone's request on its way to the local server", () => {
+  const post = (path: string, headers: Record<string, string> = {}) =>
+    new Request(`${ORIGIN}${path}`, { method: "POST", headers, body: "{}" });
+
+  it("carries the agent's key and its own channel on the sign-in request only", async () => {
+    const forged = { [RELAY_AGENT_KEY_HEADER]: "f".repeat(64), [RELAY_CHANNEL_HEADER]: "other" };
+    const signIn = phoneRequest(post(RELAY_SESSION_PATH, forged), CHANNEL, KEY);
+    expect(signIn.headers.get(RELAY_AGENT_KEY_HEADER)).toBe(KEY);
+    expect(signIn.headers.get(RELAY_CHANNEL_HEADER)).toBe(CHANNEL);
+    expect(await signIn.text()).toBe("{}");
+    for (const request of [
+      phoneRequest(post("/rpc/x", forged), CHANNEL, KEY),
+      phoneRequest(post(RELAY_SESSION_REVOKE_PATH, forged), CHANNEL, KEY),
+      phoneRequest(
+        new Request(`${ORIGIN}${RELAY_SESSION_PATH}`, { headers: forged }),
+        CHANNEL,
+        KEY,
+      ),
+      phoneRequest(post(RELAY_SESSION_PATH, forged), CHANNEL, undefined),
+    ]) {
+      expect(request.headers.get(RELAY_AGENT_KEY_HEADER)).toBeNull();
+      expect(request.headers.get(RELAY_CHANNEL_HEADER)).toBeNull();
+    }
+  });
+
+  it("says whether the local server ended a sign-in, and passes on other failures", async () => {
+    const ok = vi.fn(async () => response(204)) as unknown as typeof globalThis.fetch;
+    expect(
+      await revokePhoneSession({ origin: ORIGIN, sessionKey: KEY, channel: CHANNEL, fetch: ok }),
+    ).toBe(true);
+    const missing = vi.fn(async () => response(404)) as unknown as typeof globalThis.fetch;
+    expect(
+      await revokePhoneSession({
+        origin: ORIGIN,
+        sessionKey: KEY,
+        channel: CHANNEL,
+        fetch: missing,
+      }),
+    ).toBe(false);
+    const broken = vi.fn(async () => {
+      throw new Error("bug");
+    }) as unknown as typeof globalThis.fetch;
+    await expect(
+      revokePhoneSession({ origin: ORIGIN, sessionKey: KEY, channel: CHANNEL, fetch: broken }),
+    ).rejects.toThrow("bug");
+  });
+});
+
 describe("runRelayHost", () => {
+  it("ends the phone's sign-in on the local server when the relay no longer knows its channel", async () => {
+    for (const status of [204, 503]) {
+      const store = memoryStore([await paired()]);
+      const fetch = vi.fn(async () => response(status)) as unknown as typeof globalThis.fetch;
+      const connect = vi.fn(async () => {
+        throw new RelayHttpError(404);
+      });
+      const host = start({ store, connect, fetch, sessionKey: KEY });
+      await vi.waitFor(() =>
+        expect(host.events).toContainEqual({ event: "revoked", channel: CHANNEL }),
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(RELAY_SESSION_REVOKE_PATH, ORIGIN),
+        expect.anything(),
+      );
+      if (status !== 204) {
+        expect(host.events).toContainEqual(
+          expect.objectContaining({ event: "error", channel: CHANNEL }),
+        );
+      }
+      host.stop();
+      await host.done;
+    }
+  });
+
   it("forgets a channel the relay no longer knows", async () => {
     const store = memoryStore([await paired()]);
     const connect = vi.fn(async () => {

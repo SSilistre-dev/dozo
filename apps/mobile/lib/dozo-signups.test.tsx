@@ -101,6 +101,10 @@ vi.mock("./dozo-relay-fetch", () => ({
   isRelayGone: () => false,
   subscribeRelayGone: () => () => {},
 }));
+vi.mock("./dozo-relay-sign-in", () => ({
+  askComputerForSignIn: async () => "sign-in-on-computer",
+}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 
 const base = {
   passwordAuth: true,

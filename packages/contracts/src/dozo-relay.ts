@@ -130,3 +130,23 @@ export const RelaySetAppRequestSchema = z.object({ appVerifier: RelayKey });
 /** A text message the relay sends on a socket: whether the other end is connected now. */
 export const RelayPeerMessageSchema = z.object({ type: z.literal("peer"), present: z.boolean() });
 export type RelayPeerMessage = z.infer<typeof RelayPeerMessageSchema>;
+
+/**
+ * A paired phone's sign-in from its computer (`dozo/relay/agent/README.md`, Phone sign-in). The
+ * phone asks at this path through the relay; the computer's agent adds its key and the channel the
+ * request came on, and the local server answers with a session for its signed-in user, once per
+ * channel. The agent removes these headers from every other request it forwards.
+ */
+export const RELAY_SESSION_PATH = "/api/auth/dozo/relay-session";
+/** Where the agent ends a phone's sign-in when the phone is removed. */
+export const RELAY_SESSION_REVOKE_PATH = "/api/auth/dozo/relay-session/revoke";
+export const RELAY_AGENT_KEY_HEADER = "x-dozo-relay-agent-key";
+export const RELAY_CHANNEL_HEADER = "x-dozo-relay-channel";
+
+/** The session the computer gives: the bearer token the app signs in with. */
+export const RelaySessionSchema = z.object({ token: z.string().min(1).max(2048) });
+/** Why the computer gave none: nobody signed in there, more than one account, or given before. */
+export const RelaySessionRefusalSchema = z.object({
+  reason: z.enum(["sign-in-on-computer", "one-account", "used"]),
+});
+export type RelaySessionRefusal = z.infer<typeof RelaySessionRefusalSchema>["reason"];

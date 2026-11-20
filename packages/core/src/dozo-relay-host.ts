@@ -1,6 +1,10 @@
 import {
+  RELAY_AGENT_KEY_HEADER,
+  RELAY_CHANNEL_HEADER,
   RELAY_PAIRING_TTL_MS,
   RELAY_PROTOCOL_VERSION,
+  RELAY_SESSION_PATH,
+  RELAY_SESSION_REVOKE_PATH,
   RelayPairingOfferSchema,
   RelayRegisterResponseSchema,
 } from "@rakazo/contracts";
@@ -164,12 +168,57 @@ export async function listRelayChannels(store: RelayHostStore) {
 }
 
 /**
+ * What reaches the local server for a phone's request: never the agent's own headers as the phone
+ * sent them, and the agent's key with the request's channel only on the sign-in request.
+ */
+export function phoneRequest(request: Request, channel: string, sessionKey: string | undefined) {
+  const headers = new Headers(request.headers);
+  headers.delete(RELAY_AGENT_KEY_HEADER);
+  headers.delete(RELAY_CHANNEL_HEADER);
+  if (
+    sessionKey &&
+    request.method === "POST" &&
+    new URL(request.url).pathname === RELAY_SESSION_PATH
+  ) {
+    headers.set(RELAY_AGENT_KEY_HEADER, sessionKey);
+    headers.set(RELAY_CHANNEL_HEADER, channel);
+  }
+  return new Request(request, { headers, duplex: "half" } as RequestInit);
+}
+
+/** Ends the phone sign-in the local server gave on `channel`; resolves whether it answered. */
+export async function revokePhoneSession(deps: {
+  origin: string;
+  sessionKey: string;
+  channel: string;
+  fetch?: typeof fetch;
+}): Promise<boolean> {
+  try {
+    const response = await (deps.fetch ?? fetch)(new URL(RELAY_SESSION_REVOKE_PATH, deps.origin), {
+      method: "POST",
+      headers: { [RELAY_AGENT_KEY_HEADER]: deps.sessionKey, [RELAY_CHANNEL_HEADER]: deps.channel },
+    });
+    await response.body?.cancel();
+    return response.ok;
+  } catch (error) {
+    if (error instanceof TypeError) return false;
+    throw error;
+  }
+}
+
+/**
  * Removes a pairing: deletes the channel on the relay, which closes both sockets, and forgets its
  * keys. The keys go even when the relay cannot be reached: without them nothing answers the phone.
+ * With the local server's origin and the agent's key, the phone's sign-in there ends too.
  */
 export async function revokeRelayChannel(
-  deps: HostDeps & { channel: string; attempts?: number },
-): Promise<{ relay: "deleted" | "unreachable" }> {
+  deps: HostDeps & {
+    channel: string;
+    attempts?: number;
+    origin?: string;
+    sessionKey?: string;
+  },
+): Promise<{ relay: "deleted" | "unreachable"; session?: "revoked" | "unreachable" }> {
   const entry = (await deps.store.list()).find((item) => item.channel === deps.channel);
   if (!entry) throw new RelayHostError("no such channel");
   let relay: "deleted" | "unreachable" = "deleted";
@@ -189,7 +238,14 @@ export async function revokeRelayChannel(
     if (!(error instanceof RelayHttpError && error.status === 404)) relay = "unreachable";
   }
   await deps.store.remove(entry.channel);
-  return { relay };
+  if (!deps.origin || !deps.sessionKey) return { relay };
+  const ended = await revokePhoneSession({
+    origin: deps.origin,
+    sessionKey: deps.sessionKey,
+    channel: entry.channel,
+    fetch: deps.fetch,
+  });
+  return { relay, session: ended ? "revoked" : "unreachable" };
 }
 
 export type RelayHostOptions = HostDeps & {
@@ -197,6 +253,11 @@ export type RelayHostOptions = HostDeps & {
   /** The loopback server requests go to, such as `http://127.0.0.1:3000`. */
   origin: string;
   forward?: (request: Request) => Promise<Response>;
+  /**
+   * The key the local server checks for a phone's sign-in (`DOZO_RELAY_AGENT_KEY`). Without it
+   * phones get no sign-in from this computer.
+   */
+  sessionKey?: string;
   onEvent(event: RelayHostEvent): void;
   /** Stops everything; the promise resolves once the sockets are closed. */
   signal: AbortSignal;
@@ -324,6 +385,23 @@ class ChannelLoop {
         if (signal.aborted) return;
         if (error instanceof ChannelGone) {
           await this.options.store.remove(this.id);
+          // The phone was removed: its sign-in on the local server goes with it.
+          const { sessionKey, origin } = this.options;
+          if (
+            sessionKey &&
+            !(await revokePhoneSession({
+              origin,
+              sessionKey,
+              channel: this.id,
+              fetch: this.options.fetch,
+            }))
+          ) {
+            this.options.onEvent({
+              event: "error",
+              channel: this.id,
+              reason: "the phone's sign-in could not be ended",
+            });
+          }
           this.options.onEvent({ event: "revoked", channel: this.id });
           return;
         }
@@ -398,7 +476,10 @@ class ChannelLoop {
         const transport = app ? channel : this.firstRecord(channel);
         serveRelay(transport, {
           origin: this.options.origin,
-          forward: this.options.forward ?? ((request) => fetch(request)),
+          forward: (request) =>
+            (this.options.forward ?? fetch)(
+              phoneRequest(request, this.id, this.options.sessionKey),
+            ),
         });
       },
       (error: unknown) =>
