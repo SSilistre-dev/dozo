@@ -6005,6 +6005,15 @@
       ]
     },
     {
+      "file": "apps/web/src/pages/Onboarding.test.tsx",
+      "find": "import { afterEach, beforeEach, expect, it, vi } from \"vitest\";\n\nconst account",
+      "replace": "import { afterEach, beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-local-models\", () => ({ DozoLocalModels: () => null }));\n\nconst account",
+      "requires": [
+        "apps/web/src/pages/dozo-local-models.tsx"
+      ],
+      "reason": "upstream test of onboarding: the fork's local-model panel reads the model servers on this computer from the server, which this test's client does not provide, so it is replaced (dozo-local-models.test.tsx covers the panel)"
+    },
+    {
       "file": "packages/adapters/src/sandbox-factory.ts",
       "find": "      return new IncusSandboxProvider({\n        url: opts.incusUrl ?? \"\",",
       "replace": "      // The address and certificates are checked first, as upstream's constructor does.\n      const incus = new IncusSandboxProvider({\n        url: opts.incusUrl ?? \"\",",
