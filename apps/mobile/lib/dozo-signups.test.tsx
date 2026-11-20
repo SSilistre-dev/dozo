@@ -99,8 +99,13 @@ vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 vi.mock("./dozo-relay-fetch", () => ({
   isRelayGone: () => false,
+  relayApprovalCodeOf: async () => null,
   subscribeRelayGone: () => () => {},
 }));
+vi.mock("./dozo-relay-sign-in", () => ({
+  askComputerForSignIn: async () => "sign-in-on-computer",
+}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 
 const base = {
   passwordAuth: true,

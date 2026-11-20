@@ -192,8 +192,9 @@ pub struct Local {
     running: tokio::sync::Mutex<Running>,
     checks: Arc<dyn Checks>,
     backoff: Backoff,
-    /// The relay agent's last word about a phone: `paired`, then `approval` (its name and the
-    /// code to compare) until the person allows it here (`Agent::approve`).
+    /// The relay agent's last word about a phone: `paired`, then `approval` (its platform and the
+    /// code to compare) until the person allows it here (`Agent::approve`), `approved`, or
+    /// `expired` when nobody did within 5 minutes.
     phone_event: watch::Sender<Option<Value>>,
 }
 
@@ -217,7 +218,7 @@ impl Local {
         self.running.lock().await.agent.clone()
     }
 
-    /// Changes with each `paired`, `approval` or `approved` line of the relay agent.
+    /// Changes with each `paired`, `approval`, `approved` or `expired` line of the relay agent.
     pub fn phone_events(&self) -> watch::Receiver<Option<Value>> {
         self.phone_event.subscribe()
     }
@@ -679,9 +680,7 @@ impl Agent {
 
     /// The person allowed the phone that just paired: it gets its sign-in.
     pub async fn approve(&self, channel: &str) -> Result<(), String> {
-        self.ask("approve", &[channel, "--origin", &self.origin])
-            .await
-            .map(drop)
+        self.ask("approve", &[channel]).await.map(drop)
     }
 }
 
@@ -690,7 +689,7 @@ fn phone_event_of(line: &[u8]) -> Option<Value> {
     let event: Value = serde_json::from_slice(line).ok()?;
     let kind = event.get("event")?.as_str()?;
     event.get("channel")?.as_str()?;
-    ["paired", "approval", "approved"]
+    ["paired", "approval", "approved", "expired"]
         .contains(&kind)
         .then_some(event)
 }
@@ -1033,7 +1032,7 @@ mod tests {
       approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
       run) echo "key=$DOZO_RELAY_AGENT_KEY" >> "$0.env"; echo '{"event":"connected","channel":"c2"}'; sleep 0.3
         echo '{"event":"paired","channel":"c9"}'
-        echo '{"event":"approval","channel":"c9","name":"Pixel","platform":"android","code":"123456"}';;
+        echo '{"event":"approval","channel":"c9","platform":"android","code":"123456"}';;
     esac
     trap 'exit 0' TERM INT; while :; do sleep 0.05; done"#;
 
@@ -1200,12 +1199,10 @@ mod tests {
         )));
         let approval = events.borrow().clone().unwrap();
         assert_eq!(approval["code"], "123456");
-        assert_eq!(approval["name"], "Pixel");
+        assert_eq!(approval["platform"], "android");
         agent.approve("c9").await.unwrap();
         let commands = lines_of(&root.join("said.relay"));
-        assert!(commands.contains(&format!(
-            "relay.js approve c9 --origin {web} --state {state}"
-        )));
+        assert!(commands.contains(&format!("relay.js approve c9 --state {state}")));
         // The agent and the API get the same key, made with the other secrets.
         let key = stack_setup::secrets(&root.join("secrets")).unwrap();
         let key = key.get("RELAY_AGENT_KEY").to_owned();
@@ -1358,6 +1355,37 @@ mod tests {
             "E2E: the phone fetched a page through the relay: {}",
             fetched.trim()
         );
+        // The phone asks for its sign-in: the window would show the code, which the person
+        // compares with the phone's, and allow it.
+        let channel = offer.channel.clone();
+        let asked = events.wait_for(|event| {
+            event.as_ref().is_some_and(|event| {
+                event["event"] == "approval" && event_channel(event) == Some(channel.as_str())
+            })
+        });
+        let asked = tokio::time::timeout(Duration::from_secs(60), asked)
+            .await
+            .expect("the phone never asked for its sign-in")
+            .unwrap()
+            .clone()
+            .unwrap();
+        let shown = fs::read_to_string(shared.join("code")).unwrap();
+        assert_eq!(
+            asked["code"].as_str(),
+            Some(shown.trim()),
+            "the codes differ"
+        );
+        assert_eq!(asked["platform"], "android");
+        println!("E2E: the phone asks to sign in, same code on both ends");
+        agent.approve(&offer.channel).await.unwrap();
+        let signed_in = shared.join("signed-in");
+        assert!(
+            wait_until(Duration::from_secs(30), move || signed_in.exists()).await,
+            "the phone never got its sign-in"
+        );
+        let signed_in = fs::read_to_string(shared.join("signed-in")).unwrap();
+        assert_eq!(signed_in.trim(), "200 owner@example.test");
+        println!("E2E: allowed here, the phone signed in as owner@example.test");
         let listed = agent.phones().await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].channel, offer.channel);

@@ -1,7 +1,7 @@
 //! Connect Phone: a small window with a QR code that pairs a phone with the server on this
 //! computer through the relay agent (`stack.rs`), the account it signs in as, and the phones
 //! already paired. Once a phone scans the code, the window asks whether to connect it, with the
-//! phone's name and the code it shows; the phone gets its sign-in only after Allow, and the
+//! kind of phone and the code it shows; the phone gets its sign-in only after Allow, and the
 //! window closes. The item in the Dozo menu is on only while that server runs with an agent. Its page is `ui/phone.html`, which only this window loads
 //! and whose commands only it may call (`capabilities/phone.json`).
 
@@ -50,7 +50,7 @@ pub fn follow(app: AppHandle) {
     });
 }
 
-fn close(app: &AppHandle) {
+pub fn close(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -125,15 +125,16 @@ pub async fn remove_phone(app: AppHandle, channel: String) -> Result<(), String>
     agent(&app).await?.remove(&channel).await
 }
 
-/// Waits until the phone that scanned the code on `channel` asks to be allowed: its name,
-/// platform and the code it shows. Nothing is asked on a timer.
+/// Waits until the phone that scanned the code on `channel` asks to be allowed (its platform and
+/// the code it shows), or its pairing ran out (`expired`). Nothing is asked on a timer.
 #[tauri::command]
 pub async fn phone_wait(app: AppHandle, channel: String) -> Result<Value, String> {
     let mut events = app.state::<LocalServer>().0.phone_events();
     let asked = events
         .wait_for(|event| {
             event.as_ref().is_some_and(|event| {
-                event["event"] == "approval" && event_channel(event) == Some(channel.as_str())
+                (event["event"] == "approval" || event["event"] == "expired")
+                    && event_channel(event) == Some(channel.as_str())
             })
         })
         .await

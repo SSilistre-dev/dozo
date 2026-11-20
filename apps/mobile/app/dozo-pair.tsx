@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { currentApiBase } from "../lib/api";
+import { currentApiBase, flushPendingSignOut } from "../lib/api";
 import { saveApiBase } from "../lib/api-server";
 import type { RelayPairingError } from "../lib/dozo-relay-connection";
 import { pairRelay, readPairingOffer } from "../lib/dozo-relay-connection";
@@ -113,6 +113,9 @@ export default function DozoPairScreen() {
         return;
       }
       await relayPairingStore.save(pairing);
+      // The switch signs out of the server it left; a computer paired before is reached only
+      // through its own connection, so that sign-out goes before the connection closes.
+      await flushPendingSignOut(true);
       keepOnlyRelayConnection(connection.origin);
       router.replace("/");
     } catch (caught) {

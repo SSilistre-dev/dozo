@@ -1,6 +1,6 @@
 import { RelayAppPairingSchema } from "@rakazo/contracts";
 import type { RelayWebSocket } from "@rakazo/core";
-import { RelayHttpError } from "@rakazo/core";
+import { decodeRelayBytes, RelayHttpError, relayApprovalCode } from "@rakazo/core";
 import { getRandomValues } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import type {
@@ -209,6 +209,17 @@ function computerOrigin(input: RequestInfo | URL) {
     throw new RelayUnreachableError("not a computer's address");
   }
   return origin;
+}
+
+/** The six digits the computer shows while the user approves this phone, or null if unpaired. */
+export async function relayApprovalCodeOf(
+  origin: string,
+  store: RelayPairingStore = relayPairingStore,
+  deps: RelayDeps = relayDeps,
+) {
+  await restore(store, deps);
+  const pairing = connections.get(origin)?.pairing();
+  return pairing ? relayApprovalCode(deps.crypto, decodeRelayBytes(pairing.pairingKey)) : null;
 }
 
 /** Puts the relay in front of `target.fetch` for paired computers' origins. */

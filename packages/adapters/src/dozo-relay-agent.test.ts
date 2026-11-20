@@ -1,8 +1,16 @@
+import { createHmac } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import {
+  RELAY_AGENT_PROOF_HEADER,
+  RELAY_CHANNEL_HEADER,
+  RELAY_SESSION_PATH,
+  RELAY_SESSION_REVOKE_PATH,
+  relayAgentProofMessage,
+} from "@rakazo/contracts";
 import type { RelayChannel, RelayKeyPair } from "@rakazo/core";
 import {
   decodeRelayBytes,
@@ -10,6 +18,7 @@ import {
   openAppChannel,
   parseRelayPairingOffer,
   RelayHttpError,
+  relayApprovalCode,
   relayAppToken,
   relayClient,
   relayPairingSecrets,
@@ -27,14 +36,44 @@ import type { DevRelay } from "./dozo-relay-dev-relay.js";
 import { startDevRelay } from "./dozo-relay-dev-relay.js";
 
 const crypto = webRelayCrypto();
+const SESSION_KEY = "9".repeat(64);
+
+/** The local server's check of the agent's proof (`packages/auth/src/dozo-relay-session.ts`). */
+function proven(proof: string, method: string, path: string, channel: string) {
+  const [time, mac] = proof.split(".");
+  const expected = createHmac("sha256", SESSION_KEY)
+    .update(relayAgentProofMessage({ method, path, channel, time: Number(time) }))
+    .digest("hex");
+  return mac === expected && Math.abs(Date.now() - Number(time)) < 60_000;
+}
 const REQUEST_MARKER = "request-marker-7c1f";
 const RESPONSE_MARKER = "response-marker-93ad";
 
 /** The user's Dozo server on loopback: JSON, an echo, a slow answer and a server-sent event stream. */
 async function localServer() {
   const events: ((line: string) => void)[] = [];
+  const revoked: string[] = [];
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
+    if (url.pathname === "/headers" || url.pathname === RELAY_SESSION_PATH) {
+      // What reached the local server of the agent's own headers.
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          proof: request.headers[RELAY_AGENT_PROOF_HEADER] ?? null,
+          channel: request.headers[RELAY_CHANNEL_HEADER] ?? null,
+        }),
+      );
+      return;
+    }
+    if (url.pathname === RELAY_SESSION_REVOKE_PATH) {
+      revoked.push(String(request.headers[RELAY_CHANNEL_HEADER]));
+      const proof = String(request.headers[RELAY_AGENT_PROOF_HEADER]);
+      const channel = String(request.headers[RELAY_CHANNEL_HEADER]);
+      response.statusCode = proven(proof, request.method ?? "", url.pathname, channel) ? 204 : 404;
+      response.end();
+      return;
+    }
     if (url.pathname === "/json") {
       response.setHeader("content-type", "application/json");
       response.end(
@@ -67,6 +106,7 @@ async function localServer() {
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     origin,
+    revoked,
     push: (line: string) => {
       for (const send of events) send(line);
     },
@@ -101,7 +141,10 @@ afterEach(async () => {
   await rm(stateDir, { recursive: true, force: true });
 });
 
-async function cli(args: string[], extra: { now?: () => number; signal?: AbortSignal } = {}) {
+async function cli(
+  args: string[],
+  extra: { now?: () => number; signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
+) {
   const lines: Record<string, unknown>[] = [];
   const code = await relayAgentMain([...args, "--state", stateDir], {
     write: (line) => lines.push(JSON.parse(line)),
@@ -109,11 +152,12 @@ async function cli(args: string[], extra: { now?: () => number; signal?: AbortSi
     stateDir: "/nonexistent",
     random: () => 0,
     now: extra.now,
+    env: extra.env,
   });
   return { code, lines };
 }
 
-function runAgent(): Agent {
+function runAgent(env: NodeJS.ProcessEnv = {}): Agent {
   const controller = new AbortController();
   const lines: Record<string, unknown>[] = [];
   const finished = relayAgentMain(["run", "--origin", local.origin], {
@@ -121,6 +165,7 @@ function runAgent(): Agent {
     stateDir,
     signal: controller.signal,
     random: () => 0,
+    env,
   });
   const agent = {
     lines,
@@ -242,6 +287,7 @@ describe("relay agent end to end", () => {
           state: "paired",
           appKey: encodeRelayBytes(appKey.publicKey),
           pairedAt: expect.any(Number),
+          approved: false,
         },
       ],
     });
@@ -304,6 +350,84 @@ describe("relay agent end to end", () => {
     await agent.stop();
   });
 
+  it("holds the phone's sign-in request until the user approves it, then proves it, and no other", async () => {
+    const agent = runAgent({ DOZO_RELAY_AGENT_KEY: SESSION_KEY });
+    const { offer, first, pairingKey } = await pairPhone(agent);
+    const forged = {
+      [RELAY_AGENT_PROOF_HEADER]: `${Date.now()}.${"f".repeat(64)}`,
+      [RELAY_CHANNEL_HEADER]: "x",
+    };
+    const asked = first.client.fetch(RELAY_SESSION_PATH, {
+      method: "POST",
+      headers: forged,
+      body: JSON.stringify({ platform: "ios" }),
+    });
+    // The computer shows the code the phone shows, with what the phone said it is.
+    const code = await relayApprovalCode(crypto, pairingKey);
+    await vi.waitFor(() =>
+      expect(agent.lines).toContainEqual({
+        event: "approval",
+        channel: offer.channel,
+        code,
+        platform: "ios",
+      }),
+    );
+    const approved = await cli(["approve", offer.channel]);
+    expect(approved).toEqual({ code: 0, lines: [{ event: "approved", channel: offer.channel }] });
+    const signIn = await (await asked).json();
+    expect(signIn.channel).toBe(offer.channel);
+    expect(proven(signIn.proof, "POST", RELAY_SESSION_PATH, offer.channel)).toBe(true);
+    await vi.waitFor(() =>
+      expect(agent.lines).toContainEqual({ event: "approved", channel: offer.channel }),
+    );
+
+    // Approved once is approved: the next sign-in request goes at once.
+    const again = await first.client.fetch(RELAY_SESSION_PATH, {
+      method: "POST",
+      body: "not json",
+    });
+    expect((await again.json()).channel).toBe(offer.channel);
+    const other = await first.client.fetch("/headers", { method: "POST", headers: forged });
+    expect(await other.json()).toEqual({ proof: null, channel: null });
+    const revoke = await first.client.fetch(RELAY_SESSION_REVOKE_PATH, {
+      method: "POST",
+      headers: forged,
+    });
+    expect(revoke.status).toBe(404);
+    await agent.stop();
+  });
+
+  it("answers the sign-in request no when the agent stops before the user approved", async () => {
+    const agent = runAgent({ DOZO_RELAY_AGENT_KEY: SESSION_KEY });
+    const { first } = await pairPhone(agent);
+    const asked = first.client.fetch(RELAY_SESSION_PATH, { method: "POST", body: "{}" });
+    await vi.waitFor(() =>
+      expect(agent.lines.some((line) => line.event === "approval")).toBe(true),
+    );
+    await agent.stop();
+    const answer = await asked.then(
+      async (response) => ({ status: response.status, body: await response.json() }),
+      () => null,
+    );
+    // Either the refusal reached the phone or the channel closed under it; never a sign-in.
+    if (answer) expect(answer).toEqual({ status: 403, body: { reason: "not-approved" } });
+  });
+
+  it("ends the phone's sign-in on the local server when the computer removes the phone", async () => {
+    const agent = runAgent();
+    const { offer } = await pairPhone(agent);
+    const revoked = await cli(["revoke", offer.channel, "--origin", local.origin], {
+      env: { DOZO_RELAY_AGENT_KEY: SESSION_KEY },
+    });
+    expect(revoked.lines[0]).toEqual({
+      event: "revoked",
+      channel: offer.channel,
+      relay: "deleted",
+      session: "revoked",
+    });
+    expect(local.revoked).toEqual([offer.channel]);
+  });
+
   it("refuses the phone after the computer revokes the pairing", async () => {
     const agent = runAgent();
     const { offer, first, pairingKey } = await pairPhone(agent);
@@ -313,7 +437,7 @@ describe("relay agent end to end", () => {
     const revoked = await cli(["revoke", offer.channel]);
     expect(revoked).toEqual({
       code: 0,
-      lines: [{ event: "revoked", channel: offer.channel, relay: "deleted" }],
+      lines: [{ event: "revoked", channel: offer.channel, relay: "deleted", session: "skipped" }],
     });
     await expect(first.client.fetch("/json")).rejects.toThrow();
     const token = await relayAppToken(crypto, pairingKey);
@@ -385,6 +509,11 @@ describe("relay agent command line", () => {
     expect((await cli(["dance"])).code).toBe(64);
     expect((await cli(["pair"])).code).toBe(64);
     expect((await cli(["revoke"])).code).toBe(64);
+    expect((await cli(["approve"])).code).toBe(64);
+    expect((await cli(["approve", "Q2hhbm5lbC1pZC0xMjM0NQ"])).lines[0]).toEqual({
+      event: "error",
+      reason: "no such channel",
+    });
     expect((await cli(["run"])).code).toBe(64);
     const remote = await cli(["run", "--origin", "http://example.com"]);
     expect(remote.code).toBe(64);
@@ -394,6 +523,10 @@ describe("relay agent command line", () => {
     });
     expect((await cli(["pair", "--relay", "--state"])).code).toBe(64);
     expect((await cli(["run", "--origin", "ftp://127.0.0.1"])).code).toBe(64);
+    expect(
+      (await cli(["run", "--origin", "http://127.0.0.1:1"], { env: { DOZO_RELAY_AGENT_KEY: "x" } }))
+        .code,
+    ).toBe(64);
 
     const insecure = await cli(["pair", "--relay", "http://relay.example"]);
     expect(insecure).toEqual({

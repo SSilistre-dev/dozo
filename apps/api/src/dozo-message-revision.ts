@@ -18,6 +18,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { buildSendPrompt } from "./artifacts.js";
+import { dozoMessagePinRoutes } from "./dozo-message-pins.js";
 import type { RouterContext } from "./routes/context.js";
 import { botsRunOwnModels, modelSetup } from "./routes/shared.js";
 import { assertTeachingSendAllowed } from "./taught-skills.js";
@@ -214,6 +215,7 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
       regenerate: authed.dozoMessages.regenerate.handler(({ context, input }) =>
         revise(context.actor, input.threadId, input.messageId, { kind: "regenerate" }),
       ),
+      ...dozoMessagePinRoutes(ctx),
     },
   };
 }

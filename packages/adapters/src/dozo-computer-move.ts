@@ -319,7 +319,7 @@ async function largeFiles(
       if (++entries > MAX_SCANNED_ENTRIES) throw new BotFilesNotMovedError();
       const shown = path.posix.join(relative, entry);
       if (skipHidden && !relative && entry.startsWith(".")) continue;
-      const full = await realpath(path.join(directory, entry)).catch(() => null);
+      const full = await realpath(path.join(directory, entry)).catch(absentPath);
       if (!full?.startsWith(`${top}${path.sep}`)) continue;
       const info = await stat(full);
       if (shouldSkipPortableWorkspaceFile(path.posix.join(policy, shown), info.isDirectory())) {
@@ -329,7 +329,7 @@ async function largeFiles(
       else if (info.isFile() && info.size > MAX_MOVED_FILE_BYTES) large.push(shown);
     }
   };
-  const base = await realpath(root).catch(() => null);
+  const base = await realpath(root).catch(absentPath);
   if (!base) return large;
   for (const [directory, policy, skipHidden] of [
     [scope === "team" ? `bots/${botId}` : "", "", scope !== "team"],
@@ -337,7 +337,7 @@ async function largeFiles(
   ] as const) {
     // As the export: a folder that is itself a link is not followed.
     const expected = path.join(base, directory);
-    const top = await realpath(expected).catch(() => null);
+    const top = await realpath(expected).catch(absentPath);
     if (top === expected && (await stat(top)).isDirectory()) {
       await walk(top, top, "", policy, skipHidden, 0);
     }
@@ -478,10 +478,19 @@ async function run(
   if (exitCode !== 0) throw new Error(`command failed: ${stderr.trim()}`);
 }
 
+/**
+ * What a path that is gone, is not a folder where one was expected, or loops through links
+ * answers: null. Any other error (permissions, I/O) is not "nothing there" and reaches the caller.
+ */
+export function absentPath(error: NodeJS.ErrnoException): null {
+  if (["ENOENT", "ENOTDIR", "ELOOP"].includes(error.code ?? "")) return null;
+  throw error;
+}
+
 /** Each copied file is on the computer whole: a regular file of the size that was read. */
 async function verifyFiles(root: string, files: ReadonlyArray<{ path: string; size: number }>) {
   for (const file of files) {
-    const info = await lstat(path.join(root, file.path)).catch(() => null);
+    const info = await lstat(path.join(root, file.path)).catch(absentPath);
     if (!info?.isFile() || info.size !== file.size) {
       throw new Error(`moved file did not arrive: ${file.path}`);
     }
@@ -495,7 +504,7 @@ async function containedPath(root: string, relative: string) {
   for (const part of path.posix.dirname(relative).split("/")) {
     if (part === ".") continue;
     directory = path.join(directory, part);
-    const info = await lstat(directory).catch(() => null);
+    const info = await lstat(directory).catch(absentPath);
     if (info?.isDirectory()) continue;
     if (info) throw new Error("path escapes the home");
     await mkdir(directory);

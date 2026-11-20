@@ -5,6 +5,7 @@ import {
   monthlyBillingPeriod,
   organizationForMember,
 } from "@rakazo/db";
+import { groupUsage, readUsageCells, usageCsv } from "./dozo-usage-breakdown.js";
 import type { RouterContext } from "./routes/context.js";
 
 type CacheSums = {
@@ -57,7 +58,11 @@ export async function usagePeriodStart(
   return monthlyBillingPeriod(billing, now).since;
 }
 
-/** The cache share of the caller's own usage in the current Space, as the Usage settings count it. */
+/**
+ * The caller's own usage in the current Space: its cache share, and its spend grouped by model,
+ * bot or routine, on screen and as CSV. Every member sees only their own records, as on the
+ * Usage summary.
+ */
 export function dozoUsageRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
   return {
@@ -70,6 +75,15 @@ export function dozoUsageRoutes(ctx: RouterContext) {
           _sum: { inputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
         });
         return cacheSavings(result._sum, since);
+      }),
+      breakdown: authed.dozoUsage.breakdown.handler(async ({ context, input }) => {
+        const member = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+        return groupUsage(await readUsageCells(deps.prisma, member), input.by);
+      }),
+      csv: authed.dozoUsage.csv.handler(async ({ context, input }) => {
+        const member = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+        const groups = groupUsage(await readUsageCells(deps.prisma, member), input.by);
+        return { csv: usageCsv(groups, input.by) };
       }),
     },
   };
