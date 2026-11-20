@@ -237,10 +237,10 @@ test("Free: bilgisayar uyandırma reddedilir, Türkçe ileti ve Yükselt", async
   test.skip(!(await billingOn(page)), "this server does not bill, so Free has no limit");
   await page.getByTestId("bot-settings-trigger").click();
   await page.getByTestId("computer-preview-open").click();
-  await expect(page.getByText("Planınızda bilgisayar yok.").first()).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByRole("button", { name: "Yükselt" }).first()).toBeVisible();
+  // The computer screen's own notice: the bot settings say the same sentence under Own computer.
+  const screen = page.getByTestId("computer-viewport");
+  await expect(screen.getByText("Planınızda bilgisayar yok.")).toBeVisible({ timeout: 30_000 });
+  await expect(screen.getByRole("button", { name: "Yükselt" })).toBeVisible();
 });
 
 test("hesap silinir ve silindiği doğrulanır", async ({ page }) => {
