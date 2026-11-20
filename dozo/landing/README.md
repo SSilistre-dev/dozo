@@ -19,8 +19,14 @@ home address sends a visitor who chose Turkish to `/tr/`, and the English link o
 carries `?lang=en` to end that. Links to the app carry the page's language as `?lang=`, which the
 app's sign-in page reads (`apps/web/src/pages/dozo-auth.tsx`).
 
+Theme: the system's light or dark scheme, also when it changes, unless the address says
+`?theme=light` or `?theme=dark`. Without the script the page is dark. Every page loads `theme.js` in `<head>`, the one
+copy of the theme logic, so it paints in its theme; the header button switches it and the choice
+travels in the page's address and in its links to the site's other pages. Nothing is stored, so the
+privacy pages' one-cookie statement stays true. The home page's own script is `landing.js`.
+
 Legal pages: `privacy/`, `terms/` and `refunds/`, one `index.html` each per language, linked from
-every footer. Plain text, no script. They state only what the code does (the data flows were read
+every footer. Plain text under the landing page's header and footer. They state only what the code does (the data flows were read
 from the code) and what the owner's own published policies say; a lawyer has not reviewed them
 (`dozo/LAUNCH-CHECKLIST.md`). The app's privacy and terms links open them through two anchored rules
 in `dozo/brand/brand.json`. A value only the owner can supply is written `[[NAME]]`, and `make olc`
