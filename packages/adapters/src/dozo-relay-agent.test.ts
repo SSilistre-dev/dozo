@@ -133,6 +133,12 @@ function runAgent(): Agent {
   return agent;
 }
 
+/** The offer inside the QR code's link. */
+function offerOf(qr: string) {
+  expect(qr.startsWith("rakazo://dozo-pair#")).toBe(true);
+  return qr.slice(qr.indexOf("#") + 1);
+}
+
 async function pairOffer() {
   const { code, lines } = await cli(["pair", "--relay", relay.url]);
   expect(code).toBe(0);
@@ -174,7 +180,7 @@ async function pairPhone(agent: Agent) {
   await vi.waitFor(() =>
     expect(agent.lines).toContainEqual({ event: "connected", channel: offerLine.channel }),
   );
-  const offer = parseRelayPairingOffer(offerLine.qr, Date.now());
+  const offer = parseRelayPairingOffer(offerOf(offerLine.qr), Date.now());
   const { psk, token } = await relayPairingSecrets(crypto, decodeRelayBytes(offer.secret));
   const appKey = await crypto.generateKeyPair();
   const hostKey = decodeRelayBytes(offer.hostKey);
@@ -327,9 +333,11 @@ describe("relay agent end to end", () => {
     const past = Date.now() - 11 * 60 * 1000;
     const { lines } = await cli(["pair", "--relay", relay.url], { now: () => past });
     const offerLine = lines[0] as { channel: string; qr: string };
-    expect(() => parseRelayPairingOffer(offerLine.qr, Date.now())).toThrow("pairing offer expired");
+    expect(() => parseRelayPairingOffer(offerOf(offerLine.qr), Date.now())).toThrow(
+      "pairing offer expired",
+    );
 
-    const offer = parseRelayPairingOffer(offerLine.qr, past);
+    const offer = parseRelayPairingOffer(offerOf(offerLine.qr), past);
     const { token } = await relayPairingSecrets(crypto, decodeRelayBytes(offer.secret));
     await expect(
       connectRelaySocket(

@@ -339,18 +339,40 @@ export type RelayClient = {
   /** Works like `fetch`: only the path and query of `input` are sent; the response body streams. */
   fetch(input: string | URL, init?: RequestInit): Promise<Response>;
   close(reason?: string): void;
+  /** The session under the client ended: no request can start on it any more. */
+  readonly failed: boolean;
 };
 
+/**
+ * The `Request` and `Response` the client builds on. Both must carry stream bodies; React Native's
+ * own do not, so the phone passes its own.
+ */
+export type RelayWebTypes = { Request: typeof Request; Response: typeof Response };
+
 /** The phone's end of the multiplexer. */
-export function relayClient(duplex: RelayDuplex): RelayClient {
-  const client = new ClientMux(duplex);
+export function relayClient(duplex: RelayDuplex, web?: RelayWebTypes): RelayClient {
+  const client = new ClientMux(duplex, web ?? { Request, Response });
   return {
     fetch: (input, init) => client.fetch(input, init),
     close: (reason) => client.close(reason),
+    get failed() {
+      return client.failed;
+    },
   };
 }
 
 class ClientMux extends Mux {
+  constructor(
+    duplex: RelayDuplex,
+    private readonly web: RelayWebTypes,
+  ) {
+    super(duplex);
+  }
+
+  get failed() {
+    return this.failure !== null;
+  }
+
   private nextId = 1;
   private readonly waiting = new Map<
     number,
@@ -361,7 +383,10 @@ class ClientMux extends Mux {
     const target = new URL(input, CLIENT_BASE);
     const path = target.pathname + target.search;
     // Request normalizes every body type to a stream and fills in its content type.
-    const request = new Request(CLIENT_BASE + path, { ...init, duplex: "half" } as RequestInit);
+    const request = new this.web.Request(CLIENT_BASE + path, {
+      ...init,
+      duplex: "half",
+    } as RequestInit);
     request.signal.throwIfAborted();
     if (this.failure) throw this.failure;
     if (this.streams.size >= RELAY_MAX_STREAMS) throw new RelayMuxError("too many open requests");
@@ -419,7 +444,7 @@ class ClientMux extends Mux {
     const nullBody = NULL_BODY_STATUSES.has(head.status) || waiting.method === "HEAD";
     let response: Response;
     try {
-      response = new Response(nullBody ? null : inbox.body, {
+      response = new this.web.Response(nullBody ? null : inbox.body, {
         status: head.status,
         statusText: head.statusText,
         headers: head.headers,
@@ -524,6 +549,8 @@ class ServerMux extends Mux {
         ),
         body: inbox?.body ?? null,
         signal: abort.signal,
+        // A redirect goes back to the phone as it is: following it here could leave the origin.
+        redirect: "manual",
         duplex: "half",
       } as RequestInit);
     } catch {

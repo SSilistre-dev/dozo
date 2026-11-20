@@ -74,6 +74,24 @@ export const RelayPairingOfferSchema = z.object({
 });
 export type RelayPairingOffer = z.infer<typeof RelayPairingOfferSchema>;
 
+/**
+ * What the phone keeps after pairing, read back from its secure store. Keys are base64url. The
+ * pairing secret is never stored; `originId` is random and names the computer's address inside
+ * the app, so nothing the app loads by that address carries the channel id.
+ */
+export const RelayAppPairingSchema = z.object({
+  relay: RelayPairingOfferSchema.shape.relay,
+  channel: RelayChannelId,
+  hostKey: RelayKey,
+  appPublicKey: RelayKey,
+  appPrivateKey: RelayKey,
+  /** The key of the pairing session, the `psk` of every later one. */
+  pairingKey: RelayKey,
+  originId: z.string().regex(/^[0-9a-f]{32}$/),
+  pairedAt: z.number().int().nonnegative(),
+});
+export type RelayAppPairing = z.infer<typeof RelayAppPairingSchema>;
+
 const HeaderList = z.array(z.tuple([z.string().min(1).max(256), z.string().max(8192)])).max(256);
 
 /** The `request` frame: opens a stream from the app. */
