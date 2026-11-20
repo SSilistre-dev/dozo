@@ -2,7 +2,8 @@
 //! address on the first line (the whole file, before the two switches existed) and one
 //! `name=true|false` line per switch. A missing switch is off. `this_computer=true` says the server
 //! is the one this app runs on this computer (`stack.rs`); its address is then the one it last
-//! started at. Tested below.
+//! started at. `relay=<address>`, written by hand, names another relay for pairing phones
+//! (`stack.rs`, `RELAY`). Tested below.
 
 use std::path::Path;
 
@@ -13,6 +14,7 @@ use crate::server::parse_server;
 const OPEN_AT_LOGIN: &str = "open_at_login=";
 const KEEP_RUNNING: &str = "keep_running=";
 const THIS_COMPUTER: &str = "this_computer=";
+const RELAY: &str = "relay=";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Settings {
@@ -23,6 +25,8 @@ pub struct Settings {
     pub keep_running: bool,
     /// The app runs the server itself, on this computer.
     pub this_computer: bool,
+    /// The relay phones pair through, when not the build's.
+    pub relay: Option<String>,
 }
 
 /// Reads the file. The address is checked again: the file may have been edited by hand.
@@ -34,6 +38,11 @@ pub fn parse(text: &str) -> Settings {
             settings.open_at_login = value.trim() == "true";
         } else if let Some(value) = line.strip_prefix(KEEP_RUNNING) {
             settings.keep_running = value.trim() == "true";
+        } else if let Some(value) = line.strip_prefix(RELAY) {
+            // https, or http for this computer, as a server address is.
+            settings.relay = parse_server(value)
+                .ok()
+                .map(|url| url.as_str().trim_end_matches('/').to_owned());
         } else if let Some(value) = line.strip_prefix(THIS_COMPUTER) {
             settings.this_computer = value.trim() == "true";
         } else if !address_seen {
@@ -55,6 +64,9 @@ pub fn render(settings: &Settings) -> String {
     text.push_str(&format!("{KEEP_RUNNING}{}\n", settings.keep_running));
     if settings.this_computer {
         text.push_str(&format!("{THIS_COMPUTER}true\n"));
+    }
+    if let Some(relay) = &settings.relay {
+        text.push_str(&format!("{RELAY}{relay}\n"));
     }
     text
 }
@@ -119,6 +131,7 @@ mod tests {
                         open_at_login,
                         keep_running,
                         this_computer,
+                        relay: this_computer.then(|| "https://relay.example.com".to_owned()),
                     };
                     assert_eq!(parse(&render(&settings)), settings);
                 }
@@ -133,6 +146,7 @@ mod tests {
             open_at_login: true,
             keep_running: true,
             this_computer: true,
+            relay: None,
         };
         assert_eq!(
             render(&settings).lines().next(),
@@ -148,6 +162,21 @@ mod tests {
             None
         );
         assert!(parse("http://example.com/\nkeep_running=true\n").keep_running);
+    }
+
+    #[test]
+    fn a_relay_must_be_https_or_this_computer() {
+        let relay = |line: &str| parse(&format!("https://dozo.example.com/\n{line}\n")).relay;
+        assert_eq!(
+            relay("relay=https://relay.example.com/"),
+            Some("https://relay.example.com".into())
+        );
+        assert_eq!(
+            relay("relay=http://127.0.0.1:8787"),
+            Some("http://127.0.0.1:8787".into())
+        );
+        assert_eq!(relay("relay=http://relay.example.com"), None);
+        assert_eq!(relay("relay="), None);
     }
 
     #[test]

@@ -423,7 +423,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn a_server_that_ignores_the_range_starts_it_over_cleanly() {
-        let dir = scratch("restart");
+        let dir = scratch("fetch-restart");
         let body = body();
         let (url, ranges) = serve(body.clone(), false);
         let part = part_for(&body, url);

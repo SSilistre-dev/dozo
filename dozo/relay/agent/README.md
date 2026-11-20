@@ -148,6 +148,14 @@ One file per channel lets `pair`, `run` and `revoke` work at the same time witho
 storage is one interface (`RelayHostStore`), so the keys can move to the system key store without
 touching the rest.
 
+## In the server bundle
+
+`dozo/server-bundle/build.mjs` bundles the command line with esbuild into one file,
+`rakazo-server/dozo-relay-agent.mjs` (entrypoint `relay` in the bundle's `manifest.json`), and
+checks it answers `list`. The desktop app runs `node dozo-relay-agent.mjs run --origin <web
+address> --state <server folder>/relay` beside the server, and `pair`, `list` and `revoke` for
+its Connect Phone window (`dozo/desktop/README.md`).
+
 ## Local run
 
 In Docker, from a workspace with dependencies installed:

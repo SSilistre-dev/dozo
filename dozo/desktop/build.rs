@@ -7,6 +7,11 @@ fn main() {
         "connect",
         "use_this_computer",
         "local_progress",
+        "phone_code",
+        "phones",
+        "remove_phone",
+        "phone_wait",
+        "approve_phone",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands))
         .expect("tauri-build failed");

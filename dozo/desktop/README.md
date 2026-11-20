@@ -230,11 +230,13 @@ Windows, where nothing has run yet.
 - A process that exits on its own starts again after 1 s, then 2, 4 … at most 30 s; back to 1 s
   after a minute up. Its output goes to `logs/<name>.log`, cut to a fresh file past 5 MB, one
   older file kept.
-- Stop: in reverse, each asked first (Node TERM, Postgres INT, its fast shutdown) and killed with
-  what it started after 10 s (Postgres 20 s). Quitting waits for it, at most a minute; so does
+- Stop: the web server, the worker, the API and the relay agent together, then Postgres; each
+  asked first (Node TERM, Postgres INT, its fast shutdown) and killed with what it started after
+  10 s (the API 25 s, as it lets requests finish for 20 s; Postgres 20 s). Quitting waits for it, at most a minute; so does
   Restart to Update. Choosing another server stops it.
 - Nothing is left behind: on Linux each process ends with the app however the app ends
-  (`PR_SET_PDEATHSIG`), and each holds the folder's lock (`stack.lock`), so a second app, or a
+  (`PR_SET_PDEATHSIG`: Node is killed, as nothing is left to wait for its graceful stop; Postgres
+  gets its fast shutdown), and each holds the folder's lock (`stack.lock`), so a second app, or a
   restart while something is still left, gets "Another Dozo is already running the server on
   this computer." instead of a second server on the same database. macOS and Windows: a crash of
   the app can leave the processes running (no job object or watchdog yet), and they keep no lock,
@@ -247,12 +249,41 @@ Windows, where nothing has run yet.
   server opens with its own single account, as a self-hosted one does.
 - Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
 - Not here yet: updating the installed server, backups and going back (the folder is laid out
-  for them), a phone link.
+  for them). An installed version is kept: a newer app finds it and does not install the newer
+  one (so an install from before the phone link has none until updates exist).
+
+### Connect Phone
+
+The phone reaches the server on this computer through a relay, with no open port
+(`dozo/relay/PROTOCOL.md`). The bundle carries the relay host agent as one file
+(`dozo/relay/agent/README.md`); the app runs its `run` beside the server, under the same
+supervision (restarts, logs in `logs/relay.log`, stopped with the server, ends with the app on
+Linux), with its keys in `relay/`.
+
+- Connect Phone… in the Dozo menu is on only while that server runs with the agent. It opens a
+  small window: the QR code of a pairing offer (it works once, for ten minutes), the account the
+  phone will sign in as ("Signs in as …", the email of the account signed in to the server in the
+  main window; signed out, the window says to sign in first and shows no code), the time left,
+  and the phones already paired, each with Remove. Once a phone scans the code, the same window
+  asks "Connect this phone?" with the kind of phone (iPhone, Android) and the six-digit code it
+  shows; Allow gives the phone its sign-in (the agent's `approve`) and closes the window, Reject
+  removes it. The agent drops a pairing nobody allowed after 5 minutes (`expired`), and the window
+  then says the code expired. The event and command are the agent's (`dozo/relay/agent/README.md`,
+  Phone sign-in).
+- The agent and the API share `DOZO_RELAY_AGENT_KEY`, made with the server's other secrets
+  (`RELAY_AGENT_KEY` in `secrets`); `revoke` gets the server's `--origin`, so it ends the phone's
+  session too.
+- The relay is `https://relay.dozo.bot` unless the build (`DOZO_RELAY_URL`), the environment
+  (`DOZO_RELAY_URL`) or a `relay=` line in the settings file names another (https, or http on
+  this computer).
+- The code is drawn by the page from the modules `qrcode` (Rust, no image features) computes.
+- The window follows the system's light or dark appearance; the code is always dark on white.
 
 Its folder is `server/` in the app's local data folder (`~/.local/share/dev.ssilistre.dozo/`,
 `%LOCALAPPDATA%\dev.ssilistre.dozo\`, `~/Library/Application Support/dev.ssilistre.dozo/`):
 `versions/<version>/` (node, postgres, server) and `current`, `pgdata/`, `data/` (the server's
-files), `secrets`, `ports`, `stack.lock`, `db-created`, `downloads/`, `logs/`, `run/`.
+files), `relay/` (the relay agent's keys), `secrets`, `ports`, `stack.lock`, `db-created`,
+`downloads/`, `logs/`, `run/`.
 
 Tests: unit tests in each `src/stack*.rs` (stand-in processes for order, restarts and stops). The
 end-to-end test needs a bundle built by `dozo/server-bundle/build.sh`, and runs in the Linux build
@@ -264,7 +295,9 @@ dozo/desktop/tests/stack_e2e.sh <dist>   # last line DESKTOP STACK E2E: PASS|FAI
 
 It installs from a local manifest, gets 200 from `/health`, pairs and connects this computer,
 stops and finds no process left; then starts from what is installed, kills the test process with
-SIGKILL and finds no process left. It is not in CI: building the bundle takes several minutes.
+SIGKILL and finds no process left; then starts again and pairs a phone through the bundled agent
+(a dev relay and a phone in a second container, `tests/relay_phone.mts`), which fetches a page
+through the relay; the phone is listed and removed, and no process is left after the stop. It is not in CI: building the bundle takes several minutes.
 
 ## Build
 

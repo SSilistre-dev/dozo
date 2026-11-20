@@ -29,6 +29,20 @@ pub struct Spec {
     pub env: Vec<(String, String)>,
     pub stop: Stop,
     pub grace: Duration,
+    /// Told each line the process writes to stdout, besides its log.
+    pub on_line: Option<OnLine>,
+}
+
+/// What hears a process's stdout, a line at a time (with its newline).
+#[derive(Clone)]
+pub struct OnLine(pub Arc<LineFn>);
+
+pub type LineFn = dyn Fn(&[u8]) + Send + Sync;
+
+impl std::fmt::Debug for OnLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OnLine")
+    }
 }
 
 /// A log file cut to a fresh one past `max` bytes, keeping one older file (`.1`).
@@ -89,6 +103,17 @@ pub struct Launch {
 }
 
 impl Launch {
+    /// The same, for processes that must not hold the folder's lock.
+    pub fn without_lock(&self) -> Launch {
+        Launch {
+            logs: self.logs.clone(),
+            lock: None,
+            backoff: self.backoff.clone(),
+            log_max: self.log_max,
+            events: self.events.clone(),
+        }
+    }
+
     pub fn note(&self, line: &str) {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -99,7 +124,8 @@ impl Launch {
             .write(format!("{stamp} {line}\n").as_bytes());
     }
 
-    async fn spawn(&self, spec: &Spec) -> std::io::Result<Child> {
+    /// Starts `spec`; the task returned ends once its stdout has been read to the end.
+    async fn spawn(&self, spec: &Spec) -> std::io::Result<(Child, JoinHandle<()>)> {
         let mut command = Command::new(&spec.program);
         command
             .args(&spec.args)
@@ -113,28 +139,30 @@ impl Launch {
         stack_os::prepare(&mut command, spec.stop, self.lock.as_deref());
         let mut child = stack_os::spawn(command).await?;
         let log = Log::new(self.logs.join(format!("{}.log", spec.name)), self.log_max);
-        if let Some(out) = child.stdout.take() {
-            tokio::spawn(copy_lines(out, log.clone()));
-        }
+        let out = child.stdout.take().expect("piped");
+        let stdout = tokio::spawn(copy_lines(out, log.clone(), spec.on_line.clone()));
         if let Some(err) = child.stderr.take() {
-            tokio::spawn(copy_lines(err, log));
+            tokio::spawn(copy_lines(err, log, None));
         }
         self.note(&format!(
             "{} started (pid {})",
             spec.name,
             child.id().unwrap_or(0)
         ));
-        Ok(child)
+        Ok((child, stdout))
     }
 }
 
 /// Copies a process's output into its log line by line, and keeps reading whatever happens to
 /// the file: a pipe nobody reads would block the process.
-async fn copy_lines(stream: impl AsyncRead + Unpin, log: Arc<Mutex<Log>>) {
+async fn copy_lines(stream: impl AsyncRead + Unpin, log: Arc<Mutex<Log>>, on_line: Option<OnLine>) {
     let mut reader = BufReader::new(stream);
     let mut line = Vec::new();
     while reader.read_until(b'\n', &mut line).await.unwrap_or(0) > 0 {
         log.lock().unwrap().write(&line);
+        if let Some(on_line) = &on_line {
+            (on_line.0)(&line);
+        }
         line.clear();
     }
 }
@@ -172,10 +200,11 @@ impl Backoff {
 
 /// Runs a step to completion within `limit`; its exit status must be success.
 pub async fn run_once(spec: &Spec, launch: &Launch, limit: Duration) -> Result<(), String> {
-    let mut step =
-        Unfinished(Some(launch.spawn(spec).await.map_err(|error| {
-            format!("{} did not start: {error}", spec.name)
-        })?));
+    let (child, stdout) = launch
+        .spawn(spec)
+        .await
+        .map_err(|error| format!("{} did not start: {error}", spec.name))?;
+    let mut step = Unfinished(Some(child));
     let child = step.0.as_mut().expect("just started");
     let status = match tokio::time::timeout(limit, child.wait()).await {
         Ok(status) => status.map_err(|error| error.to_string())?,
@@ -186,12 +215,29 @@ pub async fn run_once(spec: &Spec, launch: &Launch, limit: Duration) -> Result<(
         }
     };
     step.0 = None;
+    // What it wrote last is heard before the step counts as done.
+    let _ = tokio::time::timeout(Duration::from_secs(5), stdout).await;
     launch.note(&format!("{} exited ({status})", spec.name));
     if status.success() {
         Ok(())
     } else {
         Err(format!("{} failed ({status})", spec.name))
     }
+}
+
+/// Runs a step like `run_once` and returns its stdout; a failure carries it too.
+pub async fn output(spec: &Spec, launch: &Launch, limit: Duration) -> Result<String, String> {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let mut spec = spec.clone();
+    spec.on_line = Some(OnLine(Arc::new({
+        let heard = heard.clone();
+        move |line| heard.lock().unwrap().extend_from_slice(line)
+    })));
+    let result = run_once(&spec, launch, limit).await;
+    let text = String::from_utf8_lossy(&heard.lock().unwrap()).into_owned();
+    result
+        .map(|()| text.clone())
+        .map_err(|why| format!("{why}: {}", text.trim()))
 }
 
 /// A step whose wait was cancelled (the start was stopped) ends with what it started.
@@ -219,20 +265,26 @@ pub struct Supervisor {
 impl Supervisor {
     /// Starts `spec` and keeps it running until `stop_all`. Fails if the first start fails.
     pub async fn keep(&mut self, spec: Spec, launch: Arc<Launch>) -> std::io::Result<()> {
-        let child = launch.spawn(&spec).await?;
+        let (child, _) = launch.spawn(&spec).await?;
         let (stop, stopped) = watch::channel(false);
         let task = tokio::spawn(keep_running(spec, launch, child, stopped));
         self.kept.push(Kept { stop, task });
         Ok(())
     }
 
-    /// Stops every process, the last started first. True when each stopped within its grace
-    /// period; one that had to be killed makes it false.
+    /// Stops every process: all but the first started together, then the first (Postgres, which
+    /// the others use), so the longest grace sets the wait rather than their sum. True when each
+    /// stopped within its grace period; one that had to be killed makes it false.
     pub async fn stop_all(&mut self) -> bool {
+        let mut kept = std::mem::take(&mut self.kept);
+        let first = (!kept.is_empty()).then(|| kept.remove(0));
+        for each in &kept {
+            let _ = each.stop.send(true);
+        }
         let mut clean = true;
-        while let Some(kept) = self.kept.pop() {
-            let _ = kept.stop.send(true);
-            clean &= kept.task.await.unwrap_or(false);
+        for each in kept.into_iter().chain(first) {
+            let _ = each.stop.send(true);
+            clean &= each.task.await.unwrap_or(false);
         }
         clean
     }
@@ -262,7 +314,7 @@ async fn keep_running(
             _ = stop.changed() => return true,
         }
         child = match launch.spawn(&spec).await {
-            Ok(started) => Some(started),
+            Ok((started, _)) => Some(started),
             Err(error) => {
                 launch.note(&format!("{} did not start: {error}", spec.name));
                 None
@@ -320,6 +372,7 @@ mod tests {
             env: vec![("PATH".into(), "/usr/bin:/bin".into())],
             stop: Stop::Terminate,
             grace: Duration::from_secs(5),
+            on_line: None,
         }
     }
 
@@ -346,7 +399,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stops_in_reverse_order_of_start() {
+    async fn stops_the_first_started_last() {
         let dir = scratch("order");
         let launch = launch(&dir);
         let order = dir.join("order");
@@ -371,17 +424,13 @@ mod tests {
             .unwrap();
         }
         assert!(supervisor.stop_all().await);
-        assert_eq!(
-            lines(&order),
-            [
-                "postgres",
-                "api",
-                "web",
-                "stop-web",
-                "stop-api",
-                "stop-postgres"
-            ]
-        );
+        let said = lines(&order);
+        assert_eq!(said[..3], ["postgres", "api", "web"]);
+        // The others stop together, Postgres after them.
+        let mut others = said[3..5].to_vec();
+        others.sort();
+        assert_eq!(others, ["stop-api", "stop-web"]);
+        assert_eq!(said[5], "stop-postgres");
     }
 
     #[tokio::test]
@@ -462,6 +511,28 @@ mod tests {
         let sleeping = fake("migrate", &dir, "sleep 30");
         let slow = run_once(&sleeping, &launch, Duration::from_millis(100));
         assert!(slow.await.unwrap_err().contains("longer"));
+    }
+
+    #[tokio::test]
+    async fn a_step_s_stdout_is_heard_whole_and_line_by_line() {
+        let dir = scratch("output");
+        let launch = launch(&dir);
+        let spec = fake(
+            "agent",
+            &dir,
+            "echo '{\"a\":1}'; echo second; echo oops >&2",
+        );
+        assert_eq!(
+            output(&spec, &launch, Duration::from_secs(5))
+                .await
+                .unwrap(),
+            "{\"a\":1}\nsecond\n"
+        );
+        let failing = fake("agent", &dir, "echo '{\"event\":\"error\"}'; exit 2");
+        let error = output(&failing, &launch, Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert!(error.ends_with(r#"{"event":"error"}"#), "{error}");
     }
 
     #[test]

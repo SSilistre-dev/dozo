@@ -53,10 +53,14 @@ marked latest; publishing the draft makes the addresses in the manifest live.
 ```
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
-failed. The app reads the manifest of the server version it was built for
+failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
+`0.11.0-1`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
-server archive holds `rakazo-server/`; its `manifest.json` names the four entrypoints.
+server archive holds `rakazo-server/`; its `manifest.json` names the entrypoints: upstream's
+four and `relay`, the relay host agent (`dozo/relay/agent/README.md`) as one file,
+`dozo-relay-agent.mjs`, which plain Node runs.
 
 ## Start contract
 
@@ -90,6 +94,10 @@ Each process runs from `rakazo-server/` with only these variables (plus `PATH` a
 | api, worker | `DATABASE_URL`, `DATA_DIR`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, `RAKAZO_DESKTOP_STACK_TOKEN`, `BETTER_AUTH_URL` = `WEB_ORIGIN` = `API_URL` = the web address, `SANDBOX_PROVIDER=none`, `CONTENT_ENCRYPTION=off`, `WAKEUP_DRIVER=graphile`, `AGENT_RUNTIME=pi`, `MCP_ALLOW_PRIVATE_ENDPOINT=true` |
 | api only    | `API_HOST=127.0.0.1`, `API_PORT`, `AUTH_PASSWORD_ENABLED=true`, `AUTH_BREACHED_PASSWORD_CHECK_ENABLED=false`                                                                                                                                                                                                                |
 | web         | `API_PROXY_TARGET` (the API address), `SCREEN_PROXY_SECRET`, `WEB_HOST=127.0.0.1`, `WEB_PORT`, `RAKAZO_DESKTOP_STACK_TOKEN`, `RAKAZO_IMAGE_TAG` (the bundle version)                                                                                                                                                        |
+
+The desktop app also makes `DOZO_RELAY_AGENT_KEY` (64 hex digits) with the other secrets and
+gives it to the API and to the relay agent, which signs paired phones in with it
+(`dozo/relay/agent/README.md`).
 
 `run.sh` uses ports 54329 (Postgres), 3100 (API) and 5173 (web); the app picks free ones.
 
