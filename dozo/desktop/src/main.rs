@@ -161,12 +161,16 @@ fn adopt_local(app: &AppHandle, url: &str) {
 }
 
 /// "Use the server on this computer": the app sets it up and starts it. The window follows with
-/// `local_progress`.
+/// `local_progress`. Off the main thread: a stop still under way is waited for first.
 #[tauri::command]
-fn use_this_computer(app: AppHandle) -> Result<(), String> {
+async fn use_this_computer(app: AppHandle) -> Result<(), String> {
     app.state::<Config>().0.lock().unwrap().this_computer = true;
     persist(&app).map_err(|error| format!("Could not save the choice: {error}"))?;
-    start_local_if_chosen(&app);
+    let layout = local_layout(&app).map_err(|error| error.to_string())?;
+    let local = app.state::<LocalServer>().0.clone();
+    local
+        .start(layout, stack::Options::from_build_and_environment())
+        .await;
     Ok(())
 }
 
@@ -193,9 +197,10 @@ fn current_server(app: AppHandle) -> Option<String> {
     chosen(&app).map(String::from)
 }
 
-/// Checks and saves the address. The error is the sentence the form shows.
+/// Checks and saves the address. The error is the sentence the form shows. Choosing another
+/// server stops the one on this computer first, so a start asked for right after comes after it.
 #[tauri::command]
-fn set_server(app: AppHandle, address: String) -> Result<String, String> {
+async fn set_server(app: AppHandle, address: String) -> Result<String, String> {
     let server = parse_server(&address)?;
     let (previous, was_this_computer) = {
         let state = app.state::<Config>();
@@ -213,10 +218,9 @@ fn set_server(app: AppHandle, address: String) -> Result<String, String> {
         config.this_computer = was_this_computer;
         format!("Could not save the address: {error}")
     })?;
-    // Another server was chosen: the one on this computer stops.
     if was_this_computer {
         let local = app.state::<LocalServer>().0.clone();
-        tauri::async_runtime::spawn(async move { local.stop().await });
+        local.stop().await;
     }
     device::select(&app, Some(server.clone()));
     Ok(server.into())

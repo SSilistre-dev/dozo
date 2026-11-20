@@ -21,7 +21,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::stack_fetch::{self, FetchError, Format};
-use crate::stack_manifest::{self, Part, Release};
+use crate::stack_manifest::{self, Part};
 use crate::stack_os::Stop;
 use crate::stack_proc::{self, Backoff, Launch, Spec, Supervisor};
 use crate::stack_setup::{self, PortError, Ports, Secrets};
@@ -237,14 +237,16 @@ impl Local {
         }));
     }
 
-    /// Stops the server and everything it started; true when all stopped when asked.
+    /// Stops the server and everything it started; true when all stopped when asked. Holds the
+    /// lock throughout, so a start asked for meanwhile comes after it.
     pub async fn stop(&self) -> bool {
-        let task = self.running.lock().await.task.take();
-        if let Some(task) = task {
+        let mut running = self.running.lock().await;
+        if let Some(task) = running.task.take() {
             task.abort();
             let _ = task.await;
         }
-        let clean = self.release().await;
+        let clean = running.supervisor.stop_all().await;
+        running.lock = None;
         self.status.send_replace(Status::Off);
         clean
     }
@@ -304,7 +306,8 @@ impl Local {
     }
 
     /// Downloads the three parts (one percentage over all of them), unpacks them into
-    /// `versions/<version>` and records it as `current`.
+    /// `versions/<version>` and records it as `current`. A part unpacked by an earlier try is
+    /// neither downloaded nor unpacked again.
     async fn install(
         &self,
         layout: &Layout,
@@ -318,43 +321,45 @@ impl Local {
             .map_err(|why| (Failure::Download, format!("manifest: {why}")))?;
         let release = stack_manifest::parse(&text, platform)
             .map_err(|why| (Failure::Unsupported, format!("manifest: {why}")))?;
-        let parts = [
-            ("node", &release.node, true),
-            ("postgres", &release.postgres, true),
-            ("server", &release.server, false),
-        ];
-        for (name, part, _) in parts {
-            if Format::of(&part.url).is_none() {
-                return Err((Failure::Unsupported, format!("{name}: unknown archive")));
-            }
-        }
-        let files = self.download_all(&release, layout).await?;
-        self.status.send_replace(Status::Preparing);
         let target = layout.version(&release.version);
         let mut partial = target.as_os_str().to_owned();
         partial.push(".partial");
         let partial = PathBuf::from(partial);
-        let unpacked = tokio::task::spawn_blocking({
-            let partial = partial.clone();
-            let jobs: Vec<(String, PathBuf, Format, bool)> = parts
-                .iter()
-                .zip(&files)
-                .map(|((name, part, strip), file)| {
-                    let format = Format::of(&part.url).expect("checked above");
-                    ((*name).to_owned(), file.clone(), format, *strip)
-                })
-                .collect();
-            move || -> std::io::Result<()> {
-                fs::create_dir_all(&partial)?;
-                for (name, file, format, strip) in jobs {
-                    let into = partial.join(&name);
-                    if !into.exists() {
-                        stack_fetch::unpack(&file, format, &into, strip)?;
-                    }
-                    fs::remove_file(&file)?;
+        let mut parts = Vec::new();
+        for (name, part, strip) in [
+            ("node", &release.node, true),
+            ("postgres", &release.postgres, true),
+            ("server", &release.server, false),
+        ] {
+            let format = Format::of(&part.url)
+                .ok_or_else(|| (Failure::Unsupported, format!("{name}: unknown archive")))?;
+            let done = partial.join(name).exists();
+            parts.push((name, part, format, strip, done));
+        }
+        let files = self.download_all(&parts, layout).await?;
+        self.status.send_replace(Status::Preparing);
+        let jobs: Vec<(PathBuf, PathBuf, Format, bool)> = parts
+            .iter()
+            .zip(files)
+            .filter_map(|((name, _, format, strip, _), file)| {
+                Some((file?, partial.join(name), *format, *strip))
+            })
+            .collect();
+        let into = partial.clone();
+        let unpacked = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            // A stopped start cannot cancel this job: the next one waits for it to end.
+            static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+            let _turn = ONE_AT_A_TIME
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            fs::create_dir_all(&into)?;
+            for (file, target, format, strip) in jobs {
+                if !target.exists() {
+                    stack_fetch::unpack(&file, format, &target, strip)?;
                 }
-                stack_setup::fit_postgres(&partial.join("postgres")).map_err(std::io::Error::other)
+                fs::remove_file(&file)?;
             }
+            stack_setup::fit_postgres(&into.join("postgres")).map_err(std::io::Error::other)
         })
         .await
         .map_err(|error| (Failure::Start, error.to_string()))?;
@@ -368,16 +373,16 @@ impl Local {
         Ok(release.version)
     }
 
+    /// The parts not unpacked yet, downloaded; `None` for the others.
     async fn download_all(
         &self,
-        release: &Release,
+        parts: &[(&str, &Part, Format, bool, bool)],
         layout: &Layout,
-    ) -> Result<Vec<PathBuf>, (Failure, String)> {
-        let parts: [&Part; 3] = [&release.node, &release.postgres, &release.server];
-        let total: u64 = parts.iter().map(|part| part.size).sum();
-        let done = Arc::new(Mutex::new([0u64; 3]));
+    ) -> Result<Vec<Option<PathBuf>>, (Failure, String)> {
+        let total: u64 = parts.iter().map(|part| part.1.size).sum();
+        let done = Arc::new(Mutex::new(vec![0u64; parts.len()]));
         let mut files = Vec::new();
-        for (index, part) in parts.into_iter().enumerate() {
+        for (index, (_, part, _, _, unpacked)) in parts.iter().enumerate() {
             let done = done.clone();
             let status = self.status.clone();
             let mut arrived = move |bytes: u64| {
@@ -390,13 +395,18 @@ impl Local {
                     changed
                 });
             };
+            if *unpacked {
+                arrived(part.size);
+                files.push(None);
+                continue;
+            }
             let file = stack_fetch::download(part, &layout.at("downloads"), &mut arrived)
                 .await
                 .map_err(|error| match error {
                     FetchError::Io(error) => (Failure::Start, format!("download: {error}")),
                     other => (Failure::Download, other.to_string()),
                 })?;
-            files.push(file);
+            files.push(Some(file));
         }
         Ok(files)
     }
@@ -644,7 +654,7 @@ impl Plan {
             cwd: self.root.clone(),
             env: all,
             stop: Stop::Interrupt,
-            grace: Duration::from_secs(30),
+            grace: Duration::from_secs(20),
         }
     }
 

@@ -172,23 +172,36 @@ impl Backoff {
 
 /// Runs a step to completion within `limit`; its exit status must be success.
 pub async fn run_once(spec: &Spec, launch: &Launch, limit: Duration) -> Result<(), String> {
-    let mut child = launch
-        .spawn(spec)
-        .await
-        .map_err(|error| format!("{} did not start: {error}", spec.name))?;
+    let mut step =
+        Unfinished(Some(launch.spawn(spec).await.map_err(|error| {
+            format!("{} did not start: {error}", spec.name)
+        })?));
+    let child = step.0.as_mut().expect("just started");
     let status = match tokio::time::timeout(limit, child.wait()).await {
         Ok(status) => status.map_err(|error| error.to_string())?,
         Err(_) => {
-            stack_os::kill(&mut child);
+            stack_os::kill(child);
             let _ = child.wait().await;
             return Err(format!("{} took longer than {limit:?}", spec.name));
         }
     };
+    step.0 = None;
     launch.note(&format!("{} exited ({status})", spec.name));
     if status.success() {
         Ok(())
     } else {
         Err(format!("{} failed ({status})", spec.name))
+    }
+}
+
+/// A step whose wait was cancelled (the start was stopped) ends with what it started.
+struct Unfinished(Option<Child>);
+
+impl Drop for Unfinished {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            stack_os::kill(child);
+        }
     }
 }
 

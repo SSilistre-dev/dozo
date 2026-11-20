@@ -2,7 +2,9 @@
 //!
 //! Unix: each process leads its own process group, so a stop reaches what it started too. On
 //! Linux each one is also told to end when the app ends, however it ends (`PR_SET_PDEATHSIG`),
-//! and inherits the folder's lock, so no second app starts a server beside what is left.
+//! and inherits the folder's lock, so no second app starts a server beside what is left. Not on
+//! macOS: nothing ends its processes with a crashed app yet, and an inherited lock would then
+//! keep every later start out.
 //! The kernel sends that signal when the thread that started the process ends, not the process:
 //! every start therefore happens on one thread that lives as long as the app (`spawn`).
 //! Windows: compiled, not run yet; a stop ends the process itself only (a job object that ends
@@ -24,33 +26,25 @@ pub enum Stop {
 }
 
 /// Sets up `command` as described above. `lock` is the folder's lock file.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub fn prepare(command: &mut Command, stop: Stop, lock: Option<&File>) {
     use std::os::fd::AsRawFd;
     command.process_group(0);
     let lock = lock.map(AsRawFd::as_raw_fd);
-    #[cfg(target_os = "linux")]
-    let (signal, app) = (
-        match stop {
-            Stop::Terminate => libc::SIGTERM,
-            Stop::Interrupt => libc::SIGINT,
-        },
-        std::process::id() as libc::pid_t,
-    );
-    #[cfg(not(target_os = "linux"))]
-    let _ = stop;
+    let signal = match stop {
+        Stop::Terminate => libc::SIGTERM,
+        Stop::Interrupt => libc::SIGINT,
+    };
+    let app = std::process::id() as libc::pid_t;
     // SAFETY: between fork and exec only async-signal-safe calls (prctl, getppid, fcntl).
     unsafe {
         command.pre_exec(move || {
-            #[cfg(target_os = "linux")]
-            {
-                if libc::prctl(libc::PR_SET_PDEATHSIG, signal) != 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                // The app ended before the line above ran: nothing will send the signal.
-                if libc::getppid() != app {
-                    return Err(io::Error::other("the app has ended"));
-                }
+            if libc::prctl(libc::PR_SET_PDEATHSIG, signal) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // The app ended before the line above ran: nothing will send the signal.
+            if libc::getppid() != app {
+                return Err(io::Error::other("the app has ended"));
             }
             if let Some(fd) = lock {
                 let flags = libc::fcntl(fd, libc::F_GETFD);
@@ -61,6 +55,11 @@ pub fn prepare(command: &mut Command, stop: Stop, lock: Option<&File>) {
             Ok(())
         });
     }
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn prepare(command: &mut Command, _stop: Stop, _lock: Option<&File>) {
+    command.process_group(0);
 }
 
 #[cfg(windows)]

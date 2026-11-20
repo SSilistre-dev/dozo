@@ -231,13 +231,14 @@ Windows, where nothing has run yet.
   after a minute up. Its output goes to `logs/<name>.log`, cut to a fresh file past 5 MB, one
   older file kept.
 - Stop: in reverse, each asked first (Node TERM, Postgres INT, its fast shutdown) and killed with
-  what it started after 10 s (Postgres 30 s). Quitting waits for it, at most a minute; so does
+  what it started after 10 s (Postgres 20 s). Quitting waits for it, at most a minute; so does
   Restart to Update. Choosing another server stops it.
 - Nothing is left behind: on Linux each process ends with the app however the app ends
   (`PR_SET_PDEATHSIG`), and each holds the folder's lock (`stack.lock`), so a second app, or a
   restart while something is still left, gets "Another Dozo is already running the server on
   this computer." instead of a second server on the same database. macOS and Windows: a crash of
-  the app can leave the processes running (no job object or watchdog yet).
+  the app can leave the processes running (no job object or watchdog yet), and they keep no lock,
+  so the next start fails on the database instead.
 - Linux needs `libssl3` (Prisma's migration engine); without it the start says to install it.
   Postgres's Linux build carries a `libstdc++` that needs glibc 2.36; where it does not run
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).

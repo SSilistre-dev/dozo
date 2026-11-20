@@ -3,6 +3,7 @@
 //! sha256 are the manifest's. An archive is unpacked into a folder beside the target and moved
 //! into place in one rename, after every entry was checked to stay inside it. Tested below.
 
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
@@ -218,22 +219,41 @@ fn unpack_checked(reader: Box<dyn Read>, into: &Path) -> io::Result<()> {
     archive.set_preserve_permissions(true);
     archive.set_unpack_xattrs(false);
     archive.set_overwrite(false);
+    let mut links = HashSet::new();
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?.into_owned();
         let link = entry.link_name()?.map(|link| link.into_owned());
-        check_entry(&path, entry.header().entry_type(), link.as_deref())?;
+        let kind = entry.header().entry_type();
+        check_entry(&path, kind, link.as_deref(), &links)?;
         if !entry.unpack_in(into)? {
             return Err(refused(&path));
+        }
+        if kind == tar::EntryType::Symlink {
+            links.insert(inside(Path::new(""), &path).unwrap_or_default());
         }
     }
     Ok(())
 }
 
-/// Every entry stays inside the folder it is unpacked into: no absolute path, no `..`, and a link
-/// may point only at something inside. Devices and pipes are refused.
-pub fn check_entry(path: &Path, kind: tar::EntryType, link: Option<&Path>) -> io::Result<()> {
-    if inside(Path::new(""), path).is_none() {
+/// Every entry stays inside the folder it is unpacked into: no absolute path, no `..`, nothing
+/// placed under a link the archive made (`links`), and a link may point only at something inside.
+/// A link's `..` may only lead its target, so where it points is what its name says, whatever the
+/// links it passes through. Devices and pipes are refused.
+pub fn check_entry(
+    path: &Path,
+    kind: tar::EntryType,
+    link: Option<&Path>,
+    links: &HashSet<PathBuf>,
+) -> io::Result<()> {
+    let Some(clean) = inside(Path::new(""), path) else {
+        return Err(refused(path));
+    };
+    if clean
+        .ancestors()
+        .skip(1)
+        .any(|folder| links.contains(folder))
+    {
         return Err(refused(path));
     }
     match kind {
@@ -243,9 +263,11 @@ pub fn check_entry(path: &Path, kind: tar::EntryType, link: Option<&Path>) -> io
         | tar::EntryType::GNUSparse => Ok(()),
         tar::EntryType::Symlink => {
             // Relative to the link's own folder.
-            let from = path.parent().unwrap_or(Path::new(""));
+            let from = clean.parent().unwrap_or(Path::new(""));
             match link {
-                Some(target) if inside(from, target).is_some() => Ok(()),
+                Some(target) if leading_dots_only(target) && inside(from, target).is_some() => {
+                    Ok(())
+                }
                 _ => Err(refused(path)),
             }
         }
@@ -256,6 +278,19 @@ pub fn check_entry(path: &Path, kind: tar::EntryType, link: Option<&Path>) -> io
         },
         _ => Err(refused(path)),
     }
+}
+
+fn leading_dots_only(target: &Path) -> bool {
+    let mut named = false;
+    target.components().all(|part| match part {
+        Component::ParentDir => !named,
+        Component::Normal(_) => {
+            named = true;
+            true
+        }
+        Component::CurDir => true,
+        Component::RootDir | Component::Prefix(_) => false,
+    })
 }
 
 /// `base` joined with `relative`, resolved by name, if it stays inside the top (an empty result
@@ -486,6 +521,23 @@ pub mod tests {
                 "abslink",
                 tar_gz(|b| link_entry(b, "top/out", "/etc/passwd")),
             ),
+            // Each target stays inside by name, but `b` is the top itself, so `b/..` is its
+            // parent on disk.
+            (
+                "chain",
+                tar_gz(|b| {
+                    link_entry(b, "a/b", "..");
+                    link_entry(b, "a/c", "b/..");
+                }),
+            ),
+            // A file placed through a link the archive made.
+            (
+                "through",
+                tar_gz(|b| {
+                    link_entry(b, "a/b", "..");
+                    file_entry(b, "a/b/x", b"x");
+                }),
+            ),
         ] {
             let path = dir.join(format!("{name}.tar.gz"));
             fs::write(&path, archive).unwrap();
@@ -502,13 +554,20 @@ pub mod tests {
     fn entry_checks() {
         use tar::EntryType::*;
         let p = Path::new;
-        assert!(check_entry(p("a/b"), Regular, None).is_ok());
-        assert!(check_entry(p("./a/b"), Directory, None).is_ok());
-        assert!(check_entry(p("a/b/c"), Symlink, Some(p("../d"))).is_ok());
-        assert!(check_entry(p("a/c"), Symlink, Some(p("../../d"))).is_err());
-        assert!(check_entry(p("a/c"), Link, Some(p("a/b"))).is_ok());
-        assert!(check_entry(p("a/c"), Link, Some(p("../b"))).is_err());
-        assert!(check_entry(p("a/dev"), Char, None).is_err());
-        assert!(check_entry(p("a/fifo"), Fifo, None).is_err());
+        let none = HashSet::new();
+        let check = |path, kind, link| check_entry(p(path), kind, link, &none);
+        assert!(check("a/b", Regular, None).is_ok());
+        assert!(check("./a/b", Directory, None).is_ok());
+        assert!(check("a/b/c", Symlink, Some(p("../d"))).is_ok());
+        assert!(check("a/b/c", Symlink, Some(p("../../e/f"))).is_ok());
+        assert!(check("a/c", Symlink, Some(p("../../d"))).is_err());
+        assert!(check("a/c", Symlink, Some(p("d/../e"))).is_err());
+        assert!(check("a/c", Link, Some(p("a/b"))).is_ok());
+        assert!(check("a/c", Link, Some(p("../b"))).is_err());
+        assert!(check("a/dev", Char, None).is_err());
+        assert!(check("a/fifo", Fifo, None).is_err());
+        let links = HashSet::from([PathBuf::from("a/l")]);
+        assert!(check_entry(p("a/l/x"), Regular, None, &links).is_err());
+        assert!(check_entry(p("a/lx"), Regular, None, &links).is_ok());
     }
 }
