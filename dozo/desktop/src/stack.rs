@@ -34,14 +34,14 @@ use std::io;
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
     None => {
-        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-3/manifest.json"
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-4/manifest.json"
     }
 };
 
 /// The server version this app expects: the one `MANIFEST` names. An installed older one is
 /// updated to it at the next start (`stack_update.rs`); when it is already installed, no manifest
 /// is read.
-const SERVER_VERSION: &str = "0.11.0-3";
+const SERVER_VERSION: &str = "0.11.0-4";
 
 /// The relay a phone reaches this computer through (`dozo/relay/agent/README.md`). A build can
 /// name another (`DOZO_RELAY_URL`), and so can the environment or the settings file (`relay=`).

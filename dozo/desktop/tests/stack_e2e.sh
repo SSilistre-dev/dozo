@@ -35,7 +35,13 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 # exits 1), so its migration fails.
 docker run --rm --name "$NAME-manifest" --cpus 3 --memory 6g --user "$(id -u):$(id -g)" \
   -v "$HERE/../server-bundle:/bundle:ro" -v "$DIST:/dist" -v "$OLD:/dist-old" "${DOZO_NODE_IMAGE:-node:24.22-slim}" \
-  bash -c 'set -e; node /bundle/manifest.mjs /dist file:///dist; node /bundle/manifest.mjs /dist-old file:///dist-old
+  bash -c 'set -e
+    # manifest.mjs wants the pinned runtimes beside the bundle under their own names.
+    for d in /dist /dist-old; do for part in node:node-linux-x64.tar.xz postgres:postgres-linux-x64.tar.gz; do
+      name=$(node -p "require(\"/bundle/runtimes.json\").${part%%:*}.platforms[\"linux-x64\"].url.split(\"/\").pop()")
+      [ -e "$d/$name" ] || { [ -e "$d/${part#*:}" ] && cp "$d/${part#*:}" "$d/$name"; } || [ -e "/dist/${part#*:}" ] && cp "/dist/${part#*:}" "$d/$name" || true
+    done; done
+    node /bundle/manifest.mjs /dist file:///dist; node /bundle/manifest.mjs /dist-old file:///dist-old
     mkdir -p /tmp/broken/node-broken/bin && printf "#!/bin/sh\nexit 1\n" > /tmp/broken/node-broken/bin/node
     chmod +x /tmp/broken/node-broken/bin/node && tar -C /tmp/broken -czf /dist/node-broken.tar.gz node-broken
     node -e "
