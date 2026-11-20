@@ -16,14 +16,21 @@ mod frames;
 mod frames;
 mod server;
 mod settings;
+mod stack;
+mod stack_fetch;
+mod stack_manifest;
+mod stack_os;
+mod stack_proc;
+mod stack_setup;
 mod update;
 
 use std::time::{Duration, Instant};
-use std::{fs, path::PathBuf, process::Command, sync::Mutex};
+use std::{fs, path::PathBuf, process::Command, sync::Arc, sync::Mutex};
 
 use background::{Close, OS};
 use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
 use settings::Settings;
+use stack::{Local, Status};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{
@@ -70,6 +77,9 @@ fn restart_marker(app: &AppHandle) -> Option<PathBuf> {
 /// them, and must still show its window: the marker says so, and is gone once it has been read
 /// (or here, when the install failed and the app stays).
 fn restart_for_update(app: &AppHandle) {
+    // The new process must find the server's folder free: its processes hold the lock.
+    let local = app.state::<LocalServer>().0.clone();
+    tauri::async_runtime::block_on(local.stop());
     let marker = restart_marker(app);
     if let Some(file) = &marker {
         let _ = fs::create_dir_all(file.parent().unwrap_or(file));
@@ -78,6 +88,103 @@ fn restart_for_update(app: &AppHandle) {
     update::install(app);
     if let Some(file) = marker {
         let _ = fs::remove_file(file);
+    }
+    // Still here: the install failed and the app stays, so does its server.
+    start_local_if_chosen(app);
+}
+
+/// The server on this computer (`stack.rs`), and the folder it keeps everything in.
+struct LocalServer(Arc<Local>);
+
+fn local_layout(app: &AppHandle) -> tauri::Result<stack::Layout> {
+    Ok(stack::Layout(
+        app.path().app_local_data_dir()?.join("server"),
+    ))
+}
+
+/// Starts the server on this computer when it is the chosen one. Does nothing while it is
+/// already starting or running. Called on the main thread, never from a task.
+fn start_local_if_chosen(app: &AppHandle) {
+    if !app.state::<Config>().0.lock().unwrap().this_computer {
+        return;
+    }
+    let Ok(layout) = local_layout(app) else {
+        eprintln!("dozo: no data folder for the server on this computer");
+        return;
+    };
+    // Only marks it starting and hands the work to a task: the window, which asks next, sees it.
+    let local = app.state::<LocalServer>().0.clone();
+    tauri::async_runtime::block_on(
+        local.start(layout, stack::Options::from_build_and_environment()),
+    );
+}
+
+/// Once the server on this computer is ready, its address is the chosen server.
+fn follow_local(app: AppHandle) {
+    let mut status = app.state::<LocalServer>().0.status();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let ready = match &*status.borrow_and_update() {
+                Status::Ready(url) => Some(url.clone()),
+                _ => None,
+            };
+            if let Some(url) = ready {
+                adopt_local(&app, &url);
+            }
+            if status.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+}
+
+/// Saves the ready server's address as the chosen server, if this computer's is still chosen.
+fn adopt_local(app: &AppHandle, url: &str) {
+    let Ok(server) = parse_server(url) else {
+        return;
+    };
+    let changed = {
+        let state = app.state::<Config>();
+        let mut config = state.0.lock().unwrap();
+        let changed = config.this_computer && config.server.as_ref() != Some(&server);
+        if changed {
+            config.server = Some(server.clone());
+        }
+        changed
+    };
+    if changed {
+        if let Err(error) = persist(app) {
+            eprintln!("dozo: could not save the server: {error}");
+        }
+        device::select(app, Some(server));
+    }
+}
+
+/// "Use the server on this computer": the app sets it up and starts it. The window follows with
+/// `local_progress`.
+#[tauri::command]
+fn use_this_computer(app: AppHandle) -> Result<(), String> {
+    app.state::<Config>().0.lock().unwrap().this_computer = true;
+    persist(&app).map_err(|error| format!("Could not save the choice: {error}"))?;
+    start_local_if_chosen(&app);
+    Ok(())
+}
+
+/// The server on this computer's progress, once it differs from `seen` (what the window shows
+/// now): the window asks again after each answer, and nothing is asked on a timer.
+#[tauri::command]
+async fn local_progress(app: AppHandle, seen: Option<serde_json::Value>) -> serde_json::Value {
+    let mut status = app.state::<LocalServer>().0.status();
+    loop {
+        let now = status.borrow_and_update().clone();
+        let json = now.to_json();
+        if seen.as_ref() != Some(&json) || status.changed().await.is_err() {
+            // The window connects next: the address must be the chosen one by then.
+            if let Status::Ready(url) = &now {
+                adopt_local(&app, url);
+            }
+            return json;
+        }
     }
 }
 
@@ -90,17 +197,27 @@ fn current_server(app: AppHandle) -> Option<String> {
 #[tauri::command]
 fn set_server(app: AppHandle, address: String) -> Result<String, String> {
     let server = parse_server(&address)?;
-    let previous = app
-        .state::<Config>()
-        .0
-        .lock()
-        .unwrap()
-        .server
-        .replace(server.clone());
+    let (previous, was_this_computer) = {
+        let state = app.state::<Config>();
+        let mut config = state.0.lock().unwrap();
+        let previous = config.server.replace(server.clone());
+        (
+            previous,
+            std::mem::replace(&mut config.this_computer, false),
+        )
+    };
     persist(&app).map_err(|error| {
-        app.state::<Config>().0.lock().unwrap().server = previous;
+        let state = app.state::<Config>();
+        let mut config = state.0.lock().unwrap();
+        config.server = previous;
+        config.this_computer = was_this_computer;
         format!("Could not save the address: {error}")
     })?;
+    // Another server was chosen: the one on this computer stops.
+    if was_this_computer {
+        let local = app.state::<LocalServer>().0.clone();
+        tauri::async_runtime::spawn(async move { local.stop().await });
+    }
     device::select(&app, Some(server.clone()));
     Ok(server.into())
 }
@@ -540,7 +657,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
-            connect
+            connect,
+            use_this_computer,
+            local_progress
         ])
         .menu(menu)
         .on_menu_event(|app, event| {
@@ -576,6 +695,9 @@ fn main() {
             }
             show_switches(&app, &settings);
             app.manage(Config(Mutex::new(settings.clone())));
+            app.manage(LocalServer(Local::new(Arc::new(stack::RealChecks))));
+            follow_local(app.clone());
+            start_local_if_chosen(&app);
             app.manage(device::Access::new(&app)?);
             device::select(&app, chosen(&app));
             #[cfg(not(target_os = "macos"))]
@@ -692,9 +814,29 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("the app failed to start")
         .run(|app, event| {
-            // Commands a bot started on this computer end with the app.
+            // The server on this computer stops before the app ends: the exit waits for it, for
+            // at most a minute, and then goes ahead.
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                let local = app.state::<LocalServer>().0.clone();
+                if !local.idle() {
+                    api.prevent_exit();
+                    let (app, code) = (app.clone(), code.unwrap_or(0));
+                    tauri::async_runtime::spawn(async move {
+                        let _ = tokio::time::timeout(Duration::from_secs(60), local.stop()).await;
+                        app.exit(code);
+                    });
+                }
+            }
+            // Commands a bot started on this computer end with the app, and so does its server
+            // if it is still up (an exit that was not asked for first).
             if let tauri::RunEvent::Exit = event {
                 device::quit(app);
+                let local = app.state::<LocalServer>().0.clone();
+                if !local.idle() {
+                    tauri::async_runtime::block_on(async {
+                        let _ = tokio::time::timeout(Duration::from_secs(60), local.stop()).await;
+                    });
+                }
             }
             // The Dock icon was clicked while the window was hidden.
             #[cfg(target_os = "macos")]

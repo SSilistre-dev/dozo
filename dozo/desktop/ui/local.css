@@ -1,4 +1,5 @@
-/* The app's own screens: choose a server, connecting, can't reach it.
+/* The app's own screens: choose a server, connecting, setting up the server on this computer,
+   can't reach it.
    Colours, type and shapes are the ones in dozo/design/dozo.css. */
 :root {
   --bg: #141414;
@@ -109,7 +110,10 @@ section p {
   color: var(--text);
 }
 /* The mark breathes while the app waits for the server. */
-main:has(#connecting:not([hidden])) .logo {
+#step {
+  font-variant-numeric: tabular-nums;
+}
+main:has(#connecting:not([hidden]), #setting-up:not([hidden])) .logo {
   animation: breathe 2.4s ease-in-out infinite;
 }
 @keyframes breathe {

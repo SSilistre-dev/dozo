@@ -6,7 +6,8 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 ## What it does
 
 - The first launch asks for the server (default `https://app.dozo.bot`, or one click for the
-  server on this computer, `http://127.0.0.1:5173`). The choice is saved and can be changed from
+  server on this computer, which the app downloads, sets up and runs itself: "The server on this
+  computer" below). The choice is saved and can be changed from
   the menu: Dozo, Change Server… (Cmd+,).
 - A server that cannot be reached gives a screen with Try again and Change server, not a blank page.
 - Standard macOS menus (About, Change Server…, Reload, Quit, and the Edit menu's shortcuts). The
@@ -21,8 +22,8 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 
 - It does not imitate upstream's desktop bridge, so the web app behaves as it does in a browser:
   no update section, no in-chat search bar, no custom window buttons. Upstream's native features
-  (running its own server on this computer, Docker management) are not here; updates are the
-  app's own ("Updates"). Bots using this computer is the app's own too (below), with a menu item
+  (its own server on this computer, Docker management) are not here; the server on this computer
+  and updates are the app's own (below). Bots using this computer is the app's own too (below), with a menu item
   rather than a switch in the web app's settings, which only that bridge would show.
 - Anything that leaves the server's origin opens in the browser. A sign-in that redirects to
   another site therefore finishes in the browser, not in the app; sign in with email and password.
@@ -114,7 +115,7 @@ Known limits:
 ## Security
 
 - A page loaded from a server can call nothing in the app. What reaches the app from it is the title
-  (read for the unread count only) and the notifications the web view itself shows. The three
+  (read for the unread count only) and the notifications the web view itself shows. The five
   commands are under Tauri's ACL (`build.rs`), and the only capability (`capabilities/local.json`)
   grants them to the app's own screens. It has no `remote` entry and must never get one. The
   dialog plugin's commands are granted to no page: only the app's Rust code opens its dialogs.
@@ -199,6 +200,70 @@ account and connects to it; the web app's settings then list it under Computers 
 - Not done yet: screen control (macOS needs the Accessibility and Screen Recording permissions,
   which this app does not ask for). Only the Linux app has been run against a server; the
   Windows code compiles and runs its tests in CI, the macOS code is not built on a pull request.
+
+## The server on this computer
+
+"Use the server on this computer" makes the app install and run a Dozo server for this user alone,
+with no Docker: Node, Postgres and the server bundle as plain processes
+(`dozo/server-bundle/README.md` is the contract). Linux x64 runs it; the code builds for macOS and
+Windows, where nothing has run yet.
+
+- First use downloads the manifest and the three parts (about 185 MB), checks each one's size and
+  sha256, unpacks it in a folder beside its place and moves it in with one rename. A download cut
+  off goes on from where it stopped next time (an HTTP range); one whose sha256 differs is deleted.
+  An archive entry that would land outside its folder (`..`, an absolute path, a link pointing
+  out) refuses the whole archive. Later starts use what is installed and need no network.
+- The manifest is the one of the server version this app was built for (`MANIFEST` in
+  `src/stack.rs`). `DOZO_SERVER_MANIFEST`, at build time or in the environment, names another: an
+  `https://`, `http://` or `file://` address, or a path (tests and development).
+- Start: Postgres (made on the first start), the migrations, then the API, the worker and the web
+  server; ready once `/health` and the web page answer 200 (at most two minutes). The window then
+  opens the web address and keeps it as the chosen server. One line shows where it is
+  (Downloading 42%, Preparing, Starting); a failure shows one sentence and Try again. Details go to
+  `logs/manager.log`.
+- Everything listens on 127.0.0.1 only. The ports are picked free on the first start and kept;
+  Postgres and the API move when another program took theirs. The web port is the pages' origin
+  (their sign-in and site data), so it never moves: if it is taken, the start stops and says so.
+- Secrets (the Postgres passwords, the auth and screen secrets, `ENCRYPTION_KEY`, the
+  single-account token) are made on the first start and kept in `secrets`, readable by this user
+  only. A value is never replaced; a key a later version adds is.
+- A process that exits on its own starts again after 1 s, then 2, 4 … at most 30 s; back to 1 s
+  after a minute up. Its output goes to `logs/<name>.log`, cut to a fresh file past 5 MB, one
+  older file kept.
+- Stop: in reverse, each asked first (Node TERM, Postgres INT, its fast shutdown) and killed with
+  what it started after 10 s (Postgres 30 s). Quitting waits for it, at most a minute; so does
+  Restart to Update. Choosing another server stops it.
+- Nothing is left behind: on Linux each process ends with the app however the app ends
+  (`PR_SET_PDEATHSIG`), and each holds the folder's lock (`stack.lock`), so a second app, or a
+  restart while something is still left, gets "Another Dozo is already running the server on
+  this computer." instead of a second server on the same database. macOS and Windows: a crash of
+  the app can leave the processes running (no job object or watchdog yet).
+- Linux needs `libssl3` (Prisma's migration engine); without it the start says to install it.
+  Postgres's Linux build carries a `libstdc++` that needs glibc 2.36; where it does not run
+  (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).
+- Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server) is off: a build or the
+  environment turns it on with `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin. Without it the
+  server opens with its own single account, as a self-hosted one does.
+- Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
+- Not here yet: updating the installed server, backups and going back (the folder is laid out
+  for them), a phone link.
+
+Its folder is `server/` in the app's local data folder (`~/.local/share/dev.ssilistre.dozo/`,
+`%LOCALAPPDATA%\dev.ssilistre.dozo\`, `~/Library/Application Support/dev.ssilistre.dozo/`):
+`versions/<version>/` (node, postgres, server) and `current`, `pgdata/`, `data/` (the server's
+files), `secrets`, `ports`, `stack.lock`, `db-created`, `downloads/`, `logs/`, `run/`.
+
+Tests: unit tests in each `src/stack*.rs` (stand-in processes for order, restarts and stops). The
+end-to-end test needs a bundle built by `dozo/server-bundle/build.sh`, and runs in the Linux build
+image without a window:
+
+```sh
+dozo/desktop/tests/stack_e2e.sh <dist>   # last line DESKTOP STACK E2E: PASS|FAIL
+```
+
+It installs from a local manifest, gets 200 from `/health`, pairs and connects this computer,
+stops and finds no process left; then starts from what is installed, kills the test process with
+SIGKILL and finds no process left. It is not in CI: building the bundle takes several minutes.
 
 ## Build
 
@@ -334,5 +399,7 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
   whether a revoke is pending (Windows and Linux: the config folders named above). The device
   token is in the system keyring under `dev.ssilistre.dozo`. Each bot's own folder is under
   `computers/` in the app's data folder (the same folder on macOS, `~/.local/share/dev.ssilistre.dozo/` on Linux).
+- `server/` in the app's local data folder: the server on this computer, installed and with its
+  database ("The server on this computer").
 - `~/Library/WebKit/dev.ssilistre.dozo/` and `~/Library/HTTPStorages/dev.ssilistre.dozo.binarycookies`:
   the web view's site data and cookies.

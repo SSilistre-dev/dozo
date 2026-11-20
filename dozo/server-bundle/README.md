@@ -67,6 +67,9 @@ first account created is the only one).
 
 1. On Linux, check that `libssl.so.3` exists: Prisma's migration engine loads the system OpenSSL 3.
    Without it, stop with a message that says to install `libssl3`.
+   Postgres's Linux build carries a `libstdc++.so.6` that needs glibc 2.36; its own programs need
+   2.34. Where `postgres --version` fails as unpacked (Ubuntu 22.04 has glibc 2.35), set that file
+   aside so the system's `libstdc++` (with `GLIBCXX_3.4.30`, as 22.04's has) is used.
 2. First start: `initdb -U rakazo -A scram-sha-256 -E UTF8 --locale=C`, then `createdb rakazo`.
 3. `pg_ctl start` with `-p <pg port> -c listen_addresses=127.0.0.1 -c unix_socket_directories=`.
 4. `migrate`, run to completion, every start (a no-op takes about 1.6 s). Owner role for

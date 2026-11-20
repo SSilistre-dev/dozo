@@ -1,6 +1,8 @@
 //! What the app saves between launches, in one small file in the app's config folder: the server
 //! address on the first line (the whole file, before the two switches existed) and one
-//! `name=true|false` line per switch. A missing switch is off. Tested below.
+//! `name=true|false` line per switch. A missing switch is off. `this_computer=true` says the server
+//! is the one this app runs on this computer (`stack.rs`); its address is then the one it last
+//! started at. Tested below.
 
 use std::path::Path;
 
@@ -10,6 +12,7 @@ use crate::server::parse_server;
 
 const OPEN_AT_LOGIN: &str = "open_at_login=";
 const KEEP_RUNNING: &str = "keep_running=";
+const THIS_COMPUTER: &str = "this_computer=";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Settings {
@@ -18,6 +21,8 @@ pub struct Settings {
     pub open_at_login: bool,
     /// Closing the window leaves the app running.
     pub keep_running: bool,
+    /// The app runs the server itself, on this computer.
+    pub this_computer: bool,
 }
 
 /// Reads the file. The address is checked again: the file may have been edited by hand.
@@ -29,6 +34,8 @@ pub fn parse(text: &str) -> Settings {
             settings.open_at_login = value.trim() == "true";
         } else if let Some(value) = line.strip_prefix(KEEP_RUNNING) {
             settings.keep_running = value.trim() == "true";
+        } else if let Some(value) = line.strip_prefix(THIS_COMPUTER) {
+            settings.this_computer = value.trim() == "true";
         } else if !address_seen {
             // Only the first such line is the address; a bad one leaves it unset, and no later
             // line takes its place.
@@ -46,6 +53,9 @@ pub fn render(settings: &Settings) -> String {
         .map_or_else(String::new, |server| format!("{server}\n"));
     text.push_str(&format!("{OPEN_AT_LOGIN}{}\n", settings.open_at_login));
     text.push_str(&format!("{KEEP_RUNNING}{}\n", settings.keep_running));
+    if settings.this_computer {
+        text.push_str(&format!("{THIS_COMPUTER}true\n"));
+    }
     text
 }
 
@@ -103,12 +113,15 @@ mod tests {
             [(false, false), (true, false), (false, true), (true, true)]
         {
             for server in [server(), None] {
-                let settings = Settings {
-                    server,
-                    open_at_login,
-                    keep_running,
-                };
-                assert_eq!(parse(&render(&settings)), settings);
+                for this_computer in [false, true] {
+                    let settings = Settings {
+                        server: server.clone(),
+                        open_at_login,
+                        keep_running,
+                        this_computer,
+                    };
+                    assert_eq!(parse(&render(&settings)), settings);
+                }
             }
         }
     }
@@ -119,6 +132,7 @@ mod tests {
             server: server(),
             open_at_login: true,
             keep_running: true,
+            this_computer: true,
         };
         assert_eq!(
             render(&settings).lines().next(),
