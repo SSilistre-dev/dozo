@@ -13,7 +13,7 @@
 # the toolchain while they run, so nothing is written to ~/.npm, ~/.cache, ~/.cocoapods, ~/.expo,
 # ~/Library/Developer/Xcode/DerivedData, a shell profile, Homebrew or a global npm or gem directory.
 # Needs Xcode with an iOS simulator runtime, Docker (to stage and brand) and network access.
-# DOZO_MOBILE_API_URL: the server the app opens with (default https://dozo.ssilistre.dev).
+# DOZO_MOBILE_API_URL: the server the app opens with (default https://app.dozo.bot).
 # DOZO_MOBILE_DEVICE: the simulator device type (default "iPhone 17").
 # Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
@@ -30,7 +30,7 @@ NODE_SHA256_arm64=1f5ac075be50bed4780ea3be19a007fda95ea4d527d28d76d0b91de47d9151
 NODE_SHA256_x64=6965578fd823e72c1b5387f5ab84cb25368f886e02eb8779e6f0fce6b91c27b7
 PNPM_VERSION=12.18.0
 COCOAPODS_VERSION=1.16.2
-API_URL="${DOZO_MOBILE_API_URL:-https://dozo.ssilistre.dev}"
+API_URL="${DOZO_MOBILE_API_URL:-https://app.dozo.bot}"
 DEVICE_TYPE="${DOZO_MOBILE_DEVICE:-iPhone 17}"
 DEVICE_NAME="Dozo build"
 MIN_FREE_GB=15

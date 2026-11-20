@@ -5,7 +5,7 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 
 ## What it does
 
-- The first launch asks for the server (default `https://dozo.ssilistre.dev`, or one click for the
+- The first launch asks for the server (default `https://app.dozo.bot`, or one click for the
   server on this computer, `http://127.0.0.1:5173`). The choice is saved and can be changed from
   the menu: Dozo, Change Server… (Cmd+,).
 - A server that cannot be reached gives a screen with Try again and Change server, not a blank page.

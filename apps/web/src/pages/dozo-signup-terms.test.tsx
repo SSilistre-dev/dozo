@@ -37,22 +37,22 @@ function links(locale: string) {
 
 it("links the terms and the privacy policy in one line", () => {
   expect(links("en")).toEqual([
-    ["Terms", "https://dozo-site.ssilistre.dev/terms/", "_blank", "noopener noreferrer"],
-    ["Privacy", "https://dozo-site.ssilistre.dev/privacy/", "_blank", "noopener noreferrer"],
+    ["Terms", "https://dozo.bot/terms/", "_blank", "noopener noreferrer"],
+    ["Privacy", "https://dozo.bot/privacy/", "_blank", "noopener noreferrer"],
   ]);
   expect(container.querySelectorAll("p")).toHaveLength(1);
 });
 
 it("links the Turkish pages in Turkish", () => {
   expect(links("tr").map(([, href]) => href)).toEqual([
-    "https://dozo-site.ssilistre.dev/tr/terms/",
-    "https://dozo-site.ssilistre.dev/tr/privacy/",
+    "https://dozo.bot/tr/terms/",
+    "https://dozo.bot/tr/privacy/",
   ]);
 });
 
 it("links the English pages in a language the site does not have", () => {
   expect(links("de").map(([, href]) => href)).toEqual([
-    "https://dozo-site.ssilistre.dev/terms/",
-    "https://dozo-site.ssilistre.dev/privacy/",
+    "https://dozo.bot/terms/",
+    "https://dozo.bot/privacy/",
   ]);
 });
