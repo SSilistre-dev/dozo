@@ -355,7 +355,7 @@ computer, which CI runs end to end without a window.
 
 - The server on this computer: `tests/stack_e2e_windows.ps1`, the `Desktop stack e2e windows` job
   of `dozo-server-bundle`, runs the app's own code against the Windows bundle that run built:
-  install (Node and Postgres from their pinned addresses), start, `/health`, sign up, this
+  install (Node and Postgres as a release serves them), start, `/health`, sign up, this
   computer's device socket, stop; a second start ended at once with the app (Task Manager's end);
   a phone paired through the relay agent (run, pair, approve, list, revoke); sign-in with the
   hosted account. After each, no process of the server is left. Long paths are turned off first,

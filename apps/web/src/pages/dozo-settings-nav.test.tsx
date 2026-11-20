@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { DozoSettingsNavGroups, dozoSettingsNavGroups } from "./dozo-settings-nav";
+import { DozoSettingsNavGroups, dozoSettingsNavGroups, NOTICES_PAGE } from "./dozo-settings-nav";
 import type { SettingsNavItem } from "./settings-nav";
 import type { SettingsSection } from "./shell-overlay";
 
@@ -68,10 +70,15 @@ it("puts a section it does not know yet under App instead of dropping it", () =>
 const mounted: Array<() => void> = [];
 afterEach(() => {
   for (const unmount of mounted.splice(0)) unmount();
+  vi.unstubAllGlobals();
 });
+
+/** The notices page's answer: hosted servers have none. */
+const fetchNotices = vi.fn<typeof fetch>(async () => new Response(null, { status: 404 }));
 
 function render(section: SettingsSection, disabled = false) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("fetch", fetchNotices);
   const container = document.createElement("nav");
   document.body.append(container);
   const root = createRoot(container);
@@ -118,4 +125,40 @@ it("marks General while a space's page is open, and disables every button while 
     "settings-nav-general",
   );
   expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
+});
+
+it("links the third-party notices only where the server has them", async () => {
+  fetchNotices.mockResolvedValueOnce(new Response(null, { status: 200 }));
+  const local = render("general");
+  await act(async () => {});
+  const link = local.container.querySelector<HTMLAnchorElement>(
+    '[data-testid="settings-nav-licenses"]',
+  );
+  expect(link?.getAttribute("href")).toBe(NOTICES_PAGE);
+  expect(link?.textContent).toBe("Licenses");
+  expect(link?.target).toBe("_blank");
+  // Asked as something other than a page, so the page fallback cannot answer for a missing file.
+  expect(fetchNotices).toHaveBeenCalledWith(NOTICES_PAGE, {
+    method: "HEAD",
+    headers: { accept: "text/plain" },
+  });
+
+  fetchNotices.mockClear();
+  const hosted = render("general");
+  await act(async () => {});
+  expect(fetchNotices).toHaveBeenCalled();
+  fetchNotices.mockRejectedValueOnce(new TypeError("offline"));
+  const offline = render("general");
+  await act(async () => {});
+  expect(hosted.container.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
+  expect(offline.container.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
+});
+
+it("ignores an answer that arrives after the nav closed", async () => {
+  const late = deferred<Response>();
+  fetchNotices.mockReturnValueOnce(late.promise);
+  render("general");
+  for (const unmount of mounted.splice(0)) unmount();
+  await act(async () => late.resolve(new Response(null, { status: 200 })));
+  expect(document.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
 });

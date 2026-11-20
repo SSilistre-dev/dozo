@@ -1,6 +1,6 @@
 # End-to-end test of the server on this computer on Windows (src/stack.rs, src/stack_e2e.rs),
 # without a window: what tests/stack_e2e.sh does on Linux. The app's own code installs a real
-# server bundle from a local manifest (Node and Postgres downloaded from their pinned addresses),
+# server bundle from a local manifest (Node and Postgres fetched first by runtimes.mjs),
 # starts it, gets 200 from /health, signs up, pairs this computer and connects the device socket,
 # and stops it; then starts it again from what is installed and the app is ended at once (as Task
 # Manager ends it); then a phone pairs through the bundled relay agent (run, pair, approve, list,
@@ -107,8 +107,11 @@ try {
   Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' LongPathsEnabled 0 -Type DWord
   Say "long paths: $((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem').LongPathsEnabled)"
 
-  # The manifest, made by the script a release uses; the server bundle from this folder.
+  # Node and Postgres from where they are published, and the manifest, by the scripts a release
+  # uses; all three parts are then served from this folder, as a release serves them.
   $base = 'file:///' + ($Dist -replace '\\', '/')
+  & { $ErrorActionPreference = 'Continue'; node (Join-Path $Here '..\server-bundle\runtimes.mjs') $Dist win-x64 2>&1 }
+  if ($LASTEXITCODE -ne 0) { throw 'runtimes.mjs failed' }
   & { $ErrorActionPreference = 'Continue'; node (Join-Path $Here '..\server-bundle\manifest.mjs') $Dist $base 2>&1 }
   if ($LASTEXITCODE -ne 0) { throw 'manifest.mjs failed' }
   $env:DOZO_STACK_E2E_MANIFEST = Join-Path $Dist 'manifest.json'

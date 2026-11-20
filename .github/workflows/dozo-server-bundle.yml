@@ -4,15 +4,18 @@ name: dozo-server-bundle
 # platform, runs the end-to-end smoke test on linux-x64, and on Windows the desktop app's own code
 # installs, starts and stops the bundle (dozo/desktop/tests/stack_e2e_windows.ps1). linux-x64 and
 # win-x64 have to pass; macOS is built to see that it builds, and does not fail the run.
-# On a `server-v<anything>` tag, or a manual run given a tag, the bundles and manifest.json go on a
-# DRAFT release with that tag, never marked latest (the desktop app's own updates read the latest
-# release). Pull requests only build and smoke.
+# On a `server-v<anything>` tag, or a manual run given a tag, the bundles, the Node and Postgres
+# archives runtimes.json pins (downloaded from where they are published and checked against their
+# sha256 first) and manifest.json go on a DRAFT release with that tag, never marked latest (the
+# desktop app's own updates read the latest release). The manifest points at that release for all
+# three parts. Pull requests only build and smoke.
 # Third-party actions are pinned to a full commit SHA with the version in a comment (the same SHAs
 # the upstream workflows use).
 on:
   pull_request:
     paths:
       - dozo/server-bundle/**
+      - packages/adapters/src/dozo-local-*
       - .github/workflows/dozo-server-bundle.yml
       - scripts/build-server-bundle.mjs
       - scripts/build-server.mjs
@@ -209,6 +212,8 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.22.0
+      - name: Node and Postgres
+        run: node dozo/server-bundle/runtimes.mjs dist
       - name: Manifest
         run: node dozo/server-bundle/manifest.mjs dist "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
       - name: Upload to the draft release
@@ -218,4 +223,5 @@ jobs:
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --latest=false \
               --target "$GITHUB_SHA" --title "Local server $TAG" --notes "Local server bundles and manifest.json."
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber dist/dozo-server-*.tar.xz dist/manifest.json
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber dist/dozo-server-*.tar.xz \
+            dist/node-v* dist/postgresql-* dist/manifest.json

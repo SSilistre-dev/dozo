@@ -1,0 +1,15 @@
+/* A display formula sits on its own line and scrolls sideways when it is wider than the reply. */
+.rk-chat-markdown .rk-math-display {
+  display: block;
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rk-chat-markdown .rk-math-display .katex-display {
+  margin: 0;
+}
+
+.rk-chat-markdown .rk-math-source {
+  white-space: pre-wrap;
+}
