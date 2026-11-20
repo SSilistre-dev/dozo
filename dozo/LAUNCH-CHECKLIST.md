@@ -106,8 +106,7 @@ stage (`dozo/brand/README.md`, CLI). It is not part of any gate. Placeholder add
       out needs a first run on a real Windows computer and a code signing certificate (SmartScreen
       warns without one).
 - [ ] **Marketing site** (can follow). `apps/www` is out of phase 1 scope. A static page is in
-      `dozo/landing/`, published pre-release behind `noindex` (`dozo/deploy/README.md`, "Landing page").
-      At launch: remove `robots.txt`, the `noindex` meta and header, swap the
-      pre-release addresses for the real domain (`dozo/landing/README.md`).
+      `dozo/landing/`, open to search and answer engines (`dozo/landing/README.md`). The owner submits
+      the sitemap to Google Search Console and Bing Webmaster Tools.
 - [ ] **Community links** (can follow). Upstream's Discord and App Store badges stay in upstream's
       README text. Decide whether to keep them below our fork notice.

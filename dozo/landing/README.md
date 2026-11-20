@@ -19,8 +19,14 @@ home address sends a visitor who chose Turkish to `/tr/`, and the English link o
 carries `?lang=en` to end that. Links to the app carry the page's language as `?lang=`, which the
 app's sign-in page reads (`apps/web/src/pages/dozo-auth.tsx`).
 
+Theme: the system's light or dark scheme, also when it changes, unless the address says
+`?theme=light` or `?theme=dark`. Without the script the page is dark. Every page loads `theme.js` in `<head>`, the one
+copy of the theme logic, so it paints in its theme; the header button switches it and the choice
+travels in the page's address and in its links to the site's other pages. Nothing is stored, so the
+privacy pages' one-cookie statement stays true. The home page's own script is `landing.js`.
+
 Legal pages: `privacy/`, `terms/` and `refunds/`, one `index.html` each per language, linked from
-every footer. Plain text, no script. They state only what the code does (the data flows were read
+every footer. Plain text under the landing page's header and footer. They state only what the code does (the data flows were read
 from the code) and what the owner's own published policies say; a lawyer has not reviewed them
 (`dozo/LAUNCH-CHECKLIST.md`). The app's privacy and terms links open them through two anchored rules
 in `dozo/brand/brand.json`. A value only the owner can supply is written `[[NAME]]`, and `make olc`
@@ -35,10 +41,18 @@ The site is `dozo.bot` and the app `app.dozo.bot`. A domain change touches `og:u
 the calls to action, every page's `canonical` and `hreflang` links, `dozo/e2e/landing-pages.test.mjs`
 and the site links in `dozo/brand/brand.json` and the `dozo-*` files that name it (`git grep`).
 
-Closed pre-release state, to undo at launch:
+Search and answer engines: the site is open to them. `robots.txt` allows every crawler, names the
+AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages with
+their `hreflang` alternates. The legal pages stay `noindex` (plain boilerplate with no search value;
+crawlers still follow their links) and are not in the sitemap, like the 404 pages. `llms.txt` is a
+short factual summary for answer engines: its prices are held to the page by the test. Each home
+page carries one JSON-LD block (Organization, WebSite, SoftwareApplication with the page's prices).
+It is a data block, so the CSP's `script-src 'self'` does not apply to it. No FAQ or rating markup:
+the page has neither. `www.dozo.bot` redirects permanently to `dozo.bot` in `site.nginx.conf`. A
+fixed `canonical` on every page covers `?theme=` and `?lang=` addresses.
 
-- `robots.txt` disallows everything, the page has `<meta name="robots" content="noindex">` and the
-  server sends `X-Robots-Tag: noindex` (`dozo/deploy/site.nginx.conf`). Remove all three.
+Closed pre-release state (lifted):
+
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
