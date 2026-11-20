@@ -5343,6 +5343,96 @@
         "apps/web/src/pages/shell/dozo-message-pins.tsx"
       ],
       "reason": "pins: one pin in the chat header, only while the chat has pinned messages, lists them and opens the chat at the one chosen"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
+      "find": "vi.mock(\"../lib/auth-capabilities\", () => ({\n",
+      "replace": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\", () => (\n  {\n",
+      "requires": [
+        "apps/web/src/components/dozo-quiet-hours-row.tsx"
+      ],
+      "reason": "upstream test of the general settings: the fork's quiet-hours row reads the server, which this test does not provide, so it is replaced as the test replaces the other panels (dozo-quiet-hours-row.test.tsx covers the row)"
+    },
+    {
+      "file": "apps/web/src/pages/SettingsOverlay.test.tsx",
+      "find": "vi.mock(\"./ModelSettingsOverlay\", () => ({",
+      "replace": "vi.mock(\"./dozo-model-settings\", () => ({",
+      "requires": [
+        "apps/web/src/pages/dozo-model-settings.tsx"
+      ],
+      "reason": "upstream test of the settings tabs: the overlay now imports the model settings through the fork's wrapper, so the test replaces that module and still records the scope it is given"
+    },
+    {
+      "file": "packages/adapters/src/executor-readonly-approval.test.ts",
+      "find": "ask them to open the Rakazo desktop app and turn on \"Let bots use this computer\" in its settings.';",
+      "replace": "ask them to open the Dozo desktop app and turn on \"Let bots use this computer\" in its settings.';",
+      "reason": "test files keep upstream's name; the offline line the bot is told carries the product name (prompt line)"
+    },
+    {
+      "file": "packages/adapters/src/executor-readonly-approval.test.ts",
+      "find": "ask them to open the Rakazo desktop app and turn on \"Let bots use this computer\" in its settings.',",
+      "replace": "ask them to open the Dozo desktop app and turn on \"Let bots use this computer\" in its settings.',",
+      "reason": "test files keep upstream's name; the offline error a bot reads carries the product name"
+    },
+    {
+      "file": "packages/adapters/src/executor-readonly-approval.test.ts",
+      "find": "  it(\"fetches the product docs pages without asking, but not other URLs on that site\", async () => {\n    const f = fixture({ builtin: true });\n    f.setCalls([\n      {\n        name: \"web_fetch\",\n        args: { url: \"https://rakazo.com/docs/routines.md\" },\n        executionId: \"call-1\",\n      },\n      { name: \"web_fetch\", args: { url: \"https://rakazo.com/?q=secret\" }, executionId: \"call-2\" },\n    ]);\n    await f.run();\n    expect(f.fetchedUrls).toEqual([\"https://rakazo.com/docs/routines.md\"]);\n    expect(isApprovalPausedResult(f.results[1])).toBe(true);\n  });",
+      "replace": "  it(\"asks before fetching a docs page of the upstream product: Dozo has no docs allowlist\", async () => {\n    const f = fixture({ builtin: true });\n    f.setCalls([\n      {\n        name: \"web_fetch\",\n        args: { url: \"https://rakazo.com/docs/routines.md\" },\n        executionId: \"call-1\",\n      },\n    ]);\n    await f.run();\n    expect(f.fetchedUrls).toEqual([]);\n    expect(isApprovalPausedResult(f.results[0])).toBe(true);\n  });",
+      "reason": "the product-docs list is empty in Dozo (builtin-skills.prompt.ts rule), so no docs page is fetched without asking; the test asserts that instead of the upstream allowlist"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-helper-framing.test.ts",
+      "find": "toContain('You are a Rakazo subagent named \"scout\".');",
+      "replace": "toContain('You are a Dozo subagent named \"scout\".');",
+      "reason": "test files keep upstream's name; the helper's prompt carries the product name"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-helper-framing.test.ts",
+      "find": "\"Messages marked as automated come from Rakazo, not from the user.\",",
+      "replace": "\"Messages marked as automated come from Dozo, not from the user.\",",
+      "reason": "test files keep upstream's name; the automated-message line carries the product name"
+    },
+    {
+      "file": "packages/adapters/src/run-effects.test.ts",
+      "find": "      \"Rakazo is resuming after the user approved",
+      "replace": "      \"Dozo is resuming after the user approved",
+      "reason": "test files keep upstream's name; the approval continuation the bot reads carries the product name"
+    },
+    {
+      "file": "packages/adapters/src/executor-team-chat-sender.test.ts",
+      "find": "    expect(result.context).toContain(\"Use skill: Rakazo\");\n",
+      "replace": "    expect(result.context).not.toContain(\"Use skill: Rakazo\");\n",
+      "reason": "the product-docs skill is removed (builtin-skills.prompt.ts rule): the built-in recipes that remain are still kept in a shared channel, this one is gone"
+    },
+    {
+      "file": "packages/adapters/src/executor.test.ts",
+      "find": "      \"Agent skills\",\n      expect.stringContaining(\"read the Rakazo skill\"),\n",
+      "replace": "      \"Agent skills\",\n",
+      "reason": "the product-docs skill is removed (run-instructions.prompt.ts rule), so the instruction that points at it is gone from the prompt"
+    },
+    {
+      "file": "packages/adapters/src/executor.test.ts",
+      "find": "  it(\"fails a run once the organization's own-key plan has no access\", async () => {",
+      "replace": "  it(\"does not ask for a subscription when the own-key plan is free: it asks for a model\", async () => {",
+      "requires": [
+        "packages/contracts/src/dozo-plans.ts"
+      ],
+      "reason": "plans: with a free plan every organization can run bots (packages/db/src/billing.ts rule), so an own-key organization past its free period is not refused for its plan"
+    },
+    {
+      "file": "packages/adapters/src/executor.test.ts",
+      "find": "        error: \"Subscribe in Billing to keep running bots.\",",
+      "replace": "        error: \"Connect a model in Settings before running bots.\",",
+      "requires": [
+        "packages/contracts/src/dozo-plans.ts"
+      ],
+      "reason": "plans: with a free plan the run is not refused for its plan; it fails on the missing model credential, which this fixture has none of (the rule above)"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-tool-dispatch.test.ts",
+      "find": "    expect(modes.get(\"schedule_create\")).toBe(\"sequential\");\n    expect(modes.get(\"schedule_list\")).toBe(\"sequential\");\n",
+      "replace": "    // The fork reaches both through find_tool, so use_tool (below) runs them in order.\n    expect(modes.has(\"schedule_create\")).toBe(false);\n    expect(modes.has(\"schedule_list\")).toBe(false);\n",
+      "reason": "the schedule tools are deferred (builtin-tool-bridge.ts rule): they run through use_tool, which is sequential, so a batch still cannot list routines before one is created"
     }
   ],
   "assets": {
