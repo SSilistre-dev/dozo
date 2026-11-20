@@ -10,6 +10,15 @@ Serve this folder with any static server (for example `python3 -m http.server`)
 and open a page. The pages are fixed at 1440x900.
 - `bots.html`: bot list and the six avatars at 28, 36 and 72 px
 - `chat.html`: a chat with a working bot, approval ask and composer
+- `chat-v2.html`: proposal for a calmer chat window (tone instead of lines, bot panel open; add
+  `?panel=closed` to start with it closed). Approved as the direction on 2026-11-20. Its menus
+  (account, bot row with submenus, create, model, bot panel, message) and the New bot and Delete
+  dialogs open from the page; all menus share one surface
+- `settings-v2.html`: the settings window over chat-v2 (`?section=general|approvals|usage`, the three
+  sections filled in). Proposal, not in the app: the 14 sections are grouped under Account, Bots and
+  App, where the app shows one flat list
+- `signin-v2.html`: email-first sign-in proposal: email, then a six-digit code (000000 is the wrong
+  code here), with a password as the way round; one flow for new and returning addresses
 - `computer.html`: the bot's computer view
 - `logos.html`: logo and wordmark studies
 - add `?theme=light` to any page for the light theme (dark is the default)

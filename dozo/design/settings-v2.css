@@ -1,0 +1,78 @@
+/* settings-v2: the settings window over the chat, layered on dozo.css and chat-v2.css
+   (surfaces, ink steps, buttons, fields, switch and scrim come from there). */
+:root{
+  --nav-on:color-mix(in srgb,var(--text) 8%,transparent);
+  --nav-hover:color-mix(in srgb,var(--text) 4%,transparent);
+  --card:color-mix(in srgb,var(--text) 3%,transparent);         /* a settings group */
+  --lift:color-mix(in srgb,var(--text) 14%,var(--surface-1));   /* chosen segment */
+}
+.behind{position:fixed;inset:0;width:1440px;height:900px;border:0}
+.sheet{display:flex;width:900px;height:700px;border-radius:14px;background:var(--surface-1);overflow:hidden;transform:scale(.96);transition:transform .2s var(--out)}
+.scrim.open .sheet{transform:none}
+.sheet button:focus-visible,.sheet select:focus-visible{outline:2px solid var(--ink-3);outline-offset:2px}
+
+.snav{width:200px;flex:none;padding:14px 12px 16px;overflow:auto}
+.nlab{font-size:12px;line-height:16px;color:var(--ink-3);padding:14px 10px 6px}
+.nlab:first-child{padding-top:6px}
+.snav [role=group]{display:flex;flex-direction:column;gap:2px}
+.nrow{display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border-radius:8px;font-size:13.5px;line-height:18px;text-align:left}
+.nrow svg{width:16px;height:16px;color:var(--ink-2)}
+.nrow:hover{background:var(--nav-hover)}
+.nrow[aria-current=page]{background:var(--nav-on)}.nrow[aria-current=page] svg{color:var(--ink-1)}
+
+.spane{position:relative;flex:1;min-width:0;display:flex;flex-direction:column}
+.shead{padding:26px 64px 10px 34px}
+.shead h2{font-size:16px;line-height:22px;font-weight:500}
+.sdesc{font-size:13px;line-height:18px;color:var(--ink-2);margin-top:2px}
+.sx{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.sx:hover{background:var(--wash-strong);color:var(--ink-1)}
+.sbody{flex:1;min-height:0;overflow:auto;padding:6px 24px 28px;scrollbar-width:thin;scrollbar-color:var(--wash-strong) transparent}
+.pane.enter{animation:pane-in .18s var(--out)}
+@keyframes pane-in{from{opacity:0;transform:translateY(4px)}}
+
+.sgroup+.sgroup{margin-top:20px}
+.glab{font-size:12px;line-height:16px;color:var(--ink-3);padding:0 10px 8px}
+.gcard{border-radius:14px;background:var(--card);padding:4px;display:flex;flex-direction:column;gap:2px}
+.gcard.pad{padding:8px 4px}
+.srow{display:flex;align-items:center;gap:16px;width:100%;min-height:52px;padding:8px 12px 8px 12px;border-radius:10px;text-align:left}
+.st{flex:1;min-width:0;display:flex;flex-direction:column}
+.st b{font-weight:400;font-size:14px;line-height:20px}
+.st span{font-size:12.5px;line-height:17px;color:var(--ink-2)}
+.sc{display:flex;align-items:center;gap:8px;flex:none}
+.srow.edit{gap:12px}.srow.tight{min-height:40px}.sfield{flex:1;height:32px}
+.danger-row b{color:var(--danger-text)}
+.danger-row:hover{background:var(--wash)}
+.val{font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+.seg{display:flex;gap:2px;height:28px;padding:2px;border-radius:999px;background:var(--wash)}
+.seg button{height:24px;padding:0 11px;border-radius:999px;font-size:13px;color:var(--ink-2);transition:background-color .15s var(--out),color .15s var(--out)}
+.seg button:hover{color:var(--ink-1)}
+.seg button[aria-checked=true]{background:var(--lift);color:var(--ink-1)}
+.sel{position:relative;display:inline-flex}
+.sel select{appearance:none;height:28px;max-width:200px;padding:0 28px 0 12px;border:0;border-radius:999px;background:var(--wash);color:var(--ink-1);font:inherit;font-size:13px;cursor:pointer;outline:0}
+.sel select:hover{background:var(--wash-strong)}
+.sel svg{position:absolute;right:10px;top:9px;width:10px;height:10px;color:var(--ink-2);pointer-events:none}
+.sheet .sw[aria-checked=true]{background:var(--ink-1)}
+.sheet .sw[aria-checked=true]::after{background:var(--surface-1)}
+.rm{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink-2);opacity:0}
+.rm svg{width:14px;height:14px}
+.rm:hover{background:var(--wash);color:var(--ink-1)}
+.srow:hover .rm,.srow:focus-within .rm{opacity:1}
+.addrow{margin-top:14px;padding-left:4px}
+
+.urow{display:grid;grid-template-columns:96px 1fr 44px 128px;align-items:center;gap:14px;min-height:40px;padding:0 12px}
+.urow b{font-weight:400;font-size:14px}
+.bar{height:6px;border-radius:3px;background:var(--wash-strong);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--ink-2)}
+.pct{font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.rs{font-size:12.5px;color:var(--ink-2)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stats div{border-radius:14px;background:var(--card);padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.stats span{font-size:12.5px;color:var(--ink-2)}.stats b{font-size:20px;line-height:28px;font-weight:500;font-variant-numeric:tabular-nums}
+.utab{width:100%;border-collapse:collapse;font-size:13.5px;line-height:20px}
+.utab th{text-align:left;font-weight:500;color:var(--ink-2);padding:10px 12px 6px}
+.utab td{padding:7px 12px;font-variant-numeric:tabular-nums}
+.utab tr:last-child td{padding-bottom:10px}
+.utab th:not(:first-child),.utab td:not(:first-child){text-align:right}
+
+@media (prefers-reduced-motion:reduce){.sheet,.seg button{transition:none}.pane.enter{animation:none}}
