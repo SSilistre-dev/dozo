@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Adds the fork's own dependencies (dozo/deps/mobile.json) to a staged tree: the importer's
+// Adds one list of the fork's own dependencies (dozo/deps/*.json) to a staged tree: the importer's
 // package.json gets them and pnpm writes the staged lockfile, so every frozen install that follows
 // (the unit gate, the images, the iOS build) installs them. The working tree is never touched.
 // The new lockfile must hold every upstream entry unchanged; the only additions allowed are the
