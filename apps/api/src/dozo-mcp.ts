@@ -1,5 +1,5 @@
-import type { RouterClient as OrpcRouterClient } from "@orpc/server";
-import { createRouterClient, ORPCError, onError } from "@orpc/server";
+import { randomUUID } from "node:crypto";
+import { ORPCError } from "@orpc/server";
 import type { DozoMcpOperations, DozoMcpSendResult } from "@rakazo/adapters";
 import {
   DOZO_MCP_CHAT_MAX_CHARS,
@@ -7,17 +7,17 @@ import {
   handleDozoMcpRequest,
 } from "@rakazo/adapters";
 import type { Actor, ProductEvent } from "@rakazo/contracts";
-import { ClientError, deadlineSignal } from "@rakazo/core";
+import { ClientError, deadlineSignal, dozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, requireMembership, runAsTenant } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { runAsTenant } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
+import type { DozoBotApiClient, DozoBotApiDeps } from "./dozo-bot-api.js";
+import { dozoBotApiDeps } from "./dozo-bot-api.js";
 import { exportChat } from "./dozo-chat-export.js";
-import { blockMarkdown } from "./dozo-chat-markdown.js";
-import type { DozoTokenGrant, DozoTokenVerifier } from "./dozo-token-grant.js";
+import { messageBody } from "./dozo-chat-markdown.js";
 import { requestBodyLimit } from "./request-body-limit.js";
 import type { createRouter } from "./router.js";
-import { handleRpcError } from "./rpc-errors.js";
 import { throttleKey, windowCounter } from "./window-counter.js";
 
 export const DOZO_MCP_PATH = "/api/v1/dozo/mcp";
@@ -38,13 +38,9 @@ const SENDS_PER_TOKEN_PER_MINUTE = 30;
 const REFUSED_PER_ADDRESS_PER_MINUTE = 20;
 const MAX_LOCKED_ADDRESSES = 10_000;
 
-type Router = ReturnType<typeof createRouter>;
-type RouterClient = OrpcRouterClient<Router>;
-
-export type DozoMcpDeps = {
+/** The Bot API's token check and in-process client, which this endpoint shares. */
+export type DozoMcpDeps = Pick<DozoBotApiDeps, "authenticate" | "connect" | "touch"> & {
   prisma: PrismaClient;
-  router: Router;
-  verify: DozoTokenVerifier;
   /** The origin clients reach the API at, as the web app's own proxy serves it. */
   publicOrigin: string;
   trustedOrigin: (origin: string) => boolean;
@@ -52,6 +48,16 @@ export type DozoMcpDeps = {
   version: string;
   now?: () => number;
 };
+
+/** The production dependencies: the Bot API's tokens and the app's own procedures. */
+export function dozoMcpDeps(
+  prisma: PrismaClient,
+  router: ReturnType<typeof createRouter>,
+  options: Omit<DozoMcpDeps, "authenticate" | "connect" | "touch" | "prisma">,
+): DozoMcpDeps {
+  const { authenticate, connect, touch } = dozoBotApiDeps(prisma, router);
+  return { authenticate, connect, touch, prisma, ...options };
+}
 
 /**
  * The MCP endpoint, for outside clients acting with one person's access token. It is an OAuth
@@ -91,54 +97,36 @@ export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
     const origin = c.req.header("origin");
     if (origin && !deps.trustedOrigin(origin)) return jsonRpcError(c, 403, "Origin not allowed");
     const address = throttleKey(deps.clientIp(c));
-    const token = /^Bearer\s+(\S+)\s*$/i.exec(c.req.header("authorization") ?? "")?.[1];
-    if (!token) return c.json({ error: "unauthorized" }, 401, { "WWW-Authenticate": challenge() });
+    const authorization = c.req.header("authorization");
+    if (!authorization?.trim())
+      return c.json({ error: "unauthorized" }, 401, { "WWW-Authenticate": challenge() });
     // An address that keeps presenting refused tokens waits a minute before any is looked up.
     if (locked(address)) return tooMany(c);
-    const grant = await deps.verify(token);
-    const owner = grant && (await tokenOwner(deps.prisma, grant));
-    if (!grant || !owner) {
+    const caller = await deps.authenticate(authorization);
+    if (!caller) {
       if (refused(address) >= REFUSED_PER_ADDRESS_PER_MINUTE) lock(address);
       return c.json({ error: "invalid_token" }, 401, {
         "WWW-Authenticate": challenge(', error="invalid_token"'),
       });
     }
-    if (requests(`token:${grant.id}`) > REQUESTS_PER_MINUTE) return tooMany(c);
-    const signal = c.req.raw.signal;
-    const client = createRouterClient(deps.router, {
-      context: {
-        actor: owner,
-        signal,
-        // A token revoked, or an owner removed from the Space, while a send waits ends the wait.
-        stillAuthorized: async () => {
-          const current = await deps.verify(token);
-          return current?.id === grant.id && Boolean(await tokenOwner(deps.prisma, current));
-        },
-      },
-      interceptors: [onError((error, { path }) => handleRpcError(error, path, signal))],
+    const { tokenId, actor } = caller;
+    if (requests(`token:${tokenId}`) > REQUESTS_PER_MINUTE) return tooMany(c);
+    void bestEffort("mcp token last used", deps.touch(tokenId));
+    const client = deps.connect({
+      actor,
+      signal: c.req.raw.signal,
+      // A token revoked, or its owner deactivated, while a send waits ends the wait.
+      stillAuthorized: async () => (await deps.authenticate(authorization))?.tokenId === tokenId,
     });
-    const operations = dozoMcpOperations(deps.prisma, owner, grant.botId, client, (botId) => {
+    const operations = dozoMcpOperations(deps.prisma, actor, caller.botId, client, (botId) => {
       if (
         sends(`bot:${botId}`) > SENDS_PER_BOT_PER_MINUTE ||
-        sends(`token:${grant.id}`) > SENDS_PER_TOKEN_PER_MINUTE
+        sends(`token:${tokenId}`) > SENDS_PER_TOKEN_PER_MINUTE
       )
         throw new ClientError("TOO_MANY_REQUESTS", "Too many messages to this bot. Wait a minute.");
     });
-    getLogger().info("dozo.mcp.request", { "token.id": grant.id, "user.id": owner.userId });
+    getLogger().info("dozo.mcp.request", { "token.id": tokenId, "user.id": actor.userId });
     return handleDozoMcpRequest(c.req.raw, operations, { version: deps.version });
-  });
-}
-
-/** The token's owner, still a member of its Space and still allowed to use the account. */
-async function tokenOwner(prisma: PrismaClient, grant: DozoTokenGrant): Promise<Actor | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: grant.userId },
-    select: { id: true, email: true, deactivatedAt: true },
-  });
-  if (!user || user.deactivatedAt) return null;
-  return requireMembership(prisma, user, grant.spaceId).catch((error: unknown) => {
-    if (error instanceof IsolationError) return null;
-    throw error;
   });
 }
 
@@ -151,7 +139,7 @@ export function dozoMcpOperations(
   prisma: PrismaClient,
   actor: Actor,
   onlyBotId: string | null,
-  client: RouterClient,
+  client: DozoBotApiClient,
   countSend: (botId: string) => void,
 ): DozoMcpOperations {
   // Bots are rows of the owner's Space: read them as the owner, as the app's procedures do.
@@ -182,7 +170,12 @@ export function dozoMcpOperations(
       asOwner(async () => {
         await ownBot(botId);
         countSend(botId);
-        const sent = await client.threads.send({ botId, text }, { signal });
+        // The token mark: the run this message starts or reaches asks before any outside effect,
+        // and nothing it names is taken as the owner's own word (dozo-token-run.ts).
+        const sent = await client.threads.send(
+          { botId, text, clientNonce: dozoTokenNonce(randomUUID()) },
+          { signal },
+        );
         const outcome = await runOutcome(client, botId, sent, signal);
         if (outcome !== "completed") return { status: outcome };
         return reply(client, botId, sent.runId);
@@ -203,7 +196,7 @@ type WaitOutcome = "completed" | "working" | "waiting_for_you" | "failed";
  * an approval is answered in the app, so the call returns at once rather than hold the client.
  */
 async function runOutcome(
-  client: RouterClient,
+  client: DozoBotApiClient,
   botId: string,
   sent: { runId: string; seq: number },
   signal: AbortSignal,
@@ -245,14 +238,14 @@ function eventOutcome(event: ProductEvent, runId: string): WaitOutcome | undefin
  * newest page is read: a run that wrote more than a page loses its start here, not in the chat.
  */
 async function reply(
-  client: RouterClient,
+  client: DozoBotApiClient,
   botId: string,
   runId: string,
 ): Promise<DozoMcpSendResult> {
   const page = await client.threads.messages({ botId });
   const text = page.messages
     .filter((message) => message.role === "bot" && message.runId === runId)
-    .flatMap((message) => message.blocks.flatMap((block) => blockMarkdown(block) ?? []))
+    .flatMap((message) => messageBody(message) ?? [])
     .join("\n\n");
   const truncated = text.length > DOZO_MCP_REPLY_MAX_CHARS;
   return {

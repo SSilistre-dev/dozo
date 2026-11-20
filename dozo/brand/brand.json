@@ -6653,6 +6653,33 @@
       "reason": "bot API: /api/v1/dozo answers a personal access token, never a cookie, by calling the app's own procedures as its member"
     },
     {
+      "file": "apps/api/src/app.ts",
+      "find": "import { dozoBotApiDeps, mountDozoBotApi } from \"./dozo-bot-api.js\";\n\n/**",
+      "replace": "import { dozoBotApiDeps, mountDozoBotApi } from \"./dozo-bot-api.js\";\nimport { dozoMcpDeps, mountDozoMcp } from \"./dozo-mcp.js\";\n\n/**",
+      "requires": [
+        "apps/api/src/dozo-mcp.ts"
+      ],
+      "reason": "MCP endpoint: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  mountDozoBotApi(app, dozoBotApiDeps(prisma, router));\n  if (env.inboundEmail) {\n",
+      "replace": "  mountDozoBotApi(app, dozoBotApiDeps(prisma, router));\n  mountDozoMcp(\n    app,\n    dozoMcpDeps(prisma, router, {\n      publicOrigin: env.authUrl,\n      trustedOrigin: (origin) => isTrustedOrigin(origin, env),\n      clientIp: requestClientIp,\n      version: env.gitSha ?? \"dev\",\n    }),\n  );\n  if (env.inboundEmail) {\n",
+      "requires": [
+        "apps/api/src/dozo-mcp.ts"
+      ],
+      "reason": "MCP endpoint: /api/v1/dozo/mcp answers outside MCP clients with the bot API's personal access tokens and its token gate"
+    },
+    {
+      "file": "apps/api/src/sessionless-routes.ts",
+      "find": "from configuration\",\n  \"GET /.well-known/assetlinks.json\":",
+      "replace": "from configuration\",\n  \"GET /.well-known/oauth-protected-resource/api/v1/dozo/mcp\":\n    \"public: the MCP endpoint's address and how a token is sent, from configuration; no database\",\n  \"GET /.well-known/assetlinks.json\":",
+      "requires": [
+        "apps/api/src/dozo-mcp.ts"
+      ],
+      "reason": "MCP endpoint: its RFC 9728 metadata answers without credentials, as the protocol requires"
+    },
+    {
       "file": "apps/api/src/security-audit.ts",
       "find": "kind: \"webhook\", fields: [\"botId\"] },\n  \"voice.connect\":",
       "replace": "kind: \"webhook\", fields: [\"botId\"] },\n  \"dozoAccessTokens.create\": { type: \"credential.created\", kind: \"access_token\", fields: [\"botId\"] },\n  \"dozoAccessTokens.revoke\": { type: \"credential.deleted\", kind: \"access_token\", fields: [\"id\"] },\n  \"voice.connect\":",

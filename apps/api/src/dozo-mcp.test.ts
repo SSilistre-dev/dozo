@@ -1,64 +1,63 @@
 import { ORPCError } from "@orpc/server";
 import type { DozoMcpOperations, DozoMcpOptions } from "@rakazo/adapters";
 import type { Actor, ProductEvent, ThreadMessage } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, isDozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { currentDbContext } from "@rakazo/db";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DozoTokenCaller } from "./dozo-access-tokens.js";
+import type { DozoBotApiContext } from "./dozo-bot-api.js";
 import type { DozoMcpDeps } from "./dozo-mcp.js";
 import {
   DOZO_MCP_MAX_BODY_BYTES,
   DOZO_MCP_METADATA_PATH,
   DOZO_MCP_PATH,
+  dozoMcpDeps,
   dozoMcpOperations,
   mountDozoMcp,
 } from "./dozo-mcp.js";
-import type { DozoTokenGrant } from "./dozo-token-grant.js";
 
 const spies = vi.hoisted(() => ({
   handle: vi.fn(),
-  createClient: vi.fn(),
   exportChat: vi.fn(),
+  botApiDeps: vi.fn(),
 }));
 vi.mock("@rakazo/adapters", () => ({
   handleDozoMcpRequest: spies.handle,
   DOZO_MCP_CHAT_MAX_CHARS: 64_000,
   DOZO_MCP_REPLY_MAX_CHARS: 12,
 }));
-vi.mock("@orpc/server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@orpc/server")>()),
-  createRouterClient: spies.createClient,
-}));
-vi.mock("./rpc-errors.js", () => ({ handleRpcError: vi.fn() }));
 vi.mock("./dozo-chat-export.js", () => ({ exportChat: spies.exportChat }));
+vi.mock("./dozo-bot-api.js", () => ({ dozoBotApiDeps: spies.botApiDeps }));
 
 const ORIGIN = "https://app.dozo.test";
-const grant: DozoTokenGrant = { id: "tok-1", userId: "user-1", spaceId: "space-1", botId: null };
 const actor: Actor = {
   userId: "user-1",
   spaceId: "space-1",
   email: "user@example.test",
   isDeploymentOwner: false,
 };
+const caller: DozoTokenCaller = { tokenId: "tok-1", actor, botId: null };
 
-const findUser = vi.fn();
-const findMember = vi.fn();
 const findBot = vi.fn();
 const findBots = vi.fn();
-const prisma = {
-  user: { findUnique: findUser },
-  spaceMember: { findFirst: findMember },
-  bot: { findFirst: findBot, findMany: findBots },
-} as unknown as PrismaClient;
+const prisma = { bot: { findFirst: findBot, findMany: findBots } } as unknown as PrismaClient;
 
 let clock = 0;
-function app(verify = vi.fn(async (token: string) => (token === "good" ? grant : null))) {
+function app(
+  authenticate = vi.fn(async (authorization: string | undefined) =>
+    authorization === "Bearer good" ? caller : null,
+  ),
+) {
   const hono = new Hono();
+  const connect = vi.fn((_context: DozoBotApiContext) => ({}) as never);
+  const touch = vi.fn(async () => undefined);
   const deps: DozoMcpDeps = {
     prisma,
-    router: {} as DozoMcpDeps["router"],
-    verify,
+    authenticate,
+    connect,
+    touch,
     publicOrigin: ORIGIN,
     trustedOrigin: (origin) => origin === ORIGIN,
     clientIp: (c) => c.req.header("x-test-ip") ?? "203.0.113.7",
@@ -66,7 +65,7 @@ function app(verify = vi.fn(async (token: string) => (token === "good" ? grant :
     now: () => clock,
   };
   mountDozoMcp(hono, deps);
-  return { hono, verify };
+  return { hono, authenticate, connect, touch };
 }
 
 const post = (headers: Record<string, string> = {}, body = '{"jsonrpc":"2.0"}') =>
@@ -80,13 +79,30 @@ const bearer = (token = "good") => ({ authorization: `Bearer ${token}` });
 beforeEach(() => {
   vi.clearAllMocks();
   clock = 0;
-  findUser.mockResolvedValue({ id: "user-1", email: "user@example.test", deactivatedAt: null });
-  findMember.mockResolvedValue({ spaceId: "space-1" });
   spies.handle.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
-  spies.createClient.mockReturnValue({});
 });
 
 describe("the MCP endpoint's HTTP layer", () => {
+  it("shares the Bot API's token check, in-process client and last-used mark", () => {
+    const shared = { authenticate: vi.fn(), connect: vi.fn(), touch: vi.fn(), runStatus: vi.fn() };
+    spies.botApiDeps.mockReturnValue(shared);
+    const router = {} as Parameters<typeof dozoMcpDeps>[1];
+    const options = {
+      publicOrigin: ORIGIN,
+      trustedOrigin: () => true,
+      clientIp: () => undefined,
+      version: "v",
+    };
+    expect(dozoMcpDeps(prisma, router, options)).toEqual({
+      authenticate: shared.authenticate,
+      connect: shared.connect,
+      touch: shared.touch,
+      prisma,
+      ...options,
+    });
+    expect(spies.botApiDeps).toHaveBeenCalledWith(prisma, router);
+  });
+
   it("publishes its protected resource metadata: its address and the header the token goes in", async () => {
     const response = await app().hono.request(DOZO_MCP_METADATA_PATH);
     expect(response.status).toBe(200);
@@ -97,18 +113,18 @@ describe("the MCP endpoint's HTTP layer", () => {
   });
 
   it("challenges a request without a token with where to learn how to get one", async () => {
-    const { hono, verify } = app();
+    const { hono, authenticate } = app();
     const response = await hono.request(post());
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBe(
       `Bearer resource_metadata="${ORIGIN}${DOZO_MCP_METADATA_PATH}"`,
     );
-    expect(verify).not.toHaveBeenCalled();
+    expect(authenticate).not.toHaveBeenCalled();
     expect(spies.handle).not.toHaveBeenCalled();
   });
 
   it("refuses a token the store does not know, and stops looking up an address that keeps guessing", async () => {
-    const { hono, verify } = app();
+    const { hono, authenticate } = app();
     const statuses: number[] = [];
     for (let attempt = 0; attempt < 21; attempt++) {
       const response = await hono.request(post(bearer("guess")));
@@ -119,7 +135,7 @@ describe("the MCP endpoint's HTTP layer", () => {
     expect(statuses.slice(0, 20).every((status) => status === 401)).toBe(true);
     expect(statuses[20]).toBe(429);
     // The locked address's last attempt was not looked up, even with a real token.
-    expect(verify).toHaveBeenCalledTimes(20);
+    expect(authenticate).toHaveBeenCalledTimes(20);
     expect((await hono.request(post(bearer()))).status).toBe(429);
     // Another address is not slowed, and the window ends.
     expect(
@@ -127,22 +143,6 @@ describe("the MCP endpoint's HTTP layer", () => {
     ).toBe(401);
     clock += 60_000;
     expect((await hono.request(post(bearer("guess")))).status).toBe(401);
-  });
-
-  it("refuses a token whose owner left its Space or was deactivated", async () => {
-    const { hono } = app();
-    findMember.mockResolvedValueOnce(null);
-    expect((await hono.request(post(bearer()))).status).toBe(401);
-    findUser.mockResolvedValueOnce({ ...actor, id: "user-1", deactivatedAt: new Date() });
-    expect((await hono.request(post(bearer()))).status).toBe(401);
-    findUser.mockResolvedValueOnce(null);
-    expect((await hono.request(post(bearer()))).status).toBe(401);
-    expect(spies.handle).not.toHaveBeenCalled();
-  });
-
-  it("fails as the server's error, not a refused token, when the membership cannot be read", async () => {
-    findMember.mockRejectedValueOnce(new Error("database unavailable"));
-    expect((await app().hono.request(post(bearer()))).status).toBe(500);
   });
 
   it("refuses a web page from another site, and lets the app's own and non-browser clients in", async () => {
@@ -170,22 +170,17 @@ describe("the MCP endpoint's HTTP layer", () => {
     expect(limited.headers.get("retry-after")).toBe("60");
   });
 
-  it("acts as the token's owner and ends a wait when the token is revoked", async () => {
-    const verify = vi.fn(async (token: string) => (token === "good" ? grant : null));
-    const { hono } = app(verify);
+  it("acts as the token's member, marks the token used, and ends a wait when the token is revoked", async () => {
+    const { hono, authenticate, connect, touch } = app();
     expect(await (await hono.request(post(bearer()))).json()).toEqual({ ok: true });
     const [request, , options] = spies.handle.mock.calls[0] as [Request, unknown, DozoMcpOptions];
     expect(request.method).toBe("POST");
     expect(options).toEqual({ version: "abc123" });
-    const [, clientOptions] = spies.createClient.mock.calls[0] ?? [];
-    const { context } = clientOptions as {
-      context: { actor: Actor; stillAuthorized: () => Promise<boolean> };
-    };
+    expect(touch).toHaveBeenCalledWith("tok-1");
+    const context = connect.mock.calls[0]?.[0] as DozoBotApiContext;
     expect(context.actor).toEqual(actor);
     await expect(context.stillAuthorized()).resolves.toBe(true);
-    verify.mockResolvedValueOnce(null);
-    await expect(context.stillAuthorized()).resolves.toBe(false);
-    findMember.mockResolvedValueOnce(null);
+    authenticate.mockResolvedValueOnce(null);
     await expect(context.stillAuthorized()).resolves.toBe(false);
   });
 
@@ -307,7 +302,15 @@ describe("what a token's owner may do", () => {
     const result = await operations(client, countSend).sendMessage("bot-1", "hi", signal);
     expect(result).toEqual({ status: "replied", reply: "Hello\n\nthere", truncated: false });
     expect(countSend).toHaveBeenCalledWith("bot-1");
-    expect(client.threads.send).toHaveBeenCalledWith({ botId: "bot-1", text: "hi" }, { signal });
+    expect(client.threads.send).toHaveBeenCalledWith(
+      { botId: "bot-1", text: "hi", clientNonce: expect.any(String) },
+      { signal },
+    );
+    // The token mark the run's gate reads: never the owner's own word, asked before outside effects.
+    const [{ clientNonce }] = client.threads.send.mock.calls[0] as unknown as [
+      { clientNonce: string },
+    ];
+    expect(isDozoTokenNonce(clientNonce)).toBe(true);
     expect(client.threads.subscribe).toHaveBeenCalledWith(
       { botId: "bot-1", cursor: 4 },
       { signal: expect.any(AbortSignal) },

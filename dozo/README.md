@@ -451,14 +451,15 @@ chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the
 token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
 session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
 a newer client falls back to those. Per API instance: 120 requests a minute per token, 10 messages
-a minute per bot, 20 refused tokens a minute per address; bodies up to 64 KiB.
+a minute per bot and 30 per token, 20 refused tokens a minute per address; bodies up to 64 KiB.
+
+A message sent over MCP carries the token mark, so the Bot API's token gate holds its run: it asks
+in the app before any outside effect, whatever the approval mode, and nothing it names is taken as
+the owner's own word.
 
 On the server on your own computer, point a local client at
 `http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
 the app window opens.
-
-Not yet: the endpoint is mounted with the access tokens, which the Bot API adds; until then the
-server does not answer it.
 
 ## Status and known limits
 
