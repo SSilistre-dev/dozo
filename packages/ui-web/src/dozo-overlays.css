@@ -20,7 +20,11 @@
 ) {
   border-radius: 16px;
   background: var(--dozo-menu);
-  box-shadow: inset 0 0 0 0.5px var(--dozo-menu-edge);
+  box-shadow: none;
+  /* An outline, not an inset shadow: it is drawn over the content, so a popover whose own
+     content fills it edge to edge (the model picker) keeps its edge. */
+  outline: 1px solid var(--dozo-menu-edge);
+  outline-offset: -1px;
 }
 :is(
   [data-slot="dropdown-menu-content"],
@@ -46,10 +50,20 @@
 ) {
   min-height: 32px;
   gap: 8px;
-  padding-inline: 10px;
   border-radius: 10px;
   font-size: 14px;
   line-height: 18px;
+}
+/* Plain items and submenu triggers get the design's 10px sides. Items with a tick or a dot
+   (checkbox, radio, select) keep upstream's sides, which leave the tick its room, and an inset
+   item keeps its indent. */
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"]
+):not([data-inset]) {
+  padding-inline: 10px;
 }
 :is(
   [data-slot="dropdown-menu-item"],
@@ -147,11 +161,16 @@
 
 /* ---- Dialogs ---------------------------------------------------------------------------- */
 
-/* One tonal sheet, 14px round, no ring or shadow; the footer is part of it, buttons at the end. */
-:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+/* One tonal sheet, 14px round, no ring or shadow; the footer is part of it, buttons at the end.
+   Only a dialog that keeps the default corners and surface (rounded-xl, bg-dialog; upstream's
+   class merge drops them when a dialog sets its own) changes: a full-screen one (the plan wall,
+   a peer conversation) or one with its own corners stays as upstream drew it. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]).rounded-xl {
   border-radius: 14px;
-  background: var(--dozo-dialog);
   box-shadow: none;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]).bg-dialog {
+  background: var(--dozo-dialog);
 }
 :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"]) {
   backdrop-filter: none;
@@ -278,7 +297,9 @@
   width: min(900px, calc(100% - 2rem));
   max-width: min(900px, calc(100% - 2rem));
   height: min(700px, calc(100% - 2rem));
+  border-radius: 14px;
   background: var(--dozo-surface-1);
+  box-shadow: none;
 }
 [data-testid="settings-nav"] {
   gap: 2px;
@@ -318,14 +339,15 @@
   color: var(--foreground);
 }
 [data-testid="settings-header"] {
-  padding: 26px 64px 10px 34px;
+  padding-block: 26px 10px;
+  padding-inline: 34px 64px;
   border: 0;
 }
 /* The close button sits in the sheet's corner. */
 [data-testid="settings-header"] > :last-child {
   position: absolute;
   top: 12px;
-  right: 12px;
+  inset-inline-end: 12px;
 }
 [data-testid="settings-header"] [data-slot="dialog-title"],
 [data-slot="dialog-content"]:has([data-testid="integration-categories"])
@@ -379,7 +401,9 @@
 /* The same sheet as settings: the thread's tone, a quiet search field, chips that wash. */
 [data-slot="dialog-content"]:has([data-testid="integration-categories"]) {
   max-width: min(900px, calc(100% - 2rem));
+  border-radius: 14px;
   background: var(--dozo-surface-1);
+  box-shadow: none;
 }
 [data-slot="dialog-content"]:has([data-testid="integration-categories"]) [data-slot="input"] {
   height: 36px;
@@ -408,4 +432,51 @@
   ) {
   background: var(--dozo-wash-strong);
   color: var(--foreground);
+}
+
+/* ---- Focus and errors ------------------------------------------------------------------- */
+
+/* The quiet controls above drop upstream's rings, so keyboard focus gets a clear ring of its own
+   (the second ink, at least 3:1 against every surface here) on everything focusable in a dialog,
+   the settings and Integrations windows and a popover. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"])
+  :is(
+    button,
+    a[href],
+    input,
+    textarea,
+    select,
+    [role="switch"],
+    [role="button"],
+    [role="tab"],
+    [tabindex]:not([tabindex="-1"])
+  ):focus-visible {
+  outline: 2px solid var(--dozo-focus);
+  outline-offset: 2px;
+}
+/* A menu item reached by keyboard: a stronger wash and an inner ring, not just the hover wash. */
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="select-item"]
+):focus-visible {
+  background: var(--dozo-wash-strong);
+  box-shadow: inset 0 0 0 1.5px var(--dozo-focus);
+}
+/* A field the app marks invalid shows it in the destructive colour, whatever its quiet look. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"],
+    [data-slot="native-select"],
+    [data-slot="input-group"]
+  ):is([aria-invalid="true"], :has([aria-invalid="true"])) {
+  box-shadow: inset 0 0 0 1.5px var(--destructive);
 }

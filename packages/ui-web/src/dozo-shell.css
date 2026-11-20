@@ -49,6 +49,8 @@
     color-mix(in srgb, var(--foreground) 14%, var(--background))
   );
   --dozo-danger-text: color-mix(in srgb, var(--dozo-seal) 70%, var(--foreground));
+  /* Keyboard focus: the second ink, at least 3:1 against every floating surface. */
+  --dozo-focus: var(--muted-foreground);
   /* Motion of the design: drawers and the reveal of controls. */
   --dozo-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --dozo-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -269,8 +271,8 @@
 [data-testid="bots-sidebar"] [data-roster-bot-id] > .dozo-avatar[data-state="working"]::after {
   content: "";
   position: absolute;
-  right: 1px;
-  bottom: 1px;
+  inset-inline-end: 1px;
+  inset-block-end: 1px;
   width: 10px;
   height: 10px;
   border-radius: 50%;

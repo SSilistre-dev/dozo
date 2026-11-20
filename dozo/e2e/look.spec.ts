@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
-import { gotoStable, openAccountMenu, openBot, openUserSettings } from "./ui";
+import { gotoStable, openAccountMenu, openBot, openBotSettings, openUserSettings } from "./ui";
 
 // The Dozo look on the screens the design mockups cover (dozo/design, the chat window from
 // chat-v2.html), in both themes. Each check
@@ -225,7 +225,9 @@ test("menus share one surface and a destructive item is a red word", async ({ pa
   const account = await openAccountMenu(page);
   await expect(account).toHaveCSS("border-radius", "16px");
   await expect(account).toHaveCSS("background-color", popover);
-  expect(await account.evaluate((el) => getComputedStyle(el).boxShadow)).toContain("inset");
+  // The edge is an outline, drawn over the content; the separator is a half-pixel line.
+  await expect(account).toHaveCSS("outline-style", "solid");
+  await expect(account.locator("> .border-t").first()).toHaveCSS("border-top-width", "0.5px");
   await page.keyboard.press("Escape");
 
   await page.locator(`${ROW}[aria-current="page"]`).click({ button: "right" });
@@ -241,6 +243,21 @@ test("menus share one surface and a destructive item is a red word", async ({ pa
   await expect(
     menu.locator('[data-slot="context-menu-item"] > svg:first-child').first(),
   ).toBeHidden();
+  await page.keyboard.press("Escape");
+
+  // Reached by keyboard, an item gets a stronger wash and an inner ring, not just the hover wash.
+  await page.locator(`${ROW}[aria-current="page"]`).click({ button: "right" });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  const keyed = await page.evaluate(() => {
+    const el = document.activeElement as HTMLElement;
+    const cs = getComputedStyle(el);
+    return { slot: el.dataset.slot ?? "", bg: cs.backgroundColor, ring: cs.boxShadow };
+  });
+  expect(keyed.slot).toMatch(/^context-menu-(item|sub-trigger)$/);
+  expect(keyed.bg).toBe(await tokenColor(page, "--dozo-wash-strong"));
+  expect(keyed.ring).toContain("inset");
 
   // The delete confirmation: one tonal sheet, footer without a line; cancelled, nothing deleted.
   await remove.click();
@@ -252,8 +269,119 @@ test("menus share one surface and a destructive item is a red word", async ({ pa
     "border-top-width",
     "0px",
   );
+  // The destructive button is the red word (a check on the computed colour, not on a class).
+  const confirm = dialog.locator('[data-slot="alert-dialog-action"]').last();
+  await expect(confirm).toHaveCSS("color", await tokenColor(page, "--dozo-danger-text"));
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
+  // Cancelled: the bot is still there.
+  await expect(page.locator(`${ROW}[data-roster-bot-id="${readWorld().chiefId}"]`)).toHaveCount(1);
+  expect(
+    (await rpc<{ id: string }[]>(page, "bots/list", {})).some(
+      (bot) => bot.id === readWorld().chiefId,
+    ),
+  ).toBe(true);
+});
+
+/** Tabs until the focused element matches `selector`, at most 40 stops. */
+async function tabTo(page: Page, selector: string) {
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press("Tab");
+    if (await page.evaluate((sel) => document.activeElement?.matches(sel) ?? false, selector)) {
+      return;
+    }
+  }
+  throw new Error(`no focus stop matches ${selector}`);
+}
+
+test("keyboard focus and errors stay visible in the quiet controls", async ({ page }) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  const settings = await openUserSettings(page);
+  const focusRing = async () =>
+    page.evaluate(() => {
+      const cs = getComputedStyle(document.activeElement as HTMLElement);
+      return `${cs.outlineStyle} ${cs.outlineWidth}`;
+    });
+  // A field (the language picker) and a button (Edit), reached with Tab.
+  await tabTo(page, '[data-slot="select-trigger"]');
+  expect(await focusRing()).toBe("solid 2px");
+  await tabTo(page, '[data-slot="switch"]');
+  expect(await focusRing()).toBe("solid 2px");
+
+  // A field the app marks invalid is drawn in the destructive colour.
+  await settings.getByRole("button", { name: "Edit" }).first().click();
+  const field = settings.locator('[data-slot="input"]').first();
+  await expect(field).toBeVisible();
+  await field.evaluate((el) => el.setAttribute("aria-invalid", "true"));
+  expect(await field.evaluate((el) => getComputedStyle(el).boxShadow)).toContain(
+    await tokenColor(page, "--destructive"),
+  );
+  await page.keyboard.press("Escape");
+});
+
+test("a selected option keeps the room upstream leaves for its tick", async ({ page }) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  const settings = await openUserSettings(page);
+  await settings.locator('[data-slot="select-trigger"]').first().click();
+  const item = page.locator('[data-slot="select-item"][data-selected]').first();
+  await expect(item).toBeVisible();
+  await expect(item).toHaveCSS("padding-right", "32px");
+  const boxes = await item.evaluate((el) => {
+    const tick = el.querySelector("span.absolute")?.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(
+      el.querySelector("[data-slot='select-item-text'], span:not(.absolute)") ?? el,
+    );
+    const text = range.getBoundingClientRect();
+    return { textEnd: text.right, tickStart: tick?.left ?? Number.POSITIVE_INFINITY };
+  });
+  expect(boxes.textEnd).toBeLessThanOrEqual(boxes.tickStart);
+  await page.keyboard.press("Escape");
+});
+
+test("full-screen dialogs and ones with their own corners keep upstream's shape", async ({
+  page,
+}) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  // The classes upstream gives the plan wall, a peer conversation, and a dialog with its own
+  // corners, on a dialog element: none of them is turned into the 14px tonal sheet.
+  const shapes = await page.evaluate(() => {
+    const measure = (cls: string, slot = true) => {
+      const el = document.createElement("div");
+      if (slot) el.setAttribute("data-slot", "dialog-content");
+      el.className = cls;
+      document.body.append(el);
+      const cs = getComputedStyle(el);
+      const out = { radius: cs.borderTopLeftRadius, bg: cs.backgroundColor };
+      el.remove();
+      return out;
+    };
+    return {
+      wall: measure("fixed inset-0 h-dvh rounded-none bg-background p-0 ring-0"),
+      peer: measure("inset-0 flex h-full w-full rounded-none bg-background p-0 ring-0"),
+      own: measure("rounded-2xl bg-card"),
+      ownPlain: measure("rounded-2xl bg-card", false),
+      plain: measure("bg-background", false),
+    };
+  });
+  expect(shapes.wall).toEqual({ radius: "0px", bg: shapes.plain.bg });
+  expect(shapes.peer).toEqual({ radius: "0px", bg: shapes.plain.bg });
+  expect(shapes.own).toEqual(shapes.ownPlain);
+});
+
+test("a popover filled edge to edge keeps its edge (the model picker)", async ({ page }) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  await openBotSettings(page);
+  await page
+    .getByTestId("side-panel")
+    .getByRole("button", { name: /^Model/ })
+    .first()
+    .click();
+  const picker = page.locator('[data-slot="popover-content"]').last();
+  await expect(picker).toBeVisible();
+  await expect(picker).toHaveCSS("outline-style", "solid");
+  await expect(picker).toHaveCSS("outline-color", await tokenColor(page, "--dozo-menu-edge"));
+  await page.keyboard.press("Escape");
 });
 
 test.describe("signed out", () => {
