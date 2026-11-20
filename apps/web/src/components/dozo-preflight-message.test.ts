@@ -1,7 +1,7 @@
 import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
-import { beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "vitest";
 import { classifyModelConnectionFailure } from "../lib/model-connection-preflight";
 import { preflightMessage } from "./dozo-preflight-message";
 
@@ -9,6 +9,8 @@ beforeEach(() => {
   i18n.load({ en: {}, tr: tr as Messages });
   i18n.activate("tr");
 });
+// Shared workers keep the module state between files: leave the next file in English.
+afterEach(() => i18n.activate("en"));
 
 /** What the model server probe answers a fake key, as the RPC client throws it. */
 const probeRefused = Object.assign(
