@@ -1,10 +1,12 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import {
   builtinAgentTools,
+  CLOUD_COMPUTER_TOOL_NAMES,
   connectedPluginsInstruction,
   diskNoteInstruction,
   formatRecalledMemory,
   historyWithRecall,
+  noCloudComputerInstruction,
   PiAgentRuntime,
   runIdentityInstruction,
   runReplyGuidance,
@@ -19,7 +21,7 @@ import { measureCalls } from "./measurement.js";
  * endpoint is fake. The fake counts tokens from the request body it is sent and models a prefix
  * cache, so the numbers move when what Dozo sends changes, and never with the network.
  */
-const BENCH_VERSION = "dozo-token-bench-v7";
+const BENCH_VERSION = "dozo-token-bench-v8";
 
 /** The fake model's rules, stored with every result so a baseline says what it measured. */
 const FAKE_PROVIDER = {
@@ -82,6 +84,8 @@ export type BenchTask = {
   turns: BenchTurn[];
   /** Deterministic tool output by tool name and arguments. */
   toolResult?: (name: string, args: Record<string, unknown>) => unknown;
+  /** "none": the plan has no computer hours, so the run is sent without the computer's tools. */
+  computer?: "none";
 };
 
 /** The parts of a request the input tokens are split into. */
@@ -243,6 +247,8 @@ export function benchInstructions(
   disk?: BenchTurn["disk"],
   /** Whether the history carries recalled memory (the bench has no compacted summaries). */
   historicalContext = false,
+  /** The run has no computer: the tools it was offered, for the guidance that replaces it. */
+  noComputer?: ReadonlySet<string>,
 ) {
   return userTurnInstructions({
     botInstructions: runIdentityInstruction(
@@ -255,13 +261,16 @@ export function benchInstructions(
     redactedScratchpadContext: undefined,
     hasHistoricalContext: historicalContext,
     historyRetrievalEnabled: true,
-    computerInstruction: disk
-      ? (diskNoteInstruction({
-          diskUsedBytes: BigInt(Math.round(disk.usedGb * 1e9)),
-          diskFreeBytes: BigInt(Math.round(disk.freeGb * 1e9)),
-        }) ?? "")
-      : "",
-    pageBrowserAllowed: true,
+    computerInstruction: noComputer
+      ? noCloudComputerInstruction({ userComputer: undefined, offered: noComputer })
+      : disk
+        ? (diskNoteInstruction({
+            diskUsedBytes: BigInt(Math.round(disk.usedGb * 1e9)),
+            diskFreeBytes: BigInt(Math.round(disk.freeGb * 1e9)),
+          }) ?? "")
+        : "",
+    pageBrowserAllowed: !noComputer,
+    disabledBuiltinTools: noComputer ? CLOUD_COMPUTER_TOOL_NAMES : undefined,
     workspaceInstruction: "",
     agentEnvironmentInstruction: undefined,
     botDirectory: undefined,
@@ -299,7 +308,11 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
   const script = task.turns.flatMap((turn) => turn.replies);
   const runtime = new PiAgentRuntime({ modelFetch: fakeModelFetch(script, calls) });
   const history: AgentRunRequest["history"] = [...(task.history ?? [])];
-  const tools = builtinAgentTools;
+  const tools =
+    task.computer === "none"
+      ? builtinAgentTools.filter((tool) => !CLOUD_COMPUTER_TOOL_NAMES.has(tool.name))
+      : builtinAgentTools;
+  const noComputer = task.computer === "none" ? new Set(tools.map((tool) => tool.name)) : undefined;
   for (const [index, turn] of task.turns.entries()) {
     const recalled = turn.recalled?.length
       ? [
@@ -315,6 +328,7 @@ export async function runBenchTask(task: BenchTask, pricing?: EvalPricing) {
       records,
       turn.disk,
       recalled.length > 0,
+      noComputer,
     );
     let answer = "";
     for await (const event of runtime.run(
