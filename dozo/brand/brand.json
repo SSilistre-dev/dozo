@@ -5537,6 +5537,15 @@
       "reason": "daily sends: the test's fake database answers the fork's send counter with a first count, as Postgres would, so upstream's approval tests see upstream's plan"
     },
     {
+      "file": "apps/web/src/components/ApprovalRulesSettings.test.tsx",
+      "find": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nconst rpcMock = vi.hoisted(() => ({\n",
+      "replace": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-send-limit-row\", () => ({ DozoSendLimitRow: () => null }));\n\nconst rpcMock = vi.hoisted(() => ({\n",
+      "requires": [
+        "apps/web/src/components/dozo-send-limit-row.tsx"
+      ],
+      "reason": "daily sends: the row that reads the server is mocked out, as the test mocks upstream's server reads; it has its own dozo-send-limit-row test"
+    },
+    {
       "file": "packages/contracts/src/rpc.ts",
       "find": "from \"./agent-import-setup.js\";\nimport { AiConsentQuerySchema",
       "replace": "from \"./agent-import-setup.js\";\nexport * from \"./dozo-command-rules.js\";\nimport { dozoCommandRulesContract } from \"./dozo-command-rules.js\";\nimport { AiConsentQuerySchema",
