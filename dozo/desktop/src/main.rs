@@ -3,6 +3,9 @@
 // A release build on Windows opens no console window beside the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod device;
+mod device_run;
+mod device_socket;
 #[cfg(target_os = "macos")]
 mod frames;
 #[cfg(target_os = "linux")]
@@ -15,11 +18,11 @@ use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
 use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::webview::{NewWindowResponse, PermissionResponse};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::webview::{NewWindowResponse, PageLoadEvent, PermissionResponse};
 use tauri::{
-    AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
-    window::Color,
+    AppHandle, Manager, RunEvent, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent, Wry, window::Color,
 };
 
 /// The server the user chose. Only its origin loads in the window.
@@ -47,6 +50,7 @@ fn set_server(app: AppHandle, address: String) -> Result<String, String> {
         .and_then(|()| fs::write(&file, server.as_str()))
         .map_err(|error| format!("Could not save the address: {error}"))?;
     *app.state::<Server>().0.lock().unwrap() = Some(server.clone());
+    device::select(&app, Some(server.clone()));
     Ok(server.into())
 }
 
@@ -128,6 +132,14 @@ fn reload(window: WebviewWindow) {
     });
 }
 
+/// "Let Bots Use This Computer", checked while this computer is allowed for the chosen server.
+fn device_item(app: &AppHandle) -> tauri::Result<CheckMenuItem<Wry>> {
+    let label = device::words(sys_locale::get_locale().as_deref()).menu;
+    let item = CheckMenuItem::with_id(app, device::MENU_ID, label, true, false, None::<&str>)?;
+    app.manage(device::Item(item.clone()));
+    Ok(item)
+}
+
 #[cfg(target_os = "macos")]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let separator = || PredefinedMenuItem::separator(app);
@@ -148,6 +160,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                         true,
                         Some("Cmd+,"),
                     )?,
+                    &device_item(app)?,
                     &separator()?,
                     &PredefinedMenuItem::services(app, None)?,
                     &separator()?,
@@ -209,6 +222,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             true,
             &[
                 &MenuItem::with_id(app, "change-server", "Change Server…", true, Some("Ctrl+,"))?,
+                &device_item(app)?,
                 &MenuItem::with_id(app, "reload", "Reload", true, Some("Ctrl+R"))?,
                 &PredefinedMenuItem::separator(app)?,
                 &PredefinedMenuItem::quit(app, None)?,
@@ -251,6 +265,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(update::Pending::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
@@ -266,6 +281,7 @@ fn main() {
                 "change-server" => show_local(&window, "?change"),
                 "reload" => reload(window),
                 update::MENU_ID => update::install(app),
+                device::MENU_ID => device::clicked(app),
                 _ => {}
             }
         })
@@ -275,7 +291,9 @@ fn main() {
             let saved = fs::read_to_string(server_file(&app)?)
                 .ok()
                 .and_then(|address| parse_server(&address).ok());
-            app.manage(Server(Mutex::new(saved)));
+            app.manage(Server(Mutex::new(saved.clone())));
+            app.manage(device::Access::new(&app)?);
+            device::select(&app, saved);
             update::watch(app.clone(), offer_update);
 
             let window =
@@ -300,7 +318,25 @@ fn main() {
                     .on_download(|_, _| true)
                     // Camera, microphone and the like: the web view grants them unless told otherwise.
                     .on_permission_request(|_, _| PermissionResponse::Deny)
+                    // A page of the server loaded, as after signing in again: pair if allowed.
+                    .on_page_load(|window, payload| {
+                        let app = window.app_handle();
+                        let server = chosen(app).map(|server| server.origin());
+                        if payload.event() == PageLoadEvent::Finished
+                            && server == Some(payload.url().origin())
+                        {
+                            device::wake(app);
+                        }
+                    })
                     .build()?;
+            window.on_window_event({
+                let app = app.clone();
+                move |event| {
+                    if let WindowEvent::Focused(true) = event {
+                        device::wake(&app);
+                    }
+                }
+            });
             // Only macOS and Linux need the gate: the Windows web view asks the navigation hook
             // about the window's own page alone, so frames load there as they do in a browser.
             #[cfg(target_os = "macos")]
@@ -313,6 +349,12 @@ fn main() {
             let _ = window;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("the app failed to start");
+        .build(tauri::generate_context!())
+        .expect("the app failed to start")
+        .run(|app, event| {
+            // Commands a bot started on this computer end with the app.
+            if let RunEvent::Exit = event {
+                device::quit(app);
+            }
+        });
 }
