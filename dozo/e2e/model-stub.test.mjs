@@ -168,6 +168,15 @@ test("plan: a tool the request offers is called; its result ends with TOOL_DONE"
   assert.equal(plan({ messages: [{ role: "user", content: "hi" }] }).text.length > 0, true);
 });
 
+test("plan: [e2e-table] is answered with a markdown table, anything else with the canned reply", async () => {
+  const { plan, TABLE } = await import("./model-stub.mjs");
+  assert.deepEqual(plan({ messages: [{ role: "user", content: "Show it [e2e-table]" }] }), {
+    text: TABLE,
+  });
+  assert.match(TABLE, /^\| .+ \|\n\| --- \| --- \|/);
+  assert.notEqual(plan({ messages: [{ role: "user", content: "a table" }] }).text, TABLE);
+});
+
 test("streams a tool call as chunks that end with finish_reason tool_calls", async () => {
   const response = await fetch(`${base}/v1/chat/completions`, {
     method: "POST",

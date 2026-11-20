@@ -3,11 +3,12 @@
    with #menu1 for a submenu): one open at a time, arrow keys, Home/End, Esc, click outside. */
 addEventListener('DOMContentLoaded',()=>{
   const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
-  const app=$('#app'),pill=$('#pill'),q=location.search.includes('theme=light')?'?theme=light':'';
+  const app=$('#app'),pill=$('#pill'),q=dozoQuery();
   const g=$('#sg2 g');
   if(g&&typeof pat==='string')g.innerHTML=pat; // seigaiha scales from dozo.js
   const remeasure=()=>dispatchEvent(new Event('resize')); // dozo.js tracks avatar positions
 
+  $('#apps').href='apps-v2.html'+q;
   /* bot panel */
   const set=closed=>{app.classList.toggle('closed',closed);pill.setAttribute('aria-expanded',String(!closed))};
   if(new URLSearchParams(location.search).get('panel')==='closed'){ // no slide on load
@@ -45,7 +46,7 @@ addEventListener('DOMContentLoaded',()=>{
   const BOTS=$$('.list .row').map(r=>({name:$('.txt b',r).textContent,id:$('.bot',r).dataset.bot,row:r}));
   const nav=u=>()=>{location.href=u};
   const MENUS={
-    account:()=>[{head:['Maya Chen','maya@example.com']},['Usage',{meta:'24% used',act:nav('settings-v2.html'+(q?q+'&':'?')+'section=usage')}],['Settings',{act:nav('settings-v2.html'+q)}],['Skills'],['Artifacts'],'-',['Invite friends'],'-',['Log out']],
+    account:()=>[{head:['Maya Chen','maya@example.com']},['Usage',{meta:'24% used',act:nav('settings-v2.html'+dozoQuery({section:'usage'}))}],['Settings',{act:nav('settings-v2.html'+q)}],['Skills'],['Artifacts'],'-',['Invite friends'],'-',['Log out']],
     row:b=>[['Pin'],['Move to',{sub:()=>[['Unassigned',{tick:1}],'-',['New section']]}],[b.row.classList.contains('unread')?'Mark as Read':'Mark as Unread'],
       ['Snooze',{sub:()=>[['1 hour'],['3 hours'],['Tomorrow',{meta:'09:00'}],['Next week',{meta:'Mon 09:00'}]]}],'-',['Edit Profile'],['Duplicate'],'-',['Clear conversation'],['Archive'],['Delete',{danger:1,act:()=>openDlg('dlg-del',b.name)}]],
     create:()=>[{search:['To:','Search']},['New bot',{act:()=>openDlg('dlg-new'),keep:'new bot'}],['New group chat'],['New private space',{title:'Private workspace with its own bots and groups.'}],'-',...BOTS.map(b=>[b.name,{bot:b.id}])],

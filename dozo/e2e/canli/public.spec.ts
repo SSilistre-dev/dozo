@@ -24,7 +24,11 @@ test("soğuk açılış: /sign-in ilk içerik", async ({ page }) => {
 
 test("yanlış parola: Türkçe hata iletisi", async ({ page, guard }) => {
   guard.allow(/401 POST [^ ]*\/api\/auth\/sign-in\/email/, "the wrong password is the point");
-  await page.goto("/sign-in?lang=tr");
+  // Wait for the heading first: a stalled load is then reported with the requests that never
+  // finished, and the choice button below is looked for on a drawn page.
+  await openAndSee(page, "/sign-in?lang=tr", (shown) =>
+    shown.getByRole("heading", { name: "Dozo'da oturum açın" }),
+  );
   const choice = page.getByRole("button", { name: "E-posta ile devam et" });
   if (await choice.isVisible()) await choice.click();
   const id = Math.random().toString(36).slice(2, 10);

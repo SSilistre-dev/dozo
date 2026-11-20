@@ -6,12 +6,15 @@
 // Tool calls: when the newest user message holds `[e2e-tool:<name> <args>]` and the request
 // offers a tool of that name, the answer is that one tool call; once the newest message is the
 // tool's result, the answer is TOOL_DONE. A tool the request does not offer is said so in text.
+// `[e2e-table]` asks for a reply that is a markdown table (TABLE).
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const MODEL = "dozo-e2e-model";
 const REPLY = "Hello from the offline Dozo test model.";
 export const TOOL_DONE = "The offline test model saw the tool finish.";
+// `[e2e-table]` in the newest user message: a reply with a markdown table, for the look spec.
+export const TABLE = "| Topic | Open |\n| --- | --- |\n| Billing | 3 |\n| Export | 2 |";
 // Arguments as JSON, or as `b64:<base64 JSON>` so the message does not name what they hold (a
 // site the owner names in their own words counts as one they asked for, and is not asked about).
 const TOOL_ASK = /\[e2e-tool:([a-z_]+)(?:\s+(\{[^\]]*\}|b64:[A-Za-z0-9+/=]+))?\]/;
@@ -35,7 +38,7 @@ export function plan(body) {
   if (newest?.role === "tool") return { text: TOOL_DONE };
   const user = [...messages].reverse().find((message) => message?.role === "user");
   const ask = TOOL_ASK.exec(textOf(user));
-  if (!ask) return { text: REPLY };
+  if (!ask) return { text: textOf(user).includes("[e2e-table]") ? TABLE : REPLY };
   const [, name, raw = "{}"] = ask;
   const args = raw.startsWith("b64:") ? Buffer.from(raw.slice(4), "base64").toString("utf8") : raw;
   const names = (Array.isArray(body?.tools) ? body.tools : []).map(

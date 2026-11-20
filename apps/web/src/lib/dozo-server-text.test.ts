@@ -7,6 +7,7 @@ import {
   knownServerText,
   NO_COMPUTER_HOURS,
   planLimitCopy,
+  SERVER_SENTENCE_PREFIXES,
   SERVER_SENTENCES,
   SIGN_IN_LABELS,
   serverErrorText,
@@ -52,6 +53,21 @@ it("has a Turkish line for every sentence it knows", () => {
     (sentence) => knownServerText(sentence) === sentence,
   );
   expect(untranslated).toEqual([]);
+});
+
+it("says a refusal that names files in the UI's language, keeping the names", () => {
+  expect(knownServerText(refused("Files over 12 MB can't move: videos/big.mp4, a.iso"))).toBe(
+    "12 MB'tan büyük dosyalar taşınamaz: videos/big.mp4, a.iso",
+  );
+  expect(knownServerText("Something else: a.iso")).toBeNull();
+  const untranslated = [...SERVER_SENTENCE_PREFIXES].filter(
+    (prefix) => knownServerText(`${prefix}: x`) === `${prefix}: x`,
+  );
+  expect(untranslated).toEqual([]);
+  i18n.activate("en");
+  expect(knownServerText("Files over 12 MB can't move: a.iso")).toBe(
+    "Files over 12 MB can't move: a.iso",
+  );
 });
 
 it("puts other server English behind the caller's copy, only where the UI is not English", () => {

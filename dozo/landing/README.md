@@ -31,14 +31,14 @@ To add a language: copy `tr/` to `<code>/` and translate it, add its `hreflang` 
 link to every page (the legal pages too), and copy the two `/tr/` locations and the two `tr` lines of the language cookie in `dozo/deploy/site.nginx.conf`. The test
 names whatever is missing. `og.png` carries English words and is shared by every language.
 
+The site is `dozo.bot` and the app `app.dozo.bot`. A domain change touches `og:url`, `og:image`,
+the calls to action, every page's `canonical` and `hreflang` links, `dozo/e2e/landing-pages.test.mjs`
+and the site links in `dozo/brand/brand.json` and the `dozo-*` files that name it (`git grep`).
+
 Closed pre-release state, to undo at launch:
 
 - `robots.txt` disallows everything, the page has `<meta name="robots" content="noindex">` and the
   server sends `X-Robots-Tag: noindex` (`dozo/deploy/site.nginx.conf`). Remove all three.
-- `og:url` and `og:image` and the call to action point at the pre-release addresses
-  (`dozo-site.ssilistre.dev`, `dozo.ssilistre.dev/sign-in` and `/sign-up`). Swap in the real domain, also in the
-  legal pages' `canonical` and `hreflang` links, in `dozo/e2e/landing-pages.test.mjs` and in the two
-  legal-link rules in `dozo/brand/brand.json`.
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
