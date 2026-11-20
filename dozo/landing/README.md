@@ -41,10 +41,18 @@ The site is `dozo.bot` and the app `app.dozo.bot`. A domain change touches `og:u
 the calls to action, every page's `canonical` and `hreflang` links, `dozo/e2e/landing-pages.test.mjs`
 and the site links in `dozo/brand/brand.json` and the `dozo-*` files that name it (`git grep`).
 
-Closed pre-release state, to undo at launch:
+Search and answer engines: the site is open to them. `robots.txt` allows every crawler, names the
+AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages with
+their `hreflang` alternates. The legal pages stay `noindex` (plain boilerplate with no search value;
+crawlers still follow their links) and are not in the sitemap, like the 404 pages. `llms.txt` is a
+short factual summary for answer engines: its prices are held to the page by the test. Each home
+page carries one JSON-LD block (Organization, WebSite, SoftwareApplication with the page's prices).
+It is a data block, so the CSP's `script-src 'self'` does not apply to it. No FAQ or rating markup:
+the page has neither. `www.dozo.bot` redirects permanently to `dozo.bot` in `site.nginx.conf`. A
+fixed `canonical` on every page covers `?theme=` and `?lang=` addresses.
 
-- `robots.txt` disallows everything, the page has `<meta name="robots" content="noindex">` and the
-  server sends `X-Robots-Tag: noindex` (`dozo/deploy/site.nginx.conf`). Remove all three.
+Closed pre-release state (lifted):
+
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
 - The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
