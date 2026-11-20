@@ -2,7 +2,7 @@ import type { PoolCooldownReason } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 
 /**
- * The fork's model pool tables (migration `20261231120000_dozo_model_pool`): which of a person's
+ * The fork's model pool tables (migration `20261231130000_dozo_model_pool`): which of a person's
  * connections are pooled, and until when one that ran out rests. Every read and write is scoped to
  * the connection's owner, so row security and the composite key agree.
  */
