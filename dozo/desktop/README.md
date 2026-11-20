@@ -253,7 +253,10 @@ Windows, where nothing has run yet.
   Only while the chosen server is the one on this computer, and only that origin's
   `/dozo/hosted-login`, `/sign-in` and `/sign-up` load in the window (`src/server.rs`,
   `SIGN_IN_PATHS`); every other page of it, and a sign-in with another site (Google), goes to the
-  browser as before. A server that already has accounts of its own refuses to start in that mode.
+  browser as before, so such a sign-in cannot finish in the app. A move inside the hosted web app
+  that loads no new page (its own routing) is not a navigation and stays in the window; those
+  pages, like the server's, can call nothing in the app. A server that already has accounts of
+  its own refuses to start in that mode.
 - Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
 - Not here yet: updating the installed server, backups and going back (the folder is laid out
   for them). An installed version is kept: a newer app finds it and does not install the newer
