@@ -51,10 +51,12 @@ A verifier is `base64url(SHA-256(token))`, the token taken as its ASCII text.
 
 ### Pairing link
 
-The QR code holds the link `rakazo://dozo-pair#<offer>`, `<offer>` being the offer text above. The
-phone's own camera opens it in the app, which needs no camera permission of its own. The offer sits
+The QR code holds the link `dozo://pair#<offer>`, `<offer>` being the offer text above. The
+phone's own camera opens it in the app, which needs no camera permission of its own. The scheme is
+the fork's own, so an upstream app on the same phone cannot take the link. The app also reads
+`rakazo://dozo-pair#<offer>`, which desktop 0.3.0 writes; nothing writes it any more. The offer sits
 in the fragment, which no browser or server receives, so it never reaches a log or a referrer. A
-link can come from anywhere. The app therefore acts only on this exact link and only once per
+link can come from anywhere. The app therefore acts only on these exact links and only once per
 link, parses the offer, and asks the user once whether to connect, sending nothing before that
 answer. The question names the relay when it is not the app's own, and names the server the user
 would be signed out of. The offer text alone, pasted by hand, goes through the same question.

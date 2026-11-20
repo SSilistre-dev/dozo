@@ -392,11 +392,12 @@ export function encodeRelayPairingOffer(offer: RelayPairingOffer) {
 }
 
 /**
- * What the QR code holds: a link the phone's camera opens in the app. The offer travels after `#`,
- * which no browser or server receives, so it never lands in a log or a referrer.
+ * What the QR code holds: a link the phone's camera opens in the app, on the fork's own scheme so an
+ * upstream app on the same phone never claims it. The offer travels after `#`, which no browser or
+ * server receives, so it never lands in a log or a referrer.
  */
 export function relayPairingLink(offerText: string) {
-  return `rakazo://dozo-pair#${offerText}`;
+  return `dozo://pair#${offerText}`;
 }
 
 /** Throws on a malformed or expired offer. */

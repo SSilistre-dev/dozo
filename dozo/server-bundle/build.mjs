@@ -32,7 +32,7 @@ const TRIM = [
 // The bundle's version is upstream's with this revision after it: a change to what the fork adds
 // (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
 // Raise it with every such change; the release tag is server-v<version>.
-const REVISION = 2;
+const REVISION = 3;
 const AGENT = "dozo-relay-agent.mjs";
 const BACKUP = "dozo-local-backup.mjs";
 
