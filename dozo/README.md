@@ -69,9 +69,16 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
 
 - **Free** (tier `standard`): permanent, no card, no trial. Bots run on the member's own model
   connection. No hosted computer: the server refuses to start one, and a computer on the member's
-  own machine still works. A bot still answers; a run that reaches for the computer fails and
-  offers the paid plans. A new organization starts here, and one whose subscription ends returns
-  here.
+  own machine still works. A bot still answers. A run is not offered the tools that need the
+  hosted computer and is told it has none, so it works with web lookups and connected apps and,
+  when a task truly needs a computer, says the member can connect their own from the desktop app or
+  upgrade (`packages/adapters/src/dozo-no-computer.ts`). The same holds for a paid plan whose hours
+  for the period are spent, and for an overdue payment, where the bot names the payment instead.
+  It is decided once at the start of the run, with the allowance the computer's start checks, read
+  alongside the run's other setup; if that read fails the run keeps its computer. A turn paused in
+  computer mode, for a takeover or after using the computer keeps it; a message with files from a
+  run without it is refused plainly. A server that does not bill never withholds the computer. A
+  new organization starts here, and one whose subscription ends returns here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
 
@@ -184,7 +191,8 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   `packages/contracts/src/dozo-plan-limits.ts`, in English and Turkish only (the fork's sentences
   have no catalog). Every failure shown through `errorText` gets its sentence; the upgrade action
   is wired in the composer, the computer screen and mobile's failed-send alert. Only a member who
-  manages billing is offered it.
+  manages billing is offered it. The run error's Details, shown to admins only on the web, give a
+  limit's code (`computer_not_in_plan`, ...) instead of the server's English sentence.
 - When a subscription and a higher grant coexist, the billing status reports the granted tier, so
   the plan picker marks that tier as current while the subscription bills the lower one.
 - While a server has a free plan, a computer's saved home is never deleted for an ended plan

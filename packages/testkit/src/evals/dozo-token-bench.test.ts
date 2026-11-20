@@ -172,6 +172,16 @@ describe("token benchmark", () => {
     expect(b!.components.toolResults).toBe(c!.components.toolResults);
   });
 
+  it("sends a run without a computer fewer tool tokens", async () => {
+    const byId = (id: string) => TOKEN_BENCH_TASKS.find((task) => task.id === id)!;
+    const [withComputer, without] = await Promise.all([
+      runBenchTask(byId("chat-3-turns")),
+      runBenchTask(byId("chat-3-turns-no-computer")),
+    ]);
+    expect(without.components.tools).toBeLessThan(withComputer.components.tools);
+    expect(without.modelCalls).toBe(withComputer.modelCalls);
+  });
+
   it("gives the same numbers on a second run", async () => {
     const first = await runTokenBench(TOKEN_BENCH_TASKS);
     const second = await runTokenBench(TOKEN_BENCH_TASKS);
