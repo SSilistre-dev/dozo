@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   readModelPool,
+  readModelPoolMembers,
   recordModelConnectionCooldown,
   setModelPoolMember,
 } from "./dozo-model-pool-store.js";
@@ -67,6 +68,32 @@ describe("readModelPool", () => {
     ).toBe(rows);
     expect(db.$queryRaw.mock.calls[0]?.slice(1)).toEqual([
       "model-1",
+      "user-1",
+      ["connection-a", "connection-b"],
+    ]);
+  });
+});
+
+describe("readModelPoolMembers", () => {
+  it("asks nothing for no connections", async () => {
+    const db = fakeDb();
+    expect(
+      await readModelPoolMembers(db as never, { userId: "user-1", credentialIds: [] }),
+    ).toEqual([]);
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("reads the given connections with a rest of any model", async () => {
+    const rows = [{ credentialId: "connection-a", resetsAt: new Date("2026-11-20T13:00:00Z") }];
+    const db = fakeDb({ query: rows });
+    expect(
+      await readModelPoolMembers(db as never, {
+        userId: "user-1",
+        credentialIds: ["connection-a", "connection-b"],
+      }),
+    ).toBe(rows);
+    expect(db.$queryRaw.mock.calls[0]?.[0].join("?")).not.toContain('"modelId" IN');
+    expect(db.$queryRaw.mock.calls[0]?.slice(1)).toEqual([
       "user-1",
       ["connection-a", "connection-b"],
     ]);

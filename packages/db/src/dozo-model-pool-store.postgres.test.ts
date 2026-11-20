@@ -3,6 +3,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import {
   readModelPool,
+  readModelPoolMembers,
   recordModelConnectionCooldown,
   setModelPoolMember,
 } from "./dozo-model-pool-store.js";
@@ -140,6 +141,23 @@ describePostgres("the model pool store (PostgreSQL)", () => {
     expect(await read("model-2")).toEqual([
       { credentialId: id, resetsAt: new Date(now + 3 * HOUR) },
     ]);
+  });
+
+  it("shows settings the latest rest of any model, for the current key only", async () => {
+    const id = await connection();
+    const alone = await connection();
+    await me(() => setModelPoolMember(prisma, { userId, credentialId: id }, true));
+    const now = Date.now();
+    await rest(id, new Date(now), new Date(now + HOUR), null);
+    await rest(id, new Date(now), new Date(now + 3 * HOUR), "model-2");
+    const read = () =>
+      me(() => readModelPoolMembers(prisma, { userId, credentialIds: [id, alone] }));
+    expect(await read()).toEqual([{ credentialId: id, resetsAt: new Date(now + 3 * HOUR) }]);
+    expect(
+      await asUser(otherId)(() => readModelPoolMembers(prisma, { userId, credentialIds: [id] })),
+    ).toEqual([]);
+    await owner.userModelCredential.update({ where: { id }, data: { secretId: `new-${id}` } });
+    expect(await read()).toEqual([{ credentialId: id, resetsAt: null }]);
   });
 
   it("ends a rest when a new key is saved, not when the connection is renamed", async () => {
