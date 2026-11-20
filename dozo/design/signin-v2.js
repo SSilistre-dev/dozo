@@ -2,7 +2,7 @@
    In this mockup the code 000000 is wrong and every other code is right. */
 addEventListener('DOMContentLoaded',()=>{
   const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
-  const q=location.search.includes('theme=light')?'?theme=light':'';
+  const q=dozoQuery();
   const g=$('#sg3 g');if(g&&typeof pat==='string')g.innerHTML=pat; // seigaiha scales from dozo.js
   const digits=$$('.digit'),otp=$('#otp'),err=$('#err'),resend=$('#resend'),wait=$('#wait');
   let timer=0;
