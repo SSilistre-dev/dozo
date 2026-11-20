@@ -159,10 +159,12 @@ step("relay agent", () => {
     "--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
     `--outfile=${path.join(work, AGENT)}`,
   ]);
-  // It loads and answers: a fresh state folder has no channels.
+  // It loads and answers: a fresh state folder has no channels. By its real path, as the app
+  // runs it: the agent runs its command only when Node's path for it is the file it loaded
+  // (macOS's temporary folder is behind a link).
   const listed = execFileSync(
     "node",
-    [path.join(work, AGENT), "list", "--state", path.join(work, "agent-state")],
+    [fs.realpathSync(path.join(work, AGENT)), "list", "--state", path.join(work, "agent-state")],
     {
       encoding: "utf8",
     },
