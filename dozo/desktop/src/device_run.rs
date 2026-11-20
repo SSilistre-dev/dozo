@@ -188,7 +188,7 @@ impl Runner {
     }
 
     /// How many commands' processes are tracked.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub fn tracked(&self) -> usize {
         self.owned.lock().unwrap().len()
     }
