@@ -328,8 +328,11 @@ impl Local {
             PortError::WebTaken(port) => failed(Failure::WebPortTaken(port), "web port taken"),
             PortError::Io(error) => failed(Failure::Start, &format!("ports: {error}")),
         })?;
-        let plan = Plan::new(layout, &version, ports, &secrets, options)
+        let mut plan = Plan::new(layout, &version, ports, &secrets, options)
             .map_err(|why| failed(Failure::Start, &why))?;
+        plan.user = tokio::task::spawn_blocking(stack_setup::user_environment)
+            .await
+            .unwrap_or_default();
         self.run(&plan, layout, &launch)
             .await
             .map_err(|why| failed(Failure::Start, &why))?;
@@ -682,6 +685,8 @@ struct Plan {
     app_url: String,
     secrets: Vec<(String, String)>,
     hosted_login_issuer: Option<String>,
+    /// The person's home and login `PATH` (`stack_setup::user_environment`).
+    user: Vec<(&'static str, String)>,
 }
 
 impl Plan {
@@ -742,6 +747,7 @@ impl Plan {
                 .map(|key| ((*key).to_owned(), secrets.get(key).to_owned()))
                 .collect(),
             hosted_login_issuer: options.hosted_login_issuer.clone(),
+            user: Vec::new(),
         })
     }
 
@@ -899,6 +905,7 @@ impl Plan {
         if let Some(issuer) = &self.hosted_login_issuer {
             env.push(("HOSTED_LOGIN_ISSUER", issuer.clone()));
         }
+        env.extend(self.user.iter().cloned());
         env
     }
 
@@ -993,6 +1000,7 @@ mod tests {
             &version.join("node/bin/node"),
             &format!(
                 "case \"$1\" in relay.js) echo \"$*\" >> {s}.relay; {RELAY};; esac
+                case \"$1\" in api.js) echo \"$HOME|$HOST_USER_HOME|$HOST_USER_PATH\" > {s}.user;; esac
                 echo \"$1\" >> {s}; case \"$1\" in migrate.js) exit {migrate_exit};; esac; {LOOP}"
             ),
         );
@@ -1067,6 +1075,14 @@ mod tests {
         let mut rest = first[4..].to_vec();
         rest.sort();
         assert_eq!(rest, ["api.js", "web.js", "worker.js"]);
+        // The API runs in the server's own HOME and is told the person's.
+        let user = lines_of(&root.join("said.user")).join("");
+        let [home, user_home, user_path] = user.split('|').collect::<Vec<_>>()[..] else {
+            panic!("{user}");
+        };
+        assert_eq!(home, root.to_string_lossy());
+        assert_eq!(user_home, std::env::var("HOME").unwrap());
+        assert!(!user_path.is_empty());
         // The folder is held while it runs.
         assert!(
             stack_setup::lock(&root.join("stack.lock"))

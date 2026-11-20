@@ -167,6 +167,52 @@ pub fn saved_ports(file: &Path) -> Option<Ports> {
     })
 }
 
+/// The person's own home folder and their login shell's `PATH`, for the server's API and worker
+/// (`HOST_USER_HOME`, `HOST_USER_PATH`). The server runs with its own folder as `HOME` and only
+/// the app's `PATH`, which on macOS, opened from the Dock, lacks what the shell profile adds; a
+/// command-line model provider the person installed and signed in to needs both. Passed on only;
+/// nothing reads them yet.
+pub fn user_environment() -> Vec<(&'static str, String)> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
+    let path = std::env::var("SHELL")
+        .ok()
+        .filter(|_| cfg!(unix))
+        .and_then(|shell| login_path(Path::new(&shell)))
+        .or_else(|| std::env::var("PATH").ok());
+    [("HOST_USER_HOME", home), ("HOST_USER_PATH", path)]
+        .into_iter()
+        .filter_map(|(key, value)| Some((key, value.filter(|value| !value.is_empty())?)))
+        .collect()
+}
+
+/// `PATH` as the login shell sets it: what the shell prints after a marker, so a profile that
+/// prints something of its own does not matter. Gives up after 5 seconds.
+pub fn login_path(shell: &Path) -> Option<String> {
+    const MARK: &str = "__DOZO_PATH__";
+    let mut child = std::process::Command::new(shell)
+        .args(["-l", "-c", &format!("printf '\\n{MARK}%s' \"$PATH\"")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while child.try_wait().ok()?.is_none() {
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut out).ok()?;
+    let path = out.rsplit_once(MARK)?.1.trim();
+    (!path.is_empty()).then(|| path.to_owned())
+}
+
 /// Held for as long as the server runs from this folder, and by its processes too (they inherit
 /// it, `stack_os.rs`), so a second app cannot start one beside it or beside what is left of it.
 pub fn lock(file: &Path) -> io::Result<Option<File>> {
@@ -347,6 +393,30 @@ mod tests {
             "broken; with the system's libstdc++: broken"
         );
         assert!(carried.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_login_path_is_what_the_shell_prints_after_the_mark() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("login-path");
+        let shell = dir.join("shell");
+        let write = |body: &str| {
+            fs::write(&shell, format!("#!/bin/sh\n{body}\n")).unwrap();
+            fs::set_permissions(&shell, fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        // A profile that talks, then the shell's answer to the command it was given.
+        write("echo 'welcome back'; PATH=/opt/tools/bin:/usr/bin; eval \"$3\"");
+        assert_eq!(
+            login_path(&shell).as_deref(),
+            Some("/opt/tools/bin:/usr/bin")
+        );
+        write("exit 1");
+        assert_eq!(login_path(&shell), None);
+        write("sleep 30");
+        let started = std::time::Instant::now();
+        assert_eq!(login_path(&shell), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
     #[test]
