@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, realpathSync } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -464,5 +464,7 @@ export function localBackupProcess(
   });
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+// By real path: Node loads the module by its real path, and macOS's temporary folder (and any
+// folder reached through a link) is not.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href)
   process.exitCode = await localBackupProcess(process);
