@@ -86,7 +86,9 @@ jobs:
           name: branded-tree
           path: ${{ runner.temp }}
       - name: Unpack the tree
-        run: mkdir "$RUNNER_TEMP/tree" && tar -C "$RUNNER_TEMP/tree" -xzf "$RUNNER_TEMP/tree.tar.gz"
+        # Relative paths: GNU tar on Windows reads "D:" in an argument as a remote host.
+        working-directory: ${{ runner.temp }}
+        run: mkdir tree && tar -C tree -xzf tree.tar.gz
       # The pnpm version from package.json; the Node version is the one runtimes.json ships.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6

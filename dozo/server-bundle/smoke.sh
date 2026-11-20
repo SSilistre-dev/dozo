@@ -63,7 +63,8 @@ if [ "${1:-}" = --as-user ]; then
     | grep -E '^([^ ]*/)?node [^ ]*dist|^([^ ]*/)?postgres[ :]' || true)
   [ -z "$left" ] || { say "FAILED: still running after stop: $left"; rc=2; }
   [ $rc != 0 ] || say "error lines in the server logs: $(cat "$H"/logs/{api,worker,web}.log | grep -ciE '"level":"?(error|fatal)|"level":(50|60)' || true)"
-  cp -r "$H/logs/." /logs/ 2>/dev/null || true
+  # Readable by the host's user (Postgres writes its log 0600).
+  cp -r "$H/logs/." /logs/ 2>/dev/null && chmod -R a+rX /logs || true
   exit $rc
 fi
 

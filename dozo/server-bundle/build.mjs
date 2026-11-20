@@ -153,7 +153,10 @@ step("trim", () => {
     .readdirSync(path.join(work, "upstream"))
     .find((file) => file.endsWith(".tar.xz"));
   fs.mkdirSync(unpacked);
-  execFileSync("tar", ["-xJf", path.join(work, "upstream", upstreamArchive), "-C", unpacked]);
+  // Archive names relative to cwd: GNU tar on Windows reads "C:" in -f as a remote host.
+  execFileSync("tar", ["-xJf", path.join("upstream", upstreamArchive), "-C", unpacked], {
+    cwd: work,
+  });
   before = measure(unpacked);
   trimmed = trim(path.join(unpacked, "rakazo-server"));
   for (const [prefix] of TRIM) {
@@ -165,7 +168,8 @@ step("trim", () => {
   fs.mkdirSync(outDir, { recursive: true });
   fs.rmSync(archive, { force: true });
   // Threads with large blocks: about as small as upstream's single-threaded xz, three times faster.
-  execFileSync("tar", ["-cJf", archive, "-C", unpacked, "rakazo-server"], {
+  execFileSync("tar", ["-cJf", path.basename(archive), "-C", unpacked, "rakazo-server"], {
+    cwd: outDir,
     env: { ...process.env, XZ_OPT: "-6 -T0 --block-size=256MiB" },
   });
 });
