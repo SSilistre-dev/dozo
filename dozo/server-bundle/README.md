@@ -62,8 +62,11 @@ server archive holds `rakazo-server/`; its `manifest.json` names the four entryp
 
 Everything listens on 127.0.0.1. Secrets are random on first start and kept in a 0600 file in the
 user's app folder: the Postgres owner and app passwords, `BETTER_AUTH_SECRET`,
-`SCREEN_PROXY_SECRET`, `ENCRYPTION_KEY` and the single-account `RAKAZO_DESKTOP_STACK_TOKEN` (the
-first account created is the only one).
+`SCREEN_PROXY_SECRET`, `ENCRYPTION_KEY`, the single-account `RAKAZO_DESKTOP_STACK_TOKEN` (the
+first account created is the only one) and `DOZO_RELAY_AGENT_KEY` (64 hexadecimal digits, given
+to the API and to the relay agent, so the agent can ask for a paired phone's sign-in:
+`dozo/relay/agent/README.md`, Phone sign-in; the API takes it out of its environment once read, so
+its child processes never get it).
 
 1. On Linux, check that `libssl.so.3` exists: Prisma's migration engine loads the system OpenSSL 3.
    Without it, stop with a message that says to install `libssl3`.

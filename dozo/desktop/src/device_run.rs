@@ -338,7 +338,9 @@ impl Runner {
         reply: &Reply,
     ) {
         let cwd = match command.cwd.as_deref() {
-            None | Some("/home/rakazo" | "/home/user") => home.to_path_buf(),
+            // The server's own name for a computer's home (upstream's resolveExecuteCwd, as the
+            // staged build renames it): it means this bot's folder.
+            None | Some("/home/dozo" | "/home/user") => home.to_path_buf(),
             Some(cwd) => normalize(&home.join(cwd)),
         };
         if !inside(&cwd, home) && !inside(&cwd, &self.home) {
@@ -1050,6 +1052,17 @@ mod tests {
                 let refused = frames(&runner, execute(&["pwd"], json!({ "cwd": cwd }))).await;
                 assert_eq!(stdout_of(&refused), "");
                 assert_eq!(exit_of(&refused), Some(1));
+            }
+        }
+
+        #[tokio::test]
+        async fn the_servers_home_folder_is_the_bot_folder() {
+            let (runner, _dir) = provisioned().await;
+            let bot = frames(&runner, execute(&["pwd"], json!({}))).await;
+            for cwd in ["/home/dozo", "/home/user"] {
+                let named = frames(&runner, execute(&["pwd"], json!({ "cwd": cwd }))).await;
+                assert_eq!(exit_of(&named), Some(0), "{cwd}");
+                assert_eq!(stdout_of(&named), stdout_of(&bot), "{cwd}");
             }
         }
 

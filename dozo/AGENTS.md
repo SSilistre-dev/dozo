@@ -129,6 +129,10 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   reports a network differently. Correct way: a change to what the supervisor sends Docker or reads
   back is also run against the live host's Docker version in a throwaway `docker:<version>-dind`,
   through the upstream code that reads the result (here the egress probe), before the PR.
+- 2026-11-20, the desktop app (`dozo/desktop/src/device_run.rs`) copied upstream's `/home/rakazo` as
+  the server's name for a computer's home; files under `dozo/` are not branded, so it never became
+  `/home/dozo` and commands sent there were refused. Correct way: a fork file that repeats a value
+  the brand step renames writes the renamed value, and a test sends what the branded server sends.
 
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.
