@@ -6544,11 +6544,29 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
-      "replace": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Not signed in\"\nmsgstr \"Oturum açık değil\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
+      "replace": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Not signed in\"\nmsgstr \"Oturum açık değil\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Open sign-in page\"\nmsgstr \"Oturum açma sayfasını aç\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Add account\"\nmsgstr \"Hesap ekle\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Could not send the code\"\nmsgstr \"Kod gönderilemedi\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Could not cancel\"\nmsgstr \"İptal edilemedi\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Could not add the account\"\nmsgstr \"Hesap eklenemedi\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
       "requires": [
         "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
       ],
-      "reason": "CLI accounts: the Turkish copy of the settings row's status for a tool that is not signed in"
+      "reason": "CLI accounts: the Turkish copy of the settings row: a tool that is not signed in, adding another account through the tool's own sign-in, and what each action says when it fails"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/stream.ts",
+      "find": "import { modelStreamIdleTimeoutMs } from \"../../pi-runtime-limits.js\";\nimport type { ClaudeCodeProcess }",
+      "replace": "import { modelStreamIdleTimeoutMs } from \"../../pi-runtime-limits.js\";\nimport { noteCliEvent } from \"../dozo-cli-driver.js\";\nimport type { ClaudeCodeProcess }",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-driver.ts"
+      ],
+      "reason": "CLI accounts: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/stream.ts",
+      "find": "        if (!event) throw await exitError(child, \"before replying\");\n        if (event.type === \"system\") {",
+      "replace": "        if (!event) throw await exitError(child, \"before replying\");\n        noteCliEvent(event);\n        if (event.type === \"system\") {",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-driver.ts"
+      ],
+      "reason": "CLI accounts: a usage limit the CLI reports during an account's turn is kept for the error the turn ends with, so the model pool rests that account until the reset the CLI gave; outside an account's turn it does nothing"
     }
   ],
   "assets": {

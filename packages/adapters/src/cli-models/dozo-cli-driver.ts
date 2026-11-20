@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
-import { isAbsolute } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 import type {
   Api,
   AssistantMessageEventStream,
@@ -26,11 +27,20 @@ export interface CliModelDriver {
   /** The variable that points the tool at another home folder: one per account. */
   homeEnv: string;
   /** Arguments of the tool's own subcommands. */
-  args: { version: readonly string[]; status: readonly string[] };
+  args: {
+    version: readonly string[];
+    status: readonly string[];
+    login: readonly string[];
+    logout: readonly string[];
+  };
+  /** Hosts whose sign-in address the login command may print; nothing else is shown. */
+  loginHosts: readonly string[];
   /** The tool's whole environment from `source`, built from its own allowlist. */
   env(source: NodeJS.ProcessEnv): Record<string, string>;
   /** Whether the status command says it is signed in; undefined when its output is unclear. */
   signedIn(stdout: string): boolean | undefined;
+  /** A usage limit the account ran into, from one of the tool's headless events. */
+  usageLimit(event: Record<string, unknown>): CliUsageLimit | undefined;
   /** The catalog provider whose model ids the tool takes, for a new connection's default. */
   modelSource: string;
   /** The models a connection offers, described from the catalog. */
@@ -56,26 +66,36 @@ export interface LocalCliHost {
 export function localCliHost(env: NodeJS.ProcessEnv = process.env): LocalCliHost | undefined {
   const home = env.HOST_USER_HOME?.trim();
   if (!home || !isAbsolute(home)) return undefined;
-  const path = env.HOST_USER_PATH?.trim();
+  // Only absolute entries: a relative one would find a program by wherever the tool starts.
+  const path = env.HOST_USER_PATH?.split(delimiter)
+    .filter((entry) => isAbsolute(entry))
+    .join(delimiter);
   return { home, ...(path ? { path } : {}) };
 }
 
-/** Which of the tool's homes a connection uses: the person's own. */
-export type CliAccount = { kind: "home" };
+/** A usage limit the tool reported, with when it opens again (epoch ms) when it said. */
+export interface CliUsageLimit {
+  resetsAt?: number;
+}
+
+/** Which of the tool's homes a connection uses: the person's own, or one the server added. */
+export type CliAccount = { kind: "home" } | { kind: "added"; id: string };
 
 const ACCOUNT_REF_PREFIX = "dozo-cli-account:";
-const ACCOUNT_REF = /^dozo-cli-account:(home)$/;
+const ACCOUNT_REF = /^dozo-cli-account:(home|[0-9a-f]{32})$/;
 
 /**
  * What a connection stores in place of a key: which home it uses. Not a credential: the tool keeps
  * its own sign-in, which the server never reads.
  */
 export function cliAccountRef(account: CliAccount): string {
-  return `${ACCOUNT_REF_PREFIX}${account.kind}`;
+  return `${ACCOUNT_REF_PREFIX}${account.kind === "home" ? "home" : account.id}`;
 }
 
 export function parseCliAccountRef(value: string | undefined): CliAccount | undefined {
-  return value && ACCOUNT_REF.test(value) ? { kind: "home" } : undefined;
+  const id = value ? ACCOUNT_REF.exec(value)?.[1] : undefined;
+  if (!id) return undefined;
+  return id === "home" ? { kind: "home" } : { kind: "added", id };
 }
 
 /**
@@ -102,11 +122,25 @@ export function cliAccountOverrides(
   };
 }
 
-const accountScope = new AsyncLocalStorage<Record<string, string | undefined>>();
+/** One turn's account: the environment its tool starts with, and the limit it ran into. */
+export interface CliTurn {
+  driver: Pick<CliModelDriver, "usageLimit">;
+  overrides: Record<string, string | undefined>;
+  limit?: CliUsageLimit;
+}
 
-/** Runs `work` with every tool process it starts using the account's environment. */
-export function withCliAccount<T>(overrides: Record<string, string | undefined>, work: () => T): T {
-  return accountScope.run(overrides, work);
+const accountScope = new AsyncLocalStorage<CliTurn>();
+
+/** Runs `work` with every tool process it starts using the turn's account. */
+export function withCliAccount<T>(turn: CliTurn, work: () => T): T {
+  return accountScope.run(turn, work);
+}
+
+/** Keeps a usage limit the tool reports during the turn, for the error it ends with. */
+export function noteCliEvent(event: Record<string, unknown>): void {
+  const turn = accountScope.getStore();
+  const limit = turn?.driver.usageLimit(event);
+  if (turn && limit) turn.limit = limit;
 }
 
 /**
@@ -114,8 +148,8 @@ export function withCliAccount<T>(overrides: Record<string, string | undefined>,
  * inside `withCliAccount`. The driver's allowlist then keeps every server secret out.
  */
 export function cliAccountEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const overrides = accountScope.getStore();
-  return overrides ? { ...source, ...overrides } : source;
+  const turn = accountScope.getStore();
+  return turn ? { ...source, ...turn.overrides } : source;
 }
 
 const PROBE_TIMEOUT_MS = 10_000;
@@ -128,34 +162,40 @@ export type CliProbe = { missing: boolean; stdout: string; exitCode: number | nu
  * Runs one of the tool's own subcommands, without a shell, and returns what it printed. Stopped
  * with what it started after `timeoutMs`. Unix only, as the desktop app's own server is for now.
  */
-export function probeCli(
+export async function probeCli(
   driver: Pick<CliModelDriver, "command" | "env">,
   args: readonly string[],
   overrides: Record<string, string | undefined>,
   timeoutMs = PROBE_TIMEOUT_MS,
 ): Promise<CliProbe> {
-  return new Promise((resolve) => {
-    const child = spawn(driver.command, [...args], {
-      cwd: tmpdir(),
-      env: driver.env({ ...process.env, ...overrides }),
-      stdio: ["ignore", "pipe", "ignore"],
-      detached: true,
+  // An empty folder of its own: nothing someone else put there is read as the tool's settings.
+  const cwd = await mkdtemp(join(tmpdir(), "dozo-cli-"));
+  try {
+    return await new Promise((resolve) => {
+      const child = spawn(driver.command, [...args], {
+        cwd,
+        env: driver.env({ ...process.env, ...overrides }),
+        stdio: ["ignore", "pipe", "ignore"],
+        detached: true,
+      });
+      let stdout = "";
+      const timer = setTimeout(() => stopGroup(child.pid), timeoutMs);
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout = (stdout + chunk).slice(0, PROBE_OUTPUT_LIMIT);
+      });
+      child.once("error", (error: NodeJS.ErrnoException) => {
+        clearTimeout(timer);
+        resolve({ missing: error.code === "ENOENT", stdout, exitCode: null });
+      });
+      child.once("close", (exitCode) => {
+        clearTimeout(timer);
+        resolve({ missing: false, stdout, exitCode });
+      });
     });
-    let stdout = "";
-    const timer = setTimeout(() => stopGroup(child.pid), timeoutMs);
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout = (stdout + chunk).slice(0, PROBE_OUTPUT_LIMIT);
-    });
-    child.once("error", (error: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
-      resolve({ missing: error.code === "ENOENT", stdout, exitCode: null });
-    });
-    child.once("close", (exitCode) => {
-      clearTimeout(timer);
-      resolve({ missing: false, stdout, exitCode });
-    });
-  });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 }
 
 /** Stops a tool process and whatever it started in its process group. */

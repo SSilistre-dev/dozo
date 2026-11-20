@@ -88,9 +88,14 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
     expect(localCliHost({})).toBeUndefined();
     expect(localCliHost({ HOST_USER_HOME: "relative/home" })).toBeUndefined();
     expect(localCliHost({ HOST_USER_HOME: " /home/ada " })).toEqual({ home: "/home/ada" });
-    expect(localCliHost({ HOST_USER_HOME: "/home/ada", HOST_USER_PATH: "/opt/bin" })).toEqual({
+    expect(localCliHost({ HOST_USER_HOME: "/home/ada", HOST_USER_PATH: ".:/opt/bin:bin" })).toEqual(
+      {
+        home: "/home/ada",
+        path: "/opt/bin",
+      },
+    );
+    expect(localCliHost({ HOST_USER_HOME: "/home/ada", HOST_USER_PATH: "." })).toEqual({
       home: "/home/ada",
-      path: "/opt/bin",
     });
   });
 
@@ -261,11 +266,10 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
 
   it("swaps the account's values in only inside its scope", () => {
     expect(cliAccountEnv({ HOME: "/server" })).toEqual({ HOME: "/server" });
-    expect(withCliAccount({ HOME: "/home/ada" }, () => cliAccountEnv({ HOME: "/server" }))).toEqual(
-      {
-        HOME: "/home/ada",
-      },
-    );
+    const turn = { driver: claudeCodeDriver, overrides: { HOME: "/home/ada" } };
+    expect(withCliAccount(turn, () => cliAccountEnv({ HOME: "/server" }))).toEqual({
+      HOME: "/home/ada",
+    });
     expect(() => stopGroup(undefined)).not.toThrow();
     expect(() => stopGroup(2 ** 22 + 12_345)).not.toThrow();
   });

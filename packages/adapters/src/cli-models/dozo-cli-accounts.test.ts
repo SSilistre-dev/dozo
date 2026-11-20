@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,10 +7,19 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
 import type { CliAccountsDeps } from "./dozo-cli-accounts.js";
-import { cliHomeConnection, readCliTools } from "./dozo-cli-accounts.js";
+import {
+  cancelCliLogin,
+  cliHomeConnection,
+  MAX_CLI_ACCOUNTS,
+  readCliTools,
+  sendCliLoginCode,
+  startCliAccountLogin,
+} from "./dozo-cli-accounts.js";
 import { cliAccountRef } from "./dozo-cli-driver.js";
+import { accountHomeIds, cliAccountsRoot, createAccountHome } from "./dozo-cli-homes.js";
 
 const FAKE_CLI = fileURLToPath(new URL("./claude-code/fake-cli.test-support.mjs", import.meta.url));
+const ACCOUNTS_CLI = fileURLToPath(new URL("./dozo-fake-cli.test-support.mjs", import.meta.url));
 const PROVIDER = claudeCodeDriver.provider;
 const HOME_REF = cliAccountRef({ kind: "home" });
 
@@ -28,6 +37,32 @@ function computer(scenario: string | null) {
   vi.stubEnv("HOST_USER_PATH", bin);
 }
 
+/** The person's computer with the accounts-aware fake tool, and the server's data folder. */
+function accountsComputer(scenario: string) {
+  const home = mkdtempSync(join(tmpdir(), "dozo-person-home-"));
+  const bin = mkdtempSync(join(tmpdir(), "dozo-person-bin-"));
+  const log = join(bin, "calls.log");
+  writeFileSync(
+    join(bin, claudeCodeDriver.command),
+    `#!/bin/sh\nexec "${process.execPath}" "${ACCOUNTS_CLI}" "${scenario}" "${log}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  vi.stubEnv("HOST_USER_HOME", home);
+  vi.stubEnv("HOST_USER_PATH", bin);
+  vi.stubEnv("DATA_DIR", mkdtempSync(join(tmpdir(), "dozo-server-data-")));
+  return {
+    signOuts: () =>
+      existsSync(log)
+        ? readFileSync(log, "utf8")
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { args: string[]; configDir: string | null })
+            .filter((call) => call.args.join(" ") === "auth logout")
+            .map((call) => call.configDir)
+        : [],
+  };
+}
+
 /** A server's connections and secrets: each secret's plaintext is its id's entry here. */
 function deps(
   options: {
@@ -41,7 +76,11 @@ function deps(
   return {
     billingEnabled: options.billing ?? false,
     prisma: {
-      user: { count: async () => options.people ?? 1 },
+      // Every person counted, or (asked by id) whether the caller is that person.
+      user: {
+        count: async ({ where }: { where: { id?: string } }) =>
+          where.id ? Number(where.id !== "stranger") : (options.people ?? 1),
+      },
       userModelCredential: { findMany: vi.fn(async () => options.connections ?? []) },
       secret: {
         findFirst: async ({ where }: { where: { id: string } }) =>
@@ -71,11 +110,15 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
     vi.unstubAllEnvs();
   });
 
-  it("lists nothing on a hosted server, a billing one or a shared one", async () => {
+  it("lists nothing on a hosted server, a billing one, a shared one, or to anyone else", async () => {
     expect(await readCliTools(deps(), "ada")).toEqual([]);
     computer("reply");
     expect(await readCliTools(deps({ billing: true }), "ada")).toEqual([]);
     expect(await readCliTools(deps({ people: 2 }), "ada")).toEqual([]);
+    expect(await readCliTools(deps(), "stranger")).toEqual([]);
+    await expect(cliHomeConnection(deps(), "stranger", PROVIDER)).rejects.toMatchObject({
+      kind: "NOT_FOUND",
+    });
   });
 
   it("says the tool is not installed", async () => {
@@ -87,6 +130,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
         found: false,
         signedIn: null,
         connected: false,
+        canAdd: false,
       },
     ]);
   });
@@ -100,6 +144,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
         found: true,
         signedIn: true,
         connected: true,
+        canAdd: true,
       },
     ]);
     computer("signed-out");
@@ -131,6 +176,70 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
     const refused = await cliHomeConnection(server, "ada", provider).catch((error) => error);
     expect(refused).toBeInstanceOf(ClientError);
     expect(refused.code).toBe(code);
+  });
+
+  it("removes the homes no connection uses, signing each out first, and keeps the rest", async () => {
+    const tool = accountsComputer("turn");
+    const used = await createAccountHome(PROVIDER);
+    const unused = await createAccountHome(PROVIDER);
+    const server = deps({
+      connections: [{ provider: PROVIDER, secretId: "s-used" }],
+      secrets: { "s-used": cliAccountRef({ kind: "added", id: used.id }) },
+    });
+    expect(await readCliTools(server, "ada")).toMatchObject([{ connected: false, canAdd: true }]);
+    expect(await accountHomeIds(PROVIDER)).toEqual([used.id]);
+    expect(tool.signOuts()).toEqual([unused.path]);
+  });
+
+  it("adds an account through the tool's own sign-in, and saves only which home it uses", async () => {
+    accountsComputer("login-code");
+    const saved: unknown[] = [];
+    const changed = vi.fn();
+    expect(
+      await startCliAccountLogin(deps(), "ada", PROVIDER, {
+        save: async (connection) => {
+          saved.push(connection);
+        },
+        changed,
+      }),
+    ).toEqual({ status: "waiting" });
+    // A sign-in in progress keeps its home, whatever reads the tools meanwhile.
+    expect(await readCliTools(deps(), "ada")).toMatchObject([{ login: { status: "waiting" } }]);
+    const [id] = await accountHomeIds(PROVIDER);
+    await vi.waitFor(() =>
+      expect(readCliTools(deps(), "ada")).resolves.toMatchObject([
+        { login: { url: expect.stringMatching(/^https:\/\/claude\.ai\//) } },
+      ]),
+    );
+    sendCliLoginCode("ada", PROVIDER, "good-code");
+    await vi.waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toMatchObject({
+      provider: PROVIDER,
+      label: claudeCodeDriver.name,
+      plaintext: cliAccountRef({ kind: "added", id: id! }),
+    });
+    expect(changed).toHaveBeenCalled();
+    await cancelCliLogin("ada", PROVIDER);
+  });
+
+  it("adds no account past the limit", async () => {
+    accountsComputer("login-code");
+    const ids = await Promise.all(
+      Array.from({ length: MAX_CLI_ACCOUNTS }, () => createAccountHome(PROVIDER)),
+    );
+    const full = deps({
+      connections: ids.map((home) => ({ provider: PROVIDER, secretId: home.id })),
+      secrets: Object.fromEntries(
+        ids.map((home) => [home.id, cliAccountRef({ kind: "added", id: home.id })]),
+      ),
+    });
+    expect(await readCliTools(full, "ada")).toMatchObject([{ canAdd: false }]);
+    const handlers = { save: vi.fn(), changed: vi.fn() };
+    await expect(startCliAccountLogin(full, "ada", PROVIDER, handlers)).rejects.toMatchObject({
+      code: "cli_account_unavailable",
+    });
+    expect(await accountHomeIds(PROVIDER)).toHaveLength(MAX_CLI_ACCOUNTS);
+    expect(cliAccountsRoot()).toContain("dozo-server-data-");
   });
 
   it("refuses on a hosted server", async () => {
