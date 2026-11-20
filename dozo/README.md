@@ -119,7 +119,9 @@ credits (upstream's guard, on every model call a run or a background job makes).
 `packages/adapters/src/dozo-plans.ts` withholds media generation and the operator's external
 reviewer from a run unless the organization pays (a live subscription or a credit balance); with
 no reviewer the run asks the person before a consequential action, as upstream does for any
-reviewer it cannot reach.
+reviewer it cannot reach. A monthly credit plan's computer share counts only while its
+subscription is live: its amount stays on the billing account after cancellation, and with Free's
+model access an ended plan would otherwise keep getting computer hours (`packages/db/src/sandbox-allowance.ts`).
 
 An admin can give a member's own organization Premium or Premium Plus for a while, from the admin
 page (Set plan), without a subscription. The grant is a row in `dozo_plan_grants` (tier, end date,
@@ -195,8 +197,11 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
   limit's code (`computer_not_in_plan`, ...) instead of the server's English sentence.
 - When a subscription and a higher grant coexist, the billing status reports the granted tier, so
   the plan picker marks that tier as current while the subscription bills the lower one.
-- While a server has a free plan, a computer's saved home is never deleted for an ended plan
-  (upstream deletes it only when the organization can no longer run bots).
+- While a server has a free plan, a computer's saved home is never deleted: neither 30 days after
+  a paid plan ends nor after 90 days unused (upstream deletes it only when the organization can no
+  longer run bots, and on Free every organization can).
+- The referral program is off: its reward is a month of the cheapest plan, which is Free, so
+  `apps/api/src/referrals.ts` turns itself off and no reward is offered or paid.
 - The shared space counts files only. A computer's saved home (no size is recorded; upstream caps
   one at 5 GiB), pages, memory and messages (database text) are not counted.
 - An import that does not fit is refused whole, after its files were written and removed again.
@@ -355,6 +360,15 @@ Accepted by the owner for now, stated here once:
 - Interrupt handling (SIGINT, SIGTERM and cleanup in the scripts) is implemented but not rehearsed
   against a real long run.
 - A local `make qa` stages uncommitted files while CI stages HEAD only (`dozo/docker/README.md`).
+- Code mails (sign-in code, account deletion) carry the Dozo footer's Privacy, Terms and contact
+  links like every account mail, so "a code mail has no link" no longer tells a real mail from a
+  fake one.
+- A Dozo avatar drawn at 120 px is over a push's 1050-byte image budget, so pushes carry only the
+  96 px one.
+- Kubernetes, Incus and local-VM computers need an image built from this tree
+  (`KUBERNETES_SANDBOX_COMPUTER_IMAGE`, `INCUS_SANDBOX_COMPUTER_IMAGE`, `LOCAL_VM_COMPUTER_IMAGE`):
+  upstream's published image, their default, keeps its home at `/home/rakazo`. Without one their
+  computers stay unavailable, naming the setting.
 - The local model panel ships with an empty catalog (`LOCAL_MODELS` in
   `apps/web/src/lib/dozo-local-model-catalog.ts`) until tool calling has been tried against a real
   runtime; no model is downloaded or tested before then.
