@@ -59,7 +59,7 @@ manifest live.
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
 failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
-`0.11.0-4`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+`0.11.0-5`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
 The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
@@ -139,7 +139,15 @@ its child processes never get it).
    2.34. Where `postgres --version` fails as unpacked (Ubuntu 22.04 has glibc 2.35), set that file
    aside so the system's `libstdc++` (with `GLIBCXX_3.4.30`, as 22.04's has) is used.
 2. First start: `initdb -U rakazo -A scram-sha-256 -E UTF8 --locale=C`, then `createdb rakazo`.
-3. `pg_ctl start` with `-p <pg port> -c listen_addresses=127.0.0.1 -c unix_socket_directories=`.
+3. `pg_ctl start` with `-p <pg port> -c listen_addresses=127.0.0.1 -c unix_socket_directories=
+   -c timezone=UTC`. `initdb` writes this machine's zone into `postgresql.conf`, and the database
+   client reads a `timestamptz` in the session's zone as if it were UTC, so any other zone shifts
+   times (a quiet-hours hold was never let go in Istanbul). The flag overrides the file on every
+   start, so an existing folder needs nothing else. Its data keeps its meaning: `timestamp` columns
+   hold UTC wall clocks whatever the session (the client writes them in UTC, its own
+   `@default(now())` included), and a `timestamptz` holds an instant. Only an instant the client wrote in another
+   zone (a lease, a model connection's rest) reads that many hours off once; each is short-lived
+   and replaced by the next write.
 4. `migrate`, run to completion, every start (a no-op takes about 1.6 s). Owner role for
    `DATABASE_MIGRATION_URL`; it creates the `rakazo_app` role that `DATABASE_URL` uses.
 5. `api`, `worker` and `web` together; ready when the API's `/health` and the web page answer 200.

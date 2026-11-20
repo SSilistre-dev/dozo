@@ -23,7 +23,8 @@ export function dozoTeachSweep(deps: TeachingSessionDeps) {
       const late = await deps.prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM taught_skills
         WHERE status = 'recording'
-          AND "expiresAt" < CURRENT_TIMESTAMP - make_interval(secs => ${LATE_RECORDING_SECONDS})`;
+          AND "expiresAt" < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            - make_interval(secs => ${LATE_RECORDING_SECONDS})`;
       for (const { id } of late) {
         if (signal.aborted) return;
         await bestEffort(

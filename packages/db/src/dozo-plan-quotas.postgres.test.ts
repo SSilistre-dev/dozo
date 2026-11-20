@@ -72,6 +72,10 @@ describePostgres("plan quotas (PostgreSQL)", () => {
       );
       expect(before).toEqual({ sharedSpaceMb: 300, computerHours: null });
       expect(after).toEqual({ sharedSpaceMb: 300, computerHours: 9 });
+      // A UTC wall clock, as Prisma writes a column of this kind, in any database time zone.
+      const [row] = await tx.$queryRaw<Array<{ updatedAt: Date }>>`
+        SELECT "updatedAt" FROM "dozo_plan_quotas" WHERE "tier" = 'pro'`;
+      expect(Math.abs(row!.updatedAt.getTime() - Date.now())).toBeLessThan(60_000);
 
       const limits = await readPlanLimits(tx);
       expect(limits.pro).toEqual({

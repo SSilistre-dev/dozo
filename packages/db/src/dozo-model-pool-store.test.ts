@@ -133,8 +133,9 @@ describe("recordModelConnectionCooldown", () => {
       "",
       null,
       "rejected",
-      rest.resetsAt,
-      rest.observedAt,
+      // As instants with their zone, so a database in another zone stores the same moment.
+      rest.resetsAt.toISOString(),
+      rest.observedAt.toISOString(),
       "connection-a",
       "user-1",
     ]);
