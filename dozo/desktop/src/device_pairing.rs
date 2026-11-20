@@ -62,8 +62,10 @@ impl Secrets for Keyring {
 
 /// The sign-in the pairing needs from the window.
 pub trait SignIn: Send + Sync {
-    /// The web view's cookies for the server as a `Cookie` header; `None` when signed out.
-    fn cookies(&self) -> impl Future<Output = Option<String>> + Send;
+    /// The web view's cookies for exactly this origin as a `Cookie` header; `None` when signed
+    /// out there. Always the pairing's own origin, never the server the window shows now, so a
+    /// sign-in is only ever sent back to the server that set it.
+    fn cookies(&self, origin: &Url) -> impl Future<Output = Option<String>> + Send;
 }
 
 #[derive(Debug, PartialEq)]
@@ -223,7 +225,7 @@ impl Pairing {
         if self.secret(Secret::Probe).await.is_err() {
             return Err(Failure::Keyring);
         }
-        let Some(cookies) = sign_in.cookies().await else {
+        let Some(cookies) = sign_in.cookies(&self.origin).await else {
             return Ok(Outcome::SignedOut);
         };
         let (token, saved) = match request_pairing(&self.origin, &cookies).await {
@@ -330,7 +332,7 @@ impl Pairing {
         };
         let done = match self.secret(Secret::Get).await {
             Ok(Some(token)) => revoke(&self.origin, &token).await,
-            _ => match sign_in.cookies().await {
+            _ => match sign_in.cookies(&self.origin).await {
                 Some(cookies) => revoke_as_owner(&self.origin, &saved.device, &cookies).await,
                 None => false,
             },
@@ -711,16 +713,23 @@ mod tests {
     }
 
     /// The window's sign-in; `on_cookies` runs once, as the pairing request is about to go out.
+    /// `elsewhere`: signed in on that other server, not on this one.
     #[derive(Default)]
     struct Window {
         signed_in: AtomicBool,
+        elsewhere: Mutex<Option<Url>>,
+        asked_for: Mutex<Vec<Url>>,
         on_cookies: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     }
 
     impl SignIn for Window {
-        async fn cookies(&self) -> Option<String> {
+        async fn cookies(&self, origin: &Url) -> Option<String> {
+            self.asked_for.lock().unwrap().push(origin.clone());
             if let Some(hook) = self.on_cookies.lock().unwrap().take() {
                 hook();
+            }
+            if self.elsewhere.lock().unwrap().as_ref() == Some(origin) {
+                return Some("session=other-server".to_owned());
             }
             self.signed_in
                 .load(Ordering::SeqCst)
@@ -943,6 +952,36 @@ mod tests {
         assert!(w.pairing.finish_revoke(&w.window).await);
         assert_eq!(*w.server.removed.lock().unwrap(), vec!["d1".to_owned()]);
         assert!(!w.pairing.revoke_pending());
+    }
+
+    /// Pending for server A, signed in on server B only: A never gets B's sign-in, and the
+    /// revoke waits until A's own sign-in can end it.
+    #[tokio::test]
+    async fn another_server_s_sign_in_never_ends_this_one_s_pairing() {
+        let w = world("a").await;
+        w.secrets.refuse_tokens.store(true, Ordering::SeqCst);
+        w.server.down_after_pair.store(true, Ordering::SeqCst);
+        assert_eq!(w.turn_on().await, Err(Failure::Keyring));
+        w.server.down.store(false, Ordering::SeqCst);
+        w.server.down_after_pair.store(false, Ordering::SeqCst);
+        let other = Url::parse("https://other.example/").unwrap();
+        w.window.signed_in.store(false, Ordering::SeqCst);
+        *w.window.elsewhere.lock().unwrap() = Some(other);
+        assert!(!w.pairing.finish_revoke(&w.window).await);
+        assert!(w.server.removed.lock().unwrap().is_empty());
+        assert!(
+            w.window
+                .asked_for
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|origin| origin == w.pairing.origin())
+        );
+        assert!(w.pairing.revoke_pending());
+        // Signed in on A again: its own sign-in ends it.
+        w.window.signed_in.store(true, Ordering::SeqCst);
+        assert!(w.pairing.finish_revoke(&w.window).await);
+        assert_eq!(*w.server.removed.lock().unwrap(), vec!["d1".to_owned()]);
     }
 
     #[tokio::test]

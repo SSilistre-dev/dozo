@@ -167,10 +167,9 @@ struct Window(AppHandle);
 
 impl SignIn for Window {
     /// Read off the main thread: on Windows the web view deadlocks otherwise.
-    async fn cookies(&self) -> Option<String> {
+    async fn cookies(&self, origin: &Url) -> Option<String> {
         let window = self.0.get_webview_window("main")?;
-        let (_, origin) = self.0.state::<Access>().current();
-        let origin = origin?;
+        let origin = origin.clone();
         let cookies = tauri::async_runtime::spawn_blocking(move || window.cookies_for_url(origin))
             .await
             .ok()?
@@ -298,9 +297,12 @@ async fn connect(app: &AppHandle, interactive: bool) {
     };
     match outcome {
         Ok(Outcome::Connected(token)) => {
-            if access.withdrawn.load(Ordering::SeqCst) == withdrawn && pairing.consent().is_some() {
-                start(app, generation, &pairing, token);
-            } else {
+            let started =
+                pairing.consent().is_some() && start(app, generation, withdrawn, &pairing, token);
+            let turned_off =
+                access.withdrawn.load(Ordering::SeqCst) != withdrawn || pairing.consent().is_none();
+            // Another server chosen meanwhile leaves the pairing for when it is chosen again.
+            if !started && turned_off {
                 // Turned off while it paired: end what it paired.
                 pairing.withdraw();
                 if !pairing.finish_revoke(&window).await {
@@ -447,14 +449,26 @@ fn retry_revoke(app: &AppHandle, origin: Url) {
     });
 }
 
-/// Connects. Called with the lock held, right after consent and token were confirmed.
-fn start(app: &AppHandle, generation: u64, pairing: &Pairing, token: String) {
+/// Connects. Called with the lock held, right after consent and token were confirmed; false
+/// when the server changed or access was turned off since `withdrawn` was read. Checked under
+/// the state lock, which turning off also takes to disconnect after bumping `withdrawn`, so a
+/// connection either is never opened or is closed by that turn-off.
+fn start(
+    app: &AppHandle,
+    generation: u64,
+    withdrawn: u64,
+    pairing: &Pairing,
+    token: String,
+) -> bool {
     let access = app.state::<Access>();
     let (stop, stopped) = watch::channel(false);
     {
         let mut state = access.state.lock().unwrap();
-        if state.generation != generation || state.origin.as_ref() != Some(pairing.origin()) {
-            return;
+        if state.generation != generation
+            || state.origin.as_ref() != Some(pairing.origin())
+            || access.withdrawn.load(Ordering::SeqCst) != withdrawn
+        {
+            return false;
         }
         if let Some(previous) = state.client.replace(stop) {
             let _ = previous.send(true);
@@ -476,6 +490,7 @@ fn start(app: &AppHandle, generation: u64, pairing: &Pairing, token: String) {
         };
         ended(&app, generation, origin, revoked).await;
     });
+    true
 }
 
 /// The server ended the pairing. Done even when another change holds the lock too long: it

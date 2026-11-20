@@ -116,7 +116,8 @@ account and connects to it; the web app's settings then list it under Computers 
 - What stopping a command reaches: its process group. On Linux each command also carries its own
   mark in its environment, so what it started in a new session or group (`setsid`, a double
   fork) is found in `/proc`; that is stopped only by an explicit stop (a run's cancel, the bot's
-  stop, turning access off, quitting the app), never by a timeout or a dropped connection. A
+  stop, turning access off, quitting the app). A timeout or a dropped connection stops the group
+  only and keeps tracking the rest, so turning access off or quitting later still stops it. A
   group is signalled only while a marked process is still in it. The limit: an app a command
   starts inherits the mark too, so a browser a bot opened (`xdg-open`, `firefox`) when none was
   running closes on such a stop; one that was already running only gets a new window and is not
@@ -143,7 +144,8 @@ account and connects to it; the web app's settings then list it under Computers 
   answer is asked for, its new pairing is held as a pending revoke. The menu's check mark always
   shows the saved answer.
 - Keyring: macOS Keychain, Windows Credential Manager, the Secret Service on Linux (GNOME
-  Keyring, KWallet). Without one, the app does not pair and says so, as upstream's app refuses to
+  Keyring, KWallet). On Windows, Credential Manager does not separate apps: any program running as
+  the same user can read the token. Without one, the app does not pair and says so, as upstream's app refuses to
   without secure storage; a plain file is never used for the token.
 - While connected, the menu's check mark is the only sign in the app; the web app's settings
   show the computer as Connected. No extra indicator (a tray badge or a title): it would be one

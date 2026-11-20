@@ -169,21 +169,42 @@ impl Runner {
     /// Stops every command and what it left running in its group. `escaped`: also what it
     /// started outside the group (Linux), which only an explicit stop, turning access off or
     /// quitting does, never a dropped connection.
-    pub fn stop_all(&self, escaped: bool) {
+    pub fn stop_all(self: &Arc<Self>, escaped: bool) {
         self.stop_where(|_| true, escaped);
     }
 
-    fn stop_where(&self, matches: impl Fn(&Owned) -> bool, escaped: bool) {
-        let stopped: Vec<Owned> = {
+    /// With `escaped`, the entries go: nothing of them is left. Without, only their groups stop
+    /// and the entries stay, so what escaped the group is still found by a later explicit stop
+    /// (turning access off, quitting); they are forgotten once nothing of them runs.
+    fn stop_where(self: &Arc<Self>, matches: impl Fn(&Owned) -> bool, escaped: bool) {
+        let stopped: Vec<(u32, String)> = {
             let mut owned = self.owned.lock().unwrap();
-            let (stop, keep) = owned.drain(..).partition(|owned| matches(owned));
-            *owned = keep;
-            stop
+            if escaped {
+                let (stop, keep) = owned.drain(..).partition(|owned| matches(owned));
+                *owned = keep;
+                stop.into_iter()
+                    .map(|owned: Owned| {
+                        let _ = owned.cancel.send(true);
+                        (owned.pid, owned.mark)
+                    })
+                    .collect()
+            } else {
+                owned
+                    .iter()
+                    .filter(|owned| matches(owned))
+                    .map(|owned| {
+                        let _ = owned.cancel.send(true);
+                        (owned.pid, owned.mark.clone())
+                    })
+                    .collect()
+            }
         };
         // Signalled outside the lock: finding marked processes reads /proc.
-        for owned in stopped {
-            let _ = owned.cancel.send(true);
-            kill(owned.pid, &owned.mark, escaped);
+        for (pid, mark) in stopped {
+            kill(pid, &mark, escaped);
+            if !escaped {
+                self.watch_leftovers(pid, mark);
+            }
         }
     }
 
@@ -421,7 +442,11 @@ impl Runner {
                 let note = signal.map_or(String::new(), |signal| {
                     format!("command terminated by signal {signal}")
                 });
-                if !self.forget_if_gone(pid, &mark) {
+                let runner = self.clone();
+                let checked = mark.clone();
+                let forgotten =
+                    tokio::task::spawn_blocking(move || runner.forget_if_gone(pid, &checked)).await;
+                if !matches!(forgotten, Ok(true)) {
                     self.watch_leftovers(pid, mark);
                 }
                 events(reply, "", &note, code).await;
@@ -1161,6 +1186,41 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             assert!(marker.exists());
             runner.stop_all(true);
+        }
+
+        /// What escaped the group outlives a dropped connection only until access ends: turning
+        /// it off (an explicit stop of everything) still finds it.
+        #[cfg(target_os = "linux")]
+        #[tokio::test]
+        async fn what_escaped_is_still_stopped_when_access_ends_after_a_drop() {
+            let (runner, dir) = provisioned().await;
+            let marker = dir.join("home/late");
+            let script = format!(
+                "setsid sh -c 'sleep 2; touch {}' & sleep 30",
+                marker.to_string_lossy()
+            );
+            let (reply, call) = reply("long");
+            let request = execute(&["/bin/sh", "-c", &script], json!({}));
+            let running = {
+                let runner = runner.clone();
+                tokio::spawn(async move { runner.handle(&request, &reply).await })
+            };
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            call.cancel.send(LOST).unwrap();
+            running.await.unwrap();
+            // The grace passed without the connection: groups only.
+            runner.stop_all(false);
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert_eq!(
+                owned_count(&runner),
+                1,
+                "the escaped process keeps its entry"
+            );
+            // Turning access off.
+            runner.stop_all(true);
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            assert!(!marker.exists());
+            assert_eq!(owned_count(&runner), 0);
         }
 
         #[tokio::test]
