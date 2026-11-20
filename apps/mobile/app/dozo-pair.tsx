@@ -7,6 +7,7 @@ import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { currentApiBase, flushPendingSignOut } from "../lib/api";
 import { saveApiBase } from "../lib/api-server";
+import { linkedOffer } from "../lib/dozo-pair-link";
 import type { RelayPairingError } from "../lib/dozo-relay-connection";
 import { pairRelay, readPairingOffer } from "../lib/dozo-relay-connection";
 import { displayApiHost } from "../lib/dozo-relay-endpoint";
@@ -23,15 +24,6 @@ import { useScreenHeader } from "../lib/screen-header";
 import { loadSessionToken } from "../lib/session";
 import { useSideInsets } from "../lib/side-insets";
 import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-
-/** The only links this screen acts on: the pairing route, the offer after `#`. */
-const PAIRING_LINKS = ["rakazo://dozo-pair#", "rakazo://dozo-pair/#"];
-
-function linkedOffer(link: string | null) {
-  const prefix = link ? PAIRING_LINKS.find((start) => link.startsWith(start)) : undefined;
-  const offer = prefix ? link?.slice(prefix.length) : undefined;
-  return offer && /^[A-Za-z0-9_-]+$/.test(offer) ? offer : undefined;
-}
 
 /** Links already acted on: each arrives once, so a later visit never brings an old one back. */
 const usedLinks = new Set<string>();
