@@ -178,3 +178,24 @@ length ends it, and nothing may follow. The first entry is `backup.json`: `forma
 `server` (the bundle version) and `migrations` (the applied migration names). Then the secrets
 file, `database.dump`, `data/…` and `relay/…`. Paths are relative with plain names; restored files
 keep only the owner's bits (0600, or 0700 when the owner could run it).
+
+## Account repairs
+
+Repairs a person makes on their own computer, against the server folder, so only whoever can reach
+that folder can make them. Source: `packages/adapters/src/dozo-local-account.ts`.
+
+```sh
+node rakazo-server/dozo-local-account.mjs unlink-hosted --home <server folder>
+```
+
+- `unlink-hosted` removes every link to a hosted account, ends those users' sessions and marks
+  each of them; each user keeps their data. The next hosted sign-in on that computer links a
+  marked user again, whichever hosted account it is (`packages/auth/src/dozo-hosted-login.ts`);
+  no other user is ever handed to a hosted account. It is the way back when the linked hosted
+  account was deleted or can no longer sign in.
+
+It works with the app open or closed, with the bundle's Postgres, as `backup` does (same
+`DOZO_PG_BIN` and `DOZO_SERVER_DIR`). One JSON line on stdout: `{"unlinked": <n>,
+"sessionsEnded": <n>}` or `{"error": <sentence>, "reason": <code>}` (`usage`, `no-server`,
+`failed`). Exit 0 done, 2 failed, 64 usage. Further repairs join this command as subcommands
+with the same `--home`, output and exit codes.

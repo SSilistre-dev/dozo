@@ -744,11 +744,11 @@
     {
       "file": "packages/auth/src/index.ts",
       "find": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { createDirectory } from \"./directory.js\";",
-      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
+      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { hostedLoginCapabilities } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
-      "reason": "hosted account sign-in on a local server: the start check the API runs (rule in apps/api/src/app.ts)"
+      "reason": "hosted account sign-in on a local server: what the public capabilities say about it (rule in apps/api/src/app.ts)"
     },
     {
       "file": "packages/auth/src/index.ts",
@@ -762,20 +762,11 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  publicSignInProviders,\n} from \"@rakazo/auth\";",
-      "replace": "  publicSignInProviders,\n  hostedLoginOnly,\n  refuseUnlinkedAccounts,\n} from \"@rakazo/auth\";",
+      "replace": "  publicSignInProviders,\n  hostedLoginCapabilities,\n} from \"@rakazo/auth\";",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
       "reason": "hosted account sign-in on a local server: the import of the rule below"
-    },
-    {
-      "file": "apps/api/src/app.ts",
-      "find": "    },\n  });\n  const oauthTokenUpgrade = auth\n",
-      "replace": "    },\n  });\n  // A local server in hosted mode would lock out accounts made here before: refuse to start.\n  await refuseUnlinkedAccounts(prisma);\n  const oauthTokenUpgrade = auth\n",
-      "requires": [
-        "packages/auth/src/dozo-hosted-login.ts"
-      ],
-      "reason": "hosted account sign-in on a local server: with HOSTED_LOGIN_ISSUER set, a server that already has accounts of its own stops with a clear error instead of locking their owners out"
     },
     {
       "file": "apps/web/src/App.tsx",
@@ -4323,6 +4314,95 @@
       "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
     },
     {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { NativeActionButton }",
+      "replace": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { DozoCommandsRow, dozoUsageLink } from \"../../components/dozo-account-rows\";\nimport { NativeActionButton }",
+      "requires": [
+        "apps/mobile/components/dozo-account-rows.tsx"
+      ],
+      "reason": "mobile settings: the import of the two rules below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "      key=\"usage\"\n      accessible\n      title={t`Usage`}\n",
+      "replace": "      key=\"usage\"\n      accessible\n      {...dozoUsageLink(usage, () => router.push(\"/dozo-usage\"))}\n      title={t`Usage`}\n",
+      "requires": [
+        "apps/mobile/components/dozo-account-rows.tsx",
+        "apps/mobile/app/(settings)/dozo-usage.tsx"
+      ],
+      "reason": "usage breakdown on mobile: the Usage row opens the spend grouped by model, bot or routine, with the CSV, as the web app's Usage table"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "              onPress={() => router.push(\"/approvals\")}\n            />\n          ) : null}\n          {settingsLink({",
+      "replace": "              onPress={() => router.push(\"/approvals\")}\n            />\n          ) : null}\n          <DozoCommandsRow\n            key=\"dozo-commands\"\n            disabled={signingOut}\n            leading={icon({ ios: \"terminal\", android: \"terminal-outline\" })}\n            onPress={() => router.push(\"/dozo-commands\")}\n          />\n          {settingsLink({",
+      "requires": [
+        "apps/mobile/components/dozo-account-rows.tsx",
+        "apps/mobile/app/(settings)/dozo-commands.tsx"
+      ],
+      "reason": "command rules on mobile: a Commands row beside approval Rules, only while the member always allows a command, opens the list with Remove"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "import { createSettingsPageStyles } from \"../../lib/settings-page-styles\";\nimport { ACCOUNT_SETTINGS }",
+      "replace": "import { createSettingsPageStyles } from \"../../lib/settings-page-styles\";\nimport { DozoGeneralRows } from \"../../components/dozo-general-rows\";\nimport { ACCOUNT_SETTINGS }",
+      "requires": [
+        "apps/mobile/components/dozo-general-rows.tsx"
+      ],
+      "reason": "mobile settings: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "        ) : null}\n\n        <SettingsGroup>\n          <SettingsSwitch\n            label={t`Stream replies`}",
+      "replace": "        ) : null}\n\n        <DozoGeneralRows />\n        <SettingsGroup>\n          <SettingsSwitch\n            label={t`Stream replies`}",
+      "requires": [
+        "apps/mobile/components/dozo-general-rows.tsx",
+        "apps/mobile/app/(settings)/dozo-activity.tsx"
+      ],
+      "reason": "quiet hours and the activity log on mobile: General has them as on the web, quiet hours with their start and end, Activity only for those who may read the log"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/model-connection.tsx",
+      "find": "import { useListSearch } from \"../../lib/use-list-search\";\nimport { useSubscriptionSignIn }",
+      "replace": "import { useListSearch } from \"../../lib/use-list-search\";\nimport { DozoModelPoolSwitch } from \"../../components/dozo-model-pool-switch\";\nimport { useSubscriptionSignIn }",
+      "requires": [
+        "apps/mobile/components/dozo-model-pool-switch.tsx"
+      ],
+      "reason": "model pool on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/model-connection.tsx",
+      "find": "        ) : (\n          feedback\n        )}\n      </ScrollView>",
+      "replace": "        ) : (\n          feedback\n        )}\n        {credential ? <DozoModelPoolSwitch credentialId={credential.id} /> : null}\n      </ScrollView>",
+      "requires": [
+        "apps/mobile/components/dozo-model-pool-switch.tsx"
+      ],
+      "reason": "model pool on mobile: a connection's page has the pool switch where the server offers one, and says when a resting connection opens"
+    },
+    {
+      "file": "apps/mobile/lib/chat-model-picker.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"react-native-safe-area-context\", () => ({",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"../components/dozo-model-pool-switch\", () => ({ DozoModelPoolSwitch: () => null }));\nvi.mock(\"react-native-safe-area-context\", () => ({",
+      "reason": "model pool on mobile: the connection page's pool switch reads the live stream and the pool, which this test does not stub; it is tested in dozo-model-pool-switch.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/model-settings.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./api-server\", () => ({}));",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"../components/dozo-model-pool-switch\", () => ({ DozoModelPoolSwitch: () => null }));\nvi.mock(\"./api-server\", () => ({}));",
+      "reason": "model pool on mobile: the connection page's pool switch reads the live stream and the pool, which this test does not stub; it is tested in dozo-model-pool-switch.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/settings-sheet.ts",
+      "find": "  \"computers\",\n  \"general\",\n",
+      "replace": "  \"computers\",\n  \"dozo-activity\",\n  \"dozo-commands\",\n  \"dozo-usage\",\n  \"general\",\n",
+      "requires": [
+        "apps/mobile/app/(settings)/dozo-activity.tsx",
+        "apps/mobile/app/(settings)/dozo-commands.tsx",
+        "apps/mobile/app/(settings)/dozo-usage.tsx"
+      ],
+      "reason": "mobile settings: the fork's Usage, Commands and Activity pages are settings pages, so a link to one opens inside the settings sheet"
+    },
+    {
       "file": "apps/api/src/routes/bots.ts",
       "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
       "replace": "import type { RouterContext } from \"./context.js\";\nimport { requireBotRunEditor, requireGroupRemover } from \"./dozo-bot-edit.js\";\nimport { computerContext",
@@ -4631,6 +4711,120 @@
         "apps/mobile/components/dozo-bot-profile-menu.tsx"
       ],
       "reason": "chat export: the bot profile's menu gains Export, which hands the chat as Markdown to the system share sheet"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "import { MessageContextMenu } from \"../message-context-menu\";\nimport { ReplyLine }",
+      "replace": "import { MessageContextMenu } from \"../message-context-menu\";\nimport { dozoMenuEntries, dozoSheetGroups, useDozoMessageActions } from \"../../lib/dozo-message-actions\";\nimport { ReplyLine }",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
+      "replace": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const dozoActions = useDozoMessageActions(message, readOnly, inGroup);\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: Edit, Regenerate and Pin for this message, as the server allows them (the web More menu's)"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...(codeBlocks.length === 1\n",
+      "replace": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...dozoActions,\n      ...(codeBlocks.length === 1\n",
+      "reason": "message actions on mobile: the same actions for VoiceOver and TalkBack"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "    });\n    const openSheet = (event: GestureResponderEvent) =>\n",
+      "replace": "    });\n    menu.push(...dozoMenuEntries(dozoActions));\n    const openSheet = (event: GestureResponderEvent) =>\n",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: their own section at the end of the iOS menu"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "              : []),\n          ],\n        ],\n      });\n    return {\n      menu,\n",
+      "replace": "              : []),\n          ],\n          ...dozoSheetGroups(dozoActions),\n        ],\n      });\n    return {\n      menu,\n",
+      "requires": [
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message actions on mobile: their own group at the end of the Android menu"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "        if (id === \"unread\") markUnread();\n      },\n",
+      "replace": "        if (id === \"unread\") markUnread();\n        dozoActions.find((action) => action.name === id)?.onPress();\n      },\n",
+      "reason": "message actions on mobile: an iOS menu choice runs its action"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-row.tsx",
+      "find": "    hasLike,\n    optimisticLike,\n  ]);\n",
+      "replace": "    hasLike,\n    optimisticLike,\n    dozoActions,\n  ]);\n",
+      "reason": "message actions on mobile: the menus are built again when what the server allows changes"
+    },
+    {
+      "file": "apps/mobile/components/message-context-menu.tsx",
+      "find": "    image: entry.symbol ? symbols[entry.symbol] : undefined,\n",
+      "replace": "    image: entry.symbol ? symbols[entry.symbol] : (entry as Pick<MenuAction, \"image\">).image,\n",
+      "reason": "message actions on mobile: an entry outside upstream's symbol table brings its own SF Symbol"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "import { useThreadHeader } from \"./thread-header\";\nimport { LoadEarlierButton",
+      "replace": "import { useThreadHeader } from \"./thread-header\";\nimport { useDozoThreadMenus } from \"../../lib/dozo-thread-menus\";\nimport { LoadEarlierButton",
+      "requires": [
+        "apps/mobile/lib/dozo-thread-menus.ts"
+      ],
+      "reason": "message actions on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "  const { snap, composingBots, showingSaved } = history;\n  const [agentSkills",
+      "replace": "  const { snap, composingBots, showingSaved } = history;\n  useDozoThreadMenus(snap, readOnly);\n  const [agentSkills",
+      "requires": [
+        "apps/mobile/lib/dozo-thread-menus.ts"
+      ],
+      "reason": "message actions on mobile: the iOS menu is built before it opens, so the chat reads what Edit and Regenerate apply to again when a message or run changes, and its pins on each roster signal"
+    },
+    {
+      "file": "apps/mobile/app/group-settings.tsx",
+      "find": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { rpc, selectedSpaceId }",
+      "replace": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { DozoGroupChatActions } from \"../components/dozo-group-chat-actions\";\nimport { rpc, selectedSpaceId }",
+      "requires": [
+        "apps/mobile/components/dozo-group-chat-actions.tsx"
+      ],
+      "reason": "group chat export and pins on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/group-settings.tsx",
+      "find": "            onPress={() => router.push({ pathname: \"/pages\", params: { groupId } })}\n            style={{ marginTop: 16 }}\n          />\n        ) : null}\n        <NativeActionButton\n          label={t`Delete group`}",
+      "replace": "            onPress={() => router.push({ pathname: \"/pages\", params: { groupId } })}\n            style={{ marginTop: 16 }}\n          />\n        ) : null}\n        {groupId && group ? <DozoGroupChatActions groupId={groupId} name={group.name} /> : null}\n        <NativeActionButton\n          label={t`Delete group`}",
+      "requires": [
+        "apps/mobile/components/dozo-group-chat-actions.tsx"
+      ],
+      "reason": "group chat export and pins on mobile: Export with its period, and Pinned while the group's chat has pins"
+    },
+    {
+      "file": "apps/mobile/lib/bot-profile.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./api-server\"",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./dozo-message-actions\", () => ({ useDozoChatPins: () => ({}) }));\nvi.mock(\"./dozo-chat-export\", () => ({ useChatExport: () => () => undefined }));\nvi.mock(\"./api-server\"",
+      "reason": "mobile export and pins: the bot profile's menu reads the chat's pins and loads the export sheet, neither of which this test stubs; they are tested in dozo-message-actions.test.tsx and dozo-chat-export.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/bot-member-picker.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./session\"",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./dozo-message-actions\", () => ({ useDozoChatPins: () => ({}) }));\nvi.mock(\"./dozo-chat-export\", () => ({ useChatExport: () => () => undefined }));\nvi.mock(\"./session\"",
+      "reason": "mobile export and pins: group settings reads the chat's pins and loads the export sheet, neither of which this test stubs; they are tested in dozo-message-actions.test.tsx and dozo-chat-export.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/inbox-archived.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./thread-edges\"",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./dozo-message-actions\", () => ({ useDozoChatPins: () => ({}) }));\nvi.mock(\"./dozo-chat-export\", () => ({ useChatExport: () => () => undefined }));\nvi.mock(\"./thread-edges\"",
+      "reason": "mobile export and pins: group settings reads the chat's pins and loads the export sheet, neither of which this test stubs; they are tested in dozo-message-actions.test.tsx and dozo-chat-export.test.tsx"
     },
     {
       "file": "packages/adapters/src/computer-control.ts",
@@ -5000,17 +5194,17 @@
     {
       "file": "packages/contracts/src/auth.ts",
       "find": "  signupsOpen: z.boolean().optional(),\n});",
-      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n});",
+      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n  /** Whether it still has password accounts a signed-in user may link to that account; omitted means no. */\n  hostedLink: z.boolean().optional(),\n});",
       "reason": "hosted account sign-in on a local server: the capability that tells the sign-in page to offer that one way in"
     },
     {
       "file": "apps/api/src/app.ts",
       "find": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n    } satisfies AuthCapabilities);",
-      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      hostedLogin: hostedLoginOnly(),\n    } satisfies AuthCapabilities);",
+      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      ...(await hostedLoginCapabilities(prisma)),\n    } satisfies AuthCapabilities);",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
-      "reason": "hosted account sign-in on a local server: the public capabilities say when the server signs in only with the hosted account"
+      "reason": "hosted account sign-in on a local server: the public capabilities say whether the server signs in only with the hosted account, or still has password accounts a signed-in user may link"
     },
     {
       "file": "apps/mobile/app/_layout.tsx",
@@ -5433,8 +5627,8 @@
     },
     {
       "file": "packages/auth/src/index.ts",
-      "find": "export { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory }",
-      "replace": "export { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport type { RelaySessionAuth, RelaySessionPrisma } from \"./dozo-relay-session.js\";\nexport {\n  agentProofMatches,\n  forgetRelayAgentKey,\n  issueRelaySession,\n  relayAgentKey,\n  revokeRelaySession,\n} from \"./dozo-relay-session.js\";\nexport { createDirectory }",
+      "find": "export { hostedLoginCapabilities } from \"./dozo-hosted-login.js\";\nexport { createDirectory }",
+      "replace": "export { hostedLoginCapabilities } from \"./dozo-hosted-login.js\";\nexport type { RelaySessionAuth, RelaySessionPrisma } from \"./dozo-relay-session.js\";\nexport {\n  agentProofMatches,\n  forgetRelayAgentKey,\n  issueRelaySession,\n  relayAgentKey,\n  revokeRelaySession,\n} from \"./dozo-relay-session.js\";\nexport { createDirectory }",
       "requires": [
         "packages/auth/src/dozo-relay-session.ts"
       ],
@@ -6124,6 +6318,30 @@
       "requires": [
         "packages/adapters/src/dozo-computer-image.test.ts"
       ]
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { SettingsGroup",
+      "replace": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { DozoHostedLinkRow } from \"../components/dozo-hosted-link-row\";\nimport { SettingsGroup",
+      "requires": [
+        "apps/web/src/components/dozo-hosted-link-row.tsx"
+      ],
+      "reason": "hosted account sign-in on a local server: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "          <DozoActivityLogRow />\n        </SettingsGroup>",
+      "replace": "          <DozoActivityLogRow />\n          <DozoHostedLinkRow />\n        </SettingsGroup>",
+      "requires": [
+        "apps/web/src/components/dozo-hosted-link-row.tsx"
+      ],
+      "reason": "hosted account sign-in on a local server: a server with password accounts lets a signed-in user link theirs to the Dozo account from Security; elsewhere the row shows nothing"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"",
+      "replace": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Check this computer's date and time\"\nmsgstr \"Bu bilgisayarın tarih ve saatini denetleyin\"\n\n#: apps/web/src/components/dozo-hosted-link-row.tsx\nmsgid \"Dozo account\"\nmsgstr \"Dozo hesabı\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"",
+      "reason": "hosted account sign-in on a local server: the Turkish copy of the clock hint on the sign-in page and of the link row in Security"
     }
   ],
   "assets": {

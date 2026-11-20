@@ -167,7 +167,7 @@ describe("the sign-in page of a server that signs in with the hosted account", (
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: "{}",
+      body: JSON.stringify({}),
     });
     await vi.waitFor(() =>
       expect(api.assign).toHaveBeenCalledWith(
@@ -186,5 +186,10 @@ describe("the sign-in page of a server that signs in with the hosted account", (
     await agree();
     await vi.waitFor(() => expect(alert()).toBe("Could not continue"));
     expect(api.assign).not.toHaveBeenCalled();
+  });
+
+  it("points at the computer's clock when the token arrived out of time", async () => {
+    await open("/sign-in?error=hosted_login_clock");
+    expect(alert()).toBe("Check this computer's date and time");
   });
 });

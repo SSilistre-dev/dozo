@@ -28,3 +28,19 @@ export const dozoChatExportContract = {
   /** One chat as Markdown, as its transcript shows it to the caller. */
   markdown: oc.input(DozoChatExportInputSchema).output(DozoChatExportSchema),
 };
+
+/** How far back an export reaches: the whole chat, today, or the last 7 or 30 days. */
+export type ChatExportRange = "all" | "today" | "week" | "month";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The first moment a range covers, in the reader's own day; nothing for the whole chat. */
+export function chatExportSince(range: ChatExportRange, now: Date): string | undefined {
+  if (range === "all") return undefined;
+  if (range === "today") {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    return midnight.toISOString();
+  }
+  return new Date(now.getTime() - (range === "week" ? 7 : 30) * DAY_MS).toISOString();
+}

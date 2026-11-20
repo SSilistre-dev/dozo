@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HOSTED_PROVIDER_ID } from "./dozo-hosted-login.js";
+import { HOSTED_PROVIDER_ID, hostedLoginCapabilities } from "./dozo-hosted-login.js";
 import { createAuth } from "./index.js";
 
 /**
@@ -51,6 +51,7 @@ function fakePrisma() {
     verification: [],
   };
   const members: string[] = [];
+  const accountsOf = (userId: unknown) => authData.account.filter((row) => row.userId === userId);
   const prisma = {
     authData,
     members,
@@ -65,12 +66,40 @@ function fakePrisma() {
       })),
     },
     user: {
-      findMany: vi.fn(async ({ where }: { where: { id?: { not: string } } }) =>
-        authData.user
-          .filter((user) => user.id !== where.id?.not)
-          .map((user) => ({ id: user.id as string })),
+      // Upstream's single-account check asks for other users; the hosted login, for users with
+      // no account at all.
+      findMany: vi.fn(
+        async ({
+          where,
+          take,
+        }: {
+          where: { id?: { not: string }; accounts?: unknown };
+          take?: number;
+        }) =>
+          authData.user
+            .filter((user) => user.id !== where.id?.not)
+            .filter(
+              (user) =>
+                !where.accounts ||
+                !accountsOf(user.id).some((row) => row.providerId === HOSTED_PROVIDER_ID),
+            )
+            .slice(0, take)
+            .map((user) => ({
+              id: user.id as string,
+              email: user.email as string,
+              accounts: accountsOf(user.id)
+                .slice(0, 1)
+                .map((row) => ({ id: row.id })),
+            })),
       ),
       findUnique: vi.fn(async () => null),
+    },
+    verification: {
+      findMany: vi.fn(async ({ where }: { where: { identifier: { startsWith: string } } }) =>
+        authData.verification
+          .filter((row) => String(row.identifier).startsWith(where.identifier.startsWith))
+          .map((row) => ({ identifier: row.identifier })),
+      ),
     },
     spaceMember: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string | { in: string[] } } }) => {
@@ -83,10 +112,9 @@ function fakePrisma() {
   return prisma;
 }
 
-function server(baseURL: string, env: Record<string, string>) {
+function server(baseURL: string, env: Record<string, string>, prisma = fakePrisma()) {
   vi.unstubAllEnvs();
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-  const prisma = fakePrisma();
   const auth = createAuth(prisma as never, {
     secret: SECRET,
     baseURL,
@@ -120,12 +148,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function stack() {
+/** Both servers; `before` runs on the local database first, as a release without hosted mode. */
+async function stack(before?: (local: ReturnType<typeof server>) => Promise<void>) {
   const key = String(
     generateKeyPairSync("ed25519").privateKey.export({ format: "pem", type: "pkcs8" }),
   );
   const hosted = server(HOSTED, { HOSTED_LOGIN_SIGNING_KEY: key });
-  const local = server(LOCAL, { HOSTED_LOGIN_ISSUER: HOSTED });
+  const earlier = server(LOCAL, {});
+  await before?.(earlier);
+  const local = server(LOCAL, { HOSTED_LOGIN_ISSUER: HOSTED }, earlier.prisma);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string) => hosted.auth.handler(new Request(input))),
@@ -141,14 +172,19 @@ function stack() {
     return cookieOf(response);
   }
 
-  async function signIn(hostedCookie: string) {
+  async function signIn(hostedCookie: string, session?: string) {
     const start = await local.auth.handler(
       new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: LOCAL },
-        body: "{}",
+        headers: {
+          "content-type": "application/json",
+          origin: LOCAL,
+          ...(session ? { cookie: session } : {}),
+        },
+        body: JSON.stringify(session ? { link: true } : {}),
       }),
     );
+    expect(start.status).toBe(200);
     const page = new URL(((await start.json()) as { url: string }).url);
     const issued = await hosted.auth.handler(
       new Request(`${HOSTED}/api/auth/dozo/hosted-login/issue`, {
@@ -162,7 +198,8 @@ function stack() {
     );
     expect(issued.status).toBe(200);
     const { url } = (await issued.json()) as { url: string };
-    return local.auth.handler(new Request(url, { headers: { cookie: cookieOf(start) } }));
+    const cookie = [session, cookieOf(start)].filter(Boolean).join("; ");
+    return local.auth.handler(new Request(url, { headers: { cookie } }));
   }
 
   return { hosted, local, account, signIn };
@@ -170,7 +207,7 @@ function stack() {
 
 describe("hosted login through createAuth", () => {
   it("admits the first hosted account as the install's sole account, with its workspace", async () => {
-    const s = stack();
+    const s = await stack();
     const done = await s.signIn(await s.account("ada@dozo.example"));
     expect(done.headers.get("location")).toBe(`${LOCAL}/`);
     const [user] = s.local.prisma.authData.user;
@@ -186,7 +223,7 @@ describe("hosted login through createAuth", () => {
   });
 
   it("refuses a second hosted account and keeps the first one's", async () => {
-    const s = stack();
+    const s = await stack();
     await s.signIn(await s.account("ada@dozo.example"));
     const done = await s.signIn(await s.account("eve@dozo.example"));
     expect(done.headers.get("location")).toBe(`${LOCAL}/sign-in?error=hosted_login_failed`);
@@ -194,12 +231,54 @@ describe("hosted login through createAuth", () => {
   });
 
   it("closes password sign-up and sign-in on the local server only", async () => {
-    const s = stack();
+    const s = await stack();
     const body = { email: "eve@dozo.example", password: PASSWORD, name: "Eve" };
     expect((await post(s.local.auth, LOCAL, "/sign-up/email", body)).status).toBe(404);
     expect((await post(s.local.auth, LOCAL, "/sign-in/email", body)).status).toBe(404);
     expect(s.local.prisma.authData.user).toEqual([]);
     expect((await post(s.hosted.auth, HOSTED, "/sign-up/email", body)).status).toBe(200);
+  });
+
+  it("keeps an install with a password account working, then moves it to the hosted account", async () => {
+    const body = { email: "ada@dozo.example", password: PASSWORD, name: "Ada" };
+    const s = await stack(async (earlier) => {
+      expect((await post(earlier.auth, LOCAL, "/sign-up/email", body)).status).toBe(200);
+    });
+    const prisma = s.local.prisma;
+    const [ada] = prisma.authData.user;
+    // The server came up with its password account: passwords work, linking is offered.
+    expect(await hostedLoginCapabilities(prisma as never)).toEqual({
+      hostedLogin: false,
+      hostedLink: false,
+    });
+    vi.stubEnv("HOSTED_LOGIN_ISSUER", HOSTED);
+    expect(await hostedLoginCapabilities(prisma as never)).toEqual({
+      hostedLogin: false,
+      hostedLink: true,
+    });
+    // No new account while it waits: sign-up stays closed.
+    const other = { email: "eve@dozo.example", password: PASSWORD, name: "Eve" };
+    // (upstream's single-account admission answers first here; the hosted login's 404 is behind it)
+    expect((await post(s.local.auth, LOCAL, "/sign-up/email", other)).ok).toBe(false);
+    expect(prisma.authData.user).toHaveLength(1);
+    const signedIn = await post(s.local.auth, LOCAL, "/sign-in/email", body);
+    expect(signedIn.status).toBe(200);
+    const hostedCookie = await s.account("ada@hosted.example");
+    const linked = await s.signIn(hostedCookie, cookieOf(signedIn));
+    expect(linked.headers.get("location")).toBe(`${LOCAL}/`);
+    expect(prisma.authData.account).toEqual([
+      expect.objectContaining({ userId: ada!.id, providerId: HOSTED_PROVIDER_ID }),
+    ]);
+    expect(await hostedLoginCapabilities(prisma as never)).toEqual({
+      hostedLogin: true,
+      hostedLink: false,
+    });
+    expect((await post(s.local.auth, LOCAL, "/sign-in/email", body)).status).toBe(404);
+    // Signed out, the hosted account signs in as the same user, with the same workspace.
+    const again = await s.signIn(hostedCookie);
+    expect(again.headers.get("location")).toBe(`${LOCAL}/`);
+    expect(prisma.authData.user.map((user) => user.id)).toEqual([ada!.id]);
+    expect(prisma.members).toEqual([ada!.id]);
   });
 
   it("changes nothing when neither variable is set", async () => {
