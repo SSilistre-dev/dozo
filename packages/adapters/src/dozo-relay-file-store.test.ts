@@ -4,7 +4,7 @@ import path from "node:path";
 import type { RelayHostChannel } from "@rakazo/core";
 import { encodeRelayBytes, webRelayCrypto } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fileRelayStore } from "./dozo-relay-file-store.js";
+import { fileRelayStore, replaceFile } from "./dozo-relay-file-store.js";
 
 const crypto = webRelayCrypto();
 let dir: string;
@@ -115,5 +115,19 @@ describe("fileRelayStore", () => {
     await fileRelayStore(dir).put(entry("Y2hhbm5lbC1vbmUtMTIzND"));
     await vi.waitFor(() => expect(onChange).toHaveBeenCalled());
     stop?.();
+  });
+
+  it("moves a file into place again while Windows refuses it for a moment, and only then", async () => {
+    const busy = (code: string) => Object.assign(new Error(code), { code });
+    const moves: string[] = [];
+    await replaceFile("a.tmp", "a.json", async (from) => {
+      moves.push(from);
+      if (moves.length < 3) throw busy("EPERM");
+    });
+    expect(moves).toHaveLength(3);
+    const missing = replaceFile("b.tmp", "b.json", async () => {
+      throw busy("ENOENT");
+    });
+    await expect(missing).rejects.toThrow("ENOENT");
   });
 });

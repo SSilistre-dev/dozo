@@ -258,6 +258,7 @@ async fn e2e_ends_what_a_crashed_app_left() {
 }
 
 async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
+    exit_on_panic();
     let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
     let options = Options {
         manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
@@ -365,6 +366,20 @@ async fn e2e_this_computer_connects(root: &Path, ports: Ports) {
         "the server never listed this computer as connected"
     );
     println!("E2E: this computer connected over the device socket");
+}
+
+/// A failed check ends the test process at once, after its message. Unwinding would wait for
+/// the server's output to end, which on Windows is read on threads the runtime waits for, while
+/// the server runs on until this process ends (its job objects close with it).
+fn exit_on_panic() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let report = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            report(info);
+            std::process::exit(101);
+        }));
+    });
 }
 
 /// What is still running from the server's folder a few seconds after a stop: a stop waits for

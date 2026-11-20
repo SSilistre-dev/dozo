@@ -4,7 +4,7 @@ import { chmod, link, mkdir, open, readdir, readFile, rename, rm } from "node:fs
 import path from "node:path";
 import { RelayChannelId, RelayKey } from "@rakazo/contracts";
 import type { RelayHostChannel, RelayHostStore, RelayKeyPair } from "@rakazo/core";
-import { decodeRelayBytes, encodeRelayBytes } from "@rakazo/core";
+import { decodeRelayBytes, encodeRelayBytes, retry } from "@rakazo/core";
 import * as z from "zod";
 
 /**
@@ -105,7 +105,7 @@ export function fileRelayStore(dir: string): RelayHostStore {
     async put(channel) {
       const file = channelFile(channel.channel);
       await ensureDirs();
-      await rename(await writePrivate(file, channel), file);
+      await replaceFile(await writePrivate(file, channel), file);
     },
 
     async remove(channel) {
@@ -121,6 +121,23 @@ export function fileRelayStore(dir: string): RelayHostStore {
       return () => watcher.close();
     },
   };
+}
+
+/**
+ * Moves a new file over `to`. Windows refuses that for a moment while another process (`run`
+ * reading the channel it was told about) has `to` open: asked again for about two seconds.
+ */
+export async function replaceFile(
+  from: string,
+  to: string,
+  move: (from: string, to: string) => Promise<void> = rename,
+) {
+  await retry(() => move(from, to), {
+    attempts: 20,
+    delayMs: 100,
+    retryable: (error) =>
+      ["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? ""),
+  });
 }
 
 /** Writes `value` to a new hidden file next to `file`, flushed to disk; returns its path. */
