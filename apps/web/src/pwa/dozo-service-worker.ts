@@ -1,11 +1,15 @@
 import type { ServiceWorkerScope } from "./service-worker";
-import { installServiceWorker as upstreamInstallServiceWorker } from "./service-worker";
+import {
+  SKIP_WAITING,
+  installServiceWorker as upstreamInstallServiceWorker,
+} from "./service-worker";
 
 type FetchEvent = {
   request: Request;
   clientId?: string;
   resultingClientId?: string;
   respondWith(response: Promise<Response>): void;
+  waitUntil(promise: Promise<unknown>): void;
 };
 
 /**
@@ -13,6 +17,16 @@ type FetchEvent = {
  * hangs (no answer, no error) would otherwise never reach the cache and leave the page blank.
  */
 export const NETWORK_WAIT_MS = 4000;
+
+/**
+ * The scripts `index.html` runs before first paint (the brand rule's head). They block the parser,
+ * and a browser paints nothing while one hangs, not even markup placed before it, so the worker
+ * keeps a copy and answers with it when the network hangs, like a precached asset.
+ */
+export const BOOT_SCRIPTS = ["/theme.js", "/dozo-boot.js"];
+
+/** What upstream's navigation reads: never a waiting version, so it never waits for one. */
+const NOTHING_WAITING = { waiting: null };
 
 type Settled = { response: Response } | { error: unknown };
 
@@ -47,14 +61,23 @@ export async function networkUnlessHung(
  * worker's cache first made every warm load slower. The worker's cache answers when the network
  * fails or hangs for `NETWORK_WAIT_MS`, and first for a page it opened from the cached shell while
  * offline. A navigation that hangs that long gets upstream's offline answer, the cached shell.
- * The shell, the theme and updates keep upstream's behaviour.
+ * The head's blocking scripts are precached and answered the same way.
+ *
+ * Updates: upstream answers a navigation only after asking a waiting version to take over and
+ * waiting up to 3 seconds for it, but that version cannot activate while this worker is still
+ * handling the navigation, so every first page load after a deploy sat blank for those 3 seconds
+ * and the planned reload never came. Here the navigation goes to the network at once and the
+ * waiting version is asked to take over alongside (only with one window open, as upstream does);
+ * it activates once the answer is done and takes over the open page without a reload.
+ * The shell and the theme keep upstream's behaviour.
  */
 export function installServiceWorker(
   scope: ServiceWorkerScope,
   precache: readonly string[],
   cacheName: string,
 ): void {
-  const precached = new Set(precache);
+  const shellFiles = [...precache, ...BOOT_SCRIPTS.filter((path) => !precache.includes(path))];
+  const precached = new Set(shellFiles);
   // Window clients whose navigation failed, so the cached shell was what they got.
   const offlinePages = new Set<string>();
   const navigations = new WeakMap<Request, string>();
@@ -63,9 +86,7 @@ export function installServiceWorker(
     location: scope.location,
     caches: scope.caches,
     clients: scope.clients,
-    get registration() {
-      return scope.registration;
-    },
+    registration: NOTHING_WAITING,
     skipWaiting: () => scope.skipWaiting(),
     fetch: (request: Request) => {
       const page = navigations.get(request);
@@ -91,6 +112,7 @@ export function installServiceWorker(
         const { request, clientId = "", resultingClientId = "" } = event as FetchEvent;
         if (request.mode === "navigate") {
           if (resultingClientId) navigations.set(request, resultingClientId);
+          (event as FetchEvent).waitUntil(handOver());
         } else if (networkFirst(request) && !offlinePages.has(clientId)) {
           const cached = () => scope.caches.match(request);
           (event as FetchEvent).respondWith(
@@ -107,6 +129,13 @@ export function installServiceWorker(
     },
   };
 
+  async function handOver(): Promise<void> {
+    const waiting = scope.registration.waiting;
+    if (!waiting) return;
+    if ((await scope.clients.matchAll({ type: "window" })).length > 1) return;
+    waiting.postMessage(SKIP_WAITING);
+  }
+
   function networkFirst(request: Request): boolean {
     if (request.method !== "GET") return false;
     const url = new URL(request.url);
@@ -114,5 +143,5 @@ export function installServiceWorker(
     return precached.has(url.pathname) || url.pathname.startsWith("/assets/");
   }
 
-  upstreamInstallServiceWorker(shell as unknown as ServiceWorkerScope, precache, cacheName);
+  upstreamInstallServiceWorker(shell as unknown as ServiceWorkerScope, shellFiles, cacheName);
 }

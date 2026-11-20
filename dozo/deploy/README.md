@@ -33,7 +33,9 @@ also those to the layer and the theme):
 5. Checks health: on the host, postgres, supervisor, web, api and worker are running, api and
    worker are `healthy`, the app containers and the supervisor run the new tag, the api answers
    `/health` and no service restarts within 15 seconds;
-   from outside, `https://<domain>/` answers with a title that names Dozo.
+   from outside, `https://<domain>/` answers with a title that names Dozo, and `/dozo-boot.js`
+   still carries the server's `cache-control: no-cache` (a CDN that sets its own browser cache time
+   fails this; on Cloudflare: Caching, Browser Cache TTL, Respect Existing Headers).
 6. Removes older tags of the three images, keeping the new one, the one it replaced and the
    newest other one.
 
