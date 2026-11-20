@@ -285,9 +285,7 @@ impl Local {
         for folder in ["versions", "downloads", "logs", "data", "run"] {
             fs::create_dir_all(layout.at(folder)).map_err(|_| Failure::Start)?;
         }
-        let lock = stack_setup::lock(&layout.at("stack.lock"))
-            .map_err(|_| Failure::Start)?
-            .ok_or(Failure::AlreadyRunning)?;
+        let lock = take_lock(&layout.at("stack.lock")).await?;
         let lock = Arc::new(lock);
         self.running.lock().await.lock = Some(lock.clone());
         let logs = layout.at("logs");
@@ -523,6 +521,19 @@ impl Local {
             .await
             .map_err(|error| format!("{name} did not start: {error}"))
     }
+}
+
+/// The folder's lock. Right after a stop, what a process started can hold it a moment longer
+/// (it inherits the lock and is just ending), so a taken lock is asked again for 3 seconds
+/// before another app counts as holding it.
+async fn take_lock(file: &Path) -> Result<fs::File, Failure> {
+    for _ in 0..30 {
+        if let Some(lock) = stack_setup::lock(file).map_err(|_| Failure::Start)? {
+            return Ok(lock);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err(Failure::AlreadyRunning)
 }
 
 /// The version recorded as installed, if its folder is there.
@@ -855,9 +866,15 @@ impl Plan {
     /// The relay agent's commands, when the bundle has it: they run with Node from the
     /// server's folder and keep their keys in `relay/`.
     fn agent(&self, layout: &Layout, options: &Options, launch: &Arc<Launch>) -> Option<Agent> {
-        self.entrypoints.get("relay").and_then(Value::as_str)?;
+        let entry = self.entrypoints.get("relay").and_then(Value::as_str)?;
+        // By its real path: the agent runs only when Node's path for it is the one it was
+        // loaded from, which a folder reached through a link (macOS's /var) would break.
+        let mut base = self.node_spec("relay", vec![]);
+        if let Ok(real) = fs::canonicalize(self.server.join(entry)) {
+            base.args = vec![real.into()];
+        }
         Some(Agent {
-            base: self.node_spec("relay", vec![]),
+            base,
             state: layout.at("relay"),
             relay: options.relay.clone(),
             launch: launch.clone(),
@@ -1075,11 +1092,7 @@ mod tests {
         );
         assert!(local.stop().await);
         assert_eq!(*local.status().borrow(), Status::Off);
-        assert!(
-            stack_setup::lock(&root.join("stack.lock"))
-                .unwrap()
-                .is_some()
-        );
+        assert!(take_lock(&root.join("stack.lock")).await.is_ok());
 
         // The second start keeps the database: no initdb, no createdb.
         fs::remove_file(&said).unwrap();
@@ -1156,11 +1169,7 @@ mod tests {
         assert_eq!(settled(&local).await, Status::Failed(Failure::Start));
         assert!(!lines_of(&said).iter().any(|line| line == "api.js"));
         // Postgres was stopped and the folder released.
-        assert!(
-            stack_setup::lock(&root.join("stack.lock"))
-                .unwrap()
-                .is_some()
-        );
+        assert!(take_lock(&root.join("stack.lock")).await.is_ok());
         let events = fs::read_to_string(root.join("logs/manager.log")).unwrap();
         assert!(events.contains("postgres stopped"), "{events}");
         assert!(events.contains("migrate failed"), "{events}");
