@@ -32,7 +32,11 @@ for (let tries = 0; !qr && tries < 1200; tries++) {
   qr = await readFile(path.join(shared, "qr"), "utf8").catch(() => "");
   if (!qr) await sleep(500);
 }
-if (!qr.startsWith("dozo://pair#")) throw new Error(`no pairing link: ${qr}`);
+// Both links, as the mobile app reads them: a released server's agent (the canary's) may print the
+// older one.
+if (!qr.startsWith("dozo://pair#") && !qr.startsWith("rakazo://dozo-pair#")) {
+  throw new Error(`no pairing link: ${qr}`);
+}
 const crypto = core.webRelayCrypto();
 const offer = core.parseRelayPairingOffer(qr.slice(qr.indexOf("#") + 1), Date.now());
 const { psk, token } = await core.relayPairingSecrets(crypto, core.decodeRelayBytes(offer.secret));
