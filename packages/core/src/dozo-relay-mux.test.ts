@@ -83,6 +83,24 @@ describe("relay frames", () => {
 });
 
 describe("relay multiplexer", () => {
+  it("hands a redirect back unfollowed, and says when the session under the client ended", async () => {
+    const seen: Request[] = [];
+    const { client } = setup(async (request) => {
+      seen.push(request);
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://elsewhere.invalid/" },
+      });
+    });
+    const response = await client.fetch("/moved");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://elsewhere.invalid/");
+    expect(seen[0]?.redirect).toBe("manual");
+    expect(client.failed).toBe(false);
+    client.close("done");
+    expect(client.failed).toBe(true);
+  });
+
   it("forwards a request to the origin and returns the response", async () => {
     const forward = vi.fn(async (request: Request) => {
       expect(request.url).toBe(`${ORIGIN}/api/bots?limit=2`);

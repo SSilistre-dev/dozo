@@ -97,6 +97,10 @@ vi.mock("./passkey", () => ({
 }));
 vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
+vi.mock("./dozo-relay-fetch", () => ({
+  isRelayGone: () => false,
+  subscribeRelayGone: () => () => {},
+}));
 
 const base = {
   passwordAuth: true,
@@ -140,6 +144,15 @@ it("a server with registration closed opens on sign-in, with no way to sign-up",
   await act(async () => button("Back to sign in")!.click());
   expect(text()).toContain("Sign in to Dozo");
   expect(text()).not.toContain("Sign up");
+});
+
+it("a paired computer gets no password form", async () => {
+  // The paired computer's address (dozo-relay-connection.ts, relayOrigin).
+  server.base = `https://${"ab".repeat(16)}.computer.dozo.invalid`;
+  vi.mocked(passwordResetCapabilities).mockResolvedValue(answer({}));
+  await render();
+  expect(text()).toContain("Sign in on your computer to use it here.");
+  expect(host.querySelector("input")).toBeNull();
 });
 
 it("a closed server never shows the sign-up title while its answer is on the way", async () => {

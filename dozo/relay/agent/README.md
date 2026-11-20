@@ -26,8 +26,8 @@ dozo-relay-agent revoke <channel> [--state <dir>]
 ```
 
 - `pair` registers a channel on the relay and prints one line,
-  `{"event":"offer","channel","relay","expiresAt","qr"}`. `qr` is the whole offer (base64url of its
-  JSON) and is what the QR code holds. The offer works once, for 10 minutes, and only while `run`
+  `{"event":"offer","channel","relay","expiresAt","qr"}`. `qr` is what the QR code holds: the
+  pairing link `rakazo://dozo-pair#<offer>` (`dozo/relay/PROTOCOL.md`, Pairing link). The offer works once, for 10 minutes, and only while `run`
   is connected: `run` notices the new channel by itself.
 - `run` stays connected until SIGINT or SIGTERM, then closes every socket and prints
   `{"event":"stopped"}`. `--origin` must be a loopback address; the agent forwards nowhere else.
