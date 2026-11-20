@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::hash::{BuildHasher, RandomState};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,7 +19,7 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::{Error, Message};
 
-use crate::device_run::{MAX_MESSAGE_BYTES, Reply, Runner, until};
+use crate::device_run::{CANCELLED, LOST, MAX_MESSAGE_BYTES, Reply, Runner, until};
 
 pub const CONNECT_PATH: &str = "/api/devices/connect";
 /// Carries the reason on a refused connection, which has no message to put it in.
@@ -34,30 +35,48 @@ pub struct Options {
     pub token: String,
     pub runner: Arc<Runner>,
     pub retry: (Duration, Duration),
+    /// How long what commands left running survives a dropped connection that does not come
+    /// back.
+    pub grace: Duration,
 }
 
+/// The grace a dropped connection gets before what commands left running is stopped.
+pub const GRACE: Duration = Duration::from_secs(60);
+
 /// Connects and keeps reconnecting until `stop` turns true or the server revokes this
-/// computer, which it returns. Every running command stops with the connection.
+/// computer, which it returns. Commands in flight stop with the connection (their responses
+/// could not arrive); what they left running gets `grace` to see the connection back, and then
+/// only its process groups stop. A revoke stops everything.
 pub async fn run(options: Options, mut stop: watch::Receiver<bool>) -> Option<Revoked> {
     let mut url = options.server.join(CONNECT_PATH).ok()?;
     let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
     url.set_scheme(scheme).ok()?;
     let mut attempt = 0u32;
+    let sessions = Arc::new(AtomicU64::new(0));
     loop {
         if *stop.borrow() {
             return None;
         }
         let opened = Instant::now();
-        match session(&url, &options, &mut stop).await {
+        match session(&url, &options, &mut stop, &sessions).await {
             Ended::Revoked(reason) => {
-                options.runner.stop_all();
+                options.runner.stop_all(true);
                 return Some(reason);
             }
-            Ended::Stopped => {
-                options.runner.stop_all();
-                return None;
+            // Whoever stopped it (turning access off, another server, quitting) stops the rest.
+            Ended::Stopped => return None,
+            Ended::Lost => {
+                let seen = sessions.load(Ordering::SeqCst);
+                let (runner, sessions, stop) =
+                    (options.runner.clone(), sessions.clone(), stop.clone());
+                let grace = options.grace;
+                tokio::spawn(async move {
+                    sleep(grace).await;
+                    if sessions.load(Ordering::SeqCst) == seen && !*stop.borrow() {
+                        tokio::task::spawn_blocking(move || runner.stop_all(false));
+                    }
+                });
             }
-            Ended::Lost => options.runner.stop_all(),
         }
         if opened.elapsed() >= PING {
             attempt = 0;
@@ -84,7 +103,12 @@ fn jitter() -> f64 {
     (RandomState::new().hash_one(Instant::now()) % 10_000) as f64 / 10_000.0
 }
 
-async fn session(url: &Url, options: &Options, stop: &mut watch::Receiver<bool>) -> Ended {
+async fn session(
+    url: &Url,
+    options: &Options,
+    stop: &mut watch::Receiver<bool>,
+    sessions: &AtomicU64,
+) -> Ended {
     let Ok(mut request) = url.as_str().into_client_request() else {
         return Ended::Stopped;
     };
@@ -113,9 +137,10 @@ async fn session(url: &Url, options: &Options, stop: &mut watch::Receiver<bool>)
         }
         _ => return Ended::Lost,
     };
+    sessions.fetch_add(1, Ordering::SeqCst);
     let (mut sink, mut incoming) = socket.split();
     let (out, mut outgoing) = mpsc::channel::<String>(64);
-    let calls: Arc<Mutex<HashMap<String, watch::Sender<bool>>>> = Arc::default();
+    let calls: Arc<Mutex<HashMap<String, watch::Sender<u8>>>> = Arc::default();
     let mut ping = interval(PING);
     ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ping.tick().await;
@@ -153,7 +178,7 @@ async fn session(url: &Url, options: &Options, stop: &mut watch::Receiver<bool>)
     };
     // A lost response is never retried, so work in flight stops with the connection.
     for (_, cancel) in calls.lock().unwrap().drain() {
-        let _ = cancel.send(true);
+        let _ = cancel.send(LOST);
     }
     ended
 }
@@ -163,7 +188,7 @@ fn receive(
     text: &str,
     options: &Options,
     out: &mpsc::Sender<String>,
-    calls: &Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+    calls: &Arc<Mutex<HashMap<String, watch::Sender<u8>>>>,
 ) -> Option<Revoked> {
     let Ok(message) = serde_json::from_str::<Value>(text) else {
         return None;
@@ -182,7 +207,7 @@ fn receive(
         ),
         (Some("cancel"), Some(id)) => {
             if let Some(cancel) = calls.lock().unwrap().remove(id) {
-                let _ = cancel.send(true);
+                let _ = cancel.send(CANCELLED);
             }
             None
         }
@@ -192,7 +217,7 @@ fn receive(
             if active.contains_key(id) {
                 return None;
             }
-            let (cancel, cancelled) = watch::channel(false);
+            let (cancel, cancelled) = watch::channel(0);
             active.insert(id.to_owned(), cancel);
             drop(active);
             let reply = Reply {
@@ -269,6 +294,7 @@ mod tests {
             token: token.to_owned(),
             runner: Runner::new(dir.join("data"), dir.join("home")),
             retry: (Duration::from_millis(20), Duration::from_millis(40)),
+            grace: Duration::from_millis(300),
         };
         (options, dir)
     }
@@ -380,6 +406,42 @@ mod tests {
             serde_json::from_str::<Value>(text.as_str()).unwrap()["id"],
             "after"
         );
+    }
+
+    /// What a command left running survives a dropped connection that comes back in time.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn leftovers_survive_a_drop_that_comes_back_in_time() {
+        let (url, mut sockets) = gateway().await;
+        let (options, _dir) = options(url, "good");
+        let runner = options.runner.clone();
+        let (stop, stopped) = watch::channel(false);
+        tokio::spawn(run(options, stopped));
+        let mut socket = sockets.recv().await.unwrap();
+        send(
+            &mut socket,
+            json!({ "type": "request", "id": "p", "request": { "method": "provision", "botId": "b" } }),
+        )
+        .await;
+        answer(&mut socket, "p").await;
+        send(
+            &mut socket,
+            json!({ "type": "request", "id": "e", "request": { "method": "execute", "botId": "b",
+                "command": { "argv": ["/bin/sh", "-c", "sleep 3 >/dev/null 2>&1 & exit 0"] } } }),
+        )
+        .await;
+        answer(&mut socket, "e").await;
+        assert_eq!(runner.tracked(), 1);
+        drop(socket);
+        let _back = sockets.recv().await.unwrap();
+        sleep(Duration::from_millis(600)).await;
+        assert_eq!(
+            runner.tracked(),
+            1,
+            "the grace (300 ms) passed with the connection back"
+        );
+        stop.send(true).unwrap();
+        runner.stop_all(true);
     }
 
     #[tokio::test]

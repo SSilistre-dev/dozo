@@ -103,7 +103,9 @@ account and connects to it; the web app's settings then list it under Computers 
   the web view's sign-in cookie to `/api/devices/pair` (only to the chosen server's origin) and
   keeps the device token it gets back in the system keyring (`src/device_pairing.rs`). It then holds one outbound WebSocket to
   `/api/devices/connect` with that token (`src/device_socket.rs`); the server never connects in.
-  Lost connections come back with backoff; a ping every 30 seconds notices a silent drop.
+  Lost connections come back with backoff; a ping every 30 seconds notices a silent drop. A
+  dropped connection stops the commands in flight (their answers could not arrive), and what
+  they left running gets 60 seconds to see it come back before its process groups stop.
 - What a bot can do (`src/device_run.rs`): run commands and, through them, work with files.
   Commands arrive as an argument list and start without a shell in between (the server's own
   shell tool sends `<shell> -lc <command>`, as upstream does). They run as this user, in the
@@ -111,10 +113,14 @@ account and connects to it; the web app's settings then list it under Computers 
   only the usual shell variables of this app's environment, stop at their timeout, and each one
   leads its own process group. Screen control is not offered: a bot asking to use an app on
   screen is told it is not available here.
-- What stopping a command reaches: its process group, which a run's cancel, the bot's stop and
-  turning access off all signal. On Linux each command also carries its own mark in its
-  environment, so what it started in a new session or group (`setsid`, a double fork) is found in
-  `/proc` and stopped too, and a group is signalled only while a marked process is still in it.
+- What stopping a command reaches: its process group. On Linux each command also carries its own
+  mark in its environment, so what it started in a new session or group (`setsid`, a double
+  fork) is found in `/proc`; that is stopped only by an explicit stop (a run's cancel, the bot's
+  stop, turning access off, quitting the app), never by a timeout or a dropped connection. A
+  group is signalled only while a marked process is still in it. The limit: an app a command
+  starts inherits the mark too, so a browser a bot opened (`xdg-open`, `firefox`) when none was
+  running closes on such a stop; one that was already running only gets a new window and is not
+  touched. There is no reliable way to tell an app the person now uses from a bot's own process.
   What a command hands to another manager is out of reach on every system: `systemd-run --user`,
   launchd, cron, `at`, a login item, or a process that clears its environment and leaves the group.
   On macOS, `setsid` and a double fork escape as well; on Windows, the process tree is stopped only
@@ -123,16 +129,19 @@ account and connects to it; the web app's settings then list it under Computers 
 - The server's rules stay upstream's: only chats the person starts with their own bots reach this
   computer, never routines or other people's messages, and the first command in each Space asks
   in the chat first.
-- Ends: turning the item off (running commands stop; the token is revoked on the server and
-  deleted here; if the server cannot be reached, the app says so, no command reaches this
-  computer, and the revoke is retried with backoff, at every launch and before turning it on
-  again, which cannot pair until it succeeds); removing the computer in the web app's settings; signing out or a password
+- Ends: turning the item off (at once: the connection and running commands stop and the answer
+  is gone; then the token is revoked on the server and deleted here; if the server cannot be
+  reached, the app says so and retries with backoff, at every launch and before turning it on
+  again, which cannot pair until it succeeds; a server that no longer knows the token counts as
+  done, and without the token the person's sign-in ends the pairing by its device id); removing the computer in the web app's settings; signing out or a password
   reset (the pairing ends; the same account's next sign-in pairs again on the next page load or
   when the window comes forward, another account is asked again); quitting the app (commands
   stop).
-- The answer holds for one server and one account; another server starts switched off. Turning
-  on, off, pairing and the server ending it run one at a time; the menu's check mark always shows
-  the saved answer.
+- The answer holds for one server and one account; another server starts switched off. Changes
+  to the pairing run one at a time, each step bounded (network calls time out after 15 seconds,
+  keyring calls after 10); the person is never asked while one runs. While another account's
+  answer is asked for, its new pairing is held as a pending revoke. The menu's check mark always
+  shows the saved answer.
 - Keyring: macOS Keychain, Windows Credential Manager, the Secret Service on Linux (GNOME
   Keyring, KWallet). Without one, the app does not pair and says so, as upstream's app refuses to
   without secure storage; a plain file is never used for the token.

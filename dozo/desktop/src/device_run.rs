@@ -91,18 +91,25 @@ const PASSED_ENV: &[&str] = &[
     "NUMBER_OF_PROCESSORS",
 ];
 
+/// Why a call stopped early, as `Reply::cancel` carries it. `CANCELLED`: the server cancelled it,
+/// so what the command started outside its group goes too. `LOST`: the connection dropped, so
+/// only its group stops.
+pub const CANCELLED: u8 = 1;
+pub const LOST: u8 = 2;
+
 /// Where one request's frames go: the socket's outgoing queue, tagged with the request id.
 /// Nothing is sent once the call is cancelled, as upstream writes nothing after an abort.
 pub struct Reply {
     pub id: String,
     pub out: mpsc::Sender<String>,
-    pub cancel: watch::Receiver<bool>,
+    /// 0 while it runs, then `CANCELLED` or `LOST`.
+    pub cancel: watch::Receiver<u8>,
 }
 
 impl Reply {
     /// False when the frame was not sent: cancelled, too large, or the connection is gone.
     pub async fn send(&self, frame: Value) -> bool {
-        if *self.cancel.borrow() {
+        if *self.cancel.borrow() != 0 {
             return false;
         }
         let body = json!({ "type": "frame", "id": self.id, "frame": frame }).to_string();
@@ -126,7 +133,6 @@ struct Owned {
     pid: u32,
     /// A value only this command's environment carries, inherited by what it starts. Only
     /// Linux can look for it (/proc).
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     mark: String,
     bot: String,
     run: Option<String>,
@@ -160,28 +166,46 @@ impl Runner {
         })
     }
 
-    /// Stops every command and everything they left running.
-    pub fn stop_all(&self) {
-        for owned in self.owned.lock().unwrap().drain(..) {
+    /// Stops every command and what it left running in its group. `escaped`: also what it
+    /// started outside the group (Linux), which only an explicit stop, turning access off or
+    /// quitting does, never a dropped connection.
+    pub fn stop_all(&self, escaped: bool) {
+        self.stop_where(|_| true, escaped);
+    }
+
+    fn stop_where(&self, matches: impl Fn(&Owned) -> bool, escaped: bool) {
+        let stopped: Vec<Owned> = {
+            let mut owned = self.owned.lock().unwrap();
+            let (stop, keep) = owned.drain(..).partition(|owned| matches(owned));
+            *owned = keep;
+            stop
+        };
+        // Signalled outside the lock: finding marked processes reads /proc.
+        for owned in stopped {
             let _ = owned.cancel.send(true);
-            kill(&owned);
+            kill(owned.pid, &owned.mark, escaped);
         }
     }
 
-    fn stop_where(&self, matches: impl Fn(&Owned) -> bool) {
-        self.owned.lock().unwrap().retain(|owned| {
-            if !matches(owned) {
-                return true;
-            }
-            let _ = owned.cancel.send(true);
-            kill(owned);
-            false
-        });
+    /// How many commands' processes are tracked.
+    #[cfg(test)]
+    pub fn tracked(&self) -> usize {
+        self.owned.lock().unwrap().len()
+    }
+
+    /// Drops the entry of a finished command whose processes are all gone.
+    fn forget_if_gone(&self, pid: u32, mark: &str) -> bool {
+        let gone = !alive(pid, mark);
+        let mut owned = self.owned.lock().unwrap();
+        if gone {
+            owned.retain(|owned| owned.pid != pid);
+        }
+        !owned.iter().any(|owned| owned.pid == pid)
     }
 
     /// Drops a finished command's entry once nothing it started runs any more, checked every
     /// second as upstream does, so a stop never signals a group that is no longer this app's.
-    fn watch_leftovers(self: &Arc<Self>, pid: u32) {
+    fn watch_leftovers(self: &Arc<Self>, pid: u32, mark: String) {
         let runner = Arc::downgrade(self);
         tokio::spawn(async move {
             loop {
@@ -189,9 +213,10 @@ impl Runner {
                 let Some(runner) = runner.upgrade() else {
                     return;
                 };
-                let mut owned = runner.owned.lock().unwrap();
-                owned.retain(|owned| owned.pid != pid || alive(owned));
-                if !owned.iter().any(|owned| owned.pid == pid) {
+                let mark = mark.clone();
+                let forgotten =
+                    tokio::task::spawn_blocking(move || runner.forget_if_gone(pid, &mark)).await;
+                if !matches!(forgotten, Ok(false)) {
                     return;
                 }
             }
@@ -224,13 +249,13 @@ impl Runner {
             "isRunning" => Ok(Value::Bool(running(&home))),
             "cancelRunWork" => match request.get("targetRunId").and_then(Value::as_str) {
                 Some(target) if valid_id(target, 256) => {
-                    self.stop_where(|o| o.bot == key && o.run.as_deref() == Some(target));
+                    self.stop_where(|o| o.bot == key && o.run.as_deref() == Some(target), true);
                     Ok(Value::Null)
                 }
                 _ => return reply.error(INVALID).await,
             },
             "stop" | "destroy" => {
-                self.stop_where(|o| o.bot == key);
+                self.stop_where(|o| o.bot == key, true);
                 let done = if method == "stop" {
                     stop(&home)
                 } else {
@@ -340,7 +365,7 @@ impl Runner {
         let (stop, mut stopped) = watch::channel(false);
         self.owned.lock().unwrap().push(Owned {
             pid,
-            mark,
+            mark: mark.clone(),
             bot: key.to_owned(),
             run: run.map(str::to_owned),
             cancel: stop,
@@ -365,13 +390,13 @@ impl Runner {
                 chunk = read(&mut stdout) => {
                     let text = out_text.push(chunk.as_deref(), &mut stdout);
                     if !text.is_empty() && !reply.send(event("stdout", &text)).await {
-                        break Ended::Gone;
+                        break Ended::Gone(why(&cancel));
                     }
                 }
                 chunk = read(&mut stderr) => {
                     let text = err_text.push(chunk.as_deref(), &mut stderr);
                     if !text.is_empty() && !reply.send(event("stderr", &text)).await {
-                        break Ended::Gone;
+                        break Ended::Gone(why(&cancel));
                     }
                 }
                 exit = child.wait(), if status.is_none() => {
@@ -379,13 +404,13 @@ impl Runner {
                 }
                 _ = heartbeat.tick() => {
                     if !reply.send(json!({ "heartbeat": true })).await {
-                        break Ended::Gone;
+                        break Ended::Gone(why(&cancel));
                     }
                 }
                 () = sleep_until(deadline) => {
                     break Ended::Stopped(format!("command timed out after {} ms", command.timeout_ms), 124);
                 }
-                () = until(&mut cancel) => break Ended::Gone,
+                kind = cancelled(&mut cancel) => break Ended::Gone(kind),
                 () = until(&mut stopped) => {
                     break Ended::Stopped("command aborted".to_owned(), 130);
                 }
@@ -396,21 +421,17 @@ impl Runner {
                 let note = signal.map_or(String::new(), |signal| {
                     format!("command terminated by signal {signal}")
                 });
-                let lingering = {
-                    let mut owned = self.owned.lock().unwrap();
-                    owned.retain(|owned| owned.pid != pid || alive(owned));
-                    owned.iter().any(|owned| owned.pid == pid)
-                };
-                if lingering {
-                    self.watch_leftovers(pid);
+                if !self.forget_if_gone(pid, &mark) {
+                    self.watch_leftovers(pid, mark);
                 }
                 events(reply, "", &note, code).await;
             }
+            // A timeout stops the group; a stop from the runner has already done its part.
             Ended::Stopped(note, code) => {
-                self.stop_where(|owned| owned.pid == pid);
+                self.stop_where(|owned| owned.pid == pid, false);
                 events(reply, "", &note, code).await;
             }
-            Ended::Gone => self.stop_where(|owned| owned.pid == pid),
+            Ended::Gone(kind) => self.stop_where(|owned| owned.pid == pid, kind == CANCELLED),
         }
     }
 }
@@ -418,7 +439,24 @@ impl Runner {
 enum Ended {
     Exited((i32, Option<i32>)),
     Stopped(String, i32),
-    Gone,
+    /// Cancelled or the connection dropped (`CANCELLED`, `LOST`).
+    Gone(u8),
+}
+
+/// Why sending failed: the call's cancel reason, or a dropped connection.
+fn why(cancel: &watch::Receiver<u8>) -> u8 {
+    match *cancel.borrow() {
+        0 => LOST,
+        kind => kind,
+    }
+}
+
+/// Resolves with the cancel reason once the call is cancelled; `LOST` when its sender is gone.
+async fn cancelled(cancel: &mut watch::Receiver<u8>) -> u8 {
+    match cancel.wait_for(|kind| *kind != 0).await {
+        Ok(kind) => *kind,
+        Err(_) => LOST,
+    }
 }
 
 struct Exec {
@@ -743,50 +781,51 @@ fn marked(mark: &str) -> Vec<(i32, i32)> {
         .collect()
 }
 
-/// Stops a command, its group and (on Linux) every process carrying its mark. The group is
-/// signalled only while a marked process still belongs to it, so a group id the system has
-/// since given to someone else is never hit.
+/// Stops a command's group and, with `escaped`, every process carrying its mark (what it started
+/// in a new session or group). The group is signalled only while a marked process still belongs
+/// to it, so a group id the system has since given to someone else is never hit.
 #[cfg(target_os = "linux")]
-fn kill(owned: &Owned) {
-    let marked = marked(&owned.mark);
-    let group = i32::try_from(owned.pid).unwrap_or(0);
+fn kill(pid: u32, mark: &str, escaped: bool) {
+    let marked = marked(mark);
+    let group = i32::try_from(pid).unwrap_or(0);
     // SAFETY: plain signals to processes found above; no memory is involved.
     unsafe {
         if group > 0 && marked.iter().any(|(_, pgrp)| *pgrp == group) {
             libc::kill(-group, libc::SIGKILL);
         }
-        for (pid, _) in marked {
-            libc::kill(pid, libc::SIGKILL);
+        if escaped {
+            for (pid, _) in marked {
+                libc::kill(pid, libc::SIGKILL);
+            }
         }
     }
 }
 
 #[cfg(target_os = "linux")]
-fn alive(owned: &Owned) -> bool {
-    !marked(&owned.mark).is_empty()
+fn alive(_pid: u32, mark: &str) -> bool {
+    !marked(mark).is_empty()
 }
 
 /// macOS has no /proc to find marked processes: the group alone, which the entry is dropped
 /// for within a second of emptying (`watch_leftovers`).
 #[cfg(target_os = "macos")]
-fn kill(owned: &Owned) {
-    if alive(owned) {
+fn kill(pid: u32, mark: &str, _escaped: bool) {
+    if alive(pid, mark) {
         // SAFETY: a plain signal to the group this app created; no memory is involved.
-        unsafe { libc::kill(-(owned.pid as i32), libc::SIGKILL) };
+        unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
     }
 }
 
 #[cfg(target_os = "macos")]
-fn alive(owned: &Owned) -> bool {
+fn alive(pid: u32, _mark: &str) -> bool {
     // SAFETY: signal 0 only asks whether the group still exists.
-    i32::try_from(owned.pid).is_ok_and(|group| group > 0 && unsafe { libc::kill(-group, 0) } == 0)
+    i32::try_from(pid).is_ok_and(|group| group > 0 && unsafe { libc::kill(-group, 0) } == 0)
 }
 
 /// The process and its children, while the process still runs.
 #[cfg(windows)]
-fn kill(owned: &Owned) {
+fn kill(pid: u32, _mark: &str, _escaped: bool) {
     use std::os::windows::process::CommandExt;
-    let pid = owned.pid;
     if pid == 0 {
         return;
     }
@@ -800,7 +839,7 @@ fn kill(owned: &Owned) {
 
 /// Windows has no group to ask about once the command's own process ended.
 #[cfg(windows)]
-fn alive(_owned: &Owned) -> bool {
+fn alive(_pid: u32, _mark: &str) -> bool {
     false
 }
 
@@ -812,12 +851,12 @@ mod tests {
         frames: mpsc::Receiver<String>,
         // Only the Unix tests cancel a call.
         #[cfg_attr(not(unix), allow(dead_code))]
-        cancel: watch::Sender<bool>,
+        cancel: watch::Sender<u8>,
     }
 
     fn reply(id: &str) -> (Reply, Call) {
         let (out, frames) = mpsc::channel(256);
-        let (cancel, cancelled) = watch::channel(false);
+        let (cancel, cancelled) = watch::channel(0);
         (
             Reply {
                 id: id.to_owned(),
@@ -1099,6 +1138,31 @@ mod tests {
             assert_eq!(owned_count(&runner), 0);
         }
 
+        /// A dropped connection stops the command's group only: what left the group (here a
+        /// new session, as an app a command opened could be) is spared.
+        #[cfg(target_os = "linux")]
+        #[tokio::test]
+        async fn a_dropped_connection_spares_what_left_the_group() {
+            let (runner, dir) = provisioned().await;
+            let marker = dir.join("home/spared");
+            let script = format!(
+                "setsid sh -c 'sleep 1; touch {}' & sleep 30",
+                marker.to_string_lossy()
+            );
+            let (reply, call) = reply("long");
+            let request = execute(&["/bin/sh", "-c", &script], json!({}));
+            let running = {
+                let runner = runner.clone();
+                tokio::spawn(async move { runner.handle(&request, &reply).await })
+            };
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            call.cancel.send(LOST).unwrap();
+            running.await.unwrap();
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            assert!(marker.exists());
+            runner.stop_all(true);
+        }
+
         #[tokio::test]
         async fn a_cancelled_call_sends_nothing_more() {
             let (runner, _dir) = provisioned().await;
@@ -1109,7 +1173,7 @@ mod tests {
                 tokio::spawn(async move { runner.handle(&request, &reply).await })
             };
             tokio::time::sleep(Duration::from_millis(200)).await;
-            call.cancel.send(true).unwrap();
+            call.cancel.send(CANCELLED).unwrap();
             running.await.unwrap();
             assert!(call.frames.try_recv().is_err());
             assert_eq!(owned_count(&runner), 0);

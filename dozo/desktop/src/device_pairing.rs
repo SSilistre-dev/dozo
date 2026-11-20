@@ -20,6 +20,7 @@ use tauri::Url;
 
 const PAIR_PATH: &str = "/api/devices/pair";
 const SELF_PATH: &str = "/api/devices/self";
+const DEVICES_PATH: &str = "/api/devices";
 const MAX_TOKEN: usize = 1024;
 /// The keyring entry used to check that a keyring is there before pairing.
 const PROBE: &str = "probe";
@@ -59,10 +60,8 @@ impl Secrets for Keyring {
     }
 }
 
-/// What the pairing needs from the window: the person's answer and the sign-in.
-pub trait Ui: Send + Sync {
-    /// The system consent prompt naming the server. True only when the person picks Allow.
-    fn ask(&self, host: &str) -> impl Future<Output = bool> + Send;
+/// The sign-in the pairing needs from the window.
+pub trait SignIn: Send + Sync {
     /// The web view's cookies for the server as a `Cookie` header; `None` when signed out.
     fn cookies(&self) -> impl Future<Output = Option<String>> + Send;
 }
@@ -73,19 +72,29 @@ pub enum Outcome {
     Connected(String),
     /// Allowed, but nobody is signed in: pairs on a later page load or focus.
     SignedOut,
-    /// The person said no, or turned it off meanwhile.
+    /// Not allowed (any more).
     Declined,
+    /// Paired, but for another account than the one allowed. Kept as a pending revoke until the
+    /// person answers: `adopt` it or `reject` it.
+    OtherAccount,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Failure {
     /// The server refused, with its own sentence when it gave one, or could not be reached.
     Server(Option<String>),
-    /// No system keyring to keep the token in.
+    /// No system keyring to keep the token in, or it did not answer in time.
     Keyring,
-    /// An earlier pairing could not be ended on the server yet.
+    /// A pairing could not be ended on the server yet.
     RevokePending,
 }
+
+/// A keyring that does not answer (a locked keyring's unlock prompt nobody answers) must not
+/// hold the pairing up for ever.
+#[cfg(not(test))]
+const SECRET_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+const SECRET_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// The saved, non-secret half of a pairing.
 #[derive(Debug, PartialEq, Clone)]
@@ -95,6 +104,8 @@ struct Saved {
     revoking: bool,
 }
 
+/// One server's pairing. Every method returns within bounded time: network calls time out
+/// after 15 seconds, keyring calls after `SECRET_TIMEOUT`; nothing here waits for the person.
 pub struct Pairing {
     origin: Url,
     dir: PathBuf,
@@ -112,6 +123,10 @@ impl Pairing {
 
     pub fn origin(&self) -> &Url {
         &self.origin
+    }
+
+    pub fn host(&self) -> String {
+        self.origin.host_str().unwrap_or_default().to_owned()
     }
 
     fn file(&self, suffix: &str) -> PathBuf {
@@ -153,7 +168,7 @@ impl Pairing {
     async fn secret(&self, op: Secret) -> Result<Option<String>, String> {
         let secrets = self.secrets.clone();
         let account = self.origin.as_str().to_owned();
-        tokio::task::spawn_blocking(move || match op {
+        let call = tokio::task::spawn_blocking(move || match op {
             Secret::Get => secrets.get(&account),
             Secret::Set(token) => secrets.set(&account, &token).map(|()| None),
             Secret::Delete => secrets.delete(&account).map(|()| None),
@@ -161,9 +176,12 @@ impl Pairing {
                 .set(PROBE, "1")
                 .and_then(|()| secrets.delete(PROBE))
                 .map(|()| None),
-        })
-        .await
-        .map_err(|error| error.to_string())?
+        });
+        match tokio::time::timeout(SECRET_TIMEOUT, call).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err("the keyring did not answer".to_owned()),
+        }
     }
 
     /// Forgets the pairing here, token and all.
@@ -186,28 +204,17 @@ impl Pairing {
         self.secret(Secret::Get).await.ok().flatten()
     }
 
-    /// Asks, then pairs. Ends a pairing still being revoked first.
-    pub async fn turn_on(&self, ui: &impl Ui) -> Result<Outcome, Failure> {
-        if !self.finish_revoke().await {
-            return Err(Failure::RevokePending);
-        }
-        if !ui.ask(&self.host()).await {
-            return Ok(Outcome::Declined);
-        }
-        self.save_consent(None).map_err(|_| Failure::Keyring)?;
-        let outcome = self.pair(ui).await;
-        if matches!(outcome, Err(Failure::Server(_) | Failure::Keyring)) {
-            self.remove_consent();
-        }
-        outcome
+    /// The person allowed it in the prompt; the pairing follows.
+    pub fn allow(&self) -> Result<(), Failure> {
+        self.save_consent(None).map_err(|_| Failure::Server(None))
     }
 
     /// Pairs under the person's sign-in when allowed and not paired yet.
-    pub async fn pair(&self, ui: &impl Ui) -> Result<Outcome, Failure> {
+    pub async fn pair(&self, sign_in: &impl SignIn) -> Result<Outcome, Failure> {
         let Some(consent) = self.consent() else {
             return Ok(Outcome::Declined);
         };
-        if !self.finish_revoke().await {
+        if !self.finish_revoke(sign_in).await {
             return Err(Failure::RevokePending);
         }
         if let Some(token) = self.token().await {
@@ -216,7 +223,7 @@ impl Pairing {
         if self.secret(Secret::Probe).await.is_err() {
             return Err(Failure::Keyring);
         }
-        let Some(cookies) = ui.cookies().await else {
+        let Some(cookies) = sign_in.cookies().await else {
             return Ok(Outcome::SignedOut);
         };
         let (token, saved) = match request_pairing(&self.origin, &cookies).await {
@@ -225,47 +232,86 @@ impl Pairing {
             Err(Some(failure)) => return Err(failure),
         };
         // Turned off while the server answered.
-        let Some(_) = self.consent() else {
+        if self.consent().is_none() {
             self.end(&token, &saved).await;
             return Ok(Outcome::Declined);
-        };
-        // Another account signed in since the person allowed it: theirs is asked for again.
-        if consent.as_deref().is_some_and(|user| user != saved.user)
-            && (!ui.ask(&self.host()).await || self.consent().is_none())
-        {
-            self.remove_consent();
-            self.end(&token, &saved).await;
-            return Ok(Outcome::Declined);
+        }
+        // Another account signed in since the person allowed it: kept as revoking until they
+        // answer, so a pairing nobody agreed to is ended even if the app quits meanwhile.
+        if consent.as_deref().is_some_and(|user| user != saved.user) {
+            self.park(&saved);
+            return if self.secret(Secret::Set(token.clone())).await.is_ok() {
+                Ok(Outcome::OtherAccount)
+            } else {
+                self.end(&token, &saved).await;
+                Err(Failure::Keyring)
+            };
         }
         if self.secret(Secret::Set(token.clone())).await.is_err() || self.save(&saved).is_err() {
             self.end(&token, &saved).await;
             return Err(Failure::Keyring);
         }
         if self.save_consent(Some(&saved.user)).is_err() {
-            self.turn_off().await.ok();
-            return Err(Failure::Keyring);
+            self.withdraw();
+            self.finish_revoke(sign_in).await;
+            return Err(Failure::Server(None));
         }
         Ok(Outcome::Connected(token))
     }
 
-    /// Ends a pairing nobody keeps: on the server now, or as a pending revoke when it cannot
-    /// be reached, so the token never stays valid there unnoticed.
+    /// The person allowed the other account: its pairing becomes the one in use.
+    pub async fn adopt(&self) -> Result<Outcome, Failure> {
+        let Some(saved) = self.saved().filter(|saved| saved.revoking) else {
+            return Ok(Outcome::Declined);
+        };
+        if self.consent().is_none() {
+            return Ok(Outcome::Declined);
+        }
+        let Ok(Some(token)) = self.secret(Secret::Get).await else {
+            return Err(Failure::Keyring);
+        };
+        let kept = Saved {
+            revoking: false,
+            ..saved
+        };
+        if self.save(&kept).is_err() || self.save_consent(Some(&kept.user)).is_err() {
+            self.withdraw();
+            return Err(Failure::Server(None));
+        }
+        Ok(Outcome::Connected(token))
+    }
+
+    /// The person did not allow the other account: no consent, its pairing ended.
+    pub async fn reject(&self, sign_in: &impl SignIn) -> Result<(), Failure> {
+        self.withdraw();
+        if self.finish_revoke(sign_in).await {
+            Ok(())
+        } else {
+            Err(Failure::RevokePending)
+        }
+    }
+
+    /// Marks a pairing as to be ended, before anything else is tried, so it is never left valid
+    /// on the server unnoticed. Written even when the token cannot be kept: the person's
+    /// sign-in can still end it by its device id.
+    fn park(&self, saved: &Saved) {
+        let _ = self.save(&Saved {
+            revoking: true,
+            ..saved.clone()
+        });
+    }
+
+    /// Ends a pairing nobody keeps: now, or later as a pending revoke.
     async fn end(&self, token: &str, saved: &Saved) {
         if revoke(&self.origin, token).await {
             return;
         }
-        let pending = Saved {
-            revoking: true,
-            ..saved.clone()
-        };
-        if self.secret(Secret::Set(token.to_owned())).await.is_ok() {
-            let _ = self.save(&pending);
-        }
+        self.park(saved);
+        let _ = self.secret(Secret::Set(token.to_owned())).await;
     }
 
-    /// Turns it off: no consent, and the pairing ended on the server. `Err` when the server
-    /// could not be reached; the revoke then stays pending.
-    pub async fn turn_off(&self) -> Result<(), Failure> {
+    /// Off at once, without the network: no consent, and the pairing marked to be ended.
+    pub fn withdraw(&self) {
         self.remove_consent();
         if let Some(saved) = self.saved() {
             let _ = self.save(&Saved {
@@ -273,26 +319,26 @@ impl Pairing {
                 ..saved
             });
         }
-        if self.finish_revoke().await {
-            Ok(())
-        } else {
-            Err(Failure::RevokePending)
-        }
     }
 
-    /// Tries to end a pending revoke; true when nothing is pending any more.
-    pub async fn finish_revoke(&self) -> bool {
-        if !self.revoke_pending() {
+    /// Tries to end a pending revoke; true when nothing is pending any more. With the token,
+    /// as the computer; without it (the keyring lost or refused it), as the signed-in person,
+    /// by the device id.
+    pub async fn finish_revoke(&self, sign_in: &impl SignIn) -> bool {
+        let Some(saved) = self.saved().filter(|saved| saved.revoking) else {
             return true;
+        };
+        let done = match self.secret(Secret::Get).await {
+            Ok(Some(token)) => revoke(&self.origin, &token).await,
+            _ => match sign_in.cookies().await {
+                Some(cookies) => revoke_as_owner(&self.origin, &saved.device, &cookies).await,
+                None => false,
+            },
+        };
+        if done {
+            self.forget().await;
         }
-        match self.secret(Secret::Get).await {
-            Ok(Some(token)) if !revoke(&self.origin, &token).await => false,
-            Ok(_) => {
-                self.forget().await;
-                true
-            }
-            Err(_) => false,
-        }
+        done
     }
 
     /// The server ended the pairing. A sign-out keeps the consent for that account's next
@@ -302,10 +348,6 @@ impl Pairing {
         if !signed_out {
             self.remove_consent();
         }
-    }
-
-    pub fn host(&self) -> String {
-        self.origin.host_str().unwrap_or_default().to_owned()
     }
 }
 
@@ -424,16 +466,41 @@ async fn request_pairing(origin: &Url, cookies: &str) -> Result<(String, Saved),
     }
 }
 
-/// Ends a pairing on the server; true once it no longer holds there (also when the server
-/// already dropped it).
+/// Ends a pairing on the server with its token; true once it no longer holds there. A token
+/// the server does not know (401, 403, 404, 410) holds nothing either; a busy or failing server
+/// (429, 5xx) or no answer is tried again later.
 async fn revoke(origin: &Url, token: &str) -> bool {
     let (Some(client), Ok(url)) = (client(), origin.join(SELF_PATH)) else {
         return false;
     };
     match client.delete(url).bearer_auth(token).send().await {
-        Ok(response) => response.status().is_success() || response.status() == 401,
+        Ok(response) => gone(response.status().as_u16()),
         Err(_) => false,
     }
+}
+
+/// Ends a pairing as the signed-in person, by its device id. 404: already ended, or not this
+/// person's device to keep.
+async fn revoke_as_owner(origin: &Url, device: &str, cookies: &str) -> bool {
+    let (Some(client), Ok(url)) = (client(), origin.join(&format!("{DEVICES_PATH}/{device}")))
+    else {
+        return false;
+    };
+    let request = client
+        .delete(url)
+        .header("cookie", cookies)
+        .header("origin", origin.origin().ascii_serialization());
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status().as_u16();
+            (200..300).contains(&status) || status == 404
+        }
+        Err(_) => false,
+    }
+}
+
+fn gone(status: u16) -> bool {
+    (200..300).contains(&status) || matches!(status, 401 | 403 | 404 | 410)
 }
 
 pub fn platform() -> &'static str {
@@ -488,22 +555,39 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
     #[derive(Default)]
     struct Memory {
         secrets: Mutex<HashMap<String, String>>,
+        /// No keyring at all.
         broken: AtomicBool,
+        /// The keyring refuses to keep a token (the probe still works).
+        refuse_tokens: AtomicBool,
+        /// The keyring never answers in time.
+        hung: AtomicBool,
+    }
+
+    impl Memory {
+        fn wait(&self) {
+            if self.hung.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }
     }
 
     impl Secrets for Memory {
         fn get(&self, account: &str) -> Result<Option<String>, String> {
+            self.wait();
             Ok(self.secrets.lock().unwrap().get(account).cloned())
         }
         fn set(&self, account: &str, secret: &str) -> Result<(), String> {
-            if self.broken.load(Ordering::SeqCst) {
+            self.wait();
+            if self.broken.load(Ordering::SeqCst)
+                || (account != PROBE && self.refuse_tokens.load(Ordering::SeqCst))
+            {
                 return Err("no keyring".into());
             }
             self.secrets
@@ -513,19 +597,56 @@ mod tests {
             Ok(())
         }
         fn delete(&self, account: &str) -> Result<(), String> {
+            self.wait();
             self.secrets.lock().unwrap().remove(account);
             Ok(())
         }
     }
 
-    /// A fake server: pairs whoever sends a cookie as `user`, issuing tokens t1, t2...;
-    /// records revoked tokens; `down` answers 503 to everything.
+    /// A fake server: pairs whoever sends a cookie as `user`, issuing devices d1, d2... with
+    /// tokens t1, t2...; records revokes by token and by device id. `down` answers 503 to
+    /// everything; `self_status` replaces the answer to a token revoke.
     #[derive(Default)]
     struct Server {
         user: Mutex<String>,
         issued: AtomicUsize,
         revoked: Mutex<Vec<String>>,
+        removed: Mutex<Vec<String>>,
         down: AtomicBool,
+        /// Goes down right after answering a pairing.
+        down_after_pair: AtomicBool,
+        self_status: AtomicU16,
+    }
+
+    fn header(text: &str, name: &str) -> Option<String> {
+        text.lines().find_map(|line| {
+            let lower = line.to_ascii_lowercase();
+            lower
+                .starts_with(name)
+                .then(|| line[name.len()..].trim().to_owned())
+        })
+    }
+
+    async fn read_request(stream: &mut tokio::net::TcpStream) -> String {
+        let mut request = Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            let read = stream.read(&mut buffer).await.unwrap_or(0);
+            request.extend_from_slice(&buffer[..read]);
+            let text = String::from_utf8_lossy(&request).into_owned();
+            let Some(head) = text.find("\r\n\r\n") else {
+                if read == 0 {
+                    return text;
+                }
+                continue;
+            };
+            let length = header(&text[..head], "content-length:")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0);
+            if read == 0 || request.len() >= head + 4 + length {
+                return text;
+            }
+        }
     }
 
     async fn serve(server: Arc<Server>) -> Url {
@@ -535,55 +656,8 @@ mod tests {
             while let Ok((mut stream, _)) = listener.accept().await {
                 let server = server.clone();
                 tokio::spawn(async move {
-                    let mut request = Vec::new();
-                    let mut buffer = [0u8; 4096];
-                    loop {
-                        let read = stream.read(&mut buffer).await.unwrap_or(0);
-                        request.extend_from_slice(&buffer[..read]);
-                        let text = String::from_utf8_lossy(&request);
-                        if read == 0
-                            || text.find("\r\n\r\n").is_some_and(|head| {
-                                let length = text[..head]
-                                    .lines()
-                                    .find_map(|l| {
-                                        l.to_ascii_lowercase()
-                                            .strip_prefix("content-length:")
-                                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
-                                    })
-                                    .unwrap_or(0);
-                                request.len() >= head + 4 + length
-                            })
-                        {
-                            break;
-                        }
-                    }
-                    let text = String::from_utf8_lossy(&request).into_owned();
-                    let header = |name: &str| {
-                        text.lines().find_map(|l| {
-                            l.to_ascii_lowercase()
-                                .starts_with(name)
-                                .then(|| l[name.len()..].trim().to_owned())
-                        })
-                    };
-                    let (status, body) = if server.down.load(Ordering::SeqCst) {
-                        (503, String::new())
-                    } else if text.starts_with("POST /api/devices/pair") {
-                        if header("cookie:").is_none() {
-                            (401, String::new())
-                        } else {
-                            let n = server.issued.fetch_add(1, Ordering::SeqCst) + 1;
-                            let user = server.user.lock().unwrap().clone();
-                            (201, json!({ "deviceId": format!("d{n}"), "userId": user, "token": format!("t{n}") }).to_string())
-                        }
-                    } else if text.starts_with("DELETE /api/devices/self") {
-                        let token = header("authorization:")
-                            .unwrap_or_default()
-                            .replace("Bearer ", "");
-                        server.revoked.lock().unwrap().push(token);
-                        (204, String::new())
-                    } else {
-                        (404, String::new())
-                    };
+                    let text = read_request(&mut stream).await;
+                    let (status, body) = answer(&server, &text);
                     let reply = format!(
                         "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
                         body.len()
@@ -595,22 +669,55 @@ mod tests {
         url
     }
 
-    /// Answers the prompt from a queue (no when empty) and holds the sign-in; `on_cookies` runs
-    /// while the pairing request is about to go out.
+    fn answer(server: &Server, text: &str) -> (u16, String) {
+        if server.down.load(Ordering::SeqCst) {
+            return (503, String::new());
+        }
+        let cookie = header(text, "cookie:");
+        if text.starts_with("POST /api/devices/pair ") {
+            if cookie.is_none() {
+                return (401, String::new());
+            }
+            let n = server.issued.fetch_add(1, Ordering::SeqCst) + 1;
+            let user = server.user.lock().unwrap().clone();
+            let body =
+                json!({ "deviceId": format!("d{n}"), "userId": user, "token": format!("t{n}") });
+            if server.down_after_pair.load(Ordering::SeqCst) {
+                server.down.store(true, Ordering::SeqCst);
+            }
+            return (201, body.to_string());
+        }
+        if text.starts_with("DELETE /api/devices/self ") {
+            let token = header(text, "authorization:").unwrap_or_default();
+            server
+                .revoked
+                .lock()
+                .unwrap()
+                .push(token.replace("Bearer ", ""));
+            return match server.self_status.load(Ordering::SeqCst) {
+                0 => (204, String::new()),
+                status => (status, String::new()),
+            };
+        }
+        if let Some(rest) = text.strip_prefix("DELETE /api/devices/") {
+            if cookie.is_none() {
+                return (401, String::new());
+            }
+            let device = rest.split(' ').next().unwrap_or_default().to_owned();
+            server.removed.lock().unwrap().push(device);
+            return (204, String::new());
+        }
+        (404, String::new())
+    }
+
+    /// The window's sign-in; `on_cookies` runs once, as the pairing request is about to go out.
     #[derive(Default)]
-    struct FakeUi {
-        answers: Mutex<Vec<bool>>,
-        asked: Mutex<Vec<String>>,
+    struct Window {
         signed_in: AtomicBool,
         on_cookies: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     }
 
-    impl Ui for FakeUi {
-        async fn ask(&self, host: &str) -> bool {
-            self.asked.lock().unwrap().push(host.to_owned());
-            let mut answers = self.answers.lock().unwrap();
-            !answers.is_empty() && answers.remove(0)
-        }
+    impl SignIn for Window {
         async fn cookies(&self) -> Option<String> {
             if let Some(hook) = self.on_cookies.lock().unwrap().take() {
                 hook();
@@ -625,7 +732,24 @@ mod tests {
         server: Arc<Server>,
         secrets: Arc<Memory>,
         pairing: Pairing,
-        ui: FakeUi,
+        window: Window,
+    }
+
+    impl World {
+        fn token(&self) -> Option<String> {
+            self.secrets.get(self.pairing.origin().as_str()).unwrap()
+        }
+
+        /// What the menu does when the person allows it.
+        async fn turn_on(&self) -> Result<Outcome, Failure> {
+            self.pairing.allow()?;
+            self.pairing.pair(&self.window).await
+        }
+
+        async fn turn_off(&self) -> bool {
+            self.pairing.withdraw();
+            self.pairing.finish_revoke(&self.window).await
+        }
     }
 
     async fn world(user: &str) -> World {
@@ -639,159 +763,193 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         let secrets = Arc::new(Memory::default());
-        let ui = FakeUi::default();
-        ui.signed_in.store(true, Ordering::SeqCst);
+        let window = Window::default();
+        window.signed_in.store(true, Ordering::SeqCst);
         World {
             pairing: Pairing::new(origin, dir, secrets.clone()),
             server,
             secrets,
-            ui,
+            window,
         }
     }
 
-    fn answer(ui: &FakeUi, answers: &[bool]) {
-        ui.answers.lock().unwrap().extend_from_slice(answers);
-    }
-
     #[tokio::test]
-    async fn turning_it_on_asks_naming_the_server_and_keeps_the_token_in_the_keyring() {
+    async fn it_pairs_and_keeps_the_token_in_the_keyring_only() {
         let w = world("a").await;
-        answer(&w.ui, &[true]);
-        let outcome = w.pairing.turn_on(&w.ui).await;
-        assert_eq!(outcome, Ok(Outcome::Connected("t1".into())));
-        assert_eq!(*w.ui.asked.lock().unwrap(), vec!["127.0.0.1".to_owned()]);
+        assert_eq!(w.turn_on().await, Ok(Outcome::Connected("t1".into())));
         assert_eq!(w.pairing.consent(), Some(Some("a".into())));
         let file = std::fs::read_to_string(w.pairing.file("")).unwrap();
         assert!(!file.contains("t1"), "the token is not in the file");
-        assert_eq!(
-            w.secrets.get(w.pairing.origin().as_str()).unwrap(),
-            Some("t1".into())
-        );
+        assert_eq!(w.token(), Some("t1".into()));
         assert_eq!(w.pairing.token().await, Some("t1".into()));
+        assert_eq!(w.pairing.host(), "127.0.0.1");
     }
 
     #[tokio::test]
     async fn without_a_keyring_nothing_is_paired() {
         let w = world("a").await;
         w.secrets.broken.store(true, Ordering::SeqCst);
-        answer(&w.ui, &[true]);
-        assert_eq!(w.pairing.turn_on(&w.ui).await, Err(Failure::Keyring));
+        assert_eq!(w.turn_on().await, Err(Failure::Keyring));
         assert_eq!(w.server.issued.load(Ordering::SeqCst), 0);
-        assert_eq!(w.pairing.consent(), None);
+    }
+
+    #[tokio::test]
+    async fn a_keyring_that_never_answers_gives_up_in_time() {
+        let w = world("a").await;
+        w.secrets.hung.store(true, Ordering::SeqCst);
+        let started = std::time::Instant::now();
+        assert_eq!(w.turn_on().await, Err(Failure::Keyring));
+        assert!(started.elapsed() < Duration::from_millis(1500));
+        assert_eq!(w.server.issued.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
     async fn signed_out_it_waits_and_pairs_after_sign_in() {
         let w = world("a").await;
-        w.ui.signed_in.store(false, Ordering::SeqCst);
-        answer(&w.ui, &[true]);
-        assert_eq!(w.pairing.turn_on(&w.ui).await, Ok(Outcome::SignedOut));
-        w.ui.signed_in.store(true, Ordering::SeqCst);
+        w.window.signed_in.store(false, Ordering::SeqCst);
+        assert_eq!(w.turn_on().await, Ok(Outcome::SignedOut));
+        w.window.signed_in.store(true, Ordering::SeqCst);
         assert_eq!(
-            w.pairing.pair(&w.ui).await,
+            w.pairing.pair(&w.window).await,
             Ok(Outcome::Connected("t1".into()))
         );
     }
 
     #[tokio::test]
-    async fn a_sign_out_keeps_the_answer_for_the_same_account_and_asks_another() {
+    async fn a_sign_out_keeps_the_answer_for_the_same_account_and_holds_another() {
         let w = world("a").await;
-        answer(&w.ui, &[true]);
-        w.pairing.turn_on(&w.ui).await.unwrap();
-        // Signed out: the token goes, the answer stays.
+        w.turn_on().await.unwrap();
         w.pairing.ended(true).await;
         assert_eq!(w.pairing.token().await, None);
         assert_eq!(w.pairing.consent(), Some(Some("a".into())));
-        // The same account signs in again: paired without asking.
+        // The same account again: paired without asking.
         assert_eq!(
-            w.pairing.pair(&w.ui).await,
+            w.pairing.pair(&w.window).await,
             Ok(Outcome::Connected("t2".into()))
         );
-        assert_eq!(w.ui.asked.lock().unwrap().len(), 1);
-        // Another account: asked again, and a no ends the new pairing on the server.
+        // Another account: held as a pending revoke until the person answers.
         w.pairing.ended(true).await;
         *w.server.user.lock().unwrap() = "b".into();
-        assert_eq!(w.pairing.pair(&w.ui).await, Ok(Outcome::Declined));
-        assert_eq!(w.ui.asked.lock().unwrap().len(), 2);
+        assert_eq!(w.pairing.pair(&w.window).await, Ok(Outcome::OtherAccount));
+        assert!(w.pairing.revoke_pending());
+        assert_eq!(w.pairing.token().await, None);
+        // No: ended on the server, and the answer is gone.
+        assert_eq!(w.pairing.reject(&w.window).await, Ok(()));
         assert_eq!(*w.server.revoked.lock().unwrap(), vec!["t3".to_owned()]);
         assert_eq!(w.pairing.consent(), None);
-        assert_eq!(w.pairing.token().await, None);
+        assert!(!w.pairing.revoke_pending());
     }
 
     #[tokio::test]
     async fn another_account_that_is_allowed_takes_over() {
         let w = world("a").await;
-        answer(&w.ui, &[true, true]);
-        w.pairing.turn_on(&w.ui).await.unwrap();
+        w.turn_on().await.unwrap();
         w.pairing.ended(true).await;
         *w.server.user.lock().unwrap() = "b".into();
-        assert_eq!(
-            w.pairing.pair(&w.ui).await,
-            Ok(Outcome::Connected("t2".into()))
-        );
+        assert_eq!(w.pairing.pair(&w.window).await, Ok(Outcome::OtherAccount));
+        assert_eq!(w.pairing.adopt().await, Ok(Outcome::Connected("t2".into())));
         assert_eq!(w.pairing.consent(), Some(Some("b".into())));
+        assert_eq!(w.pairing.token().await, Some("t2".into()));
+    }
+
+    #[tokio::test]
+    async fn turned_off_while_the_other_account_is_asked_about_nothing_is_adopted() {
+        let w = world("a").await;
+        w.turn_on().await.unwrap();
+        w.pairing.ended(true).await;
+        *w.server.user.lock().unwrap() = "b".into();
+        w.pairing.pair(&w.window).await.unwrap();
+        w.pairing.withdraw();
+        assert_eq!(w.pairing.adopt().await, Ok(Outcome::Declined));
+        assert!(w.pairing.finish_revoke(&w.window).await);
+        assert_eq!(*w.server.revoked.lock().unwrap(), vec!["t2".to_owned()]);
     }
 
     #[tokio::test]
     async fn removed_in_settings_ends_the_answer_too() {
         let w = world("a").await;
-        answer(&w.ui, &[true]);
-        w.pairing.turn_on(&w.ui).await.unwrap();
+        w.turn_on().await.unwrap();
         w.pairing.ended(false).await;
         assert_eq!(w.pairing.consent(), None);
-        assert_eq!(w.secrets.get(w.pairing.origin().as_str()).unwrap(), None);
+        assert_eq!(w.token(), None);
     }
 
     #[tokio::test]
     async fn turned_off_offline_the_revoke_waits_and_blocks_a_new_pairing() {
         let w = world("a").await;
-        answer(&w.ui, &[true, true]);
-        w.pairing.turn_on(&w.ui).await.unwrap();
+        w.turn_on().await.unwrap();
         w.server.down.store(true, Ordering::SeqCst);
-        assert_eq!(w.pairing.turn_off().await, Err(Failure::RevokePending));
-        // Nothing connects, the answer is gone, the token waits in the keyring.
+        assert!(!w.turn_off().await);
         assert_eq!(w.pairing.token().await, None);
         assert_eq!(w.pairing.consent(), None);
-        assert!(w.pairing.revoke_pending());
         assert_eq!(
             pending_origins(&w.pairing.dir),
             vec![w.pairing.origin().clone()]
         );
-        // Turning it on again first has to end the old pairing.
-        assert_eq!(w.pairing.turn_on(&w.ui).await, Err(Failure::RevokePending));
-        assert!(w.ui.asked.lock().unwrap().len() == 1);
+        assert_eq!(w.turn_on().await, Err(Failure::RevokePending));
         assert_eq!(w.server.issued.load(Ordering::SeqCst), 1);
-        // The server is back: the retry ends it, then a new pairing can start.
         w.server.down.store(false, Ordering::SeqCst);
-        assert!(w.pairing.finish_revoke().await);
+        assert!(w.pairing.finish_revoke(&w.window).await);
         assert_eq!(*w.server.revoked.lock().unwrap(), vec!["t1".to_owned()]);
         assert!(pending_origins(&w.pairing.dir).is_empty());
-        assert_eq!(
-            w.pairing.turn_on(&w.ui).await,
-            Ok(Outcome::Connected("t2".into()))
-        );
+        assert_eq!(w.turn_on().await, Ok(Outcome::Connected("t2".into())));
+    }
+
+    #[tokio::test]
+    async fn a_token_the_server_does_not_know_counts_as_revoked() {
+        for status in [403, 404, 410] {
+            let w = world("a").await;
+            w.turn_on().await.unwrap();
+            w.server.self_status.store(status, Ordering::SeqCst);
+            assert!(w.turn_off().await, "{status}");
+            assert!(!w.pairing.revoke_pending());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_busy_server_keeps_the_revoke_pending() {
+        let w = world("a").await;
+        w.turn_on().await.unwrap();
+        w.server.self_status.store(429, Ordering::SeqCst);
+        assert!(!w.turn_off().await);
+        assert!(w.pairing.revoke_pending());
     }
 
     #[tokio::test]
     async fn turned_off_while_pairing_the_new_token_is_ended() {
         let w = world("a").await;
-        answer(&w.ui, &[true]);
         let consent = w.pairing.file(".consent");
-        *w.ui.on_cookies.lock().unwrap() = Some(Box::new(move || {
+        *w.window.on_cookies.lock().unwrap() = Some(Box::new(move || {
             let _ = std::fs::remove_file(consent);
         }));
-        assert_eq!(w.pairing.turn_on(&w.ui).await, Ok(Outcome::Declined));
+        assert_eq!(w.turn_on().await, Ok(Outcome::Declined));
         assert_eq!(*w.server.revoked.lock().unwrap(), vec!["t1".to_owned()]);
         assert_eq!(w.pairing.token().await, None);
     }
 
     #[tokio::test]
-    async fn a_refused_pairing_turns_it_off_with_the_server_s_reason() {
+    async fn a_token_that_cannot_be_kept_or_revoked_is_ended_by_the_sign_in_later() {
         let w = world("a").await;
-        answer(&w.ui, &[true]);
+        w.secrets.refuse_tokens.store(true, Ordering::SeqCst);
+        w.server.down_after_pair.store(true, Ordering::SeqCst);
+        assert_eq!(w.turn_on().await, Err(Failure::Keyring));
+        // Neither kept nor revoked: the pending mark is on disk, without a token.
+        assert!(w.pairing.revoke_pending());
+        assert_eq!(w.token(), None);
+        assert!(!w.pairing.finish_revoke(&w.window).await);
+        // The server is back: the person's sign-in ends it by its device id.
+        w.server.down.store(false, Ordering::SeqCst);
+        w.server.down_after_pair.store(false, Ordering::SeqCst);
+        assert!(w.pairing.finish_revoke(&w.window).await);
+        assert_eq!(*w.server.removed.lock().unwrap(), vec!["d1".to_owned()]);
+        assert!(!w.pairing.revoke_pending());
+    }
+
+    #[tokio::test]
+    async fn a_refused_pairing_reports_the_server() {
+        let w = world("a").await;
         w.server.down.store(true, Ordering::SeqCst);
-        assert_eq!(w.pairing.turn_on(&w.ui).await, Err(Failure::Server(None)));
-        assert_eq!(w.pairing.consent(), None);
+        assert_eq!(w.turn_on().await, Err(Failure::Server(None)));
     }
 
     #[test]
