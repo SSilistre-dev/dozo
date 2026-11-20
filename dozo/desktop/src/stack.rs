@@ -239,6 +239,10 @@ pub struct Local {
     /// code to compare) until the person allows it here (`Agent::approve`), `approved`, or
     /// `expired` when nobody did within 5 minutes.
     phone_event: watch::Sender<Option<Value>>,
+    /// How far this start took an update: 0 none, 1 the new version made current, 2 it was
+    /// started. Only a start that failed after 1 is undone, and only after 2 is that version
+    /// skipped from then on (`undo_update`).
+    update_stage: std::sync::atomic::AtomicU8,
 }
 
 impl Local {
@@ -253,6 +257,7 @@ impl Local {
                 Duration::from_secs(60),
             ),
             phone_event: watch::channel(None).0,
+            update_stage: std::sync::atomic::AtomicU8::new(0),
         })
     }
 
@@ -332,6 +337,8 @@ impl Local {
     }
 
     async fn bring_up(&self, layout: &Layout, options: &Options) -> Result<String, Failure> {
+        self.update_stage
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         for folder in ["versions", "downloads", "logs", "data", "run"] {
             fs::create_dir_all(layout.at(folder)).map_err(|_| Failure::Start)?;
         }
@@ -389,6 +396,13 @@ impl Local {
         plan.user = tokio::task::spawn_blocking(stack_setup::user_environment)
             .await
             .unwrap_or_default();
+        // From here a failure is the new version's own, when this start updated.
+        let _ = self.update_stage.compare_exchange(
+            1,
+            2,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        );
         self.run(&plan, layout, &launch)
             .await
             .map_err(|why| failed(Failure::Start, &why))?;
@@ -407,10 +421,9 @@ impl Local {
             self.running.lock().await.agent = Some(agent);
         }
         if let Some(journal) = stack_update::journal(&layout.0) {
-            match stack_update::finish(&layout.0) {
-                Ok(()) => launch.note(&format!("updated from {} to {}", journal.from, journal.to)),
-                Err(error) => launch.note(&format!("update: tidying up failed: {error}")),
-            }
+            stack_update::finish(&layout.0)
+                .map_err(|error| failed(Failure::Start, &format!("update: {error}")))?;
+            launch.note(&format!("updated from {} to {}", journal.from, journal.to));
         }
         launch.note(&format!("ready at {}", plan.web));
         Ok(format!("{}/", plan.web))
@@ -484,7 +497,7 @@ impl Local {
             fs::remove_dir_all(&target).map_err(|error| (Failure::Start, error.to_string()))?;
         }
         fs::rename(&partial, &target)
-            .and_then(|()| fs::write(layout.at("current"), &release.version))
+            .and_then(|()| stack_update::set_current(&layout.0, &release.version))
             .map_err(|error| (Failure::Start, format!("install: {error}")))?;
         Ok(release.version.clone())
     }
@@ -543,7 +556,11 @@ impl Local {
         }
         launch.note(&format!("updating from {current} to {}", release.version));
         match self.install_release(layout, &release).await {
-            Ok(version) => version,
+            Ok(version) => {
+                self.update_stage
+                    .store(1, std::sync::atomic::Ordering::SeqCst);
+                version
+            }
             Err((_, why)) => {
                 // Not current yet: the data was not touched, the copy just goes unused.
                 let _ = stack_update::recover(root);
@@ -568,9 +585,17 @@ impl Local {
 
     /// After a start that failed: when it was an update, the version and data before it come
     /// back, and that version is not tried again on its own.
+    /// A start that failed for another reason (the folder held, a port taken before the new
+    /// version ran) undoes nothing and skips nothing: the next start finds the journal and decides.
     fn undo_update(&self, layout: &Layout) -> Option<Failure> {
+        let stage = self
+            .update_stage
+            .swap(0, std::sync::atomic::Ordering::SeqCst);
+        if stage == 0 {
+            return None;
+        }
         match stack_update::recover(&layout.0) {
-            Ok(stack_update::Recovered::RolledBack { to, .. }) => {
+            Ok(stack_update::Recovered::RolledBack { to, .. }) if stage == 2 => {
                 let _ = stack_update::skip(&layout.0, &to);
                 Some(Failure::UpdateRolledBack)
             }
@@ -1620,6 +1645,46 @@ mod tests {
         assert!(!lines_of(&said).iter().any(|line| line.starts_with("v2")));
         assert_eq!(fs::read_to_string(root.join("current")).unwrap(), "1");
         assert!(local.stop().await);
+    }
+
+    #[tokio::test]
+    async fn a_start_that_fails_for_another_reason_undoes_no_update() {
+        let root = scratch("update-unrelated");
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        let local = Local::new(Arc::new(Said(said.clone())));
+        local.start(Layout(root.clone()), options()).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(local.stop().await);
+        // The update was cut off after the switch, the new version had migrated...
+        stack_update::begin(&root, "1", "2", 1).unwrap();
+        fs::create_dir_all(root.join("versions/2")).unwrap();
+        fs::write(root.join("current"), "2").unwrap();
+        fs::write(root.join("pgdata/marker"), "v2").unwrap();
+        // ...and now another app holds the folder: this start fails before looking at it.
+        let held = stack_setup::lock(&root.join("stack.lock"))
+            .unwrap()
+            .unwrap();
+        local
+            .start(
+                Layout(root.clone()),
+                update_options("file:///nowhere".into()),
+            )
+            .await;
+        assert_eq!(
+            settled(&local).await,
+            Status::Failed(Failure::AlreadyRunning)
+        );
+        assert!(
+            stack_update::journal(&root).is_some(),
+            "the journal is left for the next start"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("pgdata/marker")).unwrap(),
+            "v2"
+        );
+        assert_eq!(stack_update::skipped(&root), None);
+        drop(held);
     }
 
     #[tokio::test]

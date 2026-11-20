@@ -20,7 +20,24 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use std::sync::Mutex;
+
 use crate::stack_setup::write_private;
+
+/// One update step at a time in this process: a stopped start cannot cancel a copy already under
+/// way on its thread, so the next start's `recover` waits for it instead of racing it.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+fn turn() -> std::sync::MutexGuard<'static, ()> {
+    ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Records `version` as the one to start, whole or not at all: a full disk never leaves it empty.
+pub fn set_current(root: &Path, version: &str) -> io::Result<()> {
+    write_private(&root.join("current"), version.as_bytes())
+}
 
 /// What a server's data is, as copied before an update.
 const DATA: [&str; 4] = ["pgdata", "data", "relay", "secrets"];
@@ -86,6 +103,10 @@ fn write_journal(root: &Path, journal: &Journal) -> io::Result<()> {
 /// Copies the data before an update from `from` to `to`. On an error (a full disk) the partial
 /// copy and the journal are gone again and the error says why; nothing else changed.
 pub fn begin(root: &Path, from: &str, to: &str, stamp: u64) -> io::Result<Journal> {
+    let _turn = turn();
+    // Room for this copy: the oldest go first, so copies never pile up past `KEEP`, even when
+    // updates keep being cut off.
+    prune_copies(root, KEEP - 1)?;
     // A name of its own, even for a second try within the same second.
     let snapshot = (0..)
         .map(|n| match n {
@@ -135,6 +156,7 @@ pub enum Recovered {
 /// Brings the folder back to a consistent state after an update that did not finish, whatever
 /// cut it off. Run with nothing running, before anything starts. Safe to run again after a cut.
 pub fn recover(root: &Path) -> io::Result<Recovered> {
+    let _turn = turn();
     let Some(journal) = journal(root) else {
         return Ok(Recovered::Nothing);
     };
@@ -143,7 +165,7 @@ pub fn recover(root: &Path) -> io::Result<Recovered> {
         let _ = fs::remove_dir_all(&journal.snapshot);
     } else if current.trim() != journal.from {
         put_back(root, &journal)?;
-        fs::write(root.join("current"), &journal.from)?;
+        set_current(root, &journal.from)?;
         fs::remove_file(root.join(JOURNAL))?;
         return Ok(Recovered::RolledBack {
             from: journal.from,
@@ -180,24 +202,33 @@ fn put_back(root: &Path, journal: &Journal) -> io::Result<()> {
 
 /// The update worked: the journal goes, and of the copies and the versions only the newest are
 /// kept (the copies `KEEP`, the versions the current one and the one it replaced).
+/// The journal must go before the server counts as updated: one left behind would make the next
+/// start undo everything done since. So an error here is the start's error.
 pub fn finish(root: &Path) -> io::Result<()> {
+    let _turn = turn();
     let Some(journal) = journal(root) else {
         return Ok(());
     };
     fs::remove_file(root.join(JOURNAL))?;
-    let mut copies: Vec<PathBuf> = fs::read_dir(root.join(SNAPSHOTS))?
-        .flatten()
-        .map(|entry| entry.path())
-        .collect();
-    copies.sort_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
-    for old in copies.iter().rev().skip(KEEP) {
-        remove(old)?;
-    }
+    prune_copies(root, KEEP)?;
     for entry in fs::read_dir(root.join("versions"))?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name != journal.to && name != journal.from {
             remove(&entry.path())?;
         }
+    }
+    Ok(())
+}
+
+/// Keeps the newest `keep` copies.
+fn prune_copies(root: &Path, keep: usize) -> io::Result<()> {
+    let Ok(entries) = fs::read_dir(root.join(SNAPSHOTS)) else {
+        return Ok(());
+    };
+    let mut copies: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+    copies.sort_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
+    for old in copies.iter().rev().skip(keep) {
+        remove(old)?;
     }
     Ok(())
 }
@@ -425,6 +456,44 @@ mod tests {
         let second = begin(&root, "1", "2", 7).unwrap();
         assert_ne!(first.snapshot, second.snapshot);
         assert!(second.copied);
+    }
+
+    #[test]
+    fn copies_never_pile_up_even_when_updates_are_cut_off() {
+        let root = installed("cut-again-and-again");
+        for stamp in 0..5 {
+            begin(&root, "1", "2", stamp).unwrap();
+            fs::write(root.join("current"), "2").unwrap();
+            recover(&root).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(fs::read_dir(root.join(SNAPSHOTS)).unwrap().count(), KEEP);
+    }
+
+    #[test]
+    fn a_stray_copy_finishes_before_the_next_start_looks() {
+        let root = installed("stray-copy");
+        let held = turn();
+        let copying = {
+            let root = root.clone();
+            std::thread::spawn(move || begin(&root, "1", "2", 1))
+        };
+        let looking = {
+            let root = root.clone();
+            std::thread::spawn(move || recover(&root))
+        };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        drop(held);
+        let begun = copying.join().unwrap();
+        let recovered = looking.join().unwrap().unwrap();
+        // Whichever went first, the folder is consistent: no journal pointing at a copy that
+        // is gone, and the data as it was.
+        if let Some(journal) = journal(&root) {
+            assert!(journal.copied && journal.snapshot.join("pgdata").is_dir());
+        } else {
+            assert!(begun.is_ok() || recovered == Recovered::Nothing);
+        }
+        assert_eq!(read(&root, "pgdata/base/table"), "old rows");
     }
 
     #[test]
