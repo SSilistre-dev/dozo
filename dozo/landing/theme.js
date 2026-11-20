@@ -1,11 +1,22 @@
-/* Dozo site theme, shared by every page. Dark unless the address says ?theme=light; loaded in
-   <head> so the page paints in its theme. The header button switches it, and the choice travels in
-   the address of the page and of its links to the site's other pages: nothing is stored. */
+/* Dozo site theme, shared by every page; loaded in <head> so the page paints in its theme. Without
+   ?theme=light or ?theme=dark in the address the page follows the system's scheme, also when it
+   changes. The header button makes a choice that beats the system; it travels in the address of the
+   page and of its links to the site's other pages: nothing is stored. */
 {
   const root = document.documentElement;
-  if (new URLSearchParams(location.search).get("theme") === "light") root.dataset.theme = "light";
+  const system = matchMedia("(prefers-color-scheme: light)");
+  let chosen = new URLSearchParams(location.search).get("theme");
+  if (chosen !== "light" && chosen !== "dark") chosen = null;
+  const apply = (light) => {
+    if (light) root.dataset.theme = "light";
+    else delete root.dataset.theme;
+  };
+  apply(chosen ? chosen === "light" : system.matches);
+  system.addEventListener("change", (e) => {
+    if (!chosen) apply(e.matches);
+  });
   const carry = (url) => {
-    if (root.dataset.theme === "light") url.searchParams.set("theme", "light");
+    if (chosen) url.searchParams.set("theme", chosen);
     else url.searchParams.delete("theme");
     return url.href;
   };
@@ -19,8 +30,8 @@
     };
     follow();
     document.getElementById("theme").addEventListener("click", () => {
-      if (root.dataset.theme === "light") delete root.dataset.theme;
-      else root.dataset.theme = "light";
+      chosen = root.dataset.theme === "light" ? "dark" : "light";
+      apply(chosen === "light");
       history.replaceState(history.state, "", carry(new URL(location.href)));
       follow();
     });

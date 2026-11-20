@@ -290,12 +290,15 @@ test("every page applies the theme before it paints and has the theme button", (
   );
 });
 
-// theme.js against a minimal page: the address carries the choice, the button flips it and every
-// link to another page of the site carries it on. Nothing is stored.
-function runTheme(href, links) {
+// theme.js against a minimal page: without ?theme= the page follows the system's scheme, also when
+// it changes; the button makes a choice that beats it and travels in the address of the page and of
+// every link to another page of the site. Nothing is stored.
+function runTheme(href, links, { systemLight = false } = {}) {
   let ready;
   let click;
+  let schemeChange;
   const anchors = links.map((link) => ({ href: new URL(link, href).href }));
+  const scheme = { matches: systemLight };
   const page = {
     location: new URL(href),
     history: { state: null, replaceState: (_s, _t, url) => (page.location = new URL(url)) },
@@ -308,6 +311,14 @@ function runTheme(href, links) {
       return page.location;
     },
     history: page.history,
+    matchMedia: (query) => {
+      assert.equal(query, "(prefers-color-scheme: light)");
+      return Object.assign(scheme, {
+        addEventListener: (type, listener) => {
+          if (type === "change") schemeChange = listener;
+        },
+      });
+    },
     addEventListener: (type, listener) => {
       if (type === "DOMContentLoaded") ready = listener;
     },
@@ -325,54 +336,83 @@ function runTheme(href, links) {
     },
   };
   runInNewContext(read("theme.js"), context);
-  return { page, anchors, ready: () => ready(), click: () => click() };
+  return {
+    page,
+    hrefs: () => anchors.map((a) => a.href),
+    ready: () => ready(),
+    click: () => click(),
+    system: (light) => {
+      scheme.matches = light;
+      schemeChange?.({ matches: light });
+    },
+  };
 }
 
-test("theme.js: applies ?theme=light at once and carries it to the site's other pages", () => {
-  const { page, anchors, ready } = runTheme("https://dozo.bot/privacy/?theme=light", [
-    "../",
-    "../tr/privacy/",
-    "./",
-    "#main",
+test("theme.js: ?theme= beats the system at once and travels to the site's other pages", () => {
+  const light = runTheme(
+    "https://dozo.bot/privacy/?theme=light",
+    ["../", "../tr/privacy/", "./", "#main", "https://app.dozo.bot/sign-in?lang=en"],
+    { systemLight: false },
+  );
+  assert.equal(light.page.root.dataset.theme, "light");
+  light.ready();
+  assert.deepEqual(light.hrefs(), [
+    "https://dozo.bot/?theme=light",
+    "https://dozo.bot/tr/privacy/?theme=light",
+    "https://dozo.bot/privacy/?theme=light",
+    "https://dozo.bot/privacy/?theme=light#main",
     "https://app.dozo.bot/sign-in?lang=en",
   ]);
-  assert.equal(page.root.dataset.theme, "light");
-  ready();
-  assert.deepEqual(
-    anchors.map((a) => a.href),
-    [
-      "https://dozo.bot/?theme=light",
-      "https://dozo.bot/tr/privacy/?theme=light",
-      "https://dozo.bot/privacy/?theme=light",
-      "https://dozo.bot/privacy/?theme=light#main",
-      "https://app.dozo.bot/sign-in?lang=en",
-    ],
-  );
+  light.system(false);
+  assert.equal(light.page.root.dataset.theme, "light");
+
+  const dark = runTheme("https://dozo.bot/terms/?theme=dark", ["../"], { systemLight: true });
+  assert.equal(dark.page.root.dataset.theme, undefined);
+  dark.ready();
+  assert.deepEqual(dark.hrefs(), ["https://dozo.bot/?theme=dark"]);
+  dark.system(true);
+  assert.equal(dark.page.root.dataset.theme, undefined);
 });
 
-test("theme.js: dark by default; the button switches the page, its address and its links", () => {
-  const { page, anchors, ready, click } = runTheme("https://dozo.bot/tr/terms/", [
-    "../../terms/?lang=en",
-    "../",
-  ]);
-  assert.equal(page.root.dataset.theme, undefined);
+test("theme.js: without ?theme= the page follows the system, also when it changes", () => {
+  const { page, hrefs, ready, system } = runTheme("https://dozo.bot/tr/terms/", ["../"], {
+    systemLight: true,
+  });
+  assert.equal(page.root.dataset.theme, "light");
   ready();
-  assert.deepEqual(
-    anchors.map((a) => a.href),
-    ["https://dozo.bot/terms/?lang=en", "https://dozo.bot/tr/"],
+  assert.deepEqual(hrefs(), ["https://dozo.bot/tr/"]);
+  system(false);
+  assert.equal(page.root.dataset.theme, undefined);
+  system(true);
+  assert.equal(page.root.dataset.theme, "light");
+  assert.equal(page.location.href, "https://dozo.bot/tr/terms/");
+  assert.deepEqual(hrefs(), ["https://dozo.bot/tr/"]);
+  assert.equal(runTheme("https://dozo.bot/", []).page.root.dataset.theme, undefined);
+});
+
+test("theme.js: the button's choice beats the system and goes into the address and links", () => {
+  const { page, hrefs, ready, click, system } = runTheme(
+    "https://dozo.bot/tr/terms/",
+    ["../../terms/?lang=en", "../"],
+    { systemLight: true },
   );
+  ready();
+  click();
+  assert.equal(page.root.dataset.theme, undefined);
+  assert.equal(page.location.href, "https://dozo.bot/tr/terms/?theme=dark");
+  assert.deepEqual(hrefs(), [
+    "https://dozo.bot/terms/?lang=en&theme=dark",
+    "https://dozo.bot/tr/?theme=dark",
+  ]);
+  system(true);
+  assert.equal(page.root.dataset.theme, undefined);
   click();
   assert.equal(page.root.dataset.theme, "light");
   assert.equal(page.location.href, "https://dozo.bot/tr/terms/?theme=light");
-  assert.deepEqual(
-    anchors.map((a) => a.href),
-    ["https://dozo.bot/terms/?lang=en&theme=light", "https://dozo.bot/tr/?theme=light"],
-  );
-  click();
-  assert.equal(page.root.dataset.theme, undefined);
-  assert.equal(page.location.href, "https://dozo.bot/tr/terms/");
-  assert.deepEqual(
-    anchors.map((a) => a.href),
-    ["https://dozo.bot/terms/?lang=en", "https://dozo.bot/tr/"],
-  );
+  assert.deepEqual(hrefs(), [
+    "https://dozo.bot/terms/?lang=en&theme=light",
+    "https://dozo.bot/tr/?theme=light",
+  ]);
+  system(false);
+  assert.equal(page.root.dataset.theme, "light");
 });
