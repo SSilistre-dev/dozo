@@ -309,8 +309,8 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
   });
 });
 
-describe("a paused turn", () => {
-  it("resumes with the tools it started with, without reading the allowance", async () => {
+describe("a turn that resumes with its computer", () => {
+  it("is decided without reading the allowance", async () => {
     const reads: string[] = [];
     const { prisma } = fakePrisma({ kind: "free" }, reads);
     const deps = { prisma, sandbox: {}, billingEnabled: true } as unknown as Parameters<
@@ -337,10 +337,42 @@ describe("the prepared computer of a run without one", () => {
       attachedFilesPrompt: "Attachments will be copied to these paths: /home/report.pdf",
       currentTurnFiles: [{ name: "report.pdf" }],
     };
-    const gated = await gateRunComputer(hold, { storedTurnCheckpoint: false }, prepared);
-    expect(gated).toMatchObject({ graphical: false, cloudComputerWithheld: true });
+    const gated = await gateRunComputer(hold, {}, prepared);
+    expect(gated).toMatchObject({
+      graphical: false,
+      cloudComputerWithheld: true,
+      // A text-only model is not told the image can be opened from the computer.
+      currentTurnFiles: [],
+    });
     expect(gated.attachedFilesPrompt).toContain('"report.pdf"');
     expect(gated.attachedFilesPrompt).not.toContain("/home");
+  });
+});
+
+describe("a resumed turn of a plan without computer hours", () => {
+  const prepared = {
+    storedComputer: { spaceId: "space-1" },
+    computerKind: "docker",
+    graphical: true,
+    attachedFilesPrompt: "",
+    currentTurnFiles: [],
+  };
+  const holdOf = (heldForTakeover: boolean) =>
+    ({
+      deps: { prisma: fakePrisma({ kind: "free" }, []).prisma, sandbox: {}, billingEnabled: true },
+      takeover: { heldForTakeover },
+    }) as unknown as Parameters<typeof gateRunComputer>[0];
+
+  it("stays without the computer when it paused for anything else, such as an approval", async () => {
+    const gated = await gateRunComputer(holdOf(false), {}, prepared);
+    expect(gated).toMatchObject({ graphical: false, cloudComputerWithheld: true });
+  });
+
+  it("keeps the computer when it paused in computer mode or for a takeover", async () => {
+    const pinned = await gateRunComputer(holdOf(false), { pinnedComputerModels: {} }, prepared);
+    expect(pinned).toMatchObject({ graphical: true, cloudComputerWithheld: false });
+    const held = await gateRunComputer(holdOf(true), {}, prepared);
+    expect(held).toMatchObject({ graphical: true, cloudComputerWithheld: false });
   });
 });
 

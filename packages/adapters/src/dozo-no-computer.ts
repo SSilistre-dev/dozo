@@ -30,7 +30,10 @@ export const CLOUD_COMPUTER_TOOL_NAMES: ReadonlySet<string> = new Set([
  * hours left (Free has none). It is the same check that refuses the computer's start, made once at
  * the start of the run, so the bot is never offered a computer that would be refused. A computer
  * on the user's own machine never counts, and a server that does not bill never withholds one.
- * A paused turn resumes with the tools it started with: its computer's start is still refused.
+ * A turn paused in computer mode or held for a takeover resumes with its computer: its start is
+ * still refused. Any other paused turn is decided again, so one that started without the computer
+ * resumes without it; a saved call to a computer tool is then dropped, as the computer could not
+ * start anyway.
  */
 export async function cloudComputerWithheld(
   deps: Pick<ExecutorDeps, "prisma" | "sandbox" | "billingEnabled">,
@@ -52,7 +55,7 @@ export function withoutCloudComputerTools(
 /**
  * The prepared computer as the rest of the run sees it. Without hours it is not graphical (no
  * desktop, page browser or computer-mode model), and attachments are named without the paths
- * they would have been copied to.
+ * they would have been copied to, and are not files the turn can open.
  */
 export async function gateRunComputer<
   T extends {
@@ -67,15 +70,13 @@ export async function gateRunComputer<
     deps: Pick<ExecutorDeps, "prisma" | "sandbox" | "billingEnabled">;
     takeover: { heldForTakeover: boolean };
   },
-  saved: { storedTurnCheckpoint: boolean; checkpointLoadError?: Error },
+  saved: { pinnedComputerModels?: unknown },
   computer: T,
 ): Promise<T & { cloudComputerWithheld: boolean }> {
   const withheld = await cloudComputerWithheld(
     hold.deps,
     { spaceId: computer.storedComputer.spaceId, kind: computer.computerKind },
-    saved.storedTurnCheckpoint ||
-      Boolean(saved.checkpointLoadError) ||
-      hold.takeover.heldForTakeover,
+    Boolean(saved.pinnedComputerModels) || hold.takeover.heldForTakeover,
   );
   if (!withheld) return { ...computer, cloudComputerWithheld: false };
   return {
@@ -84,6 +85,8 @@ export async function gateRunComputer<
     attachedFilesPrompt: noComputerFilesInstruction(
       computer.currentTurnFiles.map((file) => file.name),
     ),
+    // Nothing is copied anywhere, so an image the model cannot see is not a file it can open.
+    currentTurnFiles: [],
     cloudComputerWithheld: true,
   };
 }

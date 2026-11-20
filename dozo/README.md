@@ -74,8 +74,8 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
   when a task truly needs a computer, says the member can connect their own from the desktop app or
   upgrade (`packages/adapters/src/dozo-no-computer.ts`). The same holds for a paid plan whose hours
   for the period are spent. It is decided once at the start of the run, with the check that refuses
-  the computer's start; a paused turn resumes with the tools it had, and a server that does not
-  bill never withholds the computer. A new organization starts here, and one whose subscription
+  the computer's start; a turn paused in computer mode or for a takeover keeps its computer, and a
+  server that does not bill never withholds the computer. A new organization starts here, and one whose subscription
   ends returns here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
