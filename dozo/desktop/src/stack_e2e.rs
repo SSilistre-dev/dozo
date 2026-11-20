@@ -67,16 +67,17 @@ async fn e2e_pairs_a_phone() {
         "the agent never connected the new channel"
     );
     fs::write(shared.join("qr"), &offer.qr).unwrap();
-    let channel = offer.channel.clone();
-    let heard = events.wait_for(|event| {
-        event.as_ref().is_some_and(|event| {
-            event["event"] == "paired" && event_channel(event) == Some(channel.as_str())
+    // Its log, not the phone events: over a real relay the phone's sign-in request can come
+    // before the agent says it paired.
+    let log = root.join("logs/relay.log");
+    let paired = format!(r#""event":"paired","channel":"{}""#, offer.channel);
+    assert!(
+        wait_until(Duration::from_secs(60), move || {
+            fs::read_to_string(&log).is_ok_and(|text| text.contains(&paired))
         })
-    });
-    tokio::time::timeout(Duration::from_secs(60), heard)
-        .await
-        .expect("the phone never paired")
-        .unwrap();
+        .await,
+        "the phone never paired"
+    );
     println!("E2E: a phone paired on {}", offer.channel);
     let fetched = shared.join("fetched");
     assert!(

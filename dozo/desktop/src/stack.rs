@@ -220,9 +220,10 @@ pub struct Local {
     running: tokio::sync::Mutex<Running>,
     checks: Arc<dyn Checks>,
     backoff: Backoff,
-    /// The relay agent's last word about a phone: `paired`, then `approval` (its platform and the
-    /// code to compare) until the person allows it here (`Agent::approve`), `approved`, or
-    /// `expired` when nobody did within 5 minutes.
+    /// The relay agent's last word about a phone: `approval` (its platform and the code to
+    /// compare) until the person allows it here (`Agent::approve`), `approved`, or `expired` when
+    /// nobody did within 5 minutes. Not `paired`: over a real relay the agent can say that after
+    /// `approval`, and it would replace the question the window waits for.
     phone_event: watch::Sender<Option<Value>>,
 }
 
@@ -246,7 +247,7 @@ impl Local {
         self.running.lock().await.agent.clone()
     }
 
-    /// Changes with each `paired`, `approval`, `approved` or `expired` line of the relay agent.
+    /// Changes with each `approval`, `approved` or `expired` line of the relay agent.
     pub fn phone_events(&self) -> watch::Receiver<Option<Value>> {
         self.phone_event.subscribe()
     }
@@ -747,7 +748,7 @@ fn phone_event_of(line: &[u8]) -> Option<Value> {
     let event: Value = serde_json::from_slice(line).ok()?;
     let kind = event.get("event")?.as_str()?;
     event.get("channel")?.as_str()?;
-    ["paired", "approval", "approved", "expired"]
+    ["approval", "approved", "expired"]
         .contains(&kind)
         .then_some(event)
 }
@@ -1126,15 +1127,16 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    /// A stand-in relay agent: what each command prints.
+    /// A stand-in relay agent: what each command prints. `run` says `approval` before `paired`, as
+    /// the agent did over the real relay.
     const RELAY: &str = r#"case "$2" in
       pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"rakazo://dozo-pair#x"}'; exit 0;;
       list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
       revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
       approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
       run) echo "key=$DOZO_RELAY_AGENT_KEY" >> "$0.env"; echo '{"event":"connected","channel":"c2"}'; sleep 0.3
-        echo '{"event":"paired","channel":"c9"}'
-        echo '{"event":"approval","channel":"c9","platform":"android","code":"123456"}';;
+        echo '{"event":"approval","channel":"c9","platform":"android","code":"123456"}'
+        echo '{"event":"paired","channel":"c9"}';;
     esac
     trap 'exit 0' TERM INT; while :; do sleep 0.05; done"#;
 
@@ -1317,11 +1319,13 @@ mod tests {
 
     #[test]
     fn only_pairing_events_with_a_channel_are_kept() {
-        let event = phone_event_of(br#"{"event":"paired","channel":"c1","appKey":"k"}"#).unwrap();
+        let event = phone_event_of(br#"{"event":"approval","channel":"c1","code":"1"}"#).unwrap();
         assert_eq!(event_channel(&event), Some("c1"));
-        assert!(phone_event_of(br#"{"event":"approval","channel":"c1","code":"1"}"#).is_some());
+        assert!(phone_event_of(br#"{"event":"expired","channel":"c1"}"#).is_some());
         assert!(phone_event_of(br#"{"event":"peer","channel":"c1"}"#).is_none());
-        assert!(phone_event_of(br#"{"event":"paired"}"#).is_none());
+        assert!(phone_event_of(br#"{"event":"approval"}"#).is_none());
+        // A real relay can say `paired` after `approval`: it must not hide the question.
+        assert!(phone_event_of(br#"{"event":"paired","channel":"c1","appKey":"k"}"#).is_none());
         assert!(phone_event_of(b"not json").is_none());
     }
 
