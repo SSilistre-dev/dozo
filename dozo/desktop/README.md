@@ -244,7 +244,8 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   `run/<name>.pid`, and the next start first ends, with its process group, each one still running
   a program from `versions/` (asked, then killed after 10 s); a pid now used by anything else is
   left alone (the program is checked: `/proc/<pid>/exe` on Linux, `ps -o command=` elsewhere).
-  Tried on Linux with `PR_SET_PDEATHSIG` turned off (`tests/stack_e2e.sh`); not run on a Mac.
+  CI runs it on macOS (Apple silicon and Intel) and on Linux with `PR_SET_PDEATHSIG` turned off
+  (`tests/stack_e2e_native.sh`).
   Windows: each process runs in a job object of its own, which ends it with what it started and,
   as only the app holds it, with the app however the app ends (`src/stack_windows.rs`).
 - The server runs with its own folder as `HOME` and the app's `PATH`. The API and the worker are
@@ -310,20 +311,38 @@ as `server/` by an earlier Linux or Windows build moves to `local-server/` once 
 only when `local-server/` is not there yet).
 
 Tests: unit tests in each `src/stack*.rs` (stand-in processes for order, restarts and stops). The
-end-to-end test needs a bundle built by `dozo/server-bundle/build.sh`, and runs in the Linux build
-image without a window:
+end-to-end tests (`src/stack_e2e.rs`, ignored in a plain `cargo test`) need a bundle built by
+`dozo/server-bundle/build.sh` and run without a window. `tests/stack_e2e_native.sh <dist>
+<workspace>` runs them on Linux or macOS without Docker; the `Desktop stack e2e` jobs of
+`dozo-server-bundle` run it on Ubuntu 22.04, macOS 14 (Apple silicon) and macOS 15 (Intel) with the
+bundle that run built, on every pull request that touches this directory, the bundle or the relay
+code. Locally, in the Linux build image:
 
 ```sh
 dozo/desktop/tests/stack_e2e.sh <dist>   # last line DESKTOP STACK E2E: PASS|FAIL
 ```
 
-It installs from a local manifest, gets 200 from `/health`, pairs and connects this computer,
-stops and finds no process left; then starts from what is installed, kills the test process with
-SIGKILL and finds no process left; then starts again and pairs a phone through the bundled agent
-(a dev relay and a phone in a second container, `tests/relay_phone.mts`), which fetches a page
-through the relay; the phone is listed and removed, and no process is left after the stop; last,
-a server of its own in hosted sign-in mode signs in through a stand-in hosted server
-(`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule. It is not in CI: building the bundle takes several minutes.
+1. Installs from a local manifest, gets 200 from `/health`, signs up, pairs and connects this
+   computer, stops and finds no process left.
+2. Starts from what is installed and kills the app with SIGKILL. On Linux nothing of the server
+   outlives it; then the same with `PR_SET_PDEATHSIG` off, as on macOS, where the processes stay
+   and the next start ends them before it starts.
+3. Pairs a phone through the bundled agent against a dev relay (`tests/relay_phone.mts`): the
+   phone fetches a page through the relay, both ends show the same code, the computer allows the
+   phone and it signs in, then it is listed and removed. The test allows it the way the window's
+   Allow button does, through the agent's `approve` (`phone::approve_phone`); the click itself is
+   covered by the window tests under "Linux" (Xvfb), not here.
+4. A server of its own in hosted sign-in mode signs in through a stand-in hosted server
+   (`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule.
+
+After each step no process of the server is left. The data folder is under a home whose path has a
+space and non-ASCII letters. The verdict line is `DESKTOP STACK E2E (<os>): PASS|FAIL`, exit 2 on a
+failure. Windows runs the same tests with `tests/stack_e2e_windows.ps1` (below).
+
+The relay canary (`dozo-relay-canary`, nightly and by hand, never on pull requests or forks) runs
+steps 1 and 3 against the real relay with the server this app pins: `tests/stack_e2e_native.sh
+--relay https://relay.dozo.bot <workspace>`. Whatever happens, every channel it made is revoked
+afterwards (`tests/relay_revoke.sh`). A failure turns the run red and keeps the logs.
 
 ## Build
 
