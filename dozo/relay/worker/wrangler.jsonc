@@ -1,0 +1,43 @@
+// The relay of dozo/relay/PROTOCOL.md. Deploying, a custom domain and every setting: README.md.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dozo-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-15",
+  // The first deploy answers on <name>.<account>.workers.dev. For your own domain add, for example:
+  // "routes": [{ "pattern": "relay.dozo.bot", "custom_domain": true }]
+  "workers_dev": true,
+  // The protocol's types and constants come from the repository's packages, bundled at build
+  // time, so the relay cannot drift from the ends. zod resolves from this directory's install.
+  "alias": {
+    "@rakazo/contracts": "../../../packages/contracts/src/dozo-relay.ts",
+    "@dozo/relay-core/dozo-relay-channel": "../../../packages/core/src/dozo-relay-channel.ts",
+    "zod": "./node_modules/zod"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "CHANNELS", "class_name": "Channel" },
+      { "name": "REGISTRY", "class_name": "Registry" }
+    ]
+  },
+  // SQLite-backed classes: the only kind the free plan offers.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Channel", "Registry"] }],
+  // Per client address. `period` is 10 or 60 seconds. `namespace_id` must be unique in the account.
+  "ratelimits": [
+    { "name": "REGISTER_LIMIT", "namespace_id": "4101", "simple": { "limit": 30, "period": 60 } },
+    { "name": "ACCESS_LIMIT", "namespace_id": "4102", "simple": { "limit": 120, "period": 60 } }
+  ],
+  "vars": {
+    // Channels that may exist at once; 0 is no ceiling.
+    "MAX_CHANNELS": "10000",
+    // A paired channel nobody connected to for this many days is deleted (90 at least).
+    "IDLE_DAYS": "180",
+    // Requests one channel answers per minute with a right token, and apart from those with a wrong one.
+    "CHANNEL_ATTEMPTS_PER_MINUTE": "60",
+    // What one channel may carry per minute, both directions together.
+    "CHANNEL_MESSAGES_PER_MINUTE": "3000",
+    "CHANNEL_BYTES_PER_MINUTE": "134217728"
+  },
+  // Off: the relay never logs, and invocation logs would record request metadata.
+  "observability": { "enabled": false }
+}

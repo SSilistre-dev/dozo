@@ -1,0 +1,39 @@
+name: dozo-relay
+
+# The relay Worker (dozo/relay/worker): its own install, type check, tests in the local Workers
+# runtime and a build of the deploy bundle. Nothing is deployed. Runs when the relay or the
+# protocol code it bundles changes. Everything runs inside the Node image through docker.sh.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "dozo/relay/**"
+      - "packages/contracts/src/dozo-relay.ts"
+      - "packages/core/src/dozo-relay-*.ts"
+      - "packages/core/src/async.test-support.ts"
+      - ".github/workflows/dozo-relay.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-relay-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  relay:
+    name: relay worker tests and deploy bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Install
+        run: dozo/relay/worker/docker.sh npm ci --no-audit --no-fund
+      - name: Type check
+        run: dozo/relay/worker/docker.sh npm run typecheck
+      - name: Tests
+        run: dozo/relay/worker/docker.sh npm test
+      - name: Deploy bundle (dry run)
+        run: dozo/relay/worker/docker.sh npx wrangler deploy --dry-run --outdir /tmp/out
