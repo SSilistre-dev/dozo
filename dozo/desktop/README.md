@@ -239,9 +239,13 @@ Windows, where nothing has run yet.
   (`PR_SET_PDEATHSIG`: Node is killed, as nothing is left to wait for its graceful stop; Postgres
   gets its fast shutdown), and each holds the folder's lock (`stack.lock`), so a second app, or a
   restart while something is still left, gets "Another Dozo is already running the server on
-  this computer." instead of a second server on the same database. macOS and Windows: a crash of
-  the app can leave the processes running (no job object or watchdog yet), and they keep no lock,
-  so the next start fails on the database instead.
+  this computer." instead of a second server on the same database. Elsewhere (macOS) a crash of
+  the app leaves them running and they hold no lock, so every start leaves each process's pid in
+  `run/<name>.pid`, and the next start first ends, with its process group, each one still running
+  a program from `versions/` (asked, then killed after 10 s); a pid now used by anything else is
+  left alone (the program is checked: `/proc/<pid>/exe` on Linux, `ps -o command=` elsewhere).
+  Tried on Linux with `PR_SET_PDEATHSIG` turned off (`tests/stack_e2e.sh`); not run on a Mac.
+  Windows has neither yet (a job object comes with the Windows server).
 - Linux needs `libssl3` (Prisma's migration engine); without it the start says to install it.
   Postgres's Linux build carries a `libstdc++` that needs glibc 2.36; where it does not run
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).

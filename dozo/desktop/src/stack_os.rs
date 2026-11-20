@@ -7,6 +7,8 @@
 //! keep every later start out.
 //! The kernel sends that signal when the thread that started the process ends, not the process:
 //! every start therefore happens on one thread that lives as long as the app (`spawn`).
+//! Everywhere else nothing ends them with a crashed app, so each start also leaves its pid in
+//! `run/` and the next start ends what is still running from an earlier one (`leftovers`).
 //! Windows: compiled, not run yet; a stop ends the process itself only (a job object that ends
 //! the whole tree with the app comes with the Windows server).
 
@@ -25,11 +27,21 @@ pub enum Stop {
     Interrupt,
 }
 
+/// Tests that stand in for a system without `PR_SET_PDEATHSIG` (macOS) turn it off, and the lock
+/// that goes with it.
+#[cfg(all(test, unix))]
+pub static AS_WITHOUT_PDEATHSIG: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Sets up `command` as described above. `lock` is the folder's lock file.
 #[cfg(target_os = "linux")]
 pub fn prepare(command: &mut Command, stop: Stop, lock: Option<&File>) {
     use std::os::fd::AsRawFd;
     command.process_group(0);
+    #[cfg(test)]
+    if AS_WITHOUT_PDEATHSIG.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let lock = lock.map(AsRawFd::as_raw_fd);
     // With the app gone there is nobody to wait for a graceful stop, and Node may not end on one
     // TERM (the worker drains first): it is killed. Postgres gets its fast shutdown, which ends
@@ -106,6 +118,58 @@ fn signal_group(child: &Child, signal: libc::c_int) {
             libc::kill(-(pid as libc::pid_t), signal);
         }
     }
+}
+
+/// The program a running process was started from, when it can be told: on Linux its
+/// executable, elsewhere its whole command line, which starts with it (the server's processes
+/// are started by absolute path; the path may hold spaces). `None` when it is not running.
+#[cfg(target_os = "linux")]
+pub fn program_of(pid: u32) -> Option<String> {
+    let program = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
+    Some(program.to_string_lossy().into_owned())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn program_of(pid: u32) -> Option<String> {
+    let out = std::process::Command::new("/bin/ps")
+        .args(["-o", "command=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    let line = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (!line.is_empty()).then_some(line)
+}
+
+#[cfg(windows)]
+pub fn program_of(_pid: u32) -> Option<String> {
+    None
+}
+
+/// Ends a process left from an earlier start, with its process group: asked first, then killed
+/// after `grace`. True when it is gone.
+#[cfg(unix)]
+pub fn end_leftover(pid: u32, grace: std::time::Duration) -> bool {
+    let pid = pid as libc::pid_t;
+    // SAFETY: plain kill(2) calls on a group the process leads, and a check with signal 0.
+    let alive = || unsafe { libc::kill(pid, 0) == 0 };
+    unsafe {
+        libc::kill(-pid, libc::SIGTERM);
+        libc::kill(pid, libc::SIGTERM);
+    }
+    let deadline = std::time::Instant::now() + grace;
+    while alive() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    unsafe {
+        libc::kill(-pid, libc::SIGKILL);
+        libc::kill(pid, libc::SIGKILL);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    !alive()
+}
+
+#[cfg(windows)]
+pub fn end_leftover(_pid: u32, _grace: std::time::Duration) -> bool {
+    true
 }
 
 type Request = (Command, Handle, oneshot::Sender<io::Result<Child>>);

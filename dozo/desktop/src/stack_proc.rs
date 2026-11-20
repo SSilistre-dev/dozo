@@ -94,6 +94,8 @@ impl Log {
 /// the waits between restarts.
 pub struct Launch {
     pub logs: PathBuf,
+    /// Where each started process leaves its pid (`run/<name>.pid`), for `end_leftovers`.
+    pub run: PathBuf,
     pub lock: Option<Arc<File>>,
     pub backoff: Backoff,
     /// Size at which a log file is cut.
@@ -107,6 +109,7 @@ impl Launch {
     pub fn without_lock(&self) -> Launch {
         Launch {
             logs: self.logs.clone(),
+            run: self.run.clone(),
             lock: None,
             backoff: self.backoff.clone(),
             log_max: self.log_max,
@@ -138,6 +141,9 @@ impl Launch {
             .kill_on_drop(true);
         stack_os::prepare(&mut command, spec.stop, self.lock.as_deref());
         let mut child = stack_os::spawn(command).await?;
+        if let Some(pid) = child.id() {
+            let _ = fs::write(self.run.join(format!("{}.pid", spec.name)), pid.to_string());
+        }
         let log = Log::new(self.logs.join(format!("{}.log", spec.name)), self.log_max);
         let out = child.stdout.take().expect("piped");
         let stdout = tokio::spawn(copy_lines(out, log.clone(), spec.on_line.clone()));
@@ -336,6 +342,39 @@ async fn finish(child: &mut Child, spec: &Spec, launch: &Launch) -> bool {
     false
 }
 
+/// Ends what an earlier start left running: each pid in `run/` whose process still runs a
+/// program from `programs` (the installed versions), with its group. A pid now used by anything
+/// else is left alone. Returns how many were ended.
+pub fn end_leftovers(launch: &Launch, programs: &Path) -> usize {
+    let mut ended = 0;
+    for entry in fs::read_dir(&launch.run).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "pid") {
+            continue;
+        }
+        let pid = fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| text.trim().parse::<u32>().ok());
+        // By text: the folder has a space on macOS ("Application Support"), and there the
+        // program is the start of a command line rather than a path of its own.
+        let prefix = format!("{}/", programs.display());
+        let ours = pid
+            .and_then(stack_os::program_of)
+            .is_some_and(|program| program.starts_with(&prefix));
+        if let (true, Some(pid)) = (ours, pid) {
+            let gone = stack_os::end_leftover(pid, Duration::from_secs(10));
+            launch.note(&format!(
+                "ended a process left from an earlier start ({}, pid {pid}{})",
+                path.file_stem().unwrap_or_default().to_string_lossy(),
+                if gone { "" } else { ", still running" }
+            ));
+            ended += 1;
+        }
+        let _ = fs::remove_file(&path);
+    }
+    ended
+}
+
 /// The logs folder's manager log, for a `Launch`.
 pub fn events_log(logs: &Path, max: u64) -> Arc<Mutex<Log>> {
     Log::new(logs.join("manager.log"), max)
@@ -349,9 +388,12 @@ mod tests {
     fn launch(dir: &Path) -> Arc<Launch> {
         let logs = dir.join("logs");
         fs::create_dir_all(&logs).unwrap();
+        let run = dir.join("run");
+        fs::create_dir_all(&run).unwrap();
         Arc::new(Launch {
             events: events_log(&logs, 1 << 20),
             logs,
+            run,
             lock: None,
             backoff: Backoff::new(
                 Duration::from_millis(10),
@@ -533,6 +575,64 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.ends_with(r#"{"event":"error"}"#), "{error}");
+    }
+
+    // It reads /proc to see what is still running.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn what_an_earlier_start_left_running_is_ended_and_nothing_else() {
+        use std::os::unix::process::CommandExt;
+        let dir = scratch("leftovers");
+        let launch = launch(&dir);
+        // A program "of the server": a copy of sh in the versions folder, started outside any
+        // supervisor and with a child of its own, as an orphan from a crashed app would be.
+        // Under a folder with a space, as macOS's "Application Support" is.
+        let programs = dir.join("Application Support/versions");
+        fs::create_dir_all(&programs).unwrap();
+        let ours = programs.join("sh");
+        fs::copy("/bin/sh", &ours).unwrap();
+        let child_pid = dir.join("child");
+        let mut orphan = std::process::Command::new(&ours)
+            .args([
+                "-c",
+                &format!("sleep 300 & echo $! > {}; wait", child_pid.display()),
+            ])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let stranger = std::process::Command::new("/bin/sleep")
+            .arg("300")
+            .spawn()
+            .unwrap();
+        let orphan_pid = orphan.id();
+        // Reaped as init would reap a real orphan, so its end shows at once.
+        let reaper = std::thread::spawn(move || orphan.wait());
+        fs::write(launch.run.join("api.pid"), orphan_pid.to_string()).unwrap();
+        fs::write(launch.run.join("other.pid"), stranger.id().to_string()).unwrap();
+        fs::write(launch.run.join("gone.pid"), "999999").unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while lines(&child_pid).is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(end_leftovers(&launch, &programs), 1);
+        let alive = |pid: u32| {
+            fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| !stat.contains(") Z "))
+        };
+        let grandchild: u32 = lines(&child_pid)[0].parse().unwrap();
+        assert!(!alive(orphan_pid) && !alive(grandchild));
+        assert!(
+            alive(stranger.id()),
+            "a process not of the server is left alone"
+        );
+        assert_eq!(fs::read_dir(&launch.run).unwrap().count(), 0);
+        let mut stranger = stranger;
+        let _ = stranger.kill();
+        let _ = (stranger.wait(), reaper.join());
+        let events = fs::read_to_string(dir.join("logs/manager.log")).unwrap();
+        assert!(events.contains("ended a process left from an earlier start (api"));
     }
 
     #[test]
