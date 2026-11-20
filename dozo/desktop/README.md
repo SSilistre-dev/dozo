@@ -39,8 +39,9 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   ACL (`build.rs`), and the only capability (`capabilities/local.json`) grants them to the app's
   own screens. It has no `remote` entry and must never get one. The dialog plugin's commands are
   granted to no page: only the app's Rust code opens its dialogs.
-- Bots reach this computer only after the person allows it in the system dialog, which no page
-  can answer. The device token sits in a file only this user can read (`devices/` below).
+- Bots reach this computer only after the person allows it in the system dialog, which names the
+  server and which no page can answer. The device token is kept in the system keyring, never in
+  a file.
 - Only the chosen server's origin and the app's own screens load in the window. Every other web
   address goes to the browser; `file:`, `data:` and unknown schemes are refused (`src/server.rs`).
 - `http://` is accepted only for this computer (`localhost`, `127.0.0.0/8`, `::1`). Any other
@@ -59,13 +60,13 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 ## Bots on this computer
 
 Turning on Let Bots Use This Computer asks "Allow bots to use this computer?" in a system dialog
-with the warning "A bot can read your files on this computer and run programs as you." (Turkish
-on a Turkish system). Allow pairs this computer with the chosen server under the signed-in
+with the warning "A bot on <server> can read your files on this computer and run programs as
+you." (Turkish on a Turkish system). Allow pairs this computer with the chosen server under the signed-in
 account and connects to it; the web app's settings then list it under Computers as Connected.
 
 - Protocol: upstream's paired computer, unchanged, so the server needs nothing new. The app posts
   the web view's sign-in cookie to `/api/devices/pair` (only to the chosen server's origin) and
-  keeps the device token it gets back. It then holds one outbound WebSocket to
+  keeps the device token it gets back in the system keyring (`src/device_pairing.rs`). It then holds one outbound WebSocket to
   `/api/devices/connect` with that token (`src/device_socket.rs`); the server never connects in.
   Lost connections come back with backoff; a ping every 30 seconds notices a silent drop.
 - What a bot can do (`src/device_run.rs`): run commands and, through them, work with files.
@@ -73,22 +74,40 @@ account and connects to it; the web app's settings then list it under Computers 
   shell tool sends `<shell> -lc <command>`, as upstream does). They run as this user, in the
   bot's own folder or anywhere in the home folder; any other working folder is refused. They get
   only the usual shell variables of this app's environment, stop at their timeout, and each one
-  leads its own process group, so stopping it also stops what it left running. Screen control is
-  not offered: a bot asking to use an app on screen is told it is not available here.
+  leads its own process group. Screen control is not offered: a bot asking to use an app on
+  screen is told it is not available here.
+- What stopping a command reaches: its process group, which a run's cancel, the bot's stop and
+  turning access off all signal. On Linux each command also carries its own mark in its
+  environment, so what it started in a new session or group (`setsid`, a double fork) is found in
+  `/proc` and stopped too, and a group is signalled only while a marked process is still in it.
+  What a command hands to another manager is out of reach on every system: `systemd-run --user`,
+  launchd, cron, `at`, a login item, or a process that clears its environment and leaves the group.
+  On macOS, `setsid` and a double fork escape as well; on Windows, the process tree is stopped only
+  while the command itself still runs. A finished command's leftovers are tracked (at most 256)
+  and forgotten within a second of ending.
 - The server's rules stay upstream's: only chats the person starts with their own bots reach this
   computer, never routines or other people's messages, and the first command in each Space asks
   in the chat first.
-- Ends: turning the item off (the token is revoked on the server and deleted here, running
-  commands stop); removing the computer in the web app's settings; signing out or a password
+- Ends: turning the item off (running commands stop; the token is revoked on the server and
+  deleted here; if the server cannot be reached, the app says so, no command reaches this
+  computer, and the revoke is retried with backoff, at every launch and before turning it on
+  again, which cannot pair until it succeeds); removing the computer in the web app's settings; signing out or a password
   reset (the pairing ends; the same account's next sign-in pairs again on the next page load or
   when the window comes forward, another account is asked again); quitting the app (commands
   stop).
-- The answer holds for one server and one account; another server starts switched off.
+- The answer holds for one server and one account; another server starts switched off. Turning
+  on, off, pairing and the server ending it run one at a time; the menu's check mark always shows
+  the saved answer.
+- Keyring: macOS Keychain, Windows Credential Manager, the Secret Service on Linux (GNOME
+  Keyring, KWallet). Without one, the app does not pair and says so, as upstream's app refuses to
+  without secure storage; a plain file is never used for the token.
+- While connected, the menu's check mark is the only sign in the app; the web app's settings
+  show the computer as Connected. No tray icon: it would be one more always-visible element for
+  a state the person turned on themselves.
 - Plans: a paired computer is not a hosted one, so Free's missing computer hours do not affect it.
 - Not done yet: screen control (macOS needs the Accessibility and Screen Recording permissions,
-  which this app does not ask for). On Windows, stopping a command stops its process tree only
-  while the command itself still runs. Only the Linux app has been run against a server; the
-  macOS and Windows code compiles in CI (Windows) or not at all on a pull request (macOS).
+  which this app does not ask for). Only the Linux app has been run against a server; the
+  Windows code compiles and runs its tests in CI, the macOS code is not built on a pull request.
 
 ## Build
 
@@ -215,8 +234,9 @@ only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.
 ## Where it keeps things
 
 - `~/Library/Application Support/dev.ssilistre.dozo/`: the server address and the window position;
-  under `devices/`, per server, the device token and the account this computer is allowed for
-  (Windows and Linux: the config folders named above). Each bot's own folder is under `computers/`
+  under `devices/`, per server, the account this computer is allowed for and whether a revoke is
+  pending (Windows and Linux: the config folders named above). The device token is in the
+  system keyring under `dev.ssilistre.dozo`. Each bot's own folder is under `computers/`
   in the app's data folder (the same folder on macOS, `~/.local/share/dev.ssilistre.dozo/` on Linux).
 - `~/Library/WebKit/dev.ssilistre.dozo/` and `~/Library/HTTPStorages/dev.ssilistre.dozo.binarycookies`:
   the web view's site data and cookies.

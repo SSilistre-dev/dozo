@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod device;
+mod device_pairing;
 mod device_run;
 mod device_socket;
 #[cfg(target_os = "macos")]

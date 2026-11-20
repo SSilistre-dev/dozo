@@ -25,6 +25,10 @@ const HEARTBEAT: Duration = Duration::from_secs(30);
 /// Four slots stay free for cancellation and stop when commands fill the rest.
 const MAX_CALLS: usize = 20;
 const MAX_WORK: usize = 16;
+/// Commands, finished or not, whose leftovers this app still tracks (upstream's limit).
+const MAX_OWNED: usize = 256;
+/// Carries each command's mark (`Owned::mark`).
+const MARK_VAR: &str = "DOZO_COMMAND_MARK";
 const BUSY: &str = "Local computer is busy. Try again shortly.";
 const INVALID: &str = "Local computer request is invalid";
 const FAILED: &str = "Local computer operation failed";
@@ -120,6 +124,10 @@ impl Reply {
 /// running in the background.
 struct Owned {
     pid: u32,
+    /// A value only this command's environment carries, inherited by what it starts. Only
+    /// Linux can look for it (/proc).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    mark: String,
     bot: String,
     run: Option<String>,
     cancel: watch::Sender<bool>,
@@ -156,7 +164,7 @@ impl Runner {
     pub fn stop_all(&self) {
         for owned in self.owned.lock().unwrap().drain(..) {
             let _ = owned.cancel.send(true);
-            kill(owned.pid);
+            kill(&owned);
         }
     }
 
@@ -166,13 +174,32 @@ impl Runner {
                 return true;
             }
             let _ = owned.cancel.send(true);
-            kill(owned.pid);
+            kill(owned);
             false
         });
     }
 
+    /// Drops a finished command's entry once nothing it started runs any more, checked every
+    /// second as upstream does, so a stop never signals a group that is no longer this app's.
+    fn watch_leftovers(self: &Arc<Self>, pid: u32) {
+        let runner = Arc::downgrade(self);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let Some(runner) = runner.upgrade() else {
+                    return;
+                };
+                let mut owned = runner.owned.lock().unwrap();
+                owned.retain(|owned| owned.pid != pid || alive(owned));
+                if !owned.iter().any(|owned| owned.pid == pid) {
+                    return;
+                }
+            }
+        });
+    }
+
     /// Answers one request. Every outcome is a frame, unless the call was cancelled.
-    pub async fn handle(&self, request: &Value, reply: &Reply) {
+    pub async fn handle(self: &Arc<Self>, request: &Value, reply: &Reply) {
         if self.calls.fetch_add(1, Ordering::SeqCst) >= MAX_CALLS {
             self.calls.fetch_sub(1, Ordering::SeqCst);
             return reply.error(BUSY).await;
@@ -257,7 +284,7 @@ impl Runner {
 
     /// Streams the command's output as process events, then `exit` and `done`.
     async fn execute(
-        &self,
+        self: &Arc<Self>,
         key: &str,
         run: Option<&str>,
         home: &Path,
@@ -282,6 +309,10 @@ impl Runner {
         {
             return events(reply, "", "command rejected", 1).await;
         }
+        if self.owned.lock().unwrap().len() >= MAX_OWNED {
+            return reply.error("Too many local background commands").await;
+        }
+        let mark = new_mark();
         let mut process = Command::new(&argv[0]);
         process
             .args(&argv[1..])
@@ -294,7 +325,8 @@ impl Runner {
                 std::env::vars_os(),
                 &command.env,
                 &command.unset,
-            ));
+            ))
+            .env(MARK_VAR, &mark);
         own_group(&mut process);
         let mut child = match process.spawn() {
             Ok(child) => child,
@@ -308,6 +340,7 @@ impl Runner {
         let (stop, mut stopped) = watch::channel(false);
         self.owned.lock().unwrap().push(Owned {
             pid,
+            mark,
             bot: key.to_owned(),
             run: run.map(str::to_owned),
             cancel: stop,
@@ -363,28 +396,22 @@ impl Runner {
                 let note = signal.map_or(String::new(), |signal| {
                     format!("command terminated by signal {signal}")
                 });
-                self.forget_if_gone(pid);
+                let lingering = {
+                    let mut owned = self.owned.lock().unwrap();
+                    owned.retain(|owned| owned.pid != pid || alive(owned));
+                    owned.iter().any(|owned| owned.pid == pid)
+                };
+                if lingering {
+                    self.watch_leftovers(pid);
+                }
                 events(reply, "", &note, code).await;
             }
             Ended::Stopped(note, code) => {
                 self.stop_where(|owned| owned.pid == pid);
-                kill(pid);
                 events(reply, "", &note, code).await;
             }
-            Ended::Gone => {
-                self.stop_where(|owned| owned.pid == pid);
-                kill(pid);
-            }
+            Ended::Gone => self.stop_where(|owned| owned.pid == pid),
         }
-    }
-
-    /// Keeps a finished command's group while something it started still runs, so stopping the
-    /// bot or its run still reaches that.
-    fn forget_if_gone(&self, pid: u32) {
-        self.owned
-            .lock()
-            .unwrap()
-            .retain(|owned| owned.pid != pid || group_alive(pid));
     }
 }
 
@@ -677,26 +704,89 @@ fn own_group(command: &mut Command) {
     command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
 }
 
-#[cfg(unix)]
-fn kill(pid: u32) {
-    if let Ok(group) = i32::try_from(pid)
-        && group > 0
-    {
-        // SAFETY: a plain signal to the group this app created; no memory is involved.
-        unsafe { libc::kill(-group, libc::SIGKILL) };
+fn new_mark() -> String {
+    use std::hash::{BuildHasher, RandomState};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let next = NEXT.fetch_add(1, Ordering::SeqCst);
+    format!("{:016x}{next:x}", RandomState::new().hash_one(next))
+}
+
+/// Every live process carrying the mark, with its process group: the command, and on Linux
+/// also what it started in a new session or group (`setsid`, a double fork), which keeps the
+/// environment it inherited. Read from /proc; this user's processes only.
+#[cfg(target_os = "linux")]
+fn marked(mark: &str) -> Vec<(i32, i32)> {
+    let needle = format!("{MARK_VAR}={mark}");
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| {
+            let pid: i32 = entry.ok()?.file_name().to_str()?.parse().ok()?;
+            let environ = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+            if !environ
+                .split(|byte| *byte == 0)
+                .any(|var| var == needle.as_bytes())
+            {
+                return None;
+            }
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+            let group = stat
+                .rsplit_once(')')?
+                .1
+                .split_whitespace()
+                .nth(2)?
+                .parse()
+                .ok()?;
+            Some((pid, group))
+        })
+        .collect()
+}
+
+/// Stops a command, its group and (on Linux) every process carrying its mark. The group is
+/// signalled only while a marked process still belongs to it, so a group id the system has
+/// since given to someone else is never hit.
+#[cfg(target_os = "linux")]
+fn kill(owned: &Owned) {
+    let marked = marked(&owned.mark);
+    let group = i32::try_from(owned.pid).unwrap_or(0);
+    // SAFETY: plain signals to processes found above; no memory is involved.
+    unsafe {
+        if group > 0 && marked.iter().any(|(_, pgrp)| *pgrp == group) {
+            libc::kill(-group, libc::SIGKILL);
+        }
+        for (pid, _) in marked {
+            libc::kill(pid, libc::SIGKILL);
+        }
     }
 }
 
-#[cfg(unix)]
-fn group_alive(pid: u32) -> bool {
+#[cfg(target_os = "linux")]
+fn alive(owned: &Owned) -> bool {
+    !marked(&owned.mark).is_empty()
+}
+
+/// macOS has no /proc to find marked processes: the group alone, which the entry is dropped
+/// for within a second of emptying (`watch_leftovers`).
+#[cfg(target_os = "macos")]
+fn kill(owned: &Owned) {
+    if alive(owned) {
+        // SAFETY: a plain signal to the group this app created; no memory is involved.
+        unsafe { libc::kill(-(owned.pid as i32), libc::SIGKILL) };
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn alive(owned: &Owned) -> bool {
     // SAFETY: signal 0 only asks whether the group still exists.
-    i32::try_from(pid).is_ok_and(|group| group > 0 && unsafe { libc::kill(-group, 0) } == 0)
+    i32::try_from(owned.pid).is_ok_and(|group| group > 0 && unsafe { libc::kill(-group, 0) } == 0)
 }
 
 /// The process and its children, while the process still runs.
 #[cfg(windows)]
-fn kill(pid: u32) {
+fn kill(owned: &Owned) {
     use std::os::windows::process::CommandExt;
+    let pid = owned.pid;
     if pid == 0 {
         return;
     }
@@ -710,7 +800,7 @@ fn kill(pid: u32) {
 
 /// Windows has no group to ask about once the command's own process ended.
 #[cfg(windows)]
-fn group_alive(_pid: u32) -> bool {
+fn alive(_owned: &Owned) -> bool {
     false
 }
 
@@ -748,7 +838,7 @@ mod tests {
         (Runner::new(dir.join("data"), dir.join("home")), dir)
     }
 
-    async fn frames(runner: &Runner, request: Value) -> Vec<Value> {
+    async fn frames(runner: &Arc<Runner>, request: Value) -> Vec<Value> {
         let (reply, mut call) = reply("r1");
         runner.handle(&request, &reply).await;
         drop(reply);
@@ -961,6 +1051,52 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             assert!(!marker.exists());
             drop(call.cancel);
+        }
+
+        /// `setsid` and a double fork leave the command's group; on Linux the mark still finds
+        /// them. (macOS: they escape; see README, "Bots on this computer".)
+        #[cfg(target_os = "linux")]
+        #[tokio::test]
+        async fn what_a_command_starts_in_a_new_session_stops_with_its_run() {
+            let (runner, dir) = provisioned().await;
+            let marker = dir.join("home/escaped");
+            let script = format!(
+                "setsid sh -c 'sleep 1; touch {}' & sleep 30",
+                marker.to_string_lossy()
+            );
+            let (reply, _call) = reply("long");
+            let request = execute(&["/bin/sh", "-c", &script], json!({}));
+            let running = {
+                let runner = runner.clone();
+                tokio::spawn(async move { runner.handle(&request, &reply).await })
+            };
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            frames(
+                &runner,
+                json!({ "method": "cancelRunWork", "botId": "bot-1", "targetRunId": "run-1" }),
+            )
+            .await;
+            running.await.unwrap();
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            assert!(!marker.exists());
+        }
+
+        #[cfg(target_os = "linux")]
+        #[tokio::test]
+        async fn leftovers_are_forgotten_once_they_end() {
+            let (runner, _dir) = provisioned().await;
+            let frames = frames(
+                &runner,
+                execute(
+                    &["/bin/sh", "-c", "sleep 2 >/dev/null 2>&1 & exit 0"],
+                    json!({}),
+                ),
+            )
+            .await;
+            assert_eq!(exit_of(&frames), Some(0));
+            assert_eq!(owned_count(&runner), 1);
+            tokio::time::sleep(Duration::from_millis(3500)).await;
+            assert_eq!(owned_count(&runner), 0);
         }
 
         #[tokio::test]
