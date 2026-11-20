@@ -64,7 +64,11 @@ What needs upstream's structure changed is left as it is:
   tinted icon box; the send button is dimmed until there is text; the microphone shows only once
   voice is set up.
 - Bot panel: upstream's sections and their order (Computer, Routines, Skills, Settings), no tabs.
-- Settings, menus, dialogs and sign-in (`settings-v2.html`, `signin-v2.html`) are not ported yet.
+- Settings, menus, dialogs and Integrations follow `settings-v2.html`, `chat-v2.html` and
+  `apps-v2.html` (`dozo-overlays.css`). Still different: Appearance stays upstream's three-way
+  choice (no theme set) and there is no Message color row; a dialog's destructive button is the
+  red word on a quiet pill, not a red fill; Integrations keeps upstream's catalog, header buttons
+  and sections. Sign-in (`signin-v2.html`) is not ported yet.
 - Computer (`computer.html`): the bot's screen opens over the whole window with one title row,
   not beside the chat; no Screen, Files and Terminal tabs; "Take control" is an outline pill.
 - A bot's character comes from its shape or colour (`dozoCharacterForLook`), not its name.
