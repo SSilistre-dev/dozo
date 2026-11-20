@@ -263,6 +263,23 @@ removes it. Old clients drop the removed reply on their next read instead of at 
 
 Mobile shows the result of an edit or regenerate made elsewhere, but has no menu entry yet.
 
+## Pinned messages
+
+Any message in a bot's or a group's chat can be pinned from its More menu
+(`apps/api/src/dozo-message-pins.ts`, table `dozo_message_pins`). A pin belongs to the person who
+made it, like their read state: other members of the Space who share the chat never see it, since
+a pin marks what one person wants to find again, not a decision for everyone. Leaving the Space
+drops that person's pins there. While a chat has pins, a pin in its header lists them, newest first,
+and opens the chat at the one chosen. A chat keeps the 50 newest pins.
+
+A deleted message takes its pins with it: a regenerated reply, a cleared chat. An edited message
+keeps its pin with the new text. A pin change sends the person's own roster signal; the web app
+reads the open chat's pins again on every roster signal, so a pin made on another device and a
+message deleted elsewhere both show within the roster's signal spacing (10 seconds). Chat export
+leaves pins out.
+
+Mobile has no pin yet: pins made on the web stay, but the app neither shows nor sets them.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:

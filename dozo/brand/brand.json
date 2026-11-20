@@ -1162,20 +1162,22 @@
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "import { followStream } from \"../../lib/follow-stream\";\nimport { notificationIcon",
-      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { notificationIcon",
+      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { notificationIcon",
       "requires": [
-        "apps/web/src/components/dozo-announcement.tsx"
+        "apps/web/src/components/dozo-announcement.tsx",
+        "apps/web/src/pages/shell/dozo-message-pins.tsx"
       ],
-      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+      "reason": "site settings and pins: the imports of the rule below"
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
-      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") rosterRef.current?.changed();",
+      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void dozoPinsChanged();\n        }",
       "requires": [
-        "apps/web/src/components/dozo-announcement.tsx"
+        "apps/web/src/components/dozo-announcement.tsx",
+        "apps/web/src/pages/shell/dozo-message-pins.tsx"
       ],
-      "reason": "site settings: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once"
+      "reason": "site settings and pins: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once; a roster signal also re-reads the open chat's pins, since a pin change, a deleted message and a cleared chat all send one"
     },
     {
       "file": "infra/sandboxes/computer/Dockerfile",
@@ -5279,11 +5281,12 @@
     {
       "file": "apps/web/src/pages/shell/message-hover-actions.tsx",
       "find": "import { useState } from \"react\";\nimport { MessageHoverMetadata } from \"../../components/MessageHoverMetadata\";\n",
-      "replace": "import { useState } from \"react\";\nimport { useDozoMessageRevision } from \"./dozo-message-revision\";\nimport { MessageHoverMetadata } from \"../../components/MessageHoverMetadata\";\n",
+      "replace": "import { useState } from \"react\";\nimport { DozoPinMenuItem } from \"./dozo-message-pins\";\nimport { useDozoMessageRevision } from \"./dozo-message-revision\";\nimport { MessageHoverMetadata } from \"../../components/MessageHoverMetadata\";\n",
       "requires": [
-        "apps/web/src/pages/shell/dozo-message-revision.tsx"
+        "apps/web/src/pages/shell/dozo-message-revision.tsx",
+        "apps/web/src/pages/shell/dozo-message-pins.tsx"
       ],
-      "reason": "message revision: the import of the three rules below"
+      "reason": "message revision and pins: the imports of the three rules below"
     },
     {
       "file": "apps/web/src/pages/shell/message-hover-actions.tsx",
@@ -5297,11 +5300,12 @@
     {
       "file": "apps/web/src/pages/shell/message-hover-actions.tsx",
       "find": "            ) : null}\n            <DropdownMenuItem onClick={copyMessage}>\n",
-      "replace": "            ) : null}\n            {dozoRevision.items}\n            <DropdownMenuItem onClick={copyMessage}>\n",
+      "replace": "            ) : null}\n            {dozoRevision.items}\n            <DozoPinMenuItem message={message} menuOpen={moreOpen} />\n            <DropdownMenuItem onClick={copyMessage}>\n",
       "requires": [
-        "apps/web/src/pages/shell/dozo-message-revision.tsx"
+        "apps/web/src/pages/shell/dozo-message-revision.tsx",
+        "apps/web/src/pages/shell/dozo-message-pins.tsx"
       ],
-      "reason": "message revision: Edit on the caller's last message and Regenerate on the bot's last reply, only where the server allows them"
+      "reason": "message revision and pins: Edit on the caller's last message and Regenerate on the bot's last reply, only where the server allows them, then Pin or Unpin on any message"
     },
     {
       "file": "apps/web/src/pages/shell/message-hover-actions.tsx",
@@ -5311,6 +5315,24 @@
         "apps/web/src/pages/shell/dozo-message-revision.tsx"
       ],
       "reason": "message revision: the edit dialog lives outside the menu, which closes when it opens"
+    },
+    {
+      "file": "apps/web/src/pages/shell/chat-header.tsx",
+      "find": "import { IconTooltip } from \"../../components/IconTooltip\";\nimport { InviteDialog }",
+      "replace": "import { IconTooltip } from \"../../components/IconTooltip\";\nimport { DozoPinnedMessages } from \"./dozo-message-pins\";\nimport { InviteDialog }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-message-pins.tsx"
+      ],
+      "reason": "pins: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/chat-header.tsx",
+      "find": "      <div className=\"flex items-center justify-self-end gap-2\">\n        {phoneCallsEnabled && !inGroup && active ? (",
+      "replace": "      <div className=\"flex items-center justify-self-end gap-2\">\n        <DozoPinnedMessages threadId={activeSnapshot?.threadId} />\n        {phoneCallsEnabled && !inGroup && active ? (",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-message-pins.tsx"
+      ],
+      "reason": "pins: one pin in the chat header, only while the chat has pinned messages, lists them and opens the chat at the one chosen"
     }
   ],
   "assets": {
