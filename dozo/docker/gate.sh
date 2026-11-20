@@ -229,6 +229,14 @@ olc() {
         echo "[olc] fork dependency step ok (upstream's locked versions kept, new packages listed with their integrity)"
       else printf '%s\n' "$out"; fail "fork dependency step (dozo/deps/apply.test.mjs)"; fi
     else fail "dozo/deps/apply.test.mjs missing: the fork's dependency step is not tested"; fi
+    # The server bundle's licence notices and runtime copies (dozo/server-bundle): which licences
+    # pass, what the notices hold, and that no manifest points at a runtime it does not carry.
+    # Offline: a local HTTP server stands in for the downloads.
+    if [ -f dozo/server-bundle/notices.test.mjs ] && [ -f dozo/server-bundle/runtimes.test.mjs ]; then
+      if out=$(drun server-bundle-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/server-bundle/notices.test.mjs dozo/server-bundle/runtimes.test.mjs 2>&1); then
+        echo "[olc] server bundle notices and runtimes ok (licence policy, notices, runtime copies)"
+      else printf '%s\n' "$out"; fail "server bundle notices or runtimes (dozo/server-bundle/*.test.mjs)"; fi
+    else fail "dozo/server-bundle/notices.test.mjs or runtimes.test.mjs missing: the bundle's notices are not tested"; fi
     # Every anchored rule's file and anchor, and every `requires` file, against the repository's own
     # tree: a dry run (--check) that writes nothing, so a rule broken by an upstream change or a
     # renamed wrapper fails here and not only at `make qa`. --strict: the committed tree is
