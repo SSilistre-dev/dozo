@@ -305,6 +305,12 @@ Accepted by the owner for now, stated here once:
   the bot can make it post, delete or change settings unasked. Only payment presses and saved
   login or card fills ask. The sign-in dialog says so in one line on every computer ("The bot can
   act as you on these sites, and a page it reads can steer it."); the approval rules are unchanged.
+- Routine quiet hours (Settings > General, `packages/adapters/src/dozo-quiet-hours.ts`): a routine
+  due inside the account's range waits until it ends and then runs once, keeping its due time, so
+  it shows as late. A scheduled run missed by more than 12 hours (a server that was off) is skipped
+  without a note in the chat; only the server log names it (`routine.missed`). Quiet hours stop
+  routines from starting, not a run already going or its one retry, and webhook, email and chat
+  triggers run at once. The mobile app does not set them: it has no timezone setting either.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and
