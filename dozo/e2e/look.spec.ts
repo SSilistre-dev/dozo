@@ -93,6 +93,10 @@ test("the chat is a narrow column of tonal bubbles with a one-pill composer in t
   const column = (await bar.boundingBox())?.width ?? 0;
   expect(column).toBeGreaterThan(400);
   expect(column).toBeLessThanOrEqual(680);
+  // What scrolls under the floating name pill fades out at the column's top edge.
+  expect(await styleOf(page, '[data-testid="transcript"]', "mask-image")).toContain(
+    "linear-gradient",
+  );
   expect(await styleOf(page, '[data-testid="transcript"]', "padding-left")).toBe(
     await styleOf(page, 'fieldset:has(> [data-testid="composer-bar"])', "padding-left"),
   );

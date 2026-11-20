@@ -338,10 +338,17 @@
   backdrop-filter: none;
 }
 
+/* What scrolls up under the floating name pill fades out into the thread's tone instead of
+   running into the pill. The fade ends where the first message stands before any scroll (the
+   transcript's top padding: 80px, 84px from md), so an unscrolled chat is not touched. */
+[data-testid="transcript"] {
+  mask-image: linear-gradient(to bottom, transparent 40px, black 80px);
+}
 /* The chat is one column, 680px at most. */
 @media (min-width: 768px) {
   [data-testid="transcript"] {
     padding-inline: max(2rem, calc((100% - 680px) / 2));
+    mask-image: linear-gradient(to bottom, transparent 44px, black 84px);
   }
   fieldset:has(> [data-testid="composer-bar"]) {
     padding-inline: max(2rem, calc((100% - 680px) / 2));
