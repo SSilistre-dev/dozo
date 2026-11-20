@@ -79,8 +79,6 @@ function fakePrisma() {
         return found ? { userId: found, spaceId: `space-${found}` } : null;
       }),
     },
-    member: { findMany: vi.fn(async () => []) },
-    organization: { findUnique: vi.fn(async () => null) },
   };
   return prisma;
 }
@@ -145,9 +143,13 @@ function stack() {
 
   async function signIn(hostedCookie: string) {
     const start = await local.auth.handler(
-      new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`),
+      new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: LOCAL },
+        body: "{}",
+      }),
     );
-    const page = new URL(start.headers.get("location")!);
+    const page = new URL(((await start.json()) as { url: string }).url);
     const issued = await hosted.auth.handler(
       new Request(`${HOSTED}/api/auth/dozo/hosted-login/issue`, {
         method: "POST",
@@ -202,7 +204,7 @@ describe("hosted login through createAuth", () => {
 
   it("changes nothing when neither variable is set", async () => {
     const { prisma, auth } = server(LOCAL, {});
-    const start = await auth.handler(new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`));
+    const start = await post(auth, LOCAL, "/dozo/hosted-login/start", {});
     expect(start.status).toBe(404);
     const body = { email: "eve@dozo.example", password: PASSWORD, name: "Eve" };
     expect((await post(auth, LOCAL, "/sign-up/email", body)).status).toBe(200);

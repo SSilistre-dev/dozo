@@ -42,6 +42,9 @@ vi.mock("../lib/i18n", () => ({
 }));
 
 vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: mocks.capabilities }));
+vi.mock("./dozo-hosted-login", () => ({
+  HostedSignIn: () => <div data-testid="hosted">hosted</div>,
+}));
 vi.mock("./Auth", () => ({
   AuthPage: (props: { mode: string }) => {
     mocks.upstream(props);
@@ -307,4 +310,19 @@ it("names sign-up and sign-in in the tab's title, and gives the title back on le
   container.remove();
   await open("/forgot-password");
   expect(document.title).toBe("Dozo");
+});
+
+it("offers only the hosted account on a server that signs in with it, at the sign-in address", async () => {
+  mocks.capabilities.mockResolvedValue({ signupsOpen: true, hostedLogin: true });
+  await open("/sign-in?error=hosted_login_failed");
+  expect(container.querySelector('[data-testid="hosted"]')).not.toBeNull();
+  expect(shown()).toBeUndefined();
+  expect(language()).not.toBeNull();
+  for (const path of ["/sign-up?next=%2Fapp", "/forgot-password"]) {
+    act(() => root?.unmount());
+    container.remove();
+    await open(path);
+    expect(where()).toBe(path.startsWith("/sign-up") ? "/sign-in?next=%2Fapp" : "/sign-in");
+    expect(container.querySelector('[data-testid="hosted"]')).not.toBeNull();
+  }
 });

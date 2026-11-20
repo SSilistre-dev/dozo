@@ -11,6 +11,7 @@ import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import type { UiLocale } from "../lib/ui-locale";
 import { UI_LOCALES } from "../lib/ui-locale";
 import { AuthPage as UpstreamAuthPage } from "./Auth";
+import { HostedSignIn } from "./dozo-hosted-login";
 
 /**
  * Upstream's sign-in and sign-up page, for a deployment that may take no new accounts. The server
@@ -25,6 +26,9 @@ import { AuthPage as UpstreamAuthPage } from "./Auth";
  * an exact app language counts, anything else is dropped, and the parameter leaves the address
  * either way. The choice goes through `setUiLocale`, the same saved preference the settings use,
  * so it holds after sign-in, where the app saves it to the account.
+ *
+ * A server that signs in only with an account kept on the hosted server (`hostedLogin` in the same
+ * capabilities) shows one way in instead, at the sign-in address; the other addresses lead there.
  *
  * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
  * for this tab (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
@@ -83,11 +87,14 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
     };
   }, [title]);
   const [signups, setSignups] = useState<"pending" | "open" | "closed">("pending");
+  const [hosted, setHosted] = useState(false);
   useEffect(() => {
     let active = true;
     fetchAuthCapabilities().then(
       (capabilities) => {
-        if (active) setSignups(capabilities.signupsOpen === false ? "closed" : "open");
+        if (!active) return;
+        setHosted(capabilities.hostedLogin === true);
+        setSignups(capabilities.signupsOpen === false ? "closed" : "open");
       },
       () => {
         if (active) setSignups("open");
@@ -101,6 +108,7 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   useEffect(() => {
     if (signingUp) markSignupStarted();
   }, [signingUp]);
+  if (hosted && props.mode !== "in") return <Navigate to={`/sign-in${search}`} replace />;
   if (props.mode === "up" && signups !== "open") {
     return signups === "closed" ? <Navigate to={`/sign-in${search}`} replace /> : null;
   }
@@ -108,7 +116,7 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   if (wanted && wanted !== locale) return null;
   return (
     <div className="contents" data-dozo-signups={signups}>
-      <UpstreamAuthPage {...props} />
+      {hosted ? <HostedSignIn /> : <UpstreamAuthPage {...props} />}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2">
         <OptionSelect
           size="sm"

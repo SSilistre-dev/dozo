@@ -722,7 +722,7 @@
     {
       "file": "packages/auth/src/index.ts",
       "find": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { createDirectory } from \"./directory.js\";",
-      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
+      "replace": "export type { DirectoryAccountChange } from \"./directory.js\";\nexport { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory } from \"./directory.js\";",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
@@ -740,7 +740,7 @@
     {
       "file": "apps/api/src/app.ts",
       "find": "  publicSignInProviders,\n} from \"@rakazo/auth\";",
-      "replace": "  publicSignInProviders,\n  refuseUnlinkedAccounts,\n} from \"@rakazo/auth\";",
+      "replace": "  publicSignInProviders,\n  hostedLoginOnly,\n  refuseUnlinkedAccounts,\n} from \"@rakazo/auth\";",
       "requires": [
         "packages/auth/src/dozo-hosted-login.ts"
       ],
@@ -4861,6 +4861,21 @@
       "find": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-server-text.ts\nmsgid \"Files over 12 MB can't move\"",
       "replace": "msgstr \"Bu bilgisayar botun dosyalarını taşıyamaz.\"\n\n#: apps/web/src/pages/dozo-hosted-login.tsx\nmsgid \"Sign in on this computer?\"\nmsgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/dozo-server-text.ts\nmsgid \"Files over 12 MB can't move\"",
       "reason": "hosted account sign-in on a local server: the Turkish title of the page that asks the user to agree (apps/web/src/pages/dozo-hosted-login.tsx)"
+    },
+    {
+      "file": "packages/contracts/src/auth.ts",
+      "find": "  signupsOpen: z.boolean().optional(),\n});",
+      "replace": "  signupsOpen: z.boolean().optional(),\n  /** Whether this server signs in only with an account kept on another server; omitted means no. */\n  hostedLogin: z.boolean().optional(),\n});",
+      "reason": "hosted account sign-in on a local server: the capability that tells the sign-in page to offer that one way in"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n    } satisfies AuthCapabilities);",
+      "replace": "signupsOpenFrom(dozoSite, env.signupsEnabled),\n      hostedLogin: hostedLoginOnly(),\n    } satisfies AuthCapabilities);",
+      "requires": [
+        "packages/auth/src/dozo-hosted-login.ts"
+      ],
+      "reason": "hosted account sign-in on a local server: the public capabilities say when the server signs in only with the hosted account"
     }
   ],
   "assets": {
