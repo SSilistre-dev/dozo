@@ -73,10 +73,12 @@ over upstream's own-model tiers by `packages/contracts/src/dozo-plans.ts`:
   hosted computer and is told it has none, so it works with web lookups and connected apps and,
   when a task truly needs a computer, says the member can connect their own from the desktop app or
   upgrade (`packages/adapters/src/dozo-no-computer.ts`). The same holds for a paid plan whose hours
-  for the period are spent. It is decided once at the start of the run, with the check that refuses
-  the computer's start; a turn paused in computer mode or for a takeover keeps its computer, and a
-  server that does not bill never withholds the computer. A new organization starts here, and one whose subscription
-  ends returns here.
+  for the period are spent, and for an overdue payment, where the bot names the payment instead.
+  It is decided once at the start of the run, with the allowance the computer's start checks, read
+  alongside the run's other setup; if that read fails the run keeps its computer. A turn paused in
+  computer mode, for a takeover or after using the computer keeps it; a message with files from a
+  run without it is refused plainly. A server that does not bill never withholds the computer. A
+  new organization starts here, and one whose subscription ends returns here.
 - **Premium** (tier `pro`) and **Premium Plus** (tier `max`): upstream's Pro and Max terms, a
   monthly computer allowance and a computer size. They start without a trial.
 
