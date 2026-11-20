@@ -5023,8 +5023,8 @@
     },
     {
       "file": "apps/api/src/router.ts",
-      "find": "import { routinesRoutes } from \"./routes/routines.js\";\nimport { spacesRoutes }",
-      "replace": "import { routinesRoutes } from \"./routes/routines.js\";\nimport { dozoQuietHoursRoutes } from \"./dozo-quiet-hours.js\";\nimport { spacesRoutes }",
+      "find": "import { paymentWalletRoutes } from \"./routes/payment-wallet.js\";\nimport { routinesRoutes }",
+      "replace": "import { paymentWalletRoutes } from \"./routes/payment-wallet.js\";\nimport { dozoQuietHoursRoutes } from \"./dozo-quiet-hours.js\";\nimport { routinesRoutes }",
       "requires": [
         "apps/api/src/dozo-quiet-hours.ts"
       ],
