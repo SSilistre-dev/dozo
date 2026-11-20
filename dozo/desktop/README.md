@@ -34,7 +34,9 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 Two switches in the Dozo menu, both off until chosen. Each is saved in the same file as the server
 address (`server`, in the app's config folder): the address on the first line, then
 `open_at_login=` and `keep_running=` lines. A file with the address alone, as older versions
-wrote it, still reads, and a missing switch is off. They are menu events handled in Rust: no
+wrote it, still reads, and a missing switch is off. The other way does not: a version from before
+these switches cannot read the new file and asks for the server again. The file is written to a
+`.tmp` beside it and renamed, so a crash never leaves half an address. They are menu events handled in Rust: no
 command was added and `capabilities/local.json` is unchanged.
 
 - Open at Login uses the system's own entry (a macOS launch agent, the Windows `Run` key, a Linux
@@ -53,8 +55,12 @@ command was added and `capabilities/local.json` is unchanged.
 - A second launch starts no process: the running app shows its window and brings it forward, hidden
   or minimized (one started by the login entry is ignored). Without a session bus on Linux, a
   second app simply starts.
-- The update check and Restart to Update work with the window hidden, except that the item is in
-  the window's menu: open the window first.
+- The update check and Restart to Update work with the window hidden: once an update is waiting,
+  the item is also at the top of the tray's menu. Restarting into an update always opens the
+  window, even though the restarted process carries the login entry's argument (a `restarted` file
+  beside `server` says so, and is gone once read). The restart releases the single-instance lock
+  before it starts the new process (Tauri's `cleanup_before_exit`); this was read in the source,
+  not run against a real update.
 - Linux needs `libayatana-appindicator3` for the tray: the .deb depends on it, the AppImage carries it.
 - macOS and Windows: compiled, not tried by hand. Only Linux runs under `tests/linux_gate.py`.
 

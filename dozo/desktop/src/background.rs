@@ -39,9 +39,16 @@ pub fn can_reopen(os: Os, tray: bool) -> bool {
 }
 
 /// True when the app starts without a window: only from the login entry, only when the user
-/// asked to keep running, and only when the window can be brought back.
-pub fn start_hidden(from_login: bool, keep_running: bool, can_reopen: bool) -> bool {
-    from_login && keep_running && can_reopen
+/// asked to keep running, and only when the window can be brought back. A restart the user
+/// asked for (Restart to Update) repeats the login entry's argument but is never hidden: they
+/// are looking at the app.
+pub fn start_hidden(
+    from_login: bool,
+    restarted: bool,
+    keep_running: bool,
+    can_reopen: bool,
+) -> bool {
+    from_login && !restarted && keep_running && can_reopen
 }
 
 pub fn on_close(keep_running: bool, can_reopen: bool) -> Close {
@@ -103,12 +110,14 @@ mod tests {
             for tray in [false, true] {
                 for keep in [false, true] {
                     for login in [false, true] {
-                        let expected = login && keep && (os == Os::Mac || tray);
-                        assert_eq!(
-                            start_hidden(login, keep, can_reopen(os, tray)),
-                            expected,
-                            "{os:?} tray={tray} keep={keep} login={login}"
-                        );
+                        for restarted in [false, true] {
+                            let expected = login && !restarted && keep && (os == Os::Mac || tray);
+                            assert_eq!(
+                                start_hidden(login, restarted, keep, can_reopen(os, tray)),
+                                expected,
+                                "{os:?} tray={tray} keep={keep} login={login} restarted={restarted}"
+                            );
+                        }
                     }
                 }
             }
@@ -121,7 +130,7 @@ mod tests {
             for tray in [false, true] {
                 let reopen = can_reopen(os, tray);
                 assert!(on_close(true, reopen) != Close::Hide || reopen);
-                assert!(!start_hidden(true, true, reopen) || reopen);
+                assert!(!start_hidden(true, false, true, reopen) || reopen);
             }
         }
     }

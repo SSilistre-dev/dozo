@@ -1,7 +1,7 @@
 """Runs the Linux app against two local sites and checks what loads where (src/frames_gtk.rs).
 
 Usage: xvfb-run -a dbus-run-session -- python3 tests/linux_gate.py <path to the dozo-desktop binary>
-Needs xdotool, openbox and wmctrl. The app's server is site A; site B is another origin. A fake
+Needs xdotool, xprop, openbox and wmctrl. The app's server is site A; site B is another origin. A fake
 xdg-open records what the app hands the browser. A second part runs the app under a window manager
 and checks what a second launch and closing the window do (src/background.rs). The session bus is
 a fresh one without a tray host, which is the case where a hidden window could not come back.
@@ -126,9 +126,12 @@ def background_gate(binary, server):
         wmctrl_close()
         until("closing the window with the switch on takes it off the screen", lambda: not windows())
         stays("and the app keeps running", lambda: kept.poll() is None)
-        if not windows(visible=False):
-            print("FAIL: the window was destroyed, not minimized")
-            sys.exit(2)
+        # Minimized, not hidden: the window manager lists it as iconic (a hidden one is withdrawn)
+        # and keeps it for the taskbar to restore.
+        until("the window is minimized, not hidden or destroyed", lambda: any(
+            "Iconic" in subprocess.run(["xprop", "-id", w, "WM_STATE"], capture_output=True, text=True).stdout
+            for w in windows(visible=False)
+        ))
         returned = subprocess.Popen([binary], env=env, stderr=subprocess.DEVNULL)
         until("a second launch ends by itself again", lambda: returned.poll() == 0)
         until("and the window is back", lambda: len(windows()) == 1)

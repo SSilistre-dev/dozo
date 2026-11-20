@@ -42,11 +42,38 @@ fn settings_file(app: &AppHandle) -> tauri::Result<PathBuf> {
     Ok(app.path().app_config_dir()?.join("server"))
 }
 
-fn write_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
+/// Saves what the user chose, as it is when this turn comes: changes made at the same moment on
+/// other threads are written in order, and the choices themselves are never locked while the
+/// file is written.
+fn persist(app: &AppHandle) -> Result<(), String> {
+    static TURN: Mutex<()> = Mutex::new(());
+    let _turn = TURN.lock().unwrap();
+    let snapshot = app.state::<Config>().0.lock().unwrap().clone();
     let file = settings_file(app).map_err(|error| error.to_string())?;
-    fs::create_dir_all(file.parent().unwrap_or(&file))
-        .and_then(|()| fs::write(&file, settings::render(settings)))
-        .map_err(|error| error.to_string())
+    settings::save(&file, &snapshot).map_err(|error| error.to_string())
+}
+
+/// The file that says the app is restarting for an update, and so must open its window.
+fn restart_marker(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("restarted"))
+}
+
+/// Restart to Update. The new process gets the old one's arguments, the login entry's among
+/// them, and must still show its window: the marker says so, and is gone once it has been read
+/// (or here, when the install failed and the app stays).
+fn restart_for_update(app: &AppHandle) {
+    let marker = restart_marker(app);
+    if let Some(file) = &marker {
+        let _ = fs::create_dir_all(file.parent().unwrap_or(file));
+        let _ = fs::write(file, "");
+    }
+    update::install(app);
+    if let Some(file) = marker {
+        let _ = fs::remove_file(file);
+    }
 }
 
 #[tauri::command]
@@ -58,14 +85,17 @@ fn current_server(app: AppHandle) -> Option<String> {
 #[tauri::command]
 fn set_server(app: AppHandle, address: String) -> Result<String, String> {
     let server = parse_server(&address)?;
-    let state = app.state::<Config>();
-    let mut config = state.0.lock().unwrap();
-    let next = Settings {
-        server: Some(server.clone()),
-        ..config.clone()
-    };
-    write_settings(&app, &next).map_err(|error| format!("Could not save the address: {error}"))?;
-    *config = next;
+    let previous = app
+        .state::<Config>()
+        .0
+        .lock()
+        .unwrap()
+        .server
+        .replace(server.clone());
+    persist(&app).map_err(|error| {
+        app.state::<Config>().0.lock().unwrap().server = previous;
+        format!("Could not save the address: {error}")
+    })?;
     Ok(server.into())
 }
 
@@ -282,9 +312,7 @@ fn flip(app: &AppHandle, id: &str) {
         return;
     };
     let wanted = item.is_checked().unwrap_or(false);
-    let state = app.state::<Config>();
-    let mut config = state.0.lock().unwrap();
-    let mut next = config.clone();
+    let config = &app.state::<Config>().0;
     if id == OPEN_AT_LOGIN_ID {
         let login = app.autolaunch();
         let changed = if wanted {
@@ -295,15 +323,16 @@ fn flip(app: &AppHandle, id: &str) {
         if let Err(error) = &changed {
             eprintln!("dozo: could not change the login entry: {error}");
         }
-        next.open_at_login = login.is_enabled().unwrap_or(config.open_at_login);
-        let _ = item.set_checked(next.open_at_login);
+        let known = config.lock().unwrap().open_at_login;
+        let actual = login.is_enabled().unwrap_or(known);
+        let _ = item.set_checked(actual);
+        config.lock().unwrap().open_at_login = actual;
     } else {
-        next.keep_running = wanted;
+        config.lock().unwrap().keep_running = wanted;
     }
-    if let Err(error) = write_settings(app, &next) {
+    if let Err(error) = persist(app) {
         eprintln!("dozo: could not save the choice: {error}");
     }
-    *config = next;
 }
 
 /// Brings the window back: shown, restored from the taskbar and in front.
@@ -360,6 +389,33 @@ fn can_reopen(app: &AppHandle) -> bool {
     background::can_reopen(OS, tray_showing(app))
 }
 
+#[cfg(not(target_os = "macos"))]
+const TRAY_OPEN_ID: &str = "tray-open";
+#[cfg(not(target_os = "macos"))]
+const TRAY_UPDATE_ID: &str = "tray-update";
+
+/// The tray's menu, kept so the update item can be added to it once one is waiting.
+#[cfg(not(target_os = "macos"))]
+struct TrayMenu(Menu<Wry>);
+
+/// Adds the update item to the top of the tray's menu, once: with the window hidden it is the only
+/// way to restart into an update. Runs on the main thread.
+#[cfg(not(target_os = "macos"))]
+fn offer_update_in_tray(app: &AppHandle, label: &str) {
+    let (Some(menu), Some(tray)) = (app.try_state::<TrayMenu>(), app.tray_by_id("dozo")) else {
+        return;
+    };
+    if menu.0.get(TRAY_UPDATE_ID).is_some() {
+        return;
+    }
+    let added = MenuItem::with_id(app, TRAY_UPDATE_ID, label, true, None::<&str>)
+        .and_then(|item| menu.0.insert(&item, 0))
+        .and_then(|()| tray.set_menu(Some(menu.0.clone())));
+    if let Err(error) = added {
+        eprintln!("dozo: could not show the update item in the tray: {error}");
+    }
+}
+
 /// Adds the tray icon: Open Dozo and Quit Dozo, and a click shows the window. A failure leaves
 /// the app without one, which `can_reopen` then reports.
 #[cfg(not(target_os = "macos"))]
@@ -369,16 +425,18 @@ fn add_tray(app: &AppHandle) {
         let menu = Menu::with_items(
             app,
             &[
-                &MenuItem::with_id(app, "tray-open", "Open Dozo", true, None::<&str>)?,
+                &MenuItem::with_id(app, TRAY_OPEN_ID, "Open Dozo", true, None::<&str>)?,
                 &MenuItem::with_id(app, "tray-quit", "Quit Dozo", true, None::<&str>)?,
             ],
         )?;
+        app.manage(TrayMenu(menu.clone()));
         let mut tray = TrayIconBuilder::with_id("dozo")
             .tooltip("Dozo")
             .menu(&menu)
             .show_menu_on_left_click(false)
             .on_menu_event(|app, event| match event.id().as_ref() {
-                "tray-open" => reveal(app),
+                TRAY_OPEN_ID => reveal(app),
+                TRAY_UPDATE_ID => restart_for_update(app),
                 "tray-quit" => app.exit(0),
                 _ => {}
             })
@@ -420,6 +478,8 @@ fn offer_update(app: &AppHandle) -> bool {
             return;
         }
         let label = update::label(sys_locale::get_locale().as_deref());
+        #[cfg(not(target_os = "macos"))]
+        offer_update_in_tray(app, label);
         let added = MenuItem::with_id(app, update::MENU_ID, label, true, None::<&str>)
             .and_then(|item| {
                 Submenu::with_id_and_items(app, update::MENU_HOLDER_ID, label, true, &[&item])
@@ -476,7 +536,7 @@ fn main() {
                 OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, event.id().as_ref()),
                 #[cfg(not(target_os = "macos"))]
                 QUIT_ID => app.exit(0),
-                update::MENU_ID => update::install(app),
+                update::MENU_ID => restart_for_update(app),
                 _ => {}
             }
         })
@@ -492,17 +552,20 @@ fn main() {
                 settings.open_at_login = actual;
             }
             if settings.open_at_login != saved
-                && let Err(error) = write_settings(&app, &settings)
+                && let Err(error) = settings::save(&settings_file(&app)?, &settings)
             {
                 eprintln!("dozo: could not save the login entry: {error}");
             }
             show_switches(&app, &settings);
             app.manage(Config(Mutex::new(settings.clone())));
-            update::watch(app.clone(), offer_update);
             #[cfg(not(target_os = "macos"))]
             add_tray(&app);
+            update::watch(app.clone(), offer_update);
+            // Read once and gone, so only the start right after Restart to Update sees it.
+            let restarted = restart_marker(&app).is_some_and(|file| fs::remove_file(file).is_ok());
             let hidden = background::start_hidden(
                 background::from_login(std::env::args()),
+                restarted,
                 settings.keep_running,
                 can_reopen(&app),
             );
