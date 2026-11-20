@@ -97,6 +97,19 @@ describe("grouping usage", () => {
     });
   });
 
+  it("breaks ties with named groups first, then by key, whatever order the rows came in", () => {
+    const tied = [
+      cell({ botId: "lost" }),
+      cell(),
+      cell({ botId: "b", botName: "Bea" }),
+      cell({ botId: "gone", deletedBotName: "Old" }),
+      cell({ botId: "a", botName: "Al" }),
+    ];
+    const order = ["a", "b", "gone", "lost", ""];
+    expect(groupUsage(tied, "bot").map((g) => g.key)).toEqual(order);
+    expect(groupUsage([...tied].reverse(), "bot").map((g) => g.key)).toEqual(order);
+  });
+
   it("reads a total as unknown when a record in the group lacks the figure", () => {
     const [group] = groupUsage(
       [cell(), cell({ calls: 2, costCount: 1, totalCount: 2, inputCount: 2, outputCount: 0 })],

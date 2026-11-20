@@ -91,6 +91,14 @@ function identity(cell: UsageCell, by: DozoUsageGrouping): Identity {
   return { key: state, name: null, detail: null, state };
 }
 
+/** Ties fall back to named groups first, so the order never depends on the database's. */
+const STATE_ORDER: Record<DozoUsageGroup["state"], number> = {
+  live: 0,
+  deleted: 1,
+  unknown: 2,
+  none: 3,
+};
+
 /**
  * Sums the cells into the groups of one grouping, costliest first. As on the Usage summary, a
  * total that would skip a record without the figure reads as unknown (null).
@@ -127,7 +135,13 @@ export function groupUsage(cells: UsageCell[], by: DozoUsageGrouping): DozoUsage
         costUsd: complete(sums.costCount, sums.costUsd),
       };
     })
-    .sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1) || b.modelCalls - a.modelCalls);
+    .sort(
+      (a, b) =>
+        (b.costUsd ?? -1) - (a.costUsd ?? -1) ||
+        b.modelCalls - a.modelCalls ||
+        STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+        a.key.localeCompare(b.key),
+    );
 }
 
 /**
