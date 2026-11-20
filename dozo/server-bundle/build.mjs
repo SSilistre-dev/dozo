@@ -4,7 +4,8 @@
 // Runs in the tree: pnpm install, db:generate, the web build, then upstream's
 // scripts/build-server-bundle.mjs (wrapped, never edited). Then it drops the packages TRIM names
 // (never loaded by a local server), adds the relay host agent and the backup command as one file
-// each (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"; dozo-local-backup.mjs, "backup"),
+// each (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"; dozo-local-backup.mjs, "backup";
+// dozo-local-account.mjs, "account"),
 // repacks, and writes to <out-dir>:
 //   dozo-server-<platform>-<arch>.tar.xz   one folder, rakazo-server/ (upstream's layout)
 //   dozo-server-<platform>-<arch>.json     { platform, version, file, sha256, size, ... }
@@ -41,6 +42,7 @@ const AGENT = "dozo-relay-agent.mjs";
 // through an anchored rule (dozo/brand/brand.json).
 const LINKS = "dozo-links.json";
 const BACKUP = "dozo-local-backup.mjs";
+const ACCOUNT = "dozo-local-account.mjs";
 
 const fail = (message, code = 2) => {
   process.stderr.write(`[server-bundle] FAILED: ${message}\n`);
@@ -217,6 +219,14 @@ step("backup command", () => {
     throw new Error(`backup without arguments exited ${usage.status}: ${usage.stdout}`);
   }
 });
+// The account repairs (README.md, "Account repairs"), the same way.
+step("account command", () => {
+  bundleCommand("packages/adapters/src/dozo-local-account.ts", path.join(work, ACCOUNT));
+  const usage = spawnSync("node", [path.join(work, ACCOUNT)], { encoding: "utf8" });
+  if (usage.status !== 64 || !usage.stdout.includes('"reason":"usage"')) {
+    throw new Error(`account without arguments exited ${usage.status}: ${usage.stdout}`);
+  }
+});
 let upstream;
 step("bundle", () => {
   run("node", ["scripts/build-server-bundle.mjs", path.join(work, "upstream")]);
@@ -243,8 +253,14 @@ step("trim", () => {
   const server = path.join(unpacked, "rakazo-server");
   fs.copyFileSync(path.join(work, AGENT), path.join(server, AGENT));
   fs.copyFileSync(path.join(work, BACKUP), path.join(server, BACKUP));
+  fs.copyFileSync(path.join(work, ACCOUNT), path.join(server, ACCOUNT));
   const manifest = JSON.parse(fs.readFileSync(path.join(server, "manifest.json"), "utf8"));
-  manifest.entrypoints = { ...manifest.entrypoints, relay: AGENT, backup: BACKUP };
+  manifest.entrypoints = {
+    ...manifest.entrypoints,
+    relay: AGENT,
+    backup: BACKUP,
+    account: ACCOUNT,
+  };
   fs.writeFileSync(path.join(server, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const [prefix] of TRIM) {
     if (!trimmed.removed.some((entry) => entry.startsWith(`${prefix}@`))) {

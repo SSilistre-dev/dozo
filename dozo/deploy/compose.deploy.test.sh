@@ -34,6 +34,23 @@ set_=$(config TRUSTED_PROXIES=dokploy-traefik DOZO_ORIGIN_SOURCE_RANGE=198.51.10
 [ "$(envv "$base" api DOZO_PLUGIN_SUBMISSIONS)" = "closed" ] || bad "DOZO_PLUGIN_SUBMISSIONS: want closed by default, got '$(envv "$base" api DOZO_PLUGIN_SUBMISSIONS)'"
 [ "$(envv "$set_" api DOZO_PLUGIN_SUBMISSIONS)" = "open" ] || bad "DOZO_PLUGIN_SUBMISSIONS does not reach the api"
 
+# The hosted login keys reach the api only, and only when the panel sets them. A key that belongs
+# to a computer's own server (the relay agent's) never reaches any service here.
+keys=$(config HOSTED_LOGIN_SIGNING_KEY=signing-key HOSTED_LOGIN_OVERLAP_KEY=overlap-key \
+  DOZO_RELAY_AGENT_KEY=relay-key) || { echo "[compose.test] FAIL: docker compose config (keys set)"; exit 1; }
+for k in HOSTED_LOGIN_SIGNING_KEY HOSTED_LOGIN_OVERLAP_KEY; do
+  want=$([ "$k" = HOSTED_LOGIN_SIGNING_KEY ] && echo signing-key || echo overlap-key)
+  [ "$(envv "$keys" api "$k")" = "$want" ] || bad "$k does not reach the api"
+  [ "$(envv "$base" api "$k")" = "<unset>" ] || bad "$k unset: want it absent from the api, got '$(envv "$base" api "$k")'"
+  for svc in $(jq -r '.services | keys[]' <<<"$keys"); do
+    [ "$svc" = api ] && continue
+    [ "$(envv "$keys" "$svc" "$k")" = "<unset>" ] || bad "$k reaches $svc"
+  done
+done
+for svc in $(jq -r '.services | keys[]' <<<"$keys"); do
+  [ "$(envv "$keys" "$svc" DOZO_RELAY_AGENT_KEY)" = "<unset>" ] || bad "DOZO_RELAY_AGENT_KEY reaches $svc"
+done
+
 # Every router of this layer but the closed one goes through its container's origin allowlist,
 # which lets everyone in unless DOZO_ORIGIN_SOURCE_RANGE is set.
 for svc in api web; do

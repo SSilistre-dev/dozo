@@ -222,6 +222,26 @@ function pgTool(pg: Postgres, name: string, args: string[]): Promise<string> {
   );
 }
 
+/**
+ * Runs `work` with `psql` on a server folder's database as its owner, the app open or closed, as
+ * `create` does. Other commands for a computer's own server (`dozo-local-account.ts`) use it.
+ */
+export async function withHomeDatabase<T>(
+  home: string,
+  pgBin: string,
+  work: (psql: (args: string[]) => Promise<string>) => Promise<T>,
+): Promise<T> {
+  const secrets = await secretsFile(home);
+  const pgdata = path.join(home, "pgdata");
+  if (!secrets || !(await exists(path.join(pgdata, "PG_VERSION")))) {
+    throw new BackupRefused("no-server", "This folder has no Dozo server.");
+  }
+  const owner = await ownerPassword(path.join(home, secrets));
+  return withPostgres(pgBin, pgdata, owner, (pg) =>
+    work((args) => pgTool(pg, "psql", ["-d", DATABASE, ...args])),
+  );
+}
+
 async function* tree(home: string, relative: string): AsyncGenerator<BackupEntry> {
   const full = path.join(home, relative);
   const info = await lstat(full).catch((error) => {

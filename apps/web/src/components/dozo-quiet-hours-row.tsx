@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoQuietHours } from "@rakazo/contracts";
+import { DOZO_DEFAULT_QUIET_HOURS } from "@rakazo/contracts";
 import { Label, NativeSelect, NativeSelectOption, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
@@ -7,8 +8,7 @@ import { toastError } from "../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../lib/query";
 import { SettingsRow } from "./SettingsRows";
 
-/** What turning quiet hours on starts with: the night. */
-export const DOZO_DEFAULT_QUIET_HOURS: DozoQuietHours = { startMinute: 22 * 60, endMinute: 7 * 60 };
+export { DOZO_DEFAULT_QUIET_HOURS };
 
 const HOUR_MINUTES = Array.from({ length: 24 }, (_, hour) => hour * 60);
 
