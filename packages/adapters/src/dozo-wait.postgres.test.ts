@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import { abortableDelay } from "@rakazo/core";
+import { deferred } from "@rakazo/core/test-async";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   createDb,
@@ -30,6 +32,17 @@ const describePostgres = process.env.VERIFY_DATABASE && url ? describe : describ
 
 const WATCH = { kind: "http", url: "https://status.example.test/deploy" };
 const MINUTE = 60_000;
+
+/** `client` with some of its methods replaced, leaving the client itself as it was. */
+function only<T extends object>(client: T, replaced: Record<string, unknown>): T {
+  return new Proxy(client, {
+    get(target, key) {
+      if (typeof key === "string" && key in replaced) return replaced[key];
+      const value = Reflect.get(target, key);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
 
 describePostgres("one-time waits (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
@@ -83,15 +96,16 @@ describePostgres("one-time waits (PostgreSQL)", () => {
   });
 
   /** schedule_create with a watch and waitMinutes, as the tool handler calls it. */
-  function wait(name: string, minutes = 60) {
+  function wait(name: string, minutes = 60, using = deps) {
     return runAsTenant(owner, () =>
-      dozoCreateSchedule(createScheduleFromTool, minutes, deps, {
+      dozoCreateSchedule(createScheduleFromTool, minutes, using, {
         spaceId: owner.spaceId,
         botId: owner.botId,
         userId: owner.userId,
         threadId: owner.threadId,
         name,
         prompt: `Report ${name}`,
+        timezone: "UTC",
         schedule: { watch: WATCH },
       }),
     );
@@ -186,15 +200,40 @@ describePostgres("one-time waits (PostgreSQL)", () => {
   it("keeps a bot to its limit when two calls race for the last wait", async () => {
     for (let index = 0; index < DOZO_MAX_WAITS_PER_BOT - 1; index += 1)
       routineId(await wait(`build ${index}`));
-    const raced = await Promise.all([wait("race a"), wait("race b")]);
+    // Each call counts before either records its wait. Under the bot's lock the second cannot
+    // count until the first commits, so the first records after a short grace instead.
+    const countedBy = [deferred(), deferred()];
+    let calls = 0;
+    const racing = only(db.prisma, {
+      $transaction: (work: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        db.prisma.$transaction(async (tx) => {
+          const mine = countedBy[calls++ % 2] as ReturnType<typeof deferred>;
+          const other = countedBy.find((entry) => entry !== mine) as ReturnType<typeof deferred>;
+          return work(
+            only(tx, {
+              $queryRaw: async (...query: Parameters<typeof tx.$queryRaw>) => {
+                const rows = await tx.$queryRaw(...query);
+                if (String(query[0]).includes("count(*)")) mine.resolve(undefined);
+                return rows;
+              },
+              $executeRaw: async (...statement: Parameters<typeof tx.$executeRaw>) => {
+                await Promise.race([other.promise, abortableDelay(500)]);
+                return tx.$executeRaw(...statement);
+              },
+            }),
+          );
+        }),
+    });
+    const using = { ...deps, prisma: racing };
+    const raced = await Promise.all([wait("race a", 60, using), wait("race b", 60, using)]);
     expect(raced.filter((created) => "ok" in created)).toHaveLength(1);
     expect(raced.filter((created) => "error" in created)).toEqual([
       { error: expect.stringMatching(/already have 10 waits/) },
     ]);
-    const [{ going }] = await system.$queryRaw<Array<{ going: number }>>`
+    const [counted] = await system.$queryRaw<Array<{ going: number }>>`
       SELECT count(*)::int AS going FROM dozo_routine_waits w JOIN routines r ON r.id = w."routineId"
       WHERE r."botId" = ${owner.botId} AND r.active`;
-    expect(going).toBe(DOZO_MAX_WAITS_PER_BOT);
+    expect(counted?.going).toBe(DOZO_MAX_WAITS_PER_BOT);
     expect(
       await system.routine.count({
         where: { botId: owner.botId, active: true, name: { startsWith: "race" } },

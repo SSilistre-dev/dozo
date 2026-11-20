@@ -468,6 +468,9 @@ Accepted by the owner for now, stated here once:
   wakeup job carries it across restarts. It is a routine, so the user sees and stops it in the
   bot's Routines list (web and mobile). A deadline missed by more than 12 hours ends it without a
   run, as a missed one-time routine does. A wait for a set time is the existing one-shot reminder.
+  A wait that cannot start is refused before the approval card; the per-bot count and the insert
+  share an advisory lock. `dozo-wait.postgres.test.ts` checks it on a migrated database
+  (`VERIFY_DATABASE=1`, `DATABASE_URL` of the runtime login); the unit gate skips it.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and

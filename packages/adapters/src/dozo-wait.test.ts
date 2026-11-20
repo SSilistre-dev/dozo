@@ -15,7 +15,9 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { normalizeOpenAiToolParameters } from "./openai-tool-parameters.js";
 import type { tickRoutineWatch } from "./routine-watch.js";
+import type { RunContext } from "./run-context.js";
 import { wakeRoutine } from "./run-routines.js";
+import { scheduleCreateRefusal } from "./run-tools-tasks.js";
 import type { createScheduleFromTool } from "./schedule-tools.js";
 
 const MINUTE = 60_000;
@@ -278,6 +280,25 @@ describe("creating a wait", () => {
     }
     expect(await refusal(60)).toMatch(/already have 10 waits/);
     expect(await refusal(60, WATCH, "bot-2")).toBeUndefined();
+  });
+
+  it("is asked before schedule_create's approval card", async () => {
+    const db = fakeDatabase();
+    Object.assign(db.deps.prisma, {
+      routine: { ...db.deps.prisma.routine, findMany: async () => [] },
+    });
+    const ctx = {
+      deps: db.deps,
+      run: { spaceId: "space-1", userId: "user-1" },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+      computer: { graphical: false },
+    } as unknown as RunContext;
+    const args = { name: "Deploy", prompt: "Report the deploy", watch: WATCH };
+    expect(await scheduleCreateRefusal(ctx, args)).toBeUndefined();
+    expect(await scheduleCreateRefusal(ctx, { ...args, waitMinutes: 2 })).toEqual({
+      error: `waitMinutes must be 5 to ${DOZO_WAIT_MAX_MINUTES} minutes.`,
+    });
   });
 
   it("counts again under the bot's lock, so a call that lost the race takes its watch back", async () => {
