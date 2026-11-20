@@ -22,6 +22,11 @@ const originOf = (url: string) => {
   }
 };
 
+/** Whether the app's server is a paired computer. */
+export function isRelayServer(url: string) {
+  return isRelayOrigin(originOf(url));
+}
+
 export function displayApiHost(url: string) {
   return isRelayOrigin(originOf(url)) ? t`Your computer` : directApiHost(url);
 }

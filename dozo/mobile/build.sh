@@ -14,6 +14,7 @@
 # ~/Library/Developer/Xcode/DerivedData, a shell profile, Homebrew or a global npm or gem directory.
 # Needs Xcode with an iOS simulator runtime, Docker (to stage and brand) and network access.
 # DOZO_MOBILE_API_URL: the server the app opens with (default https://app.dozo.bot).
+# DOZO_MOBILE_RELAY_URL: the relay the app pairs through without naming it (default https://relay.dozo.bot).
 # DOZO_MOBILE_DEVICE: the simulator device type (default "iPhone 17").
 # Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
@@ -31,6 +32,7 @@ NODE_SHA256_x64=6965578fd823e72c1b5387f5ab84cb25368f886e02eb8779e6f0fce6b91c27b7
 PNPM_VERSION=12.18.0
 COCOAPODS_VERSION=1.16.2
 API_URL="${DOZO_MOBILE_API_URL:-https://app.dozo.bot}"
+RELAY_URL="${DOZO_MOBILE_RELAY_URL:-https://relay.dozo.bot}"
 DEVICE_TYPE="${DOZO_MOBILE_DEVICE:-iPhone 17}"
 DEVICE_NAME="Dozo build"
 MIN_FREE_GB=15
@@ -76,7 +78,7 @@ seal() {
   export EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 DO_NOT_TRACK=1 CI=1 SENTRY_DISABLE_AUTO_UPLOAD=true
   unset EXPO_TOKEN EAS_BUILD_PROFILE SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT SENTRY_URL \
     GOOGLE_SERVICES_JSON RAKAZO_PASSKEY_DEVELOPER_MODE
-  export EXPO_PUBLIC_API_URL="$API_URL"
+  export EXPO_PUBLIC_API_URL="$API_URL" EXPO_PUBLIC_DOZO_RELAY_URL="$RELAY_URL"
 }
 
 toolchain() {

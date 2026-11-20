@@ -1,31 +1,49 @@
 import { useLingui } from "@lingui/react/macro";
+import type { RelayPairingOffer } from "@rakazo/contracts";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { currentApiBase } from "../lib/api";
 import { saveApiBase } from "../lib/api-server";
 import type { RelayPairingError } from "../lib/dozo-relay-connection";
-import { offerText, pairRelay } from "../lib/dozo-relay-connection";
+import { pairRelay, readPairingOffer } from "../lib/dozo-relay-connection";
+import { displayApiHost } from "../lib/dozo-relay-endpoint";
 import {
   adoptRelayConnection,
+  DEFAULT_RELAY,
+  forgetRelayConnection,
   keepOnlyRelayConnection,
   relayDeps,
   relayPairingStore,
 } from "../lib/dozo-relay-fetch";
 import { useMobileTokens } from "../lib/native";
 import { useScreenHeader } from "../lib/screen-header";
+import { loadSessionToken } from "../lib/session";
 import { useSideInsets } from "../lib/side-insets";
 import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
 
-/** Offers this process already asked about: a link opens the app once, not on every visit. */
-const askedOffers = new Set<string>();
+/** The only links this screen acts on: the pairing route, the offer after `#`. */
+const PAIRING_LINKS = ["rakazo://dozo-pair#", "rakazo://dozo-pair/#"];
+
+function linkedOffer(link: string | null) {
+  const prefix = link ? PAIRING_LINKS.find((start) => link.startsWith(start)) : undefined;
+  const offer = prefix ? link?.slice(prefix.length) : undefined;
+  return offer && /^[A-Za-z0-9_-]+$/.test(offer) ? offer : undefined;
+}
+
+/** Links already acted on: each arrives once, so a later visit never brings an old one back. */
+const usedLinks = new Set<string>();
+
+const hostOf = (address: string) => new URL(address).host;
 
 /**
  * Pairs the phone with the user's own computer. The computer shows a QR code holding a link
- * (`dozo/relay/PROTOCOL.md`, Pairing link); the phone's camera opens it here, and the user agrees
- * once before anything is sent, so no other app or page can pair the phone silently. The code can
- * also be pasted. Once paired, the computer is the app's server.
+ * (`dozo/relay/PROTOCOL.md`, Pairing link); the phone's camera opens it here. The code can also be
+ * pasted. Either way the offer is checked first, then the user agrees once to what it does: which
+ * relay it goes through when that is not this build's own, and which server it signs them out of.
+ * Once paired, the computer is the app's server.
  */
 export default function DozoPairScreen() {
   const { t } = useLingui();
@@ -38,36 +56,67 @@ export default function DozoPairScreen() {
   const [pending, setPending] = useState(false);
   const running = useRef(false);
 
-  const failure = (kind: RelayPairingError["kind"]) =>
-    ({
-      invalid: t`That is not a pairing code.`,
-      expired: t`This code has expired. Show a new one on your computer.`,
-      used: t`This code was already used. Show a new one on your computer.`,
-      unreachable: t`Could not reach your computer.`,
-      "not-dozo": t`Could not reach your computer.`,
-    })[kind];
+  const failure = (kind: RelayPairingError["kind"] | undefined) =>
+    kind === "invalid"
+      ? t`That is not a pairing code.`
+      : kind === "expired"
+        ? t`This code has expired. Show a new one on your computer.`
+        : kind === "used"
+          ? t`This code was already used. Show a new one on your computer.`
+          : t`Could not reach your computer.`;
+
+  async function agrees(offer: RelayPairingOffer) {
+    const lines: string[] = [];
+    if (hostOf(offer.relay) !== hostOf(DEFAULT_RELAY)) {
+      lines.push(t`Uses the relay at ${hostOf(offer.relay)}.`);
+    }
+    if (await loadSessionToken()) {
+      lines.push(t`You will be signed out of ${displayApiHost(currentApiBase())}.`);
+    }
+    lines.push(t`Only connect to a computer you own.`);
+    return new Promise<boolean>((resolve) =>
+      Alert.alert(
+        t`Connect to this computer?`,
+        lines.join("\n"),
+        [
+          { text: t`Cancel`, style: "cancel", onPress: () => resolve(false) },
+          { text: t`Connect`, onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      ),
+    );
+  }
 
   async function connect(input: string) {
     if (running.current) return;
     running.current = true;
+    setError(null);
     try {
+      let offer: RelayPairingOffer;
+      try {
+        offer = readPairingOffer(input, Date.now());
+      } catch (caught) {
+        setError(failure((caught as RelayPairingError).kind));
+        return;
+      }
+      if (!(await agrees(offer))) return;
       // Asked before pairing: a computer that pairs is the app's server right after.
       if (!(await confirmUnsentSendLoss("server-switch"))) return;
       setPending(true);
-      setError(null);
-      const { connection, pairing } = await pairRelay(input, relayDeps);
+      const { connection, pairing } = await pairRelay(offer, relayDeps);
       adoptRelayConnection(connection);
-      await relayPairingStore.save(pairing);
       const saved = await saveApiBase(connection.origin);
       if (!saved.ok) {
+        // The app stays on its server and the stored pairing stays the one it uses.
+        forgetRelayConnection(connection.origin);
         setError(saved.error);
         return;
       }
+      await relayPairingStore.save(pairing);
       keepOnlyRelayConnection(connection.origin);
       router.replace("/");
     } catch (caught) {
-      const kind = (caught as RelayPairingError).kind;
-      setError(kind ? failure(kind) : t`Could not reach your computer.`);
+      setError(failure((caught as RelayPairingError).kind));
     } finally {
       running.current = false;
       setPending(false);
@@ -75,14 +124,10 @@ export default function DozoPairScreen() {
   }
 
   useEffect(() => {
-    if (!link?.includes("#")) return;
-    const offer = offerText(link);
-    if (askedOffers.has(offer)) return;
-    askedOffers.add(offer);
-    Alert.alert(t`Connect to this computer?`, t`Only connect to a computer you own.`, [
-      { text: t`Cancel`, style: "cancel" },
-      { text: t`Connect`, onPress: () => void connect(offer) },
-    ]);
+    const offer = linkedOffer(link);
+    if (!link || !offer || usedLinks.has(link)) return;
+    usedLinks.add(link);
+    void connect(offer);
   });
 
   useScreenHeader({

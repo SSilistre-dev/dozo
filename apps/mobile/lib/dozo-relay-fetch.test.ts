@@ -1,17 +1,27 @@
 import { randomBytes } from "node:crypto";
 import { RelayHttpError } from "@rakazo/core";
+import { flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { relayWorld } from "./dozo-relay.test-support";
 import type { RelayPairing, RelayPairingStore } from "./dozo-relay-connection";
-import { pairRelay, RelayUnreachableError, relayOrigin } from "./dozo-relay-connection";
+import {
+  pairRelay,
+  RelayUnreachableError,
+  readPairingOffer,
+  relayOrigin,
+} from "./dozo-relay-connection";
 import {
   adoptRelayConnection,
   connectNativeRelaySocket,
+  DEFAULT_RELAY,
+  forgetRelayConnection,
   installRelayFetch,
+  isRelayGone,
   keepOnlyRelayConnection,
   relayDeps,
   relayPairingStore,
   resetRelayConnections,
+  subscribeRelayGone,
   upgradeStatus,
 } from "./dozo-relay-fetch";
 
@@ -22,7 +32,10 @@ vi.mock("expo-secure-store", () => ({
   deleteItemAsync: vi.fn(async (key: string) => void secure.delete(key)),
 }));
 vi.mock("expo-crypto", () => ({
-  getRandomBytes: (length: number) => new Uint8Array(randomBytes(length)),
+  getRandomValues: (array: Uint8Array) => {
+    array.set(randomBytes(array.length));
+    return array;
+  },
 }));
 
 /** React Native's socket as the app sees it: a third argument with headers, and on* handlers. */
@@ -111,16 +124,41 @@ describe("connectNativeRelaySocket", () => {
   });
 });
 
+const KEY = "A".repeat(43);
+const STORED: RelayPairing = {
+  relay: "https://relay.example.invalid",
+  channel: "B".repeat(22),
+  hostKey: KEY,
+  appPublicKey: KEY,
+  appPrivateKey: KEY,
+  pairingKey: KEY,
+  originId: "ab".repeat(16),
+  pairedAt: 1,
+};
+
 describe("the pairing store", () => {
   it("keeps the pairing in the secure store and forgets it", async () => {
     expect(await relayPairingStore.load()).toBeNull();
-    const pairing = { channel: "c" } as RelayPairing;
-    await relayPairingStore.save(pairing);
-    expect(await relayPairingStore.load()).toEqual(pairing);
+    await relayPairingStore.save(STORED);
+    expect(await relayPairingStore.load()).toEqual(STORED);
     await relayPairingStore.clear();
     expect(await relayPairingStore.load()).toBeNull();
+  });
+
+  it("reads a stored value that is not a whole pairing as none", async () => {
     secure.set("dozo.relay_pairing", "{");
     expect(await relayPairingStore.load()).toBeNull();
+    secure.set("dozo.relay_pairing", JSON.stringify({ channel: "c" }));
+    expect(await relayPairingStore.load()).toBeNull();
+    secure.set(
+      "dozo.relay_pairing",
+      JSON.stringify({ ...STORED, relay: "http://relay.example.com" }),
+    );
+    expect(await relayPairingStore.load()).toBeNull();
+  });
+
+  it("pairs through this build's relay unless told otherwise", () => {
+    expect(DEFAULT_RELAY).toBe("https://relay.dozo.bot");
   });
 
   it("uses the system's random source", () => {
@@ -164,41 +202,103 @@ describe("installRelayFetch", () => {
   it("fails like an unreachable server for a computer that is not paired", async () => {
     const target = { fetch: vi.fn() as unknown as typeof fetch };
     installRelayFetch(target, memory(null), world.deps());
-    await expect(
-      target.fetch(`${relayOrigin("q83vEjRWeJCrze8SNFZ4kA")}/rpc/health`),
-    ).rejects.toBeInstanceOf(RelayUnreachableError);
+    await expect(target.fetch(`${relayOrigin("cd".repeat(16))}/rpc/health`)).rejects.toBeInstanceOf(
+      RelayUnreachableError,
+    );
+  });
+
+  it("never sends a computer's name with a port, a user or plain http to the network", async () => {
+    const base = vi.fn();
+    const target = { fetch: base as unknown as typeof fetch };
+    installRelayFetch(target, memory(null), world.deps());
+    const host = `${"cd".repeat(16)}.computer.dozo.invalid`;
+    for (const address of [
+      `https://${host}:8443/`,
+      `https://user:secret@${host}/`,
+      `http://${host}/`,
+      "https://short.computer.dozo.invalid/",
+    ]) {
+      await expect(target.fetch(address)).rejects.toBeInstanceOf(RelayUnreachableError);
+    }
+    expect(base).not.toHaveBeenCalled();
   });
 
   it("serves the stored pairing's origin through the relay, Request inputs included", async () => {
     world.startHost();
-    const { connection, pairing } = await pairRelay(await world.offer(), world.deps());
+    const { connection, pairing } = await pairRelay(
+      readPairingOffer(await world.offer(), Date.now()),
+      world.deps(),
+    );
     connection.close();
     const target = { fetch: vi.fn() as unknown as typeof fetch };
     installRelayFetch(target, memory(pairing), world.deps());
-    const origin = relayOrigin(pairing.channel);
+    const origin = relayOrigin(pairing.originId);
     await vi.waitFor(async () =>
       expect((await target.fetch(`${origin}/rpc/health`)).ok).toBe(true),
     );
     const input = { url: `${origin}/echo`, method: "POST", body: null } as unknown as Request;
     expect((await target.fetch(input, { body: "x" })).ok).toBe(true);
+    // An address in capitals is the same computer.
+    expect(
+      (await target.fetch(`${origin.toUpperCase().replace("HTTPS", "https")}/rpc/health`)).ok,
+    ).toBe(true);
   });
 
   it("serves a freshly paired computer, keeps only the one in use, and forgets a removed one", async () => {
     world.startHost();
-    const { connection } = await pairRelay(await world.offer(), world.deps());
-    const store = memory(null);
+    const { connection, pairing } = await pairRelay(
+      readPairingOffer(await world.offer(), Date.now()),
+      world.deps(),
+    );
+    const store = memory(pairing);
     const target = { fetch: vi.fn() as unknown as typeof fetch };
     installRelayFetch(target, store, world.deps());
     adoptRelayConnection(connection, store);
     expect((await target.fetch(`${connection.origin}/rpc/health`)).ok).toBe(true);
     keepOnlyRelayConnection(connection.origin);
     expect((await target.fetch(`${connection.origin}/rpc/health`)).ok).toBe(true);
+    const listener = vi.fn();
+    const unsubscribe = subscribeRelayGone(listener);
     connection.onGone?.();
-    expect(store.cleared).toBe(true);
+    unsubscribe();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(isRelayGone(connection.origin)).toBe(true);
+    await vi.waitFor(() => expect(store.cleared).toBe(true));
     await expect(target.fetch(`${connection.origin}/rpc/health`)).rejects.toBeInstanceOf(
       RelayUnreachableError,
     );
+    // Pairing it again brings it back.
     adoptRelayConnection(connection);
+    expect(isRelayGone(connection.origin)).toBe(false);
     keepOnlyRelayConnection("https://other.example.invalid");
+  });
+
+  it("keeps a newer stored pairing when an older computer removes the phone", async () => {
+    world.startHost();
+    const { connection } = await pairRelay(
+      readPairingOffer(await world.offer(), Date.now()),
+      world.deps(),
+    );
+    const store = memory(STORED);
+    adoptRelayConnection(connection, store);
+    connection.onGone?.();
+    await flush();
+    expect(store.cleared).toBe(false);
+  });
+
+  it("ends a connection whose server switch failed", async () => {
+    world.startHost();
+    const { connection } = await pairRelay(
+      readPairingOffer(await world.offer(), Date.now()),
+      world.deps(),
+    );
+    const target = { fetch: vi.fn() as unknown as typeof fetch };
+    installRelayFetch(target, memory(null), world.deps());
+    adoptRelayConnection(connection);
+    forgetRelayConnection(connection.origin);
+    forgetRelayConnection(connection.origin);
+    await expect(target.fetch(`${connection.origin}/rpc/health`)).rejects.toBeInstanceOf(
+      RelayUnreachableError,
+    );
   });
 });

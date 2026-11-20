@@ -7,7 +7,7 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
 }));
-vi.mock("expo-crypto", () => ({ getRandomBytes: (length: number) => new Uint8Array(length) }));
+vi.mock("expo-crypto", () => ({ getRandomValues: (array: Uint8Array) => array }));
 
 it("puts the relay in front of the global fetch and passes the layout's first import on", async () => {
   const direct = vi.fn(async () => new Response("direct"));
@@ -16,8 +16,6 @@ it("puts the relay in front of the global fetch and passes the layout's first im
   expect(i18n).toBe(lingui);
   expect(globalThis.fetch).not.toBe(direct);
   expect(await (await fetch("https://app.example.invalid/")).text()).toBe("direct");
-  await expect(fetch(`${relayOrigin("q83vEjRWeJCrze8SNFZ4kA")}/`)).rejects.toThrow(
-    "Network request failed",
-  );
+  await expect(fetch(`${relayOrigin("ab".repeat(16))}/`)).rejects.toThrow("Network request failed");
   vi.unstubAllGlobals();
 });

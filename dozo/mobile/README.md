@@ -111,27 +111,40 @@ account steps. Exit 0, 2 on any failure. It needs `curl` and `jq`.
 ## Your computer over the relay
 
 The app can use the user's own computer as its server, through the relay (`dozo/relay/PROTOCOL.md`).
-The computer shows a QR code holding `rakazo://dozo-pair#<offer>`. The phone's camera opens it in
-the app, which asks once ("Connect to this computer?") before it sends anything. The Server screen's
-"Connect to your computer" opens the same screen, where the code can be pasted. The app needs no
-camera permission of its own.
+The computer shows a QR code holding `rakazo://dozo-pair#<offer>`, which the phone's camera opens in
+the app; the Server screen's "Connect to your computer" opens the same screen, where the code can be
+pasted. The app needs no camera permission of its own.
 
+- The screen acts only on that exact link, once per link, and checks the offer before it asks
+  anything. It then asks once ("Connect to this computer?"). The question names the relay when it
+  is not this build's own (`DOZO_MOBILE_RELAY_URL`, default `https://relay.dozo.bot`, which
+  `build.sh` passes as `EXPO_PUBLIC_DOZO_RELAY_URL`), and it names the server the user would be
+  signed out of.
 - Pairing (`apps/mobile/lib/dozo-relay-connection.ts`) opens one session with the offer's secret and
   sends `/rpc/health`. That first request completes the pairing on the computer and proves a Dozo
-  server answers. The keys (`RelayPairing`) go to the secure store, and the computer becomes the
-  app's server under an address of its own, `https://<channel in hex>.computer.dozo.invalid`. No
-  network resolves it, so a request can reach the computer only through the relay.
-- `apps/mobile/lib/dozo-relay-fetch.ts`, imported first by the root layout (one anchored rule),
-  puts the relay in front of `fetch` for that address. Every JavaScript request and the live stream
-  go through it; the socket opens on the first request. A computer that is off or unreachable fails
-  like any server that does not answer, after 8 seconds, so the app shows what it shows for an
-  unreachable server. When the relay says the channel is gone (the computer removed the phone), the
-  pairing is forgotten.
+  server answers. The computer then becomes the app's server under an address of its own,
+  `https://<random id>.computer.dozo.invalid`. No network resolves it, and the name is not the
+  channel id. The keys are stored (`RelayAppPairingSchema`, checked when read back) only once the
+  server switch succeeded; a failed switch keeps the earlier pairing.
+- `apps/mobile/lib/dozo-relay-fetch.ts`, imported first by the root layout, puts the relay in front
+  of `fetch` for that address. A computer's name with a port, a user or plain http fails there and
+  never reaches DNS. Every JavaScript request and the live stream go through the relay; the socket
+  opens on the first request. A computer that is off fails after 8 seconds, like any server that
+  does not answer. A redirect is followed only on the computer; one that leaves it fails.
+- A request refused on its own (too many open, a head too large) leaves the session in use. A
+  session that ended is dropped, and the next request reconnects.
+- When the computer removed the phone, the stored pairing goes, if it is that computer's, and
+  sign-in offers to pair again.
+- Sign-in with a computer as the server shows no password form, only "Sign in on your computer to
+  use it here." A code someone else showed could have paired the phone with their computer, and a
+  password typed then would go to them. The phone getting its sign-in from the computer is the next
+  step.
 - Crypto: `@noble/curves` 2.4.0, `@noble/ciphers` 2.3.0, `@noble/hashes` 2.3.0, and `expo-crypto`
-  58.0.8 for the system's random bytes. React Native has neither `crypto.subtle` nor
-  `crypto.getRandomValues`. The packages come from `dozo/deps/mobile.json`. Ciphers and hashes are at
-  the versions upstream already locks, because 2.4.0 would make pnpm move upstream's copies. The
-  imported subpaths come to about 43 KB minified (16 KB gzipped).
+  58.0.8's `getRandomValues` for the system's random bytes. React Native has neither `crypto.subtle`
+  nor `crypto.getRandomValues`. Its `getRandomBytes` is not used, because it falls back to
+  `Math.random` under a development debugger. The packages come from `dozo/deps/mobile.json`.
+  Ciphers and hashes are at the versions upstream already locks, because 2.4.0 would make pnpm move
+  upstream's copies. The imported subpaths come to about 43 KB minified (16 KB gzipped).
 
 What does not cross the relay, because the system loads it rather than JavaScript:
 
@@ -139,19 +152,26 @@ What does not cross the relay, because the system loads it rather than JavaScrip
   why.
 - A computer's live screen, which loads in a web view. The screen shows its usual cannot-reach line.
 - Images and videos the native views load from the server's address (avatars, inline images,
-  video). They do not load.
-- Sign-in through the system browser (single sign-on, other providers) and passkeys. They need the
-  server's real address. Password sign-in works.
+  video). They do not load; each asks DNS for the random `.invalid` name, which carries nothing
+  about the channel.
+- Sign-in through the system browser and passkeys. They need the server's real address.
 - Push notifications and incoming-call pushes need the server's push credentials, which a local
   server does not have, with or without the relay.
-- A multipart upload or a file read as a `Blob` is refused with a clear error. The app's attachments
-  travel inside JSON and are not affected.
+- A multipart upload or a file read as a `Blob` is refused with a clear error, and so is a React
+  Native `Request` whose body only its own fetch can read. The app's attachments travel inside JSON
+  and are not affected.
 
-Not tried on a device or simulator: the deep link from the camera (including whether the fragment
-reaches the app on both platforms), React Native's socket with the upgrade header, and the status
-text its errors carry. The Android JavaScript bundle builds and compiles to Hermes bytecode with
-these modules (`expo export --platform android`). The flow itself is tested in Node against the
-reference relay and the computer's end.
+Not tried on a device, simulator or emulator:
+
+- the deep link from the camera, including whether the fragment survives the camera and
+  expo-router on both platforms;
+- React Native's socket with the upgrade header, and the status text its errors carry;
+- `URL`, `ReadableStream` and `AbortSignal.reason` in React Native 0.88;
+- going to the background and back.
+
+The Android JavaScript bundle builds and compiles to Hermes bytecode with these modules
+(`expo export --platform android`). The flow itself is tested in Node against the reference relay
+and the computer's end.
 
 ## Phase 2
 

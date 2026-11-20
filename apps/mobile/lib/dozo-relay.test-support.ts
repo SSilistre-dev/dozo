@@ -79,6 +79,13 @@ export async function loopbackServer() {
       return;
     }
     if (url.pathname === "/hang") return;
+    if (url.pathname === "/moved" || url.pathname === "/loop") {
+      // `to` is where it points (`/loop` points at itself); `status` overrides the 302.
+      const to = url.pathname === "/loop" ? "/loop" : url.searchParams.get("to");
+      response.writeHead(Number(url.searchParams.get("status") ?? 302), to ? { location: to } : {});
+      response.end("moved");
+      return;
+    }
     if (url.pathname === "/events") {
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.write("data: first\n\n");

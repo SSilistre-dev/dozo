@@ -1,3 +1,4 @@
+import type { RelayAppPairing, RelayPairingOffer } from "@rakazo/contracts";
 import type {
   RelayClient,
   RelayConnect,
@@ -25,17 +26,8 @@ import {
  * Protocol: `dozo/relay/PROTOCOL.md`.
  */
 
-/** What the phone keeps after pairing, base64url; the pairing secret itself is never stored. */
-export type RelayPairing = {
-  relay: string;
-  channel: string;
-  hostKey: string;
-  appPublicKey: string;
-  appPrivateKey: string;
-  /** The key of the pairing session, the `psk` of every later one. */
-  pairingKey: string;
-  pairedAt: number;
-};
+/** What the phone keeps after pairing (`RelayAppPairingSchema`). */
+export type RelayPairing = RelayAppPairing;
 
 export type RelayPairingStore = {
   load(): Promise<RelayPairing | null>;
@@ -76,12 +68,17 @@ export class RelayPairingError extends Error {
   }
 }
 
-const ORIGIN_SUFFIX = ".computer.dozo.invalid";
+export const RELAY_HOST_SUFFIX = ".computer.dozo.invalid";
+const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 20;
 
-/** The server address the app uses for a paired computer: one per channel. */
-export function relayOrigin(channel: string) {
-  const hex = [...decodeRelayBytes(channel)].map((byte) => byte.toString(16).padStart(2, "0"));
-  return `https://${hex.join("")}${ORIGIN_SUFFIX}`;
+/**
+ * The server address the app uses for a paired computer. Its name is random, not the channel id:
+ * whatever the system still loads by this address on its own (an image, say) asks DNS for a name
+ * that says nothing about the channel.
+ */
+export function relayOrigin(originId: string) {
+  return `https://${originId}${RELAY_HOST_SUFFIX}`;
 }
 
 export function isRelayOrigin(origin: string) {
@@ -95,10 +92,45 @@ export function offerText(input: string) {
   return hash >= 0 ? trimmed.slice(hash + 1) : trimmed;
 }
 
+/** The offer in a scanned link or pasted text, checked before the user is asked anything. */
+export function readPairingOffer(input: string, now: number): RelayPairingOffer {
+  try {
+    return parseRelayPairingOffer(offerText(input), now);
+  } catch (error) {
+    throw new RelayPairingError(
+      error instanceof Error && error.message.includes("expired") ? "expired" : "invalid",
+    );
+  }
+}
+
+const hex = (bytes: Uint8Array) =>
+  [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** The one body a request may carry here: what `init` gives, else a `Request`'s readable stream. */
+function requestOptions(input: RequestInfo | URL, init: RequestInit = {}) {
+  if (typeof input !== "object" || !("method" in input))
+    return { url: String(input), options: init };
+  const request = input as Request & { _bodyInit?: unknown };
+  // React Native's Request keeps its body where only its own fetch reads it: say so, never drop it.
+  if (init.body === undefined && !request.body && request._bodyInit != null) {
+    throw new TypeError("pass the body in the second argument when the request goes to a computer");
+  }
+  const options: RequestInit = {
+    method: request.method,
+    headers: request.headers,
+    body: request.body ?? undefined,
+    signal: request.signal,
+    redirect: request.redirect,
+    ...init,
+  };
+  return { url: request.url, options };
+}
+
 type Mode =
   | { kind: "paired"; pairing: RelayPairing }
   | {
       kind: "pairing";
+      originId: string;
       relay: string;
       channel: string;
       hostKey: string;
@@ -126,34 +158,57 @@ export class RelayConnection {
     private readonly deps: RelayDeps,
     private mode: Mode,
   ) {
-    this.origin = relayOrigin(mode.kind === "paired" ? mode.pairing.channel : mode.channel);
+    this.origin = relayOrigin(mode.kind === "paired" ? mode.pairing.originId : mode.originId);
   }
 
-  /** `fetch` for this computer's origin. A computer that does not answer fails like a server. */
+  get channel() {
+    return this.mode.kind === "paired" ? this.mode.pairing.channel : this.mode.channel;
+  }
+
+  /**
+   * `fetch` for this computer's origin. A computer that does not answer fails like a server. A
+   * redirect is followed on the computer only; one that leaves it fails, as no request may go
+   * anywhere else under this address.
+   */
   async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    const request = typeof input === "object" && "method" in input ? input : null;
-    const url = request ? request.url : String(input);
-    const options: RequestInit = request
-      ? {
-          method: request.method,
-          headers: request.headers,
-          body: request.body,
-          signal: request.signal,
-          ...init,
-        }
-      : (init ?? {});
+    let { url, options } = requestOptions(input, init);
+    for (let hops = 0; ; hops++) {
+      const response = await this.send(url, options);
+      if (!REDIRECTS.has(response.status) || options.redirect === "manual") return response;
+      const location = response.headers.get("location");
+      if (!location) return response;
+      await response.body?.cancel();
+      const next = new URL(location, url);
+      if (options.redirect === "error" || next.origin !== this.origin || hops >= MAX_REDIRECTS) {
+        throw new TypeError(`redirect to ${next.origin} not followed`);
+      }
+      const method = (options.method ?? "GET").toUpperCase();
+      if (response.status === 303 || (response.status < 303 && method === "POST")) {
+        options = { ...options, method: "GET", body: undefined };
+      } else if (options.body instanceof ReadableStream) {
+        throw new TypeError("a streamed body cannot be sent again after a redirect");
+      }
+      url = next.href;
+    }
+  }
+
+  private async send(url: string, options: RequestInit) {
     const client = await this.session(options.signal ?? undefined);
     try {
       return await client.fetch(url, options);
     } catch (error) {
       if (options.signal?.aborted || error instanceof TypeError) throw error;
-      // A session that failed under a request is not used again: the next request reconnects.
-      if (this.client === client) {
-        this.client = null;
-        this.socket?.close("session failed");
-      }
+      // Only a session that ended is left; a refused request (too many open) leaves it in use.
+      if (client.failed) this.retire(client);
       throw new RelayUnreachableError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /** Drops a client whose session ended and the socket under it: the next request reconnects. */
+  private retire(client: RelayClient) {
+    if (this.client !== client) return;
+    this.client = null;
+    this.socket?.close("session failed");
   }
 
   close() {
@@ -166,9 +221,10 @@ export class RelayConnection {
   /** The pairing record, once the first session gave the phone its pairing key. */
   pairing(): RelayPairing | null {
     if (this.mode.kind === "paired") return this.mode.pairing;
-    const { relay, channel, hostKey, appKey, pairingKey } = this.mode;
+    const { originId, relay, channel, hostKey, appKey, pairingKey } = this.mode;
     if (!pairingKey) return null;
     return {
+      originId,
       relay,
       channel,
       hostKey,
@@ -186,6 +242,7 @@ export class RelayConnection {
 
   private session(signal?: AbortSignal): Promise<RelayClient> {
     if (this.closed) return Promise.reject(new RelayUnreachableError("closed"));
+    if (this.client?.failed) this.retire(this.client);
     if (this.client) return Promise.resolve(this.client);
     return new Promise<RelayClient>((resolve, reject) => {
       const waiter: Waiter = {
@@ -202,7 +259,9 @@ export class RelayConnection {
         () => waiter.reject(new RelayUnreachableError("the computer did not answer")),
         this.deps.sessionWaitMs ?? SESSION_WAIT_MS,
       );
-      const onAbort = () => waiter.reject(signal?.reason);
+      // A runtime whose signal carries no reason still rejects with an abort error, never undefined.
+      const onAbort = () =>
+        waiter.reject(signal?.reason ?? new DOMException("The request was aborted", "AbortError"));
       const finish = () => {
         clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
@@ -307,26 +366,18 @@ export function pairedConnection(deps: RelayDeps, pairing: RelayPairing) {
 }
 
 /**
- * Pairs with the computer whose offer the user scanned or pasted: one session with the offer's
- * secret, then a first request, which completes the pairing on the computer and proves a Dozo
- * server answers. Resolves with the live connection and the record to store.
+ * Pairs with the computer whose offer the user scanned or pasted and agreed to: one session with
+ * the offer's secret, then a first request, which completes the pairing on the computer and proves
+ * a Dozo server answers. Resolves with the live connection and the record to store.
  */
 export async function pairRelay(
-  input: string,
+  offer: RelayPairingOffer,
   deps: RelayDeps,
 ): Promise<{ connection: RelayConnection; pairing: RelayPairing }> {
-  const now = (deps.now ?? Date.now)();
-  let offer: ReturnType<typeof parseRelayPairingOffer>;
-  try {
-    offer = parseRelayPairingOffer(offerText(input), now);
-  } catch (error) {
-    throw new RelayPairingError(
-      error instanceof Error && error.message.includes("expired") ? "expired" : "invalid",
-    );
-  }
   const { psk, token } = await relayPairingSecrets(deps.crypto, decodeRelayBytes(offer.secret));
   const connection = new RelayConnection(deps, {
     kind: "pairing",
+    originId: hex(deps.crypto.randomBytes(16)),
     relay: offer.relay.replace(/\/+$/, ""),
     channel: offer.channel,
     hostKey: offer.hostKey,

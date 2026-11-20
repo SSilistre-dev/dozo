@@ -339,6 +339,8 @@ export type RelayClient = {
   /** Works like `fetch`: only the path and query of `input` are sent; the response body streams. */
   fetch(input: string | URL, init?: RequestInit): Promise<Response>;
   close(reason?: string): void;
+  /** The session under the client ended: no request can start on it any more. */
+  readonly failed: boolean;
 };
 
 /**
@@ -353,6 +355,9 @@ export function relayClient(duplex: RelayDuplex, web?: RelayWebTypes): RelayClie
   return {
     fetch: (input, init) => client.fetch(input, init),
     close: (reason) => client.close(reason),
+    get failed() {
+      return client.failed;
+    },
   };
 }
 
@@ -362,6 +367,10 @@ class ClientMux extends Mux {
     private readonly web: RelayWebTypes,
   ) {
     super(duplex);
+  }
+
+  get failed() {
+    return this.failure !== null;
   }
 
   private nextId = 1;
@@ -540,6 +549,8 @@ class ServerMux extends Mux {
         ),
         body: inbox?.body ?? null,
         signal: abort.signal,
+        // A redirect goes back to the phone as it is: following it here could leave the origin.
+        redirect: "manual",
         duplex: "half",
       } as RequestInit);
     } catch {

@@ -4893,11 +4893,11 @@
     {
       "file": "apps/mobile/app/sign-in.tsx",
       "find": "import { displayApiHost, usesCustomApiBase } from \"../lib/endpoint\";\n",
-      "replace": "import { displayApiHost, usesCustomApiBase } from \"../lib/dozo-relay-endpoint\";\n",
+      "replace": "import { DozoComputerSignIn } from \"../components/dozo-computer-sign-in\";\nimport { displayApiHost, isRelayServer, usesCustomApiBase } from \"../lib/dozo-relay-endpoint\";\n",
       "requires": [
         "apps/mobile/lib/dozo-relay-endpoint.ts"
       ],
-      "reason": "own computer over the relay: sign-in names a paired computer \"Your computer\", not its internal address"
+      "reason": "own computer over the relay: the imports of the rule below, and sign-in names a paired computer \"Your computer\", not its internal address"
     },
     {
       "file": "apps/mobile/lib/live-notifications.ts",
@@ -4935,8 +4935,18 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#. js-lingui-explicit-id\n",
-      "replace": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#: apps/mobile/app/server.tsx\nmsgid \"Connect to your computer\"\nmsgstr \"Bilgisayarınıza bağlanın\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Pairing code\"\nmsgstr \"Eşleştirme kodu\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"That is not a pairing code.\"\nmsgstr \"Bu bir eşleştirme kodu değil.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code has expired. Show a new one on your computer.\"\nmsgstr \"Bu kodun süresi doldu. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code was already used. Show a new one on your computer.\"\nmsgstr \"Bu kod zaten kullanıldı. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Could not reach your computer.\"\nmsgstr \"Bilgisayarınıza ulaşılamadı.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Connect to this computer?\"\nmsgstr \"Bu bilgisayara bağlanılsın mı?\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Only connect to a computer you own.\"\nmsgstr \"Yalnızca size ait bir bilgisayara bağlanın.\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Your computer\"\nmsgstr \"Bilgisayarınız\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Background notifications need a direct connection to the server.\"\nmsgstr \"Arka plan bildirimleri sunucuya doğrudan bağlantı gerektirir.\"\n\n#. js-lingui-explicit-id\n",
+      "replace": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#: apps/mobile/app/server.tsx\nmsgid \"Connect to your computer\"\nmsgstr \"Bilgisayarınıza bağlanın\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Pairing code\"\nmsgstr \"Eşleştirme kodu\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"That is not a pairing code.\"\nmsgstr \"Bu bir eşleştirme kodu değil.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code has expired. Show a new one on your computer.\"\nmsgstr \"Bu kodun süresi doldu. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code was already used. Show a new one on your computer.\"\nmsgstr \"Bu kod zaten kullanıldı. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Could not reach your computer.\"\nmsgstr \"Bilgisayarınıza ulaşılamadı.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Connect to this computer?\"\nmsgstr \"Bu bilgisayara bağlanılsın mı?\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Only connect to a computer you own.\"\nmsgstr \"Yalnızca size ait bir bilgisayara bağlanın.\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Your computer\"\nmsgstr \"Bilgisayarınız\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Background notifications need a direct connection to the server.\"\nmsgstr \"Arka plan bildirimleri sunucuya doğrudan bağlantı gerektirir.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Uses the relay at {0}.\"\nmsgstr \"{0} aktarıcısını kullanır.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"You will be signed out of {0}.\"\nmsgstr \"{0} oturumunuz kapanacak.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Sign in on your computer to use it here.\"\nmsgstr \"Burada kullanmak için bilgisayarınızda oturum açın.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"This phone was removed from your computer.\"\nmsgstr \"Bu telefon bilgisayarınızdan kaldırıldı.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Pair again\"\nmsgstr \"Yeniden eşleştir\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Use another server\"\nmsgstr \"Başka bir sunucu kullanın\"\n\n#. js-lingui-explicit-id\n",
       "reason": "own computer over the relay: the Turkish copy of the mobile pairing screen, the Server screen's way to it, and the lines shown for a paired computer"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "  if (hasSession) return <Redirect href={hasIncomingShare() ? \"/share\" : \"/\"} />;\n\n  const providers =",
+      "replace": "  if (hasSession) return <Redirect href={hasIncomingShare() ? \"/share\" : \"/\"} />;\n  if (isRelayServer(apiBase)) return <DozoComputerSignIn apiBase={apiBase} />;\n\n  const providers =",
+      "requires": [
+        "apps/mobile/components/dozo-computer-sign-in.tsx",
+        "apps/mobile/lib/dozo-relay-endpoint.ts"
+      ],
+      "reason": "own computer over the relay: no password form for a paired computer, where a code someone else showed would send the password to them; the phone gets its sign-in from the computer"
     }
   ],
   "assets": {

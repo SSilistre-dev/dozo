@@ -1,6 +1,7 @@
+import { RelayAppPairingSchema } from "@rakazo/contracts";
 import type { RelayWebSocket } from "@rakazo/core";
 import { RelayHttpError } from "@rakazo/core";
-import { getRandomBytes } from "expo-crypto";
+import { getRandomValues } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import type {
   RelayConnection,
@@ -8,7 +9,12 @@ import type {
   RelayPairing,
   RelayPairingStore,
 } from "./dozo-relay-connection";
-import { isRelayOrigin, pairedConnection, RelayUnreachableError } from "./dozo-relay-connection";
+import {
+  isRelayOrigin,
+  pairedConnection,
+  RELAY_HOST_SUFFIX,
+  RelayUnreachableError,
+} from "./dozo-relay-connection";
 import { nobleRelayCrypto } from "./dozo-relay-crypto";
 import { relayWebTypes } from "./dozo-relay-web";
 
@@ -21,16 +27,28 @@ import { relayWebTypes } from "./dozo-relay-web";
 
 const PAIRING_KEY = "dozo.relay_pairing";
 
+/**
+ * The relay this build pairs through without naming it to the user. An offer that names any
+ * other relay is still accepted, but the question before pairing says which.
+ */
+export const DEFAULT_RELAY = process.env.EXPO_PUBLIC_DOZO_RELAY_URL ?? "https://relay.dozo.bot";
+
+/** A stored value that is not a whole pairing counts as none: nothing is guessed from it. */
+function storedPairing(stored: string | null): RelayPairing | null {
+  if (!stored) return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(stored);
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+  const parsed = RelayAppPairingSchema.safeParse(json);
+  return parsed.success ? parsed.data : null;
+}
+
 export const relayPairingStore: RelayPairingStore = {
-  async load() {
-    const stored = await SecureStore.getItemAsync(PAIRING_KEY);
-    if (!stored) return null;
-    try {
-      return JSON.parse(stored) as RelayPairing;
-    } catch {
-      return null;
-    }
-  },
+  load: async () => storedPairing(await SecureStore.getItemAsync(PAIRING_KEY)),
   save: (pairing) => SecureStore.setItemAsync(PAIRING_KEY, JSON.stringify(pairing)),
   clear: () => SecureStore.deleteItemAsync(PAIRING_KEY),
 };
@@ -93,13 +111,29 @@ export function connectNativeRelaySocket(
 }
 
 export const relayDeps: RelayDeps = {
-  crypto: nobleRelayCrypto((length) => getRandomBytes(length)),
+  // The system's source every time: expo-crypto's getRandomBytes falls back to Math.random under a
+  // development debugger, getRandomValues never does.
+  crypto: nobleRelayCrypto((length) => getRandomValues(new Uint8Array(length))),
   connect: connectNativeRelaySocket,
   web: relayWebTypes,
 };
 
 const connections = new Map<string, RelayConnection>();
 let restored: Promise<void> | null = null;
+/** Computers that removed this phone, until it pairs again. */
+const gone = new Set<string>();
+const goneListeners = new Set<() => void>();
+
+export function isRelayGone(origin: string) {
+  return gone.has(origin);
+}
+
+export function subscribeRelayGone(listener: () => void) {
+  goneListeners.add(listener);
+  return () => {
+    goneListeners.delete(listener);
+  };
+}
 
 /** The stored pairing's connection, made on the first request for it. */
 function restore(store: RelayPairingStore, deps: RelayDeps) {
@@ -114,17 +148,30 @@ function restore(store: RelayPairingStore, deps: RelayDeps) {
   return restored;
 }
 
-/** Serves a connection's origin; when the computer removes this phone, the pairing is forgotten. */
+/**
+ * Serves a connection's origin. When the computer removes this phone, the connection ends and the
+ * stored pairing goes too, but only if it is this computer's: a newer pairing stays.
+ */
 export function adoptRelayConnection(
   connection: RelayConnection,
   store: RelayPairingStore = relayPairingStore,
 ) {
   connection.onGone = () => {
-    connections.delete(connection.origin);
-    connection.close();
-    void store.clear();
+    forgetRelayConnection(connection.origin);
+    gone.add(connection.origin);
+    for (const listener of [...goneListeners]) listener();
+    void store.load().then((stored) => {
+      if (stored?.channel === connection.channel) return store.clear();
+    });
   };
+  gone.delete(connection.origin);
   connections.set(connection.origin, connection);
+}
+
+/** Ends a connection the app no longer uses, such as one whose server switch failed. */
+export function forgetRelayConnection(origin: string) {
+  connections.get(origin)?.close();
+  connections.delete(origin);
 }
 
 /** Closes every connection but the one for `origin`, once the app has switched to it. */
@@ -136,13 +183,32 @@ export function keepOnlyRelayConnection(origin: string) {
   }
 }
 
-function originOf(input: RequestInfo | URL) {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+/**
+ * The computer address a request is for, or null for any other address. A computer's name with a
+ * port, a user or plain http is no address the app uses: it fails here rather than reach DNS.
+ */
+function computerOrigin(input: RequestInfo | URL) {
+  const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  let url: URL;
   try {
-    return new URL(url).origin;
-  } catch {
-    return null;
+    url = new URL(href);
+  } catch (error) {
+    // Not an absolute address: the platform's fetch answers it as it always has.
+    if (error instanceof TypeError) return null;
+    throw error;
   }
+  if (!url.hostname.endsWith(RELAY_HOST_SUFFIX)) return null;
+  const origin = `https://${url.hostname}`;
+  if (
+    url.protocol !== "https:" ||
+    url.port ||
+    url.username ||
+    url.password ||
+    !isRelayOrigin(origin)
+  ) {
+    throw new RelayUnreachableError("not a computer's address");
+  }
+  return origin;
 }
 
 /** Puts the relay in front of `target.fetch` for paired computers' origins. */
@@ -153,8 +219,8 @@ export function installRelayFetch(
 ) {
   const base = target.fetch;
   target.fetch = async (input, init) => {
-    const origin = originOf(input);
-    if (!origin || !isRelayOrigin(origin)) return base(input, init);
+    const origin = computerOrigin(input);
+    if (!origin) return base(input, init);
     await restore(store, deps);
     const connection = connections.get(origin);
     if (!connection) throw new RelayUnreachableError("this computer is not paired");
@@ -166,5 +232,6 @@ export function installRelayFetch(
 export function resetRelayConnections() {
   for (const connection of connections.values()) connection.close();
   connections.clear();
+  gone.clear();
   restored = null;
 }
