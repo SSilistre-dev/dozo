@@ -21,10 +21,12 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::stack_fetch::{self, FetchError, Format};
-use crate::stack_manifest::{self, Part};
+use crate::stack_manifest::{self, Part, Release};
 use crate::stack_os::Stop;
 use crate::stack_proc::{self, Backoff, Launch, OnLine, Spec, Supervisor};
 use crate::stack_setup::{self, PortError, Ports, Secrets};
+use crate::stack_update;
+use std::io;
 
 /// The manifest of the server this app was built for. A build can name another
 /// (`DOZO_SERVER_MANIFEST` at compile time), and so can the environment at run time, for tests
@@ -32,9 +34,14 @@ use crate::stack_setup::{self, PortError, Ports, Secrets};
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
     None => {
-        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-1/manifest.json"
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-4/manifest.json"
     }
 };
+
+/// The server version this app expects: the one `MANIFEST` names. An installed older one is
+/// updated to it at the next start (`stack_update.rs`); when it is already installed, no manifest
+/// is read.
+const SERVER_VERSION: &str = "0.11.0-4";
 
 /// The relay a phone reaches this computer through (`dozo/relay/agent/README.md`). A build can
 /// name another (`DOZO_RELAY_URL`), and so can the environment or the settings file (`relay=`).
@@ -50,6 +57,8 @@ pub struct Options {
     pub manifest: String,
     pub hosted_login_issuer: Option<String>,
     pub relay: String,
+    /// The version the manifest names, when known without reading it (the build's own).
+    pub expected: Option<String>,
 }
 
 impl Options {
@@ -62,6 +71,10 @@ impl Options {
             manifest: std::env::var("DOZO_SERVER_MANIFEST").unwrap_or_else(|_| MANIFEST.into()),
             hosted_login_issuer: issuer,
             relay: std::env::var("DOZO_RELAY_URL").unwrap_or_else(|_| RELAY.into()),
+            // Another manifest may name any version: it is read to know.
+            expected: (option_env!("DOZO_SERVER_MANIFEST").is_none()
+                && std::env::var_os("DOZO_SERVER_MANIFEST").is_none())
+            .then(|| SERVER_VERSION.to_owned()),
         }
     }
 }
@@ -72,6 +85,8 @@ pub enum Status {
     Off,
     Downloading(u8),
     Preparing,
+    /// Moving the installed server to a newer version: its data is copied, then it migrates.
+    Updating,
     Starting,
     /// The web address, as the app saves a server.
     Ready(String),
@@ -85,6 +100,7 @@ impl Status {
             Status::Off => json!({ "state": "off" }),
             Status::Downloading(percent) => json!({ "state": "downloading", "percent": percent }),
             Status::Preparing => json!({ "state": "preparing" }),
+            Status::Updating => json!({ "state": "updating" }),
             Status::Starting => json!({ "state": "starting" }),
             Status::Ready(url) => json!({ "state": "ready", "url": url }),
             Status::Failed(failure) => json!({ "state": "failed", "message": failure.message() }),
@@ -102,6 +118,8 @@ pub enum Failure {
     WebPortTaken(u16),
     Unsupported,
     Start,
+    /// The newer version did not start; the previous one and its data are back.
+    UpdateRolledBack,
 }
 
 impl Failure {
@@ -117,6 +135,9 @@ impl Failure {
             }
             Failure::Unsupported => "The server can't run on this computer yet.".into(),
             Failure::Start => "The server on this computer did not start.".into(),
+            Failure::UpdateRolledBack => {
+                "The update did not start, so the server is back as it was.".into()
+            }
         }
     }
 }
@@ -218,6 +239,10 @@ pub struct Local {
     /// code to compare) until the person allows it here (`Agent::approve`), `approved`, or
     /// `expired` when nobody did within 5 minutes.
     phone_event: watch::Sender<Option<Value>>,
+    /// How far this start took an update: 0 none, 1 the new version made current, 2 it was
+    /// started. Only a start that failed after 1 is undone, and only after 2 is that version
+    /// skipped from then on (`undo_update`).
+    update_stage: std::sync::atomic::AtomicU8,
 }
 
 impl Local {
@@ -232,6 +257,7 @@ impl Local {
                 Duration::from_secs(60),
             ),
             phone_event: watch::channel(None).0,
+            update_stage: std::sync::atomic::AtomicU8::new(0),
         })
     }
 
@@ -276,6 +302,11 @@ impl Local {
                 }
                 Err(failure) => {
                     local.release().await;
+                    // An update that did not start: back to the version and data before it.
+                    let failure = match local.undo_update(&layout) {
+                        Some(failure) => failure,
+                        None => failure,
+                    };
                     local.status.send_replace(Status::Failed(failure));
                 }
             }
@@ -306,6 +337,8 @@ impl Local {
     }
 
     async fn bring_up(&self, layout: &Layout, options: &Options) -> Result<String, Failure> {
+        self.update_stage
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         for folder in ["versions", "downloads", "logs", "data", "run"] {
             fs::create_dir_all(layout.at(folder)).map_err(|_| Failure::Start)?;
         }
@@ -336,8 +369,22 @@ impl Local {
         if !stack_setup::has_libssl3() {
             return Err(failed(Failure::NoLibssl, "no libssl.so.3"));
         }
+        // A restore cut off last time (Back Up and Restore) is undone first.
+        match crate::stack_backup::recover_restore(&layout.0) {
+            Ok(true) => launch.note("a restore did not finish: the data before it is back"),
+            Ok(false) => {}
+            Err(error) => return Err(failed(Failure::Start, &format!("restore: {error}"))),
+        }
+        // An update cut off last time (the app ended, the disk filled) is undone first.
+        match stack_update::recover(&layout.0) {
+            Ok(stack_update::Recovered::RolledBack { from, to }) => {
+                launch.note(&format!("an update to {to} did not finish: back on {from}"));
+            }
+            Ok(_) => {}
+            Err(error) => return Err(failed(Failure::Start, &format!("update: {error}"))),
+        }
         let version = match installed(layout) {
-            Some(version) => version,
+            Some(current) => self.update(layout, options, &current, &launch).await,
             None => self
                 .install(layout, options)
                 .await
@@ -355,6 +402,13 @@ impl Local {
         plan.user = tokio::task::spawn_blocking(stack_setup::user_environment)
             .await
             .unwrap_or_default();
+        // From here a failure is the new version's own, when this start updated.
+        let _ = self.update_stage.compare_exchange(
+            1,
+            2,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        );
         self.run(&plan, layout, &launch)
             .await
             .map_err(|why| failed(Failure::Start, &why))?;
@@ -372,6 +426,11 @@ impl Local {
                 .map_err(|why| failed(Failure::Start, &why))?;
             self.running.lock().await.agent = Some(agent);
         }
+        if let Some(journal) = stack_update::journal(&layout.0) {
+            stack_update::finish(&layout.0)
+                .map_err(|error| failed(Failure::Start, &format!("update: {error}")))?;
+            launch.note(&format!("updated from {} to {}", journal.from, journal.to));
+        }
         launch.note(&format!("ready at {}", plan.web));
         Ok(format!("{}/", plan.web))
     }
@@ -384,14 +443,19 @@ impl Local {
         layout: &Layout,
         options: &Options,
     ) -> Result<String, (Failure, String)> {
-        let platform = stack_manifest::platform()
-            .ok_or((Failure::Unsupported, "no bundle for this system".into()))?;
         self.status.send_replace(Status::Downloading(0));
-        let text = read_manifest(&options.manifest)
-            .await
-            .map_err(|why| (Failure::Download, format!("manifest: {why}")))?;
-        let release = stack_manifest::parse(&text, platform)
-            .map_err(|why| (Failure::Unsupported, format!("manifest: {why}")))?;
+        let release = fetch_release(options).await?;
+        self.install_release(layout, &release).await
+    }
+
+    /// Installs `release` into `versions/<version>`, beside any other, and makes it `current`
+    /// only once it is all there.
+    async fn install_release(
+        &self,
+        layout: &Layout,
+        release: &Release,
+    ) -> Result<String, (Failure, String)> {
+        self.progress(Status::Downloading(0));
         let target = layout.version(&release.version);
         let mut partial = target.as_os_str().to_owned();
         partial.push(".partial");
@@ -408,7 +472,7 @@ impl Local {
             parts.push((name, part, format, strip, done));
         }
         let files = self.download_all(&parts, layout).await?;
-        self.status.send_replace(Status::Preparing);
+        self.progress(Status::Preparing);
         let jobs: Vec<(PathBuf, PathBuf, Format, bool)> = parts
             .iter()
             .zip(files)
@@ -439,9 +503,110 @@ impl Local {
             fs::remove_dir_all(&target).map_err(|error| (Failure::Start, error.to_string()))?;
         }
         fs::rename(&partial, &target)
-            .and_then(|()| fs::write(layout.at("current"), &release.version))
+            .and_then(|()| stack_update::set_current(&layout.0, &release.version))
             .map_err(|error| (Failure::Start, format!("install: {error}")))?;
-        Ok(release.version)
+        Ok(release.version.clone())
+    }
+
+    /// The version to start: `current`, or the newer one the manifest names, installed beside it
+    /// after its data was copied (`stack_update::begin`). Anything that goes wrong before the new
+    /// version is current (no network, a full disk) leaves `current` to start as before.
+    async fn update(
+        &self,
+        layout: &Layout,
+        options: &Options,
+        current: &str,
+        launch: &Launch,
+    ) -> String {
+        let root = &layout.0;
+        let skipped = stack_update::skipped(root);
+        if options.expected.as_deref() == Some(current)
+            || (options.expected.is_some() && skipped == options.expected)
+        {
+            return current.to_owned();
+        }
+        let release = match fetch_release(options).await {
+            Ok(release) => release,
+            Err((_, why)) => {
+                launch.note(&format!("update: no manifest, starting {current}: {why}"));
+                return current.to_owned();
+            }
+        };
+        match stack_update::compare(&release.version, current) {
+            Some(std::cmp::Ordering::Greater) if skipped.as_deref() != Some(&release.version) => {}
+            Some(std::cmp::Ordering::Less) => {
+                launch.note(&format!(
+                    "update: the manifest names {}, older than {current}: not going back",
+                    release.version
+                ));
+                return current.to_owned();
+            }
+            _ => return current.to_owned(),
+        }
+        self.status.send_replace(Status::Updating);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        let begun = tokio::task::spawn_blocking({
+            let (root, from, to) = (root.clone(), current.to_owned(), release.version.clone());
+            move || stack_update::begin(&root, &from, &to, stamp)
+        })
+        .await
+        .map_err(io::Error::other)
+        .and_then(|begun| begun);
+        if let Err(error) = begun {
+            launch.note(&format!(
+                "update: copying the data failed, starting {current}: {error}"
+            ));
+            return current.to_owned();
+        }
+        launch.note(&format!("updating from {current} to {}", release.version));
+        match self.install_release(layout, &release).await {
+            Ok(version) => {
+                self.update_stage
+                    .store(1, std::sync::atomic::Ordering::SeqCst);
+                version
+            }
+            Err((_, why)) => {
+                // Not current yet: the data was not touched, the copy just goes unused.
+                let _ = stack_update::recover(root);
+                launch.note(&format!(
+                    "update: installing failed, starting {current}: {why}"
+                ));
+                current.to_owned()
+            }
+        }
+    }
+
+    /// Shows an install step, unless an update is under way: that says "Updating" throughout.
+    fn progress(&self, step: Status) {
+        self.status.send_if_modified(|status| {
+            let shown = *status != Status::Updating && *status != step;
+            if shown {
+                *status = step;
+            }
+            shown
+        });
+    }
+
+    /// After a start that failed: when it was an update, the version and data before it come
+    /// back, and that version is not tried again on its own.
+    /// A start that failed for another reason (the folder held, a port taken before the new
+    /// version ran) undoes nothing and skips nothing: the next start finds the journal and decides.
+    fn undo_update(&self, layout: &Layout) -> Option<Failure> {
+        let stage = self
+            .update_stage
+            .swap(0, std::sync::atomic::Ordering::SeqCst);
+        if stage == 0 {
+            return None;
+        }
+        match stack_update::recover(&layout.0) {
+            Ok(stack_update::Recovered::RolledBack { to, .. }) if stage == 2 => {
+                let _ = stack_update::skip(&layout.0, &to);
+                Some(Failure::UpdateRolledBack)
+            }
+            _ => None,
+        }
     }
 
     /// The parts not unpacked yet, downloaded; `None` for the others.
@@ -461,6 +626,10 @@ impl Local {
                 done[index] = bytes;
                 let percent = (done.iter().sum::<u64>() * 100 / total.max(1)).min(100) as u8;
                 status.send_if_modified(|status| {
+                    // An update says so throughout instead.
+                    if *status == Status::Updating {
+                        return false;
+                    }
                     let changed = *status != Status::Downloading(percent);
                     *status = Status::Downloading(percent);
                     changed
@@ -561,6 +730,17 @@ async fn take_lock(file: &Path) -> Result<fs::File, Failure> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err(Failure::AlreadyRunning)
+}
+
+/// The manifest's entry for this computer.
+async fn fetch_release(options: &Options) -> Result<Release, (Failure, String)> {
+    let platform = stack_manifest::platform()
+        .ok_or((Failure::Unsupported, "no bundle for this system".into()))?;
+    let text = read_manifest(&options.manifest)
+        .await
+        .map_err(|why| (Failure::Download, format!("manifest: {why}")))?;
+    stack_manifest::parse(&text, platform)
+        .map_err(|why| (Failure::Unsupported, format!("manifest: {why}")))
 }
 
 /// The version recorded as installed, if its folder is there.
@@ -1097,6 +1277,8 @@ mod tests {
             manifest: "file:///nowhere/manifest.json".into(),
             hosted_login_issuer: None,
             relay: "http://127.0.0.1:9".into(),
+            // The stand-ins are installed as version 1, the one expected: no manifest is read.
+            expected: Some("1".into()),
         }
     }
 
@@ -1297,6 +1479,248 @@ mod tests {
         fs::write(mac.join("server"), "https://dozo.example.com/\n").unwrap();
         assert_eq!(folder_in(&mac), mac.join("local-server"));
         assert!(mac.join("server").is_file());
+    }
+
+    /// Version 2 of the stand-ins as a manifest with its three archives: its Postgres writes `v2`
+    /// into the data (what a migration does), its migration exits with `migrate_exit`.
+    fn release_2(dir: &Path, said: &Path, migrate_exit: u8) -> String {
+        use sha2::{Digest, Sha256};
+        let stage = dir.join("stage");
+        let s = said.display();
+        script(
+            &stage.join("node/bin/node"),
+            &format!(
+                "case \"$1\" in relay.js) {LOOP};; esac
+                echo \"v2 $1\" >> {s}; case \"$1\" in migrate.js) exit {migrate_exit};; esac; {LOOP}"
+            ),
+        );
+        let pg = stage.join("postgres/bin");
+        script(
+            &pg.join("postgres"),
+            &format!(
+                "[ \"$1\" = --version ] && exit 0; echo v2 > \"$2/marker\"; echo postgres >> {s}; {LOOP}"
+            ),
+        );
+        script(&pg.join("initdb"), "exit 1");
+        script(&pg.join("createdb"), "exit 0");
+        let server = stage.join("server/rakazo-server");
+        fs::create_dir_all(&server).unwrap();
+        fs::write(
+            server.join("manifest.json"),
+            r#"{"version":"2","entrypoints":{"migrate":"migrate.js","api":"api.js","worker":"worker.js","web":"web.js"}}"#,
+        )
+        .unwrap();
+        let mut parts = serde_json::Map::new();
+        for (name, top) in [
+            ("node", "node"),
+            ("postgres", "postgres"),
+            ("server", "server"),
+        ] {
+            let file = dir.join(format!("{name}.tar.gz"));
+            let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+                fs::File::create(&file).unwrap(),
+                flate2::Compression::fast(),
+            ));
+            // node and postgres hold one top folder, the server its rakazo-server/.
+            if name == "server" {
+                builder.append_dir_all(".", stage.join(top)).unwrap();
+            } else {
+                builder.append_dir_all(top, stage.join(top)).unwrap();
+            }
+            builder.into_inner().unwrap().finish().unwrap();
+            let bytes = fs::read(&file).unwrap();
+            let sha: String = Sha256::digest(&bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            parts.insert(
+                name.into(),
+                json!({ "url": format!("file://{}", file.display()), "sha256": sha, "size": bytes.len() }),
+            );
+        }
+        let manifest = json!({ "schema": 1, "version": "2", "platforms": {
+            stack_manifest::platform().unwrap(): parts } });
+        let path = dir.join("manifest.json");
+        fs::write(&path, manifest.to_string()).unwrap();
+        format!("file://{}", path.display())
+    }
+
+    fn update_options(manifest: String) -> Options {
+        Options {
+            manifest,
+            expected: Some("2".into()),
+            ..options()
+        }
+    }
+
+    #[tokio::test]
+    async fn an_update_installs_the_new_version_beside_and_keeps_a_copy() {
+        let root = scratch("update-to-2");
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        let local = Local::new(Arc::new(Said(said.clone())));
+        local.start(Layout(root.clone()), options()).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(local.stop().await);
+        fs::write(root.join("pgdata/marker"), "v1").unwrap();
+
+        let manifest = release_2(&scratch("release-2"), &said, 0);
+        let mut seen = local.status();
+        local
+            .start(Layout(root.clone()), update_options(manifest))
+            .await;
+        let (mut updating, mut saw_install_steps) = (false, false);
+        while !matches!(
+            *seen.borrow_and_update(),
+            Status::Ready(_) | Status::Failed(_)
+        ) {
+            updating |= *seen.borrow() == Status::Updating;
+            saw_install_steps |=
+                matches!(*seen.borrow(), Status::Downloading(_) | Status::Preparing);
+            tokio::time::timeout(Duration::from_secs(30), seen.changed())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        assert!(updating, "the window never said it was updating");
+        assert!(!saw_install_steps, "an update shows Updating only");
+        assert!(
+            matches!(*seen.borrow(), Status::Ready(_)),
+            "{:?}",
+            seen.borrow()
+        );
+        assert_eq!(fs::read_to_string(root.join("current")).unwrap(), "2");
+        assert_eq!(
+            fs::read_to_string(root.join("pgdata/marker")).unwrap(),
+            "v2\n"
+        );
+        assert!(lines_of(&said).contains(&"v2 migrate.js".to_owned()));
+        assert!(stack_update::journal(&root).is_none());
+        let copies: Vec<_> = fs::read_dir(root.join("before-update")).unwrap().collect();
+        assert_eq!(copies.len(), 1);
+        assert!(
+            root.join("versions/1").is_dir(),
+            "the previous version stays for now"
+        );
+        assert!(local.stop().await);
+        // Started again: the expected version is installed, nothing is read or copied.
+        let missing = Options {
+            manifest: "file:///nowhere".into(),
+            expected: Some("2".into()),
+            ..options()
+        };
+        local.start(Layout(root.clone()), missing).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(local.stop().await);
+    }
+
+    #[tokio::test]
+    async fn an_update_that_does_not_start_puts_everything_back_once() {
+        let root = scratch("update-fails");
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        let local = Local::new(Arc::new(Said(said.clone())));
+        local.start(Layout(root.clone()), options()).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(local.stop().await);
+        fs::write(root.join("pgdata/marker"), "v1").unwrap();
+
+        let manifest = release_2(&scratch("release-2-broken"), &said, 1);
+        local
+            .start(Layout(root.clone()), update_options(manifest.clone()))
+            .await;
+        assert_eq!(
+            settled(&local).await,
+            Status::Failed(Failure::UpdateRolledBack)
+        );
+        assert_eq!(fs::read_to_string(root.join("current")).unwrap(), "1");
+        assert_eq!(
+            fs::read_to_string(root.join("pgdata/marker")).unwrap(),
+            "v1"
+        );
+        assert!(stack_update::journal(&root).is_none());
+        let events = fs::read_to_string(root.join("logs/manager.log")).unwrap();
+        assert!(events.contains("updating from 1 to 2"), "{events}");
+
+        // Try again: the version that failed is not tried on its own; the old one starts.
+        fs::remove_file(&said).unwrap();
+        local
+            .start(Layout(root.clone()), update_options(manifest))
+            .await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(!lines_of(&said).iter().any(|line| line.starts_with("v2")));
+        assert_eq!(fs::read_to_string(root.join("current")).unwrap(), "1");
+        assert!(local.stop().await);
+    }
+
+    #[tokio::test]
+    async fn a_start_that_fails_for_another_reason_undoes_no_update() {
+        let root = scratch("update-unrelated");
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        let local = Local::new(Arc::new(Said(said.clone())));
+        local.start(Layout(root.clone()), options()).await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert!(local.stop().await);
+        // The update was cut off after the switch, the new version had migrated...
+        stack_update::begin(&root, "1", "2", 1).unwrap();
+        fs::create_dir_all(root.join("versions/2")).unwrap();
+        fs::write(root.join("current"), "2").unwrap();
+        fs::write(root.join("pgdata/marker"), "v2").unwrap();
+        // ...and now another app holds the folder: this start fails before looking at it.
+        let held = stack_setup::lock(&root.join("stack.lock"))
+            .unwrap()
+            .unwrap();
+        local
+            .start(
+                Layout(root.clone()),
+                update_options("file:///nowhere".into()),
+            )
+            .await;
+        assert_eq!(
+            settled(&local).await,
+            Status::Failed(Failure::AlreadyRunning)
+        );
+        assert!(
+            stack_update::journal(&root).is_some(),
+            "the journal is left for the next start"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("pgdata/marker")).unwrap(),
+            "v2"
+        );
+        assert_eq!(stack_update::skipped(&root), None);
+        drop(held);
+    }
+
+    #[test]
+    fn the_manifest_is_the_expected_version_s() {
+        // Moving one without the other would update to a version the manifest does not name.
+        if option_env!("DOZO_SERVER_MANIFEST").is_none() {
+            assert!(
+                MANIFEST.contains(&format!("/server-v{SERVER_VERSION}/")),
+                "{MANIFEST}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_older_manifest_never_takes_the_server_back() {
+        let root = scratch("no-downgrade");
+        let said = root.join("said");
+        installed_fakes(&root, &said, 0);
+        fs::rename(root.join("versions/1"), root.join("versions/3")).unwrap();
+        fs::write(root.join("current"), "3").unwrap();
+        let manifest = release_2(&scratch("release-2-older"), &said, 0);
+        let local = Local::new(Arc::new(Said(said.clone())));
+        local
+            .start(Layout(root.clone()), update_options(manifest))
+            .await;
+        assert!(matches!(settled(&local).await, Status::Ready(_)));
+        assert_eq!(fs::read_to_string(root.join("current")).unwrap(), "3");
+        let events = fs::read_to_string(root.join("logs/manager.log")).unwrap();
+        assert!(events.contains("older than 3: not going back"), "{events}");
+        assert!(local.stop().await);
     }
 
     #[tokio::test]
@@ -1593,12 +2017,211 @@ mod tests {
         println!("E2E: stopped, no process left");
     }
 
+    /// Updating the real server (`tests/stack_e2e.sh`, step 5): installed from the older bundle
+    /// with an account, it updates to the newer one at the next start and the account still
+    /// signs in; a newer version that cannot start (its Node is broken) puts it back as it was,
+    /// and the start after that runs the version that works without trying again.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs two built server bundles; run by tests/stack_e2e.sh"]
+    async fn e2e_updates_and_goes_back() {
+        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
+        let options = |variable: &str| Options {
+            manifest: std::env::var(variable).unwrap(),
+            hosted_login_issuer: None,
+            relay: String::new(),
+            expected: None,
+        };
+        let local = Local::new(Arc::new(RealChecks));
+        let account = async |path: &str| {
+            let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
+            let web = format!("http://127.0.0.1:{}", ports.web);
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            reqwest::Client::new()
+                .post(format!("{web}{path}"))
+                .header("origin", &web)
+                .header("content-type", "application/json")
+                .body(r#"{"email":"owner@example.test","password":"update-Password-123","name":"Owner"}"#)
+                .send()
+                .await
+                .unwrap()
+                .status()
+        };
+        let current = || fs::read_to_string(root.join("current")).unwrap();
+        let started = std::time::Instant::now();
+
+        local
+            .start(Layout(root.clone()), options("DOZO_STACK_E2E_OLD_MANIFEST"))
+            .await;
+        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
+        let old = current();
+        assert_eq!(account("/api/auth/sign-up/email").await, 200);
+        assert!(local.stop().await);
+        println!(
+            "E2E: installed {old} with an account ({} ms)",
+            started.elapsed().as_millis()
+        );
+
+        let started = std::time::Instant::now();
+        let mut seen = local.status();
+        local
+            .start(Layout(root.clone()), options("DOZO_STACK_E2E_MANIFEST"))
+            .await;
+        let mut updating = false;
+        while !matches!(
+            *seen.borrow_and_update(),
+            Status::Ready(_) | Status::Failed(_)
+        ) {
+            updating |= *seen.borrow() == Status::Updating;
+            tokio::time::timeout(Duration::from_secs(180), seen.changed())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        assert!(
+            matches!(*seen.borrow(), Status::Ready(_)),
+            "{:?}",
+            seen.borrow()
+        );
+        assert!(updating);
+        let new = current();
+        assert_ne!(new, old);
+        assert_eq!(
+            account("/api/auth/sign-in/email").await,
+            200,
+            "the account after the update"
+        );
+        assert!(local.stop().await);
+        println!(
+            "E2E: updated {old} to {new}, the account signs in ({} ms)",
+            started.elapsed().as_millis()
+        );
+
+        local
+            .start(
+                Layout(root.clone()),
+                options("DOZO_STACK_E2E_BROKEN_MANIFEST"),
+            )
+            .await;
+        assert_eq!(
+            settled_for(&local, 180).await,
+            Status::Failed(Failure::UpdateRolledBack)
+        );
+        assert_eq!(current(), new);
+        println!(
+            "E2E: a broken newer version was put back: {:?}",
+            Failure::UpdateRolledBack.message()
+        );
+        local
+            .start(
+                Layout(root.clone()),
+                options("DOZO_STACK_E2E_BROKEN_MANIFEST"),
+            )
+            .await;
+        assert!(matches!(settled_for(&local, 120).await, Status::Ready(_)));
+        assert_eq!(current(), new);
+        assert_eq!(
+            account("/api/auth/sign-in/email").await,
+            200,
+            "the account after going back"
+        );
+        assert!(local.stop().await);
+        let left = processes_under(&root);
+        assert!(left.is_empty(), "still running after stop: {left:?}");
+        println!(
+            "E2E: started {new} again without retrying, the account signs in, no process left"
+        );
+    }
+
+    /// Back up and restore with the real bundle's command (`tests/stack_e2e.sh`, step 6), on the
+    /// server step 5 left: a backup of the running server; a file added after it; a restore with
+    /// the wrong password changes nothing; one with the right password brings the backup's state
+    /// back over the data in use, and the account still signs in.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs a built server bundle with the backup command; run by tests/stack_e2e.sh"]
+    async fn e2e_backs_up_and_restores() {
+        use crate::stack_backup::{Refusal, Tool};
+        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
+        let options = Options {
+            manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
+            hosted_login_issuer: None,
+            relay: String::new(),
+            expected: None,
+        };
+        let local = Local::new(Arc::new(RealChecks));
+        let sign_in = async || {
+            let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
+            let web = format!("http://127.0.0.1:{}", ports.web);
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            reqwest::Client::new()
+                .post(format!("{web}/api/auth/sign-in/email"))
+                .header("origin", &web)
+                .header("content-type", "application/json")
+                .body(r#"{"email":"owner@example.test","password":"update-Password-123"}"#)
+                .send()
+                .await
+                .unwrap()
+                .status()
+        };
+        local.start(Layout(root.clone()), options.clone()).await;
+        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
+        let tool = Tool::of(&root).expect("the bundle has the backup command");
+        let file = root.with_file_name("e2e.dozobackup");
+        let started = std::time::Instant::now();
+        tool.create(&file, "backup-Password-1").await.unwrap();
+        println!(
+            "E2E: backed up the running server ({} KB, {} ms)",
+            fs::metadata(&file).unwrap().len() / 1024,
+            started.elapsed().as_millis()
+        );
+        fs::write(root.join("data/after-the-backup"), "new").unwrap();
+        assert!(local.stop().await);
+
+        assert_eq!(
+            tool.restore(&file, "not-the-password", 1).await,
+            Err(Refusal::WrongPassword)
+        );
+        assert!(
+            root.join("data/after-the-backup").exists(),
+            "a refused restore changed nothing"
+        );
+        println!("E2E: the wrong password was refused, nothing changed");
+
+        let started = std::time::Instant::now();
+        tool.restore(&file, "backup-Password-1", 2).await.unwrap();
+        assert!(!root.join("data/after-the-backup").exists());
+        assert!(
+            root.join("before-restore/2-0/data/after-the-backup")
+                .exists()
+        );
+        local.start(Layout(root.clone()), options).await;
+        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
+        assert_eq!(sign_in().await, 200, "the account after the restore");
+        println!(
+            "E2E: restored over the data in use ({} ms), the account signs in",
+            started.elapsed().as_millis()
+        );
+        assert!(local.stop().await);
+        let left = processes_under(&root);
+        assert!(left.is_empty(), "still running after stop: {left:?}");
+    }
+
+    async fn settled_for(local: &Local, seconds: u64) -> Status {
+        let mut status = local.status();
+        let wait = status.wait_for(|status| matches!(status, Status::Ready(_) | Status::Failed(_)));
+        tokio::time::timeout(Duration::from_secs(seconds), wait)
+            .await
+            .unwrap()
+            .unwrap()
+            .clone()
+    }
+
     async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
         let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
         let options = Options {
             manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
             hosted_login_issuer: std::env::var("DOZO_STACK_E2E_ISSUER").ok(),
             relay: std::env::var("DOZO_STACK_E2E_RELAY").unwrap_or_default(),
+            expected: None,
         };
         let local = Local::new(Arc::new(RealChecks));
         let started = std::time::Instant::now();

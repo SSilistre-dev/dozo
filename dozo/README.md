@@ -323,6 +323,38 @@ Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
 Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
 it an address. There is no anonymous path to the hosted service from a local server.
 
+## Bot API
+
+Scripts talk to a member's own bots under `/api/v1/dozo` (`apps/api/src/dozo-bot-api*.ts`,
+OpenAPI in `dozo/api/openapi.yaml`): list bots, send a message and follow the reply as
+server-sent events, read the chat, export it. Each call carries a personal access token made under
+Settings > General > Security > Access tokens (`apps/web/src/components/dozo-access-tokens.tsx`).
+
+A token belongs to one member in one Space and can be limited to one bot. Only its SHA-256 and last
+four characters are stored (`dozo_access_tokens`); it is shown once. It is read from the
+`Authorization` header only, never a cookie or the address, so another site cannot call the API
+with a signed-in browser. It reaches the app's own send, transcript and export procedures as its
+member (`createRouterClient`), so access checks, approvals and model limits are the app's: an
+approval ends the stream with `waiting_input`, and the client follows the run again afterwards
+with `Last-Event-ID`. Settings, billing, members and tokens are out of its reach: the app's RPC
+never accepts a token. Making and revoking one is in the activity log; the list shows when each was
+last used (written at most once a minute). A token goes with its bot, with the member's place in
+the Space, and stops working for a deactivated or banned account. Like other personal access
+tokens it does not expire and outlives signing out or a password change: revoke it in the list.
+
+A message sent with a token is not the owner's own word: it may come from another program or
+agent. It is saved with an `api:` client nonce (`packages/core/src/dozo-token-source.ts`, shared
+with MCP), shows a small key above it in the web chat, and a run it starts, steers or answers
+(`packages/adapters/src/dozo-token-run.ts`) asks the person before every action with an outside
+effect (a send, a connector write, a command on their own computer), even in Never ask or Auto
+review; its approval cards have no Always allow, and the sites and recipients it names are not
+trusted as the owner's. The API call does not wait: its stream ends with `waiting_input`.
+
+Limits: 60 requests a minute and 3 open streams per token, per API instance; a stream ends after 10
+minutes with `running`. Not yet: the mobile app has no token screen (a token is for a computer's
+scripts; make one on web or desktop) and shows no key on a message sent with one, and there is no
+group chat or attachment support.
+
 ## Commands on your own computer
 
 Upstream asks once per Space before a bot first runs a command on the member's own computer (the
@@ -366,8 +398,47 @@ How a command is read, and what that does not cover:
   does for a denied tool; the next message starts afresh.
 
 The mobile app lists them too, from a Commands row beside approval Rules that shows only while
-there is one (`apps/mobile/app/(settings)/dozo-commands.tsx`). Not done yet: screen control on the member's computer keeps upstream's approval per app; browser actions
-and a daily limit on what a bot sends are later work.
+there is one (`apps/mobile/app/(settings)/dozo-commands.tsx`). Not done yet: screen control on
+the member's computer keeps upstream's approval per app. The fork's
+desktop app answers every screen request with "Screen control is not available on this computer"
+(`dozo/desktop/src/device_run.rs`) and a bot's browser tools never run on the member's computer
+(a computer on the user's machine is not graphical), so no browser or screen action reaches it
+yet; only upstream's Electron app, which the fork does not ship, drives apps there. Asking per
+action belongs with adding screen control to the fork's app. The server still offers the screen
+tools to a paired Mac or Windows computer, whose first card then ends in that refusal.
+
+## Daily sends
+
+Each bot may make a number of sends a day for a member without asking them
+(`packages/adapters/src/dozo-send-limit.ts`, `packages/db/src/dozo-send-limit.ts`); past it, each
+send asks with a card that says why and offers Allow once and Deny only. Settings > Approvals sets
+the number for the account (50 until changed, 1 to 1000), under the mode.
+
+- A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
+  something (declared not read-only, or named like a change, the same test that makes it ask in
+  Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
+  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
+  including form submits, are not counted yet: telling a submit from another click needs a new
+  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
+  the member's own cloud coding agents are not sends here.
+- Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
+  rule, or left to the approval model. A send a person approves on its card is not counted. One
+  the approval model then asks about, or that fails, still counts, so the number errs towards
+  asking sooner. A run resumed after a crash may count a call twice for the same reason.
+- Per member, per bot, per day of the member's timezone (UTC until one is set), so each new bot
+  has its own number. One conditional upsert per call (table `dozo_daily_sends`), so concurrent
+  sends on any number of instances never count past the number. Rows older than yesterday go when that bot next sends. A bot that
+  changes the member's timezone (`update_preferences`, offered in the member's own chats only)
+  can move to a date that has not started elsewhere: the timezones in use span at most three
+  dates at once, so that is at most three days' sends in one real day.
+- It asks in every mode, Never ask included; a block rule still refuses. Where a card cannot wait,
+  upstream's rules hold: a background helper refuses instead. Webhook and routine runs post the
+  card as they do for any other gated action.
+- The card's reason is English, like every card detail the server writes. Mode's description
+  for Never ask ("Asks only before purchases and the first use of your computer") does not mention
+  it. The mobile app has no setting for the number; it shows the card.
+- `send_email` keeps upstream's own account-wide cap of recipients a day (`botEmailDailyLimit`,
+  set by the operator), which refuses rather than asks.
 
 ## MCP endpoint
 

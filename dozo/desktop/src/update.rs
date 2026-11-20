@@ -62,7 +62,11 @@ pub fn watch(app: AppHandle, ready: fn(&AppHandle) -> bool) {
                             log(&app, "no menu to offer it in");
                         }
                     }
-                    Ok(None) => {}
+                    // Said too, so a log shows the check ran and found nothing newer.
+                    Ok(None) => log(
+                        &app,
+                        &format!("up to date at {}", app.package_info().version),
+                    ),
                     Err(error) => log(&app, &format!("check failed: {error}")),
                 }
             }

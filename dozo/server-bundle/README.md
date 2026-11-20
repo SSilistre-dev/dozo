@@ -94,8 +94,9 @@ its own permissive `LICENSE` and the Debian copyright file of every library it s
   name, version, licence and the licence files it ships, then the licence files of this platform's
   Node and Postgres archives (downloaded and checked against `runtimes.json` for it);
 - `apps/web/dist/third-party-notices.html`: the same text, which the web server serves. The app
-  links it as "Licenses" at the end of the settings nav only where that page exists, so a hosted
-  server shows no link (`apps/web/src/pages/dozo-settings-nav.tsx`);
+  links it as "Licenses" at the end of the settings nav where the public auth capabilities say
+  `notices: true` (the API sees the notices file in its folder, `apps/api/src/dozo-notices.ts`),
+  so a hosted server shows no link and is never asked for the page;
 - `LICENSE`, `NOTICE`, `LICENSE-DOZO` and `NOTICE-DOZO` (the repository's `dozo/NOTICE`).
 
 `licenses.json` decides which licences ship. A package whose licence is in neither `allowed` nor
