@@ -54,13 +54,13 @@ marked latest; publishing the draft makes the addresses in the manifest live.
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
 failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
-`0.11.0-1`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+`0.11.0-2`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
 The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
 server archive holds `rakazo-server/`; its `manifest.json` names the entrypoints: upstream's
-four and `relay`, the relay host agent (`dozo/relay/agent/README.md`) as one file,
-`dozo-relay-agent.mjs`, which plain Node runs.
+four, `relay`, the relay host agent (`dozo/relay/agent/README.md`) as one file,
+`dozo-relay-agent.mjs`, and `backup`, `dozo-local-backup.mjs` (below); plain Node runs both.
 
 ## Start contract
 
@@ -113,3 +113,65 @@ only by that computer provider). That saves about 36 MB unpacked and under 2 MB 
 Prisma Studio (43 MB) and Prisma's `dev` server stay: the Prisma CLI requires them as it loads, and
 `migrate` fails without them. esbuild stays: pages are built with it at runtime. The smoke test is
 what proves a trim safe; a name that no longer matches anything is reported in the build log.
+
+## Backup and restore
+
+One file holds everything the server folder needs to come back: the database (`pg_dump`, custom
+format), `data/`, the secrets file (`secrets`, or `secrets.env` for `run.sh`: the encryption key
+and passwords) and `relay/` (the relay agent's keys). Ports, logs and the installed versions are
+left out. The file is sealed with a password; without it nothing can be read back, and nobody can
+recover a lost password. Source: `packages/adapters/src/dozo-local-backup.ts` and
+`dozo-local-backup-format.ts`.
+
+```sh
+node rakazo-server/dozo-local-backup.mjs create <file> --home <server folder>
+node rakazo-server/dozo-local-backup.mjs restore <file> --home <server folder>
+```
+
+The password is the first line of standard input (at least 8 characters). Postgres is the bundle's
+own (`../../postgres/bin` from `rakazo-server/`; `DOZO_PG_BIN` and `DOZO_SERVER_DIR` override).
+One JSON line on stdout: `{"created": <path>, "server": <version>}`, `{"restored": <path>,
+"server": <version>, "migrate": <bool>}` or `{"error": <sentence>, "reason": <code>}`. Exit 0 done,
+2 failed, 64 usage (`reason` `usage`).
+
+- `create` works with the app open or closed: it uses the running Postgres (its port is line 4 of
+  `pgdata/postmaster.pid`) or starts one on a free loopback port and stops it after. The file is
+  written next to its name as `<name>.<random>.partial`, mode 0600, and renamed when complete.
+  Symbolic links and special files under `data/` and `relay/` are left out.
+- `restore` goes into a new installation only: no `pgdata/` and an empty or missing `data/`
+  (`not-empty` otherwise). It opens the file into a fresh folder beside the target, refuses a
+  backup whose database has a migration this server does not know (`newer`) as soon as the first
+  entry is read, then makes a new cluster with the backup's owner password, creates the
+  `rakazo_app` role the dump's grants name, loads the dump in one transaction, and moves
+  `data/`, `relay/`, the secrets file and, last, `pgdata/` into place. A failure before that leaves
+  the target as it was. `migrate: true` means the backup is older: the next start's migration
+  brings it up to date and gives `rakazo_app` its login, as every start does.
+- Other reasons: `wrong-password` (or the first chunk was changed), `damaged`, `not-a-backup`,
+  `no-server` (nothing to back up), `no-backup-data`, `failed` (a Postgres program failed; its
+  last lines are in the sentence).
+
+### Backup file
+
+Built from Node's crypto (OpenSSL), nothing hand-made: scrypt for the key, AES-256-GCM to seal,
+in the chunked layout of the STREAM construction (Hoang, Reyhanitabar, Rogaway, Vizár 2015), so a
+file of any size streams through memory.
+
+| Bytes        | Content                                                                    |
+| ------------ | -------------------------------------------------------------------------- |
+| 0–7          | `DOZOBAK\n`                                                                |
+| 8            | format, `1`; a higher one is refused as from a newer Dozo                  |
+| 9, 10, 11    | scrypt log2(N), r, p: written as 17, 8, 1 (128 MiB); read only 15–20, 8, 1 |
+| 12–27        | salt, random per file; key = scrypt(NFC password, salt), 32 bytes          |
+| 28–          | chunks: AES-256-GCM of 64 KiB of plaintext (the last 0–64 KiB), 16-byte tag |
+
+Each chunk's nonce is the chunk number (11 bytes, big-endian) and a last-chunk byte (1 on the last
+chunk, else 0); bytes 0–27 are its associated data. A reordered, dropped, changed or appended chunk,
+a file cut at any point, or a changed header fails to open. The key is new for every file, so the
+counter nonce never repeats under one key.
+
+The plaintext is gzip of an archive: entries of a 4-byte big-endian length, a JSON header
+(`path`, `kind` `file` or `dir`, and for a file `size` and `mode`) and the file's bytes; a zero
+length ends it, and nothing may follow. The first entry is `backup.json`: `format`, `createdAt`,
+`server` (the bundle version) and `migrations` (the applied migration names). Then the secrets
+file, `database.dump`, `data/…` and `relay/…`. Paths are relative with plain names; restored files
+keep only the owner's bits (0600, or 0700 when the owner could run it).
