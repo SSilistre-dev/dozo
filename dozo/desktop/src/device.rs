@@ -170,10 +170,21 @@ impl SignIn for Window {
     async fn cookies(&self, origin: &Url) -> Option<String> {
         let window = self.0.get_webview_window("main")?;
         let origin = origin.clone();
-        let cookies = tauri::async_runtime::spawn_blocking(move || window.cookies_for_url(origin))
-            .await
-            .ok()?
-            .ok()?;
+        let cookies = tauri::async_runtime::spawn_blocking(move || {
+            // The macOS web view's own lookup compares the URL's domain name, which an IP
+            // address has none of, so for the server on this computer it finds nothing: take
+            // all and keep that host's.
+            if loopback_ip(&origin) {
+                window
+                    .cookies()
+                    .map(|all| cookies_for_loopback(all, &origin))
+            } else {
+                window.cookies_for_url(origin)
+            }
+        })
+        .await
+        .ok()?
+        .ok()?;
         let header = cookies
             .iter()
             .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
@@ -181,6 +192,37 @@ impl SignIn for Window {
             .join("; ");
         (!header.is_empty()).then_some(header)
     }
+}
+
+/// An address on this computer written as an IP (127.0.0.1, ::1).
+fn loopback_ip(url: &Url) -> bool {
+    url.host_str()
+        .map(|host| host.trim_matches(['[', ']']))
+        .and_then(|host| host.parse::<std::net::IpAddr>().ok())
+        .is_some_and(|ip| ip.is_loopback())
+}
+
+/// The cookies a browser would send to `url` on this computer: set for exactly its host (a
+/// cookie does not name a port, so every server on that host shares them, as in a browser),
+/// with a path the URL is under. Secure ones too, as a browser treats this computer as secure.
+fn cookies_for_loopback(
+    all: Vec<tauri::webview::Cookie<'static>>,
+    url: &Url,
+) -> Vec<tauri::webview::Cookie<'static>> {
+    let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
+    let under = |path: &str| {
+        let path = path.trim_end_matches('/');
+        url.path() == path || url.path().starts_with(&format!("{path}/"))
+    };
+    all.into_iter()
+        .filter(|cookie| {
+            cookie
+                .domain()
+                .map(|domain| domain.trim_matches(['[', ']']))
+                == Some(host)
+                && cookie.path().is_none_or(under)
+        })
+        .collect()
 }
 
 /// The system consent prompt naming the server, never under the lock. True only when the
@@ -524,5 +566,45 @@ mod tests {
         for locale in [Some("tr"), None] {
             assert!(words(locale).warning.contains("{host}"));
         }
+    }
+
+    #[test]
+    fn the_server_on_this_computer_gets_its_own_cookies_only() {
+        use tauri::webview::Cookie;
+        let cookie = |name: &str, domain: &str, path: &str| {
+            Cookie::build((name.to_owned(), "v".to_owned()))
+                .domain(domain.to_owned())
+                .path(path.to_owned())
+                .build()
+        };
+        let all = vec![
+            cookie("better-auth.session_token", "127.0.0.1", "/"),
+            cookie("scoped", "127.0.0.1", "/api"),
+            cookie("other-host", "127.0.0.2", "/"),
+            cookie("named", "localhost", "/"),
+            cookie("remote", "app.dozo.example", "/"),
+            cookie("ipv6", "::1", "/"),
+        ];
+        let names = |url: &str| {
+            let url = Url::parse(url).unwrap();
+            assert!(loopback_ip(&url));
+            cookies_for_loopback(all.clone(), &url)
+                .iter()
+                .map(|cookie| cookie.name().to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names("http://127.0.0.1:41234/"),
+            ["better-auth.session_token"]
+        );
+        assert_eq!(
+            names("http://127.0.0.1:41234/api/devices/pair"),
+            ["better-auth.session_token", "scoped"]
+        );
+        assert_eq!(names("http://[::1]:41234/"), ["ipv6"]);
+        assert!(!loopback_ip(
+            &Url::parse("https://app.dozo.example/").unwrap()
+        ));
+        assert!(!loopback_ip(&Url::parse("http://localhost:5173/").unwrap()));
     }
 }

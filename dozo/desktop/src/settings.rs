@@ -11,6 +11,9 @@ use tauri::Url;
 
 use crate::server::parse_server;
 
+/// The file's name in the app's config folder. Installed versions read it there: never rename.
+pub const FILE: &str = "server";
+
 const OPEN_AT_LOGIN: &str = "open_at_login=";
 const KEEP_RUNNING: &str = "keep_running=";
 const THIS_COMPUTER: &str = "this_computer=";
