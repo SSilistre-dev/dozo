@@ -57,3 +57,45 @@ export function HostedLoginPage() {
     </AuthFrame>
   );
 }
+
+/**
+ * The sign-in page of a server that signs in only with the hosted account: one button, which asks
+ * this server to start (its own page's request only) and opens the hosted page it names. A sign-in
+ * that came back refused lands here again with `error`, and says so.
+ */
+export function HostedSignIn() {
+  const [params] = useSearchParams();
+  const refused = params.has("error");
+  const start = useSave<void, string>({
+    save: async () => {
+      const response = await fetch("/api/auth/dozo/hosted-login/start", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      if (!response.ok) throw new Error(`hosted login start answered ${response.status}`);
+      return ((await response.json()) as { url: string }).url;
+    },
+    onSaved: (url) => window.location.assign(url),
+    closesScreen: true,
+  });
+  return (
+    <AuthFrame
+      title={<Trans>Sign in</Trans>}
+      onSubmit={(event) => {
+        event.preventDefault();
+        start.run();
+      }}
+    >
+      <Button type="submit" size="lg" disabled={start.pending} className={submitClass}>
+        <Trans>Continue</Trans>
+      </Button>
+      {refused || start.error ? (
+        <p role="alert" className="mt-3 w-full text-body text-destructive">
+          <Trans>Could not continue</Trans>
+        </p>
+      ) : null}
+    </AuthFrame>
+  );
+}

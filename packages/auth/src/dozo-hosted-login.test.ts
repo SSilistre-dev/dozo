@@ -13,7 +13,7 @@ import {
   HOSTED_PROVIDER_ID,
   HostedLoginError,
   hostedLoginConfig,
-  hostedPlanOf,
+  hostedLoginOnly,
   installLock,
   issuerKeys,
   issuerOrigin,
@@ -52,7 +52,6 @@ const claims = {
   email: "ada@dozo.example",
   email_verified: true,
   name: "Ada",
-  plan: "standard",
 };
 
 function keyring(...keys: KeyObject[]) {
@@ -231,7 +230,6 @@ describe("the login token", () => {
     ["an address without @", { email: "ada" }, "claims"],
     ["no name", { name: 3 }, "claims"],
     ["no verification flag", { email_verified: "yes" }, "claims"],
-    ["no plan", { plan: undefined }, "claims"],
     ["no token id", { jti: undefined }, "claims"],
   ])("refuses a signed token with %s", async (_name, change, reason) => {
     const error = await verifyLoginToken(
@@ -308,39 +306,6 @@ describe("the issuer's keys on the local server", () => {
   });
 });
 
-describe("the plan in the token", () => {
-  const prisma = (memberships: { organizationId: string; role: string }[], organization: unknown) =>
-    ({
-      member: { findMany: vi.fn(async () => memberships) },
-      organization: { findUnique: vi.fn(async () => organization) },
-    }) as never;
-
-  it("is the tier in force on the user's own organization", async () => {
-    const live = { billing: { status: "active", byokTier: "pro" }, dozoPlanGrant: null };
-    expect(await hostedPlanOf(prisma([{ organizationId: "o", role: "owner" }], live), "u")).toBe(
-      "pro",
-    );
-    const ended = { billing: { status: "canceled", byokTier: "max" }, dozoPlanGrant: null };
-    expect(await hostedPlanOf(prisma([{ organizationId: "o", role: "owner" }], ended), "u")).toBe(
-      "standard",
-    );
-  });
-
-  it("is Free for a user who owns no organization", async () => {
-    expect(await hostedPlanOf(prisma([{ organizationId: "o", role: "member" }], null), "u")).toBe(
-      "standard",
-    );
-  });
-
-  it("passes other failures on", async () => {
-    const failing = {
-      member: { findMany: vi.fn(async () => Promise.reject(new Error("db down"))) },
-      organization: { findUnique: vi.fn() },
-    } as never;
-    await expect(hostedPlanOf(failing, "u")).rejects.toThrow("db down");
-  });
-});
-
 describe("the start check of a local server", () => {
   const users = (count: number) => ({ user: { count: vi.fn(async () => count) } });
   const verifier: HostedLoginConfig = { mode: "verifier", issuer: HOSTED };
@@ -380,6 +345,14 @@ describe("the install lock", () => {
   });
 });
 
+describe("the capability the sign-in page reads", () => {
+  it("says hosted-only on a local server and nowhere else", () => {
+    expect(hostedLoginOnly({ mode: "verifier", issuer: HOSTED })).toBe(true);
+    expect(hostedLoginOnly({ mode: "issuer", signingKey: ed25519() })).toBe(false);
+    expect(hostedLoginOnly(null)).toBe(false);
+  });
+});
+
 describe("what a local server closes", () => {
   it.each([
     "/sign-in/email",
@@ -396,6 +369,7 @@ describe("what a local server closes", () => {
     "/oauth2/callback/oidc",
     "/request-password-reset",
     "/reset-password",
+    "/reset-password/:token",
     "/change-password",
     "/set-password",
     "/change-email",
@@ -429,20 +403,6 @@ const store = (): Store => ({
   rateLimit: [],
 });
 
-/** The hosted server's plan reads; the local server's lock comes from `mutex` instead. */
-function fakePrisma() {
-  return {
-    member: { findMany: vi.fn(async () => [{ organizationId: "o", role: "owner" }]) },
-    organization: {
-      findUnique: vi.fn(async () => ({
-        billing: { status: "active", byokTier: "pro" },
-        dozoPlanGrant: null,
-      })),
-    },
-    $transaction: vi.fn(),
-  };
-}
-
 /** One piece of work at a time, as the advisory lock gives across processes. */
 function mutex() {
   let tail: Promise<unknown> = Promise.resolve();
@@ -453,22 +413,23 @@ function mutex() {
   };
 }
 
-function hostedServer(key: KeyObject, rateLimit = false) {
+/** The hosted server; its API may answer on another origin than its web app. */
+function hostedServer(key: KeyObject, rateLimit = false, baseURL = HOSTED) {
   const data = store();
-  const prisma = fakePrisma();
   const auth = betterAuth({
     secret: SECRET,
-    baseURL: HOSTED,
+    baseURL,
+    trustedOrigins: [HOSTED],
     database: memoryAdapter(data),
     emailAndPassword: { enabled: true },
     rateLimit: { enabled: rateLimit, storage: "database" },
     plugins: dozoHostedLogin({
-      prisma: prisma as never,
+      prisma: {} as never,
       webOrigin: HOSTED,
       config: { mode: "issuer", signingKey: key },
     }),
   });
-  return { auth, data, prisma };
+  return { auth, data };
 }
 
 type LocalOptions = {
@@ -532,6 +493,15 @@ async function signUp(auth: Handler, email: string, name: string) {
   return cookieHeader(response);
 }
 
+/** What the local sign-in page sends to start. */
+function startRequest(headers: Record<string, string> = { origin: LOCAL }) {
+  return new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: "{}",
+  });
+}
+
 function issueRequest(body: unknown, headers: Record<string, string>) {
   return new Request(`${HOSTED}/api/auth/dozo/hosted-login/issue`, {
     method: "POST",
@@ -552,9 +522,10 @@ function world(options: LocalOptions = {}) {
     auth.handler(new Request(url, { headers: cookie ? { cookie } : {} }));
 
   async function start() {
-    const response = await get(local.auth, `${LOCAL}/api/auth/dozo/hosted-login/start`);
-    expect(response.status).toBe(302);
-    return { page: new URL(response.headers.get("location")!), cookie: cookieHeader(response) };
+    const response = await local.auth.handler(startRequest());
+    expect(response.status).toBe(200);
+    const { url } = (await response.json()) as { url: string };
+    return { page: new URL(url), cookie: cookieHeader(response) };
   }
 
   /** What the hosted page sends once the user agrees: the callback address with the token. */
@@ -615,7 +586,6 @@ describe("signing in to a local server with the hosted account", () => {
     expect(payloadOf(callback)).toMatchObject({
       sub: hostedUser.id,
       email: "ada@dozo.example",
-      plan: "pro",
       iss: HOSTED,
     });
     expect(done.status).toBe(302);
@@ -705,9 +675,57 @@ describe("signing in to a local server with the hosted account", () => {
   it("does not take over a local account that only shares the address", async () => {
     const w = world();
     w.local.data.user.push(userRow("local", "ada@dozo.example"));
+    w.local.data.account.push({
+      id: "credential",
+      userId: "local",
+      providerId: "credential",
+      accountId: "local",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     const { done } = await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
     expect(location(done)).toBe(FAILED);
-    expect(w.local.data.account).toEqual([]);
+    expect(w.local.data.account).toHaveLength(1);
+  });
+
+  it("links the user a cut-off first sign-in left without its link, instead of locking it out", async () => {
+    const w = world();
+    // What a crash between the two writes leaves: the user, and no account of any kind.
+    w.local.data.user.push(userRow("orphan", "ada@dozo.example"));
+    const { done } = await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
+    expect(location(done)).toBe(`${LOCAL}/`);
+    expect(w.local.data.user.map((user) => user.id)).toEqual(["orphan"]);
+    expect(w.local.data.account).toEqual([
+      expect.objectContaining({ userId: "orphan", providerId: HOSTED_PROVIDER_ID }),
+    ]);
+  });
+
+  it("starts only from its own page, and a page elsewhere writes nothing", async () => {
+    const w = world();
+    const elsewhere: Record<string, string>[] = [
+      { origin: "https://evil.example" },
+      { origin: "null" },
+      {},
+    ];
+    for (const headers of elsewhere) {
+      const response = await w.local.auth.handler(startRequest(headers));
+      expect(response.status).toBe(403);
+    }
+    const opened = await w.get(w.local.auth, `${LOCAL}/api/auth/dozo/hosted-login/start`);
+    expect(opened.status).not.toBe(200);
+    expect(opened.headers.getSetCookie()).toEqual([]);
+    expect(w.local.data.verification).toEqual([]);
+  });
+
+  it("keeps a sign-in going when a stray callback arrives first", async () => {
+    const w = world();
+    const hostedCookie = await signUp(w.hosted.auth, "ada@dozo.example", "Ada");
+    const started = await w.start();
+    const callback = await w.agree(started.page, hostedCookie);
+    const stray = await w.get(w.local.auth, `${CALLBACK}?token=x`, started.cookie);
+    expect(location(stray)).toBe(FAILED);
+    expect(stray.headers.getSetCookie()).toEqual([]);
+    expect(location(await w.get(w.local.auth, callback, started.cookie))).toBe(`${LOCAL}/`);
   });
 
   it("removes the user it created when the session is refused", async () => {
@@ -795,10 +813,9 @@ describe("signing in to a local server with the hosted account", () => {
 
   it("refuses when the issuer's keys cannot be fetched", async () => {
     const local = localServer(vi.fn(async () => new Response("", { status: 500 })) as never);
-    const start = await local.auth.handler(
-      new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`),
-    );
-    const nonce = new URL(location(start)!).searchParams.get("audience")!;
+    const start = await local.auth.handler(startRequest());
+    const { url } = (await start.json()) as { url: string };
+    const nonce = new URL(url).searchParams.get("audience")!;
     const token = signLoginToken(ed25519(), { ...claims, aud: nonce });
     const done = await local.auth.handler(
       new Request(`${CALLBACK}?token=${token}`, { headers: { cookie: cookieHeader(start) } }),
@@ -835,27 +852,58 @@ describe("signing in to a local server with the hosted account", () => {
     expect(w.local.data.user).toEqual([]);
   });
 
-  it("limits how often one address may start a sign-in", async () => {
+  it("limits starting and finishing a sign-in each on its own count", async () => {
     const local = localServer(vi.fn() as never, { rateLimit: true });
-    const statuses: number[] = [];
-    for (let i = 0; i < 11; i++)
-      statuses.push(
-        (
-          await local.auth.handler(
-            new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`, {
-              headers: { "x-forwarded-for": "203.0.113.9" },
-            }),
-          )
-        ).status,
-      );
-    expect(statuses.slice(0, 10).every((status) => status === 302)).toBe(true);
-    expect(statuses[10]).toBe(429);
+    const from = { "x-forwarded-for": "203.0.113.9" };
+    const statuses = async (count: number, request: () => Request) => {
+      const seen: number[] = [];
+      for (let i = 0; i < count; i++) seen.push((await local.auth.handler(request())).status);
+      return seen;
+    };
+    const starts = await statuses(11, () => startRequest({ origin: LOCAL, ...from }));
+    expect(starts.slice(0, 10).every((status) => status === 200)).toBe(true);
+    expect(starts[10]).toBe(429);
+    // A page elsewhere spending the callback's count does not reach starting, and needs 60.
+    const callbacks = await statuses(
+      61,
+      () => new Request(`${CALLBACK}?token=x`, { headers: from }),
+    );
+    expect(callbacks.slice(0, 60).every((status) => status === 302)).toBe(true);
+    expect(callbacks[60]).toBe(429);
     expect(local.data.rateLimit.length).toBeGreaterThan(0);
   });
 });
 
 describe("the hosted server", () => {
   const body = { audience: AUDIENCE, return: CALLBACK };
+
+  it("signs its web origin as the issuer, also when its API answers on another", async () => {
+    const { auth } = hostedServer(ed25519(), false, "https://api.dozo.example");
+    const cookie = await auth.handler(
+      new Request("https://api.dozo.example/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: HOSTED },
+        body: JSON.stringify({
+          email: "a@dozo.example",
+          name: "A",
+          password: "a-long-enough-password",
+        }),
+      }),
+    );
+    const response = await auth.handler(
+      new Request("https://api.dozo.example/api/auth/dozo/hosted-login/issue", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: HOSTED,
+          cookie: cookieHeader(cookie),
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+    const { url } = (await response.json()) as { url: string };
+    expect(payloadOf(url).iss).toBe(HOSTED);
+  });
 
   it("publishes its public key", async () => {
     const key = ed25519();
@@ -866,10 +914,9 @@ describe("the hosted server", () => {
   });
 
   it("issues nothing without a session", async () => {
-    const { auth, prisma } = hostedServer(ed25519());
+    const { auth } = hostedServer(ed25519());
     const response = await auth.handler(issueRequest(body, { origin: HOSTED }));
     expect(response.status).toBe(401);
-    expect(prisma.member.findMany).not.toHaveBeenCalled();
   });
 
   it("issues nothing to a request from another site, or to a link that is only opened", async () => {

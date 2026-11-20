@@ -10,14 +10,6 @@ import {
 } from "node:crypto";
 import { deadlineSignal, MESSAGING_EMAIL_SUFFIX } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import {
-  DOZO_PLAN_GRANT_SELECT,
-  IsolationError,
-  ownedOrganizationId,
-  paidTierOf,
-  runAsSystem,
-  tierInForce,
-} from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { BetterAuthPlugin, GenericEndpointContext, User } from "better-auth";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
@@ -35,14 +27,19 @@ import { setSessionCookie } from "better-auth/cookies";
  * variable set nothing changes.
  *
  * The flow, in one browser:
- * 1. local `GET /api/auth/dozo/hosted-login/start`: a single-use nonce, kept in the local database
- *    and in a cookie, goes to the hosted web page `/dozo/hosted-login?audience=<nonce>&return=<url>`
- *    (which signs the user in first when needed, and asks them to agree);
+ * 1. local `POST /api/auth/dozo/hosted-login/start`, from the local sign-in page only (its own
+ *    origin): a single-use nonce, kept in the local database and in a cookie, and the hosted web
+ *    page to open, `/dozo/hosted-login?audience=<nonce>&return=<url>` (which signs the user in
+ *    first when needed, and asks them to agree);
  * 2. hosted `POST /api/auth/dozo/hosted-login/issue` from that page, with the session and the
  *    page's own origin: the token, inside the loopback callback address it may go to;
  * 3. local `GET /api/auth/dozo/hosted-login/callback?token=<token>`: checks signature, issuer,
  *    times and that the audience is this browser's unused nonce, then opens the session.
  * The keys: hosted `GET /api/auth/dozo/hosted-login/keys`.
+ *
+ * `HOSTED_LOGIN_ISSUER` is the hosted web origin, the one place the local server knows it by: the
+ * page opens there, the keys are read there (the web server answers `/api` as the stack's does),
+ * and the hosted server signs its web origin as the token's issuer.
  */
 
 export const HOSTED_LOGIN_PATH = "/dozo/hosted-login";
@@ -75,6 +72,7 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
  * change a credential or the address, since the account lives on the hosted server.
  */
 const CLOSED_PREFIXES = [
+  "/reset-password",
   "/sign-in/",
   "/sign-up/",
   "/passkey/",
@@ -85,7 +83,6 @@ const CLOSED_PREFIXES = [
 ];
 const CLOSED_PATHS = new Set([
   "/request-password-reset",
-  "/reset-password",
   "/change-password",
   "/set-password",
   "/change-email",
@@ -186,7 +183,6 @@ export type HostedLoginClaims = {
   email: string;
   email_verified: boolean;
   name: string;
-  plan: string;
   iat: number;
   exp: number;
   jti: string;
@@ -272,7 +268,6 @@ export async function verifyLoginToken(
     !String(claims.email).includes("@") ||
     typeof claims.name !== "string" ||
     typeof claims.email_verified !== "boolean" ||
-    !text(claims.plan, 64) ||
     !text(claims.jti, 64)
   )
     throw new HostedLoginError("claims");
@@ -328,41 +323,17 @@ export function issuerKeys(issuer: string, fetcher?: typeof fetch) {
   };
 }
 
-type PlanReader = Pick<PrismaClient, "member" | "organization">;
-
-/** The tier id of the plan in force on the user's own organization; Free without one. */
-export async function hostedPlanOf(prisma: PlanReader, userId: string): Promise<string> {
-  return runAsSystem("hosted login plan", async () => {
-    let organizationId: string;
-    try {
-      organizationId = await ownedOrganizationId(prisma, userId);
-    } catch (error) {
-      if (error instanceof IsolationError) return "standard";
-      throw error;
-    }
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: {
-        billing: { select: { status: true, byokTier: true } },
-        dozoPlanGrant: { select: DOZO_PLAN_GRANT_SELECT },
-      },
-    });
-    return (
-      tierInForce(paidTierOf(organization?.billing), organization?.dozoPlanGrant) ?? "standard"
-    );
-  });
-}
-
 const nonceIdentifier = (nonce: string) =>
   `${NONCE_PREFIX}${createHash("sha256").update(nonce).digest("hex")}`;
 
-type HostedLoginPrisma = Pick<PrismaClient, "member" | "organization" | "$transaction">;
+type HostedLoginPrisma = Pick<PrismaClient, "$transaction">;
 type Locked = <T>(work: () => Promise<T>) => Promise<T>;
 
 /**
  * Runs `work` alone across every process of the local server: a Postgres advisory lock held by a
  * transaction, as the single-account admission does, so two first sign-ins cannot both create
- * an account.
+ * an account. It is only a lock: `work` writes over other connections, outside this transaction,
+ * and is a few short queries, well inside the timeout.
  */
 export function installLock(prisma: Pick<PrismaClient, "$transaction">): Locked {
   return (work) =>
@@ -396,6 +367,11 @@ export async function refuseUnlinkedAccounts(
     );
 }
 
+/** Whether this server signs in only with the hosted account, for its public capabilities. */
+export function hostedLoginOnly(config: HostedLoginConfig = hostedLoginConfig()): boolean {
+  return config?.mode === "verifier";
+}
+
 export type HostedLoginDeps = {
   prisma: HostedLoginPrisma;
   webOrigin: string;
@@ -410,13 +386,14 @@ const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" 
 export function dozoHostedLogin(deps: HostedLoginDeps): BetterAuthPlugin[] {
   const config = deps.config === undefined ? hostedLoginConfig() : deps.config;
   if (!config) return [];
-  const rateLimit = [
-    {
-      pathMatcher: (path: string) => path.startsWith(`${HOSTED_LOGIN_PATH}/`),
-      window: 60,
-      max: 10,
-    },
-  ];
+  // Each endpoint counts on its own (the library keys a count by address and path). The callback
+  // allows more, since a page elsewhere can spend an address's count on it without a cookie.
+  const per = (name: string, max: number) => ({
+    pathMatcher: (path: string) => path === `${HOSTED_LOGIN_PATH}/${name}`,
+    window: 60,
+    max,
+  });
+  const rateLimit = [per("start", 10), per("issue", 10), per("keys", 10), per("callback", 60)];
   if (config.mode === "issuer") return [issuerPlugin(config.signingKey, deps, rateLimit)];
   return [verifierPlugin(config.issuer, deps, rateLimit)];
 }
@@ -457,13 +434,12 @@ function issuerPlugin(
           back.searchParams.set(
             "token",
             signLoginToken(signingKey, {
-              iss: new URL(ctx.context.baseURL).origin,
+              iss: webOrigin,
               sub: user.id,
               aud: audience,
               email: user.email,
               email_verified: user.emailVerified === true,
               name: user.name ?? "",
-              plan: await hostedPlanOf(deps.prisma, user.id),
             }),
           );
           for (const [name, value] of Object.entries(noStore)) ctx.setHeader(name, value);
@@ -481,7 +457,8 @@ function verifierPlugin(
 ): BetterAuthPlugin {
   const keyFor = issuerKeys(issuer, deps.fetcher);
   const lock = deps.lock ?? installLock(deps.prisma);
-  const failed = new URL("/sign-in?error=hosted_login_failed", deps.webOrigin).href;
+  const webOrigin = new URL(deps.webOrigin).origin;
+  const failed = new URL("/sign-in?error=hosted_login_failed", webOrigin).href;
   return {
     id: "dozo-hosted-login",
     rateLimit,
@@ -496,10 +473,12 @@ function verifierPlugin(
       ],
     },
     endpoints: {
+      // Only the local sign-in page's own request: a page elsewhere cannot start one.
       dozoHostedLoginStart: createAuthEndpoint(
         `${HOSTED_LOGIN_PATH}/start`,
-        { method: "GET" },
+        { method: "POST" },
         async (ctx) => {
+          if (ctx.headers?.get("origin") !== webOrigin) throw new APIError("FORBIDDEN");
           const now = new Date();
           // Started sign-ins nobody finished go, so asking again and again keeps no rows.
           await ctx.context.adapter.deleteMany({
@@ -522,7 +501,7 @@ function verifierPlugin(
           const page = new URL(HOSTED_LOGIN_PAGE, issuer);
           page.searchParams.set("audience", nonce);
           page.searchParams.set("return", `${ctx.context.baseURL}${HOSTED_LOGIN_PATH}/callback`);
-          throw ctx.redirect(page.href);
+          return ctx.json({ url: page.href });
         },
       ),
       dozoHostedLoginCallback: createAuthEndpoint(
@@ -532,7 +511,6 @@ function verifierPlugin(
           for (const [name, value] of Object.entries(noStore)) ctx.setHeader(name, value);
           const cookie = ctx.context.createAuthCookie(NONCE_COOKIE);
           const nonce = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
-          ctx.setCookie(cookie.name, "", { ...cookie.attributes, maxAge: 0 });
           const token = typeof ctx.query?.token === "string" ? ctx.query.token : "";
           if (!nonce || !NONCE.test(nonce) || !token) throw ctx.redirect(failed);
           let claims: HostedLoginClaims;
@@ -544,6 +522,8 @@ function verifierPlugin(
             );
             throw ctx.redirect(failed);
           }
+          // Only a token made for this browser's sign-in ends it; anything else leaves it waiting.
+          ctx.setCookie(cookie.name, "", { ...cookie.attributes, maxAge: 0 });
           // Single use, across instances: only the request that deletes the row goes on.
           const used = await ctx.context.adapter.deleteMany({
             model: "verification",
@@ -562,7 +542,7 @@ function verifierPlugin(
             signedIn = false;
           }
           if (!signedIn) throw ctx.redirect(failed);
-          throw ctx.redirect(new URL("/", deps.webOrigin).href);
+          throw ctx.redirect(new URL("/", webOrigin).href);
         },
       ),
     },
@@ -570,9 +550,14 @@ function verifierPlugin(
 }
 
 /**
- * The local user linked to the hosted account, created with its link in one transaction when
- * there is none, under the install lock. The install keeps the first hosted account that signs
- * in and refuses any other; a local account that only shares the address is never taken over.
+ * The local user linked to the hosted account, created with its link when there is none, under the
+ * install lock. The install keeps the first hosted account that signs in and refuses any other; a
+ * local account that only shares the address is never taken over.
+ *
+ * The user and its link are two writes (the auth library's database adapter runs without
+ * transactions here). A crash between them leaves a user with no account at all, and only this
+ * code can have made it: the server refuses to start with accounts of its own and closes every
+ * other way to make one. The next sign-in of that address links it instead of being refused.
  */
 async function hostedUser(
   ctx: GenericEndpointContext,
@@ -601,12 +586,21 @@ async function hostedUser(
       model: "account",
       where: [{ field: "providerId", value: HOSTED_PROVIDER_ID }],
     });
-    if (hostedAccounts > 0 || (await adapter.findUserByEmail(email))) return null;
-    const { user } = await adapter.createOAuthUser(
-      { email, name: claims.name, emailVerified: claims.email_verified },
-      { providerId: HOSTED_PROVIDER_ID, accountId: claims.sub },
-    );
-    return { user, created: true };
+    if (hostedAccounts > 0) return null;
+    const existing = await adapter.findUserByEmail(email, { includeAccounts: true });
+    if (existing && existing.accounts.length > 0) return null;
+    const user =
+      existing?.user ??
+      (await adapter.createUser(
+        { email, name: claims.name, emailVerified: claims.email_verified },
+        { method: "oauth", oauth: { providerId: HOSTED_PROVIDER_ID } },
+      ));
+    await adapter.linkAccount({
+      userId: user.id,
+      providerId: HOSTED_PROVIDER_ID,
+      accountId: claims.sub,
+    });
+    return { user, created: !existing };
   });
 }
 

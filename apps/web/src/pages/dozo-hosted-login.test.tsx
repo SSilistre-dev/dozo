@@ -40,7 +40,7 @@ vi.mock("./Auth", () => ({
   ),
 }));
 
-import { HostedLoginPage } from "./dozo-hosted-login";
+import { HostedLoginPage, HostedSignIn } from "./dozo-hosted-login";
 
 const AUDIENCE = "a".repeat(43);
 const CALLBACK = "http://127.0.0.1:5173/api/auth/dozo/hosted-login/callback";
@@ -63,6 +63,7 @@ async function open(path: string) {
           <Where />
           <Routes>
             <Route path="/dozo/hosted-login" element={<HostedLoginPage />} />
+            <Route path="/sign-in" element={<HostedSignIn />} />
             <Route path="/app" element={<p>app</p>} />
           </Routes>
         </MemoryRouter>
@@ -147,5 +148,43 @@ describe("the page that hands the account to this computer", () => {
   ])("goes to the app from %s, which asks for nothing", async (path) => {
     await open(path);
     expect(where()).toBe("/app");
+  });
+});
+
+describe("the sign-in page of a server that signs in with the hosted account", () => {
+  const alert = () => container.querySelector('[role="alert"]')?.textContent;
+
+  it("offers one button, which starts here and opens the page the server names", async () => {
+    api.issue.mockResolvedValue(
+      Response.json({ url: "https://accounts.dozo.example/dozo/hosted-login?x=1" }),
+    );
+    await open("/sign-in");
+    expect(container.querySelector("h1")?.textContent).toBe("Sign in");
+    expect(container.querySelectorAll("button")).toHaveLength(1);
+    expect(alert()).toBeUndefined();
+    await agree();
+    expect(api.issue).toHaveBeenCalledWith("/api/auth/dozo/hosted-login/start", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    await vi.waitFor(() =>
+      expect(api.assign).toHaveBeenCalledWith(
+        "https://accounts.dozo.example/dozo/hosted-login?x=1",
+      ),
+    );
+  });
+
+  it("says when a sign-in came back refused, or could not start", async () => {
+    await open("/sign-in?error=hosted_login_failed");
+    expect(alert()).toBe("Could not continue");
+    act(() => root.unmount());
+    root = createRoot(container);
+    api.issue.mockResolvedValue(new Response("", { status: 403 }));
+    await open("/sign-in");
+    await agree();
+    await vi.waitFor(() => expect(alert()).toBe("Could not continue"));
+    expect(api.assign).not.toHaveBeenCalled();
   });
 });
