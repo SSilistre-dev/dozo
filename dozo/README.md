@@ -261,6 +261,19 @@ Accepted by the owner for now, stated here once:
   limit, a running bot, a computer someone holds) says why beside it on web; mobile keeps its
   screen's error line. A full host memory budget never refuses the switch, only a later start
   ("All computers are busy").
+- Switching moves the bot's files and browser sign-ins (`packages/adapters/src/dozo-computer-move.ts`,
+  after one confirmation line on web and mobile): Team to Own takes `bots/<id>/` and its browser
+  profile to the Own computer's home and deletes them from the Team Computer; Own to Team takes
+  the Own computer's visible entries and profile back under `bots/<id>/`. `shared/` and the Own
+  computer's hidden entries (`.config`, caches) stay. Copy, check sizes, then delete; a failed
+  copy is removed from a Team Computer and the switch is undone ("Couldn't move this bot's
+  files. Try again."). A running computer is changed through its own commands, a stopped one on
+  the server while its row is locked against a start, so nothing is started for the move. Cache
+  folders the save policy skips (`node_modules`, `.cache`, browser caches) are not copied and are
+  deleted with the rest. Only computers that work in the server's home directory (Docker) can
+  move files; others refuse a switch once they have run. Files the move reads are held in
+  memory one at a time. Folders left on a Team Computer by switches before this change stay
+  there.
 - How many Own computers: `SANDBOX_MAX_COMPUTERS_PER_USER` (default 2, or the admin's value)
   counts computer rows that back a live bot, per person across their Spaces: each Space's Team
   Computer once (kept for the Space's owner), each Own computer once. With the default, a person

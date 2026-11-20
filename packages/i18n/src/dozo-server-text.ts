@@ -74,6 +74,8 @@ export const SERVER_SENTENCES: ReadonlySet<string> = new Set([
   "The bot's computer could not do that.",
   "Not signed in there.",
   "Some sites could not be signed out. The list shows what is left.",
+  "Couldn't move this bot's files. Try again.",
+  "This computer can't move a bot's files.",
 ]);
 
 /**

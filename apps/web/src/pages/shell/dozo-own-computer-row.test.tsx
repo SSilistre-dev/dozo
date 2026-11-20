@@ -60,6 +60,17 @@ function show(mode: ComputerMode, refusal: string | null = null, locale = "en") 
   return { toggle, line, button: host.querySelector("p button") };
 }
 
+function dialog() {
+  const box = document.querySelector('[role="alertdialog"]');
+  return {
+    title: box?.querySelector("h2")?.textContent ?? null,
+    button: (name: string) =>
+      [...(box?.querySelectorAll("button") ?? [])].find(
+        (button) => button.textContent === name,
+      ) as HTMLElement,
+  };
+}
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   i18n.load({ en: {}, tr: tr as Messages });
@@ -85,8 +96,26 @@ describe("the Own computer switch", () => {
     expect(show("team", null, "tr").line).toBe(
       "Bu alandaki diğer botlarla ortak, dosyalar ve girişler dahil.",
     );
-    act(() => toggle.click());
+    act(() => show("team").toggle.click());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(dialog().title).toBe(
+      "This bot's files and browser sign-ins move to its own computer and are removed from the Team Computer.",
+    );
+    act(() => dialog().button("Move").click());
     expect(onChange).toHaveBeenCalledWith("dedicated");
+  });
+
+  it("asks before moving back to the Team Computer, and Cancel keeps the bot where it is", () => {
+    const { toggle } = show("dedicated", null, "tr");
+    act(() => toggle.click());
+    expect(dialog().title).toBe(
+      "Bu botun dosyaları ve tarayıcı girişleri Takım Bilgisayarına taşınır; bu alandaki diğer botlar onları açabilir.",
+    );
+    act(() => dialog().button("İptal").click());
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => toggle.click());
+    act(() => dialog().button("Taşı").click());
+    expect(onChange).toHaveBeenCalledWith("team");
   });
 
   it("says nothing once the bot has its own computer", () => {

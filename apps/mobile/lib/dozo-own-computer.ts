@@ -3,6 +3,7 @@ import type { ComputerMode } from "@rakazo/contracts";
 import { ownComputerNote } from "@rakazo/contracts";
 import { planLimitCopy } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
+import { Alert } from "react-native";
 import { rpcQuery } from "./query";
 
 /**
@@ -22,4 +23,18 @@ export function useOwnComputerSwitch(mode: ComputerMode): {
     };
   }
   return { detail: note?.text, disabled: note !== null };
+}
+
+/** Ask before switching: the bot's files and browser sign-ins move with it. */
+export function confirmComputerMove(mode: ComputerMode, apply: (mode: ComputerMode) => void) {
+  Alert.alert(
+    mode === "dedicated"
+      ? t`This bot's files and browser sign-ins move to its own computer and are removed from the Team Computer.`
+      : t`This bot's files and browser sign-ins move to the Team Computer, where this Space's other bots can open them.`,
+    undefined,
+    [
+      { text: t`Cancel`, style: "cancel" },
+      { text: t`Move`, onPress: () => apply(mode) },
+    ],
+  );
 }
