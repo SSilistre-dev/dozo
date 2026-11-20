@@ -1344,8 +1344,8 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./notification-avatar.js\";",
-      "replace": "export * from \"./dozo-avatar-art.js\";",
-      "requires": ["packages/core/src/dozo-avatar-art.ts"],
+      "replace": "export * from \"./dozo-avatar-art.js\";\nexport * from \"./dozo-chat-colors.js\";",
+      "requires": ["packages/core/src/dozo-avatar-art.ts", "packages/core/src/dozo-chat-colors.ts"],
       "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body"
     },
     {
@@ -1407,14 +1407,14 @@
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "(active ? chatUserBubbleColors(active.color, active.id) : undefined)",
       "replace": "(active ? dozoChatUserColors(active.color, active.id) : undefined)",
-      "requires": ["packages/core/src/dozo-avatar-art.ts"],
+      "requires": ["packages/core/src/dozo-chat-colors.ts"],
       "reason": "Dozo look: your own bubble and the send button wear the open bot's Dozo identity colour (the colour its avatar's accessory shows), darkened until white text holds 4.5:1; upstream's colour is one no Dozo avatar shows"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "  chatUserBubbleColors,\n  chatWoke,\n  dismissableAskMessageIds,\n",
       "replace": "  chatWoke,\n  dismissableAskMessageIds,\n  dozoChatUserColors,\n",
-      "requires": ["packages/core/src/dozo-avatar-art.ts"],
+      "requires": ["packages/core/src/dozo-chat-colors.ts"],
       "reason": "Dozo look: the import of the rule above, in place of upstream's bubble colours"
     },
     {
