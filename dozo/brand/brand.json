@@ -1424,6 +1424,24 @@
       "reason": "Dozo look: the sidebar starts at the chat design's width (dozo/design/chat-v2.html), room for the wordmark, its kana and two round buttons; dragging it still works"
     },
     {
+      "file": "apps/web/src/pages/SettingsOverlay.tsx",
+      "find": "import { SpaceSettingsPanel } from \"./SpaceSettingsPanel\";\nimport { useSettingsNavItems } from \"./settings-nav\";",
+      "replace": "import { SpaceSettingsPanel } from \"./SpaceSettingsPanel\";\nimport { DozoSettingsNavGroups } from \"./dozo-settings-nav\";\nimport { useSettingsNavItems } from \"./settings-nav\";",
+      "requires": [
+        "apps/web/src/pages/dozo-settings-nav.tsx"
+      ],
+      "reason": "Dozo look: the import of the grouped settings nav (next rule)"
+    },
+    {
+      "file": "apps/web/src/pages/SettingsOverlay.tsx",
+      "find": "              {navItems.map((item) => {\n                const Icon = item.icon;\n                // A space's page is reached from General, so General stays marked.\n                const active = item.id === (section === \"space\" ? \"general\" : section);\n                return (\n                  <button\n                    key={item.id}\n                    type=\"button\"\n                    data-testid={`settings-nav-${item.id}`}\n                    aria-current={active ? \"page\" : undefined}\n                    disabled={panelBusy}\n                    onClick={() => onSectionChange(item.id)}\n                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${\n                      active\n                        ? \"bg-accent text-accent-foreground\"\n                        : \"text-muted-foreground hover:bg-accent hover:text-foreground\"\n                    }`}\n                  >\n                    <Icon className=\"size-4 shrink-0\" strokeWidth={1.75} />\n                    <span className=\"whitespace-nowrap\">{item.label}</span>\n                  </button>\n                );\n              })}\n",
+      "replace": "              <DozoSettingsNavGroups\n                items={navItems}\n                section={section}\n                disabled={panelBusy}\n                onSectionChange={onSectionChange}\n              />\n",
+      "requires": [
+        "apps/web/src/pages/dozo-settings-nav.tsx"
+      ],
+      "reason": "Dozo look: the settings sections under three quiet headings (Account, Bots, App) as in dozo/design/settings-v2.html; the same buttons, ids, availability and behaviour"
+    },
+    {
       "file": "apps/web/src/pages/ResizableSidePanel.tsx",
       "find": "const DEFAULT_WIDTH = 384;",
       "replace": "const DEFAULT_WIDTH = 320;",
