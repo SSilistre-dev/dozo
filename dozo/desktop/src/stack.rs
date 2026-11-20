@@ -905,7 +905,11 @@ impl Plan {
             ("AUTH_PASSWORD_ENABLED", "true".into()),
             ("AUTH_BREACHED_PASSWORD_CHECK_ENABLED", "false".into()),
         ]);
-        self.node_spec("api", env)
+        // The API lets requests finish for up to 20 s after TERM (`apps/api/src/index.ts`).
+        Spec {
+            grace: Duration::from_secs(25),
+            ..self.node_spec("api", env)
+        }
     }
 
     fn worker(&self) -> Spec {

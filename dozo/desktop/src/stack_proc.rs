@@ -261,13 +261,19 @@ impl Supervisor {
         Ok(())
     }
 
-    /// Stops every process, the last started first. True when each stopped within its grace
-    /// period; one that had to be killed makes it false.
+    /// Stops every process: all but the first started together, then the first (Postgres, which
+    /// the others use), so the longest grace sets the wait rather than their sum. True when each
+    /// stopped within its grace period; one that had to be killed makes it false.
     pub async fn stop_all(&mut self) -> bool {
+        let mut kept = std::mem::take(&mut self.kept);
+        let first = (!kept.is_empty()).then(|| kept.remove(0));
+        for each in &kept {
+            let _ = each.stop.send(true);
+        }
         let mut clean = true;
-        while let Some(kept) = self.kept.pop() {
-            let _ = kept.stop.send(true);
-            clean &= kept.task.await.unwrap_or(false);
+        for each in kept.into_iter().chain(first) {
+            let _ = each.stop.send(true);
+            clean &= each.task.await.unwrap_or(false);
         }
         clean
     }
@@ -382,7 +388,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stops_in_reverse_order_of_start() {
+    async fn stops_the_first_started_last() {
         let dir = scratch("order");
         let launch = launch(&dir);
         let order = dir.join("order");
@@ -407,17 +413,13 @@ mod tests {
             .unwrap();
         }
         assert!(supervisor.stop_all().await);
-        assert_eq!(
-            lines(&order),
-            [
-                "postgres",
-                "api",
-                "web",
-                "stop-web",
-                "stop-api",
-                "stop-postgres"
-            ]
-        );
+        let said = lines(&order);
+        assert_eq!(said[..3], ["postgres", "api", "web"]);
+        // The others stop together, Postgres after them.
+        let mut others = said[3..5].to_vec();
+        others.sort();
+        assert_eq!(others, ["stop-api", "stop-web"]);
+        assert_eq!(said[5], "stop-postgres");
     }
 
     #[tokio::test]

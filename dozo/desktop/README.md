@@ -230,8 +230,9 @@ Windows, where nothing has run yet.
 - A process that exits on its own starts again after 1 s, then 2, 4 … at most 30 s; back to 1 s
   after a minute up. Its output goes to `logs/<name>.log`, cut to a fresh file past 5 MB, one
   older file kept.
-- Stop: in reverse, each asked first (Node TERM, Postgres INT, its fast shutdown) and killed with
-  what it started after 10 s (Postgres 20 s). Quitting waits for it, at most a minute; so does
+- Stop: the web server, the worker, the API and the relay agent together, then Postgres; each
+  asked first (Node TERM, Postgres INT, its fast shutdown) and killed with what it started after
+  10 s (the API 25 s, as it lets requests finish for 20 s; Postgres 20 s). Quitting waits for it, at most a minute; so does
   Restart to Update. Choosing another server stops it.
 - Nothing is left behind: on Linux each process ends with the app however the app ends
   (`PR_SET_PDEATHSIG`), and each holds the folder's lock (`stack.lock`), so a second app, or a
