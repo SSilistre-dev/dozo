@@ -1,4 +1,4 @@
-import { Trans, useLingui } from "@lingui/react/macro";
+import { useLingui } from "@lingui/react/macro";
 import type { DozoUsageGroup, DozoUsageGrouping, UsageSummary } from "@rakazo/contracts";
 import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import {
@@ -115,16 +115,16 @@ export function DozoUsageBreakdown() {
                 {groupings.find(([value]) => value === by)?.[1]}
               </TableHead>
               <TableHead className="text-right text-muted-foreground">
-                <Trans>Calls</Trans>
+                {t`Calls`}
               </TableHead>
               <TableHead className="text-right text-muted-foreground">
-                <Trans>Input</Trans>
+                {t`Input`}
               </TableHead>
               <TableHead className="text-right text-muted-foreground">
-                <Trans>Output</Trans>
+                {t`Output`}
               </TableHead>
               <TableHead className="text-right text-muted-foreground">
-                <Trans>Cost</Trans>
+                {t`Cost`}
               </TableHead>
             </TableRow>
           </TableHeader>
