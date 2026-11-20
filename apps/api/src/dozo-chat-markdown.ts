@@ -41,7 +41,7 @@ export function chatTimeFormatter(timeZone: string | undefined): (iso: string) =
  * link; tool activity keeps only its step labels. Cards that ask for secrets, connect accounts or
  * approve tools, raw tool output and progress lines are left out.
  */
-function blockMarkdown(block: MessageBlock): string | undefined {
+export function blockMarkdown(block: MessageBlock): string | undefined {
   switch (block.kind) {
     case "text":
       return block.text.trim() || undefined;

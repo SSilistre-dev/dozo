@@ -5534,6 +5534,15 @@
       "reason": "quiet hours: the API reads and saves an account's quiet hours through the adapters package"
     },
     {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./mcp-connector.js\";\nexport * from \"./mcp-emulator.js\";",
+      "replace": "export * from \"./mcp-connector.js\";\nexport * from \"./dozo-mcp.js\";\nexport * from \"./mcp-emulator.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-mcp.ts"
+      ],
+      "reason": "MCP endpoint: the API answers outside MCP clients through the adapters package, which loads the protocol library on the first request"
+    },
+    {
       "file": "packages/contracts/src/rpc.ts",
       "find": "from \"./ai-consent.js\";\nimport { AnalyticsScreenInput }",
       "replace": "from \"./ai-consent.js\";\nexport * from \"./dozo-quiet-hours.js\";\nimport { dozoQuietHoursContract } from \"./dozo-quiet-hours.js\";\nimport { AnalyticsScreenInput }",

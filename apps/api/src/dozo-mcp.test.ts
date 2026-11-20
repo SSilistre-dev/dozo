@@ -1,0 +1,421 @@
+import { ORPCError } from "@orpc/server";
+import type { DozoMcpOperations, DozoMcpOptions } from "@rakazo/adapters";
+import type { Actor, ProductEvent, ThreadMessage } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
+import { currentDbContext } from "@rakazo/db";
+import { Hono } from "hono";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DozoMcpDeps } from "./dozo-mcp.js";
+import {
+  DOZO_MCP_MAX_BODY_BYTES,
+  DOZO_MCP_METADATA_PATH,
+  DOZO_MCP_PATH,
+  dozoMcpOperations,
+  mountDozoMcp,
+} from "./dozo-mcp.js";
+import type { DozoTokenGrant } from "./dozo-token-grant.js";
+
+const spies = vi.hoisted(() => ({
+  handle: vi.fn(),
+  createClient: vi.fn(),
+  exportChat: vi.fn(),
+}));
+vi.mock("@rakazo/adapters", () => ({
+  handleDozoMcpRequest: spies.handle,
+  DOZO_MCP_CHAT_MAX_CHARS: 64_000,
+  DOZO_MCP_REPLY_MAX_CHARS: 12,
+}));
+vi.mock("@orpc/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orpc/server")>()),
+  createRouterClient: spies.createClient,
+}));
+vi.mock("./rpc-errors.js", () => ({ handleRpcError: vi.fn() }));
+vi.mock("./dozo-chat-export.js", () => ({ exportChat: spies.exportChat }));
+
+const ORIGIN = "https://app.dozo.test";
+const grant: DozoTokenGrant = { id: "tok-1", userId: "user-1", spaceId: "space-1", botId: null };
+const actor: Actor = {
+  userId: "user-1",
+  spaceId: "space-1",
+  email: "user@example.test",
+  isDeploymentOwner: false,
+};
+
+const findUser = vi.fn();
+const findMember = vi.fn();
+const findBot = vi.fn();
+const findBots = vi.fn();
+const prisma = {
+  user: { findUnique: findUser },
+  spaceMember: { findFirst: findMember },
+  bot: { findFirst: findBot, findMany: findBots },
+} as unknown as PrismaClient;
+
+let clock = 0;
+function app(verify = vi.fn(async (token: string) => (token === "good" ? grant : null))) {
+  const hono = new Hono();
+  const deps: DozoMcpDeps = {
+    prisma,
+    router: {} as DozoMcpDeps["router"],
+    verify,
+    publicOrigin: ORIGIN,
+    trustedOrigin: (origin) => origin === ORIGIN,
+    clientIp: (c) => c.req.header("x-test-ip") ?? "203.0.113.7",
+    version: "abc123",
+    now: () => clock,
+  };
+  mountDozoMcp(hono, deps);
+  return { hono, verify };
+}
+
+const post = (headers: Record<string, string> = {}, body = '{"jsonrpc":"2.0"}') =>
+  new Request(`http://api.internal${DOZO_MCP_PATH}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body,
+  });
+const bearer = (token = "good") => ({ authorization: `Bearer ${token}` });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  clock = 0;
+  findUser.mockResolvedValue({ id: "user-1", email: "user@example.test", deactivatedAt: null });
+  findMember.mockResolvedValue({ spaceId: "space-1" });
+  spies.handle.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+  spies.createClient.mockReturnValue({});
+});
+
+describe("the MCP endpoint's HTTP layer", () => {
+  it("publishes its protected resource metadata: its address and the header the token goes in", async () => {
+    const response = await app().hono.request(DOZO_MCP_METADATA_PATH);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      resource: `${ORIGIN}${DOZO_MCP_PATH}`,
+      bearer_methods_supported: ["header"],
+    });
+  });
+
+  it("challenges a request without a token with where to learn how to get one", async () => {
+    const { hono, verify } = app();
+    const response = await hono.request(post());
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe(
+      `Bearer resource_metadata="${ORIGIN}${DOZO_MCP_METADATA_PATH}"`,
+    );
+    expect(verify).not.toHaveBeenCalled();
+    expect(spies.handle).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token the store does not know, and stops looking up an address that keeps guessing", async () => {
+    const { hono, verify } = app();
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 21; attempt++) {
+      const response = await hono.request(post(bearer("guess")));
+      statuses.push(response.status);
+      if (attempt === 0)
+        expect(response.headers.get("www-authenticate")).toContain('error="invalid_token"');
+    }
+    expect(statuses.slice(0, 20).every((status) => status === 401)).toBe(true);
+    expect(statuses[20]).toBe(429);
+    // The locked address's last attempt was not looked up, even with a real token.
+    expect(verify).toHaveBeenCalledTimes(20);
+    expect((await hono.request(post(bearer()))).status).toBe(429);
+    // Another address is not slowed, and the window ends.
+    expect(
+      (await hono.request(post({ ...bearer("guess"), "x-test-ip": "198.51.100.2" }))).status,
+    ).toBe(401);
+    clock += 60_000;
+    expect((await hono.request(post(bearer("guess")))).status).toBe(401);
+  });
+
+  it("refuses a token whose owner left its Space or was deactivated", async () => {
+    const { hono } = app();
+    findMember.mockResolvedValueOnce(null);
+    expect((await hono.request(post(bearer()))).status).toBe(401);
+    findUser.mockResolvedValueOnce({ ...actor, id: "user-1", deactivatedAt: new Date() });
+    expect((await hono.request(post(bearer()))).status).toBe(401);
+    findUser.mockResolvedValueOnce(null);
+    expect((await hono.request(post(bearer()))).status).toBe(401);
+    expect(spies.handle).not.toHaveBeenCalled();
+  });
+
+  it("fails as the server's error, not a refused token, when the membership cannot be read", async () => {
+    findMember.mockRejectedValueOnce(new Error("database unavailable"));
+    expect((await app().hono.request(post(bearer()))).status).toBe(500);
+  });
+
+  it("refuses a web page from another site, and lets the app's own and non-browser clients in", async () => {
+    const { hono } = app();
+    const foreign = await hono.request(post({ ...bearer(), origin: "https://evil.example" }));
+    expect(foreign.status).toBe(403);
+    expect(spies.handle).not.toHaveBeenCalled();
+    expect((await hono.request(post({ ...bearer(), origin: ORIGIN }))).status).toBe(200);
+    expect((await hono.request(post(bearer()))).status).toBe(200);
+  });
+
+  it("refuses a body over the size limit before reading it", async () => {
+    const response = await app().hono.request(
+      post(bearer(), JSON.stringify({ text: "x".repeat(DOZO_MCP_MAX_BODY_BYTES) })),
+    );
+    expect(response.status).toBe(413);
+    expect(spies.handle).not.toHaveBeenCalled();
+  });
+
+  it("limits one token's requests per minute", async () => {
+    const { hono } = app();
+    for (let request = 0; request < 120; request++) await hono.request(post(bearer()));
+    const limited = await hono.request(post(bearer()));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+  });
+
+  it("acts as the token's owner and ends a wait when the token is revoked", async () => {
+    const verify = vi.fn(async (token: string) => (token === "good" ? grant : null));
+    const { hono } = app(verify);
+    expect(await (await hono.request(post(bearer()))).json()).toEqual({ ok: true });
+    const [request, , options] = spies.handle.mock.calls[0] as [Request, unknown, DozoMcpOptions];
+    expect(request.method).toBe("POST");
+    expect(options).toEqual({ version: "abc123" });
+    const [, clientOptions] = spies.createClient.mock.calls[0] ?? [];
+    const { context } = clientOptions as {
+      context: { actor: Actor; stillAuthorized: () => Promise<boolean> };
+    };
+    expect(context.actor).toEqual(actor);
+    await expect(context.stillAuthorized()).resolves.toBe(true);
+    verify.mockResolvedValueOnce(null);
+    await expect(context.stillAuthorized()).resolves.toBe(false);
+    findMember.mockResolvedValueOnce(null);
+    await expect(context.stillAuthorized()).resolves.toBe(false);
+  });
+
+  it("limits the messages one token sends per minute across its bots", async () => {
+    await app().hono.request(post(bearer()));
+    const ops = spies.handle.mock.calls[0]?.[1] as DozoMcpOperations;
+    findBot.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id }));
+    const sendTo = (bot: number) => ops.sendMessage(`bot-${bot}`, "hi", AbortSignal.abort());
+    for (let message = 0; message < 30; message++) await sendTo(message).catch(() => undefined);
+    await expect(sendTo(99)).rejects.toThrow("Too many messages");
+  });
+
+  it("limits the messages one bot gets per minute", async () => {
+    await app().hono.request(post(bearer()));
+    const ops = spies.handle.mock.calls[0]?.[1] as DozoMcpOperations;
+    findBot.mockResolvedValue({ id: "bot-1" });
+    // The client here has no procedures, so each send fails after it is counted.
+    const sendOnce = () => ops.sendMessage("bot-1", "hi", AbortSignal.abort());
+    for (let message = 0; message < 10; message++) await sendOnce().catch(() => undefined);
+    await expect(sendOnce()).rejects.toThrow("Too many messages to this bot");
+  });
+});
+
+const event = (type: ProductEvent["type"], runId = "run-1"): ProductEvent => ({
+  id: `e-${type}`,
+  spaceId: "space-1",
+  threadId: "thread-1",
+  botId: "bot-1",
+  seq: 5,
+  type,
+  runId,
+  createdAt: "2026-11-21T10:00:00.000Z",
+  payload: {},
+});
+const message = (role: "user" | "bot", text: string, runId = "run-1"): ThreadMessage => ({
+  id: `m-${text}`,
+  threadId: "thread-1",
+  seq: 6,
+  role,
+  blocks: [{ kind: "text", text }],
+  runId,
+  createdAt: "2026-11-21T10:00:00.000Z",
+});
+
+async function* stream(...events: ProductEvent[]) {
+  for (const item of events) yield item;
+}
+
+function fakeClient(events: AsyncGenerator<ProductEvent> | (() => never) = stream()) {
+  return {
+    bots: {
+      list: vi.fn(async () => [
+        { id: "bot-1", name: "Ada", description: "Reports", color: "x" },
+        { id: "bot-2", name: "Someone else's", description: "" },
+      ]),
+    },
+    threads: {
+      send: vi.fn(async () => ({ taskId: "task-1", runId: "run-1", seq: 4 })),
+      subscribe: vi.fn(async () => (typeof events === "function" ? events() : events)),
+      messages: vi.fn(async () => ({
+        threadId: "thread-1",
+        olderCursor: null,
+        messages: [
+          message("user", "hi"),
+          message("bot", "Hello"),
+          message("bot", "from a peer run", "run-0"),
+          message("bot", "there"),
+        ],
+      })),
+    },
+  };
+}
+
+function operations(
+  client: ReturnType<typeof fakeClient>,
+  countSend = vi.fn(),
+  onlyBotId: string | null = null,
+) {
+  return dozoMcpOperations(prisma, actor, onlyBotId, client as never, countSend);
+}
+
+describe("what a token's owner may do", () => {
+  it("lists only the bots the owner made, through the app's own list, read as the owner", async () => {
+    const contexts: unknown[] = [];
+    findBots.mockImplementation(async () => {
+      contexts.push(currentDbContext());
+      return [{ id: "bot-1" }];
+    });
+    const bots = await operations(fakeClient()).listBots();
+    expect(bots).toEqual([{ id: "bot-1", name: "Ada", description: "Reports" }]);
+    expect(findBots).toHaveBeenCalledWith({
+      where: { spaceId: "space-1", userId: "user-1", archivedAt: null },
+      select: { id: true },
+    });
+    expect(contexts).toEqual([{ kind: "tenant", spaceId: "space-1", userId: "user-1" }]);
+  });
+
+  it("reaches only the one bot a token for one bot names", async () => {
+    findBots.mockResolvedValue([{ id: "bot-1" }]);
+    findBot.mockResolvedValue({ id: "bot-1" });
+    const client = fakeClient();
+    const ops = operations(client, vi.fn(), "bot-1");
+    await ops.listBots();
+    expect(findBots).toHaveBeenCalledWith({
+      where: { spaceId: "space-1", userId: "user-1", archivedAt: null, id: "bot-1" },
+      select: { id: true },
+    });
+    await expect(ops.readChat("bot-2")).rejects.toThrow("No such bot.");
+    expect(findBot).not.toHaveBeenCalled();
+  });
+
+  it("sends to an own bot and returns what the bot said in that run, within the size limit", async () => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    const client = fakeClient(
+      stream(event("run.started"), event("run.completed", "run-0"), event("run.completed")),
+    );
+    const countSend = vi.fn();
+    const signal = new AbortController().signal;
+    const result = await operations(client, countSend).sendMessage("bot-1", "hi", signal);
+    expect(result).toEqual({ status: "replied", reply: "Hello\n\nthere", truncated: false });
+    expect(countSend).toHaveBeenCalledWith("bot-1");
+    expect(client.threads.send).toHaveBeenCalledWith({ botId: "bot-1", text: "hi" }, { signal });
+    expect(client.threads.subscribe).toHaveBeenCalledWith(
+      { botId: "bot-1", cursor: 4 },
+      { signal: expect.any(AbortSignal) },
+    );
+    client.threads.messages.mockResolvedValueOnce({
+      threadId: "thread-1",
+      olderCursor: null,
+      messages: [message("bot", "A reply longer than twelve")],
+    });
+    const long = await operations({
+      ...client,
+      threads: { ...client.threads, subscribe: vi.fn(async () => stream(event("run.completed"))) },
+    }).sendMessage("bot-1", "hi", signal);
+    expect(long).toEqual({ status: "replied", reply: "A reply long", truncated: true });
+  });
+
+  it.each([
+    ["run.failed", "failed"],
+    ["run.cancelled", "failed"],
+    ["run.waiting_input", "waiting_for_you"],
+    ["computer.takeover.requested", "waiting_for_you"],
+  ] as const)("ends the wait on %s as %s, without reading a reply", async (type, status) => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    const client = fakeClient(stream(event(type)));
+    const result = await operations(client).sendMessage(
+      "bot-1",
+      "hi",
+      new AbortController().signal,
+    );
+    expect(result).toEqual({ status });
+    expect(client.threads.messages).not.toHaveBeenCalled();
+  });
+
+  it("says the bot is still working when the wait ends first", async () => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    const ended = await operations(fakeClient(stream(event("run.started")))).sendMessage(
+      "bot-1",
+      "hi",
+      new AbortController().signal,
+    );
+    expect(ended).toEqual({ status: "working" });
+    const timedOut = await operations(
+      fakeClient(() => {
+        throw new Error("aborted");
+      }),
+    ).sendMessage("bot-1", "hi", AbortSignal.abort());
+    expect(timedOut).toEqual({ status: "working" });
+  });
+
+  it("lets a broken stream fail as the server's error", async () => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    const client = fakeClient(() => {
+      throw new Error("realtime down");
+    });
+    await expect(
+      operations(client).sendMessage("bot-1", "hi", new AbortController().signal),
+    ).rejects.toThrow("realtime down");
+  });
+
+  it("refuses a bot the owner did not make before sending anything", async () => {
+    findBot.mockResolvedValue(null);
+    const client = fakeClient();
+    const countSend = vi.fn();
+    const ops = operations(client, countSend);
+    await expect(ops.sendMessage("bot-2", "hi", new AbortController().signal)).rejects.toThrow(
+      new ClientError("NOT_FOUND", "No such bot."),
+    );
+    await expect(ops.readChat("bot-2")).rejects.toThrow("No such bot.");
+    expect(client.threads.send).not.toHaveBeenCalled();
+    expect(countSend).not.toHaveBeenCalled();
+    expect(spies.exportChat).not.toHaveBeenCalled();
+    expect(findBot).toHaveBeenCalledWith({
+      where: { id: "bot-2", spaceId: "space-1", userId: "user-1", archivedAt: null },
+      select: { id: true },
+    });
+  });
+
+  it("passes on the app's refusal of a send as one the client can act on, and hides the rest", async () => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    const client = fakeClient();
+    const statuses = [
+      [400, "BAD_REQUEST"],
+      [403, "FORBIDDEN"],
+      [404, "NOT_FOUND"],
+      [409, "CONFLICT"],
+      [429, "TOO_MANY_REQUESTS"],
+    ] as const;
+    for (const [status, kind] of statuses) {
+      client.threads.send.mockRejectedValueOnce(
+        new ORPCError("PLAN_LIMIT", { status, message: "Add a model first." }),
+      );
+      const refused = operations(client).sendMessage("bot-1", "hi", new AbortController().signal);
+      await expect(refused).rejects.toBeInstanceOf(ClientError);
+      await expect(refused).rejects.toMatchObject({ kind, message: "Add a model first." });
+    }
+    const failure = new ORPCError("INTERNAL_SERVER_ERROR", { status: 500 });
+    client.threads.send.mockRejectedValueOnce(failure);
+    await expect(
+      operations(client).sendMessage("bot-1", "hi", new AbortController().signal),
+    ).rejects.toBe(failure);
+  });
+
+  it("reads an own bot's chat through the export, with the resource's size limit", async () => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    spies.exportChat.mockResolvedValue({ markdown: "# Ada\n", truncated: false });
+    await expect(operations(fakeClient()).readChat("bot-1")).resolves.toEqual({
+      markdown: "# Ada\n",
+    });
+    expect(spies.exportChat).toHaveBeenCalledWith(prisma, actor, { botId: "bot-1" }, 64_000);
+  });
+});

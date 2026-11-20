@@ -369,6 +369,26 @@ The mobile app lists them too, from a Commands row beside approval Rules that sh
 there is one (`apps/mobile/app/(settings)/dozo-commands.tsx`). Not done yet: screen control on the member's computer keeps upstream's approval per app; browser actions
 and a daily limit on what a bot sends are later work.
 
+## MCP endpoint
+
+Outside MCP clients (code editors, other agents) reach a person's own bots over Streamable HTTP at
+`/api/v1/dozo/mcp`, with one of the Bot API's personal access tokens in an
+`Authorization: Bearer` header (`apps/api/src/dozo-mcp.ts`, `packages/adapters/src/dozo-mcp*.ts`).
+Tools: `list_bots` and `send_message`, which waits up to 45 seconds for the reply and returns at
+once when the bot asks a question or needs an approval (that is answered in the app); each bot's
+chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the chat export. A
+token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
+session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
+a newer client falls back to those. Per API instance: 120 requests a minute per token, 10 messages
+a minute per bot, 20 refused tokens a minute per address; bodies up to 64 KiB.
+
+On the server on your own computer, point a local client at
+`http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
+the app window opens.
+
+Not yet: the endpoint is mounted with the access tokens, which the Bot API adds; until then the
+server does not answer it.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:
