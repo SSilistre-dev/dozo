@@ -59,14 +59,14 @@ manifest live.
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
 failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
-`0.11.0-3`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+`0.11.0-4`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
 The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
 server archive holds `rakazo-server/`; its `manifest.json` names the entrypoints: upstream's
 four, `relay`, the relay host agent (`dozo/relay/agent/README.md`) as one file,
 `dozo-relay-agent.mjs`, and the local commands below, one file each: `backup`
-(`dozo-local-backup.mjs`), `reset-password` (`dozo-reset-password.mjs`) and `diagnostics`
+(`dozo-local-backup.mjs`), `account` (`dozo-local-account.mjs`) and `diagnostics`
 (`dozo-diagnostics.mjs`). Plain Node runs them all.
 
 ## Runtimes
@@ -102,30 +102,6 @@ its own permissive `LICENSE` and the Debian copyright file of every library it s
 `review` fails the build (exit 2) with its name; read the licence before adding it to either list.
 `review` licences pass and are printed and listed in the build's `.json` (`notices.review`) because
 they carry conditions someone has to accept. `packages` corrects a licence pnpm reads wrong.
-
-## Password reset
-
-A local server sends no email, so a forgotten password is set again on the computer itself:
-
-```sh
-echo '<new password>' | node rakazo-server/dozo-reset-password.mjs --home <server folder>
-```
-
-The new password is the first line of standard input (8 to 128 characters). It works with the
-app open or closed, the same way as the backup (the running Postgres, or one started and stopped).
-Nothing on the network can start it: whoever runs it must be able to read the folder's secrets
-file, and on Linux and macOS must own it (or be root). In one statement it sets the account's
-password hash (the sign-in library's scrypt format), ends every session of the account, and writes
-`auth.password.changed` to the security events and, with actor `local-reset`, to the audit log of
-each organization the account belongs to.
-
-One JSON line on stdout: `{"reset": true, "sessionsEnded": <n>}` or `{"error": <sentence>,
-"reason": <code>}`. Exit 0 done, 2 failed, 64 usage (`reason` `usage`). Reasons: `hosted-login`
-(the install signs in with the hosted account, which has no password here: `HOSTED_LOGIN_ISSUER` is
-set for the command, or the account has no password sign-in), `no-server`, `no-account`,
-`several-accounts` (not a folder the app made), `not-owner`, `failed`. This is the contract for an
-app screen: it asks for the new password twice, pipes it in and shows the sentence on failure;
-after success the window signs in again.
 
 ## Diagnostics
 
@@ -263,3 +239,37 @@ length ends it, and nothing may follow. The first entry is `backup.json`: `forma
 `server` (the bundle version) and `migrations` (the applied migration names). Then the secrets
 file, `database.dump`, `data/…` and `relay/…`. Paths are relative with plain names; restored files
 keep only the owner's bits (0600, or 0700 when the owner could run it).
+
+## Account repairs
+
+Repairs a person makes on their own computer, against the server folder, so only whoever can reach
+that folder can make them. Source: `packages/adapters/src/dozo-local-account.ts`.
+
+```sh
+node rakazo-server/dozo-local-account.mjs unlink-hosted --home <server folder>
+echo '<new password>' | node rakazo-server/dozo-local-account.mjs reset-password --home <server folder>
+```
+
+- `unlink-hosted` removes every link to a hosted account, ends those users' sessions and marks
+  each of them; each user keeps their data. The next hosted sign-in on that computer links a
+  marked user again, whichever hosted account it is (`packages/auth/src/dozo-hosted-login.ts`);
+  no other user is ever handed to a hosted account. It is the way back when the linked hosted
+  account was deleted or can no longer sign in.
+- `reset-password` sets a new password, because a local server sends no email and a forgotten one
+  has no other way back. The new password is the first line of standard input (8 to 128
+  characters). Whoever runs it must be able to read the folder's secrets file and, on Linux and
+  macOS, own it (or be root). In one statement it sets the account's password hash (the sign-in
+  library's scrypt format), ends every session of the account, and writes `auth.password.changed`
+  to the security events and, with actor `local-reset`, to the audit log of each organization the
+  account belongs to. It answers `{"reset": true, "sessionsEnded": <n>}`. Its own reasons:
+  `hosted-login` (the install signs in with the hosted account, which has no password here:
+  `HOSTED_LOGIN_ISSUER` is set for the command, or the account has no password sign-in),
+  `no-account`, `several-accounts` (not a folder the app made) and `not-owner`. For an app
+  screen: ask for the new password twice, pipe it in, show the sentence on failure; after success
+  the window signs in again.
+
+It works with the app open or closed, with the bundle's Postgres, as `backup` does (same
+`DOZO_PG_BIN` and `DOZO_SERVER_DIR`). One JSON line on stdout: `{"unlinked": <n>,
+"sessionsEnded": <n>}` (or the reset's answer above) or `{"error": <sentence>, "reason": <code>}`
+(`usage`, `no-server`, `failed`, and the reset's own). Exit 0 done, 2 failed, 64 usage. Further repairs join this command as subcommands
+with the same `--home`, output and exit codes.

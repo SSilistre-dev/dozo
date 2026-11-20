@@ -5,14 +5,14 @@
 // With `restored`, against a server restored from a backup of that one: sign in with the same
 // password, find the bot and its earlier answer, and get a new answer through the restored model
 // connection (its key sealed with the restored encryption key).
-// With `reset <reset-password.mjs> <server folder>`: sign in, set a new password with the bundle's
-// reset command while the server runs, then check that the old session and password are refused
-// and the new password signs in.
+// With `reset <dozo-local-account.mjs> <server folder>`: sign in, set a new password with the
+// bundle's `account reset-password` while the server runs, then check that the old session and
+// password are refused and the new password signs in.
 // Usage: SMOKE_REPLY=<the fake model's answer> node smoke-client.mjs <web-url> <model-base-url> [restored]
-//        node smoke-client.mjs <web-url> - reset <reset-password.mjs> <server folder>
+//        node smoke-client.mjs <web-url> - reset <dozo-local-account.mjs> <server folder>
 import { spawnSync } from "node:child_process";
 
-const [base, modelUrl, mode, resetCommand, home] = process.argv.slice(2);
+const [base, modelUrl, mode, accountCommand, home] = process.argv.slice(2);
 const restored = mode === "restored";
 const REPLY = process.env.SMOKE_REPLY;
 const step = (line) => process.stdout.write(`[client] ${line}\n`);
@@ -56,7 +56,7 @@ if (mode === "reset") {
   const before = await signIn("smoke-Password-123");
   if (before.status !== 200) fail(`sign-in before the reset answered ${before.status}`);
   cookie = cookieOf(before);
-  const reset = spawnSync(process.execPath, [resetCommand, "--home", home], {
+  const reset = spawnSync(process.execPath, [accountCommand, "reset-password", "--home", home], {
     input: `${NEW}\n`,
     encoding: "utf8",
   });

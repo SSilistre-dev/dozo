@@ -147,7 +147,7 @@ describe("addresses", () => {
   });
 
   it("takes the offer from a link or as pasted", () => {
-    expect(offerText(" rakazo://dozo-pair#abc ")).toBe("abc");
+    expect(offerText(" dozo://pair#abc ")).toBe("abc");
     expect(offerText("abc\n")).toBe("abc");
   });
 });
@@ -177,7 +177,7 @@ describe("pairing", () => {
   });
 
   it("refuses text that is not an offer, and an expired offer, before sending anything", async () => {
-    expect(() => readPairingOffer("rakazo://dozo-pair#nope", Date.now())).toThrow(
+    expect(() => readPairingOffer("dozo://pair#nope", Date.now())).toThrow(
       expect.objectContaining({ kind: "invalid" }),
     );
     const link = await world.offer(() => Date.now() - 11 * 60_000);

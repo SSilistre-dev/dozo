@@ -12,7 +12,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** The old name stays only in these identifiers (dozo/brand/README.md, "Identifiers"). */
-const KEPT = ['"scheme":"rakazo"', "Rakazo.icon", '"targetName":"RakazoWidgets"'];
+const KEPT = ['"scheme":["rakazo","dozo"]', "Rakazo.icon", '"targetName":"RakazoWidgets"'];
 
 /** Upstream's Expo account, EAS project, update channel, bundle ids, domain and GitHub owner. */
 const FOREIGN = [
@@ -44,6 +44,10 @@ export function problems(input, apiUrl) {
   want(config.updates?.url === undefined, `updates.url is set (${config.updates?.url})`);
   want(config.updates?.enabled === false, "updates.enabled is not false");
   want(/^[a-z0-9]+(\.[a-z0-9-]+)+$/.test(id), `ios.bundleIdentifier is ${JSON.stringify(id)}`);
+  want(
+    [config.scheme].flat().includes("dozo"),
+    `scheme is ${JSON.stringify(config.scheme)}: pairing links (dozo://pair) would not open the app`,
+  );
   want(config.android?.package === id, "android.package differs from ios.bundleIdentifier");
   const extensions = config.extra?.eas?.build?.experimental?.ios?.appExtensions ?? [];
   want(extensions.length > 0, "no app extensions listed");

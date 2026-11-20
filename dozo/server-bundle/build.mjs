@@ -34,17 +34,13 @@ const TRIM = [
 // The bundle's version is upstream's with this revision after it: a change to what the fork adds
 // (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
 // Raise it with every such change; the release tag is server-v<version>.
-const REVISION = 3;
+const REVISION = 4;
 const AGENT = "dozo-relay-agent.mjs";
-// The local server's own commands (README.md: "Backup and restore", "Password reset",
+// The local server's own commands (README.md: "Backup and restore", "Account repairs",
 // "Diagnostics"): entrypoint name, the file it becomes, and its source.
 const COMMANDS = [
   ["backup", "dozo-local-backup.mjs", "packages/adapters/src/dozo-local-backup.ts"],
-  [
-    "reset-password",
-    "dozo-reset-password.mjs",
-    "packages/adapters/src/dozo-local-reset-password.ts",
-  ],
+  ["account", "dozo-local-account.mjs", "packages/adapters/src/dozo-local-account.ts"],
   ["diagnostics", "dozo-diagnostics.mjs", "packages/adapters/src/dozo-local-diagnostics.ts"],
 ];
 

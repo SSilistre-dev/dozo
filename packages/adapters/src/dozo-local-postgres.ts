@@ -194,3 +194,23 @@ export function pgTool(pg: Postgres, name: string, args: string[]): Promise<stri
     { PGPASSWORD: pg.password, PGCONNECT_TIMEOUT: "10" },
   );
 }
+
+/**
+ * Runs `work` with `psql` on a server folder's database as its owner, the app open or closed. A
+ * folder without a server is refused (`no-server`).
+ */
+export async function withHomeDatabase<T>(
+  home: string,
+  pgBin: string,
+  work: (psql: (args: string[]) => Promise<string>) => Promise<T>,
+): Promise<T> {
+  const secrets = await secretsFile(home);
+  const pgdata = path.join(home, "pgdata");
+  if (!secrets || !(await exists(path.join(pgdata, "PG_VERSION")))) {
+    throw new LocalRefused("no-server", "This folder has no Dozo server.");
+  }
+  const owner = await ownerPassword(path.join(home, secrets));
+  return withPostgres(pgBin, pgdata, owner, (pg) =>
+    work((args) => pgTool(pg, "psql", ["-d", DATABASE, ...args])),
+  );
+}

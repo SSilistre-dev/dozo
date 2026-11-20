@@ -81,11 +81,11 @@ if [ "${1:-}" = --as-user ]; then
     H="$H.restored"; export DOZO_HOME="$H"
     [ $rc != 0 ] || bash /bundle/run.sh start || rc=$?
     [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 http://127.0.0.1:8001/v1 restored || rc=$?
-    [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 - reset "$R/server/rakazo-server/dozo-reset-password.mjs" "$H" || rc=$?
+    [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 - reset "$R/server/rakazo-server/dozo-local-account.mjs" "$H" || rc=$?
     bash /bundle/run.sh stop || rc=2
     # With the server stopped, the reset starts its own Postgres and stops it again.
     if [ $rc = 0 ]; then
-      out=$(echo "smoke-Third-password-789" | node "$R/server/rakazo-server/dozo-reset-password.mjs" --home "$H") || rc=2
+      out=$(echo "smoke-Third-password-789" | node "$R/server/rakazo-server/dozo-local-account.mjs" reset-password --home "$H") || rc=2
       grep -q '"reset":true' <<< "$out" || { say "FAILED: reset while stopped said $out"; rc=2; }
       [ ! -f "$H/pgdata/postmaster.pid" ] || { say "FAILED: the reset left Postgres running"; rc=2; }
       [ $rc != 0 ] || say "reset while stopped: $out"

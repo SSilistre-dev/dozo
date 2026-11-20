@@ -5,12 +5,8 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResetIo } from "./dozo-local-reset-password.js";
-import {
-  hashPassword,
-  localResetPasswordMain,
-  localResetPasswordProcess,
-} from "./dozo-local-reset-password.js";
+import type { AccountIo } from "./dozo-local-account.js";
+import { hashPassword, localAccountMain, localAccountProcess } from "./dozo-local-account.js";
 
 const NEW_PASSWORD = "a new local password";
 /** Made by the sign-in library's own `hashPassword` for NEW_PASSWORD. */
@@ -66,14 +62,14 @@ afterEach(async () => {
 });
 
 function main(argv: string[], options: { stdin?: string; env?: NodeJS.ProcessEnv; uid?: number }) {
-  const io: ResetIo = {
+  const io: AccountIo = {
     write: (line) => lines.push(line),
     stdin: Readable.from(options.stdin === undefined ? [] : [options.stdin]),
     pgBin,
     env: options.env ?? {},
     uid: "uid" in options ? options.uid : process.getuid?.(),
   };
-  return localResetPasswordMain(argv, io);
+  return localAccountMain(["reset-password", ...argv], io);
 }
 
 const last = () => JSON.parse(lines.at(-1) ?? "{}");
@@ -96,7 +92,7 @@ describe("password hash", () => {
   });
 });
 
-describe("local password reset", () => {
+describe("account reset-password", () => {
   it("sets the password, ends every session and logs it, with the server stopped", async () => {
     expect(await main(["--home", home], { stdin: `${NEW_PASSWORD}\n` })).toBe(0);
     expect(last()).toEqual({ reset: true, sessionsEnded: 2 });
@@ -176,15 +172,15 @@ describe("local password reset", () => {
     const written: string[] = [];
     const proc = (env: NodeJS.ProcessEnv) =>
       ({
-        argv: ["node", "reset-password", "--home", home],
+        argv: ["node", "dozo-local-account.mjs", "reset-password", "--home", home],
         env,
         stdin: Readable.from([`${NEW_PASSWORD}\n`]),
         stdout: { write: (text: string) => written.push(text) },
       }) as unknown as NodeJS.Process;
-    const here = pathToFileURL(path.join(serverDir, "dozo-reset-password.mjs")).href;
-    expect(await localResetPasswordProcess(proc({}), here)).toBe(0);
+    const here = pathToFileURL(path.join(serverDir, "dozo-local-account.mjs")).href;
+    expect(await localAccountProcess(proc({}), here)).toBe(0);
     expect(JSON.parse(written[0] ?? "{}")).toEqual({ reset: true, sessionsEnded: 2 });
     const elsewhere = { DOZO_SERVER_DIR: serverDir, DOZO_PG_BIN: path.join(root, "nowhere") };
-    expect(await localResetPasswordProcess(proc(elsewhere), here)).toBe(2);
+    expect(await localAccountProcess(proc(elsewhere), here)).toBe(2);
   });
 });

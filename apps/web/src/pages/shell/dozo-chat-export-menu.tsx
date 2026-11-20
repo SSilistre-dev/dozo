@@ -1,4 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
+import type { ChatExportRange } from "@rakazo/contracts";
+import { chatExportSince } from "@rakazo/contracts";
 import {
   ContextMenuItem,
   ContextMenuRadioGroup,
@@ -16,21 +18,8 @@ import { downloadArtifactBytes } from "../../lib/artifact-open";
 import { toastError } from "../../lib/dozo-error-text";
 import type { createSpaceRpc } from "../../lib/rpc";
 
-export type ChatExportRange = "all" | "today" | "week" | "month";
+export { chatExportSince };
 export type ChatExportTarget = { botId: string } | { groupId: string };
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** The first moment a range covers, in the reader's own day; nothing for the whole chat. */
-export function chatExportSince(range: ChatExportRange, now: Date): string | undefined {
-  if (range === "all") return undefined;
-  if (range === "today") {
-    const midnight = new Date(now);
-    midnight.setHours(0, 0, 0, 0);
-    return midnight.toISOString();
-  }
-  return new Date(now.getTime() - (range === "week" ? 7 : 30) * DAY_MS).toISOString();
-}
 
 /** A file name from the chat's name, with what file systems refuse taken out. */
 export function chatExportFilename(name: string, now: Date): string {
