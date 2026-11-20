@@ -676,7 +676,9 @@ fn main() {
             local_progress,
             phone::phone_code,
             phone::phones,
-            phone::remove_phone
+            phone::remove_phone,
+            phone::phone_wait,
+            phone::approve_phone
         ])
         .menu(menu)
         .on_menu_event(|app, event| {

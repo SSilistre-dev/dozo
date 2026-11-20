@@ -92,6 +92,10 @@ Each process runs from `rakazo-server/` with only these variables (plus `PATH` a
 | api only    | `API_HOST=127.0.0.1`, `API_PORT`, `AUTH_PASSWORD_ENABLED=true`, `AUTH_BREACHED_PASSWORD_CHECK_ENABLED=false`                                                                                                                                                                                                                |
 | web         | `API_PROXY_TARGET` (the API address), `SCREEN_PROXY_SECRET`, `WEB_HOST=127.0.0.1`, `WEB_PORT`, `RAKAZO_DESKTOP_STACK_TOKEN`, `RAKAZO_IMAGE_TAG` (the bundle version)                                                                                                                                                        |
 
+The desktop app also makes `DOZO_RELAY_AGENT_KEY` (64 hex digits) with the other secrets and
+gives it to the API and to the relay agent, which signs paired phones in with it
+(`dozo/relay/agent/README.md`).
+
 `run.sh` uses ports 54329 (Postgres), 3100 (API) and 5173 (web); the app picks free ones.
 
 ## Trimmed packages

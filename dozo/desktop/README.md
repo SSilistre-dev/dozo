@@ -278,7 +278,13 @@ Linux), with its keys in `relay/`.
   small window: the QR code of a pairing offer (it works once, for ten minutes), the account the
   phone will sign in as ("Signs in as …", the email of the account signed in to the server in the
   main window; signed out, the window says to sign in first and shows no code), the time left,
-  and the phones already paired, each with Remove. The window closes as soon as a phone pairs.
+  and the phones already paired, each with Remove. Once a phone scans the code, the same window
+  asks "Connect this phone?" with the phone's name and the six-digit code it shows; Allow gives
+  the phone its sign-in (the agent's `approve`) and closes the window, Reject removes it. The
+  agent drops a pairing nobody allowed after 5 minutes. The event and command follow the agent's
+  contract in `dozo/relay/agent/README.md`.
+- The agent and the API share `DOZO_RELAY_AGENT_KEY`, made with the server's other secrets
+  (`RELAY_AGENT_KEY` in `secrets`); `revoke` and `approve` get the server's `--origin`.
 - The relay is `https://relay.dozo.bot` unless the build (`DOZO_RELAY_URL`), the environment
   (`DOZO_RELAY_URL`) or a `relay=` line in the settings file names another (https, or http on
   this computer).

@@ -192,8 +192,9 @@ pub struct Local {
     running: tokio::sync::Mutex<Running>,
     checks: Arc<dyn Checks>,
     backoff: Backoff,
-    /// The channel of the phone that paired last, as the relay agent said it.
-    paired: watch::Sender<Option<String>>,
+    /// The relay agent's last word about a phone: `paired`, then `approval` (its name and the
+    /// code to compare) until the person allows it here (`Agent::approve`).
+    phone_event: watch::Sender<Option<Value>>,
 }
 
 impl Local {
@@ -207,7 +208,7 @@ impl Local {
                 Duration::from_secs(30),
                 Duration::from_secs(60),
             ),
-            paired: watch::channel(None).0,
+            phone_event: watch::channel(None).0,
         })
     }
 
@@ -216,9 +217,9 @@ impl Local {
         self.running.lock().await.agent.clone()
     }
 
-    /// Changes each time a phone pairs, to its channel.
-    pub fn paired(&self) -> watch::Receiver<Option<String>> {
-        self.paired.subscribe()
+    /// Changes with each `paired`, `approval` or `approved` line of the relay agent.
+    pub fn phone_events(&self) -> watch::Receiver<Option<Value>> {
+        self.phone_event.subscribe()
     }
 
     pub fn status(&self) -> watch::Receiver<Status> {
@@ -333,11 +334,11 @@ impl Local {
             .map_err(|why| failed(Failure::Start, &why))?;
         // The phone link. A bundle without the agent (older) runs without it.
         if let Some(agent) = plan.agent(layout, options, &launch) {
-            let paired = self.paired.clone();
+            let phone_event = self.phone_event.clone();
             let mut run = agent.spec("run", &["--origin", &plan.web]);
             run.on_line = Some(OnLine(Arc::new(move |line| {
-                if let Some(channel) = paired_channel(line) {
-                    paired.send_replace(Some(channel));
+                if let Some(event) = phone_event_of(line) {
+                    phone_event.send_replace(Some(event));
                 }
             })));
             self.keep(run, &launch)
@@ -596,6 +597,8 @@ pub struct Agent {
     base: Spec,
     state: PathBuf,
     relay: String,
+    /// The server's web address: `run` forwards there, `approve` and `revoke` reach it there.
+    origin: String,
     launch: Arc<Launch>,
 }
 
@@ -663,18 +666,35 @@ impl Agent {
             .collect())
     }
 
-    /// Ends a phone's pairing: on the relay when it can be reached, and its keys here always.
+    /// Ends a phone's pairing: on the relay when it can be reached, its session on the server,
+    /// and its keys here always. A phone not allowed yet is refused the same way.
     pub async fn remove(&self, channel: &str) -> Result<(), String> {
-        self.ask("revoke", &[channel]).await.map(drop)
+        self.ask("revoke", &[channel, "--origin", &self.origin])
+            .await
+            .map(drop)
+    }
+
+    /// The person allowed the phone that just paired: it gets its sign-in.
+    pub async fn approve(&self, channel: &str) -> Result<(), String> {
+        self.ask("approve", &[channel, "--origin", &self.origin])
+            .await
+            .map(drop)
     }
 }
 
-/// The channel in a `run` line that says a phone paired.
-fn paired_channel(line: &[u8]) -> Option<String> {
+/// A `run` line about a phone's pairing, with its channel.
+fn phone_event_of(line: &[u8]) -> Option<Value> {
     let event: Value = serde_json::from_slice(line).ok()?;
-    (event.get("event")?.as_str()? == "paired")
-        .then(|| event.get("channel")?.as_str().map(str::to_owned))
-        .flatten()
+    let kind = event.get("event")?.as_str()?;
+    event.get("channel")?.as_str()?;
+    ["paired", "approval", "approved"]
+        .contains(&kind)
+        .then_some(event)
+}
+
+/// The channel a phone event is about.
+pub fn event_channel(event: &Value) -> Option<&str> {
+    event.get("channel")?.as_str()
 }
 
 /// Every process of one start: programs, folders and variables (the README's table).
@@ -869,7 +889,9 @@ impl Plan {
         let entry = self.entrypoints.get("relay").and_then(Value::as_str)?;
         // By its real path: the agent runs only when Node's path for it is the one it was
         // loaded from, which a folder reached through a link (macOS's /var) would break.
-        let mut base = self.node_spec("relay", vec![]);
+        // The key the agent shows the server when it asks a phone's sign-in.
+        let key = vec![("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY"))];
+        let mut base = self.node_spec("relay", key);
         if let Ok(real) = fs::canonicalize(self.server.join(entry)) {
             base.args = vec![real.into()];
         }
@@ -877,6 +899,7 @@ impl Plan {
             base,
             state: layout.at("relay"),
             relay: options.relay.clone(),
+            origin: self.web.clone(),
             // Its one-shot commands (pair, list, revoke) are not the server: they do not hold the
             // folder's lock, so one still running never keeps the next start out.
             launch: Arc::new(launch.without_lock()),
@@ -928,6 +951,8 @@ impl Plan {
             ("API_PORT", self.ports.api.to_string()),
             ("AUTH_PASSWORD_ENABLED", "true".into()),
             ("AUTH_BREACHED_PASSWORD_CHECK_ENABLED", "false".into()),
+            // Phones sign in through the relay agent, which shows this key (agent README).
+            ("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY")),
         ]);
         // The API lets requests finish for up to 20 s after TERM (`apps/api/src/index.ts`).
         Spec {
@@ -998,7 +1023,10 @@ mod tests {
       pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"rakazo://dozo-pair#x"}'; exit 0;;
       list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
       revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
-      run) echo '{"event":"connected","channel":"c2"}'; sleep 0.3; echo '{"event":"paired","channel":"c9"}';;
+      approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
+      run) echo "key=$DOZO_RELAY_AGENT_KEY" >> "$0.env"; echo '{"event":"connected","channel":"c2"}'; sleep 0.3
+        echo '{"event":"paired","channel":"c9"}'
+        echo '{"event":"approval","channel":"c9","name":"Pixel","platform":"android","code":"123456"}';;
     esac
     trap 'exit 0' TERM INT; while :; do sleep 0.05; done"#;
 
@@ -1115,7 +1143,7 @@ mod tests {
         let said = root.join("said");
         installed_fakes(&root, &said, 0);
         let local = Local::new(Arc::new(Said(said.clone())));
-        let mut paired = local.paired();
+        let mut events = local.phone_events();
         local.start(Layout(root.clone()), options()).await;
         assert!(matches!(settled(&local).await, Status::Ready(_)));
         let agent = local.agent().await.expect("the bundle has an agent");
@@ -1136,7 +1164,11 @@ mod tests {
                 .unwrap_err()
                 .contains("no such channel")
         );
-        let heard = paired.wait_for(|channel| channel.as_deref() == Some("c9"));
+        let heard = events.wait_for(|event| {
+            event
+                .as_ref()
+                .is_some_and(|event| event["event"] == "approval")
+        });
         tokio::time::timeout(Duration::from_secs(5), heard)
             .await
             .unwrap()
@@ -1146,19 +1178,41 @@ mod tests {
         assert!(commands.contains(&format!(
             "relay.js pair --relay http://127.0.0.1:9 --state {state}"
         )));
-        assert!(commands.contains(&format!("relay.js revoke c2 --state {state}")));
+        let web = local_web(&root);
+        assert!(commands.contains(&format!(
+            "relay.js revoke c2 --origin {web} --state {state}"
+        )));
+        let approval = events.borrow().clone().unwrap();
+        assert_eq!(approval["code"], "123456");
+        assert_eq!(approval["name"], "Pixel");
+        agent.approve("c9").await.unwrap();
+        let commands = lines_of(&root.join("said.relay"));
+        assert!(commands.contains(&format!(
+            "relay.js approve c9 --origin {web} --state {state}"
+        )));
+        // The agent and the API get the same key, made with the other secrets.
+        let key = stack_setup::secrets(&root.join("secrets")).unwrap();
+        let key = key.get("RELAY_AGENT_KEY").to_owned();
+        assert_eq!(key.len(), 64);
+        let node = root.join("versions/1/node/bin/node.env");
+        assert_eq!(lines_of(&node), [format!("key={key}")]);
         assert!(local.stop().await);
         assert!(local.agent().await.is_none());
     }
 
     #[test]
-    fn only_a_paired_event_names_a_channel() {
-        assert_eq!(
-            paired_channel(br#"{"event":"paired","channel":"c1","appKey":"k"}"#),
-            Some("c1".into())
-        );
-        assert_eq!(paired_channel(br#"{"event":"peer","channel":"c1"}"#), None);
-        assert_eq!(paired_channel(b"not json"), None);
+    fn only_pairing_events_with_a_channel_are_kept() {
+        let event = phone_event_of(br#"{"event":"paired","channel":"c1","appKey":"k"}"#).unwrap();
+        assert_eq!(event_channel(&event), Some("c1"));
+        assert!(phone_event_of(br#"{"event":"approval","channel":"c1","code":"1"}"#).is_some());
+        assert!(phone_event_of(br#"{"event":"peer","channel":"c1"}"#).is_none());
+        assert!(phone_event_of(br#"{"event":"paired"}"#).is_none());
+        assert!(phone_event_of(b"not json").is_none());
+    }
+
+    fn local_web(root: &Path) -> String {
+        let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
+        format!("http://127.0.0.1:{}", ports.web)
     }
 
     #[tokio::test]
@@ -1248,7 +1302,7 @@ mod tests {
             "no relay at {relay}"
         );
         let (local, root, _) = e2e_ready().await;
-        let mut paired = local.paired();
+        let mut events = local.phone_events();
         let agent = local.agent().await.expect("the bundle has the relay agent");
         let offer = agent.offer().await.unwrap();
         // The offer works once the agent's socket for it is open.
@@ -1263,7 +1317,11 @@ mod tests {
         );
         fs::write(shared.join("qr"), &offer.qr).unwrap();
         let channel = offer.channel.clone();
-        let heard = paired.wait_for(|paired| paired.as_deref() == Some(channel.as_str()));
+        let heard = events.wait_for(|event| {
+            event.as_ref().is_some_and(|event| {
+                event["event"] == "paired" && event_channel(event) == Some(channel.as_str())
+            })
+        });
         tokio::time::timeout(Duration::from_secs(60), heard)
             .await
             .expect("the phone never paired")
