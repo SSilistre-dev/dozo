@@ -23,6 +23,7 @@ mod stack_manifest;
 mod stack_os;
 mod stack_proc;
 mod stack_setup;
+mod stack_update;
 mod update;
 
 use std::time::{Duration, Instant};
