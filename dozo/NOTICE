@@ -64,5 +64,12 @@ dozo/brand/README.md; every other technical identifier keeps its upstream
 name. Files modified this way carry this notice of change through this file.
 The unmodified source is the git tree.
 
+Third-party software in distributed builds
+
+The local server bundle (dozo/server-bundle) carries THIRD-PARTY-NOTICES.txt:
+every third-party package it ships with its licence texts, and the licence
+files of the Node.js and PostgreSQL downloads the desktop app installs beside
+it, which are passed on unchanged with their own licence files inside.
+
 Dozo is not affiliated with or endorsed by the Rakazo project. No right to use
 the Rakazo name or marks is claimed.

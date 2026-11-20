@@ -8,8 +8,11 @@
 # Steps: without libssl3 the start refuses with a clear message; then, with it: Node, Postgres and
 # the bundle downloaded from the manifest and checked against its sha256, initdb, migrate, api,
 # worker and web up, /health 200, sign-up without an email sender, a bot, an answer from a fake
-# local model, a backup while it runs restored into a new folder that signs in and answers again,
-# and a clean stop (no process needed KILL).
+# local model, a diagnostics report while it runs (searched for the folder's secrets, the account's
+# email and the message sent), a backup while it runs restored into a new folder that signs in and
+# answers again, a password reset while that one runs (old session and password refused, the new
+# one signs in) and another while it is stopped, and a clean stop (no process needed KILL). Node
+# and Postgres come from the dist folder, as a release serves them (runtimes.mjs, manifest.mjs).
 # Last line: SERVER-BUNDLE SMOKE: PASS|FAIL. Exit 0 pass, 2 fail, 64 usage.
 # Containers: --cpus 3 --memory 6g, named dozo-server-smoke-<pid>[-pre], removed at exit.
 set -uo pipefail
@@ -61,6 +64,16 @@ if [ "${1:-}" = --as-user ]; then
   # Backup while it runs, then restore into a new folder and use it: same sign-in, bot, history
   # and model key (README.md, "Backup and restore").
   backup() { echo "smoke-backup-password" | node "$R/server/rakazo-server/dozo-local-backup.mjs" "$@"; }
+  # The report holds no secret value, no email address and nothing the user wrote.
+  if [ $rc = 0 ]; then
+    node "$R/server/rakazo-server/dozo-diagnostics.mjs" --home "$H" --out "$HOME/diag.tar.gz" || rc=2
+    mkdir -p "$HOME/diag" && tar -xzf "$HOME/diag.tar.gz" -C "$HOME/diag" || rc=2
+    for value in $(cut -d= -f2- "$H/secrets.env") owner@example.test "Are you there?" "$REPLY_TEXT"; do
+      ! grep -rqF -- "$value" "$HOME/diag" || { say "FAILED: the diagnostics report holds a secret or private text"; rc=2; }
+    done
+    [ -s "$HOME/diag/dozo-diagnostics/logs/api.log" ] || { say "FAILED: the diagnostics report has no api log"; rc=2; }
+    [ $rc != 0 ] || say "diagnostics: $(tar -tzf "$HOME/diag.tar.gz" | wc -l) files, no secret, email or message"
+  fi
   [ $rc != 0 ] || { t=$(ms); backup create "$HOME/smoke.dozo" --home "$H" || rc=2; say "backup: $(( $(ms) - t )) ms"; }
   bash /bundle/run.sh stop || rc=2
   if [ $rc = 0 ]; then
@@ -68,7 +81,15 @@ if [ "${1:-}" = --as-user ]; then
     H="$H.restored"; export DOZO_HOME="$H"
     [ $rc != 0 ] || bash /bundle/run.sh start || rc=$?
     [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 http://127.0.0.1:8001/v1 restored || rc=$?
+    [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 - reset "$R/server/rakazo-server/dozo-local-account.mjs" "$H" || rc=$?
     bash /bundle/run.sh stop || rc=2
+    # With the server stopped, the reset starts its own Postgres and stops it again.
+    if [ $rc = 0 ]; then
+      out=$(echo "smoke-Third-password-789" | node "$R/server/rakazo-server/dozo-local-account.mjs" reset-password --home "$H") || rc=2
+      grep -q '"reset":true' <<< "$out" || { say "FAILED: reset while stopped said $out"; rc=2; }
+      [ ! -f "$H/pgdata/postmaster.pid" ] || { say "FAILED: the reset left Postgres running"; rc=2; }
+      [ $rc != 0 ] || say "reset while stopped: $out"
+    fi
   fi
   # No ps in a bare Debian: read the command lines from /proc.
   left=$(for p in /proc/[0-9]*; do tr '\0' ' ' < "$p/cmdline" 2> /dev/null; echo; done \
@@ -91,9 +112,11 @@ trap 'exit 130' INT; trap 'exit 143' TERM
 [ -f "$DIST/dozo-server-$PLATFORM.tar.xz" ] || { say "FAILED: no dozo-server-$PLATFORM.tar.xz in $DIST"; verdict FAIL; }
 LIMITS=(--cpus 3 --memory 6g)
 
-# The manifest the container downloads from, built with the same script a release uses.
+# Node and Postgres beside the bundle and the manifest the container downloads from, made with the
+# same scripts a release uses.
 docker run --rm --name "$NAME-pre" "${LIMITS[@]}" --user "$(id -u):$(id -g)" -v "$HERE:/bundle:ro" -v "$DIST:/dist" \
-  "${DOZO_NODE_IMAGE:-node:24.22-slim}" node /bundle/manifest.mjs /dist file:///dist || verdict FAIL
+  "${DOZO_NODE_IMAGE:-node:24.22-slim}" sh -c 'node /bundle/runtimes.mjs /dist '"$PLATFORM"' && node /bundle/manifest.mjs /dist file:///dist' \
+  || verdict FAIL
 
 # Without libssl3 the start stops before touching anything, with a message that names it.
 out=$(docker run --rm --name "$NAME-pre" "${LIMITS[@]}" -v "$HERE:/bundle:ro" debian:bookworm-slim \
