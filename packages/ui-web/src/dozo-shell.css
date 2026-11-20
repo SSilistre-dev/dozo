@@ -272,6 +272,69 @@
   box-shadow: 0 0 0 2px var(--dozo-row-on);
 }
 
+/* Collapsed sidebar (the 72px strip, desktop only): the header's four buttons in one centred
+   column, all the same round size and spacing, all shown at rest; then room before the bots. The
+   wave pattern does not fit two whole scales across the strip, so it fades out there. The open
+   chat's avatar stands on a lighter round surface, its dots ringed in that tone. */
+[data-collapsible="icon"] [data-slot="sidebar-inner"]::before {
+  opacity: 0;
+}
+[data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child {
+  min-height: 0;
+  padding: 12px 0 16px;
+}
+[data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child {
+  gap: 8px;
+}
+[data-collapsible="icon"]
+  [data-slot="sidebar-inner"]
+  > .app-drag:first-child
+  > :last-child
+  button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  margin: 0;
+  opacity: 1;
+  background: transparent;
+}
+[data-collapsible="icon"]
+  [data-slot="sidebar-inner"]
+  > .app-drag:first-child
+  > :last-child
+  button:hover {
+  background: var(--dozo-surface-3);
+  color: var(--sidebar-foreground);
+}
+[data-collapsible="icon"] [data-roster-bot-id],
+[data-collapsible="icon"] .group\/row > [data-slot="context-menu-trigger"] {
+  border-radius: 50%;
+}
+[data-collapsible="icon"] [data-roster-bot-id] > span::after {
+  position: absolute;
+  inset-inline-end: -2px;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 0 2px var(--dozo-surface-0);
+}
+[data-collapsible="icon"] [data-roster-bot-id] > span:has(> .dozo-avatar[data-state="waiting"])::after {
+  content: "";
+}
+[data-collapsible="icon"] .group\/row:hover [data-roster-bot-id] > span > [aria-hidden] {
+  --tw-ring-color: var(--dozo-row-hover);
+}
+[data-collapsible="icon"] .group\/row:hover [data-roster-bot-id] > span::after {
+  box-shadow: 0 0 0 2px var(--dozo-row-hover);
+}
+[data-collapsible="icon"] [data-roster-bot-id][aria-current="page"] > span > [aria-hidden] {
+  --tw-ring-color: var(--dozo-row-on);
+}
+[data-collapsible="icon"] [data-roster-bot-id][aria-current="page"] > span::after {
+  box-shadow: 0 0 0 2px var(--dozo-row-on);
+}
 /* Footer: the account button and "Connect apps", both round on the card tone, no outline. */
 [data-testid="user-menu-trigger"] {
   width: 40px;
@@ -513,6 +576,9 @@
   }
   [data-testid="message-hover-actions"] {
     transition: opacity 0.15s ease;
+  }
+  [data-slot="sidebar-inner"]::before {
+    transition: opacity 0.2s var(--dozo-out);
   }
   [data-slot="sidebar-inner"]
     > .app-drag:first-child
