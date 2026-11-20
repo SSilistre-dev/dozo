@@ -5,7 +5,10 @@
    sidebar rows, the seigaiha sidebar pattern, the wordmark with its seal dot, tonal bubbles and
    cards, the one-pill composer and the bot panel on the sidebar's tone. Upstream elements are
    reached through their data attributes; dozo/e2e checks that each hook still matches after an
-   upstream merge. */
+   upstream merge. Menus, dialogs and the settings and Integrations windows are in
+   dozo-overlays.css, which reads the tone steps named here. */
+
+@import "./dozo-overlays.css";
 
 :root {
   /* The one red of the brand, the seal dot. No semantic token carries it, so it is written here. */
@@ -32,6 +35,20 @@
      dozo/theme/README.md). */
   --dozo-ink-2: var(--muted-foreground);
   --dozo-ink-3: var(--muted-foreground);
+  /* Floating surfaces (chat-v2.css, settings-v2.css): one menu surface for every menu, popover and
+     picker, the dialog, the settings window's nav rows, groups and chosen segment, and the one
+     red word of a destructive action. */
+  --dozo-menu: var(--popover);
+  --dozo-menu-edge: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --dozo-dialog: var(--dialog);
+  --dozo-nav-hover: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --dozo-nav-on: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --dozo-group: color-mix(in srgb, var(--foreground) 3%, transparent);
+  --dozo-lift: light-dark(
+    var(--popover),
+    color-mix(in srgb, var(--foreground) 14%, var(--background))
+  );
+  --dozo-danger-text: color-mix(in srgb, var(--dozo-seal) 70%, var(--foreground));
   /* Motion of the design: drawers and the reveal of controls. */
   --dozo-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --dozo-out: cubic-bezier(0.22, 1, 0.36, 1);
