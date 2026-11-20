@@ -256,7 +256,8 @@ Windows, where nothing has run yet.
 - Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server,
   `packages/auth/src/dozo-hosted-login.ts`) is off: a build or the environment turns it on with
   `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). Without it the
-  server opens with its own single account, as a self-hosted one does. With it, the local
+  server opens with its own single account, as a self-hosted one does: its first page is the sign-up
+  page, and the account made there is the only one it will ever have. With it, the local
   sign-in page's one button opens the hosted page that asks the person to agree in the app's own
   window, and its answer comes back to the local server's callback, which is the chosen server.
   Only while the chosen server is the one on this computer, and only that origin's
