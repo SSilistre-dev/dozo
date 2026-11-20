@@ -964,11 +964,14 @@ impl Plan {
     fn agent(&self, layout: &Layout, options: &Options, launch: &Arc<Launch>) -> Option<Agent> {
         let entry = self.entrypoints.get("relay").and_then(Value::as_str)?;
         // By its real path: the agent runs only when Node's path for it is the one it was
-        // loaded from, which a folder reached through a link (macOS's /var) would break.
+        // loaded from, which a folder reached through a link (macOS's /var) would break. Not on
+        // Windows, where the real path starts with `\\?\`, which Node does not give back.
         // The key the agent shows the server when it asks a phone's sign-in.
         let key = vec![("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY"))];
         let mut base = self.node_spec("relay", key);
-        if let Ok(real) = fs::canonicalize(self.server.join(entry)) {
+        if cfg!(unix)
+            && let Ok(real) = fs::canonicalize(self.server.join(entry))
+        {
             base.args = vec![real.into()];
         }
         Some(Agent {

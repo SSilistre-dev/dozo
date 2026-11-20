@@ -105,18 +105,18 @@ grep -q 'E2E: holding' /tmp/e2e/hold2.log || { say "FAILED: the start did not ge
 kill -KILL $app; wait $app 2>/dev/null; sleep 2
 say "left running after SIGKILL, as on macOS: $(left | wc -l) processes"
 "$BIN" --ignored --exact stack::e2e::e2e_ends_what_a_crashed_app_left --nocapture \
-  2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/manager.log; exit 2; }
+  2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert|still running' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/manager.log; exit 2; }
 [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 say "3. start again and pair a phone through the relay agent"
 "$BIN" --ignored --exact stack::e2e::e2e_pairs_a_phone --nocapture \
-  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
+  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert|still running' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
 [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 say "4. a server of its own signs in with the hosted account (stand-in issuer)"
 # A server that has accounts of its own refuses that mode: a new folder, the same install.
 mkdir -p /tmp/e2e/hosted && cp -a "$DOZO_STACK_E2E_ROOT"/{versions,current} /tmp/e2e/hosted/
 DOZO_STACK_E2E_ROOT=/tmp/e2e/hosted DOZO_STACK_E2E_ISSUER=http://127.0.0.1:8788 \
   "$BIN" --ignored --exact stack::e2e::e2e_signs_in_with_the_hosted_account --nocapture \
-  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 /tmp/e2e/hosted/logs/{manager,api}.log; exit 2; }
+  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert|still running' || { say "FAILED: see the lines above"; tail -n 15 /tmp/e2e/hosted/logs/{manager,api}.log; exit 2; }
 DOZO_STACK_E2E_ROOT=/tmp/e2e/hosted; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 EOF
 rc=$?

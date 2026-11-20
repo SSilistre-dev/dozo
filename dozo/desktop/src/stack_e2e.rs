@@ -15,7 +15,7 @@ async fn e2e_installs_starts_and_stops_the_real_server() {
     assert!(answers_200(ports.api, "/health"));
     e2e_this_computer_connects(&root, ports).await;
     assert!(local.stop().await, "a process had to be killed");
-    let left = processes_under(&root);
+    let left = left_after_stop(&root);
     assert!(left.is_empty(), "still running after stop: {left:?}");
     println!("E2E: stopped, no process left");
 }
@@ -126,7 +126,7 @@ async fn e2e_pairs_a_phone() {
     assert!(agent.phones().await.unwrap().is_empty());
     println!("E2E: listed and removed the phone");
     assert!(local.stop().await, "a process had to be killed");
-    let left = processes_under(&root);
+    let left = left_after_stop(&root);
     assert!(left.is_empty(), "still running after stop: {left:?}");
     println!("E2E: stopped, relay agent included, no process left");
 }
@@ -216,7 +216,7 @@ async fn e2e_signs_in_with_the_hosted_account() {
         .unwrap();
     assert_eq!(password.status(), 404, "password sign-in");
     assert!(local.stop().await, "a process had to be killed");
-    let left = processes_under(&root);
+    let left = left_after_stop(&root);
     assert!(left.is_empty(), "still running after stop: {left:?}");
     println!("E2E: stopped, no process left");
 }
@@ -252,7 +252,7 @@ async fn e2e_ends_what_a_crashed_app_left() {
     assert!(ended >= 4, "{events}");
     println!("E2E: ended {ended} processes left by the killed app, then started");
     assert!(local.stop().await, "a process had to be killed");
-    let left = processes_under(&root);
+    let left = left_after_stop(&root);
     assert!(left.is_empty(), "still running after stop: {left:?}");
     println!("E2E: stopped, no process left");
 }
@@ -365,6 +365,20 @@ async fn e2e_this_computer_connects(root: &Path, ports: Ports) {
         "the server never listed this computer as connected"
     );
     println!("E2E: this computer connected over the device socket");
+}
+
+/// What is still running from the server's folder a few seconds after a stop: a stop waits for
+/// each process it started, while what those started ends a moment later.
+fn left_after_stop(root: &Path) -> Vec<String> {
+    let mut left = processes_under(root);
+    for _ in 0..50 {
+        if left.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        left = processes_under(root);
+    }
+    left
 }
 
 /// Processes whose program or command line is in the server's folder.
