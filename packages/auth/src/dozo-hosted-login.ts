@@ -31,13 +31,14 @@ import { setSessionCookie } from "better-auth/cookies";
  * the same user, and every other way to sign in or to add a credential is closed there. With
  * neither variable set nothing changes.
  *
- * A local server that already has password accounts of its own never refuses to start: until each
- * is linked it keeps password sign-in and offers no hosted sign-in ("legacy" mode). A signed-in
- * user links their account from the settings with the same flow (`start` with `link`, proven by
- * their own session); the password goes with it, and once none is left the server is in hosted
- * mode. A user without any account (a first sign-in cut off between its two writes, or one
- * unlinked from the computer itself with `dozo-unlink-hosted`) is linked by the next hosted
- * sign-in. Sessions there last `LOCAL_SESSION_DAYS`, so a computer left offline keeps its user.
+ * A local server that already has users of its own never refuses to start: until each is linked
+ * it keeps password and passkey sign-in, makes no new account and offers no hosted sign-in
+ * ("legacy" mode). A signed-in user links their account from the settings with the same flow
+ * (`start` with `link`, proven by their own session); the password goes with it, and once no
+ * such user is left the server is in hosted mode. Each existing user links their own hosted
+ * account; once any is linked, a hosted account that is not linked is refused, as a new account
+ * would be. A user marked for it (`ADOPT_PREFIX`) is linked by the next hosted sign-in. Sessions
+ * there last `LOCAL_SESSION_DAYS`, so a computer left offline keeps its user.
  *
  * The flow, in one browser:
  * 1. local `POST /api/auth/dozo/hosted-login/start`, from the local sign-in page only (its own
@@ -111,6 +112,20 @@ const CLOSED_PATHS = new Set([
   "/send-verification-email",
   "/verify-email",
 ]);
+
+/**
+ * What stays open while the server is in legacy mode: signing in with a password or a passkey,
+ * and the owner's own password upkeep. Making new accounts and every other way in stay closed.
+ */
+export function openInLegacyMode(path: string): boolean {
+  return (
+    path === "/sign-in/email" ||
+    path === "/request-password-reset" ||
+    path === "/change-password" ||
+    path.startsWith("/reset-password") ||
+    path.startsWith("/passkey/")
+  );
+}
 
 export function closedOnLocalServer(path: string): boolean {
   return CLOSED_PATHS.has(path) || CLOSED_PREFIXES.some((prefix) => path.startsWith(prefix));
@@ -353,7 +368,7 @@ export function issuerKeys(issuer: string, fetcher?: typeof fetch) {
 const nonceIdentifier = (nonce: string) =>
   `${NONCE_PREFIX}${createHash("sha256").update(nonce).digest("hex")}`;
 
-type HostedLoginPrisma = Pick<PrismaClient, "$transaction" | "account" | "user">;
+type HostedLoginPrisma = Pick<PrismaClient, "$transaction" | "user" | "verification">;
 type Locked = <T>(work: () => Promise<T>) => Promise<T>;
 
 /**
@@ -373,21 +388,56 @@ export function installLock(prisma: Pick<PrismaClient, "$transaction">): Locked 
     );
 }
 
-type ModePrisma = Pick<PrismaClient, "account">;
+type ModePrisma = Pick<PrismaClient, "user" | "verification">;
 
 /**
- * Whether a local server still has a password account that is not linked to a hosted account: it
- * then keeps password sign-in and offers linking instead of hosted sign-in.
+ * Marks a user the next hosted sign-in links, whichever hosted account it is (`user:<id>`, left by
+ * `dozo-unlink-hosted`), or the user made for an address whose first sign-in may not have reached
+ * its link (`email:<address>`, written before that user is made). Nothing else makes a user
+ * adoptable, so a user the server made any other way is never handed to a hosted account.
+ */
+export const ADOPT_PREFIX = "dozo-hosted-adopt:";
+const adoptUser = (id: string) => `${ADOPT_PREFIX}user:${id}`;
+const adoptEmail = (email: string) => `${ADOPT_PREFIX}email:${email}`;
+
+type Unlinked = { id: string; email: string; adopt: "user" | "email" | null };
+
+/** The users not linked to a hosted account, each with whether a hosted sign-in may link it. */
+async function unlinkedUsers(prisma: ModePrisma): Promise<Unlinked[]> {
+  const [users, marks] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        accounts: { none: { providerId: HOSTED_PROVIDER_ID } },
+        NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
+      },
+      select: { id: true, email: true, accounts: { select: { id: true }, take: 1 } },
+      take: 50,
+    }),
+    prisma.verification.findMany({
+      where: { identifier: { startsWith: ADOPT_PREFIX } },
+      select: { identifier: true },
+    }),
+  ]);
+  const marked = new Set(marks.map((mark) => mark.identifier));
+  return users.map((user) => ({
+    id: user.id,
+    email: user.email,
+    adopt: marked.has(adoptUser(user.id))
+      ? "user"
+      : // Only a user still without any account: one with a password is the owner's own.
+        user.accounts.length === 0 && marked.has(adoptEmail(user.email))
+        ? "email"
+        : null,
+  }));
+}
+
+/**
+ * Whether a local server still has a user of its own, not linked to a hosted account and not
+ * marked to be: it then keeps password and passkey sign-in and offers linking instead of hosted
+ * sign-in ("legacy" mode).
  */
 export async function legacyAccounts(prisma: ModePrisma): Promise<boolean> {
-  const unlinked = await prisma.account.findFirst({
-    where: {
-      providerId: "credential",
-      user: { accounts: { none: { providerId: HOSTED_PROVIDER_ID } } },
-    },
-    select: { id: true },
-  });
-  return unlinked !== null;
+  return (await unlinkedUsers(prisma)).some((user) => user.adopt === null);
 }
 
 /**
@@ -504,10 +554,11 @@ function verifierPlugin(
     hooks: {
       before: [
         {
-          // Closed once no password account is left to link; open for them until then.
+          // Closed, but for password and passkey sign-in while legacy accounts are left.
           matcher: (ctx) => closedOnLocalServer(ctx.path ?? ""),
-          handler: createAuthMiddleware(async () => {
-            if (!(await legacyAccounts(deps.prisma))) throw new APIError("NOT_FOUND");
+          handler: createAuthMiddleware(async (ctx) => {
+            if (openInLegacyMode(ctx.path ?? "") && (await legacyAccounts(deps.prisma))) return;
+            throw new APIError("NOT_FOUND");
           }),
         },
       ],
@@ -645,16 +696,14 @@ async function linkSignedInUser(
 
 /**
  * The local user the hosted account signs in as, under the install lock: the one linked to it;
- * else, while no hosted account is linked, a user with no account of any kind (one with its
- * address first, else the only one), linked now; else a new user. The install keeps the first
- * hosted account that signs in and refuses any other; a user with a password is never taken over
- * (it links from its own session instead).
+ * else, while no hosted account is linked and no user of the server's own is left, a user marked
+ * to be linked (`ADOPT_PREFIX`: one unlinked on the computer, whichever account signs in, or one
+ * a first sign-in of this address left without its link); else a new user. The install keeps
+ * the first hosted account that signs in and refuses any other.
  *
- * A user with no account at all is one a first sign-in left half made (the user and its link are
- * two writes: the auth library's database adapter runs without transactions here), or one the
- * computer's owner unlinked with `dozo-unlink-hosted`, or one that signed in with an emailed code
- * before the server was in this mode. Every other way to make a user is closed here, and starting
- * a sign-in takes the local page's own request, so linking it is the recovery, never a takeover.
+ * A new user and its link are two writes (the auth library's database adapter runs without
+ * transactions here), so the address is marked first: a crash between them leaves a user the next
+ * sign-in of that address links instead of refusing.
  */
 async function hostedUser(
   ctx: GenericEndpointContext,
@@ -676,25 +725,35 @@ async function hostedUser(
       where: [{ field: "providerId", value: HOSTED_PROVIDER_ID }],
     });
     if (hostedAccounts > 0) return null;
-    const bare = await prisma.user.findMany({
-      where: { accounts: { none: {} }, NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } } },
-      select: { id: true, email: true },
-      take: 2,
-    });
-    const adopt = bare.find((user) => user.email === email) ?? (bare.length === 1 ? bare[0] : null);
-    if (!adopt && (await adapter.findUserByEmail(email))) return null;
-    const user = adopt
-      ? await adapter.findUserById(adopt.id)
-      : await adapter.createUser(
-          { email, name: claims.name, emailVerified: claims.email_verified },
-          { method: "oauth", oauth: { providerId: HOSTED_PROVIDER_ID } },
-        );
+    // Read again under the lock: a legacy account keeps hosted sign-in closed.
+    const unlinked = await unlinkedUsers(prisma);
+    if (unlinked.some((user) => user.adopt === null)) return null;
+    const adopt =
+      unlinked.find((user) => user.adopt === "user") ??
+      unlinked.find((user) => user.adopt === "email" && user.email === email);
+    let user: User | null;
+    if (adopt) {
+      user = await adapter.findUserById(adopt.id);
+    } else {
+      if (await adapter.findUserByEmail(email)) return null;
+      await adapter.createVerificationValue({
+        identifier: adoptEmail(email),
+        value: "1",
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      });
+      user = await adapter.createUser(
+        { email, name: claims.name, emailVerified: claims.email_verified },
+        { method: "oauth", oauth: { providerId: HOSTED_PROVIDER_ID } },
+      );
+    }
     if (!user) return null;
     await adapter.linkAccount({
       userId: user.id,
       providerId: HOSTED_PROVIDER_ID,
       accountId: claims.sub,
     });
+    for (const identifier of [adoptUser(user.id), adoptEmail(email)])
+      await adapter.deleteVerificationByIdentifier(identifier);
     return { user: adopt ? await refreshed(ctx, user, claims) : user, created: !adopt };
   });
 }
@@ -721,7 +780,6 @@ async function signInHostedUser(
   lock: Locked,
   prisma: HostedLoginPrisma,
 ): Promise<boolean> {
-  if (await legacyAccounts(prisma)) return false;
   const found = await hostedUser(ctx, claims, lock, prisma);
   if (!found) return false;
   const { user, created } = found;

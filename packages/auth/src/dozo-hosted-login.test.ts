@@ -7,6 +7,7 @@ import { APIError } from "better-auth/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostedLoginClaims, HostedLoginConfig } from "./dozo-hosted-login.js";
 import {
+  ADOPT_PREFIX,
   CLOCK_LEEWAY_SECONDS,
   closedOnLocalServer,
   dozoHostedLogin,
@@ -23,6 +24,7 @@ import {
   legacyAccounts,
   loopbackCallback,
   MAX_KEYS_BYTES,
+  openInLegacyMode,
   publicJwk,
   signingKeyFrom,
   signLoginToken,
@@ -326,42 +328,93 @@ describe("the issuer's keys on the local server", () => {
 });
 
 describe("the mode of a local server", () => {
-  const prisma = (found: { id: string } | null) => ({
-    account: { findFirst: vi.fn(async () => found) },
+  type Seed = { id: string; email: string; accounts: { id: string }[] };
+  const prisma = (users: Seed[], marks: string[] = []) => ({
+    user: { findMany: vi.fn(async () => users) },
+    verification: {
+      findMany: vi.fn(async () => marks.map((identifier) => ({ identifier }))),
+    },
   });
   const verifier: HostedLoginConfig = { mode: "verifier", issuer: HOSTED };
+  const password = { id: "u1", email: "ada@dozo.example", accounts: [{ id: "credential" }] };
+  const bare = { id: "u2", email: "eve@dozo.example", accounts: [] };
 
-  it("stays on passwords while a password account is not linked, and says it may be linked", async () => {
-    const legacy = prisma({ id: "credential" });
-    expect(await hostedLoginCapabilities(legacy as never, verifier)).toEqual({
-      hostedLogin: false,
-      hostedLink: true,
-    });
-    expect(legacy.account.findFirst).toHaveBeenCalledWith({
+  it("stays on its own sign-in while a user of its own is not linked, and offers linking", async () => {
+    for (const users of [[password], [bare]]) {
+      const legacy = prisma(users);
+      expect(await hostedLoginCapabilities(legacy as never, verifier)).toEqual({
+        hostedLogin: false,
+        hostedLink: true,
+      });
+    }
+    const asked = prisma([password]);
+    await legacyAccounts(asked as never);
+    expect(asked.user.findMany).toHaveBeenCalledWith({
       where: {
-        providerId: "credential",
-        user: { accounts: { none: { providerId: HOSTED_PROVIDER_ID } } },
+        accounts: { none: { providerId: HOSTED_PROVIDER_ID } },
+        NOT: { email: { endsWith: "@messaging.invalid" } },
       },
-      select: { id: true },
+      select: { id: true, email: true, accounts: { select: { id: true }, take: 1 } },
+      take: 50,
+    });
+    expect(asked.verification.findMany).toHaveBeenCalledWith({
+      where: { identifier: { startsWith: ADOPT_PREFIX } },
+      select: { identifier: true },
     });
   });
 
-  it("signs in only with the hosted account once none is left, also on an empty database", async () => {
-    expect(await hostedLoginCapabilities(prisma(null) as never, verifier)).toEqual({
-      hostedLogin: true,
-      hostedLink: false,
-    });
-    expect(await legacyAccounts(prisma(null) as never)).toBe(false);
+  it("signs in only with the hosted account on an empty database or with marked users only", async () => {
+    for (const seeded of [
+      prisma([]),
+      prisma([password], [`${ADOPT_PREFIX}user:u1`]),
+      prisma([bare], [`${ADOPT_PREFIX}email:eve@dozo.example`]),
+    ])
+      expect(await hostedLoginCapabilities(seeded as never, verifier)).toEqual({
+        hostedLogin: true,
+        hostedLink: false,
+      });
+  });
+
+  it("never counts a user with a password as marked by an address", async () => {
+    expect(
+      await legacyAccounts(prisma([password], [`${ADOPT_PREFIX}email:ada@dozo.example`]) as never),
+    ).toBe(true);
   });
 
   it("says nothing and asks nothing on a server in another mode", async () => {
-    const none = prisma({ id: "credential" });
+    const none = prisma([password]);
     for (const config of [null, { mode: "issuer", signingKey: ed25519() } as HostedLoginConfig])
       expect(await hostedLoginCapabilities(none as never, config)).toEqual({
         hostedLogin: false,
         hostedLink: false,
       });
-    expect(none.account.findFirst).not.toHaveBeenCalled();
+    expect(none.user.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("what stays open in legacy mode", () => {
+  it.each([
+    "/sign-in/email",
+    "/request-password-reset",
+    "/reset-password",
+    "/reset-password/:token",
+    "/change-password",
+    "/passkey/verify-authentication",
+  ])("keeps %s", (path) => {
+    expect(openInLegacyMode(path)).toBe(true);
+  });
+
+  it.each([
+    "/sign-up/email",
+    "/sign-in/email-otp",
+    "/email-otp/send-verification-otp",
+    "/sign-in/social",
+    "/callback/oidc",
+    "/oauth2/callback/oidc",
+    "/change-email",
+    "/link-social",
+  ])("closes %s", (path) => {
+    expect(openInLegacyMode(path)).toBe(false);
   });
 });
 
@@ -435,23 +488,28 @@ const store = (): Store => ({
 function localPrisma(data: Store) {
   const accountsOf = (userId: unknown) => data.account.filter((row) => row.userId === userId);
   return {
-    account: {
-      findFirst: vi.fn(async () => {
-        const unlinked = data.account.find(
-          (row) =>
-            row.providerId === "credential" &&
-            !accountsOf(row.userId).some((other) => other.providerId === HOSTED_PROVIDER_ID),
-        );
-        return unlinked ? { id: unlinked.id } : null;
-      }),
-    },
     user: {
       findMany: vi.fn(async ({ take }: { take: number }) =>
         data.user
-          .filter((user) => accountsOf(user.id).length === 0)
+          .filter(
+            (user) => !accountsOf(user.id).some((row) => row.providerId === HOSTED_PROVIDER_ID),
+          )
           .filter((user) => !String(user.email).endsWith("@messaging.invalid"))
           .slice(0, take)
-          .map((user) => ({ id: user.id, email: user.email })),
+          .map((user) => ({
+            id: user.id,
+            email: user.email,
+            accounts: accountsOf(user.id)
+              .slice(0, 1)
+              .map((row) => ({ id: row.id })),
+          })),
+      ),
+    },
+    verification: {
+      findMany: vi.fn(async ({ where }: { where: { identifier: { startsWith: string } } }) =>
+        data.verification
+          .filter((row) => String(row.identifier).startsWith(where.identifier.startsWith))
+          .map((row) => ({ identifier: row.identifier })),
       ),
     },
   };
@@ -489,6 +547,7 @@ function hostedServer(key: KeyObject, rateLimit = false, baseURL = HOSTED, overl
 type LocalOptions = {
   refuse?: (userId: string) => boolean;
   beforeCreate?: () => Promise<void>;
+  beforeLink?: () => Promise<void>;
   lock?: <T>(work: () => Promise<T>) => Promise<T>;
   rateLimit?: boolean;
 };
@@ -506,6 +565,13 @@ function localServer(fetcher: typeof fetch, options: LocalOptions = {}) {
         create: {
           before: async () => {
             await options.beforeCreate?.();
+          },
+        },
+      },
+      account: {
+        create: {
+          before: async () => {
+            await options.beforeLink?.();
           },
         },
       },
@@ -625,6 +691,15 @@ const userRow = (id: string, email: string) => ({
   updatedAt: new Date(),
 });
 
+const mark = (identifier: string) => ({
+  id: identifier,
+  identifier,
+  value: "1",
+  expiresAt: new Date(Date.now() + 86_400_000),
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+
 /** A password account made on the local server before hosted mode, as a 0.3.0 install has. */
 async function passwordAccount(w: ReturnType<typeof world>, email: string) {
   const context = await w.local.auth.$context;
@@ -705,7 +780,16 @@ describe("signing in to a local server with the hosted account", () => {
     const w = world();
     const hostedCookie = await signUp(w.hosted.auth, "ada@dozo.example", "Ada");
     await w.signIn(hostedCookie);
+    // Another user of the install, linked to its own hosted account, has the new address.
     w.local.data.user.push(userRow("other", "taken@dozo.example"));
+    w.local.data.account.push({
+      id: "other-link",
+      userId: "other",
+      providerId: HOSTED_PROVIDER_ID,
+      accountId: "other-sub",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     Object.assign(w.hosted.data.user[0]!, { email: "taken@dozo.example" });
     const { done } = await w.signIn(hostedCookie);
     expect(location(done)).toBe(`${LOCAL}/`);
@@ -766,7 +850,19 @@ describe("signing in to a local server with the hosted account", () => {
     const w = world();
     const ada = await passwordAccount(w, "ada@dozo.example");
     const hostedCookie = await signUp(w.hosted.auth, "ada.hosted@dozo.example", "Ada");
-    // Password sign-in still works, and nothing else asks for a password to be dropped.
+    // Password sign-in still works; no new account is made while it waits.
+    const signUpLocal = await w.local.auth.handler(
+      new Request(`${LOCAL}/api/auth/sign-up/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: LOCAL },
+        body: JSON.stringify({
+          email: "eve@dozo.example",
+          password: "a-long-enough-password",
+          name: "E",
+        }),
+      }),
+    );
+    expect(signUpLocal.status).toBe(404);
     const signedIn = await passwordSignIn(w, "ada@dozo.example");
     expect(signedIn.status).toBe(200);
     const session = cookieHeader(signedIn);
@@ -816,8 +912,9 @@ describe("signing in to a local server with the hosted account", () => {
 
   it("links the user an unlink left behind to the next hosted account that signs in", async () => {
     const w = world();
-    // What `dozo-unlink-hosted` leaves: the user and their data, no account of any kind.
+    // What `dozo-unlink-hosted` leaves: the user and their data, no link, and the mark.
     w.local.data.user.push(userRow("owner", "old@dozo.example"));
+    w.local.data.verification.push(mark(`${ADOPT_PREFIX}user:owner`));
     const { done } = await w.signIn(await signUp(w.hosted.auth, "new@dozo.example", "New"));
     expect(location(done)).toBe(`${LOCAL}/`);
     expect(w.local.data.user).toEqual([
@@ -826,6 +923,15 @@ describe("signing in to a local server with the hosted account", () => {
     expect(w.local.data.account).toEqual([
       expect.objectContaining({ userId: "owner", providerId: HOSTED_PROVIDER_ID }),
     ]);
+    expect(w.local.data.verification).toEqual([]);
+  });
+
+  it("hands no user of the server's own to a hosted account, even one without any account", async () => {
+    const w = world();
+    // A user the server made another way (an emailed code, a passkey only): not marked.
+    w.local.data.user.push(userRow("own", "ada@dozo.example"));
+    expect((await w.local.auth.handler(startRequest())).status).toBe(403);
+    expect(w.local.data.account).toEqual([]);
   });
 
   it("keeps a local session for weeks, renewed by use", async () => {
@@ -855,14 +961,44 @@ describe("signing in to a local server with the hosted account", () => {
   });
 
   it("links the user a cut-off first sign-in left without its link, instead of locking it out", async () => {
-    const w = world();
-    // What a crash between the two writes leaves: the user, and no account of any kind.
-    w.local.data.user.push(userRow("orphan", "ada@dozo.example"));
-    const { done } = await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
+    let crash = true;
+    const w = world({
+      beforeLink: async () => {
+        // The process dies between the user and its link.
+        if (crash) throw new Error("killed");
+      },
+    });
+    const hostedCookie = await signUp(w.hosted.auth, "ada@dozo.example", "Ada");
+    const cut = await w.signIn(hostedCookie);
+    expect(cut.done.status).toBe(500);
+    const [orphan] = w.local.data.user;
+    expect(w.local.data.account).toEqual([]);
+    // The server is not stuck on that user: it is still in hosted mode, and the next sign-in links it.
+    crash = false;
+    const { done } = await w.signIn(hostedCookie);
     expect(location(done)).toBe(`${LOCAL}/`);
-    expect(w.local.data.user.map((user) => user.id)).toEqual(["orphan"]);
+    expect(w.local.data.user.map((user) => user.id)).toEqual([orphan!.id]);
     expect(w.local.data.account).toEqual([
-      expect.objectContaining({ userId: "orphan", providerId: HOSTED_PROVIDER_ID }),
+      expect.objectContaining({ userId: orphan!.id, providerId: HOSTED_PROVIDER_ID }),
+    ]);
+    expect(w.local.data.verification).toEqual([]);
+  });
+
+  it("does not let another address take the user a cut-off sign-in left", async () => {
+    let crash = true;
+    const w = world({
+      beforeLink: async () => {
+        if (crash) throw new Error("killed");
+      },
+    });
+    await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
+    crash = false;
+    const { done } = await w.signIn(await signUp(w.hosted.auth, "eve@dozo.example", "Eve"));
+    expect(location(done)).toBe(`${LOCAL}/`);
+    // Eve's sign-in makes a user of her own; the one left for Ada's address is not handed over.
+    expect(w.local.data.user.map((user) => user.email).sort()).toEqual([
+      "ada@dozo.example",
+      "eve@dozo.example",
     ]);
   });
 

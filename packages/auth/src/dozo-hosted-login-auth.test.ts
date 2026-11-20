@@ -78,22 +78,28 @@ function fakePrisma() {
         }) =>
           authData.user
             .filter((user) => user.id !== where.id?.not)
-            .filter((user) => !where.accounts || accountsOf(user.id).length === 0)
+            .filter(
+              (user) =>
+                !where.accounts ||
+                !accountsOf(user.id).some((row) => row.providerId === HOSTED_PROVIDER_ID),
+            )
             .slice(0, take)
-            .map((user) => ({ id: user.id as string, email: user.email as string })),
+            .map((user) => ({
+              id: user.id as string,
+              email: user.email as string,
+              accounts: accountsOf(user.id)
+                .slice(0, 1)
+                .map((row) => ({ id: row.id })),
+            })),
       ),
       findUnique: vi.fn(async () => null),
     },
-    account: {
-      // A password account not linked to a hosted one.
-      findFirst: vi.fn(async () => {
-        const found = authData.account.find(
-          (row) =>
-            row.providerId === "credential" &&
-            !accountsOf(row.userId).some((other) => other.providerId === HOSTED_PROVIDER_ID),
-        );
-        return found ? { id: found.id } : null;
-      }),
+    verification: {
+      findMany: vi.fn(async ({ where }: { where: { identifier: { startsWith: string } } }) =>
+        authData.verification
+          .filter((row) => String(row.identifier).startsWith(where.identifier.startsWith))
+          .map((row) => ({ identifier: row.identifier })),
+      ),
     },
     spaceMember: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string | { in: string[] } } }) => {
@@ -250,6 +256,11 @@ describe("hosted login through createAuth", () => {
       hostedLogin: false,
       hostedLink: true,
     });
+    // No new account while it waits: sign-up stays closed.
+    const other = { email: "eve@dozo.example", password: PASSWORD, name: "Eve" };
+    // (upstream's single-account admission answers first here; the hosted login's 404 is behind it)
+    expect((await post(s.local.auth, LOCAL, "/sign-up/email", other)).ok).toBe(false);
+    expect(prisma.authData.user).toHaveLength(1);
     const signedIn = await post(s.local.auth, LOCAL, "/sign-in/email", body);
     expect(signedIn.status).toBe(200);
     const hostedCookie = await s.account("ada@hosted.example");

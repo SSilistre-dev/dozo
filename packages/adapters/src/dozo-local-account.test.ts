@@ -41,7 +41,7 @@ beforeEach(async () => {
   await writeFile(path.join(home, "pgdata", "PG_VERSION"), "16\n");
   await writeFile(path.join(home, "secrets"), "PG_OWNER_PASSWORD=owner-secret\n");
   vi.stubEnv("FAKE_PG_LOG", path.join(root, "pg.log"));
-  vi.stubEnv("FAKE_PSQL_OUT", "1 2");
+  vi.stubEnv("FAKE_PSQL_OUT", "1 2 1");
   vi.stubEnv("FAKE_PSQL_FAIL", "");
 });
 
@@ -61,6 +61,9 @@ describe("account unlink-hosted", () => {
     expect(calls).toContain("-U rakazo -d rakazo -v ON_ERROR_STOP=1 -Atc");
     expect(calls).toContain(`DELETE FROM "account" WHERE "providerId" = 'dozo-hosted'`);
     expect(calls).toContain(`DELETE FROM "session" WHERE "userId" IN (SELECT "userId" FROM gone)`);
+    // Each unlinked user is marked for the next hosted sign-in to link.
+    expect(calls).toContain(`INSERT INTO "verification"`);
+    expect(calls).toContain(`'dozo-hosted-adopt:user:' || "userId"`);
     expect(calls).toMatch(/^pg_ctl -D .*pgdata -m fast -w stop$/m);
   });
 
@@ -76,7 +79,7 @@ describe("account unlink-hosted", () => {
   });
 
   it("says when there is nothing linked", async () => {
-    vi.stubEnv("FAKE_PSQL_OUT", "0 0");
+    vi.stubEnv("FAKE_PSQL_OUT", "0 0 0");
     expect(await localAccountMain(["unlink-hosted", "--home", home], io())).toBe(0);
     expect(answer()).toEqual({ unlinked: 0, sessionsEnded: 0 });
   });

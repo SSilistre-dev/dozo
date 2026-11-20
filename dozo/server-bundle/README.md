@@ -188,10 +188,11 @@ that folder can make them. Source: `packages/adapters/src/dozo-local-account.ts`
 node rakazo-server/dozo-local-account.mjs unlink-hosted --home <server folder>
 ```
 
-- `unlink-hosted` removes every link to a hosted account and ends those users' sessions; each user
-  keeps their data. The next hosted sign-in on that computer links the user again, whichever
-  hosted account it is (`packages/auth/src/dozo-hosted-login.ts`). It is the way back when the
-  linked hosted account was deleted or can no longer sign in.
+- `unlink-hosted` removes every link to a hosted account, ends those users' sessions and marks
+  each of them; each user keeps their data. The next hosted sign-in on that computer links a
+  marked user again, whichever hosted account it is (`packages/auth/src/dozo-hosted-login.ts`);
+  no other user is ever handed to a hosted account. It is the way back when the linked hosted
+  account was deleted or can no longer sign in.
 
 It works with the app open or closed, with the bundle's Postgres, as `backup` does (same
 `DOZO_PG_BIN` and `DOZO_SERVER_DIR`). One JSON line on stdout: `{"unlinked": <n>,

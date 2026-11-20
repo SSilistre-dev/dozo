@@ -10,10 +10,10 @@ import { BackupRefused, withHomeDatabase } from "./dozo-local-backup.js";
  * `account`) and runs with the bundle's Node and Postgres, the app open or closed. Commands,
  * output and exit codes: `dozo/server-bundle/README.md`, "Account repairs".
  *
- * `unlink-hosted` removes every link to a hosted account and ends those users' sessions. Each
- * user stays with their data; the next hosted sign-in on that computer links the user again
- * (`packages/auth/src/dozo-hosted-login.ts`), whichever hosted account it is. It is the way back
- * when the linked hosted account was deleted or cannot sign in any more.
+ * `unlink-hosted` removes every link to a hosted account, ends those users' sessions and marks each
+ * user so the next hosted sign-in on that computer links it again, whichever hosted account it
+ * is (`packages/auth/src/dozo-hosted-login.ts`). Each user stays with their data. It is the way
+ * back when the linked hosted account was deleted or cannot sign in any more.
  */
 
 const USAGE = 64;
@@ -28,9 +28,19 @@ export type AccountIo = {
 
 class UsageError extends Error {}
 
+/** The mark the hosted login reads (`ADOPT_PREFIX` in `packages/auth/src/dozo-hosted-login.ts`). */
+const ADOPT_USER = "dozo-hosted-adopt:user:";
+
+/**
+ * In one statement: the links go, those users' sessions end, and each user is marked so the next
+ * hosted sign-in links it again.
+ */
 const UNLINK_SQL = `WITH gone AS (DELETE FROM "account" WHERE "providerId" = '${HOSTED_PROVIDER_ID}' RETURNING "userId"),
-ended AS (DELETE FROM "session" WHERE "userId" IN (SELECT "userId" FROM gone) RETURNING 1)
-SELECT (SELECT count(*) FROM gone) || ' ' || (SELECT count(*) FROM ended)`;
+ended AS (DELETE FROM "session" WHERE "userId" IN (SELECT "userId" FROM gone) RETURNING 1),
+marked AS (INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
+  SELECT gen_random_uuid()::text, '${ADOPT_USER}' || "userId", '1', now() + interval '10 years', now(), now()
+  FROM (SELECT DISTINCT "userId" FROM gone) AS users RETURNING 1)
+SELECT (SELECT count(*) FROM gone) || ' ' || (SELECT count(*) FROM ended) || ' ' || (SELECT count(*) FROM marked)`;
 
 function parseArguments(argv: string[]) {
   try {
