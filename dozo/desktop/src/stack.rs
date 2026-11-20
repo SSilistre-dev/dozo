@@ -43,10 +43,6 @@ pub const RELAY: &str = match option_env!("DOZO_RELAY_URL") {
     None => "https://relay.dozo.bot",
 };
 
-/// Sign-in with the hosted account on this server (`packages/auth/src/dozo-hosted-login.ts`):
-/// off unless the build or the environment names the hosted origin (`DOZO_HOSTED_LOGIN_ISSUER`).
-const HOSTED_LOGIN_ISSUER: Option<&str> = option_env!("DOZO_HOSTED_LOGIN_ISSUER");
-
 const LOG_MAX: u64 = 5 << 20;
 
 #[derive(Clone, Debug)]
@@ -58,10 +54,10 @@ pub struct Options {
 
 impl Options {
     pub fn from_build_and_environment() -> Options {
-        let issuer = std::env::var("DOZO_HOSTED_LOGIN_ISSUER")
-            .ok()
-            .or(HOSTED_LOGIN_ISSUER.map(str::to_owned))
-            .filter(|issuer| !issuer.trim().is_empty());
+        // Sign-in with the hosted account (`server::hosted_login_issuer`): its origin, as the
+        // server's `HOSTED_LOGIN_ISSUER` wants it, without a path.
+        let issuer = crate::server::hosted_login_issuer()
+            .map(|issuer| issuer.as_str().trim_end_matches('/').to_owned());
         Options {
             manifest: std::env::var("DOZO_SERVER_MANIFEST").unwrap_or_else(|_| MANIFEST.into()),
             hosted_login_issuer: issuer,
@@ -1280,11 +1276,101 @@ mod tests {
         println!("E2E: stopped, relay agent included, no process left");
     }
 
+    /// Sign-in with the hosted account, as the window does it: the server on this computer runs
+    /// with `HOSTED_LOGIN_ISSUER` (`DOZO_STACK_E2E_ISSUER`, `tests/fake_issuer.mjs`); its sign-in
+    /// starts, the issuer's page (which the window may open) sends back to the callback (which it
+    /// may open too), and the session that comes back is the hosted account's.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs a built server bundle and a stand-in issuer; run by tests/stack_e2e.sh"]
+    async fn e2e_signs_in_with_the_hosted_account() {
+        use crate::server::{Verdict, decide_with};
+        let issuer = tauri::Url::parse(&std::env::var("DOZO_STACK_E2E_ISSUER").unwrap()).unwrap();
+        let (local, root, ports) = e2e_ready().await;
+        let web = tauri::Url::parse(&format!("http://127.0.0.1:{}/", ports.web)).unwrap();
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let cookies = |response: &reqwest::Response| {
+            response
+                .headers()
+                .get_all("set-cookie")
+                .iter()
+                .filter_map(|value| value.to_str().ok()?.split(';').next().map(str::to_owned))
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        // The local sign-in page's button.
+        let start = client
+            .post(web.join("/api/auth/dozo/hosted-login/start").unwrap())
+            .header("origin", web.as_str().trim_end_matches('/'))
+            .header("content-type", "application/json")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(start.status(), 200, "start");
+        let nonce = cookies(&start);
+        let page: Value = start.json().await.unwrap();
+        let page = tauri::Url::parse(page["url"].as_str().unwrap()).unwrap();
+        assert_eq!(page.origin(), issuer.origin());
+        assert_eq!(
+            decide_with(&page, Some(&web), Some(&issuer)),
+            Verdict::Window
+        );
+        // The issuer's page agrees at once and sends the window back.
+        let agreed = client.get(page.clone()).send().await.unwrap();
+        assert_eq!(agreed.status(), 302, "the issuer's page");
+        let back = tauri::Url::parse(agreed.headers()["location"].to_str().unwrap()).unwrap();
+        assert_eq!(
+            decide_with(&back, Some(&web), Some(&issuer)),
+            Verdict::Window
+        );
+        let callback = client
+            .get(back)
+            .header("cookie", &nonce)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(callback.status(), 302, "the callback");
+        assert_eq!(
+            callback.headers()["location"].to_str().unwrap(),
+            web.as_str()
+        );
+        let session = cookies(&callback);
+        let me: Value = client
+            .get(web.join("/api/auth/get-session").unwrap())
+            .header("cookie", session)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(me["user"]["email"], "owner@example.test", "{me}");
+        println!("E2E: signed in as the hosted account through the stand-in issuer");
+        // Every other way to sign in is closed on such a server.
+        let password = client
+            .post(web.join("/api/auth/sign-in/email").unwrap())
+            .header("origin", web.as_str().trim_end_matches('/'))
+            .header("content-type", "application/json")
+            .body(r#"{"email":"owner@example.test","password":"x"}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(password.status(), 404, "password sign-in");
+        assert!(local.stop().await, "a process had to be killed");
+        let left = processes_under(&root);
+        assert!(left.is_empty(), "still running after stop: {left:?}");
+        println!("E2E: stopped, no process left");
+    }
+
     async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
         let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
         let options = Options {
             manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
-            hosted_login_issuer: None,
+            hosted_login_issuer: std::env::var("DOZO_STACK_E2E_ISSUER").ok(),
             relay: std::env::var("DOZO_STACK_E2E_RELAY").unwrap_or_default(),
         };
         let local = Local::new(Arc::new(RealChecks));

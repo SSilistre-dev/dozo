@@ -84,14 +84,39 @@ pub fn outside(url: &Url) -> Option<Url> {
     Some(url)
 }
 
-/// Only the app's own screens and the chosen server's origin load in the window.
+/// The hosted server whose account signs in to the server on this computer
+/// (`packages/auth/src/dozo-hosted-login.ts`), when this build or the environment names one
+/// (`DOZO_HOSTED_LOGIN_ISSUER`): its origin, https or on this computer. Off by default.
+pub fn hosted_login_issuer() -> Option<Url> {
+    const BUILT: Option<&str> = option_env!("DOZO_HOSTED_LOGIN_ISSUER");
+    let named = std::env::var("DOZO_HOSTED_LOGIN_ISSUER")
+        .ok()
+        .or(BUILT.map(str::to_owned))?;
+    parse_server(&named).ok()
+}
+
+/// The hosted server's pages that may open in the window during that sign-in: the page that
+/// asks the person to agree, and its own sign-in and sign-up, which it shows first when needed.
+/// Everything else of it, and every other site, goes to the browser as before.
+const SIGN_IN_PATHS: [&str; 3] = ["/dozo/hosted-login", "/sign-in", "/sign-up"];
+
+/// Only the app's own screens and the chosen server's origin load in the window, and, while the
+/// chosen server is the one on this computer, the hosted server's sign-in pages.
 pub fn decide(url: &Url, server: Option<&Url>) -> Verdict {
+    decide_with(url, server, hosted_login_issuer().as_ref())
+}
+
+pub fn decide_with(url: &Url, server: Option<&Url>, issuer: Option<&Url>) -> Verdict {
     let on_server = server.is_some_and(|server| server.origin() == url.origin());
+    let signing_in = server.is_some_and(is_loopback)
+        && issuer.is_some_and(|issuer| issuer.origin() == url.origin())
+        && SIGN_IN_PATHS.contains(&url.path());
     match url.scheme() {
         _ if is_local(url) => Verdict::Window,
         "about" => Verdict::Window,
         // A blob URL carries the origin of the page that made it.
         "http" | "https" | "blob" if on_server => Verdict::Window,
+        "http" | "https" if signing_in => Verdict::Window,
         _ => outside(url).map_or(Verdict::Refused, Verdict::Browser),
     }
 }
@@ -271,5 +296,59 @@ mod tests {
         drop(listener);
         assert!(!reachable(&parse_server(&address).unwrap()));
         assert!(!reachable(&url("https://no-such-host.invalid/")));
+    }
+
+    #[test]
+    fn the_hosted_sign_in_pages_load_only_while_this_computer_s_server_signs_in() {
+        let issuer = url("https://app.dozo.example/");
+        let local = url("http://127.0.0.1:41234/");
+        let hosted = Some(&issuer);
+        for page in [
+            "https://app.dozo.example/dozo/hosted-login?audience=abc&return=http%3A%2F%2F127.0.0.1",
+            "https://app.dozo.example/sign-in?next=%2Fdozo%2Fhosted-login",
+            "https://app.dozo.example/sign-up",
+        ] {
+            assert_eq!(
+                decide_with(&url(page), Some(&local), hosted),
+                Verdict::Window,
+                "{page}"
+            );
+        }
+        // Any other page of it, another origin, another scheme or port: the browser.
+        for other in [
+            "https://app.dozo.example/",
+            "https://app.dozo.example/settings",
+            "https://app.dozo.example/dozo/hosted-login/extra",
+            "https://app.dozo.example:8443/sign-in",
+            "http://app.dozo.example/sign-in",
+            "https://evil.example/dozo/hosted-login",
+            "https://accounts.google.com/o/oauth2/auth",
+        ] {
+            assert!(
+                matches!(
+                    decide_with(&url(other), Some(&local), hosted),
+                    Verdict::Browser(_)
+                ),
+                "{other}"
+            );
+        }
+        // The callback comes back to the server on this computer, which is the chosen one.
+        let back = url("http://127.0.0.1:41234/api/auth/dozo/hosted-login/callback?token=t");
+        assert_eq!(decide_with(&back, Some(&local), hosted), Verdict::Window);
+        // Only while the chosen server is on this computer, and only when an issuer is named.
+        let page = url("https://app.dozo.example/dozo/hosted-login");
+        let remote = url("https://dozo.example.com/");
+        assert!(matches!(
+            decide_with(&page, Some(&remote), hosted),
+            Verdict::Browser(_)
+        ));
+        assert!(matches!(
+            decide_with(&page, Some(&local), None),
+            Verdict::Browser(_)
+        ));
+        assert!(matches!(
+            decide_with(&page, None, hosted),
+            Verdict::Browser(_)
+        ));
     }
 }

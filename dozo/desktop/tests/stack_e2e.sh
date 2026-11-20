@@ -6,7 +6,8 @@
 # then starts it once more and pairs a phone through the bundled relay agent: a dev relay and a
 # phone run in a second container on the same loopback (tests/relay_phone.mts, with the workspace
 # from the dozo-qa-deps volume, read only, and this checkout's relay files over it). After each,
-# no process of the server may be left.
+# no process of the server may be left. Last, a server of its own signs in with the hosted account
+# against a stand-in hosted server (tests/fake_issuer.mjs, in the same second container).
 # Usage: dozo/desktop/tests/stack_e2e.sh <dist-dir>
 #   <dist-dir> holds dozo-server-linux-x64.tar.xz and its .json (dozo/server-bundle/build.sh).
 #   node-linux-x64.tar.xz and postgres-linux-x64.tar.gz in it, when there, are used instead of
@@ -51,7 +52,8 @@ done
 docker run -d --name "$NAME-phone" --cpus 1 --memory 1g -u "$(id -u):$(id -g)" -e HOME=/tmp \
   -e DOZO_WORKSPACE=/d/w -v dozo-qa-deps:/d:ro "${overlay[@]}" -v "$HERE/tests:/tests:ro" \
   -v "$SHARED:/shared" "${DOZO_NODE_IMAGE:-node:24.22-slim}" \
-  /d/w/node_modules/.bin/tsx /tests/relay_phone.mts /shared > /dev/null || verdict FAIL
+  sh -c 'node /tests/fake_issuer.mjs 8788 & exec /d/w/node_modules/.bin/tsx /tests/relay_phone.mts /shared' \
+  > /dev/null || verdict FAIL
 docker run --rm -i --name "$NAME" --network "container:$NAME-phone" --cpus 3 --memory 6g -e CARGO_BUILD_JOBS=3 -u "$(id -u):$(id -g)" \
   -v "$HERE/..:/dozo" -v "$DIST:/dist:ro" -v "$HERE/target/e2e-passwd:/etc/passwd:ro" -w /dozo/desktop -e HOME=/tmp \
   -e RUSTUP_HOME=/dozo/desktop/.toolchain/linux/rustup \
@@ -98,6 +100,13 @@ say "3. start again and pair a phone through the relay agent"
 "$BIN" --ignored --exact stack::tests::e2e_pairs_a_phone --nocapture \
   2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
 [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
+say "4. a server of its own signs in with the hosted account (stand-in issuer)"
+# A server that has accounts of its own refuses that mode: a new folder, the same install.
+mkdir -p /tmp/e2e/hosted && cp -a "$DOZO_STACK_E2E_ROOT"/{versions,current} /tmp/e2e/hosted/
+DOZO_STACK_E2E_ROOT=/tmp/e2e/hosted DOZO_STACK_E2E_ISSUER=http://127.0.0.1:8788 \
+  "$BIN" --ignored --exact stack::tests::e2e_signs_in_with_the_hosted_account --nocapture \
+  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 /tmp/e2e/hosted/logs/{manager,api}.log; exit 2; }
+DOZO_STACK_E2E_ROOT=/tmp/e2e/hosted; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 EOF
 rc=$?
 docker logs "$NAME-phone" 2>&1 | tail -5

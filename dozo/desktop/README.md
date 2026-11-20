@@ -27,6 +27,7 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   rather than a switch in the web app's settings, which only that bridge would show.
 - Anything that leaves the server's origin opens in the browser. A sign-in that redirects to
   another site therefore finishes in the browser, not in the app; sign in with email and password.
+  The one exception is the hosted account's sign-in on the server on this computer (below).
   A link that asks for a new window also opens in the browser, even on the same origin.
 - The server address must be the one the pages are served from. An address that redirects to
   another host (a bare domain to `www.`) opens the browser and ends on the "Can't reach" screen.
@@ -243,9 +244,16 @@ Windows, where nothing has run yet.
 - Linux needs `libssl3` (Prisma's migration engine); without it the start says to install it.
   Postgres's Linux build carries a `libstdc++` that needs glibc 2.36; where it does not run
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).
-- Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server) is off: a build or the
-  environment turns it on with `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin. Without it the
-  server opens with its own single account, as a self-hosted one does.
+- Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server,
+  `packages/auth/src/dozo-hosted-login.ts`) is off: a build or the environment turns it on with
+  `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). Without it the
+  server opens with its own single account, as a self-hosted one does. With it, the local
+  sign-in page's one button opens the hosted page that asks the person to agree in the app's own
+  window, and its answer comes back to the local server's callback, which is the chosen server.
+  Only while the chosen server is the one on this computer, and only that origin's
+  `/dozo/hosted-login`, `/sign-in` and `/sign-up` load in the window (`src/server.rs`,
+  `SIGN_IN_PATHS`); every other page of it, and a sign-in with another site (Google), goes to the
+  browser as before. A server that already has accounts of its own refuses to start in that mode.
 - Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
 - Not here yet: updating the installed server, backups and going back (the folder is laid out
   for them). An installed version is kept: a newer app finds it and does not install the newer
@@ -288,7 +296,9 @@ It installs from a local manifest, gets 200 from `/health`, pairs and connects t
 stops and finds no process left; then starts from what is installed, kills the test process with
 SIGKILL and finds no process left; then starts again and pairs a phone through the bundled agent
 (a dev relay and a phone in a second container, `tests/relay_phone.mts`), which fetches a page
-through the relay; the phone is listed and removed, and no process is left after the stop. It is not in CI: building the bundle takes several minutes.
+through the relay; the phone is listed and removed, and no process is left after the stop; last,
+a server of its own in hosted sign-in mode signs in through a stand-in hosted server
+(`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule. It is not in CI: building the bundle takes several minutes.
 
 ## Build
 
