@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import type { ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -218,6 +219,50 @@ describe("relay multiplexer", () => {
     expect(records).toHaveLength(2);
     expect(records.flatMap((record) => decodeRelayFrames(record))).toHaveLength(6);
     client.close();
+  });
+
+  it("sends a small loopback response as one record, and a stream's head and events at once", async () => {
+    const live = deferred<ServerResponse>();
+    const http = createServer((request, response) => {
+      if (request.url === "/api/live") {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.flushHeaders();
+        live.resolve(response);
+        return;
+      }
+      response.end(JSON.stringify({ bots: [] }));
+    });
+    http.listen(0, "127.0.0.1");
+    await once(http, "listening");
+    cleanups.push(() => {
+      http.closeAllConnections();
+      http.close();
+    });
+    const origin = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+    const pipe = relayPipe();
+    serveRelay(pipe.host, { origin, forward: (request) => fetch(request) });
+    const client = relayClient(pipe.app);
+    cleanups.push(() => client.close());
+    const fromHost = () => pipe.log.filter((entry) => entry.from === "host");
+
+    // The head, body and end the loopback server wrote at once leave as one relay message.
+    const before = fromHost().length;
+    const response = await client.fetch("/api/bots");
+    expect(await response.json()).toEqual({ bots: [] });
+    expect(fromHost().length - before).toBe(1);
+
+    // A stream's head goes out without waiting for an event, and each event without the next one.
+    const opened = fromHost().length;
+    const stream = await client.fetch("/api/live");
+    expect(fromHost().length - opened).toBe(1);
+    const reader = stream.body?.getReader();
+    const server = await live.promise;
+    const sent = fromHost().length;
+    server.write("data: one\n\n");
+    expect(new TextDecoder().decode((await reader?.read())?.value)).toBe("data: one\n\n");
+    expect(fromHost().length - sent).toBe(1);
+    await reader?.cancel();
+    server.end();
   });
 
   it("stops a response waiting for credit when the reader cancels", async () => {

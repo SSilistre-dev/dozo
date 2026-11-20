@@ -41,6 +41,11 @@ const BODY_HEADERS = new Set(["content-encoding", "content-length"]);
 
 type Frame = { type: number; stream: number; payload: Uint8Array };
 
+/** Runs after the current event-loop turn: `setImmediate` where the runtime has it (Node). */
+const nextTurn: (callback: () => void) => unknown =
+  (globalThis as { setImmediate?: (callback: () => void) => unknown }).setImmediate ??
+  ((callback) => setTimeout(callback, 0));
+
 /** Writes one frame: type, stream id, payload length, payload. */
 export function encodeRelayFrame(
   type: number,
@@ -196,12 +201,17 @@ abstract class Mux {
   protected abstract onOpen(frame: Frame): void;
   protected abstract onHead(stream: Stream, frame: Frame): void;
 
+  /** When frames written now are sent: after the promise callbacks of this turn by default. */
+  protected schedule(flush: () => void) {
+    queueMicrotask(flush);
+  }
+
   /** Frames written in the same turn share records, up to the record limit. */
   protected write(frame: Uint8Array) {
     this.queue.push(frame);
     if (this.flushing) return;
     this.flushing = true;
-    queueMicrotask(() => {
+    this.schedule(() => {
       this.flushing = false;
       let record: Uint8Array[] = [];
       let size = 0;
@@ -446,6 +456,16 @@ class ServerMux extends Mux {
   ) {
     super(duplex);
     this.origin = new URL(options.origin).origin;
+  }
+
+  /**
+   * After the whole event-loop turn instead: the loopback client hands over a small response's
+   * head, body and end in one turn but through several promise hops, so they share one record
+   * (one relay message instead of three). Nothing waits on a timer, so a stream's events still go
+   * out as soon as they are read.
+   */
+  protected override schedule(flush: () => void) {
+    nextTurn(flush);
   }
 
   protected onHead(stream: Stream) {

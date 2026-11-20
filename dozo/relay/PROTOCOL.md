@@ -149,7 +149,9 @@ fails its tag, is shorter than 25 bytes, or is larger than the limit. The plaint
 
 A record's plaintext is one or more frames: `type (1) || stream (4) || length (2) || payload`,
 payload at most 32,768 bytes. Frames written in the same turn share a record, so a request head
-and its `end` cost one relay message.
+and its `end` cost one relay message. The host's turn is a whole event-loop turn, so a small response
+its loopback server wrote at once (head, data and `end`) is one message too; nothing waits on a
+timer, so a stream's events are not held back.
 
 | Type | Name | From | Payload |
 | --- | --- | --- | --- |
