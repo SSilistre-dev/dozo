@@ -868,7 +868,9 @@ impl Plan {
             base,
             state: layout.at("relay"),
             relay: options.relay.clone(),
-            launch: launch.clone(),
+            // Its one-shot commands (pair, list, revoke) are not the server: they do not hold the
+            // folder's lock, so one still running never keeps the next start out.
+            launch: Arc::new(launch.without_lock()),
         })
     }
 
