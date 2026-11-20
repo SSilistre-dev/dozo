@@ -233,12 +233,21 @@ as before and never moves to another connection of the pool, and a run stays on 
   `dozo-model-pool-capabilities.ts` (keys and own endpoints yes, subscription sign-ins no).
 - The pool lives in two fork tables with no model in `schema.prisma` (`dozo_model_pool_members`,
   `dozo_model_connection_cooldowns`, `packages/db/src/dozo-model-pool-store.ts`). A connection
-  without a row runs exactly as upstream's does. Nothing writes a membership yet: the setting
-  arrives with its own change. The store's SQL and row security are tested in
+  without a row runs exactly as upstream's does. The store's SQL and row security are tested in
   `dozo-model-pool-store.postgres.test.ts`, which needs a migrated database (see Hosted plans).
 - When every connection rests, the run tries the one that opens first and fails with the
   provider's own message. A pinned run keeps the connection it asked for. Moving to another
   connection mid-run rebuilds the provider's prompt cache, so that call costs more.
+- Settings: where two or more of one provider's connections may join (the first five added), each
+  of their pages in Models has one switch that pools all of them or none
+  (`apps/web/src/pages/model-settings/dozo-model-pool.tsx`, procedures `dozoModelPool.get` and
+  `dozoModelPool.set` in `apps/api/src/dozo-model-pool.ts`, the offer in
+  `packages/adapters/src/dozo-model-pool-settings.ts`). The server refuses any other connection,
+  records each change in the activity log (`model.pool.changed`) and sends the person's roster
+  signal. A resting connection's row shows when it opens; a rest that starts while Models is open
+  shows when it is opened again or the window gets focus. A connection added later joins when the
+  switch is turned on again. Mobile shows the connections as before, without the switch or the
+  time: the pool still runs there.
 
 ## Editing and regenerating
 

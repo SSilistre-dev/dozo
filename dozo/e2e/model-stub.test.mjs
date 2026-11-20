@@ -93,6 +93,19 @@ test("answers a body that is not JSON with 400, and keeps serving", async () => 
   assert.equal((await fetch(`${base}/health`)).status, 200);
 });
 
+test("tells the spent key its quota ran out, and still answers any other key", async () => {
+  const ask = (key) =>
+    fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ messages: [] }),
+    });
+  const spent = await ask("e2e-spent-key");
+  assert.equal(spent.status, 429);
+  assert.equal((await spent.json()).error.code, "insufficient_quota");
+  assert.equal((await ask("e2e-other-key")).status, 200);
+});
+
 test("/health reports the completions served so far", async () => {
   const before = (await (await fetch(`${base}/health`)).json()).completions;
   await post(JSON.stringify({}));
