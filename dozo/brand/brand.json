@@ -2893,6 +2893,25 @@
       "reason": "plan limits: the one table of what a refused limit says and offers, shared by the server's codes, web, the desktop apps and mobile"
     },
     {
+      "file": "packages/contracts/src/index.ts",
+      "find": "export * from \"./user-devices.js\";\nexport * from \"./vault-import.js\";\n",
+      "replace": "export * from \"./user-devices.js\";\nexport * from \"./dozo-relay.js\";\nexport * from \"./vault-import.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-relay.ts"
+      ],
+      "reason": "relay protocol: the pairing offer, the relay's HTTP and socket contract and the multiplexed frames, shared by the phone, the computer and any relay (dozo/relay/PROTOCOL.md)"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./user-device-client.js\";\nexport * from \"./user-error.js\";",
+      "replace": "export * from \"./user-device-client.js\";\nexport * from \"./dozo-relay-channel.js\";\nexport * from \"./dozo-relay-mux.js\";\nexport * from \"./user-error.js\";",
+      "requires": [
+        "packages/core/src/dozo-relay-channel.ts",
+        "packages/core/src/dozo-relay-mux.ts"
+      ],
+      "reason": "relay protocol: the sealed channel and the multiplexer one implementation serves on the phone and on the computer (dozo/relay/PROTOCOL.md)"
+    },
+    {
       "file": "packages/db/src/spaces.ts",
       "find": "super(\"BAD_REQUEST\", \"Space limit reached\");",
       "replace": "super(\"BAD_REQUEST\", \"Space limit reached\", \"space_limit_reached\");",
