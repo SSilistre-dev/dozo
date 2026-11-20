@@ -2126,6 +2126,79 @@ mod tests {
         );
     }
 
+    /// Back up and restore with the real bundle's command (`tests/stack_e2e.sh`, step 6), on the
+    /// server step 5 left: a backup of the running server; a file added after it; a restore with
+    /// the wrong password changes nothing; one with the right password brings the backup's state
+    /// back over the data in use, and the account still signs in.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "needs a built server bundle with the backup command; run by tests/stack_e2e.sh"]
+    async fn e2e_backs_up_and_restores() {
+        use crate::stack_backup::{Refusal, Tool};
+        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
+        let options = Options {
+            manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
+            hosted_login_issuer: None,
+            relay: String::new(),
+            expected: None,
+        };
+        let local = Local::new(Arc::new(RealChecks));
+        let sign_in = async || {
+            let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
+            let web = format!("http://127.0.0.1:{}", ports.web);
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            reqwest::Client::new()
+                .post(format!("{web}/api/auth/sign-in/email"))
+                .header("origin", &web)
+                .header("content-type", "application/json")
+                .body(r#"{"email":"owner@example.test","password":"update-Password-123"}"#)
+                .send()
+                .await
+                .unwrap()
+                .status()
+        };
+        local.start(Layout(root.clone()), options.clone()).await;
+        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
+        let tool = Tool::of(&root).expect("the bundle has the backup command");
+        let file = root.with_file_name("e2e.dozobackup");
+        let started = std::time::Instant::now();
+        tool.create(&file, "backup-Password-1").await.unwrap();
+        println!(
+            "E2E: backed up the running server ({} KB, {} ms)",
+            fs::metadata(&file).unwrap().len() / 1024,
+            started.elapsed().as_millis()
+        );
+        fs::write(root.join("data/after-the-backup"), "new").unwrap();
+        assert!(local.stop().await);
+
+        assert_eq!(
+            tool.restore(&file, "not-the-password", 1).await,
+            Err(Refusal::WrongPassword)
+        );
+        assert!(
+            root.join("data/after-the-backup").exists(),
+            "a refused restore changed nothing"
+        );
+        println!("E2E: the wrong password was refused, nothing changed");
+
+        let started = std::time::Instant::now();
+        tool.restore(&file, "backup-Password-1", 2).await.unwrap();
+        assert!(!root.join("data/after-the-backup").exists());
+        assert!(
+            root.join("before-restore/2-0/data/after-the-backup")
+                .exists()
+        );
+        local.start(Layout(root.clone()), options).await;
+        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
+        assert_eq!(sign_in().await, 200, "the account after the restore");
+        println!(
+            "E2E: restored over the data in use ({} ms), the account signs in",
+            started.elapsed().as_millis()
+        );
+        assert!(local.stop().await);
+        let left = processes_under(&root);
+        assert!(left.is_empty(), "still running after stop: {left:?}");
+    }
+
     async fn settled_for(local: &Local, seconds: u64) -> Status {
         let mut status = local.status();
         let wait = status.wait_for(|status| matches!(status, Status::Ready(_) | Status::Failed(_)));

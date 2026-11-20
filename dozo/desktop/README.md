@@ -295,6 +295,26 @@ back is a rename; it needs no running Postgres of either version; and the secret
 keys come back with the database they belong to. Migrations cannot be undone, so going back is
 always the copy.
 
+### Back Up and Restore
+
+Back Up… and Restore… in the Dozo menu are on while the server on this computer runs. They use the
+bundle's own command (`dozo/server-bundle/README.md`, "Backup and restore"; `src/stack_backup.rs`)
+from a small window (`ui/backup.html`, `src/backup.rs`):
+
+- Back Up asks for a password twice ("Nobody can recover a lost password." is said once, there),
+  then the system's save dialog picks the file (`Dozo <date>.dozobackup`). The running server is
+  backed up as it is.
+- Restore picks a file with the system's open dialog, then asks its password ("This replaces the
+  data on this computer."). The command restores into an empty installation only, so the server
+  stops and its data (`pgdata/`, `data/`, `relay/`, `secrets`) is moved aside into
+  `before-restore/<time>/`; the backup goes into the emptied folder and the server starts on it.
+  A restore that fails (a wrong password, a damaged file, a backup from a newer Dozo) puts the
+  data back with renames and starts the server as it was ("… Nothing changed."); a restored
+  server that does not start is swapped back the same way. The newest set moved aside is kept.
+- The page sees a file's name, never its path: the path stays in the app. The password goes to
+  the command's standard input only, never an argument, a variable or a log line.
+- A bundle without the command (before 0.11.0-2) is told "Update the server first."
+
 ### Connect Phone
 
 The phone reaches the server on this computer through a relay, with no open port

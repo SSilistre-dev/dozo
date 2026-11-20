@@ -11,7 +11,8 @@
 # against a stand-in hosted server (tests/fake_issuer.mjs, in the same second container).
 # With an older bundle as well, a fifth step updates a server installed from it to <dist-dir>'s,
 # keeping its account, then tries a newer, broken version and checks the server comes back as it
-# was (src/stack_update.rs).
+# was (src/stack_update.rs); and a sixth backs that server up and restores it over newer data
+# with the bundle's own command (src/stack_backup.rs).
 # Usage: dozo/desktop/tests/stack_e2e.sh <dist-dir> [<older-dist-dir>]
 #   <dist-dir> holds dozo-server-linux-x64.tar.xz and its .json (dozo/server-bundle/build.sh).
 #   node-linux-x64.tar.xz and postgres-linux-x64.tar.gz in it, when there, are used instead of
@@ -146,6 +147,11 @@ if [ "$DOZO_STACK_E2E_UPDATE" = 1 ]; then
     DOZO_STACK_E2E_BROKEN_MANIFEST=file:///dist/e2e-broken-manifest.json \
     "$BIN" --ignored --exact stack::tests::e2e_updates_and_goes_back --nocapture \
     2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 25 /tmp/e2e/update/logs/manager.log; exit 2; }
+  DOZO_STACK_E2E_ROOT=/tmp/e2e/update; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
+  say "6. back up that server, then restore it over newer data"
+  DOZO_STACK_E2E_ROOT=/tmp/e2e/update \
+    "$BIN" --ignored --exact stack::tests::e2e_backs_up_and_restores --nocapture \
+    2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 25 /tmp/e2e/update/logs/{manager,backup}.log; exit 2; }
   DOZO_STACK_E2E_ROOT=/tmp/e2e/update; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 fi
 EOF
