@@ -228,9 +228,10 @@ going back undoes nothing outside the chat:
 
 - the message is the caller's own, sent from the app: not from a chat app (that app already holds
   the reply and cannot unsend it), not a spoken call, not a group;
-- one run answered it, that run has ended, and it called no tool and recorded no external effect
-  (the same test upstream uses before retrying a routine run). A bot that searched, wrote memory,
-  sent mail or used its computer gets neither option, since those cannot be taken back;
+- the runs it started have ended (earlier ones are those an edit or regenerate replaced; the newest
+  wrote the reply), and none called a tool or recorded an external effect (the same test upstream
+  uses before retrying a routine run). A bot that searched, wrote memory, sent mail or used its
+  computer gets neither option, since those cannot be taken back;
 - nothing else was said after the reply, and no run in the chat is working or waiting.
 
 The old reply is deleted with its events, so its words stay nowhere in the chat or in what the

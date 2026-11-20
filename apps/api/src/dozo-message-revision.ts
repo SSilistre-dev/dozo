@@ -16,6 +16,7 @@ import {
   spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { buildSendPrompt } from "./artifacts.js";
 import type { RouterContext } from "./routes/context.js";
 import { botsRunOwnModels, modelSetup } from "./routes/shared.js";
@@ -41,7 +42,7 @@ export interface RevisionTurn {
     blocks: MessageBlock[];
     intact: boolean;
   };
-  /** The runs started from that message. */
+  /** The runs started from that message, newest first: earlier ones were edited or regenerated. */
   runs: Array<{
     id: string;
     taskPrompt: string;
@@ -52,7 +53,7 @@ export interface RevisionTurn {
   }>;
   /** Every message after it, oldest first. */
   replies: Array<{ id: string; role: string; runId: string | null }>;
-  /** Tool calls and recorded external effects of the one run that answered it. */
+  /** Tool calls and recorded external effects of those runs. */
   actions: number;
 }
 
@@ -64,15 +65,21 @@ export interface RevisionPlan {
 /**
  * What can change in the newest turn, if anything. Only a turn that is wholly the caller's and the
  * bot's own conversation can: their own message from the app (not a chat app, which already holds
- * the reply, and not a spoken call), answered by one finished run that called no tool, so going
- * back undoes nothing outside the chat. Regenerating also needs a reply to replace.
+ * the reply, and not a spoken call), answered by finished runs that called no tool, so going back
+ * undoes nothing outside the chat. The newest run wrote every reply after it; earlier runs are
+ * the ones an edit or regenerate replaced. Regenerating also needs a reply to replace.
  */
 export function planRevision(turn: RevisionTurn | null, userId: string): RevisionPlan | null {
-  if (!turn || turn.busy || turn.actions > 0 || turn.runs.length !== 1) return null;
+  const run = turn?.runs[0];
+  if (!turn || !run || turn.busy || turn.actions > 0) return null;
   const { message, replies } = turn;
-  const run = turn.runs[0]!;
-  if (message.authorUserId !== userId || run.userId !== userId) return null;
-  if (run.trigger !== "user" || run.mirrored || !TERMINAL_RUN_STATUSES.has(run.status)) return null;
+  if (message.authorUserId !== userId) return null;
+  const ownTurn = (each: RevisionTurn["runs"][number]) =>
+    each.userId === userId &&
+    each.trigger === "user" &&
+    !each.mirrored &&
+    TERMINAL_RUN_STATUSES.has(each.status);
+  if (!turn.runs.every(ownTurn)) return null;
   if (
     !message.intact ||
     messagingChannelId(message.blocks) ||
@@ -104,6 +111,7 @@ export async function loadRevisionTurn(
   const [runs, replies, busy] = await Promise.all([
     db.run.findMany({
       where: { threadId: thread.id, sourceMessageId: message.id },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
         id: true,
         status: true,
@@ -121,13 +129,11 @@ export async function loadRevisionTurn(
     db.run.count({ where: { threadId: thread.id, status: { in: [...ACTIVE_RUN_STATUSES] } } }),
   ]);
   // The same test upstream uses before it retries a routine run on its own.
-  const only = runs.length === 1 ? runs[0]!.id : null;
-  const [toolCalls, effects] = only
-    ? await Promise.all([
-        db.event.count({ where: { runId: only, type: "agent.tool.called" } }),
-        db.externalEffect.count({ where: { runId: only } }),
-      ])
-    : [0, 0];
+  const runId = { in: runs.map((run) => run.id) };
+  const [toolCalls, effects] = await Promise.all([
+    db.event.count({ where: { runId, type: "agent.tool.called" } }),
+    db.externalEffect.count({ where: { runId } }),
+  ]);
   const { blocks, intact } = readMessageBlocks(message);
   return {
     compactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -180,9 +186,13 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
       (tx) => reviseInTransaction(tx, { actor, threadId, botId, messageId, revision }),
       THREAD_LOCK_TRANSACTION_OPTIONS,
     );
-    await deps.events.notify(threadId, committed.seq);
-    await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
+    // Committed: a missed signal must not report the change as failed or leave the run asleep.
     await wakeRun(deps.jobs, committed.runId);
+    await bestEffort("message revision signal", deps.events.notify(threadId, committed.seq));
+    await bestEffort(
+      "message revision runs signal",
+      deps.events.publishSpaceChange?.(actor.spaceId, "runs"),
+    );
     return { runId: committed.runId };
   }
 

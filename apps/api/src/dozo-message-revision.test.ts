@@ -191,8 +191,12 @@ describe("planRevision", () => {
     ["before the run ends", (s) => (s.runs[0]!.status = "running")],
     ["when the message went to a run that was already working", (s) => (s.runs = [])],
     [
-      "when the message woke two runs",
-      (s) => s.runs.push({ ...s.runs[0]!, id: "r-2", status: "failed" }),
+      "when an earlier run of the message was someone else's",
+      (s) => s.runs.push({ ...s.runs[0]!, id: "r-0", userId: "someone" }),
+    ],
+    [
+      "when the reply came from an earlier run, not the newest",
+      (s) => s.runs.unshift({ ...s.runs[0]!, id: "r-2", status: "failed" }),
     ],
     [
       "for a group channel message",
@@ -236,13 +240,27 @@ describe("planRevision", () => {
     });
   });
 
-  it("counts tool calls only for the one run that answered", async () => {
+  it("offers both again after a revision, judged on the newest run", async () => {
     const state = chat();
-    state.runs = [];
+    // A regenerate left the first run and started the one that wrote the reply.
+    state.runs.push({ ...state.runs[0]!, id: "r-0" });
+    state.runs[0]!.id = "r-1";
+    expect(planRevision(await turnOf(state), ME)?.revisable).toEqual({
+      editMessageId: "m-ask",
+      regenerateMessageId: "m-reply",
+    });
+  });
+
+  it("counts tool calls and effects of every run the message started", async () => {
+    const state = chat();
+    state.runs.push({ ...state.runs[0]!, id: "r-0" });
     const db = fakeDb(state);
     await loadRevisionTurn(db as never, thread);
-    expect(db.event.count).not.toHaveBeenCalled();
-    expect(db.externalEffect.count).not.toHaveBeenCalled();
+    const runId = { in: ["r-1", "r-0"] };
+    expect(db.event.count).toHaveBeenCalledWith({
+      where: { runId, type: "agent.tool.called" },
+    });
+    expect(db.externalEffect.count).toHaveBeenCalledWith({ where: { runId } });
   });
 });
 
@@ -445,6 +463,15 @@ describe("dozoMessagesRoutes", () => {
     expect(mocks.assertTeachingSendAllowed).toHaveBeenCalledWith(deps.prisma, "space-1", "bot-1");
     expect(deps.events.notify).toHaveBeenCalledWith("thread-1", 41);
     expect(deps.events.publishSpaceChange).toHaveBeenCalledWith("space-1", "runs");
+    expect(mocks.wakeRun).toHaveBeenCalledWith(deps.jobs, "r-new");
+  });
+
+  it("reports a committed change as done when its signal fails", async () => {
+    const { call, deps } = setup(chat());
+    deps.events.notify.mockRejectedValue(new Error("realtime down"));
+    await expect(
+      call("regenerate", { threadId: "thread-1", messageId: "m-reply" }),
+    ).resolves.toEqual({ runId: "r-new" });
     expect(mocks.wakeRun).toHaveBeenCalledWith(deps.jobs, "r-new");
   });
 

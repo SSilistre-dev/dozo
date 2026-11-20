@@ -199,6 +199,19 @@ describePostgres("editing the last message and regenerating the last reply (Post
     await system.run.update({ where: { id: runId }, data: { status: "running" } });
     const next = await botSays(me, { threadId: turn.threadId, botId: turn.botId, runId }, "Soup.");
     expect(next.seq).toBe(turn.reply.seq);
+
+    // The new reply can be regenerated again, and the message edited after it.
+    await system.run.update({ where: { id: runId }, data: { status: "completed" } });
+    expect((await call(me, "dozoMessages/revisable", { threadId: turn.threadId })).json).toEqual({
+      editMessageId: turn.askId,
+      regenerateMessageId: next.id,
+    });
+    const again = await call(me, "dozoMessages/regenerate", {
+      threadId: turn.threadId,
+      messageId: next.id,
+    });
+    expect(again.status).toBe(200);
+    expect((await messagesOf(turn.threadId)).map((m) => m.id)).toEqual([turn.askId]);
   });
 
   it("edits: the message holds the new text, its old event is replaced, and the run starts on it", async () => {
