@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import {
@@ -18,9 +19,11 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { POOLABLE_CONNECTION_KINDS } from "./dozo-model-pool-capabilities.js";
 import type { ExecutorDeps } from "./executor-deps.js";
+import { parseModelSecret } from "./model-secret.js";
 import type { ModelCredential } from "./model-selection.js";
 import { loadStoredModelSecret } from "./model-selection.js";
 import { modelCredentialAuthKindFromPlaintext } from "./pi-catalog-availability.js";
+import { oauthCredentialAccountId } from "./pi-oauth.js";
 
 /**
  * A run's model pool (packages/core/src/dozo-model-pool.ts): the connection it starts on and the
@@ -88,18 +91,30 @@ async function readRunModelPool(
     select: { id: true, secretId: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  const stored = await readModelPool(prisma, {
-    ...scope,
-    credentialIds: connections.map((connection) => connection.id),
-  });
-  const members = [];
-  for (const connection of connections) {
-    const member = stored.find((row) => row.credentialId === connection.id);
-    if (!member || !(await poolable(deps, run.userId, connection.secretId))) continue;
-    members.push({ id: connection.id, resetsAt: member.resetsAt?.getTime() });
-  }
-  if (members.length < 2 || !members.some((member) => member.id === credential.id))
-    return undefined;
+  const pooled = new Set(
+    (
+      await readModelPool(prisma, {
+        ...scope,
+        credentialIds: connections.map((connection) => connection.id),
+      })
+    ).map((row) => row.credentialId),
+  );
+  const { live, accounts } = await livePoolConnections(
+    deps,
+    run.userId,
+    connections.filter((connection) => pooled.has(connection.id)),
+  );
+  const rests = new Map(
+    (await readModelPool(prisma, { ...scope, credentialIds: live, accounts })).map((row) => [
+      row.credentialId,
+      row.resetsAt?.getTime(),
+    ]),
+  );
+  const members = live.map((id) => ({ id, resetsAt: rests.get(id) }));
+  // A pool needs another connection to hand over to. The chosen one may be out of it (a sign-in
+  // that must be made again): then the run starts on the pool's first open connection.
+  const chosenLive = live.includes(credential.id);
+  if (members.length < (chosenLive ? 2 : 1)) return undefined;
   const { order, opensAt } = poolOrder({ members, preferred: credential.id, now });
   const startId = order[0] ?? credential.id;
   const start =
@@ -117,11 +132,14 @@ async function readRunModelPool(
     ...(opensAt === undefined ? {} : { opensAt }),
     recordOut: (connectionId, failedModelId, reason, providerResetAt) => {
       const observedAt = Date.now();
+      // A subscription that ran out rests for its account; a refused sign-in ends with a new one.
+      const holder = reason === "exhausted" ? accounts.get(connectionId) : undefined;
       return recordModelConnectionCooldown(prisma, {
         userId: run.userId,
         credentialId: connectionId,
         modelId: reason === "rejected" ? null : failedModelId,
         reason,
+        ...(holder ? { holder } : {}),
         resetsAt: new Date(poolCooldownUntil(observedAt, providerResetAt)),
         observedAt: new Date(observedAt),
       });
@@ -129,15 +147,57 @@ async function readRunModelPool(
   };
 }
 
-/** Whether a stored connection is of a kind that may join a pool; one that cannot be read is not. */
-export async function poolable(deps: PoolDeps, userId: string, secretId: string): Promise<boolean> {
+/**
+ * A stored connection as a pool sees it: absent when it may not join (its kind, a secret that
+ * cannot be read, a sign-in that must be made again). `account` stands for a subscription
+ * sign-in's account, a digest of the provider's account id, when the provider gives one.
+ */
+export async function poolConnection(
+  deps: PoolDeps,
+  userId: string,
+  secretId: string,
+): Promise<{ account?: string } | undefined> {
   const secret = await loadStoredModelSecret(deps.prisma, deps.secretStore, userId, secretId);
-  if (secret.status !== "loaded") return false;
+  if (secret.status !== "loaded") return undefined;
   try {
-    return POOLABLE_CONNECTION_KINDS[modelCredentialAuthKindFromPlaintext(secret.plaintext)];
+    if (!POOLABLE_CONNECTION_KINDS[modelCredentialAuthKindFromPlaintext(secret.plaintext)])
+      return undefined;
+    const parsed = parseModelSecret(secret.plaintext);
+    if (parsed.kind !== "oauth") return {};
+    if (parsed.reconnectRequired) return undefined;
+    const accountId = oauthCredentialAccountId(parsed.credential);
+    if (!accountId) return {};
+    return {
+      account: `account:${createHash("sha256").update(accountId).digest("hex").slice(0, 32)}`,
+    };
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/**
+ * The connections, in the order given, that may stand in for each other: each one a pool may hold,
+ * and of two signed in to the same account only the first, so one subscription is never two
+ * members. With the accounts of those that have one.
+ */
+export async function livePoolConnections(
+  deps: PoolDeps,
+  userId: string,
+  connections: readonly { id: string; secretId: string }[],
+): Promise<{ live: string[]; accounts: Map<string, string> }> {
+  const live: string[] = [];
+  const accounts = new Map<string, string>();
+  const seen = new Set<string>();
+  for (const connection of connections) {
+    const member = await poolConnection(deps, userId, connection.secretId);
+    if (!member || (member.account && seen.has(member.account))) continue;
+    live.push(connection.id);
+    if (member.account) {
+      seen.add(member.account);
+      accounts.set(connection.id, member.account);
+    }
+  }
+  return { live, accounts };
 }
 
 /**
@@ -210,6 +270,22 @@ export function connectionOutReason(error: {
   return providerQuotaResetAt(text) !== undefined || SPENT.test(text) ? "exhausted" : undefined;
 }
 
+/** "Try again in ~90 min." or "in 2 hours": how a subscription's window says when it resets. */
+const TRY_AGAIN_IN = /\btry again in ~?\s*(\d+(?:\.\d+)?)\s*(min|minutes?|hours?|hrs?|h|days?)\b/i;
+const UNIT_MS: Record<string, number> = { m: 60_000, h: 60 * 60_000, d: 24 * 60 * 60_000 };
+
+/**
+ * When a connection that ran out opens again, as the provider says it: its reset headers, else the
+ * time a subscription's usage window names in words. Nothing when it says neither.
+ */
+export function poolResetAt(text: string, now = Date.now()): number | undefined {
+  const fromHeaders = providerQuotaResetAt(text, now);
+  if (fromHeaders !== undefined) return fromHeaders;
+  const match = TRY_AGAIN_IN.exec(text);
+  if (!match) return undefined;
+  return now + Number(match[1]) * (UNIT_MS[(match[2] ?? "m").charAt(0).toLowerCase()] ?? 0);
+}
+
 /**
  * Moves a failed call to the next backup. When the connection ran out, it rests first and the
  * pool's other connections may take the call, those passed over after an earlier failure of this
@@ -227,12 +303,7 @@ export async function switchAfterFailure(
   if (failed.connectionId)
     await bestEffort(
       "model pool cooldown",
-      pool.recordOut(
-        failed.connectionId,
-        failed.id,
-        reason,
-        providerQuotaResetAt(error.errorMessage ?? ""),
-      ),
+      pool.recordOut(failed.connectionId, failed.id, reason, poolResetAt(error.errorMessage ?? "")),
     );
   // Everything before that place was tried or ruled out, so the chain can go back to it.
   const from = passedOver.get(state);

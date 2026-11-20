@@ -173,6 +173,56 @@ describePostgres("the model pool store (PostgreSQL)", () => {
     expect(await read()).toEqual([{ credentialId: id, resetsAt: null }]);
   });
 
+  it("keeps a subscription's rest for its account across a refresh and a new sign-in", async () => {
+    const id = await connection();
+    await me(() => setModelPoolMember(prisma, { userId, credentialId: id }, true));
+    const now = Date.now();
+    await me(() =>
+      recordModelConnectionCooldown(prisma, {
+        userId,
+        credentialId: id,
+        modelId: model,
+        reason: "exhausted",
+        resetsAt: new Date(now + 5 * HOUR),
+        observedAt: new Date(now),
+        holder: "account:one",
+      }),
+    );
+    const read = (account: string) =>
+      me(() =>
+        readModelPool(prisma, {
+          userId,
+          credentialIds: [id],
+          modelId: model,
+          accounts: new Map([[id, account]]),
+        }),
+      );
+    const resting = [{ credentialId: id, resetsAt: new Date(now + 5 * HOUR) }];
+    // A token refresh rewrites the secret in place: the connection row does not change.
+    expect(await read("account:one")).toEqual(resting);
+    // Signing in again gives the connection a new secret; the same account keeps its rest.
+    await owner.userModelCredential.update({ where: { id }, data: { secretId: `again-${id}` } });
+    expect(await read("account:one")).toEqual(resting);
+    expect(
+      await me(() =>
+        readModelPoolMembers(prisma, {
+          userId,
+          credentialIds: [id],
+          accounts: new Map([[id, "account:one"]]),
+        }),
+      ),
+    ).toEqual(resting);
+    // Another account on the same connection starts open.
+    expect(await read("account:two")).toEqual([{ credentialId: id, resetsAt: null }]);
+    // A refused sign-in rests only until the next one.
+    await rest(id, new Date(now + 1), new Date(now + HOUR), null);
+    expect(await read("account:two")).toEqual([
+      { credentialId: id, resetsAt: new Date(now + HOUR) },
+    ]);
+    await owner.userModelCredential.update({ where: { id }, data: { secretId: `third-${id}` } });
+    expect(await read("account:two")).toEqual([{ credentialId: id, resetsAt: null }]);
+  });
+
   it("writes no rest for a connection that is not pooled", async () => {
     const now = Date.now();
     const alone = await connection();

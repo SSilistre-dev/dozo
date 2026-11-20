@@ -230,7 +230,15 @@ as before and never moves to another connection of the pool, and a run stays on 
 
 - The rule is `packages/core/src/dozo-model-pool.ts`; the runtime side and the anchored rules it
   needs are in `packages/adapters/src/dozo-model-pool.ts`; which kinds of connection may join is
-  `dozo-model-pool-capabilities.ts` (keys and own endpoints yes, subscription sign-ins no).
+  `dozo-model-pool-capabilities.ts` (keys, own endpoints and subscription sign-ins).
+- Subscription sign-ins: a pool of them is the person's own accounts, used under each provider's
+  terms, which are theirs to keep. One that ran out rests for its account (a digest of the account
+  id the provider gives), so a token refresh or signing in again with the same account keeps the
+  rest and another account ends it; a provider that gives no account id rests the sign-in instead,
+  like a key. Two connections signed in to the same account are one member. A sign-in that must be
+  made again leaves the pool until it is, and a run whose chosen connection is one starts on the
+  next. A usage window's reset is read from the provider's headers or its "try again in" words,
+  else the default rest. No quota endpoint is called.
 - The pool lives in two fork tables with no model in `schema.prisma` (`dozo_model_pool_members`,
   `dozo_model_connection_cooldowns`, `packages/db/src/dozo-model-pool-store.ts`). A connection
   without a row runs exactly as upstream's does. The store's SQL and row security are tested in

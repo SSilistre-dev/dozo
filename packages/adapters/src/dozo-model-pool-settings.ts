@@ -3,33 +3,43 @@ import { canonicalPiProviderId, DOZO_MODEL_POOL_MAX } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { readModelPoolMembers, setModelPoolMember } from "@rakazo/db";
 import type { PoolDeps } from "./dozo-model-pool.js";
-import { poolable } from "./dozo-model-pool.js";
+import { livePoolConnections } from "./dozo-model-pool.js";
 
 /**
  * The model pool as settings show and change it: one switch per provider, offered where two or
  * more of the person's connections of that provider may join a pool, the first five added.
  */
 
-type Offer = { provider: string; offered: string[]; others: string[] };
+type Offer = {
+  provider: string;
+  offered: string[];
+  others: string[];
+  accounts: Map<string, string>;
+};
 
-/** Each provider's connections, the ones a pool may hold (in the order added) and the rest. */
+/**
+ * Each provider's connections: the ones a pool may hold, in the order added, at most five and one
+ * per subscription account, with their accounts; and the rest.
+ */
 async function poolOffers(deps: PoolDeps, userId: string): Promise<Offer[]> {
   const connections = await deps.prisma.userModelCredential.findMany({
     where: { userId },
     select: { id: true, provider: true, secretId: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  const offers = new Map<string, Offer>();
+  const byProvider = new Map<string, typeof connections>();
   for (const connection of connections) {
     const provider = canonicalPiProviderId(connection.provider);
-    const offer = offers.get(provider) ?? { provider, offered: [], others: [] };
-    offers.set(provider, offer);
-    const fits =
-      offer.offered.length < DOZO_MODEL_POOL_MAX &&
-      (await poolable(deps, userId, connection.secretId));
-    (fits ? offer.offered : offer.others).push(connection.id);
+    byProvider.set(provider, [...(byProvider.get(provider) ?? []), connection]);
   }
-  return [...offers.values()];
+  const offers: Offer[] = [];
+  for (const [provider, own] of byProvider) {
+    const { live, accounts } = await livePoolConnections(deps, userId, own);
+    const offered = live.slice(0, DOZO_MODEL_POOL_MAX);
+    const others = own.map((connection) => connection.id).filter((id) => !offered.includes(id));
+    offers.push({ provider, offered, others, accounts });
+  }
+  return offers;
 }
 
 async function readPool(deps: PoolDeps, userId: string, offers: Offer[], now: number) {
@@ -37,6 +47,7 @@ async function readPool(deps: PoolDeps, userId: string, offers: Offer[], now: nu
   const members = await readModelPoolMembers(deps.prisma, {
     userId,
     credentialIds: shown.flatMap((offer) => offer.offered),
+    accounts: new Map(shown.flatMap((offer) => [...offer.accounts])),
   });
   const rests = new Map(members.map((member) => [member.credentialId, member.resetsAt]));
   return {
