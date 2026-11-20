@@ -73,7 +73,12 @@ type Routine = {
   active: boolean;
   nextRunAt: Date | null;
 };
-type Hold = { dueAt: Date; heldUntil: Date };
+type Hold = { dueAt: Date; heldUntil: Date; crons: string[]; timezone: string };
+
+const sameSchedule = (
+  a: { crons: string[]; timezone: string },
+  b: { crons: string[]; timezone: string },
+) => a.timezone === b.timezone && a.crons.join("\n") === b.crons.join("\n");
 
 /** The rows the module reads and writes, behind the few calls it makes. */
 function fakeDatabase() {
@@ -86,10 +91,11 @@ function fakeDatabase() {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = sql(strings);
       if (text.includes('FROM "user" u')) {
-        const [routineId, userId] = values as [string, string];
+        const [routineId, crons, timezone, userId] = values as [string, string[], string, string];
         const user = users.get(userId);
         if (!user) return [];
-        const hold = holds.get(routineId);
+        const stored = holds.get(routineId);
+        const hold = stored && sameSchedule(stored, { crons, timezone }) ? stored : undefined;
         const hours = quiet.get(userId);
         return [
           {
@@ -109,8 +115,18 @@ function fakeDatabase() {
         return [...holds.entries()].flatMap(([routineId, hold]) => {
           const routine = routines.get(routineId);
           if (!routine) return [];
-          return routine.userId === values[0] && routine.active && hold.heldUntil > new Date()
-            ? [{ routineId, spaceId: routine.spaceId, ...hold }]
+          return routine.userId === values[0] &&
+            routine.active &&
+            hold.heldUntil > new Date() &&
+            sameSchedule(hold, routine)
+            ? [
+                {
+                  routineId,
+                  spaceId: routine.spaceId,
+                  dueAt: hold.dueAt,
+                  heldUntil: hold.heldUntil,
+                },
+              ]
             : [];
         });
       }
@@ -124,8 +140,19 @@ function fakeDatabase() {
       } else if (text.includes("DELETE FROM dozo_quiet_hours")) {
         quiet.delete(values[0] as string);
       } else if (text.includes("INSERT INTO dozo_routine_holds")) {
-        const [routineId, dueAt, heldUntil] = values as [string, Date, Date];
-        holds.set(routineId, { dueAt, heldUntil });
+        const [routineId, dueAt, heldUntil, crons, timezone] = values as [
+          string,
+          string,
+          string,
+          string[],
+          string,
+        ];
+        holds.set(routineId, {
+          dueAt: new Date(dueAt),
+          heldUntil: new Date(heldUntil),
+          crons,
+          timezone,
+        });
       } else throw new Error(`unexpected statement: ${text}`);
       return 1;
     }),
@@ -187,7 +214,13 @@ function fakeDatabase() {
     if (!users.has(row.userId)) users.set(row.userId, { timezone: null });
     return row;
   };
-  return { routines, holds, quiet, users, deps, enqueued, publishSpaceChange, addRoutine };
+  /** Holds a routine under the schedule it has now. */
+  const hold = (routineId: string, dueAt: Date, heldUntil: Date) => {
+    const routine = routines.get(routineId);
+    if (!routine) throw new Error(`no routine ${routineId}`);
+    holds.set(routineId, { dueAt, heldUntil, crons: routine.crons, timezone: routine.timezone });
+  };
+  return { routines, holds, quiet, users, deps, enqueued, publishSpaceChange, addRoutine, hold };
 }
 
 const NOW = new Date("2026-11-20T23:00:00Z");
@@ -234,7 +267,12 @@ describe("a due routine", () => {
     const end = new Date("2026-11-21T07:00:00Z");
     expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(true);
     expect(routine.nextRunAt).toEqual(end);
-    expect(db.holds.get("routine-1")).toEqual({ dueAt: NOW, heldUntil: end });
+    expect(db.holds.get("routine-1")).toEqual({
+      dueAt: NOW,
+      heldUntil: end,
+      crons: ["0 * * * *"],
+      timezone: "UTC",
+    });
     expect(db.enqueued).toEqual([
       expect.objectContaining({
         name: "routine.wakeup",
@@ -269,7 +307,7 @@ describe("a due routine", () => {
     const end = new Date("2026-11-21T07:00:00Z");
     vi.setSystemTime(end);
     const routine = db.addRoutine({ nextRunAt: end, crons: ["0 3 * * *"] });
-    db.holds.set("routine-1", { dueAt: due, heldUntil: end });
+    db.hold("routine-1", due, end);
     const wake = vi.fn(async () => undefined);
     expect(await dozoHoldRoutine(db.deps, routine, end, wake)).toBe(true);
     expect(routine.nextRunAt).toEqual(due);
@@ -281,10 +319,32 @@ describe("a due routine", () => {
     const end = new Date("2026-11-21T07:00:00Z");
     vi.setSystemTime(end);
     const routine = db.addRoutine({ nextRunAt: new Date("2026-11-21T09:00:00Z") });
-    db.holds.set("routine-1", { dueAt: NOW, heldUntil: end });
+    db.hold("routine-1", NOW, end);
     const wake = vi.fn(async () => undefined);
     expect(await dozoHoldRoutine(db.deps, routine, end, wake)).toBe(true);
     expect(wake).not.toHaveBeenCalled();
+  });
+
+  it("forgets a wait once its schedule is edited, even onto the same time", async () => {
+    const db = fakeDatabase();
+    const end = new Date("2026-11-21T07:00:00Z");
+    vi.setSystemTime(new Date("2026-11-21T06:30:00Z"));
+    const routine = db.addRoutine({ nextRunAt: end, crons: ["0 6 * * *"] });
+    db.hold("routine-1", new Date("2026-11-21T06:00:00Z"), end);
+    routine.crons = ["0 7 * * *"];
+    vi.setSystemTime(end);
+    const wake = vi.fn(async () => undefined);
+    expect(await dozoHoldRoutine(db.deps, routine, end, wake)).toBe(false);
+    expect(wake).not.toHaveBeenCalled();
+    expect(routine.nextRunAt).toEqual(end);
+  });
+
+  it("runs once a long-missed repeat whose schedule no longer parses, as before", async () => {
+    const db = fakeDatabase();
+    const due = new Date(NOW.getTime() - 3 * 24 * HOUR);
+    const routine = db.addRoutine({ nextRunAt: due, crons: ["not a cron"] });
+    expect(await dozoHoldRoutine(db.deps, routine, due, vi.fn())).toBe(false);
+    expect(routine).toMatchObject({ active: true, nextRunAt: due });
   });
 
   it("runs once when it was missed by less than the catch-up window", async () => {
@@ -337,7 +397,7 @@ describe("a due routine", () => {
     const due = new Date(NOW.getTime() - 20 * HOUR);
     const end = new Date(NOW.getTime() - 2 * HOUR);
     const routine = db.addRoutine({ nextRunAt: due, crons: ["@once"] });
-    db.holds.set("routine-1", { dueAt: due, heldUntil: end });
+    db.hold("routine-1", due, end);
     expect(await dozoHoldRoutine(db.deps, routine, due, vi.fn())).toBe(false);
   });
 
@@ -378,18 +438,23 @@ describe("saving quiet hours", () => {
     const due = new Date(Date.now() - HOUR);
     const end = new Date(Date.now() + 5 * HOUR);
     const waiting = db.addRoutine({ id: "waiting", nextRunAt: end });
-    db.holds.set("waiting", { dueAt: due, heldUntil: end });
+    db.hold("waiting", due, end);
     // Edited since it was held: it keeps its new schedule.
     const edited = db.addRoutine({ id: "edited", spaceId: "space-2", nextRunAt: due });
-    db.holds.set("edited", { dueAt: due, heldUntil: end });
+    db.hold("edited", due, end);
+    // Moved onto the same time under a new schedule: not the routine that was held.
+    const moved = db.addRoutine({ id: "moved", nextRunAt: end });
+    db.hold("moved", due, end);
+    moved.crons = ["30 * * * *"];
     // Another account's routine.
     db.addRoutine({ id: "theirs", userId: "user-2", nextRunAt: end });
-    db.holds.set("theirs", { dueAt: due, heldUntil: end });
+    db.hold("theirs", due, end);
 
     await saveDozoQuietHours(db.deps, "user-1", null);
 
     expect(waiting.nextRunAt).toEqual(due);
     expect(edited.nextRunAt).toEqual(due);
+    expect(moved.nextRunAt).toEqual(end);
     expect(db.routines.get("theirs")?.nextRunAt).toEqual(end);
     expect(db.enqueued).toEqual([
       expect.objectContaining({

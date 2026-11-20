@@ -101,7 +101,8 @@ export async function saveDozoQuietHours(
       >`
         SELECT h."routineId", r."spaceId", h."dueAt", h."heldUntil"
         FROM dozo_routine_holds h JOIN routines r ON r.id = h."routineId"
-        WHERE r."userId" = ${userId} AND r.active AND h."heldUntil" > CURRENT_TIMESTAMP`;
+        WHERE r."userId" = ${userId} AND r.active AND h."heldUntil" > CURRENT_TIMESTAMP
+          AND h.crons = r.crons AND h.timezone = r.timezone`;
       const woken: typeof held = [];
       for (const hold of held) {
         // Only a routine still waiting on this hold moves; an edit since then already rescheduled it.
@@ -152,6 +153,7 @@ interface WakingRoutine {
  *   one-time one ends;
  * - during the owner's quiet hours the routine waits for their end. Hourly ticks inside them
  *   become one run, and a change check looks once.
+ * A hold counts only while the routine keeps the schedule it was held under.
  */
 export async function dozoHoldRoutine<Deps extends WakeDeps>(
   deps: Deps,
@@ -176,6 +178,7 @@ export async function dozoHoldRoutine<Deps extends WakeDeps>(
     FROM "user" u
     LEFT JOIN dozo_quiet_hours q ON q."userId" = u.id
     LEFT JOIN dozo_routine_holds h ON h."routineId" = ${routine.id}
+      AND h.crons = ${routine.crons}::text[] AND h.timezone = ${routine.timezone}
     WHERE u.id = ${routine.userId}`)(),
   );
   if (!rows) return false;
@@ -208,9 +211,12 @@ export async function dozoHoldRoutine<Deps extends WakeDeps>(
         routine.timezone,
       )?.getTime() ?? Number.POSITIVE_INFINITY) <= now.getTime();
     if (!recent) {
-      const nextRunAt = isOneShotRoutineCrons(routine.crons)
+      const oneShot = isOneShotRoutineCrons(routine.crons);
+      const nextRunAt = oneShot
         ? null
         : nextRoutineRunDateAcross(routine.crons, scheduledAt, now, routine.timezone);
+      // A repeat with no schedule that parses runs once and then pauses, as it always has.
+      if (!oneShot && !nextRunAt) return false;
       const skipped = await deps.prisma.routine.updateMany({
         where: { id: routine.id, active: true, nextRunAt: scheduledAt },
         data: { nextRunAt, ...(nextRunAt ? {} : { active: false }) },
@@ -238,10 +244,11 @@ export async function dozoHoldRoutine<Deps extends WakeDeps>(
     });
     if (moved.count !== 1) return false;
     await tx.$executeRaw`
-      INSERT INTO dozo_routine_holds ("routineId", "dueAt", "heldUntil")
-      VALUES (${routine.id}, ${scheduledAt}, ${heldUntil})
+      INSERT INTO dozo_routine_holds ("routineId", "dueAt", "heldUntil", crons, timezone)
+      VALUES (${routine.id}, ${scheduledAt.toISOString()}::timestamptz,
+        ${heldUntil.toISOString()}::timestamptz, ${routine.crons}::text[], ${routine.timezone})
       ON CONFLICT ("routineId") DO UPDATE SET "dueAt" = EXCLUDED."dueAt",
-        "heldUntil" = EXCLUDED."heldUntil"`;
+        "heldUntil" = EXCLUDED."heldUntil", crons = EXCLUDED.crons, timezone = EXCLUDED.timezone`;
     return true;
   });
   if (held) {

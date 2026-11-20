@@ -13,10 +13,13 @@ CREATE TABLE "dozo_quiet_hours" (
   CHECK ("startMinute" <> "endMinute")
 );
 
--- A routine occurrence waiting for quiet hours to end: when it was due, and the wake that takes it
--- up again. Only a routine whose next run is still "heldUntil" is waiting; an edit ends the wait.
+-- A routine occurrence waiting for quiet hours to end: when it was due, the wake that takes it up
+-- again, and the schedule it was held under. Only a routine whose next run is still "heldUntil"
+-- and whose schedule is unchanged is waiting; an edit to the schedule ends the wait.
 CREATE TABLE "dozo_routine_holds" (
   "routineId" TEXT NOT NULL PRIMARY KEY REFERENCES "routines"("id") ON DELETE CASCADE,
   "dueAt" TIMESTAMPTZ(3) NOT NULL,
-  "heldUntil" TIMESTAMPTZ(3) NOT NULL
+  "heldUntil" TIMESTAMPTZ(3) NOT NULL,
+  "crons" TEXT[] NOT NULL,
+  "timezone" TEXT NOT NULL
 );
