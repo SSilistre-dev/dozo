@@ -51,6 +51,13 @@ describe("messageMarkdown", () => {
     ).toBe("**Ada** · 2026-11-20 09:05\n\nHello");
   });
 
+  it("keeps math as the TeX the bot wrote", () => {
+    const tex = "Area is $\\pi r^2$, costs $5.\n\n$$\n\\int_0^1 x\\,dx\n$$";
+    expect(messageMarkdown(message({ blocks: [text(tex)] }), names, utc)).toBe(
+      `**2026-11-20 09:05**\n\n${tex}`,
+    );
+  });
+
   it("keeps only the time when nobody is known", () => {
     expect(messageMarkdown(message({ blocks: [text("Hi")] }), names, utc)).toBe(
       "**2026-11-20 09:05**\n\nHi",
