@@ -283,7 +283,9 @@ message's text. The old run row stays for usage. A server-side memory provider t
 the finished turn keeps it: providers forget per chat, not per turn, so only clearing the chat
 removes it. Old clients drop the removed reply on their next read instead of at once.
 
-Mobile shows the result of an edit or regenerate made elsewhere, but has no menu entry yet.
+Mobile offers the same two in a message's long-press menu (`apps/mobile/lib/dozo-message-actions.ts`);
+Edit opens its own screen. The iOS menu is built before it opens, so the open chat reads what may
+change again whenever its newest message or a run changes (`apps/mobile/lib/dozo-thread-menus.ts`).
 
 ## Pinned messages
 
@@ -300,7 +302,9 @@ reads the open chat's pins again on every roster signal, so a pin made on anothe
 message deleted elsewhere both show within the roster's signal spacing (10 seconds). Chat export
 leaves pins out.
 
-Mobile has no pin yet: pins made on the web stay, but the app neither shows nor sets them.
+Mobile pins from the same long-press menu, and lists a chat's pins from the bot profile's menu or
+group settings, only while there are some; choosing one opens the chat at it. The app reads a
+chat's pins again on every roster signal.
 
 ## Commands on your own computer
 
