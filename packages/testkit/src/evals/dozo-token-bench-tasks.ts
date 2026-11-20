@@ -251,6 +251,8 @@ export const TOKEN_BENCH_TASKS: readonly BenchTask[] = [
   { id: "chat-1-turn", kind: "short-chat", turns: chatTurns(1) },
   { id: "chat-3-turns", kind: "short-chat", turns: chatTurns(3) },
   { id: "chat-6-turns", kind: "short-chat", turns: chatTurns(6) },
+  // chat-3-turns on a plan without computer hours (Free): no computer tools, the no-computer line.
+  { id: "chat-3-turns-no-computer", kind: "short-chat", turns: chatTurns(3), computer: "none" },
   {
     id: "chat-with-history",
     kind: "short-chat",
