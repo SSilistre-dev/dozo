@@ -40,7 +40,8 @@ under its own path. An end refuses an offer or a handshake of a version it does 
 5. Both ends keep the session's `pairingKey`. Once the first data record from the phone has opened
    in that session (which proves the phone got the `welcome`), the host derives
    `appToken = base64url(HKDF(pairingKey, "", LABEL || " app token", 32))` and sets its verifier on
-   the relay, which deletes the pairing verifier. The host forgets `secret` and `psk`, and accepts
+   the relay, which deletes the pairing verifier. So the phone sends a request (any request) as
+   soon as its first session opens; until then the pairing is not complete. The host forgets `secret` and `psk`, and accepts
    no second pairing for that offer.
 6. Stored afterwards. Host: channel, relay address, its key pair, the app's public key,
    `pairingKey`, `hostToken`. App: channel, relay address, the host's public key, its key pair,
@@ -63,8 +64,12 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 | `GET /v1/channels/{channel}/host` | host token | WebSocket upgrade | `101` |
 | `GET /v1/channels/{channel}/app` | app token, or the pairing token before it expires and while no app verifier is set | WebSocket upgrade | `101` |
 
-- Tokens travel as `Authorization: Bearer <token>`. The relay hashes what it receives and compares
-  verifiers in constant time. It never logs a token.
+- Tokens travel as `Authorization: Bearer <token>`, on the WebSocket upgrade too. The relay hashes
+  what it receives and compares verifiers in constant time. It never logs a token.
+- An end tells a refused upgrade from a network failure by its status: `404` means the channel or
+  the token is gone for good (the host forgets the channel's keys), anything else is retried with
+  backoff, honoring `Retry-After`. So an end's WebSocket client must set a request header and
+  report the upgrade's status; Node's and React Native's can, a browser's cannot.
 - The relay picks the channel id: 16 random bytes.
 - `400` for a body that does not parse; `429` with `Retry-After` when a limit is hit.
 - The relay stores per channel: id, `hostVerifier`, `appVerifier` or `pairVerifier` with its
@@ -76,7 +81,8 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 
 - One socket per role and channel. A new one replaces the old, which is closed with code `4000`.
 - The relay sends text messages only of the form `{"type":"peer","present":true|false}`: once on
-  open, and whenever the other role connects or goes away.
+  open, and whenever the other role connects or goes away. That first message can arrive together
+  with the upgrade's answer, so an end listens for messages before it hands the socket on.
 - A binary message is forwarded unchanged and in order to the other role's socket, or dropped when
   that socket is not open. The relay never buffers, merges, splits or reorders messages.
 - A text `ping` is answered with a text `pong` by the relay itself. Ends ping about every 25 seconds
