@@ -8,13 +8,15 @@ use std::net::{Ipv4Addr, TcpListener};
 use std::path::Path;
 
 /// Each a random 32-byte hex string. Kept in `<root>/secrets`, readable by this user only.
-pub const SECRET_KEYS: [&str; 6] = [
+pub const SECRET_KEYS: [&str; 7] = [
     "PG_OWNER_PASSWORD",
     "PG_APP_PASSWORD",
     "BETTER_AUTH_SECRET",
     "SCREEN_PROXY_SECRET",
     "ENCRYPTION_KEY",
     "STACK_TOKEN",
+    // The relay agent shows it to the API to sign a paired phone in (`DOZO_RELAY_AGENT_KEY`).
+    "RELAY_AGENT_KEY",
 ];
 
 #[derive(Debug, PartialEq)]
