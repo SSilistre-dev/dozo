@@ -3,13 +3,14 @@
 // Usage: node dozo/server-bundle/build.mjs <branded-tree> <out-dir>
 // Runs in the tree: pnpm install, db:generate, the web build, then upstream's
 // scripts/build-server-bundle.mjs (wrapped, never edited). Then it drops the packages TRIM names
-// (never loaded by a local server), adds the relay host agent as one file
-// (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"), repacks, and writes to <out-dir>:
+// (never loaded by a local server), adds the relay host agent and the backup command as one file
+// each (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"; dozo-local-backup.mjs, "backup"),
+// repacks, and writes to <out-dir>:
 //   dozo-server-<platform>-<arch>.tar.xz   one folder, rakazo-server/ (upstream's layout)
 //   dozo-server-<platform>-<arch>.json     { platform, version, file, sha256, size, ... }
 // manifest.mjs joins those fragments with runtimes.json into the manifest the desktop app reads.
 // Needs Node 24 and corepack on PATH, git and tar with xz. Exit 0 ok, 2 failed, 64 usage.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,8 +32,9 @@ const TRIM = [
 // The bundle's version is upstream's with this revision after it: a change to what the fork adds
 // (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
 // Raise it with every such change; the release tag is server-v<version>.
-const REVISION = 1;
+const REVISION = 2;
 const AGENT = "dozo-relay-agent.mjs";
+const BACKUP = "dozo-local-backup.mjs";
 
 const fail = (message, code = 2) => {
   process.stderr.write(`[server-bundle] FAILED: ${message}\n`);
@@ -172,6 +174,24 @@ step("relay agent", () => {
   if (listed.trim() !== '{"channels":[]}') throw new Error(`agent list printed ${listed}`);
   fs.rmSync(path.join(work, "agent-state"), { recursive: true, force: true });
 });
+// The backup command (README.md, "Backup and restore"), the same way. Without arguments it loads
+// and answers with its usage line and exit 64.
+step("backup command", () => {
+  run("pnpm", [
+    "exec",
+    "esbuild",
+    "packages/adapters/src/dozo-local-backup.ts",
+    "--bundle",
+    "--platform=node",
+    "--format=esm",
+    "--target=node24",
+    `--outfile=${path.join(work, BACKUP)}`,
+  ]);
+  const usage = spawnSync("node", [path.join(work, BACKUP)], { encoding: "utf8" });
+  if (usage.status !== 64 || !usage.stdout.includes('"reason":"usage"')) {
+    throw new Error(`backup without arguments exited ${usage.status}: ${usage.stdout}`);
+  }
+});
 let upstream;
 step("bundle", () => {
   run("node", ["scripts/build-server-bundle.mjs", path.join(work, "upstream")]);
@@ -197,8 +217,9 @@ step("trim", () => {
   trimmed = trim(path.join(unpacked, "rakazo-server"));
   const server = path.join(unpacked, "rakazo-server");
   fs.copyFileSync(path.join(work, AGENT), path.join(server, AGENT));
+  fs.copyFileSync(path.join(work, BACKUP), path.join(server, BACKUP));
   const manifest = JSON.parse(fs.readFileSync(path.join(server, "manifest.json"), "utf8"));
-  manifest.entrypoints = { ...manifest.entrypoints, relay: AGENT };
+  manifest.entrypoints = { ...manifest.entrypoints, relay: AGENT, backup: BACKUP };
   fs.writeFileSync(path.join(server, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const [prefix] of TRIM) {
     if (!trimmed.removed.some((entry) => entry.startsWith(`${prefix}@`))) {
