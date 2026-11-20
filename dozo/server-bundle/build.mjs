@@ -33,6 +33,11 @@ const TRIM = [
 // Raise it with every such change; the release tag is server-v<version>.
 const REVISION = 1;
 const AGENT = "dozo-relay-agent.mjs";
+// Windows only: the links of the bundle, which an archive made there cannot carry (pnpm makes
+// junctions), as { "<link>": "<target, relative to the link's folder>" }, forward slashes. The
+// desktop app makes each one again where it installs the bundle. Written by upstream's script
+// through an anchored rule (dozo/brand/brand.json).
+const LINKS = "dozo-links.json";
 
 const fail = (message, code = 2) => {
   process.stderr.write(`[server-bundle] FAILED: ${message}\n`);
@@ -66,19 +71,24 @@ function* walk(dir) {
   }
 }
 
-/** Total bytes and files under a folder. */
+/** Total bytes and files under a folder, and its longest path inside (Windows' limit is 260). */
 function measure(dir) {
   let bytes = 0;
   let files = 0;
+  let longest = 0;
   for (const [at, entry] of walk(dir)) {
+    longest = Math.max(longest, path.relative(dir, at).length);
     if (!entry.isFile()) continue;
     bytes += fs.statSync(at).size;
     files += 1;
   }
-  return { bytes, files };
+  return { bytes, files, longest };
 }
 
-/** Removes the TRIM store folders and every symlink left pointing at nothing. */
+/**
+ * Removes the TRIM store folders and every link left pointing at nothing: symlinks, and on
+ * Windows the entries of LINKS whose folder or target went with them.
+ */
 function trim(root) {
   const store = path.join(root, "node_modules", ".pnpm");
   const removed = [];
@@ -92,7 +102,20 @@ function trim(root) {
     ([at, entry]) => entry.isSymbolicLink() && !fs.existsSync(at),
   );
   for (const [at] of dangling) fs.rmSync(at);
-  return { removed, dangling: dangling.length };
+  let listed = 0;
+  let unlisted = 0;
+  const list = path.join(root, LINKS);
+  if (fs.existsSync(list)) {
+    const links = Object.entries(JSON.parse(fs.readFileSync(list, "utf8")));
+    const kept = links.filter(([at, target]) => {
+      const folder = path.join(root, path.dirname(at));
+      return fs.existsSync(folder) && fs.existsSync(path.join(folder, target));
+    });
+    fs.writeFileSync(list, `${JSON.stringify(Object.fromEntries(kept), null, 1)}\n`);
+    listed = kept.length;
+    unlisted = links.length - kept.length;
+  }
+  return { removed, dangling: dangling.length + unlisted, listed };
 }
 
 const sha256 = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
@@ -230,7 +253,7 @@ const fragment = {
 };
 fs.writeFileSync(path.join(outDir, `${name}.json`), `${JSON.stringify(fragment, null, 2)}\n`);
 say(
-  `trim: ${trimmed.removed.length} store folders, ${trimmed.dangling} dangling links; unpacked ${mb(before.bytes)} -> ${mb(after.bytes)}, files ${before.files} -> ${after.files}`,
+  `trim: ${trimmed.removed.length} store folders, ${trimmed.dangling} dangling links${win ? `, ${trimmed.listed} listed links` : ""}; unpacked ${mb(before.bytes)} -> ${mb(after.bytes)}, files ${before.files} -> ${after.files}, longest path ${after.longest}`,
 );
 say(
   `${fragment.file}: ${mb(fragment.size)} (untrimmed ${mb(upstream.size)}), sha256 ${fragment.sha256}, total ${seconds(started)}`,

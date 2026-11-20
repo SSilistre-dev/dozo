@@ -238,12 +238,13 @@ olc() {
         echo "[olc] brand rules match the tree: $(printf '%s\n' "$out" | grep '^hooks:')"
       else printf '%s\n' "$out"; fail "brand rules do not match the tree (apply.mjs --check)"; fi
     else fail "dozo/brand/apply.mjs missing: brand rules not checked"; fi
-    # The leak gate of the brand step, brought forward: the working tree's apps, packages and infra
-    # (tracked and untracked, not ignored) are branded in a scratch copy inside one container and
+    # The leak gate of the brand step, brought forward: the working tree's apps, packages, infra and
+    # scripts (where the rules on the server bundle's scripts apply; tracked and untracked, not
+    # ignored) are branded in a scratch copy inside one container and
     # scanned, so the old name left in anything users see (a screen, an e-mail template, a locale
     # catalogue, a prompt) fails here and not only at `make qa`. About 9 seconds.
     if [ -f dozo/brand/check.mjs ]; then
-      if out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra \
+      if out=$(git ls-files -z --cached --others --exclude-standard -- apps packages infra scripts \
         | drun brand-leak -i --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'set -e
             mkdir -p /tmp/w; tar --null --ignore-failed-read -T - -cf - | tar -C /tmp/w -xf -
             node dozo/brand/apply.mjs --root /tmp/w --strict > /dev/null
