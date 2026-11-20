@@ -6461,6 +6461,51 @@
       "find": "  const parsed = streaming ? closeUnterminatedFence(source) : source;",
       "replace": "  const parsed = mathSource(streaming ? closeUnterminatedFence(source) : source);",
       "reason": "chat math: dollars that are prices, not math delimiters, stay text; same length, so parser offsets still match the source"
+    },
+    {
+      "file": "apps/api/src/runs.ts",
+      "find": "import { Prisma } from \"@rakazo/db\";\n\nconst RECENT_LIMIT",
+      "replace": "import { Prisma } from \"@rakazo/db\";\nimport { dozoActivityPrompt } from \"./dozo-activity-preview.js\";\n\nconst RECENT_LIMIT",
+      "requires": [
+        "apps/api/src/dozo-activity-preview.ts"
+      ],
+      "reason": "activity list: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/runs.ts",
+      "find": "      prompt: row.task.prompt,\n      sourceBlocks: row.sourceMessage?.blocks,",
+      "replace": "      prompt: dozoActivityPrompt({ ...row, prompt: row.task.prompt }),\n      sourceBlocks: row.sourceMessage?.blocks,",
+      "requires": [
+        "apps/api/src/dozo-activity-preview.ts"
+      ],
+      "reason": "activity list: a run woken by a prompt the server wrote (the creation intro, a call's end, an approved connector) shows no prompt; its instructions to the bot appeared as the chat's preview"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./time-separators.js\";\nexport * from \"./tool-activity.js\";",
+      "replace": "export * from \"./time-separators.js\";\nexport * from \"./dozo-local-day.js\";\nexport * from \"./tool-activity.js\";",
+      "requires": [
+        "packages/core/src/dozo-local-day.ts"
+      ],
+      "reason": "downloads: the person's own date for a file's name (usage CSV, chat export), shared by web and mobile"
+    },
+    {
+      "file": "apps/api/src/model-credentials.ts",
+      "find": "} from \"@rakazo/db\";\nimport { mayUsePrivateEndpoint } from \"./mcp-servers.js\";\n",
+      "replace": "} from \"@rakazo/db\";\nimport { dozoBecomesMain } from \"./dozo-main-model.js\";\nimport { mayUsePrivateEndpoint } from \"./mcp-servers.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-main-model.ts"
+      ],
+      "reason": "main model: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/model-credentials.ts",
+      "find": "  const becomesMain =\n    input.makeDefault !== false &&\n    Boolean(defaultModel) &&\n    (!input.keepExistingDefault || !mainRole.primary);",
+      "replace": "  const becomesMain =\n    Boolean(defaultModel) && dozoBecomesMain(input, mainRole.primary, credential);",
+      "requires": [
+        "apps/api/src/dozo-main-model.ts"
+      ],
+      "reason": "main model: a save that does not ask for it (the web form of an existing connection sends no makeDefault) changes the main model only while there is none or this connection already runs it, instead of moving it to that connection"
     }
   ],
   "assets": {

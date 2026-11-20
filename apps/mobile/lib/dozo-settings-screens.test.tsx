@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
+import { dozoLocalDay } from "@rakazo/core";
 import { flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -293,7 +294,8 @@ describe("usage on mobile", () => {
     await settle(() => expect(ui.share).toHaveBeenCalled());
     expect(ui.share.mock.lastCall![0]).toMatchObject({
       message: "group,calls\nfast-model,1200\n",
-      title: expect.stringMatching(/^usage-model-\d{4}-\d{2}-\d{2}\.csv$/),
+      // The person's own day, not UTC's.
+      title: `usage-model-${dozoLocalDay(new Date())}.csv`,
     });
 
     answers["dozoUsage/csv"] = new Error("Not now");

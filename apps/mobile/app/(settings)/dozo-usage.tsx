@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { DozoUsageGroup, DozoUsageGrouping } from "@rakazo/contracts";
+import { dozoLocalDay } from "@rakazo/core";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet, Text } from "react-native";
@@ -47,7 +48,7 @@ export default function DozoUsage() {
         ...rpcQuery("dozoUsage/csv", { by }),
         staleTime: 0,
       });
-      const day = new Date().toISOString().slice(0, 10);
+      const day = dozoLocalDay(new Date());
       await Share.share({ message: csv, title: `usage-${by}-${day}.csv` });
     } catch (error) {
       Alert.alert(t`Could not export`, errorText(error, t`Try again.`));

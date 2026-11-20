@@ -178,6 +178,24 @@ it("downloads the grouping shown as the server's CSV", async () => {
   expect(new TextDecoder().decode(bytes)).toBe("routine\r\n");
 });
 
+it("names the CSV with the person's own day", async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = "Europe/Istanbul";
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T21:30:00Z") });
+  try {
+    await show(<DozoUsageSettingsPanel usage={summary} />);
+    await act(async () =>
+      (host.querySelector("[aria-label='Download CSV']") as HTMLButtonElement).click(),
+    );
+    // Half past midnight in Istanbul is still the day before in UTC.
+    expect(api.download.mock.calls[0]?.[0]).toBe("usage-model-2026-11-21.csv");
+  } finally {
+    vi.useRealTimers();
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+});
+
 it("says so when the download fails", async () => {
   const failure = new Error("offline");
   api.csv.mockRejectedValueOnce(failure);
