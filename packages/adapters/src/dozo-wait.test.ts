@@ -7,6 +7,7 @@ import {
   DOZO_MAX_WAITS_PER_BOT,
   dozoCreateSchedule,
   dozoTickWait,
+  dozoWaitRefusal,
   dozoWatchNextRunAt,
 } from "./dozo-wait.js";
 import { DOZO_WAIT_MAX_MINUTES } from "./dozo-wait.tool-definition.js";
@@ -30,6 +31,7 @@ function fakeDatabase() {
   const routines = new Map<string, Routine & { botId: string }>();
   const sql = (strings: TemplateStringsArray) => strings.join("?");
   let failInsert = false;
+  const lockedFor: string[] = [];
   const client = {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = sql(strings);
@@ -39,6 +41,10 @@ function fakeDatabase() {
           return routine !== undefined && routine.botId === values[0] && routine.active;
         });
         return [{ waits: waiting.length }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) {
+        lockedFor.push(values[0] as string);
+        return [];
       }
       if (text.includes("FROM dozo_routine_waits WHERE")) {
         const wait = waits.get(values[0] as string);
@@ -76,6 +82,9 @@ function fakeDatabase() {
       ),
     },
   };
+  Object.assign(client, {
+    $transaction: async <T>(work: (tx: typeof client) => Promise<T>) => work(client),
+  });
   const enqueued: BackgroundJob[] = [];
   const cancelled: string[] = [];
   const jobs: JobPublisher = {
@@ -108,6 +117,7 @@ function fakeDatabase() {
     cancelled,
     publishSpaceChange,
     addRoutine,
+    lockedFor,
     failInserts: () => {
       failInsert = true;
     },
@@ -250,6 +260,47 @@ describe("creating a wait", () => {
     // A wait for another bot counts against that bot.
     const other = { ...input, target: { botId: "bot-2", threadId: "thread-2" } };
     expect(await dozoCreateSchedule(create, 30, deps(db), other)).toHaveProperty("ok", true);
+  });
+
+  it("refuses before the approval card what the call itself would refuse", async () => {
+    const db = fakeDatabase();
+    const refusal = (minutes: unknown, watch: unknown = WATCH, botId = "bot-1") =>
+      dozoWaitRefusal(db.deps.prisma, minutes, { botId, watch });
+    expect(await refusal(undefined)).toBeUndefined();
+    expect(await refusal(null, undefined)).toBeUndefined();
+    expect(await refusal(60)).toBeUndefined();
+    expect(await refusal(1)).toMatch(/must be 5 to/);
+    expect(await refusal(60, null)).toMatch(/goes with a watch/);
+    expect(await refusal(60, "")).toMatch(/goes with a watch/);
+    for (let wait = 0; wait < DOZO_MAX_WAITS_PER_BOT; wait += 1) {
+      db.addRoutine({ id: `full-${wait}` });
+      db.waits.set(`full-${wait}`, { endsAt: NOW, minutes: 30 });
+    }
+    expect(await refusal(60)).toMatch(/already have 10 waits/);
+    expect(await refusal(60, WATCH, "bot-2")).toBeUndefined();
+  });
+
+  it("counts again under the bot's lock, so a call that lost the race takes its watch back", async () => {
+    const db = fakeDatabase();
+    for (let wait = 0; wait < DOZO_MAX_WAITS_PER_BOT - 1; wait += 1) {
+      db.addRoutine({ id: `other-${wait}` });
+      db.waits.set(`other-${wait}`, { endsAt: NOW, minutes: 30 });
+    }
+    // Another call records the last wait while this one creates its routine.
+    const create = vi.fn(async () => {
+      db.addRoutine({ id: "rival" });
+      db.waits.set("rival", { endsAt: NOW, minutes: 30 });
+      db.addRoutine({ id: "routine-1", nextRunAt: new Date(NOW.getTime() + 2_000) });
+      return { ok: true as const, routineId: "routine-1", name: "Deploy", watch: WATCH, note: "" };
+    }) as unknown as typeof createScheduleFromTool;
+    expect(await dozoCreateSchedule(create, 30, deps(db), input)).toHaveProperty(
+      "error",
+      expect.stringMatching(/already have 10 waits/),
+    );
+    expect(db.lockedFor).toEqual(["dozo-wait:bot-1"]);
+    expect(db.waits.has("routine-1")).toBe(false);
+    expect(db.routines.get("routine-1")).toMatchObject({ active: false, nextRunAt: null });
+    expect(db.cancelled).toEqual(["routine:routine-1"]);
   });
 
   it("passes on what schedule_create refuses", async () => {

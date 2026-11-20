@@ -5401,7 +5401,7 @@
     {
       "file": "packages/adapters/src/run-tools-tasks.ts",
       "find": "} from \"./desktop-command-guard.js\";\nimport type { RunContext } from \"./run-context.js\";",
-      "replace": "} from \"./desktop-command-guard.js\";\nimport { dozoCreateSchedule } from \"./dozo-wait.js\";\nimport type { RunContext } from \"./run-context.js\";",
+      "replace": "} from \"./desktop-command-guard.js\";\nimport { dozoCreateSchedule, dozoWaitRefusal } from \"./dozo-wait.js\";\nimport type { RunContext } from \"./run-context.js\";",
       "requires": [
         "packages/adapters/src/dozo-wait.ts"
       ],
@@ -5415,6 +5415,15 @@
         "packages/adapters/src/dozo-wait.ts"
       ],
       "reason": "one-time waits: schedule_create with a watch and waitMinutes records the wait, within the per-bot limit"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.ts",
+      "find": "      ...scheduleCreateFields(args),\n    }));\n  return error ? { error } : undefined;",
+      "replace": "      ...scheduleCreateFields(args),\n    })) ??\n    (await dozoWaitRefusal(deps.prisma, args.waitMinutes, { botId: bot.id, watch: args.watch }));\n  return error ? { error } : undefined;",
+      "requires": [
+        "packages/adapters/src/dozo-wait.ts"
+      ],
+      "reason": "one-time waits: a wait that cannot start (bad length, no watch, the bot's waits all in use) is refused before the approval card, like the rest of schedule_create"
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",

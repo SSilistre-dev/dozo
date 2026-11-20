@@ -1,5 +1,6 @@
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatchState } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { DOZO_ROUTINE_CATCH_UP_MS } from "./dozo-quiet-hours.js";
 import { DOZO_WAIT_CHANGED_NOTE, dozoWaitTimedOutNote } from "./dozo-wait.prompt.js";
@@ -25,20 +26,56 @@ type CreateSchedule = typeof createScheduleFromTool;
 type CreateDeps = Parameters<CreateSchedule>[0];
 type CreateInput = Parameters<CreateSchedule>[1];
 
-/** The minutes asked for; undefined when no wait is asked for. */
-function readWaitMinutes(value: unknown): number | undefined | { error: string } {
-  if (value === undefined || value === null || (typeof value === "string" && !value.trim()))
-    return undefined;
+const TOO_MANY = `You already have ${DOZO_MAX_WAITS_PER_BOT} waits going. Cancel one with schedule_cancel before adding another.`;
+
+/** The minutes asked for, why they cannot be used, or undefined when no wait is asked for. */
+function readWaitMinutes(value: unknown): number | string | undefined {
+  if (!given(value)) return undefined;
   const minutes = Math.round(Number(value));
   if (
     !Number.isFinite(minutes) ||
     minutes < DOZO_WAIT_MIN_MINUTES ||
     minutes > DOZO_WAIT_MAX_MINUTES
   )
-    return {
-      error: `waitMinutes must be ${DOZO_WAIT_MIN_MINUTES} to ${DOZO_WAIT_MAX_MINUTES} minutes.`,
-    };
+    return `waitMinutes must be ${DOZO_WAIT_MIN_MINUTES} to ${DOZO_WAIT_MAX_MINUTES} minutes.`;
   return minutes;
+}
+
+/** Model serializers send an unused field as null or "". */
+function given(value: unknown): boolean {
+  return value !== undefined && value !== null && !(typeof value === "string" && !value.trim());
+}
+
+async function waitsGoing(db: Pick<PrismaClient, "$queryRaw">, botId: string): Promise<number> {
+  const [counted] = await db.$queryRaw<Array<{ waits: number }>>`
+    SELECT count(*)::int AS waits FROM dozo_routine_waits w JOIN routines r ON r.id = w."routineId"
+    WHERE r."botId" = ${botId} AND r.active`;
+  return counted?.waits ?? 0;
+}
+
+async function waitRefusal(
+  prisma: PrismaClient,
+  botId: string,
+  watch: unknown,
+): Promise<string | undefined> {
+  if (!given(watch))
+    return "waitMinutes goes with a watch. To wait a set time, use delayMinutes or runAt.";
+  return (await waitsGoing(prisma, botId)) >= DOZO_MAX_WAITS_PER_BOT ? TOO_MANY : undefined;
+}
+
+/**
+ * Why a schedule_create call's wait cannot start. Asked before the approval gate as well, so a
+ * wait that cannot start shows no approval card.
+ */
+export async function dozoWaitRefusal(
+  prisma: PrismaClient,
+  rawMinutes: unknown,
+  input: { botId: string; watch: unknown },
+): Promise<string | undefined> {
+  const minutes = readWaitMinutes(rawMinutes);
+  if (minutes === undefined) return undefined;
+  if (typeof minutes === "string") return minutes;
+  return waitRefusal(prisma, input.botId, input.watch);
 }
 
 /** schedule_create, which becomes a one-time wait when the call gives `waitMinutes`. */
@@ -50,38 +87,41 @@ export async function dozoCreateSchedule(
 ) {
   const minutes = readWaitMinutes(rawMinutes);
   if (minutes === undefined) return create(deps, input);
-  if (typeof minutes !== "number") return minutes;
-  if (input.schedule.watch === undefined)
-    return {
-      error: "waitMinutes goes with a watch. To wait a set time, use delayMinutes or runAt.",
-    };
+  if (typeof minutes === "string") return { error: minutes };
   const botId = input.target?.botId ?? input.botId;
-  const [counted] = await deps.prisma.$queryRaw<Array<{ waits: number }>>`
-    SELECT count(*)::int AS waits FROM dozo_routine_waits w JOIN routines r ON r.id = w."routineId"
-    WHERE r."botId" = ${botId} AND r.active`;
-  if ((counted?.waits ?? 0) >= DOZO_MAX_WAITS_PER_BOT)
-    return {
-      error: `You already have ${DOZO_MAX_WAITS_PER_BOT} waits going. Cancel one with schedule_cancel before adding another.`,
-    };
+  const refused = await waitRefusal(deps.prisma, botId, input.schedule.watch);
+  if (refused) return { error: refused };
   const created = await create(deps, input);
   const routineId = "ok" in created ? created.routineId : undefined;
   if (!routineId) return created;
   const endsAt = new Date(Date.now() + minutes * 60_000);
-  try {
-    await deps.prisma.$executeRaw`
-      INSERT INTO dozo_routine_waits ("routineId", "endsAt", minutes)
-      VALUES (${routineId}, ${endsAt.toISOString()}::timestamptz, ${minutes})`;
-  } catch (error) {
-    // Without its row the watch would repeat for good: take it back.
-    getLogger().warn("routine.wait_failed", { "routine.id": routineId, error });
+  // Without its row the watch would repeat for good: take it back.
+  const takeBack = async (error: string) => {
     await deps.prisma.routine.updateMany({
       where: { id: routineId },
       data: { active: false, nextRunAt: null },
     });
     await bestEffort("wait job", deps.jobs.cancel(routineJobKey(routineId)));
     await bestEffort("wait change", deps.events.publishSpaceChange?.(input.spaceId, "routines"));
-    return { error: "Could not start the wait. Try again." };
+    return { error };
+  };
+  let recorded: boolean;
+  try {
+    recorded = await deps.prisma.$transaction(async (tx) => {
+      // A bot's waits are counted and added one at a time, so two calls cannot both take the last.
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-wait:${botId}`}, 0))::text AS "lock"`;
+      if ((await waitsGoing(tx, botId)) >= DOZO_MAX_WAITS_PER_BOT) return false;
+      await tx.$executeRaw`
+        INSERT INTO dozo_routine_waits ("routineId", "endsAt", minutes)
+        VALUES (${routineId}, ${endsAt.toISOString()}::timestamptz, ${minutes})`;
+      return true;
+    });
+  } catch (error) {
+    getLogger().warn("routine.wait_failed", { "routine.id": routineId, error });
+    return takeBack("Could not start the wait. Try again.");
   }
+  if (!recorded) return takeBack(TOO_MANY);
   return {
     ...created,
     waitEndsAt: endsAt.toISOString(),
