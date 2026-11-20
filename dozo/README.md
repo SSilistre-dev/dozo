@@ -300,21 +300,24 @@ command there unasked. The fork keeps that first card and then reads each comman
 
 How a command is read, and what that does not cover:
 
-- The server does not know which shell runs it (zsh, bash, fish or PowerShell), so it reads only
-  what is plain in all of them: one program and its words, each bare or wholly quoted. Two
+- The server does not know which shell runs it (the computer's login shell, or PowerShell on
+  Windows), so it reads only what is plain in zsh, bash, fish and PowerShell: one program and its
+  words, each bare or wholly quoted. Other shells (tcsh, nushell) were not considered. Two
   commands, pipes, redirections, variables, globs, `~`, braces, subshells, backslashes, an
   assignment before the program, `//` anywhere in a word (a Windows network share), curly quotes,
-  control characters and invisible format marks make it unreadable. An
-  unreadable command always asks, and offers no Always allow.
+  control characters and invisible format marks make it unreadable. An unreadable command always
+  asks, and offers no Always allow.
 - The read-only list names what may pass, never what must ask, so a script, an interpreter or a
   copy of a program under another name asks. A program is matched by its bare name; a path asks.
-- What a program does is not checked: an alias or function in the member's login profile can
-  make `ls` do anything, and a command allowed by a rule (`npm test`) runs whatever its files say
-  today, and a program put earlier on `PATH` by a command the member allowed runs under the
-  name of a read-only one. Reading does not ask, including files that hold secrets. A Mac can
+- What a program does is not checked. An alias or function in the member's login profile can
+  make `ls` do anything; a command allowed by a rule (`npm test`) runs whatever its files say
+  today; a program put earlier on `PATH` by a command the member allowed runs under the name of a
+  read-only one. Reading does not ask, including files that hold secrets. A Mac can
   reach the network through `/net/<host>` paths, which a read-only command may list.
-- A rule matches the exact words and the folder as the bot wrote it; `~/app` and the same folder
-  by its full path are two rules. The card offers Always allow only when it shows the whole command
+- A rule is the member's for that bot on any of their own computers, not one device, and stays
+  when a computer is removed and paired again (the Space's first card does not). It matches the
+  exact words and the folder as the bot wrote it; `~/app` and the same folder by its full path
+  are two rules. The card offers Always allow only when it shows the whole command
   (nothing hidden as a secret, nothing cut off).
 - Deny on any command makes the rest of that reply refuse commands on the computer, as upstream
   does for a denied tool; the next message starts afresh.
