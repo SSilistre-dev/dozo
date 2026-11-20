@@ -200,7 +200,7 @@ jobs:
       matrix:
         include:
           - { platform: linux-x64, os: ubuntu-22.04 }
-          - { platform: darwin-arm64, os: macos-14 }
+          - { platform: darwin-arm64, os: macos-latest }
           - { platform: darwin-x64, os: macos-15-intel }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -219,7 +219,9 @@ jobs:
             dozo/desktop
             dozo/server-bundle
             dozo/brand/assets
+            dozo/deps
             package.json
+            pnpm-lock.yaml
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: bundle-${{ matrix.platform }}
@@ -232,6 +234,15 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.22.0
+      # The branded tree's lockfile is upstream's plus the fork's listed packages (dozo/deps).
+      - name: Package store
+        id: store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ${{ steps.store.outputs.path }}
+          key: stack-e2e-pnpm-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml', 'dozo/deps/*.json') }}
+          restore-keys: stack-e2e-pnpm-${{ matrix.platform }}-
       - name: Unpack and install the tree
         working-directory: ${{ runner.temp }}
         run: |

@@ -314,9 +314,9 @@ Tests: unit tests in each `src/stack*.rs` (stand-in processes for order, restart
 end-to-end tests (`src/stack_e2e.rs`, ignored in a plain `cargo test`) need a bundle built by
 `dozo/server-bundle/build.sh` and run without a window. `tests/stack_e2e_native.sh <dist>
 <workspace>` runs them on Linux or macOS without Docker; the `Desktop stack e2e` jobs of
-`dozo-server-bundle` run it on Ubuntu 22.04, macOS 14 (Apple silicon) and macOS 15 (Intel) with the
-bundle that run built, on every pull request that touches this directory, the bundle or the relay
-code. Locally, in the Linux build image:
+`dozo-server-bundle` run it on Ubuntu 22.04, the newest macOS on Apple silicon and macOS 15 on
+Intel, with the bundle that run built, on every pull request that touches this directory, the
+bundle or the relay code. Locally, in the Linux build image:
 
 ```sh
 dozo/desktop/tests/stack_e2e.sh <dist>   # last line DESKTOP STACK E2E: PASS|FAIL
