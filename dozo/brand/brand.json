@@ -4559,6 +4559,15 @@
       "reason": "teaching: Stop waits for the bot's input still on its way to the computer, so the last value typed and its Enter are recorded before the recording ends"
     },
     {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { useDesktopBadge } from \"../lib/use-desktop-badge\";",
+      "replace": "import { useDesktopBadge } from \"../lib/dozo-desktop-badge\";",
+      "requires": [
+        "apps/web/src/lib/dozo-desktop-badge.ts"
+      ],
+      "reason": "desktop badge: the unread count also goes in front of the page title (only the number), where the fork's desktop shell, which has no bridge into the page, reads it for the Dock, taskbar or launcher badge"
+    },
+    {
       "file": "packages/adapters/src/teaching-session.ts",
       "find": "import { toComputerRef } from \"./computer-support.js\";\n\nexport type TaughtSkillRow",
       "replace": "import { toComputerRef } from \"./computer-support.js\";\nimport type { TeachClickObservation } from \"./dozo-teach-targets.js\";\nimport {\n  observeTeachClick,\n  teachClickTarget,\n  withTeachClickTarget,\n} from \"./dozo-teach-targets.js\";\n\nexport type TaughtSkillRow",

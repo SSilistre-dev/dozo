@@ -65,10 +65,11 @@ jobs:
 
       # The built app against two local sites under a virtual display: frames, clicked links and
       # scripts land where src/frames_gtk.rs says, and a second launch and closing the window do
-      # what src/background.rs says. A session bus of its own, with no tray host on it.
+      # what src/background.rs says, and notifications and the badge do what src/alerts.rs says.
+      # A session bus of its own, with no tray host on it.
       - name: Frame gate
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb xdotool dbus openbox wmctrl x11-utils
+          sudo apt-get install -y --no-install-recommends xvfb xdotool dbus openbox wmctrl x11-utils python3-gi gir1.2-glib-2.0
           xvfb-run -a -s "-screen 0 1280x860x24" dbus-run-session -- python3 tests/linux_gate.py target/release/dozo-desktop
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

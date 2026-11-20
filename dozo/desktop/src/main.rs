@@ -3,6 +3,7 @@
 // A release build on Windows opens no console window beside the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod alerts;
 mod background;
 #[cfg(target_os = "macos")]
 mod frames;
@@ -20,7 +21,7 @@ use background::{Close, OS};
 use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable};
 use settings::Settings;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
-use tauri::webview::{NewWindowResponse, PermissionResponse};
+use tauri::webview::NewWindowResponse;
 use tauri::{
     AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
     Wry, window::Color,
@@ -591,8 +592,36 @@ fn main() {
                     })
                     // Downloads go to the Downloads folder under a name that is not taken.
                     .on_download(|_, _| true)
-                    // Camera, microphone and the like: the web view grants them unless told otherwise.
-                    .on_permission_request(|_, _| PermissionResponse::Deny)
+                    // Notifications for the server's own origin; camera, microphone and the
+                    // like are refused (the web view grants them unless told otherwise).
+                    .on_permission_request({
+                        let app = app.clone();
+                        move |webview, kind| {
+                            alerts::answer(kind, webview.url().ok().as_ref(), chosen(&app).as_ref())
+                        }
+                    })
+                    // The server's page puts its unread count in front of its title; nothing
+                    // else of it reaches the app, and any other page counts as none. The window
+                    // keeps its own title.
+                    .on_document_title_changed({
+                        let app = app.clone();
+                        move |window, title| {
+                            let page = window.url().ok();
+                            let count =
+                                alerts::count_for(page.as_ref(), chosen(&app).as_ref(), &title);
+                            alerts::show_unread(&window, count);
+                        }
+                    })
+                    // Leaving the server (Change Server, the connection screens) clears the badge
+                    // at once, whether or not the next page's title changes.
+                    .on_page_load({
+                        let app = app.clone();
+                        move |window, load| {
+                            if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
+                                alerts::show_unread(&window, 0);
+                            }
+                        }
+                    })
                     .build()?;
             window.on_window_event({
                 let app = app.clone();
@@ -620,6 +649,8 @@ fn main() {
             // about the window's own page alone, so frames load there as they do in a browser.
             #[cfg(target_os = "macos")]
             frames::only_gate_the_main_frame(&window)?;
+            #[cfg(target_os = "linux")]
+            alerts::reveal_on_click(&window)?;
             #[cfg(target_os = "linux")]
             frames::only_gate_the_main_frame(&window, move |url, seen| {
                 follow(frames::verdict(url, chosen(&app).as_ref(), seen))
