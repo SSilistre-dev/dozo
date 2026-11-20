@@ -219,6 +219,28 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
   upstream's plans.
 
+## Editing and regenerating
+
+In a person's own chat with a bot, the More menu offers Edit on their last message and Regenerate
+on the bot's last reply (`apps/api/src/dozo-message-revision.ts`). The server names the one message
+each applies to; the menu reads that while it is open. Only the newest turn can change, and only when
+going back undoes nothing outside the chat:
+
+- the message is the caller's own, sent from the app: not from a chat app (that app already holds
+  the reply and cannot unsend it), not a spoken call, not a group;
+- one run answered it, that run has ended, and it called no tool and recorded no external effect
+  (the same test upstream uses before retrying a routine run). A bot that searched, wrote memory,
+  sent mail or used its computer gets neither option, since those cannot be taken back;
+- nothing else was said after the reply, and no run in the chat is working or waiting.
+
+The old reply is deleted with its events, so its words stay nowhere in the chat or in what the
+model reads next; the next reply takes its seq, so the history keeps no gap. An edit replaces the
+message's text. The old run row stays for usage. A server-side memory provider that already learned
+the finished turn keeps it: providers forget per chat, not per turn, so only clearing the chat
+removes it. Old clients drop the removed reply on their next read instead of at once.
+
+Mobile shows the result of an edit or regenerate made elsewhere, but has no menu entry yet.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:
