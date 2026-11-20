@@ -135,10 +135,14 @@ pasted. The app needs no camera permission of its own.
   session that ended is dropped, and the next request reconnects.
 - When the computer removed the phone, the stored pairing goes, if it is that computer's, and
   sign-in offers to pair again.
-- Sign-in with a computer as the server shows no password form, only "Sign in on your computer to
-  use it here." A code someone else showed could have paired the phone with their computer, and a
-  password typed then would go to them. The phone getting its sign-in from the computer is the next
-  step.
+- Sign-in with a computer as the server shows no password form: a code someone else showed could
+  have paired the phone with their computer, and a password typed then would go to them. Instead,
+  the phone asks the computer for its sign-in when the screen shows and when the app comes back to
+  the front (`apps/mobile/lib/dozo-relay-sign-in.ts`). While the computer waits for the user to
+  approve the phone there, the screen shows the same six-digit code the computer shows. The computer
+  gives one session per pairing, after that approval (`dozo/relay/agent/README.md`, Phone sign-in).
+  Otherwise the screen says why: sign in on the computer, more than one account there, not approved
+  in time, or pair again.
 - Crypto: `@noble/curves` 2.4.0, `@noble/ciphers` 2.3.0, `@noble/hashes` 2.3.0, and `expo-crypto`
   58.0.8's `getRandomValues` for the system's random bytes. React Native has neither `crypto.subtle`
   nor `crypto.getRandomValues`. Its `getRandomBytes` is not used, because it falls back to

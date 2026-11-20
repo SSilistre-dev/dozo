@@ -6,6 +6,7 @@ import { RELAY_MAX_MESSAGE_BYTES } from "@rakazo/contracts";
 import { isLoopbackHost } from "@rakazo/contracts/network-host";
 import type { RelayWebSocket } from "@rakazo/core";
 import {
+  approveRelayChannel,
   listRelayChannels,
   pairRelayHost,
   parseRetryAfter,
@@ -32,6 +33,8 @@ export type RelayAgentIo = {
   signal: AbortSignal;
   random?: () => number;
   now?: () => number;
+  /** Where `DOZO_RELAY_AGENT_KEY` is read from (`run`, `revoke`). */
+  env?: NodeJS.ProcessEnv;
 };
 
 const USAGE = 64;
@@ -39,6 +42,15 @@ const FAILED = 2;
 const HANDSHAKE_TIMEOUT_MS = 15_000;
 
 class UsageError extends Error {}
+
+/** The key the local server checks for a phone's sign-in, shared with it; none turns that off. */
+function sessionKeyFrom(env: NodeJS.ProcessEnv = {}) {
+  const key = env.DOZO_RELAY_AGENT_KEY?.trim();
+  if (!key) return undefined;
+  if (!/^[a-f0-9]{64}$/.test(key))
+    throw new UsageError("DOZO_RELAY_AGENT_KEY must be 64 hexadecimal digits");
+  return key;
+}
 
 /** Runs one command and returns the exit code: 0 done, 2 failed, 64 usage error. */
 export async function relayAgentMain(argv: string[], io: RelayAgentIo): Promise<number> {
@@ -76,6 +88,7 @@ export async function relayAgentMain(argv: string[], io: RelayAgentIo): Promise<
           store,
           crypto,
           origin,
+          sessionKey: sessionKeyFrom(io.env),
           connect: connectRelaySocket,
           onEvent: emit,
           signal: io.signal,
@@ -90,12 +103,25 @@ export async function relayAgentMain(argv: string[], io: RelayAgentIo): Promise<
         return 0;
       case "revoke": {
         if (!channel) throw new UsageError("revoke needs a channel id");
-        const result = await revokeRelayChannel({ store, crypto, channel });
-        emit({ event: "revoked", channel, relay: result.relay });
+        const sessionKey = sessionKeyFrom(io.env);
+        const origin = values.origin ? loopbackOrigin(values.origin) : undefined;
+        const result = await revokeRelayChannel({ store, crypto, channel, origin, sessionKey });
+        emit({
+          event: "revoked",
+          channel,
+          relay: result.relay,
+          session: result.session,
+        });
+        return 0;
+      }
+      case "approve": {
+        if (!channel) throw new UsageError("approve needs a channel id");
+        await approveRelayChannel({ store, channel, now });
+        emit({ event: "approved", channel });
         return 0;
       }
       default:
-        throw new UsageError("commands: pair, run, list, revoke");
+        throw new UsageError("commands: pair, run, list, approve, revoke");
     }
   } catch (error) {
     emit({ event: "error", reason: (error as Error).message });
@@ -184,6 +210,7 @@ export function relayAgentProcess(
     write: (line) => proc.stdout.write(`${line}\n`),
     signal: controller.signal,
     stateDir: defaultRelayStateDir(proc.platform, proc.env, homedir()),
+    env: proc.env,
   });
 }
 

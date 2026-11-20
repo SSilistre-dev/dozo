@@ -5048,7 +5048,7 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#. js-lingui-explicit-id\n",
-      "replace": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#: apps/mobile/app/server.tsx\nmsgid \"Connect to your computer\"\nmsgstr \"Bilgisayarınıza bağlanın\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Pairing code\"\nmsgstr \"Eşleştirme kodu\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"That is not a pairing code.\"\nmsgstr \"Bu bir eşleştirme kodu değil.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code has expired. Show a new one on your computer.\"\nmsgstr \"Bu kodun süresi doldu. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code was already used. Show a new one on your computer.\"\nmsgstr \"Bu kod zaten kullanıldı. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Could not reach your computer.\"\nmsgstr \"Bilgisayarınıza ulaşılamadı.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Connect to this computer?\"\nmsgstr \"Bu bilgisayara bağlanılsın mı?\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Only connect to a computer you own.\"\nmsgstr \"Yalnızca size ait bir bilgisayara bağlanın.\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Your computer\"\nmsgstr \"Bilgisayarınız\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Background notifications need a direct connection to the server.\"\nmsgstr \"Arka plan bildirimleri sunucuya doğrudan bağlantı gerektirir.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Uses the relay at {0}.\"\nmsgstr \"{0} aktarıcısını kullanır.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"You will be signed out of {0}.\"\nmsgstr \"{0} oturumunuz kapanacak.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Sign in on your computer to use it here.\"\nmsgstr \"Burada kullanmak için bilgisayarınızda oturum açın.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"This phone was removed from your computer.\"\nmsgstr \"Bu telefon bilgisayarınızdan kaldırıldı.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Pair again\"\nmsgstr \"Yeniden eşleştir\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Use another server\"\nmsgstr \"Başka bir sunucu kullanın\"\n\n#. js-lingui-explicit-id\n",
+      "replace": "msgstr \"Bu bilgisayarda oturum açılsın mı?\"\n\n#: apps/mobile/app/server.tsx\nmsgid \"Connect to your computer\"\nmsgstr \"Bilgisayarınıza bağlanın\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Pairing code\"\nmsgstr \"Eşleştirme kodu\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"That is not a pairing code.\"\nmsgstr \"Bu bir eşleştirme kodu değil.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code has expired. Show a new one on your computer.\"\nmsgstr \"Bu kodun süresi doldu. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"This code was already used. Show a new one on your computer.\"\nmsgstr \"Bu kod zaten kullanıldı. Bilgisayarınızda yenisini gösterin.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Could not reach your computer.\"\nmsgstr \"Bilgisayarınıza ulaşılamadı.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Connect to this computer?\"\nmsgstr \"Bu bilgisayara bağlanılsın mı?\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Only connect to a computer you own.\"\nmsgstr \"Yalnızca size ait bir bilgisayara bağlanın.\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Your computer\"\nmsgstr \"Bilgisayarınız\"\n\n#: apps/mobile/lib/dozo-relay-endpoint.ts\nmsgid \"Background notifications need a direct connection to the server.\"\nmsgstr \"Arka plan bildirimleri sunucuya doğrudan bağlantı gerektirir.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"Uses the relay at {0}.\"\nmsgstr \"{0} aktarıcısını kullanır.\"\n\n#: apps/mobile/app/dozo-pair.tsx\nmsgid \"You will be signed out of {0}.\"\nmsgstr \"{0} oturumunuz kapanacak.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Sign in on your computer to use it here.\"\nmsgstr \"Burada kullanmak için bilgisayarınızda oturum açın.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"This phone was removed from your computer.\"\nmsgstr \"Bu telefon bilgisayarınızdan kaldırıldı.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Pair again\"\nmsgstr \"Yeniden eşleştir\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Use another server\"\nmsgstr \"Başka bir sunucu kullanın\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Approve this phone on your computer.\"\nmsgstr \"Bu telefonu bilgisayarınızda onaylayın.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"This phone was not approved in time.\"\nmsgstr \"Bu telefon zamanında onaylanmadı.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Pair again to sign in on this phone.\"\nmsgstr \"Bu telefonda oturum açmak için yeniden eşleştirin.\"\n\n#: apps/mobile/components/dozo-computer-sign-in.tsx\nmsgid \"Your computer has more than one account, so it cannot sign this phone in.\"\nmsgstr \"Bilgisayarınızda birden fazla hesap var, bu yüzden bu telefonda oturum açamıyor.\"\n\n#. js-lingui-explicit-id\n",
       "reason": "own computer over the relay: the Turkish copy of the mobile pairing screen, the Server screen's way to it, and the lines shown for a paired computer"
     },
     {
@@ -5327,6 +5327,51 @@
         "apps/web/src/pages/shell/dozo-message-revision.tsx"
       ],
       "reason": "message revision: the edit dialog lives outside the menu, which closes when it opens"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "import { dozoHostedLogin } from \"./dozo-hosted-login.js\";\nimport { emailLocale,",
+      "replace": "import { dozoHostedLogin } from \"./dozo-hosted-login.js\";\nimport { dozoRelaySessionsWhenKeyed } from \"./dozo-relay-session.js\";\nimport { emailLocale,",
+      "requires": [
+        "packages/auth/src/dozo-relay-session.ts"
+      ],
+      "reason": "phone sign-in from the user's computer: the import of the rule below"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "      signedBearer,\n      expo(),",
+      "replace": "      signedBearer,\n      // Only with the relay agent's key: otherwise nothing of it is wired.\n      ...dozoRelaySessionsWhenKeyed({ prisma }),\n      expo(),",
+      "requires": [
+        "packages/auth/src/dozo-relay-session.ts"
+      ],
+      "reason": "phone sign-in from the user's computer: the phones' sessions follow the computer's (sign-out, its last session ending) and may not change the account's sign-in; wired only with the relay agent's key"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "export { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport { createDirectory }",
+      "replace": "export { hostedLoginOnly, refuseUnlinkedAccounts } from \"./dozo-hosted-login.js\";\nexport type { RelaySessionAuth, RelaySessionPrisma } from \"./dozo-relay-session.js\";\nexport {\n  agentProofMatches,\n  forgetRelayAgentKey,\n  issueRelaySession,\n  relayAgentKey,\n  revokeRelaySession,\n} from \"./dozo-relay-session.js\";\nexport { createDirectory }",
+      "requires": [
+        "packages/auth/src/dozo-relay-session.ts"
+      ],
+      "reason": "phone sign-in from the user's computer: what the API's route uses"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { startComputerSwitchSweep } from \"./routes/dozo-computer-switch.js\";\nimport { afterSpaceDeparture }",
+      "replace": "import { startComputerSwitchSweep } from \"./routes/dozo-computer-switch.js\";\nimport { mountDozoRelaySessions } from \"./dozo-relay-session.js\";\nimport { afterSpaceDeparture }",
+      "requires": [
+        "apps/api/src/dozo-relay-session.ts"
+      ],
+      "reason": "phone sign-in from the user's computer: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "      return response;\n    });\n  }\n  app.on([\"GET\", \"POST\"], \"/api/auth/*\", async (c) => {",
+      "replace": "      return response;\n    });\n  }\n  // Before the auth routes, and only with the relay agent's key: only the agent reaches these.\n  mountDozoRelaySessions(app, { auth, prisma });\n  app.on([\"GET\", \"POST\"], \"/api/auth/*\", async (c) => {",
+      "requires": [
+        "apps/api/src/dozo-relay-session.ts"
+      ],
+      "reason": "phone sign-in from the user's computer: the local server gives a paired phone a session for its one account, asked for by the computer's relay agent only"
     },
     {
       "file": "apps/web/src/pages/shell/chat-header.tsx",

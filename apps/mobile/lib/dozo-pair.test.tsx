@@ -37,6 +37,7 @@ const relay = vi.hoisted(() => ({
   ),
   confirm: vi.fn(async (): Promise<boolean> => true),
   token: vi.fn(async () => ""),
+  flush: vi.fn(async () => undefined),
 }));
 
 vi.mock("react-native", () => ({
@@ -67,7 +68,10 @@ vi.mock("./screen-header", () => ({
     state.header = header;
   },
 }));
-vi.mock("./api", () => ({ currentApiBase: () => "https://app.example.invalid" }));
+vi.mock("./api", () => ({
+  currentApiBase: () => "https://app.example.invalid",
+  flushPendingSignOut: relay.flush,
+}));
 vi.mock("./session", () => ({ loadSessionToken: relay.token }));
 vi.mock("./dozo-relay-endpoint", () => ({ displayApiHost: (url: string) => new URL(url).host }));
 vi.mock("./unsent-send-warning", () => ({ confirmUnsentSendLoss: relay.confirm }));
@@ -147,6 +151,11 @@ it("checks a pasted code, asks once, pairs, and stores the pairing only after th
     relay.save.mock.invocationCallOrder[0] as number,
   );
   expect(relay.keepOnly).toHaveBeenCalledWith(ORIGIN);
+  // The computer paired before is signed out through its own connection, before it closes.
+  expect(relay.flush).toHaveBeenCalledWith(true);
+  expect(relay.flush.mock.invocationCallOrder[0]).toBeLessThan(
+    relay.keepOnly.mock.invocationCallOrder[0] as number,
+  );
   expect(router.replace).toHaveBeenCalledWith("/");
 });
 
