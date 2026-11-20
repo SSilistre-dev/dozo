@@ -99,6 +99,10 @@ The desktop app also makes `DOZO_RELAY_AGENT_KEY` (64 hex digits) with the other
 gives it to the API and to the relay agent, which signs paired phones in with it
 (`dozo/relay/agent/README.md`).
 
+The desktop app also gives the API and the worker `HOST_USER_HOME` and `HOST_USER_PATH`, the
+person's own home folder and login shell `PATH` (the processes run with `HOME` in the server's
+folder); nothing in the server reads them yet, and `run.sh` leaves them out.
+
 `run.sh` uses ports 54329 (Postgres), 3100 (API) and 5173 (web); the app picks free ones.
 
 ## Trimmed packages

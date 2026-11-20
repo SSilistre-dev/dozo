@@ -169,6 +169,61 @@ pub fn saved_ports(file: &Path) -> Option<Ports> {
     })
 }
 
+/// The person's own home folder and their login shell's `PATH`, for the server's API and worker
+/// (`HOST_USER_HOME`, `HOST_USER_PATH`). The server runs with its own folder as `HOME` and only
+/// the app's `PATH`, which on macOS, opened from the Dock, lacks what the shell profile adds; a
+/// command-line model provider the person installed and signed in to needs both. Passed on only;
+/// nothing reads them yet.
+pub fn user_environment() -> Vec<(&'static str, String)> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
+    let path = std::env::var("SHELL")
+        .ok()
+        .filter(|_| cfg!(unix))
+        .and_then(|shell| login_path(Path::new(&shell)))
+        .or_else(|| std::env::var("PATH").ok());
+    [("HOST_USER_HOME", home), ("HOST_USER_PATH", path)]
+        .into_iter()
+        .filter_map(|(key, value)| Some((key, value.filter(|value| !value.is_empty())?)))
+        .collect()
+}
+
+/// `PATH` as the login shell sets it: what the shell prints after a marker, so a profile that
+/// prints something of its own does not matter. Its output is read as it comes, and after 5
+/// seconds the shell and what its profile started in its process group are ended: a profile that
+/// leaves something holding the output open cannot hold up the start.
+pub fn login_path(shell: &Path) -> Option<String> {
+    const MARK: &str = "__DOZO_PATH__";
+    let mut command = std::process::Command::new(shell);
+    command
+        .args(["-l", "-c", &format!("printf '\\n{MARK}%s' \"$PATH\"")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut child = command.spawn().ok()?;
+    let mut out = child.stdout.take()?;
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = std::io::Read::read_to_string(&mut out, &mut text);
+        let _ = send.send(text);
+    });
+    let text = receive.recv_timeout(std::time::Duration::from_secs(5)).ok();
+    #[cfg(unix)]
+    // SAFETY: a plain kill(2) on the group the shell leads.
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    let text = text?;
+    let path = text.rsplit_once(MARK)?.1.trim();
+    (!path.is_empty()).then(|| path.to_owned())
+}
+
 /// Held for as long as the server runs from this folder, and by its processes too (they inherit
 /// it, `stack_os.rs`), so a second app cannot start one beside it or beside what is left of it.
 pub fn lock(file: &Path) -> io::Result<Option<File>> {
@@ -349,6 +404,35 @@ mod tests {
             "broken; with the system's libstdc++: broken"
         );
         assert!(carried.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_login_path_is_what_the_shell_prints_after_the_mark() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("login-path");
+        let shell = dir.join("shell");
+        let write = |body: &str| {
+            fs::write(&shell, format!("#!/bin/sh\n{body}\n")).unwrap();
+            fs::set_permissions(&shell, fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        // A profile that talks, then the shell's answer to the command it was given.
+        write("echo 'welcome back'; PATH=/opt/tools/bin:/usr/bin; eval \"$3\"");
+        assert_eq!(
+            login_path(&shell).as_deref(),
+            Some("/opt/tools/bin:/usr/bin")
+        );
+        write("exit 1");
+        assert_eq!(login_path(&shell), None);
+        write("sleep 30");
+        let started = std::time::Instant::now();
+        assert_eq!(login_path(&shell), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        // A profile that leaves something behind holding the output open.
+        write("sleep 30 & eval \"$3\"");
+        let started = std::time::Instant::now();
+        assert_eq!(login_path(&shell), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
     #[test]
