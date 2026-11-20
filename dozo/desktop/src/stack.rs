@@ -370,7 +370,7 @@ impl Local {
             let mut run = agent.spec("run", &["--origin", &plan.web]);
             run.on_line = Some(OnLine(Arc::new(move |line| {
                 if let Some(event) = phone_event_of(line) {
-                    phone_event.send_replace(Some(event));
+                    phone_event.send_if_modified(|last| keep_phone_event(last, event));
                 }
             })));
             self.keep(run, &launch)
@@ -680,12 +680,13 @@ pub struct Phone {
 }
 
 impl Agent {
+    /// The command line: options first, a channel last after `--` (`channel_last`).
     fn spec(&self, command: &str, args: &[&str]) -> Spec {
         let mut spec = self.base.clone();
         spec.args.push(command.into());
-        spec.args.extend(args.iter().map(Into::into));
         spec.args.push("--state".into());
         spec.args.push(self.state.clone().into());
+        spec.args.extend(args.iter().map(Into::into));
         spec
     }
 
@@ -731,14 +732,16 @@ impl Agent {
     /// Ends a phone's pairing: on the relay when it can be reached, its session on the server,
     /// and its keys here always. A phone not allowed yet is refused the same way.
     pub async fn remove(&self, channel: &str) -> Result<(), String> {
-        self.ask("revoke", &[channel, "--origin", &self.origin])
+        self.ask("revoke", &["--origin", &self.origin, "--", channel])
             .await
             .map(drop)
     }
 
     /// The person allowed the phone that just paired: it gets its sign-in.
     pub async fn approve(&self, channel: &str) -> Result<(), String> {
-        self.ask("approve", &[channel]).await.map(drop)
+        // After `--`: a channel id is base64url, so one in 64 starts with `-`, which would read
+        // as an option.
+        self.ask("approve", &["--", channel]).await.map(drop)
     }
 }
 
@@ -750,6 +753,20 @@ fn phone_event_of(line: &[u8]) -> Option<Value> {
     ["paired", "approval", "approved", "expired"]
         .contains(&kind)
         .then_some(event)
+}
+
+/// Takes `event` as the last word about a phone, unless it would hide a question the person has
+/// to answer: `paired` comes once the pairing is stored and on the relay, and the phone may ask
+/// for its sign-in (`approval`) before that. True when it was taken.
+fn keep_phone_event(last: &mut Option<Value>, event: Value) -> bool {
+    let asking = last.as_ref().is_some_and(|last| {
+        last["event"] == "approval" && event_channel(last) == event_channel(&event)
+    });
+    if asking && event["event"] == "paired" {
+        return false;
+    }
+    *last = Some(event);
+    true
 }
 
 /// The channel a phone event is about.
@@ -1131,7 +1148,7 @@ mod tests {
       pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"dozo://pair#x"}'; exit 0;;
       list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
       revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
-      approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
+      approve) for a; do last=$a; done; echo "{\"event\":\"approved\",\"channel\":\"$last\"}"; exit 0;;
       run) echo "key=$DOZO_RELAY_AGENT_KEY" >> "$0.env"; echo '{"event":"connected","channel":"c2"}'; sleep 0.3
         echo '{"event":"paired","channel":"c9"}'
         echo '{"event":"approval","channel":"c9","platform":"android","code":"123456"}';;
@@ -1214,9 +1231,9 @@ mod tests {
         assert_eq!(
             lines_of(&root.join("said.relay")),
             [format!(
-                "relay.js run --origin http://127.0.0.1:{} --state {}",
-                url[17..].trim_end_matches('/'),
-                root.join("relay").display()
+                "relay.js run --state {} --origin http://127.0.0.1:{}",
+                root.join("relay").display(),
+                url[17..].trim_end_matches('/')
             )]
         );
         assert_eq!(first[..4], ["initdb", "postgres", "createdb", "migrate.js"]);
@@ -1293,18 +1310,18 @@ mod tests {
         let commands = lines_of(&root.join("said.relay"));
         let state = root.join("relay").display().to_string();
         assert!(commands.contains(&format!(
-            "relay.js pair --relay http://127.0.0.1:9 --state {state}"
+            "relay.js pair --state {state} --relay http://127.0.0.1:9"
         )));
         let web = local_web(&root);
         assert!(commands.contains(&format!(
-            "relay.js revoke c2 --origin {web} --state {state}"
+            "relay.js revoke --state {state} --origin {web} -- c2"
         )));
         let approval = events.borrow().clone().unwrap();
         assert_eq!(approval["code"], "123456");
         assert_eq!(approval["platform"], "android");
         agent.approve("c9").await.unwrap();
         let commands = lines_of(&root.join("said.relay"));
-        assert!(commands.contains(&format!("relay.js approve c9 --state {state}")));
+        assert!(commands.contains(&format!("relay.js approve --state {state} -- c9")));
         // The agent and the API get the same key, made with the other secrets.
         let key = stack_setup::secrets(&root.join("secrets")).unwrap();
         let key = key.get("RELAY_AGENT_KEY").to_owned();
@@ -1313,6 +1330,29 @@ mod tests {
         assert_eq!(lines_of(&node), [format!("key={key}")]);
         assert!(local.stop().await);
         assert!(local.agent().await.is_none());
+    }
+
+    #[test]
+    fn a_late_paired_does_not_hide_the_question_for_the_same_phone() {
+        let event = |line: &[u8]| phone_event_of(line).unwrap();
+        let mut last = None;
+        assert!(keep_phone_event(
+            &mut last,
+            event(br#"{"event":"approval","channel":"c1","code":"1"}"#)
+        ));
+        assert!(!keep_phone_event(
+            &mut last,
+            event(br#"{"event":"paired","channel":"c1","appKey":"k"}"#)
+        ));
+        assert_eq!(last.as_ref().unwrap()["event"], "approval");
+        assert!(keep_phone_event(
+            &mut last,
+            event(br#"{"event":"paired","channel":"c2","appKey":"k"}"#)
+        ));
+        assert!(keep_phone_event(
+            &mut last,
+            event(br#"{"event":"approved","channel":"c2"}"#)
+        ));
     }
 
     #[test]

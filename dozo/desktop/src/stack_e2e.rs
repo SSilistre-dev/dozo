@@ -63,9 +63,11 @@ async fn e2e_pairs_a_phone() {
     );
     fs::write(shared.join("qr"), &offer.qr).unwrap();
     let channel = offer.channel.clone();
+    // `paired`, or already the question that follows it (`keep_phone_event`).
     let heard = events.wait_for(|event| {
         event.as_ref().is_some_and(|event| {
-            event["event"] == "paired" && event_channel(event) == Some(channel.as_str())
+            (event["event"] == "paired" || event["event"] == "approval")
+                && event_channel(event) == Some(channel.as_str())
         })
     });
     tokio::time::timeout(Duration::from_secs(60), heard)

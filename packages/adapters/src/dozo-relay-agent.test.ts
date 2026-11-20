@@ -372,7 +372,7 @@ describe("relay agent end to end", () => {
         platform: "ios",
       }),
     );
-    const approved = await cli(["approve", offer.channel]);
+    const approved = await cli(["approve", "--", offer.channel]);
     expect(approved).toEqual({ code: 0, lines: [{ event: "approved", channel: offer.channel }] });
     const signIn = await (await asked).json();
     expect(signIn.channel).toBe(offer.channel);
@@ -416,7 +416,7 @@ describe("relay agent end to end", () => {
   it("ends the phone's sign-in on the local server when the computer removes the phone", async () => {
     const agent = runAgent();
     const { offer } = await pairPhone(agent);
-    const revoked = await cli(["revoke", offer.channel, "--origin", local.origin], {
+    const revoked = await cli(["revoke", "--origin", local.origin, "--", offer.channel], {
       env: { DOZO_RELAY_AGENT_KEY: SESSION_KEY },
     });
     expect(revoked.lines[0]).toEqual({
@@ -434,7 +434,7 @@ describe("relay agent end to end", () => {
     expect((await first.client.fetch("/json")).status).toBe(200);
     await vi.waitFor(() => expect(agent.lines.some((line) => line.event === "paired")).toBe(true));
 
-    const revoked = await cli(["revoke", offer.channel]);
+    const revoked = await cli(["revoke", "--", offer.channel]);
     expect(revoked).toEqual({
       code: 0,
       lines: [{ event: "revoked", channel: offer.channel, relay: "deleted", session: "skipped" }],
