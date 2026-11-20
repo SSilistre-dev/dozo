@@ -323,6 +323,28 @@ Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
 Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
 it an address. There is no anonymous path to the hosted service from a local server.
 
+## Bot API
+
+Scripts talk to a member's own bots under `/api/v1/dozo` (`apps/api/src/dozo-bot-api*.ts`,
+OpenAPI in `dozo/api/openapi.yaml`): list bots, send a message and follow the reply as
+server-sent events, read the chat, export it. Each call carries a personal access token made under
+Settings > General > Security > Access tokens (`apps/web/src/components/dozo-access-tokens.tsx`).
+
+A token belongs to one member in one Space and can be limited to one bot. Only its SHA-256 and last
+four characters are stored (`dozo_access_tokens`); it is shown once. It is read from the
+`Authorization` header only, never a cookie or the address, so another site cannot call the API
+with a signed-in browser. It reaches the app's own send, transcript and export procedures as its
+member (`createRouterClient`), so access checks, approvals and model limits are the app's: an
+approval ends the stream with `waiting_input`, and the client follows the run again afterwards
+with `Last-Event-ID`. Settings, billing, members and tokens are out of its reach: the app's RPC
+never accepts a token. Making and revoking one is in the activity log; the list shows when each was
+last used (written at most once a minute). A token goes with its bot, with the member's place in
+the Space, and stops working for a deactivated or banned account.
+
+Limits: 60 requests a minute and 3 open streams per token, per API instance; a stream ends after 10
+minutes with `running`. Not yet: the mobile app has no token screen (a token is for a computer's
+scripts; make one on web or desktop), and there is no group chat or attachment support.
+
 ## Commands on your own computer
 
 Upstream asks once per Space before a bot first runs a command on the member's own computer (the

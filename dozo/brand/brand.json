@@ -6461,6 +6461,111 @@
       "find": "  const parsed = streaming ? closeUnterminatedFence(source) : source;",
       "replace": "  const parsed = mathSource(streaming ? closeUnterminatedFence(source) : source);",
       "reason": "chat math: dollars that are prices, not math delimiters, stay text; same length, so parser offsets still match the source"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./account-status.js\";\nexport * from \"./approval-settings.js\";\n",
+      "replace": "export * from \"./account-status.js\";\nexport * from \"./dozo-access-tokens.js\";\nexport * from \"./approval-settings.js\";\n",
+      "requires": [
+        "packages/db/src/dozo-access-tokens.ts"
+      ],
+      "reason": "bot API: personal access tokens are made, listed, revoked and found by their hash here"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "from \"./security-events.js\";\nimport { SettingsScopeSchema",
+      "replace": "from \"./security-events.js\";\nexport * from \"./dozo-access-tokens.js\";\nimport { dozoAccessTokensContract } from \"./dozo-access-tokens.js\";\nimport { SettingsScopeSchema",
+      "requires": [
+        "packages/contracts/src/dozo-access-tokens.ts"
+      ],
+      "reason": "bot API: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  },\n  /** Deployment-owner view of the append-only security event log",
+      "replace": "  },\n  dozoAccessTokens: dozoAccessTokensContract,\n  /** Deployment-owner view of the append-only security event log",
+      "requires": [
+        "packages/contracts/src/dozo-access-tokens.ts"
+      ],
+      "reason": "bot API: the member's access tokens join the app contract beside security; only a signed-in session reaches them"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { contentRoutes } from \"./routes/content.js\";\nimport { createRouterContext }",
+      "replace": "import { contentRoutes } from \"./routes/content.js\";\nimport { dozoAccessTokensRoutes } from \"./dozo-access-tokens.js\";\nimport { createRouterContext }",
+      "requires": [
+        "apps/api/src/dozo-access-tokens.ts"
+      ],
+      "reason": "bot API: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...contentRoutes(ctx),\n    ...pagesRoutes(ctx),\n",
+      "replace": "    ...contentRoutes(ctx),\n    ...dozoAccessTokensRoutes(ctx),\n    ...pagesRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-access-tokens.ts"
+      ],
+      "reason": "bot API: the router lists, makes and revokes the signed-in member's access tokens in the current Space"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "import { mountWebhookHttpRoutes } from \"./webhook.js\";\n\n/**",
+      "replace": "import { mountWebhookHttpRoutes } from \"./webhook.js\";\nimport { dozoBotApiDeps, mountDozoBotApi } from \"./dozo-bot-api.js\";\n\n/**",
+      "requires": [
+        "apps/api/src/dozo-bot-api.ts"
+      ],
+      "reason": "bot API: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/app.ts",
+      "find": "  mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });\n  if (env.inboundEmail) {\n",
+      "replace": "  mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });\n  mountDozoBotApi(app, dozoBotApiDeps(prisma, router));\n  if (env.inboundEmail) {\n",
+      "requires": [
+        "apps/api/src/dozo-bot-api.ts"
+      ],
+      "reason": "bot API: /api/v1/dozo answers a personal access token, never a cookie, by calling the app's own procedures as its member"
+    },
+    {
+      "file": "apps/api/src/security-audit.ts",
+      "find": "kind: \"webhook\", fields: [\"botId\"] },\n  \"voice.connect\":",
+      "replace": "kind: \"webhook\", fields: [\"botId\"] },\n  \"dozoAccessTokens.create\": { type: \"credential.created\", kind: \"access_token\", fields: [\"botId\"] },\n  \"dozoAccessTokens.revoke\": { type: \"credential.deleted\", kind: \"access_token\", fields: [\"id\"] },\n  \"voice.connect\":",
+      "requires": [
+        "apps/api/src/dozo-access-tokens.ts"
+      ],
+      "reason": "bot API: making and revoking an access token is in the activity log, like any credential"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { DozoHostedLinkRow } from \"../components/dozo-hosted-link-row\";\nimport { SettingsGroup",
+      "replace": "import { DozoHostedLinkRow } from \"../components/dozo-hosted-link-row\";\nimport { DozoAccessTokensRow } from \"../components/dozo-access-tokens\";\nimport { SettingsGroup",
+      "requires": [
+        "apps/web/src/components/dozo-access-tokens.tsx"
+      ],
+      "reason": "bot API: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "          <DozoHostedLinkRow />\n        </SettingsGroup>",
+      "replace": "          <DozoHostedLinkRow />\n          <DozoAccessTokensRow />\n        </SettingsGroup>",
+      "requires": [
+        "apps/web/src/components/dozo-access-tokens.tsx"
+      ],
+      "reason": "bot API: Security has one Access tokens row that opens the member's tokens: make one (shown once), see when each was last used, revoke"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Manage\"\nmsgstr \"Yönet\"\n\n#.",
+      "replace": "msgid \"Manage\"\nmsgstr \"Yönet\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Access tokens\"\nmsgstr \"Erişim belirteçleri\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"New token\"\nmsgstr \"Yeni belirteç\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Last used {date}\"\nmsgstr \"Son kullanım {date}\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Never used\"\nmsgstr \"Hiç kullanılmadı\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Revoke {name}\"\nmsgstr \"{name} belirtecini iptal et\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Could not revoke token\"\nmsgstr \"Belirteç iptal edilemedi\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Could not create token\"\nmsgstr \"Belirteç oluşturulamadı\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Copy token\"\nmsgstr \"Belirteci kopyala\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Copy it now. It won't be shown again.\"\nmsgstr \"Şimdi kopyalayın. Bir daha gösterilmeyecek.\"\n\n#.",
+      "reason": "bot API: the Turkish copy of the Access tokens row and its dialog in Security"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
+      "find": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "replace": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\nvi.mock(\"../components/dozo-access-tokens\", () => ({ DozoAccessTokensRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "requires": [
+        "apps/web/src/components/dozo-access-tokens.tsx"
+      ],
+      "reason": "upstream test of the general settings: the fork's Access tokens row opens a dialog this test's component mock does not provide, so it is replaced as the quiet-hours row is (dozo-access-tokens.test.tsx covers the row)"
     }
   ],
   "assets": {

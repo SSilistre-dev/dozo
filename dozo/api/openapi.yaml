@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: Dozo bot API
+  version: "1"
+  summary: Talk to your own bots from scripts and the command line.
+  description: |
+    Every call carries a personal access token as a bearer. Make one in the app under
+    Settings > General > Security > Access tokens; it is shown once. A token belongs to you, works
+    in the Space it was made in, and can be limited to one bot. It can list bots, send a message and
+    follow the reply, read the chat and export it; nothing else. Cookies are never read here.
+
+    The answer to a message streams as server-sent events. When the bot stops to ask you something
+    (an approval, a question, the computer), the stream ends with that status; answer in the app,
+    then follow the run again from the last event id you saw.
+
+    Each token may make 60 requests a minute and hold 3 streams open at once, per API process.
+servers:
+  - url: "{origin}"
+    description: The address you open Dozo at, on your own computer or a hosted server.
+    variables:
+      origin:
+        default: http://127.0.0.1:5173
+security:
+  - accessToken: []
+paths:
+  /api/v1/dozo/bots:
+    get:
+      operationId: listBots
+      summary: The bots the token can reach
+      responses:
+        "200":
+          description: Bots in the token's Space, or the one bot it is limited to.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bots]
+                properties:
+                  bots:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/dozo/bots/{botId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/BotId"
+    post:
+      operationId: sendMessage
+      summary: Send the bot a message
+      description: |
+        Without `Accept: text/event-stream` the answer says where the run starts. With it, the
+        reply streams on the same request: a `run` event first, then `delta`, `activity` and
+        `message` events, and a last `status` event.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: A retried request with the same key sends the message once.
+          schema: { type: string, maxLength: 190 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 100000 }
+      responses:
+        "202":
+          description: The message is in the chat and the bot's run has started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunStart" }
+        "200":
+          description: The reply as server-sent events, when asked for.
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/RunEvents" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    get:
+      operationId: readMessages
+      summary: Read the chat, newest page first
+      parameters:
+        - name: before
+          in: query
+          description: The `before` of the previous page, for the page older than it.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Messages oldest first, as text. Cards that ask for secrets are left out.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages, before]
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+                  before:
+                    type: [integer, "null"]
+                    description: Pass as `before` for older messages; null at the start of the chat.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/dozo/bots/{botId}/runs/{runId}/events:
+    parameters:
+      - $ref: "#/components/parameters/BotId"
+      - name: runId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: followRun
+      summary: Follow a run again
+      description: |
+        Resumes after `Last-Event-ID` (or `after`). Without either, a settled run answers its
+        status at once and a running one is followed from now.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          schema: { type: integer, minimum: -1 }
+        - name: after
+          in: query
+          schema: { type: integer, minimum: -1 }
+      responses:
+        "200":
+          description: The run's events.
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/RunEvents" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/dozo/bots/{botId}/export:
+    parameters:
+      - $ref: "#/components/parameters/BotId"
+    get:
+      operationId: exportChat
+      summary: The chat as Markdown
+      parameters:
+        - name: since
+          in: query
+          description: Only messages from this time on.
+          schema: { type: string, format: date-time }
+        - name: timeZone
+          in: query
+          description: IANA zone for message times; UTC when absent or unknown.
+          schema: { type: string, maxLength: 64 }
+      responses:
+        "200":
+          description: The export, newest messages kept when it is cut at its size limit.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [markdown, truncated]
+                properties:
+                  markdown: { type: string }
+                  truncated: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    accessToken:
+      type: http
+      scheme: bearer
+      description: A personal access token, `dozo_pat_` and 43 more characters.
+  parameters:
+    BotId:
+      name: botId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: The request was refused; `error` says why.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: No token, a revoked one, or one sent anywhere but the Authorization header.
+      headers:
+        WWW-Authenticate: { schema: { type: string, const: Bearer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Too many requests or open streams for this token.
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    RunStart:
+      type: object
+      required: [runId, seq]
+      properties:
+        runId: { type: string }
+        seq: { type: integer, description: Follow the run after this id. }
+    Message:
+      type: object
+      required: [id, seq, role, createdAt, text]
+      properties:
+        id: { type: string }
+        seq: { type: integer }
+        role: { type: string, enum: [user, bot] }
+        botId: { type: string }
+        author: { type: string, description: The person who wrote a user message. }
+        runId: { type: string }
+        createdAt: { type: string, format: date-time }
+        text: { type: string, description: Markdown. }
+    RunEvents:
+      type: string
+      description: |
+        Each event has an `id` (resume after it), a name and one JSON `data` line:
+
+        - `run`: `{"runId", "seq"}`, first on a send.
+        - `delta`: `{"text"}`, the next piece of the reply.
+        - `activity`: `{"text"}`, what the bot is doing.
+        - `message`: `{"id", "text"}`, a finished bot message, whole.
+        - `status`: `{"status"}`, the last event: `completed`, `failed`, `cancelled`,
+          `waiting_input` (an approval or a question in the app), `waiting_takeover` (the
+          computer), or `running` (the stream's time ran out; follow the run again).
+
+        Comment lines (`: keepalive`) keep the connection alive.
