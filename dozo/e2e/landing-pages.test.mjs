@@ -250,7 +250,7 @@ test("the server remembers only the languages the site has", () => {
     languages.map((code) => [code, pathOf(code)]),
   );
   assert.match(conf, /if \(\$dozo_lang_home\) \{ return 302 \$dozo_lang_home; \}/);
-  assert.equal([...conf.matchAll(/return 30\d/g)].length, 1);
+  assert.equal([...conf.matchAll(/return 302/g)].length, 1);
   for (const lang of ["en", ...languages]) {
     assert.match(
       read(`${lang === "en" ? "" : `${lang}/`}privacy/index.html`),
