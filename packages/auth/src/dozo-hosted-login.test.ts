@@ -7,22 +7,25 @@ import { APIError } from "better-auth/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostedLoginClaims, HostedLoginConfig } from "./dozo-hosted-login.js";
 import {
+  ADOPT_PREFIX,
   CLOCK_LEEWAY_SECONDS,
   closedOnLocalServer,
   dozoHostedLogin,
   HOSTED_PROVIDER_ID,
   HostedLoginError,
+  hostedLoginCapabilities,
   hostedLoginConfig,
-  hostedLoginOnly,
   installLock,
   issuerKeys,
   issuerOrigin,
   KEY_REFRESH_SECONDS,
   KEY_RETRY_SECONDS,
+  LOCAL_SESSION_DAYS,
+  legacyAccounts,
   loopbackCallback,
   MAX_KEYS_BYTES,
+  openInLegacyMode,
   publicJwk,
-  refuseUnlinkedAccounts,
   signingKeyFrom,
   signLoginToken,
   TOKEN_LIFETIME_SECONDS,
@@ -81,6 +84,24 @@ describe("configuration", () => {
       expect(config?.mode).toBe("issuer");
       expect(config?.mode === "issuer" && publicJwk(config.signingKey).kid).toBe(kid);
     }
+  });
+
+  it("reads an optional second key to publish beside the signing one", () => {
+    const [signing, overlap] = [ed25519(), ed25519()];
+    const config = hostedLoginConfig({
+      HOSTED_LOGIN_SIGNING_KEY: pem(signing),
+      HOSTED_LOGIN_OVERLAP_KEY: pem(overlap),
+    });
+    expect(config?.mode === "issuer" && config.overlapKey && publicJwk(config.overlapKey).kid).toBe(
+      publicJwk(overlap).kid,
+    );
+    const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
+    expect(() =>
+      hostedLoginConfig({
+        HOSTED_LOGIN_SIGNING_KEY: pem(signing),
+        HOSTED_LOGIN_OVERLAP_KEY: pem(rsa),
+      }),
+    ).toThrow(/Ed25519/);
   });
 
   it("refuses a key of another algorithm, both variables, and an issuer that is not an https origin", () => {
@@ -306,29 +327,94 @@ describe("the issuer's keys on the local server", () => {
   });
 });
 
-describe("the start check of a local server", () => {
-  const users = (count: number) => ({ user: { count: vi.fn(async () => count) } });
+describe("the mode of a local server", () => {
+  type Seed = { id: string; email: string; accounts: { id: string }[] };
+  const prisma = (users: Seed[], marks: string[] = []) => ({
+    user: { findMany: vi.fn(async () => users) },
+    verification: {
+      findMany: vi.fn(async () => marks.map((identifier) => ({ identifier }))),
+    },
+  });
   const verifier: HostedLoginConfig = { mode: "verifier", issuer: HOSTED };
+  const password = { id: "u1", email: "ada@dozo.example", accounts: [{ id: "credential" }] };
+  const bare = { id: "u2", email: "eve@dozo.example", accounts: [] };
 
-  it("refuses a server that already has accounts of its own", async () => {
-    const prisma = users(2);
-    await expect(refuseUnlinkedAccounts(prisma as never, verifier)).rejects.toThrow(
-      /HOSTED_LOGIN_ISSUER is set, but this server has 2 account/,
-    );
-    expect(prisma.user.count).toHaveBeenCalledWith({
+  it("stays on its own sign-in while a user of its own is not linked, and offers linking", async () => {
+    for (const users of [[password], [bare]]) {
+      const legacy = prisma(users);
+      expect(await hostedLoginCapabilities(legacy as never, verifier)).toEqual({
+        hostedLogin: false,
+        hostedLink: true,
+      });
+    }
+    const asked = prisma([password]);
+    await legacyAccounts(asked as never);
+    expect(asked.user.findMany).toHaveBeenCalledWith({
       where: {
-        NOT: { email: { endsWith: "@messaging.invalid" } },
         accounts: { none: { providerId: HOSTED_PROVIDER_ID } },
+        NOT: { email: { endsWith: "@messaging.invalid" } },
       },
+      select: { id: true, email: true, accounts: { select: { id: true }, take: 1 } },
+      take: 50,
+    });
+    expect(asked.verification.findMany).toHaveBeenCalledWith({
+      where: { identifier: { startsWith: ADOPT_PREFIX } },
+      select: { identifier: true },
     });
   });
 
-  it("starts with hosted accounts only, and asks nothing in another mode", async () => {
-    await expect(refuseUnlinkedAccounts(users(0) as never, verifier)).resolves.toBeUndefined();
-    const prisma = users(5);
-    await refuseUnlinkedAccounts(prisma as never, null);
-    await refuseUnlinkedAccounts(prisma as never, { mode: "issuer", signingKey: ed25519() });
-    expect(prisma.user.count).not.toHaveBeenCalled();
+  it("signs in only with the hosted account on an empty database or with marked users only", async () => {
+    for (const seeded of [
+      prisma([]),
+      prisma([password], [`${ADOPT_PREFIX}user:u1`]),
+      prisma([bare], [`${ADOPT_PREFIX}email:eve@dozo.example`]),
+    ])
+      expect(await hostedLoginCapabilities(seeded as never, verifier)).toEqual({
+        hostedLogin: true,
+        hostedLink: false,
+      });
+  });
+
+  it("never counts a user with a password as marked by an address", async () => {
+    expect(
+      await legacyAccounts(prisma([password], [`${ADOPT_PREFIX}email:ada@dozo.example`]) as never),
+    ).toBe(true);
+  });
+
+  it("says nothing and asks nothing on a server in another mode", async () => {
+    const none = prisma([password]);
+    for (const config of [null, { mode: "issuer", signingKey: ed25519() } as HostedLoginConfig])
+      expect(await hostedLoginCapabilities(none as never, config)).toEqual({
+        hostedLogin: false,
+        hostedLink: false,
+      });
+    expect(none.user.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("what stays open in legacy mode", () => {
+  it.each([
+    "/sign-in/email",
+    "/request-password-reset",
+    "/reset-password",
+    "/reset-password/:token",
+    "/change-password",
+    "/passkey/verify-authentication",
+  ])("keeps %s", (path) => {
+    expect(openInLegacyMode(path)).toBe(true);
+  });
+
+  it.each([
+    "/sign-up/email",
+    "/sign-in/email-otp",
+    "/email-otp/send-verification-otp",
+    "/sign-in/social",
+    "/callback/oidc",
+    "/oauth2/callback/oidc",
+    "/change-email",
+    "/link-social",
+  ])("closes %s", (path) => {
+    expect(openInLegacyMode(path)).toBe(false);
   });
 });
 
@@ -342,14 +428,6 @@ describe("the install lock", () => {
     expect(await lock(async () => "done")).toBe("done");
     expect(executeRaw.mock.calls[0]?.[0].join("")).toContain("pg_advisory_xact_lock");
     expect(transaction.mock.calls[0]?.[1]).toEqual({ timeout: 30_000 });
-  });
-});
-
-describe("the capability the sign-in page reads", () => {
-  it("says hosted-only on a local server and nowhere else", () => {
-    expect(hostedLoginOnly({ mode: "verifier", issuer: HOSTED })).toBe(true);
-    expect(hostedLoginOnly({ mode: "issuer", signingKey: ed25519() })).toBe(false);
-    expect(hostedLoginOnly(null)).toBe(false);
   });
 });
 
@@ -403,6 +481,40 @@ const store = (): Store => ({
   rateLimit: [],
 });
 
+/**
+ * The two reads the module makes through Prisma on a local server, played against the memory
+ * adapter's rows: whether a password account is unlinked, and the users with no account at all.
+ */
+function localPrisma(data: Store) {
+  const accountsOf = (userId: unknown) => data.account.filter((row) => row.userId === userId);
+  return {
+    user: {
+      findMany: vi.fn(async ({ take }: { take: number }) =>
+        data.user
+          .filter(
+            (user) => !accountsOf(user.id).some((row) => row.providerId === HOSTED_PROVIDER_ID),
+          )
+          .filter((user) => !String(user.email).endsWith("@messaging.invalid"))
+          .slice(0, take)
+          .map((user) => ({
+            id: user.id,
+            email: user.email,
+            accounts: accountsOf(user.id)
+              .slice(0, 1)
+              .map((row) => ({ id: row.id })),
+          })),
+      ),
+    },
+    verification: {
+      findMany: vi.fn(async ({ where }: { where: { identifier: { startsWith: string } } }) =>
+        data.verification
+          .filter((row) => String(row.identifier).startsWith(where.identifier.startsWith))
+          .map((row) => ({ identifier: row.identifier })),
+      ),
+    },
+  };
+}
+
 /** One piece of work at a time, as the advisory lock gives across processes. */
 function mutex() {
   let tail: Promise<unknown> = Promise.resolve();
@@ -414,7 +526,7 @@ function mutex() {
 }
 
 /** The hosted server; its API may answer on another origin than its web app. */
-function hostedServer(key: KeyObject, rateLimit = false, baseURL = HOSTED) {
+function hostedServer(key: KeyObject, rateLimit = false, baseURL = HOSTED, overlapKey?: KeyObject) {
   const data = store();
   const auth = betterAuth({
     secret: SECRET,
@@ -426,7 +538,7 @@ function hostedServer(key: KeyObject, rateLimit = false, baseURL = HOSTED) {
     plugins: dozoHostedLogin({
       prisma: {} as never,
       webOrigin: HOSTED,
-      config: { mode: "issuer", signingKey: key },
+      config: { mode: "issuer", signingKey: key, ...(overlapKey ? { overlapKey } : {}) },
     }),
   });
   return { auth, data };
@@ -435,6 +547,7 @@ function hostedServer(key: KeyObject, rateLimit = false, baseURL = HOSTED) {
 type LocalOptions = {
   refuse?: (userId: string) => boolean;
   beforeCreate?: () => Promise<void>;
+  beforeLink?: () => Promise<void>;
   lock?: <T>(work: () => Promise<T>) => Promise<T>;
   rateLimit?: boolean;
 };
@@ -455,6 +568,13 @@ function localServer(fetcher: typeof fetch, options: LocalOptions = {}) {
           },
         },
       },
+      account: {
+        create: {
+          before: async () => {
+            await options.beforeLink?.();
+          },
+        },
+      },
       session: {
         create: {
           before: async (session) => {
@@ -465,7 +585,7 @@ function localServer(fetcher: typeof fetch, options: LocalOptions = {}) {
       },
     },
     plugins: dozoHostedLogin({
-      prisma: {} as never,
+      prisma: localPrisma(data) as never,
       webOrigin: LOCAL,
       config: { mode: "verifier", issuer: HOSTED },
       fetcher,
@@ -494,11 +614,11 @@ async function signUp(auth: Handler, email: string, name: string) {
 }
 
 /** What the local sign-in page sends to start. */
-function startRequest(headers: Record<string, string> = { origin: LOCAL }) {
+function startRequest(headers: Record<string, string> = { origin: LOCAL }, body: unknown = {}) {
   return new Request(`${LOCAL}/api/auth/dozo/hosted-login/start`, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
-    body: "{}",
+    body: JSON.stringify(body),
   });
 }
 
@@ -571,6 +691,41 @@ const userRow = (id: string, email: string) => ({
   updatedAt: new Date(),
 });
 
+const mark = (identifier: string) => ({
+  id: identifier,
+  identifier,
+  value: "1",
+  expiresAt: new Date(Date.now() + 86_400_000),
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+
+/** A password account made on the local server before hosted mode, as a 0.3.0 install has. */
+async function passwordAccount(w: ReturnType<typeof world>, email: string) {
+  const context = await w.local.auth.$context;
+  const user = await context.internalAdapter.createUser(
+    { email, name: "Ada", emailVerified: true },
+    { method: "email-password" },
+  );
+  await context.internalAdapter.linkAccount({
+    userId: user.id,
+    providerId: "credential",
+    accountId: user.id,
+    password: await context.password.hash("a-long-enough-password"),
+  });
+  return user.id;
+}
+
+function passwordSignIn(w: ReturnType<typeof world>, email: string) {
+  return w.local.auth.handler(
+    new Request(`${LOCAL}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: LOCAL },
+      body: JSON.stringify({ email, password: "a-long-enough-password" }),
+    }),
+  );
+}
+
 describe("signing in to a local server with the hosted account", () => {
   it("creates the local user from the hosted account and opens a session", async () => {
     const w = world();
@@ -625,7 +780,16 @@ describe("signing in to a local server with the hosted account", () => {
     const w = world();
     const hostedCookie = await signUp(w.hosted.auth, "ada@dozo.example", "Ada");
     await w.signIn(hostedCookie);
+    // Another user of the install, linked to its own hosted account, has the new address.
     w.local.data.user.push(userRow("other", "taken@dozo.example"));
+    w.local.data.account.push({
+      id: "other-link",
+      userId: "other",
+      providerId: HOSTED_PROVIDER_ID,
+      accountId: "other-sub",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     Object.assign(w.hosted.data.user[0]!, { email: "taken@dozo.example" });
     const { done } = await w.signIn(hostedCookie);
     expect(location(done)).toBe(`${LOCAL}/`);
@@ -672,31 +836,169 @@ describe("signing in to a local server with the hosted account", () => {
     expect(w.local.data.account).toHaveLength(1);
   });
 
-  it("does not take over a local account that only shares the address", async () => {
+  it("never takes over a password account that only shares the address", async () => {
     const w = world();
-    w.local.data.user.push(userRow("local", "ada@dozo.example"));
-    w.local.data.account.push({
-      id: "credential",
-      userId: "local",
-      providerId: "credential",
-      accountId: "local",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    const { done } = await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
-    expect(location(done)).toBe(FAILED);
-    expect(w.local.data.account).toHaveLength(1);
+    const ada = await passwordAccount(w, "ada@dozo.example");
+    // That server keeps its passwords: hosted sign-in waits until the account is linked.
+    expect((await w.local.auth.handler(startRequest())).status).toBe(403);
+    expect(w.local.data.account).toEqual([
+      expect.objectContaining({ userId: ada, providerId: "credential" }),
+    ]);
+  });
+
+  it("keeps a server with a password account on passwords, then links it from its own session", async () => {
+    const w = world();
+    const ada = await passwordAccount(w, "ada@dozo.example");
+    const hostedCookie = await signUp(w.hosted.auth, "ada.hosted@dozo.example", "Ada");
+    // Password sign-in still works; no new account is made while it waits.
+    const signUpLocal = await w.local.auth.handler(
+      new Request(`${LOCAL}/api/auth/sign-up/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: LOCAL },
+        body: JSON.stringify({
+          email: "eve@dozo.example",
+          password: "a-long-enough-password",
+          name: "E",
+        }),
+      }),
+    );
+    expect(signUpLocal.status).toBe(404);
+    const signedIn = await passwordSignIn(w, "ada@dozo.example");
+    expect(signedIn.status).toBe(200);
+    const session = cookieHeader(signedIn);
+    // Linking needs the session: without it, nothing starts.
+    expect((await w.local.auth.handler(startRequest(undefined, { link: true }))).status).toBe(401);
+    const started = await w.local.auth.handler(
+      startRequest({ origin: LOCAL, cookie: session }, { link: true }),
+    );
+    expect(started.status).toBe(200);
+    const page = new URL(((await started.json()) as { url: string }).url);
+    const callback = await w.agree(page, hostedCookie);
+    const done = await w.get(w.local.auth, callback, `${session}; ${cookieHeader(started)}`);
+    expect(location(done)).toBe(`${LOCAL}/`);
+    expect(w.local.data.account).toEqual([
+      expect.objectContaining({ userId: ada, providerId: HOSTED_PROVIDER_ID }),
+    ]);
+    // The password is gone and the server signs in only with the hosted account, as that user.
+    expect((await passwordSignIn(w, "ada@dozo.example")).status).toBe(404);
+    const again = await w.signIn(hostedCookie);
+    expect(location(again.done)).toBe(`${LOCAL}/`);
+    expect(w.local.data.user.map((user) => user.id)).toEqual([ada]);
+    // Linked already: a second link is refused before it starts.
+    const relinked = await w.local.auth.handler(
+      startRequest({ origin: LOCAL, cookie: cookieHeader(again.done) }, { link: true }),
+    );
+    expect(relinked.status).toBe(409);
+  });
+
+  it("links only for the session that asked", async () => {
+    const w = world();
+    await passwordAccount(w, "ada@dozo.example");
+    const hostedCookie = await signUp(w.hosted.auth, "ada.hosted@dozo.example", "Ada");
+    const session = cookieHeader(await passwordSignIn(w, "ada@dozo.example"));
+    const started = await w.local.auth.handler(
+      startRequest({ origin: LOCAL, cookie: session }, { link: true }),
+    );
+    const page = new URL(((await started.json()) as { url: string }).url);
+    const callback = await w.agree(page, hostedCookie);
+    // The nonce cookie alone, the session gone: refused, and nothing linked.
+    const nonceOnly = cookieHeader(started)
+      .split("; ")
+      .filter((cookie) => cookie.includes("dozo_hosted_login="))
+      .join("; ");
+    expect(location(await w.get(w.local.auth, callback, nonceOnly))).toBe(FAILED);
+    expect(w.local.data.account.map((row) => row.providerId)).toEqual(["credential"]);
+  });
+
+  it("links the user an unlink left behind to the next hosted account that signs in", async () => {
+    const w = world();
+    // What `dozo-unlink-hosted` leaves: the user and their data, no link, and the mark.
+    w.local.data.user.push(userRow("owner", "old@dozo.example"));
+    w.local.data.verification.push(mark(`${ADOPT_PREFIX}user:owner`));
+    const { done } = await w.signIn(await signUp(w.hosted.auth, "new@dozo.example", "New"));
+    expect(location(done)).toBe(`${LOCAL}/`);
+    expect(w.local.data.user).toEqual([
+      expect.objectContaining({ id: "owner", email: "new@dozo.example", name: "New" }),
+    ]);
+    expect(w.local.data.account).toEqual([
+      expect.objectContaining({ userId: "owner", providerId: HOSTED_PROVIDER_ID }),
+    ]);
+    expect(w.local.data.verification).toEqual([]);
+  });
+
+  it("hands no user of the server's own to a hosted account, even one without any account", async () => {
+    const w = world();
+    // A user the server made another way (an emailed code, a passkey only): not marked.
+    w.local.data.user.push(userRow("own", "ada@dozo.example"));
+    expect((await w.local.auth.handler(startRequest())).status).toBe(403);
+    expect(w.local.data.account).toEqual([]);
+  });
+
+  it("keeps a local session for weeks, renewed by use", async () => {
+    const w = world();
+    const before = Date.now();
+    await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
+    const expires = new Date(w.local.data.session[0]?.expiresAt as Date).getTime();
+    const days = (expires - before) / (24 * 60 * 60 * 1000);
+    expect(days).toBeGreaterThan(LOCAL_SESSION_DAYS - 1);
+    expect(days).toBeLessThanOrEqual(LOCAL_SESSION_DAYS + 1);
+    // The hosted server keeps the library's week.
+    const hostedDays =
+      (new Date(w.hosted.data.session[0]?.expiresAt as Date).getTime() - before) / 86_400_000;
+    expect(hostedDays).toBeLessThan(8);
+  });
+
+  it("says the computer's clock is off when a token for this sign-in arrives out of time", async () => {
+    const w = world();
+    const started = await w.start();
+    const token = signLoginToken(
+      w.key,
+      { ...claims, aud: started.page.searchParams.get("audience")! },
+      Date.now() - 10 * 60 * 1000,
+    );
+    const done = await w.get(w.local.auth, `${CALLBACK}?token=${token}`, started.cookie);
+    expect(location(done)).toBe(`${LOCAL}/sign-in?error=hosted_login_clock`);
   });
 
   it("links the user a cut-off first sign-in left without its link, instead of locking it out", async () => {
-    const w = world();
-    // What a crash between the two writes leaves: the user, and no account of any kind.
-    w.local.data.user.push(userRow("orphan", "ada@dozo.example"));
-    const { done } = await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
+    let crash = true;
+    const w = world({
+      beforeLink: async () => {
+        // The process dies between the user and its link.
+        if (crash) throw new Error("killed");
+      },
+    });
+    const hostedCookie = await signUp(w.hosted.auth, "ada@dozo.example", "Ada");
+    const cut = await w.signIn(hostedCookie);
+    expect(cut.done.status).toBe(500);
+    const [orphan] = w.local.data.user;
+    expect(w.local.data.account).toEqual([]);
+    // The server is not stuck on that user: it is still in hosted mode, and the next sign-in links it.
+    crash = false;
+    const { done } = await w.signIn(hostedCookie);
     expect(location(done)).toBe(`${LOCAL}/`);
-    expect(w.local.data.user.map((user) => user.id)).toEqual(["orphan"]);
+    expect(w.local.data.user.map((user) => user.id)).toEqual([orphan!.id]);
     expect(w.local.data.account).toEqual([
-      expect.objectContaining({ userId: "orphan", providerId: HOSTED_PROVIDER_ID }),
+      expect.objectContaining({ userId: orphan!.id, providerId: HOSTED_PROVIDER_ID }),
+    ]);
+    expect(w.local.data.verification).toEqual([]);
+  });
+
+  it("does not let another address take the user a cut-off sign-in left", async () => {
+    let crash = true;
+    const w = world({
+      beforeLink: async () => {
+        if (crash) throw new Error("killed");
+      },
+    });
+    await w.signIn(await signUp(w.hosted.auth, "ada@dozo.example", "Ada"));
+    crash = false;
+    const { done } = await w.signIn(await signUp(w.hosted.auth, "eve@dozo.example", "Eve"));
+    expect(location(done)).toBe(`${LOCAL}/`);
+    // Eve's sign-in makes a user of her own; the one left for Ada's address is not handed over.
+    expect(w.local.data.user.map((user) => user.email).sort()).toEqual([
+      "ada@dozo.example",
+      "eve@dozo.example",
     ]);
   });
 
@@ -905,12 +1207,29 @@ describe("the hosted server", () => {
     expect(payloadOf(url).iss).toBe(HOSTED);
   });
 
+  it("publishes the second key beside the signing one, and a token from either verifies", async () => {
+    const [signing, overlap] = [ed25519(), ed25519()];
+    const { auth } = hostedServer(signing, false, HOSTED, overlap);
+    const response = await auth.handler(new Request(`${HOSTED}/api/auth/dozo/hosted-login/keys`));
+    expect(await response.json()).toEqual({ keys: [publicJwk(signing), publicJwk(overlap)] });
+    const keyFor = issuerKeys(HOSTED, (async (input: string) =>
+      auth.handler(new Request(input))) as unknown as typeof fetch);
+    for (const key of [signing, overlap]) {
+      const token = signLoginToken(key, claims);
+      expect(
+        await verifyLoginToken(token, { issuer: HOSTED, audience: AUDIENCE, keyFor }),
+      ).toMatchObject({
+        sub: claims.sub,
+      });
+    }
+  });
+
   it("publishes its public key", async () => {
     const key = ed25519();
     const { auth } = hostedServer(key);
     const response = await auth.handler(new Request(`${HOSTED}/api/auth/dozo/hosted-login/keys`));
     expect(await response.json()).toEqual({ keys: [publicJwk(key)] });
-    expect(response.headers.get("cache-control")).toMatch(/max-age=300/);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60");
   });
 
   it("issues nothing without a session", async () => {

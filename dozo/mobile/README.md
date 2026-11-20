@@ -85,7 +85,8 @@ Each is upstream's own behaviour for a build without the piece, not new code.
   exercised: phase 1 only opened the app in the simulator.
 
 Still upstream's on purpose: the `rakazo://` link scheme, which the server trusts as the app's
-origin (`dozo/brand/README.md`, Identifiers). An upstream app on the same phone claims it too.
+origin (`dozo/brand/README.md`, Identifiers). An upstream app on the same phone claims it too, so
+the app also registers `dozo://`, which pairing links use.
 There is no store listing: the app's update fallback opens the landing page, and the privacy and
 terms links open the landing site's pages (`dozo/landing/README.md`).
 
@@ -111,11 +112,12 @@ account steps. Exit 0, 2 on any failure. It needs `curl` and `jq`.
 ## Your computer over the relay
 
 The app can use the user's own computer as its server, through the relay (`dozo/relay/PROTOCOL.md`).
-The computer shows a QR code holding `rakazo://dozo-pair#<offer>`, which the phone's camera opens in
+The computer shows a QR code holding `dozo://pair#<offer>`, which the phone's camera opens in
 the app; the Server screen's "Connect to your computer" opens the same screen, where the code can be
 pasted. The app needs no camera permission of its own.
 
-- The screen acts only on that exact link, once per link, and checks the offer before it asks
+- The screen acts only on that exact link (and on `rakazo://dozo-pair#<offer>`, which desktop
+  0.3.0 writes), once per link, and checks the offer before it asks
   anything. It then asks once ("Connect to this computer?"). The question names the relay when it
   is not this build's own (`DOZO_MOBILE_RELAY_URL`, default `https://relay.dozo.bot`, which
   `build.sh` passes as `EXPO_PUBLIC_DOZO_RELAY_URL`), and it names the server the user would be

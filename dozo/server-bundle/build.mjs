@@ -4,7 +4,8 @@
 // Runs in the tree: pnpm install, db:generate, the web build, then upstream's
 // scripts/build-server-bundle.mjs (wrapped, never edited). Then it drops the packages TRIM names
 // (never loaded by a local server), adds the relay host agent and the backup command as one file
-// each (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"; dozo-local-backup.mjs, "backup"),
+// each (rakazo-server/dozo-relay-agent.mjs, entrypoint "relay"; dozo-local-backup.mjs, "backup";
+// dozo-local-account.mjs, "account"),
 // repacks, and writes to <out-dir>:
 //   dozo-server-<platform>-<arch>.tar.xz   one folder, rakazo-server/ (upstream's layout)
 //   dozo-server-<platform>-<arch>.json     { platform, version, file, sha256, size, ... }
@@ -33,14 +34,15 @@ const TRIM = [
 // The bundle's version is upstream's with this revision after it: a change to what the fork adds
 // (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
 // Raise it with every such change; the release tag is server-v<version>.
-const REVISION = 2;
+const REVISION = 3;
 const AGENT = "dozo-relay-agent.mjs";
-const BACKUP = "dozo-local-backup.mjs";
 // Windows only: the links of the bundle, which an archive made there cannot carry (pnpm makes
 // junctions), as { "<link>": "<target, relative to the link's folder>" }, forward slashes. The
 // desktop app makes each one again where it installs the bundle. Written by upstream's script
 // through an anchored rule (dozo/brand/brand.json).
 const LINKS = "dozo-links.json";
+const BACKUP = "dozo-local-backup.mjs";
+const ACCOUNT = "dozo-local-account.mjs";
 
 const fail = (message, code = 2) => {
   process.stderr.write(`[server-bundle] FAILED: ${message}\n`);
@@ -169,24 +171,31 @@ step("web", () =>
 );
 
 const work = fs.mkdtempSync(path.join(tmpdir(), "dozo-server-bundle-"));
-// The relay host agent (dozo/relay/agent/README.md) as one file: plain Node runs it, no tsx. ws's
-// optional native helpers stay out; ws runs without them.
-step("relay agent", () => {
-  // Through esbuild's own API, not its command line: on Windows that goes through a shell, which
-  // splits the banner at its spaces.
+/**
+ * One fork command as one file: plain Node runs it, no tsx. Through esbuild's own API, not its
+ * command line, which on Windows goes through a shell that splits arguments at their spaces.
+ */
+const bundleCommand = (entry, outfile, options = {}) =>
   createRequire(path.join(tree, "package.json"))("esbuild").buildSync({
     absWorkingDir: tree,
-    entryPoints: ["packages/adapters/src/dozo-relay-agent.ts"],
+    entryPoints: [entry],
     bundle: true,
     platform: "node",
     format: "esm",
     target: "node24",
+    outfile,
+    logLevel: "warning",
+    ...options,
+  });
+
+// The relay host agent (dozo/relay/agent/README.md). ws's optional native helpers stay out; ws
+// runs without them.
+step("relay agent", () => {
+  bundleCommand("packages/adapters/src/dozo-relay-agent.ts", path.join(work, AGENT), {
     external: ["bufferutil", "utf-8-validate"],
     banner: {
       js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
     },
-    outfile: path.join(work, AGENT),
-    logLevel: "warning",
   });
   // It loads and answers: a fresh state folder has no channels. By its real path, as the app
   // runs it: the agent runs its command only when Node's path for it is the file it loaded
@@ -204,19 +213,18 @@ step("relay agent", () => {
 // The backup command (README.md, "Backup and restore"), the same way. Without arguments it loads
 // and answers with its usage line and exit 64.
 step("backup command", () => {
-  run("pnpm", [
-    "exec",
-    "esbuild",
-    "packages/adapters/src/dozo-local-backup.ts",
-    "--bundle",
-    "--platform=node",
-    "--format=esm",
-    "--target=node24",
-    `--outfile=${path.join(work, BACKUP)}`,
-  ]);
+  bundleCommand("packages/adapters/src/dozo-local-backup.ts", path.join(work, BACKUP));
   const usage = spawnSync("node", [path.join(work, BACKUP)], { encoding: "utf8" });
   if (usage.status !== 64 || !usage.stdout.includes('"reason":"usage"')) {
     throw new Error(`backup without arguments exited ${usage.status}: ${usage.stdout}`);
+  }
+});
+// The account repairs (README.md, "Account repairs"), the same way.
+step("account command", () => {
+  bundleCommand("packages/adapters/src/dozo-local-account.ts", path.join(work, ACCOUNT));
+  const usage = spawnSync("node", [path.join(work, ACCOUNT)], { encoding: "utf8" });
+  if (usage.status !== 64 || !usage.stdout.includes('"reason":"usage"')) {
+    throw new Error(`account without arguments exited ${usage.status}: ${usage.stdout}`);
   }
 });
 let upstream;
@@ -245,8 +253,14 @@ step("trim", () => {
   const server = path.join(unpacked, "rakazo-server");
   fs.copyFileSync(path.join(work, AGENT), path.join(server, AGENT));
   fs.copyFileSync(path.join(work, BACKUP), path.join(server, BACKUP));
+  fs.copyFileSync(path.join(work, ACCOUNT), path.join(server, ACCOUNT));
   const manifest = JSON.parse(fs.readFileSync(path.join(server, "manifest.json"), "utf8"));
-  manifest.entrypoints = { ...manifest.entrypoints, relay: AGENT, backup: BACKUP };
+  manifest.entrypoints = {
+    ...manifest.entrypoints,
+    relay: AGENT,
+    backup: BACKUP,
+    account: ACCOUNT,
+  };
   fs.writeFileSync(path.join(server, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const [prefix] of TRIM) {
     if (!trimmed.removed.some((entry) => entry.startsWith(`${prefix}@`))) {

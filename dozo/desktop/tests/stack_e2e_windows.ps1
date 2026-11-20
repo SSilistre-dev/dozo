@@ -57,15 +57,38 @@ function Show-Logs([string]$folder) {
   }
 }
 
-# Runs one ignored test of src/stack_e2e.rs to its end; its E2E lines are shown.
-# Native programs' stderr is output here, not an error that stops the script.
-function Run-Test([string]$name, [string]$folder) {
-  $ErrorActionPreference = 'Continue'
+# Runs one ignored test of src/stack_e2e.rs, at most $minutes; its E2E lines are shown as they
+# come. One that takes longer is ended, with what is running and the logs shown.
+function Run-Test([string]$name, [string]$folder, [int]$minutes = 12) {
   $env:DOZO_STACK_E2E_ROOT = $folder
-  $out = & $script:Bin --ignored --exact "stack::e2e::$name" --nocapture 2>&1
-  $code = $LASTEXITCODE
-  $out | Where-Object { "$_" -match 'E2E|panicked|test result|assert' } | ForEach-Object { "$_" }
-  if ($code -ne 0) { Show-Logs $folder; throw "$name failed (exit $code)" }
+  $log = Join-Path $env:RUNNER_TEMP "e2e-$name.log"
+  $test = Start-Process -FilePath $script:Bin -PassThru -NoNewWindow `
+    -ArgumentList '--ignored', '--exact', "stack::e2e::$name", '--nocapture' `
+    -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+  $null = $test.Handle # keeps the exit code readable after it ends
+  $deadline = (Get-Date).AddMinutes($minutes)
+  $shown = 0
+  $show = {
+    $lines = @(Get-Content $log, "$log.err" -ErrorAction SilentlyContinue)
+    $lines[$shown..($lines.Count)] | Where-Object { "$_" -match 'E2E|panicked|test result|assert|still running' } | ForEach-Object { "$_" }
+    $shown = $lines.Count
+  }
+  while (-not $test.WaitForExit(5000)) {
+    . $show
+    if ((Get-Date) -gt $deadline) {
+      Stop-Process -Id $test.Id -Force -ErrorAction SilentlyContinue
+      Say "$name took longer than $minutes minutes; running from the folder:"
+      Left $folder
+      Show-Logs $folder
+      throw "$name took longer than $minutes minutes"
+    }
+  }
+  . $show
+  if ($test.ExitCode -ne 0) {
+    Get-Content "$log.err" -Tail 20 -ErrorAction SilentlyContinue
+    Show-Logs $folder
+    throw "$name failed (exit $($test.ExitCode))"
+  }
 }
 
 function Assert-None-Left([string]$folder, [string]$when) {

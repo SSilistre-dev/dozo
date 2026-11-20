@@ -164,7 +164,7 @@ export async function relayWorld() {
     /** A pairing offer from the computer, as the QR code's link. */
     async offer(now?: () => number) {
       const made = await pairRelayHost({ store, crypto, relay: relay.url, now });
-      return `rakazo://dozo-pair#${made.offer}`;
+      return `dozo://pair#${made.offer}`;
     },
     startHost() {
       const controller = new AbortController();

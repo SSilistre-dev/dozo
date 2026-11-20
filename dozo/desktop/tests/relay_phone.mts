@@ -32,7 +32,7 @@ for (let tries = 0; !qr && tries < 1200; tries++) {
   qr = await readFile(path.join(shared, "qr"), "utf8").catch(() => "");
   if (!qr) await sleep(500);
 }
-if (!qr.startsWith("rakazo://dozo-pair#")) throw new Error(`no pairing link: ${qr}`);
+if (!qr.startsWith("dozo://pair#")) throw new Error(`no pairing link: ${qr}`);
 const crypto = core.webRelayCrypto();
 const offer = core.parseRelayPairingOffer(qr.slice(qr.indexOf("#") + 1), Date.now());
 const { psk, token } = await core.relayPairingSecrets(crypto, core.decodeRelayBytes(offer.secret));

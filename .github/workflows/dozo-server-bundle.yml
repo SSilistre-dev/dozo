@@ -75,7 +75,7 @@ jobs:
           - { platform: darwin-x64, os: macos-15-intel }
           - { platform: win-x64, os: windows-latest }
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.platform != 'linux-x64' }}
+    continue-on-error: ${{ startsWith(matrix.platform, 'darwin-') }}
     timeout-minutes: 45
     defaults:
       run:

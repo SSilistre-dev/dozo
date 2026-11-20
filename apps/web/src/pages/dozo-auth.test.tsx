@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
+import type { FormEvent, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
@@ -15,8 +16,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+  Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
+  Button: ({ children, ...props }: { children: ReactNode }) => (
+    <button {...props}>{children}</button>
+  ),
   OptionSelect: (props: {
     value: string;
     options: { value: string; label: string }[];
@@ -46,6 +51,21 @@ vi.mock("./dozo-hosted-login", () => ({
   HostedSignIn: () => <div data-testid="hosted">hosted</div>,
 }));
 vi.mock("./Auth", () => ({
+  submitClass: "submit",
+  AuthFrame: ({
+    title,
+    onSubmit,
+    children,
+  }: {
+    title: ReactNode;
+    onSubmit: (event: FormEvent) => void;
+    children: ReactNode;
+  }) => (
+    <form onSubmit={onSubmit}>
+      <h1>{title}</h1>
+      {children}
+    </form>
+  ),
   AuthPage: (props: { mode: string }) => {
     mocks.upstream(props);
     return <div data-testid="upstream">{props.mode}</div>;
@@ -325,4 +345,41 @@ it("offers only the hosted account on a server that signs in with it, at the sig
     expect(where()).toBe(path.startsWith("/sign-up") ? "/sign-in?next=%2Fapp" : "/sign-in");
     expect(container.querySelector('[data-testid="hosted"]')).not.toBeNull();
   }
+});
+
+describe("on a server on the person's own computer", () => {
+  beforeEach(() => {
+    vi.spyOn(window, "location", "get").mockReturnValue({
+      ...window.location,
+      hostname: "127.0.0.1",
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows nothing until the server answers, never a password form first", async () => {
+    const answer = deferred<{ hostedLogin?: boolean }>();
+    mocks.capabilities.mockReturnValue(answer.promise);
+    await open("/sign-in");
+    expect(shown()).toBeUndefined();
+    expect(container.querySelector("form")).toBeNull();
+    await act(async () => answer.resolve({ hostedLogin: true }));
+    expect(container.querySelector('[data-testid="hosted"]')).not.toBeNull();
+  });
+
+  it("says the server could not be reached and asks again, without a password form", async () => {
+    mocks.capabilities.mockRejectedValueOnce(new Error("offline"));
+    mocks.capabilities.mockResolvedValueOnce({ hostedLogin: true });
+    await open("/sign-in");
+    expect(container.querySelector("h1")?.textContent).toBe("Could not reach the server");
+    expect(shown()).toBeUndefined();
+    await act(async () => {
+      container.querySelector("form")?.requestSubmit();
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="hosted"]')).not.toBeNull(),
+    );
+    expect(mocks.capabilities).toHaveBeenCalledTimes(2);
+  });
 });
