@@ -90,6 +90,55 @@ test("the sidebar shows Dozo characters in two-line rows under the wordmark and 
   expect(await styleOf(page, `${open} > .dozo-avatar`, "content", "::before")).toBe("none");
 });
 
+test("the collapsed sidebar stacks four equal buttons above the bots, without overlap", async ({
+  page,
+}) => {
+  await openBot(page, readWorld().chiefId, "Chief");
+  const header = page.locator(HEADER);
+  await header.hover();
+  await page.getByTestId("minimize-bots-sidebar").click();
+  const restore = page.getByTestId("restore-bots-sidebar");
+  await expect(restore).toBeVisible();
+  try {
+    // At rest: the pointer is over the thread, not the strip.
+    await page.mouse.move(900, 450);
+    const sidebar = page.getByTestId("bots-sidebar");
+    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(72);
+    const strip = await sidebar.boundingBox();
+    const buttons = [
+      page.getByTestId("sidebar-search-trigger"),
+      header.locator("[data-activity-mode]"),
+      restore,
+      page.getByTestId("create-menu-trigger"),
+    ];
+    const boxes = await Promise.all(buttons.map((button) => button.boundingBox()));
+    expect(new Set(boxes.map((box) => box?.x))).toEqual(new Set([(strip?.x ?? 0) + 16]));
+    const sizes = new Set(boxes.map((box) => `${box?.width}x${box?.height}`));
+    expect([...sizes]).toEqual(["40x40"]);
+    const gaps = new Set(
+      boxes.slice(1).map((box, i) => Math.round((box?.y ?? 0) - ((boxes[i]?.y ?? 0) + 40))),
+    );
+    expect(gaps.size).toBe(1);
+
+    // The bots start below the last button, with room between, and centred in the strip.
+    const create = boxes[3];
+    const first = await page.locator(ROW).first().boundingBox();
+    expect(first?.y ?? 0).toBeGreaterThan((create?.y ?? 0) + (create?.height ?? 0));
+    expect((first?.x ?? 0) + (first?.width ?? 0) / 2).toBe((strip?.x ?? 0) + 36);
+
+    // The open chat's avatar stands on a lighter round surface; the wave pattern is not cut.
+    const open = `${ROW}[aria-current="page"]`;
+    expect(await styleOf(page, open, "background-color")).not.toBe(
+      await styleOf(page, INNER, "background-color"),
+    );
+    expect(await styleOf(page, open, "border-radius")).toBe("50%");
+    expect(await styleOf(page, INNER, "opacity", "::before")).toBe("0");
+  } finally {
+    await restore.click();
+    await expect(page.getByTestId("minimize-bots-sidebar")).toBeAttached();
+  }
+});
+
 test("the chat is a narrow column of tonal bubbles with a one-pill composer in the bot's colour", async ({
   page,
 }) => {

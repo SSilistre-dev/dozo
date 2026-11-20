@@ -1,0 +1,26 @@
+{
+  // The protocol's reference ends, checked against the web platform they target, as declarations
+  // the Worker's own check reads (the Workers types differ from the DOM's in a few signatures).
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2024", "dom"],
+    "types": [],
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "../../../packages",
+    "outDir": "node_modules/.relay-core-types",
+    "paths": {
+      "@rakazo/contracts": ["../../../packages/contracts/src/dozo-relay.ts"],
+      "zod": ["./node_modules/zod"]
+    }
+  },
+  "files": [
+    "../../../packages/core/src/async.test-support.ts",
+    "../../../packages/core/src/dozo-relay-channel.ts",
+    "../../../packages/core/src/dozo-relay-mux.ts"
+  ]
+}
