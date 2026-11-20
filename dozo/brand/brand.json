@@ -4314,6 +4314,95 @@
       "reason": "sign-in label: the server sends the button text in English, so a known one reads in the UI's language"
     },
     {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { NativeActionButton }",
+      "replace": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { DozoCommandsRow, dozoUsageLink } from \"../../components/dozo-account-rows\";\nimport { NativeActionButton }",
+      "requires": [
+        "apps/mobile/components/dozo-account-rows.tsx"
+      ],
+      "reason": "mobile settings: the import of the two rules below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "      key=\"usage\"\n      accessible\n      title={t`Usage`}\n",
+      "replace": "      key=\"usage\"\n      accessible\n      {...dozoUsageLink(usage, () => router.push(\"/dozo-usage\"))}\n      title={t`Usage`}\n",
+      "requires": [
+        "apps/mobile/components/dozo-account-rows.tsx",
+        "apps/mobile/app/(settings)/dozo-usage.tsx"
+      ],
+      "reason": "usage breakdown on mobile: the Usage row opens the spend grouped by model, bot or routine, with the CSV, as the web app's Usage table"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "              onPress={() => router.push(\"/approvals\")}\n            />\n          ) : null}\n          {settingsLink({",
+      "replace": "              onPress={() => router.push(\"/approvals\")}\n            />\n          ) : null}\n          <DozoCommandsRow\n            key=\"dozo-commands\"\n            disabled={signingOut}\n            leading={icon({ ios: \"terminal\", android: \"terminal-outline\" })}\n            onPress={() => router.push(\"/dozo-commands\")}\n          />\n          {settingsLink({",
+      "requires": [
+        "apps/mobile/components/dozo-account-rows.tsx",
+        "apps/mobile/app/(settings)/dozo-commands.tsx"
+      ],
+      "reason": "command rules on mobile: a Commands row beside approval Rules, only while the member always allows a command, opens the list with Remove"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "import { createSettingsPageStyles } from \"../../lib/settings-page-styles\";\nimport { ACCOUNT_SETTINGS }",
+      "replace": "import { createSettingsPageStyles } from \"../../lib/settings-page-styles\";\nimport { DozoGeneralRows } from \"../../components/dozo-general-rows\";\nimport { ACCOUNT_SETTINGS }",
+      "requires": [
+        "apps/mobile/components/dozo-general-rows.tsx"
+      ],
+      "reason": "mobile settings: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/general.tsx",
+      "find": "        ) : null}\n\n        <SettingsGroup>\n          <SettingsSwitch\n            label={t`Stream replies`}",
+      "replace": "        ) : null}\n\n        <DozoGeneralRows />\n        <SettingsGroup>\n          <SettingsSwitch\n            label={t`Stream replies`}",
+      "requires": [
+        "apps/mobile/components/dozo-general-rows.tsx",
+        "apps/mobile/app/(settings)/dozo-activity.tsx"
+      ],
+      "reason": "quiet hours and the activity log on mobile: General has them as on the web, quiet hours with their start and end, Activity only for those who may read the log"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/model-connection.tsx",
+      "find": "import { useListSearch } from \"../../lib/use-list-search\";\nimport { useSubscriptionSignIn }",
+      "replace": "import { useListSearch } from \"../../lib/use-list-search\";\nimport { DozoModelPoolSwitch } from \"../../components/dozo-model-pool-switch\";\nimport { useSubscriptionSignIn }",
+      "requires": [
+        "apps/mobile/components/dozo-model-pool-switch.tsx"
+      ],
+      "reason": "model pool on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/model-connection.tsx",
+      "find": "        ) : (\n          feedback\n        )}\n      </ScrollView>",
+      "replace": "        ) : (\n          feedback\n        )}\n        {credential ? <DozoModelPoolSwitch credentialId={credential.id} /> : null}\n      </ScrollView>",
+      "requires": [
+        "apps/mobile/components/dozo-model-pool-switch.tsx"
+      ],
+      "reason": "model pool on mobile: a connection's page has the pool switch where the server offers one, and says when a resting connection opens"
+    },
+    {
+      "file": "apps/mobile/lib/chat-model-picker.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"react-native-safe-area-context\", () => ({",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"../components/dozo-model-pool-switch\", () => ({ DozoModelPoolSwitch: () => null }));\nvi.mock(\"react-native-safe-area-context\", () => ({",
+      "reason": "model pool on mobile: the connection page's pool switch reads the live stream and the pool, which this test does not stub; it is tested in dozo-model-pool-switch.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/model-settings.test.tsx",
+      "find": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"./api-server\", () => ({}));",
+      "replace": "vi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));\nvi.mock(\"../components/dozo-model-pool-switch\", () => ({ DozoModelPoolSwitch: () => null }));\nvi.mock(\"./api-server\", () => ({}));",
+      "reason": "model pool on mobile: the connection page's pool switch reads the live stream and the pool, which this test does not stub; it is tested in dozo-model-pool-switch.test.tsx"
+    },
+    {
+      "file": "apps/mobile/lib/settings-sheet.ts",
+      "find": "  \"computers\",\n  \"general\",\n",
+      "replace": "  \"computers\",\n  \"dozo-activity\",\n  \"dozo-commands\",\n  \"dozo-usage\",\n  \"general\",\n",
+      "requires": [
+        "apps/mobile/app/(settings)/dozo-activity.tsx",
+        "apps/mobile/app/(settings)/dozo-commands.tsx",
+        "apps/mobile/app/(settings)/dozo-usage.tsx"
+      ],
+      "reason": "mobile settings: the fork's Usage, Commands and Activity pages are settings pages, so a link to one opens inside the settings sheet"
+    },
+    {
       "file": "apps/api/src/routes/bots.ts",
       "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
       "replace": "import type { RouterContext } from \"./context.js\";\nimport { requireBotRunEditor, requireGroupRemover } from \"./dozo-bot-edit.js\";\nimport { computerContext",
