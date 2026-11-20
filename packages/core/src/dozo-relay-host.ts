@@ -415,11 +415,17 @@ class ChannelLoop {
 
   private readonly approvalWaiters = new Set<() => void>();
 
-  /** Drops a pairing the user did not approve within five minutes: its channel goes too. */
+  /**
+   * Drops a pairing made on this agent that the user did not approve within five minutes: its
+   * channel goes too. Only where phones get a sign-in (the key is set), since only there is the
+   * user asked; a pairing stored before approvals existed is kept, and still asks before a sign-in.
+   */
   private async approvalExpiry() {
     const { signal } = this.controller;
+    if (!this.options.sessionKey) return;
     while (!signal.aborted && !this.entry.app?.approvedAt) {
       const app = this.entry.app;
+      if (app && app.approvedAt === undefined) return;
       const left = app ? app.pairedAt + RELAY_APPROVAL_MS - this.now() : 1000;
       if (left <= 0) {
         this.controller.abort();
@@ -481,16 +487,18 @@ class ChannelLoop {
     }
     const code = await relayApprovalCode(this.options.crypto, decodeRelayBytes(app.pairingKey));
     this.options.onEvent({ event: "approval", channel: this.id, code, platform });
-    const { signal } = this.controller;
-    await new Promise<void>((resolve) => {
-      const done = () => {
-        this.approvalWaiters.delete(done);
-        signal.removeEventListener("abort", done);
-        resolve();
-      };
-      this.approvalWaiters.add(done);
-      signal.addEventListener("abort", done, { once: true });
-    });
+    // Until the user answers, the agent stops, or five minutes pass (a new pairing is dropped by
+    // then; an older one just gets no sign-in this time).
+    const waited = new AbortController();
+    const stop = () => waited.abort();
+    this.controller.signal.addEventListener("abort", stop, { once: true });
+    this.approvalWaiters.add(stop);
+    try {
+      await abortableDelay(RELAY_APPROVAL_MS, waited.signal);
+    } finally {
+      this.approvalWaiters.delete(stop);
+      this.controller.signal.removeEventListener("abort", stop);
+    }
     return Boolean(this.entry.app?.approvedAt);
   }
 
@@ -667,6 +675,8 @@ class ChannelLoop {
         pairingKey: encodeRelayBytes(channel.pairingKey),
         verifierSet: false,
         pairedAt: this.now(),
+        // Waiting for the user: unlike a pairing stored before approvals existed (no field).
+        approvedAt: null,
       },
     };
     try {
@@ -696,7 +706,9 @@ class ChannelLoop {
         ),
       { attempts: HTTP_ATTEMPTS, signal: this.controller.signal, random: this.options.random },
     );
-    this.entry = { ...this.entry, app: { ...app, verifierSet: true } };
+    // The current app, not the one read before the relay answered: an approval may have come since.
+    const current = this.entry.app ?? app;
+    this.entry = { ...this.entry, app: { ...current, verifierSet: true } };
     await this.options.store.put(this.entry);
   }
 }

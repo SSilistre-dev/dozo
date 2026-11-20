@@ -18,6 +18,8 @@ import { makeSignature } from "better-auth/crypto";
 /** The user agent a phone's session is stored under: tells it from the computer's own sessions. */
 export const RELAY_SESSION_USER_AGENT = "dozo-relay-phone";
 const RECORD_PREFIX = "dozo-relay-session:";
+/** When the user last signed out on the computer: a phone session made since does not survive. */
+const SIGNED_OUT_PREFIX = "dozo-relay-signed-out:";
 /** The requests that sign the user out on the computer: this session, or all of them. */
 const SIGN_OUT_PATHS = new Set(["/sign-out", "/revoke-sessions"]);
 /** What a phone's session may not do: end other sessions or change how the account signs in. */
@@ -29,6 +31,9 @@ const COMPUTER_ONLY_PATHS = [
   "/set-password",
   "/change-email",
   "/delete-user",
+  "/delete-user/",
+  "/request-account-deletion",
+  "/email-otp/",
   "/link-social",
   "/unlink-account",
   "/passkey/",
@@ -153,6 +158,7 @@ export async function issueRelaySession(
 ): Promise<RelaySessionResult> {
   const { prisma } = deps;
   const now = (deps.now ?? (() => new Date()))();
+  const started = Date.now();
   const users = await prisma.user.findMany({ where: humans, select: { id: true }, take: 2 });
   if (users.length > 1) return { refused: "one-account" };
   const userId = users[0]?.id;
@@ -194,7 +200,14 @@ export async function issueRelaySession(
     });
     return true;
   });
-  if (!kept || (await computerSignedIn(prisma, userId, new Date())) === 0) {
+  // A sign-out from any session on the computer since this request began counts too, even one
+  // that came before the channel was claimed and left another computer session signed in.
+  const signedOut = await prisma.verification.findFirst({
+    where: { identifier: `${SIGNED_OUT_PREFIX}${userId}` },
+    select: { value: true },
+  });
+  const signedOutSince = Number(signedOut?.value ?? 0) >= started;
+  if (!kept || signedOutSince || (await computerSignedIn(prisma, userId, new Date())) === 0) {
     await prisma.session.deleteMany({ where: { id: session.id } });
     return { refused: "sign-in-on-computer" };
   }
@@ -266,11 +279,45 @@ export async function revokeRelaySessionsOf(
   }
 }
 
-/** The bearer token's session id part, as the bearer sign-in reads it. */
-function bearerToken(header: string | null | undefined) {
-  if (!header || header.slice(0, 7).toLowerCase() !== "bearer ") return null;
-  const token = header.slice(7).trim();
-  return (token.includes("%") ? decodeURIComponent(token) : token).split(".")[0] || null;
+/** Records the time the user signed out on the computer, for a phone session made meanwhile. */
+async function markSignedOut(prisma: Pick<PrismaClient, "verification">, userId: string) {
+  const identifier = `${SIGNED_OUT_PREFIX}${userId}`;
+  const value = String(Date.now());
+  const existing = await prisma.verification.findFirst({
+    where: { identifier },
+    select: { id: true },
+  });
+  if (existing) await prisma.verification.update({ where: { id: existing.id }, data: { value } });
+  else {
+    await prisma.verification.create({
+      data: { id: randomUUID(), identifier, value, expiresAt: RECORD_EXPIRES },
+    });
+  }
+}
+
+/** A session token's id part, as Better Auth reads a signed one, from a bearer header or cookie. */
+function tokenPart(value: string) {
+  return (value.includes("%") ? decodeURIComponent(value) : value).split(".")[0] || null;
+}
+
+/**
+ * Every session a request may sign in with: its bearer token and its session cookie. A phone
+ * holds the cookie's value too, so both are looked at, not only the header.
+ */
+function requestTokens(headers: Headers | undefined, cookieName: string) {
+  const tokens: string[] = [];
+  const bearer = headers?.get("authorization");
+  if (bearer?.slice(0, 7).toLowerCase() === "bearer ") {
+    const token = tokenPart(bearer.slice(7).trim());
+    if (token) tokens.push(token);
+  }
+  for (const part of (headers?.get("cookie") ?? "").split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name !== cookieName && name !== `__Secure-${cookieName}`) continue;
+    const token = tokenPart(rest.join("="));
+    if (token) tokens.push(token);
+  }
+  return tokens;
 }
 
 /**
@@ -305,11 +352,12 @@ export function dozoRelaySessions(deps: {
               path.endsWith("/") ? context.path?.startsWith(path) : context.path === path,
             ),
           handler: createAuthMiddleware(async (context) => {
-            const token = bearerToken(context.headers?.get("authorization"));
-            if (!token) return;
-            const found = await context.context.internalAdapter.findSession(token);
-            if (found?.session.userAgent === RELAY_SESSION_USER_AGENT) {
-              throw new APIError("FORBIDDEN", { message: "Do this on your computer" });
+            const cookieName = context.context.authCookies.sessionToken.name;
+            for (const token of requestTokens(context.headers, cookieName)) {
+              const found = await context.context.internalAdapter.findSession(token);
+              if (found?.session.userAgent === RELAY_SESSION_USER_AGENT) {
+                throw new APIError("FORBIDDEN", { message: "Do this on your computer" });
+              }
             }
           }),
         },
@@ -323,6 +371,7 @@ export function dozoRelaySessions(deps: {
               after: async (session, context) => {
                 if (session.userAgent === RELAY_SESSION_USER_AGENT) return;
                 const signedOut = SIGN_OUT_PATHS.has(context?.path ?? "");
+                if (signedOut) await markSignedOut(deps.prisma, session.userId);
                 if (
                   !signedOut &&
                   (await computerSignedIn(deps.prisma, session.userId, now())) > 0

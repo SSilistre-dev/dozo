@@ -321,7 +321,7 @@ describe("a phone's sign-in", () => {
   });
 
   it("lets a phone do nothing that ends other sessions or changes how the account signs in", async () => {
-    const { account, whoIs, call, phone } = server();
+    const { account, whoIs, call, phone, auth } = server();
     const computer = await account();
     const token = await phone();
     for (const [path, body] of [
@@ -338,6 +338,22 @@ describe("a phone's sign-in", () => {
     expect(
       (await call("/revoke-other-sessions", { token: encodeURIComponent(token), body: {} })).status,
     ).toBe(403);
+    // The same token as the session cookie, the way a browser would carry it.
+    const cookie = (await auth.$context).authCookies.sessionToken.name;
+    for (const path of ["/revoke-sessions", "/request-account-deletion"]) {
+      const asCookie = await auth.handler(
+        new Request(`${BASE}/api/auth${path}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: BASE,
+            cookie: `other=1; ${cookie}=${encodeURIComponent(token)}`,
+          },
+          body: "{}",
+        }),
+      );
+      expect(asCookie.status, path).toBe(403);
+    }
     // A request with no bearer token is the server's own rules' to answer.
     expect((await call("/revoke-other-sessions", { body: {} })).status).toBe(401);
     expect(await whoIs(computer)).toBe("owner@example.com");
@@ -424,6 +440,24 @@ describe("ending a phone's sign-in", () => {
     expect(
       prisma.authData.session.filter((row) => row.userAgent === RELAY_SESSION_USER_AGENT),
     ).toEqual([]);
+  });
+
+  it("ends a session asked for just before a sign-out, with another computer session left", async () => {
+    const { deps, account, call, prisma } = server();
+    const first = await account();
+    await account("owner@example.com", true);
+    // The sign-out lands after the check that someone is signed in, before the channel is claimed.
+    const claim = prisma.$transaction.getMockImplementation();
+    prisma.$transaction.mockImplementationOnce(async (work) => {
+      await call("/sign-out", { token: first, body: {} });
+      return claim?.(work);
+    });
+    expect(await issueRelaySession(deps, CHANNEL)).toEqual({ refused: "sign-in-on-computer" });
+    expect(
+      prisma.authData.session.filter((row) => row.userAgent === RELAY_SESSION_USER_AGENT),
+    ).toEqual([]);
+    // A later request is not held back by an old sign-out.
+    expect("token" in (await issueRelaySession(deps, OTHER))).toBe(true);
   });
 
   it("leaves other users' phones alone and skips records it cannot read", async () => {

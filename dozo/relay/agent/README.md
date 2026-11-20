@@ -69,10 +69,12 @@ inherits it.
    from every request a phone sends.
 4. The local server answers only a request from this computer with a valid proof; anyone else gets
    404. It gives each channel one session, ever: `200 { token }`, or `409 { reason:
-   "sign-in-on-computer" | "one-account" }`, or `410 { reason: "used" }`. A pairing that was not
-   approved within 5 minutes is dropped (its channel deleted, `{"event":"expired"}`), and a request
-   still waiting gets `403 { reason: "not-approved" }`. The token crosses only inside the sealed
-   channel and is never logged.
+   "sign-in-on-computer" | "one-account" }`, or `410 { reason: "used" }`. With the key set, a
+   pairing made on this agent that was not approved within 5 minutes is dropped (its channel
+   deleted, `{"event":"expired"}`), and a request still waiting gets `403 { reason: "not-approved"
+   }`. A pairing stored before approvals existed is kept, but still asks before a sign-in. An agent
+   without the key drops nothing: it never asks. The token crosses only inside the sealed channel
+   and is never logged.
 
 "Signed in on the computer" means: the account has a session that is not a phone's, still valid and
 used in the last 30 days. It is not proof of who sits at the computer, which is why the approval
@@ -82,14 +84,16 @@ The session ends:
 - when the phone is removed (`revoke --origin`, or `run` when the relay no longer knows the
   channel), and `revoke` says what happened to it: `"session": "revoked" | "unreachable" |
   "skipped"`. "skipped" means `--origin` or the key was not given, so the session was left;
-- when the user signs out on the computer (one session or all), or when their last computer
-  session ends by any other way (revoked from another browser, deleted when found expired);
+- when the user signs out on the computer (one session or all; a phone session being made at that
+  moment is ended too), or when their last computer session ends by any other way (revoked from
+  another browser, deleted when found expired);
 - when the phone signs out, or the app switches to another server (it signs out of the one it
   leaves, through the relay while the old pairing still answers).
 
 A phone's session may not end other sessions, change or set the password, change the address,
-delete the account, or add a passkey or another sign-in: those answer 403 and are done on the
-computer. A removed phone pairs again to get a new session.
+delete the account or ask for that, use the email-code endpoints, or add a passkey or another
+sign-in, whether it carries its token as a bearer header or as the session cookie. Those answer 403
+and are done on the computer. A removed phone pairs again to get a new session.
 
 Limits, on purpose:
 - If the local server cannot be reached when a phone is removed, the session stays in its database.

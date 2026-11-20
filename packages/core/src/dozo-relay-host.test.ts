@@ -409,7 +409,13 @@ describe("approving a phone", () => {
     const store = memoryStore([{ ...unapproved, app }]);
     const fetch = vi.fn(async () => response(204)) as unknown as typeof globalThis.fetch;
     let now = 1_000 + RELAY_APPROVAL_MS - 1;
-    const host = start({ store, connect: async () => fakeSocket(), fetch, now: () => now });
+    const host = start({
+      store,
+      connect: async () => fakeSocket(),
+      fetch,
+      now: () => now,
+      sessionKey: KEY,
+    });
     await vi.waitFor(() =>
       expect(host.events).toContainEqual({ event: "connected", channel: CHANNEL }),
     );
@@ -425,7 +431,12 @@ describe("approving a phone", () => {
     await host.done;
 
     const approved = memoryStore([await paired()]);
-    const kept = start({ store: approved, connect: async () => fakeSocket(), now: () => 1e15 });
+    const kept = start({
+      store: approved,
+      connect: async () => fakeSocket(),
+      now: () => 1e15,
+      sessionKey: KEY,
+    });
     await vi.waitFor(() =>
       expect(kept.events).toContainEqual({ event: "connected", channel: CHANNEL }),
     );
@@ -434,13 +445,44 @@ describe("approving a phone", () => {
     await kept.done;
   });
 
+  it("keeps an unapproved pairing where phones get no sign-in, and one made before approvals", async () => {
+    const unapproved = await paired();
+    const pending = memoryStore([{ ...unapproved, app: { ...unapproved.app!, approvedAt: null } }]);
+    const keyless = start({ store: pending, connect: async () => fakeSocket(), now: () => 1e15 });
+    const { approvedAt: _, ...legacyApp } = unapproved.app!;
+    const legacy = memoryStore([{ ...unapproved, app: legacyApp }]);
+    const keyed = start({
+      store: legacy,
+      connect: async () => fakeSocket(),
+      now: () => 1e15,
+      sessionKey: KEY,
+    });
+    for (const host of [keyless, keyed]) {
+      await vi.waitFor(() =>
+        expect(host.events).toContainEqual({ event: "connected", channel: CHANNEL }),
+      );
+    }
+    expect(pending.channels.size).toBe(1);
+    expect(legacy.channels.size).toBe(1);
+    for (const host of [keyless, keyed]) {
+      host.stop();
+      await host.done;
+    }
+  });
+
   it("drops the keys even when the relay cannot be told", async () => {
     const unapproved = await paired();
     const store = memoryStore([{ ...unapproved, app: { ...unapproved.app!, approvedAt: null } }]);
     const fetch = vi.fn(async () => {
       throw new TypeError("fetch failed");
     }) as unknown as typeof globalThis.fetch;
-    const host = start({ store, connect: async () => fakeSocket(), fetch, now: () => 1e15 });
+    const host = start({
+      store,
+      connect: async () => fakeSocket(),
+      fetch,
+      now: () => 1e15,
+      sessionKey: KEY,
+    });
     await vi.waitFor(() => expect(store.channels.size).toBe(0), { timeout: 3000 });
     expect(host.events).toContainEqual(
       expect.objectContaining({ event: "error", channel: CHANNEL }),
