@@ -46,6 +46,7 @@ const fixtures = vi.hoisted(() => {
     hardware,
     models,
     connect: vi.fn(),
+    servers: vi.fn(),
     me: vi.fn(),
     ranked: vi.fn(),
     copy: vi.fn(async () => true),
@@ -67,6 +68,7 @@ vi.mock("../lib/rpc", () => {
   const client = Object.assign(read, {
     me: fixtures.me,
     models: { connect: fixtures.connect, list: read, credentials: read },
+    dozoLocalModels: { servers: fixtures.servers },
   });
   return {
     rpc: client,
@@ -194,6 +196,8 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   fixtures.connect.mockReset();
+  fixtures.servers.mockReset();
+  fixtures.servers.mockResolvedValue({ available: true, servers: [] });
   fixtures.me.mockReset();
   fixtures.copy.mockClear();
   fixtures.ranked.mockClear();
@@ -219,6 +223,8 @@ async function render(props: React.ComponentProps<typeof DozoLocalModels> = {}) 
       </QueryClientProvider>,
     ),
   );
+  // The panel shows once the server has said whether it may look on this computer.
+  await act(async () => flush());
 }
 
 const button = (name: string) =>
@@ -247,7 +253,7 @@ it("renders nothing, detects nothing and calls nothing while collapsed", async (
   const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   await render();
 
-  expect(container.textContent).toBe("Run on this computer");
+  expect(container.textContent).toBe("Run on this computerNo model server is running");
   expect(container.querySelector("select, input")).toBeNull();
   expect(getContext).not.toHaveBeenCalled();
   expect(fixtures.connect).not.toHaveBeenCalled();
@@ -282,11 +288,76 @@ it("shows only the pickers until hardware is chosen", async () => {
   expect(rowLabels()).toEqual(["Model m2", "Model m1"]);
 });
 
-it("renders nothing at all while the catalog is empty", async () => {
+it("renders nothing at all where the server may not look on this computer", async () => {
+  fixtures.servers.mockResolvedValue({ available: false, servers: [] });
+  await render();
+
+  expect(fixtures.servers).toHaveBeenCalledOnce();
+  expect(container.innerHTML).toBe("");
+});
+
+it("with an empty catalog shows the running servers and no estimator", async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  await render({ models: [] });
+  await open();
+
+  expect(container.textContent).toBe("Run on this computerNo model server is running");
+  expect(container.querySelector("select, input")).toBeNull();
+});
+
+const OLLAMA = { name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1" };
+
+it("lists each running server's models and connects one by its server's name", async () => {
+  fixtures.servers.mockResolvedValue({
+    available: true,
+    servers: [
+      { ...OLLAMA, models: ["qwen3:4b", "gemma3:12b"] },
+      { name: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1", models: [] },
+    ],
+  });
+  fixtures.connect.mockResolvedValue(undefined);
+  const onConnected = vi.fn();
+  await render({ models: [], onConnected, scope: "account", makeDefault: false });
+
+  expect(rowLabels()).toEqual(["qwen3:4b", "gemma3:12b"]);
+  expect(container.textContent).toContain("LM Studio");
+  expect(container.textContent).toContain("No models listed.");
+
+  await act(async () => button("Connect")?.click());
+  await vi.waitFor(() => expect(onConnected).toHaveBeenCalledOnce());
+  expect(fixtures.connect.mock.calls[0]?.[0]).toEqual({
+    provider: "openai-compatible",
+    baseUrl: OLLAMA.baseUrl,
+    modelId: "qwen3:4b",
+    label: "Ollama",
+    credentialId: null,
+    scope: "account",
+    makeDefault: false,
+  });
+  const connected = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Connected qwen3:4b"]',
+  );
+  expect(connected?.disabled).toBe(true);
+  expect(
+    container.querySelector<HTMLButtonElement>('button[aria-label="Connect gemma3:12b"]')?.disabled,
+  ).toBe(false);
+});
+
+it("shows a refused connect next to its own model only", async () => {
+  fixtures.servers.mockResolvedValue({
+    available: true,
+    servers: [{ ...OLLAMA, models: ["qwen3:4b", "gemma3:12b"] }],
+  });
+  fixtures.connect.mockRejectedValue(new Error("Model server returned 500."));
   await render({ models: [] });
 
-  expect(container.innerHTML).toBe("");
-  expect(container.querySelector("button, select, input")).toBeNull();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Connect gemma3:12b"]')?.click(),
+  );
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  const alerts = container.querySelectorAll('[role="alert"]');
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]?.closest("li")?.textContent).toContain("gemma3:12b");
 });
 
 it("says Nothing fits only once hardware and memory are chosen and no row qualifies", async () => {
@@ -593,6 +664,7 @@ async function renderSettings(props: { embedded?: boolean; scope: "account" | "s
       </QueryClientProvider>,
     ),
   );
+  await act(async () => flush());
 }
 
 async function connectFirstRow() {
