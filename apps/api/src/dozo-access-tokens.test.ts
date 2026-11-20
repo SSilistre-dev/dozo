@@ -156,6 +156,8 @@ describe("dozoTokenAuthenticator", () => {
       },
     });
     expect(spies.find).toHaveBeenCalledWith(prisma, token);
+    // The scheme's name is not case-sensitive.
+    expect(await authenticate(`bearer ${token}`)).not.toBeNull();
   });
 
   it("looks nothing up for a missing, malformed or differently sent token", async () => {

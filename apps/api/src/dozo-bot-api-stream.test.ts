@@ -137,6 +137,35 @@ describe("dozoRunStream", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("replays a settled run up to where its thread stood, then ends with its status", async () => {
+    const delta = event("thread.progress", { delta: "rest" });
+    const head = event("thread.message.created", { messageId: "m-9", role: "user", blocks: [] });
+    const later = event("thread.progress", { delta: "never" });
+    const replayed = await read(
+      dozoRunStream({
+        runId: "run-1",
+        settled: { status: "completed", headSeq: head.seq },
+        events: (signal) => events([delta, head, later], signal),
+        signal: new AbortController().signal,
+        maxMs: 60_000,
+      }),
+    );
+    expect(replayed).toBe(
+      `id: ${delta.seq}\nevent: delta\ndata: {"text":"rest"}\n\nevent: status\ndata: {"status":"completed"}\n\n`,
+    );
+    // The head event never arrives (another run's, filtered out): the first quiet moment ends it.
+    const quiet = await read(
+      dozoRunStream({
+        runId: "run-1",
+        settled: { status: "failed", headSeq: 10_000 },
+        events: (signal) => events([event("heartbeat", {}, null)], signal),
+        signal: new AbortController().signal,
+        maxMs: 60_000,
+      }),
+    );
+    expect(quiet).toBe('event: status\ndata: {"status":"failed"}\n\n');
+  });
+
   it("says the run is still going when the events end or the time is up", async () => {
     const ended = await read(
       dozoRunStream({

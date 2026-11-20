@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type { RouterClient } from "@orpc/server";
 import { createRouterClient, ORPCError, onError } from "@orpc/server";
 import type { Actor, ThreadMessage } from "@rakazo/contracts";
 import { IsoDate, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
+import { dozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant, touchDozoAccessToken } from "@rakazo/db";
 import { bestEffort, enrichLogContext } from "@rakazo/logging";
@@ -9,7 +11,7 @@ import type { Context, Hono } from "hono";
 import * as z from "zod";
 import type { DozoTokenCaller } from "./dozo-access-tokens.js";
 import { dozoTokenAuthenticator } from "./dozo-access-tokens.js";
-import type { DozoStreamFrame } from "./dozo-bot-api-stream.js";
+import type { DozoSettledRun, DozoStreamFrame } from "./dozo-bot-api-stream.js";
 import { DOZO_SETTLED_RUN_STATUSES, dozoRunStream, sseFrame } from "./dozo-bot-api-stream.js";
 import { messageBody } from "./dozo-chat-markdown.js";
 import { readBoundedBody } from "./http-body.js";
@@ -136,7 +138,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   const openStreams = new Map<string, number>();
   const streamMaxMs = deps.streamMaxMs ?? DOZO_BOT_API_STREAM_MAX_MS;
 
-  type Caller = DozoTokenCaller & { client: DozoBotApiClient };
+  type Caller = DozoTokenCaller & {
+    client: DozoBotApiClient;
+    context: Omit<DozoBotApiContext, "signal">;
+  };
 
   const caller = async (c: Context): Promise<Caller> => {
     const authorization = c.req.header("authorization");
@@ -146,13 +151,12 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       throw new ApiError(429, "Too many requests");
     enrichLogContext({ "user.id": found.actor.userId, "space.id": found.actor.spaceId });
     void bestEffort("bot api token last used", deps.touch(found.tokenId));
-    const client = deps.connect({
+    const context = {
       actor: found.actor,
-      signal: c.req.raw.signal,
       stillAuthorized: async () =>
         (await deps.authenticate(authorization))?.tokenId === found.tokenId,
-    });
-    return { ...found, client };
+    };
+    return { ...found, context, client: deps.connect({ ...context, signal: c.req.raw.signal }) };
   };
 
   /** The bot in the path, when the token may reach it; any other answers as a missing bot. */
@@ -178,21 +182,30 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   const stream = (
     c: Context,
     found: Caller,
-    input: { botId: string; runId: string; cursor: number; first?: DozoStreamFrame[] },
+    input: {
+      botId: string;
+      runId: string;
+      cursor: number;
+      first?: DozoStreamFrame[];
+      settled?: DozoSettledRun;
+      /** A place already held for this stream; otherwise one is taken now. */
+      release?: () => void;
+    },
   ) => {
-    const release = holdStream(found.tokenId);
+    const release = input.release ?? holdStream(found.tokenId);
     const body = dozoRunStream({
       runId: input.runId,
       first: input.first,
+      settled: input.settled,
       signal: c.req.raw.signal,
       maxMs: streamMaxMs,
       onClose: release,
+      // Its own client, so the stream's end (its time, or the reader leaving) ends the follow too.
       events: (signal) => ({
         async *[Symbol.asyncIterator]() {
-          yield* await found.client.threads.subscribe(
-            { botId: input.botId, cursor: input.cursor },
-            { signal },
-          );
+          yield* await deps
+            .connect({ ...found.context, signal })
+            .threads.subscribe({ botId: input.botId, cursor: input.cursor }, { signal });
         },
       }),
     });
@@ -252,19 +265,31 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       const body = SendBody.safeParse(parsedJson);
       if (!body.success) throw new ApiError(400, "Give the message as text");
       const key = c.req.header("idempotency-key")?.trim();
-      const sent = await found.client.threads.send({
-        botId,
-        text: body.data.text,
-        // A retried request with the same key is the same message, not a second one.
-        ...(key ? { clientNonce: `api:${key.slice(0, 190)}` } : {}),
-      });
+      if (key && key.length > 190) throw new ApiError(400, "Idempotency-Key is too long");
+      // The stream's place is taken before the send, so a refused stream never sent anything.
+      const streaming = c.req.header("accept")?.includes("text/event-stream") === true;
+      const release = streaming ? holdStream(found.tokenId) : undefined;
+      let sent: Awaited<ReturnType<DozoBotApiClient["threads"]["send"]>>;
+      try {
+        sent = await found.client.threads.send({
+          botId,
+          text: body.data.text,
+          // Always marked as sent with a token (the run gate reads it); a retried request with
+          // the same key is the same message, not a second one.
+          clientNonce: dozoTokenNonce(key || randomUUID()),
+        });
+      } catch (error) {
+        release?.();
+        throw error;
+      }
       const started = { runId: sent.runId, seq: sent.seq };
-      if (!c.req.header("accept")?.includes("text/event-stream")) return json(c, started, 202);
+      if (!release) return json(c, started, 202);
       return stream(c, found, {
         botId,
         runId: sent.runId,
         cursor: sent.seq,
         first: [{ id: sent.seq, event: "run", data: started }],
+        release,
       });
     }),
   );
@@ -281,8 +306,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       const head = await found.client.threads.head({ botId });
       const status = await deps.runStatus(found.actor, head.threadId, runId.data);
       if (!status) throw new ApiError(404, "Run not found");
-      // Without a place to resume from, a settled run has nothing more to say.
-      if (cursor === undefined && DOZO_SETTLED_RUN_STATUSES.has(status))
+      const settled = DOZO_SETTLED_RUN_STATUSES.has(status);
+      // A settled run with nothing after the client's place has only its status to say, so a
+      // client that reconnects after the last frame is answered at once instead of held open.
+      if (settled && (cursor === undefined || cursor.data >= head.cursor))
         return new Response(sseFrame({ event: "status", data: { status } }), {
           headers: EVENT_STREAM_HEADERS,
         });
@@ -290,6 +317,8 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
         botId,
         runId: runId.data,
         cursor: cursor?.data ?? head.cursor,
+        // The events up to now are replayed, then the stream ends with the run's status.
+        ...(settled ? { settled: { status, headSeq: head.cursor } } : {}),
       });
     }),
   );

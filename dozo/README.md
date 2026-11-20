@@ -339,11 +339,21 @@ approval ends the stream with `waiting_input`, and the client follows the run ag
 with `Last-Event-ID`. Settings, billing, members and tokens are out of its reach: the app's RPC
 never accepts a token. Making and revoking one is in the activity log; the list shows when each was
 last used (written at most once a minute). A token goes with its bot, with the member's place in
-the Space, and stops working for a deactivated or banned account.
+the Space, and stops working for a deactivated or banned account. Like other personal access
+tokens it does not expire and outlives signing out or a password change: revoke it in the list.
+
+A message sent with a token is not the owner's own word: it may come from another program or
+agent. It is saved with an `api:` client nonce (`packages/core/src/dozo-token-source.ts`, shared
+with MCP), shows a small key above it in the web chat, and a run it starts, steers or answers
+(`packages/adapters/src/dozo-token-run.ts`) asks the person before every action with an outside
+effect (a send, a connector write, a command on their own computer), even in Never ask or Auto
+review; its approval cards have no Always allow, and the sites and recipients it names are not
+trusted as the owner's. The API call does not wait: its stream ends with `waiting_input`.
 
 Limits: 60 requests a minute and 3 open streams per token, per API instance; a stream ends after 10
 minutes with `running`. Not yet: the mobile app has no token screen (a token is for a computer's
-scripts; make one on web or desktop), and there is no group chat or attachment support.
+scripts; make one on web or desktop) and shows no key on a message sent with one, and there is no
+group chat or attachment support.
 
 ## Commands on your own computer
 

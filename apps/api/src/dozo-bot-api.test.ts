@@ -1,6 +1,7 @@
 import { ORPCError, os } from "@orpc/server";
 import type { Actor, ProductEvent } from "@rakazo/contracts";
 import { Hono } from "hono";
+import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DozoTokenCaller } from "./dozo-access-tokens.js";
 import type { DozoBotApiClient, DozoBotApiContext, DozoBotApiDeps } from "./dozo-bot-api.js";
@@ -58,7 +59,7 @@ function fakeClient() {
       send: vi.fn(async () => ({ taskId: "task-1", runId: "run-1", seq: 41 })),
       messages: vi.fn(async () => ({
         threadId: "thread-1",
-        olderCursor: 3,
+        olderCursor: 3 as number | null,
         messages: [
           {
             id: "m-1",
@@ -109,8 +110,8 @@ function fakeClient() {
 
 let client: ReturnType<typeof fakeClient>;
 let contexts: DozoBotApiContext[];
-let runStatus: ReturnType<typeof vi.fn>;
-let authenticate: ReturnType<typeof vi.fn>;
+let runStatus: Mock<DozoBotApiDeps["runStatus"]>;
+let authenticate: Mock<DozoBotApiDeps["authenticate"]>;
 
 function app(overrides: Partial<DozoBotApiDeps> = {}) {
   const hono = new Hono();
@@ -144,8 +145,8 @@ const send = (hono: Hono, body: unknown, headers: Record<string, string> = {}) =
 beforeEach(() => {
   client = fakeClient();
   contexts = [];
-  runStatus = vi.fn(async () => "running");
-  authenticate = vi.fn(async (header: string | undefined) =>
+  runStatus = vi.fn<DozoBotApiDeps["runStatus"]>(async () => "running");
+  authenticate = vi.fn<DozoBotApiDeps["authenticate"]>(async (header) =>
     header === `Bearer ${TOKEN}` ? everyBot : null,
   );
 });
@@ -266,7 +267,12 @@ describe("sending a message", () => {
       { botId: "bot-1", cursor: 41 },
       { signal: expect.any(AbortSignal) },
     );
-    expect(client.threads.send).toHaveBeenCalledWith({ botId: "bot-1", text: "Plan dinner" });
+    // Every message sent with a token is marked so, with a fresh nonce when no key was given.
+    expect(client.threads.send).toHaveBeenCalledWith({
+      botId: "bot-1",
+      text: "Plan dinner",
+      clientNonce: expect.stringMatching(/^api:[0-9a-f-]{36}$/),
+    });
   });
 
   it("ends the call when the run stops for an approval, saying so", async () => {
@@ -282,6 +288,19 @@ describe("sending a message", () => {
     ).text();
     expect(text).toContain('event: status\ndata: {"status":"waiting_input"}');
     expect(text).not.toContain("after approval");
+  });
+
+  it("gives a stream's place back when the send fails", async () => {
+    client.threads.send.mockRejectedValue(new ORPCError("BAD_REQUEST", { message: "No model" }));
+    const hono = app();
+    for (let index = 0; index <= DOZO_BOT_API_STREAMS_PER_TOKEN; index++)
+      expect((await send(hono, { text: "hi" }, { accept: "text/event-stream" })).status).toBe(400);
+  });
+
+  it("refuses an idempotency key too long to keep whole", async () => {
+    const long = await send(app(), { text: "hi" }, { "idempotency-key": "k".repeat(191) });
+    expect(long.status).toBe(400);
+    expect(client.threads.send).not.toHaveBeenCalled();
   });
 
   it("refuses what is not a JSON message", async () => {
@@ -338,6 +357,8 @@ describe("sending a message", () => {
     for (const reader of open) await reader.read();
     const refused = await send(hono, { text: "hi" }, { accept: "text/event-stream" });
     expect(refused.status).toBe(429);
+    // The refused stream sent nothing, so a retry cannot send the message twice.
+    expect(client.threads.send).toHaveBeenCalledTimes(DOZO_BOT_API_STREAMS_PER_TOKEN);
     await open[0]!.cancel();
     expect((await send(hono, { text: "hi" }, { accept: "text/event-stream" })).status).toBe(200);
   });
@@ -371,6 +392,24 @@ describe("following a run", () => {
     runStatus.mockResolvedValue("waiting_input");
     const settled = await call(app(), "/bots/bot-1/runs/run-1/events");
     expect(await settled.text()).toBe('event: status\ndata: {"status":"waiting_input"}\n\n');
+    expect(client.threads.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays a settled run after the client's place, and answers at once from its end", async () => {
+    runStatus.mockResolvedValue("completed");
+    const replayed = await call(app(), "/bots/bot-1/runs/run-1/events", {
+      headers: { "last-event-id": "30" },
+    });
+    expect(client.threads.subscribe).toHaveBeenCalledWith(
+      { botId: "bot-1", cursor: 30 },
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(await replayed.text()).toContain('"status":"completed"');
+    // An EventSource reconnects after the last frame: nothing is held open for it.
+    const atEnd = await call(app(), "/bots/bot-1/runs/run-1/events", {
+      headers: { "last-event-id": "44" },
+    });
+    expect(await atEnd.text()).toBe('event: status\ndata: {"status":"completed"}\n\n');
     expect(client.threads.subscribe).toHaveBeenCalledTimes(1);
   });
 

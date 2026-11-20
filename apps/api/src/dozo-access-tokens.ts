@@ -76,7 +76,7 @@ export type DozoTokenCaller = { tokenId: string; actor: Actor; botId: string | n
  */
 export function dozoTokenAuthenticator(prisma: PrismaClient) {
   return async (authorization: string | undefined): Promise<DozoTokenCaller | null> => {
-    const match = /^Bearer ([^\s]+)$/.exec(authorization ?? "");
+    const match = /^Bearer ([^\s]+)$/i.exec(authorization ?? "");
     const token = match?.[1];
     if (!token || !looksLikeDozoAccessToken(token)) return null;
     return runAsSystem("authenticate a bot API access token", async () => {

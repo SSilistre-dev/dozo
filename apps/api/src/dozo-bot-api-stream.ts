@@ -87,6 +87,9 @@ export const SSE_KEEPALIVE = ": keepalive\n\n";
 
 export type DozoRunEvents = AsyncIterable<ProductEvent>;
 
+/** A run that had already settled when the stream opened, and the thread's last event then. */
+export type DozoSettledRun = { status: string; headSeq: number };
+
 /**
  * Streams one run's frames as server-sent events, starting with `first` frames, until the run ends
  * or stops for the person, the events end, the client leaves, or `maxMs` passes, when a last
@@ -96,6 +99,8 @@ export function dozoRunStream(input: {
   runId: string;
   events: (signal: AbortSignal) => DozoRunEvents;
   first?: DozoStreamFrame[];
+  /** Replay up to `headSeq`, then end with this status instead of waiting for more. */
+  settled?: DozoSettledRun;
   signal: AbortSignal;
   maxMs: number;
   onClose?: () => void;
@@ -116,19 +121,22 @@ export function dozoRunStream(input: {
       let ended = false;
       try {
         for (const frame of input.first ?? []) send(sseFrame(frame));
+        const { settled } = input;
         for await (const event of input.events(signal)) {
           if (signal.aborted) break;
-          if (event.type === "heartbeat") {
-            send(SSE_KEEPALIVE);
-            continue;
-          }
-          const frame = dozoStreamFrame(event, input.runId);
-          if (!frame) continue;
-          send(sseFrame(frame));
-          if (frame.event === "status") {
+          const frame = event.type === "heartbeat" ? null : dozoStreamFrame(event, input.runId);
+          if (frame) send(sseFrame(frame));
+          if (frame?.event === "status") {
             ended = true;
             break;
           }
+          // Replayed up to where the settled run's thread stood: nothing more is coming.
+          if (settled && (event.type === "heartbeat" || event.seq >= settled.headSeq)) {
+            send(sseFrame({ event: "status", data: { status: settled.status } }));
+            ended = true;
+            break;
+          }
+          if (event.type === "heartbeat") send(SSE_KEEPALIVE);
         }
       } catch (error) {
         // The client left or the time ran out; anything else ends the stream as an error.

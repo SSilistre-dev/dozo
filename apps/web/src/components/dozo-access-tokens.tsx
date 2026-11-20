@@ -131,7 +131,7 @@ function TokenRow({
         variant="ghost"
         size="icon-sm"
         aria-label={t`Revoke ${name}`}
-        className="text-destructive hover:text-destructive"
+        className="text-muted-foreground hover:text-destructive"
         disabled={disabled}
         onClick={onRevoke}
       >
