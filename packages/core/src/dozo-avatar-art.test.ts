@@ -8,8 +8,6 @@ import {
   dozoAvatarSvg,
   dozoCharacterForLook,
   dozoCharacterForSeed,
-  dozoChatUserColors,
-  dozoContrast,
   dozoHashSeed,
   notificationAvatarSource,
 } from "./dozo-avatar-art.js";
