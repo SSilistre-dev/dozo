@@ -306,6 +306,23 @@ Mobile pins from the same long-press menu, and lists a chat's pins from the bot 
 group settings, only while there are some; choosing one opens the chat at it. The app reads a
 chat's pins again on every roster signal.
 
+## Feedback
+
+The account menu's Send feedback opens a short note with an optional Include diagnostics switch
+(`apps/api/src/dozo-feedback.ts`, `apps/web/src/components/dozo-feedback*.tsx`). It goes to the
+address in `DOZO_FEEDBACK_EMAIL`; without one the item is not shown. With an email provider the
+server mails it there, as plain text with the sender's own address to reply to. Without one the
+dialog saves the report as a text file and shows the address to send it to.
+
+Diagnostics are the surface (web or desktop), the browser's user agent, language and time zone,
+the server's revision, and the ids and times of the sender's own failed runs in the last 7 days
+(never their error text). The dialog shows the exact lines added under the note before anything is
+sent, and the server sends only the runs it showed. Nothing is sent without the person pressing
+Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
+
+Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
+it an address. There is no anonymous path to the hosted service from a local server.
+
 ## Commands on your own computer
 
 Upstream asks once per Space before a bot first runs a command on the member's own computer (the
@@ -462,6 +479,15 @@ Accepted by the owner for now, stated here once:
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
   which it does not show.
+- One-time waits (`packages/adapters/src/dozo-wait.ts`): `schedule_create` with a watch and
+  `waitMinutes` (5 minutes to a week, at most 10 going per bot) wakes the bot once in that chat, at
+  the first change or at the deadline, then ends; no model runs in between and the routine's
+  wakeup job carries it across restarts. It is a routine, so the user sees and stops it in the
+  bot's Routines list (web and mobile). A deadline missed by more than 12 hours ends it without a
+  run, as a missed one-time routine does. A wait for a set time is the existing one-shot reminder.
+  A wait that cannot start is refused before the approval card; the per-bot count and the insert
+  share an advisory lock. `dozo-wait.postgres.test.ts` checks it on a migrated database
+  (`VERIFY_DATABASE=1`, `DATABASE_URL` of the runtime login); the unit gate skips it.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and

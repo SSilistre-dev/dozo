@@ -106,6 +106,7 @@ CLIENT_IP_HEADER=cf-connecting-ip   # only when a CDN that sets this header is i
 TRUSTED_PROXIES=dokploy-traefik   # with CLIENT_IP_HEADER: the panel's proxy only (Client addresses)
 DOZO_ORIGIN_SOURCE_RANGE=       # optional: the CDN's ranges, comma-separated (Origin behind a CDN)
 DOZO_PLUGIN_SUBMISSIONS=closed  # optional, the default; open lets anyone submit a plugin
+DOZO_FEEDBACK_EMAIL=           # optional: the inbox in-app feedback is mailed to (needs email)
 POSTGRES_PASSWORD=...           # the six secrets from step 2
 POSTGRES_APP_PASSWORD=...
 BETTER_AUTH_SECRET=...
