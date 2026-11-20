@@ -720,6 +720,8 @@ mod tests {
 
     struct Call {
         frames: mpsc::Receiver<String>,
+        // Only the Unix tests cancel a call.
+        #[cfg_attr(not(unix), allow(dead_code))]
         cancel: watch::Sender<bool>,
     }
 
@@ -734,10 +736,6 @@ mod tests {
             },
             Call { frames, cancel },
         )
-    }
-
-    fn owned_count(runner: &Runner) -> usize {
-        runner.owned.lock().unwrap().len()
     }
 
     fn runner() -> (Arc<Runner>, PathBuf) {
@@ -762,21 +760,6 @@ mod tests {
             frames.push(frame["frame"].clone());
         }
         frames
-    }
-
-    fn stdout_of(frames: &[Value]) -> String {
-        frames
-            .iter()
-            .filter(|frame| frame["value"]["type"] == "stdout")
-            .map(|frame| frame["value"]["data"].as_str().unwrap())
-            .collect()
-    }
-
-    fn exit_of(frames: &[Value]) -> Option<i64> {
-        frames
-            .iter()
-            .find(|frame| frame["value"]["type"] == "exit")
-            .and_then(|frame| frame["value"]["code"].as_i64())
     }
 
     #[tokio::test]
@@ -846,6 +829,25 @@ mod tests {
     #[cfg(unix)]
     mod unix {
         use super::*;
+
+        fn owned_count(runner: &Runner) -> usize {
+            runner.owned.lock().unwrap().len()
+        }
+
+        fn stdout_of(frames: &[Value]) -> String {
+            frames
+                .iter()
+                .filter(|frame| frame["value"]["type"] == "stdout")
+                .map(|frame| frame["value"]["data"].as_str().unwrap())
+                .collect()
+        }
+
+        fn exit_of(frames: &[Value]) -> Option<i64> {
+            frames
+                .iter()
+                .find(|frame| frame["value"]["type"] == "exit")
+                .and_then(|frame| frame["value"]["code"].as_i64())
+        }
 
         async fn provisioned() -> (Arc<Runner>, PathBuf) {
             let (runner, dir) = runner();
