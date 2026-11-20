@@ -52,12 +52,11 @@ export function DozoSettingsNavGroups({
     app: t`App`,
   };
   return dozoSettingsNavGroups(items).map((group) => (
-    <div
+    <fieldset
       key={group.id}
-      role="group"
       aria-labelledby={`dozo-settings-nav-${group.id}`}
       data-dozo-settings-group={group.id}
-      className="contents md:flex md:flex-col md:gap-0.5"
+      className="contents m-0 min-w-0 border-0 p-0 md:flex md:flex-col md:gap-0.5"
     >
       <div
         id={`dozo-settings-nav-${group.id}`}
@@ -89,6 +88,6 @@ export function DozoSettingsNavGroups({
           </button>
         );
       })}
-    </div>
+    </fieldset>
   ));
 }
