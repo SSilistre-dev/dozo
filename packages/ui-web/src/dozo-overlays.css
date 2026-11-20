@@ -282,7 +282,7 @@
 }
 [data-testid="settings-nav"] {
   gap: 2px;
-  border-color: transparent;
+  border: 0;
   background: transparent;
 }
 [data-testid="user-settings"] > div > div:first-child {
