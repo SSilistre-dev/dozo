@@ -8,7 +8,7 @@ const COUNT_PREFIX = /^\(\d+\) /;
  * number: no chat or bot name ever goes into the title. */
 export function titleWithCount(title: string, count: number): string {
   const bare = title.replace(COUNT_PREFIX, "");
-  return count > 0 ? `(${Math.floor(count)}) ${bare}` : bare;
+  return Number.isFinite(count) && count >= 1 ? `(${Math.floor(count)}) ${bare}` : bare;
 }
 
 /**

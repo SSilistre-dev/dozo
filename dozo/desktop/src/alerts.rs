@@ -43,6 +43,16 @@ pub fn answer(
     }
 }
 
+/// The count the badge shows for the window's own page: the one in its title on the server's
+/// origin, and none anywhere else (the local screens, an address on its way to the browser).
+pub fn count_for(page: Option<&Url>, server: Option<&Url>, title: &str) -> u32 {
+    if on_server(page, server) {
+        unread_count(title)
+    } else {
+        0
+    }
+}
+
 /// The largest count the badge shows; more reads as `99+`.
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 pub const BADGE_CAP: u32 = 99;
@@ -204,6 +214,12 @@ mod tests {
         for (page, server, allowed) in [
             ("https://dozo.example.com/space/1?x=1", &server, true),
             ("https://dozo.example.com:443/", &server, true),
+            // Host names are case-insensitive: the parsed address is lower case.
+            ("https://DOZO.Example.COM/", &server, true),
+            // User info does not change the host: this one is evil.test.
+            ("https://dozo.example.com@evil.test/", &server, false),
+            // A trailing dot is a different host to the origin, so it is refused.
+            ("https://dozo.example.com./", &server, false),
             ("http://127.0.0.1:5173/chat", &local, true),
             // Another port, scheme, host or a look-alike: another origin.
             ("https://dozo.example.com:8443/", &server, false),
@@ -301,6 +317,19 @@ mod tests {
         ] {
             assert_eq!(unread_count(title), count, "{title:?}");
         }
+    }
+
+    #[test]
+    fn only_the_server_s_page_has_a_count() {
+        let server = url("https://dozo.example.com/");
+        let count = |page: &str| count_for(Some(&url(page)), Some(&server), "(3) Dozo");
+        assert_eq!(count("https://dozo.example.com/chat"), 3);
+        // Change Server and the connection screens are local: the badge clears.
+        assert_eq!(count("tauri://localhost/index.html?change"), 0);
+        assert_eq!(count("http://tauri.localhost/index.html"), 0);
+        assert_eq!(count("https://evil.test/"), 0);
+        assert_eq!(count_for(None, Some(&server), "(3) Dozo"), 0);
+        assert_eq!(count_for(Some(&server), None, "(3) Dozo"), 0);
     }
 
     #[test]

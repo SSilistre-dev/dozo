@@ -180,22 +180,26 @@ def notify_gate(binary):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return f"http://127.0.0.1:{server.server_address[1]}"
 
-    # Asks for permission on a click anywhere (WebKitGTK wants one), says what it got, and shows one
-    # notification if it may. The frame asks without one: being another origin refuses it first.
-    ask = """<body style="margin:0;height:100vh"><script>{when}(async () => {{
+    # Asks for permission on a click anywhere in its document (WebKitGTK wants one), says who asked
+    # and what it got, and shows one notification if it may. Two frames ask on a click too: one
+    # from another origin and one from the server's, so the origin is what tells them apart.
+    ask = """<body style="margin:0;height:100vh"><script>document.body.onclick = () => (async () => {{
   const before = Notification.permission;
   const result = await Notification.requestPermission();
   document.title = 'permission ' + result;
-  await fetch('/report?before=' + before + '&result=' + result);
+  await fetch('/report?who={who}&before=' + before + '&result=' + result);
   if (result === 'granted') {{
     const shown = new Notification('{summary}', {{ body: 'gate' }});
     shown.onclick = () => fetch('/report?clicked');
   }}
 }})();</script>"""
-    other = reporting("b", {"/frame": ask.format(when="", summary="from-the-frame")})
+    other = reporting("b", {"/frame": ask.format(who="other", summary="from-the-other-frame")})
+    frame = "position:fixed;top:0;width:200px;height:120px;border:0"
     server = reporting("a", {
-        "/": ask.format(when="document.body.onclick = () => ", summary="from-the-server")
-        + f"""<iframe src="{other}/frame" style="position:fixed;top:0;left:0;width:50px;height:50px"></iframe>
+        "/same": ask.format(who="same", summary="from-the-same-frame"),
+        "/": ask.format(who="server", summary="from-the-server")
+        + f"""<iframe src="{other}/frame" style="{frame};left:0"></iframe>
+<iframe src="/same" style="{frame};left:240px"></iframe>
 <script>setInterval(async () => {{
   const next = await (await fetch('/title')).text();
   if (next && document.title !== next) document.title = next;
@@ -221,15 +225,26 @@ def notify_gate(binary):
                 sys.exit(2)
             print(f"ok: {what}")
 
-        until("the frame from another origin asked", lambda: report["b"])
-        check("another origin's frame is denied notifications", report["b"][0].endswith("result=denied"))
+        def asked(who):
+            return [r for r in report["a"] + report["b"] if r.startswith(f"who={who}&")]
+
+        def click(x, y):
+            subprocess.run(["xdotool", "mousemove", "--window", windows()[0], str(x), str(y), "click", "1"], check=True)
+
         until("the window is on screen", lambda: len(windows()) == 1)
-        time.sleep(1)  # the page has loaded and listens for the click
-        subprocess.run(["xdotool", "mousemove", "--window", windows()[0], "400", "300", "click", "1"], check=True)
-        until("the server's page asked", lambda: report["a"])
-        check("the server's origin is granted them", report["a"][0] == "before=default&result=granted")
+        time.sleep(1)  # the page and its frames have loaded and listen for clicks
+        # Below the menu bar, inside each frame, then on the page itself.
+        click(100, 90)
+        until("a frame from another origin asked on a click", lambda: asked("other"))
+        check("and is denied notifications", asked("other")[0] == "who=other&before=default&result=denied")
+        click(340, 90)
+        until("a frame from the server's origin asked on a click", lambda: asked("same"))
+        check("and is granted them: the origin decides", asked("same")[0] == "who=same&before=default&result=granted")
+        click(600, 400)
+        until("the server's page asked", lambda: asked("server"))
+        check("the server's origin is granted them", asked("server")[0].endswith("&result=granted"))
         until("the server's notification reaches the desktop", lambda: any(" from-the-server" in line for line in shown()))
-        check("and nothing from the frame does", not any("from-the-frame" in line for line in shown()))
+        check("and nothing from the other origin does", not any("from-the-other-frame" in line for line in shown()))
 
         # Closing with Keep Running in Background and no tray takes the window off the screen;
         # a click on the notification brings it back, and the page hears the click.

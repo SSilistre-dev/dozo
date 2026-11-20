@@ -607,12 +607,19 @@ fn main() {
                         let app = app.clone();
                         move |window, title| {
                             let page = window.url().ok();
-                            let count = if alerts::on_server(page.as_ref(), chosen(&app).as_ref()) {
-                                alerts::unread_count(&title)
-                            } else {
-                                0
-                            };
+                            let count =
+                                alerts::count_for(page.as_ref(), chosen(&app).as_ref(), &title);
                             alerts::show_unread(&window, count);
+                        }
+                    })
+                    // Leaving the server (Change Server, the connection screens) clears the badge
+                    // at once, whether or not the next page's title changes.
+                    .on_page_load({
+                        let app = app.clone();
+                        move |window, load| {
+                            if !alerts::on_server(Some(load.url()), chosen(&app).as_ref()) {
+                                alerts::show_unread(&window, 0);
+                            }
                         }
                     })
                     .build()?;
