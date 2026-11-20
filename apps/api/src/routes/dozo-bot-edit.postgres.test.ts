@@ -268,6 +268,35 @@ describePostgres("who changes a shared bot's run settings (PostgreSQL)", () => {
     expect(await instructionsOf(chef.id)).toBe("Plan meals.");
   });
 
+  it("lets only a bot's creator or the space owner switch its computer, which moves its files", async () => {
+    const { owner, member } = await sharedSpace();
+    const ownersBot = await newBot(owner, "Keeper");
+    const membersBot = await newBot(member, "Scout");
+    const scopeOf = async (botId: string) =>
+      (
+        await system.bot.findUniqueOrThrow({
+          where: { id: botId },
+          select: { computer: { select: { scope: true } } },
+        })
+      ).computer?.scope;
+    const own = { mode: "dedicated" };
+
+    const refused = await call(member, "bots/setComputer", { botId: ownersBot.id, ...own });
+    expect(refused.status).toBe(403);
+    expect(await scopeOf(ownersBot.id)).toBe("team");
+    expect((await call(member, "bots/setComputer", { botId: membersBot.id, ...own })).status).toBe(
+      200,
+    );
+    expect(await scopeOf(membersBot.id)).toBe("dedicated");
+    expect(
+      (await call(owner, "bots/setComputer", { botId: membersBot.id, mode: "team" })).status,
+    ).toBe(200);
+    expect(await scopeOf(membersBot.id)).toBe("team");
+    expect((await call(owner, "bots/setComputer", { botId: ownersBot.id, ...own })).status).toBe(
+      200,
+    );
+  });
+
   it("lets any member archive a group but only its creator or the space owner remove it", async () => {
     const { owner, member } = await sharedSpace();
     const ownersGroup = await newGroup(owner);

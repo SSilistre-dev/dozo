@@ -78,6 +78,11 @@ export const SERVER_SENTENCES: ReadonlySet<string> = new Set([
   "This computer can't move a bot's files.",
 ]);
 
+/** Refusals that name what they are about after ": "; the sentence is translated, the names kept. */
+export const SERVER_SENTENCE_PREFIXES: ReadonlySet<string> = new Set([
+  "Files over 12 MB can't move",
+]);
+
 /**
  * Sign-in button labels the server sends for subscription providers, by their fixed English text.
  * The provider names are product data; each label is its own catalog id with a Turkish line.
@@ -105,8 +110,14 @@ function messageOf(error: unknown): string | undefined {
 /** A refusal people often see, in the UI's language; null for any other text. */
 export function knownServerText(error: unknown): string | null {
   const message = messageOf(error)?.trim();
-  if (!message || !SERVER_SENTENCES.has(message)) return null;
-  return i18n.locale ? i18n._({ id: message, message }) : message;
+  if (!message) return null;
+  const said = (sentence: string) =>
+    i18n.locale ? i18n._({ id: sentence, message: sentence }) : sentence;
+  if (SERVER_SENTENCES.has(message)) return said(message);
+  const split = message.indexOf(": ");
+  const prefix = message.slice(0, split);
+  if (split < 0 || !SERVER_SENTENCE_PREFIXES.has(prefix)) return null;
+  return `${said(prefix)}: ${message.slice(split + 2)}`;
 }
 
 /**
