@@ -36,7 +36,7 @@ describe("DozoFooter", () => {
     const html = await render(<DozoFooter locale="en" />);
     expect(html).toContain('href="https://dozo.bot/privacy/"');
     expect(html).toContain('href="https://dozo.bot/terms/"');
-    expect(html).toContain('href="mailto:info@ssilistre.dev"');
+    expect(html).toContain('href="mailto:info@dozo.bot"');
     expect(html).toContain("SSilistre.dev");
     expect(html).not.toContain("unsubscribe");
   });
@@ -69,7 +69,7 @@ describe("branded account mail", () => {
     expect(mail.html).toContain("#1F1F1F");
     expect(mail.html).not.toContain("Arial, Helvetica, sans-serif;");
     expect(mail.text).toContain("Gizlilik https://dozo.bot/tr/privacy/");
-    expect(mail.text).toContain("info@ssilistre.dev");
+    expect(mail.text).toContain("info@dozo.bot");
   });
 
   it("escapes a hostile code and name, and links nothing but the footer", async () => {
