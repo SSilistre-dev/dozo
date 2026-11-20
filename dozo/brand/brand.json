@@ -6540,6 +6540,15 @@
         "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
       ],
       "reason": "CLI accounts: under Providers, one row per provider tool installed on the server's own computer and not connected yet; nothing where there is none"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
+      "replace": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Not signed in\"\nmsgstr \"Oturum açık değil\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+      ],
+      "reason": "CLI accounts: the Turkish copy of the settings row's status for a tool that is not signed in"
     }
   ],
   "assets": {
