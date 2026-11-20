@@ -2,7 +2,8 @@ import type { Page } from "@playwright/test";
 import { expect, readWorld, test, UPSTREAM_AVATAR_ART } from "./fixtures";
 import { gotoStable, openBot } from "./ui";
 
-// The Dozo look on the screens the design mockups cover (dozo/design), in both themes. Each check
+// The Dozo look on the screens the design mockups cover (dozo/design, the chat window from
+// chat-v2.html), in both themes. Each check
 // reads a hook the fork's stylesheet or avatar wrapper relies on (a data attribute or a class of
 // upstream's), so an upstream merge that renames one fails here instead of silently dropping the look.
 
@@ -37,7 +38,7 @@ test("the theme file is loaded and follows the chosen appearance", async ({ page
   expect(applied.toLowerCase()).toBe(declared?.toLowerCase());
 });
 
-test("the sidebar shows Dozo characters in pill rows under the wordmark and the pattern", async ({
+test("the sidebar shows Dozo characters in two-line rows under the wordmark and the pattern", async ({
   page,
 }) => {
   const world = readWorld();
@@ -48,54 +49,61 @@ test("the sidebar shows Dozo characters in pill rows under the wordmark and the 
   await expect(page.locator(`${ROW} > .dozo-avatar`)).toHaveCount(await rows.count());
   await expect(page.locator(UPSTREAM_AVATAR_ART)).toHaveCount(0);
 
-  // One-line rows with the small avatar, fully rounded, like every button.
-  expect(await styleOf(page, ROW, "border-radius")).toBe("999px");
-  expect(await styleOf(page, `${ROW} > .dozo-avatar`, "width")).toBe("28px");
+  // Two-line rows (name, then the last message) with the large avatar, softly rounded; buttons
+  // stay fully rounded.
+  await expect(page.locator(`${ROW} [data-roster-preview]`).first()).toBeVisible();
+  expect(await styleOf(page, ROW, "border-radius")).toBe("12px");
+  expect(await styleOf(page, `${ROW} > .dozo-avatar`, "width")).toBe("38px");
+  expect(await styleOf(page, `${ROW} > .dozo-avatar`, "scale")).not.toBe("none");
   expect(await styleOf(page, `${INNER} [data-slot="button"]`, "border-radius")).toBe("999px");
+  expect(await styleOf(page, '[data-testid="create-menu-trigger"]', "width")).toBe("40px");
 
   // The wordmark with its seal dot starts the header (a browser has no window controls, so their
   // spacer is dropped), and the wave pattern lies behind the top of the sidebar.
-  expect((await page.getByTestId("bots-sidebar").boundingBox())?.width).toBe(240);
+  expect((await page.getByTestId("bots-sidebar").boundingBox())?.width).toBe(288);
   expect(await styleOf(page, `${HEADER} > [aria-hidden="true"]`, "display")).toBe("none");
   expect(await styleOf(page, HEADER, "content", "::before")).toBe('"dozo"');
   expect(await styleOf(page, HEADER, "background-image", "::before")).toContain("radial-gradient");
   expect(await styleOf(page, INNER, "mask-image", "::before")).toContain("data:image/svg+xml");
   expect(await styleOf(page, INNER, "opacity", "::before")).toBe("1");
 
-  // The open bot's row is tinted by its avatar; the other rows are not.
+  // The open chat's row is one tone lighter than the sidebar; the others are not filled.
   const open = `${ROW}[aria-current="page"]`;
   await expect(page.locator(open)).toHaveCount(1);
-  expect(await styleOf(page, open, "background-color")).toBe(CLEAR);
-  const tint = await styleOf(page, `${open} > .dozo-avatar`, "background-color", "::before");
-  expect(tint).not.toBe(CLEAR);
-  expect(tint).toMatch(/0\.14\)$/);
-  expect(
-    await styleOf(page, `${ROW}:not([aria-current]) > .dozo-avatar`, "content", "::before"),
-  ).toBe("none");
+  const sidebar = await styleOf(page, INNER, "background-color");
+  const on = await styleOf(page, open, "background-color");
+  expect(on).not.toBe(CLEAR);
+  expect(on).not.toBe(sidebar);
+  expect(await styleOf(page, `${ROW}:not([aria-current])`, "background-color")).toBe(CLEAR);
+  expect(await styleOf(page, `${open} > .dozo-avatar`, "content", "::before")).toBe("none");
 });
 
-test("the chat is a narrow column with plain bot text and theme-coloured controls", async ({
+test("the chat is a narrow column of tonal bubbles with a one-pill composer in the bot's colour", async ({
   page,
 }) => {
   await openBot(page, readWorld().chiefId, "Chief");
   const bubble = page.getByTestId("message-bot-bubble").first();
   await expect(bubble).toBeVisible();
-  await expect(bubble).toHaveCSS("background-color", CLEAR);
-  await expect(bubble).toHaveCSS("padding-left", "0px");
-  const column = (await page.getByTestId("composer-bar").boundingBox())?.width ?? 0;
+  expect(await bubble.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(CLEAR);
+  await expect(bubble).toHaveCSS("border-radius", "18px");
+  await expect(bubble).toHaveCSS("padding-left", "14px");
+  const bar = page.getByTestId("composer-bar");
+  await expect(bar).toHaveCSS("border-radius", "22px");
+  await expect(bar).toHaveCSS("border-top-width", "0px");
+  const column = (await bar.boundingBox())?.width ?? 0;
   expect(column).toBeGreaterThan(400);
-  expect(column).toBeLessThanOrEqual(720);
+  expect(column).toBeLessThanOrEqual(680);
   expect(await styleOf(page, '[data-testid="transcript"]', "padding-left")).toBe(
     await styleOf(page, 'fieldset:has(> [data-testid="composer-bar"])', "padding-left"),
   );
 
-  // The send button is the theme's primary, not the bot's upstream colour.
+  // The send button wears the bot's identity colour, one value per theme, as your bubbles do.
   const draft = page.getByRole("combobox", { name: "Message Chief" });
   await draft.fill("hello");
   const send = page.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeEnabled();
-  expect(await send.getAttribute("class")).not.toContain("bg-chat-user");
-  expect(await send.getAttribute("style")).toBeNull();
+  expect(await send.getAttribute("class")).toContain("bg-chat-user");
+  expect(await send.getAttribute("style")).toContain("light-dark(");
   await draft.fill("");
 });
 
@@ -103,10 +111,18 @@ test("the chat header and the bot panel show the bot's character", async ({ page
   await openBot(page, readWorld().chiefId, "Chief");
   const trigger = page.getByTestId("bot-settings-trigger");
   await expect(trigger.locator(".dozo-avatar")).toBeVisible();
+  await expect(trigger).toHaveCSS("height", "39px");
+  expect(await styleOf(page, '[data-testid="bot-settings-trigger"]', "content", "::after")).toBe(
+    '""',
+  );
   await trigger.click();
   const profile = page.getByTestId("bot-profile-header");
   await expect(profile.locator(".dozo-avatar").first()).toBeVisible();
   await expect(page.locator(UPSTREAM_AVATAR_ART)).toHaveCount(0);
+  // The panel stands on the sidebar's tone.
+  expect(await styleOf(page, '[data-testid="side-panel"]', "background-color")).toBe(
+    await styleOf(page, INNER, "background-color"),
+  );
 });
 
 test.describe("signed out", () => {
