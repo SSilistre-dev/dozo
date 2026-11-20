@@ -1,0 +1,482 @@
+/* Dozo overlays: what floats over the chat, in the language of the approved mockups
+   (dozo/design): chat-v2.html's one menu surface and its dialogs, the settings window of
+   settings-v2.html and the Integrations window of apps-v2.html. Imported by dozo-shell.css, whose
+   :root names every tone used here, and unlayered like it, so it outranks Tailwind's utilities.
+   Upstream elements are reached through their data-slot and data-testid hooks; dozo/e2e's look
+   spec checks the computed result. What a surface holds, its order and its behaviour stay
+   upstream's. */
+
+/* ---- One menu surface ------------------------------------------------------------------- */
+
+/* Every menu, submenu, popover and picker: one tone above what it opens over, 16px round, a
+   half-pixel edge and no shadow. */
+:is(
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"]
+) {
+  border-radius: 16px;
+  background: var(--dozo-menu);
+  box-shadow: none;
+  /* An outline, not an inset shadow: it is drawn over the content, so a popover whose own
+     content fills it edge to edge (the model picker) keeps its edge. */
+  outline: 1px solid var(--dozo-menu-edge);
+  outline-offset: -1px;
+}
+:is(
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="select-content"]
+) {
+  padding: 6px;
+}
+
+/* Items: 32px rows, 10px round, washed (not filled) where the pointer or focus is. */
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="select-item"]
+) {
+  min-height: 32px;
+  gap: 8px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 18px;
+}
+/* Plain items and submenu triggers get the design's 10px sides. Items with a tick or a dot
+   (checkbox, radio, select) keep upstream's sides, which leave the tick its room, and an inset
+   item keeps its indent. */
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"]
+):not([data-inset]) {
+  padding-inline: 10px;
+}
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="select-item"]
+):is(:focus, [data-highlighted], [data-popup-open]) {
+  background: var(--dozo-wash);
+  color: var(--popover-foreground);
+}
+/* The words carry a menu: leading icons go, a submenu's chevron and a tick stay. */
+:is(
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="context-menu-item"],
+    [data-slot="context-menu-sub-trigger"]
+  )
+  > svg:first-child {
+  display: none;
+}
+/* A destructive item is a red word, never a red panel. */
+:is([data-slot="dropdown-menu-item"], [data-slot="context-menu-item"])[data-variant="destructive"],
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="context-menu-item"]
+)[data-variant="destructive"]:is(:focus, [data-highlighted]) {
+  background: transparent;
+  color: var(--dozo-danger-text);
+}
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="context-menu-item"]
+)[data-variant="destructive"]:is(:focus, [data-highlighted]) {
+  background: var(--dozo-wash);
+}
+:is(
+  [data-slot="dropdown-menu-separator"],
+  [data-slot="context-menu-separator"],
+  [data-slot="select-separator"]
+) {
+  height: 0.5px;
+  margin: 4px 8px;
+  background: var(--dozo-wash-strong);
+}
+:is(
+  [data-slot="dropdown-menu-label"],
+  [data-slot="context-menu-label"],
+  [data-slot="select-label"]
+) {
+  padding: 8px 10px 4px;
+  color: var(--dozo-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+/* The account menu is a popover of buttons: the same rows, at the width its words need. */
+[data-slot="popover-content"]:has(> [data-testid="account-menu-header"]) {
+  width: auto;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 6px;
+}
+[data-testid="account-menu-header"] {
+  margin-bottom: 0;
+  padding: 6px 10px 8px;
+  border: 0;
+}
+[data-slot="popover-content"]:has(> [data-testid="account-menu-header"])
+  > :is([data-slot="button"], a) {
+  height: 32px;
+  padding-inline: 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+[data-slot="popover-content"]:has(> [data-testid="account-menu-header"])
+  > :is([data-slot="button"], a):hover {
+  background: var(--dozo-wash);
+}
+[data-slot="popover-content"]:has(> [data-testid="account-menu-header"])
+  > :is([data-slot="button"], a)
+  > svg:first-child {
+  display: none;
+}
+[data-slot="popover-content"]:has(> [data-testid="account-menu-header"]) > .border-t {
+  margin: 4px 8px;
+  border-color: var(--dozo-wash-strong);
+  border-top-width: 0.5px;
+}
+
+/* ---- Dialogs ---------------------------------------------------------------------------- */
+
+/* One tonal sheet, 14px round, no ring or shadow; the footer is part of it, buttons at the end.
+   Only a dialog that keeps the default corners and surface (rounded-xl, bg-dialog; upstream's
+   class merge drops them when a dialog sets its own) changes: a full-screen one (the plan wall,
+   a peer conversation) or one with its own corners stays as upstream drew it. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]).rounded-xl {
+  border-radius: 14px;
+  box-shadow: none;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]).bg-dialog {
+  background: var(--dozo-dialog);
+}
+:is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"]) {
+  backdrop-filter: none;
+}
+:is([data-slot="dialog-title"], [data-slot="alert-dialog-title"]) {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+:is([data-slot="dialog-description"], [data-slot="alert-dialog-description"]) {
+  color: var(--dozo-ink-2);
+  font-size: 14px;
+  line-height: 21px;
+}
+:is([data-slot="dialog-footer"], [data-slot="alert-dialog-footer"]) {
+  border: 0;
+  background: transparent;
+  justify-content: flex-end;
+}
+/* A destructive button in a dialog: the red word on a quiet pill. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is(
+    [data-slot="button"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"]
+  ).bg-destructive\/10 {
+  background: var(--dozo-wash);
+  color: var(--dozo-danger-text);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is(
+    [data-slot="button"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"]
+  ).bg-destructive\/10:hover {
+  background: var(--dozo-wash-strong);
+}
+
+/* Controls inside dialogs and the settings window: quiet pills, borderless fields, a washed
+   segmented track with the chosen segment lifted, the one main button stays ink. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is(
+    [data-slot="button"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"]
+  ):is(.border-border, .bg-secondary):not(.bg-destructive\/10, [aria-pressed]) {
+  border-color: transparent;
+  background: var(--dozo-wash);
+  box-shadow: none;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is(
+    [data-slot="button"],
+    [data-slot="alert-dialog-action"],
+    [data-slot="alert-dialog-cancel"]
+  ):is(.border-border, .bg-secondary):not(.bg-destructive\/10, [aria-pressed]):hover {
+  background: var(--dozo-wash-strong);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]) {
+  border-color: transparent;
+  border-radius: 10px;
+  background: var(--dozo-wash);
+  box-shadow: none;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]):is(
+    :hover,
+    :focus-within
+  ) {
+  background: var(--dozo-wash-strong);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is([data-slot="select-trigger"], [data-slot="native-select"]) {
+  height: 28px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: var(--dozo-wash);
+  box-shadow: none;
+  font-size: 13px;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is([data-slot="select-trigger"], [data-slot="native-select"]):hover {
+  background: var(--dozo-wash-strong);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) [data-slot="toggle-group"] {
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--dozo-wash);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  [data-slot="toggle-group"]
+  > [data-slot="toggle-group-item"] {
+  height: 24px;
+  padding-inline: 11px;
+  border-radius: 999px;
+  color: var(--dozo-ink-2);
+  font-size: 13px;
+  box-shadow: none;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  [data-slot="toggle-group"]
+  > [data-slot="toggle-group-item"]:is([aria-pressed="true"], [data-pressed]) {
+  background: var(--dozo-lift);
+  color: var(--foreground);
+}
+/* Choices in a dialog (radio cards): plain rows, washed on hover, no boxes. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  label:has(> [data-slot="radio-group-item"]) {
+  border-color: transparent;
+  border-radius: 10px;
+  background: transparent;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  label:has(> [data-slot="radio-group-item"]):hover {
+  background: var(--dozo-wash);
+}
+
+/* ---- Settings window -------------------------------------------------------------------- */
+
+/* 900 x 700 at most, on the thread's tone; the nav shares the sheet, no lines anywhere. */
+[data-slot="dialog-content"][data-testid="user-settings"] {
+  width: min(900px, calc(100% - 2rem));
+  max-width: min(900px, calc(100% - 2rem));
+  height: min(700px, calc(100% - 2rem));
+  border-radius: 14px;
+  background: var(--dozo-surface-1);
+  box-shadow: none;
+}
+[data-testid="settings-nav"] {
+  gap: 2px;
+  border: 0;
+  background: transparent;
+}
+[data-testid="user-settings"] > div > div:first-child {
+  border-color: transparent;
+}
+[data-dozo-settings-label] {
+  padding: 14px 10px 6px;
+  color: var(--dozo-ink-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+[data-dozo-settings-group]:first-child [data-dozo-settings-label] {
+  padding-top: 6px;
+}
+[data-testid="settings-nav"] [data-testid^="settings-nav-"] {
+  height: 32px;
+  padding-inline: 10px;
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 13.5px;
+  line-height: 18px;
+}
+[data-testid="settings-nav"] [data-testid^="settings-nav-"] > svg {
+  color: var(--dozo-ink-2);
+}
+[data-testid="settings-nav"] [data-testid^="settings-nav-"]:hover {
+  background: var(--dozo-nav-hover);
+}
+[data-testid="settings-nav"] [data-testid^="settings-nav-"][aria-current="page"] {
+  background: var(--dozo-nav-on);
+}
+[data-testid="settings-nav"] [data-testid^="settings-nav-"][aria-current="page"] > svg {
+  color: var(--foreground);
+}
+[data-testid="settings-header"] {
+  padding-block: 26px 10px;
+  padding-inline: 34px 64px;
+  border: 0;
+}
+/* The close button sits in the sheet's corner. */
+[data-testid="settings-header"] > :last-child {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 12px;
+}
+[data-testid="settings-header"] [data-slot="dialog-title"],
+[data-slot="dialog-content"]:has([data-testid="integration-categories"])
+  [data-slot="dialog-title"] {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 22px;
+}
+[data-testid="settings-header"] [data-slot="dialog-description"] {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* A settings group: a small grey label over borderless rows on a faint card. */
+[data-testid="user-settings"] section > div:has(+ .divide-y) > h3 {
+  color: var(--dozo-ink-3);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+[data-testid="user-settings"] section > div:has(+ .divide-y) {
+  margin-bottom: 0;
+  padding: 0 10px 8px;
+}
+[data-testid="user-settings"] section > .divide-y.border {
+  padding: 4px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--dozo-group);
+}
+[data-testid="user-settings"] section > .divide-y.border > * {
+  border: 0;
+}
+[data-testid="user-settings"] section > .divide-y.border .px-4.py-3 {
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+/* Usage and the other panels' own cards: the same faint card, no border. */
+[data-testid="settings-scroll"] :is(.rounded-xl, .rounded-2xl).border {
+  border-color: transparent;
+  background: var(--dozo-group);
+}
+[data-testid="settings-scroll"] :is(table, [role="table"]) :is(tr, [role="row"]) {
+  border-color: transparent;
+}
+
+/* ---- Integrations window ---------------------------------------------------------------- */
+
+/* The same sheet as settings: the thread's tone, a quiet search field, chips that wash. */
+[data-slot="dialog-content"]:has([data-testid="integration-categories"]) {
+  max-width: min(900px, calc(100% - 2rem));
+  border-radius: 14px;
+  background: var(--dozo-surface-1);
+  box-shadow: none;
+}
+[data-slot="dialog-content"]:has([data-testid="integration-categories"]) [data-slot="input"] {
+  height: 36px;
+}
+[data-testid="integration-categories"]
+  :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]) {
+  height: 28px;
+  padding-inline: 12px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--dozo-ink-2);
+  font-size: 13px;
+}
+[data-testid="integration-categories"]
+  :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):hover {
+  background: var(--dozo-wash);
+  color: var(--foreground);
+}
+[data-testid="integration-categories"]
+  [data-slot="button"]:is(
+    [aria-pressed="true"],
+    [aria-checked="true"],
+    [data-state="on"],
+    [aria-current]
+  ) {
+  background: var(--dozo-wash-strong);
+  color: var(--foreground);
+}
+
+/* ---- Focus and errors ------------------------------------------------------------------- */
+
+/* The quiet controls above drop upstream's rings, so keyboard focus gets a clear ring of its own
+   (the second ink, at least 3:1 against every surface here) on everything focusable in a dialog,
+   the settings and Integrations windows and a popover. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"])
+  :is(
+    button,
+    a[href],
+    input,
+    textarea,
+    select,
+    [role="switch"],
+    [role="button"],
+    [role="tab"],
+    [tabindex]:not([tabindex="-1"])
+  ):focus-visible {
+  outline: 2px solid var(--dozo-focus);
+  outline-offset: 2px;
+}
+/* A menu item reached by keyboard: a stronger wash and an inner ring, not just the hover wash. */
+:is(
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="select-item"]
+):focus-visible {
+  background: var(--dozo-wash-strong);
+  box-shadow: inset 0 0 0 1.5px var(--dozo-focus);
+}
+/* A field the app marks invalid shows it in the destructive colour, whatever its quiet look. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])
+  :is(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"],
+    [data-slot="native-select"],
+    [data-slot="input-group"]
+  ):is([aria-invalid="true"], :has([aria-invalid="true"])) {
+  box-shadow: inset 0 0 0 1.5px var(--destructive);
+}

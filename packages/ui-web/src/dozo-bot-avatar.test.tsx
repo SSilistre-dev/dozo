@@ -280,6 +280,26 @@ describe("dozo-shell.css", () => {
   });
 });
 
+describe("dozo-overlays.css", () => {
+  const overlays = readFileSync(join(import.meta.dirname, "dozo-overlays.css"), "utf8");
+
+  it("is imported by the shell stylesheet before any rule of its own", () => {
+    expect(css.indexOf('@import "./dozo-overlays.css";')).toBeGreaterThan(-1);
+    expect(css.indexOf('@import "./dozo-overlays.css";')).toBeLessThan(css.indexOf(":root"));
+  });
+
+  it("takes every colour from a tone the shell names, and writes no motion or !important", () => {
+    expect(overlays).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(overlays).not.toMatch(/color-mix\(|rgba?\(|hsla?\(|oklch\(/);
+    expect(overlays).not.toMatch(/\b(?:animation|transition)\b\s*:/);
+    expect(overlays).not.toContain("!important");
+    const named = new Set([...css.matchAll(/^\s*(--dozo-[a-z0-9-]+):/gm)].map(([, name]) => name));
+    for (const [, used] of overlays.matchAll(/var\((--dozo-[a-z0-9-]+)\)/g)) {
+      expect(named.has(used as string), `${used} is not named in dozo-shell.css`).toBe(true);
+    }
+  });
+});
+
 describe("closed registration", () => {
   it("hides the way to sign-up until the page says registration is open", () => {
     expect(css).toContain(

@@ -219,6 +219,50 @@ until the owner sets them it carries none and the paid plans keep upstream's amo
 - Upstream's marketing pricing page (`apps/www`) is not built or branded and still describes
   upstream's plans.
 
+## Model pool
+
+A person's own connections to the same provider can stand in for each other. When the one a run is
+on runs out of quota or credit, or its key is refused, before anything is shown, the call moves to
+the next open connection of the pool, and the one that ran out rests until the provider's reset
+(else an hour, at most a week). The next runs skip it until then and go back to it after. It is a
+handover, not a way around rate limits: a short rate limit, an overload or an empty reply retries
+as before and never moves to another connection of the pool, and a run stays on one connection.
+
+- The rule is `packages/core/src/dozo-model-pool.ts`; the runtime side and the anchored rules it
+  needs are in `packages/adapters/src/dozo-model-pool.ts`; which kinds of connection may join is
+  `dozo-model-pool-capabilities.ts` (keys and own endpoints yes, subscription sign-ins no).
+- The pool lives in two fork tables with no model in `schema.prisma` (`dozo_model_pool_members`,
+  `dozo_model_connection_cooldowns`, `packages/db/src/dozo-model-pool-store.ts`). A connection
+  without a row runs exactly as upstream's does. Nothing writes a membership yet: the setting
+  arrives with its own change. The store's SQL and row security are tested in
+  `dozo-model-pool-store.postgres.test.ts`, which needs a migrated database (see Hosted plans).
+- When every connection rests, the run tries the one that opens first and fails with the
+  provider's own message. A pinned run keeps the connection it asked for. Moving to another
+  connection mid-run rebuilds the provider's prompt cache, so that call costs more.
+
+## Editing and regenerating
+
+In a person's own chat with a bot, the More menu offers Edit on their last message and Regenerate
+on the bot's last reply (`apps/api/src/dozo-message-revision.ts`). The server names the one message
+each applies to; the menu reads that while it is open. Only the newest turn can change, and only when
+going back undoes nothing outside the chat:
+
+- the message is the caller's own, sent from the app: not from a chat app (that app already holds
+  the reply and cannot unsend it), not a spoken call, not a group;
+- the runs it started have ended (earlier ones are those an edit or regenerate replaced; the newest
+  wrote the reply), and none called a tool or recorded an external effect (the same test upstream
+  uses before retrying a routine run). A bot that searched, wrote memory, sent mail or used its
+  computer gets neither option, since those cannot be taken back;
+- nothing else was said after the reply, and no run in the chat is working or waiting.
+
+The old reply is deleted with its events, so its words stay nowhere in the chat or in what the
+model reads next; the next reply takes its seq, so the history keeps no gap. An edit replaces the
+message's text. The old run row stays for usage. A server-side memory provider that already learned
+the finished turn keeps it: providers forget per chat, not per turn, so only clearing the chat
+removes it. Old clients drop the removed reply on their next read instead of at once.
+
+Mobile shows the result of an edit or regenerate made elsewhere, but has no menu entry yet.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:
@@ -305,6 +349,12 @@ Accepted by the owner for now, stated here once:
   the bot can make it post, delete or change settings unasked. Only payment presses and saved
   login or card fills ask. The sign-in dialog says so in one line on every computer ("The bot can
   act as you on these sites, and a page it reads can steer it."); the approval rules are unchanged.
+- Routine quiet hours (Settings > General, `packages/adapters/src/dozo-quiet-hours.ts`): a routine
+  due inside the account's range waits until it ends and then runs once, keeping its due time, so
+  it shows as late. A scheduled run missed by more than 12 hours (a server that was off) is skipped
+  without a note in the chat; only the server log names it (`routine.missed`). Quiet hours stop
+  routines from starting, not a run already going or its one retry, and webhook, email and chat
+  triggers run at once. The mobile app does not set them: it has no timezone setting either.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and

@@ -22,6 +22,16 @@
         <p>Connecting to <span class="host"></span></p>
       </section>
 
+      <section id="setting-up" hidden>
+        <p id="step"></p>
+      </section>
+
+      <section id="failed" hidden>
+        <p role="alert" id="failure"></p>
+        <button type="button" class="primary" id="local-retry">Try again</button>
+        <button type="button" id="local-change">Change server</button>
+      </section>
+
       <section id="unreachable" hidden>
         <p role="alert">Can't reach <span class="host"></span></p>
         <button type="button" class="primary" id="retry">Try again</button>
