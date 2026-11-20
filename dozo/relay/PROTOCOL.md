@@ -66,15 +66,21 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 - Tokens travel as `Authorization: Bearer <token>`. The relay hashes what it receives and compares
   verifiers in constant time. It never logs a token.
 - The relay picks the channel id: 16 random bytes.
-- `400` for a body that does not parse; `429` with `Retry-After` when a limit is hit.
+- `400` for a body that does not parse, and for a `pairExpiresAt` that has passed or lies more than
+  the pairing TTL (plus a minute of clock skew) ahead; `429` with `Retry-After` when a limit is hit,
+  including a relay's ceiling on how many channels exist at once.
+- A channel whose app verifier was never set is deleted shortly after `pairExpiresAt` (the reference
+  relay waits 2 minutes, so a host that saw the first data record just in time can still confirm);
+  its sockets close with `4001`. The pairing token itself stops working at `pairExpiresAt`.
 - The relay stores per channel: id, `hostVerifier`, `appVerifier` or `pairVerifier` with its
   expiry, and timestamps. Nothing else: no account, no content, no message log.
 - It may delete a channel nobody connected to for a long time (at least 90 days). The ends then
-  get `404` and pair again.
+  get `404` and pair again. A connected socket counts as use.
 
 ### Sockets
 
 - One socket per role and channel. A new one replaces the old, which is closed with code `4000`.
+- When the channel is deleted (`DELETE`, or expiry as above) both sockets close with code `4001`.
 - The relay sends text messages only of the form `{"type":"peer","present":true|false}`: once on
   open, and whenever the other role connects or goes away.
 - A binary message is forwarded unchanged and in order to the other role's socket, or dropped when
@@ -82,6 +88,8 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 - A text `ping` is answered with a text `pong` by the relay itself. Ends ping about every 25 seconds
   and treat 75 seconds without any message as a dead socket.
 - Messages over 65,561 bytes (`RELAY_MAX_MESSAGE_BYTES`) may be refused with close code `1009`.
+- Text other than `ping` may be refused with close code `1003`, and a socket past the relay's
+  per-channel traffic limit closed with `1008`; the end reconnects after a pause.
 
 ### Limits a relay is expected to apply
 
