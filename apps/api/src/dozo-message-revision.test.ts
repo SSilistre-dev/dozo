@@ -401,7 +401,7 @@ describe("dozoMessagesRoutes", () => {
     };
     const authed = {
       dozoMessages: Object.fromEntries(
-        ["revisable", "edit", "regenerate"].map((name) => [
+        ["revisable", "edit", "regenerate", "pins", "pin"].map((name) => [
           name,
           { handler: (handler: Handler) => handler },
         ]),

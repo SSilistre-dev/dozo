@@ -236,7 +236,8 @@ Windows, where nothing has run yet.
   10 s (the API 25 s, as it lets requests finish for 20 s; Postgres 20 s). Quitting waits for it, at most a minute; so does
   Restart to Update. Choosing another server stops it.
 - Nothing is left behind: on Linux each process ends with the app however the app ends
-  (`PR_SET_PDEATHSIG`), and each holds the folder's lock (`stack.lock`), so a second app, or a
+  (`PR_SET_PDEATHSIG`: Node is killed, as nothing is left to wait for its graceful stop; Postgres
+  gets its fast shutdown), and each holds the folder's lock (`stack.lock`), so a second app, or a
   restart while something is still left, gets "Another Dozo is already running the server on
   this computer." instead of a second server on the same database. macOS and Windows: a crash of
   the app can leave the processes running (no job object or watchdog yet), and they keep no lock,
@@ -275,12 +276,14 @@ Linux), with its keys in `relay/`.
   phone will sign in as ("Signs in as …", the email of the account signed in to the server in the
   main window; signed out, the window says to sign in first and shows no code), the time left,
   and the phones already paired, each with Remove. Once a phone scans the code, the same window
-  asks "Connect this phone?" with the phone's name and the six-digit code it shows; Allow gives
-  the phone its sign-in (the agent's `approve`) and closes the window, Reject removes it. The
-  agent drops a pairing nobody allowed after 5 minutes. The event and command follow the agent's
-  contract in `dozo/relay/agent/README.md`.
+  asks "Connect this phone?" with the kind of phone (iPhone, Android) and the six-digit code it
+  shows; Allow gives the phone its sign-in (the agent's `approve`) and closes the window, Reject
+  removes it. The agent drops a pairing nobody allowed after 5 minutes (`expired`), and the window
+  then says the code expired. The event and command are the agent's (`dozo/relay/agent/README.md`,
+  Phone sign-in).
 - The agent and the API share `DOZO_RELAY_AGENT_KEY`, made with the server's other secrets
-  (`RELAY_AGENT_KEY` in `secrets`); `revoke` and `approve` get the server's `--origin`.
+  (`RELAY_AGENT_KEY` in `secrets`); `revoke` gets the server's `--origin`, so it ends the phone's
+  session too.
 - The relay is `https://relay.dozo.bot` unless the build (`DOZO_RELAY_URL`), the environment
   (`DOZO_RELAY_URL`) or a `relay=` line in the settings file names another (https, or http on
   this computer).

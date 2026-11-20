@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { RelayHostChannel } from "@rakazo/core";
-import { webRelayCrypto } from "@rakazo/core";
+import { encodeRelayBytes, webRelayCrypto } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fileRelayStore } from "./dozo-relay-file-store.js";
 
@@ -53,6 +53,23 @@ describe("fileRelayStore", () => {
     await store.remove("Y2hhbm5lbC1vbmUtMTIzND");
     await store.remove("Y2hhbm5lbC1vbmUtMTIzND");
     expect(await store.list()).toHaveLength(1);
+  });
+
+  it("keeps the user's approval of a phone", async () => {
+    const store = fileRelayStore(dir);
+    const paired: RelayHostChannel = {
+      ...entry("Y2hhbm5lbC1vbmUtMTIzND"),
+      pairing: null,
+      app: {
+        key: encodeRelayBytes(crypto.randomBytes(32)),
+        pairingKey: encodeRelayBytes(crypto.randomBytes(32)),
+        verifierSet: true,
+        pairedAt: 1,
+        approvedAt: 2,
+      },
+    };
+    await store.put(paired);
+    expect((await store.list())[0]?.app?.approvedAt).toBe(2);
   });
 
   it("makes the host key once, even when asked twice at the same time", async () => {
