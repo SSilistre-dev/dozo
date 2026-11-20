@@ -133,6 +133,21 @@ stage() {
   say "stage: ok ($(find "$SRC" -path "$SRC/data" -prune -o -type f -print | wc -l | tr -d ' ') files, no .git)"
 }
 
+# The fork's own dependencies (dozo/deps/README.md) go into the staged manifest and lockfile. An
+# empty list starts no container. pnpm's downloads and each resolved lockfile are cached in the
+# stage area, so the same input needs the network once.
+deps() {
+  local list="$ROOT/dozo/deps/mobile.json" cache="$STAGE/deps-cache"
+  [ -f "$list" ] || die "dozo/deps/mobile.json missing" 2
+  if grep -Eq '"add"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' "$list"; then say "brand: deps: none listed"; return 0; fi
+  mkdir -p "$cache"
+  say "brand: deps (dozo/deps/mobile.json)"
+  STARTED_CONTAINER=1
+  docker run --init --rm --name "dozo-deps-$$" --label "dozo.run=build-$$" --user "$(id -u):$(id -g)" \
+    -v "$ROOT/dozo:/dozo:ro" -v "$SRC:/w" -v "$cache:/cache" -w /w "$NODE_IMAGE" \
+    node /dozo/deps/apply.mjs --root /w --cache /cache || die "deps: the fork's dependencies could not be added (dozo/deps/README.md)" 2
+}
+
 brand() {
   STEP=brand; need_stage; need docker
   if [ "${DOZO_SKIP_BRAND:-}" = 1 ]; then say "brand: SKIPPED (DOZO_SKIP_BRAND=1), build will be UNBRANDED"; return 0; fi
@@ -141,6 +156,7 @@ brand() {
   done
   say "brand: apply.mjs"
   node_run /dozo/brand/apply.mjs --root /w --strict || die "apply.mjs failed (rule failure or error)" 2
+  deps
   say "brand: leak gate check.mjs"
   node_run /dozo/brand/check.mjs --root /w || die "leak gate found leaks" 2
   say "brand: ok, leak gate clean"

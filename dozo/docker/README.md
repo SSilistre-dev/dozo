@@ -79,6 +79,8 @@ with `down`.
    that already looks applied an error (upstream drift), so a second `brand` on the same stage
    fails: stage again first. Semantics: `dozo/brand/README.md`. A missing tool fails with "brand tool
    missing". `DOZO_SKIP_BRAND=1` skips the step (unbranded build, pipeline testing only).
+   Between the two, the fork's own dependencies (`dozo/deps/README.md`) go into the staged manifest
+   and lockfile; an empty list starts no container. `DOZO_SKIP_BRAND=1` skips them too.
 3. `build`: `docker compose` runs inside the staged copy, project `dozo`, upstream's compose file
    unmodified plus `compose.ports.yml` and `dozo/theme/compose.theme.yml` (the Dozo theme, mounted
    from the checkout's `dozo/theme`; see `dozo/theme/README.md`, Activation). It builds every image, the `computer` sandbox image
@@ -133,6 +135,8 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   with the shipped rules in a scratch tree and fails unless it carries the Dozo name and id family
   and nothing of upstream's Expo account, EAS project, update channel, bundle ids or domain. It
   builds nothing; the check on the resolved config is `dozo/mobile/build.sh check`.
+- The fork's dependency step: `dozo/deps/apply.test.mjs`, offline with a fake pnpm, on which
+  lockfiles it accepts (upstream's versions and integrity kept, new packages listed).
 - Every anchored brand rule against the repository tree: `apply.mjs --check --allow-git --strict`
   (writes nothing; prints the `hooks:` line).
 - The leak gate on a branded copy: the working tree's `apps`, `packages` and `infra` (tracked and
@@ -170,7 +174,7 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   lock owner's start time across time zones; and checks that the unit step fails on fewer fork test
   files than the committed tree has.
 
-A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no mobile config test, no
+A step that cannot run fails: no `.mjs` files, no brand tests, no `apply.mjs`, no model-stub test, no mobile config test, no dependency step test, no
 merge base, a missing Node image (in CI, where `CI` is set, it pulls the image; locally the message
 is `docker pull node:24.22-slim`). Nothing is skipped silently.
 

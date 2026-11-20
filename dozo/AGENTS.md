@@ -16,6 +16,10 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - Put work in `dozo/`, or in new `dozo-*` files inside upstream directories (see below).
 - To change upstream behaviour or wording, add an anchored rule in `dozo/brand/brand.json`. It is
   applied to a staged copy at build time. Do not patch the source.
+- A dependency upstream does not ship goes in `dozo/deps/mobile.json` with exact versions and the
+  integrity of every package it adds, never in an upstream `package.json` or lockfile. The brand
+  step adds it to the staged tree and fails (exit 2) when the lockfile would move any version or
+  integrity upstream locked, or gain a package the list does not name: `dozo/deps/README.md`.
 - Never rename technical identifiers by hand. Which ones the overlay keeps (`@rakazo/*`, `RAKAZO_*`,
   DB names, headers, storage keys, cookies, `rakazo://`) and the few persisted ones it renames on
   purpose: `dozo/brand/README.md`, "Identifiers".
