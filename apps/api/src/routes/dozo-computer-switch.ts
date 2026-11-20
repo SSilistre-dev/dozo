@@ -10,6 +10,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
 import {
+  assertLeaseHeld,
   ensureComputerRecord,
   LeaseHeldError,
   runAsSystem,
@@ -38,6 +39,11 @@ const COMPUTER_FIELDS = {
  * Switch the bot's computer and move its files and browser sign-ins with it, holding the bot's
  * switch lease. The switch counts only once they are on the new computer: when they cannot be,
  * it is undone and the refusal says why. A switch already under way for the bot refuses.
+ *
+ * The bot's computer changes in one transaction with a check that the lease is still this
+ * switch's, together with a lapsed `switchDueKey` row: from then the computer it left is due a
+ * cleanup, which this switch does and clears, or the sweep does. `read` answers the bot as the
+ * caller shows it, once the switch has happened.
  */
 export async function switchBotComputerWithFiles(
   deps: ComputerMoveDeps,
@@ -48,11 +54,11 @@ export async function switchBotComputerWithFiles(
     mode: ComputerMode;
     context: AdapterContext;
   },
-  switchTo: () => Promise<Bot>,
+  read: () => Promise<Bot>,
 ): Promise<Bot> {
   const { actor, bot, mode, context } = input;
   try {
-    return await withLease(
+    await withLease(
       deps.prisma,
       switchLeaseKey(bot.id),
       { ttlMs: SWITCH_LEASE_MS, signal: context.signal },
@@ -66,16 +72,31 @@ export async function switchBotComputerWithFiles(
           mode === "team"
             ? await teamComputerUserId(deps.prisma, { spaceId: actor.spaceId, userId: bot.userId })
             : bot.userId;
-        const to = await ensureComputerRecord(deps.prisma, {
-          mode,
-          spaceId: actor.spaceId,
-          userId,
-          botId: bot.id,
-          kind: from.kind,
-        });
-        return moveBotComputerFiles(
+        const record = { mode, spaceId: actor.spaceId, userId, botId: bot.id, kind: from.kind };
+        const to = await ensureComputerRecord(deps.prisma, record);
+        await moveBotComputerFiles(
           deps,
-          { botId: bot.id, from, to, flip: switchTo },
+          {
+            botId: bot.id,
+            from,
+            to,
+            flip: () =>
+              deps.prisma.$transaction(async (tx) => {
+                await assertLeaseHeld(tx, lease);
+                // Again inside the transaction, so the per-person computer limit holds with the link.
+                await ensureComputerRecord(tx, record);
+                await tx.bot.update({ where: { id: bot.id }, data: { computerId: to.id } });
+                await tx.$executeRaw`
+                  INSERT INTO "leases" ("key", "fence", "expiresAt")
+                  VALUES (${switchDueKey(bot.id)}, nextval('leases_fence_seq'), clock_timestamp())
+                  ON CONFLICT ("key") DO NOTHING`;
+              }),
+            stillHeld: () => deps.prisma.$transaction((tx) => assertLeaseHeld(tx, lease)),
+            cleared: async () => {
+              await deps.prisma
+                .$executeRaw`DELETE FROM "leases" WHERE "key" = ${switchDueKey(bot.id)}`;
+            },
+          },
           { ...context, signal: lease.signal },
         );
       },
@@ -84,29 +105,36 @@ export async function switchBotComputerWithFiles(
     if (error instanceof LeaseHeldError) throw new BotFilesNotMovedError();
     throw error;
   }
+  return read();
 }
 
+/** A lapsed row that brings the sweep back to a bot it could not finish yet. */
+const retryKey = (botId: string) => `dozo-computer-switch-retry:${botId}`;
+
 /**
- * Finish the switches whose process died or whose Team Computer could not be cleared: each left
- * a lapsed row in the lease table (`recoverBotComputerSwitch`).
+ * Finish the switches whose process died or whose computer left behind could not be cleared:
+ * each left a lapsed row in the lease table. A `switchDueKey` row means the bot's computer had
+ * changed, so the computer it left is cleared too (`recoverBotComputerSwitch`).
  */
 export async function sweepComputerSwitches(deps: ComputerMoveDeps, signal: AbortSignal) {
   const rows = await deps.prisma.$queryRaw<Array<{ key: string }>>`
     SELECT "key" FROM "leases"
-    WHERE ("key" LIKE 'dozo-computer-switch:%' OR "key" LIKE 'dozo-computer-switch-due:%')
-      AND "expiresAt" <= clock_timestamp()
+    WHERE "key" LIKE 'dozo-computer-switch%' AND "expiresAt" <= clock_timestamp()
     ORDER BY "expiresAt" LIMIT ${SWEEP_BATCH}`;
   const botIds = new Set(rows.map((row) => row.key.slice(row.key.indexOf(":") + 1)));
   for (const botId of botIds) {
     if (signal.aborted) return;
     const context = createAdapterContext({ spaceId: "", userId: "" }, botId, "computer.switch");
     await withLease(deps.prisma, switchLeaseKey(botId), { ttlMs: SWITCH_LEASE_MS }, async () => {
-      if (await recoverBotComputerSwitch(deps, botId, context, DEAD_SWITCH_MS)) {
-        await deps.prisma.$executeRaw`DELETE FROM "leases" WHERE "key" = ${switchDueKey(botId)}`;
+      const due = await deps.prisma.$queryRaw<unknown[]>`
+        SELECT 1 FROM "leases" WHERE "key" = ${switchDueKey(botId)}`;
+      if (await recoverBotComputerSwitch(deps, botId, context, DEAD_SWITCH_MS, due.length > 0)) {
+        await deps.prisma.$executeRaw`
+          DELETE FROM "leases" WHERE "key" IN (${switchDueKey(botId)}, ${retryKey(botId)})`;
       } else {
         await deps.prisma.$executeRaw`
           INSERT INTO "leases" ("key", "fence", "expiresAt")
-          VALUES (${switchDueKey(botId)}, nextval('leases_fence_seq'), clock_timestamp())
+          VALUES (${retryKey(botId)}, nextval('leases_fence_seq'), clock_timestamp())
           ON CONFLICT ("key") DO NOTHING`;
       }
     }).catch((error: unknown) => {

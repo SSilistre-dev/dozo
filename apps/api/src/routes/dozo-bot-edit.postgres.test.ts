@@ -295,6 +295,12 @@ describePostgres("who changes a shared bot's run settings (PostgreSQL)", () => {
     expect((await call(owner, "bots/setComputer", { botId: ownersBot.id, ...own })).status).toBe(
       200,
     );
+    // Each switch held its lease, and nothing was left for the sweep.
+    const rows = await system.$queryRaw<unknown[]>`
+      SELECT 1 FROM "leases"
+      WHERE "key" IN (${`dozo-computer-switch:${ownersBot.id}`}, ${`dozo-computer-switch-due:${ownersBot.id}`},
+        ${`dozo-computer-switch:${membersBot.id}`}, ${`dozo-computer-switch-due:${membersBot.id}`})`;
+    expect(rows).toEqual([]);
   });
 
   it("lets any member archive a group but only its creator or the space owner remove it", async () => {

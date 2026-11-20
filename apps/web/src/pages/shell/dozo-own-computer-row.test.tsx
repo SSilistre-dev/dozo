@@ -13,6 +13,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const billing = vi.hoisted(() => ({
   status: null as Partial<BillingStatus> | null,
   showPlans: vi.fn(),
+  me: { userId: "maker" } as { userId: string } | undefined,
+  members: undefined as { canManage: boolean } | undefined,
+}));
+vi.mock("../../lib/query", () => ({
+  useSpaceQueries: () => ({
+    me: { queryOptions: () => ({ queryKey: ["me"] }) },
+    spaces: { members: { list: { queryOptions: () => ({ queryKey: ["members"] }) } } },
+  }),
+}));
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: ({ queryKey, enabled }: { queryKey: string[]; enabled?: boolean }) => ({
+    data: enabled === false ? undefined : queryKey[0] === "me" ? billing.me : billing.members,
+  }),
 }));
 // The macro compiles away in the build; here it translates through the loaded catalog as `t` does.
 vi.mock("@lingui/react/macro", async () => {
@@ -48,11 +61,23 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 const onChange = vi.fn();
 
-function show(mode: ComputerMode, refusal: string | null = null, locale = "en") {
+function show(
+  mode: ComputerMode,
+  refusal: string | null = null,
+  locale = "en",
+  bot = { spaceId: "space", userId: "maker" },
+) {
   i18n.activate(locale);
   act(() =>
     root.render(
-      <OwnComputerRow id="own" mode={mode} saving={false} refusal={refusal} onChange={onChange} />,
+      <OwnComputerRow
+        id="own"
+        mode={mode}
+        saving={false}
+        refusal={refusal}
+        onChange={onChange}
+        bot={bot}
+      />,
     ),
   );
   const toggle = host.querySelector<HTMLElement>('[role="switch"]')!;
@@ -76,6 +101,8 @@ beforeEach(() => {
   i18n.load({ en: {}, tr: tr as Messages });
   billing.status = premium;
   billing.showPlans.mockReset();
+  billing.me = { userId: "maker" };
+  billing.members = undefined;
   onChange.mockReset();
   host = document.createElement("div");
   document.body.append(host);
@@ -148,5 +175,17 @@ describe("the Own computer switch", () => {
   it("shows a refused switch beside it instead of the hint", () => {
     const { line } = show("team", "Computer limit reached. Archive a bot to free one.");
     expect(line).toBe("Computer limit reached. Archive a bot to free one.");
+  });
+
+  it("is read-only, with the reason, for a member who did not make the bot", () => {
+    const theirs = { spaceId: "space", userId: "someone-else" };
+    const { toggle, line } = show("team", null, "en", theirs);
+    expect(toggle.getAttribute("aria-disabled")).toBe("true");
+    expect(line).toBe("Only the space owner can do that");
+    expect(show("team", null, "tr", theirs).line).toBe("Bunu yalnızca alanın sahibi yapabilir");
+    act(() => toggle.click());
+    expect(onChange).not.toHaveBeenCalled();
+    billing.members = { canManage: true };
+    expect(show("team", null, "en", theirs).toggle.getAttribute("aria-disabled")).not.toBe("true");
   });
 });

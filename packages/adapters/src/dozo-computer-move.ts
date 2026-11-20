@@ -19,7 +19,7 @@ import {
 } from "./computer-workspace.js";
 import { removeAgentHomeFolders, resolveAgentHomePath } from "./home.js";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
-import { shouldSkipPortableWorkspaceFile } from "./workspace-save-policy.js";
+import { shouldSkipPortableWorkspaceFile, WORKSPACE_SAVE_LIMITS } from "./workspace-save-policy.js";
 
 export const BOT_FILES_NOT_MOVED = "Couldn't move this bot's files. Try again.";
 export const BOT_FILES_UNMOVABLE = "This computer can't move a bot's files.";
@@ -61,6 +61,11 @@ export const switchDueKey = (botId: string) => `dozo-computer-switch-due:${botId
 const holdId = (botId: string) => `dozo-move:${botId}`;
 
 const REMOVE_BATCH = 200;
+/** The most entries and folder depth the size check walks; a bigger tree refuses the switch. */
+const MAX_SCANNED_ENTRIES = WORKSPACE_SAVE_LIMITS.maxFiles;
+const MAX_SCANNED_DEPTH = 64;
+/** How many names a refusal for large files shows; the rest are counted. */
+const LARGE_NAMES_SHOWN = 3;
 const PROFILE_BUSY_ATTEMPTS = 3;
 const PROFILE_BUSY_RETRY_MS = 1_000;
 
@@ -75,23 +80,33 @@ export function movesBotFiles(kind: string) {
  * Computer they are `bots/<id>` and `.browser-profiles/<profile>`, on its Own computer the home's
  * visible entries and the same profile. `shared/` and the Own computer's hidden entries stay.
  *
- * Copy and check, then `flip` (the bot's computer changes), then delete what it left. A copy or
- * flip that fails removes the copy and leaves the bot where it was. After the flip the Team
- * Computer is cleared at once or by the sweep (`recoverBotComputerSwitch`); an Own computer that
- * keeps a copy keeps it private. The caller holds `switchLeaseKey` and the bot does not run.
+ * Copy and check, then `flip` (the bot's computer changes, fenced by the caller's lease, and the
+ * caller records that the computer it left is due a cleanup), then, while `stillHeld` confirms
+ * the lease, delete what it left and call `cleared`. A copy or flip that fails removes the copy
+ * and leaves the bot where it was. A cleanup that fails or never ran is the sweep's
+ * (`recoverBotComputerSwitch`). The caller holds `switchLeaseKey` and the bot does not run.
  */
 export async function moveBotComputerFiles<T>(
   deps: ComputerMoveDeps,
-  input: { botId: string; from: MovingComputer; to: MovingComputer; flip: () => Promise<T> },
+  input: {
+    botId: string;
+    from: MovingComputer;
+    to: MovingComputer;
+    flip: () => Promise<T>;
+    stillHeld?: () => Promise<void>;
+    cleared?: () => Promise<void>;
+  },
   context: AdapterContext,
 ): Promise<T> {
   const { botId, from, to, flip } = input;
-  if (from.id === to.id) return flip();
-  if (!movesBotFiles(from.kind) || !movesBotFiles(to.kind)) {
-    // A computer that never started holds nothing to move.
-    if (!from.providerRef) return flip();
-    throw new BotFilesNotMovedError(BOT_FILES_UNMOVABLE);
+  // Nothing to move: the same computer, or one that never started and so holds nothing.
+  const unmovable = !movesBotFiles(from.kind) || !movesBotFiles(to.kind);
+  if (from.id === to.id || (unmovable && !from.providerRef)) {
+    const flipped = await flip();
+    await input.cleared?.();
+    return flipped;
   }
+  if (unmovable) throw new BotFilesNotMovedError(BOT_FILES_UNMOVABLE);
   const profile = teamBrowserProfileName(botId);
   if (!isTeamBotFolderName(botId) || !profile) throw new BotFilesNotMovedError();
   const ctx: AdapterContext = { ...context, botId, screenLeaseId: undefined };
@@ -103,12 +118,11 @@ export async function moveBotComputerFiles<T>(
     let flipped: T;
     try {
       await source.releaseScreen();
-      const large = await largeFiles(source.root, botId, from.scope, profile);
-      if (large.length)
-        throw new BotFilesNotMovedError(`${BOT_FILES_TOO_LARGE}: ${large.join(", ")}`);
+      const large = await largeFiles(source.root, botId, from.scope, profile, ctx.signal);
+      if (large.length) throw new BotFilesNotMovedError(tooLarge(large));
       for await (const file of botFiles(deps.home, input, profile, ctx)) {
         if (file.content.byteLength > MAX_MOVED_FILE_BYTES) {
-          throw new BotFilesNotMovedError(`${BOT_FILES_TOO_LARGE}: ${file.path}`);
+          throw new BotFilesNotMovedError(tooLarge([file.path]));
         }
         ctx.signal.throwIfAborted();
         await dest.write(file);
@@ -133,11 +147,12 @@ export async function moveBotComputerFiles<T>(
         : (await ownRootEntries(deps.home, from.homeKey, ctx)).map((name) => ["", name] as const);
     moved.push([".browser-profiles", profile]);
     try {
+      // A switch whose lease lapsed leaves the cleanup to whoever holds it now.
+      await input.stillHeld?.();
       await source.removeEntries(moved);
+      await input.cleared?.();
     } catch (error) {
       getLogger().error("bot file move cleanup", error);
-      // On an Own computer the copy left behind stays private; a Team Computer is cleared later.
-      if (from.scope === "team") await markSwitchDue(deps.prisma, botId);
     }
     return flipped;
   } catch (error) {
@@ -153,25 +168,28 @@ function notMoved(error: unknown) {
   return new BotFilesNotMovedError(BOT_FILES_NOT_MOVED, { cause: error });
 }
 
-async function markSwitchDue(prisma: PrismaClient, botId: string) {
-  await prisma.$executeRaw`
-    INSERT INTO "leases" ("key", "fence", "expiresAt")
-    VALUES (${switchDueKey(botId)}, nextval('leases_fence_seq'), clock_timestamp())
-    ON CONFLICT ("key") DO NOTHING`;
+/** The first few names, then how many more: the refusal stays one short line. */
+function tooLarge(names: readonly string[]) {
+  const shown = names.slice(0, LARGE_NAMES_SHOWN).join(", ");
+  const more = names.length - LARGE_NAMES_SHOWN;
+  return `${BOT_FILES_TOO_LARGE}: ${shown}${more > 0 ? ` (+${more})` : ""}`;
 }
 
 /**
- * Finish a switch that stopped part way (its process died, or the Team Computer could not be
+ * Finish a switch that stopped part way (its process died, or the computer it left could not be
  * cleared): free the computers it held, and when the bot is on its Own computer, remove its
- * folder and profile from the Team Computer. Its own computer keeps any copy, which is private.
- * Clears the bot's switching flag once the switch is clearly not running. Returns whether
- * nothing is left to do. The caller holds `switchLeaseKey`.
+ * folder and profile from the Team Computer. On the Team Computer, its Own computer is cleared
+ * only when `cleanupDue` (the switch changed the bot's computer, so everything there was copied
+ * first); a copy from a switch that never got that far stays private there. Clears the bot's
+ * switching flag once the switch is clearly not running. Returns whether nothing is left to do.
+ * The caller holds `switchLeaseKey`.
  */
 export async function recoverBotComputerSwitch(
   deps: ComputerMoveDeps,
   botId: string,
   context: AdapterContext,
   staleMs: number,
+  cleanupDue = false,
 ): Promise<boolean> {
   await deps.prisma.computer.updateMany({
     where: { maintenanceId: holdId(botId) },
@@ -189,26 +207,36 @@ export async function recoverBotComputerSwitch(
   });
   if (!bot) return true;
   const profile = teamBrowserProfileName(botId);
-  if (bot.computer?.scope === "dedicated" && profile && isTeamBotFolderName(botId)) {
-    const team = await deps.prisma.computer.findUnique({
+  const onOwn = bot.computer?.scope === "dedicated";
+  if (profile && isTeamBotFolderName(botId) && (onOwn || cleanupDue)) {
+    // The computer the bot left: the Space's Team Computer, or its own.
+    const left = await deps.prisma.computer.findUnique({
       where: {
-        scopeKey: computerScopeKey({
-          mode: "team",
-          spaceId: bot.spaceId,
-          userId: await teamComputerUserId(deps.prisma, bot),
-        }),
+        scopeKey: onOwn
+          ? computerScopeKey({
+              mode: "team",
+              spaceId: bot.spaceId,
+              userId: await teamComputerUserId(deps.prisma, bot),
+            })
+          : computerScopeKey({
+              mode: "dedicated",
+              spaceId: bot.spaceId,
+              userId: bot.userId,
+              botId,
+            }),
       },
       select: { id: true, homeKey: true, kind: true, providerRef: true, scope: true },
     });
-    if (team && movesBotFiles(team.kind)) {
+    if (left && movesBotFiles(left.kind)) {
       const ctx: AdapterContext = { ...context, botId, screenLeaseId: undefined };
       const held: MovingComputer[] = [];
       try {
-        const home = await openHome(deps, team, botId, ctx, held);
-        await home.removeEntries([
-          ["bots", botId],
-          [".browser-profiles", profile],
-        ]);
+        const home = await openHome(deps, left, botId, ctx, held);
+        const entries: Entry[] = onOwn
+          ? [["bots", botId]]
+          : (await ownRootEntries(deps.home, left.homeKey, ctx)).map((name) => ["", name] as const);
+        entries.push([".browser-profiles", profile]);
+        await home.removeEntries(entries);
       } catch (error) {
         getLogger().warn("bot file move recovery", { error });
         return false;
@@ -261,18 +289,34 @@ async function ownRootEntries(home: AgentHomeStore, homeKey: string, context: Ad
 /**
  * The files the move would carry that are over the limit, by their path in the bot's folder or
  * profile, read from the sizes alone before anything is copied. Walks as the export does: links
- * inside the folder are followed, links out of it and anything but files and folders are passed.
+ * inside the folder are followed, each folder once, and links out of it and anything but files
+ * and folders are passed. Other bots can write the folder, so the walk is bounded: a tree past
+ * the entry or depth limit refuses the switch, and a switch that stops waiting stops it.
  */
-async function largeFiles(root: string, botId: string, scope: string, profile: string) {
+async function largeFiles(
+  root: string,
+  botId: string,
+  scope: string,
+  profile: string,
+  signal: AbortSignal,
+) {
   const large: string[] = [];
+  const visited = new Set<string>();
+  let entries = 0;
   const walk = async (
     top: string,
     directory: string,
     relative: string,
     policy: string,
     skipHidden: boolean,
+    depth: number,
   ) => {
+    if (visited.has(directory)) return;
+    visited.add(directory);
+    if (depth > MAX_SCANNED_DEPTH) throw new BotFilesNotMovedError();
     for (const entry of await readdir(directory)) {
+      signal.throwIfAborted();
+      if (++entries > MAX_SCANNED_ENTRIES) throw new BotFilesNotMovedError();
       const shown = path.posix.join(relative, entry);
       if (skipHidden && !relative && entry.startsWith(".")) continue;
       const full = await realpath(path.join(directory, entry)).catch(() => null);
@@ -281,7 +325,7 @@ async function largeFiles(root: string, botId: string, scope: string, profile: s
       if (shouldSkipPortableWorkspaceFile(path.posix.join(policy, shown), info.isDirectory())) {
         continue;
       }
-      if (info.isDirectory()) await walk(top, full, shown, policy, false);
+      if (info.isDirectory()) await walk(top, full, shown, policy, false, depth + 1);
       else if (info.isFile() && info.size > MAX_MOVED_FILE_BYTES) large.push(shown);
     }
   };
@@ -295,7 +339,7 @@ async function largeFiles(root: string, botId: string, scope: string, profile: s
     const expected = path.join(base, directory);
     const top = await realpath(expected).catch(() => null);
     if (top === expected && (await stat(top)).isDirectory()) {
-      await walk(top, top, "", policy, skipHidden);
+      await walk(top, top, "", policy, skipHidden, 0);
     }
   }
   return large;

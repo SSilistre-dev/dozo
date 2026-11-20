@@ -9,6 +9,7 @@ import {
   rm,
   stat,
   symlink,
+  truncate,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,6 +29,7 @@ import {
   movesBotFiles,
   recoverBotComputerSwitch,
   switchDueKey,
+  switchLeaseKey,
 } from "./dozo-computer-move.js";
 import { LocalAgentHomeStore } from "./home.js";
 import { knownSandboxKinds } from "./sandbox-kind-capabilities.js";
@@ -51,7 +53,7 @@ let dir: string;
 let home: LocalAgentHomeStore;
 let computers: Record<string, Row>;
 let bots: Record<string, BotRow>;
-let due: string[];
+let cleared: number;
 let sandbox: SandboxProvider & { written: string[] };
 const context = { signal: new AbortController().signal, spaceId: "space" } as AdapterContext;
 
@@ -106,10 +108,6 @@ const prisma = () =>
       },
     },
     spaceMember: { findFirst: async () => ({ userId: "owner" }) },
-    $executeRaw: async (_sql: TemplateStringsArray, key: string) => {
-      due.push(key);
-      return 1;
-    },
   }) as unknown as PrismaClient;
 
 const deps = () => ({ prisma: prisma(), sandbox, home });
@@ -118,7 +116,12 @@ const deps = () => ({ prisma: prisma(), sandbox, home });
 const move = (
   from: MovingComputer,
   to: MovingComputer,
-  options: { botId?: string; flip?: () => Promise<string>; signal?: AbortSignal } = {},
+  options: {
+    botId?: string;
+    flip?: () => Promise<string>;
+    signal?: AbortSignal;
+    stillHeld?: () => Promise<void>;
+  } = {},
 ) => {
   const botId = options.botId ?? A;
   const flip =
@@ -130,7 +133,16 @@ const move = (
     });
   return moveBotComputerFiles(
     deps(),
-    { botId, from, to, flip },
+    {
+      botId,
+      from,
+      to,
+      flip,
+      stillHeld: options.stillHeld,
+      cleared: async () => {
+        cleared += 1;
+      },
+    },
     { ...context, signal: options.signal ?? context.signal },
   );
 };
@@ -167,7 +179,7 @@ beforeEach(async () => {
       updatedAt: new Date(Date.now() - 60 * 60_000),
     },
   };
-  due = [];
+  cleared = 0;
   // A running Team Computer works in the server's home directory, as Docker's does.
   const written: string[] = [];
   sandbox = {
@@ -269,6 +281,7 @@ describe("moving a bot's files when it switches computers", () => {
     await symlink("/etc", path.join(folder, "etc"));
     await symlink("/etc/hostname", path.join(folder, "hostname"));
     await symlink(`../${B}`, path.join(folder, "beta"));
+    await symlink("missing", path.join(folder, "dangling"));
     await link(teamPath(`bots/${B}/notes.txt`), path.join(folder, "linked.txt"));
     execFileSync("mkfifo", [path.join(folder, "pipe")]);
     await move(team(), own());
@@ -280,6 +293,49 @@ describe("moving a bot's files when it switches computers", () => {
     expect(await readFile(ownPath("linked.txt"), "utf8")).toBe("beta notes");
     expect(await readFile(teamPath(`bots/${B}/notes.txt`), "utf8")).toBe("beta notes");
     expect(existsSync(teamPath(`bots/${A}`))).toBe(false);
+  });
+
+  it("walks a folder that links back into itself once, and finishes", async () => {
+    const folder = teamPath(`bots/${A}`);
+    await mkdir(path.join(folder, "x/y"), { recursive: true });
+    await symlink(".", path.join(folder, "x/self"));
+    await symlink("..", path.join(folder, "x/y/up"));
+    await mkdir(path.join(folder, "a"));
+    await mkdir(path.join(folder, "b"));
+    await symlink("../b", path.join(folder, "a/to-b"));
+    await symlink("../a", path.join(folder, "b/to-a"));
+    await put(path.join(folder, "a/kept.txt"), "kept");
+    await move(team(), own());
+    expect(await readFile(ownPath("a/kept.txt"), "utf8")).toBe("kept");
+    expect(await readFile(ownPath("notes.txt"), "utf8")).toBe("alpha notes");
+  });
+
+  it("refuses a folder nested past the limit, and a switch that stopped waiting", async () => {
+    await mkdir(teamPath(`bots/${A}/${Array(70).fill("d").join("/")}`), { recursive: true });
+    await expect(move(team(), own())).rejects.toThrow(BOT_FILES_NOT_MOVED);
+    expect(existsSync(ownPath("notes.txt"))).toBe(false);
+    await rm(teamPath(`bots/${A}/d`), { recursive: true });
+    const stopped = new AbortController();
+    stopped.abort(new Error("stopped"));
+    const flip = vi.fn();
+    await expect(move(team(), own(), { flip, signal: stopped.signal })).rejects.toThrow(
+      BOT_FILES_NOT_MOVED,
+    );
+    expect(flip).not.toHaveBeenCalled();
+  });
+
+  it("names the first few large files and counts the rest", async () => {
+    for (const name of ["a", "b", "c", "d", "e"]) {
+      const file = teamPath(`bots/${A}/big/${name}.bin`);
+      await put(file, "");
+      await truncate(file, MAX_MOVED_FILE_BYTES + 1);
+    }
+    const failed = (await move(team(), own()).catch((error: unknown) => error)) as Error;
+    expect(failed.message).toMatch(
+      new RegExp(
+        `^${BOT_FILES_TOO_LARGE}: big/\\w\\.bin, big/\\w\\.bin, big/\\w\\.bin \\(\\+2\\)$`,
+      ),
+    );
   });
 
   it("refuses files over the limit before copying anything, and names them", async () => {
@@ -392,17 +448,32 @@ describe("moving a bot's files when it switches computers", () => {
     vi.mocked(sandbox.workspaceDirectories!).mockRejectedValue(new Error("gone"));
     await expect(move(team(), own())).resolves.toBe("switched");
     expect(await readFile(ownPath("notes.txt"), "utf8")).toBe("alpha notes");
-    expect(due).toEqual([switchDueKey(A)]);
+    // Not cleared: the cleanup the switch recorded stays due for the sweep.
+    expect(cleared).toBe(0);
+  });
+
+  it("clears the computer it left only while its lease still holds", async () => {
+    const stillHeld = vi.fn().mockRejectedValue(new Error("lease lost"));
+    await expect(move(team(), own(), { stillHeld })).resolves.toBe("switched");
+    expect(stillHeld).toHaveBeenCalledOnce();
+    expect(existsSync(teamPath(`bots/${A}/notes.txt`))).toBe(true);
+    expect(cleared).toBe(0);
+    await rm(ownPath(), { recursive: true });
+    botA().computerId = "team";
+    await move(team(), own(), { stillHeld: async () => {} });
+    expect(existsSync(teamPath(`bots/${A}`))).toBe(false);
+    expect(cleared).toBe(1);
   });
 
   it("keeps a copy its Own computer could not drop: it is private, and the switch stands", async () => {
     await move(team(), own());
+    cleared = 0;
     own().state = "running";
     own().providerRef = "c-own";
     await expect(move(own(), team())).resolves.toBe("switched");
     expect(await readFile(teamPath(`bots/${A}/notes.txt`), "utf8")).toBe("alpha notes");
     expect(await readFile(ownPath("notes.txt"), "utf8")).toBe("alpha notes");
-    expect(due).toEqual([]);
+    expect(cleared).toBe(0);
   });
 
   it("refuses a folder another bot swapped for a link, writing nothing through it", async () => {
@@ -463,6 +534,23 @@ describe("moving a bot's files when it switches computers", () => {
     expect(existsSync(teamPath(`bots/${A}/notes.txt`))).toBe(true);
   });
 
+  it("a file that never arrives fails the move, and a bot with no browser profile moves", async () => {
+    await rm(teamPath(profile), { recursive: true });
+    await move(team(), own());
+    expect(await readFile(ownPath("notes.txt"), "utf8")).toBe("alpha notes");
+    team().state = "running";
+    vi.mocked(sandbox.writeFile).mockImplementation(async () => {});
+    await expect(move(own(), team())).rejects.toThrow(BOT_FILES_NOT_MOVED);
+    expect(botA().computerId).toBe("own");
+  });
+
+  it("names its lease and its due row by the bot", () => {
+    expect([switchLeaseKey(A), switchDueKey(A)]).toEqual([
+      `dozo-computer-switch:${A}`,
+      `dozo-computer-switch-due:${A}`,
+    ]);
+  });
+
   it("only Docker computers declare that they move a bot's files", () => {
     expect(knownSandboxKinds.filter(movesBotFiles)).toEqual(["docker"]);
   });
@@ -492,7 +580,8 @@ describe("moving a bot's files when it switches computers", () => {
 });
 
 describe("finishing a switch that stopped part way", () => {
-  const recover = (staleMs = 60_000) => recoverBotComputerSwitch(deps(), A, context, staleMs);
+  const recover = (staleMs = 60_000, cleanupDue = false) =>
+    recoverBotComputerSwitch(deps(), A, context, staleMs, cleanupDue);
 
   it("after the process died copying to the Team Computer: the copy goes, holds and flag clear", async () => {
     // The bot was still on its Own computer; part of its files had reached the Team Computer.
@@ -516,6 +605,22 @@ describe("finishing a switch that stopped part way", () => {
     await expect(recover()).resolves.toBe(true);
     expect(sandbox.workspaceDirectories).toHaveBeenCalledTimes(2);
     expect(existsSync(teamPath(`bots/${A}`))).toBe(false);
+  });
+
+  it("after a switch to the Team Computer that changed the bot's computer, clears its own", async () => {
+    await put(ownPath("left.txt"), "a copy the switch could not remove");
+    await put(ownPath(`${profile}/Default/Cookies`), "alpha cookies");
+    await put(ownPath(".config/app.json"), "{}");
+    own().state = "running";
+    own().providerRef = "c-own";
+    await expect(recover(60_000, true)).resolves.toBe(false);
+    expect(existsSync(ownPath("left.txt"))).toBe(true);
+    own().state = "stopped";
+    await expect(recover(60_000, true)).resolves.toBe(true);
+    expect(existsSync(ownPath("left.txt"))).toBe(false);
+    expect(existsSync(ownPath(profile))).toBe(false);
+    expect(existsSync(ownPath(".config/app.json"))).toBe(true);
+    expect(existsSync(teamPath(`bots/${A}/notes.txt`))).toBe(true);
   });
 
   it("leaves a bot on the Team Computer as it is: what its Own computer keeps is private", async () => {

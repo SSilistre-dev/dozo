@@ -8,6 +8,7 @@ const fake = vi.hoisted(() => ({
   recover: vi.fn(),
   ensure: vi.fn(),
   held: new Set<string>(),
+  lost: false,
   logged: vi.fn(),
 }));
 vi.mock("@rakazo/adapters", () => {
@@ -24,6 +25,9 @@ vi.mock("@rakazo/db", () => {
   class LeaseHeldError extends Error {}
   return {
     LeaseHeldError,
+    assertLeaseHeld: async () => {
+      if (fake.lost) throw new Error("Lost the lease");
+    },
     ensureComputerRecord: fake.ensure,
     teamComputerUserId: async () => "space-owner",
     runAsSystem: (_reason: string, work: () => Promise<unknown>) => work(),
@@ -51,13 +55,28 @@ const team = { id: "team", homeKey: "h-team", kind: "docker", providerRef: "c1",
 const own = { id: "own", homeKey: "h-own", kind: "docker", providerRef: null, scope: "dedicated" };
 let lapsed: Array<{ key: string }>;
 let executed: string[];
+let flippedTo: string | undefined;
+const firstWord = (sql: TemplateStringsArray) => sql.join("?").trim().split(/\s+/)[0] as string;
+const executeRaw = async (sql: TemplateStringsArray) => {
+  executed.push(firstWord(sql));
+  return 1;
+};
 const prisma = {
   computer: { findUniqueOrThrow: async () => team },
-  $queryRaw: async () => lapsed,
-  $executeRaw: async (sql: TemplateStringsArray) => {
-    executed.push(sql.join("?").trim().split(/\s+/)[0] as string);
-    return 1;
-  },
+  $queryRaw: async (sql: TemplateStringsArray, ...values: unknown[]) =>
+    sql.join("?").includes("LIKE")
+      ? lapsed
+      : lapsed.filter((row) => row.key === values[0]).map(() => ({ found: 1 })),
+  $executeRaw: executeRaw,
+  $transaction: async (work: (tx: unknown) => Promise<unknown>) =>
+    work({
+      $executeRaw: executeRaw,
+      bot: {
+        update: async ({ data }: { data: { computerId: string } }) => {
+          flippedTo = data.computerId;
+        },
+      },
+    }),
 } as unknown as PrismaClient;
 const deps = { prisma, sandbox: {} as SandboxProvider, home: {} as AgentHomeStore };
 const actor = { userId: "member", spaceId: "space" } as Actor;
@@ -78,17 +97,33 @@ beforeEach(() => {
   fake.ensure.mockReset();
   fake.logged.mockReset();
   fake.held.clear();
+  fake.lost = false;
   lapsed = [];
   executed = [];
+  flippedTo = undefined;
 });
 
 describe("switching a bot's computer", () => {
   it("moves the files from the computer it leaves to the one the switch would make", async () => {
     fake.ensure.mockResolvedValue(own);
-    fake.move.mockImplementation(async (_deps, input: { flip: () => Promise<Bot> }) =>
-      input.flip(),
+    fake.move.mockImplementation(
+      async (
+        _deps,
+        input: {
+          flip: () => Promise<void>;
+          stillHeld: () => Promise<void>;
+          cleared: () => Promise<void>;
+        },
+      ) => {
+        await input.flip();
+        await input.stillHeld();
+        await input.cleared();
+      },
     );
     await expect(switchTo("dedicated", "team")).resolves.toBe(onOwn);
+    // The bot's computer changed with the cleanup marked due, then the cleanup cleared it.
+    expect(flippedTo).toBe("own");
+    expect(executed).toEqual(["INSERT", "DELETE"]);
     expect(fake.ensure).toHaveBeenCalledWith(prisma, {
       mode: "dedicated",
       spaceId: "space",
@@ -112,6 +147,17 @@ describe("switching a bot's computer", () => {
     );
   });
 
+  it("never changes the bot's computer once its lease is lost", async () => {
+    fake.ensure.mockResolvedValue(own);
+    fake.lost = true;
+    fake.move.mockImplementation(async (_deps, input: { flip: () => Promise<void> }) =>
+      input.flip(),
+    );
+    await expect(switchTo("dedicated", "team")).rejects.toThrow("Lost the lease");
+    expect(flippedTo).toBeUndefined();
+    expect(executed).toEqual([]);
+  });
+
   it("refuses while another switch of the bot holds its lease", async () => {
     fake.held.add("dozo-computer-switch:bot");
     await expect(switchTo("dedicated", "team")).rejects.toBeInstanceOf(BotFilesNotMovedError);
@@ -133,9 +179,19 @@ describe("the switch sweep", () => {
     ];
     fake.recover.mockImplementation(async (_deps, botId: string) => botId === "a");
     await sweepComputerSwitches(deps, new AbortController().signal);
-    expect(fake.recover.mock.calls.map((call) => call[1])).toEqual(["a", "b"]);
-    // Done for a: its due row goes. Not yet for b: its due row stays for the next pass.
+    expect(fake.recover.mock.calls.map((call) => [call[1], call[4]])).toEqual([
+      ["a", true],
+      ["b", true],
+    ]);
+    // Done for a: its rows go. Not yet for b: a retry row brings the sweep back.
     expect(executed).toEqual(["DELETE", "INSERT"]);
+  });
+
+  it("clears the computer a bot left only where its switch had changed the bot's computer", async () => {
+    lapsed = [{ key: "dozo-computer-switch:a" }];
+    fake.recover.mockResolvedValue(true);
+    await sweepComputerSwitches(deps, new AbortController().signal);
+    expect(fake.recover.mock.calls[0]?.[4]).toBe(false);
   });
 
   it("leaves a bot whose switch is under way, and logs any other failure", async () => {
