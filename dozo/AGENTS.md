@@ -72,6 +72,9 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - `make qa`: run before merge. Per-step logs in `dozo/.stage/logs/`.
 - What each gate runs, the coverage floors, variables and exit codes, and the local-versus-CI stage
   difference: `dozo/docker/README.md`. Do not lower a floor to get green.
+- `dozo/docker/upstream-tests.sh` (CI job `dozo-upstream-tests`): upstream's tests on the branded tree
+  against `dozo/brand/upstream-tests-known.tsv`; a fork change that turns one red fixes it or lists it
+  with its class and reason (`dozo/docker/README.md`, Upstream tests).
 - `make olcum`: code quality and readability scores against `dozo/metrics/baseline.json`; the
   fork's target is 90 for both (`dozo/metrics/README.md`). Not part of `olc` or `qa`.
 - `dozo/sync.sh`: merge upstream. Read `dozo/SYNC.md` first.

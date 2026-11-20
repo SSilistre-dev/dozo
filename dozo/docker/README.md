@@ -212,6 +212,30 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
   Compose value unless the variable is set.
 - `DOZO_QA_STEPS="olc stage brand unit"` runs a subset in the order given.
 
+## Upstream tests
+
+`dozo/docker/upstream-tests.sh`, after `build.sh stage` and `build.sh brand`: upstream's own tests
+on the branded stage, held to `dozo/brand/upstream-tests-known.tsv`, the reviewed list of upstream
+tests that are red only on the branded tree on purpose. Not part of `olc` or `qa`: it takes about 20
+minutes, so the workflow `dozo-upstream-tests` runs it on every pull request beside `dozo-gate`.
+
+1. Every upstream test file (not `dozo-*`) on the branded stage, three workers.
+2. The files with a red test, and the files the list names, on the unbranded tree of the same commit
+   (`DOZO_STAGE_REF` or `HEAD`, in `<stage>/pristine`), so red that the brand step did not cause
+   (no `git` or `python3` in the image, timing) is left out.
+3. The files of any finding once more on the branded stage: a new red must be red again, and a
+   listed test green again, so a flaky test fails neither way.
+4. The verdict (`dozo/brand/upstream-tests.mjs`): a red test that is not listed, or a listed test
+   that is no longer red only on the branded tree, fails (exit 2) and is named. Last line
+   `UPSTREAM: PASS (<n> listed, <m> red only on the branded tree)` or `UPSTREAM: FAIL (...)`.
+
+A list line is `file<TAB>test<TAB>class<TAB>reason`; the class is `a` (brand text or a renamed
+identifier), `b` (a deliberate fork difference, naming its rule) or `c` (a fixture the fork's code
+needs and the test lacks; prefer an anchored rule on the test that adds it). Adding a line is a
+reviewed change with its reason; a fixed cause turns its tests green, which fails the job until the
+line is removed, so the list only shrinks on its own. Each tree installs its own lockfile in a
+scratch copy inside the container; reports and logs are in `<stage>/upstream-tests/`.
+
 ## Variables
 
 | Variable | Default | Meaning |
@@ -253,7 +277,8 @@ e2e variables are in `dozo/e2e/README.md`; the sync ones in `dozo/SYNC.md`.
   Compose containers are `dozo-<service>-1` (the e2e suite finds the api one by its compose labels).
 - Images: `dozo-<service>` for the app images. The sandbox image stays `rakazo/computer:local`: its
   name is hard-coded upstream and the leak gate allows it as an identifier shape.
-- Volumes: `dozo-qa-deps` (unit dependencies), `dozo-e2e-npm` (e2e), and the project's `dozo_*`
+- Volumes: `dozo-qa-deps` (unit dependencies), `dozo-e2e-npm` (e2e),
+  `dozo-upstream-tests-store` (the upstream tests' pnpm store), and the project's `dozo_*`
   volumes. Do not stop or remove what you did not create.
 
 ## Generated files

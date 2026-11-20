@@ -5714,6 +5714,318 @@
         "apps/web/src/components/dozo-command-rules.tsx"
       ],
       "reason": "command approval: upstream test of Approvals; the fork's Commands list reads the server, which this test does not provide, so it is replaced as other fork rows are (dozo-command-rules.test.tsx covers the list)"
+    },
+    {
+      "file": "packages/auth/src/oidc.test.ts",
+      "find": "  const prisma: Record<string, unknown> = {\n    deploymentSettings: {\n",
+      "replace": "  const prisma: Record<string, unknown> = {\n    $queryRaw: vi.fn(async (sql: TemplateStringsArray) =>\n      sql.join(\"\").includes('\"rateLimit\"') ? [{ count: 1 }] : [],\n    ),\n    deploymentSettings: {\n",
+      "reason": "upstream test fixture: the fork's auth reads its own tables (bans, site settings, the verification-mail limit) with raw SQL, which this fake database lacks; they are given empty here, and a rate-limit upsert answers its first count, as Postgres would"
+    },
+    {
+      "file": "packages/auth/src/identity-trust.test.ts",
+      "find": "    $executeRaw: vi.fn(async () => 0),\n    $transaction: vi.fn(\n",
+      "replace": "    $executeRaw: vi.fn(async () => 0),\n    $queryRaw: vi.fn(async (sql: TemplateStringsArray) =>\n      sql.join(\"\").includes('\"rateLimit\"') ? [{ count: 1 }] : [],\n    ),\n    $transaction: vi.fn(\n",
+      "reason": "upstream test fixture: the fork's auth reads its own tables (bans, site settings, the verification-mail limit) with raw SQL, which this fake database lacks; they are given empty here, and a rate-limit upsert answers its first count, as Postgres would"
+    },
+    {
+      "file": "packages/auth/src/password-policy.test.ts",
+      "find": "    authData: data,\n    deploymentSettings: {\n      findUnique: vi.fn(async () => ({\n",
+      "replace": "    authData: data,\n    $queryRaw: vi.fn(async (sql: TemplateStringsArray) =>\n      sql.join(\"\").includes('\"rateLimit\"') ? [{ count: 1 }] : [],\n    ),\n    deploymentSettings: {\n      findUnique: vi.fn(async () => ({\n",
+      "reason": "upstream test fixture: the fork's auth reads its own tables (bans, site settings, the verification-mail limit) with raw SQL, which this fake database lacks; they are given empty here, and a rate-limit upsert answers its first count, as Postgres would"
+    },
+    {
+      "file": "packages/auth/src/password-policy.test.ts",
+      "find": "vi.mock(\"@rakazo/db\", () => ({\n  bootstrapUserSpace",
+      "replace": "vi.mock(\"@rakazo/db\", async (original) => ({\n  ...(await original<object>()),\n  bootstrapUserSpace",
+      "reason": "upstream test fixture: its @rakazo/db mock lists only what upstream's auth imports; the fork's auth also reads the signup policy from there, so the mock keeps the module's other exports, as identity-trust.test.ts's does"
+    },
+    {
+      "file": "packages/auth/src/index.test.ts",
+      "find": "    const auth = createAuth(\n      {\n        user: {\n          findFirst: vi.fn().mockRejectedValue(error),",
+      "replace": "    const auth = createAuth(\n      {\n        $queryRaw: vi.fn(async () => []),\n        user: {\n          findFirst: vi.fn().mockRejectedValue(error),",
+      "reason": "upstream test fixture: the fork's auth reads its own tables (bans, site settings, the verification-mail limit) with raw SQL, which this fake database lacks; they are given empty here, and a rate-limit upsert answers its first count, as Postgres would"
+    },
+    {
+      "file": "packages/auth/src/index.test.ts",
+      "find": "describe(\"stored account names\", () => {\n  const auth = createAuth({} as never, {",
+      "replace": "describe(\"stored account names\", () => {\n  const auth = createAuth({ $queryRaw: async () => [] } as never, {",
+      "reason": "upstream test fixture: the fork's auth reads its own tables (bans, site settings, the verification-mail limit) with raw SQL, which this fake database lacks; they are given empty here, and a rate-limit upsert answers its first count, as Postgres would"
+    },
+    {
+      "file": "packages/auth/src/index.test.ts",
+      "find": "it(\"preserves readable numbered account names on writes\", async () => {\n  const auth = createAuth({} as never, {",
+      "replace": "it(\"preserves readable numbered account names on writes\", async () => {\n  const auth = createAuth({ $queryRaw: async () => [] } as never, {",
+      "reason": "upstream test fixture: the fork's auth reads its own tables (bans, site settings, the verification-mail limit) with raw SQL, which this fake database lacks; they are given empty here, and a rate-limit upsert answers its first count, as Postgres would"
+    },
+    {
+      "file": "apps/api/src/calls.test.ts",
+      "find": "import { createRouter } from \"./router.js\";",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
+    },
+    {
+      "file": "apps/api/src/chat-alerts.test.ts",
+      "find": "import { createRouter } from \"./router.js\";",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
+    },
+    {
+      "file": "apps/api/src/space-changes.test.ts",
+      "find": "import { createRouter } from \"./router.js\";",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
+    },
+    {
+      "file": "apps/api/src/board.test.ts",
+      "find": "import { createRouter } from \"./router.js\";",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
+    },
+    {
+      "file": "apps/api/src/roster-procedures.test.ts",
+      "find": "import { createRouter } from \"./router.js\";",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
+    },
+    {
+      "file": "apps/api/src/trusted-link-sites.test.ts",
+      "find": "import { createRouter } from \"./router.js\";",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
+    },
+    {
+      "file": "apps/api/src/router.test.ts",
+      "find": "const withRoleDeps = (deps: RouterDeps) => {\n  withModelRoles(deps.prisma);\n  return deps;",
+      "replace": "const withRoleDeps = (deps: RouterDeps) => {\n  withModelRoles(deps.prisma);\n  // Dozo: a running app always has a web origin, and its database the fork's catalog snapshot (here\n  // fresh and empty, so no refresh starts) and the group table the fork's delete check reads.\n  (deps as { env?: Record<string, unknown> }).env ??= {};\n  deps.env.webOrigin ??= \"http://127.0.0.1:5173\";\n  const db = deps.prisma as unknown as Record<string, unknown>;\n  db.dozoCatalogSnapshot ??= {\n    findUnique: async () => ({\n      key: \"plugin-marketplace\",\n      data: { entries: [], unavailableRegistries: [], skippedEntries: [] },\n      refreshedAt: new Date(),\n      failures: 0,\n      retryAt: null,\n    }),\n  };\n  db.dozoCatalogImage ??= { findMany: async () => [] };\n  db.chatGroup ??= { findFirst: async () => null };\n  return deps;",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, the fork's plugin catalog tables and the group row the fork's group-delete check reads; each is given as an empty or fresh default only where the test has none"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.test.ts",
+      "find": "function transactional<T extends object>(client: T): PrismaClient {\n  return Object.assign(client, {\n",
+      "replace": "function transactional<T extends object>(client: T): PrismaClient {\n  // Dozo: the fork's allowance reads the computer's space and the admin's plan quotas.\n  const db = client as Record<string, unknown>;\n  db.space ??= { findUnique: vi.fn(async () => null) };\n  db.dozoPlanQuota ??= { findMany: vi.fn(async () => []) };\n  return Object.assign(client, {\n",
+      "reason": "upstream test fixture: the fork counts every computer that does not run on the user's own machine against the allowance, so a start reads the computer's space; this fake database has no space row, which reads as no allowance to spend; and no plan quotas, so each plan keeps its terms"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.test.ts",
+      "find": "    const client = {\n      computer: {\n        findUniqueOrThrow: vi.fn(async () => ({ ...row })),\n        updateMany: vi.fn(async (args: { data: { state?: string; providerRef?: string } }) => {\n",
+      "replace": "    const client = {\n      space: { findUnique: vi.fn(async () => null) },\n      computer: {\n        findUniqueOrThrow: vi.fn(async () => ({ ...row })),\n        updateMany: vi.fn(async (args: { data: { state?: string; providerRef?: string } }) => {\n",
+      "reason": "upstream test fixture: the fork counts every computer that does not run on the user's own machine against the allowance, so a start reads the computer's space; this fake database has no space row, which reads as no allowance to spend"
+    },
+    {
+      "file": "packages/adapters/src/computer-lifecycle.test.ts",
+      "find": "      space: { findUnique: vi.fn().mockResolvedValue({ organizationId: \"organization-1\" }) },\n      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ modelCreditsEnabled: true }) },\n",
+      "replace": "      space: { findUnique: vi.fn().mockResolvedValue({ organizationId: \"organization-1\" }) },\n      dozoPlanQuota: { findMany: vi.fn(async () => []) },\n      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ modelCreditsEnabled: true }) },\n",
+      "reason": "upstream test fixture: the fork's computer allowance reads the plan quotas an admin set (dozo_plan_quotas); this fake database has none, so each plan keeps its terms"
+    },
+    {
+      "file": "packages/adapters/src/sandbox-allowance.test.ts",
+      "find": "    $queryRaw: vi.fn().mockResolvedValue(input.hours ?? []),\n  };\n  return {\n    prisma,\n",
+      "replace": "    $queryRaw: vi.fn().mockResolvedValue(input.hours ?? []),\n    dozoPlanQuota: { findMany: vi.fn(async () => []) },\n  };\n  return {\n    prisma,\n",
+      "reason": "upstream test fixture: the fork's computer allowance reads the plan quotas an admin set (dozo_plan_quotas); this fake database has none, so each plan keeps its terms"
+    },
+    {
+      "file": "packages/adapters/src/computer-reuse.test.ts",
+      "find": "    computer: { findUniqueOrThrow: vi.fn(async () => ({ ...row })), updateMany },\n    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),\n",
+      "replace": "    computer: { findUniqueOrThrow: vi.fn(async () => ({ ...row })), updateMany },\n    space: { findUnique: vi.fn(async () => null) },\n    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),\n",
+      "reason": "upstream test fixture: the fork counts every computer that does not run on the user's own machine against the allowance, so a start reads the computer's space; this fake database has no space row, which reads as no allowance to spend"
+    },
+    {
+      "file": "packages/adapters/src/computer-idle.test.ts",
+      "find": "    $queryRaw: vi.fn(async () => [{ kind: \"e2b\", hours: options.computerHours ?? 0 }]),\n    deploymentSettings: {\n      findUnique: vi.fn(async () => ({ modelCreditsEnabled: options.computerHours !== undefined })),\n",
+      "replace": "    $queryRaw: vi.fn(async () => [{ kind: \"e2b\", hours: options.computerHours ?? 0 }]),\n    dozoPlanQuota: { findMany: vi.fn(async () => []) },\n    deploymentSettings: {\n      findUnique: vi.fn(async () => ({ modelCreditsEnabled: options.computerHours !== undefined })),\n",
+      "reason": "upstream test fixture: the fork's computer allowance reads the plan quotas an admin set (dozo_plan_quotas); this fake database has none, so each plan keeps its terms"
+    },
+    {
+      "file": "apps/api/src/computer-stop.test.ts",
+      "find": "      const prisma = {\n        spaceMember: { count: vi.fn(async () => 1) },\n",
+      "replace": "      const prisma = {\n        space: { findUnique: vi.fn(async () => null) },\n        spaceMember: { count: vi.fn(async () => 1) },\n",
+      "reason": "upstream test fixture: the fork counts every computer that does not run on the user's own machine against the allowance, so a start reads the computer's space; this fake database has no space row, which reads as no allowance to spend"
+    },
+    {
+      "file": "apps/api/src/artifacts.test.ts",
+      "find": "      name: \"voice.oga\",\n      description: null,\n      mimeType: \"audio/ogg\",\n      size: bytes.byteLength,\n      version: 1,\n      createdAt: new Date(0),\n    };\n    const tx = {\n      $queryRaw: vi.fn().mockResolvedValue([]),\n",
+      "replace": "      name: \"voice.oga\",\n      description: null,\n      mimeType: \"audio/ogg\",\n      size: bytes.byteLength,\n      version: 1,\n      createdAt: new Date(0),\n    };\n    const tx = {\n      deploymentSettings: { findUnique: vi.fn(async () => null) },\n      $queryRaw: vi.fn().mockResolvedValue([]),\n",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "apps/api/src/artifacts.test.ts",
+      "find": "      name: \"voice\",\n      description: null,\n      mimeType: \"audio/ogg\",\n      size: bytes.byteLength,\n      version: 1,\n      createdAt: new Date(0),\n    };\n    const tx = {\n      $queryRaw: vi.fn().mockResolvedValue([]),\n",
+      "replace": "      name: \"voice\",\n      description: null,\n      mimeType: \"audio/ogg\",\n      size: bytes.byteLength,\n      version: 1,\n      createdAt: new Date(0),\n    };\n    const tx = {\n      deploymentSettings: { findUnique: vi.fn(async () => null) },\n      $queryRaw: vi.fn().mockResolvedValue([]),\n",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "apps/api/src/artifacts.test.ts",
+      "find": "      createdAt: new Date(0),\n    }));\n    const tx = {\n      $queryRaw: vi.fn().mockResolvedValue([]),\n",
+      "replace": "      createdAt: new Date(0),\n    }));\n    const tx = {\n      deploymentSettings: { findUnique: vi.fn(async () => null) },\n      $queryRaw: vi.fn().mockResolvedValue([]),\n",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "packages/adapters/src/thread-artifacts.test.ts",
+      "find": "\n    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };\n    const put",
+      "replace": "\n    const tx = { artifact, deploymentSettings: { findUnique: vi.fn(async () => null) }, $queryRaw: vi.fn().mockResolvedValue([]) };\n    const put",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "packages/adapters/src/thread-artifacts.test.ts",
+      "find": "      const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };\n      const remove",
+      "replace": "      const tx = { artifact, deploymentSettings: { findUnique: vi.fn(async () => null) }, $queryRaw: vi.fn().mockResolvedValue([]) };\n      const remove",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "packages/adapters/src/thread-artifacts.test.ts",
+      "find": "    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([{ lock: \"1\" }]) };",
+      "replace": "    const tx = { artifact, deploymentSettings: { findUnique: vi.fn(async () => null) }, $queryRaw: vi.fn().mockResolvedValue([{ lock: \"1\" }]) };",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "packages/db/src/artifact-versions.test.ts",
+      "find": "  const tx = { artifact: { findFirst: reading }, $queryRaw: queryRaw };",
+      "replace": "  const tx = { artifact: { findFirst: reading }, deploymentSettings: { findUnique: vi.fn(async () => null) }, $queryRaw: queryRaw };",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "packages/adapters/src/media-generation-tools.test.ts",
+      "find": "    prisma: {\n      externalEffect,\n      artifact: { findFirst: vi.fn().mockResolvedValue(null) },\n",
+      "replace": "    prisma: {\n      externalEffect,\n      deploymentSettings: { findUnique: vi.fn(async () => null) },\n      artifact: { findFirst: vi.fn().mockResolvedValue(null) },\n",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies"
+    },
+    {
+      "file": "packages/adapters/src/tool-step-outcomes.test.ts",
+      "find": "        prisma: { artifact: { findFirst: vi.fn(async () => null), create } },",
+      "replace": "        prisma: {\n          artifact: { findFirst: vi.fn(async () => null), create },\n          deploymentSettings: { findUnique: vi.fn(async () => null) },\n          $transaction(work: (tx: unknown) => Promise<unknown>) {\n            return work(this);\n          },\n        },",
+      "reason": "upstream test fixture: the fork holds new files to the organization's shared space when the server bills (deployment_settings.modelCreditsEnabled); this fake database has no settings row, which reads as a server that does not bill, so no limit applies; the fork writes the screenshot's row in a transaction, which this fake runs on itself"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-panel.test.tsx",
+      "find": "import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nvi.mock(\"../../lib/rpc\", () => {",
+      "replace": "import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-own-computer-row\", () => ({ OwnComputerRow: () => null }));\nvi.mock(\"./dozo-bot-skills-section\", () => ({ DozoBotSkillsSection: () => null }));\n\nvi.mock(\"../../lib/rpc\", () => {",
+      "reason": "upstream test fixture: the fork's own-computer row and skills section read the server, which this test does not provide, so they are left out as the test leaves out the other server-backed parts (dozo-own-computer-row.test.tsx and dozo-bot-skills-section.test.tsx cover them)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-settings.test.tsx",
+      "find": "import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nvi.mock(\"../../lib/rpc\", () => {",
+      "replace": "import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-own-computer-row\", () => ({ OwnComputerRow: () => null }));\n\nvi.mock(\"../../lib/rpc\", () => {",
+      "reason": "upstream test fixture: the fork's own-computer row reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-own-computer-row.test.tsx covers it)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/chat-header.test.tsx",
+      "find": "const writeText = vi.hoisted(() => vi.fn(async () => undefined));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "replace": "const writeText = vi.hoisted(() => vi.fn(async () => undefined));\n\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "reason": "upstream test fixture: the fork's pinned messages reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-message-pins.test.tsx covers it)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/message-hover-actions.test.tsx",
+      "find": "import { MessageHoverActions } from \"./message-hover-actions\";\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "replace": "import { MessageHoverActions } from \"./message-hover-actions\";\n\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\nvi.mock(\"./dozo-message-revision\", () => ({\n  useDozoMessageRevision: () => ({ items: null, dialog: null }),\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "reason": "upstream test fixture: the fork's pin and edit actions reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-message-pins.test.tsx and dozo-message-revision.test.tsx covers it)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/message-view.test.tsx",
+      "find": "}));\nvi.mock(\"../../lib/rpc\", () => ({ rpc: { skills, artifacts: { get: vi.fn() } } }));",
+      "replace": "}));\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\nvi.mock(\"./dozo-message-revision\", () => ({\n  useDozoMessageRevision: () => ({ items: null, dialog: null }),\n}));\n\nvi.mock(\"../../lib/rpc\", () => ({ rpc: { skills, artifacts: { get: vi.fn() } } }));",
+      "reason": "upstream test fixture: the fork's pin and edit actions on a message read the server, which this test does not provide, so they are left out as the test leaves out the other server-backed parts (dozo-message-pins.test.tsx and dozo-message-revision.test.tsx cover them)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/transcript.test.tsx",
+      "find": "  String.raw(strings, ...values);\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "replace": "  String.raw(strings, ...values);\n\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\nvi.mock(\"./dozo-message-revision\", () => ({\n  useDozoMessageRevision: () => ({ items: null, dialog: null }),\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "reason": "upstream test fixture: the fork's pin and edit actions on a message read the server, which this test does not provide, so they are left out as the test leaves out the other server-backed parts (dozo-message-pins.test.tsx and dozo-message-revision.test.tsx cover them)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/transcript-member-name.test.tsx",
+      "find": "  String.raw(strings, ...values);\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "replace": "  String.raw(strings, ...values);\n\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\nvi.mock(\"./dozo-message-revision\", () => ({\n  useDozoMessageRevision: () => ({ items: null, dialog: null }),\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "reason": "upstream test fixture: the fork's pin and edit actions on a message read the server, which this test does not provide, so they are left out as the test leaves out the other server-backed parts (dozo-message-pins.test.tsx and dozo-message-revision.test.tsx cover them)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/computer-overlay.test.tsx",
+      "find": "import { afterEach, beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "replace": "import { afterEach, beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-site-sessions\", () => ({ SiteSessionsControl: () => null }));\nvi.mock(\"./dozo-computer-sleep\", () => ({ ComputerSleepButton: () => null }));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "reason": "upstream test fixture: the fork's site sign-ins control and sleep button read the server, which this test does not provide, so they are left out as the test leaves out the other server-backed parts (dozo-site-sessions.test.tsx and dozo-computer-sleep.test.tsx cover them)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.test.tsx",
+      "find": "const accountMenuDisabled: Array<boolean> = vi.hoisted(() => []);\n\nvi.mock(\"../lib/rpc\", () => ({",
+      "replace": "const accountMenuDisabled: Array<boolean> = vi.hoisted(() => []);\n\nvi.mock(\"../lib/dozo-events\", () => ({ reportUpgradeViewed: () => {} }));\n\nvi.mock(\"../lib/rpc\", () => ({",
+      "reason": "upstream test fixture: the fork's upgrade-viewed event reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-events.test.ts covers it)"
+    },
+    {
+      "file": "apps/web/src/components/ModelCredits.sign-out.test.tsx",
+      "find": "import { afterEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"../lib/rpc\", () => ({",
+      "replace": "import { afterEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"../lib/dozo-events\", () => ({ reportUpgradeViewed: () => {} }));\n\nvi.mock(\"../lib/rpc\", () => ({",
+      "reason": "upstream test fixture: the fork's upgrade-viewed event reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-events.test.ts covers it)"
+    },
+    {
+      "file": "apps/web/src/pages/Paywall.test.tsx",
+      "find": "// The global client follows the space another tab selected last.\nvi.mock(\"../lib/rpc\", () => ({",
+      "replace": "// The global client follows the space another tab selected last.\nvi.mock(\"../lib/dozo-events\", () => ({ reportUpgradeViewed: () => {} }));\n\nvi.mock(\"../lib/rpc\", () => ({",
+      "reason": "upstream test fixture: the fork's upgrade-viewed event reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-events.test.ts covers it)"
+    },
+    {
+      "file": "apps/web/src/App.test.tsx",
+      "find": "}));\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "replace": "}));\nvi.mock(\"./components/dozo-announcement\", async (original) => ({\n  ...(await original<object>()),\n  DozoAnnouncementLayout: (await import(\"react-router-dom\")).Outlet,\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
+      "reason": "upstream test fixture: the fork's signed-in layout adds lines below the page (failed payment, address to verify, the admin's announcement) that read the server, which this test does not provide; here the layout is only the page, as upstream's (dozo-announcement.test.tsx, dozo-past-due.test.tsx and dozo-verify-reminder.test.tsx cover the lines)"
+    },
+    {
+      "file": "apps/web/src/call-routes.test.tsx",
+      "find": "  declineIncomingCall: vi.fn(),\n}));\n\nvi.mock(\"@lingui/core/macro\", () => ({ t: (parts: TemplateStringsArray) => parts.join(\"\") }));",
+      "replace": "  declineIncomingCall: vi.fn(),\n}));\n\nvi.mock(\"./components/dozo-announcement\", async (original) => ({\n  ...(await original<object>()),\n  DozoAnnouncementLayout: (await import(\"react-router-dom\")).Outlet,\n}));\n\nvi.mock(\"@lingui/core/macro\", () => ({ t: (parts: TemplateStringsArray) => parts.join(\"\") }));",
+      "reason": "upstream test fixture: the fork's signed-in layout adds lines below the page (failed payment, address to verify, the admin's announcement) that read the server, which this test does not provide; here the layout is only the page, as upstream's (dozo-announcement.test.tsx, dozo-past-due.test.tsx and dozo-verify-reminder.test.tsx cover the lines)"
+    },
+    {
+      "file": "apps/mobile/lib/bot-settings-voice.test.tsx",
+      "find": "];\n\nvi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));",
+      "replace": "];\n\nvi.mock(\"./dozo-own-computer\", async (original) => ({\n  ...(await original<object>()),\n  useOwnComputerSwitch: () => ({ detail: undefined, disabled: false }),\n}));\n\nvi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));",
+      "reason": "upstream test fixture: the fork's line under the Own computer switch reads the plan and the Space's members from the server, which this test does not provide; here it shows nothing and leaves the switch on, as upstream's does (dozo-own-computer.test.ts covers it); the fork's confirmation before a move stays real"
+    },
+    {
+      "file": "apps/mobile/lib/chat-model-picker.test.tsx",
+      "find": "  thinkingLevels: [\"low\", \"medium\", \"high\"],\n}));\n\nvi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));",
+      "replace": "  thinkingLevels: [\"low\", \"medium\", \"high\"],\n}));\n\nvi.mock(\"./dozo-own-computer\", async (original) => ({\n  ...(await original<object>()),\n  useOwnComputerSwitch: () => ({ detail: undefined, disabled: false }),\n}));\n\nvi.mock(\"./side-insets\", () => ({ useSideInsets: () => ({}) }));",
+      "reason": "upstream test fixture: the fork's line under the Own computer switch reads the plan and the Space's members from the server, which this test does not provide; here it shows nothing and leaves the switch on, as upstream's does (dozo-own-computer.test.ts covers it); the fork's confirmation before a move stays real"
+    },
+    {
+      "file": "packages/db/src/sandbox-allowance.ts",
+      "find": "        : creditShare(billing?.creditAmountCents ?? 0);",
+      "replace": "        : // Free lets every organization run bots, so a monthly credit plan's share counts only\n          // while its subscription is live; upstream relied on runs being refused once it ended.\n          creditShare(live ? (billing?.creditAmountCents ?? 0) : 0);",
+      "reason": "plans: an ended monthly credit plan opens no computer hours; its stored amount stays on the billing account after cancellation, and with Free's model access the organization would otherwise get the plan's computer share every month without paying"
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "    case \"kubernetes\":\n      return new KubernetesSandboxProvider({",
+      "replace": "    case \"kubernetes\":\n      if (!opts.kubernetesComputerImage?.trim())\n        return missingRemoteKey(\"kubernetes\", \"KUBERNETES_SANDBOX_COMPUTER_IMAGE\");\n      return new KubernetesSandboxProvider({",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "      return new IncusSandboxProvider({\n        url: opts.incusUrl ?? \"\",",
+      "replace": "      // The address and certificates are checked first, as upstream's constructor does.\n      const incus = new IncusSandboxProvider({\n        url: opts.incusUrl ?? \"\",",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "        unreferencedMachines: opts.unreferencedMachines,\n      });\n    }\n    case \"local-vm\": {",
+      "replace": "        unreferencedMachines: opts.unreferencedMachines,\n      });\n      if (!opts.incusComputerImage?.trim())\n        return missingRemoteKey(\"incus\", \"INCUS_SANDBOX_COMPUTER_IMAGE\");\n      return incus;\n    }\n    case \"local-vm\": {",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
+    },
+    {
+      "file": "packages/adapters/src/sandbox-factory.ts",
+      "find": "    case \"local-vm\": {\n      const { AppleContainerSandboxProvider }",
+      "replace": "    case \"local-vm\": {\n      if (!opts.localVmComputerImage?.trim())\n        return missingRemoteKey(\"local-vm\", \"LOCAL_VM_COMPUTER_IMAGE\");\n      const { AppleContainerSandboxProvider }",
+      "reason": "computer image: these providers default to upstream's published image, whose home is /home/rakazo while the branded code works in /home/dozo, so no computer could start; until Dozo publishes an image they need one built from this tree, and without it computers stay unavailable with the setting named, as for a missing key (dozo-computer-image.test.ts)",
+      "requires": [
+        "packages/adapters/src/dozo-computer-image.test.ts"
+      ]
     }
   ],
   "assets": {
