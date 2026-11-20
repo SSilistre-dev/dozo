@@ -600,10 +600,20 @@ fn main() {
                             alerts::answer(kind, webview.url().ok().as_ref(), chosen(&app).as_ref())
                         }
                     })
-                    // The page puts its unread count in front of its title; nothing else of it
-                    // reaches the app. The window keeps its own title.
-                    .on_document_title_changed(|window, title| {
-                        alerts::show_unread(&window, alerts::unread_count(&title));
+                    // The server's page puts its unread count in front of its title; nothing
+                    // else of it reaches the app, and any other page counts as none. The window
+                    // keeps its own title.
+                    .on_document_title_changed({
+                        let app = app.clone();
+                        move |window, title| {
+                            let page = window.url().ok();
+                            let count = if alerts::on_server(page.as_ref(), chosen(&app).as_ref()) {
+                                alerts::unread_count(&title)
+                            } else {
+                                0
+                            };
+                            alerts::show_unread(&window, count);
+                        }
                     })
                     .build()?;
             window.on_window_event({

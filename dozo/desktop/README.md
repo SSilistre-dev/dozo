@@ -80,7 +80,7 @@ setting, menu item, sound or text was added: the system's own notification setti
   and WebView2 refuse a frame from another origin themselves, and WebKitGTK also wants a click or
   key press behind the request (the web app asks when a message is sent). Every other permission
   stays denied.
-- Badge: capped at `99+` on the Dock, at `9+` in the Windows taskbar overlay (an ink disc with
+- Badge: read only from a page on the server's origin, capped at `99+` on the Dock, at `9+` in the Windows taskbar overlay (an ink disc with
   white digits, drawn in `src/alerts.rs`), at 99 in a Linux launcher; cleared at 0, and when the
   window leaves the server (the local screens have no count).
 - A click on a notification brings the window back on Linux, hidden or minimized (`reveal_on_click`).

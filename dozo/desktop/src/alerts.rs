@@ -16,8 +16,9 @@ pub fn notification_origin(server: Option<&Url>) -> Option<String> {
     origin.is_tuple().then(|| origin.ascii_serialization())
 }
 
-/// True when a page at `page` may show notifications: exactly the server's origin.
-pub fn allows_notifications(page: Option<&Url>, server: Option<&Url>) -> bool {
+/// True when `page` has exactly the server's origin: only such a page may show notifications
+/// or set the badge.
+pub fn on_server(page: Option<&Url>, server: Option<&Url>) -> bool {
     notification_origin(server).is_some_and(|origin| notification_origin(page) == Some(origin))
 }
 
@@ -34,7 +35,7 @@ pub fn answer(
 ) -> PermissionResponse {
     if !cfg!(target_os = "macos")
         && kind == PermissionKind::Notifications
-        && allows_notifications(page, server)
+        && on_server(page, server)
     {
         PermissionResponse::Allow
     } else {
@@ -43,6 +44,7 @@ pub fn answer(
 }
 
 /// The largest count the badge shows; more reads as `99+`.
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 pub const BADGE_CAP: u32 = 99;
 
 /// The unread count the page puts in front of its title, as `(3) Dozo`. Anything else is 0.
@@ -79,7 +81,6 @@ pub fn show_unread(window: &tauri::WebviewWindow, count: u32) {
     if *shown == count {
         return;
     }
-    *shown = count;
     #[cfg(target_os = "macos")]
     let result = window.set_badge_label(badge_label(count));
     // Desktops that show a launcher count (libunity); elsewhere nothing happens.
@@ -90,8 +91,9 @@ pub fn show_unread(window: &tauri::WebviewWindow, count: u32) {
         overlay_text(count)
             .map(|text| tauri::image::Image::new_owned(overlay(&text), OVERLAY, OVERLAY)),
     );
-    if let Err(error) = result {
-        eprintln!("dozo: could not show the unread count: {error}");
+    match result {
+        Ok(()) => *shown = count,
+        Err(error) => eprintln!("dozo: could not show the unread count: {error}"),
     }
 }
 
@@ -220,20 +222,17 @@ mod tests {
             ("file:///etc/passwd", &server, false),
         ] {
             assert_eq!(
-                allows_notifications(Some(&url(page)), Some(server)),
+                on_server(Some(&url(page)), Some(server)),
                 allowed,
                 "{page} for {server}"
             );
         }
         // No page, no server, or a server that is not a web address.
-        assert!(!allows_notifications(None, Some(&server)));
-        assert!(!allows_notifications(Some(&server), None));
-        assert!(!allows_notifications(None, None));
+        assert!(!on_server(None, Some(&server)));
+        assert!(!on_server(Some(&server), None));
+        assert!(!on_server(None, None));
         let local_screen = url("tauri://localhost/");
-        assert!(!allows_notifications(
-            Some(&local_screen),
-            Some(&local_screen)
-        ));
+        assert!(!on_server(Some(&local_screen), Some(&local_screen)));
         assert_eq!(
             notification_origin(Some(&url("https://dozo.example.com:8443/x"))).as_deref(),
             Some("https://dozo.example.com:8443")
