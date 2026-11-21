@@ -121,51 +121,51 @@ const EVENTS: &[&str] = &[
 const MAX_EVENTS: usize = 64;
 const ANSWER: Duration = Duration::from_secs(30);
 
+/// Whether this app tells servers it has a browser for bots. Off until the sign-in pause comes
+/// (the person signs in while the app passes on nothing): until then no server offers the bot's
+/// browser, and this module is reached only by its tests.
+pub const DECLARED: bool = false;
+
 pub const NO_BROWSER: &str = "No Chrome, Edge, Brave or Chromium is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
 
-/// The browser this computer would start, if any: the first of Chrome, Edge, Brave and Chromium.
-/// A Snap package is passed over: it cannot use a profile folder inside the app's data.
+/// The browser this computer would start, if any: the first of Chrome, Edge, Brave and Chromium,
+/// looked for only where the system installs them, never in a folder on `PATH` or in the home
+/// folder, which any program running as this user could fill. A Snap package is passed over: it
+/// cannot use a profile folder inside the app's data.
 #[cfg(target_os = "macos")]
 pub fn find() -> Option<PathBuf> {
-    let apps = [
-        "Google Chrome.app/Contents/MacOS/Google Chrome",
-        "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        "Brave Browser.app/Contents/MacOS/Brave Browser",
-        "Chromium.app/Contents/MacOS/Chromium",
-    ];
-    let home = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Applications"));
-    let folders = [Some(PathBuf::from("/Applications")), home];
-    apps.iter().find_map(|app| {
-        folders
-            .iter()
-            .flatten()
-            .map(|folder| folder.join(app))
-            .find(|path| path.is_file())
-    })
+    [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .find(|path| path.is_file())
 }
 
 #[cfg(target_os = "linux")]
 pub fn find() -> Option<PathBuf> {
-    let names = [
-        "google-chrome",
-        "google-chrome-stable",
-        "microsoft-edge",
-        "microsoft-edge-stable",
-        "brave-browser",
-        "brave",
-        "chromium",
-        "chromium-browser",
-    ];
-    let path = std::env::var_os("PATH")?;
-    names.iter().find_map(|name| {
-        std::env::split_paths(&path)
-            .map(|dir| dir.join(name))
-            .filter(|candidate| is_executable(candidate))
-            .find(|candidate| {
-                let real = std::fs::canonicalize(candidate).unwrap_or_default();
-                !candidate.starts_with("/snap/") && !real.starts_with("/snap/")
-            })
+    [
+        "/opt/google/chrome/chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/opt/microsoft/msedge/msedge",
+        "/usr/bin/microsoft-edge-stable",
+        "/usr/bin/microsoft-edge",
+        "/opt/brave.com/brave/brave",
+        "/usr/bin/brave-browser",
+        "/usr/lib/chromium/chromium",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .find(|candidate| {
+        let real = std::fs::canonicalize(candidate).unwrap_or_default();
+        is_executable(candidate) && !real.starts_with("/snap/")
     })
 }
 
@@ -199,8 +199,9 @@ fn arguments(profile: &Path, headless: bool) -> Vec<String> {
     args
 }
 
-/// Checks one command from the server and keeps only the parameters it may carry.
-pub fn allowed(command: &Value) -> Result<(String, Value), String> {
+/// Checks one command from the server and keeps only the parameters it may carry. `local`: pages
+/// on this computer or its network may be opened (tests only).
+pub fn allowed(command: &Value, local: bool) -> Result<(String, Value), String> {
     let method = command
         .get("method")
         .and_then(Value::as_str)
@@ -227,12 +228,12 @@ pub fn allowed(command: &Value) -> Result<(String, Value), String> {
     }
     if method == "Page.navigate" {
         let url = given.get("url").and_then(Value::as_str).unwrap_or_default();
-        if !web_address(url) {
-            return Err("The bot's browser opens only http and https addresses".to_owned());
+        if !web_address(url, local) {
+            return Err(NOT_WEB.to_owned());
         }
     }
-    if method == "Input.dispatchKeyEvent" && pastes(&given) {
-        return Err("Not allowed in the bot's browser: paste".to_owned());
+    if method == "Input.dispatchKeyEvent" && shortcut(&given) {
+        return Err("Not allowed in the bot's browser: that key".to_owned());
     }
     // A middle click pastes what the person last selected anywhere (Linux).
     let middle = given.get("button").and_then(Value::as_str) == Some("middle")
@@ -243,34 +244,125 @@ pub fn allowed(command: &Value) -> Result<(String, Value), String> {
     Ok((method.to_owned(), Value::Object(given)))
 }
 
-/// An address a page may be sent to: http, https or a blank page. Never `javascript:`, `file:`,
-/// `data:` or the browser's own pages.
-fn web_address(url: &str) -> bool {
+const NOT_WEB: &str = "The bot's browser opens only websites: http and https addresses outside this computer and its network";
+
+/// An address a page may be sent to or used on: a blank page, or http and https on a host outside
+/// this computer and its network. Never `javascript:`, `file:`, `data:`, the browser's own pages,
+/// loopback, link-local, private or `.local` hosts (with `local`, those hosts too: tests only). A
+/// public name that resolves to a private address is not caught.
+fn web_address(url: &str, local: bool) -> bool {
     if url == "about:blank" {
         return true;
     }
-    tauri::Url::parse(url)
-        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+    let Ok(url) = tauri::Url::parse(url) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    // The address parser has already written any form of an IP address the usual way.
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    local
+        || match bare.parse::<std::net::IpAddr>() {
+            Ok(std::net::IpAddr::V4(ip)) => public_v4(ip),
+            Ok(std::net::IpAddr::V6(ip)) => match ip.to_ipv4_mapped() {
+                Some(ip) => public_v4(ip),
+                None => {
+                    let first = ip.segments()[0];
+                    !(ip.is_loopback()
+                        || ip.is_unspecified()
+                        || first & 0xfe00 == 0xfc00
+                        || first & 0xffc0 == 0xfe80)
+                }
+            },
+            Err(_) => {
+                let name = bare.trim_end_matches('.').to_ascii_lowercase();
+                !(name == "localhost"
+                    || [".localhost", ".local", ".internal", ".home.arpa"]
+                        .iter()
+                        .any(|suffix| name.ends_with(suffix)))
+            }
+        }
 }
 
-/// A key press that would paste the person's clipboard into the bot's page: Ctrl or Cmd with V,
-/// or Shift with Insert.
-fn pastes(params: &Map<String, Value>) -> bool {
+fn public_v4(ip: std::net::Ipv4Addr) -> bool {
+    let [a, b, ..] = ip.octets();
+    !(ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_unspecified()
+        || ip.is_broadcast()
+        || a == 0
+        || (a == 100 && (64..128).contains(&b)))
+}
+
+/// A key press that reaches more than the page's text: the clipboard (Ctrl or Cmd with V or C,
+/// Shift with Insert, which copy or paste), or the browser's own shortcuts (Alt with anything, Ctrl
+/// or Cmd with anything but select all, undo and the editing keys, the function keys and the
+/// browser and media keys).
+fn shortcut(params: &Map<String, Value>) -> bool {
     let modifiers = params.get("modifiers").and_then(Value::as_u64).unwrap_or(0);
-    let named = |value: &str| {
-        ["key", "code"]
+    let names: Vec<String> = ["key", "code"]
+        .iter()
+        .filter_map(|field| params.get(*field).and_then(Value::as_str))
+        .map(|name| name.to_ascii_lowercase())
+        .collect();
+    let code = params.get("windowsVirtualKeyCode").and_then(Value::as_u64);
+    let browser_key = names.iter().any(|name| {
+        name.starts_with("browser")
+            || name.starts_with("launch")
+            || name.starts_with("media")
+            || name.starts_with("audio")
+            || (name.len() > 1 && name.starts_with('f') && name[1..].parse::<u8>().is_ok())
+    }) || code
+        .is_some_and(|code| (112..=135).contains(&code) || (166..=183).contains(&code));
+    if browser_key || modifiers & 1 != 0 {
+        return true;
+    }
+    if modifiers & 8 != 0 && (names.iter().any(|name| name == "insert") || code == Some(45)) {
+        return true;
+    }
+    if modifiers & (2 | 4) == 0 {
+        return false;
+    }
+    // With Ctrl or Cmd: only select all, undo and moving or deleting by word.
+    const EDITING: &[(&str, &str, u64)] = &[
+        ("a", "keya", 65),
+        ("z", "keyz", 90),
+        ("backspace", "backspace", 8),
+        ("delete", "delete", 46),
+        ("arrowleft", "arrowleft", 37),
+        ("arrowright", "arrowright", 39),
+        ("arrowup", "arrowup", 38),
+        ("arrowdown", "arrowdown", 40),
+        ("home", "home", 36),
+        ("end", "end", 35),
+    ];
+    let known = |name: &String| {
+        EDITING
             .iter()
-            .filter_map(|field| params.get(*field).and_then(Value::as_str))
-            .any(|given| given.eq_ignore_ascii_case(value))
+            .any(|(key, code, _)| name == key || name == code)
     };
-    let code = params
-        .get("windowsVirtualKeyCode")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let control_or_command = modifiers & (2 | 4) != 0;
-    let shift = modifiers & 8 != 0;
-    (control_or_command && (named("v") || named("KeyV") || code == 86))
-        || (shift && (named("Insert") || code == 45))
+    // Cmd with an arrow goes back or forward on macOS.
+    let command_arrow = modifiers & 4 != 0
+        && (names.iter().any(|name| name.starts_with("arrow"))
+            || code.is_some_and(|code| (37..=40).contains(&code)));
+    // With Shift too, only selecting by word or line and redo: Ctrl+Shift+Delete clears the
+    // browsing data.
+    let shifted_delete = modifiers & 8 != 0
+        && (names
+            .iter()
+            .any(|name| ["backspace", "delete", "a", "keya"].contains(&name.as_str()))
+            || code.is_some_and(|code| [8, 46, 65].contains(&code)));
+    let identified = !names.is_empty() || code.is_some();
+    !identified
+        || command_arrow
+        || shifted_delete
+        || !names.iter().all(known)
+        || code.is_some_and(|code| !EDITING.iter().any(|(_, _, editing)| *editing == code))
 }
 
 /// One browser's end of the pipe: commands out, answers and events back.
@@ -430,13 +522,17 @@ struct Running {
     pipe: Arc<Pipe>,
     /// One attach at a time, so two calls never open two pages.
     attach: tokio::sync::Mutex<()>,
+    /// The bot's page, once attached.
+    target: Mutex<Option<String>>,
     #[cfg(unix)]
     child: Mutex<Option<tokio::process::Child>>,
 }
 
 impl Running {
-    /// The bot's page, attached once: its first tab, or a new one if the person closed them all.
-    async fn page(&self) -> Result<String, String> {
+    /// The bot's page, attached once: its first tab showing a website or a blank page, or a new one
+    /// when the person closed those (a tab of the browser's own pages or this computer's files is
+    /// never taken).
+    async fn page(&self, local: bool) -> Result<String, String> {
         let _attaching = self.attach.lock().await;
         if let Some(session) = self.pipe.session.lock().unwrap().clone() {
             return Ok(session);
@@ -444,13 +540,18 @@ impl Running {
         let mut target = None;
         for _ in 0..50 {
             let targets = self.pipe.call("Target.getTargets", json!({}), None).await?;
-            target = targets["targetInfos"]
+            let pages: Vec<&Value> = targets["targetInfos"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .find(|info| info["type"] == "page")
+                .filter(|info| info["type"] == "page")
+                .collect();
+            target = pages
+                .iter()
+                .find(|info| web_address(info["url"].as_str().unwrap_or(""), local))
                 .and_then(|info| info["targetId"].as_str().map(str::to_owned));
-            if target.is_some() {
+            // The browser's first tab can take a moment; other tabs mean it is ready.
+            if target.is_some() || !pages.is_empty() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -475,10 +576,48 @@ impl Running {
             .await?;
         let session = attached["sessionId"].as_str().ok_or(CLOSED)?.to_owned();
         *self.pipe.session.lock().unwrap() = Some(session.clone());
+        *self.target.lock().unwrap() = Some(target);
         self.pipe
             .call("Page.enable", json!({}), Some(&session))
             .await?;
+        // This app's own guard, never the server's: in every document the page opens from now on,
+        // and in the one it shows.
+        let guard = json!({ "source": GUARD });
+        self.pipe
+            .call(
+                "Page.addScriptToEvaluateOnNewDocument",
+                guard,
+                Some(&session),
+            )
+            .await?;
+        let now = json!({ "expression": GUARD });
+        self.pipe
+            .call("Runtime.evaluate", now, Some(&session))
+            .await?;
         Ok(session)
+    }
+
+    /// The address the bot's page shows now, as the browser has it.
+    async fn address(&self) -> Result<String, String> {
+        let target = self.target.lock().unwrap().clone().ok_or(CLOSED)?;
+        let info = self
+            .pipe
+            .call("Target.getTargetInfo", json!({ "targetId": target }), None)
+            .await?;
+        Ok(info["targetInfo"]["url"].as_str().unwrap_or("").to_owned())
+    }
+
+    /// Ends the browser; the profile is free once this returns.
+    async fn end_and_wait(&self) {
+        self.pipe.close();
+        #[cfg(unix)]
+        {
+            let child = self.child.lock().unwrap().take();
+            if let Some(mut child) = child {
+                crate::stack_os::kill(&mut child);
+                let _ = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+            }
+        }
     }
 
     fn end(&self) {
@@ -490,15 +629,21 @@ impl Running {
     }
 }
 
+const OFF_THE_WEB: &str = "The bot's page shows no website now (a page of the browser or of this computer). Open a website with Page.navigate first.";
+
 /// Every bot's browser on this computer, each with its own profile under `root`.
 pub struct Browsers {
     root: PathBuf,
     program: Option<PathBuf>,
     headless: bool,
+    /// Pages on this computer and its network may be opened: tests only, which serve their page
+    /// on loopback.
+    local: bool,
     open: Mutex<HashMap<String, Arc<Running>>>,
     /// One start at a time.
     starting: tokio::sync::Mutex<()>,
-    /// Moves on with every `close_all`, so a browser that was starting meanwhile is ended.
+    /// Moves on with every `close` and `close_all`, so a browser that was starting meanwhile is
+    /// ended.
     generation: AtomicU64,
 }
 
@@ -513,10 +658,18 @@ impl Browsers {
             root,
             program,
             headless,
+            local: false,
             open: Mutex::default(),
             starting: tokio::sync::Mutex::default(),
             generation: AtomicU64::new(0),
         }
+    }
+
+    /// Lets tests open the page they serve on loopback.
+    #[cfg(test)]
+    pub fn with_local_pages(mut self) -> Self {
+        self.local = true;
+        self
     }
 
     pub fn available(&self) -> bool {
@@ -524,17 +677,24 @@ impl Browsers {
     }
 
     /// Runs one allowed command on the bot's page, starting its browser when none runs, and
-    /// answers with the result and the page events since the last answer.
+    /// answers with the result and the page events since the last answer. Only going to a website
+    /// works while the page shows anything else.
     pub async fn handle(&self, key: &str, command: &Value) -> Result<Value, String> {
-        let (method, params) = allowed(command)?;
+        let (method, params) = allowed(command, self.local)?;
         let running = self.running(key).await?;
-        let session = match running.page().await {
+        let session = match running.page(self.local).await {
             Ok(session) => session,
             Err(error) => {
                 self.forget(key, &running);
                 return Err(error);
             }
         };
+        // A tab still on its first, empty document while it loads a page shows no address yet.
+        let address = running.address().await?;
+        if method != "Page.navigate" && !address.is_empty() && !web_address(&address, self.local) {
+            running.pipe.take_events();
+            return Err(OFF_THE_WEB.to_owned());
+        }
         if method == "Page.navigateToHistoryEntry" {
             let history = running
                 .pipe
@@ -546,15 +706,31 @@ impl Browsers {
                 .flatten()
                 .find(|entry| entry["id"] == params["entryId"]);
             let url = entry.and_then(|entry| entry["url"].as_str()).unwrap_or("");
-            if !web_address(url) {
-                return Err("The bot's browser opens only http and https addresses".to_owned());
+            if !web_address(url, self.local) {
+                return Err(NOT_WEB.to_owned());
             }
         }
         let result = running.pipe.call(&method, params, Some(&session)).await;
         if !running.pipe.open.load(Ordering::SeqCst) {
             self.forget(key, &running);
         }
-        Ok(json!({ "result": result?, "events": running.pipe.take_events() }))
+        let mut result = result?;
+        if method == "Page.getNavigationHistory" {
+            hide_off_web_entries(&mut result, self.local);
+        }
+        let events: Vec<Value> = running
+            .pipe
+            .take_events()
+            .into_iter()
+            .filter(|event| {
+                event["method"] != "Page.frameNavigated"
+                    || web_address(
+                        event["params"]["frame"]["url"].as_str().unwrap_or(""),
+                        self.local,
+                    )
+            })
+            .collect();
+        Ok(json!({ "result": result, "events": events }))
     }
 
     fn current(&self, key: &str) -> Option<Arc<Running>> {
@@ -595,8 +771,9 @@ impl Browsers {
         running.end();
     }
 
-    /// Ends the bot's browser. `forget_profile` also removes its profile (the bot is gone).
-    pub fn close(&self, key: &str, forget_profile: bool) {
+    /// Ends the bot's browser. `forget_profile` also removes its profile (the bot is gone), once
+    /// the browser has ended, so it cannot write it back.
+    pub async fn close(&self, key: &str, forget_profile: bool) {
         let running = {
             let mut open = self.open.lock().unwrap();
             // A browser starting meanwhile is ended rather than kept.
@@ -604,11 +781,15 @@ impl Browsers {
             open.remove(key)
         };
         if let Some(running) = running {
-            running.end();
+            running.end_and_wait().await;
         }
         if forget_profile {
-            let _ = std::fs::remove_dir_all(self.root.join(key));
-            let _ = std::fs::remove_file(self.root.join(format!("{key}.pid")));
+            let (root, key) = (self.root.clone(), key.to_owned());
+            let _ = tokio::task::spawn_blocking(move || {
+                let _ = std::fs::remove_dir_all(root.join(&key));
+                let _ = std::fs::remove_file(root.join(format!("{key}.pid")));
+            })
+            .await;
         }
     }
 
@@ -638,20 +819,13 @@ impl Browsers {
         if let Some(pid) = child.id() {
             let _ = std::fs::write(&pid_file, pid.to_string());
         }
-        // Nothing the bot's page starts is saved to this computer.
-        let denied = pipe
-            .call(
-                "Browser.setDownloadBehavior",
-                json!({ "behavior": "deny" }),
-                None,
-            )
-            .await;
         let running = Running {
             pipe,
             attach: tokio::sync::Mutex::default(),
+            target: Mutex::default(),
             child: Mutex::new(Some(child)),
         };
-        if let Err(error) = denied {
+        if let Err(error) = harden(&running.pipe).await {
             running.end();
             return Err(error);
         }
@@ -661,6 +835,51 @@ impl Browsers {
     #[cfg(windows)]
     async fn start(&self, _program: &Path, _key: &str) -> Result<Running, String> {
         Err(NO_BROWSER.to_owned())
+    }
+}
+
+/// What the browser is told before the bot's page is used: nothing it starts is saved to this
+/// computer (downloads denied), and no page reads or writes the clipboard through its API.
+async fn harden(pipe: &Pipe) -> Result<(), String> {
+    pipe.call(
+        "Browser.setDownloadBehavior",
+        json!({ "behavior": "deny" }),
+        None,
+    )
+    .await?;
+    for name in ["clipboard-write", "clipboard-read"] {
+        let denied = json!({ "permission": { "name": name }, "setting": "denied" });
+        pipe.call("Browser.setPermission", denied, None).await?;
+    }
+    Ok(())
+}
+
+/// A click the server sends counts as the person's gesture, so a page could use it to write the
+/// clipboard or take the whole screen. The permission above stops the clipboard API; this stops the
+/// older copy and cut commands and full screen, in every frame. A page that opens a window still
+/// can (sign-ins need it): it opens as a tab the bot cannot reach.
+const GUARD: &str = "(() => {
+  const exec = Document.prototype.execCommand;
+  Document.prototype.execCommand = function (command, ...rest) {
+    return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
+      ? false
+      : exec.call(this, command, ...rest);
+  };
+  const refuse = () => Promise.reject(new DOMException('Not allowed here', 'NotAllowedError'));
+  Element.prototype.requestFullscreen = refuse;
+  if (Element.prototype.webkitRequestFullscreen) Element.prototype.webkitRequestFullscreen = () => {};
+})();";
+
+/// History as the server gets it: each entry's id, address and title only (the browser also names
+/// what was typed), and an entry that is no website keeps its place without address or title.
+fn hide_off_web_entries(history: &mut Value, local: bool) {
+    for entry in history["entries"].as_array_mut().into_iter().flatten() {
+        let url = entry["url"].as_str().unwrap_or("").to_owned();
+        *entry = if web_address(&url, local) {
+            json!({ "id": entry["id"], "url": url, "title": entry["title"] })
+        } else {
+            json!({ "id": entry["id"], "url": "", "title": "" })
+        };
     }
 }
 
@@ -703,6 +922,27 @@ fn command_line(pid: u32) -> Option<String> {
     crate::stack_os::program_of(pid)
 }
 
+/// The variables a browser on the desktop needs.
+const BROWSER_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LANGUAGE",
+    "TZ",
+    "TMPDIR",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_DATA_DIRS",
+    "XDG_CONFIG_HOME",
+    "DBUS_SESSION_BUS_ADDRESS",
+];
+
 /// Starts the browser with the pipe on its fds 3 (commands in) and 4 (answers out).
 #[cfg(unix)]
 async fn launch(
@@ -714,6 +954,14 @@ async fn launch(
     let (answers_in, answers_out) = std::io::pipe()?;
     let (browser_reads, browser_writes) = (commands_in.as_raw_fd(), answers_out.as_raw_fd());
     let mut command = tokio::process::Command::new(program);
+    // Only what a desktop browser needs: no variable of this app's environment, such as
+    // CHROMIUM_FLAGS or LD_PRELOAD, adds flags or code to it.
+    command
+        .env_clear()
+        .envs(std::env::vars_os().filter(|(name, _)| {
+            let name = name.to_string_lossy();
+            BROWSER_ENV.contains(&name.as_ref()) || name.starts_with("LC_")
+        }));
     command
         .args(args)
         .stdin(std::process::Stdio::null())
@@ -776,13 +1024,18 @@ mod tests {
 
     #[test]
     fn it_passes_on_only_allowed_commands_and_parameters() {
-        let ok = allowed(&json!({ "method": "Input.insertText", "params": { "text": "hi" } }));
+        let ok = allowed(
+            &json!({ "method": "Input.insertText", "params": { "text": "hi" } }),
+            false,
+        );
         assert_eq!(
             ok.unwrap(),
             ("Input.insertText".to_owned(), json!({ "text": "hi" }))
         );
         assert_eq!(
-            allowed(&json!({ "method": "Page.enable" })).unwrap().1,
+            allowed(&json!({ "method": "Page.enable" }), false)
+                .unwrap()
+                .1,
             json!({})
         );
         for refused in [
@@ -819,18 +1072,130 @@ mod tests {
             json!({ "method": "Page.captureScreenshot", "params": { "captureBeyondViewport": true } }),
             json!({ "method": "Page.captureScreenshot", "params": { "clip": { "x": 0, "y": 0, "width": 99999, "height": 99999, "scale": 9 } } }),
         ] {
-            assert!(allowed(&refused).is_err(), "passed: {refused}");
+            assert!(allowed(&refused, false).is_err(), "passed: {refused}");
         }
         for url in [
             "https://example.test/a?b",
-            "http://127.0.0.1:8080/",
+            "http://93.184.215.14/",
             "about:blank",
         ] {
             let navigate = json!({ "method": "Page.navigate", "params": { "url": url } });
-            assert!(allowed(&navigate).is_ok(), "{url}");
+            assert!(allowed(&navigate, false).is_ok(), "{url}");
         }
         let typed = json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "key": "v", "modifiers": 8 } });
-        assert!(allowed(&typed).is_ok(), "Shift+V is a capital V");
+        assert!(allowed(&typed, false).is_ok(), "Shift+V is a capital V");
+    }
+
+    #[test]
+    fn it_opens_no_page_on_this_computer_or_its_network() {
+        for url in [
+            "http://127.0.0.1:8080/",
+            "http://localhost:3000/",
+            "http://app.localhost/",
+            "http://printer.local/",
+            "http://router.home.arpa/",
+            "http://db.internal/",
+            "http://10.0.0.1/",
+            "http://172.16.5.4/",
+            "http://192.168.1.1/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://100.64.0.1/",
+            "http://0.0.0.0/",
+            "http://[::1]/",
+            "http://[fe80::1]/",
+            "http://[fd00::1]/",
+            "http://[::ffff:127.0.0.1]/",
+            "http://2130706433/",
+            "http://0x7f.1/",
+            "file:///etc/hosts",
+            "chrome://settings/passwords",
+        ] {
+            assert!(!web_address(url, false), "{url}");
+            let navigate = json!({ "method": "Page.navigate", "params": { "url": url } });
+            assert!(allowed(&navigate, false).is_err(), "{url}");
+        }
+        assert!(
+            web_address("http://127.0.0.1:8080/", true),
+            "tests may open their own page"
+        );
+        assert!(!web_address("file:///etc/hosts", true));
+        assert!(web_address("https://[2606:4700::1111]/", false));
+    }
+
+    #[test]
+    fn keys_reach_the_page_s_text_and_never_the_browser_or_the_clipboard() {
+        let key = |key: &str, code: &str, vk: u64, modifiers: u64| {
+            allowed(
+                &json!({ "method": "Input.dispatchKeyEvent", "params": {
+                    "type": "rawKeyDown", "key": key, "code": code,
+                    "windowsVirtualKeyCode": vk, "modifiers": modifiers } }),
+                false,
+            )
+        };
+        for (name, code, vk, modifiers) in [
+            ("o", "KeyO", 79, 2),
+            ("s", "KeyS", 83, 2),
+            ("p", "KeyP", 80, 2),
+            ("h", "KeyH", 72, 2),
+            ("t", "KeyT", 84, 2),
+            ("w", "KeyW", 87, 2),
+            ("l", "KeyL", 76, 4),
+            ("c", "KeyC", 67, 2),
+            ("x", "KeyX", 88, 4),
+            ("v", "KeyV", 86, 2),
+            ("Delete", "Delete", 46, 2 | 8),
+            ("ArrowLeft", "ArrowLeft", 37, 1),
+            ("ArrowLeft", "ArrowLeft", 37, 4),
+            ("[", "BracketLeft", 219, 4),
+            ("F12", "F12", 123, 0),
+            ("F5", "F5", 116, 0),
+            ("BrowserBack", "BrowserBack", 166, 0),
+            ("Insert", "Insert", 45, 8),
+            ("a", "KeyO", 65, 2),
+        ] {
+            assert!(
+                key(name, code, vk, modifiers).is_err(),
+                "passed: {name} {modifiers}"
+            );
+        }
+        for (name, code, vk, modifiers) in [
+            ("a", "KeyA", 65, 2),
+            ("a", "KeyA", 65, 4),
+            ("z", "KeyZ", 90, 2),
+            ("Backspace", "Backspace", 8, 2),
+            ("ArrowRight", "ArrowRight", 39, 2 | 8),
+            ("End", "End", 35, 2),
+            ("A", "KeyA", 65, 8),
+            ("Enter", "Enter", 13, 0),
+            ("Tab", "Tab", 9, 8),
+            ("Escape", "Escape", 27, 0),
+        ] {
+            assert!(
+                key(name, code, vk, modifiers).is_ok(),
+                "refused: {name} {modifiers}"
+            );
+        }
+        let bare = json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "modifiers": 2 } });
+        assert!(allowed(&bare, false).is_err(), "Ctrl with no key named");
+    }
+
+    #[test]
+    fn history_of_pages_that_are_not_websites_keeps_no_address() {
+        let mut history = json!({ "currentIndex": 1, "entries": [
+            { "id": 1, "url": "file:///home/ada/notes.txt", "title": "notes.txt" },
+            { "id": 2, "url": "https://example.test/", "title": "Example", "userTypedURL": "file:///x" },
+            { "id": 3, "url": "chrome://password-manager/passwords", "title": "Passwords" },
+        ] });
+        hide_off_web_entries(&mut history, false);
+        assert_eq!(
+            history["entries"][0],
+            json!({ "id": 1, "url": "", "title": "" })
+        );
+        assert_eq!(
+            history["entries"][1],
+            json!({ "id": 2, "url": "https://example.test/", "title": "Example" })
+        );
+        assert_eq!(history["entries"][2]["title"], "");
     }
 
     /// A browser stand-in on the other end of an in-memory pipe: answers each command with

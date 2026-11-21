@@ -298,7 +298,7 @@ impl Runner {
             },
             "stop" | "destroy" => {
                 self.stop_where(|o| o.bot == key, true);
-                self.browsers.close(&key, method == "destroy");
+                self.browsers.close(&key, method == "destroy").await;
                 let done = if method == "stop" {
                     stop(&home)
                 } else {
