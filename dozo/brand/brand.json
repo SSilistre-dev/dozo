@@ -9439,6 +9439,143 @@
       "find": "{ value: \"4.2%\", label: \"Trial to paid\" }",
       "replace": "{ value: \"42\", label: \"Tasks done\" }",
       "reason": "iOS screenshot fixture: the sample dashboard shows a neutral figure, not a business metric"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { dozoAvatarGenerateContract } from \"./dozo-avatar-generate.js\";\n\nconst botId",
+      "replace": "import { dozoAvatarGenerateContract } from \"./dozo-avatar-generate.js\";\nexport * from \"./dozo-organization-logo.js\";\nimport { dozoOrganizationLogoContract } from \"./dozo-organization-logo.js\";\n\nconst botId",
+      "requires": [
+        "packages/contracts/src/dozo-organization-logo.ts"
+      ],
+      "reason": "organization logo: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  dozoAvatarGenerate: dozoAvatarGenerateContract,\n  export: {\n",
+      "replace": "  dozoAvatarGenerate: dozoAvatarGenerateContract,\n  dozoOrganizationLogo: dozoOrganizationLogoContract,\n  export: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-organization-logo.ts"
+      ],
+      "reason": "organization logo: reading the logo of the open Space's organization, and its owner or an admin changing it, join the app contract"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { dozoAvatarGenerateRoutes } from \"./dozo-avatar-generate.js\";\nimport { paymentWalletRoutes }",
+      "replace": "import { dozoAvatarGenerateRoutes } from \"./dozo-avatar-generate.js\";\nimport { dozoOrganizationLogoRoutes } from \"./dozo-organization-logo.js\";\nimport { paymentWalletRoutes }",
+      "requires": [
+        "apps/api/src/dozo-organization-logo.ts",
+        "apps/api/src/dozo-organization-logo.test.ts"
+      ],
+      "reason": "organization logo: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...dozoAvatarGenerateRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "replace": "    ...dozoAvatarGenerateRoutes(ctx),\n    ...dozoOrganizationLogoRoutes(ctx),\n    ...paymentWalletRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-organization-logo.ts",
+        "apps/api/src/dozo-organization-logo.test.ts"
+      ],
+      "reason": "organization logo: the router serves the logo to the organization's members and lets only its owner or an admin change it, checked on the server"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./bot-messages.js\";",
+      "replace": "export * from \"./dozo-avatar-upload.js\";\nexport * from \"./dozo-organization-logo.js\";\nexport * from \"./bot-messages.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-organization-logo.ts"
+      ],
+      "reason": "organization logo: the API checks and re-encodes an uploaded logo through the adapters package, as it does an avatar"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./organizations.js\";\nexport * from \"./page-shares.js\";",
+      "replace": "export * from \"./organizations.js\";\nexport * from \"./dozo-organization-logo.js\";\nexport * from \"./page-shares.js\";",
+      "requires": [
+        "packages/db/src/dozo-organization-logo.ts"
+      ],
+      "reason": "organization logo: who may read and change an organization's logo, held by the database package"
+    },
+    {
+      "file": "apps/web/src/pages/shell/sidebar-header.tsx",
+      "find": "import { WindowChrome } from \"../WindowChrome\";\nimport { BotCreatePicker } from \"./bot-picker\";",
+      "replace": "import { WindowChrome } from \"../WindowChrome\";\nimport { DozoSidebarStart } from \"./dozo-organization-mark\";\nimport { BotCreatePicker } from \"./bot-picker\";",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-organization-mark.tsx"
+      ],
+      "reason": "organization logo: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/sidebar-header.tsx",
+      "find": "      {!mini || hasWindowChrome ? <WindowChrome /> : null}\n",
+      "replace": "      <DozoSidebarStart mini={mini} chrome={!mini || hasWindowChrome ? <WindowChrome /> : null} />\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-organization-mark.tsx"
+      ],
+      "reason": "organization logo: the sidebar header starts with the open Space's organization logo when it has one, in place of the web's empty spacer and after a desktop window's controls; the one place the logo shows"
+    },
+    {
+      "file": "apps/web/src/pages/OrganizationSettingsPanel.tsx",
+      "find": "import { errorText } from \"../lib/user-error\";\n\n/** The organization the app is showing",
+      "replace": "import { errorText } from \"../lib/user-error\";\nimport { DozoOrganizationLogoRow } from \"./dozo-organization-logo-row\";\n\n/** The organization the app is showing",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-logo-row.tsx"
+      ],
+      "reason": "organization logo: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/OrganizationSettingsPanel.tsx",
+      "find": "        </SettingsRow>\n      </SettingsGroup>\n      <div className=\"flex flex-wrap gap-2\">",
+      "replace": "        </SettingsRow>\n        <DozoOrganizationLogoRow organizationId={organization.id} />\n      </SettingsGroup>\n      <div className=\"flex flex-wrap gap-2\">",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-logo-row.tsx"
+      ],
+      "reason": "organization logo: the organization's settings show its logo under its name; its owner or an admin uploads or removes it there"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "import { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoCliAccountsChanged }",
+      "replace": "import { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-organization-mark.tsx"
+      ],
+      "reason": "organization logo: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "          void dozoModelPoolChanged();\n          void dozoCliAccountsChanged();\n",
+      "replace": "          void dozoModelPoolChanged();\n          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-organization-mark.tsx"
+      ],
+      "reason": "organization logo: a logo change comes on the roster signal of every Space of the organization, so open apps read the logo again with it"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "import { OrganizationTitleMenu } from \"../components/organization-menu\";\nimport { PickChatPane }",
+      "replace": "import { OrganizationTitleMenu } from \"../components/organization-menu\";\nimport { dozoHomeTitle, useDozoOrganizationMark } from \"../lib/dozo-organization-mark\";\nimport { PickChatPane }",
+      "requires": [
+        "apps/mobile/lib/dozo-organization-mark.tsx"
+      ],
+      "reason": "organization logo: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/index.tsx",
+      "find": "  const headerTitle = useMemo(\n    () => (hasOrganizationMenu ? () => <OrganizationTitleMenu list={organizations} /> : undefined),\n    [hasOrganizationMenu, organizations],\n  );\n",
+      "replace": "  const dozoMark = useDozoOrganizationMark(hasSession && !onShareSelect);\n  const headerTitle = useMemo(\n    () =>\n      dozoHomeTitle(\n        dozoMark,\n        hasOrganizationMenu ? () => <OrganizationTitleMenu list={organizations} /> : undefined,\n      ),\n    [dozoMark, hasOrganizationMenu, organizations],\n  );\n",
+      "requires": [
+        "apps/mobile/lib/dozo-organization-mark.tsx"
+      ],
+      "reason": "organization logo: the home header shows the selected Space's organization logo before the organization menu; mobile only shows it, the web and desktop apps upload it"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Remove\"\nmsgstr \"Kaldır\"\n\n#. placeholder {0}: attachment.file.name",
+      "replace": "msgid \"Remove\"\nmsgstr \"Kaldır\"\n\n#: apps/web/src/pages/dozo-organization-logo-row.tsx\nmsgid \"Logo\"\nmsgstr \"Logo\"\n\n#: apps/web/src/pages/dozo-organization-logo-row.tsx\nmsgid \"Couldn't use that image as a logo\"\nmsgstr \"Bu görsel logo olarak kullanılamadı\"\n\n#. placeholder {0}: attachment.file.name",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-logo-row.tsx"
+      ],
+      "reason": "organization logo: the Turkish copy of the settings row's label and its one refusal (Upload and Remove are upstream's)"
     }
   ],
   "assets": {
