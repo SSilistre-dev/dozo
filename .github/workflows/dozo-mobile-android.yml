@@ -137,11 +137,15 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The plain system image: the app needs no Google services, and the Google image's launcher
+      # and services, still starting after boot, put a "not responding" dialog over the app.
+      # A boot that hangs or a test that stalls ends here, not at the job's limit.
       - name: Pair on an emulator
+        timeout-minutes: 30
         uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
         with:
           api-level: 34
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           cores: 2
