@@ -14,6 +14,10 @@ const LIST_ROWS = 4;
 
 type GlyphProps = ComponentProps<typeof ActiveBotGlyph>;
 
+/** One entry per bot: every run of a bot is a working entry, and waiting ones are not more bots. */
+const onceEach = (bots: GlyphProps["bots"]) =>
+  bots.filter((bot, index) => bots.findIndex((other) => other.botId === bot.botId) === index);
+
 /**
  * The chat's working line. While the caller's own work waits for the bot it says so, what it waits
  * for and, when several wait, its place; tapping it lists what waits and stops the caller's own.
@@ -49,7 +53,7 @@ export function DozoWaitingGlyph({ bots, label, target }: GlyphProps & { target:
   return (
     <Popover>
       <PopoverTrigger className="block max-w-full cursor-pointer text-start">
-        <ActiveBotGlyph bots={bots} label={line} />
+        <ActiveBotGlyph bots={onceEach(bots)} label={line} />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 gap-1 p-1.5">
         {shown.map((item) => (
