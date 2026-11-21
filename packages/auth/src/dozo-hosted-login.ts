@@ -497,11 +497,9 @@ function issuerPlugin(
       dozoHostedLoginKeys: createAuthEndpoint(
         `${HOSTED_LOGIN_PATH}/keys`,
         { method: "GET" },
-        async (ctx) => {
-          // Short, so a key published ahead of a change reaches every cache well before it signs.
-          ctx.setHeader("Cache-Control", "public, max-age=60");
-          return ctx.json({ keys });
-        },
+        // The API marks every /api/auth reply no-store (apps/api/src/app.ts), so no cache holds
+        // these; a computer keeps them in memory (issuerKeys).
+        async (ctx) => ctx.json({ keys }),
       ),
       // Only the web app's own page, after the user agreed, with their session: a request from
       // anywhere else, or a page that only links here, gets nothing.

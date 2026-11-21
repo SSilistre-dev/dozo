@@ -51,7 +51,7 @@ First release of the Dozo mobile app.
 
 ## Links
 
-- Support URL: TODO owner (a page or address that answers users)
+- Support URL: https://dozo.bot/support/
 - Privacy policy URL: https://dozo.bot/privacy/ (App Store Connect and Play Console both require it)
 - Marketing URL: https://dozo.bot
 
