@@ -9576,6 +9576,15 @@
         "apps/web/src/pages/dozo-organization-logo-row.tsx"
       ],
       "reason": "organization logo: the Turkish copy of the settings row's label and its one refusal (Upload and Remove are upstream's)"
+    },
+    {
+      "file": "apps/web/src/pages/OrganizationSettingsPanel.test.tsx",
+      "find": "        return organizations.rename(input);\n      },\n    },\n  });",
+      "replace": "        return organizations.rename(input);\n      },\n    },\n    dozoOrganizationLogo: { get: async () => ({ logo: null, canManage: false }) },\n  });",
+      "requires": [
+        "apps/web/src/pages/dozo-organization-logo-row.tsx"
+      ],
+      "reason": "organization logo: upstream's test of the organization settings, whose stand-in client has no logo read, which the logo row under the name makes; answered as an organization without a logo"
     }
   ],
   "assets": {
