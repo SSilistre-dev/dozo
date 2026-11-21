@@ -6,7 +6,10 @@ kendi sınırlarıdır.
 
 ## Ad [30]
 
-Dozo
+Dozo Bot
+
+App Store kaydının adı "Dozo Bot" ("Dozo" alınmıştı). Telefonda simgenin altındaki ad "Dozo" kalır
+(uygulamanın görünen adı, değişmedi).
 
 ## Alt başlık (App Store) [30]
 

@@ -47,6 +47,8 @@ Google in the store app, enable Apple on the hosted server (`APPLE_CLIENT_ID`,
 `packages/auth/src/social.ts`) and the capability on the App ID. Without it, someone who only ever
 signed in with Google cannot sign in on iPhone (an emailed code or a password set on the web still
 works). Linking Google to an existing account from the profile screen is unchanged.
+Measured on the hosted server (2026-11-21): its capabilities list no third-party sign-in providers,
+so the store app shows email only and 4.8 does not apply.
 
 ## Permission purpose strings
 
@@ -71,7 +73,7 @@ app sets from its theme (`apps/mobile/app/_layout.tsx`); it read dark on the dar
 
 ## Export compliance (encryption)
 
-TODO owner, decide before the first TestFlight upload; the value is unchanged here.
+Decided by the owner: the value stays `false` and France is left out of the first release (`export-compliance.md`; what adding France needs is there).
 `apps/mobile/app.json` (upstream's `ios.config.usesNonExemptEncryption: false`, written to the plist
 as `ITSAppUsesNonExemptEncryption` NO) answers "no encryption beyond the exempt kind", so App Store
 Connect asks nothing. The app does use encryption in its own code beyond HTTPS and the system's:
