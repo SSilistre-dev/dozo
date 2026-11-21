@@ -13,6 +13,7 @@ import {
   createThreadMessageInTransaction,
   Prisma,
   runAsSystem,
+  spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -96,7 +97,7 @@ export async function readDozoDailyDigest(
   >`
     SELECT r."botId", b.name AS "botName", r.crons, r.active FROM dozo_daily_digest d
     JOIN routines r ON r.id = d."routineId" JOIN bots b ON b.id = r."botId"
-    WHERE d."userId" = ${userId}`;
+    WHERE d."userId" = ${userId} AND r."userId" = ${userId}`;
   const row = rows[0];
   if (!row?.active) return null;
   return { botId: row.botId, botName: row.botName, minute: dozoDigestMinute(row.crons) };
@@ -123,11 +124,13 @@ export async function saveDozoDailyDigest(
     deps.prisma.$transaction(async (tx) => {
       // One save per account at a time, even its first: two would each make a routine.
       await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
+      // A routine handed to someone else (its owner left the Space) is no longer this digest.
       const [current] = await tx.$queryRaw<
         Array<{ routineId: string; botId: string; spaceId: string }>
       >`
         SELECT r.id AS "routineId", r."botId", r."spaceId" FROM dozo_daily_digest d
-        JOIN routines r ON r.id = d."routineId" WHERE d."userId" = ${userId}`;
+        JOIN routines r ON r.id = d."routineId"
+        WHERE d."userId" = ${userId} AND r."userId" = ${userId}`;
       const spaces = new Set<string>();
       let removed: string | null = null;
       if (current && current.botId !== digest?.botId) {
@@ -135,7 +138,10 @@ export async function saveDozoDailyDigest(
         spaces.add(current.spaceId);
         removed = current.routineId;
       }
-      if (!digest) return { spaces, removed, wake: null };
+      if (!digest) {
+        await tx.$executeRaw`DELETE FROM dozo_daily_digest WHERE "userId" = ${userId}`;
+        return { spaces, removed, wake: null };
+      }
       const user = await tx.user.findUnique({
         where: { id: userId },
         select: { timezone: true, locale: true },
@@ -370,12 +376,14 @@ export async function dozoSendDailyDigest(
     }),
     { locale: digest.locale, timeZone: routine.timezone },
   );
-  const seq = await deps.prisma.$transaction(async (tx) => {
+  const done = await deps.prisma.$transaction(async (tx) => {
+    if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
     const claimed = await tx.routine.updateMany({
       where: { id: routine.id, active: true, nextRunAt: scheduledAt },
       data: { lastRunAt: now, nextRunAt, ...(nextRunAt ? {} : { active: false }) },
     });
-    if (claimed.count !== 1 || !text) return null;
+    if (claimed.count !== 1) return null;
+    if (!text) return { seq: null };
     const blocks = [{ kind: "text" as const, text }];
     const message = await createThreadMessageInTransaction(tx, {
       threadId: thread.id,
@@ -391,9 +399,12 @@ export async function dozoSendDailyDigest(
       type: "thread.message.created",
       payload: { messageId: message.id, role: "bot", blocks },
     });
-    return event.seq;
+    return { seq: event.seq };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  if (seq !== null) await bestEffort("daily digest message", deps.events.notify(thread.id, seq));
+  // Another wake or a save took this occurrence, and scheduled whatever comes next.
+  if (!done) return true;
+  if (done.seq !== null)
+    await bestEffort("daily digest message", deps.events.notify(thread.id, done.seq));
   await bestEffort(
     "daily digest routine change",
     deps.events.publishSpaceChange?.(routine.spaceId, "routines"),

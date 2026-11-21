@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   messages: [] as Array<{ threadId: string; text: string; clientNonce?: string }>,
   events: [] as Array<{ type: string; threadId: string }>,
+  spaceTakesWork: true,
 }));
 
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   runAsSystem: (_why: string, work: () => unknown) => work(),
+  spaceTakesWork: async () => db.spaceTakesWork,
   createThreadMessageInTransaction: async (
     _tx: unknown,
     input: { threadId: string; blocks: Array<{ text: string }>; clientNonce?: string },
@@ -86,7 +88,7 @@ function fakeDatabase() {
       if (text.includes('FROM "user" WHERE id = ? FOR UPDATE')) return [{ id: values[0] }];
       if (text.includes("JOIN routines r ON r.id")) {
         const routine = routines.get(digests.get(values[0] as string) ?? "");
-        if (!routine) return [];
+        if (!routine || routine.userId !== values[1]) return [];
         return [
           {
             routineId: routine.id,
@@ -106,8 +108,11 @@ function fakeDatabase() {
       throw new Error(`unexpected query: ${text}`);
     }),
     $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      if (!sql(strings).includes("INSERT INTO dozo_daily_digest")) throw new Error("unexpected");
-      digests.set(values[0] as string, values[1] as string);
+      const text = sql(strings);
+      if (text.includes("DELETE FROM dozo_daily_digest")) digests.delete(values[0] as string);
+      else if (text.includes("INSERT INTO dozo_daily_digest"))
+        digests.set(values[0] as string, values[1] as string);
+      else throw new Error(`unexpected statement: ${text}`);
       return 1;
     }),
     user: {
@@ -231,6 +236,7 @@ function fakeDatabase() {
 beforeEach(() => {
   db.messages.length = 0;
   db.events.length = 0;
+  db.spaceTakesWork = true;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(DUE);
 });
@@ -440,6 +446,23 @@ describe("saving the digest", () => {
     expect(await readDozoDailyDigest(fake.deps.prisma, "user-1")).toBeNull();
   });
 
+  it("lets go of a routine handed to someone else, without touching it", async () => {
+    const fake = fakeDatabase();
+    fake.addDigest({ userId: "owner" });
+    fake.digests.set("user-1", "digest-1");
+    expect(await readDozoDailyDigest(fake.deps.prisma, "user-1")).toBeNull();
+    await saveDozoDailyDigest(fake.deps, "user-1", {
+      botId: "bot-1",
+      minute: 9 * 60,
+      spaceId: "space-1",
+    });
+    expect(fake.routines.get("digest-1")).toMatchObject({ userId: "owner", crons: ["0 8 * * *"] });
+    expect(fake.digests.get("user-1")).toBe("created-1");
+    await saveDozoDailyDigest(fake.deps, "user-1", null);
+    expect(fake.routines.has("digest-1")).toBe(true);
+    expect(fake.digests.has("user-1")).toBe(false);
+  });
+
   it("reads a paused routine as off", async () => {
     const fake = fakeDatabase();
     fake.addDigest({ active: false });
@@ -508,6 +531,21 @@ describe("sending the digest", () => {
       .mockResolvedValueOnce([{ botId: "bot-1", _count: { _all: 1 } }]);
     expect(await send(fake, routine)).toBe(true);
     expect(db.messages).toEqual([]);
+    // The wake that lost leaves the next one, set by whoever took it, alone.
+    expect(fake.enqueued).toEqual([]);
+    expect(fake.publishSpaceChange).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing in a Space being deleted", async () => {
+    const fake = fakeDatabase();
+    const routine = fake.addDigest();
+    db.spaceTakesWork = false;
+    fake.groupBy
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ botId: "bot-1", _count: { _all: 1 } }]);
+    expect(await send(fake, routine)).toBe(true);
+    expect(db.messages).toEqual([]);
+    expect(fake.routines.get("digest-1")?.nextRunAt).toEqual(DUE);
   });
 
   it("ends a schedule that no longer parses", async () => {
