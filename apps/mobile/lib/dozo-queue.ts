@@ -11,17 +11,11 @@ const LIST_ROWS = 4;
 
 type QueueTarget = { botId: string } | { groupId: string };
 
-function reasonText(item: DozoQueueItem): string {
-  if (item.reason === "computer_busy") return t`Computer busy`;
-  if (item.reason === "behind_run" && item.waitingFor) return t`After ${item.waitingFor}`;
-  return t`Busy elsewhere`;
-}
-
 /** The chat's working line while the caller's own work waits; null when none of it does. */
 export function queueLine(items: readonly DozoQueueItem[]): string | null {
   const first = items.find((item) => item.mine);
   if (!first) return null;
-  return [t`Waiting in line…`, reasonText(first), items.length > 1 ? `#${first.position}` : null]
+  return [t`Waiting in line…`, first.reason === "behind_run" && first.waitingFor ? t`After ${first.waitingFor}` : null, items.length > 1 ? `#${first.position}` : null]
     .filter(Boolean)
     .join(" · ");
 }
@@ -33,7 +27,7 @@ export function queueSheet(items: readonly DozoQueueItem[]): {
 } {
   const shown = items.slice(0, LIST_ROWS);
   const rows = shown.map(
-    (item) => `${item.position}  ${item.mine ? (item.label ?? reasonText(item)) : t`Another task`}`,
+    (item) => `${item.position}  ${item.mine && item.label ? item.label : t`Queued`}`,
   );
   if (items.length > shown.length) rows.push(`+${items.length - shown.length}`);
   return { message: rows.join("\n"), own: shown.filter((item) => item.mine) };
@@ -41,7 +35,7 @@ export function queueSheet(items: readonly DozoQueueItem[]): {
 
 /** What the sheet's stop buttons are called: the row's name beside the action. */
 export function stopText(item: DozoQueueItem): string {
-  return item.label ? `${t`Stop waiting`} · ${item.label}` : t`Stop waiting`;
+  return item.label ? `${t`Stop`} · ${item.label}` : t`Stop`;
 }
 
 /**

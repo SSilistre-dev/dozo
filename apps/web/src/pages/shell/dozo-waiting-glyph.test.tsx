@@ -106,10 +106,10 @@ it("keeps the working line when nothing of mine waits", async () => {
 });
 
 it.each([
-  ["computer_busy", "Waiting in line… · Computer busy"],
-  ["bot_busy", "Waiting in line… · Busy elsewhere"],
-  ["behind_run", "Waiting in line… · Busy elsewhere"],
-] as const)("says what a %s wait waits for", async (reason, text) => {
+  ["computer_busy", "Waiting in line…"],
+  ["bot_busy", "Waiting in line…"],
+  ["behind_run", "Waiting in line…"],
+] as const)("keeps a %s wait to the plain line, with no reason", async (reason, text) => {
   await render([item({ reason })]);
   expect(status()).toBe(text);
 });
@@ -124,10 +124,10 @@ it("adds my place when several wait", async () => {
     item({ id: "run-0", mine: false, position: 1 }),
     item({ id: "run-1", position: 2, reason: "computer_busy" }),
   ]);
-  expect(status()).toBe("Waiting in line… · Computer busy · #2");
+  expect(status()).toBe("Waiting in line… · #2");
 });
 
-it("lists my work by name, others' as another task without a cancel, and folds the rest", async () => {
+it("lists my work by name, others' as queued without a cancel, and folds the rest", async () => {
   await render([
     item({ id: "a", position: 1, mine: false }),
     item({ id: "b", position: 2, label: "Book a table" }),
@@ -138,7 +138,7 @@ it("lists my work by name, others' as another task without a cancel, and folds t
   ]);
   const rows = [...container.querySelectorAll("[data-row]")];
   expect(rows).toHaveLength(4);
-  expect(rows[0]?.textContent).toContain("Another task");
+  expect(rows[0]?.textContent).toContain("Queued");
   expect(rows[0]?.querySelector("button")).toBeNull();
   expect(rows[1]?.textContent).toContain("Book a table");
   expect(rows[1]?.querySelector("button")).not.toBeNull();
@@ -150,7 +150,7 @@ it("cancels my own wait by run or by message", async () => {
     item({ id: "run-1", label: "Book a table" }),
     item({ id: "msg-1", kind: "message", position: 2, label: "Hello" }),
   ]);
-  const stops = container.querySelectorAll<HTMLButtonElement>('[aria-label="Stop waiting"]');
+  const stops = container.querySelectorAll<HTMLButtonElement>('[aria-label="Stop"]');
   await act(async () => stops[0]?.click());
   expect(api.cancel).toHaveBeenLastCalledWith({ runId: "run-1" });
   await act(async () => stops[1]?.click());
@@ -160,8 +160,8 @@ it("cancels my own wait by run or by message", async () => {
 it("tells why a stop failed and keeps the line", async () => {
   api.cancel.mockRejectedValue(new Error("not found"));
   await render([item({ id: "run-1", label: "Book a table" })]);
-  const stop = container.querySelector<HTMLButtonElement>('[aria-label="Stop waiting"]');
+  const stop = container.querySelector<HTMLButtonElement>('[aria-label="Stop"]');
   await act(async () => stop?.click());
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("failed"));
-  expect(status()).toBe("Waiting in line… · Busy elsewhere");
+  expect(status()).toBe("Waiting in line…");
 });

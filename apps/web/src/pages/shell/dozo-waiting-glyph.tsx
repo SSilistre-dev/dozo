@@ -37,15 +37,9 @@ export function DozoWaitingGlyph({ bots, label, target }: GlyphProps & { target:
   const first = items.find((item) => item.mine);
   if (!first) return <ActiveBotGlyph bots={bots} label={label} />;
 
-  const reasonText = (item: DozoQueueItem) =>
-    item.reason === "computer_busy"
-      ? t`Computer busy`
-      : item.reason === "behind_run" && item.waitingFor
-        ? t`After ${item.waitingFor}`
-        : t`Busy elsewhere`;
   const line = [
     t`Waiting in line…`,
-    reasonText(first),
+    first.reason === "behind_run" && first.waitingFor ? t`After ${first.waitingFor}` : null,
     items.length > 1 ? `#${first.position}` : null,
   ]
     .filter(Boolean)
@@ -62,14 +56,14 @@ export function DozoWaitingGlyph({ bots, label, target }: GlyphProps & { target:
           <div key={item.id} data-row className="flex min-h-8 items-center gap-2 px-2 text-body">
             <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{item.position}</span>
             <span dir="auto" className="min-w-0 flex-1 truncate">
-              {item.mine ? (item.label ?? reasonText(item)) : t`Another task`}
+              {item.mine && item.label ? item.label : t`Queued`}
             </span>
             {item.mine ? (
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="text-muted-foreground"
-                aria-label={t`Stop waiting`}
+                aria-label={t`Stop`}
                 disabled={cancel.pending}
                 onClick={() => cancel.run(item)}
               >

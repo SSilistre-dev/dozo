@@ -77,18 +77,18 @@ afterEach(() => {
 });
 
 it("says why your own work waits, with its place only when several wait", () => {
-  expect(queueLine([item({ reason: "bot_busy" })])).toBe("Waiting in line… · Busy elsewhere");
-  expect(queueLine([item({ reason: "computer_busy" })])).toBe("Waiting in line… · Computer busy");
+  expect(queueLine([item({ reason: "bot_busy" })])).toBe("Waiting in line…");
+  expect(queueLine([item({ reason: "computer_busy" })])).toBe("Waiting in line…");
   expect(queueLine([item({ reason: "behind_run", waitingFor: "Daily report" })])).toBe(
     "Waiting in line… · After Daily report",
   );
-  expect(queueLine([item({ reason: "behind_run" })])).toBe("Waiting in line… · Busy elsewhere");
+  expect(queueLine([item({ reason: "behind_run" })])).toBe("Waiting in line…");
   expect(
     queueLine([
       item({ id: "other", mine: false, position: 1 }),
       item({ id: "mine", position: 2, reason: "computer_busy" }),
     ]),
-  ).toBe("Waiting in line… · Computer busy · #2");
+  ).toBe("Waiting in line… · #2");
 });
 
 it("shows no line when none of the waiting work is yours", () => {
@@ -96,7 +96,7 @@ it("shows no line when none of the waiting work is yours", () => {
   expect(queueLine([item({ mine: false })])).toBeNull();
 });
 
-it("lists up to four rows, folds the rest into a count, and names another's work as another task", () => {
+it("lists up to four rows, folds the rest into a count, and names unnamed work as queued", () => {
   const items = [
     item({ id: "a", position: 1, mine: false }),
     item({ id: "b", position: 2, label: "Summarize the file" }),
@@ -107,10 +107,10 @@ it("lists up to four rows, folds the rest into a count, and names another's work
   ];
   const sheet = queueSheet(items);
   expect(sheet.message.split("\n")).toEqual([
-    "1  Another task",
+    "1  Queued",
     "2  Summarize the file",
-    "3  Computer busy",
-    "4  Another task",
+    "3  Queued",
+    "4  Queued",
     "+2",
   ]);
   expect(sheet.own.map((entry) => entry.id)).toEqual(["b", "c"]);

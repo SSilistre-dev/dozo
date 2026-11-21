@@ -108,12 +108,12 @@ it("opens a native sheet that lists what waits and stops your own", () => {
     item({ id: "mine", position: 2, label: "Report" }),
   ];
   render(footer({ botId: "bot-1" }));
-  expect(container.textContent).toBe("Waiting in line… · Busy elsewhere · #2");
+  expect(container.textContent).toBe("Waiting in line… · #2");
   act(() => container.querySelector("button")?.click());
   const [options, pick] = ui.sheet.mock.calls[0] ?? [];
   expect(options).toEqual({
-    message: "1  Another task\n2  Report",
-    options: ["Stop waiting · Report", "Cancel"],
+    message: "1  Queued\n2  Report",
+    options: ["Stop · Report", "Cancel"],
     cancelButtonIndex: 1,
   });
   act(() => pick(1));
@@ -134,10 +134,10 @@ it("uses an alert off iOS, and never offers to stop another's work", () => {
   render(footer({ botId: "bot-1" }));
   act(() => container.querySelector("button")?.click());
   const [title, message, buttons] = ui.alert.mock.calls[0] ?? [];
-  expect(title).toBe("Waiting in line… · Busy elsewhere · #2");
-  expect(message).toBe("1  Another task\n2  Busy elsewhere");
+  expect(title).toBe("Waiting in line… · #2");
+  expect(message).toBe("1  Queued\n2  Queued");
   expect(buttons.map((button: { text: string }) => button.text)).toEqual([
-    "Stop waiting",
+    "Stop",
     "Cancel",
   ]);
   buttons[0].onPress();
