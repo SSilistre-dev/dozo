@@ -7,6 +7,10 @@ export type Env = {
   REGISTER_LIMIT: RateLimit;
   ACCESS_LIMIT: RateLimit;
   MAX_CHANNELS?: string;
+  PENDING_PER_SOURCE?: string;
+  CHANNELS_PER_SOURCE_PER_DAY?: string;
+  /** A secret (`wrangler secret put ADMIN_TOKEN`): who may read the counters. Unset: nobody. */
+  ADMIN_TOKEN?: string;
   IDLE_DAYS?: string;
   CHANNEL_ATTEMPTS_PER_MINUTE?: string;
   CHANNEL_MESSAGES_PER_MINUTE?: string;
@@ -21,6 +25,8 @@ const MIN_IDLE_DAYS = 90;
 export function settings(env: Env) {
   return {
     maxChannels: count(env.MAX_CHANNELS, 10_000),
+    pendingPerSource: count(env.PENDING_PER_SOURCE, 10),
+    channelsPerSourceDaily: count(env.CHANNELS_PER_SOURCE_PER_DAY, 30),
     idleMs: Math.max(MIN_IDLE_DAYS, count(env.IDLE_DAYS, 180)) * DAY,
     attemptsPerMinute: count(env.CHANNEL_ATTEMPTS_PER_MINUTE, 60),
     messagesPerMinute: count(env.CHANNEL_MESSAGES_PER_MINUTE, 3000),

@@ -192,7 +192,12 @@ describe("one answer for every refusal", () => {
 describe("limits", { timeout: 30_000 }, () => {
   it("limits registrations per address and says when to retry", async () => {
     const address = newAddress();
-    for (let i = 0; i < 30; i += 1) await register({ address });
+    // Bodies that do not parse still count, so the per-source channel limits never come into it.
+    for (let i = 0; i < 30; i += 1) {
+      expect((await call("/v1/channels", { method: "POST", address, body: "{}" })).status).toBe(
+        400,
+      );
+    }
     const refused = await call("/v1/channels", { method: "POST", address, body: "{}" });
     expect(refused.status).toBe(429);
     expect(refused.headers.get("Retry-After")).toBe("60");
@@ -262,39 +267,6 @@ describe("limits", { timeout: 30_000 }, () => {
     for (let i = 0; i < 3001; i += 1) app.ws.send(bytes(i % 256));
     expect((await waitForClose(app)).code).toBe(1008);
     expect(host.binaries).toHaveLength(3000);
-  });
-
-  it("refuses registrations over the channel ceiling until one is deleted", async () => {
-    const existing = await channelCount();
-    const ceiling = existing + 1;
-    const limited = { ...env, MAX_CHANNELS: String(ceiling) };
-    const relay = createRelay(() => true);
-    const registerBody = () =>
-      JSON.stringify({
-        hostVerifier: "A".repeat(43),
-        pairVerifier: "A".repeat(43),
-        pairExpiresAt: Date.now() + 1000,
-      });
-    const post = () =>
-      relay.fetch!(
-        new Request("https://relay.test/v1/channels", {
-          method: "POST",
-          headers: { "CF-Connecting-IP": newAddress() },
-          body: registerBody(),
-        }) as Request<unknown, IncomingRequestCfProperties>,
-        limited,
-        createExecutionContext(),
-      );
-    expect((await post()).status).toBe(201);
-    expect(await channelCount()).toBe(ceiling);
-    expect((await post()).status).toBe(429);
-
-    const { channel, hostToken } = await register();
-    expect(
-      (await call(`/v1/channels/${channel}`, { method: "DELETE", token: hostToken })).status,
-    ).toBe(204);
-    await call(`/v1/channels/${channel}`, { method: "DELETE", token: hostToken });
-    expect(await channelCount()).toBe(ceiling);
   });
 });
 

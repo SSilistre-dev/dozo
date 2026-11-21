@@ -96,9 +96,19 @@ export class Channel extends DurableObject<Env> {
     if (request.method === "PUT") {
       const body = await readJson(request, RelaySetAppRequestSchema);
       if (!body) return relayResponse(400);
-      const current = await this.load();
+      let current = await this.load();
       // Deleted while the body was read: do not bring it back.
       if (!current) return relayResponse(404);
+      if (current.appVerifier === null) {
+        // Pushed out of the registry to make room while unpaired: it may not become paired.
+        const counted = await registry(this.env).paired(current.id);
+        current = await this.load();
+        if (!current) return relayResponse(404);
+        if (!counted) {
+          await this.destroy(current);
+          return relayResponse(404);
+        }
+      }
       if (current.appVerifier !== null && current.appVerifier !== body.appVerifier) {
         // A new phone replaces the old one: the old socket must not stay on the channel.
         for (const ws of this.ctx.getWebSockets("app")) ws.close(CLOSE_DELETED, "replaced");
@@ -194,7 +204,7 @@ export class Channel extends DurableObject<Env> {
 
   private async destroy(record: ChannelRecord) {
     // Released first: if that call fails the channel is still here and its alarm tries again.
-    if (settings(this.env).maxChannels > 0) await registry(this.env).release(record.id);
+    await registry(this.env).release(record.id);
     for (const ws of this.ctx.getWebSockets()) ws.close(CLOSE_DELETED, "deleted");
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
