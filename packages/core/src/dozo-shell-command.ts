@@ -151,13 +151,10 @@ function splitOnPipes(command: string): string[] | undefined {
  */
 export function readOnlyPipeline(command: string): boolean {
   const parts = splitOnPipes(command);
-  return (
-    parts !== undefined &&
-    parts.every((part) => {
-      const words = literalCommandWords(part);
-      return words !== undefined && readOnlyCommand(words);
-    })
-  );
+  return !!parts?.every((part) => {
+    const words = literalCommandWords(part);
+    return words !== undefined && readOnlyCommand(words);
+  });
 }
 
 /** The words as one line a person can read, quoting the ones that need it. */
