@@ -11,6 +11,7 @@ import {
   revokeDozoAccessToken,
   takeDozoApiMinute,
   touchDozoAccessToken,
+  trustDozoBot,
 } from "./dozo-access-tokens.js";
 
 /** The text of a nested SQL fragment among a call's values. */
@@ -148,5 +149,18 @@ describe("takeDozoApiMinute", () => {
     expect(calls[1]!.sql).toContain("ON CONFLICT (key, minute)");
     expect(calls[1]!.values).toEqual(["token:t-1", minute.toISOString(), 60]);
     expect(await takeDozoApiMinute(fakeDb([]).db, "token:t-1", 60)).toBe(false);
+  });
+});
+
+describe("trustDozoBot", () => {
+  it("records when the owner trusted the bot again, in the bot's own Space, once per bot", async () => {
+    const { db, calls } = fakeDb(1);
+    const now = new Date("2026-11-21T10:00:00.000Z");
+    await trustDozoBot(db, { spaceId: "space-1", botId: "bot-1", userId: "user-1" }, now);
+    expect(calls[0]!.sql).toContain("INSERT INTO dozo_token_trust");
+    expect(calls[0]!.sql).toContain('ON CONFLICT ("botId") DO UPDATE');
+    expect(calls[0]!.values).toEqual([now.toISOString(), "user-1", "bot-1", "space-1"]);
+    await trustDozoBot(db, { spaceId: "space-1", botId: "bot-1", userId: "user-1" });
+    expect(calls).toHaveLength(2);
   });
 });
