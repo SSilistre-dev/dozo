@@ -16,6 +16,7 @@ import { runCameByToken } from "./dozo-token-run.js";
 import type { Route } from "./dozo-user-browser-gate.js";
 import {
   APPROVED_SITE,
+  pageSite,
   recordConsent,
   userBrowserAsk,
   userBrowserRoute,
@@ -103,7 +104,8 @@ async function refusal(ctx: RunContext, call: ToolCall, route: Route) {
   // in this thread.
   const key = { botId: ctx.bot.id, deviceId: route.deviceId, threadId: ctx.thread.id };
   if (asked.browser) await recordConsent(ctx.deps.prisma, key, "");
-  if (asked.newSite && asked.site) await recordConsent(ctx.deps.prisma, key, asked.site);
+  if (asked.newSite && asked.site)
+    await recordConsent(ctx.deps.prisma, key, `${asked.verb}:${asked.site}`);
   return undefined;
 }
 
@@ -111,6 +113,7 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
   const { name, args } = call;
   const refused = await refusal(ctx, call, route);
   if (refused) return refused;
+  const asked = userBrowserAsk(args)!;
   const { signal } = ctx.context;
   const first = !providers.has(ctx);
   const provider = providerFor(ctx, route);
@@ -138,7 +141,10 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
         : name === "browser_snapshot"
           ? await browserSnapshotFromTool(provider, computer, ctx.context, args, options)
           : // No saved login, card or upload reaches this browser yet: those steps are refused.
-            await browserActFromTool(provider, computer, ctx.context, args, options);
+            await (async () => {
+              provider.expectedSite = asked.site || undefined;
+              return browserActFromTool(provider, computer, ctx.context, args, options);
+            })();
   } catch (error) {
     if (signal.aborted) throw error;
     const reason = redactSecrets(error instanceof Error ? error.message : "failed", ctx.secrets);
@@ -149,6 +155,11 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
     error?: unknown;
     note?: unknown;
   };
+  // The bot has one page, which another thread's run may have moved since the approval: a look
+  // at another site than the one approved is not given.
+  const now = typeof page.url === "string" ? pageSite(page.url) : "";
+  if (name === "browser_snapshot" && asked.site && now !== asked.site)
+    return call.finish({ error: MOVED });
   if (typeof page.url === "string" && page.url) ctx.state.pageUrl = page.url;
   if (first) page.note = [USER_BROWSER_NOTE, page.note].filter(Boolean).join(" ");
   const formatted = browserResultForModel(page);
@@ -198,10 +209,11 @@ async function approvedSite(ctx: RunContext, call: ToolCall): Promise<string | u
 export async function userBrowserSignIn(ctx: RunContext, call: ToolCall) {
   const route = await userBrowserRoute(ctx);
   if (!route) return call.finish({ error: UNAVAILABLE });
+  if (userBrowserAsk(call.args)?.site === "")
+    return call.finish({ error: "Name the site to sign in to, such as x.com." });
   const refused = await refusal(ctx, call, route);
   if (refused) return refused;
   const asked = userBrowserAsk(call.args)!;
-  if (!asked.site) return call.finish({ error: "Name the site to sign in to, such as x.com." });
   const { signal } = ctx.context;
   try {
     await lastValue(

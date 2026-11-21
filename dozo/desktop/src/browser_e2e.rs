@@ -525,7 +525,14 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
          addEventListener('message',e=>r(e.data));</script>\
          <button onclick=\"{COPY}const w=window.open();r(w.Document.prototype.execCommand.call(document,'copy')?'window-wrote':'window-refused');w.close()\">Window</button>\
          <button onclick=\"{COPY}const f=document.createElement('iframe');document.body.append(f);r(frames[frames.length-1].Document.prototype.execCommand.call(document,'copy')?'frame-wrote':'frame-refused')\">Frame</button>\
-         <button onclick=\"document.documentElement.webkitRequestFullScreen();setTimeout(()=>r(document.fullscreenElement?'webkit-taken':'webkit-refused'),300)\">Webkit</button>"
+         <button onclick=\"document.documentElement.webkitRequestFullScreen();setTimeout(()=>r(document.fullscreenElement?'webkit-taken':'webkit-refused'),300)\">Webkit</button>\
+         <button onclick=\"{COPY}Array.prototype.includes=()=>false;String.prototype.toLowerCase=function(){{return 'bold'}};r(document.execCommand('copy')?'includes-wrote':'includes-refused')\">Includes</button>\
+         <button onclick=\"{COPY}const seen=[];const call=Function.prototype.call;Function.prototype.call=function(t,...a){{seen.push(this);return Reflect.apply(this,t,a)}};Reflect.apply=(f,t,a)=>{{seen.push(f);return call.apply(f,[t,...a])}};document.execCommand('bold');const f=seen.find(x=>x&&x.name==='execCommand'&&!String(x).includes('arguments'));r(f&&call.apply(f,[document,'copy'])?'call-wrote':'call-refused')\">Call</button>\
+         <button onclick=\"document.body.requestPointerLock().then(()=>r('lock-taken'),()=>r('lock-refused'))\">Lock</button>\
+         <button onclick=\"(window.showOpenFilePicker?showOpenFilePicker():Promise.reject()).then(()=>r('picker-opened'),()=>r('picker-refused'))\">Picker</button>\
+         <button onclick=\"(window.documentPictureInPicture?documentPictureInPicture.requestWindow():Promise.reject()).then(()=>r('pip-opened'),()=>r('pip-refused'))\">PiP</button>\
+         <button onclick=\"navigator.credentials.get({{publicKey:{{challenge:new Uint8Array(16)}}}}).then(()=>r('passkey-asked'),()=>r('passkey-refused'))\">Passkey</button>\
+         <button onclick=\"Notification.requestPermission().then(p=>r(p==='granted'?'notify-granted':'notify-refused'))\">Notify</button>"
     );
     let inner = format!(
         "<button style='width:100%;height:100%' onclick=\"{COPY}parent.postMessage(document.execCommand('copy')?'site-wrote':'site-refused','*')\">Inside</button>"
@@ -542,7 +549,11 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
     let page = format!("http://127.0.0.1:{outer_port}/");
     call(&browsers, "Page.navigate", json!({ "url": page })).await;
     let found = wait_for(&browsers, "Webkit").await;
-    for button in ["Window", "Frame", "Webkit"] {
+    let buttons = [
+        "Window", "Frame", "Webkit", "Includes", "Call", "Lock", "Picker", "PiP", "Passkey",
+        "Notify",
+    ];
+    for button in buttons {
         click(&browsers, find_node(&found, "button", button)).await;
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
@@ -559,7 +570,7 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
             .find(|(_, name, _)| name.starts_with("probe:"))
             .map(|(_, name, _)| name)
             .unwrap_or_default();
-        if probe.split(' ').count() == 5 {
+        if probe.split(' ').count() == buttons.len() + 2 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -569,15 +580,22 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
     assert_eq!(
         outcomes,
         [
+            "call-refused",
             "frame-refused",
+            "includes-refused",
+            "lock-refused",
+            "notify-refused",
+            "passkey-refused",
+            "picker-refused",
+            "pip-refused",
             "site-refused",
             "webkit-refused",
-            "window-refused"
+            "window-refused",
         ],
         "{probe}"
     );
     println!(
-        "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, and the older full screen"
+        "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, the older full screen, against a page that replaces what it relies on, and for pointer lock, pickers, picture-in-picture, passkeys and notifications"
     );
     browsers.close_all();
 }
@@ -750,13 +768,143 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
         .await
         .unwrap();
     assert!(!answer.to_string().contains("SECRET"), "{answer}");
+    // The page is the site's home now, not the return address: no answer names the code, and
+    // the history entry the sign-in made cannot be gone back to.
+    for method in ["Page.getFrameTree", "DOM.getDocument"] {
+        let answer = call(&browsers, method, json!({})).await;
+        assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
+    }
+    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    let hidden = history["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["url"] == "")
+        .map(|entry| entry["id"].clone())
+        .expect("the sign-in's entries keep their place");
+    let back = json!({ "method": "Page.navigateToHistoryEntry", "params": { "entryId": hidden } });
+    assert!(
+        browsers.handle("bot", &back).await.is_err(),
+        "went back into the sign-in"
+    );
     let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
     assert!(
-        tree.to_string().contains("signed in"),
-        "the page is the bot's again"
+        tree.to_string().contains("Account"),
+        "the page is the site's home"
     );
     println!(
-        "E2E: after Done the page is the bot's again, and no address of the sign-in reaches the server"
+        "E2E: after Done the page is the site's home, and no address of the sign-in reaches the server"
     );
+    // A cancelled sign-in leaves a blank page, not what the person had started there.
+    let cancelling = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.answer.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(false)
+        .unwrap();
+    assert!(!cancelling.await.unwrap().unwrap(), "the person cancelled");
+    let after = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
+    assert!(
+        !after.to_string().contains("Account"),
+        "a cancelled sign-in left its page: {after}"
+    );
+    println!("E2E: a cancelled sign-in leaves a blank page");
+    browsers.close_all();
+}
+
+/// A plain HTTP server that keeps each connection open for more requests and records the host
+/// every request named; returns its port and the record.
+fn keep_alive_server(body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let hosts = Arc::new(Mutex::new(Vec::new()));
+    let seen = hosts.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let seen = seen.clone();
+            std::thread::spawn(move || {
+                let mut stream = stream;
+                let mut buffer = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let Ok(read) = stream.read(&mut chunk) else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    buffer.extend_from_slice(&chunk[..read]);
+                    while let Some(end) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head: Vec<u8> = buffer.drain(..end + 4).collect();
+                        let head = String::from_utf8_lossy(&head).to_lowercase();
+                        let host = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("host: "))
+                            .unwrap_or("")
+                            .to_owned();
+                        seen.lock().unwrap().push(host);
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                    }
+                }
+            });
+        }
+    });
+    (port, hosts)
+}
+
+/// A plain HTTP request for one site never goes to another site's server, even if the browser
+/// sends a second request on the proxy connection it used for the first.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_plain_requests_reach_only_their_own_site() {
+    let (a, a_hosts) = keep_alive_server("<!doctype html><title>A</title><p>site a</p>");
+    let (b, b_hosts) = keep_alive_server("<!doctype html><title>B</title><p>site b</p>");
+    let root = root();
+    let program = find().expect("a Chromium-family browser on this computer");
+    let browsers = Browsers::with(root.join("browser-profiles"), Some(program), true)
+        .with_local_ports(vec![a, b]);
+    for round in 0..4 {
+        for (port, name) in [(a, "site a"), (b, "site b")] {
+            let url = format!("http://127.0.0.1:{port}/{round}");
+            call(&browsers, "Page.navigate", json!({ "url": url })).await;
+            wait_for(&browsers, name).await;
+        }
+    }
+    let wrong = |hosts: &Arc<Mutex<Vec<String>>>, port: u16| {
+        hosts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|host| !host.ends_with(&format!(":{port}")))
+            .count()
+    };
+    let (to_a, to_b) = (a_hosts.lock().unwrap().len(), b_hosts.lock().unwrap().len());
+    let misrouted = wrong(&a_hosts, a) + wrong(&b_hosts, b);
+    let reused = browsers
+        .proxy
+        .lock()
+        .await
+        .as_ref()
+        .map_or(0, |proxy| proxy.reused.load(Ordering::SeqCst));
+    println!(
+        "E2E: {to_a} requests reached site a and {to_b} site b; {misrouted} named the other site; the browser sent {reused} requests on a proxy connection it had used, each closed and sent again"
+    );
+    assert_eq!(misrouted, 0, "a request reached another site's server");
     browsers.close_all();
 }
