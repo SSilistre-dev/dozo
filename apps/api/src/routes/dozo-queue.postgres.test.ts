@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { handleRpcError } from "../rpc-errors.js";
+import { STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../thread-stop.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -28,6 +29,7 @@ describePostgres("what waits for a shared bot (PostgreSQL)", () => {
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
   const publishSpaceChange = vi.fn();
+  const notify = vi.fn().mockResolvedValue(undefined);
   const users: string[] = [];
   const organizations: string[] = [];
 
@@ -162,7 +164,7 @@ describePostgres("what waits for a shared bot (PostgreSQL)", () => {
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
       },
-      events: { notify: vi.fn().mockResolvedValue(undefined), publishSpaceChange },
+      events: { notify, publishSpaceChange },
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       artifacts: { remove: vi.fn().mockResolvedValue(undefined) },
@@ -377,5 +379,98 @@ describePostgres("what waits for a shared bot (PostgreSQL)", () => {
       404,
     );
     expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(1);
+  });
+
+  /** The chat's system notes, oldest first, as the chat reads them. */
+  const notes = async (threadId: string) =>
+    (
+      await system.message.findMany({
+        where: { threadId, role: "system" },
+        orderBy: { seq: "asc" },
+      })
+    )
+      .flatMap((message) => message.blocks as Array<{ kind: string; text: string }>)
+      .map((block) => block.text);
+  const noteEvents = (threadId: string) =>
+    system.event.findMany({ where: { threadId, type: "thread.message.created" } });
+
+  it("says a cancelled held message stopped, as Stop does, and the message joins history", async () => {
+    const space = await sharedSpace();
+    const { owner, member } = space;
+    const working = await newRun(space, owner.userId, { status: "running" });
+    const message = await newMessage(space.threadId, member.userId, "Hold this", working.id);
+    await system.steeringMessage.create({
+      data: { messageId: message.id, botId: space.botId, userId: member.userId, runId: null },
+    });
+    notify.mockClear();
+
+    expect((await call(member, "dozoQueue/cancelWaiting", { messageId: message.id })).status).toBe(
+      200,
+    );
+    expect(await notes(space.threadId)).toEqual([STOPPED_BY_MESSAGE_NOTE]);
+    const [event] = await noteEvents(space.threadId);
+    expect(event?.botId).toBe(space.botId);
+    // Other clients are told to catch up to that event.
+    expect(notify).toHaveBeenCalledWith(space.threadId, event?.seq);
+    // The next turn's history leaves out a message only while steering holds it (the filter in
+    // run-assembly-history); Stop deletes the hold, and so does this: the message is history.
+    const stored = await system.message.findUniqueOrThrow({
+      where: { id: message.id },
+      include: { steeringMessages: true },
+    });
+    expect(stored.steeringMessages).toHaveLength(0);
+    // Nothing is said for a try that finds nothing to cancel.
+    expect((await call(member, "dozoQueue/cancelWaiting", { messageId: message.id })).status).toBe(
+      404,
+    );
+    expect(await notes(space.threadId)).toEqual([STOPPED_BY_MESSAGE_NOTE]);
+  });
+
+  it("says so when a queued run goes with the follow-ups sent to it", async () => {
+    const space = await sharedSpace();
+    const { owner, member } = space;
+    await newRun(space, owner.userId, { status: "running" });
+    const mine = await newRun(space, member.userId);
+    const followUp = await newMessage(space.threadId, member.userId, "And this", mine.id);
+    await system.steeringMessage.create({
+      data: { messageId: followUp.id, botId: space.botId, userId: member.userId, runId: mine.id },
+    });
+
+    expect((await call(member, "dozoQueue/cancelWaiting", { runId: mine.id })).status).toBe(200);
+    expect(await system.steeringMessage.count({ where: { messageId: followUp.id } })).toBe(0);
+    expect(await notes(space.threadId)).toEqual([STOPPED_BY_MESSAGE_NOTE]);
+    expect(await noteEvents(space.threadId)).toHaveLength(1);
+  });
+
+  it("names the routine for a cancelled routine run and leaves its schedule alone", async () => {
+    const space = await sharedSpace();
+    const { owner } = space;
+    const routine = await system.routine.create({
+      data: {
+        botId: space.botId,
+        spaceId: space.spaceId,
+        userId: owner.userId,
+        threadId: space.threadId,
+        name: "Weekly sums",
+        prompt: "Add things up",
+        crons: ["0 9 * * 1"],
+        active: true,
+        lastRunAt: new Date("2026-11-16T09:00:00Z"),
+        nextRunAt: new Date("2026-11-23T09:00:00Z"),
+      },
+    });
+    await newRun(space, owner.userId, { status: "running" });
+    const queued = await newRun(space, owner.userId, {
+      trigger: "routine",
+      routineId: routine.id,
+    });
+    const before = await system.routine.findUniqueOrThrow({ where: { id: routine.id } });
+    const runsBefore = await system.run.count({ where: { routineId: routine.id } });
+
+    expect((await call(owner, "dozoQueue/cancelWaiting", { runId: queued.id })).status).toBe(200);
+    expect(await notes(space.threadId)).toEqual([stoppedRoutineNote("Weekly sums")]);
+    // The next firing is the routine's own business: the row is exactly as it was.
+    expect(await system.routine.findUniqueOrThrow({ where: { id: routine.id } })).toEqual(before);
+    expect(await system.run.count({ where: { routineId: routine.id } })).toBe(runsBefore);
   });
 });

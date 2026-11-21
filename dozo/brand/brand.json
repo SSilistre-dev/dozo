@@ -8284,6 +8284,15 @@
     },
     {
       "file": "packages/core/src/index.ts",
+      "find": "export * from \"./voice-chat-groups.js\";\nexport * from \"./voice-response.js\";",
+      "replace": "export * from \"./voice-chat-groups.js\";\nexport * from \"./dozo-queue-line.js\";\nexport * from \"./voice-response.js\";",
+      "requires": [
+        "packages/core/src/dozo-queue-line.ts"
+      ],
+      "reason": "waiting work: the chat's line and the list's rows, one reading for web and mobile"
+    },
+    {
+      "file": "packages/core/src/index.ts",
       "find": "export * from \"./routine-draft.js\";\nexport * from \"./routine-mention-batcher.js\";",
       "replace": "export * from \"./routine-draft.js\";\nexport * from \"./dozo-quiet-days.js\";\nexport * from \"./routine-mention-batcher.js\";",
       "requires": [

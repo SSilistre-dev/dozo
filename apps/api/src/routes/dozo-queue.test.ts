@@ -1,6 +1,7 @@
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../thread-stop.js";
 import type { RouterContext } from "./context.js";
 import { dozoQueueRoutes, loadDozoQueue } from "./dozo-queue.js";
 
@@ -11,16 +12,21 @@ const mocks = vi.hoisted(() => ({
   appendEventInTransaction: vi.fn(),
   clearEndedRunState: vi.fn(),
   createPendingSteeringRun: vi.fn(),
+  createThreadMessage: vi.fn(),
 }));
 
 vi.mock("@rakazo/adapters", () => ({ wakeRun: mocks.wakeRun }));
 vi.mock("../thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
-vi.mock("../thread-stop.js", () => ({ finishThreadStop: mocks.finishThreadStop }));
+vi.mock("../thread-stop.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../thread-stop.js")>()),
+  finishThreadStop: mocks.finishThreadStop,
+}));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   appendEventInTransaction: mocks.appendEventInTransaction,
   clearEndedRunState: mocks.clearEndedRunState,
   createPendingSteeringRun: mocks.createPendingSteeringRun,
+  createThreadMessageInTransaction: mocks.createThreadMessage,
 }));
 
 const ME = "user-me";
@@ -228,7 +234,12 @@ describe("dozoQueueRoutes", () => {
 
   function setup(
     patch: {
-      run?: { threadId: string; botId: string } | null;
+      run?: {
+        threadId: string;
+        botId: string;
+        trigger?: string;
+        routine?: { name: string } | null;
+      } | null;
       cancelled?: number;
       message?: { threadId: string } | null;
       removed?: number;
@@ -241,6 +252,9 @@ describe("dozoQueueRoutes", () => {
         updateManyAndReturn: vi.fn(async () => Array(patch.cancelled ?? 1).fill({ id: "run-1" })),
       },
       steeringMessage: {
+        findMany: vi.fn(async () =>
+          (patch.removed ?? 1) > 0 ? [{ id: "steer-1", botId: "bot-1" }] : [],
+        ),
         deleteMany: vi.fn(async () => ({ count: patch.removed ?? 1 })),
       },
       event: { deleteMany: vi.fn() },
@@ -250,7 +264,9 @@ describe("dozoQueueRoutes", () => {
       run: {
         ...(patch.prisma ?? fakePrisma()).run,
         findFirst: vi.fn(async () =>
-          patch.run === undefined ? { threadId: "thread-1", botId: "bot-1" } : patch.run,
+          patch.run === undefined
+            ? { threadId: "thread-1", botId: "bot-1", trigger: "user", routine: null }
+            : patch.run,
         ),
       },
       message: {
@@ -282,6 +298,7 @@ describe("dozoQueueRoutes", () => {
     vi.clearAllMocks();
     mocks.appendEventInTransaction.mockResolvedValue({ seq: 7 });
     mocks.createPendingSteeringRun.mockResolvedValue(null);
+    mocks.createThreadMessage.mockResolvedValue({ id: "note-1" });
     mocks.resolveThreadTarget.mockResolvedValue({
       kind: "bot",
       botId: "bot-1",
@@ -338,6 +355,59 @@ describe("dozoQueueRoutes", () => {
       expect(mocks.wakeRun).not.toHaveBeenCalled();
     });
 
+    it("says so in the chat as Stop does, and lets the other clients know", async () => {
+      mocks.appendEventInTransaction
+        .mockResolvedValueOnce({ seq: 7 })
+        .mockResolvedValueOnce({ seq: 8 });
+      const { call, tx, deps } = setup();
+      await call("cancelWaiting", { runId: "run-1" });
+      const blocks = [{ kind: "meta", text: STOPPED_BY_MESSAGE_NOTE }];
+      expect(mocks.createThreadMessage).toHaveBeenCalledWith(tx, {
+        threadId: "thread-1",
+        role: "system",
+        blocks,
+        botId: "bot-1",
+      });
+      expect(mocks.appendEventInTransaction).toHaveBeenLastCalledWith(tx, {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        type: "thread.message.created",
+        payload: { messageId: "note-1", role: "system", blocks },
+      });
+      // The last event's seq is what subscribers are told to catch up to.
+      expect(mocks.finishThreadStop).toHaveBeenCalledWith(
+        deps,
+        actor,
+        expect.anything(),
+        expect.objectContaining({ eventSeq: 8 }),
+      );
+    });
+
+    it("names the routine when the queued run is a routine's", async () => {
+      const { call } = setup({
+        run: {
+          threadId: "thread-1",
+          botId: "bot-1",
+          trigger: "routine",
+          routine: { name: "Weekly sums" },
+        },
+      });
+      await call("cancelWaiting", { runId: "run-1" });
+      expect(mocks.createThreadMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          blocks: [{ kind: "meta", text: stoppedRoutineNote("Weekly sums") }],
+        }),
+      );
+    });
+
+    it("says nothing when the run had already started", async () => {
+      const { call } = setup({ cancelled: 0 });
+      await call("cancelWaiting", { runId: "run-1" }).catch(() => undefined);
+      expect(mocks.createThreadMessage).not.toHaveBeenCalled();
+    });
+
     it("starts a run for messages that waited behind it", async () => {
       mocks.createPendingSteeringRun.mockResolvedValue("run-next");
       const { call, deps } = setup();
@@ -374,6 +444,37 @@ describe("dozoQueueRoutes", () => {
         where: { messageId: "m-1", userId: ME, runId: null, claimedAt: null },
       });
       expect(deps.events.publishSpaceChange).toHaveBeenCalledWith("space-1", "runs");
+    });
+
+    it("says so in the chat as Stop does, and lets the other clients know", async () => {
+      mocks.appendEventInTransaction.mockResolvedValue({ seq: 9 });
+      const { call, tx, deps } = setup();
+      await call("cancelWaiting", { messageId: "m-1" });
+      const blocks = [{ kind: "meta", text: STOPPED_BY_MESSAGE_NOTE }];
+      expect(mocks.createThreadMessage).toHaveBeenCalledWith(tx, {
+        threadId: "thread-1",
+        role: "system",
+        blocks,
+        botId: "bot-1",
+      });
+      expect(mocks.appendEventInTransaction).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ type: "thread.message.created", threadId: "thread-1" }),
+      );
+      expect(mocks.finishThreadStop).toHaveBeenCalledWith(
+        deps,
+        actor,
+        { threadId: "thread-1" },
+        expect.objectContaining({ runIds: [], eventSeq: 9 }),
+      );
+      expect(deps.events.publishSpaceChange).toHaveBeenCalledWith("space-1", "runs");
+    });
+
+    it("says nothing when there was no hold to remove", async () => {
+      const { call } = setup({ removed: 0 });
+      await call("cancelWaiting", { messageId: "m-1" }).catch(() => undefined);
+      expect(mocks.createThreadMessage).not.toHaveBeenCalled();
+      expect(mocks.finishThreadStop).not.toHaveBeenCalled();
     });
 
     it("answers a message of another Space as not found", async () => {

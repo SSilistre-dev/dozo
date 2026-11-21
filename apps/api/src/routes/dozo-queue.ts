@@ -1,18 +1,19 @@
 import { wakeRun } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, ClientError, QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   clearEndedRunState,
   createPendingSteeringRun,
+  createThreadMessageInTransaction,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   transientRunEventsWhere,
 } from "@rakazo/db";
 import type { QueueRun, QueueSnapshot } from "../dozo-queue-plan.js";
 import { planQueue, queueLabel } from "../dozo-queue-plan.js";
-import { finishThreadStop } from "../thread-stop.js";
+import { finishThreadStop, STOPPED_BY_MESSAGE_NOTE, stoppedRoutineNote } from "../thread-stop.js";
 import { resolveThreadTarget } from "../thread-target.js";
 import type { RouterContext } from "./context.js";
 
@@ -143,18 +144,48 @@ export async function loadDozoQueue(
 
 const notFound = () => new ClientError("NOT_FOUND", "That is no longer waiting");
 
+/**
+ * Stop's note in the chat, written under the thread lock the caller holds: cancelling work that
+ * was waiting says so the way Stop does, with the same words, and returns the event's seq for
+ * `finishThreadStop` to tell the other clients about.
+ */
+async function writeStoppedNote(
+  tx: Prisma.TransactionClient,
+  actor: Pick<Actor, "spaceId">,
+  at: { threadId: string; botId: string },
+  text: string,
+) {
+  const blocks: MessageBlock[] = [{ kind: "meta", text }];
+  const message = await createThreadMessageInTransaction(tx, {
+    threadId: at.threadId,
+    role: "system",
+    blocks,
+    botId: at.botId,
+  });
+  const event = await appendEventInTransaction(tx, {
+    spaceId: actor.spaceId,
+    threadId: at.threadId,
+    botId: at.botId,
+    type: "thread.message.created",
+    payload: { messageId: message.id, role: "system", blocks },
+  });
+  return event.seq;
+}
+
 export function dozoQueueRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
 
   /**
    * Stop waiting for the caller's own queued run. This is not Stop: it ends one run that has
    * not started and nothing else, so another person's work, a run under way and the rest of the
-   * conversation are left alone. Messages that waited behind it get a run of their own.
+   * conversation are left alone. The caller's follow-ups sent to it are dropped with it, and the
+   * chat says so as Stop does (the routine's name for a routine's run). Messages that waited
+   * behind it get a run of their own.
    */
   async function cancelRun(actor: Actor, runId: string) {
     const run = await deps.prisma.run.findFirst({
       where: { id: runId, spaceId: actor.spaceId, userId: actor.userId, status: "queued" },
-      select: { threadId: true, botId: true },
+      select: { threadId: true, botId: true, trigger: true, routine: { select: { name: true } } },
     });
     if (!run) throw notFound();
     const done = await deps.prisma.$transaction(async (tx) => {
@@ -167,7 +198,7 @@ export function dozoQueueRoutes(ctx: RouterContext) {
       if (cancelled.length === 0) throw notFound();
       await clearEndedRunState(tx, [runId]);
       await tx.steeringMessage.deleteMany({ where: { runId } });
-      const event = await appendEventInTransaction(tx, {
+      await appendEventInTransaction(tx, {
         spaceId: actor.spaceId,
         threadId: run.threadId,
         botId: run.botId,
@@ -176,12 +207,20 @@ export function dozoQueueRoutes(ctx: RouterContext) {
         payload: {},
       });
       await tx.event.deleteMany({ where: { ...transientRunEventsWhere(), runId } });
+      const noteSeq = await writeStoppedNote(
+        tx,
+        actor,
+        run,
+        run.trigger === "routine" && run.routine
+          ? stoppedRoutineNote(run.routine.name)
+          : STOPPED_BY_MESSAGE_NOTE,
+      );
       const continuationId = await createPendingSteeringRun(tx, {
         spaceId: actor.spaceId,
         threadId: run.threadId,
         botId: run.botId,
       });
-      return { seq: event.seq, continuationId };
+      return { seq: noteSeq, continuationId };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
     // A run that has not started holds no computer, so there is nothing to tear down.
     await finishThreadStop(deps, actor, run, {
@@ -194,20 +233,41 @@ export function dozoQueueRoutes(ctx: RouterContext) {
     if (done.continuationId) await wakeRun(deps.jobs, done.continuationId);
   }
 
-  /** Stop waiting for the caller's own message that is held behind a run. */
+  /**
+   * Stop waiting for the caller's own message that is held behind a run. Like Stop it drops the
+   * hold only: the message stays in the chat and, with nothing holding it, is read as history by
+   * the next turn. The chat says so and the other clients are told, as for Stop.
+   */
   async function cancelMessage(actor: Actor, messageId: string) {
     const message = await deps.prisma.message.findFirst({
       where: { id: messageId, thread: { spaceId: actor.spaceId } },
       select: { threadId: true },
     });
     if (!message) throw notFound();
-    const removed = await deps.prisma.$transaction(async (tx) => {
+    const holds = { messageId, userId: actor.userId, runId: null, claimedAt: null };
+    const eventSeq = await deps.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${message.threadId} FOR UPDATE`;
-      return tx.steeringMessage.deleteMany({
-        where: { messageId, userId: actor.userId, runId: null, claimedAt: null },
+      const [first] = await tx.steeringMessage.findMany({
+        where: holds,
+        select: { id: true, botId: true },
       });
+      if (!first) throw notFound();
+      await tx.steeringMessage.deleteMany({ where: holds });
+      return writeStoppedNote(
+        tx,
+        actor,
+        { threadId: message.threadId, botId: first.botId },
+        STOPPED_BY_MESSAGE_NOTE,
+      );
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
-    if (removed.count === 0) throw notFound();
+    await finishThreadStop(deps, actor, message, {
+      runIds: [],
+      computers: [],
+      leases: [],
+      eventSeq,
+      stoppedHelpers: [],
+    });
+    // No run ended, so the line is announced here.
     await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
   }
 

@@ -91,6 +91,18 @@ it("says why your own work waits, with its place only when several wait", () => 
   ).toBe("Waiting in line… · #2");
 });
 
+it("counts a place only among work waiting for the same bot, in a group chat", () => {
+  const other = item({ id: "other", botId: "bot-2", mine: false, position: 1 });
+  expect(queueLine([other, item({ id: "mine", position: 1 })])).toBe("Waiting in line…");
+  expect(
+    queueLine([
+      other,
+      item({ id: "same", mine: false, position: 1 }),
+      item({ id: "mine", position: 2 }),
+    ]),
+  ).toBe("Waiting in line… · #2");
+});
+
 it("shows no line when none of the waiting work is yours", () => {
   expect(queueLine([])).toBeNull();
   expect(queueLine([item({ mine: false })])).toBeNull();

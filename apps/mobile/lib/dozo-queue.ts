@@ -1,23 +1,20 @@
 import { t } from "@lingui/core/macro";
 import type { DozoQueueItem } from "@rakazo/contracts";
+import { queueLine as queueLineOf, queueRows } from "@rakazo/core";
 import { Alert } from "react-native";
 import { queryClient, rpcQuery, useSave } from "./query";
 import { useSpaceChanges } from "./roster-signals";
 import { useScreenQuery } from "./screen-query";
 import { errorText } from "./user-error";
 
-/** Rows the sheet lists before it folds the rest into a count, as on the web. */
-const LIST_ROWS = 4;
-
 type QueueTarget = { botId: string } | { groupId: string };
 
 /** The chat's working line while the caller's own work waits; null when none of it does. */
 export function queueLine(items: readonly DozoQueueItem[]): string | null {
-  const first = items.find((item) => item.mine);
-  if (!first) return null;
-  return [t`Waiting in line…`, first.reason === "behind_run" && first.waitingFor ? t`After ${first.waitingFor}` : null, items.length > 1 ? `#${first.position}` : null]
-    .filter(Boolean)
-    .join(" · ");
+  return queueLineOf(items, {
+    waiting: t`Waiting in line…`,
+    after: (name) => t`After ${name}`,
+  });
 }
 
 /** What the sheet lists (one row per line, up to four) and the caller's own work it can stop. */
@@ -25,12 +22,13 @@ export function queueSheet(items: readonly DozoQueueItem[]): {
   message: string;
   own: DozoQueueItem[];
 } {
-  const shown = items.slice(0, LIST_ROWS);
-  const rows = shown.map(
-    (item) => `${item.position}  ${item.mine && item.label ? item.label : t`Queued`}`,
-  );
-  if (items.length > shown.length) rows.push(`+${items.length - shown.length}`);
-  return { message: rows.join("\n"), own: shown.filter((item) => item.mine) };
+  const { shown, hidden } = queueRows(items, t`Queued`);
+  const rows = shown.map(({ item, text }) => `${item.position}  ${text}`);
+  if (hidden > 0) rows.push(`+${hidden}`);
+  return {
+    message: rows.join("\n"),
+    own: shown.map((row) => row.item).filter((item) => item.mine),
+  };
 }
 
 /** What the sheet's stop buttons are called: the row's name beside the action. */

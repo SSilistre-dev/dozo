@@ -131,6 +131,23 @@ it("adds my place when several wait", async () => {
   expect(status()).toBe("Waiting in line… · #2");
 });
 
+it("gives no place for work that another bot's work is not ahead of, in a group chat", async () => {
+  await render([
+    item({ id: "run-0", botId: "bot-2", mine: false, position: 1 }),
+    item({ id: "run-1", botId: "bot-1", position: 1 }),
+  ]);
+  expect(status()).toBe("Waiting in line…");
+});
+
+it("counts a place among work waiting for the same bot, in a group chat", async () => {
+  await render([
+    item({ id: "run-0", botId: "bot-2", mine: false, position: 1 }),
+    item({ id: "run-1", botId: "bot-1", mine: false, position: 1 }),
+    item({ id: "run-2", botId: "bot-1", position: 2 }),
+  ]);
+  expect(status()).toBe("Waiting in line… · #2");
+});
+
 it("lists my work by name, others' as queued without a cancel, and folds the rest", async () => {
   await render([
     item({ id: "a", position: 1, mine: false }),
