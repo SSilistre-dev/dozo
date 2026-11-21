@@ -1022,6 +1022,11 @@ mod tests {
             frames(&runner, page).await,
             vec![json!({ "error": NOT_HERE })]
         );
+        let sign_in = json!({ "method": "pageBrowserSignIn", "botId": "b", "site": "example.com" });
+        assert_eq!(
+            frames(&runner, sign_in).await,
+            vec![json!({ "error": NOT_HERE })]
+        );
         assert!(
             !dir.join("data").join("browser-profiles").exists(),
             "no profile was made"
