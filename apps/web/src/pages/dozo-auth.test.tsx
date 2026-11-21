@@ -81,6 +81,7 @@ vi.mock("./Auth", () => ({
   },
 }));
 
+import { readPlanIntent } from "../lib/dozo-plan-intent";
 import { takeSignupStarted } from "../lib/dozo-signup-start";
 import { AuthPage } from "./dozo-auth";
 
@@ -143,7 +144,7 @@ it("is upstream's page, props unchanged, while registration is open", async () =
 });
 
 it("keeps when the sign-up form opened, only while registration is open", async () => {
-  window.sessionStorage.clear();
+  window.localStorage.clear();
   mocks.capabilities.mockResolvedValue({ signupsOpen: false });
   await open("/sign-up");
   expect(takeSignupStarted()).toBeNull();
@@ -343,20 +344,20 @@ it("saves a language chosen on the page through the app's own preference", async
   expect(language()?.value).toBe("tr");
 });
 
-const intent = () => window.sessionStorage.getItem("dozo:plan-intent");
+const intent = () => readPlanIntent();
 
 it.each([
   ["premium", "year", { tier: "pro", period: "year" }],
   ["premium_plus", "month", { tier: "max", period: "month" }],
 ])(
-  "keeps plan %j billed every %j for the tab and drops both from the address",
+  "keeps plan %j billed every %j in this browser and drops both from the address",
   async (plan, period, kept) => {
-    window.sessionStorage.clear();
+    window.localStorage.clear();
     mocks.capabilities.mockResolvedValue({ signupsOpen: true });
     await open(`/sign-up?plan=${plan}&period=${period}&next=%2Fapp`);
     expect(where()).toBe("/sign-up?next=%2Fapp");
     expect(shown()).toBe("up");
-    expect(JSON.parse(intent() ?? "null")).toMatchObject(kept);
+    expect(intent()).toEqual(kept);
   },
 );
 
@@ -367,7 +368,7 @@ it.each([
   "period=year",
   "plan=",
 ])("keeps nothing for %j and only drops it from the address", async (query) => {
-  window.sessionStorage.clear();
+  window.localStorage.clear();
   mocks.capabilities.mockResolvedValue({ signupsOpen: true });
   await open(`/sign-up?${query}&next=%2Fapp`);
   expect(where()).toBe("/sign-up?next=%2Fapp");
@@ -375,21 +376,21 @@ it.each([
 });
 
 it("keeps the plan and the language together, dropping all three parameters once", async () => {
-  window.sessionStorage.clear();
+  window.localStorage.clear();
   mocks.capabilities.mockResolvedValue({ signupsOpen: true });
   await open("/sign-up?lang=tr&plan=premium&period=year");
   expect(mocks.setUiLocale).toHaveBeenCalledWith("tr");
   expect(where()).toBe("/sign-up");
   expect(language()?.value).toBe("tr");
-  expect(JSON.parse(intent() ?? "null")).toMatchObject({ tier: "pro", period: "year" });
+  expect(intent()).toEqual({ tier: "pro", period: "year" });
 });
 
 it("keeps the plan when registration is closed and sign-in shows instead", async () => {
-  window.sessionStorage.clear();
+  window.localStorage.clear();
   mocks.capabilities.mockResolvedValue({ signupsOpen: false });
   await open("/sign-up?plan=premium_plus&period=year");
   expect(where()).toBe("/sign-in");
-  expect(JSON.parse(intent() ?? "null")).toMatchObject({ tier: "max", period: "year" });
+  expect(intent()).toEqual({ tier: "max", period: "year" });
 });
 
 it("names sign-up and sign-in in the tab's title, and gives the title back on leaving", async () => {

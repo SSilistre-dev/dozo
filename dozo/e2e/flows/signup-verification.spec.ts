@@ -1,6 +1,14 @@
 import type { Page } from "@playwright/test";
-import { codeIn, mailsTo, PASSWORD, verificationLinkAfter } from "../support";
-import { BASE, emailFormTr, openPasswordFormTr, uniqueEmail } from "./accounts";
+import { codeIn, mailsTo, openEmailForm, PASSWORD, verificationLinkAfter } from "../support";
+import {
+  BASE,
+  dollars,
+  emailFormTr,
+  fakeBilling,
+  openPasswordFormTr,
+  serverPlans,
+  uniqueEmail,
+} from "./accounts";
 import { expect, SIGNED_OUT, test } from "./flow";
 
 /**
@@ -10,7 +18,8 @@ import { expect, SIGNED_OUT, test } from "./flow";
  * skips this, and there sign-up opens a session at once (auth.spec.ts, verify.spec.ts).
  *
  * New addresses only; each test starts signed out. Turkish for the link and password path, English
- * for the emailed-code path (as code-sign-in.spec.ts).
+ * for the emailed-code path (as code-sign-in.spec.ts) and for the plan picked on the landing page
+ * (as billing.spec.ts, whose billing fake it reuses).
  */
 test.use({ storageState: SIGNED_OUT });
 
@@ -186,4 +195,70 @@ test("numaralandırma yok: aynı ileti, aynı kontrol ekranı", async ({ page, g
   await signInForm(page, email, `${PASSWORD}-wrong`);
   await expect(page.getByText(wrong)).toBeVisible();
   await expect(page.getByText("E-posta doğrulaması gerekiyor")).toHaveCount(0);
+});
+
+test("postadaki bağlantı yeni sekmede: seçilen plan ve kayıt başlangıcı kaybolmaz", async ({
+  page,
+  browser,
+  guard,
+}) => {
+  const plans = await serverPlans(browser);
+  const plus = plans.find((p) => p.tier === "max");
+  expect(plus, "the server sells Premium Plus").toBeTruthy();
+  const email = uniqueEmail("newtab");
+
+  // The landing page's Premium Plus card, yearly, leads to sign-up; the form asks for the mailbox.
+  await page.goto("/sign-up?plan=premium_plus&period=year");
+  await expect(page).not.toHaveURL(/plan=/);
+  await openEmailForm(page);
+  await page.getByPlaceholder("Your name").fill("E2E New Tab");
+  await page.getByPlaceholder("Your email address").fill(email);
+  await page.getByPlaceholder("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  const link = await verificationLinkAfter(page.request, email, 0);
+
+  // The mail is opened in a new tab of the same browser (a mail app opens links that way): it
+  // shares the cookies and local storage, not the first tab's session storage.
+  const tab = await page.context().newPage();
+  guard.follow(tab);
+  await fakeBilling(tab, plans);
+  // The stack sends no product events on (no analytics provider): the app is told it does, and
+  // what it reports is recorded here instead of sent.
+  const events: { name?: string }[] = [];
+  await tab.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json?: Record<string, unknown> };
+    if (body.json) Object.assign(body.json, { billingEnabled: true, productEvents: true });
+    await route.fulfill({ response, json: body });
+  });
+  await tab.route("**/rpc/dozoEvents/track", async (route) => {
+    events.push((route.request().postDataJSON() as { json?: { name?: string } }).json ?? {});
+    await route.fulfill({ json: { json: null } });
+  });
+
+  await tab.goto(link);
+  await expect(tab.getByRole("heading", { name: "Sign in to continue" })).toBeVisible();
+  await tab.getByRole("link", { name: "Sign in", exact: true }).click();
+  await tab.waitForURL(/\/sign-in\/email/);
+  await openEmailForm(tab);
+  await expect(tab.getByPlaceholder("Your email address")).toHaveValue(email);
+  await tab.getByPlaceholder("Password").fill(PASSWORD);
+  await tab.getByRole("button", { name: "Sign in", exact: true }).click();
+  await tab.waitForURL(/\/onboarding/);
+  await tab.getByRole("button", { name: "Later" }).click();
+  await tab.waitForURL(/\/app/);
+
+  // Soft, so a run without the start still says whether the plan came through.
+  await expect
+    .configure({ soft: true })
+    .poll(() => events.map((event) => event.name), { message: "the sign-up start was reported" })
+    .toContain("signup_started");
+  await expect(tab, "Billing opened with the plan picked before sign-up").toHaveURL(
+    /settings=billing/,
+  );
+  const subscribe = tab
+    .getByTestId("user-settings")
+    .getByRole("button", { name: /^Subscribe for/ });
+  await expect(subscribe).toContainText(`${dollars(plus?.annualPriceCents ?? null)} / year`);
 });

@@ -323,14 +323,14 @@ The auth endpoints allow 10 credential calls per 15 minutes per address and path
 the stack's rate-limit rows before each run. The suite reports a 429 with its retry-after if the
 limit is hit.
 
-- Without mail (plain `make up`, production mode): the limit is on and this change adds no call: a
+- Without mail (plain `make up`, production mode): the limit is on: a
   run spends about eight sign-ups and five sign-ins (the admin signs in once, its session is
   reused). The mail-only specs skip and spend nothing.
 - With the email emulator (`compose.email-emulator.yml` sets `NODE_ENV=development`): the limit is
-  off. A full run there makes fourteen sign-up calls (admin, verification account, setup, four
-  `newAccount`, three in `auth.spec.ts`, four in `signup-verification.spec.ts`) and about sixteen
+  off. A full run there makes fifteen sign-up calls (admin, verification account, setup, four
+  `newAccount`, three in `auth.spec.ts`, five in `signup-verification.spec.ts`) and about seventeen
   sign-in calls (setup, the admin, four `newAccount` that finish through the mail, three in
-  `auth.spec.ts`, six in `signup-verification.spec.ts`, the round trip). Both are over 10, so a
+  `auth.spec.ts`, seven in `signup-verification.spec.ts`, the round trip). Both are over 10, so a
   mail stack must not run in production mode.
 - `make canli` on the live site: one sign-up form submission (the refusal check) and up to two
   sign-ins (the wrong-password line, the trial account); no account is opened.

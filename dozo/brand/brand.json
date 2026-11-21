@@ -727,7 +727,7 @@
       "file": "packages/auth/src/index.ts",
       "find": "            const verificationUrl = new URL(url);\n            verificationUrl.searchParams.set(\n              \"callbackURL\",\n              new URL(\"/sign-in\", env.webOrigin).href,\n            );\n            const locale = await emailLocaleOf({ id: user.id }, request?.headers);\n            await env.email!.send(\n              await verificationEmail(user.email, verificationUrl.href, locale),\n            );\n",
       "replace": "            // Keep the response timing generic, as the reset mail does: the fork file limits\n            // mails per address, sends in the background and reports a failure to onEmailError.\n            void sendVerificationMail(\n              {\n                prisma,\n                email: env.email!,\n                secret: env.secret,\n                webOrigin: env.webOrigin,\n                localeOf: emailLocaleOf,\n                onError: env.onEmailError,\n              },\n              user,\n              url,\n              request?.headers,\n            );\n",
-      "reason": "verification mail: sent in the background like the reset mail, so the answer is the same whatever the address and however delivery goes; at most 3 an hour per address across instances; the link lands on the result page with a signed mark, never the address",
+      "reason": "verification mail: sent in the background like the reset mail, so the answer is the same whatever the address and however delivery goes; at most 3 an hour per address across instances; never to a deactivated account or a banned address; the link lands on the result page with a signed mark, never the address",
       "requires": [
         "packages/auth/src/dozo-email-link.ts"
       ]

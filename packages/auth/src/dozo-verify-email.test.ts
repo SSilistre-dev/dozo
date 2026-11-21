@@ -1,10 +1,18 @@
-import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { signJWT } from "better-auth/crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { banEntry } from "./dozo-operator.js";
-import { createAuth } from "./index.js";
+import {
+  disposeFixtures,
+  email,
+  fixture,
+  otherPassword,
+  password,
+  SECRET,
+  webOrigin,
+} from "./dozo-signup.test-support.js";
 
-// Better Auth's real routes over its offline memory adapter, as the ban list tests do.
+// Better Auth's real routes over its offline memory adapter, as the ban list tests do; the
+// fixture is in dozo-signup.test-support.ts.
 vi.mock("better-auth/adapters/prisma", async () => {
   const { memoryAdapter } = await import("better-auth/adapters/memory");
   return {
@@ -24,172 +32,7 @@ vi.mock("@rakazo/db", async () => {
   };
 });
 
-const baseURL = "http://auth.example.test";
-const webOrigin = "http://web.example.test";
-const email = "ada@example.test";
-const password = "offline-password-1234";
-const otherPassword = "another-password-5678";
-
-type FixtureOptions = { origin?: string; web?: string; allowlist?: string; signups?: string };
-
-function fixture({
-  origin = baseURL,
-  web = webOrigin,
-  allowlist = "",
-  signups = "true",
-}: FixtureOptions = {}) {
-  const messages: TransactionalEmail[] = [];
-  const devices = vi.fn(async () => ({ count: 0 }));
-  const banned = new Set<string>();
-  const mailCounts = new Map<string, number>();
-  const prisma = {
-    authData: { user: [] as Record<string, unknown>[], account: [], session: [], verification: [] },
-    // The verification mail limit counts per address like the real one; the ban list reads `banned`.
-    $queryRaw: vi.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
-      if (sql.join("").includes("rateLimit")) {
-        const key = String(values[1]);
-        mailCounts.set(key, (mailCounts.get(key) ?? 0) + 1);
-        return [{ count: mailCounts.get(key) }];
-      }
-      return Array.isArray(values[0])
-        ? (values[0] as string[]).filter((key) => banned.has(key)).map((value) => ({ value }))
-        : [];
-    }),
-    $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
-    deploymentSettings: {
-      findUnique: vi.fn(async () => ({
-        signupsEnabled: signups === "true",
-        signupAllowlist: allowlist,
-        signupPolicyInitialized: true,
-      })),
-    },
-    spaceMember: { findFirst: vi.fn(async () => ({ spaceId: "space-1" })) },
-    user: { findUnique: vi.fn(async () => null) },
-    passkey: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    account: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    userDevice: { updateMany: devices },
-  };
-  /** The server with a mail provider, and the same data served as before one was configured. */
-  const serve = (withMail: boolean) => {
-    const auth = createAuth(prisma as never, {
-      secret: "offline-auth-secret-at-least-32-characters",
-      baseURL: origin,
-      webOrigin: web,
-      signupsEnabled: signups,
-      signupAllowlist: allowlist,
-      ...(withMail
-        ? {
-            email: {
-              describe: () => ({
-                id: "offline-email",
-                contractVersion: "1",
-                adapterVersion: "1",
-                capabilities: { transactional: true },
-              }),
-              send: async (message: TransactionalEmail) => {
-                messages.push(message);
-              },
-            },
-          }
-        : {}),
-    });
-    const call = (path: string, body?: unknown, cookie?: string) =>
-      auth.handler(
-        new Request(`${origin}/api/auth${path}`, {
-          method: body ? "POST" : "GET",
-          headers: {
-            "content-type": "application/json",
-            origin: web,
-            ...(cookie ? { cookie } : {}),
-          },
-          body: body ? JSON.stringify(body) : undefined,
-        }),
-      );
-    return { auth, call };
-  };
-  const main = serve(true);
-  /** Signing up here still opens a session: how every account before the mail provider was made. */
-  const legacy = serve(false);
-  const { auth, call } = main;
-  const cookieOf = (response: Response, jar = "") => {
-    const cookies = new Map(
-      jar
-        .split("; ")
-        .filter(Boolean)
-        .map((pair) => [pair.split("=")[0], pair] as const),
-    );
-    for (const set of response.headers.getSetCookie?.() ?? []) {
-      const pair = set.split(";")[0] as string;
-      const name = pair.split("=")[0] as string;
-      if (/max-age=0/i.test(set) || pair.endsWith("=")) cookies.delete(name);
-      else cookies.set(name, pair);
-    }
-    return [...cookies.values()].join("; ");
-  };
-  const register = (address = email, cookie?: string, server = main, pass = password) =>
-    server.call("/sign-up/email", { email: address, password: pass, name: "Ada" }, cookie);
-  const signUp = async (address = email, cookie?: string, server = main) => {
-    const response = await register(address, cookie, server);
-    expect(response.status).toBe(200);
-    return cookieOf(response);
-  };
-  const signIn = (cookie?: string, pass = password, address = email) =>
-    call("/sign-in/email", { email: address, password: pass }, cookie);
-  const mailsTo = (address: string) =>
-    messages.filter((m) => m.to === address && m.text.includes("/verify-email?"));
-  /** Opens the link of the last verification mail, in a browser holding `cookie` or none. */
-  const openLink = async (cookie?: string, edit = (_url: URL) => {}, address = email) => {
-    // The mail goes out in the background.
-    const mail = await vi.waitFor(() => {
-      const found = mailsTo(address).at(-1);
-      if (!found) throw new Error("no verification mail yet");
-      return found;
-    });
-    const url = new URL(mail.text.match(/https?:\/\/\S+/)![0]);
-    edit(url);
-    return call(`${url.pathname.replace("/api/auth", "")}${url.search}`, undefined, cookie);
-  };
-  const user = async (cookie: string) =>
-    (await auth.api.getSession({ headers: new Headers({ cookie }) }))?.user ?? null;
-  /** The stored account, whatever sessions exist. */
-  const stored = (address = email) => prisma.authData.user.find((row) => row.email === address);
-  /** An account made before the mail provider, signed in on one browser: its session and its mail. */
-  const oldAccount = async (address = email) => {
-    const session = await signUp(address, undefined, legacy);
-    // The mail the account has not had yet: a password sign-in now asks for verification.
-    expect((await signIn(undefined, password, address)).status).toBe(403);
-    await vi.waitFor(() => expect(mailsTo(address)).toHaveLength(1));
-    return session;
-  };
-  /** A new account, verified the way the page does it: the link, then the password, in one browser. */
-  const verifiedAccount = async (address: string) => {
-    await signUp(address);
-    const browser = cookieOf(await openLink(undefined, undefined, address));
-    expect((await signIn(browser, password, address)).status).toBe(200);
-    expect(stored(address)).toMatchObject({ emailVerified: true });
-  };
-  return {
-    prisma,
-    messages,
-    devices,
-    banned,
-    legacy,
-    auth,
-    call,
-    cookieOf,
-    register,
-    signUp,
-    signIn,
-    openLink,
-    user,
-    stored,
-    mailsTo,
-    oldAccount,
-    verifiedAccount,
-  };
-}
+afterEach(disposeFixtures);
 
 describe("the emailed verification link", () => {
   it("opened where the account is not signed in, verifies nothing and takes nothing away", async () => {
@@ -371,19 +214,21 @@ describe("a password sign-up where a mail provider is configured", () => {
       await f.register("new@example.test"),
     ];
 
-    const bodies = await Promise.all(answers.map((answer) => answer.json()));
+    const bodies = (await Promise.all(answers.map((answer) => answer.json()))) as {
+      user: object;
+    }[];
     for (const [index, answer] of answers.entries()) {
       expect(answer.status).toBe(200);
       expect(bodies[index]).toMatchObject({ token: null });
       // The memory adapter leaves out the empty `image` and `deactivatedAt` of a stored account
       // that the answer for an existing address carries, which a database row would also hold; so
       // the two existing-address answers are compared whole and the new one by its stored fields.
-      expect(Object.keys(bodies[index].user)).toEqual(
-        expect.arrayContaining(Object.keys(bodies[2].user)),
+      expect(Object.keys(bodies[index]!.user)).toEqual(
+        expect.arrayContaining(Object.keys(bodies[2]!.user)),
       );
       expect(answer.headers.getSetCookie?.() ?? []).toEqual([]);
     }
-    expect(Object.keys(bodies[0].user)).toEqual(Object.keys(bodies[1].user));
+    expect(Object.keys(bodies[0]!.user)).toEqual(Object.keys(bodies[1]!.user));
     // Only the new address made an account, and nobody's password changed.
     expect(f.prisma.authData.user).toHaveLength(accounts + 1);
     expect((await f.signIn(undefined, otherPassword)).status).toBe(401);
@@ -445,11 +290,7 @@ describe("a password sign-up where a mail provider is configured", () => {
   it("is not finished by a link that changes the address", async () => {
     const f = fixture();
     await f.signUp();
-    const link = await signJWT(
-      { email, updateTo: "new@example.test" },
-      "offline-auth-secret-at-least-32-characters",
-      3600,
-    );
+    const link = await signJWT({ email, updateTo: "new@example.test" }, SECRET, 3600);
 
     const attempt = await f.signIn(`dozo_pending_verification=${link}`);
 
@@ -471,25 +312,10 @@ describe("a password sign-up where a mail provider is configured", () => {
 });
 
 describe("a sign-in code on an account that never proved its address", () => {
-  const codeOf = async (f: ReturnType<typeof fixture>, address: string) => {
-    expect(
-      (await f.call("/email-otp/send-verification-otp", { email: address, type: "sign-in" }))
-        .status,
-    ).toBe(200);
-    const mail = await vi.waitFor(() => {
-      const found = f.messages.findLast(
-        (m) => m.to === address && !m.text.includes("/verify-email?"),
-      );
-      if (!found) throw new Error("no code yet");
-      return found;
-    });
-    return mail.text.match(/\b(\d{6})\b/)![1];
-  };
-
   it("signs in and verifies the address, and the password stops working", async () => {
     const f = fixture();
     await f.signUp();
-    const otp = await codeOf(f, email);
+    const otp = await f.signInCode(email);
 
     const signedIn = await f.call("/sign-in/email-otp", { email, otp });
 
@@ -508,7 +334,7 @@ describe("a sign-in code on an account that never proved its address", () => {
   it("opens a new, verified account with a session", async () => {
     const f = fixture();
     const address = "new@example.test";
-    const otp = await codeOf(f, address);
+    const otp = await f.signInCode(address);
 
     const signedIn = await f.call("/sign-in/email-otp", { email: address, otp });
 

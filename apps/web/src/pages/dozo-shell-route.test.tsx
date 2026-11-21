@@ -195,7 +195,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
-  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 it("reopens Billing on the chat the app lands on after a checkout left unpaid", async () => {
