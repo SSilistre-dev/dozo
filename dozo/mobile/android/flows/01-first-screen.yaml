@@ -1,0 +1,9 @@
+# A fresh install opens on the sign-in or sign-up screen of the server the build names.
+appId: dev.ssilistre.dozo
+name: Dozo Android first screen
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Sign (up for|in to) Dozo"
+    timeout: 120000

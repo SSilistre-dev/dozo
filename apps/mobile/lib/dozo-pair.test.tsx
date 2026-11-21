@@ -242,6 +242,28 @@ it.each([
   expect(container.textContent).not.toContain(text);
 });
 
+it("logs why pairing failed, with the cause under the message", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const socket = new TypeError("socket error");
+  relay.pair.mockRejectedValue(
+    Object.assign(new Error("relay unreachable", { cause: socket }), { kind: "unreachable" }),
+  );
+  await render();
+  await type("code");
+  await press();
+  await answer("Connect");
+  expect(warn).toHaveBeenCalledWith(
+    "Pairing failed:",
+    "Error: relay unreachable <- TypeError: socket error",
+  );
+  relay.pair.mockRejectedValue("not an error");
+  await type("other");
+  await press();
+  await answer("Connect");
+  expect(warn).toHaveBeenLastCalledWith("Pairing failed:", "not an error");
+  warn.mockRestore();
+});
+
 it("acts on the pairing link once, and on no other link", async () => {
   state.link = "rakazo://dozo-pair#offer-1";
   await render();

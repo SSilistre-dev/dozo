@@ -1,0 +1,7 @@
+# Approved on the computer: the phone signs in with the session it gets and lists the chats.
+appId: dev.ssilistre.dozo
+name: Dozo Android signed in through the computer
+---
+- extendedWaitUntil:
+    visible: ${DOZO_BOT}
+    timeout: 90000
