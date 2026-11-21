@@ -118,6 +118,8 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
       },
       events: { ...createThreadEvents(prisma), publishRosterChange },
       jobs: { enqueue: vi.fn() },
+      // No Space memory learns from turns, so a revision can take one back.
+      memoryProviders: { resolve: async () => null },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       dataDir: "/tmp/rakazo-bot-chats-test",
     } as unknown as RouterDeps;

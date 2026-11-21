@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
 import {
@@ -12,18 +13,22 @@ import { useQuery } from "@tanstack/react-query";
 import { Pencil, RotateCcw } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { errorText, toastError } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query";
 
 /**
- * Edit for the caller's last message and Regenerate for the bot's last reply, in the message's
- * More menu. The server names the one message each applies to, read while the menu is open, so a
- * message it does not name offers neither. The chat updates from the thread's own events.
+ * Edit for the caller's messages and Regenerate for the bot's replies, in the message's More menu.
+ * The server names the messages each applies to, read while the menu is open, so a message it does
+ * not name offers neither. An earlier one removes every later message, so the change asks first,
+ * naming how many go.
+ * The chat updates from the thread's own events.
  */
 export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const [draft, setDraft] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<"edit" | "regenerate" | null>(null);
   const threadId = message.threadId;
   const input = { threadId };
   const revisable = useQuery({
@@ -42,23 +47,33 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
     stale,
     onSaved: () => setDraft(null),
   });
-  const canEdit = revisable.data?.editMessageId === message.id;
-  const canRegenerate = revisable.data?.regenerateMessageId === message.id;
+  const named = revisable.data;
+  const earlierEdit = named?.earlierEditMessageIds?.includes(message.id) ?? false;
+  const earlierRegenerate = named?.earlierRegenerateMessageIds?.includes(message.id) ?? false;
+  const canEdit = named?.editMessageId === message.id || earlierEdit;
+  const canRegenerate = named?.regenerateMessageId === message.id || earlierRegenerate;
+  const count = named?.removedCounts?.[message.id] ?? 0;
+  const startEdit = () => setDraft(messageText(message));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (draft?.trim()) edit.run(draft.trim());
+    if (!draft?.trim()) return;
+    if (earlierEdit) setConfirming("edit");
+    else edit.run(draft.trim());
   };
 
   const items = (
     <>
       {canEdit ? (
-        <DropdownMenuItem onClick={() => setDraft(messageText(message))}>
+        <DropdownMenuItem onClick={startEdit}>
           <Pencil size={14} strokeWidth={1.7} />
           <Trans>Edit</Trans>
         </DropdownMenuItem>
       ) : null}
       {canRegenerate ? (
-        <DropdownMenuItem disabled={regenerate.pending} onClick={() => regenerate.run()}>
+        <DropdownMenuItem
+          disabled={regenerate.pending}
+          onClick={earlierRegenerate ? () => setConfirming("regenerate") : () => regenerate.run()}
+        >
           <RotateCcw size={14} strokeWidth={1.7} />
           <Trans>Regenerate</Trans>
         </DropdownMenuItem>
@@ -66,7 +81,21 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
     </>
   );
 
-  const dialog =
+  const confirm =
+    confirming === null ? null : (
+      <ConfirmDialog
+        onCancel={() => setConfirming(null)}
+        title={t`${plural(count, { one: "Remove # message?", other: "Remove # messages?" })}`}
+        confirmLabel={<Trans>Remove</Trans>}
+        onConfirm={() => {
+          setConfirming(null);
+          if (confirming === "regenerate") regenerate.run();
+          else if (draft?.trim()) edit.run(draft.trim());
+        }}
+      />
+    );
+
+  const editor =
     draft === null ? null : (
       <Dialog
         open
@@ -103,7 +132,15 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
       </Dialog>
     );
 
-  return { items, dialog };
+  return {
+    items,
+    dialog: (
+      <>
+        {editor}
+        {confirm}
+      </>
+    ),
+  };
 }
 
 function messageText(message: ThreadMessage): string {

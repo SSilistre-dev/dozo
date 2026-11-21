@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   revisable: vi.fn(),
@@ -73,6 +73,25 @@ vi.mock("@rakazo/ui-web", () => ({
     </button>
   ),
   Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+}));
+
+vi.mock("../../components/ConfirmDialog", () => ({
+  ConfirmDialog: (props: {
+    title: ReactNode;
+    confirmLabel: ReactNode;
+    onConfirm: () => void;
+    onCancel: () => void;
+  }) => (
+    <div role="alertdialog">
+      <h2>{props.title}</h2>
+      <button type="button" data-dismiss onClick={props.onCancel}>
+        Cancel
+      </button>
+      <button type="button" data-confirm onClick={props.onConfirm}>
+        {props.confirmLabel}
+      </button>
+    </div>
+  ),
 }));
 
 import type * as Query from "../../lib/query";
@@ -239,4 +258,61 @@ it("says so when a regenerate fails", async () => {
   await vi.waitFor(() => expect(item("Regenerate")).toBeTruthy());
   await click(item("Regenerate"));
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Busy"));
+});
+
+describe("an earlier message", () => {
+  const confirmation = () => container.querySelector("[role=alertdialog]");
+  beforeEach(() => {
+    api.revisable.mockResolvedValue({
+      editMessageId: "m-later",
+      regenerateMessageId: "m-later-reply",
+      earlierEditMessageIds: ["m-ask"],
+      earlierRegenerateMessageIds: ["m-reply"],
+      removedCounts: { "m-ask": 3, "m-reply": 1 },
+    });
+  });
+
+  it("edits, then asks before Send removes the later messages, naming how many", async () => {
+    await render(ask);
+    await vi.waitFor(() => expect(item("Edit")).toBeTruthy());
+    await click(item("Edit"));
+    expect(confirmation()).toBeNull();
+    expect(textarea()?.value).toBe("Plan dinner\n\nfor two");
+    await type("Plan lunch");
+    await submit();
+    expect(api.edit).not.toHaveBeenCalled();
+    expect(confirmation()?.textContent).toContain("Remove 3 messages?");
+    expect(container.querySelector("[data-confirm]")?.textContent).toBe("Remove");
+    // Cancel keeps the edit open with its text.
+    await click(container.querySelector("[data-dismiss]"));
+    expect(confirmation()).toBeNull();
+    expect(textarea()?.value).toBe("Plan lunch");
+    expect(api.edit).not.toHaveBeenCalled();
+
+    await submit();
+    await click(container.querySelector("[data-confirm]"));
+    await vi.waitFor(() =>
+      expect(api.edit).toHaveBeenCalledWith({
+        threadId: "thread-1",
+        messageId: "m-ask",
+        text: "Plan lunch",
+      }),
+    );
+    await vi.waitFor(() => expect(textarea()).toBeNull());
+  });
+
+  it("asks before Regenerate and does nothing when cancelled", async () => {
+    await render(reply);
+    await vi.waitFor(() => expect(item("Regenerate")).toBeTruthy());
+    await click(item("Regenerate"));
+    expect(confirmation()?.textContent).toContain("Remove 1 message?");
+    await click(container.querySelector("[data-dismiss]"));
+    expect(api.regenerate).not.toHaveBeenCalled();
+    await click(item("Regenerate"));
+    expect(container.querySelector("[data-confirm]")?.textContent).toBe("Remove");
+    await click(container.querySelector("[data-confirm]"));
+    await vi.waitFor(() =>
+      expect(api.regenerate).toHaveBeenCalledWith({ threadId: "thread-1", messageId: "m-reply" }),
+    );
+  });
 });

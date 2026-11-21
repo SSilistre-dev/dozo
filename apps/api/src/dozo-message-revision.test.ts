@@ -1,12 +1,16 @@
 import type { Actor } from "@rakazo/contracts";
+import { ProductEventType } from "@rakazo/contracts";
 import { ClientError, MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   dozoMessagesRoutes,
-  loadRevisionTurn,
+  loadRevisionHistory,
   MessageNotRevisableError,
   planRevision,
+  QUIET_EVENT_TYPES,
+  REVISION_TURNS,
+  revisableOf,
   reviseInTransaction,
 } from "./dozo-message-revision.js";
 import type { RouterContext } from "./routes/context.js";
@@ -37,6 +41,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   appendEventInTransaction: mocks.appendEventInTransaction,
   spaceTakesWork: mocks.spaceTakesWork,
   loadMessageAuthor: mocks.loadMessageAuthor,
+  runAsSystemInTransaction: (_tx: unknown, _reason: string, read: () => unknown) => read(),
 }));
 
 const ME = "user-me";
@@ -93,6 +98,7 @@ function chat() {
         blocks: [{ kind: "text", text: "Pasta." }],
       },
     ] as Row[],
+    /** Newest first within each message, as the runs are read. */
     runs: [
       {
         id: "r-1",
@@ -105,54 +111,126 @@ function chat() {
       },
     ] as RunRow[],
     active: 0,
-    toolCalls: 0,
-    effects: 0,
+    /** Events of the runs, by type. */
+    events: [] as Array<{ runId: string; type: string }>,
+    /** Runs with a recorded external effect. */
+    effects: [] as string[],
+    /** Every member's pins in the chat. */
+    pins: [] as Array<{ messageId: string; userId: string }>,
+    /** The Space's memory learns from each finished turn. */
+    learns: false,
+    retryAfter: null as number | null,
   };
 }
 type Chat = ReturnType<typeof chat>;
 
+/** The same chat with a second turn after the first: "Make it vegan", answered by r-2. */
+function twoTurns() {
+  const state = chat();
+  state.messages.push(
+    {
+      id: "m-ask-2",
+      seq: 6,
+      role: "user",
+      runId: "r-2",
+      authorUserId: ME,
+      clientNonce: "nonce-2",
+      blocks: [{ kind: "text", text: "Make it vegan" }],
+    },
+    {
+      id: "m-reply-2",
+      seq: 7,
+      role: "bot",
+      runId: "r-2",
+      authorUserId: null,
+      clientNonce: null,
+      blocks: [{ kind: "text", text: "Lentil pasta." }],
+    },
+  );
+  state.runs.unshift({ ...state.runs[0]!, id: "r-2", sourceMessageId: "m-ask-2" });
+  return state;
+}
+
+const byMessage = (state: Chat, id: string) => state.messages.find((m) => m.id === id)!;
+const byRun = (state: Chat, id: string) => state.runs.find((r) => r.id === id)!;
+
+type MessageWhere = { role?: string | { not: string }; seq?: { gt: number } };
 function fakeDb(state: Chat) {
   return {
     thread: {
-      update: vi.fn(async () => ({ id: "thread-1", historyCompactedUpToSeq: state.compacted })),
+      update: vi.fn(async () => ({
+        id: "thread-1",
+        historyCompactedUpToSeq: state.compacted,
+        historyCompactionRetryAfterSeq: state.retryAfter,
+        nextMessageSeq: Math.max(...state.messages.map((m) => m.seq)) + 1,
+      })),
     },
     threadRead: { updateMany: vi.fn(async () => ({ count: 1 })) },
     message: {
-      findFirst: vi.fn(
-        async () =>
-          state.messages.filter((m) => m.role === "user").sort((a, b) => b.seq - a.seq)[0] ?? null,
-      ),
-      findMany: vi.fn(async ({ where }: { where: { seq: { gt: number } } }) =>
-        state.messages
-          .filter((m) => m.seq > where.seq.gt)
+      findMany: vi.fn(async ({ where, take }: { where: MessageWhere; take?: number }) => {
+        if (typeof where.role === "string")
+          return state.messages
+            .filter((m) => m.role === where.role)
+            .sort((a, b) => b.seq - a.seq)
+            .slice(0, take)
+            .map(({ id, seq, authorUserId, clientNonce, blocks }) => ({
+              id,
+              seq,
+              authorUserId,
+              clientNonce,
+              blocks,
+            }));
+        return state.messages
+          .filter((m) => m.seq > where.seq!.gt && m.role !== "user")
           .sort((a, b) => a.seq - b.seq)
-          .map(({ id, role, runId }) => ({ id, role, runId })),
-      ),
+          .map(({ id, seq, role, runId, blocks }) => ({ id, seq, role, runId, blocks }));
+      }),
       deleteMany: vi.fn(async () => ({ count: 1 })),
       update: vi.fn(async () => ({})),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     run: {
-      findMany: vi.fn(async ({ where }: { where: { sourceMessageId: string } }) =>
+      findMany: vi.fn(async ({ where }: { where: { sourceMessageId: { in: string[] } } }) =>
         state.runs
-          .filter((run) => run.sourceMessageId === where.sourceMessageId)
-          .map(({ prompt, sourceMessageId: _, ...run }) => ({ ...run, task: { prompt } })),
+          .filter((run) => where.sourceMessageId.in.includes(run.sourceMessageId))
+          .map(({ prompt, ...run }) => ({ ...run, task: { prompt } })),
       ),
       count: vi.fn(async () => state.active),
       create: vi.fn(async () => ({ id: "r-new" })),
     },
     task: { create: vi.fn(async () => ({ id: "task-new" })) },
     event: {
-      count: vi.fn(async () => state.toolCalls),
+      findMany: vi.fn(
+        async ({ where }: { where: { runId: { in: string[] }; type: { notIn: string[] } } }) =>
+          state.events
+            .filter((e) => where.runId.in.includes(e.runId) && !where.type.notIn.includes(e.type))
+            .map(({ runId }) => ({ runId })),
+      ),
       deleteMany: vi.fn(async () => ({ count: 2 })),
     },
-    externalEffect: { count: vi.fn(async () => state.effects) },
+    externalEffect: {
+      findMany: vi.fn(async ({ where }: { where: { runId: { in: string[] } } }) =>
+        state.effects.filter((runId) => where.runId.in.includes(runId)).map((runId) => ({ runId })),
+      ),
+    },
+    // The one raw read: every member's pins on the given messages.
+    $queryRaw: vi.fn(async (_sql: TemplateStringsArray, _threadId: string, ids: string[]) =>
+      state.pins.filter((pin) => ids.includes(pin.messageId)),
+    ),
   };
 }
 type FakeDb = ReturnType<typeof fakeDb>;
 
 const thread = { id: "thread-1", historyCompactedUpToSeq: null };
-const turnOf = (state: Chat) => loadRevisionTurn(fakeDb(state) as never, thread);
+const historyOf = async (state: Chat) => ({
+  ...(await loadRevisionHistory(fakeDb(state) as never, thread, {
+    userId: ME,
+    learnsTurns: state.learns,
+  })),
+  compactedUpToSeq: state.compacted,
+});
+const revisable = async (state: Chat) => revisableOf(planRevision(await historyOf(state), ME));
+const NOTHING = { editMessageId: null, regenerateMessageId: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -164,7 +242,7 @@ beforeEach(() => {
 
 describe("planRevision", () => {
   it("offers Edit on the last message and Regenerate on the last reply of a quiet turn", async () => {
-    expect(planRevision(await turnOf(chat()), ME)?.revisable).toEqual({
+    expect(await revisable(chat())).toEqual({
       editMessageId: "m-ask",
       regenerateMessageId: "m-reply",
     });
@@ -173,37 +251,42 @@ describe("planRevision", () => {
   it("offers nothing in an empty chat", async () => {
     const state = chat();
     state.messages = [];
-    expect(await turnOf(state)).toBeNull();
-    expect(planRevision(null, ME)).toBeNull();
+    expect((await historyOf(state)).turns).toEqual([]);
+    expect(planRevision(null, ME)).toEqual([]);
   });
 
   const refusals: Array<[string, (state: Chat) => void]> = [
     ["while a run works or waits", (s) => (s.active = 1)],
-    ["after a tool call, which may have acted outside the chat", (s) => (s.toolCalls = 1)],
-    ["after a recorded external effect", (s) => (s.effects = 1)],
-    ["for another person's message", (s) => (s.messages[1]!.authorUserId = "someone")],
-    ["for a run another person started", (s) => (s.runs[0]!.userId = "someone")],
-    ["for a chat-app message", (s) => (s.runs[0]!.trigger = "messaging")],
+    [
+      "after a tool call, which may have acted outside the chat",
+      (s) => s.events.push({ runId: "r-1", type: "agent.tool.called" }),
+    ],
+    ["after a recorded external effect", (s) => s.effects.push("r-1")],
+    ["after a memory write", (s) => s.events.push({ runId: "r-1", type: "memory.revised" })],
+    ["after a routine was set up", (s) => s.events.push({ runId: "r-1", type: "routine.created" })],
+    ["for another person's message", (s) => (byMessage(s, "m-ask").authorUserId = "someone")],
+    ["for a run another person started", (s) => (byRun(s, "r-1").userId = "someone")],
+    ["for a chat-app message", (s) => (byRun(s, "r-1").trigger = "messaging")],
     [
       "once the reply was mirrored to a chat app",
-      (s) => (s.runs[0]!.messagingMirroredAt = new Date()),
+      (s) => (byRun(s, "r-1").messagingMirroredAt = new Date()),
     ],
-    ["before the run ends", (s) => (s.runs[0]!.status = "running")],
+    ["before the run ends", (s) => (byRun(s, "r-1").status = "running")],
     ["when the message went to a run that was already working", (s) => (s.runs = [])],
     [
       "when an earlier run of the message was someone else's",
-      (s) => s.runs.push({ ...s.runs[0]!, id: "r-0", userId: "someone" }),
+      (s) => s.runs.push({ ...byRun(s, "r-1"), id: "r-0", userId: "someone" }),
     ],
     [
       "when the reply came from an earlier run, not the newest",
-      (s) => s.runs.unshift({ ...s.runs[0]!, id: "r-2", status: "failed" }),
+      (s) => s.runs.unshift({ ...byRun(s, "r-1"), id: "r-3", status: "failed" }),
     ],
     [
       "for a group channel message",
-      (s) => (s.messages[1]!.blocks = [{ kind: "channel_message", channelId: "c" }]),
+      (s) => (byMessage(s, "m-ask").blocks = [{ kind: "channel_message", channelId: "c" }]),
     ],
-    ["for a turn of a call", (s) => (s.messages[1]!.clientNonce = "call:abc:turn")],
-    ["when the stored blocks lost entries", (s) => (s.messages[1]!.blocks = ["broken"])],
+    ["for a turn of a call", (s) => (byMessage(s, "m-ask").clientNonce = "call:abc:turn")],
+    ["when the stored blocks lost entries", (s) => (byMessage(s, "m-ask").blocks = ["broken"])],
     ["once the message is in the compaction summary", (s) => (s.compacted = 4)],
     [
       "when something else was said after the reply",
@@ -222,45 +305,237 @@ describe("planRevision", () => {
   it.each(refusals)("offers nothing %s", async (_, change) => {
     const state = chat();
     change(state);
-    const turn = await turnOf(state);
-    expect(planRevision(turn && { ...turn, compactedUpToSeq: state.compacted }, ME)).toBeNull();
+    expect(planRevision(await historyOf(state), ME)).toEqual([]);
   });
 
   it("edits only a text message and regenerates only an existing reply", async () => {
     const state = chat();
-    state.messages[1]!.blocks = [
+    byMessage(state, "m-ask").blocks = [
       { kind: "text", text: "Look" },
       { kind: "image", artifactId: "a" },
     ];
     state.messages.pop();
-    state.runs[0]!.status = "failed";
-    expect(planRevision(await turnOf(state), ME)?.revisable).toEqual({
-      editMessageId: null,
-      regenerateMessageId: null,
-    });
+    byRun(state, "r-1").status = "failed";
+    expect(await revisable(state)).toEqual(NOTHING);
   });
 
   it("offers both again after a revision, judged on the newest run", async () => {
     const state = chat();
     // A regenerate left the first run and started the one that wrote the reply.
-    state.runs.push({ ...state.runs[0]!, id: "r-0" });
-    state.runs[0]!.id = "r-1";
-    expect(planRevision(await turnOf(state), ME)?.revisable).toEqual({
+    state.runs.push({ ...byRun(state, "r-1"), id: "r-0" });
+    expect(await revisable(state)).toEqual({
       editMessageId: "m-ask",
       regenerateMessageId: "m-reply",
     });
   });
 
-  it("counts tool calls and effects of every run the message started", async () => {
-    const state = chat();
-    state.runs.push({ ...state.runs[0]!, id: "r-0" });
+  it("asks about the tool calls, effects and records of every run the turns started", async () => {
+    const state = twoTurns();
+    state.runs.push({ ...byRun(state, "r-1"), id: "r-0" });
     const db = fakeDb(state);
-    await loadRevisionTurn(db as never, thread);
-    const runId = { in: ["r-1", "r-0"] };
-    expect(db.event.count).toHaveBeenCalledWith({
-      where: { runId, type: "agent.tool.called" },
+    await loadRevisionHistory(db as never, thread, { userId: ME, learnsTurns: false });
+    const runId = { in: ["r-2", "r-1", "r-0"] };
+    expect(db.event.findMany).toHaveBeenCalledWith({
+      where: {
+        runId,
+        type: { notIn: QUIET_EVENT_TYPES },
+      },
+      select: { runId: true },
+      distinct: ["runId"],
     });
-    expect(db.externalEffect.count).toHaveBeenCalledWith({ where: { runId } });
+    expect(db.externalEffect.findMany).toHaveBeenCalledWith({
+      where: { runId },
+      select: { runId: true },
+      distinct: ["runId"],
+    });
+    expect(db.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { threadId: "thread-1", role: "user" },
+        take: REVISION_TURNS,
+      }),
+    );
+  });
+
+  it("offers an earlier message and reply when every later turn is quiet", async () => {
+    expect(await revisable(twoTurns())).toEqual({
+      editMessageId: "m-ask-2",
+      regenerateMessageId: "m-reply-2",
+      earlierEditMessageIds: ["m-ask"],
+      earlierRegenerateMessageIds: ["m-reply"],
+      // Its reply and the later turn's two messages.
+      removedCounts: { "m-ask": 3, "m-reply": 3 },
+    });
+  });
+
+  // Each of these in the later turn keeps the earlier one as it is: going back would remove it.
+  const laterRefusals: Array<[string, (state: Chat) => void]> = [
+    [
+      "a tool call (a file, a page, an email)",
+      (s) => s.events.push({ runId: "r-2", type: "agent.tool.called" }),
+    ],
+    ["a memory write", (s) => s.events.push({ runId: "r-2", type: "memory.revised" })],
+    ["a routine or reminder", (s) => s.events.push({ runId: "r-2", type: "routine.created" })],
+    ["an external effect", (s) => s.effects.push("r-2")],
+    ["another person's message", (s) => (byMessage(s, "m-ask-2").authorUserId = "someone")],
+    [
+      "a chat-app message",
+      (s) => (byMessage(s, "m-ask-2").blocks = [{ kind: "channel_message", channelId: "c" }]),
+    ],
+    ["a call", (s) => (byMessage(s, "m-ask-2").clientNonce = "call:abc:turn")],
+    ["a run another person started", (s) => (byRun(s, "r-2").userId = "someone")],
+    ["a reply mirrored to a chat app", (s) => (byRun(s, "r-2").messagingMirroredAt = new Date())],
+    [
+      "a bot message no turn of theirs asked for (a reminder firing)",
+      (s) =>
+        s.messages.push({
+          id: "m-reminder",
+          seq: 8,
+          role: "bot",
+          runId: "r-routine",
+          authorUserId: null,
+          clientNonce: null,
+          blocks: [{ kind: "text", text: "Time to cook." }],
+        }),
+    ],
+  ];
+  it.each(laterRefusals)("offers no earlier turn after %s", async (_, change) => {
+    const state = twoTurns();
+    change(state);
+    const result = await revisable(state);
+    expect(result.earlierEditMessageIds).toBeUndefined();
+    expect(result.earlierRegenerateMessageIds).toBeUndefined();
+  });
+
+  it("offers the newer turn but not one in the compaction summary", async () => {
+    const state = twoTurns();
+    state.compacted = 5;
+    expect(await revisable(state)).toEqual({
+      editMessageId: "m-ask-2",
+      regenerateMessageId: "m-reply-2",
+    });
+  });
+
+  it("goes back past a reaction that started nothing, which offers nothing itself", async () => {
+    const state = chat();
+    state.messages.push({
+      id: "m-thumbs",
+      seq: 6,
+      role: "user",
+      runId: null,
+      authorUserId: ME,
+      clientNonce: "nonce-thumbs",
+      blocks: [{ kind: "text", text: "👍" }],
+    });
+    expect(await revisable(state)).toEqual({
+      editMessageId: null,
+      regenerateMessageId: null,
+      earlierEditMessageIds: ["m-ask"],
+      earlierRegenerateMessageIds: ["m-reply"],
+      removedCounts: { "m-ask": 2, "m-reply": 2 },
+    });
+  });
+
+  it("offers nothing at all when the Space's memory learns from each turn", async () => {
+    const state = twoTurns();
+    state.learns = true;
+    expect(await revisable(state)).toEqual(NOTHING);
+  });
+
+  it("goes back past the caller's own pins, but not past another member's", async () => {
+    const state = twoTurns();
+    state.pins = [
+      { messageId: "m-reply-2", userId: ME },
+      { messageId: "m-ask", userId: "someone" },
+    ];
+    // The other pin is on the earlier message itself, which stays when it changes.
+    expect((await revisable(state)).earlierEditMessageIds).toEqual(["m-ask"]);
+    state.pins.push({ messageId: "m-ask-2", userId: "someone" });
+    expect((await revisable(state)).earlierEditMessageIds).toBeUndefined();
+    // On a reply that would go, it stops the turn itself.
+    state.pins = [{ messageId: "m-reply-2", userId: "someone" }];
+    expect(await revisable(state)).toEqual(NOTHING);
+  });
+
+  it("does not go back past a later message with a file", async () => {
+    const state = twoTurns();
+    byMessage(state, "m-ask-2").blocks = [
+      { kind: "text", text: "Here" },
+      { kind: "image", artifactId: "a" },
+    ];
+    // Regenerating keeps the message and its file; going further back would remove them.
+    expect(await revisable(state)).toEqual({
+      editMessageId: null,
+      regenerateMessageId: "m-reply-2",
+    });
+  });
+
+  it.each(["file", "chart", "page", "card"])(
+    "offers nothing over a reply that carries a %s, which may live on outside the words",
+    async (kind) => {
+      const state = chat();
+      byMessage(state, "m-reply").blocks = [{ kind: "text", text: "Done" }, { kind }];
+      expect(await revisable(state)).toEqual(NOTHING);
+    },
+  );
+
+  it("treats an event type it does not know as acting outside the chat", async () => {
+    const state = twoTurns();
+    state.events.push({ runId: "r-2", type: "someday.new" });
+    expect(await revisable(state)).toEqual(NOTHING);
+  });
+});
+
+/**
+ * Every known event type is classified: what a run that only talked records, or what may have
+ * acted outside the chat. A new type fails here until someone decides; until then it counts as
+ * acting.
+ */
+describe("event types", () => {
+  const ACTING = [
+    "thread.cleared",
+    "thread.message.reaction",
+    "thread.artifact",
+    "thread.ask",
+    "thread.choice",
+    "thread.computer",
+    "thread.subagent",
+    "thread.cloud_agent",
+    "thread.call.ended",
+    "run.waiting_input",
+    "computer.takeover.requested",
+    "computer.takeover.granted",
+    "computer.takeover.released",
+    "computer.command",
+    "memory.revised",
+    "routine.created",
+    "routine.updated",
+    "routine.fired",
+    "skill.teaching.started",
+    "skill.teaching.stopped",
+    "skill.draft.created",
+    "skill.saved",
+    "effect.recorded",
+    "agent.tool.called",
+    "agent.tool.completed",
+    "effect.reconciled",
+    "bot.spawned",
+    "bot.updated",
+    "bot.archived",
+    "bot.deleted",
+    "group.created",
+    "group.updated",
+    "group.handoff",
+  ];
+
+  it("puts each one on one side", () => {
+    expect(QUIET_EVENT_TYPES.filter((type) => ACTING.includes(type))).toEqual([]);
+    expect([...QUIET_EVENT_TYPES, ...ACTING].sort()).toEqual([...ProductEventType.options].sort());
+  });
+
+  it.each(ACTING)("does not undo a turn whose run recorded %s", async (type) => {
+    const state = twoTurns();
+    state.events.push({ runId: "r-2", type });
+    expect(await revisable(state)).toEqual(NOTHING);
   });
 });
 
@@ -276,6 +551,7 @@ describe("reviseInTransaction", () => {
       botId: "bot-1",
       messageId,
       revision,
+      learnsTurns: false,
     });
 
   it("regenerates: the old reply goes, its seq is reused, and a new run answers the same message", async () => {
@@ -283,11 +559,16 @@ describe("reviseInTransaction", () => {
     expect(await revise(db, "m-reply", { kind: "regenerate" })).toEqual({
       runId: "r-new",
       seq: 41,
+      pinnedBy: [],
     });
     expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["m-reply"] } } });
     expect(db.thread.update).toHaveBeenLastCalledWith({
       where: { id: "thread-1" },
-      data: { nextMessageSeq: 5 },
+      data: {
+        nextMessageSeq: 5,
+        dozoRewinds: { increment: 1 },
+        historyCompactionRetryAfterSeq: null,
+      },
     });
     expect(db.threadRead.updateMany).toHaveBeenCalledWith({
       where: { threadId: "thread-1", lastReadSeq: { gt: 4 } },
@@ -328,7 +609,7 @@ describe("reviseInTransaction", () => {
 
   it("edits: the message takes the new text, every client is told, and the run starts on it", async () => {
     const db = fakeDb(chat());
-    expect(await revise(db, "m-ask", { kind: "edit", text: "Plan lunch" })).toEqual({
+    expect(await revise(db, "m-ask", { kind: "edit", text: "Plan lunch" })).toMatchObject({
       runId: "r-new",
       seq: 42,
     });
@@ -356,21 +637,128 @@ describe("reviseInTransaction", () => {
   it("edits a message whose run ended without a reply", async () => {
     const state = chat();
     state.messages.pop();
-    state.runs[0]!.status = "cancelled";
+    byRun(state, "r-1").status = "cancelled";
     const db = fakeDb(state);
-    await revise(db, "m-ask", { kind: "edit", text: "Again" });
+    // Nothing went, so no one's pins are read again.
+    expect(await revise(db, "m-ask", { kind: "edit", text: "Again" })).toMatchObject({
+      pinnedBy: [],
+    });
     expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [] } } });
     expect(mocks.appendEventInTransaction).toHaveBeenCalledTimes(1);
   });
 
+  it("edits an earlier message: every later message goes, oldest first, and the run starts there", async () => {
+    const state = twoTurns();
+    // The caller's own pin on a message that goes, and a summary that was too long.
+    state.pins = [{ messageId: "m-reply-2", userId: ME }];
+    state.retryAfter = 60;
+    const db = fakeDb(state);
+    expect(await revise(db, "m-ask", { kind: "edit", text: "Plan lunch" })).toEqual({
+      runId: "r-new",
+      seq: 44,
+      pinnedBy: [ME],
+    });
+    const removed = ["m-reply", "m-ask-2", "m-reply-2"];
+    expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: removed } } });
+    // Three messages went: the summary still waits for as many new ones as before.
+    expect(db.thread.update).toHaveBeenLastCalledWith({
+      where: { id: "thread-1" },
+      data: {
+        nextMessageSeq: 5,
+        dozoRewinds: { increment: 1 },
+        historyCompactionRetryAfterSeq: 57,
+      },
+    });
+    expect(db.threadRead.updateMany).toHaveBeenCalledWith({
+      where: { threadId: "thread-1", lastReadSeq: { gt: 4 } },
+      data: { lastReadSeq: 4 },
+    });
+    expect(db.event.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        OR: ["m-ask", ...removed].map((id) => ({ payload: { path: ["messageId"], equals: id } })),
+      }),
+    });
+    expect(mocks.appendEventInTransaction.mock.calls.map(([, event]) => event.payload)).toEqual([
+      ...removed.map((messageId) => ({ messageId, removed: true })),
+      expect.objectContaining({
+        messageId: "m-ask",
+        blocks: [{ kind: "text", text: "Plan lunch" }],
+      }),
+    ]);
+    expect(db.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ sourceMessageId: "m-ask" }),
+    });
+    expect(db.message.updateMany).toHaveBeenCalledWith({
+      where: { id: "m-ask", runId: "r-1" },
+      data: { runId: "r-new" },
+    });
+  });
+
+  it("regenerates an earlier reply from the prompt of the message it answered", async () => {
+    const db = fakeDb(twoTurns());
+    await revise(db, "m-reply", { kind: "regenerate" });
+    expect(db.message.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["m-reply", "m-ask-2", "m-reply-2"] } },
+    });
+    expect(db.message.update).not.toHaveBeenCalled();
+    expect(db.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ prompt: "Plan dinner" }),
+    });
+  });
+
   it.each([
     ["a message the server did not name", "m-reply", { kind: "edit", text: "x" }],
-    ["a reply that is not the last", "m-old", { kind: "regenerate" }],
+    ["a reply that ends no turn of theirs", "m-old", { kind: "regenerate" }],
   ] as const)("refuses %s and changes nothing", async (_, messageId, revision) => {
     const db = fakeDb(chat());
     await expect(revise(db, messageId, revision)).rejects.toBeInstanceOf(MessageNotRevisableError);
     expect(db.message.deleteMany).not.toHaveBeenCalled();
     expect(db.run.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a memory write", { runId: "r-2", type: "memory.revised" }],
+    ["a routine", { runId: "r-2", type: "routine.created" }],
+    ["a file the bot wrote", { runId: "r-2", type: "agent.tool.called" }],
+  ])("refuses to go back over %s and changes nothing", async (_, event) => {
+    const state = twoTurns();
+    state.events.push(event);
+    const db = fakeDb(state);
+    await expect(revise(db, "m-ask", { kind: "edit", text: "x" })).rejects.toBeInstanceOf(
+      MessageNotRevisableError,
+    );
+    await expect(revise(db, "m-reply", { kind: "regenerate" })).rejects.toBeInstanceOf(
+      MessageNotRevisableError,
+    );
+    expect(db.message.deleteMany).not.toHaveBeenCalled();
+    expect(db.run.create).not.toHaveBeenCalled();
+  });
+
+  it("decides again under the lock: a message sent after the menu read stops the change", async () => {
+    const state = twoTurns();
+    expect((await revisable(state)).earlierEditMessageIds).toEqual(["m-ask"]);
+    // The person's other device sent a message; its run is still working.
+    state.messages.push({
+      id: "m-ask-3",
+      seq: 8,
+      role: "user",
+      runId: "r-3",
+      authorUserId: ME,
+      clientNonce: "nonce-3",
+      blocks: [{ kind: "text", text: "And dessert" }],
+    });
+    state.runs.unshift({
+      ...byRun(state, "r-2"),
+      id: "r-3",
+      sourceMessageId: "m-ask-3",
+      status: "running",
+    });
+    state.active = 1;
+    const db = fakeDb(state);
+    await expect(revise(db, "m-ask", { kind: "edit", text: "x" })).rejects.toBeInstanceOf(
+      MessageNotRevisableError,
+    );
+    expect(db.message.deleteMany).not.toHaveBeenCalled();
   });
 
   it("refuses in a Space that is being deleted", async () => {
@@ -404,6 +792,11 @@ describe("dozoMessagesRoutes", () => {
       },
       events: { notify: vi.fn(async () => undefined), publishSpaceChange: vi.fn() },
       jobs: { enqueue: vi.fn() },
+      memoryProviders: {
+        resolve: vi.fn(async () =>
+          state.learns ? { provider: { retainConversation: vi.fn() } } : null,
+        ),
+      },
     };
     const authed = {
       dozoMessages: Object.fromEntries(
@@ -492,6 +885,25 @@ describe("dozoMessagesRoutes", () => {
       call("regenerate", { threadId: "thread-1", messageId: "m-reply" }),
     ).resolves.toEqual({ runId: "r-new" });
     expect(mocks.wakeRun).toHaveBeenCalledWith(deps.jobs, "r-new");
+  });
+
+  it("tells the caller to read their pins again when one went", async () => {
+    const state = twoTurns();
+    state.pins = [{ messageId: "m-ask-2", userId: ME }];
+    const { call, deps } = setup(state);
+    const publishRosterChange = vi.fn(async () => undefined);
+    Object.assign(deps.events, { publishRosterChange });
+    await call("edit", { threadId: "thread-1", messageId: "m-ask", text: "Plan lunch" });
+    expect(publishRosterChange).toHaveBeenCalledWith({ userIds: [ME] });
+  });
+
+  it("names earlier messages too, and still nothing for another person's chat turn", async () => {
+    const state = twoTurns();
+    byMessage(state, "m-ask-2").authorUserId = "someone";
+    expect(await setup(state).call("revisable", { threadId: "thread-1" })).toEqual(NOTHING);
+    expect(await setup(twoTurns()).call("revisable", { threadId: "thread-1" })).toMatchObject({
+      earlierEditMessageIds: ["m-ask"],
+    });
   });
 
   it("edits through the same path", async () => {

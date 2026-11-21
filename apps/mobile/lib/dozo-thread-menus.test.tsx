@@ -119,7 +119,7 @@ it("opens the edit screen for the chat's message", async () => {
     pathname: "/dozo-edit-message",
     params: { threadId: "thread-1", messageId: "m-1" },
   });
-  expect(takeEditDraft("m-1")).toBe("Hi");
+  expect(takeEditDraft("m-1")).toEqual({ text: "Hi", removes: null });
 });
 
 it("opens a message's Report on the feedback form, naming the message", async () => {

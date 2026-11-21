@@ -134,6 +134,8 @@ describePostgres("pinned messages (PostgreSQL)", () => {
       },
       events: createThreadEvents(prisma),
       jobs: { enqueue },
+      // No Space memory learns from turns, so a revision can take one back.
+      memoryProviders: { resolve: async () => null },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       dataDir: "/tmp/rakazo-pins-test",
     } as unknown as RouterDeps;

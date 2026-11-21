@@ -1,4 +1,4 @@
-import { ph } from "@lingui/core/macro";
+import { ph, plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { DozoMessagePin, MessageAuthor } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
@@ -11,9 +11,10 @@ import { useRosterSignals } from "./roster-signals";
 import { errorText } from "./user-error";
 
 /**
- * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the one message Edit and
- * Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
- * current (`useDozoThreadMenus`) and each message only reads it.
+ * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the messages Edit
+ * and Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
+ * current (`useDozoThreadMenus`) and each message only reads it. An earlier message removes every
+ * later one, so it is confirmed first.
  */
 export type DozoMessageAction = {
   name: "dozoEdit" | "dozoRegenerate" | "dozoPin" | "dozoReport" | "dozoBlock";
@@ -72,8 +73,41 @@ export function pinLabel({ preview }: DozoMessagePin, page: string, message: str
   return preview.text || preview.attachment?.name || (preview.page ? page : message);
 }
 
+/**
+ * Going back to an earlier message removes the later ones: the person says so first, told how
+ * many go.
+ */
+export function confirmRemoval(
+  t: ReturnType<typeof useLingui>["t"],
+  count: number,
+  act: () => void,
+): void {
+  Alert.alert(
+    t`${plural(count, { one: "Remove # message?", other: "Remove # messages?" })}`,
+    undefined,
+    [
+      { text: t`Cancel`, style: "cancel" },
+      { text: t`Remove`, style: "destructive", onPress: act },
+    ],
+  );
+}
+
+/** How many messages changing this one removes when it is an earlier one, else null. */
+function earlierRemoves(
+  revisable: DozoRevisable | undefined,
+  kind: "edit" | "regenerate",
+  messageId: string,
+): number | null {
+  const ids =
+    kind === "edit" ? revisable?.earlierEditMessageIds : revisable?.earlierRegenerateMessageIds;
+  return ids?.includes(messageId) ? (revisable?.removedCounts?.[messageId] ?? 0) : null;
+}
+
 // The edit screen takes the text from here rather than from its route, which would carry it.
-const editDrafts = new Map<string, string>();
+const editDrafts = new Map<string, EditDraft>();
+
+/** The text Edit opens with, and how many later messages sending it removes (null: none). */
+export type EditDraft = { text: string; removes: number | null };
 
 /**
  * How Edit opens its screen, set by the chat's module (`dozo-thread-menus.ts`) so a message row
@@ -92,11 +126,11 @@ export function setDozoReportOpener(open: (threadId: string, messageId: string) 
   openReport = open;
 }
 
-/** The text the edit screen opens with, once. */
-export function takeEditDraft(messageId: string): string {
-  const text = editDrafts.get(messageId) ?? "";
+/** What the edit screen opens with, once. */
+export function takeEditDraft(messageId: string): EditDraft {
+  const draft = editDrafts.get(messageId) ?? { text: "", removes: null };
   editDrafts.delete(messageId);
-  return text;
+  return draft;
 }
 
 function messageText(message: MobileMessage): string {
@@ -148,8 +182,11 @@ export function useDozoMessageActions(
     stale: [pinsRead(threadId).queryKey],
     onFailed: failed,
   });
-  const canEdit = sent && revisable?.editMessageId === messageId;
-  const canRegenerate = sent && revisable?.regenerateMessageId === messageId;
+  const editRemoves = sent ? earlierRemoves(revisable, "edit", messageId) : null;
+  const regenerateRemoves = sent ? earlierRemoves(revisable, "regenerate", messageId) : null;
+  const canEdit = editRemoves !== null || (sent && revisable?.editMessageId === messageId);
+  const canRegenerate =
+    regenerateRemoves !== null || (sent && revisable?.regenerateMessageId === messageId);
   const pinned = pins?.some((entry) => entry.messageId === messageId) ?? false;
   const showPin = sent && pins !== undefined;
   const showReport = sent && reportable && Boolean(feedback?.mode);
@@ -166,7 +203,7 @@ export function useDozoMessageActions(
         symbol: "pencil",
         icon: "create-outline",
         onPress: () => {
-          editDrafts.set(messageId, text);
+          editDrafts.set(messageId, { text, removes: editRemoves });
           openEdit?.(threadId, messageId);
         },
       });
@@ -176,7 +213,11 @@ export function useDozoMessageActions(
         text: t`Regenerate`,
         symbol: "arrow.clockwise",
         icon: "refresh-outline",
-        onPress: () => saves.current.regenerate.run(),
+        onPress: () => {
+          const run = () => saves.current.regenerate.run();
+          if (regenerateRemoves === null) run();
+          else confirmRemoval(t, regenerateRemoves, run);
+        },
       });
     if (showPin)
       actions.push({
@@ -219,6 +260,8 @@ export function useDozoMessageActions(
   }, [
     canEdit,
     canRegenerate,
+    editRemoves,
+    regenerateRemoves,
     showPin,
     pinned,
     showReport,
