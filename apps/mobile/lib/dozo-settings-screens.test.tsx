@@ -160,17 +160,17 @@ vi.mock("../components/settings-group", () => ({
         act: (name) => onAccessibilityAction?.({ nativeEvent: { actionName: name } }),
       };
     return (
-    <li data-dimmed={dimmed ? "yes" : undefined}>
-      <button
-        type="button"
-        onClick={onPress}
-        onDoubleClick={() => onAccessibilityAction?.({ nativeEvent: { actionName: "remove" } })}
-      >
-        {title}
-      </button>
-      {detail ? <small>{detail}</small> : null}
-      {value ? <b>{value}</b> : null}
-    </li>
+      <li data-dimmed={dimmed ? "yes" : undefined}>
+        <button
+          type="button"
+          onClick={onPress}
+          onDoubleClick={() => onAccessibilityAction?.({ nativeEvent: { actionName: "remove" } })}
+        >
+          {title}
+        </button>
+        {detail ? <small>{detail}</small> : null}
+        {value ? <b>{value}</b> : null}
+      </li>
     );
   },
   SettingsSwitch: ({
@@ -403,9 +403,10 @@ describe("commands on mobile", () => {
     await render(<DozoCommands />);
     await settle(() => expect(text()).toContain("npm test …"));
     expect(text()).toContain("Ada, ~/app, Bot computer");
-    expect(
-      [...container.querySelectorAll("small")].map((entry) => entry.textContent),
-    ).toEqual(["Ada, ~/app, Bot computer", "Ada"]);
+    expect([...container.querySelectorAll("small")].map((entry) => entry.textContent)).toEqual([
+      "Ada, ~/app, Bot computer",
+      "Ada",
+    ]);
     expect(menu("npm test").actions.find((action) => action.state === "on")!.id).toBe(
       "allow_prefix",
     );
