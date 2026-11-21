@@ -95,7 +95,13 @@ describe("dozoHostedCommandGate", () => {
   });
 
   it("reads the rules of the member whose run it is, for this bot", async () => {
-    await dozoHostedCommandGate(context("ask", "member-2"), "shell", { command: "ls" }, NO_RULE, "allow");
+    await dozoHostedCommandGate(
+      context("ask", "member-2"),
+      "shell",
+      { command: "ls" },
+      NO_RULE,
+      "allow",
+    );
     expect(db.rules).toHaveBeenCalledWith({}, { userId: "member-2", botId: "bot-1" });
     expect(dozoCommandBlockRefusal({ command: "ls" })).toBeUndefined();
   });
@@ -105,7 +111,9 @@ describe("dozoHostedCommandGate", () => {
     expect((await gate("npm test", { plan: "ask" })).plan).toBe("allow");
     expect((await gate("npm test", { plan: "judge" })).plan).toBe("allow");
     // A rule asking for the whole tool still asks, and so does anything the rule does not cover.
-    expect((await gate("npm test", { plan: "ask", resolved: { decision: "ask" } })).plan).toBe("ask");
+    expect((await gate("npm test", { plan: "ask", resolved: { decision: "ask" } })).plan).toBe(
+      "ask",
+    );
     expect((await gate("npm test; curl x", { plan: "ask" })).plan).toBe("ask");
   });
 

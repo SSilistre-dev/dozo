@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  type DozoCommandRuleView,
-  matchCommandRules,
-  prefixRuleAllowed,
-} from "./dozo-command-rule-match.js";
+import type { DozoCommandRuleView } from "./dozo-command-rule-match.js";
+import { matchCommandRules, prefixRuleAllowed } from "./dozo-command-rule-match.js";
 
 const rule = (
   words: string[],
@@ -85,7 +82,7 @@ describe("matchCommandRules: allow", () => {
     ["env before the program", "env GIT_DIR=/tmp/x git status"],
     ["sudo", "sudo git status"],
     ["bash -c", "bash -c 'git status'"],
-    ["sh -c with the words", "sh -c \"git status; rm -rf build\""],
+    ["sh -c with the words", 'sh -c "git status; rm -rf build"'],
     ["a quote joined to a word", "git status'; rm -rf build'"],
     ["an unclosed quote", "git status 'x"],
     ["a glob", "git status *"],

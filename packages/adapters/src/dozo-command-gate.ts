@@ -61,8 +61,7 @@ export async function dozoHostedCommandGate<Plan extends string>(
   if (name !== HOSTED_SHELL_TOOL || plan === "deny") return plan;
   const match = await commandRuleMatch(ctx, args, "hosted");
   if (match === "block") return "deny";
-  if (plan !== "allow")
-    return match === "allow" && resolved.decision !== "ask" ? "allow" : plan;
+  if (plan !== "allow") return match === "allow" && resolved.decision !== "ask" ? "allow" : plan;
   if (match || resolved.source === "always_allow") return plan;
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
     return plan;

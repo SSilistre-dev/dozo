@@ -56,7 +56,10 @@ export function buildApprovalAskBlock(
         text: "Run on the bot's computer?",
       }
     : buildUpstreamAskBlock(effectId, toolName, args, secrets, dozoSendLimitCard(args, options));
-  if (block.kind !== "ask" || !(hosted || (toolName === USER_COMPUTER_SHELL_TOOL && commandAsked(args))))
+  if (
+    block.kind !== "ask" ||
+    !(hosted || (toolName === USER_COMPUTER_SHELL_TOOL && commandAsked(args)))
+  )
     return block;
   const command = String(args.command ?? "");
   // As the card writes it, so a redacted or shortened command is never saved unseen.

@@ -63,7 +63,9 @@ describe("userComputerGate", () => {
   });
 
   it("refuses a blocked command in every mode, also before the Space allows the computer", async () => {
-    rules.read.mockResolvedValue([rule(["git", "push"], "block", { cwd: "~/app", computer: "hosted" })]);
+    rules.read.mockResolvedValue([
+      rule(["git", "push"], "block", { cwd: "~/app", computer: "hosted" }),
+    ]);
     for (const [plan, ctx] of [
       ["allow", context()],
       ["allow", context(true, true)],
@@ -112,7 +114,11 @@ describe("userComputerGate", () => {
   });
 
   it("asks before a command it cannot read, whatever rule allows its words", async () => {
-    rules.read.mockResolvedValue([rule(["ls"], "allow_prefix"), rule(["ls"]), rule(["cat", "notes"])]);
+    rules.read.mockResolvedValue([
+      rule(["ls"], "allow_prefix"),
+      rule(["ls"]),
+      rule(["cat", "notes"]),
+    ]);
     for (const command of [
       "ls; rm -rf ~",
       "ls && rm -rf ~",

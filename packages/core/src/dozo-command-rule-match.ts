@@ -76,13 +76,11 @@ const RUNNERS = new Set([
 
 /** A program word as a shell finds it: its last path part, without case or a Windows `.exe`. */
 function programName(word: string): string {
-  return (
-    word
-      .split(/[/\\]/)
-      .pop()!
-      .toLowerCase()
-      .replace(/\.exe$/, "")
-  );
+  return word
+    .split(/[/\\]/)
+    .pop()!
+    .toLowerCase()
+    .replace(/\.exe$/, "");
 }
 
 /**
@@ -123,7 +121,7 @@ function sameWords(left: readonly string[], right: readonly string[]): boolean {
 /** Invisible format marks, which a shell keeps but a person cannot see. */
 const FORMAT = /[\p{Cf}\u2028\u2029]/gu;
 /** Marks that end one command and start another in some shell, or open a nested one. */
-const COMMAND_BREAKS = /[;&|\n\r\v\f\u0000-\u0008\u000e-\u001f\u007f-\u009f\u2028\u2029`()]+/u;
+const COMMAND_BREAKS = /[;&|`()\p{Cc}\u2028\u2029]+/u;
 /** Marks that split a command into words in some shell. */
 const WORD_BREAKS = /[\s$={},<>]+/u;
 
@@ -135,19 +133,23 @@ const WORD_BREAKS = /[\s$={},<>]+/u;
  * a program name, both with its backslashes dropped (an escape, `gi\t`) and read as a Windows path.
  */
 function looseCommands(command: string): string[][][] {
-  return command
-    .normalize("NFKC")
-    .replace(FORMAT, "")
-    .replace(/\\\r?\n/g, "")
-    .replace(/['"]/g, "")
-    .split(COMMAND_BREAKS)
-    .map((part) =>
-      part
-        .split(WORD_BREAKS)
-        .filter(Boolean)
-        .map((word) => [programName(word.replace(/\\/g, "")), programName(word)]),
-    )
-    .filter((words) => words.length > 0);
+  return (
+    command
+      .normalize("NFKC")
+      .replace(FORMAT, "")
+      .replace(/\\\r?\n/g, "")
+      .replace(/['"]/g, "")
+      // A tab only separates words; every other control character ends a command.
+      .replace(/\t/g, " ")
+      .split(COMMAND_BREAKS)
+      .map((part) =>
+        part
+          .split(WORD_BREAKS)
+          .filter(Boolean)
+          .map((word) => [programName(word.replace(/\\/g, "")), programName(word)]),
+      )
+      .filter((words) => words.length > 0)
+  );
 }
 
 /**
@@ -188,7 +190,8 @@ export function matchCommandRules(
   if (!words) return undefined;
   const usable = rules.filter(
     (rule) =>
-      rule.computer === command.computer || (command.computer === "hosted" && rule.effect === "allow"),
+      rule.computer === command.computer ||
+      (command.computer === "hosted" && rule.effect === "allow"),
   );
   const matched = usable.filter((rule) => allows(rule, words, command.cwd));
   if (matched.some((rule) => rule.effect === "allow")) return "allow";
