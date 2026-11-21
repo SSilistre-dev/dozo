@@ -80,6 +80,22 @@ describe("DozoConnectThisComputer", () => {
     expect(links()).toEqual([["Connect this computer", "dozo-app://settings"]]);
   });
 
+  it("ignores a list that arrives after it is gone", async () => {
+    window.dozoDesktopShell = true;
+    const first = deferred<{ deviceId: string; name: string; connected: boolean }[]>();
+    const second = deferred<{ deviceId: string; name: string; connected: boolean }[]>();
+    api.devices.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await show(<DozoConnectThisComputer />);
+    act(() => root.unmount());
+    await act(async () => first.resolve([]));
+    root = createRoot(container);
+    await show(<DozoConnectThisComputer />);
+    act(() => root.unmount());
+    await act(async () => second.reject(new Error("offline")));
+    expect(container.innerHTML).toBe("");
+    root = createRoot(container);
+  });
+
   it("stays away while a computer is connected or the list fails", async () => {
     window.dozoDesktopShell = true;
     api.devices.mockResolvedValue([{ deviceId: "d1", name: "Laptop", connected: true }]);
