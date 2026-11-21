@@ -36,10 +36,11 @@ local stack. `build.sh` keeps the pnpm store in the volume `dozo-server-bundle-s
 (`DOZO_PNPM_STORE_VOLUME`); remove it when done.
 
 CI (`.github/workflows/dozo-server-bundle.yml`) builds linux-x64, macOS arm64 and x64 and Windows
-x64, and runs the smoke test on linux-x64. Only linux-x64 has to pass. A `server-v*` tag, or a
-manual run given a tag, puts the bundles, the Node and Postgres archives and `manifest.json` on a
-draft release that is never marked latest; publishing the draft makes the addresses in the
-manifest live.
+x64, runs the smoke test on linux-x64, and on Windows the desktop app installs, starts and stops
+the bundle it built (`dozo/desktop/tests/stack_e2e_windows.ps1`). linux-x64 and win-x64 have to
+pass. A `server-v*` tag, or a manual run given a tag, puts the bundles, the Node and Postgres
+archives and `manifest.json` on a draft release that is never marked latest; publishing the draft
+makes the addresses in the manifest live.
 
 ## Manifest
 
@@ -123,6 +124,13 @@ real report for the secrets, the account's email and the message sent.
 One JSON line on stdout: `{"written": <path>, "files": <n>}`, or `{"error", "reason"}` with
 `no-server` (no such folder), `failed` or `usage`; exit 0, 2 or 64. For an app menu item: pick the
 file with a save dialog, run the command with `--out` set to it, then reveal the file.
+
+Windows: Node's archive is a zip. The server archive built there has no links: pnpm makes
+junctions on Windows, which hold absolute paths, so upstream's script (through anchored rules in
+`dozo/brand/brand.json`) lists each one instead in `rakazo-server/dozo-links.json`,
+`{ "<link>": "<target>" }`, the link from `rakazo-server/` and the target from the link's folder,
+forward slashes. Once the bundle is in its place, the app makes each one, as a junction to a
+folder or a copy of a file, after checking that both stay inside the bundle.
 
 ## Start contract
 

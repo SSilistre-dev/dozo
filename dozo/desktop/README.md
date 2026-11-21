@@ -206,8 +206,8 @@ account and connects to it; the web app's settings then list it under Computers 
 
 "Use the server on this computer" makes the app install and run a Dozo server for this user alone,
 with no Docker: Node, Postgres and the server bundle as plain processes
-(`dozo/server-bundle/README.md` is the contract). Linux x64 runs it; the code builds for macOS and
-Windows, where nothing has run yet.
+(`dozo/server-bundle/README.md` is the contract). Linux x64 runs it, and Windows x64 runs it in CI
+end to end (below); the code builds for macOS, where it has run by hand only.
 
 - First use downloads the manifest and the three parts (about 185 MB), checks each one's size and
   sha256, unpacks it in a folder beside its place and moves it in with one rename. A download cut
@@ -249,7 +249,8 @@ Windows, where nothing has run yet.
   a program from `versions/` (asked, then killed after 10 s); a pid now used by anything else is
   left alone (the program is checked: `/proc/<pid>/exe` on Linux, `ps -o command=` elsewhere).
   Tried on Linux with `PR_SET_PDEATHSIG` turned off (`tests/stack_e2e.sh`); not run on a Mac.
-  Windows has neither yet (a job object comes with the Windows server).
+  Windows: each process runs in a job object of its own, which ends it with what it started and,
+  as only the app holds it, with the app however the app ends (`src/stack_windows.rs`).
 - The server runs with its own folder as `HOME` and the app's `PATH`. The API and the worker are
   also told the person's own home folder and their login shell's `PATH` (`HOST_USER_HOME`,
   `HOST_USER_PATH`; the shell is asked once per start, for at most 5 s), which a command-line
@@ -404,7 +405,26 @@ compiled and tested by the workflows under "Windows" and "Linux".
 
 The same app, built on a GitHub Actions Windows runner: nothing here builds it on a Mac. It
 compiles and packages there, and the unit tests pass there. Nobody has run the installed app on
-Windows yet, so treat everything below as untested until someone does.
+Windows yet, so treat everything below as untested until someone does, except the server on this
+computer, which CI runs end to end without a window.
+
+- The server on this computer: `tests/stack_e2e_windows.ps1`, the `Desktop stack e2e windows` job
+  of `dozo-server-bundle`, runs the app's own code against the Windows bundle that run built:
+  install (Node and Postgres as a release serves them), start, `/health`, sign up, this
+  computer's device socket, stop; a second start ended at once with the app (Task Manager's end);
+  a phone paired through the relay agent (run, pair, approve, list, revoke); sign-in with the
+  hosted account. After each, no process of the server is left. Long paths are turned off first,
+  as Windows ships. Last line: `DESKTOP STACK E2E (windows): PASS|FAIL`.
+- How it differs from Linux: there is no signal a process without a console hears, so a stop
+  ends the Node processes at once (their job, with what they started); Postgres is started and
+  stopped by `pg_ctl` (`stop -m fast`), which also gives up an administrator's rights that
+  Postgres refuses to run with. Node for Windows is a zip. pnpm makes junctions on Windows, which
+  an archive cannot carry: the Windows bundle lists its links (`dozo-links.json`) and the app
+  makes them as junctions once the bundle is in its place. The secrets file is in
+  `%LOCALAPPDATA%`, which only this user can read; it has no Unix mode.
+- Not tried there: an installed app with a window, a user without administrator rights (the CI
+  runner has them; `pg_ctl` and `initdb` give them up), SmartScreen and antivirus scanning the
+  57,000 files of the bundle.
 
 - Build: the `dozo-desktop-windows` workflow (`.github/workflows/dozo-desktop-windows.yml`). It
   runs on a pull request that touches this directory, or by hand from the Actions tab (Run

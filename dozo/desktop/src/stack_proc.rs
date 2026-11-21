@@ -262,10 +262,12 @@ struct Kept {
     task: JoinHandle<bool>,
 }
 
-/// The long-running processes, in the order they were started.
+/// The long-running processes, in the order they were started, and the steps that stop what
+/// runs outside them.
 #[derive(Default)]
 pub struct Supervisor {
     kept: Vec<Kept>,
+    at_stop: Vec<(Spec, Arc<Launch>)>,
 }
 
 impl Supervisor {
@@ -278,9 +280,16 @@ impl Supervisor {
         Ok(())
     }
 
+    /// Runs `spec` to completion once every process has stopped (`stop_all`): it stops what a
+    /// step started that is not kept here (Postgres started by `pg_ctl` on Windows, `stack.rs`).
+    pub fn at_stop(&mut self, spec: Spec, launch: Arc<Launch>) {
+        self.at_stop.push((spec, launch));
+    }
+
     /// Stops every process: all but the first started together, then the first (Postgres, which
-    /// the others use), so the longest grace sets the wait rather than their sum. True when each
-    /// stopped within its grace period; one that had to be killed makes it false.
+    /// the others use), so the longest grace sets the wait rather than their sum, then runs the
+    /// `at_stop` steps. True when each stopped within its grace period and each step succeeded;
+    /// one that had to be killed makes it false.
     pub async fn stop_all(&mut self) -> bool {
         let mut kept = std::mem::take(&mut self.kept);
         let first = (!kept.is_empty()).then(|| kept.remove(0));
@@ -291,6 +300,9 @@ impl Supervisor {
         for each in kept.into_iter().chain(first) {
             let _ = each.stop.send(true);
             clean &= each.task.await.unwrap_or(false);
+        }
+        for (spec, launch) in std::mem::take(&mut self.at_stop) {
+            clean &= run_once(&spec, &launch, spec.grace).await.is_ok();
         }
         clean
     }
@@ -473,6 +485,37 @@ mod tests {
         others.sort();
         assert_eq!(others, ["stop-api", "stop-web"]);
         assert_eq!(said[5], "stop-postgres");
+    }
+
+    #[tokio::test]
+    async fn the_steps_at_stop_run_after_every_process_stopped() {
+        let dir = scratch("at-stop");
+        let launch = launch(&dir);
+        let order = dir.join("order");
+        let mut supervisor = Supervisor::default();
+        let script = format!(
+            "trap 'echo stop-api >> {o}; exit 0' TERM; echo api >> {o}; while :; do sleep 0.05; done",
+            o = order.display()
+        );
+        supervisor
+            .keep(fake("api", &dir, &script), launch.clone())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while lines(&order).is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let step = format!("echo pg_ctl-stop >> {}", order.display());
+        supervisor.at_stop(fake("pg_ctl", &dir, &step), launch.clone());
+        assert!(supervisor.stop_all().await);
+        assert_eq!(lines(&order), ["api", "stop-api", "pg_ctl-stop"]);
+        // A failed step makes the stop not clean, once.
+        supervisor.at_stop(fake("pg_ctl", &dir, "exit 1"), launch);
+        assert!(!supervisor.stop_all().await);
+        assert!(supervisor.stop_all().await);
     }
 
     #[tokio::test]

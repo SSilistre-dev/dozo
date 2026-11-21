@@ -1,7 +1,8 @@
 //! Downloads one part of the server and unpacks it. A download is written to `<sha256>.part`
 //! beside its final name and goes on from where it stopped; it is trusted only once its size and
 //! sha256 are the manifest's. An archive is unpacked into a folder beside the target and moved
-//! into place in one rename, after every entry was checked to stay inside it. Tested below.
+//! into place in one rename, after every entry was checked to stay inside it. A bundle built on
+//! Windows carries its links as a list (`LINKS`), made once it is in place. Tested below.
 
 use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
@@ -65,8 +66,8 @@ pub async fn download(
     }
     arrived(have);
     if have < part.size {
-        if let Some(path) = part.url.strip_prefix("file://") {
-            copy_from(Path::new(path), &mut file, have, part.size, arrived)?;
+        if let Some(path) = local_path(&part.url) {
+            copy_from(&path, &mut file, have, part.size, arrived)?;
         } else {
             fetch(&part.url, &mut file, have, part.size, arrived).await?;
         }
@@ -82,6 +83,20 @@ pub async fn download(
     }
     fs::rename(&partial, &done)?;
     Ok(done)
+}
+
+/// The file a `file://` address names: `file:///C:/x` and `file://C:\\x` on Windows, `file:///x`
+/// elsewhere.
+pub fn local_path(url: &str) -> Option<PathBuf> {
+    let path = url.strip_prefix("file://")?;
+    let bytes = path.as_bytes();
+    let drive =
+        bytes.len() > 2 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':';
+    Some(PathBuf::from(if cfg!(windows) && drive {
+        &path[1..]
+    } else {
+        path
+    }))
 }
 
 /// A local file (tests and development): the rest after what is already there.
@@ -174,11 +189,12 @@ fn sha256_of(path: &Path) -> io::Result<String> {
         .collect())
 }
 
-/// The archive formats the manifest uses.
+/// The archive formats the manifest uses: Node for Windows is a zip.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Format {
     TarXz,
     TarGz,
+    Zip,
 }
 
 impl Format {
@@ -188,6 +204,8 @@ impl Format {
             Some(Format::TarXz)
         } else if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
             Some(Format::TarGz)
+        } else if url.ends_with(".zip") {
+            Some(Format::Zip)
         } else {
             None
         }
@@ -205,11 +223,17 @@ pub fn unpack(archive: &Path, format: Format, target: &Path, strip_top: bool) ->
     }
     fs::create_dir_all(&scratch)?;
     let file = io::BufReader::new(File::open(archive)?);
-    let reader: Box<dyn Read> = match format {
-        Format::TarXz => Box::new(xz2::read::XzDecoder::new_multi_decoder(file)),
-        Format::TarGz => Box::new(flate2::read::MultiGzDecoder::new(file)),
+    let unpacked = match format {
+        Format::TarXz => unpack_checked(
+            Box::new(xz2::read::XzDecoder::new_multi_decoder(file)),
+            &scratch,
+        ),
+        Format::TarGz => {
+            unpack_checked(Box::new(flate2::read::MultiGzDecoder::new(file)), &scratch)
+        }
+        Format::Zip => unpack_zip(file, &scratch),
     };
-    let result = unpack_checked(reader, &scratch).and_then(|()| {
+    let result = unpacked.and_then(|()| {
         let source = if strip_top {
             only_folder(&scratch)?
         } else {
@@ -241,6 +265,87 @@ fn unpack_checked(reader: Box<dyn Read>, into: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// A zip's files and folders, each checked to stay inside; links and anything else are refused.
+fn unpack_zip(file: io::BufReader<File>, into: &Path) -> io::Result<()> {
+    let mut archive = zip::ZipArchive::new(file).map_err(io::Error::other)?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(io::Error::other)?;
+        let name = PathBuf::from(entry.name().map_err(io::Error::other)?.into_owned());
+        let path = inside(Path::new(""), &name)
+            .filter(|_| !entry.is_symlink())
+            .ok_or_else(|| refused(&name))?;
+        let at = into.join(&path);
+        if entry.is_dir() {
+            fs::create_dir_all(&at)?;
+            continue;
+        }
+        if let Some(parent) = at.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut out = OpenOptions::new().write(true).create_new(true).open(&at)?;
+        io::copy(&mut entry, &mut out)?;
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            out.set_permissions(fs::Permissions::from_mode(mode & 0o755))?;
+        }
+    }
+    Ok(())
+}
+
+/// The list of links a bundle built on Windows carries instead of links (pnpm makes junctions
+/// there, which an archive cannot hold): `{ "<link>": "<target>" }`, the link from the bundle's
+/// top and the target from the link's folder, both with forward slashes.
+pub const LINKS: &str = "dozo-links.json";
+
+/// Makes the links `LINKS` lists in the folder `root`, if it has one: each checked as an archive's
+/// link is (inside `root`, by name), and made as a symbolic link, or on Windows, where that needs
+/// a privilege, as a junction to a folder or a copy of a file. Returns how many it made.
+pub fn make_links(root: &Path) -> io::Result<usize> {
+    let text = match fs::read_to_string(root.join(LINKS)) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let list: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&text).map_err(io::Error::other)?;
+    let mut made = 0;
+    for (link, target) in &list {
+        let target = target.as_str().ok_or_else(|| refused(Path::new(link)))?;
+        let (at, to) = link_paths(root, link, target)?;
+        if let Some(parent) = at.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        crate::stack_os::make_link(&at, &to, Path::new(target))?;
+        made += 1;
+    }
+    Ok(made)
+}
+
+/// Where a listed link goes and what it points at, both under `root`; refused unless both stay
+/// inside it by name and the target's `..` only lead it, as for an archive's link.
+fn link_paths(root: &Path, link: &str, target: &str) -> io::Result<(PathBuf, PathBuf)> {
+    // Plain names between single slashes: no root, drive or backslash.
+    let parts = |text: &str| -> Option<PathBuf> {
+        text.split('/')
+            .map(|part| (!part.is_empty() && !part.contains(['\\', ':'])).then_some(part))
+            .collect()
+    };
+    let (Some(link_path), Some(target_path)) = (parts(link), parts(target)) else {
+        return Err(refused(Path::new(link)));
+    };
+    let clean = inside(Path::new(""), &link_path)
+        .filter(|clean| clean.components().count() == link_path.components().count())
+        .filter(|clean| !clean.as_os_str().is_empty())
+        .ok_or_else(|| refused(&link_path))?;
+    let from = clean.parent().unwrap_or(Path::new(""));
+    let to = Some(&target_path)
+        .filter(|target| leading_dots_only(target))
+        .and_then(|target| inside(from, target))
+        .ok_or_else(|| refused(&link_path))?;
+    Ok((root.join(clean), root.join(to)))
 }
 
 /// Every entry stays inside the folder it is unpacked into: no absolute path, no `..`, nothing
@@ -555,6 +660,122 @@ pub mod tests {
             assert!(!dir.join(format!("{name}.unpack")).exists(), "{name}");
         }
         assert!(!dir.parent().unwrap().join("evil").exists());
+    }
+
+    fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, body) in entries {
+            if name.ends_with('/') {
+                writer.add_directory(*name, options).unwrap();
+            } else {
+                writer.start_file(*name, options).unwrap();
+                writer.write_all(body).unwrap();
+            }
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn a_zip_unpacks_one_top_folder_into_place_and_one_that_escapes_is_refused() {
+        let dir = scratch("zip");
+        let archive = dir.join("node.zip");
+        fs::write(
+            &archive,
+            zip_of(&[
+                ("node-v1/", b""),
+                ("node-v1/node.exe", b"MZ"),
+                ("node-v1/node_modules/npm/index.js", b"js"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            Format::of("https://x/node-v1-win-x64.zip"),
+            Some(Format::Zip)
+        );
+        let target = dir.join("node");
+        unpack(&archive, Format::Zip, &target, true).unwrap();
+        assert_eq!(fs::read(target.join("node.exe")).unwrap(), b"MZ");
+        assert_eq!(
+            fs::read(target.join("node_modules/npm/index.js")).unwrap(),
+            b"js"
+        );
+        for (name, entry) in [("dotdot", "top/../../evil"), ("absolute", "/tmp/evil")] {
+            let path = dir.join(format!("{name}.zip"));
+            fs::write(&path, zip_of(&[(entry, b"x")])).unwrap();
+            let target = dir.join(name);
+            let error = unpack(&path, Format::Zip, &target, false).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{name}");
+            assert!(!target.exists() && !dir.join(format!("{name}.unpack")).exists());
+        }
+        assert!(!dir.parent().unwrap().join("evil").exists());
+    }
+
+    #[test]
+    fn a_file_address_names_its_file() {
+        assert_eq!(local_path("https://x/y"), None);
+        let path = local_path("file:///dist/manifest.json").unwrap();
+        if cfg!(windows) {
+            assert_eq!(path, PathBuf::from("/dist/manifest.json"));
+            assert_eq!(
+                local_path("file:///C:/dist/a.tar.xz").unwrap(),
+                PathBuf::from("C:/dist/a.tar.xz")
+            );
+        } else {
+            assert_eq!(path, PathBuf::from("/dist/manifest.json"));
+        }
+    }
+
+    #[test]
+    fn the_listed_links_are_made_inside_and_reach_their_targets() {
+        let root = scratch("links");
+        let package = root.join("node_modules/.pnpm/a@1/node_modules/a");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(package.join("index.js"), "a").unwrap();
+        fs::write(package.join("LICENSE"), "l").unwrap();
+        assert_eq!(make_links(&root).unwrap(), 0, "no list, nothing to make");
+        fs::write(
+            root.join(LINKS),
+            r#"{
+              "apps/api/node_modules/a": "../../../node_modules/.pnpm/a@1/node_modules/a",
+              "node_modules/.pnpm/node_modules/a": "../a@1/node_modules/a",
+              "node_modules/.pnpm/a@1/node_modules/a/COPYING": "LICENSE"
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(make_links(&root).unwrap(), 3);
+        for link in [
+            "apps/api/node_modules/a",
+            "node_modules/.pnpm/node_modules/a",
+        ] {
+            assert_eq!(
+                fs::read_to_string(root.join(link).join("index.js")).unwrap(),
+                "a"
+            );
+        }
+        assert_eq!(fs::read_to_string(package.join("COPYING")).unwrap(), "l");
+        for (link, target) in [
+            ("a/b", "../../outside"),
+            ("a/b", "/etc"),
+            ("a/b", "c/../../.."),
+            ("../b", "x"),
+            ("a/../b", "x"),
+            ("", "x"),
+        ] {
+            let other = scratch("links-refused");
+            fs::write(
+                other.join(LINKS),
+                serde_json::json!({ link: target }).to_string(),
+            )
+            .unwrap();
+            let error = make_links(&other).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                io::ErrorKind::InvalidData,
+                "{link} -> {target}"
+            );
+        }
     }
 
     #[test]
