@@ -111,15 +111,18 @@ function userBrowserCard(
         : "";
   const detail = redactSecrets(doing, secrets).slice(0, 2000);
   // What the page tool would do on the site, as its card says it.
-  const verb =
-    toolName === "browser_snapshot" ? "read" : toolName === "browser_act" ? "act on" : "open";
+  // What the call would do on the site, as its card says it; the first card names it too.
+  const place = ask.site || "this page";
+  const does =
+    ask.verb === "signin"
+      ? `have you sign in to ${place}`
+      : `${ask.verb === "act" ? "act on" : ask.verb} ${place}`;
   return {
     kind: "ask",
     approvalEffectId: effectId,
-    // The first card names the site too, as every later one does.
     text: ask.browser
-      ? `Let this bot use its own browser on your computer${ask.site ? ` and ${verb} ${ask.site}` : ""}?`
-      : `Let this bot ${verb} ${ask.site || "this page"} in its browser?`,
+      ? `Let this bot use its own browser on your computer${ask.site ? ` and ${does}` : ""}?`
+      : `Let this bot ${does} in its browser?`,
     ...(detail ? { detail, detailFormat: "code" as const } : {}),
     status: "pending",
     actions: [
