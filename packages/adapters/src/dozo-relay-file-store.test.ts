@@ -72,6 +72,38 @@ describe("fileRelayStore", () => {
     expect((await store.list())[0]?.app?.approvedAt).toBe(2);
   });
 
+  it("keeps an approval when run then writes the copy of the channel it read before it", async () => {
+    const store = fileRelayStore(dir);
+    const channel = "Y2hhbm5lbC10d28tMTIzND";
+    const unapproved: RelayHostChannel = {
+      ...entry(channel),
+      pairing: null,
+      app: {
+        key: encodeRelayBytes(crypto.randomBytes(32)),
+        pairingKey: encodeRelayBytes(crypto.randomBytes(32)),
+        verifierSet: false,
+        pairedAt: 1,
+        approvedAt: null,
+      },
+    };
+    await store.put(unapproved);
+    expect((await store.list())[0]?.app?.approvedAt).toBeNull();
+    await store.approve(channel, 7);
+    // run's own write after its verifier is set, from the entry it held before the approval.
+    await store.put({ ...unapproved, app: { ...unapproved.app!, verifierSet: true } });
+    expect((await store.list())[0]?.app).toMatchObject({ verifierSet: true, approvedAt: 7 });
+    // An approval file it cannot read is an error, never "not approved".
+    const approval = path.join(dir, "channels", `${channel}.approved`);
+    await writeFile(approval, JSON.stringify({ approvedAt: "soon" }));
+    await expect(store.list()).rejects.toThrow("is not an approval");
+    await rm(approval);
+    await mkdir(approval);
+    await expect(store.list()).rejects.toThrow();
+    await rm(approval, { recursive: true });
+    await store.remove(channel);
+    expect(await readdir(path.join(dir, "channels"))).toEqual([]);
+  });
+
   it("makes the host key once, even when asked twice at the same time", async () => {
     const first = fileRelayStore(dir);
     const second = fileRelayStore(dir);

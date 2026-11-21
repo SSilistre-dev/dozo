@@ -476,8 +476,10 @@ desktop app answers every screen request with "Screen control is not available o
 (`dozo/desktop/src/device_run.rs`) and a bot's browser tools never run on the member's computer
 (a computer on the user's machine is not graphical), so no browser or screen action reaches it
 yet; only upstream's Electron app, which the fork does not ship, drives apps there. Asking per
-action belongs with adding screen control to the fork's app. The server still offers the screen
-tools to a paired Mac or Windows computer, whose first card then ends in that refusal.
+action belongs with adding screen control to the fork's app. The server offers a connected computer
+the screen tools only when it declares screen control on connecting
+(`packages/adapters/src/dozo-device-capabilities.ts`; the desktop app declares commands only), tells the bot it can only run commands there, and answers a
+refused screen request with that fact (`packages/adapters/src/dozo-device-screen.ts`).
 
 ## Daily sends
 
@@ -644,6 +646,23 @@ Accepted by the owner for now, stated here once:
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
   which it does not show.
+- Generated images and videos leave one usage record each (`packages/adapters/src/dozo-media-usage.ts`,
+  provider `media`, model `generate_image` or `generate_video`), so they show in usage. The media
+  service reports no price, so their cost reads as unknown; nothing is charged against model credit.
+- Uploaded avatars (`packages/adapters/src/dozo-avatar-upload.ts`): a new picture from the web or
+  mobile app, or a data image a bot passes to `update_bot`, is kept only when its first bytes are
+  the PNG, JPEG, GIF or WebP its header names, and it is stored as the server's own 256 px WebP
+  re-encoding. Values already stored, imported bots and exports are not re-checked.
+- Daily digest (Settings > General, web and mobile; off by default;
+  `packages/adapters/src/dozo-daily-digest.ts`): a routine on the chosen bot that, at the chosen
+  hour in the account's timezone, writes one message in that bot's chat from saved data, with no
+  model run: the account's runs in that Space started the local day before (done and failed per
+  bot), its runs waiting for an answer, and its timed routines still due today. A day with none of
+  these writes nothing. It is a routine, so quiet hours and the 12-hour catch-up apply, and it
+  shows in the bot's Routines list, where deleting it turns the digest off. A test run there, or
+  an edit to its prompt, runs the model with that prompt instead. Text is English or Turkish, by
+  the account's language. No meeting preparation: reading a calendar means calling one
+  connector's own tools, which shared code may not name.
 - One-time waits (`packages/adapters/src/dozo-wait.ts`): `schedule_create` with a watch and
   `waitMinutes` (5 minutes to a week, at most 10 going per bot) wakes the bot once in that chat, at
   the first change or at the deadline, then ends; no model runs in between and the routine's

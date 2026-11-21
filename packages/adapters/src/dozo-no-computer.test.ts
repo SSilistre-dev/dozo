@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from "./dozo-device-screen.prompt.js";
 import {
   CLOUD_COMPUTER_TOOL_NAMES,
   filesWithoutComputer,
@@ -12,6 +13,7 @@ import {
 } from "./dozo-no-computer.prompt.js";
 import { createRunExecutor } from "./executor.js";
 import { EncryptedSecretStore } from "./secrets.js";
+import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 
 const provisionComputer = vi.hoisted(() => vi.fn());
 
@@ -200,6 +202,8 @@ async function ownerRun(options: {
   plan: Plan;
   billingEnabled: boolean;
   userComputer?: "connected" | "offline";
+  /** The connected computer's platform. */
+  platform?: string;
   /** A tool the model calls before it answers. */
   call?: { name: string; args: Record<string, unknown> };
 }) {
@@ -213,7 +217,7 @@ async function ownerRun(options: {
       toolResult = await sent.executeTool?.(options.call.name, options.call.args, "exec-1");
     yield { type: "done" as const, text: "" };
   });
-  const device = { deviceId: "device-1", name: "Laptop", platform: "darwin" };
+  const device = { deviceId: "device-1", name: "Laptop", platform: options.platform ?? "darwin" };
   const userDevices = options.userComputer
     ? {
         connected: vi.fn(async () => (options.userComputer === "connected" ? device : null)),
@@ -308,7 +312,6 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
       userComputer: "connected",
     });
     expect(free.tools).toContain("user_computer_shell");
-    expect(free.tools).toContain("user_computer_observe");
     for (const name of CLOUD_COMPUTER_TOOL_NAMES) expect(free.tools).not.toContain(name);
     expect(free.instructions).toContain(NO_OWN_COMPUTER);
     expect(free.instructions).toContain("use the user's computer");
@@ -316,6 +319,21 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
     expect(free.instructions).not.toContain("upgrade");
     expect(free.instructions).not.toContain("hours left");
   });
+
+  it.each(["darwin", "win32"])(
+    "offers a connected %s computer its shell only, never the screen tools",
+    async (platform) => {
+      const free = await ownerRun({
+        plan: { kind: "free" },
+        billingEnabled: true,
+        userComputer: "connected",
+        platform,
+      });
+      expect(free.tools).toContain("user_computer_shell");
+      for (const name of USER_COMPUTER_SCREEN_TOOLS) expect(free.tools).not.toContain(name);
+      expect(free.instructions).toContain(COMPUTER_WITHOUT_SCREEN_INSTRUCTION);
+    },
+  );
 
   it("on Free with the user's computer offline, says how to connect it, never to upgrade", async () => {
     const free = await ownerRun({
