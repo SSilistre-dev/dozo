@@ -66,11 +66,14 @@ async function chatRow(db: Db, actor: Actor, chatId: string): Promise<ChatRow> {
 }
 
 /**
- * Under the bot's row lock, so two creates cannot both pass the count, and a bot deleted at the
- * same time takes the new chat with it.
+ * Under the bot's row lock, so two creates cannot both pass the count, and a bot archived or
+ * deleted since the caller's check is refused. The lock does not hold up writes that only point
+ * at the bot (its messages and runs).
  */
 async function assertRoomForOneMore(tx: Tx, botId: string) {
-  await tx.$queryRaw`SELECT id FROM bots WHERE id = ${botId} FOR UPDATE`;
+  const bot = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM bots WHERE id = ${botId} AND "archivedAt" IS NULL FOR NO KEY UPDATE`;
+  if (bot.length === 0) throw new IsolationError();
   const [{ open }] = await tx.$queryRaw<{ open: number }[]>`
     SELECT count(*)::int AS open FROM dozo_bot_chats
     WHERE "botId" = ${botId} AND "archivedAt" IS NULL`;

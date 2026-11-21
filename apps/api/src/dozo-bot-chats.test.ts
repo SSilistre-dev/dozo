@@ -28,7 +28,7 @@ type Row = {
 };
 
 /** Answers SQL as the table would for one chat, and counts open chats as `open`. */
-function fakeDb(options: { row?: Row | null; open?: number } = {}) {
+function fakeDb(options: { row?: Row | null; open?: number; botGone?: boolean } = {}) {
   const statements: Sql[] = [];
   let row = options.row === undefined ? null : options.row;
   const record = (strings: TemplateStringsArray, values: unknown[]) => {
@@ -40,7 +40,7 @@ function fakeDb(options: { row?: Row | null; open?: number } = {}) {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = record(strings, values);
       if (text.startsWith("SELECT count(*)")) return [{ open: options.open ?? 0 }];
-      if (text.includes("FOR UPDATE")) return [{ id: values[0] }];
+      if (text.includes("FOR NO KEY UPDATE")) return options.botGone ? [] : [{ id: values[0] }];
       return row ? [row] : [];
     }),
     $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -112,7 +112,15 @@ describe("createChat", () => {
       select: { id: true },
     });
     expect(made).toMatchObject({ id: "thread-new", botId: "bot-1", name: "Garden" });
-    expect(statements[0]?.text).toContain("FOR UPDATE");
+    expect(statements[0]?.text).toContain("FOR NO KEY UPDATE");
+  });
+
+  it("refuses a bot archived or deleted since the caller's check", async () => {
+    const { db } = fakeDb({ botGone: true });
+    await expect(
+      createChat(db as never, actor, { botId: "bot-1", name: "Garden" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    expect(db.thread.create).not.toHaveBeenCalled();
   });
 
   it("refuses past the most open chats a bot holds, with a stable code", async () => {
