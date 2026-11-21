@@ -461,8 +461,9 @@ once when the bot asks a question or needs an approval (that is answered in the 
 chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the chat export. A
 token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
 session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
-a newer client falls back to those. Per API instance: 120 requests a minute per token, 10 messages
-a minute per bot and 30 per token, 20 refused tokens a minute per address; bodies up to 64 KiB.
+a newer client falls back to those. A token's requests and an account's messages count against the
+Bot API's budgets, shared by every instance; an address that presents 20 refused tokens in a minute
+waits a minute (per instance); bodies up to 64 KiB. A bare stop word is refused: stop a run in the app.
 
 A message sent over MCP carries the token mark, so the Bot API's token gate holds its run: it asks
 in the app before any outside effect, whatever the approval mode, and nothing it names is taken as

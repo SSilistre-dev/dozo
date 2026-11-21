@@ -63,6 +63,7 @@ it("does not send an injected email in Never ask: the call returns waiting_for_y
     authenticate: async (authorization) => (authorization === "Bearer good" ? caller : null),
     connect: () => client as never,
     touch: async () => undefined,
+    take: async () => true,
     publicOrigin: "https://app.dozo.test",
     trustedOrigin: () => false,
     clientIp: () => "203.0.113.7",

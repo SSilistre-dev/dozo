@@ -13,11 +13,16 @@ import { runAsTenant } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import type { DozoBotApiClient, DozoBotApiDeps } from "./dozo-bot-api.js";
-import { dozoBotApiDeps } from "./dozo-bot-api.js";
+import {
+  DOZO_BOT_API_REQUESTS_PER_MINUTE,
+  DOZO_BOT_API_SENDS_PER_MINUTE,
+  dozoBotApiDeps,
+} from "./dozo-bot-api.js";
 import { exportChat } from "./dozo-chat-export.js";
 import { messageBody } from "./dozo-chat-markdown.js";
 import { requestBodyLimit } from "./request-body-limit.js";
 import type { createRouter } from "./router.js";
+import { isStopMessage } from "./thread-stop.js";
 import { throttleKey, windowCounter } from "./window-counter.js";
 
 export const DOZO_MCP_PATH = "/api/v1/dozo/mcp";
@@ -30,21 +35,20 @@ export const DOZO_MCP_MAX_BODY_BYTES = 64 * 1024;
 export const DOZO_MCP_REPLY_WAIT_MS = 45_000;
 
 const MINUTE_MS = 60_000;
-// Burst guards, counted per API instance: a token's requests, the messages one bot gets, and the
-// refused tokens one address presents. Model use is limited by the account's plan, as in the app.
-const REQUESTS_PER_MINUTE = 120;
-const SENDS_PER_BOT_PER_MINUTE = 10;
-const SENDS_PER_TOKEN_PER_MINUTE = 30;
+// Refused tokens one address presents, counted in this instance before any lookup. A token's
+// requests and an account's messages share the Bot API's budgets, counted across instances.
 const REFUSED_PER_ADDRESS_PER_MINUTE = 20;
 const MAX_LOCKED_ADDRESSES = 10_000;
 
 /** The Bot API's token check and in-process client, which this endpoint shares. */
-export type DozoMcpDeps = Pick<DozoBotApiDeps, "authenticate" | "connect" | "touch"> & {
+export type DozoMcpDeps = Pick<
+  DozoBotApiDeps,
+  "authenticate" | "connect" | "touch" | "take" | "clientIp"
+> & {
   prisma: PrismaClient;
   /** The origin clients reach the API at, as the web app's own proxy serves it. */
   publicOrigin: string;
   trustedOrigin: (origin: string) => boolean;
-  clientIp: (c: Context) => string | undefined;
   version: string;
   now?: () => number;
 };
@@ -53,10 +57,10 @@ export type DozoMcpDeps = Pick<DozoBotApiDeps, "authenticate" | "connect" | "tou
 export function dozoMcpDeps(
   prisma: PrismaClient,
   router: ReturnType<typeof createRouter>,
-  options: Omit<DozoMcpDeps, "authenticate" | "connect" | "touch" | "prisma">,
+  options: Omit<DozoMcpDeps, "authenticate" | "connect" | "touch" | "take" | "prisma">,
 ): DozoMcpDeps {
-  const { authenticate, connect, touch } = dozoBotApiDeps(prisma, router);
-  return { authenticate, connect, touch, prisma, ...options };
+  const { authenticate, connect, touch, take } = dozoBotApiDeps(prisma, router, options.clientIp);
+  return { authenticate, connect, touch, take, prisma, ...options };
 }
 
 /**
@@ -66,8 +70,6 @@ export function dozoMcpDeps(
  */
 export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
   const now = deps.now ?? Date.now;
-  const requests = windowCounter(MINUTE_MS, now);
-  const sends = windowCounter(MINUTE_MS, now);
   const refused = windowCounter(MINUTE_MS, now);
   // Addresses past the refusal limit, until when: checked before a presented token is looked up.
   const lockedUntil = new Map<string, number>();
@@ -110,7 +112,7 @@ export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
       });
     }
     const { tokenId, actor } = caller;
-    if (requests(`token:${tokenId}`) > REQUESTS_PER_MINUTE) return tooMany(c);
+    if (!(await deps.take(`token:${tokenId}`, DOZO_BOT_API_REQUESTS_PER_MINUTE))) return tooMany(c);
     void bestEffort("mcp token last used", deps.touch(tokenId));
     const client = deps.connect({
       actor,
@@ -118,12 +120,9 @@ export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
       // A token revoked, or its owner deactivated, while a send waits ends the wait.
       stillAuthorized: async () => (await deps.authenticate(authorization))?.tokenId === tokenId,
     });
-    const operations = dozoMcpOperations(deps.prisma, actor, caller.botId, client, (botId) => {
-      if (
-        sends(`bot:${botId}`) > SENDS_PER_BOT_PER_MINUTE ||
-        sends(`token:${tokenId}`) > SENDS_PER_TOKEN_PER_MINUTE
-      )
-        throw new ClientError("TOO_MANY_REQUESTS", "Too many messages to this bot. Wait a minute.");
+    const operations = dozoMcpOperations(deps.prisma, actor, caller.botId, client, async () => {
+      if (!(await deps.take(`sends:${actor.userId}`, DOZO_BOT_API_SENDS_PER_MINUTE)))
+        throw new ClientError("TOO_MANY_REQUESTS", "Too many messages. Wait a minute.");
     });
     getLogger().info("dozo.mcp.request", { "token.id": tokenId, "user.id": actor.userId });
     return handleDozoMcpRequest(c.req.raw, operations, { version: deps.version });
@@ -140,7 +139,7 @@ export function dozoMcpOperations(
   actor: Actor,
   onlyBotId: string | null,
   client: DozoBotApiClient,
-  countSend: (botId: string) => void,
+  countSend: () => Promise<void>,
 ): DozoMcpOperations {
   // Bots are rows of the owner's Space: read them as the owner, as the app's procedures do.
   const asOwner = <T>(work: () => Promise<T>) => refusals(() => runAsTenant(actor, work));
@@ -168,8 +167,10 @@ export function dozoMcpOperations(
       }),
     sendMessage: (botId, text, signal) =>
       asOwner(async () => {
+        // In the app a stop word stops every run in the chat, the owner's too; a token may not.
+        if (isStopMessage({ text })) throw new ClientError("BAD_REQUEST", "Stop a run in the app.");
         await ownBot(botId);
-        countSend(botId);
+        await countSend();
         // The token mark: the run this message starts or reaches asks before any outside effect,
         // and nothing it names is taken as the owner's own word (dozo-token-run.ts).
         const sent = await client.threads.send(

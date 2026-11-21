@@ -6663,8 +6663,8 @@
     },
     {
       "file": "apps/api/src/app.ts",
-      "find": "  mountDozoBotApi(app, dozoBotApiDeps(prisma, router));\n  if (env.inboundEmail) {\n",
-      "replace": "  mountDozoBotApi(app, dozoBotApiDeps(prisma, router));\n  mountDozoMcp(\n    app,\n    dozoMcpDeps(prisma, router, {\n      publicOrigin: env.authUrl,\n      trustedOrigin: (origin) => isTrustedOrigin(origin, env),\n      clientIp: requestClientIp,\n      version: env.gitSha ?? \"dev\",\n    }),\n  );\n  if (env.inboundEmail) {\n",
+      "find": "  mountDozoBotApi(app, dozoBotApiDeps(prisma, router, requestClientIp));\n  if (env.inboundEmail) {\n",
+      "replace": "  mountDozoBotApi(app, dozoBotApiDeps(prisma, router, requestClientIp));\n  mountDozoMcp(\n    app,\n    dozoMcpDeps(prisma, router, {\n      publicOrigin: env.authUrl,\n      trustedOrigin: (origin) => isTrustedOrigin(origin, env),\n      clientIp: requestClientIp,\n      version: env.gitSha ?? \"dev\",\n    }),\n  );\n  if (env.inboundEmail) {\n",
       "requires": [
         "apps/api/src/dozo-mcp.ts"
       ],

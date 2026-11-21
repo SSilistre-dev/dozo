@@ -29,7 +29,11 @@ vi.mock("@rakazo/adapters", () => ({
   DOZO_MCP_REPLY_MAX_CHARS: 12,
 }));
 vi.mock("./dozo-chat-export.js", () => ({ exportChat: spies.exportChat }));
-vi.mock("./dozo-bot-api.js", () => ({ dozoBotApiDeps: spies.botApiDeps }));
+vi.mock("./dozo-bot-api.js", () => ({
+  dozoBotApiDeps: spies.botApiDeps,
+  DOZO_BOT_API_REQUESTS_PER_MINUTE: 60,
+  DOZO_BOT_API_SENDS_PER_MINUTE: 20,
+}));
 
 const ORIGIN = "https://app.dozo.test";
 const actor: Actor = {
@@ -53,11 +57,13 @@ function app(
   const hono = new Hono();
   const connect = vi.fn((_context: DozoBotApiContext) => ({}) as never);
   const touch = vi.fn(async () => undefined);
+  const take = vi.fn(async (_key: string, _limit: number) => true);
   const deps: DozoMcpDeps = {
     prisma,
     authenticate,
     connect,
     touch,
+    take,
     publicOrigin: ORIGIN,
     trustedOrigin: (origin) => origin === ORIGIN,
     clientIp: (c) => c.req.header("x-test-ip") ?? "203.0.113.7",
@@ -65,7 +71,7 @@ function app(
     now: () => clock,
   };
   mountDozoMcp(hono, deps);
-  return { hono, authenticate, connect, touch };
+  return { hono, authenticate, connect, touch, take };
 }
 
 const post = (headers: Record<string, string> = {}, body = '{"jsonrpc":"2.0"}') =>
@@ -84,7 +90,14 @@ beforeEach(() => {
 
 describe("the MCP endpoint's HTTP layer", () => {
   it("shares the Bot API's token check, in-process client and last-used mark", () => {
-    const shared = { authenticate: vi.fn(), connect: vi.fn(), touch: vi.fn(), runStatus: vi.fn() };
+    const shared = {
+      authenticate: vi.fn(),
+      connect: vi.fn(),
+      touch: vi.fn(),
+      take: vi.fn(),
+      runStatus: vi.fn(),
+      clientIp: vi.fn(),
+    };
     spies.botApiDeps.mockReturnValue(shared);
     const router = {} as Parameters<typeof dozoMcpDeps>[1];
     const options = {
@@ -97,10 +110,11 @@ describe("the MCP endpoint's HTTP layer", () => {
       authenticate: shared.authenticate,
       connect: shared.connect,
       touch: shared.touch,
+      take: shared.take,
       prisma,
       ...options,
     });
-    expect(spies.botApiDeps).toHaveBeenCalledWith(prisma, router);
+    expect(spies.botApiDeps).toHaveBeenCalledWith(prisma, router, options.clientIp);
   });
 
   it("publishes its protected resource metadata: its address and the header the token goes in", async () => {
@@ -162,9 +176,11 @@ describe("the MCP endpoint's HTTP layer", () => {
     expect(spies.handle).not.toHaveBeenCalled();
   });
 
-  it("limits one token's requests per minute", async () => {
-    const { hono } = app();
-    for (let request = 0; request < 120; request++) await hono.request(post(bearer()));
+  it("counts a token's requests in the Bot API's budget, shared by every instance", async () => {
+    const { hono, take } = app();
+    expect((await hono.request(post(bearer()))).status).toBe(200);
+    expect(take).toHaveBeenCalledWith("token:tok-1", 60);
+    take.mockResolvedValueOnce(false);
     const limited = await hono.request(post(bearer()));
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
@@ -184,23 +200,16 @@ describe("the MCP endpoint's HTTP layer", () => {
     await expect(context.stillAuthorized()).resolves.toBe(false);
   });
 
-  it("limits the messages one token sends per minute across its bots", async () => {
-    await app().hono.request(post(bearer()));
-    const ops = spies.handle.mock.calls[0]?.[1] as DozoMcpOperations;
-    findBot.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id }));
-    const sendTo = (bot: number) => ops.sendMessage(`bot-${bot}`, "hi", AbortSignal.abort());
-    for (let message = 0; message < 30; message++) await sendTo(message).catch(() => undefined);
-    await expect(sendTo(99)).rejects.toThrow("Too many messages");
-  });
-
-  it("limits the messages one bot gets per minute", async () => {
-    await app().hono.request(post(bearer()));
+  it("counts a send in the account's message budget, shared with the Bot API", async () => {
+    const { hono, take } = app();
+    await hono.request(post(bearer()));
     const ops = spies.handle.mock.calls[0]?.[1] as DozoMcpOperations;
     findBot.mockResolvedValue({ id: "bot-1" });
-    // The client here has no procedures, so each send fails after it is counted.
-    const sendOnce = () => ops.sendMessage("bot-1", "hi", AbortSignal.abort());
-    for (let message = 0; message < 10; message++) await sendOnce().catch(() => undefined);
-    await expect(sendOnce()).rejects.toThrow("Too many messages to this bot");
+    take.mockResolvedValueOnce(false);
+    await expect(ops.sendMessage("bot-1", "hi", AbortSignal.abort())).rejects.toThrow(
+      "Too many messages. Wait a minute.",
+    );
+    expect(take).toHaveBeenLastCalledWith("sends:user-1", 20);
   });
 });
 
@@ -256,7 +265,7 @@ function fakeClient(events: AsyncGenerator<ProductEvent> | (() => never) = strea
 
 function operations(
   client: ReturnType<typeof fakeClient>,
-  countSend = vi.fn(),
+  countSend = vi.fn(async () => undefined),
   onlyBotId: string | null = null,
 ) {
   return dozoMcpOperations(prisma, actor, onlyBotId, client as never, countSend);
@@ -301,7 +310,7 @@ describe("what a token's owner may do", () => {
     const signal = new AbortController().signal;
     const result = await operations(client, countSend).sendMessage("bot-1", "hi", signal);
     expect(result).toEqual({ status: "replied", reply: "Hello\n\nthere", truncated: false });
-    expect(countSend).toHaveBeenCalledWith("bot-1");
+    expect(countSend).toHaveBeenCalledOnce();
     expect(client.threads.send).toHaveBeenCalledWith(
       { botId: "bot-1", text: "hi", clientNonce: expect.any(String) },
       { signal },
@@ -368,6 +377,14 @@ describe("what a token's owner may do", () => {
     await expect(
       operations(client).sendMessage("bot-1", "hi", new AbortController().signal),
     ).rejects.toThrow("realtime down");
+  });
+
+  it("refuses a stop word, which in the app would stop every run in the chat", async () => {
+    const client = fakeClient();
+    await expect(
+      operations(client).sendMessage("bot-1", "stop", new AbortController().signal),
+    ).rejects.toThrow("Stop a run in the app.");
+    expect(client.threads.send).not.toHaveBeenCalled();
   });
 
   it("refuses a bot the owner did not make before sending anything", async () => {
