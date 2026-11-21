@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "backup",
+  "description": "The Back Up and Restore window (ui/backup.html): a backup, picking a backup and restoring it. Like the app's other screens it has no `remote` entry.",
+  "windows": ["backup"],
+  "permissions": ["allow-back-up", "allow-restore-pick", "allow-restore"]
+}
