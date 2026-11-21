@@ -97,15 +97,16 @@ test("revision: an earlier message is edited after a confirm, and not past a too
   await opened(page.getByRole("menu"));
   await shoot(page, "app-edit-earlier-dark");
   await page.getByRole("menuitem", { name: "Edit" }).click();
-  const confirm = page.getByRole("alertdialog");
-  await expect(confirm).toContainText("Remove the messages after it?");
-  await opened(confirm);
-  await shoot(page, "app-edit-earlier-confirm-dark");
-  await confirm.getByRole("button", { name: "Edit" }).click();
   const editor = page.getByRole("textbox", { name: "Edit" });
   await expect(editor).toHaveValue("Plan dinner");
   await editor.fill("Plan lunch");
   await page.getByRole("dialog").getByRole("button", { name: "Send" }).click();
+  // Its reply and the later turn go: Send asks first, naming how many.
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm).toContainText("Remove 3 messages?");
+  await opened(confirm);
+  await shoot(page, "app-edit-earlier-confirm-dark");
+  await confirm.getByRole("button", { name: "Remove" }).click();
   await expect(asked(page, "Make it vegan")).toHaveCount(0, { timeout: 30_000 });
   await expect(asked(page, "Plan lunch")).toBeVisible();
   await expect(replies).toHaveCount(greeting + 1, { timeout: 60_000 });

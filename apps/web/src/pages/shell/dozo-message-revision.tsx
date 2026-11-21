@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
 import {
@@ -19,7 +20,8 @@ import { useSave, useSpaceQueries } from "../../lib/query";
 /**
  * Edit for the caller's messages and Regenerate for the bot's replies, in the message's More menu.
  * The server names the messages each applies to, read while the menu is open, so a message it does
- * not name offers neither. An earlier one removes every later message, so it is confirmed first.
+ * not name offers neither. An earlier one removes every later message, so the change asks first,
+ * naming how many go.
  * The chat updates from the thread's own events.
  */
 export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean) {
@@ -50,16 +52,19 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
   const earlierRegenerate = named?.earlierRegenerateMessageIds?.includes(message.id) ?? false;
   const canEdit = named?.editMessageId === message.id || earlierEdit;
   const canRegenerate = named?.regenerateMessageId === message.id || earlierRegenerate;
+  const count = named?.removedCounts?.[message.id] ?? 0;
   const startEdit = () => setDraft(messageText(message));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (draft?.trim()) edit.run(draft.trim());
+    if (!draft?.trim()) return;
+    if (earlierEdit) setConfirming("edit");
+    else edit.run(draft.trim());
   };
 
   const items = (
     <>
       {canEdit ? (
-        <DropdownMenuItem onClick={earlierEdit ? () => setConfirming("edit") : startEdit}>
+        <DropdownMenuItem onClick={startEdit}>
           <Pencil size={14} strokeWidth={1.7} />
           <Trans>Edit</Trans>
         </DropdownMenuItem>
@@ -80,20 +85,18 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
     confirming === null ? null : (
       <ConfirmDialog
         onCancel={() => setConfirming(null)}
-        title={<Trans>Remove the messages after it?</Trans>}
-        confirmLabel={confirming === "edit" ? <Trans>Edit</Trans> : <Trans>Regenerate</Trans>}
+        title={t`${plural(count, { one: "Remove # message?", other: "Remove # messages?" })}`}
+        confirmLabel={<Trans>Remove</Trans>}
         onConfirm={() => {
           setConfirming(null);
-          if (confirming === "edit") startEdit();
-          else regenerate.run();
+          if (confirming === "regenerate") regenerate.run();
+          else if (draft?.trim()) edit.run(draft.trim());
         }}
       />
     );
 
-  const dialog =
-    draft === null ? (
-      confirm
-    ) : (
+  const editor =
+    draft === null ? null : (
       <Dialog
         open
         // Only Edit opens it, so a change of state here is always a close.
@@ -129,7 +132,15 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
       </Dialog>
     );
 
-  return { items, dialog };
+  return {
+    items,
+    dialog: (
+      <>
+        {editor}
+        {confirm}
+      </>
+    ),
+  };
 }
 
 function messageText(message: ThreadMessage): string {

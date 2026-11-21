@@ -97,6 +97,7 @@ vi.mock("../components/settings-group", () => ({
   ),
 }));
 
+import { Alert } from "react-native";
 import DozoEditMessage from "../app/dozo-edit-message";
 import DozoPins from "../app/dozo-pins";
 import { setDozoEditOpener, useDozoMessageActions } from "./dozo-message-actions";
@@ -134,11 +135,12 @@ describe("the edit screen", () => {
     });
 
   /** Opens the screen the way a message's Edit does, with its text handed over. */
-  async function openFromMenu(text: string) {
+  async function openFromMenu(
+    text: string,
+    revisable: Record<string, unknown> = { editMessageId: "m-1", regenerateMessageId: null },
+  ) {
     ui.rpc.mockImplementation(async (path: string) =>
-      path === "dozoMessages/pins"
-        ? { pins: [] }
-        : { editMessageId: "m-1", regenerateMessageId: null },
+      path === "dozoMessages/pins" ? { pins: [] } : revisable,
     );
     let actions: ReturnType<typeof useDozoMessageActions> = [];
     function Row() {
@@ -186,6 +188,38 @@ describe("the edit screen", () => {
       expect(container.textContent).toContain("That message can no longer be edited"),
     );
     expect(ui.back).not.toHaveBeenCalled();
+  });
+
+  it("asks before an earlier message's edit removes the later ones, then sends it", async () => {
+    const alert = vi.mocked(Alert.alert);
+    alert.mockReset();
+    await openFromMenu("Plan dinner", {
+      editMessageId: "m-9",
+      regenerateMessageId: null,
+      earlierEditMessageIds: ["m-1"],
+      removedCounts: { "m-1": 4 },
+    });
+    await type("Plan lunch");
+    await act(async () => ui.header!.action!.onPress());
+    expect(ui.rpc).not.toHaveBeenCalledWith(
+      "dozoMessages/edit",
+      expect.anything(),
+      expect.anything(),
+    );
+    const [title, , buttons] = alert.mock.calls[0]!;
+    expect(title).toBe("Remove 4 messages?");
+    expect(buttons?.map((button) => [button.text, button.style])).toEqual([
+      ["Cancel", "cancel"],
+      ["Remove", "destructive"],
+    ]);
+    ui.rpc.mockResolvedValueOnce({ runId: "run-2" });
+    await act(async () => buttons![1]!.onPress!());
+    await vi.waitFor(() => expect(ui.back).toHaveBeenCalledOnce());
+    expect(ui.rpc).toHaveBeenCalledWith(
+      "dozoMessages/edit",
+      { threadId: "thread-1", messageId: "m-1", text: "Plan lunch" },
+      expect.anything(),
+    );
   });
 
   it("opens empty without ids rather than failing", async () => {

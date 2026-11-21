@@ -195,11 +195,11 @@ describe("a message's menu on mobile", () => {
     await shows(["Edit", "Pin"]);
     actions[0]!.onPress();
     expect(open).toHaveBeenCalledWith("thread-1", "m-user");
-    expect(takeEditDraft("m-user")).toBe("First\n\nSecond");
-    expect(takeEditDraft("m-user")).toBe("");
+    expect(takeEditDraft("m-user")).toEqual({ text: "First\n\nSecond", removes: null });
+    expect(takeEditDraft("m-user")).toEqual({ text: "", removes: null });
   });
 
-  it("asks before an earlier message's Edit or Regenerate removes the later ones", async () => {
+  it("hands an earlier message's count to Edit, and asks before Regenerate removes the later ones", async () => {
     const open = vi.fn();
     setDozoEditOpener(open);
     answers["dozoMessages/revisable"] = {
@@ -207,19 +207,15 @@ describe("a message's menu on mobile", () => {
       regenerateMessageId: "m-later-reply",
       earlierEditMessageIds: ["m-user"],
       earlierRegenerateMessageIds: ["m-bot"],
+      removedCounts: { "m-user": 3, "m-bot": 2 },
     };
     await render(<Row m={message("m-user")} />);
     await shows(["Edit", "Pin"]);
     actions[0]!.onPress();
-    expect(open).not.toHaveBeenCalled();
-    const [title, body, buttons] = api.alert.mock.calls[0]!;
-    expect([title, body]).toEqual(["Remove the messages after it?", undefined]);
-    expect(buttons.map((b: { text: string; style: string }) => [b.text, b.style])).toEqual([
-      ["Cancel", "cancel"],
-      ["Edit", "destructive"],
-    ]);
-    buttons[1].onPress();
+    // Edit opens at once; its screen asks before Send, told how many go.
+    expect(api.alert).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith("thread-1", "m-user");
+    expect(takeEditDraft("m-user")).toEqual({ text: "Hello", removes: 3 });
 
     await render(<Row m={message("m-bot", { role: "bot" })} />);
     await shows(["Regenerate", "Pin"]);
@@ -230,8 +226,12 @@ describe("a message's menu on mobile", () => {
       expect.anything(),
       expect.anything(),
     );
-    const regenerate = api.alert.mock.calls[1]![2];
-    expect(regenerate[1].text).toBe("Regenerate");
+    const [title, body, regenerate] = api.alert.mock.calls[0]!;
+    expect([title, body]).toEqual(["Remove 2 messages?", undefined]);
+    expect(regenerate.map((b: { text: string; style: string }) => [b.text, b.style])).toEqual([
+      ["Cancel", "cancel"],
+      ["Remove", "destructive"],
+    ]);
     await act(async () => regenerate[1].onPress());
     await vi.waitFor(() =>
       expect(api.rpc).toHaveBeenCalledWith(

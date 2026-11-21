@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -27,6 +27,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
   const enqueue = vi.fn();
+  let memoryLearns = false;
   const users: string[] = [];
 
   async function person(): Promise<Actor> {
@@ -64,8 +65,13 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     return { botId: bot.id, ...(await turn(actor, { threadId, botId: bot.id }, "Plan dinner")) };
   }
 
-  async function turn(actor: Actor, at: { threadId: string; botId: string }, text: string) {
-    const sent = await send(actor, at, text);
+  async function turn(
+    actor: Actor,
+    at: { threadId: string; botId: string },
+    text: string,
+    attachment?: MessageBlock,
+  ) {
+    const sent = await send(actor, at, text, attachment);
     const runId = sent.runId!;
     await system.run.update({ where: { id: runId }, data: { status: "running" } });
     const reply = await botSays(actor, { ...at, runId }, `${text}: done.`);
@@ -73,14 +79,19 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     return { threadId: at.threadId, askId: sent.messageId, askSeq: sent.seq, runId, reply };
   }
 
-  function send(actor: Actor, at: { threadId: string; botId: string }, text: string) {
+  function send(
+    actor: Actor,
+    at: { threadId: string; botId: string },
+    text: string,
+    attachment?: MessageBlock,
+  ) {
     return createThreadEvents(system).sendUserMessage({
       spaceId: actor.spaceId,
       threadId: at.threadId,
       botId: at.botId,
       userId: actor.userId,
       authorUserId: actor.userId,
-      blocks: [{ kind: "text", text }],
+      blocks: [{ kind: "text", text }, ...(attachment ? [attachment] : [])],
       prompt: text,
       trigger: "user",
       clientNonce: randomUUID(),
@@ -150,6 +161,12 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
         sandboxProvider: "fake",
       },
       events: createThreadEvents(prisma),
+      // The Space's memory learns from each turn only where a test says so.
+      memoryProviders: {
+        resolve: vi.fn(async () =>
+          memoryLearns ? { provider: { retainConversation: vi.fn() } } : null,
+        ),
+      },
       jobs: { enqueue },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       dataDir: "/tmp/rakazo-revision-test",
@@ -302,6 +319,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
       regenerateMessageId: second.reply.id,
       earlierEditMessageIds: [first.askId],
       earlierRegenerateMessageIds: [first.reply.id],
+      removedCounts: { [first.askId]: 3, [first.reply.id]: 3 },
     });
 
     const edited = await call(me, "dozoMessages/edit", {
@@ -418,6 +436,176 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     });
     expect(refused.status).toBe(409);
     expect((await messagesOf(first.threadId)).at(-1)?.id).toBe(arrived.messageId);
+  });
+
+  const NOTHING = { editMessageId: null, regenerateMessageId: null };
+  const revisableIn = async (actor: Actor, threadId: string) =>
+    (await call(actor, "dozoMessages/revisable", { threadId })).json;
+  const idsIn = async (threadId: string) => (await messagesOf(threadId)).map((m) => m.id);
+
+  it("counts the chat's rewinds, which a summary begun before one compares", async () => {
+    const me = await person();
+    const { first } = await twoTurns(me);
+    const before = await system.thread.findUniqueOrThrow({ where: { id: first.threadId } });
+    expect(
+      (
+        await call(me, "dozoMessages/regenerate", {
+          threadId: first.threadId,
+          messageId: first.reply.id,
+        })
+      ).status,
+    ).toBe(200);
+    const after = await system.thread.findUniqueOrThrow({ where: { id: first.threadId } });
+    expect(after.dozoRewinds).toBe(before.dozoRewinds + 1);
+    expect(after.nextMessageSeq).toBe(first.reply.seq);
+  });
+
+  it("offers nothing and changes nothing while the Space's memory learns from each turn", async () => {
+    const me = await person();
+    const { first, second } = await twoTurns(me);
+    memoryLearns = true;
+    try {
+      expect(await revisableIn(me, first.threadId)).toEqual(NOTHING);
+      const refused = await call(me, "dozoMessages/edit", {
+        threadId: first.threadId,
+        messageId: second.askId,
+        text: "Plan lunch",
+      });
+      expect(refused.status).toBe(409);
+    } finally {
+      memoryLearns = false;
+    }
+    expect(await idsIn(first.threadId)).toEqual([
+      first.askId,
+      first.reply.id,
+      second.askId,
+      second.reply.id,
+    ]);
+  });
+
+  it("does not go back past a later message with a file, which regenerating keeps", async () => {
+    const me = await person();
+    const first = await chat(me);
+    const at = { threadId: first.threadId, botId: first.botId };
+    const file: MessageBlock = {
+      kind: "file",
+      artifactId: randomUUID(),
+      mimeType: "application/pdf",
+      name: "menu.pdf",
+    } as MessageBlock;
+    const second = await turn(me, at, "Read this", file);
+    expect(await revisableIn(me, first.threadId)).toEqual({
+      editMessageId: null,
+      regenerateMessageId: second.reply.id,
+    });
+    expect(
+      (await call(me, "dozoMessages/edit", { ...at, messageId: first.askId, text: "x" })).status,
+    ).toBe(409);
+    expect(await idsIn(first.threadId)).toEqual([
+      first.askId,
+      first.reply.id,
+      second.askId,
+      second.reply.id,
+    ]);
+  });
+
+  it("does not go back past another member's pin, and leaves it in place", async () => {
+    const me = await person();
+    const { first, second } = await twoTurns(me);
+    const other = `revision-${randomUUID()}`;
+    users.push(other);
+    const createdAt = new Date();
+    const space = await system.space.findUniqueOrThrow({ where: { id: me.spaceId } });
+    await system.user.create({
+      data: { id: other, name: "Bo", email: `${other}@example.test`, emailVerified: true },
+    });
+    await system.member.create({
+      data: {
+        id: `m-${other}`,
+        organizationId: space.organizationId,
+        userId: other,
+        role: "member",
+        createdAt,
+      },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId: me.spaceId,
+        organizationId: space.organizationId,
+        userId: other,
+        role: "member",
+        createdAt,
+      },
+    });
+    await system.$executeRaw`
+      INSERT INTO dozo_message_pins ("userId", "spaceId", "threadId", "messageId")
+      VALUES (${other}, ${me.spaceId}, ${first.threadId}, ${second.askId})`;
+    expect((await revisableIn(me, first.threadId)).earlierEditMessageIds).toBeUndefined();
+    expect(
+      (
+        await call(me, "dozoMessages/edit", {
+          threadId: first.threadId,
+          messageId: first.askId,
+          text: "Plan lunch",
+        })
+      ).status,
+    ).toBe(409);
+    const pins = await system.$queryRaw<Array<{ messageId: string }>>`
+      SELECT "messageId" FROM dozo_message_pins WHERE "userId" = ${other}`;
+    expect(pins).toEqual([{ messageId: second.askId }]);
+  });
+
+  it("treats a later run's event type it does not know as acting outside the chat", async () => {
+    const me = await person();
+    const { first, second, at } = await twoTurns(me);
+    await system.$transaction((tx) =>
+      appendEventInTransaction(tx, {
+        spaceId: me.spaceId,
+        ...at,
+        type: "someday.new",
+        runId: second.runId,
+        payload: {},
+      }),
+    );
+    expect(await revisableIn(me, first.threadId)).toEqual(NOTHING);
+  });
+
+  it("edits and regenerates in a bot's extra chat, and never applies to another chat", async () => {
+    const me = await person();
+    const main = await chat(me);
+    const created = await call(me, "dozoChats/create", { botId: main.botId, name: "Garden" });
+    expect(created.status).toBe(200);
+    const chatId = (created.json.chat as { id: string }).id;
+    const at = { threadId: chatId, botId: main.botId };
+    const first = await turn(me, at, "Plan the garden");
+    const second = await turn(me, at, "Add tomatoes");
+    expect(await revisableIn(me, chatId)).toMatchObject({
+      editMessageId: second.askId,
+      earlierEditMessageIds: [first.askId],
+      earlierRegenerateMessageIds: [first.reply.id],
+    });
+    // The extra chat's message is no message of the main chat's.
+    expect(
+      (
+        await call(me, "dozoMessages/edit", {
+          threadId: main.threadId,
+          messageId: first.askId,
+          text: "x",
+        })
+      ).status,
+    ).toBe(409);
+    const regenerated = await call(me, "dozoMessages/regenerate", {
+      threadId: chatId,
+      messageId: first.reply.id,
+    });
+    expect(regenerated.status).toBe(200);
+    expect(await idsIn(chatId)).toEqual([first.askId]);
+    expect(await idsIn(main.threadId)).toEqual([main.askId, main.reply.id]);
+    const run = await system.run.findUniqueOrThrow({
+      where: { id: regenerated.json.runId as string },
+    });
+    expect(run).toMatchObject({ threadId: chatId, sourceMessageId: first.askId });
   });
 
   it("hides another person's chat", async () => {

@@ -1,4 +1,5 @@
 import type { Actor } from "@rakazo/contracts";
+import { ProductEventType } from "@rakazo/contracts";
 import { ClientError, MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import {
   loadRevisionHistory,
   MessageNotRevisableError,
   planRevision,
+  QUIET_EVENT_TYPES,
   REVISION_TURNS,
   revisableOf,
   reviseInTransaction,
@@ -113,8 +115,11 @@ function chat() {
     events: [] as Array<{ runId: string; type: string }>,
     /** Runs with a recorded external effect. */
     effects: [] as string[],
-    /** Members with a pin on a removed message. */
-    pinnedBy: [] as string[],
+    /** Every member's pins in the chat. */
+    pins: [] as Array<{ messageId: string; userId: string }>,
+    /** The Space's memory learns from each finished turn. */
+    learns: false,
+    retryAfter: null as number | null,
   };
 }
 type Chat = ReturnType<typeof chat>;
@@ -149,16 +154,21 @@ function twoTurns() {
 const byMessage = (state: Chat, id: string) => state.messages.find((m) => m.id === id)!;
 const byRun = (state: Chat, id: string) => state.runs.find((r) => r.id === id)!;
 
-type MessageWhere = { role?: string; seq?: { gt: number } };
+type MessageWhere = { role?: string | { not: string }; seq?: { gt: number } };
 function fakeDb(state: Chat) {
   return {
     thread: {
-      update: vi.fn(async () => ({ id: "thread-1", historyCompactedUpToSeq: state.compacted })),
+      update: vi.fn(async () => ({
+        id: "thread-1",
+        historyCompactedUpToSeq: state.compacted,
+        historyCompactionRetryAfterSeq: state.retryAfter,
+        nextMessageSeq: Math.max(...state.messages.map((m) => m.seq)) + 1,
+      })),
     },
     threadRead: { updateMany: vi.fn(async () => ({ count: 1 })) },
     message: {
       findMany: vi.fn(async ({ where, take }: { where: MessageWhere; take?: number }) => {
-        if (where.role)
+        if (typeof where.role === "string")
           return state.messages
             .filter((m) => m.role === where.role)
             .sort((a, b) => b.seq - a.seq)
@@ -171,9 +181,9 @@ function fakeDb(state: Chat) {
               blocks,
             }));
         return state.messages
-          .filter((m) => m.seq > where.seq!.gt)
+          .filter((m) => m.seq > where.seq!.gt && m.role !== "user")
           .sort((a, b) => a.seq - b.seq)
-          .map(({ id, seq, role, runId }) => ({ id, seq, role, runId }));
+          .map(({ id, seq, role, runId, blocks }) => ({ id, seq, role, runId, blocks }));
       }),
       deleteMany: vi.fn(async () => ({ count: 1 })),
       update: vi.fn(async () => ({})),
@@ -191,9 +201,9 @@ function fakeDb(state: Chat) {
     task: { create: vi.fn(async () => ({ id: "task-new" })) },
     event: {
       findMany: vi.fn(
-        async ({ where }: { where: { runId: { in: string[] }; type: { in: string[] } } }) =>
+        async ({ where }: { where: { runId: { in: string[] }; type: { notIn: string[] } } }) =>
           state.events
-            .filter((e) => where.runId.in.includes(e.runId) && where.type.in.includes(e.type))
+            .filter((e) => where.runId.in.includes(e.runId) && !where.type.notIn.includes(e.type))
             .map(({ runId }) => ({ runId })),
       ),
       deleteMany: vi.fn(async () => ({ count: 2 })),
@@ -203,14 +213,20 @@ function fakeDb(state: Chat) {
         state.effects.filter((runId) => where.runId.in.includes(runId)).map((runId) => ({ runId })),
       ),
     },
-    $queryRaw: vi.fn(async () => state.pinnedBy.map((userId) => ({ userId }))),
+    // The one raw read: every member's pins on the given messages.
+    $queryRaw: vi.fn(async (_sql: TemplateStringsArray, _threadId: string, ids: string[]) =>
+      state.pins.filter((pin) => ids.includes(pin.messageId)),
+    ),
   };
 }
 type FakeDb = ReturnType<typeof fakeDb>;
 
 const thread = { id: "thread-1", historyCompactedUpToSeq: null };
 const historyOf = async (state: Chat) => ({
-  ...(await loadRevisionHistory(fakeDb(state) as never, thread)),
+  ...(await loadRevisionHistory(fakeDb(state) as never, thread, {
+    userId: ME,
+    learnsTurns: state.learns,
+  })),
   compactedUpToSeq: state.compacted,
 });
 const revisable = async (state: Chat) => revisableOf(planRevision(await historyOf(state), ME));
@@ -317,12 +333,12 @@ describe("planRevision", () => {
     const state = twoTurns();
     state.runs.push({ ...byRun(state, "r-1"), id: "r-0" });
     const db = fakeDb(state);
-    await loadRevisionHistory(db as never, thread);
+    await loadRevisionHistory(db as never, thread, { userId: ME, learnsTurns: false });
     const runId = { in: ["r-2", "r-1", "r-0"] };
     expect(db.event.findMany).toHaveBeenCalledWith({
       where: {
         runId,
-        type: { in: expect.arrayContaining(["agent.tool.called", "memory.revised"]) },
+        type: { notIn: QUIET_EVENT_TYPES },
       },
       select: { runId: true },
       distinct: ["runId"],
@@ -346,6 +362,8 @@ describe("planRevision", () => {
       regenerateMessageId: "m-reply-2",
       earlierEditMessageIds: ["m-ask"],
       earlierRegenerateMessageIds: ["m-reply"],
+      // Its reply and the later turn's two messages.
+      removedCounts: { "m-ask": 3, "m-reply": 3 },
     });
   });
 
@@ -413,7 +431,111 @@ describe("planRevision", () => {
       regenerateMessageId: null,
       earlierEditMessageIds: ["m-ask"],
       earlierRegenerateMessageIds: ["m-reply"],
+      removedCounts: { "m-ask": 2, "m-reply": 2 },
     });
+  });
+
+  it("offers nothing at all when the Space's memory learns from each turn", async () => {
+    const state = twoTurns();
+    state.learns = true;
+    expect(await revisable(state)).toEqual(NOTHING);
+  });
+
+  it("goes back past the caller's own pins, but not past another member's", async () => {
+    const state = twoTurns();
+    state.pins = [
+      { messageId: "m-reply-2", userId: ME },
+      { messageId: "m-ask", userId: "someone" },
+    ];
+    // The other pin is on the earlier message itself, which stays when it changes.
+    expect((await revisable(state)).earlierEditMessageIds).toEqual(["m-ask"]);
+    state.pins.push({ messageId: "m-ask-2", userId: "someone" });
+    expect((await revisable(state)).earlierEditMessageIds).toBeUndefined();
+    // On a reply that would go, it stops the turn itself.
+    state.pins = [{ messageId: "m-reply-2", userId: "someone" }];
+    expect(await revisable(state)).toEqual(NOTHING);
+  });
+
+  it("does not go back past a later message with a file", async () => {
+    const state = twoTurns();
+    byMessage(state, "m-ask-2").blocks = [
+      { kind: "text", text: "Here" },
+      { kind: "image", artifactId: "a" },
+    ];
+    // Regenerating keeps the message and its file; going further back would remove them.
+    expect(await revisable(state)).toEqual({
+      editMessageId: null,
+      regenerateMessageId: "m-reply-2",
+    });
+  });
+
+  it.each(["file", "chart", "page", "card"])(
+    "offers nothing over a reply that carries a %s, which may live on outside the words",
+    async (kind) => {
+      const state = chat();
+      byMessage(state, "m-reply").blocks = [{ kind: "text", text: "Done" }, { kind }];
+      expect(await revisable(state)).toEqual(NOTHING);
+    },
+  );
+
+  it("treats an event type it does not know as acting outside the chat", async () => {
+    const state = twoTurns();
+    state.events.push({ runId: "r-2", type: "someday.new" });
+    expect(await revisable(state)).toEqual(NOTHING);
+  });
+});
+
+/**
+ * Every known event type is classified: what a run that only talked records, or what may have
+ * acted outside the chat. A new type fails here until someone decides; until then it counts as
+ * acting.
+ */
+describe("event types", () => {
+  const ACTING = [
+    "thread.cleared",
+    "thread.message.reaction",
+    "thread.artifact",
+    "thread.ask",
+    "thread.choice",
+    "thread.computer",
+    "thread.subagent",
+    "thread.cloud_agent",
+    "thread.call.ended",
+    "run.waiting_input",
+    "computer.takeover.requested",
+    "computer.takeover.granted",
+    "computer.takeover.released",
+    "computer.command",
+    "memory.revised",
+    "routine.created",
+    "routine.updated",
+    "routine.fired",
+    "skill.teaching.started",
+    "skill.teaching.stopped",
+    "skill.draft.created",
+    "skill.saved",
+    "effect.recorded",
+    "agent.tool.called",
+    "agent.tool.completed",
+    "effect.reconciled",
+    "bot.spawned",
+    "bot.updated",
+    "bot.archived",
+    "bot.deleted",
+    "group.created",
+    "group.updated",
+    "group.handoff",
+  ];
+
+  it("puts each one on one side", () => {
+    expect(QUIET_EVENT_TYPES.filter((type) => ACTING.includes(type))).toEqual([]);
+    expect([...QUIET_EVENT_TYPES, ...ACTING].sort()).toEqual([...ProductEventType.options].sort());
+  });
+
+  it.each(ACTING)("does not undo a turn whose run recorded %s", async (type) => {
+    const state = twoTurns();
+    state.events.push({ runId: "r-2", type });
+    expect(await revisable(state)).toEqual(NOTHING);
   });
 });
 
@@ -429,6 +551,7 @@ describe("reviseInTransaction", () => {
       botId: "bot-1",
       messageId,
       revision,
+      learnsTurns: false,
     });
 
   it("regenerates: the old reply goes, its seq is reused, and a new run answers the same message", async () => {
@@ -441,7 +564,11 @@ describe("reviseInTransaction", () => {
     expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["m-reply"] } } });
     expect(db.thread.update).toHaveBeenLastCalledWith({
       where: { id: "thread-1" },
-      data: { nextMessageSeq: 5 },
+      data: {
+        nextMessageSeq: 5,
+        dozoRewinds: { increment: 1 },
+        historyCompactionRetryAfterSeq: null,
+      },
     });
     expect(db.threadRead.updateMany).toHaveBeenCalledWith({
       where: { threadId: "thread-1", lastReadSeq: { gt: 4 } },
@@ -512,32 +639,40 @@ describe("reviseInTransaction", () => {
     state.messages.pop();
     byRun(state, "r-1").status = "cancelled";
     const db = fakeDb(state);
-    await revise(db, "m-ask", { kind: "edit", text: "Again" });
+    // Nothing went, so no one's pins are read again.
+    expect(await revise(db, "m-ask", { kind: "edit", text: "Again" })).toMatchObject({
+      pinnedBy: [],
+    });
     expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [] } } });
-    expect(db.$queryRaw).not.toHaveBeenCalled();
     expect(mocks.appendEventInTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("edits an earlier message: every later message goes, oldest first, and the run starts there", async () => {
     const state = twoTurns();
-    state.pinnedBy = ["user-other"];
+    // The caller's own pin on a message that goes, and a summary that was too long.
+    state.pins = [{ messageId: "m-reply-2", userId: ME }];
+    state.retryAfter = 60;
     const db = fakeDb(state);
     expect(await revise(db, "m-ask", { kind: "edit", text: "Plan lunch" })).toEqual({
       runId: "r-new",
       seq: 44,
-      pinnedBy: ["user-other"],
+      pinnedBy: [ME],
     });
     const removed = ["m-reply", "m-ask-2", "m-reply-2"];
     expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: removed } } });
+    // Three messages went: the summary still waits for as many new ones as before.
     expect(db.thread.update).toHaveBeenLastCalledWith({
       where: { id: "thread-1" },
-      data: { nextMessageSeq: 5 },
+      data: {
+        nextMessageSeq: 5,
+        dozoRewinds: { increment: 1 },
+        historyCompactionRetryAfterSeq: 57,
+      },
     });
     expect(db.threadRead.updateMany).toHaveBeenCalledWith({
       where: { threadId: "thread-1", lastReadSeq: { gt: 4 } },
       data: { lastReadSeq: 4 },
     });
-    expect(db.$queryRaw).toHaveBeenCalledWith(expect.anything(), "thread-1", removed);
     expect(db.event.deleteMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
         OR: ["m-ask", ...removed].map((id) => ({ payload: { path: ["messageId"], equals: id } })),
@@ -657,6 +792,11 @@ describe("dozoMessagesRoutes", () => {
       },
       events: { notify: vi.fn(async () => undefined), publishSpaceChange: vi.fn() },
       jobs: { enqueue: vi.fn() },
+      memoryProviders: {
+        resolve: vi.fn(async () =>
+          state.learns ? { provider: { retainConversation: vi.fn() } } : null,
+        ),
+      },
     };
     const authed = {
       dozoMessages: Object.fromEntries(
@@ -747,14 +887,14 @@ describe("dozoMessagesRoutes", () => {
     expect(mocks.wakeRun).toHaveBeenCalledWith(deps.jobs, "r-new");
   });
 
-  it("tells the members whose pins went to read them again", async () => {
+  it("tells the caller to read their pins again when one went", async () => {
     const state = twoTurns();
-    state.pinnedBy = ["user-other"];
+    state.pins = [{ messageId: "m-ask-2", userId: ME }];
     const { call, deps } = setup(state);
     const publishRosterChange = vi.fn(async () => undefined);
     Object.assign(deps.events, { publishRosterChange });
     await call("edit", { threadId: "thread-1", messageId: "m-ask", text: "Plan lunch" });
-    expect(publishRosterChange).toHaveBeenCalledWith({ userIds: ["user-other"] });
+    expect(publishRosterChange).toHaveBeenCalledWith({ userIds: [ME] });
   });
 
   it("names earlier messages too, and still nothing for another person's chat turn", async () => {

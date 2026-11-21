@@ -21,6 +21,8 @@ export const DozoRevisableSchema = z.object({
    */
   earlierEditMessageIds: z.array(Id).optional(),
   earlierRegenerateMessageIds: z.array(Id).optional(),
+  /** How many messages changing each earlier one removes, for the confirm. */
+  removedCounts: z.record(Id, z.number().int().positive()).optional(),
 });
 export type DozoRevisable = z.infer<typeof DozoRevisableSchema>;
 

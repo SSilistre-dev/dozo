@@ -26,31 +26,49 @@ import { botsRunOwnModels, modelSetup } from "./routes/shared.js";
 import { assertTeachingSendAllowed } from "./taught-skills.js";
 import { resolveThreadTarget } from "./thread-target.js";
 
-type Db = Pick<Prisma.TransactionClient, "message" | "run" | "event" | "externalEffect">;
+type Db = Pick<
+  Prisma.TransactionClient,
+  "message" | "run" | "event" | "externalEffect" | "$queryRaw"
+>;
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const MESSAGE_EVENT_TYPES = ["thread.message.created", "thread.message.updated"];
 /**
- * What a run records when it did something outside the chat: a tool call (upstream's own test
- * before it retries a routine run), and the records a run writes without one.
+ * The events of a run that only talked. Any other type, one added later included, may mean the run
+ * did something outside the chat, so its turn cannot be undone. A test holds every known type to
+ * one side or the other.
  */
-const ACTION_EVENT_TYPES = [
-  "agent.tool.called",
-  "memory.revised",
-  "routine.created",
-  "routine.updated",
-  "effect.recorded",
-  "skill.draft.created",
-  "thread.subagent",
-  "command.finished",
+export const QUIET_EVENT_TYPES = [
+  "thread.message.created",
+  "thread.message.updated",
+  "thread.progress",
+  "thread.meta",
+  "run.started",
+  "run.steering.claimed",
+  "run.checkpointed",
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+  "usage.recorded",
+  "computer.status",
+  "heartbeat",
 ];
 /** How many of the newest person turns can change; older ones are past what a chat shows first. */
 export const REVISION_TURNS = 25;
 
+type Said = {
+  id: string;
+  /** Only words: no file, picture, card or anything else a removal would leave behind. */
+  textOnly: boolean;
+  /** Another member pinned it: their own record, which a rewind must not take. */
+  pinnedByOthers: boolean;
+  /** The caller pinned it. */
+  pinnedByCaller: boolean;
+};
+
 /** One person turn of a direct chat and everything that answered it. */
 export interface RevisionTurn {
-  message: {
-    id: string;
+  message: Said & {
     seq: number;
     authorUserId: string | null;
     clientNonce: string | null;
@@ -67,8 +85,8 @@ export interface RevisionTurn {
     mirrored: boolean;
   }>;
   /** The messages after it up to the next person turn, oldest first. */
-  replies: Array<{ id: string; role: string; runId: string | null }>;
-  /** Those runs that acted outside the chat. */
+  replies: Array<Said & { role: string; runId: string | null }>;
+  /** Those runs that may have acted outside the chat. */
   actions: number;
 }
 
@@ -78,6 +96,11 @@ export interface RevisionHistory {
   compactedUpToSeq: number | null;
   /** Any run of the chat still working or waiting. */
   busy: boolean;
+  /**
+   * The Space's memory learns from each finished turn and can only forget a whole chat, so a turn
+   * it may hold cannot be taken back.
+   */
+  learnsTurns: boolean;
   turns: RevisionTurn[];
 }
 
@@ -88,30 +111,38 @@ export interface RevisionTarget {
   run: RevisionTurn["runs"][number];
   /** Going back to it also removes later turns, which the person confirms first. */
   earlier: boolean;
+  /** How many messages the change removes. */
+  removes: number;
 }
 
 /**
  * Which messages can change: the caller's own messages (Edit) and the bot's reply that ends each
  * of their turns (Regenerate), going back from the newest turn. Changing one removes everything
  * after its message, so every turn from there on must be wholly the caller's and the bot's own
- * conversation: their own message from the app (not a chat app, which already holds the reply,
- * and not a spoken call), outside the compaction summary, answered only by finished runs of their
- * own that did nothing outside the chat. The first turn that is not stops the walk. A message of
- * theirs that started no run and got no reply (a reaction) goes with a rewind but offers nothing.
+ * conversation: their own words from the app (not a chat app, which already holds the reply, and
+ * not a spoken call), outside the compaction summary, answered in words only by finished runs of
+ * their own that did nothing outside the chat, with nothing another member pinned. The first turn
+ * that is not stops the walk. A message of theirs that started no run and got no reply (a
+ * reaction) goes with a rewind but offers nothing.
  */
 export function planRevision(history: RevisionHistory | null, userId: string): RevisionTarget[] {
-  if (!history || history.busy) return [];
+  if (!history || history.busy || history.learnsTurns) return [];
   const targets: RevisionTarget[] = [];
+  let later = 0;
   for (const [index, turn] of history.turns.entries()) {
     if (!quietTurn(turn, history.compactedUpToSeq, userId)) break;
     const run = turn.runs[0];
-    if (!run) continue;
-    const { message } = turn;
+    const { message, replies } = turn;
+    const removes = later + replies.length;
     const earlier = index > 0;
-    if (message.blocks.length > 0 && message.blocks.every((block) => block.kind === "text"))
-      targets.push({ kind: "edit", messageId: message.id, turn, run, earlier });
-    const reply = turn.replies.at(-1);
-    if (reply) targets.push({ kind: "regenerate", messageId: reply.id, turn, run, earlier });
+    if (run && message.blocks.length > 0 && message.textOnly)
+      targets.push({ kind: "edit", messageId: message.id, turn, run, earlier, removes });
+    const reply = replies.at(-1);
+    if (run && reply)
+      targets.push({ kind: "regenerate", messageId: reply.id, turn, run, earlier, removes });
+    // Going further back removes this message too.
+    if (!message.textOnly || message.pinnedByOthers) break;
+    later = removes + 1;
   }
   return targets;
 }
@@ -120,15 +151,21 @@ export function planRevision(history: RevisionHistory | null, userId: string): R
 export function revisableOf(targets: readonly RevisionTarget[]): DozoRevisable {
   const newest = (kind: Revision["kind"]) =>
     targets.find((target) => target.kind === kind && !target.earlier)?.messageId ?? null;
-  const earlier = (kind: Revision["kind"]) =>
-    targets.filter((target) => target.kind === kind && target.earlier).map((t) => t.messageId);
-  const editEarlier = earlier("edit");
-  const regenerateEarlier = earlier("regenerate");
-  return {
+  const older = targets.filter((target) => target.earlier);
+  const ids = (kind: Revision["kind"]) =>
+    older.filter((target) => target.kind === kind).map((target) => target.messageId);
+  const revisable: DozoRevisable = {
     editMessageId: newest("edit"),
     regenerateMessageId: newest("regenerate"),
-    ...(editEarlier.length > 0 ? { earlierEditMessageIds: editEarlier } : {}),
-    ...(regenerateEarlier.length > 0 ? { earlierRegenerateMessageIds: regenerateEarlier } : {}),
+  };
+  if (older.length === 0) return revisable;
+  const edit = ids("edit");
+  const regenerate = ids("regenerate");
+  return {
+    ...revisable,
+    ...(edit.length > 0 ? { earlierEditMessageIds: edit } : {}),
+    ...(regenerate.length > 0 ? { earlierRegenerateMessageIds: regenerate } : {}),
+    removedCounts: Object.fromEntries(older.map((target) => [target.messageId, target.removes])),
   };
 }
 
@@ -150,12 +187,24 @@ function quietTurn(turn: RevisionTurn, compactedUpToSeq: number | null, userId: 
   if (!runs.every(ownRun)) return false;
   // The newest run wrote every reply; earlier runs are the ones an edit or regenerate replaced.
   const run = runs[0];
-  return replies.every((reply) => reply.role === "bot" && run && reply.runId === run.id);
+  return replies.every(
+    (reply) =>
+      reply.role === "bot" &&
+      run !== undefined &&
+      reply.runId === run.id &&
+      reply.textOnly &&
+      !reply.pinnedByOthers,
+  );
 }
 
+/**
+ * Reads the newest turns inside a transaction: whose pins they carry is read past the rule that
+ * shows each member only their own.
+ */
 export async function loadRevisionHistory(
   db: Db,
   thread: { id: string; historyCompactedUpToSeq: number | null },
+  caller: { userId: string; learnsTurns: boolean },
 ): Promise<RevisionHistory> {
   const asks = await db.message.findMany({
     where: { threadId: thread.id, role: "user" },
@@ -164,8 +213,11 @@ export async function loadRevisionHistory(
     select: { id: true, seq: true, authorUserId: true, clientNonce: true, blocks: true },
   });
   const oldest = asks.at(-1);
-  const compactedUpToSeq = thread.historyCompactedUpToSeq;
-  if (!oldest) return { compactedUpToSeq, busy: false, turns: [] };
+  const base = {
+    compactedUpToSeq: thread.historyCompactedUpToSeq,
+    learnsTurns: caller.learnsTurns,
+  };
+  if (!oldest) return { ...base, busy: false, turns: [] };
   const [runs, after, busy] = await Promise.all([
     db.run.findMany({
       where: { threadId: thread.id, sourceMessageId: { in: asks.map((ask) => ask.id) } },
@@ -181,28 +233,47 @@ export async function loadRevisionHistory(
       },
     }),
     db.message.findMany({
-      where: { threadId: thread.id, seq: { gt: oldest.seq } },
+      where: { threadId: thread.id, seq: { gt: oldest.seq }, role: { not: "user" } },
       orderBy: { seq: "asc" },
-      select: { id: true, seq: true, role: true, runId: true },
+      select: { id: true, seq: true, role: true, runId: true, blocks: true },
     }),
     db.run.count({ where: { threadId: thread.id, status: { in: [...ACTIVE_RUN_STATUSES] } } }),
   ]);
   const runId = { in: runs.map((run) => run.id) };
-  const [events, effects] = await Promise.all([
+  const messageIds = [...asks, ...after].map((message) => message.id);
+  const [events, effects, pins] = await Promise.all([
     db.event.findMany({
-      where: { runId, type: { in: ACTION_EVENT_TYPES } },
+      where: { runId, type: { notIn: QUIET_EVENT_TYPES } },
       select: { runId: true },
       distinct: ["runId"],
     }),
     db.externalEffect.findMany({ where: { runId }, select: { runId: true }, distinct: ["runId"] }),
+    runAsSystemInTransaction(
+      db,
+      "pins a rewind would remove, every member's",
+      () =>
+        db.$queryRaw<Array<{ messageId: string; userId: string }>>`
+        SELECT "messageId", "userId" FROM dozo_message_pins
+        WHERE "threadId" = ${thread.id} AND "messageId" = ANY(${messageIds})`,
+    ),
   ]);
   const acting = new Set([...events, ...effects].map((row) => row.runId));
+  const said = (message: { id: string; blocks: unknown }) => {
+    const { blocks, intact } = readMessageBlocks(message);
+    const pinnedBy = pins.filter((pin) => pin.messageId === message.id).map((pin) => pin.userId);
+    return {
+      blocks,
+      intact,
+      textOnly: intact && blocks.every((block) => block.kind === "text"),
+      pinnedByOthers: pinnedBy.some((user) => user !== caller.userId),
+      pinnedByCaller: pinnedBy.includes(caller.userId),
+    };
+  };
   const turns = asks.map((ask, index): RevisionTurn => {
     const next = asks[index - 1]?.seq ?? Number.POSITIVE_INFINITY;
     const own = runs.filter((run) => run.sourceMessageId === ask.id);
-    const { blocks, intact } = readMessageBlocks(ask);
     return {
-      message: { ...ask, blocks, intact },
+      message: { ...ask, ...said(ask) },
       runs: own.map((run) => ({
         id: run.id,
         taskPrompt: run.task.prompt,
@@ -213,11 +284,14 @@ export async function loadRevisionHistory(
       })),
       replies: after
         .filter((message) => message.seq > ask.seq && message.seq < next)
-        .map(({ id, role, runId }) => ({ id, role, runId })),
+        .map(({ id, role, runId, blocks }) => {
+          const { textOnly, pinnedByOthers, pinnedByCaller } = said({ id, blocks });
+          return { id, role, runId, textOnly, pinnedByOthers, pinnedByCaller };
+        }),
       actions: own.filter((run) => acting.has(run.id)).length,
     };
   });
-  return { compactedUpToSeq, busy: busy > 0, turns };
+  return { ...base, busy: busy > 0, turns };
 }
 
 export class MessageNotRevisableError extends ClientError {
@@ -251,14 +325,29 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
     return { ...thread, botId: thread.botId };
   }
 
+  /** Whether the Space's memory learns from each finished turn: then no turn can be taken back. */
+  async function learnsTurns(spaceId: string) {
+    const configured = await deps.memoryProviders.resolve(spaceId);
+    return Boolean(configured?.provider.retainConversation);
+  }
+
   async function revise(actor: Actor, threadId: string, messageId: string, revision: Revision) {
     const { botId } = await directThread(actor, threadId);
+    const learns = await learnsTurns(actor.spaceId);
     const setup = await modelSetup(deps, actor);
     if (setup.needsModel && !(await botsRunOwnModels(deps, actor, [botId])))
       throw new ClientError("BAD_REQUEST", MODEL_REQUIRED_SEND_ERROR);
     await assertTeachingSendAllowed(deps.prisma, actor.spaceId, botId);
     const committed = await deps.prisma.$transaction(
-      (tx) => reviseInTransaction(tx, { actor, threadId, botId, messageId, revision }),
+      (tx) =>
+        reviseInTransaction(tx, {
+          actor,
+          threadId,
+          botId,
+          messageId,
+          revision,
+          learnsTurns: learns,
+        }),
       THREAD_LOCK_TRANSACTION_OPTIONS,
     );
     // Committed: a missed signal must not report the change as failed or leave the run asleep.
@@ -280,8 +369,12 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
     dozoMessages: {
       revisable: authed.dozoMessages.revisable.handler(async ({ context, input }) => {
         const thread = await directThread(context.actor, input.threadId);
-        const history = await loadRevisionHistory(deps.prisma, thread);
-        return revisableOf(planRevision(history, context.actor.userId));
+        const { userId, spaceId } = context.actor;
+        const caller = { userId, learnsTurns: await learnsTurns(spaceId) };
+        const history = await deps.prisma.$transaction((tx) =>
+          loadRevisionHistory(tx, thread, caller),
+        );
+        return revisableOf(planRevision(history, userId));
       }),
       edit: authed.dozoMessages.edit.handler(({ context, input }) =>
         revise(context.actor, input.threadId, input.messageId, { kind: "edit", text: input.text }),
@@ -308,6 +401,7 @@ export async function reviseInTransaction(
     botId: string;
     messageId: string;
     revision: Revision;
+    learnsTurns: boolean;
   },
 ): Promise<{ runId: string; seq: number; pinnedBy: string[] }> {
   const { actor, threadId, botId, revision } = input;
@@ -315,45 +409,48 @@ export async function reviseInTransaction(
   const thread = await tx.thread.update({
     where: { id: threadId },
     data: { nextMessageSeq: { increment: 0 } },
-    select: { id: true, historyCompactedUpToSeq: true },
+    select: {
+      id: true,
+      nextMessageSeq: true,
+      historyCompactedUpToSeq: true,
+      historyCompactionRetryAfterSeq: true,
+    },
   });
-  const history = await loadRevisionHistory(tx, thread);
+  const caller = { userId: actor.userId, learnsTurns: input.learnsTurns };
+  const history = await loadRevisionHistory(tx, thread, caller);
   const target = planRevision(history, actor.userId).find(
     (each) => each.kind === revision.kind && each.messageId === input.messageId,
   );
   if (!target) throw new MessageNotRevisableError();
   const { message } = target.turn;
   // The turns are newest first: every message after this one, oldest first.
-  const removedIds = history.turns
+  const removed = history.turns
     .slice(0, history.turns.indexOf(target.turn) + 1)
     .reverse()
-    .flatMap((turn) =>
-      turn === target.turn ? turn.replies : [{ id: turn.message.id }, ...turn.replies],
-    )
-    .map((each) => each.id);
+    .flatMap((turn) => (turn === target.turn ? turn.replies : [turn.message, ...turn.replies]));
+  const removedIds = removed.map((each) => each.id);
   // What was removed is the thread's tail, so the next message takes the first freed seq: the
   // history stays gapless (compaction and paging stop at a gap) and the new reply reads as unread
-  // again. Compaction has not reached it: planRevision refuses a message in its summary.
-  await tx.thread.update({ where: { id: threadId }, data: { nextMessageSeq: message.seq + 1 } });
+  // again. Compaction has not reached it (planRevision refuses a message in its summary), and the
+  // rewind count makes a summary begun before now, over messages that are gone, land nowhere. A
+  // summary that was too long waits for as many new messages as it did before.
+  const nextMessageSeq = message.seq + 1;
+  const retry = thread.historyCompactionRetryAfterSeq;
+  await tx.thread.update({
+    where: { id: threadId },
+    data: {
+      nextMessageSeq,
+      dozoRewinds: { increment: 1 },
+      historyCompactionRetryAfterSeq:
+        retry === null ? null : retry - (thread.nextMessageSeq - nextMessageSeq),
+    },
+  });
   await tx.threadRead.updateMany({
     where: { threadId, lastReadSeq: { gt: message.seq } },
     data: { lastReadSeq: message.seq },
   });
-  // Pins go with their messages; the members who had one read their pins again. A member sees
-  // only their own pins, so the others' are read past that rule.
-  const pinnedBy =
-    removedIds.length === 0
-      ? []
-      : (
-          await runAsSystemInTransaction(
-            tx,
-            "members whose pins a rewind removes",
-            () =>
-              tx.$queryRaw<{ userId: string }[]>`
-            SELECT DISTINCT "userId" FROM dozo_message_pins
-            WHERE "threadId" = ${threadId} AND "messageId" = ANY(${removedIds})`,
-          )
-        ).map((row) => row.userId);
+  // Only the caller's own pins can be on what goes: they read their pins again.
+  const pinnedBy = removed.some((each) => each.pinnedByCaller) ? [actor.userId] : [];
   const revisedIds = revision.kind === "edit" ? [message.id, ...removedIds] : removedIds;
   await tx.message.deleteMany({ where: { id: { in: removedIds } } });
   await tx.event.deleteMany({

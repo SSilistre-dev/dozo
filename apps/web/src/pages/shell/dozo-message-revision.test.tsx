@@ -268,25 +268,29 @@ describe("an earlier message", () => {
       regenerateMessageId: "m-later-reply",
       earlierEditMessageIds: ["m-ask"],
       earlierRegenerateMessageIds: ["m-reply"],
+      removedCounts: { "m-ask": 3, "m-reply": 1 },
     });
   });
 
-  it("asks before Edit removes the later messages, then edits as before", async () => {
+  it("edits, then asks before Send removes the later messages, naming how many", async () => {
     await render(ask);
     await vi.waitFor(() => expect(item("Edit")).toBeTruthy());
     await click(item("Edit"));
-    expect(confirmation()?.textContent).toContain("Remove the messages after it?");
-    expect(textarea()).toBeNull();
-    await click(container.querySelector("[data-dismiss]"));
-    expect(confirmation()).toBeNull();
-    expect(textarea()).toBeNull();
-
-    await click(item("Edit"));
-    await click(container.querySelector("[data-confirm]"));
     expect(confirmation()).toBeNull();
     expect(textarea()?.value).toBe("Plan dinner\n\nfor two");
     await type("Plan lunch");
     await submit();
+    expect(api.edit).not.toHaveBeenCalled();
+    expect(confirmation()?.textContent).toContain("Remove 3 messages?");
+    expect(container.querySelector("[data-confirm]")?.textContent).toBe("Remove");
+    // Cancel keeps the edit open with its text.
+    await click(container.querySelector("[data-dismiss]"));
+    expect(confirmation()).toBeNull();
+    expect(textarea()?.value).toBe("Plan lunch");
+    expect(api.edit).not.toHaveBeenCalled();
+
+    await submit();
+    await click(container.querySelector("[data-confirm]"));
     await vi.waitFor(() =>
       expect(api.edit).toHaveBeenCalledWith({
         threadId: "thread-1",
@@ -294,16 +298,18 @@ describe("an earlier message", () => {
         text: "Plan lunch",
       }),
     );
+    await vi.waitFor(() => expect(textarea()).toBeNull());
   });
 
   it("asks before Regenerate and does nothing when cancelled", async () => {
     await render(reply);
     await vi.waitFor(() => expect(item("Regenerate")).toBeTruthy());
     await click(item("Regenerate"));
+    expect(confirmation()?.textContent).toContain("Remove 1 message?");
     await click(container.querySelector("[data-dismiss]"));
     expect(api.regenerate).not.toHaveBeenCalled();
     await click(item("Regenerate"));
-    expect(container.querySelector("[data-confirm]")?.textContent).toBe("Regenerate");
+    expect(container.querySelector("[data-confirm]")?.textContent).toBe("Remove");
     await click(container.querySelector("[data-confirm]"));
     await vi.waitFor(() =>
       expect(api.regenerate).toHaveBeenCalledWith({ threadId: "thread-1", messageId: "m-reply" }),
