@@ -73,8 +73,32 @@ describe("userComputerGate", () => {
 
   it("lets a command that only reads go ahead", async () => {
     expect((await gate("ls -la")).plan).toBe("allow");
-    expect((await gate("grep -rn TODO src", { cwd: "~/app" })).plan).toBe("allow");
+    expect((await gate("grep -n TODO src/app.ts", { cwd: "~/app" })).plan).toBe("allow");
     expect(rules.exists).not.toHaveBeenCalled();
+  });
+
+  it("asks before a read-only command that touches a secret location", async () => {
+    for (const command of [
+      "cat .ssh/id_rsa",
+      "cat .aws/credentials | grep -i key",
+      "ls Library/Keychains",
+      "cat /proc/self/environ",
+      "cat Env:SECRET",
+      "ls Env: | grep -i key",
+      "find / -name .env | head",
+      "grep -r key .",
+      "tail -f log.txt",
+    ])
+      expect((await gate(command)).plan, command).toBe("ask");
+    for (const command of [
+      "uname -a",
+      "ls",
+      "pwd",
+      "cat notes.txt",
+      "ls Documents",
+      "ls /Applications | grep -i brave",
+    ])
+      expect((await gate(command)).plan, command).toBe("allow");
   });
 
   it("asks before a command that changes something or reaches out", async () => {
