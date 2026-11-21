@@ -8,12 +8,13 @@ export function useDozoMeetingPrepCopy(): BotTemplateCopy {
     name: t`Meeting prep`,
     summary: t`A short prep note before each meeting`,
     sample: t`**Design review, 11:30**
+
 With Priya, Sam and Dana (Acme)
 
 **Agenda**
 - Walk through the new onboarding flow
 - Decide on the launch date
-Attached: onboarding-v3.pdf
+- Attached: onboarding-v3.pdf
 
 **From before**
 - Priya asked to cut the signup step on Tuesday

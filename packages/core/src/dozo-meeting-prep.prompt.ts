@@ -9,12 +9,13 @@ export const DOZO_MEETING_PREP_SUMMARY = "A short prep note before each meeting"
 
 export const DOZO_MEETING_PREP_SAMPLE = [
   "**Design review, 11:30**",
+  "",
   "With Priya, Sam and Dana (Acme)",
   "",
   "**Agenda**",
   "- Walk through the new onboarding flow",
   "- Decide on the launch date",
-  "Attached: onboarding-v3.pdf",
+  "- Attached: onboarding-v3.pdf",
   "",
   "**From before**",
   "- Priya asked to cut the signup step on Tuesday",
