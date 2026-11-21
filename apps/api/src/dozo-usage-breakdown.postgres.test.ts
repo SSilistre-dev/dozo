@@ -285,13 +285,15 @@ describePostgres("the usage breakdown query (PostgreSQL)", () => {
         ["2026-10-31", 1],
       ]);
     }
-    await at("2026-03-08T07:59:00Z"); // 23:59 PST on 03-07
-    await at("2026-03-08T08:00:00Z"); // 00:00 PST on 03-08
-    await at("2026-03-09T06:59:00Z"); // 23:59 PST on 03-08 (a 23-hour day: PDT starts at 10:00Z)
-    await at("2026-03-09T07:00:00Z"); // 00:00 PDT on 03-09
+    const bob = await person();
+    const inSpring = (iso: string) => usage(bob, { createdAt: new Date(iso) });
+    await inSpring("2026-03-08T07:59:00Z"); // 23:59 PST on 03-07
+    await inSpring("2026-03-08T08:00:00Z"); // 00:00 PST on 03-08
+    await inSpring("2026-03-09T06:59:00Z"); // 23:59 PST on 03-08 (a 23-hour day: PDT starts at 10:00Z)
+    await inSpring("2026-03-09T07:00:00Z"); // 00:00 PDT on 03-09
     const springNow = new Date("2026-03-09T12:00:00Z");
     for (const sessionZone of SESSION_ZONES) {
-      expect(await days(ada, "America/Los_Angeles", sessionZone, springNow)).toEqual([
+      expect(await days(bob, "America/Los_Angeles", sessionZone, springNow)).toEqual([
         ["2026-03-09", 1],
         ["2026-03-08", 2],
         ["2026-03-07", 1],
