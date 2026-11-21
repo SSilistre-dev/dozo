@@ -192,7 +192,7 @@ async function storeValues(
       "userId" = EXCLUDED."userId", "values" = EXCLUDED."values",
       "targets" = EXCLUDED."targets", "suggestions" = NULL,
       "expiresAt" = EXCLUDED."expiresAt"
-    RETURNING "expiresAt"`;
+    RETURNING "expiresAt" AT TIME ZONE 'UTC' AS "expiresAt"`;
   const [queue] = await tx.$queryRaw<Array<{ ready: boolean }>>`
     SELECT to_regnamespace('graphile_worker') IS NOT NULL AS ready`;
   if (stored && queue?.ready) {

@@ -36,6 +36,9 @@ describePostgres("the ban list (PostgreSQL)", () => {
     const listed = (await listBans(prisma)).filter((ban) => ban.value.endsWith(domain));
     expect(listed.map((ban) => ban.value).sort()).toEqual([domain, `eve@${domain}`].sort());
     expect(listed[0]?.createdAt).toBeInstanceOf(Date);
+    // When it was added, in any database time zone.
+    for (const ban of listed)
+      expect(Math.abs(ban.createdAt.getTime() - Date.now())).toBeLessThan(60_000);
 
     await removeBan(prisma, domain);
     await removeBan(prisma, `eve@${domain}`);

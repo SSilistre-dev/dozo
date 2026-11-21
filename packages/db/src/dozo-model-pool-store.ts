@@ -70,7 +70,7 @@ export async function readModelPool(
   if (!scope.credentialIds.length) return [];
   const { ids, keys } = accountColumns(scope.credentialIds, scope.accounts);
   return db.$queryRaw<StoredPoolMember[]>`
-    SELECT m."credentialId", max(cd."resetsAt") AS "resetsAt"
+    SELECT m."credentialId", max(cd."resetsAt") AT TIME ZONE 'UTC' AS "resetsAt"
     FROM "dozo_model_pool_members" m
     JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
     JOIN unnest(${ids}::text[], ${keys}::text[]) AS a("id", "account") ON a."id" = m."credentialId"
@@ -104,7 +104,8 @@ export async function recordModelConnectionCooldown(
     INSERT INTO "dozo_model_connection_cooldowns"
       ("credentialId", "userId", "modelId", "secretId", "holder", "reason", "resetsAt", "observedAt")
     SELECT m."credentialId", m."userId", ${rest.modelId ?? ""}, c."secretId", ${rest.holder ?? null},
-      ${rest.reason}, ${rest.resetsAt}, ${rest.observedAt}
+      ${rest.reason}, ${rest.resetsAt.toISOString()}::timestamptz,
+      ${rest.observedAt.toISOString()}::timestamptz
     FROM "dozo_model_pool_members" m
     JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
     WHERE m."credentialId" = ${rest.credentialId} AND m."userId" = ${rest.userId}
@@ -129,7 +130,7 @@ export async function readModelPoolMembers(
   if (!scope.credentialIds.length) return [];
   const { ids, keys } = accountColumns(scope.credentialIds, scope.accounts);
   return db.$queryRaw<StoredPoolMember[]>`
-    SELECT m."credentialId", max(cd."resetsAt") AS "resetsAt"
+    SELECT m."credentialId", max(cd."resetsAt") AT TIME ZONE 'UTC' AS "resetsAt"
     FROM "dozo_model_pool_members" m
     JOIN "user_model_credentials" c ON c."id" = m."credentialId" AND c."userId" = m."userId"
     JOIN unnest(${ids}::text[], ${keys}::text[]) AS a("id", "account") ON a."id" = m."credentialId"
