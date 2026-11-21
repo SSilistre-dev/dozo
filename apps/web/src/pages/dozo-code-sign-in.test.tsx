@@ -420,16 +420,16 @@ it("verifies a full code submitted from the form, and an emptied box leaves the 
 
 it("sends a provider sign-in back to where the person was going", async () => {
   mocks.sso.mockResolvedValueOnce({ data: {} });
-  await open("/sign-in?next=%2Fdocs", [{ id: "google", name: "Google" } as SignInProvider]);
+  await open("/sign-in?next=%2Fadmin%2Fplugins", [{ id: "google", name: "Google" } as SignInProvider]);
   await act(async () => button("google")?.click());
   expect(alerts()).toEqual([]);
   const [start, allowed] = mocks.sso.mock.calls[0] as [
     (d: boolean, cb: (p: string) => string) => unknown,
     string[],
   ];
-  expect(allowed).toContain("/docs");
+  expect(allowed).toContain("/admin/plugins");
   start(false, (path) => `cb:${path}`);
-  expect(mocks.social).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: "cb:/docs" }));
+  expect(mocks.social).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: "cb:/admin/plugins" }));
 });
 
 it("hands over an empty address when the password form has no email field", async () => {
