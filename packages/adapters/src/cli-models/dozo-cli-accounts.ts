@@ -3,6 +3,7 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { defaultCatalogModelId, loadStoredModelSecret } from "../model-selection.js";
+import { agentConnection, agentDriverFor, readAgentTools } from "./dozo-agent-accounts.js";
 import type { CliAccount, CliModelDriver, LocalCliHost } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -32,6 +33,8 @@ export const MAX_CLI_ACCOUNTS = 5;
 export interface CliToolView {
   provider: string;
   name: string;
+  /** A model the bot talks through, or an agent that runs the bot's whole turn. */
+  mode: "model" | "agent";
   found: boolean;
   /** Whether the person's own sign-in is there; null when the tool would not say. */
   signedIn: boolean | null;
@@ -142,7 +145,8 @@ export async function readCliTools(deps: CliAccountsDeps, userId: string): Promi
   const host = await usableHost(deps, userId);
   if (!host) return [];
   const connected = await connectedAccounts(deps, userId);
-  return Promise.all(
+  const agents = await readAgentTools(deps.prisma, userId, host);
+  const models = await Promise.all(
     CLI_MODEL_DRIVERS.map(async (driver) => {
       const accounts = connected.get(driver.provider) ?? [];
       await removeUnusedHomes(deps, driver, host);
@@ -151,6 +155,7 @@ export async function readCliTools(deps: CliAccountsDeps, userId: string): Promi
       return {
         provider: driver.provider,
         name: driver.name,
+        mode: "model" as const,
         ...state,
         connected: accounts.some((account) => account.kind === "home"),
         canAdd: state.found && accounts.length < MAX_CLI_ACCOUNTS,
@@ -158,6 +163,7 @@ export async function readCliTools(deps: CliAccountsDeps, userId: string): Promi
       };
     }),
   );
+  return [...models, ...agents];
 }
 
 export class CliAccountUnavailableError extends ClientError {
@@ -196,7 +202,16 @@ export async function cliHomeConnection(
   deps: CliAccountsDeps,
   userId: string,
   provider: string,
+  options: { consent?: boolean } = {},
 ): Promise<ReturnType<typeof cliConnection>> {
+  const agent = agentDriverFor(provider);
+  if (agent) {
+    const host = await usableHost(deps, userId);
+    if (!host) throw new ClientError("NOT_FOUND", "This tool cannot be used on this server.");
+    const connected = await deps.prisma.userModelCredential.count({ where: { userId, provider } });
+    if (connected) throw new CliAccountUnavailableError(`${agent.name} is already connected.`);
+    return agentConnection(agent, host, options.consent === true);
+  }
   const { driver, state } = await usableTool(deps, userId, provider);
   if (state.signedIn === false)
     throw new CliAccountUnavailableError(`Sign in to ${driver.name} on this computer first.`);

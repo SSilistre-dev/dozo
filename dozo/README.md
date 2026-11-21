@@ -323,6 +323,33 @@ Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
 Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
 it an address. There is no anonymous path to the hosted service from a local server.
 
+## Agent mode (unverified)
+
+On the local server only (the desktop app runs it and passes `HOST_USER_HOME` and `HOST_USER_PATH`),
+a provider's own agent CLI can run a bot's whole turn as the person: Codex, through its own
+app-server (`packages/adapters/src/cli-models/dozo-agent.ts` and `codex/dozo-codex-agent.ts`). It
+was written against Codex 0.171's protocol schema and has not been run against a real, signed-in
+Codex yet, so it is off until turned on by hand:
+
+- **Turn it on:** put `codex-agent` on its own line in `dozo-agent-tools` in the server's data
+  folder (the `data/` next to the server's other files), then restart the app. Remove the line, or
+  the file, to turn it off. No settings screen shows or changes this.
+- **Connecting:** Settings > Models then shows Codex, marked Agent. Connecting asks the person to
+  agree to what agent mode means and checks, there and then, that Codex is 0.171.x, is signed in,
+  and reaches Dozo's tools through the bridge; a failed check says why and saves nothing.
+- **A turn:** one Codex process per run, in an empty folder of the bot's own under
+  `data/agent-work/`, sandboxed to that folder, asking only the person (never Codex's own reviewer).
+  Codex's requests to run a command, change files or get more access become an approval card with
+  "Allow once" and "Decline"; Dozo never answers for the session. Dozo's own tools reach Codex
+  through a stdio MCP bridge that runs them in the run's tool executor, so approvals, daily sends
+  and the token gate apply; its socket and key last only as long as the run.
+- **Interrupted, never re-run:** a run waiting for the person keeps its Codex process in the server
+  process that started it, for 30 minutes at most. If another process (or the same one after a
+  restart) picks the run up, it ends with "The agent was interrupted" instead of starting Codex
+  again; a mark in `data/agent-runs/` holds this across processes.
+- **Not yet:** more accounts or the model pool for agents, other agents (Grok, Antigravity over
+  ACP), mobile.
+
 ## Commands on your own computer
 
 Upstream asks once per Space before a bot first runs a command on the member's own computer (the

@@ -5,6 +5,8 @@ import * as z from "zod";
 export const DozoCliToolSchema = z.object({
   provider: z.string(),
   name: z.string(),
+  /** A model the bot talks through, or an agent that runs the bot's whole turn as the person. */
+  mode: z.enum(["model", "agent"]),
   /** Installed where the server runs. */
   found: z.boolean(),
   /** The person's own sign-in is there; null when the tool would not say. */
@@ -30,8 +32,13 @@ const Provider = z.object({ provider: z.string().min(1).max(100) });
 export const dozoCliAccountsContract = {
   /** Empty unless the server runs on the person's own computer and serves only them. */
   list: oc.output(DozoCliToolsSchema),
-  /** Connects the tool's own sign-in on this computer as a model connection. */
-  connect: oc.input(Provider).output(DozoCliToolsSchema),
+  /**
+   * Connects the tool's own sign-in on this computer. An agent needs `consent`: the person agreed
+   * to what agent mode means.
+   */
+  connect: oc
+    .input(Provider.extend({ consent: z.boolean().optional() }))
+    .output(DozoCliToolsSchema),
   /** Starts the tool's own sign-in of another account, in a home of its own. */
   addAccount: oc.input(Provider).output(DozoCliToolsSchema),
   /** Hands a code the tool's sign-in asks for to it. */
