@@ -23,24 +23,23 @@ export * from "./user-device-gateway.js";
  */
 export class UserDeviceHub extends UpstreamUserDeviceHub {
   private readonly prisma: PrismaClient;
-  private readonly upstreamUpgrade = this.handleUpgrade;
 
   constructor(deps: ConstructorParameters<typeof UpstreamUserDeviceHub>[0]) {
     super(deps);
     this.prisma = deps.prisma;
+    const upstream = this.handleUpgrade;
+    this.handleUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+      // Until upstream's handler takes the socket, a client reset must not crash the process.
+      const onError = (error: Error) =>
+        getLogger().warn("user device upgrade socket error", { error });
+      socket.on("error", onError);
+      // A database that cannot save it cannot record the connection either: upstream refuses it.
+      void bestEffort("save a user device's capabilities", this.declare(request)).then(() => {
+        socket.off("error", onError);
+        upstream(request, socket, head);
+      });
+    };
   }
-
-  override handleUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    // Until upstream's handler takes the socket, a client reset must not crash the process.
-    const onError = (error: Error) =>
-      getLogger().warn("user device upgrade socket error", { error });
-    socket.on("error", onError);
-    // A database that cannot save it cannot record the connection either: upstream refuses it.
-    void bestEffort("save a user device's capabilities", this.declare(request)).then(() => {
-      socket.off("error", onError);
-      this.upstreamUpgrade(request, socket, head);
-    });
-  };
 
   /** A token that does not authenticate saves nothing; upstream's handler refuses it. */
   private async declare(request: IncomingMessage) {
