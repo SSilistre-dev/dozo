@@ -3,20 +3,20 @@ import type { MediaGenerationProvider } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import {
   DOZO_MEDIA_USAGE_PROVIDER,
-  dozoRecordMediaUsage,
+  dozoReserveMediaUsage,
   operatorPaysFor,
   validateGeneratedMedia,
 } from "@rakazo/adapters";
 import type { Actor, DozoAvatarGenerateReason } from "@rakazo/contracts";
 import { DOZO_AVATAR_GENERATE_ERRORS } from "@rakazo/contracts";
 import { ClientError, deadlineSignal } from "@rakazo/core";
-import { LeaseHeldError, withLease } from "@rakazo/db";
+import { LeaseHeldError, runAsSystem, withLease } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { dozoAvatarForSave } from "./dozo-avatar-upload.js";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
 
-/** Pictures one person may have drawn in 24 hours, in one Space. */
+/** Pictures one person may have drawn in any 24 hours, in all their Spaces together. */
 export const DOZO_AVATAR_GENERATE_PER_DAY = 20;
 /** The usage records' label for these pictures, apart from a bot's own `generate_image`. */
 export const DOZO_AVATAR_USAGE_MODEL = "avatar_image";
@@ -92,12 +92,13 @@ async function asFailure<T>(work: () => Promise<T> | T): Promise<T> {
  * logged, put in an error or kept in a usage record.
  *
  * The operator pays for each picture, so: Free on a billing server is refused (the plan rule a
- * bot's own image tool follows), `DOZO_AVATAR_GENERATE_PER_DAY` a day per person and Space is
- * counted from the usage records (which every instance shares), and a person has one picture being
- * drawn at a time, held by a lease across instances. The count is read under that lease, so two at
- * once cannot both slip past the limit. A picture is recorded as soon as the service returns one,
- * whether or not it turns out to be usable, because it may have been charged; a caller who leaves
- * or a deadline stops the call first and records nothing.
+ * bot's own image tool follows), `DOZO_AVATAR_GENERATE_PER_DAY` in any sliding 24 hours per person
+ * is counted from the usage records (which every instance shares), and a person has one picture
+ * being drawn at a time, held by a lease across instances. The count is read under that lease, so
+ * two at once cannot both slip past the limit. A picture's one record is written before the
+ * service is called and its write is not swallowed: a call that cannot be counted does not start,
+ * and one that is cancelled, times out or fails still counts, since the service may have been
+ * charged.
  */
 export function dozoAvatarGenerateRoutes(
   ctx: RouterContext,
@@ -118,16 +119,19 @@ export function dozoAvatarGenerateRoutes(
       : "plan";
   }
 
+  // Usage rows are Space-owned, so a count across a person's Spaces is named system work; it
+  // reads the number of their own rows and nothing else.
   const drawnToday = (actor: Actor) =>
-    prisma.usageRecord.count({
-      where: {
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        provider: DOZO_MEDIA_USAGE_PROVIDER,
-        model: DOZO_AVATAR_USAGE_MODEL,
-        createdAt: { gte: new Date(now() - DAY_MS) },
-      },
-    });
+    runAsSystem("count a person's drawn avatars", () =>
+      prisma.usageRecord.count({
+        where: {
+          userId: actor.userId,
+          provider: DOZO_MEDIA_USAGE_PROVIDER,
+          model: DOZO_AVATAR_USAGE_MODEL,
+          createdAt: { gte: new Date(now() - DAY_MS) },
+        },
+      }),
+    );
 
   async function draw(
     actor: Actor,
@@ -137,17 +141,17 @@ export function dozoAvatarGenerateRoutes(
   ): Promise<string> {
     if ((await drawnToday(actor)) >= DOZO_AVATAR_GENERATE_PER_DAY) throw REFUSALS.limit();
     const id = `avatar:${randomUUID()}`;
+    await dozoReserveMediaUsage(
+      prisma,
+      { userId: actor.userId, spaceId: actor.spaceId },
+      DOZO_AVATAR_USAGE_MODEL,
+      id,
+    );
     const output = await asFailure(() =>
       image.generateImage(
         { prompt: `${prompt}. ${FRAMING}` },
         { operationId: id, traceId: id, spaceId: actor.spaceId, userId: actor.userId, signal },
       ),
-    );
-    await dozoRecordMediaUsage(
-      prisma,
-      { userId: actor.userId, spaceId: actor.spaceId },
-      DOZO_AVATAR_USAGE_MODEL,
-      id,
     );
     await asFailure(() => validateGeneratedMedia(output, "image/png"));
     // The same signature check and re-encoding as an uploaded picture; a refusal is its own.

@@ -4862,6 +4862,26 @@
       "reason": "avatar generation: the avatar route records a picture in usage and reads the plan rule a bot's image tool follows, both fork files"
     },
     {
+      "file": "packages/adapters/src/media-generation-provider.ts",
+      "find": "import { FAKE_VIDEO_BASE64 } from \"./fake-media-assets.js\";\nimport type { ResolveHostname }",
+      "replace": "import { FAKE_VIDEO_BASE64 } from \"./fake-media-assets.js\";\nimport { DOZO_FAKE_IMAGE_BASE64 } from \"./dozo-fake-image.js\";\nimport type { ResolveHostname }",
+      "requires": [
+        "packages/adapters/src/dozo-fake-image.ts",
+        "packages/adapters/src/dozo-fake-image.test.ts"
+      ],
+      "reason": "offline image: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/media-generation-provider.ts",
+      "find": "        \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0u8AAAAASUVORK5CYII=\",\n",
+      "replace": "        DOZO_FAKE_IMAGE_BASE64,\n",
+      "requires": [
+        "packages/adapters/src/dozo-fake-image.ts",
+        "packages/adapters/src/dozo-fake-image.test.ts"
+      ],
+      "reason": "offline image: the provider's 1x1 picture has a wrong checksum that no image decoder accepts, so an avatar could not be drawn on a local server; it returns an 8x8 PNG that decodes"
+    },
+    {
       "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
       "find": "import { useRef, useState } from \"react\";\n\n/**\n * The shape grid",
       "replace": "import { useRef, useState } from \"react\";\nimport { DozoAvatarGeneratePanel, DozoAvatarGenerateTab } from \"./dozo-avatar-generate\";\n\n/**\n * The shape grid",
@@ -4930,6 +4950,15 @@
         "apps/mobile/lib/dozo-avatar-generate.test.tsx"
       ],
       "reason": "avatar generation: a bot's avatar sheet draws a picture from a description where the server can, and the picture is kept like a chosen photo"
+    },
+    {
+      "file": "apps/mobile/lib/bot-settings-voice.test.tsx",
+      "find": "vi.mock(\"./session\", () => ({\n  loadSessionToken: async () => \"token\",\n}));",
+      "replace": "vi.mock(\"./session\", () => ({\n  loadSessionToken: async () => \"token\",\n  currentSessionGeneration: () => 1,\n}));\nvi.mock(\"./app-foreground\", () => ({ useAppForeground: () => true }));",
+      "requires": [
+        "apps/mobile/components/dozo-avatar-generate.tsx"
+      ],
+      "reason": "avatar generation: upstream's test of the bot settings screen, whose stand-ins have no session generation and no foreground state, which the avatar sheet's status read needs"
     },
     {
       "file": "apps/web/src/pages/BotContextMenu.tsx",

@@ -2,14 +2,14 @@
 import { i18n } from "@lingui/core";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Runs on the branded tree: the avatar procedures exist once the brand rules apply.
 
-const ui = vi.hoisted(() => ({ rpc: vi.fn(), noSession: false }));
+const ui = vi.hoisted(() => ({ rpc: vi.fn() }));
 
 vi.mock("react-native", () => ({
   Text: ({ children }: { children?: ReactNode }) => <p role="alert">{children}</p>,
@@ -31,11 +31,10 @@ vi.mock("./api", () => ({
   }),
   rpc: ui.rpc,
 }));
-vi.mock("./session", () => ({
-  currentSessionGeneration: () => {
-    if (ui.noSession) throw new Error("no session");
-    return 1;
-  },
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
 }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("../components/bot-avatar", () => ({
@@ -105,6 +104,7 @@ async function describeAs(text: string) {
     field?.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+const settle = (check: () => void) => act(() => vi.waitFor(check));
 const calls = (path: string) => ui.rpc.mock.calls.filter(([called]) => called === path);
 const alertText = () => container.querySelector('[role="alert"]')?.textContent ?? null;
 
@@ -115,7 +115,6 @@ beforeEach(() => {
   queryClient.clear();
   answers = { "dozoAvatarGenerate/status": { available: true, reason: null } };
   used.mockClear();
-  ui.noSession = false;
   ui.rpc.mockReset().mockImplementation(async (path: string, input: unknown) => {
     const value = answers[path];
     if (value instanceof Error) throw value;
@@ -139,12 +138,6 @@ describe("drawing an avatar from a description on mobile", () => {
     },
   );
 
-  it("offers nothing on a screen rendered without a session", async () => {
-    ui.noSession = true;
-    await render();
-    expect(container.textContent).toBe("");
-  });
-
   it("starts with the description and Generate, which waits for words", async () => {
     await render();
     expect(container.querySelectorAll("textarea")).toHaveLength(1);
@@ -164,15 +157,41 @@ describe("drawing an avatar from a description on mobile", () => {
     expect(used).not.toHaveBeenCalled();
   });
 
-  it("goes back to waiting, silently, when one is already being drawn", async () => {
+  it("shows the refusal when one is already being drawn elsewhere", async () => {
     answers["dozoAvatarGenerate/generate"] = Object.assign(new Error("busy"), {
       code: "avatar_generate_busy",
     });
     await render();
     await describeAs("a fox");
     await press("Generate");
-    expect(alertText()).toBeNull();
+    expect(alertText()).toBe("Something went wrong. Try again.");
     expect(button("Generate")?.disabled).toBe(false);
+  });
+
+  it("shows the refusal and reads the status again when the day's allowance is used up", async () => {
+    answers["dozoAvatarGenerate/generate"] = Object.assign(new Error("limit"), {
+      code: "avatar_generate_limit",
+    });
+    await render();
+    await describeAs("a fox");
+    const before = calls("dozoAvatarGenerate/status").length;
+    answers["dozoAvatarGenerate/status"] = { available: false, reason: "limit" };
+    await press("Generate");
+    await settle(() => expect(calls("dozoAvatarGenerate/status").length).toBeGreaterThan(before));
+    expect(alertText()).toBe("Something went wrong. Try again.");
+    expect(button("Generate")).toBeUndefined();
+  });
+
+  it("keeps the last picture usable but offers no more once the allowance is spent", async () => {
+    answers["dozoAvatarGenerate/generate"] = () => ({ image: IMAGE });
+    await render();
+    await describeAs("a fox");
+    answers["dozoAvatarGenerate/status"] = { available: false, reason: "limit" };
+    await press("Generate");
+    await settle(() => expect(button("Try again")).toBeUndefined());
+    expect(button("Use")).toBeDefined();
+    await press("Use");
+    expect(used).toHaveBeenCalledWith(IMAGE);
   });
 
   it("sends one request for two taps", async () => {

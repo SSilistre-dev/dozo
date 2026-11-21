@@ -1,7 +1,11 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { DOZO_MEDIA_USAGE_PROVIDER, dozoRecordMediaUsage } from "./dozo-media-usage.js";
+import {
+  DOZO_MEDIA_USAGE_PROVIDER,
+  dozoRecordMediaUsage,
+  dozoReserveMediaUsage,
+} from "./dozo-media-usage.js";
 import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
 
@@ -68,6 +72,33 @@ describe("media usage", () => {
       runId: undefined,
       parentRunId: undefined,
     });
+  });
+
+  it("reserves a generation's one record before it runs, and says when it cannot", async () => {
+    const db = usageDatabase();
+    const person = { userId: "owner", spaceId: "space" };
+    await dozoReserveMediaUsage(
+      db as unknown as PrismaClient,
+      person,
+      "avatar_image",
+      "avatar:one",
+    );
+    // Recording the same generation afterwards adds nothing: it is one record.
+    await dozoRecordMediaUsage(db as unknown as PrismaClient, person, "avatar_image", "avatar:one");
+    expect(db.rows).toHaveLength(1);
+    const broken = {
+      $transaction: async () => {
+        throw new Error("database down");
+      },
+    };
+    await expect(
+      dozoReserveMediaUsage(
+        broken as unknown as PrismaClient,
+        person,
+        "avatar_image",
+        "avatar:two",
+      ),
+    ).rejects.toThrow("database down");
   });
 
   it("never fails the delivered media when the record cannot be written", async () => {

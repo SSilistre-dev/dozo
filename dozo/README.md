@@ -658,19 +658,17 @@ Accepted by the owner for now, stated here once:
   picture, which goes through the same checks and 256 px WebP re-encoding as an upload and comes back
   as a data image; nothing is saved until the person saves it as an avatar. It is offered only when
   the server has an image service that draws images and, on a server that bills, only to an
-  organization that pays (Free is refused, as a bot's own image tool is). Each picture leaves one
-  usage record (provider `media`, model `avatar_image`, no run or bot, cost unknown), recorded as
-  soon as the service returns one, usable or not; a caller who leaves or the 2-minute deadline stops
-  the call first and records nothing. The limit is 20 a day per person and Space, counted from those
-  records, and one picture at a time per person, held by a lease, so two at once cannot both pass
-  the count or be billed twice. The description is never logged or kept. The count is per Space,
-  not across a person's Spaces.
-  On web and desktop it is a third tab, Generate, in the Avatar Studio beside Bot and Upload
-  (`dozo-avatar-generate.tsx`); on mobile it is a field and Generate under the shapes in a bot's
-  avatar sheet (`apps/mobile/components/dozo-avatar-generate.tsx`). Both draw one picture, show it
-  with Use and Try again, and offer nothing unless `status` says it is available (a spent daily
-  allowance hides it too). Web cancels the request when the tab or studio closes; mobile cannot
-  (a save's `send` has no abort signal), so it drops the answer and the picture is still counted.
+  organization that pays (Free is refused, as a bot's own image tool is). Each try leaves one usage
+  record (provider `media`, model `avatar_image`, no run or bot, cost unknown), written before the
+  service is called; if it cannot be written the call does not start. So a try that is cancelled,
+  times out (2 minutes), fails or returns something unusable still counts, since the service may
+  have charged. The limit is 20 in any sliding 24 hours per person, across all their Spaces
+  together, counted from those records (an index on person and time serves it), and a person has
+  one picture being drawn at a time, held by a lease, so two at once cannot both pass the count or
+  be billed twice. The description is never logged or kept. The offline image provider
+  (`MEDIA_GENERATION_PROVIDER=fake`) returns a valid 8x8 PNG (`dozo-fake-image.ts`), so the feature
+  runs on a local server; `dozo-avatar-generate.postgres.test.ts` checks the count and the lease on
+  a real database.
 - Daily digest (Settings > General, web and mobile; off by default;
   `packages/adapters/src/dozo-daily-digest.ts`): a routine on the chosen bot that, at the chosen
   hour in the account's timezone, writes one message in that bot's chat from saved data, with no

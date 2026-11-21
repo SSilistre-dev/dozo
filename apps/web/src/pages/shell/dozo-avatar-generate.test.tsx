@@ -36,15 +36,14 @@ import { DozoAvatarGeneratePanel, DozoAvatarGenerateTab } from "./dozo-avatar-ge
 
 const IMAGE = "data:image/webp;base64,AAAA";
 const used = vi.fn<(image: string) => void>();
+let client: QueryClient;
 let container: HTMLDivElement;
 let root: Root;
 
 function Harness() {
   const [tab, setTab] = useState("generate");
   return (
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="bot">Bot</TabsTrigger>
@@ -58,6 +57,7 @@ function Harness() {
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -153,7 +153,7 @@ describe("drawing an avatar from a description", () => {
     expect(used).not.toHaveBeenCalled();
   });
 
-  it("goes back to waiting, silently, when one is already being drawn", async () => {
+  it("shows the refusal when one is already being drawn elsewhere", async () => {
     await open({ available: true, reason: null });
     api.generate.mockRejectedValue(
       Object.assign(new Error("busy"), { code: "avatar_generate_busy" }),
@@ -161,8 +161,39 @@ describe("drawing an avatar from a description", () => {
     await describe_("a fox");
     await press("Generate");
     await act(flush);
-    expect(alertText()).toBeNull();
+    expect(alertText()).toBe("Something went wrong. Try again.");
     expect(button("Generate").disabled).toBe(false);
+  });
+
+  it("shows the refusal and reads the status again when the day's allowance is used up", async () => {
+    await open({ available: true, reason: null });
+    api.generate.mockRejectedValue(
+      Object.assign(new Error("limit"), { code: "avatar_generate_limit" }),
+    );
+    api.status.mockResolvedValue({ available: false, reason: "limit" });
+    await describe_("a fox");
+    await press("Generate");
+    await act(flush);
+    expect(api.status).toHaveBeenCalledTimes(2);
+    expect(alertText()).toBe("Something went wrong. Try again.");
+    expect(document.querySelector('[role="tab"][aria-selected]')).not.toBeNull();
+    expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+      "Bot",
+    ]);
+  });
+
+  it("keeps the last picture usable but offers no more once the allowance is spent", async () => {
+    await open({ available: true, reason: null });
+    api.generate.mockResolvedValue({ image: IMAGE });
+    api.status.mockResolvedValue({ available: false, reason: "limit" });
+    await describe_("a fox");
+    await press("Generate");
+    await act(flush);
+    expect(api.status).toHaveBeenCalledTimes(2);
+    expect(hasButton("Use")).toBe(true);
+    expect(hasButton("Try again")).toBe(false);
+    await press("Use");
+    expect(used).toHaveBeenCalledWith(IMAGE);
   });
 
   it("sends one request for two presses and ignores nothing it needs", async () => {

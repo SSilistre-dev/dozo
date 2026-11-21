@@ -5,6 +5,7 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import { dozoAvatarImageBytes } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { DOZO_AVATAR_GENERATE_ERRORS } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
@@ -104,6 +105,8 @@ type Setup = {
 };
 
 const usageRows: Array<Record<string, unknown>> = [];
+/** A database that cannot take the usage record. */
+let usageWriteFails = false;
 const count = vi.fn(async (_query: unknown) => 0);
 const generateImage =
   vi.fn<(input: { prompt: string }, context: AdapterContext) => Promise<GeneratedMedia>>();
@@ -122,7 +125,10 @@ function prismaFor(plan: NonNullable<Setup["plan"]>) {
   };
   return {
     usageRecord: { count },
-    $transaction: async <T>(work: (client: typeof tx) => Promise<T>) => work(tx),
+    $transaction: async <T>(work: (client: typeof tx) => Promise<T>) => {
+      if (usageWriteFails) throw new Error("database down");
+      return work(tx);
+    },
     space: { findUnique: vi.fn(async () => ({ organizationId: "org-1" })) },
     member: { findUnique: vi.fn(async () => (plan === "paid" ? { role: "owner" } : null)) },
     organization: {
@@ -137,7 +143,7 @@ function prismaFor(plan: NonNullable<Setup["plan"]>) {
 
 function routes(setup: Setup = {}) {
   const plan = setup.plan ?? "self-hosted";
-  count.mockResolvedValue(setup.used ?? 0);
+  count.mockImplementation(async () => (setup.used ?? 0) + usageRows.length);
   const provider =
     setup.provider === null
       ? undefined
@@ -167,6 +173,7 @@ function caller(built = routes()) {
 
 beforeEach(async () => {
   usageRows.length = 0;
+  usageWriteFails = false;
   generateImage.mockReset().mockImplementation(async (_input, context) => {
     context.signal.throwIfAborted();
     return { mimeType: "image/png", bytes: wideImage() };
@@ -190,7 +197,7 @@ describe("status", () => {
     });
     expect(count).toHaveBeenCalledWith({
       where: {
-        spaceId: "space-1",
+        // Every Space together: the person, not the Space.
         userId: "user-1",
         provider: "media",
         model: "avatar_image",
@@ -282,7 +289,7 @@ describe("generate: refusals", () => {
 });
 
 describe("generate: the image service goes wrong", () => {
-  it("answers one general failure, records nothing and tells nothing of the description", async () => {
+  it("answers one general failure, still counts the try and tells nothing of the description", async () => {
     generateImage.mockRejectedValue(new MediaGenerationError("authentication"));
     const error = await caller()
       .dozoAvatarGenerate.generate({ prompt: SECRET })
@@ -294,7 +301,8 @@ describe("generate: the image service goes wrong", () => {
     // Neither the service's own reason nor a cause that could carry it goes with the answer.
     expect((error as Error).message).not.toMatch(/authentication|Media generation/i);
     expect((error as Error).cause).toBeUndefined();
-    expect(usageRows).toEqual([]);
+    // Written before the call, so a call that failed has counted all the same.
+    expect(usageRows).toHaveLength(1);
     expectNoPromptAnywhere((error as Error).message);
   });
 
@@ -324,6 +332,7 @@ describe("generate: the image service goes wrong", () => {
     await expect(caller().dozoAvatarGenerate.generate({ prompt: SECRET })).rejects.toMatchObject({
       code: DOZO_AVATAR_GENERATE_ERRORS.failed,
     });
+    expect(usageRows).toHaveLength(3);
     expectNoPromptAnywhere();
   });
 
@@ -405,7 +414,7 @@ describe("generate: the caller leaves or the service is slow", () => {
     );
   }
 
-  it("stops the image service when the caller disconnects, and records nothing", async () => {
+  it("stops the image service when the caller disconnects, and the try still counts", async () => {
     untilAborted();
     const built = routes();
     const leaving = new AbortController();
@@ -422,7 +431,7 @@ describe("generate: the caller leaves or the service is slow", () => {
     const error = await outcome;
     expect(signal.aborted).toBe(true);
     expect(error).not.toMatchObject({ code: DOZO_AVATAR_GENERATE_ERRORS.failed });
-    expect(usageRows).toEqual([]);
+    expect(usageRows).toHaveLength(1);
     expectNoPromptAnywhere((error as Error).message);
     // Nothing is held after it: the person can ask again.
     await expect(caller(built).dozoAvatarGenerate.generate({ prompt: "a fox" })).resolves.toEqual({
@@ -430,7 +439,7 @@ describe("generate: the caller leaves or the service is slow", () => {
     });
   });
 
-  it("gives up on a slow image service with the general failure, and records nothing", async () => {
+  it("gives up on a slow image service with the general failure, and the try still counts", async () => {
     untilAborted();
     const error = await caller(routes({ deadlineMs: 20 }))
       .dozoAvatarGenerate.generate({ prompt: SECRET })
@@ -439,8 +448,63 @@ describe("generate: the caller leaves or the service is slow", () => {
       kind: "SERVICE_UNAVAILABLE",
       code: DOZO_AVATAR_GENERATE_ERRORS.failed,
     });
-    expect(usageRows).toEqual([]);
+    expect(usageRows).toHaveLength(1);
     expectNoPromptAnywhere((error as Error).message);
+  });
+
+  it("refuses the 21st after twenty that were cancelled or timed out", async () => {
+    const built = routes();
+    for (let attempt = 0; attempt < DOZO_AVATAR_GENERATE_PER_DAY; attempt++) {
+      untilAborted();
+      if (attempt % 2) {
+        const leaving = new AbortController();
+        const pending = createRouterClient(built, { context: { actor } })
+          .dozoAvatarGenerate.generate({ prompt: "a fox" }, { signal: leaving.signal })
+          .catch((thrown: unknown) => thrown);
+        await flush();
+        leaving.abort();
+        await pending;
+      } else {
+        await caller(routes({ deadlineMs: 5 }))
+          .dozoAvatarGenerate.generate({ prompt: "a fox" })
+          .catch((thrown: unknown) => thrown);
+      }
+    }
+    expect(usageRows).toHaveLength(DOZO_AVATAR_GENERATE_PER_DAY);
+    generateImage.mockClear();
+    await expect(
+      caller(built).dozoAvatarGenerate.generate({ prompt: "a fox" }),
+    ).rejects.toMatchObject({
+      kind: "TOO_MANY_REQUESTS",
+      code: DOZO_AVATAR_GENERATE_ERRORS.limit,
+    });
+    expect(generateImage).not.toHaveBeenCalled();
+    await expect(caller(built).dozoAvatarGenerate.status()).resolves.toEqual({
+      available: false,
+      reason: "limit",
+    });
+  });
+});
+
+describe("generate: the count cannot be written", () => {
+  it("does not call the image service, and answers a server error", async () => {
+    usageWriteFails = true;
+    const error = await caller()
+      .dozoAvatarGenerate.generate({ prompt: SECRET })
+      .catch((thrown: unknown) => thrown);
+    expect(error).toMatchObject({ message: "database down" });
+    expect(error).not.toBeInstanceOf(ClientError);
+    expect(generateImage).not.toHaveBeenCalled();
+    expect(usageRows).toEqual([]);
+  });
+
+  it("writes the record before the image service is called", async () => {
+    generateImage.mockImplementationOnce(async () => {
+      expect(usageRows).toHaveLength(1);
+      return { mimeType: "image/png", bytes: wideImage() };
+    });
+    await caller().dozoAvatarGenerate.generate({ prompt: "a fox" });
+    expect(usageRows).toHaveLength(1);
   });
 });
 
@@ -486,6 +550,15 @@ describe("generate: a picture", () => {
     await caller(built).dozoAvatarGenerate.generate({ prompt: "a fox" });
     await caller(built).dozoAvatarGenerate.generate({ prompt: "a fox" });
     expect(new Set(usageRows.map((row) => row.callId)).size).toBe(2);
+  });
+
+  it("takes the picture the offline image provider returns", async () => {
+    const { FakeMediaGenerationProvider } = await import("@rakazo/adapters");
+    generateImage.mockImplementationOnce((input, context) =>
+      new FakeMediaGenerationProvider().generateImage(input, context),
+    );
+    const { image } = await caller().dozoAvatarGenerate.generate({ prompt: "a fox" });
+    expect(webpSize(dozoAvatarImageBytes(image)!)).toEqual([256, 256]);
   });
 
   it("keeps the description out of every log, answer and record", async () => {
