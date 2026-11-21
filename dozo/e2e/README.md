@@ -188,7 +188,9 @@ rows, so repeated runs are not refused (only on this local stack).
 
 The model stub calls a tool when the newest user message holds `[e2e-tool:<name> <args>]` (args as
 JSON or `b64:<base64 JSON>`) and the request offers that tool, then answers its result with a fixed
-line; the chat scenario uses it for a tool call that waits for the owner's approval.
+line; the chat scenario uses it for a tool call that waits for the owner's approval. `[e2e-slow:<seconds>]`
+holds the answer back that long (at most 300), so a bot stays busy while the queue scenario puts work
+in line behind it.
 
 There is no payment provider on this stack: billing's server answers are faked in the browser from
 the server's own plans (`fakeBilling`, prices read from `dozoAdmin/plans/list`, never written in the
@@ -202,7 +204,7 @@ What is checked where, per surface. "crawl" = opened and scanned (`surfaces/`), 
 does the feature end to end (`flows/`), "flow (faked)" = a scenario with the server's answer faked
 in the browser because this stack lacks the provider, "live" = `make canli` only. 49 inventory keys
 (routes, settings sections, overlays, onboarding steps; the inventory check fails on a new one) plus
-the features below: 38 surfaces in the table, 36 checked, 2 not (each row is one surface).
+the features below: 39 surfaces in the table, 37 checked, 2 not (each row is one surface).
 
 | Surface | Scenario | Status |
 | --- | --- | --- |
@@ -231,6 +233,7 @@ the features below: 38 surfaces in the table, 36 checked, 2 not (each row is one
 | Billing: payment page | opens with the right plan and amount, no card entered | live |
 | Plan limit: Free computer | waking is refused, the plan line and Upgrade | live |
 | Plan limit: shared space | a full space refuses the upload with its line | flow (faked) |
+| Waiting line | a member's long answer keeps a bot busy; the caller's routine runs and a message wait behind it: the line and its place, the list (others' work only "Queued"), stopping one's own wait by signal and from the list, another's refused, the line following the live signal with no reload and no timed read | flow |
 | Computer | start from the bot panel, stop from the admin list, asleep again | flow; crawl (full window, teach) |
 | Admin: members | search, plan filter, give Premium, take it back, suspend, status filter, delete | flow |
 | Admin: site settings | announcement saved, a member sees the line, cleared | flow |
