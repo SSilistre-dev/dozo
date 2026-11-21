@@ -111,6 +111,8 @@ impl Access {
         runner.set_sign_in_prompt(std::sync::Arc::new(crate::browser_signin::DialogPrompt(
             app.clone(),
         )));
+        let handle = app.clone();
+        runner.set_on_browser_names(Box::new(move || crate::browser_clear::sync(&handle)));
         Ok(Self {
             runner,
             secrets: Arc::new(Keyring),
@@ -119,6 +121,11 @@ impl Access {
             asking: AtomicBool::new(false),
             state: Mutex::default(),
         })
+    }
+
+    /// What runs the server's requests on this computer.
+    pub fn runner(&self) -> &Arc<Runner> {
+        &self.runner
     }
 
     /// Stops the connection and every command it started, and what they started.

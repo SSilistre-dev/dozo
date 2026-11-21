@@ -186,19 +186,38 @@ impl Runner {
     }
 
     /// While the person signs in with a bot's browser, every command still running here, any
-    /// bot's, started before, is held (its process group stopped) and let go after. What left
-    /// its group is out of reach, as for a stop.
+    /// bot's, started before, is held and let go after: its process group while it still is the
+    /// command's (as for a stop), and on Linux also what it started outside the group. On macOS
+    /// what left the group is out of reach.
     fn hold_commands(&self, hold: bool) {
         #[cfg(unix)]
         for owned in self.owned.lock().unwrap().iter() {
             let signal = if hold { libc::SIGSTOP } else { libc::SIGCONT };
-            // SAFETY: a plain kill(2) on a group this app started.
-            unsafe {
-                libc::kill(-(owned.pid as libc::pid_t), signal);
-            }
+            send_signal(owned.pid, &owned.mark, signal, true);
         }
         #[cfg(windows)]
         let _ = hold;
+    }
+
+    fn remember_name(&self, key: &str, request: &Value) {
+        if let Some(name) = request.get("botName").and_then(Value::as_str) {
+            self.browsers.remember_name(key, name);
+        }
+    }
+
+    /// The bots whose browser this computer keeps, by key, with their names.
+    pub fn browser_names(&self) -> Vec<(String, String)> {
+        self.browsers.named()
+    }
+
+    /// The person clears that bot's browser (`Browsers::clear`).
+    pub async fn clear_browser(&self, key: &str) {
+        self.browsers.clear(key).await;
+    }
+
+    /// Whom to tell when `browser_names` changes.
+    pub fn set_on_browser_names(&self, tell: Box<dyn Fn() + Send + Sync>) {
+        self.browsers.set_on_list(tell);
     }
 
     /// Whether a bot's browser can start here.
@@ -354,10 +373,14 @@ impl Runner {
             }
             // Not offered until the app declares it (`browser::DECLARED`): a server that asks
             // anyway gets what an unoffered method gets, and no browser starts.
-            "pageBrowser" | "pageBrowserSignIn" if !crate::browser::DECLARED => {
+            "pageBrowser" | "pageBrowserSignIn" | "pageBrowserCleared"
+                if !crate::browser::DECLARED =>
+            {
                 return reply.error(NOT_HERE).await;
             }
+            "pageBrowserCleared" => Ok(json!({ "cleared": self.browsers.cleared(&key) })),
             "pageBrowserSignIn" => {
+                self.remember_name(&key, request);
                 if !running(&home) {
                     return reply.error("Local computer stopped").await;
                 }
@@ -368,6 +391,7 @@ impl Runner {
                 }
             }
             "pageBrowser" => {
+                self.remember_name(&key, request);
                 if !running(&home) {
                     return reply.error("Local computer stopped").await;
                 }
@@ -470,13 +494,26 @@ impl Runner {
         };
         let pid = child.id().unwrap_or(0);
         let (stop, mut stopped) = watch::channel(false);
-        self.owned.lock().unwrap().push(Owned {
-            pid,
-            mark: mark.clone(),
-            bot: key.to_owned(),
-            run: run.map(str::to_owned),
-            cancel: stop,
-        });
+        {
+            // A sign-in that began while this started (after the check in `handle`) is seen
+            // here, under the lock its hold takes: the command is ended, not left unheld.
+            let mut owned = self.owned.lock().unwrap();
+            if let Some(site) = self.browsers.anyone_signing() {
+                drop(owned);
+                kill(pid, &mark, true);
+                let _ = child.wait().await;
+                let refused =
+                    format!("The person is signing in to {site}; wait until they are done.");
+                return reply.error(&refused).await;
+            }
+            owned.push(Owned {
+                pid,
+                mark: mark.clone(),
+                bot: key.to_owned(),
+                run: run.map(str::to_owned),
+                cancel: stop,
+            });
+        }
         let mut stdout = child.stdout.take();
         let mut stderr = child.stderr.take();
         let (mut out_text, mut err_text) = (Utf8::default(), Utf8::default());
@@ -893,20 +930,29 @@ fn marked(mark: &str) -> Vec<(i32, i32)> {
 }
 
 /// Stops a command's group and, with `escaped`, every process carrying its mark (what it started
-/// in a new session or group). The group is signalled only while a marked process still belongs
-/// to it, so a group id the system has since given to someone else is never hit.
-#[cfg(target_os = "linux")]
+/// in a new session or group).
+#[cfg(unix)]
 fn kill(pid: u32, mark: &str, escaped: bool) {
+    send_signal(pid, mark, libc::SIGKILL, escaped);
+}
+
+/// Signals a command's group and, with `escaped`, every process carrying its mark. The group is
+/// signalled only while a marked process still belongs to it, so a group id the system has since
+/// given to someone else is never hit, and never group 0 (this app's own).
+#[cfg(target_os = "linux")]
+fn send_signal(pid: u32, mark: &str, signal: libc::c_int, escaped: bool) {
     let marked = marked(mark);
     let group = i32::try_from(pid).unwrap_or(0);
     // SAFETY: plain signals to processes found above; no memory is involved.
     unsafe {
         if group > 0 && marked.iter().any(|(_, pgrp)| *pgrp == group) {
-            libc::kill(-group, libc::SIGKILL);
+            libc::kill(-group, signal);
         }
         if escaped {
             for (pid, _) in marked {
-                libc::kill(pid, libc::SIGKILL);
+                if pid > 0 {
+                    libc::kill(pid, signal);
+                }
             }
         }
     }
@@ -917,13 +963,13 @@ fn alive(_pid: u32, mark: &str) -> bool {
     !marked(mark).is_empty()
 }
 
-/// macOS has no /proc to find marked processes: the group alone, which the entry is dropped
-/// for within a second of emptying (`watch_leftovers`).
+/// macOS has no /proc to find marked processes: the group alone, while it exists (never group
+/// 0), which the entry is dropped for within a second of emptying (`watch_leftovers`).
 #[cfg(target_os = "macos")]
-fn kill(pid: u32, mark: &str, _escaped: bool) {
+fn send_signal(pid: u32, mark: &str, signal: libc::c_int, _escaped: bool) {
     if alive(pid, mark) {
         // SAFETY: a plain signal to the group this app created; no memory is involved.
-        unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
+        unsafe { libc::kill(-(pid as i32), signal) };
     }
 }
 
@@ -1046,7 +1092,7 @@ mod tests {
         let (runner, dir) = runner();
         let provision = json!({ "method": "provision", "botId": "b" });
         assert!(frames(&runner, provision).await[0].get("value").is_some());
-        let page = json!({ "method": "pageBrowser", "botId": "b",
+        let page = json!({ "method": "pageBrowser", "botId": "b", "botName": "Ada",
             "command": { "method": "Page.navigate", "params": { "url": "https://example.com/" } } });
         assert_eq!(
             frames(&runner, page).await,
@@ -1057,6 +1103,12 @@ mod tests {
             frames(&runner, sign_in).await,
             vec![json!({ "error": NOT_HERE })]
         );
+        let cleared = json!({ "method": "pageBrowserCleared", "botId": "b" });
+        assert_eq!(
+            frames(&runner, cleared).await,
+            vec![json!({ "error": NOT_HERE })]
+        );
+        assert!(runner.browser_names().is_empty(), "no name was kept");
         assert!(
             !dir.join("data").join("browser-profiles").exists(),
             "no profile was made"
@@ -1093,6 +1145,25 @@ mod tests {
             .trim()
             .parse()
             .unwrap();
+        // And one that left its group (Linux finds it by its mark).
+        #[cfg(target_os = "linux")]
+        let escaped: u32 = {
+            let escaped_file = dir.join("home/escaped.pid");
+            let leave = format!(
+                "setsid sh -c 'exec sleep 30' >/dev/null 2>&1 & echo $! > {f}; \
+                 until grep -q sleep /proc/$(cat {f})/comm; do sleep 0.02; done",
+                f = escaped_file.display()
+            );
+            let started = json!({ "method": "execute", "botId": "c",
+                "command": { "argv": ["sh", "-c", leave], "cwd": dir.join("home").to_string_lossy() } });
+            frames(&runner, started).await;
+            // The command waited until it is the sleep itself, whose environment can be read.
+            std::fs::read_to_string(&escaped_file)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap()
+        };
         runner
             .browsers
             .mark_signing(&bot_key("b"), Some("example.com"));
@@ -1108,19 +1179,25 @@ mod tests {
         }
         #[cfg(target_os = "linux")]
         {
-            let state = |pid: u32| {
-                let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
-                stat.rsplit_once(')')
-                    .unwrap()
-                    .1
-                    .split_whitespace()
-                    .next()
-                    .unwrap()
-                    .to_owned()
+            // Whether the process is stopped, once a signal sent has had up to a second to land.
+            let stopped = |pid: u32, want: bool| {
+                let now = || {
+                    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+                    stat.rsplit_once(')').unwrap().1.split_whitespace().next() == Some("T")
+                };
+                for _ in 0..50 {
+                    if now() == want {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                now()
             };
-            assert_eq!(state(sleeper), "T", "held while the person signs in");
+            assert!(stopped(sleeper, true), "held while the person signs in");
+            assert!(stopped(escaped, true), "outside its group too");
             runner.browsers.mark_signing(&bot_key("b"), None);
-            assert_ne!(state(sleeper), "T", "let go after");
+            assert!(!stopped(sleeper, false), "let go after");
+            assert!(!stopped(escaped, false), "let go after");
         }
         #[cfg(not(target_os = "linux"))]
         runner.browsers.mark_signing(&bot_key("b"), None);
@@ -1131,6 +1208,82 @@ mod tests {
         );
         runner.stop_all(true);
         let _ = sleeper;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A hold reaches only what is still a command's: a group id the system gave to another
+    /// process since, and group 0 (this app's own), are left alone.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_hold_leaves_alone_a_group_that_is_no_longer_a_command_s() {
+        use std::os::unix::process::CommandExt;
+        let (runner, dir) = runner();
+        let mut other = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        for pid in [other.id(), 0] {
+            runner.owned.lock().unwrap().push(Owned {
+                pid,
+                mark: new_mark(),
+                bot: bot_key("b"),
+                run: None,
+                cancel: watch::channel(false).0,
+            });
+        }
+        runner
+            .browsers
+            .mark_signing(&bot_key("b"), Some("example.com"));
+        // Long enough for a stop sent by mistake to land.
+        std::thread::sleep(Duration::from_millis(300));
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", other.id())).unwrap();
+        let state = stat
+            .rsplit_once(')')
+            .unwrap()
+            .1
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_owned();
+        assert_ne!(state, "T");
+        runner.browsers.mark_signing(&bot_key("b"), None);
+        let _ = other.kill();
+        let _ = other.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A command that reached the start as a sign-in began is ended there, not left running
+    /// unheld.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_command_starting_as_a_sign_in_begins_is_ended() {
+        let (runner, dir) = runner();
+        let provision = json!({ "method": "provision", "botId": "b" });
+        frames(&runner, provision).await;
+        runner
+            .browsers
+            .mark_signing(&bot_key("c"), Some("example.com"));
+        let ran = dir.join("ran");
+        let command = parse_command(&json!({
+            "argv": ["sh", "-c", format!("sleep 1; touch {}", ran.display())]
+        }))
+        .unwrap();
+        let (reply, mut call) = reply("r1");
+        let home = runner.bot_home("b");
+        runner
+            .execute(&bot_key("b"), None, &home, command, &reply)
+            .await;
+        drop(reply);
+        let frame: Value = serde_json::from_str(&call.frames.recv().await.unwrap()).unwrap();
+        assert_eq!(
+            frame["frame"],
+            json!({ "error": "The person is signing in to example.com; wait until they are done." })
+        );
+        assert_eq!(runner.tracked(), 0);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        assert!(!ran.exists(), "the command did not go on");
+        runner.browsers.mark_signing(&bot_key("c"), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

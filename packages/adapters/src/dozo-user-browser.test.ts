@@ -23,6 +23,8 @@ const FORM = "https://example.test/form";
 /** A run with the user's computer connected, a consent table, effects and a token mark, in memory. */
 function setup(options: { capabilities?: string[]; owner?: string; token?: boolean } = {}) {
   const consents = new Set<string>();
+  /** The person cleared the bot's browser on that computer. */
+  const cleared = { value: false };
   const signIn = { answer: true as unknown };
   const effects = new Map<string, { id: string; request: unknown }>();
   const device = fakeDeviceBrowser({
@@ -44,6 +46,10 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
         yield { signedIn: signIn.answer };
         return;
       }
+      if (request.method === "pageBrowserCleared") {
+        yield { cleared: cleared.value };
+        return;
+      }
       if (request.method === "pageBrowser") {
         const answer: { result?: unknown; events?: DeviceBrowserEvent[] } = await device(
           request.command as never,
@@ -63,6 +69,11 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
       throw new Error(`unexpected SQL ${sql(strings)}`);
     }),
     $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (sql(strings).includes("DELETE FROM dozo_browser_consents")) {
+        for (const key of consents)
+          if (key.startsWith(`${values[0]}|${values[1]}|`)) consents.delete(key);
+        return 1;
+      }
       if (!sql(strings).includes("INSERT INTO dozo_browser_consents"))
         throw new Error("unexpected");
       consents.add(values.join("|"));
@@ -77,7 +88,7 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
   const ctx = {
     source: { userComputerOwner: "owner" in options ? options.owner : "user-1" },
     deps: { userDevices: devices, prisma },
-    bot: { id: "bot-1" },
+    bot: { id: "bot-1", name: "Ada" },
     thread: { id: "thread-1" },
     run: { botId: "bot-1", threadId: "thread-1", userId: "user-1" },
     runId: "run-1",
@@ -88,7 +99,7 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
     computer: { acceptsImages: true, stored: {}, graphical: false },
     tools: { disabled: new Set<string>() },
   } as unknown as RunContext;
-  return { ctx, consents, effects, device, requests, devices, signIn };
+  return { ctx, consents, effects, device, requests, devices, signIn, cleared };
 }
 
 /** What the person already allowed in thread-1: the browser, and each "verb:site" given. */
@@ -493,7 +504,7 @@ describe("the sign-in", () => {
     expect(kept.has("browser_sign_in")).toBe(true);
   });
 
-  it("asks once per site in a thread, then tells the bot only whether the user signed in", async () => {
+  it("asks for every sign-in, then tells the bot only whether the user signed in", async () => {
     const run = setup();
     const args = { site: "www.X.com" };
     expect(await userBrowserGate(run.ctx, false, "browser_sign_in", args)).toBe("ask");
@@ -504,13 +515,24 @@ describe("the sign-in", () => {
     run.effects.set(first.effectKey, { id: first.effectKey, request: { ...args } });
     expect(await userBrowserSignIn(run.ctx, first)).toEqual({ site: "x.com", signedIn: true });
     expect(run.requests.at(-1)).toMatchObject({ method: "pageBrowserSignIn", site: "x.com" });
+    expect(run.requests.at(-1)).toMatchObject({ botName: "Ada" });
+    // A sign-in holds every bot's commands on that computer: the same site asks again.
     const again = { site: "x.com" };
-    expect(await userBrowserGate(run.ctx, false, "browser_sign_in", again)).toBe("allow");
-    run.signIn.answer = false;
-    expect(await userBrowserSignIn(run.ctx, call("browser_sign_in", again))).toEqual({
-      site: "x.com",
-      signedIn: false,
+    expect(await userBrowserGate(run.ctx, false, "browser_sign_in", again)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_sign_in", again, [])).toMatchObject({
+      text: "Let this bot have you sign in to x.com in its browser?",
     });
+    run.signIn.answer = false;
+    const second = call("browser_sign_in", again);
+    run.effects.set(second.effectKey, { id: second.effectKey, request: { ...again } });
+    expect(await userBrowserSignIn(run.ctx, second)).toEqual({ site: "x.com", signedIn: false });
+    // One that its card did not see is refused.
+    const unasked = { site: "x.com" };
+    await userBrowserGate(run.ctx, false, "browser_sign_in", unasked);
+    const skipped = call("browser_sign_in", unasked);
+    await userBrowserSignIn(run.ctx, skipped);
+    expect(skipped.finish.mock.calls[0]![0]).toMatchObject({ error: expect.any(String) });
+    expect(run.requests.filter((r) => r.method === "pageBrowserSignIn")).toHaveLength(2);
     const elsewhere = { site: "paypa1.com" };
     expect(await userBrowserGate(run.ctx, false, "browser_sign_in", elsewhere)).toBe("ask");
     expect(buildApprovalAskBlock("e", "browser_sign_in", elsewhere, [])).toMatchObject({
@@ -546,11 +568,15 @@ describe("the sign-in", () => {
     allow(run, "signin:x.com");
     const args = { site: "x.com" };
     await userBrowserGate(run.ctx, false, "browser_sign_in", args);
+    const asked = (made: ReturnType<typeof call>) => {
+      run.effects.set(made.effectKey, { id: made.effectKey, request: { ...args } });
+      return made;
+    };
     run.devices.request = async function* () {
       yield* [];
       throw "gone";
     } as never;
-    const failed = call("browser_sign_in", args);
+    const failed = asked(call("browser_sign_in", args));
     await userBrowserSignIn(run.ctx, failed);
     expect(failed.finish).toHaveBeenCalledWith({
       error: "The user's computer did not finish the sign-in: failed",
@@ -559,7 +585,7 @@ describe("the sign-in", () => {
       yield* [];
       throw new Error("closed");
     } as never;
-    const closed = call("browser_sign_in", args);
+    const closed = asked(call("browser_sign_in", args));
     await userBrowserSignIn(run.ctx, closed);
     expect(closed.finish).toHaveBeenCalledWith({
       error: "The user's computer did not finish the sign-in: closed",
@@ -567,8 +593,22 @@ describe("the sign-in", () => {
     const stopped = new AbortController();
     stopped.abort(new Error("stopped"));
     (run.ctx as { context: { signal: AbortSignal } }).context = { signal: stopped.signal };
-    await expect(userBrowserSignIn(run.ctx, call("browser_sign_in", args))).rejects.toThrow(
+    await expect(userBrowserSignIn(run.ctx, asked(call("browser_sign_in", args)))).rejects.toThrow(
       "closed",
     );
+  });
+
+  it("forgets what the bot was allowed on a computer whose person cleared its browser", async () => {
+    const run = setup();
+    allow(run, "open:example.test", "read:example.test");
+    run.consents.add("bot-1|device-1|thread-2|");
+    run.consents.add("bot-2|device-1|thread-1|");
+    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", {})).toBe("allow");
+    run.cleared.value = true;
+    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", {})).toBe("ask");
+    expect([...run.consents]).toEqual(["bot-2|device-1|thread-1|"]);
+    expect(run.requests.find((r) => r.method === "pageBrowser")).toMatchObject({
+      botName: "Ada",
+    });
   });
 });
