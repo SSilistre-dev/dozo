@@ -437,11 +437,74 @@ command there unasked. The fork keeps that first card and then reads each comman
 - A command that only reads (`ls`, `cat`, `grep`, `find` without `-exec` or `-delete`, and a few
   more in `READ_ONLY_PROGRAMS`) goes ahead.
 - Any other command asks with Allow once, Always allow this command and Deny. Always allow saves
-  the exact words for that bot, in that folder (table `dozo_command_rules`); Settings > Approvals
-  lists them under Commands, with Remove.
+  the exact words for that bot, in that folder, on that computer (table `dozo_command_policies`);
+  Settings > Approvals lists them under Commands, where each can be changed or removed.
 - Never ask keeps upstream's behaviour: the first card alone. Auto asks like Ask; no approval model
   reads commands yet. A block rule on the tool still refuses every command.
-- Commands on a bot's own cloud computer never ask, as upstream: it is the bot's isolated machine.
+
+### Command rules
+
+Each rule is the member's, for one bot (in a group chat, the rules of the member whose run it is).
+A bot another bot starts or messages runs under its own rules, which start empty, so a block for
+one bot does not hold for another. A rule does one of three things
+(`packages/core/src/dozo-command-rule-match.ts`):
+
+- **Allow**: exactly these words, in this folder. It needs the command to read as one literal
+  program (above), so chaining, substitution, redirection, a variable before the program, `sudo`
+  or `bash -c` never pass by a rule.
+- **Allow with arguments**: these words followed by more plain words, offered only for plain
+  readers whose arguments only name what to read or print (`PREFIX_PROGRAMS`: `basename`, `cat`,
+  `cmp`, `df`, `diff`, `dirname`, `du`, `echo`, `file`, `grep`, `head`, `ls`, `pwd`, `readlink`,
+  `realpath`, `stat`, `tail`, `tree`, `wc`, `which`), by their plain name, and never for a rule
+  whose folder is a secret place (`.ssh`, `.aws`, Library, an absolute path outside the system
+  folders). Every other command is allowed exactly or not at all, and the settings do not offer
+  the choice: test runners (`pytest evil.py` picks the code that runs), git (a repository the bot
+  can edit can make `git status` or `git diff` run a program through its configuration or hooks),
+  any Windows program, and everything unknown. An added word may not be an option or a setting
+  (nothing starting with `-`, no `=`), and must pass the read-only gate's check for secret places
+  (`readableWord`: no absolute path outside the system folders, no `..`, no hidden or private
+  location, no drive, no `/S`).
+- An exact rule runs the same words every time, but not always the same code: `npm test`, `make`
+  or `git status` run what the project's files say today, and the bot may have edited those files.
+- **Block**: refuses any command containing these words on either computer, in any folder and in
+  every mode, Never ask included, before an allow rule and before the Space's first card. From the
+  program (by name: a path, case, `.exe`, an escape), the rule's other words follow in order within
+  that command, with anything between, compared as paths (`./x/../build/` is `build`; only slashes
+  mean the root `/`; `../build` stays another folder), and its short options appear in any order or form (`rm -rf` refuses `rm -fr`,
+  `rm -r --force`; `git push -f` refuses `--force`, `--force-with-lease` and `+main`). A variable or
+  substitution after the program in the same command can stand for the rest (`git $(echo push)`),
+  and an unquoted glob for a word it matches (`git pu*h`). It reads through quotes, invisible marks,
+  full-width letters, `sudo`, `env` and `bash -c '…'`, and checks a routine's command watch both
+  when it is made and at every check. A best effort, not a security boundary: it errs toward
+  refusing (`echo git push` is refused) and does not follow a program name built from variables
+  (`X=r; Y=m; $X$Y`), `eval`, encoded text (`base64 -d | sh`), `python -c`, aliases or scripts the
+  bot writes first, and it does not know PowerShell's own names and abbreviations (`Remove-Item -r
+  -fo build` is not `rm -rf build`; block the PowerShell form as its own rule).
+- A rule saved on the member's own computer allows on it; an exact one also allows on the bot's
+  computer, which holds less of theirs. A rule saved on the bot's computer never allows on the
+  member's own. A prefix rule stays on the computer it was saved on.
+- Settings > Approvals > Commands (web and mobile) changes a rule between the three or removes it;
+  a member sees and changes only their own rules in the current Space.
+- The rules moved to `dozo_command_policies`. Until the deferred migration drops
+  `dozo_command_rules`, removing a rule or making it anything but an exact allow also removes its
+  copy there, so a previous release still running during a deploy, or rolled back to, never allows
+  it. A rule saved during that window by the previous release is not carried over: it asks again.
+- The card for a command on the bot's computer reads "Run on the bot's computer?" ("Botun
+  bilgisayarında çalıştırılsın mı?"). Like every approval card title, the server writes it in
+  English and no surface translates it yet.
+
+### Commands on the bot's computer
+
+Upstream never asks before a command on the bot's own computer: it is an isolated machine without
+the member's files. The fork keeps that default (`packages/adapters/src/dozo-command-gate.ts`), so
+no bot starts asking after this change. Block rules refuse there in every mode. In a run that
+outside text started (a webhook), where upstream asks, an exact allow rule lets the command go
+ahead as an always-allow rule for the tool would; a prefix rule does not, and a run a token's text
+reached still asks. "Ask before commands on bot computers" (Settings > Approvals, shown once the
+Space has such a computer) makes a command that does more than read ask, outside Never ask, with
+the same card and Always allow; it is per account (table `dozo_command_settings`). It covers
+`shell` only: typing into a terminal through screen control or writing a script with the file
+tools is not read.
 - Only the owner's own chats reach their computer, never routines, webhooks or chat apps, so no
   card waits on a run nobody watches.
 
@@ -645,7 +708,20 @@ Accepted by the owner for now, stated here once:
   without a note in the chat; only the server log names it (`routine.missed`). Quiet hours stop
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
-  which it does not show.
+  which it does not show. The server keeps up to four ranges, each on its own days and belonging
+  to the day it starts on (Friday 22:00-07:00 covers Saturday morning), their union in force;
+  ranges that leave no minute of the week outside them are refused. `hours` in the API is the
+  first range, for clients that set one range only: saving `hours` changes that range's times and
+  keeps its days and the other ranges (one range on every day when there is none), and `null`
+  turns all of them off. The previous release's single-range table is always written with the
+  first range's times in the same save, so while a deploy or a rollback runs that release, its
+  range gone reads as quiet hours off and other times as a change to the first range.
+  `dozoQuietHours.suggest` (at most 5 a minute per account, per API process) fits ranges to the
+  hours of the last four weeks in which the account wrote least (only messages it wrote itself,
+  in the app or from a linked messaging app, counted per local hour; nothing is kept), or answers
+  null when there is too little or no clear pattern. Known limit: a message after midnight counts
+  for the calendar day it was written on, so a Friday night out shows as Saturday activity, while
+  a range belongs to the day it starts on.
 - Generated images and videos leave one usage record each (`packages/adapters/src/dozo-media-usage.ts`,
   provider `media`, model `generate_image` or `generate_video`), so they show in usage. The media
   service reports no price, so their cost reads as unknown; nothing is charged against model credit.
