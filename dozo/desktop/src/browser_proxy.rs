@@ -9,6 +9,9 @@
 //! What it does not hide: anyone on this computer can use the proxy, which reaches only what they
 //! can already reach; it refuses the same local destinations for them.
 
+// Windows starts no browser yet, so nothing starts the proxy there.
+#![cfg_attr(windows, allow(dead_code))]
+
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
