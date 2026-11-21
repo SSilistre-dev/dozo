@@ -17,8 +17,11 @@ export const DozoCacheSavingsSchema = z.object({
 });
 export type DozoCacheSavings = z.infer<typeof DozoCacheSavingsSchema>;
 
-/** What the Usage table groups the caller's spend by. */
-export const DozoUsageGroupingSchema = z.enum(["model", "bot", "routine"]);
+/**
+ * What the Usage table groups spend by. `day` is the caller's last 30 days, one row per day in
+ * the account's time zone; `person` is every member of the Space and only the owner may ask.
+ */
+export const DozoUsageGroupingSchema = z.enum(["model", "bot", "routine", "day", "person"]);
 export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
 
 /**
@@ -30,7 +33,7 @@ export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
 export const DozoUsageGroupSchema = z.object({
   key: z.string(),
   name: z.string().nullable(),
-  /** The provider of a model, the bot of a routine; null otherwise. */
+  /** The provider of a model, the bot of a routine, the email of a person; null otherwise. */
   detail: z.string().nullable(),
   state: z.enum(["live", "deleted", "none", "unknown"]),
   modelCalls: z.number().int().nonnegative(),
@@ -48,6 +51,8 @@ export const dozoUsageContract = {
   cacheSavings: oc.output(DozoCacheSavingsSchema.nullable()),
   /** The caller's own usage in the current Space, as the Usage summary counts it, grouped. */
   breakdown: oc.input(GroupingInput).output(z.array(DozoUsageGroupSchema)),
+  /** Whether the caller may group by person: the owner of a Space with other members. */
+  scope: oc.output(z.object({ person: z.boolean() })),
   /** The same groups as a CSV file, rendered on the server. */
   csv: oc.input(GroupingInput).output(z.object({ csv: z.string() })),
 };

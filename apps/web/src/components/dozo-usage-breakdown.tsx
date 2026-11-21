@@ -20,6 +20,8 @@ import { useSpaceQueries } from "../lib/query";
 import { UsageSettingsPanel as UpstreamUsageSettingsPanel } from "../pages/AccountSettingsOverlay";
 import { IconTooltip } from "./IconTooltip";
 
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Settings > Usage: upstream's totals, then the caller's spend grouped by model, bot or routine,
  * which replaces upstream's per-model table. The server groups and renders the CSV, from the
@@ -43,8 +45,12 @@ export function DozoUsageSettingsPanel({
 export function DozoUsageBreakdown() {
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
-  const [by, setBy] = useState<DozoUsageGrouping>("model");
-  const { data } = useQuery({
+  const [chosen, setBy] = useState<DozoUsageGrouping>("model");
+  // Only an owner whose Space has other members is offered the person grouping; if that stops
+  // being true while it is open, the table falls back to the model grouping.
+  const { data: scope } = useQuery(queries.dozoUsage.scope.queryOptions());
+  const by = chosen === "person" && !scope?.person ? "model" : chosen;
+  const { data, isPlaceholderData } = useQuery({
     ...queries.dozoUsage.breakdown.queryOptions({ input: { by } }),
     placeholderData: keepPreviousData,
   });
@@ -57,13 +63,25 @@ export function DozoUsageBreakdown() {
     ["model", t`Model`],
     ["bot", t`Bot`],
     ["routine", t`Routine`],
+    ["day", t`Day`],
+    ...(scope?.person ? ([["person", t`Person`]] as Array<[DozoUsageGrouping, string]>) : []),
   ];
+  const dayFormat = new Intl.DateTimeFormat(i18n.locale, {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
   const name = (group: DozoUsageGroup) => {
+    // The previous grouping stays on screen while this one loads, so its keys are not days yet.
+    if (by === "day" && DAY_KEY.test(group.key))
+      return dayFormat.format(new Date(`${group.key}T00:00:00Z`));
     if (group.state === "unknown") return t`Unknown`;
     if (group.state === "none") return by === "bot" ? t`No bot` : t`No routine`;
     return group.name ?? "—";
   };
   const detail = (group: DozoUsageGroup) => (group.state === "deleted" ? t`Deleted` : group.detail);
+  const mostSpent = Math.max(0, ...(data ?? []).map((group) => group.costUsd ?? 0));
 
   async function download() {
     try {
@@ -116,18 +134,10 @@ export function DozoUsageBreakdown() {
               <TableHead>
                 <span className="sr-only">{groupings.find(([value]) => value === by)?.[1]}</span>
               </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Calls`}
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Input`}
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Output`}
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Cost`}
-              </TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Calls`}</TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Input`}</TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Output`}</TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Cost`}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -141,6 +151,13 @@ export function DozoUsageBreakdown() {
                   </div>
                   {detail(group) ? (
                     <div className="text-label text-muted-foreground">{detail(group)}</div>
+                  ) : null}
+                  {by === "day" && !isPlaceholderData && mostSpent > 0 ? (
+                    <div
+                      aria-hidden
+                      className="mt-1 h-1 rounded-full bg-muted-foreground/40"
+                      style={{ width: `${Math.round(((group.costUsd ?? 0) / mostSpent) * 100)}%` }}
+                    />
                   ) : null}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
