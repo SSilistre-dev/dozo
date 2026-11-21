@@ -1,14 +1,18 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
-  commandRuleCwd,
   literalCommandWords,
   readOnlyCwd,
   readOnlyPipeline,
   redactSecrets,
 } from "@rakazo/core";
-import { dozoCommandRuleExists } from "@rakazo/db";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
+import {
+  commandAsked,
+  commandRuleMatch,
+  HOSTED_SHELL_TOOL,
+  markCommandAsk,
+} from "./dozo-command-gate.js";
 import { dozoSendLimitCard } from "./dozo-send-limit.js";
 import { isUserBrowserTool, userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
@@ -19,13 +23,11 @@ import {
 
 export { routesToUserBrowser } from "./dozo-user-browser-gate.js";
 
-/** The calls this gate asked about one by one, so their card asks about the command alone. */
-const commandAsks = new WeakSet<Record<string, unknown>>();
-
 /**
- * The user's own computer, as upstream gates it, and then each command once the Space allows the
- * computer: a command that only reads, or that the member always allows this bot to run in that
- * folder, goes ahead; any other asks. Never ask keeps the Space-wide approval alone.
+ * The user's own computer, as upstream gates it, and then each command: a block rule refuses it in
+ * every mode, also before the Space allows the computer. Once the Space allows it, a command that
+ * only reads, or that the member allows this bot to run in that folder, goes ahead; any other asks.
+ * Never ask keeps the Space-wide approval alone.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -36,28 +38,22 @@ export async function userComputerGate(
   // The page tools reach this gate only when they go to the user's own browser.
   if (isUserBrowserTool(name)) return userBrowserGate(ctx, blocked, name, args);
   const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
-  if (plan !== "allow" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
+  if (plan === "deny" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
+  const ruled = await commandRuleMatch(ctx, args, "user");
+  if (ruled === "block") return "deny";
+  if (plan !== "allow") return plan;
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
     return "allow";
-  const words = literalCommandWords(String(args.command ?? ""));
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return "allow";
-  const ruled =
-    words &&
-    (await dozoCommandRuleExists(ctx.deps.prisma, {
-      userId: ctx.run.userId,
-      botId: ctx.bot.id,
-      words,
-      cwd: commandRuleCwd(args.cwd),
-    }));
   if (ruled) return "allow";
-  commandAsks.add(args);
+  markCommandAsk(args);
   return "ask";
 }
 
 /**
- * Upstream's card, except for a command asked about on its own: Allow once, Deny, and Always allow
- * this command when the card shows the whole command as it will be saved. A send held for the
- * daily limit says so (dozo-send-limit.ts).
+ * Upstream's card, except for a command asked about on its own, and for every command on the bot's
+ * computer: Allow once, Deny, and Always allow this command when the card shows the whole command as
+ * it will be saved. A send held for the daily limit says so (dozo-send-limit.ts).
  */
 export function buildApprovalAskBlock(
   ...input: Parameters<typeof buildUpstreamAskBlock>
@@ -65,17 +61,21 @@ export function buildApprovalAskBlock(
   const [effectId, toolName, args, secrets, options] = input;
   const browserAsk = userBrowserAsk(args);
   if (browserAsk) return userBrowserCard(effectId, toolName, args, secrets, browserAsk);
-  const block = buildUpstreamAskBlock(
-    effectId,
-    toolName,
-    args,
-    secrets,
-    dozoSendLimitCard(args, options),
-  );
-  if (toolName !== USER_COMPUTER_SHELL_TOOL || !commandAsks.has(args) || block.kind !== "ask")
+  const hosted = toolName === HOSTED_SHELL_TOOL;
+  const block = hosted
+    ? // Written as upstream writes a command for the user's own computer, under its own question.
+      {
+        ...buildUpstreamAskBlock(effectId, USER_COMPUTER_SHELL_TOOL, args, secrets),
+        text: "Run on the bot's computer?",
+      }
+    : buildUpstreamAskBlock(effectId, toolName, args, secrets, dozoSendLimitCard(args, options));
+  if (
+    block.kind !== "ask" ||
+    !(hosted || (toolName === USER_COMPUTER_SHELL_TOOL && commandAsked(args)))
+  )
     return block;
   const command = String(args.command ?? "");
-  // As upstream's card writes it, so a redacted or shortened command is never saved unseen.
+  // As the card writes it, so a redacted or shortened command is never saved unseen.
   const cwd = typeof args.cwd === "string" ? args.cwd.trim() : "";
   const shown = block.detail === `${cwd ? `cd ${cwd}\n` : ""}${command}`;
   return {
