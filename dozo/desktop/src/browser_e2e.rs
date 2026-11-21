@@ -15,7 +15,8 @@ const PAGE: &str = "<!doctype html><html><head><title>Dozo browser test</title><
 <button onclick=\"navigator.clipboard.writeText('x').then(()=>r('api-wrote'),()=>r('api-refused'))\">Copy API</button>\
 <button onclick=\"document.addEventListener('copy',e=>{e.clipboardData.setData('text/plain','x');e.preventDefault()},{once:true});r(document.execCommand('copy')?'exec-wrote':'exec-refused')\">Copy command</button>\
 <button onclick=\"document.documentElement.requestFullscreen().then(()=>r('screen-taken'),()=>r('screen-refused'))\">Full screen</button>\
-<p id=\"probe\">probe:</p><script>function r(t){document.getElementById('probe').textContent+=' '+t}</script>\
+<p id=\"probe\">probe:</p><script>function r(t){document.getElementById('probe').textContent+=' '+t}\
+document.addEventListener('copy',()=>r('copied'));document.addEventListener('paste',()=>r('pasted'));document.addEventListener('cut',()=>r('snipped'));</script>\
 </body></html>";
 
 /// Serves `PAGE` to every request on loopback, from a thread, and returns its address.
@@ -285,6 +286,32 @@ async fn e2e_browser_page_tools_work_through_the_pipe_only() {
         );
     }
     println!("E2E: cookie, storage and script commands refused");
+
+    // The keyboard's own Copy, Cut and Paste keys never reach the page.
+    click(&browsers, find_node(&found, "textbox", "Name")).await;
+    for key in ["Copy", "Cut", "Paste"] {
+        for params in [
+            json!({ "type": "keyDown", "key": key }),
+            json!({ "type": "rawKeyDown", "code": key }),
+        ] {
+            let press = json!({ "method": "Input.dispatchKeyEvent", "params": params });
+            assert!(
+                browsers.handle("bot", &press).await.is_err(),
+                "{key} passed"
+            );
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let probe = nodes(&browsers)
+        .await
+        .into_iter()
+        .find(|(_, name, _)| name.starts_with("probe:"))
+        .unwrap()
+        .1;
+    for word in ["copied", "pasted", "snipped"] {
+        assert!(!probe.contains(word), "{probe}");
+    }
+    println!("E2E: the Copy, Cut and Paste keys refused");
 
     // The person sends the bot's tab to the browser's own pages, then to a file: nothing but going
     // to a website works there, and the page's events and history name neither.
@@ -679,6 +706,7 @@ async fn e2e_browser_reaches_nothing_on_this_computer_or_its_network() {
 struct HeldPrompt {
     asked: Mutex<Option<String>>,
     answer: Mutex<Option<oneshot::Sender<bool>>>,
+    ended: Mutex<Vec<String>>,
 }
 
 impl SignInPrompt for HeldPrompt {
@@ -687,6 +715,10 @@ impl SignInPrompt for HeldPrompt {
         *self.asked.lock().unwrap() = Some(site.to_owned());
         *self.answer.lock().unwrap() = Some(answer);
         answered
+    }
+
+    fn ended(&self, site: &str) {
+        self.ended.lock().unwrap().push(site.to_owned());
     }
 }
 
@@ -699,7 +731,7 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
     let port = serve_pages(vec![
         (
             "/",
-            "<!doctype html><title>Home</title><button>Account</button>".to_owned(),
+            "<!doctype html><title>Home</title><button>Account</button><button onclick=\"history.go(-2)\">Back</button>".to_owned(),
         ),
         (
             "/callback?code=SECRET",
@@ -708,7 +740,7 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
     ]);
     let site = format!("127.0.0.1:{port}");
     let root = root();
-    let browsers = Arc::new(browsers(&root));
+    let browsers = Arc::new(browsers(&root).with_sign_in_time(Duration::from_secs(10)));
     let prompt = Arc::new(HeldPrompt::default());
     browsers.set_sign_in_prompt(prompt.clone());
     call(
@@ -774,24 +806,29 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
         let answer = call(&browsers, method, json!({})).await;
         assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
     }
-    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
-    let hidden = history["entries"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["url"] == "")
-        .map(|entry| entry["id"].clone())
-        .expect("the sign-in's entries keep their place");
-    let back = json!({ "method": "Page.navigateToHistoryEntry", "params": { "entryId": hidden } });
-    assert!(
-        browsers.handle("bot", &back).await.is_err(),
-        "went back into the sign-in"
-    );
     let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
     assert!(
         tree.to_string().contains("Account"),
         "the page is the site's home"
     );
+    // The tab keeps no way back: a page that goes back, or a Back link the bot clicks, finds
+    // nothing behind it, and the history is the home page alone.
+    let home = wait_for(&browsers, "Back").await;
+    click(&browsers, find_node(&home, "button", "Back")).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    for method in [
+        "Page.getFrameTree",
+        "DOM.getDocument",
+        "Page.getNavigationHistory",
+    ] {
+        let answer = browsers
+            .handle("bot", &json!({ "method": method }))
+            .await
+            .unwrap();
+        assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
+    }
+    let entries = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    assert_eq!(entries["entries"].as_array().unwrap().len(), 1, "{entries}");
     println!(
         "E2E: after Done the page is the site's home, and no address of the sign-in reaches the server"
     );
@@ -821,6 +858,13 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
         "a cancelled sign-in left its page: {after}"
     );
     println!("E2E: a cancelled sign-in leaves a blank page");
+    // One nobody answers counts as cancelled when its time runs out, and the person is told.
+    *prompt.answer.lock().unwrap() = None;
+    let unanswered = browsers.sign_in("bot", &site).await.unwrap();
+    assert!(!unanswered, "an unanswered sign-in is cancelled");
+    assert_eq!(*prompt.ended.lock().unwrap(), vec![site.clone()]);
+    assert!(browsers.signing_site("bot").is_none());
+    println!("E2E: an unanswered sign-in ends when its time runs out, and the person is told");
     browsers.close_all();
 }
 

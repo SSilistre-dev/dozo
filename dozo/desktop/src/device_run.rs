@@ -169,13 +169,36 @@ impl Runner {
         home: PathBuf,
         browsers: crate::browser::Browsers,
     ) -> Arc<Self> {
-        Arc::new(Self {
+        let runner = Arc::new(Self {
             root,
             home,
             calls: AtomicUsize::new(0),
             owned: Mutex::new(Vec::new()),
             browsers,
-        })
+        });
+        let held = Arc::downgrade(&runner);
+        runner.browsers.set_on_pause(Box::new(move |hold| {
+            if let Some(runner) = held.upgrade() {
+                runner.hold_commands(hold);
+            }
+        }));
+        runner
+    }
+
+    /// While the person signs in with a bot's browser, every command still running here, any
+    /// bot's, started before, is held (its process group stopped) and let go after. What left
+    /// its group is out of reach, as for a stop.
+    fn hold_commands(&self, hold: bool) {
+        #[cfg(unix)]
+        for owned in self.owned.lock().unwrap().iter() {
+            let signal = if hold { libc::SIGSTOP } else { libc::SIGCONT };
+            // SAFETY: a plain kill(2) on a group this app started.
+            unsafe {
+                libc::kill(-(owned.pid as libc::pid_t), signal);
+            }
+        }
+        #[cfg(windows)]
+        let _ = hold;
     }
 
     /// Whether a bot's browser can start here.
@@ -314,9 +337,9 @@ impl Runner {
                 done.map(|()| Value::Null)
             }
             "execute" => {
-                // While the person signs in with this bot's browser, the bot runs nothing here
-                // either: a command could read the screen or reach the browser.
-                if let Some(site) = self.browsers.signing_site(&key) {
+                // While the person signs in with any bot's browser, no bot runs anything here: a
+                // command could read the screen or reach the browser (`hold_commands`).
+                if let Some(site) = self.browsers.anyone_signing() {
                     let refused =
                         format!("The person is signing in to {site}; wait until they are done.");
                     return reply.error(&refused).await;
@@ -1041,34 +1064,73 @@ mod tests {
     }
 
     /// While the person signs in with a bot's browser, that bot runs no command here, and
-    /// stopping it leaves the browser alone.
+    /// stopping it leaves the browser alone. Unix only: Windows has no bot's browser, and the
+    /// command left running is a shell one.
+    #[cfg(unix)]
     #[tokio::test]
-    async fn nothing_runs_for_a_bot_whose_browser_the_person_signs_in_with() {
+    async fn nothing_runs_while_the_person_signs_in_with_a_bot_s_browser() {
         let dir =
             std::env::temp_dir().join(format!("dozo-device-run-signing-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("home")).unwrap();
         let browsers =
             crate::browser::Browsers::with(dir.join("data/browser-profiles"), None, true);
-        browsers.mark_signing(&bot_key("b"), "example.com");
         let runner = Runner::with_browsers(dir.join("data"), dir.join("home"), browsers);
-        let provision = json!({ "method": "provision", "botId": "b" });
-        assert!(frames(&runner, provision).await[0].get("value").is_some());
-        let execute = json!({ "method": "execute", "botId": "b", "command": { "argv": ["true"] } });
-        assert_eq!(
-            frames(&runner, execute).await,
-            vec![
-                json!({ "error": "The person is signing in to example.com; wait until they are done." })
-            ]
+        for bot in ["b", "c"] {
+            let provision = json!({ "method": "provision", "botId": bot });
+            assert!(frames(&runner, provision).await[0].get("value").is_some());
+        }
+        // Another bot's command left running from before.
+        let pid_file = dir.join("home/sleeper.pid");
+        let leave = format!(
+            "sleep 30 >/dev/null 2>&1 & echo $! > {}",
+            pid_file.display()
         );
-        let other = json!({ "method": "provision", "botId": "c" });
-        assert!(frames(&runner, other).await[0].get("value").is_some());
-        let theirs = json!({ "method": "execute", "botId": "c", "command": { "argv": ["true"] } });
+        let started = json!({ "method": "execute", "botId": "c",
+            "command": { "argv": ["sh", "-c", leave], "cwd": dir.join("home").to_string_lossy() } });
+        frames(&runner, started).await;
+        let sleeper: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        runner
+            .browsers
+            .mark_signing(&bot_key("b"), Some("example.com"));
+        let refusal = "The person is signing in to example.com; wait until they are done.";
+        for bot in ["b", "c"] {
+            let execute =
+                json!({ "method": "execute", "botId": bot, "command": { "argv": ["true"] } });
+            assert_eq!(
+                frames(&runner, execute).await,
+                vec![json!({ "error": refusal })],
+                "{bot}"
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let state = |pid: u32| {
+                let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+                stat.rsplit_once(')')
+                    .unwrap()
+                    .1
+                    .split_whitespace()
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            };
+            assert_eq!(state(sleeper), "T", "held while the person signs in");
+            runner.browsers.mark_signing(&bot_key("b"), None);
+            assert_ne!(state(sleeper), "T", "let go after");
+        }
+        #[cfg(not(target_os = "linux"))]
+        runner.browsers.mark_signing(&bot_key("b"), None);
+        let after = json!({ "method": "execute", "botId": "c", "command": { "argv": ["true"] } });
         assert_ne!(
-            frames(&runner, theirs).await[0].get("error"),
-            Some(&json!(
-                "The person is signing in to example.com; wait until they are done."
-            ))
+            frames(&runner, after).await[0].get("error"),
+            Some(&json!(refusal))
         );
+        runner.stop_all(true);
+        let _ = sleeper;
         let _ = std::fs::remove_dir_all(&dir);
     }
 

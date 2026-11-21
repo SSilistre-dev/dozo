@@ -19,7 +19,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 const MAX_HEAD: usize = 16 * 1024;
-/// Connections served at once; more wait in the browser's own queue.
+/// Connections served at once, for every bot's browser together. One past it is closed at
+/// once, not queued: that request fails in the page (a browser may try it again), and one bot's
+/// pages can take every connection from the others while they last.
 const MAX_CONNECTIONS: usize = 256;
 /// A connection with nothing sent either way for this long is closed.
 const IDLE: Duration = Duration::from_secs(5 * 60);
@@ -77,7 +79,7 @@ impl Proxy {
         let accept = tokio::spawn(async move {
             loop {
                 match listener.accept().await {
-                    // Over the limit a connection is closed at once; the browser tries again.
+                    // Over the limit a connection is closed at once (see `MAX_CONNECTIONS`).
                     Ok((client, _)) => {
                         if let Ok(slot) = slots.clone().try_acquire_owned() {
                             let (local, counted) = (local.clone(), counted.clone());
@@ -285,9 +287,14 @@ async fn open(host: &str, port: u16, local: &Local) -> Option<TcpStream> {
     // Every answer must be public, and none this computer's own address or on a network it is on
     // directly (a public IPv6 or IPv4 address of its own, a neighbour's): a name with one such
     // answer among others is a name meant to reach in.
+    // When this computer's networks cannot be read, nothing outside it is let through.
     let networks = own_networks();
     let allowed = |at: &SocketAddr| {
-        (public_ip(at.ip()) && !within(at.ip(), &networks)) || local.allows(at.ip(), at.port())
+        let ip = canonical(at.ip());
+        let outside = networks
+            .as_ref()
+            .is_some_and(|networks| !within(ip, networks));
+        (public_ip(ip) && outside) || local.allows(at.ip(), at.port())
     };
     if addresses.is_empty() || !addresses.iter().all(allowed) {
         return None;
@@ -301,16 +308,17 @@ async fn open(host: &str, port: u16, local: &Local) -> Option<TcpStream> {
     None
 }
 
-/// The networks this computer is on directly: each address of its own with its prefix length.
+/// The networks this computer is on directly: each address of its own with its prefix length;
+/// none when they cannot be read.
 #[cfg(unix)]
-fn own_networks() -> Vec<(IpAddr, u8)> {
+fn own_networks() -> Option<Vec<(IpAddr, u8)>> {
     let mut found = Vec::new();
     let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
-    // SAFETY: getifaddrs fills a list this function owns and frees below; each entry's
-    // address and mask are read only for their family's length.
+    // SAFETY: getifaddrs fills a list this function owns and frees below; each entry's address
+    // and mask are read only within the length the system gives them (`sockaddr_bytes`).
     unsafe {
         if libc::getifaddrs(&mut list) != 0 {
-            return found;
+            return None;
         }
         let mut entry = list;
         while !entry.is_null() {
@@ -318,22 +326,21 @@ fn own_networks() -> Vec<(IpAddr, u8)> {
             if !address.is_null() && !mask.is_null() {
                 match i32::from((*address).sa_family) {
                     libc::AF_INET => {
-                        let ip = (*(address as *const libc::sockaddr_in)).sin_addr.s_addr;
-                        let bits = (*(mask as *const libc::sockaddr_in)).sin_addr.s_addr;
-                        let ip = Ipv4Addr::from(u32::from_be(ip));
-                        let prefix = u32::from_be(bits).count_ones() as u8;
+                        let at = std::mem::offset_of!(libc::sockaddr_in, sin_addr);
+                        let ip: [u8; 4] = sockaddr_bytes(address, at);
+                        let bits: [u8; 4] = sockaddr_bytes(mask, at);
+                        let prefix = bits.iter().map(|byte| byte.count_ones()).sum::<u32>() as u8;
                         // A network wider than /8 (a tunnel with no mask) counts as its address.
-                        found.push((IpAddr::V4(ip), if prefix < 8 { 32 } else { prefix }));
+                        let prefix = if prefix < 8 { 32 } else { prefix };
+                        found.push((IpAddr::V4(Ipv4Addr::from(ip)), prefix));
                     }
                     libc::AF_INET6 => {
-                        let ip = (*(address as *const libc::sockaddr_in6)).sin6_addr.s6_addr;
-                        let bits = (*(mask as *const libc::sockaddr_in6)).sin6_addr.s6_addr;
-                        let prefix = bits.iter().map(|byte| byte.count_ones()).sum::<u32>();
-                        let prefix = prefix as u8;
-                        found.push((
-                            IpAddr::V6(Ipv6Addr::from(ip)),
-                            if prefix < 32 { 128 } else { prefix },
-                        ));
+                        let at = std::mem::offset_of!(libc::sockaddr_in6, sin6_addr);
+                        let ip: [u8; 16] = sockaddr_bytes(address, at);
+                        let bits: [u8; 16] = sockaddr_bytes(mask, at);
+                        let prefix = bits.iter().map(|byte| byte.count_ones()).sum::<u32>() as u8;
+                        let prefix = if prefix < 32 { 128 } else { prefix };
+                        found.push((IpAddr::V6(Ipv6Addr::from(ip)), prefix));
                     }
                     _ => {}
                 }
@@ -342,12 +349,51 @@ fn own_networks() -> Vec<(IpAddr, u8)> {
         }
         libc::freeifaddrs(list);
     }
-    found
+    Some(found)
 }
 
+/// `N` bytes of a socket address from `at`, zero past the length it has: a macOS netmask may be
+/// shorter than its family's address (`sa_len`).
+#[cfg(unix)]
+unsafe fn sockaddr_bytes<const N: usize>(address: *const libc::sockaddr, at: usize) -> [u8; N] {
+    let mut out = [0u8; N];
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+    // SAFETY: the system says how long this address is.
+    let length = unsafe { usize::from((*address).sa_len) };
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
+    let length = at + N;
+    let take = length.saturating_sub(at).min(N);
+    // SAFETY: at most `take` bytes from `at`, within the address's length.
+    unsafe {
+        std::ptr::copy_nonoverlapping((address as *const u8).add(at), out.as_mut_ptr(), take)
+    };
+    out
+}
+
+/// Windows starts no browser yet; when it does, reading its networks comes first. Until then
+/// nothing outside this computer is let through.
 #[cfg(windows)]
-fn own_networks() -> Vec<(IpAddr, u8)> {
-    Vec::new()
+fn own_networks() -> Option<Vec<(IpAddr, u8)>> {
+    None
+}
+
+/// An address in the form its family compares in: an IPv4 address carried in IPv6 (mapped,
+/// compatible, or NAT64's 64:ff9b::/96) becomes that IPv4 address.
+fn canonical(ip: IpAddr) -> IpAddr {
+    let IpAddr::V6(v6) = ip else { return ip };
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return IpAddr::V4(v4);
+    }
+    let segments = v6.segments();
+    let carried = segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0]
+        || (segments[..6] == [0, 0, 0, 0, 0, 0] && !v6.is_loopback() && !v6.is_unspecified());
+    if carried {
+        let octets = v6.octets();
+        return IpAddr::V4(Ipv4Addr::new(
+            octets[12], octets[13], octets[14], octets[15],
+        ));
+    }
+    ip
 }
 
 /// Whether `ip` is one of `networks` (an address and its prefix length), of the same family.
@@ -616,13 +662,25 @@ mod tests {
             "1.2.3.4".parse().unwrap(),
             &[("9.9.9.9".parse().unwrap(), 0)]
         ));
-        // The real list holds this computer's loopback at least (Windows starts no browser and
-        // reads none).
+        // The real list holds this computer's loopback at least. Windows reads none, and then
+        // nothing outside is let through.
         #[cfg(unix)]
         {
-            let own = own_networks();
+            let own = own_networks().expect("this computer's networks");
             assert!(within(IpAddr::V4(Ipv4Addr::LOCALHOST), &own), "{own:?}");
         }
+        #[cfg(windows)]
+        assert!(own_networks().is_none());
+        // An IPv4 address of its own carried in IPv6 is the same address.
+        let v4_own = [("203.0.114.7".parse().unwrap(), 32)];
+        for carried in ["::ffff:203.0.114.7", "::203.0.114.7", "64:ff9b::cb00:7207"] {
+            let ip = canonical(carried.parse().unwrap());
+            assert!(within(ip, &v4_own), "{carried}");
+        }
+        assert_eq!(
+            canonical("::1".parse().unwrap()),
+            "::1".parse::<IpAddr>().unwrap()
+        );
         assert!(
             !public_host("64:ff9b:1::a00:1"),
             "a network's own NAT64 prefix"

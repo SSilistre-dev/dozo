@@ -329,26 +329,34 @@ into it.
   the person sign in to each site, each of those on its own ("Let this bot open x.com in its
   browser?", "... read ...", "... act on ...", "... have you sign in to ..."): allowing a look at
   a site allows no action there. Once content from outside has entered the run (a page it read, a
-  fetched text), opening another site than the one the browser shows asks every time, so a page
-  that steers the bot cannot send it, or what it read, elsewhere unseen. A page whose site cannot
-  be told is asked about before it is read; a blank one is not. An answer holds for that bot, on
-  this computer, in that thread; the card's site is kept with the call, and a call resumed after
-  the page moved elsewhere is refused. The bot has one page: a look at, or a batch of steps on,
-  another site than the one approved (another thread's run moved it) is refused, and a batch stops
-  when a step took the page elsewhere. A call that reached this computer without its approval
+  fetched text), opening another site than the one the browser shows asks every time. This makes
+  sending what the bot read elsewhere harder, not impossible: a site the person allowed can still
+  pass the bot on (a redirect, a link, a form), and the request reaches the other site before the
+  bot is told (see "What stays possible" below). A page whose site cannot be told is asked about
+  before it is read; a blank one is not. An answer holds for that bot, on this computer, in that
+  thread; the card's site is kept with the call, and a call resumed after the page moved elsewhere
+  is refused. What a call returns is the page it ended on, and only a page of the site it was
+  approved for is given: a navigation or action that ended on another site says where and gives
+  nothing of it, a look at a page another thread's run moved (a blank one included) is refused,
+  and a batch stops when a step took the page elsewhere. A call that reached this computer without its approval
   having seen it is refused. Saved logins, cards and uploads do not reach this browser yet.
 - Signing in: the bot never types a password or a code there. With `browser_sign_in` it names a
   site; this app opens that site's home page in the bot's window (never an address the bot gives)
   and shows the person a small system dialog of its own: "Sign in to x.com in the bot's browser
-  window, then choose Done." with Done and Cancel. Until they answer, every command for that
-  bot's browser is refused (no page, screenshot, input, navigation or history), and so are that
-  bot's commands on this computer, which could read the screen; stopping the bot leaves its
-  browser open meanwhile. When they answer, the page goes to the site's home page (Done) or a
-  blank page (Cancel) before the bot has it again, so neither a return address with a code nor a
-  half-done step reaches the server; the sign-in's events are dropped, its history entries reach
-  the server without addresses, and going back to one is refused. The bot learns whether they
-  signed in, and then sees the site's home page as anyone signed in would. Only the person ends
-  it; after 15 minutes without an answer it counts as cancelled. A request the server or the run
+  window, then choose Done. Until you choose, for up to 15 minutes, the bot sees nothing there."
+  with Done and Cancel. Until they answer, every command for that bot's browser is refused (no
+  page, screenshot, input, navigation or history); no bot runs a new command on this computer, and
+  the commands already running here, any bot's, are held (their process groups stopped) and let
+  go after, since a command could read the screen. Stopping the bot leaves its browser open
+  meanwhile; deleting it ends the sign-in. When they answer, the page goes to the site's home page
+  (Done) or a blank page (Cancel) and the tab's history is cleared, before the bot has it again:
+  neither a return address with a code, nor a half-done step, nor a way back to them reaches the
+  server, and the sign-in's events are dropped. The bot learns whether they signed in, and then
+  sees the site's home page as anyone signed in would. Only the person ends it; after 15 minutes
+  without an answer, if the browser closes, or if the bot is deleted, it counts as cancelled and a
+  second dialog says so: "The sign-in to x.com ended without your answer: the bot has its browser
+  again, and Done or Cancel there no longer does anything." (the first cannot be closed by the
+  app). A request the server or the run
   gives up on leaves it as it is. Every site asks a card first, in each thread; a site whose name
   imitates another's (paypa1.com) gets the same card and dialog, named as it is. Device request:
   `pageBrowserSignIn`.
@@ -380,7 +388,10 @@ into it.
   addresses and the networks it is on directly are refused too, public ones included, and so is
   the server on this computer. Plain HTTP passes one request per connection: the browser does send
   more on a connection it used (measured), which the proxy closes so the request comes again
-  through the check. At most 256 connections at once; one idle for five minutes is closed. The address the bot opens is checked the same way first.
+  through the check. At most 256 connections at once for all bots together: one past that is
+  closed at once, so that request fails in the page; one idle for five minutes is closed. When this
+  computer's networks cannot be read (and on Windows, which has no browser yet), nothing outside
+  is let through. The address the bot opens is checked the same way first.
 - While the bot's tab shows anything else (the person sent it to the browser's own pages or a
   file), only going to a website works, and its history and events leave such addresses out. The
   bot's tab is the one the browser opened with; once the person closes it, the bot always gets a
@@ -407,6 +418,21 @@ into it.
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
   also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
   next start on that profile ends what is left first. A dropped connection keeps it open.
+- What stays possible, in plain words:
+  - A site the bot may act on gets everything the bot types there.
+  - A site the person allowed can pass the bot on to another site (a redirect, a link, a form)
+    and so send that site what is in its address; the bot is told only afterwards and sees
+    nothing of the other site until it is allowed.
+  - On Linux, text a page selects can land in the system's selection, which a middle click
+    elsewhere pastes.
+  - Some of the browser's own choosers may appear in the bot's window: device pickers (USB,
+    Bluetooth, serial, HID), the screen-sharing picker, the share sheet, a site asking to open
+    links of a kind, and the right-click menu. They are for the person; the bot cannot answer them.
+  - Public addresses reached only through a split-tunnel VPN are not filtered.
+  - Any program running as you, a command you allowed a bot to run included, can read the bot's
+    browser profile and its sign-ins.
+  - One bot's pages can use up the proxy's connections for a while and make other bots' pages
+    fail meanwhile.
 - Honest limits: anything running as this user, the bot's own commands included, can read the
   profile folder, and on Linux can open the browser's pipe through `/proc` and send it any
   command. Anyone on this computer can use the proxy, which reaches only what they already can.
