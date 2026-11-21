@@ -3,6 +3,7 @@ import {
   commandWordsLabel,
   literalCommandWords,
   readOnlyCommand,
+  readOnlyCwd,
   readOnlyPipeline,
 } from "./dozo-shell-command.js";
 
@@ -147,6 +148,18 @@ describe("readOnlyCommand", () => {
     "ls 'Library/Application Support'",
     "cat Library/Application Support/Google/Chrome/Default/Cookies",
     "cat Cookies",
+    "cat NTUSER.DAT",
+    "cat ntuser.ini",
+    "find -L . -name x",
+    "find -H .",
+    "find . -follow",
+    "du -L .",
+    "du -sL .",
+    "du --dereference .",
+    "du --dereference-args .",
+    "ls -L",
+    "ls -lH",
+    "ls --dereference",
     "ls AppData",
     "ls appdata/Roaming",
     "cat 'AppData\\Roaming\\x'",
@@ -330,5 +343,17 @@ describe("readOnlyPipeline", () => {
       "ls | -x",
     ])
       expect(readOnlyPipeline(command), JSON.stringify(command)).toBe(false);
+  });
+});
+
+describe("readOnlyCwd", () => {
+  it("passes the home folder and plain folders", () => {
+    for (const cwd of [undefined, null, "", "  ", "~", "Documents", "~/app", "src/app"])
+      expect(readOnlyCwd(cwd), String(cwd)).toBe(true);
+  });
+
+  it("asks for a secret folder or a value that is not a path", () => {
+    for (const cwd of [".ssh", "~/.aws", "..", "/etc", "Library/Keychains", "AppData", 5, {}])
+      expect(readOnlyCwd(cwd), String(cwd)).toBe(false);
   });
 });

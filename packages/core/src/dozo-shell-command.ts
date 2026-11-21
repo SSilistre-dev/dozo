@@ -107,7 +107,7 @@ const OPEN_ROOTS = ["/applications", "/system/applications", "/usr", "/bin", "/s
  * Folders and file names that hold secrets or private data, matched on a whole path component
  * (macOS and Windows ignore case).
  */
-const PRIVATE_COMPONENTS = new Set(["library", "appdata", "keychains", "cookies", "ntuser"]);
+const PRIVATE_COMPONENTS = new Set(["library", "appdata", "keychains", "cookies"]);
 /** File names that hold a private key or a browser's stored data, wherever they sit. */
 const KEY_FILE = /^id_(rsa|dsa|ecdsa|ed25519)|keychain|cookies|login data/;
 
@@ -142,8 +142,22 @@ function touchesSecretLocation(word: string, program: string): boolean {
         (part.startsWith(".") && part !== ".") ||
         (part.startsWith("-") && part.includes(".")) ||
         PRIVATE_COMPONENTS.has(part) ||
+        part.startsWith("ntuser") ||
         KEY_FILE.test(part),
     );
+}
+
+/**
+ * Whether the folder a command runs in is one the command may read without asking: the home
+ * folder (`''` or `~`), or a path that passes the same check as a word (`~/` first is the home
+ * folder), so `cat credentials` run inside `.aws` still asks.
+ */
+export function readOnlyCwd(cwd: unknown): boolean {
+  if (cwd === undefined || cwd === null) return true;
+  if (typeof cwd !== "string") return false;
+  const folder = cwd.trim();
+  if (folder === "" || folder === "~") return true;
+  return !touchesSecretLocation(folder.startsWith("~/") ? folder.slice(2) : folder, "");
 }
 
 /** grep's long options that only change what it prints; any other (`--pre`, `--filter`) asks. */
@@ -186,6 +200,11 @@ function hasRiskyArgument(program: string, args: readonly string[]): boolean {
         ? !GREP_LONG_OPTIONS.has(arg.slice(2).split("=")[0]!)
         : /[rRfdD]/.test(shortLetters(arg)),
     );
+  // Following a link can reach a place the words do not name (/net, /Volumes, a secret folder).
+  const followsLinks = (arg: string) =>
+    arg.startsWith("--") ? arg.startsWith("--deref") : /[LHD]/.test(shortLetters(arg));
+  if (program === "find") return args.some((arg) => ["-L", "-H", "-follow"].includes(arg));
+  if (program === "du" || program === "ls") return args.some(followsLinks);
   if (program === "tail")
     return args.some((arg) =>
       arg.startsWith("--") ? arg.startsWith("--f") : /[fF]/.test(shortLetters(arg)),

@@ -101,6 +101,25 @@ describe("userComputerGate", () => {
       expect((await gate(command)).plan, command).toBe("allow");
   });
 
+  it("asks before a read-only command run inside a secret folder", async () => {
+    for (const [command, cwd] of [
+      ["cat credentials", ".aws"],
+      ["cat config", ".ssh"],
+      ["cat known_hosts", "~/.ssh"],
+      ["cat config", ".kube"],
+      ["cat 'Local State'", "AppData/Local/Google/Chrome/User Data"],
+      ["cat logins.json", "Library/Application Support/Firefox/Profiles/x"],
+      ["ls", ".."],
+      ["ls", "/etc"],
+      ["ls", "C:\\Users"],
+      ["ls", "AppData\\Local"],
+      ["ls", "Env:"],
+    ] as const)
+      expect((await gate(command, { cwd })).plan, `${command} in ${cwd}`).toBe("ask");
+    for (const cwd of ["Documents", "", "~", " ~ ", "~/app", "src/app"])
+      expect((await gate("ls", { cwd })).plan, cwd).toBe("allow");
+  });
+
   it("asks before a command that changes something or reaches out", async () => {
     for (const command of ["rm -rf build", "curl https://example.com", "npm publish"])
       expect((await gate(command)).plan, command).toBe("ask");
