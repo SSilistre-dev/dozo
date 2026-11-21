@@ -12,12 +12,7 @@ import { DeviceBrowserProvider } from "./dozo-device-browser.js";
 import { filesWithoutComputer } from "./dozo-no-computer.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { Route } from "./dozo-user-browser-gate.js";
-import {
-  pageSite,
-  recordConsent,
-  userBrowserAsk,
-  userBrowserRoute,
-} from "./dozo-user-browser-gate.js";
+import { recordConsent, userBrowserAsk, userBrowserRoute } from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { pageBrowserTool as computerPageBrowserTool } from "./run-tools-computer.js";
@@ -83,9 +78,12 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
   const { signal } = ctx.context;
   // The call passed its approval: what it asked is now allowed for this bot on this computer.
   const asked = userBrowserAsk(args);
+  if (asked && asked.deviceId !== route.deviceId)
+    return call.finish({
+      error: "The user's computer changed since this was approved. Try again.",
+    });
   await recordConsent(prisma, ctx.bot.id, route.deviceId, "");
-  const site = name === "browser_act" ? (asked?.site ?? pageSite(ctx.state.pageUrl)) : "";
-  if (site) await recordConsent(prisma, ctx.bot.id, route.deviceId, site);
+  if (asked?.site) await recordConsent(prisma, ctx.bot.id, route.deviceId, asked.site);
   const first = !providers.has(ctx);
   const provider = providerFor(ctx, route);
   const computer: ComputerRef = {

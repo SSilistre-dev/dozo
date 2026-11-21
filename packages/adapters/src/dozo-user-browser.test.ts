@@ -67,7 +67,8 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
     context: { signal: new AbortController().signal },
     secrets: new Set<string>(["ada-secret"]),
     state: {} as { pageUrl?: string },
-    computer: { acceptsImages: true, stored: {} },
+    computer: { acceptsImages: true, stored: {}, graphical: false },
+    tools: { disabled: new Set<string>() },
   } as unknown as RunContext;
   return { ctx, consents, device, requests, devices };
 }
@@ -92,6 +93,14 @@ describe("where the page tools go", () => {
     expect(await routesToUserBrowser(setup({ capabilities: ["shell"] }).ctx, "browser_act")).toBe(
       false,
     );
+    // A run with a graphical computer of its own keeps its own browser.
+    const graphical = setup().ctx;
+    (graphical.computer as { graphical: boolean }).graphical = true;
+    expect(await routesToUserBrowser(graphical, "browser_act")).toBe(false);
+    // The bot's owner turned off the user's computer for it.
+    const off = setup().ctx;
+    off.tools.disabled.add("user_computer_shell");
+    expect(await routesToUserBrowser(off, "browser_act")).toBe(false);
   });
 
   it("reads the site of a page by its registrable domain", () => {
@@ -111,7 +120,7 @@ describe("its approval", () => {
   });
 
   it("asks once per bot and computer, then once per site acted on", async () => {
-    const { ctx } = setup();
+    const { ctx, devices } = setup();
     const first = { url: FORM };
     expect(await userBrowserGate(ctx, false, "browser_navigate", first)).toBe("ask");
     const card = buildApprovalAskBlock("effect-1", "browser_navigate", first, []);
@@ -130,6 +139,7 @@ describe("its approval", () => {
     expect(await userBrowserGate(ctx, false, "browser_navigate", { url: FORM })).toBe("allow");
 
     const act = { actions: [{ kind: "fill", ref: "e11", text: "ada-secret" }] };
+    // The site is read from the browser itself, which shows the form now.
     expect(await userBrowserGate(ctx, false, "browser_act", act)).toBe("ask");
     const actCard = buildApprovalAskBlock("effect-2", "browser_act", act, ["ada-secret"]);
     expect(actCard).toMatchObject({ text: "Let this bot act on example.test in its browser?" });
@@ -137,13 +147,41 @@ describe("its approval", () => {
     await pageBrowserTool(ctx, call("browser_act", act));
     expect(await userBrowserGate(ctx, false, "browser_act", { actions: [] })).toBe("allow");
 
-    ctx.state.pageUrl = "https://other.test/";
-    expect(await userBrowserGate(ctx, false, "browser_act", { actions: [] })).toBe("ask");
-    ctx.state.pageUrl = undefined;
     const unknown = { actions: [] };
+    devices.request = async function* () {
+      yield* [];
+      throw new Error("the browser closed");
+    } as never;
     expect(await userBrowserGate(ctx, false, "browser_act", unknown)).toBe("ask");
     expect(buildApprovalAskBlock("effect-3", "browser_act", unknown, [])).toMatchObject({
       text: "Let this bot act on this page in its browser?",
+    });
+  });
+
+  it("asks about the browser alone before it is allowed, without starting it", async () => {
+    const { ctx, requests } = setup();
+    const act = { actions: [{ kind: "click", ref: "e12" }] };
+    expect(await userBrowserGate(ctx, false, "browser_act", act)).toBe("ask");
+    expect(buildApprovalAskBlock("effect-5", "browser_act", act, [])).toMatchObject({
+      text: "Let this bot use its own browser on your computer?",
+    });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("runs an approved call only on the computer it asked about", async () => {
+    const { ctx, devices } = setup();
+    const args = { url: FORM };
+    await userBrowserGate(ctx, false, "browser_navigate", args);
+    devices.connected.mockResolvedValue({
+      deviceId: "device-2",
+      name: "Other",
+      platform: "linux",
+      capabilities: ["shell", "browser"],
+    } as never);
+    const moved = call("browser_navigate", args);
+    await pageBrowserTool(ctx, moved);
+    expect(moved.finish).toHaveBeenCalledWith({
+      error: "The user's computer changed since this was approved. Try again.",
     });
   });
 

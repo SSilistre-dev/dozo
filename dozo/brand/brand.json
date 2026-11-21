@@ -5228,11 +5228,11 @@
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "      userComputerShell = !device.screenOnly;\n      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
-      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      userComputerScreen = offers.screen;\n      if (offers.browser)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n",
+      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      userComputerScreen = offers.screen;\n      // Only a run without a graphical computer of its own: one that has it keeps its browser.\n      if (offers.browser && !graphical)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
-      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only. One that declares a browser gets the page tools for the bot's own browser there, even in a run without a computer of its own"
+      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only. One that declares a browser gets the page tools for the bot's own browser there in a run without a graphical computer of its own (Free)"
     },
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
@@ -5266,6 +5266,15 @@
         "packages/adapters/src/dozo-user-computer-gate.ts"
       ],
       "reason": "user's browser: a page tool that goes to the user's own browser is approved like the user's computer: never in a token's run, its first use by a bot there asks, and so does its first action on each site"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "    READ_ONLY_AGENT_TOOLS.has(name) &&\n    siteGate !== \"new\" &&\n",
+      "replace": "    READ_ONLY_AGENT_TOOLS.has(name) &&\n    !(await routesToUserBrowser(ctx, name)) &&\n    siteGate !== \"new\" &&\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-computer-gate.ts"
+      ],
+      "reason": "user's browser: a look (browser_snapshot) at the user's own browser records its call like any other, so its approval card is shown instead of skipped as a read"
     },
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",

@@ -1,11 +1,13 @@
 import { hostSite } from "@rakazo/core/egress";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
 import { deviceOffers } from "./dozo-device-capabilities.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { RunContext } from "./run-context.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
+import { USER_COMPUTER_SHELL_TOOL } from "./user-computer-tools.js";
 
 /**
  * Where the page tools go and what they ask, for the bot's own browser on the user's computer
@@ -18,12 +20,20 @@ export type Route = {
   devices: NonNullable<RunContext["deps"]["userDevices"]>;
 };
 
-/** The user's connected computer this run's page tools go to, if it has a browser. */
+/**
+ * The user's connected computer this run's page tools go to, if it has a browser: only in a run
+ * without a graphical computer of its own (Free has none; a run that has one keeps its own browser,
+ * beside its desktop tools), and only while the bot may use the user's computer at all.
+ */
 export async function userBrowserRoute(ctx: RunContext): Promise<Route | undefined> {
   const owner = ctx.source.userComputerOwner;
   const devices = ctx.deps.userDevices;
-  if (!owner || !devices) return undefined;
-  const device = (await devices.connected(owner).catch(() => null)) as DeclaredUserDevice | null;
+  if (!owner || !devices || ctx.computer.graphical) return undefined;
+  if (ctx.tools.disabled.has(USER_COMPUTER_SHELL_TOOL)) return undefined;
+  const device = (await bestEffort(
+    "find the user's computer for its browser",
+    devices.connected(owner),
+  )) as DeclaredUserDevice | null | undefined;
   return device && deviceOffers(device).browser
     ? { owner, devices, deviceId: device.deviceId }
     : undefined;
@@ -43,6 +53,8 @@ export function pageSite(pageUrl: string | undefined): string {
 
 /** What a call asks the person, kept for its card: the browser at all, and the site it acts on. */
 export interface UserBrowserAsk {
+  /** The computer it asked about, so the call runs there or not at all. */
+  deviceId: string;
   browser: boolean;
   /** Set for an action: the site, or "" for a page whose site is unknown. */
   site?: string;
@@ -95,12 +107,39 @@ export async function userBrowserGate(
   const route = await userBrowserRoute(ctx);
   if (!route) return "ask";
   const allowed = await consents(ctx.deps.prisma, ctx.bot.id, route.deviceId);
-  const ask: UserBrowserAsk = { browser: !allowed.has("") };
-  if (name === "browser_act") {
-    const site = pageSite(ctx.state.pageUrl);
+  const ask: UserBrowserAsk = { deviceId: route.deviceId, browser: !allowed.has("") };
+  // An action asks about the site the browser shows now, read from the browser itself (the person
+  // may have moved it), and again after a resume. Before the browser is allowed it is not started:
+  // the first card asks about the browser alone.
+  if (name === "browser_act" && !ask.browser) {
+    const site = pageSite(await currentUrl(ctx, route));
     if (!site || !allowed.has(site)) ask.site = site;
   }
-  if (!ask.browser && ask.site === undefined) return "allow";
   asks.set(args, ask);
-  return "ask";
+  return !ask.browser && ask.site === undefined ? "allow" : "ask";
+}
+
+/** The address the bot's browser shows, or undefined when it cannot tell. */
+async function currentUrl(ctx: RunContext, route: Route): Promise<string | undefined> {
+  const request = route.devices.request<{ result?: { currentIndex?: number; entries?: unknown } }>(
+    route.owner,
+    {
+      method: "pageBrowser",
+      botId: ctx.bot.id,
+      runId: ctx.runId,
+      command: { method: "Page.getNavigationHistory" },
+    },
+    ctx.context.signal,
+    route.deviceId,
+  );
+  let answer: { result?: { currentIndex?: number; entries?: unknown } } | undefined;
+  try {
+    for await (const value of request) answer = value;
+  } catch {
+    // A browser that cannot answer leaves the site unknown, which asks.
+    return undefined;
+  }
+  const entries = Array.isArray(answer?.result?.entries) ? answer.result.entries : [];
+  const entry = entries[Number(answer?.result?.currentIndex)] as { url?: unknown } | undefined;
+  return typeof entry?.url === "string" ? entry.url : undefined;
 }
