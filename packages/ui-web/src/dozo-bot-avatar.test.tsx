@@ -74,6 +74,18 @@ describe("BotAvatar", () => {
     expect(DOZO_CHARACTERS).toContain(of(""));
   });
 
+  it("paints the accessory in the colour picked for the bot, the one its swatch shows", () => {
+    const tile = (color: string) =>
+      avatarIn(
+        mount(<BotAvatar color={color} identity="bot-1" />).container,
+      ).style.getPropertyValue("--dozo-tile");
+    for (const { id, hex } of BOT_COLOR_LIST) {
+      expect(tile(hex)).toBe(id === "white" ? "var(--dozo-body)" : hex.toLowerCase());
+    }
+    expect(tile(`${hexOf("red")}::shape_2`)).toBe(hexOf("red").toLowerCase());
+    expect(new Set(BOT_COLOR_LIST.map(({ hex }) => tile(hex))).size).toBe(BOT_COLOR_LIST.length);
+  });
+
   it("keeps a saved photo as upstream draws it", () => {
     const { container } = mount(<BotAvatar color={PHOTO} identity="bot-1" />);
     expect(container.querySelector("img")?.getAttribute("src")).toBe(PHOTO);

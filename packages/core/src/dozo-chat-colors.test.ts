@@ -1,6 +1,6 @@
 import { BOT_COLOR_LIST } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { DOZO_BOT_PALETTE, DOZO_CHARACTERS, dozoCharacterForLook } from "./dozo-avatar-art.js";
+import { dozoBotColor } from "./dozo-avatar-art.js";
 import { dozoBotFill, dozoChatUserColors, dozoContrast } from "./dozo-chat-colors.js";
 import * as core from "./index.js";
 
@@ -8,34 +8,28 @@ const hexOf = (id: string) => BOT_COLOR_LIST.find((color) => color.id === id)?.h
 const PHOTO = "data:image/png;base64,iVBORw0KGgo=";
 
 describe("your own bubble in a bot's chat", () => {
-  const fills = (value: string) =>
-    /^light-dark\((#[0-9a-f]{6}), (#[0-9a-f]{6})\)$/.exec(value)?.slice(1) as [string, string];
-
-  it("wears each character's colour, darkened until white text on it holds 4.5:1 in both themes", () => {
-    for (const [index, character] of DOZO_CHARACTERS.entries()) {
-      const colors = dozoChatUserColors(core.botLookWithShape(hexOf("blue"), index), "bot-1");
-      expect(colors?.foreground).toBe("#ffffff");
-      const [light, dark] = fills(colors?.background ?? "");
-      for (const fill of [light, dark]) {
-        expect(dozoContrast(fill, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  it("wears the colour picked for the bot, darkened until white text on it holds 4.5:1", () => {
+    for (const { id, hex } of BOT_COLOR_LIST.filter(({ id }) => id !== "white")) {
+      for (const value of [hex, core.botLookWithShape(hex, 2)]) {
+        const colors = dozoChatUserColors(value, "bot-1");
+        expect(colors, id).toEqual({
+          background: dozoBotFill(hex.toLowerCase()),
+          foreground: "#ffffff",
+        });
+        expect(dozoContrast(colors?.background ?? "", "#ffffff")).toBeGreaterThanOrEqual(4.5);
       }
-      // Still the character's hue: the darkest channel of the palette colour stays the darkest.
-      const [paletteLight] = DOZO_BOT_PALETTE[character];
-      const channels = (hex: string) =>
-        [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
-      const order = (hex: string) =>
-        channels(hex).map((v, _, all) => all.filter((o) => o < v).length);
-      expect(order(light)).toEqual(order(paletteLight));
     }
   });
 
-  it("follows the avatar's character and leaves a photo avatar's chat neutral", () => {
-    const blue = dozoCharacterForLook("bot-1", hexOf("blue"));
-    const sameCharacter = core.botLookWithShape(hexOf("green"), DOZO_CHARACTERS.indexOf(blue));
-    expect(dozoChatUserColors(hexOf("blue"), "bot-1")).toEqual(
-      dozoChatUserColors(sameCharacter, "bot-2"),
+  it("is the colour the avatar's accessory wears, and neutral for a photo or a white bot", () => {
+    expect(dozoChatUserColors(hexOf("magenta"), "bot-1")?.background).toBe(
+      dozoBotFill(dozoBotColor("bot-1", hexOf("magenta")) as string),
+    );
+    expect(dozoChatUserColors(hexOf("magenta"), "bot-1")).not.toEqual(
+      dozoChatUserColors(hexOf("red"), "bot-1"),
     );
     expect(dozoChatUserColors(PHOTO, "bot-1")).toBeUndefined();
+    expect(dozoChatUserColors(hexOf("white"), "bot-1")).toBeUndefined();
   });
 
   it("darkens a light colour past the design's mix until white text holds 4.5:1", () => {
@@ -51,13 +45,13 @@ describe("your own bubble in a bot's chat", () => {
     );
   });
 
-  it("still gives a pair of fills for a value that is not a colour, an empty one or an unknown kind", () => {
+  it("gives a bot with no valid colour the one upstream assigns it", () => {
     for (const value of ["nonsense", "", "#zzz", "rgb(1, 2, 3)"]) {
-      const colors = dozoChatUserColors(value, "bot-1");
-      expect(colors?.background).toMatch(/^light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/);
-      expect(colors?.foreground).toBe("#ffffff");
+      const assigned = dozoBotColor("bot-1", value);
+      expect(dozoChatUserColors(value, "bot-1")).toEqual(
+        assigned ? { background: dozoBotFill(assigned), foreground: "#ffffff" } : undefined,
+      );
     }
-    expect(dozoChatUserColors("", "")?.background).toMatch(/^light-dark\(/);
   });
 
   it("measures contrast as WCAG does", () => {
