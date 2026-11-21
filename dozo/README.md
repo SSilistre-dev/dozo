@@ -510,6 +510,28 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
 - `send_email` keeps upstream's own account-wide cap of recipients a day (`botEmailDailyLimit`,
   set by the operator), which refuses rather than asks.
 
+## MCP endpoint
+
+Outside MCP clients (code editors, other agents) reach a person's own bots over Streamable HTTP at
+`/api/v1/dozo/mcp`, with one of the Bot API's personal access tokens in an
+`Authorization: Bearer` header (`apps/api/src/dozo-mcp.ts`, `packages/adapters/src/dozo-mcp*.ts`).
+Tools: `list_bots` and `send_message`, which waits up to 45 seconds for the reply and returns at
+once when the bot asks a question or needs an approval (that is answered in the app); each bot's
+chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the chat export. A
+token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
+session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
+a newer client falls back to those. A token's requests and an account's messages count against the
+Bot API's budgets (a token's share and the account's total of messages), shared by every instance; an address that presents 20 refused tokens in a minute
+waits a minute (per instance); bodies up to 64 KiB. A bare stop word is refused: stop a run in the app.
+
+A message sent over MCP carries the token mark, so the Bot API's token gate holds its run: it asks
+in the app before any outside effect, whatever the approval mode, and nothing it names is taken as
+the owner's own word.
+
+On the server on your own computer, point a local client at
+`http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
+the app window opens.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:
