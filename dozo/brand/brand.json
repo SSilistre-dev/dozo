@@ -5167,6 +5167,12 @@
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "or network. cwd defaults to their home folder",
+      "replace": "or network. Send one simple command per call, with no ; && || redirections, variables or subshells: a plain read-only command, or read-only commands joined by |, runs without asking, anything else asks. Use the platform you have learned instead of an a || b fallback. cwd defaults to their home folder",
+      "reason": "command approval: the bot is told to send one plain command per call, so read-only commands run without asking"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "the workspace root on a Private Computer.",
       "replace": "the workspace root on its Own computer.",
       "reason": "one name for a bot's own computer: the bot reads the setting's name, as the person sees it"

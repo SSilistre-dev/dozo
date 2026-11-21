@@ -118,6 +118,45 @@ export function readOnlyCommand(words: readonly string[]): boolean {
   return false;
 }
 
+/**
+ * The parts of a command split on each `|` outside quotes, skipping quotes exactly as
+ * `literalCommandWords` pairs them, so a split never falls inside a quoted word. Undefined when a
+ * quote is never closed.
+ */
+function splitOnPipes(command: string): string[] | undefined {
+  const parts: string[] = [];
+  let from = 0;
+  for (let at = 0; at < command.length; at++) {
+    const char = command[at]!;
+    if (char === "'" || char === '"') {
+      const end = command.indexOf(char, at + 1);
+      if (end < 0) return undefined;
+      at = end;
+    } else if (char === "|") {
+      parts.push(command.slice(from, at));
+      from = at + 1;
+    }
+  }
+  parts.push(command.slice(from));
+  return parts;
+}
+
+/**
+ * Whether the command is one read-only command, or read-only commands joined by single pipes. Each
+ * part must pass `literalCommandWords` and `readOnlyCommand` on its own, so `||`, `|&`, an empty
+ * part, a leading or trailing pipe and every other operator fail. None of the listed programs
+ * writes a file or runs another program from its input (in PowerShell their names are aliases of
+ * cmdlets that only read or print), so a pipe between them only passes text along. `tail -f`
+ * waits until the command's own timeout.
+ */
+export function readOnlyPipeline(command: string): boolean {
+  const parts = splitOnPipes(command);
+  return !!parts?.every((part) => {
+    const words = literalCommandWords(part);
+    return words !== undefined && readOnlyCommand(words);
+  });
+}
+
 /** The words as one line a person can read, quoting the ones that need it. */
 export function commandWordsLabel(words: readonly string[]): string {
   return words
