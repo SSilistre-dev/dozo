@@ -206,11 +206,12 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
       if (!jobs) return [];
       const rows = await prisma.$queryRaw<{ organizationId: string }[]>`
         SELECT ending."organizationId" FROM (
-          SELECT "organizationId" FROM "dozo_plan_grants" WHERE "endsAt" > CURRENT_TIMESTAMP
+          SELECT "organizationId" FROM "dozo_plan_grants"
+          WHERE "endsAt" > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
           UNION
           SELECT "organizationId" FROM "billing_accounts"
           WHERE "cancelAtPeriodEnd" AND "status" IN ('trialing', 'active', 'past_due')
-            AND "currentPeriodEndsAt" > CURRENT_TIMESTAMP
+            AND "currentPeriodEndsAt" > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
         ) AS ending
         LEFT JOIN "dozo_billing_notices" AS notice
           ON notice."organizationId" = ending."organizationId"

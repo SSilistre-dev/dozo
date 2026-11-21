@@ -96,10 +96,13 @@ export async function saveDozoQuietHours(
       } else {
         await tx.$executeRaw`DELETE FROM dozo_quiet_hours WHERE "userId" = ${userId}`;
       }
+      // Times as UTC wall clocks: the client reads a timestamptz in the session's zone as if it
+      // were UTC, so a database in another zone would shift them (dozo/AGENTS.md).
       const held = await tx.$queryRaw<
         Array<{ routineId: string; spaceId: string; dueAt: Date; heldUntil: Date }>
       >`
-        SELECT h."routineId", r."spaceId", h."dueAt", h."heldUntil"
+        SELECT h."routineId", r."spaceId", h."dueAt" AT TIME ZONE 'UTC' AS "dueAt",
+          h."heldUntil" AT TIME ZONE 'UTC' AS "heldUntil"
         FROM dozo_routine_holds h JOIN routines r ON r.id = h."routineId"
         WHERE r."userId" = ${userId} AND r.active AND h."heldUntil" > CURRENT_TIMESTAMP
           AND h.crons = r.crons AND h.timezone = r.timezone`;
@@ -174,7 +177,8 @@ export async function dozoHoldRoutine<Deps extends WakeDeps>(
           timezone: string | null;
         }>
       >`
-    SELECT h."dueAt", h."heldUntil", q."startMinute", q."endMinute", u.timezone
+    SELECT h."dueAt" AT TIME ZONE 'UTC' AS "dueAt", h."heldUntil" AT TIME ZONE 'UTC' AS "heldUntil",
+      q."startMinute", q."endMinute", u.timezone
     FROM "user" u
     LEFT JOIN dozo_quiet_hours q ON q."userId" = u.id
     LEFT JOIN dozo_routine_holds h ON h."routineId" = ${routine.id}

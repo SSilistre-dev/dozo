@@ -34,7 +34,7 @@ const TRIM = [
 // The bundle's version is upstream's with this revision after it: a change to what the fork adds
 // (the agent, the trim) makes a new version, so the desktop app installs it as a new folder.
 // Raise it with every such change; the release tag is server-v<version>.
-const REVISION = 4;
+const REVISION = 5;
 const AGENT = "dozo-relay-agent.mjs";
 // The local server's own commands (README.md: "Backup and restore", "Account repairs",
 // "Diagnostics"): entrypoint name, the file it becomes, and its source.
@@ -234,6 +234,10 @@ step("trim", () => {
   const server = path.join(unpacked, "rakazo-server");
   fs.copyFileSync(path.join(work, AGENT), path.join(server, AGENT));
   for (const [, file] of COMMANDS) fs.copyFileSync(path.join(work, file), path.join(server, file));
+  // The job queue reads `crontab` from the folder the API and the worker run in, and logs at every
+  // start that cron is disabled when there is none. Nothing runs on it: scheduled jobs are added
+  // in code. An empty one says so without the line.
+  fs.writeFileSync(path.join(server, "crontab"), "");
   const manifest = JSON.parse(fs.readFileSync(path.join(server, "manifest.json"), "utf8"));
   manifest.entrypoints = {
     ...manifest.entrypoints,
