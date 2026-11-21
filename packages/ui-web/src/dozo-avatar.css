@@ -11,8 +11,8 @@
   user-select: none;
 }
 
-/* The character's colour (--dozo-tile) is set inline by the component from its bot identity
-   palette, so no colour value is written in this file. It paints the accessory only.
+/* The bot's colour (--dozo-tile) is set inline by the component (the colour picked for the bot,
+   or the character's own), so no colour value is written in this file. It paints the accessory only.
    How far each accessory moves when it pulses: a hat or a pair of ears only stirs, a flower beats.
    Ears are part of the head, so they do not fade (--dozo-dim). */
 .dozo-avatar[data-character="sora"] {

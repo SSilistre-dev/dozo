@@ -10,7 +10,7 @@ import type {
 import type { AgentBridge, BridgeCall } from "./dozo-agent-bridge.js";
 import { startAgentBridge } from "./dozo-agent-bridge.js";
 import type { LocalCliHost } from "./dozo-cli-driver.js";
-import { localCliHost } from "./dozo-cli-driver.js";
+import { localCliHost, parseCliAccountRef } from "./dozo-cli-driver.js";
 
 /**
  * Agent mode: a provider's own agent CLI on the person's computer runs a bot's whole turn, as the
@@ -60,14 +60,22 @@ export interface AgentDriver {
   provider: string;
   name: string;
   command: string;
-  /** The catalog provider whose model ids the agent takes. */
-  modelSource: string;
+  /**
+   * The catalog provider whose model ids the agent takes; none for an agent that chooses its own
+   * model, which the catalog then lists as one model, the agent's own choice.
+   */
+  modelSource?: string;
+  /** Its maker's terms put the person's account at risk when it is used outside their products. */
+  termsRisk?: true;
   /** Whether the agent is on the person's PATH. */
   installed(host: LocalCliHost): Promise<boolean>;
   /** Checks, when connecting, that this agent can be driven here; the reason when it cannot. */
   selfTest(host: LocalCliHost, workDir: string): Promise<string | undefined>;
   start(options: AgentStart): Promise<AgentSession>;
 }
+
+/** The model id of an agent that chooses its own model. */
+export const AGENT_OWN_MODEL = "default";
 
 /** The one action the person may take on an agent's request besides declining it. */
 export const ALLOW_ONCE = "Allow once";
@@ -77,6 +85,10 @@ export const AGENT_INTERRUPTED_ERROR =
   "The agent was interrupted: its process ended before this turn finished. Send the message again.";
 export const AGENT_OWN_RUNS_ONLY =
   "Agent mode runs only for your own messages in Dozo, never for chat apps, other bots or webhooks.";
+export const AGENT_RECONNECT_ERROR =
+  "This agent connection was not made in Settings. Connect the agent again there.";
+export const AGENT_TOKEN_TEXT =
+  "Agent mode does not run in a chat that text sent with an access token reached. Trust the bot again first.";
 export const AGENT_BRIDGE_PAUSED =
   "Waiting for the person's approval in Dozo. Stop here; you will be told when it is answered.";
 
@@ -230,6 +242,9 @@ async function* runAgent(
     throw new Error(`${driver.name} agent mode is not turned on on this server.`);
   const refusal = (await options.accessCheck()) ?? (await options.runAllowed(request.runId));
   if (refusal) throw new Error(refusal);
+  // Only a connection made in settings, after the person's agreement and the check, names this.
+  if (parseCliAccountRef(request.model.apiKey)?.kind !== "home")
+    throw new Error(AGENT_RECONNECT_ERROR);
   const { runId } = request;
   // Each attempt runs Dozo's tools with its own executor, approvals and limits.
   let paused = false;

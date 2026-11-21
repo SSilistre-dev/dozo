@@ -16,6 +16,7 @@ pub const FILE: &str = "server";
 
 const OPEN_AT_LOGIN: &str = "open_at_login=";
 const KEEP_RUNNING: &str = "keep_running=";
+const PUSH_TO_TALK: &str = "push_to_talk=";
 const THIS_COMPUTER: &str = "this_computer=";
 const RELAY: &str = "relay=";
 
@@ -26,6 +27,8 @@ pub struct Settings {
     pub open_at_login: bool,
     /// Closing the window leaves the app running.
     pub keep_running: bool,
+    /// The push-to-talk shortcut works while another app is in front (`talk.rs`).
+    pub push_to_talk: bool,
     /// The app runs the server itself, on this computer.
     pub this_computer: bool,
     /// The relay phones pair through, when not the build's.
@@ -41,6 +44,8 @@ pub fn parse(text: &str) -> Settings {
             settings.open_at_login = value.trim() == "true";
         } else if let Some(value) = line.strip_prefix(KEEP_RUNNING) {
             settings.keep_running = value.trim() == "true";
+        } else if let Some(value) = line.strip_prefix(PUSH_TO_TALK) {
+            settings.push_to_talk = value.trim() == "true";
         } else if let Some(value) = line.strip_prefix(RELAY) {
             // https, or http for this computer, as a server address is.
             settings.relay = parse_server(value)
@@ -65,6 +70,9 @@ pub fn render(settings: &Settings) -> String {
         .map_or_else(String::new, |server| format!("{server}\n"));
     text.push_str(&format!("{OPEN_AT_LOGIN}{}\n", settings.open_at_login));
     text.push_str(&format!("{KEEP_RUNNING}{}\n", settings.keep_running));
+    if settings.push_to_talk {
+        text.push_str(&format!("{PUSH_TO_TALK}true\n"));
+    }
     if settings.this_computer {
         text.push_str(&format!("{THIS_COMPUTER}true\n"));
     }
@@ -120,6 +128,10 @@ mod tests {
         let text = "https://dozo.example.com/\nopen_at_login=yes\n";
         assert_eq!(parse(text).server, server());
         assert!(!parse(text).open_at_login && !parse(text).keep_running);
+        // Push to Talk is off until chosen, and anything but `true` is off.
+        assert!(!parse(text).push_to_talk);
+        assert!(!parse("push_to_talk=on\n").push_to_talk);
+        assert!(parse("push_to_talk=true\n").push_to_talk);
     }
 
     #[test]
@@ -133,6 +145,7 @@ mod tests {
                         server: server.clone(),
                         open_at_login,
                         keep_running,
+                        push_to_talk: this_computer != keep_running,
                         this_computer,
                         relay: this_computer.then(|| "https://relay.example.com".to_owned()),
                     };
@@ -148,6 +161,7 @@ mod tests {
             server: server(),
             open_at_login: true,
             keep_running: true,
+            push_to_talk: true,
             this_computer: true,
             relay: None,
         };

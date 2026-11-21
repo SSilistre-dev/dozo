@@ -10,9 +10,15 @@ test.use({ storageState: SIGNED_OUT });
 
 async function emailForm(page: import("@playwright/test").Page, path: string) {
   await page.goto(`${path}?lang=tr`);
+  // Sign-in by emailed code offers the password one step away; sign-up and a server without codes
+  // show the form, or a choice of providers first.
+  const password = page.getByRole("button", { name: "Bunun yerine şifre kullan" });
   const choice = page.getByRole("button", { name: "E-posta ile devam et" });
-  await expect(page.getByPlaceholder("E-posta adresiniz").or(choice).first()).toBeVisible();
-  if (await choice.isVisible()) await choice.click();
+  const field = page.getByPlaceholder("Parola");
+  await expect(password.or(choice).or(field).first()).toBeVisible();
+  if (await password.isVisible()) await password.click();
+  else if (await choice.isVisible()) await choice.click();
+  await expect(field).toBeVisible();
 }
 
 test("kayıt, çıkış, yeniden giriş", async ({ page }) => {
@@ -73,8 +79,14 @@ test("parola sıfırlama: bağlantı isteği ve geçersiz bağlantı", async ({ 
   await page.goto("/forgot-password?lang=tr");
   await page.getByPlaceholder("E-posta adresiniz").fill(uniqueEmail("reset"));
   await page.getByRole("button", { name: "Sıfırlama bağlantısı gönder" }).click();
-  // This stack sends no mail: the page says so instead of pretending a link went out.
-  await expect(page.getByText("Bu sunucu için parola kurtarma yapılandırılmamış")).toBeVisible();
+  // A stack that sends no mail says so instead of pretending a link went out; one with the email
+  // emulator (DOZO_EMAIL_EMULATOR=1) sends it.
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  await expect(
+    capabilities.passwordReset
+      ? page.getByRole("heading", { name: "E-postanızı kontrol edin" })
+      : page.getByText("Bu sunucu için parola kurtarma yapılandırılmamış"),
+  ).toBeVisible();
   await page.goto("/reset-password?token=e2e-not-a-token&lang=tr");
   await expect(page.getByRole("button", { name: "Parolayı sıfırla" })).toBeVisible();
 });
