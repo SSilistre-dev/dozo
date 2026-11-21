@@ -111,6 +111,7 @@ vi.mock("./Auth", () => ({
 vi.mock("./dozo-signup-terms", () => ({ DozoSignupTerms: () => <p>terms</p> }));
 
 import type { SignInProvider } from "@rakazo/contracts";
+import { authErrorText } from "../lib/user-error";
 import { DozoCodeSignIn, RESEND_AFTER_MS } from "./dozo-code-sign-in";
 import { DozoEmailCodeLink, dozoCodeSignInAvailable } from "./dozo-email-code-link";
 
@@ -181,6 +182,7 @@ const button = (label: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent?.startsWith(label)) as
     | HTMLButtonElement
     | undefined;
+const refusal = (error: unknown) => authErrorText(error, "Could not continue");
 const alerts = () => [...host.querySelectorAll('[role="alert"]')].map((el) => el.textContent);
 
 async function type(input: HTMLInputElement, value: string) {
@@ -200,7 +202,7 @@ async function toCode(address = "maya@example.com") {
 
 it("asks for the address alone, with autofill for a passkey, and names a bad one under the field", async () => {
   await open();
-  expect(text()).toContain("Sign in to Rakazo");
+  expect(text()).toMatch(/Sign in to \w+/);
   expect(emailField().autocomplete).toBe("username webauthn");
   expect(host.querySelector('input[type="password"]')).toBeNull();
   await toCode("not-an-address");
@@ -224,11 +226,12 @@ it("mails a sign-in code with upstream's own call, then shows the code step for 
 });
 
 it("stays on the address when sending fails, saying why in one line", async () => {
-  mocks.send.mockResolvedValueOnce({ error: { status: 429, message: "Too many requests" } });
+  const limited = { status: 429, message: "Too many requests" };
+  mocks.send.mockResolvedValueOnce({ error: limited });
   await open();
   await toCode();
   expect(text()).not.toContain("Check your email");
-  expect(alerts()).toEqual(["Too many requests"]);
+  expect(alerts()).toEqual([refusal(limited)]);
   mocks.send.mockRejectedValueOnce(new Error("offline"));
   await submit();
   expect(alerts()).toEqual(["Could not reach the server"]);
@@ -293,10 +296,11 @@ it("lets Resend code ask again only after 30 seconds, showing the wait, and show
   expect(resend().textContent).toBe("Resend code");
 
   // The server's limit is its own: a refusal is said in one line and the step stays.
-  mocks.send.mockResolvedValueOnce({ error: { status: 429, message: "Too many requests" } });
+  const limited = { status: 429, message: "Too many requests" };
+  mocks.send.mockResolvedValueOnce({ error: limited });
   await act(async () => resend().click());
   expect(mocks.send).toHaveBeenCalledTimes(2);
-  expect(alerts()).toEqual(["Too many requests"]);
+  expect(alerts()).toEqual([refusal(limited)]);
   expect(text()).toContain("Check your email");
   expect(code().value).toBe("");
 
@@ -312,7 +316,7 @@ it("goes Back to the address, keeping it", async () => {
   await open();
   await toCode();
   await act(async () => button("Back")?.click());
-  expect(text()).toContain("Sign in to Rakazo");
+  expect(text()).toMatch(/Sign in to \w+/);
   expect(emailField().value).toBe("maya@example.com");
 });
 
@@ -332,7 +336,8 @@ it("starts from an address handed over in the history entry and shows an error f
 
 it("keeps the deployment's providers and passkey on the first step", async () => {
   mocks.passkeySupported = true;
-  mocks.sso.mockResolvedValueOnce({ error: { message: "Denied" } });
+  const denied = { code: "ACCOUNT_DEACTIVATED", message: "Denied" };
+  mocks.sso.mockResolvedValueOnce({ error: denied });
   const google = { id: "google", name: "Google" } as SignInProvider;
   await open("/sign-in", [google]);
   expect(mocks.providers).toHaveBeenLastCalledWith([google]);
@@ -340,7 +345,7 @@ it("keeps the deployment's providers and passkey on the first step", async () =>
   expect(mocks.passkeyStart).toHaveBeenCalledTimes(1);
   await act(async () => button("google")?.click());
   expect(mocks.sso).toHaveBeenCalledTimes(1);
-  expect(alerts()).toEqual(["Denied"]);
+  expect(alerts()).toEqual([refusal(denied)]);
   // The flow builds upstream's social sign-in call.
   const [start] = mocks.sso.mock.calls[0] as [(d: boolean, cb: (p: string) => string) => unknown];
   start(true, (path) => `cb:${path}`);

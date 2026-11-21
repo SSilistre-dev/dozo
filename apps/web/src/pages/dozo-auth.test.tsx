@@ -47,7 +47,8 @@ vi.mock("../lib/i18n", () => ({
 }));
 
 vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: mocks.capabilities }));
-vi.mock("@rakazo/contracts", () => ({
+vi.mock("@rakazo/contracts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/contracts")>()),
   signInProviders: (capabilities: { providers?: { id: string }[] }) => capabilities.providers ?? [],
 }));
 vi.mock("./dozo-code-sign-in", () => ({
