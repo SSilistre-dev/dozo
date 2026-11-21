@@ -540,9 +540,7 @@ describe("an address naming an extra chat", () => {
   it("stays on one of the bot's open extra chats", async () => {
     api.list.mockResolvedValue({ chats: [chat()] });
     await render(<Redirect />, "/app/bot-1?chat=chat-1");
-    await vi.waitFor(() => expect(api.list).toHaveBeenCalled());
-    await act(async () => undefined);
-    expect(redirect()).toBe("stay");
+    await vi.waitFor(() => expect(redirect()).toBe("stay"));
   });
 
   it("goes to the bot's main chat for an unknown, another bot's or an archived chat", async () => {
@@ -558,13 +556,16 @@ describe("an address naming an extra chat", () => {
     }
   });
 
-  it("waits for the list, stays when it cannot be read, and reads none on a main chat", async () => {
-    api.list.mockReturnValue(new Promise(() => undefined));
-    await render(<Redirect />, "/app/bot-1?chat=chat-1");
-    expect(redirect()).toBe("checking");
+  it("stays when the list cannot be read, as on a server without extra chats", async () => {
     api.list.mockRejectedValue(new Error("No such route"));
     await render(<Redirect />, "/app/bot-1?chat=chat-2");
     await vi.waitFor(() => expect(redirect()).toBe("stay"));
+  });
+
+  it("waits for the list, and reads none on a main chat", async () => {
+    api.list.mockReturnValue(new Promise(() => undefined));
+    await render(<Redirect />, "/app/bot-1?chat=chat-1");
+    expect(redirect()).toBe("checking");
     api.list.mockClear();
     await render(<Redirect />, "/app/bot-1");
     expect(redirect()).toBe("stay");
