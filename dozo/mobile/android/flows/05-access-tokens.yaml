@@ -1,0 +1,9 @@
+# A link to a settings page opened while signed in: the access tokens page, with its one row for
+# making a token. The list starts empty for the fresh account.
+appId: dev.ssilistre.dozo
+name: Dozo Android access tokens
+---
+- extendedWaitUntil:
+    visible: "New token"
+    timeout: 30000
+- assertVisible: "Access tokens"

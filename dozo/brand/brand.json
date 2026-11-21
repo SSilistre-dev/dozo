@@ -4396,11 +4396,12 @@
     {
       "file": "apps/mobile/app/(settings)/account.tsx",
       "find": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { NativeActionButton }",
-      "replace": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { DozoCommandsRow, dozoUsageLink } from \"../../components/dozo-account-rows\";\nimport { NativeActionButton }",
+      "replace": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { DozoCommandsRow, dozoUsageLink } from \"../../components/dozo-account-rows\";\nimport { DozoSendLimitRow } from \"../../components/dozo-send-limit-row\";\nimport { NativeActionButton }",
       "requires": [
-        "apps/mobile/components/dozo-account-rows.tsx"
+        "apps/mobile/components/dozo-account-rows.tsx",
+        "apps/mobile/components/dozo-send-limit-row.tsx"
       ],
-      "reason": "mobile settings: the import of the two rules below"
+      "reason": "mobile settings: the import of the rules below"
     },
     {
       "file": "apps/mobile/app/(settings)/account.tsx",
@@ -4421,6 +4422,15 @@
         "apps/mobile/app/(settings)/dozo-commands.tsx"
       ],
       "reason": "command rules on mobile: a Commands row beside approval Rules, only while the member always allows a command, opens the list with Remove"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "            leading={icon({ ios: \"checkmark.shield\", android: \"shield-checkmark-outline\" })}\n          />\n          {approvals.ruleCount ? (",
+      "replace": "            leading={icon({ ios: \"checkmark.shield\", android: \"shield-checkmark-outline\" })}\n          />\n          <DozoSendLimitRow\n            key=\"dozo-send-limit\"\n            leading={icon({ ios: \"paperplane\", android: \"send-outline\" })}\n          />\n          {approvals.ruleCount ? (",
+      "requires": [
+        "apps/mobile/components/dozo-send-limit-row.tsx"
+      ],
+      "reason": "daily sends on mobile: the account's number of sends each bot makes a day without asking, a native menu under its approval mode, as the web app has it"
     },
     {
       "file": "apps/mobile/app/(settings)/general.tsx",
@@ -4474,13 +4484,15 @@
     {
       "file": "apps/mobile/lib/settings-sheet.ts",
       "find": "  \"computers\",\n  \"general\",\n",
-      "replace": "  \"computers\",\n  \"dozo-activity\",\n  \"dozo-commands\",\n  \"dozo-usage\",\n  \"general\",\n",
+      "replace": "  \"computers\",\n  \"dozo-access-tokens\",\n  \"dozo-activity\",\n  \"dozo-commands\",\n  \"dozo-feedback\",\n  \"dozo-usage\",\n  \"general\",\n",
       "requires": [
+        "apps/mobile/app/(settings)/dozo-access-tokens.tsx",
         "apps/mobile/app/(settings)/dozo-activity.tsx",
         "apps/mobile/app/(settings)/dozo-commands.tsx",
+        "apps/mobile/app/(settings)/dozo-feedback.tsx",
         "apps/mobile/app/(settings)/dozo-usage.tsx"
       ],
-      "reason": "mobile settings: the fork's Usage, Commands and Activity pages are settings pages, so a link to one opens inside the settings sheet"
+      "reason": "mobile settings: the fork's Usage, Commands, Activity, Access tokens and Feedback pages are settings pages, so a link to one opens inside the settings sheet"
     },
     {
       "file": "apps/api/src/routes/bots.ts",
@@ -4822,11 +4834,21 @@
     {
       "file": "apps/mobile/app/bot-profile.tsx",
       "find": "import { botProfileMenuOptions, useBotProfileActions } from \"../components/bot-profile-menu\";",
-      "replace": "import { botProfileMenuOptions, useBotProfileActions } from \"../components/dozo-bot-profile-menu\";",
+      "replace": "import { botProfileMenuOptions, useBotProfileActions } from \"../components/dozo-bot-profile-menu\";\nimport { DozoTrustBotHost } from \"../lib/dozo-trust-bot\";",
       "requires": [
-        "apps/mobile/components/dozo-bot-profile-menu.tsx"
+        "apps/mobile/components/dozo-bot-profile-menu.tsx",
+        "apps/mobile/lib/dozo-trust-bot.tsx"
       ],
-      "reason": "chat export: the bot profile's menu gains Export, which hands the chat as Markdown to the system share sheet"
+      "reason": "chat export: the bot profile's menu gains Export, which hands the chat as Markdown to the system share sheet; the import of the trust host below"
+    },
+    {
+      "file": "apps/mobile/app/bot-profile.tsx",
+      "find": "      <View style={styles.identity}>\n        {bot ? (\n",
+      "replace": "      <View style={styles.identity}>\n        <DozoTrustBotHost />\n        {bot ? (\n",
+      "requires": [
+        "apps/mobile/lib/dozo-trust-bot.tsx"
+      ],
+      "reason": "trust a bot again on mobile: the profile holds the identity check for the menu's item, which shows only while the bot is marked by text sent with an access token"
     },
     {
       "file": "apps/mobile/components/thread/message-row.tsx",
