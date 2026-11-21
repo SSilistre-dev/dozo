@@ -43,4 +43,12 @@ describe("waiting work contract", () => {
     expect((await check(output, { items: [{ ...item, position: 0 }] })).issues).toBeDefined();
     expect((await check(output, { items: [{ ...item, reason: "other" }] })).issues).toBeDefined();
   });
+
+  it("accepts every reason a piece of work waits, with no name or label given", async () => {
+    const output = dozoQueueContract.list["~orpc"].outputSchema!;
+    const item = { id: "r", kind: "message", botId: "b", position: 2, mine: false };
+    for (const reason of ["bot_busy", "computer_busy", "behind_run"]) {
+      expect((await check(output, { items: [{ ...item, reason }] })).issues).toBeUndefined();
+    }
+  });
 });
