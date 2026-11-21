@@ -609,6 +609,16 @@ Accepted by the owner for now, stated here once:
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
   which it does not show.
+- Daily digest (Settings > General, web and mobile; off by default;
+  `packages/adapters/src/dozo-daily-digest.ts`): a routine on the chosen bot that, at the chosen
+  hour in the account's timezone, writes one message in that bot's chat from saved data, with no
+  model run: the account's runs in that Space started the local day before (done and failed per
+  bot), its runs waiting for an answer, and its timed routines still due today. A day with none of
+  these writes nothing. It is a routine, so quiet hours and the 12-hour catch-up apply, and it
+  shows in the bot's Routines list, where deleting it turns the digest off. A test run there, or
+  an edit to its prompt, runs the model with that prompt instead. Text is English or Turkish, by
+  the account's language. No meeting preparation: reading a calendar means calling one
+  connector's own tools, which shared code may not name.
 - One-time waits (`packages/adapters/src/dozo-wait.ts`): `schedule_create` with a watch and
   `waitMinutes` (5 minutes to a week, at most 10 going per bot) wakes the bot once in that chat, at
   the first change or at the deadline, then ends; no model runs in between and the routine's

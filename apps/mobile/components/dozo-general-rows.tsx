@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { DozoQuietHours } from "@rakazo/contracts";
-import { DOZO_DEFAULT_QUIET_HOURS } from "@rakazo/contracts";
+import { DOZO_DEFAULT_DIGEST_MINUTE, DOZO_DEFAULT_QUIET_HOURS } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Alert } from "react-native";
@@ -16,14 +16,115 @@ const HOUR_MINUTES = Array.from({ length: 24 }, (_, hour) => hour * 60);
 
 /**
  * General settings' rows the web app has there too: the account's quiet hours, in which its
- * routines start nothing, and the organization's activity log for those who may read it.
+ * routines start nothing, its daily digest, and the organization's activity log for those who
+ * may read it.
  */
 export function DozoGeneralRows() {
   return (
     <>
       <DozoQuietHoursRows />
+      <DozoDailyDigestRows />
       <DozoActivityRow />
     </>
+  );
+}
+
+type Digest = { botId: string; minute: number } | null;
+
+/**
+ * Off shows the switch alone, and nothing while this Space has no bot to write it; on adds the
+ * time, and the bot when there is more than one to pick.
+ */
+function DozoDailyDigestRows() {
+  const { t } = useLingui();
+  const colorScheme = useResolvedAppearance();
+  const locale = dateLocaleForUi(useUiLocale());
+  const read = rpcQuery("dozoDailyDigest/get");
+  const current = useQuery({ ...read, refetchOnMount: "always" }, queryClient);
+  const bots = useQuery(rpcQuery("bots/list"), queryClient);
+  const save = useSave({
+    save: (digest: Digest, send) => send("dozoDailyDigest/set", { digest }),
+    stale: [read.queryKey],
+    onFailed: (error) =>
+      Alert.alert(t`Couldn't update the daily digest`, errorText(error, t`Try again.`)),
+  });
+  const saved = current.data?.digest ?? null;
+  const digest = save.pending
+    ? save.input
+      ? { ...save.input, botName: saved?.botName ?? "" }
+      : null
+    : saved;
+  const firstBot = bots.data?.[0];
+  if (!digest && !firstBot) return null;
+  const time = new Intl.DateTimeFormat(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  });
+  const label = (minute: number) => time.format(new Date(Date.UTC(2000, 0, 1, 0, minute)));
+  const minutes =
+    digest?.minute == null || HOUR_MINUTES.includes(digest.minute)
+      ? HOUR_MINUTES
+      : [...HOUR_MINUTES, digest.minute].sort((a, b) => a - b);
+  const botOptions = (bots.data ?? []).map((bot) => ({ id: bot.id, name: bot.name }));
+  if (digest && !botOptions.some((bot) => bot.id === digest.botId))
+    botOptions.unshift({ id: digest.botId, name: digest.botName });
+  const minute = digest?.minute ?? DOZO_DEFAULT_DIGEST_MINUTE;
+  return (
+    <SettingsGroup>
+      <SettingsSwitch
+        label={t`Daily digest`}
+        value={digest !== null}
+        disabled={!current.data || save.pending}
+        onChange={(on) =>
+          save.run(
+            on && firstBot ? { botId: firstBot.id, minute: DOZO_DEFAULT_DIGEST_MINUTE } : null,
+          )
+        }
+      />
+      {digest ? (
+        <MenuView
+          title={t`Time`}
+          colorScheme={colorScheme}
+          actions={minutes.map((option) => ({
+            id: String(option),
+            title: label(option),
+            state: option === digest.minute ? ("on" as const) : ("off" as const),
+          }))}
+          onPressAction={({ nativeEvent }) =>
+            save.run({ botId: digest.botId, minute: Number(nativeEvent.event) })
+          }
+        >
+          <SettingsRow
+            accessible
+            accessibilityRole="button"
+            dimmed={save.pending}
+            title={t`Time`}
+            value={digest.minute == null ? "" : label(digest.minute)}
+          />
+        </MenuView>
+      ) : null}
+      {digest && botOptions.length > 1 ? (
+        <MenuView
+          title={t`Bot`}
+          colorScheme={colorScheme}
+          actions={botOptions.map((bot) => ({
+            id: bot.id,
+            title: bot.name,
+            state: bot.id === digest.botId ? ("on" as const) : ("off" as const),
+          }))}
+          onPressAction={({ nativeEvent }) => save.run({ botId: nativeEvent.event, minute })}
+        >
+          <SettingsRow
+            accessible
+            accessibilityRole="button"
+            dimmed={save.pending}
+            title={t`Bot`}
+            value={botOptions.find((bot) => bot.id === digest.botId)?.name ?? ""}
+          />
+        </MenuView>
+      ) : null}
+    </SettingsGroup>
   );
 }
 
