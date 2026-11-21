@@ -1,5 +1,7 @@
 import type { AgentToolExecutionResult, ComputerRef } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
+import { JsonColumnMismatchError, readJsonColumn } from "@rakazo/db";
+import { z } from "zod";
 import {
   browserActFromTool,
   browserNavigateFromTool,
@@ -12,7 +14,12 @@ import { DeviceBrowserProvider } from "./dozo-device-browser.js";
 import { filesWithoutComputer } from "./dozo-no-computer.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { Route } from "./dozo-user-browser-gate.js";
-import { recordConsent, userBrowserAsk, userBrowserRoute } from "./dozo-user-browser-gate.js";
+import {
+  APPROVED_SITE,
+  recordConsent,
+  userBrowserAsk,
+  userBrowserRoute,
+} from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { pageBrowserTool as computerPageBrowserTool } from "./run-tools-computer.js";
@@ -29,6 +36,9 @@ export const USER_BROWSER_NOTE =
   "This browser is your own, on the user's computer, in a window they can see. If a site needs signing in, ask the user to sign in there themselves, then continue.";
 const UNAVAILABLE =
   "The user's computer is not connected, so its browser cannot be used now. Ask them to open the desktop app if the task needs it.";
+const CHANGED =
+  "The browser on the user's computer was not part of this call's approval. Try again.";
+const MOVED = "The browser shows another site than the one the user approved. Ask again.";
 const TOKEN_RUN = "The browser on the user's computer is not used for a message sent with a token.";
 
 const providers = new WeakMap<RunContext, DeviceBrowserProvider>();
@@ -76,14 +86,24 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
   if (await runCameByToken(ctx)) return call.finish({ error: TOKEN_RUN });
   const { prisma } = ctx.deps;
   const { signal } = ctx.context;
-  // The call passed its approval: what it asked is now allowed for this bot on this computer.
+  // Only a call this browser's approval saw runs here: one that reached the user's computer
+  // after its approval went the other way is refused, not run without a card.
   const asked = userBrowserAsk(args);
-  if (asked && asked.deviceId !== route.deviceId)
+  if (!asked) return call.finish({ error: CHANGED });
+  if (asked.deviceId !== route.deviceId)
     return call.finish({
       error: "The user's computer changed since this was approved. Try again.",
     });
-  await recordConsent(prisma, ctx.bot.id, route.deviceId, "");
-  if (asked?.site) await recordConsent(prisma, ctx.bot.id, route.deviceId, asked.site);
+  // A call that asked runs only on the site its card named (kept with its effect).
+  if (asked.browser || asked.newSite) {
+    const approved = await approvedSite(ctx, call);
+    if (approved !== asked.site) return call.finish({ error: MOVED });
+  }
+  // The call passed its approval: what it asked is now allowed for this bot, on this computer,
+  // in this thread.
+  const key = { botId: ctx.bot.id, deviceId: route.deviceId, threadId: ctx.thread.id };
+  if (asked.browser) await recordConsent(prisma, key, "");
+  if (asked.newSite && asked.site) await recordConsent(prisma, key, asked.site);
   const first = !providers.has(ctx);
   const provider = providerFor(ctx, route);
   const computer: ComputerRef = {
@@ -138,4 +158,26 @@ function withScreenshot(result: unknown, data: string): unknown {
     ...shown,
     content: [...shown.content, { type: "image", data, mimeType: "image/jpeg" }],
   };
+}
+
+/** The site the card of this call named, as its effect keeps it; undefined when it has none. */
+async function approvedSite(ctx: RunContext, call: ToolCall): Promise<string | undefined> {
+  const effect = await ctx.deps.prisma.externalEffect.findUnique({
+    where: { idempotencyKey: call.effectKey },
+    select: { id: true, request: true },
+  });
+  if (!effect) return undefined;
+  try {
+    const request = readJsonColumn(
+      z.object({ [APPROVED_SITE]: z.string() }),
+      effect.request,
+      { table: "external_effects", column: "request", id: effect.id },
+      "reject",
+    );
+    return request[APPROVED_SITE];
+  } catch (error) {
+    // An effect from before the site was kept names none: it does not approve a site.
+    if (error instanceof JsonColumnMismatchError) return undefined;
+    throw error;
+  }
 }

@@ -91,8 +91,9 @@ export function buildApprovalAskBlock(
 }
 
 /**
- * The card for the bot's own browser on the user's computer: its first use there, or its first
- * action on a site, named by its registrable domain.
+ * The card for the bot's own browser on the user's computer: its first use in a thread, or the
+ * first time it opens, reads or acts on a site there, named by its registrable domain. The detail
+ * shows the address or the steps.
  */
 function userBrowserCard(
   effectId: string,
@@ -109,13 +110,16 @@ function userBrowserCard(
         ? JSON.stringify(args.actions)
         : "";
   const detail = redactSecrets(doing, secrets).slice(0, 2000);
+  // What the page tool would do on the site, as its card says it.
+  const verb =
+    toolName === "browser_navigate" ? "open" : toolName === "browser_snapshot" ? "read" : "act on";
   return {
     kind: "ask",
     approvalEffectId: effectId,
-    text:
-      ask.site === undefined
-        ? "Let this bot use its own browser on your computer?"
-        : `Let this bot act on ${ask.site || "this page"} in its browser?`,
+    // The first card names the site too, as every later one does.
+    text: ask.browser
+      ? `Let this bot use its own browser on your computer${ask.site ? ` and ${verb} ${ask.site}` : ""}?`
+      : `Let this bot ${verb} ${ask.site || "this page"} in its browser?`,
     ...(detail ? { detail, detailFormat: "code" as const } : {}),
     status: "pending",
     actions: [

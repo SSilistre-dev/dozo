@@ -2,6 +2,7 @@ import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import {
   DeviceBrowserProvider,
+  MOVED_SITE,
   readAccessibilityTree,
   refNode,
   UNSUPPORTED_STEP,
@@ -138,6 +139,34 @@ describe("the browser on the user's computer", () => {
       method: "Page.captureScreenshot",
       params: { format: "jpeg", quality: 60 },
     });
+  });
+});
+
+describe("a batch of steps", () => {
+  it("stops when a step took the page to another site, before acting there", async () => {
+    const { provider, device } = setup({
+      "https://a.test/": {
+        title: "A",
+        nodes: [
+          { role: "link", name: "Elsewhere", opens: "https://b.test/" },
+          { role: "button", name: "Stay" },
+        ],
+      },
+      "https://b.test/": { title: "B", nodes: [{ role: "textbox", name: "Card" }] },
+    });
+    await provider.navigate(computer, { url: "https://a.test/" }, context());
+    const acted = await provider.act(
+      computer,
+      {
+        actions: [
+          { kind: "click", ref: "e10" },
+          { kind: "fill", ref: "e10", text: "4242" },
+        ],
+      },
+      context(),
+    );
+    expect(acted).toMatchObject({ ok: false, completed: 1, uncertain: false, error: MOVED_SITE });
+    expect(device.value(10)).toBeUndefined();
   });
 });
 
