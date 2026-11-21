@@ -86,11 +86,16 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 - `400` for a body that does not parse, and for a `pairExpiresAt` that has passed or lies more than
   the pairing TTL (plus a minute of clock skew) ahead; `429` with `Retry-After` when a limit is hit,
   including a relay's ceiling on how many channels exist at once.
+- A relay may delete an unpaired channel early to make room under that ceiling (the reference relay
+  deletes the oldest unpaired one). Its `PUT` then answers `404` like any deleted channel. It never
+  deletes a paired channel for room.
 - A channel whose app verifier was never set is deleted shortly after `pairExpiresAt` (the reference
   relay waits 2 minutes, so a host that saw the first data record just in time can still confirm);
   its sockets close with `4001`. The pairing token itself stops working at `pairExpiresAt`.
 - The relay stores per channel: id, `hostVerifier`, `appVerifier` or `pairVerifier` with its
-  expiry, and timestamps. Nothing else: no account, no content, no message log.
+  expiry, and timestamps. Nothing else: no account, no content, no message log. To apply limits per
+  source it may keep, for a day after registration, a keyed hash of the registering address or of
+  its IPv6 /64; never the address itself.
 - It may delete a channel nobody connected to for a long time (at least 90 days). The ends then
   get `404` and pair again. A connected socket counts as use.
 
@@ -111,8 +116,9 @@ All bodies are JSON. Errors carry no detail. An unknown channel and a wrong toke
 
 ### Limits a relay is expected to apply
 
-Registrations per client address (order of 30 a minute), connects per channel (order of 60 a
-minute), failed token attempts per address, and bytes per channel. Exact numbers are the relay's
+Registrations per client address (order of 30 a minute), unpaired channels per source at once and
+channels per source per day (an IPv4 address or an IPv6 /64; order of 10 and 30), connects per
+channel (order of 60 a minute), failed token attempts per address, and bytes per channel. Exact numbers are the relay's
 choice; it answers `429` and the ends back off.
 
 ## Sealed channel

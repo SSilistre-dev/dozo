@@ -51,7 +51,6 @@ vi.mock("../lib/auth", () => ({
   authClient: { useSession: () => ({ data: { user: { id: "user-a" } } }) },
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <RosterShell /> }));
-vi.mock("./shell/dozo-trust-bot", () => ({ DozoTrustBotHost: () => null }));
 
 import { readPlanIntent, savePlanIntent } from "../lib/dozo-plan-intent";
 import { ShellPage } from "./dozo-shell";
