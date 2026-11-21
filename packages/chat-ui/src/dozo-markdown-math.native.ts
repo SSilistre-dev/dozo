@@ -1,11 +1,12 @@
 import type { createMarkdownIt } from "@ronradtke/react-native-markdown-display";
 
 /**
- * Math in mobile chat Markdown. The web draws `$…$` and `$$…$$` as formulas with KaTeX; drawing
- * them on a phone needs a browser engine and a script the paired-computer relay cannot carry, so
- * here the TeX shows as written, in the code style: `$…$` and a `$$…$$` on one line become an
- * inline code span, and a `$$` block a code block. Code is never read as Markdown, so `_`, `*`,
- * backslashes and HTML inside a formula stay exactly as the bot wrote them.
+ * Math in mobile chat Markdown. The web draws `$…$` and `$$…$$` as formulas with KaTeX; here the
+ * parser reads them into `dozo_math_inline` (`$…$`, and a `$$…$$` on one line) and
+ * `dozo_math_block` (a `$$` block) tokens that hold the TeX exactly as the bot wrote it. The
+ * render rules in `native/dozo-math.tsx` draw them when the app can, and otherwise show the TeX in
+ * the code style. Like code, the TeX is never read as Markdown, so `_`, `*`, backslashes and HTML
+ * inside a formula stay as written.
  *
  * The delimiter rules are the web's (`dozo-markdown-math.ts`): a single dollar opens math only
  * before a non-space and closes it only after a non-space and not before a digit, so prices
@@ -87,7 +88,7 @@ const mathSpan: InlineRule = (state, silent) => {
     return true;
   }
   if (!silent) {
-    const token = state.push("code_inline", "code", 0);
+    const token = state.push("dozo_math_inline", "span", 0);
     token.markup = "$".repeat(run);
     token.content = content.replace(/\s*\n\s*/g, " ").trim();
   }
@@ -115,8 +116,7 @@ const mathBlock: BlockRule = (state, startLine, endLine, silent) => {
   }
   if (line >= endLine) return false;
   if (silent) return true;
-  const token = state.push("fence", "code", 0);
-  token.info = "tex";
+  const token = state.push("dozo_math_block", "div", 0);
   token.markup = "$".repeat(run);
   token.map = [startLine, line + 1];
   token.content =
@@ -126,7 +126,7 @@ const mathBlock: BlockRule = (state, startLine, endLine, silent) => {
   return true;
 };
 
-/** Makes the chat's Markdown parser read math as code. */
+/** Makes the chat's Markdown parser read `$…$` and `$$…$$` as math tokens. */
 export function mathAsCode<T extends Parser>(parser: T): T {
   parser.block.ruler.before("fence", "dozo_math", mathBlock, {
     alt: ["paragraph", "reference", "blockquote", "list"],
