@@ -49,7 +49,7 @@ export function DozoSidebarStart({ chrome, mini }: { chrome: ReactNode; mini: bo
   if (!logo || !mark) return chrome;
   const spacer = windowChromeKind(desktopBridge()) === "spacer";
   return (
-    <div className="flex min-w-0 items-center gap-3" data-testid="organization-mark">
+    <div className="me-3 flex min-w-0 items-center gap-3" data-testid="organization-mark">
       {spacer ? null : chrome}
       <DozoOrganizationLogoTile logo={logo} name={mark.name} />
     </div>
