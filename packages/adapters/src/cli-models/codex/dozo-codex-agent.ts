@@ -1,7 +1,3 @@
-import type { ChildProcessByStdio } from "node:child_process";
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-import type { Readable, Writable } from "node:stream";
 import { bestEffort } from "@rakazo/logging";
 import type {
   AgentDecision,
@@ -11,8 +7,10 @@ import type {
   AgentStart,
 } from "../dozo-agent.js";
 import { startAgentBridge } from "../dozo-agent-bridge.js";
+import type { RpcMessage } from "../dozo-agent-rpc.js";
+import { AgentProcess, agentEnv, EXITED } from "../dozo-agent-rpc.js";
 import type { LocalCliHost } from "../dozo-cli-driver.js";
-import { cliAccountOverrides, probeCli, stopGroup } from "../dozo-cli-driver.js";
+import { probeCli } from "../dozo-cli-driver.js";
 
 /**
  * Codex's own app-server (`codex app-server`, JSON-RPC as JSON lines on stdio), written against
@@ -24,47 +22,6 @@ const COMMAND = "codex";
 const VERSIONS = { min: [0, 171, 0], below: [0, 172, 0] } as const;
 const MCP_SERVER = "dozo";
 const STARTUP_MS = 15_000;
-const REQUEST_MS = 30_000;
-const STOP_GRACE_MS = 2_000;
-
-/** What Codex's process may see: what it needs to find its own sign-in and reach the network. */
-const PASSTHROUGH = new Set([
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "LANG",
-  "LANGUAGE",
-  "LC_ALL",
-  "LC_CTYPE",
-  "LC_MESSAGES",
-  "TZ",
-  "TMPDIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-]);
-
-/** Codex's environment from `source`, built from the allowlist: no server secret goes in. */
-export function codexEnv(source: NodeJS.ProcessEnv): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source))
-    if (value !== undefined && PASSTHROUGH.has(key)) env[key] = value;
-  return env;
-}
-
-const driverEnv = (host: LocalCliHost) =>
-  codexEnv({
-    ...process.env,
-    // The person's own Codex home: no other is ever named.
-    ...cliAccountOverrides({ homeEnv: "CODEX_HOME" }, host, undefined),
-  });
 
 function versionInRange(text: string): boolean {
   const found = /(\d+)\.(\d+)\.(\d+)/.exec(text)?.slice(1).map(Number);
@@ -77,123 +34,7 @@ function versionInRange(text: string): boolean {
   return compare(VERSIONS.min) >= 0 && compare(VERSIONS.below) < 0;
 }
 
-type Message = {
-  id?: number | string;
-  method?: string;
-  params?: Record<string, unknown>;
-  result?: unknown;
-  error?: { code?: number; message?: string };
-};
-
-/** One `codex app-server` process and the JSON-RPC conversation with it. */
-class AppServer {
-  private next = 0;
-  private pending = new Map<
-    number,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
-  >();
-  private listeners = new Set<(message: Message) => void>();
-  private exited = false;
-
-  constructor(private child: ChildProcessByStdio<Writable, Readable, null>) {
-    child.stdin.on("error", () => {});
-    createInterface({ input: child.stdout, crlfDelay: Number.POSITIVE_INFINITY }).on(
-      "line",
-      (line) => {
-        let message: Message;
-        try {
-          message = JSON.parse(line) as Message;
-        } catch {
-          return;
-        }
-        if (message.method === undefined && typeof message.id === "number") {
-          const waiter = this.pending.get(message.id);
-          this.pending.delete(message.id);
-          if (message.error) waiter?.reject(new Error(message.error.message ?? "Codex refused."));
-          else waiter?.resolve(message.result);
-          return;
-        }
-        for (const listener of this.listeners) listener(message);
-      },
-    );
-    const gone = () => {
-      this.exited = true;
-      for (const waiter of this.pending.values()) waiter.reject(new Error("Codex stopped."));
-      this.pending.clear();
-      for (const listener of this.listeners) listener({ method: "dozo/exited" });
-    };
-    child.once("close", gone);
-    child.once("error", gone);
-  }
-
-  static start(host: LocalCliHost, cwd: string): AppServer {
-    return new AppServer(
-      spawn(COMMAND, ["app-server"], {
-        cwd,
-        env: driverEnv(host),
-        stdio: ["pipe", "pipe", "ignore"],
-        detached: true,
-      }),
-    );
-  }
-
-  request<T>(method: string, params: Record<string, unknown>): Promise<T> {
-    if (this.exited) return Promise.reject(new Error("Codex stopped."));
-    const id = ++this.next;
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Codex did not answer ${method}.`));
-      }, REQUEST_MS);
-      this.pending.set(id, {
-        resolve: (value) => {
-          clearTimeout(timer);
-          resolve(value as T);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      });
-      this.send({ id, method, params });
-    });
-  }
-
-  notify(method: string) {
-    this.send({ method });
-  }
-
-  respond(
-    id: number | string,
-    body: { result: unknown } | { error: { code: number; message: string } },
-  ) {
-    this.send({ id, ...body });
-  }
-
-  on(listener: (message: Message) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private send(message: Record<string, unknown>) {
-    // After Codex exits a write fails on its own; the stdin error handler takes it.
-    this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-  }
-
-  /** Asks Codex and what it started to stop, and ends them if they have not soon after. */
-  close() {
-    this.exited = true;
-    const pid = this.child.pid;
-    try {
-      if (pid) process.kill(-pid, "SIGTERM");
-    } catch {
-      // Already gone.
-    }
-    setTimeout(() => stopGroup(pid), STOP_GRACE_MS).unref();
-  }
-}
-
-async function initialize(server: AppServer) {
+async function initialize(server: AgentProcess) {
   await server.request("initialize", {
     clientInfo: { name: "dozo", title: "Dozo", version: "1" },
     capabilities: { experimentalApi: false },
@@ -202,13 +43,13 @@ async function initialize(server: AppServer) {
 }
 
 /** Whether Codex has the person's own sign-in; asked before any turn so none starts without. */
-async function signedIn(server: AppServer): Promise<boolean> {
+async function signedIn(server: AgentProcess): Promise<boolean> {
   const answer = await server.request<{ account?: unknown }>("account/read", {});
   return Boolean(answer.account);
 }
 
 /** Starts a thread that asks the person, and only the person, before it acts beyond reading. */
-async function startThread(server: AppServer, options: Omit<AgentStart, "host">) {
+async function startThread(server: AgentProcess, options: Omit<AgentStart, "host">) {
   const started = await server.request<{ thread: { id: string } }>("thread/start", {
     cwd: options.cwd,
     ...(options.model ? { model: options.model } : {}),
@@ -223,11 +64,11 @@ async function startThread(server: AppServer, options: Omit<AgentStart, "host">)
 }
 
 /** Waits until Codex says the bridge to Dozo's tools is ready; false when it failed or never did. */
-function bridgeReady(server: AppServer): Promise<boolean> {
+function bridgeReady(server: AgentProcess): Promise<boolean> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => finish(false), STARTUP_MS);
     const stop = server.on((message) => {
-      if (message.method === "dozo/exited") return finish(false);
+      if (message.method === EXITED) return finish(false);
       if (message.method !== "mcpServer/startupStatus/updated") return;
       if (message.params?.name !== MCP_SERVER) return;
       if (message.params.status === "ready") finish(true);
@@ -244,7 +85,7 @@ function bridgeReady(server: AppServer): Promise<boolean> {
 
 /** The approval a server request asks for, as the card shows it; undefined for anything else. */
 export function codexApproval(
-  message: Message,
+  message: RpcMessage,
   files: readonly string[] = [],
 ): { summary: string; detail?: string } | undefined {
   const params = message.params ?? {};
@@ -294,7 +135,7 @@ export function codexAnswer(
 }
 
 const codexVersion = (host: LocalCliHost) =>
-  probeCli({ command: COMMAND, env: () => driverEnv(host) }, ["--version"], {});
+  probeCli({ command: COMMAND, env: () => agentEnv(host) }, ["--version"], {});
 
 const MINUTE = 60_000;
 
@@ -308,7 +149,7 @@ function limitMessage(resetsAt: number | undefined): string {
 export const CODEX_SIGNED_OUT_ERROR =
   "Codex on this computer is not signed in. Run `codex login`, then try again.";
 
-function codexSession(server: AppServer, threadId: string): AgentSession {
+function codexSession(server: AgentProcess, threadId: string): AgentSession {
   /** Requests Codex waits on, by the id the card's answer names. */
   const waiting = new Map<
     string,
@@ -328,8 +169,7 @@ function codexSession(server: AppServer, threadId: string): AgentSession {
       };
       const stop = server.on((message) => {
         const params = message.params ?? {};
-        if (message.method === "dozo/exited")
-          return push({ type: "failed", message: "Codex stopped." });
+        if (message.method === EXITED) return push({ type: "failed", message: "Codex stopped." });
         if (message.id !== undefined && message.method) {
           const itemId = typeof params.itemId === "string" ? params.itemId : "";
           const approval = codexApproval(message, changedFiles.get(itemId));
@@ -463,7 +303,7 @@ export const codexAgentDriver: AgentDriver = {
     if (!versionInRange(version.stdout))
       return "This Codex version has not been checked with Dozo yet; use Codex 0.171.";
     const bridge = await startAgentBridge();
-    const server = AppServer.start(host, workDir);
+    const server = AgentProcess.start("Codex", COMMAND, ["app-server"], host, workDir);
     try {
       await initialize(server);
       if (!(await signedIn(server))) return CODEX_SIGNED_OUT_ERROR;
@@ -484,7 +324,7 @@ export const codexAgentDriver: AgentDriver = {
     }
   },
   async start(options) {
-    const server = AppServer.start(options.host, options.cwd);
+    const server = AgentProcess.start("Codex", COMMAND, ["app-server"], options.host, options.cwd);
     try {
       await initialize(server);
       // Codex accepts a turn without a sign-in and then retries it again and again.

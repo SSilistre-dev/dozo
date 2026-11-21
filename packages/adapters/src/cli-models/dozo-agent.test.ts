@@ -13,12 +13,13 @@ import {
   codexAgentDriver,
   codexAnswer,
   codexApproval,
-  codexEnv,
 } from "./codex/dozo-codex-agent.js";
 import type { AgentDriver, AgentSession, AgentSessionEvent } from "./dozo-agent.js";
 import {
   AGENT_INTERRUPTED_ERROR,
   AGENT_OWN_RUNS_ONLY,
+  AGENT_RECONNECT_ERROR,
+  AGENT_TOKEN_TEXT,
   ALLOW_ONCE,
   agentInput,
   DECLINE,
@@ -27,6 +28,7 @@ import {
   withAgentRuntime,
 } from "./dozo-agent.js";
 import { startAgentBridge } from "./dozo-agent-bridge.js";
+import { allowlistedEnv as codexEnv } from "./dozo-agent-rpc.js";
 import { AGENT_CATALOG_ERROR, registerLocalCliProviders } from "./dozo-cli-providers.js";
 import { cliModelRuntime, ownRun } from "./dozo-cli-runtime.js";
 
@@ -97,7 +99,7 @@ function request(over: Partial<AgentRunRequest> = {}): AgentRunRequest {
     instructions: "You are a helpful bot.",
     history: [],
     tools: [],
-    model: { provider: CODEX_AGENT_PROVIDER_ID, id: "gpt-6-luna" },
+    model: { provider: CODEX_AGENT_PROVIDER_ID, id: "gpt-6-luna", apiKey: "dozo-cli-account:home" },
     ...over,
   } as AgentRunRequest;
 }
@@ -185,6 +187,15 @@ describe.skipIf(process.platform === "win32")("agent mode with Codex", () => {
     await expect(
       collect(runtime(undefined, async () => "Only your own messages.").run(request(), {})),
     ).rejects.toThrow("Only your own messages.");
+    expect(logged()).toEqual([]);
+  });
+
+  it("refuses a connection that was not made in settings", async () => {
+    computer("reply");
+    const forged = request({
+      model: { provider: CODEX_AGENT_PROVIDER_ID, id: "m", apiKey: "sk-x" },
+    });
+    await expect(collect(runtime().run(forged, {}))).rejects.toThrow(AGENT_RECONNECT_ERROR);
     expect(logged()).toEqual([]);
   });
 
@@ -717,8 +728,16 @@ describe("the agent runtime's own rules", () => {
 });
 
 describe("who may start an agent run", () => {
-  const prismaWith = (run: unknown) =>
-    ({ run: { findUnique: async () => run } }) as unknown as Parameters<typeof ownRun>[0];
+  const prismaWith = (run: unknown, tokenText = false) =>
+    ({
+      run: { findUnique: async () => run },
+      $queryRaw: async () => [{ sourced: tokenText }],
+    }) as unknown as Parameters<typeof ownRun>[0];
+
+  it("refuses a run that text sent with an access token reached", async () => {
+    const run = { trigger: "user", userId: "ada", botId: "b", threadId: "t", sourceMessage: null };
+    expect(await ownRun(prismaWith(run, true), "run-1")).toBe(AGENT_TOKEN_TEXT);
+  });
 
   it.each([
     [{ trigger: "user", userId: "ada", sourceMessage: { authorUserId: "ada" } }, undefined],
@@ -747,7 +766,9 @@ describe.skipIf(process.platform === "win32")("the server's runtime", () => {
     computer("reply");
     const prisma = {
       user: { count: async () => 1 },
-      run: { findUnique: async () => ({ trigger: "messaging", userId: "ada", sourceMessage: null }) },
+      run: {
+        findUnique: async () => ({ trigger: "messaging", userId: "ada", sourceMessage: null }),
+      },
     } as unknown as Parameters<typeof cliModelRuntime>[2]["prisma"];
     const serverRuntime = cliModelRuntime(
       { defaultProvider: "openrouter", defaultModel: "m", deploymentModelConfigured: false },

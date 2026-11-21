@@ -81,5 +81,23 @@ for r in dozo-app dozo-app-assets; do
 done
 [ "$(referrer dozo-app-shared)" = "no-referrer" ] || bad "dozo-app-shared: Referrer-Policy want no-referrer only, got '$(referrer dozo-app-shared)'"
 
+# The MCP endpoint's OAuth metadata goes to the api, and only that /.well-known/ path: the passkey
+# association files stay on the web container. While the api is down its paths answer 502 instead
+# of falling through to the web container, so that router takes the same paths.
+api_rule=$(label "$base" api traefik.http.routers.dozo-api.rule)
+case "$api_rule" in
+  *'PathPrefix(`/.well-known/oauth-protected-resource`)'*) ;;
+  *) bad "dozo-api does not take /.well-known/oauth-protected-resource: $api_rule" ;;
+esac
+for svc in api web; do
+  for r in $(jq -r --arg s "$svc" '.services[$s].labels | keys[] | capture("^traefik\\.http\\.routers\\.(?<r>[^.]+)\\.rule$").r' <<<"$base"); do
+    rule=$(label "$base" "$svc" "traefik.http.routers.$r.rule")
+    rest=${rule//'PathPrefix(`/.well-known/oauth-protected-resource`)'/}
+    case "$rest" in *well-known*) bad "router $r takes another /.well-known/ path: $rule" ;; esac
+  done
+done
+[ "$(label "$base" web traefik.http.routers.dozo-app-noapi.rule)" = "$api_rule" ] ||
+  bad "dozo-app-noapi does not take the same paths as dozo-api"
+
 [ "$FAILED" = 0 ] && echo "[compose.test] ok"
 exit "$FAILED"

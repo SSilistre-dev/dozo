@@ -161,3 +161,18 @@ export async function deleteProbe(request: APIRequestContext, probe: Probe): Pro
   if (left !== "null" && left !== "") throw new Error("a session is left after the delete");
   return `delete-user ${deleted.status()}; sign-in again 401; session null`;
 }
+
+/**
+ * Opens the password form of the Turkish sign-in page, on the email-first screen ("Bunun yerine
+ * şifre kullan") and on the earlier one alike (the password form, or "E-posta ile devam et" after
+ * a choice of providers), so the live scenarios pass before and after a deploy of either.
+ */
+export async function openPasswordForm(page: Page) {
+  const password = page.getByRole("button", { name: "Bunun yerine şifre kullan" });
+  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
+  const field = page.getByPlaceholder("Parola");
+  await expectFlow(password.or(choice).or(field).first()).toBeVisible();
+  if (await password.isVisible()) await password.click();
+  else if (await choice.isVisible()) await choice.click();
+  await expectFlow(field).toBeVisible();
+}

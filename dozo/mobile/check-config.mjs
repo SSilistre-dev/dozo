@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 /** The old name stays only in these identifiers (dozo/brand/README.md, "Identifiers"). */
 const KEPT = ['"scheme":["rakazo","dozo"]', "Rakazo.icon", '"targetName":"RakazoWidgets"'];
 
+/** The application id and iOS bundle id (the `com.rakazo.app` literal rule in brand.json). */
+const DOZO_ID = "dev.ssilistre.dozo";
+
 /** Upstream's Expo account, EAS project, update channel, bundle ids, domain and GitHub owner. */
 const FOREIGN = [
   /inbox-?zero/i,
@@ -49,6 +52,16 @@ export function problems(input, apiUrl) {
     `scheme is ${JSON.stringify(config.scheme)}: pairing links (dozo://pair) would not open the app`,
   );
   want(config.android?.package === id, "android.package differs from ios.bundleIdentifier");
+  // The id family is the literal in dozo/brand/brand.json; a store app can never change it.
+  want(id === DOZO_ID, `ios.bundleIdentifier ${JSON.stringify(id)} is not the Dozo id ${DOZO_ID}`);
+  want(
+    config.android?.package === DOZO_ID,
+    `android.package ${JSON.stringify(config.android?.package)} is not the Dozo id ${DOZO_ID}`,
+  );
+  // The release build takes the version name from here and sets its own versionCode (README, Release).
+  want(/^\d+\.\d+\.\d+$/.test(config.version ?? ""), `version is ${JSON.stringify(config.version)}`);
+  const code = config.android?.versionCode;
+  want(Number.isInteger(code) && code > 0, `android.versionCode is ${JSON.stringify(code)}`);
   const extensions = config.extra?.eas?.build?.experimental?.ios?.appExtensions ?? [];
   want(extensions.length > 0, "no app extensions listed");
   for (const extension of extensions) {

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Alert } from "react-native";
 import { useDozoActivity } from "../lib/dozo-activity";
+import { useFeedbackStatus } from "../lib/dozo-feedback";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query";
@@ -16,13 +17,15 @@ const HOUR_MINUTES = Array.from({ length: 24 }, (_, hour) => hour * 60);
 
 /**
  * General settings' rows the web app has there too: the account's quiet hours, in which its
- * routines start nothing, and the organization's activity log for those who may read it.
+ * routines start nothing, the organization's activity log for those who may read it, and the
+ * access tokens and feedback the web app keeps under Security and its account menu.
  */
 export function DozoGeneralRows() {
   return (
     <>
       <DozoQuietHoursRows />
       <DozoActivityRow />
+      <DozoTokensAndFeedbackRows />
     </>
   );
 }
@@ -106,6 +109,31 @@ function DozoActivityRow() {
         onPress={() => router.push("/dozo-activity")}
         title={t`Activity`}
       />
+    </SettingsGroup>
+  );
+}
+
+/** Access tokens always; Send feedback only where the server takes it, as on the web. */
+function DozoTokensAndFeedbackRows() {
+  const { t } = useLingui();
+  const router = useRouter();
+  const feedback = useFeedbackStatus();
+  return (
+    <SettingsGroup>
+      <SettingsRow
+        accessibilityRole="button"
+        chevron="right"
+        onPress={() => router.push("/dozo-access-tokens")}
+        title={t`Access tokens`}
+      />
+      {feedback?.mode ? (
+        <SettingsRow
+          accessibilityRole="button"
+          chevron="right"
+          onPress={() => router.push("/dozo-feedback")}
+          title={t`Send feedback`}
+        />
+      ) : null}
     </SettingsGroup>
   );
 }

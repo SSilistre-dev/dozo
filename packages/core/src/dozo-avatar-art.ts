@@ -293,15 +293,34 @@ export function dozoCharacterForLook(identity: string, avatarValue?: string | nu
 }
 
 /**
+ * The colour a bot wears, as `#rrggbb`: the one picked for it (its swatch), or the one upstream
+ * assigns a bot without a valid colour. Its accessory, your own bubble in its chat and its
+ * notification portrait all take it from here. White has none: such a bot is drawn in the head's
+ * ink alone, since a white accessory would vanish on a white head or a light page.
+ */
+export function dozoBotColor(identity: string, avatarValue?: string | null): string | undefined {
+  const parsed = avatarValue ? parseBotAvatarValue(avatarValue) : undefined;
+  const explicit = parsed && "color" in parsed ? parsed.color : avatarValue;
+  const def = resolvePersonaColorDef(identity, explicit);
+  if (def.id === "white") return undefined;
+  const digits = def.hex.slice(1).toLowerCase();
+  return `#${digits.length === 3 ? [...digits].map((c) => c + c).join("") : digits}`;
+}
+
+/**
  * A still drawing for surfaces without the web component. It stands on a dark tile, like the app
  * icon, because a notification gives no say over the surface behind it.
  */
-export function dozoAvatarSvg(character: DozoCharacter, size = 96): string {
+export function dozoAvatarSvg(
+  character: DozoCharacter,
+  size = 96,
+  accent: string = DOZO_BOT_PALETTE[character][1],
+): string {
   const ink = darkTokens.foreground;
   const fill: Record<DozoPaint, string> = {
     body: `fill="${ink}" fill-rule="evenodd"`,
     line: `fill="none" stroke-width="2.6" stroke-linecap="round" stroke="${ink}"`,
-    accent: `fill="${DOZO_BOT_PALETTE[character][1]}"`,
+    accent: `fill="${accent}"`,
   };
   const shapes = DOZO_AVATAR_ART[character].map(([, tag, paint, attrs]) => {
     const drawn = Object.entries(attrs).map(([name, value]) => `${name}="${value}"`);
@@ -316,6 +335,10 @@ export function notificationAvatarSource(bot: { id: string; color: string }): st
     ? parseBotAvatarValue(bot.color)
     : undefined;
   if (parsed?.kind === "image") return parsed.imageUrl;
-  const drawing = dozoAvatarSvg(dozoCharacterForLook(bot.id, bot.color));
+  const drawing = dozoAvatarSvg(
+    dozoCharacterForLook(bot.id, bot.color),
+    96,
+    dozoBotColor(bot.id, bot.color) ?? darkTokens.foreground,
+  );
   return `data:image/svg+xml,${encodeURIComponent(drawing)}`;
 }
