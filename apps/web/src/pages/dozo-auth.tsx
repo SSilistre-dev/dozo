@@ -1,9 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { signInProviders } from "@rakazo/contracts";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
 import { Button, OptionSelect } from "@rakazo/ui-web";
 import type { ComponentProps } from "react";
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
+import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { planIntentFromParams, savePlanIntent } from "../lib/dozo-plan-intent";
 import { markSignupStarted } from "../lib/dozo-signup-start";
@@ -11,6 +13,8 @@ import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import type { UiLocale } from "../lib/ui-locale";
 import { UI_LOCALES } from "../lib/ui-locale";
 import { AuthFrame, submitClass, AuthPage as UpstreamAuthPage } from "./Auth";
+import { DozoCodeSignIn } from "./dozo-code-sign-in";
+import { dozoCodeSignInAvailable } from "./dozo-email-code-link";
 import { HostedSignIn } from "./dozo-hosted-login";
 
 /**
@@ -36,6 +40,11 @@ import { HostedSignIn } from "./dozo-hosted-login";
  * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
  * for this tab (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
  * the same way. The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
+ *
+ * Where the server signs in with an emailed code, sign-in starts with the address alone and then
+ * the code (dozo-code-sign-in.tsx, at `/sign-in`); upstream's password form stays one step away at
+ * `/sign-in/email`. A server without it keeps upstream's page at both addresses. Sign-up is
+ * upstream's, unchanged.
  */
 /** A server on the person's own computer: the desktop app and the server bundle serve it here. */
 const ownComputer = () => ["127.0.0.1", "[::1]"].includes(window.location.hostname);
@@ -48,7 +57,7 @@ function withoutLinkParams(current: URLSearchParams): URLSearchParams {
 
 export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   const { t } = useLingui();
-  const { search } = useLocation();
+  const { search, pathname } = useLocation();
   const [params, setParams] = useSearchParams();
   const asked = params.get("lang");
   const wanted = UI_LOCALES.find((code) => code === asked);
@@ -94,6 +103,8 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   }, [title]);
   const [signups, setSignups] = useState<"pending" | "open" | "closed">("pending");
   const [hosted, setHosted] = useState(false);
+  const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
+  const [capabilitiesFailed, setCapabilitiesFailed] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -103,11 +114,13 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
       (capabilities) => {
         if (!active) return;
         setUnreachable(false);
+        setCapabilities(capabilities);
         setHosted(capabilities.hostedLogin === true);
         setSignups(capabilities.signupsOpen === false ? "closed" : "open");
       },
       () => {
         if (!active) return;
+        setCapabilitiesFailed(true);
         if (ownComputer()) setUnreachable(true);
         else setSignups("open");
       },
@@ -142,9 +155,19 @@ export function AuthPage(props: ComponentProps<typeof UpstreamAuthPage>) {
   }
   // A language asked for in the address is shown from the first paint, never after a flash.
   if (wanted && wanted !== locale) return null;
+  const codeFirst = props.mode === "in" && pathname === "/sign-in";
+  // Sign-in waits for the server's answer, so neither form flashes before the other.
+  if (codeFirst && !capabilities && !capabilitiesFailed)
+    return <div className="h-full bg-background" />;
   return (
     <div className="contents" data-dozo-signups={signups}>
-      {hosted ? <HostedSignIn /> : <UpstreamAuthPage {...props} />}
+      {hosted ? (
+        <HostedSignIn />
+      ) : codeFirst && dozoCodeSignInAvailable(capabilities) && capabilities ? (
+        <DozoCodeSignIn providers={signInProviders(capabilities)} />
+      ) : (
+        <UpstreamAuthPage {...props} />
+      )}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2">
         <OptionSelect
           size="sm"
