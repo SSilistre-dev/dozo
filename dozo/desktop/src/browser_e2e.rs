@@ -778,3 +778,88 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
     );
     browsers.close_all();
 }
+
+/// A plain HTTP server that keeps each connection open for more requests and records the host
+/// every request named; returns its port and the record.
+fn keep_alive_server(body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let hosts = Arc::new(Mutex::new(Vec::new()));
+    let seen = hosts.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let seen = seen.clone();
+            std::thread::spawn(move || {
+                let mut stream = stream;
+                let mut buffer = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let Ok(read) = stream.read(&mut chunk) else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    buffer.extend_from_slice(&chunk[..read]);
+                    while let Some(end) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head: Vec<u8> = buffer.drain(..end + 4).collect();
+                        let head = String::from_utf8_lossy(&head).to_lowercase();
+                        let host = head
+                            .lines()
+                            .find_map(|line| line.strip_prefix("host: "))
+                            .unwrap_or("")
+                            .to_owned();
+                        seen.lock().unwrap().push(host);
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                    }
+                }
+            });
+        }
+    });
+    (port, hosts)
+}
+
+/// A plain HTTP request for one site never goes to another site's server, even if the browser
+/// sends a second request on the proxy connection it used for the first.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_plain_requests_reach_only_their_own_site() {
+    let (a, a_hosts) = keep_alive_server("<!doctype html><title>A</title><p>site a</p>");
+    let (b, b_hosts) = keep_alive_server("<!doctype html><title>B</title><p>site b</p>");
+    let root = root();
+    let program = find().expect("a Chromium-family browser on this computer");
+    let browsers = Browsers::with(root.join("browser-profiles"), Some(program), true)
+        .with_local_ports(vec![a, b]);
+    for round in 0..4 {
+        for (port, name) in [(a, "site a"), (b, "site b")] {
+            let url = format!("http://127.0.0.1:{port}/{round}");
+            call(&browsers, "Page.navigate", json!({ "url": url })).await;
+            wait_for(&browsers, name).await;
+        }
+    }
+    let wrong = |hosts: &Arc<Mutex<Vec<String>>>, port: u16| {
+        hosts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|host| !host.ends_with(&format!(":{port}")))
+            .count()
+    };
+    let (to_a, to_b) = (a_hosts.lock().unwrap().len(), b_hosts.lock().unwrap().len());
+    let misrouted = wrong(&a_hosts, a) + wrong(&b_hosts, b);
+    let reused = browsers
+        .proxy
+        .lock()
+        .await
+        .as_ref()
+        .map_or(0, |proxy| proxy.reused.load(Ordering::SeqCst));
+    println!(
+        "E2E: {to_a} requests reached site a and {to_b} site b; {misrouted} named the other site; the browser sent {reused} requests on a proxy connection it had used, each closed and sent again"
+    );
+    assert_eq!(misrouted, 0, "a request reached another site's server");
+    browsers.close_all();
+}

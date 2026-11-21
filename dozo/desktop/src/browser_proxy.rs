@@ -46,6 +46,9 @@ impl Local {
 /// A running proxy; it stops with this value.
 pub struct Proxy {
     pub port: u16,
+    /// How often the browser sent another request on a connection it had used (tests read it).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub reused: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     accept: tokio::task::JoinHandle<()>,
 }
 
@@ -60,18 +63,28 @@ impl Proxy {
     pub async fn start(local: Local) -> std::io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
+        let reused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = reused.clone();
         let accept = tokio::spawn(async move {
             while let Ok((client, _)) = listener.accept().await {
-                tokio::spawn(serve(client, local.clone()));
+                tokio::spawn(serve(client, local.clone(), counted.clone()));
             }
         });
-        Ok(Self { port, accept })
+        Ok(Self {
+            port,
+            reused,
+            accept,
+        })
     }
 }
 
 /// One client connection: a CONNECT tunnel, or one plain HTTP request sent on with
 /// `connection: close`, so the next request (maybe for another host) comes on a new connection.
-async fn serve(mut client: TcpStream, local: Local) {
+async fn serve(
+    mut client: TcpStream,
+    local: Local,
+    reused: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) {
     let Some((head, rest)) = read_head(&mut client).await else {
         return;
     };
@@ -140,10 +153,49 @@ async fn serve(mut client: TcpStream, local: Local) {
         }
     }
     sent.push_str("connection: close\r\n\r\n");
-    if server.write_all(sent.as_bytes()).await.is_err() || server.write_all(&rest).await.is_err() {
+    // Only this request goes to this server: its body (by its length; a body of unknown length
+    // is refused), and nothing the browser sends after it on this connection, which could be
+    // meant for another site.
+    let header = |name: &str| {
+        text.split("\r\n").skip(1).find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.trim()
+                .eq_ignore_ascii_case(name)
+                .then(|| value.trim().to_owned())
+        })
+    };
+    if header("transfer-encoding").is_some() {
+        let _ = client.write_all(REFUSED).await;
         return;
     }
-    let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+    let length: usize = header("content-length")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let mut body = rest;
+    body.truncate(length);
+    if server.write_all(sent.as_bytes()).await.is_err() || server.write_all(&body).await.is_err() {
+        return;
+    }
+    let remaining = (length - body.len()) as u64;
+    let (mut from_client, mut to_client) = client.split();
+    if tokio::io::copy(&mut (&mut from_client).take(remaining), &mut server)
+        .await
+        .is_err()
+    {
+        return;
+    }
+    // The answer goes back until the server ends it. Should the browser send another request on
+    // this connection meanwhile (it does reuse them), both are closed instead: the browser sends
+    // it again on a new connection, through this check.
+    let mut next = [0u8; 1];
+    tokio::select! {
+        _ = tokio::io::copy(&mut server, &mut to_client) => {}
+        read = from_client.read(&mut next) => {
+            if matches!(read, Ok(1)) {
+                reused.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
 }
 
 /// The request head up to its blank line, and whatever came after it.
@@ -527,5 +579,26 @@ mod tests {
             !public_host("64:ff9b:1::a00:1"),
             "a network's own NAT64 prefix"
         );
+    }
+
+    #[tokio::test]
+    async fn a_second_request_on_one_connection_is_never_sent_on() {
+        let port = echo().await;
+        let proxy = Proxy::start(Local::All).await.unwrap();
+        let answer = ask(
+            &proxy,
+            &format!(
+                "POST http://127.0.0.1:{port}/one HTTP/1.1\r\ncontent-length: 3\r\n\r\nabcGET http://127.0.0.1:{port}/two HTTP/1.1\r\n\r\n"
+            ),
+        )
+        .await;
+        assert!(answer.contains("POST /one HTTP/1.1|"), "{answer}");
+        assert!(!answer.contains("/two"), "{answer}");
+        let chunked = ask(
+            &proxy,
+            &format!("POST http://127.0.0.1:{port}/c HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\n0\r\n\r\n"),
+        )
+        .await;
+        assert!(chunked.starts_with("HTTP/1.1 502"), "{chunked}");
     }
 }
