@@ -17,73 +17,94 @@ privacy page and `privacy.md`.
 
 ## Paid plans and the external purchase (App Store 3.1.1, Play payments policy)
 
-RISK, and the biggest one. The app sells nothing through the stores' own billing.
+OK in the App Store build. `dozo/mobile/build.sh archive` always bundles with
+`EXPO_PUBLIC_DOZO_STORE_BUILD=1` (`DOZO_MOBILE_STORE_BUILD=1 build.sh sim` shows it on the simulator),
+read once in `apps/mobile/lib/dozo-store-build.ts`. That build sells nothing and links to no
+payment page:
 
-- A Free account that hits a limit gets an alert whose upgrade button opens the web Billing page in
-  the system browser (`apps/mobile/lib/dozo-plan-limit.ts`, `openPlanUpgrade`, `webBillingUrl`).
-- The in-app Billing and paywall screens (`app/(settings)/billing.tsx`, `app/paywall.tsx`) start a
-  subscription or buy credits on the payment processor's checkout page, opened inside the app as a
-  browser session (`apps/mobile/lib/billing.ts`, `openBillingPage`). They appear only when the
-  server has billing on (`me.billingEnabled`, `app/(settings)/account.tsx`).
-- Plans and credits are digital goods used inside the app. Apple's 3.1.1 requires in-app purchase
-  for them, with exceptions that depend on the storefront (for example the United States, where a
-  link out to the web is allowed, and the EU's own rules). Google Play requires Play Billing for
-  digital goods unless an alternative billing programme is joined. The reader-app exception (3.1.3(a))
-  covers content bought elsewhere, not a service like this one.
-- Options for the owner, none built: (a) ship the iOS and Play builds without a way to buy, with
-  billing hidden by the server for those clients, and sell on the web only; (b) add the stores'
-  purchase flows (a large piece of work with a server side); (c) keep the links and apply for
-  the external-link entitlement or programme where it is allowed, accepting a rejection elsewhere.
-  Whichever it is, state it in the review notes. Do not describe the Free plan in the listing as
-  "free app with in-app plans" unless the choice matches.
+- no Billing row in Settings, no paywall for an organization without a plan, no past-due line
+  with "Manage billing", no invite gift (a free month on a paid plan); a link to Billing or the
+  paywall lands on the chats (`components/dozo-store-gate.tsx`);
+- a limit (no computer on Free, hours used up, shared space full) is named without Upgrade, without
+  "ask the owner to upgrade" and without "change the plan" (alerts, the chat's failed run, the
+  computer screen, the Own computer switch); deleting files stays the way out of a full space;
+- a plan bought on the web still works in the app; the app only stops offering one.
+
+Decision: client-side, not by the server hiding `billing` per client: the server cannot tell a
+store binary from a sideloaded or self-built one, and the store rule is about the binary.
+Not covered: what a bot writes. A Free run is never told to suggest an upgrade
+(`packages/adapters/src/dozo-no-computer.prompt.ts`); a paid plan out of hours may say "get more
+computer hours" or "update the payment" in prose, with no link. An organization without any plan
+(rare: a new one starts on Free) sees its runs fail with the server's reason and no way to buy.
+Play: the Android build is not a store build yet; the same flag applies when it is.
 
 ## Sign in with Apple (App Store 4.8)
 
-TODO owner, depends on the hosted server's settings. The app lists the sign-in providers the server
-offers (`signInProviders` in `packages/contracts/src/auth.ts`, `apps/mobile/app/sign-in.tsx`) and
-shows Apple's native button when "apple" is among them (`apps/mobile/lib/native-provider-button.tsx`,
-the `expo-apple-authentication` plugin is in `app.json`). The built-in providers are Google and
-Apple, set by `GOOGLE_CLIENT_ID` and `APPLE_CLIENT_ID` (`packages/auth/src/social.ts`,
-`apps/api/src/env.ts`). Rule of thumb: if the hosted server offers Google, it must offer Apple too;
-with email and password only, 4.8 does not apply. Sign in with Apple needs the capability on the
-App ID, which `-allowProvisioningUpdates` normally adds, and the server's Apple client id and key.
+OK in the App Store build: a third-party sign-in (Google) shows only when the server also offers
+Sign in with Apple; organization sign-in (OIDC, exempt) and email stay
+(`storeSignInProviders`, an anchored rule on `apps/mobile/app/sign-in.tsx`). TODO owner: to keep
+Google in the store app, enable Apple on the hosted server (`APPLE_CLIENT_ID`,
+`packages/auth/src/social.ts`) and the capability on the App ID. Without it, someone who only ever
+signed in with Google cannot sign in on iPhone (an emailed code or a password set on the web still
+works). Linking Google to an existing account from the profile screen is unchanged.
 
 ## Permission purpose strings
 
-OK. The usage descriptions are in `apps/mobile/app.json` and are branded Dozo texts:
-camera and photo library (attach images), microphone and speech recognition (calls and dictation),
-local network (reach a server on the user's network). Each names a feature the user started. The
-app declares background modes `voip`, `audio` and `remote-notification`: App Review expects incoming
-calls to use CallKit (the app's native call module reports them, `lib/incoming-calls.ts`) and
-background audio to be a call in progress. Say so in the review notes. Capabilities the App ID
-needs (registered automatically by the archive step unless Apple refuses one): push, time-sensitive
-and communication notifications, associated domains (passkeys), app groups, Siri.
-TODO owner: check each appears on the identifier after the first archive.
+OK. In `apps/mobile/app.json` through anchored rules, branded Dozo texts, held by
+`dozo/mobile/check-config.mjs`: camera and photo library (attach images), photo library add (the
+share sheet's Save Image), microphone (calls and dictation, the same text from all three plugins
+that write it), speech recognition (calls and dictation), local network (a server on the user's
+network). No location, contacts, calendar, Bluetooth, tracking or Face ID use in the app's code;
+`expo-secure-store` may add its default Face ID string, unused. Background modes `voip`, `audio` and
+`remote-notification`: App Review expects incoming calls to use CallKit (the app's native call
+module reports them, `lib/incoming-calls.ts`) and background audio to be a call in progress. Say
+so in the review notes. Capabilities the App ID needs (registered by the archive step unless Apple
+refuses one): push, time-sensitive and communication notifications, associated domains (passkeys),
+app groups, Siri. TODO owner: check each appears on the identifier after the first archive.
+
+Privacy manifest: `ios.privacyManifests` declares UserDefaults (CA92.1, the app's own Swift
+modules), file timestamps (C617.1, 0A2A.1, 3B52.1), boot time (35F9.1) and disk space (E174.1,
+85F4.1) for React Native; `build.sh` fails when the generated `PrivacyInfo.xcprivacy` lacks them.
+
+Status bar: `UIViewControllerBasedStatusBarAppearance` is false, so the bar takes the style the
+app sets from its theme (`apps/mobile/app/_layout.tsx`); it read dark on the dark sign-in screen.
 
 ## Export compliance (encryption)
 
-TODO owner, decide before the first TestFlight upload. `apps/mobile/app.json` (upstream's value,
-`ios.config.usesNonExemptEncryption: false`) answers "no" to App Store Connect's question, so the
-upload asks nothing. The app does use encryption beyond HTTPS and the system's own: the relay
-seals phone-to-computer traffic with AES-256-GCM, X25519 and HKDF through `@noble/ciphers` and
-`@noble/curves` (`dozo/relay/PROTOCOL.md`, `apps/mobile/lib/dozo-relay-connection.ts`). Apple's
-questionnaire counts standard algorithms in the app's own code as "yes", with the usual exemption
-for mass-market software (a self-classification, an annual report to the US export office and, for
-France, a declaration). Flipping the answer is one anchored rule on `app.json`, not made here
-because it is the owner's call after checking with their adviser. Google Play has no equivalent
-question.
+TODO owner, decide before the first TestFlight upload; the value is unchanged here.
+`apps/mobile/app.json` (upstream's `ios.config.usesNonExemptEncryption: false`, written to the plist
+as `ITSAppUsesNonExemptEncryption` NO) answers "no encryption beyond the exempt kind", so App Store
+Connect asks nothing. The app does use encryption in its own code beyond HTTPS and the system's:
+the relay seals phone-to-computer traffic with AES-256-GCM, X25519 and HKDF through
+`@noble/ciphers` and `@noble/curves` (`dozo/relay/PROTOCOL.md`, `apps/mobile/lib/dozo-relay-crypto.ts`).
+Options:
+
+- Keep `false`: no code change. It states the app uses only exempt encryption, which the relay's
+  own AES-GCM does not obviously meet; the risk is a false declaration, not a rejection.
+- Set `true` (one anchored rule on `app.json`, and `check-config.mjs` to hold it): every upload
+  then waits on App Store Connect's questions. The expected answers: standard algorithms, in
+  addition to the system's; mass-market (exempt under Category 5 Part 2); then whether the app is
+  offered in France, which needs the French encryption declaration. Once Apple issues an export
+  compliance code, `ITSEncryptionExportComplianceCode` in the plist skips the question per build.
+- Leave France out of the storefronts to avoid the declaration.
+
+Google Play has no equivalent question.
 
 ## User-generated and AI content
 
-RISK. Guideline 1.2 and Play's AI-generated-content policy ask for a way to report offensive
-content and to block abusive users where the app has user-generated content. The app has shared
-Spaces and group threads with invited members (`app/space-members.tsx`, `app/group-thread.tsx`)
-and bot replies from a model. There is no report or block action in the mobile code today.
-Mitigations that exist: people join a Space only by invitation, and the server owner (the operator)
-moderates. Options: add a report action that emails the support address (a code change, not
-done here), or explain in the review notes that content is private to invited members and the
-operator contact is `TODO owner`. Also: Play's policy wants AI features to show a feedback path;
-a support address in the listing covers the minimum.
+OK, with limits. Guideline 1.2 and Play's AI-generated-content policy:
+
+- Report: a message's menu (long press) has Report on a bot's reply and on another member's message
+  in a shared chat, while the server takes feedback. It opens the feedback form starting with
+  "Reported message <id> in chat <id>"; the person adds why and sends it to the operator's address
+  (`apps/mobile/lib/dozo-message-actions.ts`, `app/(settings)/dozo-feedback.tsx`). TODO owner: the
+  hosted server must have a feedback address (and mail) set, or Report does not show; review the
+  reports within 24 hours.
+- Block: another member's message has Block, which asks first and then hides that person's
+  messages in every shared chat on this phone (`apps/mobile/lib/dozo-blocked-people.ts`). Kept on
+  the device only: not synced, not undone in the app, the person is not told and stays in the Space.
+  Removing a member stays the Space owner's (`app/space-members.tsx`).
+- People join a Space only by invitation; say so in the review notes.
 
 ## Age rating and content declarations
 

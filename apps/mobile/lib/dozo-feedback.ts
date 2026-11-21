@@ -14,6 +14,11 @@ export function mobileDiagnostics(): DozoClientDiagnostics {
   };
 }
 
+/** The first line of a report from a message's menu: which message, as the operator finds it. */
+export function reportLine(threadId: string, messageId: string): string {
+  return `Reported message ${messageId} in chat ${threadId}`;
+}
+
 /** Where feedback goes on this server; nothing while it is loading or not set up. */
 export function useFeedbackStatus() {
   return useQuery({ ...rpcQuery("dozoFeedback/status"), refetchOnMount: "always" }, queryClient)

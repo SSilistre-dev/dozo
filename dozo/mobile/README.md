@@ -44,6 +44,13 @@ Variables: `DOZO_MOBILE_API_URL` is the server the app opens with (default
 `https://app.dozo.bot`; the sign-in screen can still name another). `DOZO_MOBILE_DEVICE` is
 the simulator device type (default `iPhone 17`).
 
+The App Store build: `archive` always bundles with `EXPO_PUBLIC_DOZO_STORE_BUILD=1`, which sells
+nothing in the app (no Billing, paywall, price or payment link) and shows Google sign-in only beside
+Sign in with Apple (`apps/mobile/lib/dozo-store-build.ts`, `store/review-checklist.md`).
+`DOZO_MOBILE_STORE_BUILD=1 dozo/mobile/build.sh sim` shows that build on the simulator. `archive`
+also writes the build number into the app's and each extension's `Info.plist`, and fails when the
+archive's differ.
+
 There is no CI job: an iOS build needs a macOS runner.
 
 ## Android

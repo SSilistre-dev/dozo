@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { paymentPastDue } from "@rakazo/contracts";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { openBillingPage } from "../lib/billing";
+import { storeBuild } from "../lib/dozo-store-build";
 import { useMobileTokens } from "../lib/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query";
 import { useScreenQuery } from "../lib/screen-query";
@@ -10,14 +11,16 @@ import { NativeActionButton } from "./native-action-button";
 /**
  * One line above the chats while the subscription is past due, for the member who manages
  * billing, with the way to fix it. Read when the screen gains focus and when the app comes back,
- * so it goes once the payment is through.
+ * so it goes once the payment is through. The store build sells nothing, so it shows no line.
  */
 export function DozoPastDueLine() {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const me = useScreenQuery(rpcQuery("me")).data;
   const billing = rpcQuery("billing/status");
-  const status = useScreenQuery(billing, { enabled: Boolean(me?.billingEnabled) }).data;
+  const status = useScreenQuery(billing, {
+    enabled: Boolean(me?.billingEnabled) && !storeBuild,
+  }).data;
   const manage = useSave({
     save: async (_, send) => {
       const { url } = await send("billing/portal", { client: "mobile" });
@@ -25,7 +28,7 @@ export function DozoPastDueLine() {
     },
     onFailed: () => Alert.alert(t`Could not open billing`),
   });
-  if (!me?.billingEnabled || !paymentPastDue(status)) return null;
+  if (storeBuild || !me?.billingEnabled || !paymentPastDue(status)) return null;
   return (
     <View accessibilityRole="summary" style={[styles.line, { borderColor: tokens.border }]}>
       <Text style={[styles.text, { color: tokens.warning }]} numberOfLines={2}>

@@ -19,6 +19,8 @@
 # DOZO_MOBILE_API_URL: the server the app opens with (default https://app.dozo.bot).
 # DOZO_MOBILE_RELAY_URL: the relay the app pairs through without naming it (default https://relay.dozo.bot).
 # DOZO_MOBILE_DEVICE: the simulator device type (default "iPhone 17").
+# DOZO_MOBILE_STORE_BUILD=1: the App Store build, which sells nothing (no plan, price or payment
+# page; apps/mobile/lib/dozo-store-build.ts). archive always makes it; set it for sim to see it.
 # archive and upload need an App Store Connect API key and the Apple team; with any of these unset
 # they print "skipped" and exit 0 without building anything:
 # DOZO_ASC_KEY_ID: the key's id (10 characters). DOZO_ASC_ISSUER_ID: the issuer id (a UUID).
@@ -90,6 +92,7 @@ seal() {
   unset EXPO_TOKEN EAS_BUILD_PROFILE SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT SENTRY_URL \
     GOOGLE_SERVICES_JSON RAKAZO_PASSKEY_DEVELOPER_MODE
   export EXPO_PUBLIC_API_URL="$API_URL" EXPO_PUBLIC_DOZO_RELAY_URL="$RELAY_URL"
+  export EXPO_PUBLIC_DOZO_STORE_BUILD="${DOZO_MOBILE_STORE_BUILD:-0}"
 }
 
 toolchain() {
@@ -183,6 +186,19 @@ native_project() {
   # config it came from: nothing of upstream's accounts, ids or domain may have reached it.
   foreign=$(grep -rIlE 'com\.rakazo|07f7eb04|u\.expo\.dev|inbox-?zero|rakazo\.(com|ai|app)' "$APP/ios" --exclude-dir=Pods || true)
   [ -z "$foreign" ] || die "the generated iOS project names upstream's account, ids or domain: $foreign"
+  store_review_fields
+}
+
+# What App Review reads from the generated app, not only from the config it came from: the status
+# bar follows the app's theme, and the privacy manifest names the required-reason APIs.
+store_review_fields() {
+  local plist="$APP/ios/Dozo/Info.plist" privacy="$APP/ios/Dozo/PrivacyInfo.xcprivacy"
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :UIViewControllerBasedStatusBarAppearance' "$plist" 2>/dev/null)" = false ] \
+    || die "$plist: UIViewControllerBasedStatusBarAppearance is not false, so the status bar ignores the app's theme"
+  [ -f "$privacy" ] || die "no $privacy"
+  for reason in CA92.1 C617.1 35F9.1 E174.1; do
+    grep -q "$reason" "$privacy" || die "$privacy does not declare the required-reason API reason $reason"
+  done
 }
 
 build() {
@@ -247,6 +263,7 @@ archive() {
   xcrun --find xcodebuild >/dev/null 2>&1 || die "Xcode not found"
   cocoapods
   native_project
+  set_build_number "$number"
   asc_key
   auth=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY"
     -authenticationKeyID "$DOZO_ASC_KEY_ID" -authenticationKeyIssuerID "$DOZO_ASC_ISSUER_ID")
@@ -258,6 +275,7 @@ archive() {
     CLANG_MODULE_CACHE_PATH="$OUT/derived/ModuleCache.noindex" COMPILER_INDEX_STORE_ENABLE=NO \
     DEVELOPMENT_TEAM="$DOZO_APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$number" \
     "${auth[@]}" >"$OUT/archive.log" 2>&1 || die "xcodebuild archive failed ($OUT/archive.log)"
+  store_archive_fields "$number"
   printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
     '<plist version="1.0"><dict>' \
@@ -272,6 +290,29 @@ archive() {
   ipa=$(find "$OUT/ipa" -name '*.ipa' | head -n 1)
   [ -n "$ipa" ] || die "the export left no .ipa ($OUT/export.log)"
   say "ipa: $ipa ($(du -sh "$ipa" | cut -f1)), build number $number"
+}
+
+# The archived app and its extensions carry this build number (prebuild writes the config's
+# buildNumber as a literal, which CURRENT_PROJECT_VERSION does not override) and the store flag.
+store_archive_fields() {
+  local plist found=0
+  while IFS= read -r -d '' plist; do
+    found=1
+    [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" = "$1" ] \
+      || die "$plist: CFBundleVersion is not the build number $1"
+  done < <(find "$OUT/Dozo.xcarchive/Products/Applications" -maxdepth 4 \( -path '*.app/Info.plist' -o -path '*.appex/Info.plist' \) -print0)
+  [ "$found" = 1 ] || die "no Info.plist in the archive"
+  [ "$EXPO_PUBLIC_DOZO_STORE_BUILD" = 1 ] || die "the archive was not bundled as the store build"
+}
+
+# Sets the build number in every generated Info.plist (the app and each extension) before the
+# archive, so each upload is higher than the last.
+set_build_number() {
+  local plist
+  while IFS= read -r -d '' plist; do
+    /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist" >/dev/null 2>&1 || continue
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $1" "$plist"
+  done < <(find "$APP/ios" -name Info.plist -not -path '*/Pods/*' -not -path '*/build/*' -print0)
 }
 
 # Uploads the exported .ipa to App Store Connect; it shows in TestFlight once Apple has processed it.
@@ -301,7 +342,7 @@ clean() {
 case "${1:-}" in
   check) preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; say "check PASS" ;;
   sim) preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; timed build; say "sim PASS" ;;
-  archive) asc_credentials archive || exit 0; preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; timed archive; say "archive PASS" ;;
+  archive) asc_credentials archive || exit 0; export DOZO_MOBILE_STORE_BUILD=1; preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; timed archive; say "archive PASS" ;;
   upload) asc_credentials upload || exit 0; preflight; mkdir -p "$OUT"; upload; say "upload PASS" ;;
   clean) clean ;;
   *) echo "usage: $0 check|sim|archive|upload|clean" >&2; exit 64 ;;

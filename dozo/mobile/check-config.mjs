@@ -17,6 +17,17 @@ const KEPT = ['"scheme":["rakazo","dozo"]', "Rakazo.icon", '"targetName":"Rakazo
 /** The application id and iOS bundle id (the `com.rakazo.app` literal rule in brand.json). */
 const DOZO_ID = "dev.ssilistre.dozo";
 
+/** Purpose strings the app's own features need, each naming the app (the plugins add the rest). */
+const PURPOSE_STRINGS = [
+  "NSCameraUsageDescription",
+  "NSPhotoLibraryUsageDescription",
+  "NSPhotoLibraryAddUsageDescription",
+  "NSLocalNetworkUsageDescription",
+];
+
+/** Required-reason API reasons: UserDefaults, file timestamps, boot time, disk space. */
+const PRIVACY_REASONS = ["CA92.1", "C617.1", "35F9.1", "E174.1"];
+
 /** Upstream's Expo account, EAS project, update channel, bundle ids, domain and GitHub owner. */
 const FOREIGN = [
   /inbox-?zero/i,
@@ -59,7 +70,10 @@ export function problems(input, apiUrl) {
     `android.package ${JSON.stringify(config.android?.package)} is not the Dozo id ${DOZO_ID}`,
   );
   // The release build takes the version name from here and sets its own versionCode (README, Release).
-  want(/^\d+\.\d+\.\d+$/.test(config.version ?? ""), `version is ${JSON.stringify(config.version)}`);
+  want(
+    /^\d+\.\d+\.\d+$/.test(config.version ?? ""),
+    `version is ${JSON.stringify(config.version)}`,
+  );
   const code = config.android?.versionCode;
   want(Number.isInteger(code) && code > 0, `android.versionCode is ${JSON.stringify(code)}`);
   const extensions = config.extra?.eas?.build?.experimental?.ios?.appExtensions ?? [];
@@ -76,6 +90,19 @@ export function problems(input, apiUrl) {
       );
     }
   }
+  // App Review reads these from the built app; build.sh checks the generated files as well.
+  const plist = config.ios?.infoPlist ?? {};
+  for (const key of PURPOSE_STRINGS)
+    want(/^Dozo /.test(plist[key] ?? ""), `ios.infoPlist.${key} is ${JSON.stringify(plist[key])}`);
+  want(
+    plist.UIViewControllerBasedStatusBarAppearance === false,
+    "ios.infoPlist.UIViewControllerBasedStatusBarAppearance is not false: the status bar ignores the app's theme",
+  );
+  const reasons = (config.ios?.privacyManifests?.NSPrivacyAccessedAPITypes ?? []).flatMap(
+    (entry) => entry.NSPrivacyAccessedAPITypeReasons ?? [],
+  );
+  for (const reason of PRIVACY_REASONS)
+    want(reasons.includes(reason), `ios.privacyManifests does not declare reason ${reason}`);
   if (apiUrl) {
     const host = new URL(apiUrl).hostname;
     for (const domain of config.ios?.associatedDomains ?? []) {
