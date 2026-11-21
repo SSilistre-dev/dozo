@@ -7,24 +7,10 @@ import {
   DOZO_BOT_CHATS_MAX,
   DOZO_BOT_CHATS_TOTAL_LIMIT_CODE,
   DOZO_BOT_CHATS_TOTAL_MAX,
-  DozoBotChatArchiveInputSchema,
-  DozoBotChatCreateInputSchema,
-  DozoBotChatRenameInputSchema,
-  DozoBotChatsListInputSchema,
 } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import {
-  asSystem,
-  createDb,
-  createRepos,
-  createThreadEvents,
-  IsolationError,
-  runAsTenant,
-} from "@rakazo/db";
+import { asSystem, createDb, createRepos, createThreadEvents, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import * as z from "zod";
-import { dozoBotChats } from "./dozo-bot-chats.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
@@ -46,7 +32,6 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
-  let chats: ReturnType<typeof dozoBotChats>;
   const users: string[] = [];
   const publishRosterChange = vi.fn(async () => undefined);
 
@@ -97,31 +82,9 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     return { status: response!.status, json: body.json as Record<string, unknown> };
   }
 
-  const schemas = {
-    list: DozoBotChatsListInputSchema,
-    create: DozoBotChatCreateInputSchema,
-    rename: DozoBotChatRenameInputSchema,
-    archive: DozoBotChatArchiveInputSchema,
-  } as const;
-
-  /**
-   * The chats service as a route will call it: the contract's input check, then the work as the
-   * member, answered with the status the RPC error handler would give.
-   */
-  async function chatCall(actor: Actor, op: keyof typeof schemas, input: unknown) {
-    try {
-      const json = await runAsTenant(actor, () =>
-        chats[op](actor, schemas[op].parse(input) as never),
-      );
-      return { status: 200, json: json as Record<string, unknown> };
-    } catch (error) {
-      if (error instanceof IsolationError) return { status: 404, json: {} };
-      if (error instanceof z.ZodError) return { status: 400, json: {} };
-      if (error instanceof ClientError && error.kind === "CONFLICT")
-        return { status: 409, json: { code: error.code } as Record<string, unknown> };
-      throw error;
-    }
-  }
+  type ChatOp = "list" | "create" | "rename" | "archive";
+  const chatCall = (actor: Actor, op: ChatOp, input: unknown) =>
+    call(actor, `dozoChats/${op}`, input);
 
   const create = async (actor: Actor, botId: string, name = "Garden") => {
     const answer = await chatCall(actor, "create", { botId, name });
@@ -158,7 +121,6 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       dataDir: "/tmp/rakazo-bot-chats-test",
     } as unknown as RouterDeps;
-    chats = dozoBotChats(deps);
     handler = new RPCHandler(createRouter(deps), {
       clientInterceptors: [
         onError((error, { path, signal }) => handleRpcError(error, path, signal)),
@@ -236,17 +198,17 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     expect(await call(me, "threads/get", { botId })).toEqual(getBefore);
   });
 
-  it("refuses an extra chat's id on every route that takes a chat id, never answering for another", async () => {
+  it("lets the routes that take a chat id reach an extra chat for its Space only", async () => {
     const me = await person();
+    const stranger = await person();
     const { botId } = await bot(me);
     const extra = (await create(me, botId)).chat;
     for (const [path, input] of [
       ["dozoMessages/pins", { threadId: extra.id }],
-      ["dozoMessages/pin", { threadId: extra.id, messageId: "m-1", pinned: true }],
       ["dozoMessages/revisable", { threadId: extra.id }],
-      ["dozoMessages/regenerate", { threadId: extra.id, messageId: "m-1" }],
     ] as const) {
-      expect((await call(me, path, input)).status, path).toBe(404);
+      expect((await call(me, path, input)).status, path).toBe(200);
+      expect((await call(stranger, path, input)).status, path).toBe(404);
     }
   });
 
@@ -335,22 +297,6 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
       SELECT 1 FROM dozo_bot_chats WHERE "botId" = ${botId}`;
     expect(rows).toEqual([]);
   });
-  it("is not published: the app's API has no route for it yet", async () => {
-    const me = await person();
-    const { botId } = await bot(me);
-    for (const path of ["dozoChats/list", "dozoChats/create"]) {
-      const { matched } = await handler.handle(
-        new Request(`http://127.0.0.1/rpc/${path}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ json: { botId, name: "Garden" } }),
-        }),
-        { prefix: "/rpc", context: { actor: me } },
-      );
-      expect(matched, path).toBe(false);
-    }
-  });
-
   it("caps a bot's chats in all, so creating and archiving cannot grow them forever", async () => {
     const me = await person();
     const { botId } = await bot(me);

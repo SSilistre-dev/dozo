@@ -308,11 +308,7 @@
 [data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child {
   gap: 8px;
 }
-[data-collapsible="icon"]
-  [data-slot="sidebar-inner"]
-  > .app-drag:first-child
-  > :last-child
-  button {
+[data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child button {
   width: 40px;
   min-width: 40px;
   height: 40px;
@@ -342,7 +338,9 @@
   background: var(--warning);
   box-shadow: 0 0 0 2px var(--dozo-surface-0);
 }
-[data-collapsible="icon"] [data-roster-bot-id] > span:has(> .dozo-avatar[data-state="waiting"])::after {
+[data-collapsible="icon"]
+  [data-roster-bot-id]
+  > span:has(> .dozo-avatar[data-state="waiting"])::after {
   content: "";
 }
 [data-collapsible="icon"] .group\/row:hover [data-roster-bot-id] > span > [aria-hidden] {
@@ -621,4 +619,35 @@
 /* Sign-in offers sign-up only once the server has said registration is open (dozo-auth.tsx). */
 [data-dozo-signups]:not([data-dozo-signups="open"]) p:has(> a[href^="/sign-up"]) {
   display: none;
+}
+
+/* A bot's extra chats under its row (dozo-bot-chats.tsx): one line each, its name lined up with the
+   bot's name, the same hover, open and unread tones as the rows above. */
+[data-dozo-bot-chat] {
+  min-height: 32px;
+  padding: 6px 12px 6px 58px;
+  border-radius: 10px;
+  color: var(--dozo-ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+[data-dozo-bot-chat][data-compact] {
+  padding-inline-start: 44px;
+}
+[data-dozo-bot-chat]:hover {
+  background: var(--dozo-row-hover);
+}
+[data-dozo-bot-chat][aria-current="page"] {
+  background: var(--dozo-row-on);
+  color: var(--sidebar-foreground);
+}
+[data-dozo-bot-chat][data-roster-unread="true"] {
+  color: var(--sidebar-foreground);
+  font-weight: 600;
+}
+[data-dozo-bot-chat] [data-roster-unread-dot] {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sidebar-foreground);
 }

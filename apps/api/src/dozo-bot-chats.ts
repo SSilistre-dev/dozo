@@ -17,6 +17,7 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
+import type { RouterContext } from "./routes/context.js";
 import { resolveThreadTarget } from "./thread-target.js";
 
 type Db = Pick<PrismaClient, "$queryRaw">;
@@ -28,6 +29,8 @@ type ChatRow = {
   name: string;
   createdAt: Date;
   archivedAt: Date | null;
+  unread: boolean | null;
+  snoozedUntil: Date | null;
 };
 
 /** The bot holds the most open extra chats, or the most it can ever hold, archived ones included. */
@@ -49,33 +52,45 @@ const toChat = (row: ChatRow): DozoBotChat => ({
   name: row.name,
   createdAt: row.createdAt.toISOString(),
   archivedAt: row.archivedAt?.toISOString() ?? null,
+  unread: row.unread ?? false,
+  snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
 });
 
-/** The bot's extra chats in the caller's Space, oldest first. */
+/**
+ * Extra chats in the caller's Space, oldest first, each with the caller's own read state: one
+ * bot's, or without one every chat of the Space's bots that are not archived.
+ */
 export async function listChats(
   db: Db,
   actor: Actor,
-  botId: string,
+  botId: string | undefined,
   includeArchived: boolean,
 ): Promise<DozoBotChat[]> {
   const rows = await db.$queryRaw<ChatRow[]>`
-    SELECT "threadId", "botId", name,
-      "createdAt" AT TIME ZONE 'UTC' AS "createdAt",
-      "archivedAt" AT TIME ZONE 'UTC' AS "archivedAt"
-    FROM dozo_bot_chats
-    WHERE "botId" = ${botId} AND "spaceId" = ${actor.spaceId}
-      AND (${includeArchived}::boolean OR "archivedAt" IS NULL)
-    ORDER BY "createdAt", "threadId"`;
+    SELECT c."threadId", c."botId", c.name,
+      c."createdAt" AT TIME ZONE 'UTC' AS "createdAt",
+      c."archivedAt" AT TIME ZONE 'UTC' AS "archivedAt",
+      r.unread, r."snoozedUntil"
+    FROM dozo_bot_chats c
+    JOIN bots b ON b.id = c."botId"
+    LEFT JOIN thread_reads r ON r."threadId" = c."threadId" AND r."userId" = ${actor.userId}
+    WHERE c."spaceId" = ${actor.spaceId}
+      AND (${botId ?? null}::text IS NULL OR c."botId" = ${botId ?? null})
+      AND (${botId ?? null}::text IS NOT NULL OR b."archivedAt" IS NULL)
+      AND (${includeArchived}::boolean OR c."archivedAt" IS NULL)
+    ORDER BY c."createdAt", c."threadId"`;
   return rows.map(toChat);
 }
 
 async function chatRow(db: Db, actor: Actor, chatId: string): Promise<ChatRow> {
   const [row] = await db.$queryRaw<ChatRow[]>`
-    SELECT "threadId", "botId", name,
-      "createdAt" AT TIME ZONE 'UTC' AS "createdAt",
-      "archivedAt" AT TIME ZONE 'UTC' AS "archivedAt"
-    FROM dozo_bot_chats
-    WHERE "threadId" = ${chatId} AND "spaceId" = ${actor.spaceId}`;
+    SELECT c."threadId", c."botId", c.name,
+      c."createdAt" AT TIME ZONE 'UTC' AS "createdAt",
+      c."archivedAt" AT TIME ZONE 'UTC' AS "archivedAt",
+      r.unread, r."snoozedUntil"
+    FROM dozo_bot_chats c
+    LEFT JOIN thread_reads r ON r."threadId" = c."threadId" AND r."userId" = ${actor.userId}
+    WHERE c."threadId" = ${chatId} AND c."spaceId" = ${actor.spaceId}`;
   if (!row) throw new IsolationError();
   return row;
 }
@@ -146,12 +161,8 @@ export async function archiveChat(
 /**
  * A bot's extra chats, for anyone in the Space who can chat with the bot, under the same check
  * that opens its main chat. Changing one leaves an archived bot's chats as they are, as its main
- * chat takes no new messages either. Inputs are the contract's, already checked.
- *
- * Not published yet: no route calls this until the app can show extra chats (the web step wires
- * `dozoChatsContract` to it). Sending to or reading an extra chat is not here either: every
- * existing route reaches a chat through its bot or group, so it refuses an extra chat's id as not
- * found instead of answering for another chat.
+ * chat takes no new messages either. Inputs are the contract's, already checked. Reading and
+ * writing an extra chat go through the chat routes, which take its id as `chatId`.
  */
 export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events">) {
   const { prisma } = deps;
@@ -166,7 +177,8 @@ export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events">) {
   };
   return {
     async list(actor: Actor, input: DozoBotChatsListInput) {
-      await resolveThreadTarget(prisma, actor, { botId: input.botId }, { includeArchived: true });
+      if (input.botId)
+        await resolveThreadTarget(prisma, actor, { botId: input.botId }, { includeArchived: true });
       return { chats: await listChats(prisma, actor, input.botId, input.includeArchived ?? false) };
     },
     async create(actor: Actor, input: DozoBotChatCreateInput) {
@@ -186,6 +198,66 @@ export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events">) {
       const chat = await prisma.$transaction((tx) => archiveChat(tx, actor, input));
       await changed(actor);
       return { chat };
+    },
+  };
+}
+
+/**
+ * An extra chat from an account archive: its thread and its row in one transaction, as the
+ * database wants a thread without an owner to be a bot chat when it commits.
+ */
+export async function dozoImportChat(
+  prisma: Pick<PrismaClient, "$transaction">,
+  input: {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    chat: { name: string; archivedAt: string | null };
+    thread: {
+      historyCompactedUpToSeq: number | null;
+      historyCompactionSummary: string | null;
+      createdAt: string;
+    };
+  },
+): Promise<string> {
+  return prisma.$transaction(async (tx) => {
+    const createdAt = new Date(input.thread.createdAt);
+    const thread = await tx.thread.create({
+      data: {
+        spaceId: input.spaceId,
+        userId: input.userId,
+        historyCompactedUpToSeq: input.thread.historyCompactedUpToSeq,
+        historyCompactionSummary: input.thread.historyCompactionSummary,
+        createdAt,
+      },
+      select: { id: true },
+    });
+    const archivedAt = input.chat.archivedAt;
+    await tx.$executeRaw`
+      INSERT INTO dozo_bot_chats ("threadId", "botId", "spaceId", name, "createdAt", "archivedAt")
+      VALUES (${thread.id}, ${input.botId}, ${input.spaceId}, ${input.chat.name},
+        ${createdAt.toISOString()}::timestamptz,
+        ${archivedAt ? new Date(archivedAt).toISOString() : null}::timestamptz)`;
+    return thread.id;
+  });
+}
+
+/** The app's routes for a bot's extra chats. */
+export function dozoBotChatRoutes(ctx: RouterContext) {
+  const chats = dozoBotChats(ctx.deps);
+  const { authed } = ctx;
+  return {
+    dozoChats: {
+      list: authed.dozoChats.list.handler(({ context, input }) => chats.list(context.actor, input)),
+      create: authed.dozoChats.create.handler(({ context, input }) =>
+        chats.create(context.actor, input),
+      ),
+      rename: authed.dozoChats.rename.handler(({ context, input }) =>
+        chats.rename(context.actor, input),
+      ),
+      archive: authed.dozoChats.archive.handler(({ context, input }) =>
+        chats.archive(context.actor, input),
+      ),
     },
   };
 }

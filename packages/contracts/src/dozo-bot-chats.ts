@@ -31,13 +31,17 @@ export const DozoBotChatSchema = z.object({
   name: z.string(),
   createdAt: IsoDate,
   archivedAt: IsoDate.nullable(),
+  /** The caller's own state of the chat, as for the bot's main chat. */
+  unread: z.boolean(),
+  snoozedUntil: IsoDate.nullable(),
 });
 export type DozoBotChat = z.infer<typeof DozoBotChatSchema>;
 
 const ChatOutput = z.object({ chat: DozoBotChatSchema });
 
 export const DozoBotChatsListInputSchema = z.object({
-  botId: Id,
+  /** One bot's chats; without it, every chat of the Space's bots that are not archived. */
+  botId: Id.optional(),
   includeArchived: z.boolean().optional(),
 });
 export type DozoBotChatsListInput = z.infer<typeof DozoBotChatsListInputSchema>;
@@ -48,12 +52,8 @@ export type DozoBotChatRenameInput = z.infer<typeof DozoBotChatRenameInputSchema
 export const DozoBotChatArchiveInputSchema = z.object({ chatId: Id, archived: z.boolean() });
 export type DozoBotChatArchiveInput = z.infer<typeof DozoBotChatArchiveInputSchema>;
 
-/**
- * Not part of the app contract yet: the web step adds it, with the routes, once the app can show
- * extra chats.
- */
 export const dozoChatsContract = {
-  /** The bot's extra chats, oldest first; archived ones only when asked for. */
+  /** Extra chats, oldest first; archived ones only when asked for. */
   list: oc
     .input(DozoBotChatsListInputSchema)
     .output(z.object({ chats: z.array(DozoBotChatSchema) })),

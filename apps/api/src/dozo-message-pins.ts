@@ -2,23 +2,27 @@ import type { Actor, DozoMessagePin } from "@rakazo/contracts";
 import { DOZO_MESSAGE_PINS_MAX, MessageRole } from "@rakazo/contracts";
 import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, storedMessageBlocks } from "@rakazo/db";
+import { IsolationError, storedMessageBlocks, withDozoChatBot } from "@rakazo/db";
 import type { RouterContext } from "./routes/context.js";
 import { resolveThreadTarget } from "./thread-target.js";
 
 type Db = Pick<PrismaClient, "thread" | "message" | "$queryRaw" | "$executeRaw">;
 
 /**
- * A chat the caller can read: a bot's or a group's, through the same target check the transcript
+ * A chat the caller can read: a bot's (main or extra) or a group's, through the same target check the transcript
  * uses, archived ones included. Helper and chat-app conversations have no pins.
  */
 export async function readableThread(prisma: PrismaClient, actor: Actor, threadId: string) {
-  const thread = await prisma.thread.findFirst({
-    where: { id: threadId, spaceId: actor.spaceId },
-    select: { botId: true, groupId: true },
-  });
+  const thread = await withDozoChatBot(
+    prisma,
+    threadId,
+    await prisma.thread.findFirst({
+      where: { id: threadId, spaceId: actor.spaceId },
+      select: { botId: true, groupId: true },
+    }),
+  );
   const input = thread?.botId
-    ? { botId: thread.botId }
+    ? { botId: thread.botId, chatId: threadId }
     : thread?.groupId
       ? { groupId: thread.groupId }
       : null;

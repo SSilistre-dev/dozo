@@ -20,7 +20,7 @@ import { toastError } from "../../lib/dozo-error-text";
 import type { createSpaceRpc } from "../../lib/rpc";
 
 export { chatExportSince };
-export type ChatExportTarget = { botId: string } | { groupId: string };
+export type ChatExportTarget = { botId: string; chatId?: string } | { groupId: string };
 
 /** A file name from the chat's name, with what file systems refuse taken out. */
 export function chatExportFilename(name: string, now: Date): string {

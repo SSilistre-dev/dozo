@@ -6,6 +6,8 @@ export const DozoChatExportInputSchema = z
   .object({
     botId: Id.optional(),
     groupId: Id.optional(),
+    /** One of the bot's extra chats; without it, the bot's main chat. */
+    chatId: Id.optional(),
     /** Only messages sent at or after this time; absent exports the whole chat. */
     since: IsoDate.optional(),
     /** The reader's IANA time zone for message times; absent or unknown means UTC. */
