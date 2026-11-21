@@ -18,6 +18,9 @@ const HOSTED = "http://localhost:6173";
 const LOCAL = "http://127.0.0.1:5173";
 const LEGACY = "http://127.0.0.1:5273";
 const PASSWORD = "e2e-password-1234";
+/** The longest a server command or a whole step may take before the run fails, saying where. */
+const COMMAND_MS = 4 * 60 * 1000;
+const STEP_MS = 5 * 60 * 1000;
 
 // --- prepare: the runtime the manifest names ---
 
@@ -63,10 +66,16 @@ async function sh(script, args, env) {
     const { stdout } = await run("bash", [script, ...args], {
       env: { PATH: process.env.PATH, HOME: "/tmp", ...env },
       maxBuffer: 16 * 1024 * 1024,
+      // Their own waits are bounded (start: 120 s, each stop: 30 s); this bounds the rest.
+      timeout: COMMAND_MS,
+      killSignal: "SIGKILL",
     });
     return stdout;
   } catch (error) {
-    throw new Error(`${path.basename(script)} ${args.join(" ")}: ${error.stderr || error.message}`);
+    const what = error.killed
+      ? `did not finish in ${COMMAND_MS / 1000} s`
+      : error.stderr || error.message;
+    throw new Error(`${path.basename(script)} ${args.join(" ")}: ${what}`);
   }
 }
 
@@ -221,6 +230,13 @@ async function refused(page, base, text) {
 
 // --- the cases ---
 
+/** What the current step is doing, for a step that runs out of time. */
+const progress = [];
+const doing = (what) => {
+  progress.push(what);
+  say(`  ${what}`);
+};
+
 /** Every page load of the run's pages, as `<ms> <url>`: printed for a failed step. */
 const loads = [];
 function watch(context) {
@@ -239,8 +255,15 @@ async function cases(browser) {
   const results = [];
   const step = async (name, work) => {
     const started = Date.now();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`did not finish in ${STEP_MS / 1000} s (last: ${progress.at(-1)})`)),
+        STEP_MS,
+      );
+    });
     try {
-      await work();
+      await Promise.race([work(), deadline]);
       results.push([name, "ok"]);
       say(`ok   ${name} (${Date.now() - started} ms)`);
     } catch (error) {
@@ -248,6 +271,8 @@ async function cases(browser) {
       say(`FAIL ${name}: ${error.message.split("\n")[0]}`);
       say(`page loads before it:\n${loads.slice(-12).join("\n")}`);
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
   };
   const first = newKey();
@@ -352,6 +377,7 @@ async function cases(browser) {
       const local = `owner.${Date.now()}@dozo.example`;
       const linked = `owner.hosted.${Date.now()}@dozo.example`;
       // A release without hosted sign-in: the computer's own account.
+      doing("start the computer without hosted sign-in");
       await computer("start", LEGACY);
       await tab.goto(`${LEGACY}/sign-up`);
       await openEmailForm(tab);
@@ -359,8 +385,10 @@ async function cases(browser) {
       await tab.getByPlaceholder("Your email address").fill(local);
       await tab.getByPlaceholder("Password").fill(PASSWORD);
       await tab.getByRole("button", { name: "Create account" }).click();
+      doing("sign up there with a password");
       const ownerId = await landed(tab, LEGACY, local);
       // A computer someone has used: its first bot exists, so the app opens on the shell.
+      doing("make its first bot");
       const made = await call(owner, LEGACY, "/rpc/bots/create", {
         json: {
           name: "Chief",
@@ -372,8 +400,10 @@ async function cases(browser) {
       });
       check(made.ok(), `first bot: ${made.status()} ${(await made.text()).slice(0, 200)}`);
       await signOut(owner, LEGACY);
+      doing("stop it");
       await computer("stop", LEGACY);
       // The update turns hosted sign-in on: the server starts, and passwords still work.
+      doing("start it with the issuer");
       await computer("start", LEGACY, HOSTED);
       tab = await freshPage(owner);
       await tab.goto(`${LEGACY}/sign-in`);
@@ -381,10 +411,12 @@ async function cases(browser) {
       await tab.getByPlaceholder("Your email address").fill(local);
       await tab.getByPlaceholder("Password").fill(PASSWORD);
       await tab.getByRole("button", { name: "Sign in", exact: true }).click();
+      doing("sign in with the password");
       check((await landed(tab, LEGACY, local)) === ownerId, "password sign-in as before");
       // Settings > General > Security: link to the hosted account.
       const capabilities = await (await call(owner, LEGACY, "/api/auth/capabilities")).json();
       check(capabilities.hostedLink === true && !capabilities.hostedLogin, "legacy mode");
+      doing("open Settings");
       tab = await freshPage(owner);
       await tab.goto(`${LEGACY}/app?settings=general`);
       const row = tab.getByText("Dozo account", { exact: true });
@@ -393,10 +425,12 @@ async function cases(browser) {
         say(`settings at ${tab.url()}: ${(await tab.textContent("body"))?.slice(0, 800)}`);
         throw error;
       });
+      doing("link");
       await tab.getByRole("button", { name: "Link", exact: true }).click();
       await tab.waitForURL((url) => url.origin === HOSTED);
       await hostedSignUp(tab, linked);
       await agree(tab, linked);
+      doing("back linked");
       check((await landed(tab, LEGACY, linked)) === ownerId, "linked, same user");
       // The password is gone and the way in is the hosted account.
       const closed = (
@@ -404,9 +438,11 @@ async function cases(browser) {
       ).status();
       check(closed === 404, `password sign-in closed, got ${closed}`);
       await signOut(owner, LEGACY);
+      doing("sign in with the hosted account");
       tab = await startHostedSignIn(owner, LEGACY);
       await agree(tab, linked);
       check((await landed(tab, LEGACY, linked)) === ownerId, "hosted sign-in as the same user");
+      doing("close the browser context");
       await owner.close();
     },
   );
@@ -443,11 +479,13 @@ main(process.argv[2]).then(
   async (error) => {
     say(`FAILED: ${error.message}`);
     for (const home of ["hosted", "computer", "legacy"]) {
-      const log = path.join(STATE, home, "logs", "api.log");
-      if (existsSync(log))
-        say(
-          `${home} api.log (last lines):\n${(await readFile(log, "utf8")).split("\n").slice(-15).join("\n")}`,
-        );
+      for (const name of ["migrate.log", "api.log", "web.log", "postgres.log"]) {
+        const log = path.join(STATE, home, "logs", name);
+        if (existsSync(log))
+          say(
+            `${home} ${name} (last lines):\n${(await readFile(log, "utf8")).split("\n").slice(-12).join("\n")}`,
+          );
+      }
     }
     process.exit(2);
   },
