@@ -37,7 +37,11 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 vi.mock("../../components/ai/CollaborationMarker", () => ({
-  ActiveBotGlyph: ({ label }: { label: string }) => <div role="status">{label}</div>,
+  ActiveBotGlyph: ({ label, bots }: { label: string; bots: unknown[] }) => (
+    <div role="status" data-bots={bots.length}>
+      {label}
+    </div>
+  ),
 }));
 vi.mock("@rakazo/ui-web", () => ({
   Button: ({
@@ -68,14 +72,14 @@ const item = (over: Partial<DozoQueueItem>): DozoQueueItem => ({
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-async function render(items: DozoQueueItem[]) {
+async function render(items: DozoQueueItem[], bots: Array<{ botId: string }> = []) {
   api.list.mockResolvedValue({ items });
   await act(async () => {
     root.render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <DozoWaitingGlyph bots={[]} label="Working…" target={{ botId: "bot-1" }} />
+        <DozoWaitingGlyph bots={bots as never} label="Working…" target={{ botId: "bot-1" }} />
       </QueryClientProvider>,
     );
   });
@@ -164,4 +168,15 @@ it("tells why a stop failed and keeps the line", async () => {
   await act(async () => stop?.click());
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("failed"));
   expect(status()).toBe("Waiting in line…");
+});
+
+it("draws the bot once while its queued runs are in line, and as given when none of mine waits", async () => {
+  // One working entry per run of the bot: the running one and two waiting.
+  const runs = [{ botId: "bot-1" }, { botId: "bot-1" }, { botId: "bot-1" }];
+  await render([item({})], runs);
+  expect(container.querySelector("[role=status]")?.getAttribute("data-bots")).toBe("1");
+  act(() => root.unmount());
+  root = createRoot(container);
+  await render([item({ mine: false })], runs);
+  expect(container.querySelector("[role=status]")?.getAttribute("data-bots")).toBe("3");
 });
