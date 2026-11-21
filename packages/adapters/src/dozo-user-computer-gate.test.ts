@@ -76,8 +76,60 @@ describe("userComputerGate", () => {
 
   it("lets a command that only reads go ahead", async () => {
     expect((await gate("ls -la")).plan).toBe("allow");
-    expect((await gate("grep -rn TODO src", { cwd: "~/app" })).plan).toBe("allow");
+    expect((await gate("grep -n TODO src/app.ts", { cwd: "~/app" })).plan).toBe("allow");
     expect(rules.exists).not.toHaveBeenCalled();
+  });
+
+  it("asks before a read-only command that touches a secret location", async () => {
+    for (const command of [
+      "cat .ssh/id_rsa",
+      "cat .aws/credentials | grep -i key",
+      "ls Library/Keychains",
+      "cat /proc/self/environ",
+      "cat Env:SECRET",
+      "ls Env: | grep -i key",
+      "find / -name .env | head",
+      "grep -r key .",
+      "tail -f log.txt",
+    ])
+      expect((await gate(command)).plan, command).toBe("ask");
+    for (const command of [
+      "uname -a",
+      "ls",
+      "pwd",
+      "cat notes.txt",
+      "ls Documents",
+      "ls /Applications | grep -i brave",
+    ])
+      expect((await gate(command)).plan, command).toBe("allow");
+  });
+
+  it("asks before a read-only command run inside a secret folder", async () => {
+    for (const [command, cwd] of [
+      ["cat credentials", ".aws"],
+      ["cat config", ".ssh"],
+      ["cat known_hosts", "~/.ssh"],
+      ["cat config", ".kube"],
+      ["cat 'Local State'", "AppData/Local/Google/Chrome/User Data"],
+      ["cat logins.json", "Library/Application Support/Firefox/Profiles/x"],
+      ["ls", ".."],
+      ["ls", "/etc"],
+      ["ls", "C:\\Users"],
+      ["ls", "AppData\\Local"],
+      ["ls", "Env:"],
+      ["cat 'Local/Google/Chrome/User Data/Local State'", "AppData."],
+      ["cat x", "AppData. ./Local"],
+      ["cat x", "Library..."],
+      ["cat x", "Application Data"],
+      ["cat x", "Local Settings/Application Data"],
+      ["cat x", "AppData\\Local"],
+      ["cat x", "Lib\u200Brary"],
+      ["cat x", "Library\u202E"],
+      ["cat x", "a\u0001b"],
+    ] as const)
+      expect((await gate(command, { cwd })).plan, `${command} in ${cwd}`).toBe("ask");
+    for (const cwd of ["Documents", "", "~", " ~ ", "~/app", "src/app"])
+      expect((await gate("ls", { cwd })).plan, cwd).toBe("allow");
   });
 
   it("asks before a command that changes something or reaches out", async () => {

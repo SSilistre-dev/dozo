@@ -67,6 +67,12 @@ is its `release` job (`## Release`).
   shows the approval code, which must be the one the agent reports; `approve` on the computer; the
   app signs in and lists the bot; a `dozo://dozo-access-tokens` link then opens a settings page,
   the access tokens, whose "New token" row shows. Last line: `ANDROID PAIRING E2E: PASS|FAIL`.
+- The emulator runs the plain Android image, without Google's apps: on the Google image the
+  launcher, still busy after boot, showed "Pixel Launcher isn't responding" over the app. `e2e.sh`
+  starts only once the system has finished starting (boot completed, the package manager answers,
+  the boot broadcasts are delivered). On a failure the artifact also holds the window list and
+  the run log names any system dialog that covered the app; each start of the app logs how long
+  its first screen took.
 
 What a release needs from the owner: "What the owner must do", below.
 

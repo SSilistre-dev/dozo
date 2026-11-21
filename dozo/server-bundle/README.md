@@ -62,7 +62,7 @@ makes the addresses in the manifest live.
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
 failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
-`0.11.0-5`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+`0.11.0-6`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
 The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
@@ -136,7 +136,9 @@ folder or a copy of a file, after checking that both stay inside the bundle.
 
 ## Start contract
 
-Everything listens on 127.0.0.1. Secrets are random on first start and kept in a 0600 file in the
+Everything listens on 127.0.0.1, and must: hosted sign-in trusts that only this computer can reach
+its start and callback (`packages/auth/src/dozo-hosted-login.ts`), so a server in that mode must
+not be reachable from other machines. Secrets are random on first start and kept in a 0600 file in the
 user's app folder: the Postgres owner and app passwords, `BETTER_AUTH_SECRET`,
 `SCREEN_PROXY_SECRET`, `ENCRYPTION_KEY`, the single-account `RAKAZO_DESKTOP_STACK_TOKEN` (the
 first account created is the only one) and `DOZO_RELAY_AGENT_KEY` (64 hexadecimal digits, given
@@ -172,7 +174,7 @@ Each process runs from `rakazo-server/` with only these variables (plus `PATH` a
 | all         | `NODE_ENV=production`, `RAKAZO_ENV_FILE=none`                                                                                                                                                                                                                                                                               |
 | migrate     | `DATABASE_URL`, `DATABASE_MIGRATION_URL`, `RAKAZO_DB_PACKAGE_DIR=packages/db`                                                                                                                                                                                                                                               |
 | api, worker | `DATABASE_URL`, `DATA_DIR`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `SCREEN_PROXY_SECRET`, `RAKAZO_DESKTOP_STACK_TOKEN`, `BETTER_AUTH_URL` = `WEB_ORIGIN` = `API_URL` = the web address, `SANDBOX_PROVIDER=none`, `CONTENT_ENCRYPTION=off`, `WAKEUP_DRIVER=graphile`, `AGENT_RUNTIME=pi`, `MCP_ALLOW_PRIVATE_ENDPOINT=true` |
-| api only    | `API_HOST=127.0.0.1`, `API_PORT`, `AUTH_PASSWORD_ENABLED=true`, `AUTH_BREACHED_PASSWORD_CHECK_ENABLED=false`                                                                                                                                                                                                                |
+| api only    | `API_HOST=127.0.0.1`, `API_PORT`, `AUTH_PASSWORD_ENABLED=true`, `AUTH_BREACHED_PASSWORD_CHECK_ENABLED=false`, and with hosted sign-in on, `HOSTED_LOGIN_ISSUER` (the hosted origin; `run.sh` takes it as `DOZO_HOSTED_LOGIN_ISSUER`)                                                                                         |
 | web         | `API_PROXY_TARGET` (the API address), `SCREEN_PROXY_SECRET`, `WEB_HOST=127.0.0.1`, `WEB_PORT`, `RAKAZO_DESKTOP_STACK_TOKEN`, `RAKAZO_IMAGE_TAG` (the bundle version)                                                                                                                                                        |
 
 The desktop app also makes `DOZO_RELAY_AGENT_KEY` (64 hex digits) with the other secrets and
@@ -285,8 +287,9 @@ echo '<new password>' | node rakazo-server/dozo-local-account.mjs reset-password
   library's scrypt format), ends every session of the account, and writes `auth.password.changed`
   to the security events and, with actor `local-reset`, to the audit log of each organization the
   account belongs to. It answers `{"reset": true, "sessionsEnded": <n>}`. Its own reasons:
-  `hosted-login` (the install signs in with the hosted account, which has no password here:
-  `HOSTED_LOGIN_ISSUER` is set for the command, or the account has no password sign-in),
+  `hosted-login` (the account signs in with the hosted account and has no password here; one that
+  still has its password, before it is linked, can reset it), messaging identities are not
+  counted as accounts,
   `no-account`, `several-accounts` (not a folder the app made) and `not-owner`. For an app
   screen: ask for the new password twice, pipe it in, show the sentence on failure; after success
   the window signs in again.

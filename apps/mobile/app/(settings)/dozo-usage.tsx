@@ -16,8 +16,10 @@ import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * The caller's spend in this Space grouped by model, bot or routine, as the web app's Usage table
+ * The caller's spend in this Space grouped by model, bot, routine or day (and, for an owner, person), as the web app's Usage table
  * shows it; Export hands the server's CSV of the same groups to the share sheet.
  */
 export default function DozoUsage() {
@@ -25,7 +27,11 @@ export default function DozoUsage() {
   const locale = dateLocaleForUi(useUiLocale());
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [by, setBy] = useState<DozoUsageGrouping>("model");
+  const [chosen, setBy] = useState<DozoUsageGrouping>("model");
+  // Only an owner whose Space has other members is offered the person grouping; if that stops
+  // being true while it is open, the list falls back to the model grouping.
+  const scope = useQuery(rpcQuery("dozoUsage/scope"), queryClient);
+  const by = chosen === "person" && !scope.data?.person ? "model" : chosen;
   const groups = useQuery(
     { ...rpcQuery("dozoUsage/breakdown", { by }), placeholderData: keepPreviousData },
     queryClient,
@@ -35,7 +41,16 @@ export default function DozoUsage() {
   const number = (value: number | null) => (value == null ? "—" : count.format(value));
   const cost = (value: number | null) =>
     value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+  const dayFormat = new Intl.DateTimeFormat(locale, {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
   const name = (group: DozoUsageGroup) => {
+    // The previous grouping stays on screen while this one loads, so its keys are not days yet.
+    if (by === "day" && DAY_KEY.test(group.key))
+      return dayFormat.format(new Date(`${group.key}T00:00:00Z`));
     if (group.state === "unknown") return t`Unknown`;
     if (group.state === "none") return by === "bot" ? t`No bot` : t`No routine`;
     return group.name ?? "—";
@@ -76,6 +91,8 @@ export default function DozoUsage() {
             { value: "model", label: t`Model` },
             { value: "bot", label: t`Bot` },
             { value: "routine", label: t`Routine` },
+            { value: "day", label: t`Day` },
+            ...(scope.data?.person ? [{ value: "person" as const, label: t`Person` }] : []),
           ]}
           value={by}
         />

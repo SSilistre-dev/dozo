@@ -101,14 +101,147 @@ const READ_ONLY_PROGRAMS = new Set([
 /** find's actions that run a program, delete, or write a file. */
 const FIND_ACTIONS = ["-exec", "-ok", "-delete", "-fprint", "-fls"];
 
+/** Absolute locations a command may name without asking; every other absolute path asks. */
+const OPEN_ROOTS = ["/applications", "/system/applications", "/usr", "/bin", "/sbin", "/opt"];
+/**
+ * Folders and file names that hold secrets or private data, matched on a whole path component
+ * after `componentName` (macOS and Windows ignore case). The last five are the legacy Windows
+ * junctions that lead into AppData or hold user data.
+ */
+const PRIVATE_COMPONENTS = new Set([
+  "library",
+  "appdata",
+  "keychains",
+  "cookies",
+  "application data",
+  "local settings",
+  "nethood",
+  "printhood",
+  "templates",
+]);
+/** A path component as Windows reads it: it drops trailing dots and spaces. */
+const componentName = (part: string) => part.replace(/[. ]+$/, "");
+/** A component that stripping empties (`...`, a space) is not one a name check can judge. */
+const emptiedByStripping = (part: string) => part !== "" && part !== "." && !componentName(part);
+/** File names that hold a private key or a browser's stored data, wherever they sit. */
+const KEY_FILE = /^id_(rsa|dsa|ecdsa|ed25519)|keychain|cookies|login data/;
+
+/**
+ * Whether a word names, or could reach, a place that holds secrets, so the command asks. These
+ * commands run without a card and their output goes to the model, so a word asks when unsure:
+ * - a component that starts with a dot other than `.` (`.ssh`, `.aws`, `.env`, `.config`), and any
+ *   `..`, which can leave the folder the user chose (simplest sound rule: all of them ask);
+ * - a flag that holds a dot (`-f.ssh/x`), since the letters before the value are unknown;
+ * - Library, AppData, keychains and cookie files, and key files by name;
+ * - a `:` (PowerShell's `Env:`, `HKLM:`, `Cert:` drives, `C:` paths), except in a `date +` format;
+ * - `~`, `$`, and a glob character (a shell never reads it when quoted, but PowerShell does);
+ * - an absolute path outside `OPEN_ROOTS`, which covers /proc, /sys, /etc, /dev (also /dev/null:
+ *   nothing needs it), /private, /net, /Network, /Volumes, /Users and /root.
+ * Names alone are not secret: `ls -a`, `ls -R`, `du -a` and `find` print hidden names, never what
+ * is inside them, so they pass; `find / -name .env` still asks through `/` and `.env`.
+ * A word is read in every segment between `/`, `\`, `=` and other marks, so `--file=.ssh/x` asks.
+ */
+function touchesSecretLocation(word: string, program: string): boolean {
+  const lower = word.toLowerCase().replaceAll("\\", "/");
+  if (lower.includes(":") && !(program === "date" && lower.startsWith("+"))) return true;
+  if (/[*?[~$]/.test(lower)) return true;
+  for (const segment of lower.split("=")) {
+    const open = OPEN_ROOTS.some((root) => segment === root || segment.startsWith(`${root}/`));
+    if (segment.startsWith("/") && !open) return true;
+  }
+  if (KEY_FILE.test(lower)) return true;
+  const components = lower.split("/").map(componentName);
+  if (lower.split("/").some(emptiedByStripping)) return true;
+  if (components.some((c) => PRIVATE_COMPONENTS.has(c) || c.startsWith("ntuser"))) return true;
+  return lower
+    .split(/[^\p{L}\p{N}_\-.]+/u)
+    .some(
+      (part) =>
+        (part.startsWith(".") && part !== ".") ||
+        (part.startsWith("-") && part.includes(".")) ||
+        PRIVATE_COMPONENTS.has(componentName(part)) ||
+        componentName(part).startsWith("ntuser") ||
+        KEY_FILE.test(part),
+    );
+}
+
+/**
+ * Whether the folder a command runs in is one the command may read without asking: the home
+ * folder (`''` or `~`), or a path that passes the same check as a word (`~/` first is the home
+ * folder), so `cat credentials` run inside `.aws` still asks.
+ */
+export function readOnlyCwd(cwd: unknown): boolean {
+  if (cwd === undefined || cwd === null) return true;
+  if (typeof cwd !== "string") return false;
+  const folder = cwd.trim();
+  if (hasNeverCharacter(folder)) return false;
+  if (folder === "" || folder === "~") return true;
+  return !touchesSecretLocation(folder.startsWith("~/") ? folder.slice(2) : folder, "");
+}
+
+/** grep's long options that only change what it prints; any other (`--pre`, `--filter`) asks. */
+const GREP_LONG_OPTIONS = new Set([
+  "after-context",
+  "before-context",
+  "color",
+  "colour",
+  "context",
+  "count",
+  "extended-regexp",
+  "files-with-matches",
+  "files-without-match",
+  "fixed-strings",
+  "ignore-case",
+  "invert-match",
+  "line-number",
+  "max-count",
+  "no-filename",
+  "no-messages",
+  "only-matching",
+  "quiet",
+  "regexp",
+  "silent",
+  "with-filename",
+  "word-regexp",
+]);
+
+/**
+ * Arguments that make an otherwise reading program read more than it names or run something.
+ * grep: recursion (it would read every hidden file below the folder), `-f` and `-d`/`-D`, and
+ * long options outside the list (some greps run a program with `--pre` or `--filter`). tail:
+ * `-f`, `-F` and `--follow` wait for the command's own timeout.
+ */
+function hasRiskyArgument(program: string, args: readonly string[]): boolean {
+  const shortLetters = (arg: string) => (/^-[^-]/.test(arg) ? arg.slice(1) : "");
+  if (program === "grep")
+    return args.some((arg) =>
+      arg.startsWith("--")
+        ? !GREP_LONG_OPTIONS.has(arg.slice(2).split("=")[0]!)
+        : /[rRfdD]/.test(shortLetters(arg)),
+    );
+  // Following a link can reach a place the words do not name (/net, /Volumes, a secret folder).
+  const followsLinks = (arg: string) =>
+    arg.startsWith("--") ? arg.startsWith("--deref") : /[LHD]/.test(shortLetters(arg));
+  if (program === "find") return args.some((arg) => ["-L", "-H", "-follow"].includes(arg));
+  if (program === "du" || program === "ls") return args.some(followsLinks);
+  if (program === "tail")
+    return args.some((arg) =>
+      arg.startsWith("--") ? arg.startsWith("--f") : /[fF]/.test(shortLetters(arg)),
+    );
+  return false;
+}
+
 /**
  * Whether the words run a program that only reads, with no argument that makes it write or run
- * another program. The list holds what may pass, never what must ask, so a program it does not
- * know (a script, an interpreter, a copy under another name) asks.
+ * another program, and no word that touches a secret location. The list holds what may pass,
+ * never what must ask, so a program it does not know (a script, an interpreter, a copy under
+ * another name) asks.
  */
 export function readOnlyCommand(words: readonly string[]): boolean {
   const [program, ...args] = words;
   if (!program) return false;
+  if (args.some((arg) => touchesSecretLocation(arg, program))) return false;
+  if (hasRiskyArgument(program, args)) return false;
   if (READ_ONLY_PROGRAMS.has(program)) return true;
   if (program === "find")
     return !args.some((arg) => FIND_ACTIONS.some((action) => arg.startsWith(action)));

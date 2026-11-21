@@ -161,6 +161,7 @@ fn sync_check(app: &AppHandle) {
     if let Some(item) = app.try_state::<Item>() {
         let _ = item.0.set_checked(allowed);
     }
+    crate::prefs::changed(app);
 }
 
 fn spawn(future: impl Future<Output = ()> + Send + 'static) {

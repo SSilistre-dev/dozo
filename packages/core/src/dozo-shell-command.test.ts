@@ -3,6 +3,7 @@ import {
   commandWordsLabel,
   literalCommandWords,
   readOnlyCommand,
+  readOnlyCwd,
   readOnlyPipeline,
 } from "./dozo-shell-command.js";
 
@@ -105,7 +106,15 @@ describe("readOnlyCommand", () => {
       "head -n 20 src/app.ts",
       "tail -n 5 log.txt",
       "wc -l notes.txt",
-      "grep -rn TODO src",
+      "grep -n TODO src/app.ts",
+      'grep -iE "chrome|safari" notes.txt',
+      "grep --color=auto -i todo notes.txt",
+      "cat notes.txt",
+      "ls Documents",
+      "ls -a",
+      "ls -R Documents",
+      "ls ./src",
+      "tail -n5 log.txt",
       "find . -name package.json",
       "date",
       "date +%Y-%m-%d",
@@ -118,6 +127,129 @@ describe("readOnlyCommand", () => {
       "stat 'my file.txt'",
     ])
       expect(readOnly(command), command).toBe(true);
+  });
+
+  it.each([
+    "cat .ssh/id_rsa",
+    "cat .aws/credentials",
+    "cat .env",
+    "cat .env.local",
+    "cat .config/gh/hosts.yml",
+    "cat .netrc",
+    "cat .npmrc",
+    "cat id_rsa",
+    "cat ssh/ID_ED25519",
+    "ls ..",
+    "cat ../other/notes.txt",
+    "cat Documents/../.ssh/id_rsa",
+    "ls Library/Keychains",
+    "ls library/keychains",
+    "cat Library/Cookies/Cookies.binarycookies",
+    "ls 'Library/Application Support'",
+    "cat Library/Application Support/Google/Chrome/Default/Cookies",
+    "cat Cookies",
+    "cat NTUSER.DAT",
+    "cat NTUSER.DAT.",
+    "ls AppData.",
+    "cat AppData./Local/x",
+    "cat 'AppData. /Local/x'",
+    "cat Library.../x",
+    "ls 'Library '",
+    "ls Library.",
+    "ls Keychains.",
+    "ls 'Application Data'",
+    "cat 'Application Data/x'",
+    "cat 'Local Settings/x'",
+    "ls NetHood",
+    "ls PrintHood",
+    "ls Templates",
+    "ls '.. '",
+    "ls ' '",
+    "cat ntuser.ini",
+    "find -L . -name x",
+    "find -H .",
+    "find . -follow",
+    "du -L .",
+    "du -sL .",
+    "du --dereference .",
+    "du --dereference-args .",
+    "ls -L",
+    "ls -lH",
+    "ls --dereference",
+    "ls AppData",
+    "ls appdata/Roaming",
+    "cat 'AppData\\Roaming\\x'",
+    "cat /proc/self/environ",
+    "ls /sys",
+    "cat /etc/passwd",
+    "cat /private/etc/hosts",
+    "cat /private/var/db/x",
+    "cat /dev/zero",
+    "cat /dev/null",
+    "ls /Users",
+    "ls /Users/other",
+    "ls /root",
+    "ls /net/host",
+    "ls /Network",
+    "ls /Volumes",
+    "ls /",
+    "cat Env:SECRET",
+    "ls Env:",
+    "ls HKLM:",
+    "ls HKCU:/Software",
+    "ls Cert:",
+    "cat Variable:x",
+    "ls Function:",
+    "ls Alias:",
+    "ls WSMan:",
+    "ls C:/Users",
+    "ls '~'",
+    "cat '~/notes.txt'",
+    "cat '*'",
+    "cat 'a?'",
+    "cat '[a]'",
+    "cat '$HOME/x'",
+    "cat --file=.ssh/x",
+    "grep -f.ssh/x notes.txt",
+    "stat -f.ssh/x",
+    "cat -x.ssh/x",
+    "cat '.ssh'",
+    "cat --path=C:/x",
+    "find / -name .env",
+    "find . -name .env",
+    "find . -newer .ssh/id_rsa",
+    "grep -r key .",
+    "grep -rn TODO src",
+    "grep -R key notes",
+    "grep --recursive key .",
+    "grep -ir key .",
+    "grep -f patterns.txt notes.txt",
+    "grep --file=patterns.txt notes.txt",
+    "grep --pre=ls x",
+    "grep --pre ls x",
+    "grep --filter=ls x",
+    "grep -d recurse key .",
+    "tail -f log.txt",
+    "tail -F log.txt",
+    "tail -fn5 log.txt",
+    "tail --follow log.txt",
+    "tail --follow=name log.txt",
+    "env",
+    "printenv",
+    "printenv HOME",
+    "set",
+    "export",
+    "export A=b",
+    "Get-ChildItem Env:",
+    "Get-Content Env:X",
+    "gci Env:",
+  ])("asks when a word touches a secret location: %s", (command) => {
+    expect(readOnly(command)).toBe(false);
+  });
+
+  it("keeps a date format with a colon", () => {
+    expect(readOnly("date +%H:%M")).toBe(true);
+    expect(readOnly("cat +%H:%M")).toBe(false);
   });
 
   it("asks for everything else", () => {
@@ -174,6 +306,8 @@ describe("readOnlyPipeline", () => {
       "echo 'a|b' | grep 'a|b'",
       'grep "a|b" notes.txt | head -n 3',
       "ls | tail -n 5",
+      "ls /Applications | grep -i brave",
+      "uname -a",
     ])
       expect(readOnlyPipeline(command), command).toBe(true);
   });
@@ -225,5 +359,32 @@ describe("readOnlyPipeline", () => {
       "ls | -x",
     ])
       expect(readOnlyPipeline(command), JSON.stringify(command)).toBe(false);
+  });
+});
+
+describe("readOnlyCwd", () => {
+  it("passes the home folder and plain folders", () => {
+    for (const cwd of [undefined, null, "", "  ", "~", "Documents", "~/app", "src/app"])
+      expect(readOnlyCwd(cwd), String(cwd)).toBe(true);
+  });
+
+  it("asks for a secret folder or a value that is not a path", () => {
+    for (const cwd of [
+      ".ssh",
+      "~/.aws",
+      "..",
+      "/etc",
+      "Library/Keychains",
+      "AppData",
+      "AppData.",
+      "Library ...",
+      "Application Data",
+      "Local Settings",
+      "Lib\u200Brary",
+      "\u202Ex",
+      5,
+      {},
+    ])
+      expect(readOnlyCwd(cwd), String(cwd)).toBe(false);
   });
 });
