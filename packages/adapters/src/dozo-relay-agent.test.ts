@@ -146,7 +146,7 @@ async function cli(
   extra: { now?: () => number; signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
 ) {
   const lines: Record<string, unknown>[] = [];
-  const code = await relayAgentMain([...args, "--state", stateDir], {
+  const code = await relayAgentMain(["--state", stateDir, ...args], {
     write: (line) => lines.push(JSON.parse(line)),
     signal: extra.signal ?? new AbortController().signal,
     stateDir: "/nonexistent",
