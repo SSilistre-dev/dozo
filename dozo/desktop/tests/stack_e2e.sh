@@ -89,6 +89,7 @@ docker run --rm -i --name "$NAME" --network "container:$NAME-phone" --cpus 3 --m
   -e RUSTUP_HOME=/dozo/desktop/.toolchain/linux/rustup \
   -e CARGO_HOME=/dozo/desktop/.toolchain/linux/cargo \
   -e DOZO_STACK_E2E_MANIFEST=file:///dist/e2e-manifest.json -e DOZO_STACK_E2E_ROOT=/tmp/e2e/server \
+  -e TZ=Europe/Istanbul \
   -e DOZO_STACK_E2E_RELAY=http://127.0.0.1:8787 -e DOZO_STACK_E2E_SHARED=/shared -v "$SHARED:/shared" \
   dozo-desktop-linux:22.04 bash -s <<'EOF'
 set -uo pipefail

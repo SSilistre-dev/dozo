@@ -34,14 +34,18 @@ use std::io;
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
     None => {
-        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-4/manifest.json"
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-5/manifest.json"
     }
 };
 
 /// The server version this app expects: the one `MANIFEST` names. An installed older one is
 /// updated to it at the next start (`stack_update.rs`); when it is already installed, no manifest
 /// is read.
-const SERVER_VERSION: &str = "0.11.0-4";
+const SERVER_VERSION: &str = "0.11.0-5";
+
+/// Where the server on this computer sends in-app feedback to (`apps/api/src/dozo-feedback.ts`),
+/// named by the build (`DOZO_FEEDBACK_EMAIL`); without it the feedback is only kept.
+const FEEDBACK_EMAIL: Option<&str> = option_env!("DOZO_FEEDBACK_EMAIL");
 
 /// The relay a phone reaches this computer through (`dozo/relay/agent/README.md`). A build can
 /// name another (`DOZO_RELAY_URL`), and so can the environment or the settings file (`relay=`).
@@ -824,12 +828,19 @@ pub struct Phone {
 }
 
 impl Agent {
+    /// `command` with `args`, and `--state` before any `--`: a channel id is base64url and can
+    /// start with `-`, so it always comes after `--`, where it cannot be read as an option.
     fn spec(&self, command: &str, args: &[&str]) -> Spec {
         let mut spec = self.base.clone();
         spec.args.push(command.into());
-        spec.args.extend(args.iter().map(Into::into));
+        let split = args
+            .iter()
+            .position(|arg| *arg == "--")
+            .unwrap_or(args.len());
+        spec.args.extend(args[..split].iter().map(Into::into));
         spec.args.push("--state".into());
         spec.args.push(self.state.clone().into());
+        spec.args.extend(args[split..].iter().map(Into::into));
         spec
     }
 
@@ -875,14 +886,14 @@ impl Agent {
     /// Ends a phone's pairing: on the relay when it can be reached, its session on the server,
     /// and its keys here always. A phone not allowed yet is refused the same way.
     pub async fn remove(&self, channel: &str) -> Result<(), String> {
-        self.ask("revoke", &[channel, "--origin", &self.origin])
+        self.ask("revoke", &["--origin", &self.origin, "--", channel])
             .await
             .map(drop)
     }
 
     /// The person allowed the phone that just paired: it gets its sign-in.
     pub async fn approve(&self, channel: &str) -> Result<(), String> {
-        self.ask("approve", &[channel]).await.map(drop)
+        self.ask("approve", &["--", channel]).await.map(drop)
     }
 }
 
@@ -1057,6 +1068,10 @@ impl Plan {
             "listen_addresses=127.0.0.1",
             "-c",
             "unix_socket_directories=",
+            // initdb wrote this computer's zone into the data folder; the server's SQL expects UTC
+            // (`dozo/server-bundle/README.md`, "Start contract").
+            "-c",
+            "timezone=UTC",
         ];
         self.pg_spec("postgres", args.map(str::to_owned).to_vec(), vec![])
     }
@@ -1162,6 +1177,9 @@ impl Plan {
             // Phones sign in through the relay agent, which shows this key (agent README).
             ("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY")),
         ]);
+        if let Some(email) = FEEDBACK_EMAIL.filter(|email| !email.trim().is_empty()) {
+            env.push(("DOZO_FEEDBACK_EMAIL", email.to_owned()));
+        }
         // The API lets requests finish for up to 20 s after TERM (`apps/api/src/index.ts`).
         Spec {
             grace: Duration::from_secs(25),
@@ -1255,7 +1273,7 @@ mod tests {
         let pg = version.join("postgres/bin");
         script(
             &pg.join("postgres"),
-            &format!("echo postgres >> {s}; {LOOP}"),
+            &format!("echo \"$*\" > {s}.pg; echo postgres >> {s}; {LOOP}"),
         );
         script(
             &pg.join("initdb"),
@@ -1322,6 +1340,9 @@ mod tests {
             )]
         );
         assert_eq!(first[..4], ["initdb", "postgres", "createdb", "migrate.js"]);
+        // Postgres runs in UTC whatever this computer's zone, on every start.
+        let pg = lines_of(&root.join("said.pg")).join(" ");
+        assert!(pg.contains("-c timezone=UTC"), "{pg}");
         let mut rest = first[4..].to_vec();
         rest.sort();
         assert_eq!(rest, ["api.js", "web.js", "worker.js"]);
@@ -1399,14 +1420,18 @@ mod tests {
         )));
         let web = local_web(&root);
         assert!(commands.contains(&format!(
-            "relay.js revoke c2 --origin {web} --state {state}"
+            "relay.js revoke --origin {web} --state {state} -- c2"
         )));
         let approval = events.borrow().clone().unwrap();
         assert_eq!(approval["code"], "123456");
         assert_eq!(approval["platform"], "android");
         agent.approve("c9").await.unwrap();
         let commands = lines_of(&root.join("said.relay"));
-        assert!(commands.contains(&format!("relay.js approve c9 --state {state}")));
+        assert!(commands.contains(&format!("relay.js approve --state {state} -- c9")));
+        // A channel id may start with "-" (base64url): it still reaches the agent as a channel.
+        agent.approve("-dash").await.unwrap();
+        let commands = lines_of(&root.join("said.relay"));
+        assert!(commands.contains(&format!("relay.js approve --state {state} -- -dash")));
         // The agent and the API get the same key, made with the other secrets.
         let key = stack_setup::secrets(&root.join("secrets")).unwrap();
         let key = key.get("RELAY_AGENT_KEY").to_owned();
@@ -1775,6 +1800,36 @@ mod tests {
     async fn e2e_installs_starts_and_stops_the_real_server() {
         let (local, root, ports) = e2e_ready().await;
         assert!(answers_200(ports.api, "/health"));
+        // tests/stack_e2e.sh runs this with the computer's zone not UTC (TZ): initdb wrote that
+        // zone into the data folder, and the server still runs in UTC.
+        let secrets = stack_setup::secrets(&root.join("secrets")).unwrap();
+        let version = fs::read_to_string(root.join("current")).unwrap();
+        let shown = std::process::Command::new(
+            root.join("versions")
+                .join(version.trim())
+                .join("postgres/bin/psql"),
+        )
+        .args([
+            "-h",
+            "127.0.0.1",
+            "-p",
+            &ports.postgres.to_string(),
+            "-U",
+            "rakazo",
+            "-d",
+            "rakazo",
+            "-tAc",
+            "SHOW timezone",
+        ])
+        .env("PGPASSWORD", secrets.get("PG_OWNER_PASSWORD"))
+        .output()
+        .unwrap();
+        let shown = String::from_utf8_lossy(&shown.stdout).trim().to_owned();
+        assert_eq!(shown, "UTC", "the zone here is {:?}", std::env::var("TZ"));
+        println!(
+            "E2E: Postgres runs in UTC while this computer is in {}",
+            std::env::var("TZ").unwrap_or_default()
+        );
         e2e_this_computer_connects(&root, ports).await;
         assert!(local.stop().await, "a process had to be killed");
         let left = processes_under(&root);
@@ -2196,6 +2251,35 @@ mod tests {
         local.start(Layout(root.clone()), options).await;
         assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
         assert_eq!(sign_in().await, 200, "the account after the restore");
+        // Reset Password… and Save Diagnostics…, with the bundle's own commands.
+        let account = Tool::named(&root, "account").expect("the bundle has the account command");
+        account.reset_password("reset-Password-2").await.unwrap();
+        let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
+        let web = format!("http://127.0.0.1:{}", ports.web);
+        let signed_in = reqwest::Client::new()
+            .post(format!("{web}/api/auth/sign-in/email"))
+            .header("origin", &web)
+            .header("content-type", "application/json")
+            .body(r#"{"email":"owner@example.test","password":"reset-Password-2"}"#)
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(signed_in, 200, "the new password");
+        assert_ne!(sign_in().await, 200, "the old password no longer works");
+        let report = root.with_file_name("e2e-diagnostics.tar.gz");
+        let _ = fs::remove_file(&report);
+        Tool::named(&root, "diagnostics")
+            .expect("the bundle has the diagnostics command")
+            .diagnostics(&report)
+            .await
+            .unwrap();
+        let bytes = fs::read(&report).unwrap();
+        assert_eq!(bytes[..2], [0x1f, 0x8b], "a gzip file");
+        println!(
+            "E2E: reset the password (the new one signs in, the old one not) and saved a {} KB diagnostics report",
+            bytes.len() / 1024
+        );
         println!(
             "E2E: restored over the data in use ({} ms), the account signs in",
             started.elapsed().as_millis()
