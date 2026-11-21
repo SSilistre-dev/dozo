@@ -15,7 +15,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
-RELEASE_MANIFEST="https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-5/manifest.json"
+RELEASE_MANIFEST="https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-6/manifest.json"
 say() { echo "[hosted-e2e] $*"; }
 verdict() { echo "HOSTED LOGIN E2E: $1"; [ "$1" = PASS ] && exit 0 || exit 2; }
 
