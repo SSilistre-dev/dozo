@@ -1,7 +1,9 @@
 # Dozo
 
-Dozo runs persistent AI bots, each with its own computer. Run it on your own server for free, or use
-the hosted version (a free plan and paid plans). This repository is its
+Dozo runs persistent AI bots, each with its own computer. Run it on your own server for free, use
+the hosted version at [app.dozo.bot](https://app.dozo.bot) (a free plan and paid plans; sign-up is
+open), or install the desktop app for macOS, Windows or Linux and keep the server and your chats
+and files on your own computer (what is sent to a model goes to the provider you chose). This repository is its
 source code: source available, with Dozo's own files under the Elastic License 2.0 and the code it
 builds on under Apache-2.0. Dozo is an independent fork of
 [Rakazo](https://github.com/elie222/rakazo) and is not affiliated with or endorsed by the
@@ -33,7 +35,7 @@ Branded output is never committed.
 | `dozo/theme/` | Theme tokens for the Dozo look and the compose override that loads them. See `dozo/theme/README.md` |
 | `dozo/design/` | Design reference: the source of truth for how Dozo should look |
 | `dozo/deploy/` | Running the server side on one host behind a Dokploy panel: deploy and roll back, the production compose layer, firewall rules for bot computers, backups and a health check. See `dozo/deploy/README.md` |
-| `dozo/desktop/` | The macOS app: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
+| `dozo/desktop/` | The desktop app for macOS, Windows and Linux: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
 | `dozo/mobile/` | The iOS app: upstream's Expo app built as Dozo from the staged tree, simulator only so far. See `dozo/mobile/README.md` |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
 | `dozo/LICENSE`, `dozo/NOTICE` | The licence of the fork's own files, which files those are, and the notice of changes |

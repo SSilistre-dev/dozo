@@ -209,7 +209,7 @@ with no Docker: Node, Postgres and the server bundle as plain processes
 (`dozo/server-bundle/README.md` is the contract). Linux x64 runs it, and Windows x64 runs it in CI
 end to end (below); the code builds for macOS, where it has run by hand only.
 
-- First use downloads the manifest and the three parts (about 185 MB), checks each one's size and
+- First use downloads the manifest and the three parts (190 to 240 MB depending on the system: server, Node and Postgres), checks each one's size and
   sha256, unpacks it in a folder beside its place and moves it in with one rename. A download cut
   off goes on from where it stopped next time (an HTTP range); one whose sha256 differs is deleted.
   An archive entry that would land outside its folder (`..`, an absolute path, a link pointing
