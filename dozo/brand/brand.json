@@ -7490,6 +7490,78 @@
       "reason": "agent mode and the token gate: upstream's executor test with a fake Codex calling a tool through the real MCP bridge into the real executor: in a run a token's message reached, a write asks even in Never ask, the call never runs, and no mark is left. Agent mode itself refuses such a run first (ownRun in dozo-cli-runtime.ts); this holds the gate as the second line"
     },
     {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./bot-avatar.js\";\nexport * from \"./bot-messages.js\";",
+      "replace": "export * from \"./bot-avatar.js\";\nexport * from \"./dozo-avatar-upload.js\";\nexport * from \"./bot-messages.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-avatar-upload.ts"
+      ],
+      "reason": "avatar uploads: the API checks an uploaded avatar's bytes through the adapters package"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "import { createBotFromTemplate, listBotTemplates } from \"../bot-templates.js\";\nimport { botIntroPrompt }",
+      "replace": "import { createBotFromTemplate, listBotTemplates } from \"../bot-templates.js\";\nimport { dozoAvatarForSave } from \"../dozo-avatar-upload.js\";\nimport { botIntroPrompt }",
+      "requires": [
+        "apps/api/src/dozo-avatar-upload.ts"
+      ],
+      "reason": "avatar uploads: the import of the two rules below"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "        const bot = await repos.createBot(context.actor, request);\n",
+      "replace": "        const bot = await repos.createBot(context.actor, {\n          ...request,\n          color: await dozoAvatarForSave(request.color),\n        });\n",
+      "requires": [
+        "apps/api/src/dozo-avatar-upload.ts"
+      ],
+      "reason": "avatar uploads: a new bot's uploaded picture is stored only when its bytes are the image its header names, re-encoded by the server; the header alone let any bytes through"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "            color: input.color,\n            avatarSet: input.avatarSet,\n",
+      "replace": "            color: await dozoAvatarForSave(input.color, existing.color),\n            avatarSet: input.avatarSet,\n",
+      "requires": [
+        "apps/api/src/dozo-avatar-upload.ts"
+      ],
+      "reason": "avatar uploads: a changed uploaded picture is checked and re-encoded by the server the same way; the picture the bot already has is kept as it is"
+    },
+    {
+      "file": "packages/adapters/src/bot-avatar.ts",
+      "find": "import { BOT_AVATAR_VALUE_MAX_LENGTH, isBotAvatarValue } from \"@rakazo/contracts\";\n\nexport const BOT_AVATAR_ENCODE_SIZE",
+      "replace": "import { BOT_AVATAR_VALUE_MAX_LENGTH, isBotAvatarValue } from \"@rakazo/contracts\";\nimport { dozoAvatarImageBytes } from \"./dozo-avatar-upload.js\";\n\nexport const BOT_AVATAR_ENCODE_SIZE",
+      "requires": [
+        "packages/adapters/src/dozo-avatar-upload.ts"
+      ],
+      "reason": "avatar uploads: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/bot-avatar.ts",
+      "find": "      };\n    }\n    return { color };\n  }\n\n  return { error: \"missing\" };",
+      "replace": "      };\n    }\n    if (color.startsWith(\"data:image/\")) {\n      const bytes = dozoAvatarImageBytes(color);\n      if (!bytes) return { error: \"Could not use that image as an avatar.\" };\n      try {\n        return { color: await encodeBotAvatarImage(bytes) };\n      } catch {\n        return { error: \"Could not use that image as an avatar.\" };\n      }\n    }\n    return { color };\n  }\n\n  return { error: \"missing\" };",
+      "requires": [
+        "packages/adapters/src/dozo-avatar-upload.ts"
+      ],
+      "reason": "avatar uploads: a data image a bot passes as its colour is checked and re-encoded like a person's upload, so update_bot cannot store bytes that are not that image"
+    },
+    {
+      "file": "packages/adapters/src/media-generation-tools.ts",
+      "find": "import { z } from \"zod\";\nimport { mediaPromptSchema,",
+      "replace": "import { z } from \"zod\";\nimport { dozoRecordMediaUsage } from \"./dozo-media-usage.js\";\nimport { mediaPromptSchema,",
+      "requires": [
+        "packages/adapters/src/dozo-media-usage.ts"
+      ],
+      "reason": "media usage: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/media-generation-tools.ts",
+      "find": "    await options.publish(attached.block, reservation.id, attached.artifactId);\n    return { status: \"completed\", artifactId: attached.artifactId };",
+      "replace": "    await options.publish(attached.block, reservation.id, attached.artifactId);\n    await dozoRecordMediaUsage(prisma, run, options.name, reservation.id);\n    return { status: \"completed\", artifactId: attached.artifactId };",
+      "requires": [
+        "packages/adapters/src/dozo-media-usage.ts"
+      ],
+      "reason": "media usage: every generated image or video leaves one usage record, so generations show in usage; upstream recorded none"
+    },
+    {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
       "replace": "      // The Dozo desktop has no screen driver yet: no connected computer is offered the screen\n      // tools until devices declare screen control.\n      userComputerScreen = false;\n",
