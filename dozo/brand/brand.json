@@ -8285,11 +8285,30 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./voice-chat-groups.js\";\nexport * from \"./voice-response.js\";",
-      "replace": "export * from \"./voice-chat-groups.js\";\nexport * from \"./dozo-queue-line.js\";\nexport * from \"./voice-response.js\";",
+      "replace": "export * from \"./voice-chat-groups.js\";\nexport * from \"./dozo-queue-line.js\";\nexport * from \"./dozo-queue-order.js\";\nexport * from \"./voice-response.js\";",
       "requires": [
-        "packages/core/src/dozo-queue-line.ts"
+        "packages/core/src/dozo-queue-line.ts",
+        "packages/core/src/dozo-queue-order.ts"
       ],
-      "reason": "waiting work: the chat's line and the list's rows, one reading for web and mobile"
+      "reason": "waiting work: the chat's line and the list's rows, one reading for web and mobile, and the order work starts in, which the line and the run that starts next share"
+    },
+    {
+      "file": "packages/adapters/src/run-lifecycle.ts",
+      "find": "  nextFence,\n  redactSecrets,",
+      "replace": "  nextFence,\n  queueStartOrder,\n  redactSecrets,",
+      "requires": [
+        "packages/core/src/dozo-queue-order.ts"
+      ],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-lifecycle.ts",
+      "find": "    orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n    select: { id: true },\n  });\n  if (next) await wakeRun",
+      "replace": "    orderBy: queueStartOrder(),\n    select: { id: true },\n  });\n  if (next) await wakeRun",
+      "requires": [
+        "packages/core/src/dozo-queue-order.ts"
+      ],
+      "reason": "waiting work: the run that starts when a bot's computer is released is picked in the order the line people are shown is drawn in, from one definition"
     },
     {
       "file": "packages/core/src/index.ts",

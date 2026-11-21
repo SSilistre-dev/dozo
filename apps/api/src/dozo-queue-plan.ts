@@ -1,4 +1,5 @@
 import type { DozoQueueItem } from "@rakazo/contracts";
+import { compareQueueStart } from "@rakazo/core";
 
 /** A run as the queue reads it: no content, only what decides who waits for whom. */
 export interface QueueRun {
@@ -42,8 +43,8 @@ export interface QueueSnapshot {
   previews: Map<string, string>;
 }
 
-const byStart = (a: QueueRun, b: QueueRun) =>
-  a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id);
+/** The order the next run starts in (`startNextWaitingRun` reads the same one). */
+const byStart = compareQueueStart;
 
 /** A routine's name, to the person it belongs to and no one else. */
 function ownRoutineName(run: QueueRun | null | undefined, userId: string): string | null {

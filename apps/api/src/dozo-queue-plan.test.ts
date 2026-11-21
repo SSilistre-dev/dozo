@@ -1,3 +1,4 @@
+import { queueStartOrder } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import type { QueueRun, QueueSnapshot } from "./dozo-queue-plan.js";
 import { planQueue, queueLabel } from "./dozo-queue-plan.js";
@@ -49,6 +50,28 @@ describe("a run waiting for its bot", () => {
       ["first", 1, "bot_busy", false],
       ["second", 2, "bot_busy", true],
     ]);
+  });
+
+  it("is in the order `startNextWaitingRun` starts them in, ties included", () => {
+    // That function asks the database for `queueStartOrder()`; the line must put the runs in the
+    // order those keys give, so the place shown is the one that comes up. If either side changes
+    // its order on its own, this or the starter's own test (adapters) fails.
+    const same = new Date(NOW.getTime() - 5_000);
+    const older = run("older");
+    const tied = ["m", "c", "x", "a"].map((id) => run(id, { createdAt: same }));
+    const keys = queueStartOrder().flatMap((entry) => Object.keys(entry)) as Array<
+      "createdAt" | "id"
+    >;
+    const byKeys = [older, ...tied].sort((a, b) => {
+      for (const key of keys) {
+        if (a[key] < b[key]) return -1;
+        if (a[key] > b[key]) return 1;
+      }
+      return 0;
+    });
+    const working = run("working", { status: "running", userId: OTHER });
+    const items = planQueue(snapshot({ runs: [...tied.reverse(), working, older] }));
+    expect(items.map((item) => item.id)).toEqual(byKeys.map((entry) => entry.id));
   });
 
   it("is not in line when nothing is in its way, the first moments of a run", () => {
