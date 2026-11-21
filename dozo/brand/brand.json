@@ -5871,11 +5871,12 @@
     {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./action-approval.js\";\nexport * from \"./activity-sections.js\";\n",
-      "replace": "export * from \"./action-approval.js\";\nexport * from \"./dozo-shell-command.js\";\nexport * from \"./activity-sections.js\";\n",
+      "replace": "export * from \"./action-approval.js\";\nexport * from \"./dozo-shell-command.js\";\nexport * from \"./dozo-command-rule-match.js\";\nexport * from \"./activity-sections.js\";\n",
       "requires": [
-        "packages/core/src/dozo-shell-command.ts"
+        "packages/core/src/dozo-shell-command.ts",
+        "packages/core/src/dozo-command-rule-match.ts"
       ],
-      "reason": "command approval: how a command for the user's own computer is read, for the gate, the answer and the settings list"
+      "reason": "command approval: how a command for the user's own computer or the bot's computer is read and matched against the member's rules, for the gates, the answer and the settings list"
     },
     {
       "file": "packages/db/src/index.ts",
@@ -5889,7 +5890,7 @@
     {
       "file": "packages/db/src/thread-ask.ts",
       "find": "import { saveApprovalRule, storedBatchActions } from \"./approval-settings.js\";\nimport type { Prisma, PrismaClient } from \"./client.js\";\n",
-      "replace": "import { saveApprovalRule, storedBatchActions } from \"./approval-settings.js\";\nimport { DOZO_COMMAND_TOOL, saveDozoCommandRule } from \"./dozo-command-rules.js\";\nimport type { Prisma, PrismaClient } from \"./client.js\";\n",
+      "replace": "import { saveApprovalRule, storedBatchActions } from \"./approval-settings.js\";\nimport { dozoCommandComputer, saveDozoCommandRule } from \"./dozo-command-rules.js\";\nimport type { Prisma, PrismaClient } from \"./client.js\";\n",
       "requires": [
         "packages/db/src/dozo-command-rules.ts"
       ],
@@ -5898,11 +5899,11 @@
     {
       "file": "packages/db/src/thread-ask.ts",
       "find": "    if (input.answer === \"always\" && (site || approvalEffect!.kind !== \"web_fetch\")) {",
-      "replace": "    if (input.answer === \"always\" && approvalEffect!.kind === DOZO_COMMAND_TOOL) {\n      await saveDozoCommandRule(tx, approvalEffect!, {\n        userId: approvalUserId!,\n        spaceId: input.spaceId,\n        botId: run.botId,\n      });\n    } else if (input.answer === \"always\" && (site || approvalEffect!.kind !== \"web_fetch\")) {",
+      "replace": "    const dozoComputer = dozoCommandComputer(approvalEffect!.kind);\n    if (input.answer === \"always\" && dozoComputer) {\n      await saveDozoCommandRule(tx, approvalEffect!, {\n        userId: approvalUserId!,\n        spaceId: input.spaceId,\n        botId: run.botId,\n        computer: dozoComputer,\n      });\n    } else if (input.answer === \"always\" && (site || approvalEffect!.kind !== \"web_fetch\")) {",
       "requires": [
         "packages/db/src/dozo-command-rules.ts"
       ],
-      "reason": "command approval: Always allow on a command for the user's own computer allows that command for that bot in that folder, never the whole tool"
+      "reason": "command approval: Always allow on a command for the user's own computer or the bot's computer allows that command for that bot in that folder on that computer, never the whole tool"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -6069,11 +6070,11 @@
     {
       "file": "apps/api/src/security-audit.ts",
       "find": "  \"approvalRules.remove\": { type: \"approval.policy.changed\", fields: [\"id\"] },\n  \"models.setRole\": { type: \"approval.policy.changed\", fields: [\"role\", \"scope\"] },\n",
-      "replace": "  \"approvalRules.remove\": { type: \"approval.policy.changed\", fields: [\"id\"] },\n  \"dozoCommandRules.remove\": { type: \"approval.policy.changed\", fields: [\"id\"] },\n  \"models.setRole\": { type: \"approval.policy.changed\", fields: [\"role\", \"scope\"] },\n",
+      "replace": "  \"approvalRules.remove\": { type: \"approval.policy.changed\", fields: [\"id\"] },\n  \"dozoCommandRules.remove\": { type: \"approval.policy.changed\", fields: [\"id\"] },\n  \"dozoCommandRules.update\": { type: \"approval.policy.changed\", fields: [\"id\", \"effect\"] },\n  \"dozoCommandRules.setHostedAsks\": { type: \"approval.policy.changed\", fields: [\"hostedAsks\"] },\n  \"models.setRole\": { type: \"approval.policy.changed\", fields: [\"role\", \"scope\"] },\n",
       "requires": [
         "apps/api/src/dozo-command-rules.ts"
       ],
-      "reason": "command approval: removing a command rule is an approval policy change in the audit log, like removing an approval rule"
+      "reason": "command approval: removing or changing a command rule, and whether the bot's computer asks, are approval policy changes in the audit log, like changing an approval rule"
     },
     {
       "file": "apps/web/src/components/ApprovalRulesSettings.tsx",
