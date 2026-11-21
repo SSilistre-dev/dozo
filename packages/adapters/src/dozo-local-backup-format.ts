@@ -6,50 +6,49 @@ import type { TransformCallback } from "node:stream";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
+import type { SealedFailure, SealedKdf } from "@rakazo/core";
+import {
+  encodeSealedEntryHead,
+  parseSealedEntryHead,
+  readSealedHeader,
+  SEALED_CHUNK_BYTES,
+  SEALED_DEFAULT_KDF,
+  SEALED_HEADER_BYTES,
+  SEALED_MAX_ENTRY_HEADER,
+  SEALED_TAG_BYTES,
+  SealedFileError,
+  sealedDamaged,
+  sealedEntryPath,
+  sealedNonce,
+  writeSealedHeader,
+} from "@rakazo/core";
 
 /**
- * The local backup file: one password-sealed stream. Layout, limits and why each piece was
- * chosen: `dozo/server-bundle/README.md`, "Backup file".
- *
- * Header (28 bytes): magic `DOZOBAK\n`, format 1, scrypt log2(N), r, p, 16-byte salt. The key is
- * scrypt(password, salt) and is new for every file. The body is gzip of the archive, cut into
- * 64 KiB chunks, each sealed with AES-256-GCM under the nonce (chunk counter, last-chunk flag) with
- * the header as associated data, so a chunk cannot be reordered, dropped, cut off at the end or
- * moved to another file without the open failing.
- *
- * Archive: entries of a 4-byte big-endian length, a JSON header (`path`, `kind`, `size`, `mode`)
- * and, for a file, its bytes; a zero length ends it.
+ * The local backup file, written and read with Node's streams and crypto. The format itself
+ * (header, limits, nonce, archive entry heads, failures) is defined once in `@rakazo/core`
+ * (`dozo-sealed-file.ts`), which the account backup made in the browser shares; layout and why
+ * each piece was chosen: `dozo/server-bundle/README.md`, "Backup file".
  */
 
-const MAGIC = Buffer.from("DOZOBAK\n", "latin1");
-const FORMAT = 1;
-const HEADER_BYTES = MAGIC.length + 4 + 16;
-const CHUNK = 64 * 1024;
-const TAG = 16;
-const MAX_ENTRY_HEADER = 64 * 1024;
-/** 128 MiB of memory and well under a second: the strength the file is written with. */
-export const DEFAULT_KDF: Kdf = { logN: 17, r: 8, p: 1 };
+const HEADER_BYTES = SEALED_HEADER_BYTES;
+const CHUNK = SEALED_CHUNK_BYTES;
+const TAG = SEALED_TAG_BYTES;
+const MAX_ENTRY_HEADER = SEALED_MAX_ENTRY_HEADER;
+export const DEFAULT_KDF: Kdf = SEALED_DEFAULT_KDF;
 
-export type Kdf = { logN: number; r: number; p: number };
+export type Kdf = SealedKdf;
 
 export type BackupEntry =
   | { path: string; kind: "dir" }
   | { path: string; kind: "file"; size: number; mode: number; open: () => Readable };
 
-export type BackupFailure = "not-a-backup" | "wrong-password" | "damaged";
+export type BackupFailure = SealedFailure;
+export const BackupFormatError = SealedFileError;
+export type BackupFormatError = SealedFileError;
 
-export class BackupFormatError extends Error {
-  constructor(
-    readonly reason: BackupFailure,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+const damaged = sealedDamaged;
 
-const damaged = () => new BackupFormatError("damaged", "The backup file is damaged or incomplete.");
-
-function deriveKey(password: string, salt: Buffer, kdf: Kdf): Promise<Buffer> {
+function deriveKey(password: string, salt: Uint8Array, kdf: Kdf): Promise<Buffer> {
   const N = 2 ** kdf.logN;
   return new Promise((resolve, reject) => {
     scrypt(
@@ -62,17 +61,12 @@ function deriveKey(password: string, salt: Buffer, kdf: Kdf): Promise<Buffer> {
   });
 }
 
-function nonce(counter: bigint, last: boolean): Buffer {
-  const bytes = Buffer.alloc(12);
-  bytes.writeBigUInt64BE(counter, 3);
-  bytes[11] = last ? 1 : 0;
-  return bytes;
-}
+const nonce = sealedNonce;
 
 /** Plaintext in, the sealed file out (header first). */
 export async function sealer(password: string, kdf: Kdf = DEFAULT_KDF): Promise<Transform> {
   const salt = randomBytes(16);
-  const header = Buffer.concat([MAGIC, Buffer.from([FORMAT, kdf.logN, kdf.r, kdf.p]), salt]);
+  const header = writeSealedHeader(kdf, salt);
   const key = await deriveKey(password, salt, kdf);
   let pending = Buffer.alloc(0);
   let counter = 0n;
@@ -100,22 +94,6 @@ export async function sealer(password: string, kdf: Kdf = DEFAULT_KDF): Promise<
       done();
     },
   });
-}
-
-function readHeader(bytes: Buffer): { kdf: Kdf; salt: Buffer } {
-  if (!bytes.subarray(0, MAGIC.length).equals(MAGIC)) {
-    throw new BackupFormatError("not-a-backup", "This is not a Dozo backup file.");
-  }
-  const [format, logN, r, p] = bytes.subarray(MAGIC.length, MAGIC.length + 4);
-  if (format !== FORMAT) {
-    throw new BackupFormatError(
-      "not-a-backup",
-      "This backup file is from a newer Dozo. Update Dozo, then restore it.",
-    );
-  }
-  // Bounds, so a crafted header cannot ask for gigabytes of memory.
-  if (logN === undefined || logN < 15 || logN > 18 || r !== 8 || p !== 1) throw damaged();
-  return { kdf: { logN, r, p }, salt: bytes.subarray(MAGIC.length + 4, HEADER_BYTES) };
 }
 
 /** The sealed file in, plaintext out; fails on a wrong password or any change to the file. */
@@ -149,7 +127,7 @@ export function opener(password: string): Transform {
           if (pending.length < HEADER_BYTES) return;
           header = Buffer.from(pending.subarray(0, HEADER_BYTES));
           pending = pending.subarray(HEADER_BYTES);
-          const { kdf, salt } = readHeader(header);
+          const { kdf, salt } = readSealedHeader(header);
           key = await deriveKey(password, salt, kdf);
         }
         while (pending.length > CHUNK + TAG) {
@@ -176,14 +154,7 @@ export function opener(password: string): Transform {
 async function* archive(entries: AsyncIterable<BackupEntry>): AsyncGenerator<Buffer> {
   for await (const entry of entries) {
     const { path: name, kind } = entry;
-    const head =
-      kind === "file"
-        ? { path: name, kind, size: entry.size, mode: entry.mode & 0o777 }
-        : { path: name, kind };
-    const json = Buffer.from(JSON.stringify(head));
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(json.length);
-    yield Buffer.concat([length, json]);
+    yield Buffer.from(encodeSealedEntryHead(entry));
     if (kind !== "file") continue;
     let left = entry.size;
     for await (const chunk of entry.open()) {
@@ -243,41 +214,9 @@ class ByteReader {
   }
 }
 
-/** A relative path of plain names: no `..`, `.`, empty part, absolute start or backslash. */
-export function safeEntryPath(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 4096) throw damaged();
-  if (value.includes("\\") || value.includes("\0") || value.startsWith("/")) throw damaged();
-  if (value.split("/").some((part) => part === "" || part === "." || part === "..")) {
-    throw damaged();
-  }
-  return value;
-}
-
-function entryHead(json: Buffer): {
-  path: string;
-  kind: "dir" | "file";
-  size: number;
-  mode: number;
-} {
-  let head: Record<string, unknown>;
-  try {
-    head = JSON.parse(json.toString("utf8"));
-  } catch {
-    throw damaged();
-  }
-  const name = safeEntryPath(head.path);
-  if (head.kind === "dir") return { path: name, kind: "dir", size: 0, mode: 0o700 };
-  const { size, mode } = head;
-  if (head.kind !== "file" || !Number.isSafeInteger(size) || (size as number) < 0) throw damaged();
-  if (!Number.isInteger(mode)) throw damaged();
-  // Owner bits only: the folder is this user's alone, and so is everything restored into it.
-  return {
-    path: name,
-    kind: "file",
-    size: size as number,
-    mode: (mode as number) & 0o100 ? 0o700 : 0o600,
-  };
-}
+export const safeEntryPath = sealedEntryPath;
+// Owner bits only: the folder is this user's alone, and so is everything restored into it.
+const entryHead = parseSealedEntryHead;
 
 /**
  * Opens the sealed file at `input` and writes its entries under `dir`, which should be new and

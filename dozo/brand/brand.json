@@ -8355,6 +8355,15 @@
       "reason": "quiet hours: the default range and the named day sets, shared by the web and mobile settings rows"
     },
     {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./screen-reconnect.js\";\nexport * from \"./search.js\";",
+      "replace": "export * from \"./screen-reconnect.js\";\nexport * from \"./dozo-sealed-file.js\";\nexport * from \"./search.js\";",
+      "requires": [
+        "packages/core/src/dozo-sealed-file.ts"
+      ],
+      "reason": "sealed backup: the one definition of the password-sealed backup file and its web codec, shared by the local server's backup and the account backup sealed in the browser"
+    },
+    {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
       "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoCommandBlockRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",

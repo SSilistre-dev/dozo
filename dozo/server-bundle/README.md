@@ -241,9 +241,10 @@ One JSON line on stdout: `{"created": <path>, "server": <version>}`, `{"restored
 
 ### Backup file
 
-Built from Node's crypto (OpenSSL), nothing hand-made: scrypt for the key, AES-256-GCM to seal,
-in the chunked layout of the STREAM construction (Hoang, Reyhanitabar, Rogaway, Vizár 2015), so a
-file of any size streams through memory.
+Built from Node's crypto (OpenSSL), or WebCrypto and an audited scrypt in the browser, nothing
+hand-made: scrypt for the key, AES-256-GCM to seal, in the chunked layout of the STREAM
+construction (Hoang, Reyhanitabar, Rogaway, Vizár 2015), so a file of any size streams through
+memory.
 
 | Bytes        | Content                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -264,6 +265,11 @@ length ends it, and nothing may follow. The first entry is `backup.json`: `forma
 `server` (the bundle version) and `migrations` (the applied migration names). Then the secrets
 file, `database.dump`, `data/…` and `relay/…`. Paths are relative with plain names; restored files
 keep only the owner's bits (0600, or 0700 when the owner could run it).
+
+The format is defined once, in `packages/core/src/dozo-sealed-file.ts`, and the same format is
+written in the browser for account backups (Settings > Data, Backup): one entry,
+`account-export.zip`, holding the account export, sealed and opened in the page so the password
+never reaches the server.
 
 ## Account repairs
 
