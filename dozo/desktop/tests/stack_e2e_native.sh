@@ -198,6 +198,7 @@ if [ -z "$RELAY" ]; then
   fi
   browser_test e2e_browser_page_tools_work_through_the_pipe_only
   browser_test e2e_browser_guard_holds_in_windows_and_frames
+  browser_test e2e_browser_reaches_nothing_on_this_computer_or_its_network
   export DOZO_BROWSER_E2E_ROOT="$BASE/browser"
   "$BIN" --ignored --exact browser::e2e::e2e_browser_hold_until_killed --nocapture \
     > "$LOGS/e2e_browser_hold_until_killed.log" 2>&1 &

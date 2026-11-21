@@ -186,12 +186,17 @@ pub fn find() -> Option<PathBuf> {
 /// or keep its passwords unencrypted (`--enable-automation`, `--use-mock-keychain`,
 /// `--password-store=basic`), never `--app` or kiosk (the address bar stays), and never a
 /// debugging port.
-fn arguments(profile: &Path, headless: bool) -> Vec<String> {
+fn arguments(profile: &Path, headless: bool, proxy: u16) -> Vec<String> {
     let mut args = vec![
         format!("--user-data-dir={}", profile.display()),
         "--remote-debugging-pipe".to_owned(),
         "--no-first-run".to_owned(),
         "--no-default-browser-check".to_owned(),
+        // Every request through this app's proxy (`browser_proxy.rs`), loopback included, which
+        // the browser would otherwise reach directly, and no WebRTC traffic around it.
+        format!("--proxy-server=http://127.0.0.1:{proxy}"),
+        "--proxy-bypass-list=<-loopback>".to_owned(),
+        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_owned(),
     ];
     if headless {
         args.push("--headless=new".to_owned());
@@ -274,40 +279,7 @@ fn web_address(url: &str, local: bool) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
-    // The address parser has already written any form of an IP address the usual way.
-    let bare = host.trim_start_matches('[').trim_end_matches(']');
-    local
-        || match bare.parse::<std::net::IpAddr>() {
-            Ok(std::net::IpAddr::V4(ip)) => public_v4(ip),
-            Ok(std::net::IpAddr::V6(ip)) => match ip.to_ipv4_mapped() {
-                Some(ip) => public_v4(ip),
-                None => {
-                    let first = ip.segments()[0];
-                    !(ip.is_loopback()
-                        || ip.is_unspecified()
-                        || first & 0xfe00 == 0xfc00
-                        || first & 0xffc0 == 0xfe80)
-                }
-            },
-            Err(_) => {
-                let name = bare.trim_end_matches('.').to_ascii_lowercase();
-                !(name == "localhost"
-                    || [".localhost", ".local", ".internal", ".home.arpa"]
-                        .iter()
-                        .any(|suffix| name.ends_with(suffix)))
-            }
-        }
-}
-
-fn public_v4(ip: std::net::Ipv4Addr) -> bool {
-    let [a, b, ..] = ip.octets();
-    !(ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_unspecified()
-        || ip.is_broadcast()
-        || a == 0
-        || (a == 100 && (64..128).contains(&b)))
+    local || crate::browser_proxy::public_host(host.trim_start_matches('[').trim_end_matches(']'))
 }
 
 /// A key press that reaches more than the page's text: the clipboard (Ctrl or Cmd with V, C or X,
@@ -661,7 +633,11 @@ pub struct Browsers {
     /// Pages on this computer and its network may be opened: tests only, which serve their page
     /// on loopback.
     local: bool,
+    /// What of them the proxy lets through, for those tests.
+    local_hosts: crate::browser_proxy::Local,
     open: Mutex<HashMap<String, Arc<Running>>>,
+    /// The bots' browsers' only way out, started with the first of them.
+    proxy: tokio::sync::Mutex<Option<crate::browser_proxy::Proxy>>,
     /// One start at a time.
     starting: tokio::sync::Mutex<()>,
     /// Moves on with every `close` and `close_all`, so a browser that was starting meanwhile is
@@ -681,7 +657,9 @@ impl Browsers {
             program,
             headless,
             local: false,
+            local_hosts: crate::browser_proxy::Local::None,
             open: Mutex::default(),
+            proxy: tokio::sync::Mutex::default(),
             starting: tokio::sync::Mutex::default(),
             generation: AtomicU64::new(0),
         }
@@ -691,6 +669,15 @@ impl Browsers {
     #[cfg(test)]
     pub fn with_local_pages(mut self) -> Self {
         self.local = true;
+        self.local_hosts = crate::browser_proxy::Local::All;
+        self
+    }
+
+    /// Lets tests open only the loopback ports they name, as pages and through the proxy.
+    #[cfg(test)]
+    pub fn with_local_ports(mut self, ports: Vec<u16>) -> Self {
+        self.local = true;
+        self.local_hosts = crate::browser_proxy::Local::Ports(ports);
         self
     }
 
@@ -845,7 +832,15 @@ impl Browsers {
         let pid_file = self.root.join(format!("{key}.pid"));
         let (pid, marked) = (pid_file.clone(), profile.clone());
         let _ = tokio::task::spawn_blocking(move || end_leftover(&pid, &marked)).await;
-        let (child, pipe) = launch(program, &arguments(&profile, self.headless))
+        let proxy = {
+            let mut proxy = self.proxy.lock().await;
+            if proxy.is_none() {
+                let started = crate::browser_proxy::Proxy::start(self.local_hosts.clone()).await;
+                *proxy = Some(started.map_err(|_| "The bot's browser could not start".to_owned())?);
+            }
+            proxy.as_ref().map_or(0, |proxy| proxy.port)
+        };
+        let (child, pipe) = launch(program, &arguments(&profile, self.headless, proxy))
             .await
             .map_err(|_| "The bot's browser could not start".to_owned())?;
         if let Some(pid) = child.id() {
@@ -1115,7 +1110,7 @@ mod tests {
 
     #[test]
     fn it_starts_with_a_profile_of_its_own_and_none_of_the_flags_that_weaken_it() {
-        let args = arguments(Path::new("/data/browser-profiles/abc"), false);
+        let args = arguments(Path::new("/data/browser-profiles/abc"), false, 4242);
         assert_eq!(args[0], "--user-data-dir=/data/browser-profiles/abc");
         assert!(args.contains(&"--remote-debugging-pipe".to_owned()));
         for forbidden in [
@@ -1132,7 +1127,9 @@ mod tests {
                 "{forbidden} in {args:?}"
             );
         }
-        assert!(arguments(Path::new("/p"), true).contains(&"--headless=new".to_owned()));
+        assert!(arguments(Path::new("/p"), true, 1).contains(&"--headless=new".to_owned()));
+        assert!(args.contains(&"--proxy-server=http://127.0.0.1:4242".to_owned()));
+        assert!(args.contains(&"--proxy-bypass-list=<-loopback>".to_owned()));
     }
 
     #[test]
@@ -1207,6 +1204,11 @@ mod tests {
             "http://app.localhost/",
             "http://printer.local/",
             "http://router.home.arpa/",
+            "http://router/",
+            "http://fritz.box/",
+            "http://nas.lan/",
+            "http://198.18.0.1/",
+            "http://[64:ff9b::a00:1]/",
             "http://db.internal/",
             "http://10.0.0.1/",
             "http://172.16.5.4/",

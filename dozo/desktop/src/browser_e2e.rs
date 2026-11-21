@@ -497,11 +497,17 @@ fn serve_pages(pages: Vec<(&'static str, String)>) -> u16 {
                 .find(|(at, _)| *at == path)
                 .map(|(_, body)| body.as_str())
                 .unwrap_or("");
-            let _ = write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                body.len()
-            );
+            let _ = match body.strip_prefix("REDIRECT ") {
+                Some(to) => write!(
+                    stream,
+                    "HTTP/1.1 302 Found\r\nlocation: {to}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                ),
+                None => write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                ),
+            };
         }
     });
     port
@@ -572,6 +578,80 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
     );
     println!(
         "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, and the older full screen"
+    );
+    browsers.close_all();
+}
+
+/// Nothing the page does reaches this computer or its network: not a picture, a script's request,
+/// a form, a redirect, or a public name that resolves to loopback. A port that answers and one
+/// that does not look the same. The test's page is on a loopback port the proxy lets through; the
+/// target, another loopback port, counts every request it gets.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_reaches_nothing_on_this_computer_or_its_network() {
+    use std::sync::atomic::AtomicUsize;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let target = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = target.local_addr().unwrap().port();
+    let counted = hits.clone();
+    std::thread::spawn(move || {
+        for mut stream in target.incoming().flatten() {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok");
+        }
+    });
+    let closed = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let home = format!(
+        "<!doctype html><title>reach</title><p id=probe>probe:</p>\
+         <script>function r(t){{document.getElementById('probe').textContent+=' '+t}}</script>\
+         <img src='http://127.0.0.1:{port}/img'>\
+         <button onclick=\"fetch('http://127.0.0.1:{port}/f',{{mode:'no-cors'}}).then(()=>r('fetch-done'),()=>r('fetch-done'))\">Fetch</button>"
+    );
+    let form = format!(
+        "<!doctype html><title>form</title><form method=post action='http://127.0.0.1:{port}/form'><button>Post</button></form>"
+    );
+    let page = serve_pages(vec![
+        ("/", home),
+        ("/form", form),
+        ("/away", format!("REDIRECT http://127.0.0.1:{port}/r")),
+    ]);
+    let root = root();
+    let program = find().expect("a Chromium-family browser on this computer");
+    let window = std::env::var_os("DOZO_BROWSER_E2E_WINDOW").is_some();
+    let browsers = Browsers::with(root.join("browser-profiles"), Some(program), !window)
+        .with_local_ports(vec![page]);
+    let at = |path: &str| format!("http://127.0.0.1:{page}{path}");
+    call(&browsers, "Page.navigate", json!({ "url": at("/") })).await;
+    let found = wait_for(&browsers, "Fetch").await;
+    click(&browsers, find_node(&found, "button", "Fetch")).await;
+    // The request ends either way (the proxy answers it); only the target's count tells.
+    wait_for(&browsers, "fetch-").await;
+    call(&browsers, "Page.navigate", json!({ "url": at("/form") })).await;
+    let form = wait_for(&browsers, "Post").await;
+    click(&browsers, find_node(&form, "button", "Post")).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    call(&browsers, "Page.navigate", json!({ "url": at("/away") })).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let rebound = format!("http://127.0.0.1.nip.io:{port}/");
+    let to_target = call(&browsers, "Page.navigate", json!({ "url": rebound })).await;
+    let shut = format!("http://127.0.0.1.nip.io:{closed}/");
+    let to_closed = call(&browsers, "Page.navigate", json!({ "url": shut })).await;
+    assert_eq!(
+        to_target["errorText"], to_closed["errorText"],
+        "an open port looks like a closed one"
+    );
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        0,
+        "a request reached the target"
+    );
+    println!(
+        "E2E: no picture, script request, form, redirect or rebound name reached this computer; open and closed ports look alike"
     );
     browsers.close_all();
 }
