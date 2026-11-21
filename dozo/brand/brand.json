@@ -5137,6 +5137,20 @@
       "reason": "message actions on mobile: the iOS menu is built before it opens, so the chat reads what Edit and Regenerate apply to again when a message or run changes, and its pins on each roster signal"
     },
     {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "import { LoadEarlierButton, ThreadWorkingFooter } from \"./thread-list-controls\";",
+      "replace": "import { LoadEarlierButton } from \"./thread-list-controls\";\nimport { DozoWaitingFooter } from \"./dozo-waiting-footer\";",
+      "requires": ["apps/mobile/components/thread/dozo-waiting-footer.tsx"],
+      "reason": "waiting work on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "<ThreadWorkingFooter\n      bots={workingBots.map((bot) => ({",
+      "replace": "<DozoWaitingFooter\n      target={groupId ? { groupId } : botId ? { botId } : undefined}\n      bots={workingBots.map((bot) => ({",
+      "requires": ["apps/mobile/components/thread/dozo-waiting-footer.tsx"],
+      "reason": "waiting work on mobile: when the caller's own work waits for the bot, the chat's working line says what it waits for and its place, and tapping it opens a native sheet that lists what waits with a stop for the caller's own"
+    },
+    {
       "file": "apps/mobile/app/group-settings.tsx",
       "find": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { rpc, selectedSpaceId }",
       "replace": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { DozoGroupChatActions } from \"../components/dozo-group-chat-actions\";\nimport { rpc, selectedSpaceId }",
