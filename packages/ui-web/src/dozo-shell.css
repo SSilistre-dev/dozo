@@ -308,7 +308,11 @@
 [data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child {
   gap: 8px;
 }
-[data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child button {
+[data-collapsible="icon"]
+  [data-slot="sidebar-inner"]
+  > .app-drag:first-child
+  > :last-child
+  button {
   width: 40px;
   min-width: 40px;
   height: 40px;
@@ -338,9 +342,7 @@
   background: var(--warning);
   box-shadow: 0 0 0 2px var(--dozo-surface-0);
 }
-[data-collapsible="icon"]
-  [data-roster-bot-id]
-  > span:has(> .dozo-avatar[data-state="waiting"])::after {
+[data-collapsible="icon"] [data-roster-bot-id] > span:has(> .dozo-avatar[data-state="waiting"])::after {
   content: "";
 }
 [data-collapsible="icon"] .group\/row:hover [data-roster-bot-id] > span > [aria-hidden] {

@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   passkeySupported: false,
   providers: vi.fn(),
   now: 0,
-  complete: true,
 }));
 
 vi.mock("@lingui/react/macro", () => ({
@@ -37,7 +36,8 @@ vi.mock("@rakazo/ui-web", () => ({
   Label: ({ children, htmlFor }: React.ComponentProps<"label">) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),
-  // One input stands for the six boxes; a full value completes the code, as input-otp does.
+  // One input stands for the six boxes and hands the raw value on, as input-otp does without a
+  // pattern; the page turns it into digits and checks a full code itself.
   InputOTP: (props: {
     value: string;
     disabled?: boolean;
@@ -45,7 +45,6 @@ vi.mock("@rakazo/ui-web", () => ({
     autoComplete: string;
     inputMode: "numeric";
     onChange: (value: string) => void;
-    onComplete: (value: string) => void;
   }) => (
     <input
       data-testid="code"
@@ -54,10 +53,7 @@ vi.mock("@rakazo/ui-web", () => ({
       inputMode={props.inputMode}
       disabled={props.disabled}
       value={props.value}
-      onChange={(event) => {
-        props.onChange(event.target.value);
-        if (mocks.complete && event.target.value.length === 6) props.onComplete(event.target.value);
-      }}
+      onChange={(event) => props.onChange(event.target.value)}
     />
   ),
   InputOTPGroup: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -113,7 +109,7 @@ vi.mock("./dozo-signup-terms", () => ({ DozoSignupTerms: () => <p>terms</p> }));
 
 import type { SignInProvider } from "@rakazo/contracts";
 import { authErrorText } from "../lib/user-error";
-import { DozoCodeSignIn, RESEND_AFTER_MS } from "./dozo-code-sign-in";
+import { DozoCodeSignIn, dozoCodeDigits, RESEND_AFTER_MS } from "./dozo-code-sign-in";
 import { DozoEmailCodeLink, dozoCodeSignInAvailable } from "./dozo-email-code-link";
 
 let host: HTMLDivElement;
@@ -127,7 +123,6 @@ beforeEach(() => {
   mocks.providers.mockClear();
   mocks.passkeyStart.mockClear();
   mocks.passkeySupported = false;
-  mocks.complete = true;
   clock = 1_000_000;
   mocks.now = clock;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -314,12 +309,14 @@ it("lets Resend code ask again only after 30 seconds, showing the wait, and show
   expect(resend().textContent).toBe("Resend code0:30");
 });
 
-it("goes Back to the address, keeping it", async () => {
+it("goes Back to the address, keeping it, with focus on the field", async () => {
   await open();
+  expect(document.activeElement).not.toBe(emailField());
   await toCode();
   await act(async () => button("Back")?.click());
   expect(text()).toMatch(/Sign in to \w+/);
   expect(emailField().value).toBe("maya@example.com");
+  expect(document.activeElement).toBe(emailField());
 });
 
 it("opens the password form one step away, handing the address over in the history entry", async () => {
@@ -402,25 +399,68 @@ it("offers a way back from the password form only where the server signs in with
   expect(button("Email me a code instead")).toBeUndefined();
 });
 
-it("verifies a full code submitted from the form, and an emptied box leaves the error in place", async () => {
-  mocks.verify.mockResolvedValueOnce({ error: { code: "INVALID_OTP", message: "Invalid OTP" } });
+it("checks a code once, however often it is submitted while the first check is on its way", async () => {
+  let answer: (value: unknown) => void = () => undefined;
+  mocks.verify.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  );
   await open();
   await toCode();
   const code = () =>
     host.querySelector<HTMLInputElement>('[data-testid="code"]') as HTMLInputElement;
-  mocks.complete = false;
   await type(code(), "246810");
-  expect(mocks.verify).not.toHaveBeenCalled();
   await submit();
-  expect(mocks.verify).toHaveBeenCalledWith({ email: "maya@example.com", otp: "246810" });
-  expect(alerts()).toHaveLength(1);
+  await submit();
+  expect(mocks.verify).toHaveBeenCalledTimes(1);
+  await act(async () => answer({ error: { code: "INVALID_OTP", message: "Invalid OTP" } }));
+  expect(alerts()).toEqual(["Invalid code"]);
+  // The lock goes with the answer: the next code is checked.
+  mocks.verify.mockResolvedValueOnce({ error: { code: "INVALID_OTP", message: "Invalid OTP" } });
+  await type(code(), "135790");
+  expect(mocks.verify).toHaveBeenCalledTimes(2);
+  // An emptied box leaves the error in place.
   await type(code(), "");
   expect(alerts()).toHaveLength(1);
 });
 
+it("turns other scripts' and fullwidth digits into the ASCII code the server takes", async () => {
+  expect(dozoCodeDigits("１２３４５６")).toBe("123456");
+  expect(dozoCodeDigits("١٢٣٤٥٦")).toBe("123456");
+  expect(dozoCodeDigits("۱۲۳۴۵۶")).toBe("123456");
+  expect(dozoCodeDigits("१२३४५६")).toBe("123456");
+  expect(dozoCodeDigits("১২৩৪৫৬")).toBe("123456");
+  expect(dozoCodeDigits("๑๒๓๔๕๖")).toBe("123456");
+  expect(dozoCodeDigits(" 12-34 56\n")).toBe("123456");
+  expect(dozoCodeDigits("abc")).toBe("");
+
+  mocks.verify.mockResolvedValue({ error: { code: "INVALID_OTP", message: "Invalid OTP" } });
+  await open();
+  await toCode();
+  const code = () =>
+    host.querySelector<HTMLInputElement>('[data-testid="code"]') as HTMLInputElement;
+  await type(code(), "١٢٣٤٥٦٧");
+  expect(mocks.verify).toHaveBeenLastCalledWith({ email: "maya@example.com", otp: "123456" });
+});
+
+it("says a paste with no digit in it is not a code, instead of doing nothing", async () => {
+  await open();
+  await toCode();
+  const code = () =>
+    host.querySelector<HTMLInputElement>('[data-testid="code"]') as HTMLInputElement;
+  await type(code(), "abcdef");
+  expect(mocks.verify).not.toHaveBeenCalled();
+  expect(alerts()).toEqual(["Invalid code"]);
+  expect(code().value).toBe("");
+});
+
 it("sends a provider sign-in back to where the person was going", async () => {
   mocks.sso.mockResolvedValueOnce({ data: {} });
-  await open("/sign-in?next=%2Fadmin%2Fplugins", [{ id: "google", name: "Google" } as SignInProvider]);
+  await open("/sign-in?next=%2Fadmin%2Fplugins", [
+    { id: "google", name: "Google" } as SignInProvider,
+  ]);
   await act(async () => button("google")?.click());
   expect(alerts()).toEqual([]);
   const [start, allowed] = mocks.sso.mock.calls[0] as [
@@ -429,7 +469,9 @@ it("sends a provider sign-in back to where the person was going", async () => {
   ];
   expect(allowed).toContain("/admin/plugins");
   start(false, (path) => `cb:${path}`);
-  expect(mocks.social).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: "cb:/admin/plugins" }));
+  expect(mocks.social).toHaveBeenCalledWith(
+    expect.objectContaining({ callbackURL: "cb:/admin/plugins" }),
+  );
 });
 
 it("hands over an empty address when the password form has no email field", async () => {

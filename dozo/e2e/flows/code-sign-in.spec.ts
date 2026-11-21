@@ -10,8 +10,11 @@ import { expect, SIGNED_OUT, test } from "./flow";
  *
  * A new address, not the setup's account: this stack opens sign-up, so the code makes the account
  * (the server's sign-up policy decides that, not the page). And a code that proves an unverified
- * account's mailbox drops its earlier logins, its password included (upstream's guard against an
- * address someone else registered first), which would sign the shared account out of later tests.
+ * account's mailbox takes away everything that account had before: Better Auth drops its password
+ * and its sessions, and the server (revokeUnprovenCredentials in packages/auth/src/index.ts) its
+ * passkeys, SSO and social links, messaging identities and link codes, and paired devices.
+ * Upstream's guard against an address someone else registered first; on the shared, unverified
+ * account it would sign later tests out.
  */
 test.use({ storageState: SIGNED_OUT });
 

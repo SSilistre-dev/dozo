@@ -16,6 +16,31 @@ import { AuthFrame, submitClass } from "./Auth";
 import { DozoSignupTerms } from "./dozo-signup-terms";
 
 const CODE_LENGTH = 6;
+
+/** The first code point of each run of ten decimal digits a keyboard or a mail may give. */
+const DIGIT_ZEROS = [
+  0x30, // ASCII
+  0x660, // Arabic-Indic
+  0x6f0, // Extended Arabic-Indic (Persian, Urdu)
+  0x966, // Devanagari
+  0x9e6, // Bengali
+  0xe50, // Thai
+  0xff10, // Fullwidth
+];
+
+/**
+ * The digits of a typed or pasted code as ASCII: other scripts' and fullwidth digits are turned
+ * into 0-9, anything else (spaces, dashes, letters) is dropped. The server takes ASCII only.
+ */
+export function dozoCodeDigits(text: string): string {
+  let digits = "";
+  for (const char of text) {
+    const point = char.codePointAt(0) ?? 0;
+    const zero = DIGIT_ZEROS.find((start) => point >= start && point < start + 10);
+    if (zero !== undefined) digits += String(point - zero);
+  }
+  return digits;
+}
 /** How long "Resend code" waits after a code was sent; the server keeps its own limit. */
 export const RESEND_AFTER_MS = 30_000;
 
@@ -45,6 +70,10 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
   const [misses, setMisses] = useState(0);
   const [pending, setPending] = useState(false);
   const entering = useRef(false);
+  // A code is checked once: a second submit while the first is on its way would spend another of
+  // the code's three attempts. A ref, because two calls can come before a re-render.
+  const verifying = useRef(false);
+  const [returned, setReturned] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     const failed = searchParams.get("error");
     return failed ? authErrorText({ code: failed }, t`Could not continue`) : null;
@@ -85,7 +114,8 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
   }
 
   async function verify(otp: string) {
-    if (pending) return;
+    if (verifying.current) return;
+    verifying.current = true;
     setPending(true);
     setError(null);
     try {
@@ -100,6 +130,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
     } catch {
       setError(t`Could not reach the server`);
     } finally {
+      verifying.current = false;
       if (!entering.current) setPending(false);
     }
   }
@@ -142,17 +173,22 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
           <InputOTP
             aria-label={t({ message: "Code", context: "email sign-in" })}
             maxLength={CODE_LENGTH}
-            pattern={"^\\d+$"}
             inputMode="numeric"
             autoComplete="one-time-code"
             autoFocus
             disabled={pending}
             value={code}
             onChange={(value: string) => {
-              setCode(value);
-              if (value) setError(null);
+              const digits = dozoCodeDigits(value).slice(0, CODE_LENGTH);
+              // Something was typed or pasted and none of it is a digit: say so, never nothing.
+              if (value.length > code.length && digits.length <= code.length) {
+                setError(t`Invalid code`);
+                return;
+              }
+              setCode(digits);
+              if (digits) setError(null);
+              if (digits.length === CODE_LENGTH) void verify(digits);
             }}
-            onComplete={(value: string) => void verify(value)}
           >
             <InputOTPGroup>
               {[0, 1, 2, 3, 4, 5].map((index) => (
@@ -173,6 +209,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
             disabled={pending && !entering.current}
             onClick={() => {
               setStep("email");
+              setReturned(true);
               setCode("");
               setError(null);
             }}
@@ -229,6 +266,8 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
           name="email"
           type="email"
           autoComplete="username webauthn"
+          // Back from the code step lands on the address, ready to correct it.
+          autoFocus={returned}
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
