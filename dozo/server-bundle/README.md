@@ -36,8 +36,10 @@ local stack. `build.sh` keeps the pnpm store in the volume `dozo-server-bundle-s
 (`DOZO_PNPM_STORE_VOLUME`); remove it when done.
 
 CI (`.github/workflows/dozo-server-bundle.yml`) builds linux-x64, macOS arm64 and x64 and Windows
-x64, runs the smoke test on linux-x64, and on Windows the desktop app installs, starts and stops
-the bundle it built (`dozo/desktop/tests/stack_e2e_windows.ps1`). linux-x64 and win-x64 have to
+x64, runs the smoke test on linux-x64, and the desktop app installs, starts and stops each bundle
+it built and pairs a phone through it: on Linux and macOS (Apple silicon and Intel) natively
+(`dozo/desktop/tests/stack_e2e_native.sh`, which also updates a server installed from a published
+release to it), on Windows with `dozo/desktop/tests/stack_e2e_windows.ps1`. All of those have to
 pass. A `server-v*` tag, or a manual run given a tag, puts the bundles, the Node and Postgres
 archives and `manifest.json` on a draft release that is never marked latest; publishing the draft
 makes the addresses in the manifest live.

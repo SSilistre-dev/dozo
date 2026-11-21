@@ -222,7 +222,7 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
       runtime,
       deps,
     );
-    for await (const _ of local.run({} as never, {} as never));
+    for await (const _ of local.run({ model: { provider: "openrouter" } } as never, {} as never));
     expect(seen).toBeDefined();
     const deployment = cliModelRuntime(
       { defaultProvider: PROVIDER, defaultModel: MODEL_ID, deploymentModelConfigured: true },
@@ -230,7 +230,10 @@ describe.skipIf(process.platform === "win32")("CLI models on the person's own co
       deps,
     );
     seen = undefined;
-    for await (const _ of deployment.run({} as never, {} as never));
+    for await (const _ of deployment.run(
+      { model: { provider: "openrouter" } } as never,
+      {} as never,
+    ));
     expect((seen as { getModels(): unknown[] } | undefined)?.getModels()).toHaveLength(1);
   });
 
