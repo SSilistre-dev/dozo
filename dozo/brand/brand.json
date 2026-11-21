@@ -1368,6 +1368,26 @@
       "reason": "cache share and usage breakdown on Usage: a finished run records its usage, and its runs signal re-reads both while Usage is open"
     },
     {
+      "file": "apps/web/src/lib/space-changes.ts",
+      "find": "    [\"dozoUsage\", \"breakdown\"],\n  ],",
+      "replace": "    [\"dozoUsage\", \"breakdown\"],\n    [\"dozoQueue\", \"list\"],\n  ],",
+      "reason": "waiting work: what waits for a bot changes with its runs, so the chat reads it again on the same signal instead of polling"
+    },
+    {
+      "file": "apps/web/src/pages/shell/transcript.tsx",
+      "find": "import { ActiveBotGlyph } from \"../../components/ai/CollaborationMarker\";",
+      "replace": "import { DozoWaitingGlyph } from \"./dozo-waiting-glyph\";",
+      "requires": ["apps/web/src/pages/shell/dozo-waiting-glyph.tsx"],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/transcript.tsx",
+      "find": "<ActiveBotGlyph bots={workingBots} label={workingLabel} />",
+      "replace": "<DozoWaitingGlyph bots={workingBots} label={workingLabel} target={artifactTarget} />",
+      "requires": ["apps/web/src/pages/shell/dozo-waiting-glyph.tsx"],
+      "reason": "waiting work: when the caller's own work waits for the bot, the chat's working line says what it waits for and its place, and lists what waits with a stop for the caller's own"
+    },
+    {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "import { ModelStep } from \"./onboarding/model-step\";",
       "replace": "import { dozoCreditsOnSale, ModelStep } from \"./onboarding/dozo-model-step\";",
@@ -6909,6 +6929,12 @@
       "reason": "upstream test fixture: the fork's own-computer row reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-own-computer-row.test.tsx covers it)"
     },
     {
+      "file": "apps/web/src/pages/shell/transcript.test.tsx",
+      "find": "vi.mock(\"../../lib/rpc\", () => ({ rpc: {} }));",
+      "replace": "vi.mock(\"./dozo-waiting-glyph\", () => ({\n  DozoWaitingGlyph: ({ label }: { label: string }) => <div role=\"status\">{label}</div>,\n}));\n\nvi.mock(\"../../lib/rpc\", () => ({ rpc: {} as never }));",
+      "reason": "upstream test fixture: the fork's working line reads what waits for the bot from the server, which this test does not provide, so it shows the plain working line as the test leaves out the other server-backed parts (dozo-waiting-glyph.test.tsx covers it)"
+    },
+    {
       "file": "apps/web/src/pages/shell/chat-header.test.tsx",
       "find": "const writeText = vi.hoisted(() => vi.fn(async () => undefined));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
       "replace": "const writeText = vi.hoisted(() => vi.fn(async () => undefined));\n\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
@@ -7308,6 +7334,15 @@
       "find": "msgid \"Manage\"\nmsgstr \"Yönet\"\n\n#.",
       "replace": "msgid \"Manage\"\nmsgstr \"Yönet\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Access tokens\"\nmsgstr \"Erişim belirteçleri\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"New token\"\nmsgstr \"Yeni belirteç\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Last used {date}\"\nmsgstr \"Son kullanım {date}\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Never used\"\nmsgstr \"Hiç kullanılmadı\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Revoke {name}\"\nmsgstr \"{name} belirtecini iptal et\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Could not revoke token\"\nmsgstr \"Belirteç iptal edilemedi\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Could not create token\"\nmsgstr \"Belirteç oluşturulamadı\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Copy token\"\nmsgstr \"Belirteci kopyala\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Copy it now. It won't be shown again.\"\nmsgstr \"Şimdi kopyalayın. Bir daha gösterilmeyecek.\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Expires in 90 days\"\nmsgstr \"90 gün sonra sona erer\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Never expires\"\nmsgstr \"Süresiz\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Expires {ends}\"\nmsgstr \"Bitiş {ends}\"\n\n#: apps/web/src/pages/shell/dozo-token-mark.tsx\n#: apps/mobile/components/thread/dozo-token-mark.tsx\nmsgid \"Sent with an access token\"\nmsgstr \"Erişim belirteciyle gönderildi\"\n\n#: apps/web/src/pages/shell/dozo-trust-bot.tsx\nmsgid \"Trust this bot again\"\nmsgstr \"Bu bota yeniden güven\"\n\n#: apps/web/src/pages/shell/dozo-trust-bot.tsx\nmsgid \"Could not trust the bot\"\nmsgstr \"Bota güvenilemedi\"\n\n#.",
       "reason": "bot API: the Turkish copy of the Access tokens row and its dialog in Security"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bota güvenilemedi\"\n\n#.",
+      "replace": "msgstr \"Bota güvenilemedi\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"Computer busy\"\nmsgstr \"Bilgisayar meşgul\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"After {0}\"\nmsgstr \"{0} sonrası\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"Busy elsewhere\"\nmsgstr \"Başka işte meşgul\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"Another task\"\nmsgstr \"Başka bir iş\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"Stop waiting\"\nmsgstr \"Beklemeyi bırak\"\n\n#.",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-waiting-glyph.tsx"
+      ],
+      "reason": "waiting work: the Turkish copy of the chat's waiting line and its list of what waits"
     },
     {
       "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
