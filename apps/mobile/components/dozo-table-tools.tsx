@@ -1,14 +1,15 @@
+import { useLingui } from "@lingui/react/macro";
 import type { TableToolsProps } from "@rakazo/chat-ui/native";
 import { useMarkdownCopy } from "@rakazo/chat-ui/native";
-import { bestEffort } from "@rakazo/logging";
 import { useState } from "react";
-import { Modal, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Modal, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { shareCsv } from "../lib/dozo-table-share";
 import { NativeActionButton } from "./native-action-button";
 
 /** The controls beside a chat table: share it as CSV, and open it full screen. */
 export function TableTools({ csv, renderTable }: TableToolsProps) {
+  const { t } = useLingui();
   const copy = useMarkdownCopy();
   const [open, setOpen] = useState(false);
   return (
@@ -18,7 +19,10 @@ export function TableTools({ csv, renderTable }: TableToolsProps) {
         icon={{ ios: "square.and.arrow.up", android: "share-outline" }}
         prominence="quiet"
         size="compact"
-        onPress={() => void bestEffort("share table as CSV", shareCsv(csv))}
+        onPress={() =>
+          // Said to the reader, who asked for it; the message is the one the app uses everywhere.
+          void shareCsv(csv).catch(() => Alert.alert(t`Could not share file`))
+        }
       />
       <NativeActionButton
         accessibilityLabel={copy.expandTable}

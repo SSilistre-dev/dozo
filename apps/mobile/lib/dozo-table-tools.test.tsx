@@ -7,11 +7,11 @@ import { afterEach, expect, it, vi } from "vitest";
 const host = vi.hoisted(() => ({
   shared: [] as string[],
   shareFails: false,
-  labels: [] as string[],
-  failed: 0,
+  alerts: [] as string[],
 }));
 
 vi.mock("react-native", () => ({
+  Alert: { alert: (title: string) => host.alerts.push(title) },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement("section", {}, children),
@@ -55,15 +55,8 @@ vi.mock("../components/native-action-button", () => ({
       onClick: props.onPress,
     }),
 }));
-vi.mock("@rakazo/logging", () => ({
-  bestEffort: async (label: string, work: Promise<unknown>) => {
-    host.labels.push(label);
-    try {
-      await work;
-    } catch {
-      host.failed++;
-    }
-  },
+vi.mock("@lingui/react/macro", () => ({
+  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings[0] }),
 }));
 vi.mock("../lib/dozo-table-share", () => ({
   shareCsv: async (csv: string) => {
@@ -102,8 +95,7 @@ afterEach(() => {
   for (const container of containers.splice(0)) container.remove();
   host.shared.length = 0;
   host.shareFails = false;
-  host.labels.length = 0;
-  host.failed = 0;
+  host.alerts.length = 0;
 });
 
 it("shares the table as CSV from the share control", async () => {
@@ -113,15 +105,15 @@ it("shares the table as CSV from the share control", async () => {
   );
   await act(async () => button(page, "Download CSV")?.click());
   expect(host.shared).toEqual(["a,b\n1,2"]);
+  expect(host.alerts).toEqual([]);
 });
 
-it("hands a failed share to bestEffort, which logs it, instead of dropping it silently", async () => {
+it("tells the reader when sharing fails, and keeps the table closed", async () => {
   host.shareFails = true;
   const page = show();
   await act(async () => button(page, "Download CSV")?.click());
   expect(host.shared).toHaveLength(1);
-  expect(host.labels).toEqual(["share table as CSV"]);
-  expect(host.failed).toBe(1);
+  expect(host.alerts).toEqual(["Could not share file"]);
   expect(page.querySelector("dialog")).toBeNull();
 });
 
