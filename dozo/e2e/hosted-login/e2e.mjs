@@ -154,24 +154,48 @@ async function agree(page, email) {
   await page.getByRole("button", { name: "Continue", exact: true }).click();
 }
 
-async function session(page, base) {
-  if (new URL(page.url()).origin !== base) await page.goto(`${base}/sign-in`);
-  return page.evaluate(async () => (await fetch("/api/auth/get-session")).json());
+// The app keeps navigating by itself after a sign-in lands (`/` to `/app`, and to `/sign-in` or
+// back once the session changes), so a script run in its page, or a navigation started in it, can
+// race the app's own and be torn down with it ("Execution context was destroyed",
+// net::ERR_ABORTED). Calls to a server therefore go through the person's cookies without a page
+// (`context.request`), and each step that opens a page opens a new tab after closing the old one.
+
+/** A server's answer to the person's own cookies, with the origin a page of it would send. */
+function call(context, base, path, body) {
+  const headers = {
+    origin: base,
+    ...(body === undefined ? {} : { "content-type": "application/json" }),
+  };
+  return body === undefined
+    ? context.request.get(`${base}${path}`, { headers })
+    : context.request.post(`${base}${path}`, { headers, data: JSON.stringify(body) });
 }
 
-async function signOut(page, base) {
-  if (new URL(page.url()).origin !== base) await page.goto(`${base}/sign-in`);
-  await page.evaluate(() => fetch("/api/auth/sign-out", { method: "POST" }));
+async function session(context, base) {
+  return (await call(context, base, "/api/auth/get-session")).json();
+}
+
+async function signOut(context, base) {
+  const response = await call(context, base, "/api/auth/sign-out", {});
+  check(response.ok(), `signed out on ${base}: ${response.status()}`);
+}
+
+/** One tab for the person: the ones before it are closed, with whatever they were doing. */
+async function freshPage(context) {
+  for (const open of context.pages()) await open.close();
+  return context.newPage();
 }
 
 /** The computer's sign-in page offers only the hosted account: its one button starts. */
-async function startHostedSignIn(page, base) {
+async function startHostedSignIn(context, base) {
+  const page = await freshPage(context);
   await page.goto(`${base}/sign-in`);
   const button = page.getByRole("button", { name: "Continue", exact: true });
   await button.waitFor();
   check((await page.getByPlaceholder("Password").count()) === 0, "no password form");
   await button.click();
   await page.waitForURL((url) => url.origin === HOSTED);
+  return page;
 }
 
 /** Back on the computer after the callback: signed in as `email`, and its user id. */
@@ -183,7 +207,7 @@ async function landed(page, base, email) {
       !["/sign-in", "/sign-up"].includes(url.pathname),
     { timeout: 30_000 },
   );
-  const got = await session(page, base);
+  const got = await session(page.context(), base);
   check(got?.user?.email === email, `signed in on ${base} as ${email}, got ${got?.user?.email}`);
   return got.user.id;
 }
@@ -197,6 +221,20 @@ async function refused(page, base, text) {
 
 // --- the cases ---
 
+/** Every page load of the run's pages, as `<ms> <url>`: printed for a failed step. */
+const loads = [];
+function watch(context) {
+  context.on("page", (page) =>
+    page.on("framenavigated", (frame) => {
+      if (frame !== page.mainFrame()) return;
+      const line = `${Date.now()} ${frame.url()}`;
+      loads.push(line);
+      if (process.env.HOSTED_E2E_TRACE) say(`load ${line}`);
+    }),
+  );
+  return context;
+}
+
 async function cases(browser) {
   const results = [];
   const step = async (name, work) => {
@@ -208,13 +246,14 @@ async function cases(browser) {
     } catch (error) {
       results.push([name, "FAIL"]);
       say(`FAIL ${name}: ${error.message.split("\n")[0]}`);
+      say(`page loads before it:\n${loads.slice(-12).join("\n")}`);
       throw error;
     }
   };
   const first = newKey();
   const second = newKey();
-  const person = await browser.newContext();
-  const page = await person.newPage();
+  const person = watch(await browser.newContext());
+  let page;
   const ada = `ada.${Date.now()}@dozo.example`;
   const eve = `eve.${Date.now()}@dozo.example`;
   let adaLocalId = "";
@@ -229,7 +268,7 @@ async function cases(browser) {
   await step(
     "first sign-in on an empty computer: sign up on the hosted page, agree, back",
     async () => {
-      await startHostedSignIn(page, LOCAL);
+      page = await startHostedSignIn(person, LOCAL);
       await hostedSignUp(page, ada);
       await agree(page, ada);
       adaLocalId = await landed(page, LOCAL, ada);
@@ -237,8 +276,8 @@ async function cases(browser) {
   );
 
   await step("signed out, the same account signs in again as the same user", async () => {
-    await signOut(page, LOCAL);
-    await startHostedSignIn(page, LOCAL);
+    await signOut(person, LOCAL);
+    page = await startHostedSignIn(person, LOCAL);
     await agree(page, ada);
     check((await landed(page, LOCAL, ada)) === adaLocalId, "same local user");
     const sessions = await psql(
@@ -258,8 +297,8 @@ async function cases(browser) {
       await hosted("restart-api", keys);
       const published = await (await fetch(`${HOSTED}/api/auth/dozo/hosted-login/keys`)).json();
       check(published.keys.length === (keys.overlap ? 2 : 1), "keys published");
-      await signOut(page, LOCAL);
-      await startHostedSignIn(page, LOCAL);
+      await signOut(person, LOCAL);
+      page = await startHostedSignIn(person, LOCAL);
       await agree(page, ada);
       check((await landed(page, LOCAL, ada)) === adaLocalId, "same local user");
     });
@@ -267,8 +306,8 @@ async function cases(browser) {
 
   await step("a token out of time: the computer says to check its clock", async () => {
     await hosted("restart-api", { signing: second, faketime: "-10m" });
-    await signOut(page, LOCAL);
-    await startHostedSignIn(page, LOCAL);
+    await signOut(person, LOCAL);
+    page = await startHostedSignIn(person, LOCAL);
     await agree(page, ada);
     await refused(page, LOCAL, "Check this computer's date and time");
     await hosted("restart-api", { signing: second });
@@ -278,9 +317,8 @@ async function cases(browser) {
     "hosted account deleted: another is refused until unlink-hosted, then links the user",
     async () => {
       await psql(`${STATE}/hosted`, 54529, `DELETE FROM "user" WHERE email = '${ada}'`);
-      const fresh = await browser.newContext();
-      const other = await fresh.newPage();
-      await startHostedSignIn(other, LOCAL);
+      const fresh = watch(await browser.newContext());
+      let other = await startHostedSignIn(fresh, LOCAL);
       await hostedSignUp(other, eve);
       await agree(other, eve);
       await refused(other, LOCAL, "Could not continue");
@@ -299,7 +337,7 @@ async function cases(browser) {
         ).stdout,
       );
       check(answer.unlinked === 1, `unlinked one, got ${JSON.stringify(answer)}`);
-      await startHostedSignIn(other, LOCAL);
+      other = await startHostedSignIn(fresh, LOCAL);
       await agree(other, eve);
       check((await landed(other, LOCAL, eve)) === adaLocalId, "the same local user, now Eve's");
       await fresh.close();
@@ -309,8 +347,8 @@ async function cases(browser) {
   await step(
     "a computer with a password account: opens, keeps the password, links from Settings",
     async () => {
-      const owner = await browser.newContext();
-      const tab = await owner.newPage();
+      const owner = watch(await browser.newContext());
+      let tab = await freshPage(owner);
       const local = `owner.${Date.now()}@dozo.example`;
       const linked = `owner.hosted.${Date.now()}@dozo.example`;
       // A release without hosted sign-in: the computer's own account.
@@ -323,27 +361,21 @@ async function cases(browser) {
       await tab.getByRole("button", { name: "Create account" }).click();
       const ownerId = await landed(tab, LEGACY, local);
       // A computer someone has used: its first bot exists, so the app opens on the shell.
-      const made = await tab.evaluate(async () => {
-        const response = await fetch("/rpc/bots/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            json: {
-              name: "Chief",
-              title: "",
-              description: "",
-              notifyOnFinish: true,
-              computerMode: "team",
-            },
-          }),
-        });
-        return `${response.status} ${(await response.text()).slice(0, 200)}`;
+      const made = await call(owner, LEGACY, "/rpc/bots/create", {
+        json: {
+          name: "Chief",
+          title: "",
+          description: "",
+          notifyOnFinish: true,
+          computerMode: "team",
+        },
       });
-      check(made.startsWith("200"), `first bot: ${made}`);
-      await signOut(tab, LEGACY);
+      check(made.ok(), `first bot: ${made.status()} ${(await made.text()).slice(0, 200)}`);
+      await signOut(owner, LEGACY);
       await computer("stop", LEGACY);
       // The update turns hosted sign-in on: the server starts, and passwords still work.
       await computer("start", LEGACY, HOSTED);
+      tab = await freshPage(owner);
       await tab.goto(`${LEGACY}/sign-in`);
       await openEmailForm(tab);
       await tab.getByPlaceholder("Your email address").fill(local);
@@ -351,10 +383,9 @@ async function cases(browser) {
       await tab.getByRole("button", { name: "Sign in", exact: true }).click();
       check((await landed(tab, LEGACY, local)) === ownerId, "password sign-in as before");
       // Settings > General > Security: link to the hosted account.
-      const capabilities = await tab.evaluate(async () =>
-        (await fetch("/api/auth/capabilities")).json(),
-      );
+      const capabilities = await (await call(owner, LEGACY, "/api/auth/capabilities")).json();
       check(capabilities.hostedLink === true && !capabilities.hostedLogin, "legacy mode");
+      tab = await freshPage(owner);
       await tab.goto(`${LEGACY}/app?settings=general`);
       const row = tab.getByText("Dozo account", { exact: true });
       await row.waitFor({ timeout: 30_000 }).catch(async (error) => {
@@ -368,20 +399,12 @@ async function cases(browser) {
       await agree(tab, linked);
       check((await landed(tab, LEGACY, linked)) === ownerId, "linked, same user");
       // The password is gone and the way in is the hosted account.
-      const closed = await tab.evaluate(
-        async ([email, password]) =>
-          (
-            await fetch("/api/auth/sign-in/email", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ email, password }),
-            })
-          ).status,
-        [linked, PASSWORD],
-      );
+      const closed = (
+        await call(owner, LEGACY, "/api/auth/sign-in/email", { email: linked, password: PASSWORD })
+      ).status();
       check(closed === 404, `password sign-in closed, got ${closed}`);
-      await signOut(tab, LEGACY);
-      await startHostedSignIn(tab, LEGACY);
+      await signOut(owner, LEGACY);
+      tab = await startHostedSignIn(owner, LEGACY);
       await agree(tab, linked);
       check((await landed(tab, LEGACY, linked)) === ownerId, "hosted sign-in as the same user");
       await owner.close();
