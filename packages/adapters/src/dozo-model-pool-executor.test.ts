@@ -103,6 +103,8 @@ async function runTurn() {
   const prisma = withModelRoles(
     {
       $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+      // No message sent with an access token is in the bot's chat (dozo-token-run.ts).
+      $queryRaw: vi.fn(async () => []),
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: async () => ({ id: "member-1" }) },
       run: {

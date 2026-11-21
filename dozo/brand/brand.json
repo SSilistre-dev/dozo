@@ -6891,6 +6891,24 @@
         "packages/adapters/src/dozo-token-run.ts"
       ],
       "reason": "token gate: upstream's approval tests, run through the real executor: in a run reached by text sent with an access token (an injection), a send asks even in Never ask with no Always allow and the reason on the card, Auto Review is skipped, a read still runs, an approved send goes ahead once, the computer, files, memory, routines and child bots ask, and a message to another bot marks that bot"
+    },
+    {
+      "file": "packages/adapters/src/executor-backup-start.test.ts",
+      "find": "      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),\n      user: { findUnique: vi.fn(async () => null) },\n",
+      "replace": "      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),\n      $queryRaw: vi.fn(async () => []),\n      user: { findUnique: vi.fn(async () => null) },\n",
+      "requires": [
+        "packages/adapters/src/dozo-token-run.ts"
+      ],
+      "reason": "token gate: upstream test of a run's backup model; the fork's run start asks the database whether a message sent with an access token is in the bot's chat, which this fake did not answer, so it answers none (dozo-token-run.test.ts and dozo-token-run.postgres.test.ts cover the question)"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.test.ts",
+      "find": "    deps: { prisma: {} },\n    run: { id: \"run-1\"",
+      "replace": "    deps: { prisma: { $queryRaw: async () => [] } },\n    run: { id: \"run-1\"",
+      "requires": [
+        "packages/adapters/src/dozo-token-run.ts"
+      ],
+      "reason": "token gate: upstream test of the tool gate; the fork's gate asks the database whether a message sent with an access token is in the bot's chat, which this fake did not answer, so it answers none (dozo-token-run.test.ts covers the question)"
     }
   ],
   "assets": {
