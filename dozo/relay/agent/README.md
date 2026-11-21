@@ -22,9 +22,11 @@ unit gate cover it:
 dozo-relay-agent pair --relay <https address> [--state <dir>]
 dozo-relay-agent run --origin http://127.0.0.1:<port> [--state <dir>]
 dozo-relay-agent list [--state <dir>]
-dozo-relay-agent approve <channel> [--state <dir>]
-dozo-relay-agent revoke <channel> [--origin http://127.0.0.1:<port>] [--state <dir>]
+dozo-relay-agent approve [--state <dir>] -- <channel>
+dozo-relay-agent revoke [--origin http://127.0.0.1:<port>] [--state <dir>] -- <channel>
 ```
+
+A channel id is base64url and can start with `-`: pass it after `--`, or it reads as an option.
 
 - `pair` registers a channel on the relay and prints one line,
   `{"event":"offer","channel","relay","expiresAt","qr"}`. `qr` is what the QR code holds: the

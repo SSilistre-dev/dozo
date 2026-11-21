@@ -20,6 +20,7 @@
     "Unlicense"
   ],
   "review": {
+    "Apache-2.0 AND LGPL-3.0-or-later": "sharp's Windows packages: its Apache-2.0 binding and the LGPL-3.0-or-later libvips in one package (two packages elsewhere), each on its own terms as above",
     "EPL-2.0": "weak copyleft: redistribution unchanged is allowed with the licence text and a note on where its source is; a changed copy must publish the change",
     "FSL-1.1-Apache-2.0": "Functional Source License: not open source until it turns Apache-2.0 two years after each release; use and redistribution are allowed except for a competing product",
     "LGPL-3.0-or-later": "copyleft library shipped as a native binary: redistribution needs the licence text, a way to get its source, and the freedom to replace the library",
