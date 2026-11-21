@@ -616,9 +616,13 @@ mod tests {
             "1.2.3.4".parse().unwrap(),
             &[("9.9.9.9".parse().unwrap(), 0)]
         ));
-        // The real list holds this computer's loopback at least.
-        let own = own_networks();
-        assert!(within(IpAddr::V4(Ipv4Addr::LOCALHOST), &own), "{own:?}");
+        // The real list holds this computer's loopback at least (Windows starts no browser and
+        // reads none).
+        #[cfg(unix)]
+        {
+            let own = own_networks();
+            assert!(within(IpAddr::V4(Ipv4Addr::LOCALHOST), &own), "{own:?}");
+        }
         assert!(
             !public_host("64:ff9b:1::a00:1"),
             "a network's own NAT64 prefix"
