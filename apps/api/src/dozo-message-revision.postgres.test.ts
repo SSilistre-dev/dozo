@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { Actor, MessageBlock } from "@rakazo/contracts";
+import type { Actor, MessageBlock, ProductEventType } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -192,6 +192,8 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     expect((await call(me, "dozoMessages/revisable", { threadId: turn.threadId })).json).toEqual({
       editMessageId: turn.askId,
       regenerateMessageId: turn.reply.id,
+      removedCounts: { [turn.askId]: 1, [turn.reply.id]: 1 },
+      lastMessageId: turn.reply.id,
     });
 
     const regenerated = await call(me, "dozoMessages/regenerate", {
@@ -230,6 +232,8 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     expect((await call(me, "dozoMessages/revisable", { threadId: turn.threadId })).json).toEqual({
       editMessageId: turn.askId,
       regenerateMessageId: next.id,
+      removedCounts: { [turn.askId]: 1, [next.id]: 1 },
+      lastMessageId: next.id,
     });
     const again = await call(me, "dozoMessages/regenerate", {
       threadId: turn.threadId,
@@ -319,13 +323,20 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
       regenerateMessageId: second.reply.id,
       earlierEditMessageIds: [first.askId],
       earlierRegenerateMessageIds: [first.reply.id],
-      removedCounts: { [first.askId]: 3, [first.reply.id]: 3 },
+      removedCounts: {
+        [first.askId]: 3,
+        [first.reply.id]: 3,
+        [second.askId]: 1,
+        [second.reply.id]: 1,
+      },
+      lastMessageId: second.reply.id,
     });
 
     const edited = await call(me, "dozoMessages/edit", {
       threadId: first.threadId,
       messageId: first.askId,
       text: "Plan lunch",
+      confirmed: await confirmedOf(me, first.threadId, first.askId),
     });
     expect(edited.status).toBe(200);
     const [ask, ...rest] = await messagesOf(first.threadId);
@@ -361,6 +372,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     const regenerated = await call(me, "dozoMessages/regenerate", {
       threadId: first.threadId,
       messageId: first.reply.id,
+      confirmed: await confirmedOf(me, first.threadId, first.reply.id),
     });
     expect(regenerated.status).toBe(200);
     expect((await messagesOf(first.threadId)).map((m) => m.id)).toEqual([first.askId]);
@@ -379,7 +391,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
         appendEventInTransaction(tx, {
           spaceId: me.spaceId,
           ...at,
-          type,
+          type: type as ProductEventType,
           runId: second.runId,
           payload: { path: "notes.md" },
         }),
@@ -394,6 +406,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
         threadId: first.threadId,
         messageId: first.askId,
         text: "Plan lunch",
+        confirmed: await confirmedOf(me, first.threadId, first.askId),
       });
       expect(refused.status).toBe(409);
       expect((await messagesOf(first.threadId)).map((m) => m.id)).toEqual([
@@ -408,13 +421,20 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
   it("lets one of two clients go back and refuses the other", async () => {
     const me = await person();
     const { first } = await twoTurns(me);
+    // Both read the same chat and confirm the same three messages.
+    const confirmed = await confirmedOf(me, first.threadId, first.askId);
     const both = await Promise.all([
       call(me, "dozoMessages/edit", {
         threadId: first.threadId,
         messageId: first.askId,
         text: "Plan lunch",
+        confirmed,
       }),
-      call(me, "dozoMessages/regenerate", { threadId: first.threadId, messageId: first.reply.id }),
+      call(me, "dozoMessages/regenerate", {
+        threadId: first.threadId,
+        messageId: first.reply.id,
+        confirmed,
+      }),
     ]);
     expect(both.map((each) => each.status).sort()).toEqual([200, 409]);
     expect((await messagesOf(first.threadId)).map((m) => m.id)).toEqual([first.askId]);
@@ -428,11 +448,13 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     const { first, at } = await twoTurns(me);
     const read = await call(me, "dozoMessages/revisable", { threadId: first.threadId });
     expect(read.json.earlierEditMessageIds).toEqual([first.askId]);
+    const confirmed = await confirmedOf(me, first.threadId, first.askId);
     const arrived = await send(me, at, "And dessert");
     const refused = await call(me, "dozoMessages/edit", {
       threadId: first.threadId,
       messageId: first.askId,
       text: "Plan lunch",
+      confirmed,
     });
     expect(refused.status).toBe(409);
     expect((await messagesOf(first.threadId)).at(-1)?.id).toBe(arrived.messageId);
@@ -441,7 +463,48 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
   const NOTHING = { editMessageId: null, regenerateMessageId: null };
   const revisableIn = async (actor: Actor, threadId: string) =>
     (await call(actor, "dozoMessages/revisable", { threadId })).json;
+  /** What the confirm names for changing this message, sent back as the person confirmed it. */
+  async function confirmedOf(actor: Actor, threadId: string, messageId: string) {
+    const named = (await call(actor, "dozoMessages/revisable", { threadId })).json as {
+      removedCounts?: Record<string, number>;
+      lastMessageId?: string | null;
+    };
+    return {
+      removes: named.removedCounts?.[messageId] ?? 0,
+      lastMessageId: named.lastMessageId ?? null,
+    };
+  }
   const idsIn = async (threadId: string) => (await messagesOf(threadId)).map((m) => m.id);
+
+  it("refuses a change whose confirm a turn that came and finished meanwhile made stale", async () => {
+    const me = await person();
+    const { first, second, at } = await twoTurns(me);
+    const earlier = await confirmedOf(me, first.threadId, first.askId);
+    const newest = await confirmedOf(me, first.threadId, second.askId);
+    expect([earlier.removes, newest.removes]).toEqual([3, 1]);
+    // Another device's turn arrives and finishes while the edit is open.
+    const third = await turn(me, at, "And dessert");
+    const edit = (messageId: string, confirmed?: typeof earlier) =>
+      call(me, "dozoMessages/edit", { ...at, messageId, text: "Plan lunch", confirmed });
+    expect((await edit(first.askId, earlier)).status).toBe(409);
+    // The newest turn when read asked nothing; it is an earlier one now.
+    expect((await edit(second.askId, newest)).status).toBe(409);
+    // A client that confirms nothing changes only the newest turn.
+    expect((await edit(second.askId)).status).toBe(409);
+    expect(await idsIn(first.threadId)).toEqual([
+      first.askId,
+      first.reply.id,
+      second.askId,
+      second.reply.id,
+      third.askId,
+      third.reply.id,
+    ]);
+    // Read again, the confirm names what goes now, and the change goes ahead.
+    const fresh = await confirmedOf(me, first.threadId, second.askId);
+    expect(fresh).toEqual({ removes: 3, lastMessageId: third.reply.id });
+    expect((await edit(second.askId, fresh)).status).toBe(200);
+    expect(await idsIn(first.threadId)).toEqual([first.askId, first.reply.id, second.askId]);
+  });
 
   it("counts the chat's rewinds, which a summary begun before one compares", async () => {
     const me = await person();
@@ -452,6 +515,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
         await call(me, "dozoMessages/regenerate", {
           threadId: first.threadId,
           messageId: first.reply.id,
+          confirmed: await confirmedOf(me, first.threadId, first.reply.id),
         })
       ).status,
     ).toBe(200);
@@ -497,9 +561,18 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
     expect(await revisableIn(me, first.threadId)).toEqual({
       editMessageId: null,
       regenerateMessageId: second.reply.id,
+      removedCounts: { [second.reply.id]: 1 },
+      lastMessageId: second.reply.id,
     });
     expect(
-      (await call(me, "dozoMessages/edit", { ...at, messageId: first.askId, text: "x" })).status,
+      (
+        await call(me, "dozoMessages/edit", {
+          ...at,
+          messageId: first.askId,
+          text: "x",
+          confirmed: await confirmedOf(me, at.threadId, first.askId),
+        })
+      ).status,
     ).toBe(409);
     expect(await idsIn(first.threadId)).toEqual([
       first.askId,
@@ -548,6 +621,7 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
           threadId: first.threadId,
           messageId: first.askId,
           text: "Plan lunch",
+          confirmed: await confirmedOf(me, first.threadId, first.askId),
         })
       ).status,
     ).toBe(409);
@@ -563,7 +637,8 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
       appendEventInTransaction(tx, {
         spaceId: me.spaceId,
         ...at,
-        type: "someday.new",
+        // A type a later release adds, which this one does not know.
+        type: "someday.new" as ProductEventType,
         runId: second.runId,
         payload: {},
       }),
@@ -592,12 +667,14 @@ describePostgres("editing a message and regenerating a reply (PostgreSQL)", () =
           threadId: main.threadId,
           messageId: first.askId,
           text: "x",
+          confirmed: await confirmedOf(me, main.threadId, first.askId),
         })
       ).status,
     ).toBe(409);
     const regenerated = await call(me, "dozoMessages/regenerate", {
       threadId: chatId,
       messageId: first.reply.id,
+      confirmed: await confirmedOf(me, chatId, first.reply.id),
     });
     expect(regenerated.status).toBe(200);
     expect(await idsIn(chatId)).toEqual([first.askId]);

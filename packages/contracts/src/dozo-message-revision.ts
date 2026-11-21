@@ -21,12 +21,24 @@ export const DozoRevisableSchema = z.object({
    */
   earlierEditMessageIds: z.array(Id).optional(),
   earlierRegenerateMessageIds: z.array(Id).optional(),
-  /** How many messages changing each earlier one removes, for the confirm. */
-  removedCounts: z.record(Id, z.number().int().positive()).optional(),
+  /** How many messages changing each named one removes, for the confirm and to send back. */
+  removedCounts: z.record(Id, z.number().int().nonnegative()).optional(),
+  /** The chat's newest message, the last any change removes; sent back with the count. */
+  lastMessageId: Id.nullable().optional(),
 });
 export type DozoRevisable = z.infer<typeof DozoRevisableSchema>;
 
 const ThreadInput = z.object({ threadId: Id });
+
+/**
+ * What the person confirmed a change removes, as `revisable` named it. The server refuses a change
+ * that would remove anything else; without it, only a change to the newest turn goes ahead.
+ */
+export const DozoRevisionConfirmedSchema = z.object({
+  removes: z.number().int().nonnegative(),
+  lastMessageId: Id.nullable(),
+});
+export type DozoRevisionConfirmed = z.infer<typeof DozoRevisionConfirmedSchema>;
 const RevisedOutput = z.object({ runId: Id });
 
 export const dozoMessagesContract = {
@@ -37,10 +49,13 @@ export const dozoMessagesContract = {
       ThreadInput.extend({
         messageId: Id,
         text: z.string().trim().min(1).max(THREAD_MESSAGE_TEXT_MAX_LENGTH),
+        confirmed: DozoRevisionConfirmedSchema.optional(),
       }),
     )
     .output(RevisedOutput),
   /** Removes a reply the server named and what followed it, and runs the bot again. */
-  regenerate: oc.input(ThreadInput.extend({ messageId: Id })).output(RevisedOutput),
+  regenerate: oc
+    .input(ThreadInput.extend({ messageId: Id, confirmed: DozoRevisionConfirmedSchema.optional() }))
+    .output(RevisedOutput),
   ...dozoMessagePinsContract,
 };

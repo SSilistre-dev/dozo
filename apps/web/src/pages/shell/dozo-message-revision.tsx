@@ -1,6 +1,6 @@
 import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ThreadMessage } from "@rakazo/contracts";
+import type { DozoRevisable, DozoRevisionConfirmed, ThreadMessage } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -16,6 +16,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { errorText, toastError } from "../../lib/dozo-error-text";
 import { useSave, useSpaceQueries } from "../../lib/query";
+import { errorCode } from "../../lib/user-error";
 
 /**
  * Edit for the caller's messages and Regenerate for the bot's replies, in the message's More menu.
@@ -37,28 +38,53 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
     staleTime: 0,
   });
   const stale = [queries.dozoMessages.revisable.key({ input })];
+  const messageId = message.id;
+  /**
+   * After a refusal the chat may have changed since the confirm (a turn arrived and finished):
+   * read again and, when the message can still change, ask again with what would go now.
+   */
+  const askAgain = async (kind: "edit" | "regenerate", error: Error) => {
+    if (errorCode(error) !== "MESSAGE_NOT_REVISABLE") return false;
+    const fresh = (await revisable.refetch()).data;
+    if (!fresh || !named(fresh, kind, messageId)) return false;
+    setConfirming(kind);
+    return true;
+  };
   const regenerate = useSave({
-    save: (_input, rpc) => rpc.dozoMessages.regenerate({ threadId, messageId: message.id }),
+    save: (confirmed: DozoRevisionConfirmed | undefined, rpc) =>
+      rpc.dozoMessages.regenerate({ threadId, messageId, confirmed }),
     stale,
-    onFailed: (error) => toastError(errorText(error)),
+    onFailed: (error) =>
+      void askAgain("regenerate", error).then((asked) => {
+        if (!asked) toastError(errorText(error));
+      }),
   });
   const edit = useSave({
-    save: (text: string, rpc) => rpc.dozoMessages.edit({ threadId, messageId: message.id, text }),
+    save: (change: { text: string; confirmed?: DozoRevisionConfirmed }, rpc) =>
+      rpc.dozoMessages.edit({ threadId, messageId, ...change }),
     stale,
     onSaved: () => setDraft(null),
+    onFailed: (error) => void askAgain("edit", error),
   });
-  const named = revisable.data;
-  const earlierEdit = named?.earlierEditMessageIds?.includes(message.id) ?? false;
-  const earlierRegenerate = named?.earlierRegenerateMessageIds?.includes(message.id) ?? false;
-  const canEdit = named?.editMessageId === message.id || earlierEdit;
-  const canRegenerate = named?.regenerateMessageId === message.id || earlierRegenerate;
-  const count = named?.removedCounts?.[message.id] ?? 0;
+  const latest = revisable.data;
+  // What the person confirms goes, sent back so the server refuses anything more.
+  const confirmed: DozoRevisionConfirmed | undefined = latest?.removedCounts
+    ? {
+        removes: latest.removedCounts[messageId] ?? 0,
+        lastMessageId: latest.lastMessageId ?? null,
+      }
+    : undefined;
+  const earlierEdit = latest?.earlierEditMessageIds?.includes(messageId) ?? false;
+  const earlierRegenerate = latest?.earlierRegenerateMessageIds?.includes(messageId) ?? false;
+  const canEdit = latest !== undefined && named(latest, "edit", messageId);
+  const canRegenerate = latest !== undefined && named(latest, "regenerate", messageId);
+  const count = confirmed?.removes ?? 0;
   const startEdit = () => setDraft(messageText(message));
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!draft?.trim()) return;
     if (earlierEdit) setConfirming("edit");
-    else edit.run(draft.trim());
+    else edit.run({ text: draft.trim(), confirmed });
   };
 
   const items = (
@@ -72,7 +98,9 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
       {canRegenerate ? (
         <DropdownMenuItem
           disabled={regenerate.pending}
-          onClick={earlierRegenerate ? () => setConfirming("regenerate") : () => regenerate.run()}
+          onClick={
+            earlierRegenerate ? () => setConfirming("regenerate") : () => regenerate.run(confirmed)
+          }
         >
           <RotateCcw size={14} strokeWidth={1.7} />
           <Trans>Regenerate</Trans>
@@ -89,8 +117,8 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
         confirmLabel={<Trans>Remove</Trans>}
         onConfirm={() => {
           setConfirming(null);
-          if (confirming === "regenerate") regenerate.run();
-          else if (draft?.trim()) edit.run(draft.trim());
+          if (confirming === "regenerate") regenerate.run(confirmed);
+          else if (draft?.trim()) edit.run({ text: draft.trim(), confirmed });
         }}
       />
     );
@@ -114,7 +142,7 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
               rows={4}
               autoFocus
             />
-            {edit.error ? (
+            {edit.error && confirming === null ? (
               <div role="alert" className="text-body-sm text-destructive">
                 {errorText(edit.error)}
               </div>
@@ -141,6 +169,15 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
       </>
     ),
   };
+}
+
+/** Whether the server names this message for this change, as the newest or an earlier one. */
+function named(revisable: DozoRevisable, kind: "edit" | "regenerate", messageId: string) {
+  return kind === "edit"
+    ? revisable.editMessageId === messageId ||
+        (revisable.earlierEditMessageIds?.includes(messageId) ?? false)
+    : revisable.regenerateMessageId === messageId ||
+        (revisable.earlierRegenerateMessageIds?.includes(messageId) ?? false);
 }
 
 function messageText(message: ThreadMessage): string {

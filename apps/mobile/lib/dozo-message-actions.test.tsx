@@ -208,6 +208,7 @@ describe("a message's menu on mobile", () => {
       earlierEditMessageIds: ["m-user"],
       earlierRegenerateMessageIds: ["m-bot"],
       removedCounts: { "m-user": 3, "m-bot": 2 },
+      lastMessageId: "m-later-reply",
     };
     await render(<Row m={message("m-user")} />);
     await shows(["Edit", "Pin"]);
@@ -215,7 +216,11 @@ describe("a message's menu on mobile", () => {
     // Edit opens at once; its screen asks before Send, told how many go.
     expect(api.alert).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith("thread-1", "m-user");
-    expect(takeEditDraft("m-user")).toEqual({ text: "Hello", removes: 3 });
+    expect(takeEditDraft("m-user")).toEqual({
+      text: "Hello",
+      removes: 3,
+      confirmed: { removes: 3, lastMessageId: "m-later-reply" },
+    });
 
     await render(<Row m={message("m-bot", { role: "bot" })} />);
     await shows(["Regenerate", "Pin"]);
@@ -236,7 +241,53 @@ describe("a message's menu on mobile", () => {
     await vi.waitFor(() =>
       expect(api.rpc).toHaveBeenCalledWith(
         "dozoMessages/regenerate",
-        { threadId: "thread-1", messageId: "m-bot" },
+        {
+          threadId: "thread-1",
+          messageId: "m-bot",
+          confirmed: { removes: 2, lastMessageId: "m-later-reply" },
+        },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("asks again with what goes now when the chat changed since the confirm", async () => {
+    answers["dozoMessages/revisable"] = {
+      editMessageId: null,
+      regenerateMessageId: "m-later-reply",
+      earlierRegenerateMessageIds: ["m-bot"],
+      removedCounts: { "m-bot": 2, "m-later-reply": 1 },
+      lastMessageId: "m-later-reply",
+    };
+    await render(<Row m={message("m-bot", { role: "bot" })} />);
+    await shows(["Regenerate", "Pin"]);
+    // A turn came and finished meanwhile: the server refuses, and now four go.
+    answers["dozoMessages/regenerate"] = Object.assign(
+      new Error("This message can no longer be changed."),
+      { code: "MESSAGE_NOT_REVISABLE" },
+    );
+    actions[0]!.onPress();
+    answers["dozoMessages/revisable"] = {
+      editMessageId: null,
+      regenerateMessageId: "m-newest-reply",
+      earlierRegenerateMessageIds: ["m-bot"],
+      removedCounts: { "m-bot": 4, "m-newest-reply": 1 },
+      lastMessageId: "m-newest-reply",
+    };
+    await act(async () => api.alert.mock.calls[0]![2][1].onPress());
+    await vi.waitFor(() => expect(api.alert).toHaveBeenCalledTimes(2));
+    const [title, , buttons] = api.alert.mock.calls[1]!;
+    expect(title).toBe("Remove 4 messages?");
+    answers["dozoMessages/regenerate"] = { runId: "run-2" };
+    await act(async () => buttons[1].onPress());
+    await vi.waitFor(() =>
+      expect(api.rpc).toHaveBeenCalledWith(
+        "dozoMessages/regenerate",
+        {
+          threadId: "thread-1",
+          messageId: "m-bot",
+          confirmed: { removes: 4, lastMessageId: "m-newest-reply" },
+        },
         expect.anything(),
       ),
     );

@@ -1,5 +1,5 @@
 import { wakeRun } from "@rakazo/adapters";
-import type { Actor, DozoRevisable, MessageBlock } from "@rakazo/contracts";
+import type { Actor, DozoRevisable, DozoRevisionConfirmed, MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   ClientError,
@@ -102,6 +102,8 @@ export interface RevisionHistory {
    */
   learnsTurns: boolean;
   turns: RevisionTurn[];
+  /** The chat's newest message: the last a change removes when it removes any. */
+  lastMessageId: string | null;
 }
 
 export interface RevisionTarget {
@@ -147,8 +149,14 @@ export function planRevision(history: RevisionHistory | null, userId: string): R
   return targets;
 }
 
-/** The newest turn's messages in the two fields every client reads, older ones only when any. */
-export function revisableOf(targets: readonly RevisionTarget[]): DozoRevisable {
+/**
+ * The newest turn's messages in the two fields every client reads, older ones only when any, and
+ * for every message named what changing it removes, which the client sends back as confirmed.
+ */
+export function revisableOf(
+  targets: readonly RevisionTarget[],
+  lastMessageId: string | null,
+): DozoRevisable {
   const newest = (kind: Revision["kind"]) =>
     targets.find((target) => target.kind === kind && !target.earlier)?.messageId ?? null;
   const older = targets.filter((target) => target.earlier);
@@ -158,14 +166,15 @@ export function revisableOf(targets: readonly RevisionTarget[]): DozoRevisable {
     editMessageId: newest("edit"),
     regenerateMessageId: newest("regenerate"),
   };
-  if (older.length === 0) return revisable;
+  if (targets.length === 0) return revisable;
   const edit = ids("edit");
   const regenerate = ids("regenerate");
   return {
     ...revisable,
     ...(edit.length > 0 ? { earlierEditMessageIds: edit } : {}),
     ...(regenerate.length > 0 ? { earlierRegenerateMessageIds: regenerate } : {}),
-    removedCounts: Object.fromEntries(older.map((target) => [target.messageId, target.removes])),
+    removedCounts: Object.fromEntries(targets.map((target) => [target.messageId, target.removes])),
+    lastMessageId,
   };
 }
 
@@ -217,7 +226,7 @@ export async function loadRevisionHistory(
     compactedUpToSeq: thread.historyCompactedUpToSeq,
     learnsTurns: caller.learnsTurns,
   };
-  if (!oldest) return { ...base, busy: false, turns: [] };
+  if (!oldest) return { ...base, busy: false, turns: [], lastMessageId: null };
   const [runs, after, busy] = await Promise.all([
     db.run.findMany({
       where: { threadId: thread.id, sourceMessageId: { in: asks.map((ask) => ask.id) } },
@@ -291,7 +300,9 @@ export async function loadRevisionHistory(
       actions: own.filter((run) => acting.has(run.id)).length,
     };
   });
-  return { ...base, busy: busy > 0, turns };
+  const newest = turns[0];
+  const lastMessageId = newest ? (newest.replies.at(-1)?.id ?? newest.message.id) : null;
+  return { ...base, busy: busy > 0, turns, lastMessageId };
 }
 
 export class MessageNotRevisableError extends ClientError {
@@ -301,6 +312,8 @@ export class MessageNotRevisableError extends ClientError {
 }
 
 type Revision = { kind: "edit"; text: string } | { kind: "regenerate" };
+/** What the person confirmed would go: how many messages, and the newest of them. */
+type Confirmed = DozoRevisionConfirmed | undefined;
 
 export function dozoMessagesRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
@@ -325,13 +338,25 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
     return { ...thread, botId: thread.botId };
   }
 
-  /** Whether the Space's memory learns from each finished turn: then no turn can be taken back. */
+  /**
+   * Whether the Space's memory learns from each finished turn: then no turn can be taken back. A
+   * provider that cannot be read counts as learning, so nothing is offered rather than an error.
+   */
   async function learnsTurns(spaceId: string) {
-    const configured = await deps.memoryProviders.resolve(spaceId);
-    return Boolean(configured?.provider.retainConversation);
+    const configured = await bestEffort(
+      "message revision memory provider",
+      deps.memoryProviders.resolve(spaceId),
+    );
+    return configured === undefined || Boolean(configured?.provider.retainConversation);
   }
 
-  async function revise(actor: Actor, threadId: string, messageId: string, revision: Revision) {
+  async function revise(
+    actor: Actor,
+    threadId: string,
+    messageId: string,
+    revision: Revision,
+    confirmed: Confirmed,
+  ) {
     const { botId } = await directThread(actor, threadId);
     const learns = await learnsTurns(actor.spaceId);
     const setup = await modelSetup(deps, actor);
@@ -346,6 +371,7 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
           botId,
           messageId,
           revision,
+          confirmed,
           learnsTurns: learns,
         }),
       THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -374,13 +400,25 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
         const history = await deps.prisma.$transaction((tx) =>
           loadRevisionHistory(tx, thread, caller),
         );
-        return revisableOf(planRevision(history, userId));
+        return revisableOf(planRevision(history, userId), history.lastMessageId);
       }),
       edit: authed.dozoMessages.edit.handler(({ context, input }) =>
-        revise(context.actor, input.threadId, input.messageId, { kind: "edit", text: input.text }),
+        revise(
+          context.actor,
+          input.threadId,
+          input.messageId,
+          { kind: "edit", text: input.text },
+          input.confirmed,
+        ),
       ),
       regenerate: authed.dozoMessages.regenerate.handler(({ context, input }) =>
-        revise(context.actor, input.threadId, input.messageId, { kind: "regenerate" }),
+        revise(
+          context.actor,
+          input.threadId,
+          input.messageId,
+          { kind: "regenerate" },
+          input.confirmed,
+        ),
       ),
       ...dozoMessagePinRoutes(ctx),
     },
@@ -401,6 +439,7 @@ export async function reviseInTransaction(
     botId: string;
     messageId: string;
     revision: Revision;
+    confirmed: Confirmed;
     learnsTurns: boolean;
   },
 ): Promise<{ runId: string; seq: number; pinnedBy: string[] }> {
@@ -429,6 +468,27 @@ export async function reviseInTransaction(
     .reverse()
     .flatMap((turn) => (turn === target.turn ? turn.replies : [turn.message, ...turn.replies]));
   const removedIds = removed.map((each) => each.id);
+  // Exactly what the person confirmed, read before anything new arrived: a turn that came and
+  // finished meanwhile would go too. A client that sends nothing confirmed only its newest turn.
+  const { confirmed } = input;
+  const ok = confirmed
+    ? confirmed.removes === removed.length &&
+      confirmed.lastMessageId === (removed.at(-1)?.id ?? null)
+    : !target.earlier;
+  if (!ok) throw new MessageNotRevisableError();
+  if (removedIds.length > 0) {
+    // Hold what goes, so no pin can land on it before the delete, then read every member's pins
+    // on it again: another member's pin added since the plan stops the change.
+    await tx.$queryRaw`SELECT "id" FROM messages WHERE "id" = ANY(${removedIds}) FOR UPDATE`;
+    const pins = await runAsSystemInTransaction(
+      tx,
+      "pins on what a rewind removes",
+      () =>
+        tx.$queryRaw<Array<{ userId: string }>>`
+        SELECT "userId" FROM dozo_message_pins WHERE "messageId" = ANY(${removedIds})`,
+    );
+    if (pins.some((pin) => pin.userId !== actor.userId)) throw new MessageNotRevisableError();
+  }
   // What was removed is the thread's tail, so the next message takes the first freed seq: the
   // history stays gapless (compaction and paging stop at a gap) and the new reply reads as unread
   // again. Compaction has not reached it (planRevision refuses a message in its summary), and the

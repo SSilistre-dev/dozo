@@ -120,6 +120,8 @@ function chat() {
     /** The Space's memory learns from each finished turn. */
     learns: false,
     retryAfter: null as number | null,
+    /** Pins another member adds after the plan read the chat's pins. */
+    latePins: [] as Array<{ messageId: string; userId: string }>,
   };
 }
 type Chat = ReturnType<typeof chat>;
@@ -214,9 +216,15 @@ function fakeDb(state: Chat) {
       ),
     },
     // The one raw read: every member's pins on the given messages.
-    $queryRaw: vi.fn(async (_sql: TemplateStringsArray, _threadId: string, ids: string[]) =>
-      state.pins.filter((pin) => ids.includes(pin.messageId)),
-    ),
+    $queryRaw: vi.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
+      const text = sql.join("?");
+      // The lock on what goes.
+      if (text.includes("FOR UPDATE")) return [];
+      // The plan reads the chat's pins; the read again under the lock also sees later ones.
+      const ids = values.at(-1) as string[];
+      const pins = text.includes('"threadId"') ? state.pins : [...state.pins, ...state.latePins];
+      return pins.filter((pin) => ids.includes(pin.messageId));
+    }),
   };
 }
 type FakeDb = ReturnType<typeof fakeDb>;
@@ -229,8 +237,13 @@ const historyOf = async (state: Chat) => ({
   })),
   compactedUpToSeq: state.compacted,
 });
-const revisable = async (state: Chat) => revisableOf(planRevision(await historyOf(state), ME));
+const revisable = async (state: Chat) => {
+  const history = await historyOf(state);
+  return revisableOf(planRevision(history, ME), history.lastMessageId);
+};
 const NOTHING = { editMessageId: null, regenerateMessageId: null };
+/** What the confirm names for an earlier message of the two-turn chat. */
+const THREE_GO = { removes: 3, lastMessageId: "m-reply-2" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -245,6 +258,8 @@ describe("planRevision", () => {
     expect(await revisable(chat())).toEqual({
       editMessageId: "m-ask",
       regenerateMessageId: "m-reply",
+      removedCounts: { "m-ask": 1, "m-reply": 1 },
+      lastMessageId: "m-reply",
     });
   });
 
@@ -326,6 +341,8 @@ describe("planRevision", () => {
     expect(await revisable(state)).toEqual({
       editMessageId: "m-ask",
       regenerateMessageId: "m-reply",
+      removedCounts: { "m-ask": 1, "m-reply": 1 },
+      lastMessageId: "m-reply",
     });
   });
 
@@ -362,8 +379,9 @@ describe("planRevision", () => {
       regenerateMessageId: "m-reply-2",
       earlierEditMessageIds: ["m-ask"],
       earlierRegenerateMessageIds: ["m-reply"],
-      // Its reply and the later turn's two messages.
-      removedCounts: { "m-ask": 3, "m-reply": 3 },
+      // Its reply and the later turn's two messages; the newest turn's reply alone.
+      removedCounts: { "m-ask": 3, "m-reply": 3, "m-ask-2": 1, "m-reply-2": 1 },
+      lastMessageId: "m-reply-2",
     });
   });
 
@@ -412,6 +430,8 @@ describe("planRevision", () => {
     expect(await revisable(state)).toEqual({
       editMessageId: "m-ask-2",
       regenerateMessageId: "m-reply-2",
+      removedCounts: { "m-ask-2": 1, "m-reply-2": 1 },
+      lastMessageId: "m-reply-2",
     });
   });
 
@@ -432,6 +452,7 @@ describe("planRevision", () => {
       earlierEditMessageIds: ["m-ask"],
       earlierRegenerateMessageIds: ["m-reply"],
       removedCounts: { "m-ask": 2, "m-reply": 2 },
+      lastMessageId: "m-thumbs",
     });
   });
 
@@ -466,6 +487,8 @@ describe("planRevision", () => {
     expect(await revisable(state)).toEqual({
       editMessageId: null,
       regenerateMessageId: "m-reply-2",
+      removedCounts: { "m-reply-2": 1 },
+      lastMessageId: "m-reply-2",
     });
   });
 
@@ -544,6 +567,7 @@ describe("reviseInTransaction", () => {
     db: FakeDb,
     messageId: string,
     revision: Parameters<typeof reviseInTransaction>[1]["revision"],
+    confirmed?: { removes: number; lastMessageId: string | null },
   ) =>
     reviseInTransaction(db as never, {
       actor,
@@ -551,6 +575,7 @@ describe("reviseInTransaction", () => {
       botId: "bot-1",
       messageId,
       revision,
+      confirmed,
       learnsTurns: false,
     });
 
@@ -653,7 +678,7 @@ describe("reviseInTransaction", () => {
     state.pins = [{ messageId: "m-reply-2", userId: ME }];
     state.retryAfter = 60;
     const db = fakeDb(state);
-    expect(await revise(db, "m-ask", { kind: "edit", text: "Plan lunch" })).toEqual({
+    expect(await revise(db, "m-ask", { kind: "edit", text: "Plan lunch" }, THREE_GO)).toEqual({
       runId: "r-new",
       seq: 44,
       pinnedBy: [ME],
@@ -696,7 +721,7 @@ describe("reviseInTransaction", () => {
 
   it("regenerates an earlier reply from the prompt of the message it answered", async () => {
     const db = fakeDb(twoTurns());
-    await revise(db, "m-reply", { kind: "regenerate" });
+    await revise(db, "m-reply", { kind: "regenerate" }, THREE_GO);
     expect(db.message.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ["m-reply", "m-ask-2", "m-reply-2"] } },
     });
@@ -761,6 +786,64 @@ describe("reviseInTransaction", () => {
     expect(db.message.deleteMany).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["nothing confirmed, from a client that does not send it", undefined],
+    ["fewer messages than now go", { removes: 1, lastMessageId: "m-reply-2" }],
+    ["another newest message", { removes: 3, lastMessageId: "m-reply" }],
+  ])("refuses an earlier change with %s, and changes nothing", async (_, confirmed) => {
+    const db = fakeDb(twoTurns());
+    await expect(
+      revise(db, "m-ask", { kind: "edit", text: "x" }, confirmed),
+    ).rejects.toBeInstanceOf(MessageNotRevisableError);
+    expect(db.message.deleteMany).not.toHaveBeenCalled();
+    expect(db.run.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses once a turn came and finished after the confirm, which would go too", async () => {
+    // Confirmed on the newest turn (only its reply goes) and on the earlier one (three go).
+    const newest = { removes: 1, lastMessageId: "m-reply" };
+    const state = chat();
+    expect((await revisable(state)).removedCounts).toEqual({ "m-ask": 1, "m-reply": 1 });
+    state.messages.push(...twoTurns().messages.slice(3));
+    state.runs = twoTurns().runs;
+    const db = fakeDb(state);
+    await expect(revise(db, "m-ask", { kind: "edit", text: "x" }, newest)).rejects.toBeInstanceOf(
+      MessageNotRevisableError,
+    );
+    await expect(revise(db, "m-reply", { kind: "regenerate" })).rejects.toBeInstanceOf(
+      MessageNotRevisableError,
+    );
+    expect(db.message.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("goes ahead on the newest turn without a confirm, as an older client sends it", async () => {
+    const db = fakeDb(twoTurns());
+    await revise(db, "m-reply-2", { kind: "regenerate" });
+    expect(db.message.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["m-reply-2"] } } });
+  });
+
+  it("holds what goes, then refuses over another member's pin added since the plan", async () => {
+    const state = twoTurns();
+    state.latePins = [{ messageId: "m-ask-2", userId: "someone" }];
+    const db = fakeDb(state);
+    await expect(revise(db, "m-ask", { kind: "edit", text: "x" }, THREE_GO)).rejects.toBeInstanceOf(
+      MessageNotRevisableError,
+    );
+    const sql = db.$queryRaw.mock.calls.map(([text]) => (text as TemplateStringsArray).join("?"));
+    const lock = sql.findIndex((text) => text.includes("FOR UPDATE"));
+    expect(lock).toBeGreaterThan(-1);
+    expect(sql.slice(lock + 1).some((text) => text.includes("dozo_message_pins"))).toBe(true);
+    expect(db.message.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("goes ahead over the caller's own pin added since the plan", async () => {
+    const state = twoTurns();
+    state.latePins = [{ messageId: "m-ask-2", userId: ME }];
+    const db = fakeDb(state);
+    await revise(db, "m-ask", { kind: "edit", text: "x" }, THREE_GO);
+    expect(db.message.deleteMany).toHaveBeenCalled();
+  });
+
   it("refuses in a Space that is being deleted", async () => {
     mocks.spaceTakesWork.mockResolvedValue(false);
     const db = fakeDb(chat());
@@ -823,6 +906,8 @@ describe("dozoMessagesRoutes", () => {
     expect(await call("revisable", { threadId: "thread-1" })).toEqual({
       editMessageId: "m-ask",
       regenerateMessageId: "m-reply",
+      removedCounts: { "m-ask": 1, "m-reply": 1 },
+      lastMessageId: "m-reply",
     });
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
       chatBotId: "bot-1",
@@ -835,6 +920,8 @@ describe("dozoMessagesRoutes", () => {
     expect(await call("revisable", { threadId: "thread-1" })).toEqual({
       editMessageId: "m-ask",
       regenerateMessageId: "m-reply",
+      removedCounts: { "m-ask": 1, "m-reply": 1 },
+      lastMessageId: "m-reply",
     });
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
       chatBotId: "bot-1",
@@ -893,8 +980,19 @@ describe("dozoMessagesRoutes", () => {
     const { call, deps } = setup(state);
     const publishRosterChange = vi.fn(async () => undefined);
     Object.assign(deps.events, { publishRosterChange });
-    await call("edit", { threadId: "thread-1", messageId: "m-ask", text: "Plan lunch" });
+    await call("edit", {
+      threadId: "thread-1",
+      messageId: "m-ask",
+      text: "Plan lunch",
+      confirmed: THREE_GO,
+    });
     expect(publishRosterChange).toHaveBeenCalledWith({ userIds: [ME] });
+  });
+
+  it("names nothing, rather than failing, when the Space's memory cannot be read", async () => {
+    const { call, deps } = setup(twoTurns());
+    deps.memoryProviders.resolve.mockRejectedValue(new Error("memory down"));
+    expect(await call("revisable", { threadId: "thread-1" })).toEqual(NOTHING);
   });
 
   it("names earlier messages too, and still nothing for another person's chat turn", async () => {

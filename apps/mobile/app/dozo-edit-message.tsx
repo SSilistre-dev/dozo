@@ -1,10 +1,16 @@
 import { useLingui } from "@lingui/react/macro";
+import type { DozoRevisionConfirmed } from "@rakazo/contracts";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
-import { confirmRemoval, revisableRead, takeEditDraft } from "../lib/dozo-message-actions";
+import {
+  askAgain,
+  confirmRemoval,
+  revisableRead,
+  takeEditDraft,
+} from "../lib/dozo-message-actions";
 import { native, useThemedStyles } from "../lib/native";
 import { useSave } from "../lib/query";
 import { useScreenHeader } from "../lib/screen-header";
@@ -27,17 +33,27 @@ export default function DozoEditMessage() {
   const styles = useThemedStyles(createStyles);
   const [opened] = useState(() => takeEditDraft(messageId));
   const [draft, setDraft] = useState(opened.text);
+  // Asked again after a refusal: the question replaces the refusal's text.
+  const [askedAgain, setAskedAgain] = useState(false);
+  const text = draft.trim();
   const edit = useSave({
-    save: (text: string, send) => send("dozoMessages/edit", { threadId, messageId, text }),
+    save: (change: { text: string; confirmed?: DozoRevisionConfirmed }, send) =>
+      send("dozoMessages/edit", { threadId, messageId, ...change }),
     stale: [revisableRead(threadId).queryKey],
     closesScreen: true,
     onSaved: () => router.back(),
+    onFailed: (error) =>
+      void askAgain(t, { threadId, messageId, kind: "edit" }, error, (confirmed) => {
+        setAskedAgain(false);
+        edit.run({ text, confirmed });
+      }).then(setAskedAgain),
   });
-  const text = draft.trim();
-  const send = () =>
-    opened.removes === null
-      ? edit.run(text)
-      : confirmRemoval(t, opened.removes, () => edit.run(text));
+  const { confirmed } = opened;
+  const send = () => {
+    setAskedAgain(false);
+    if (opened.removes === null) edit.run({ text, confirmed });
+    else confirmRemoval(t, opened.removes, () => edit.run({ text, confirmed }));
+  };
   useScreenHeader({
     title: t`Edit`,
     action: {
@@ -65,7 +81,7 @@ export default function DozoEditMessage() {
           textAlignVertical="top"
           style={styles.editor}
         />
-        {edit.error ? (
+        {edit.error && !askedAgain ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {errorText(edit.error, t`Try again.`)}
           </Text>

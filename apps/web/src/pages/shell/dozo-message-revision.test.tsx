@@ -269,6 +269,7 @@ describe("an earlier message", () => {
       earlierEditMessageIds: ["m-ask"],
       earlierRegenerateMessageIds: ["m-reply"],
       removedCounts: { "m-ask": 3, "m-reply": 1 },
+      lastMessageId: "m-last",
     });
   });
 
@@ -291,11 +292,13 @@ describe("an earlier message", () => {
 
     await submit();
     await click(container.querySelector("[data-confirm]"));
+    // What was confirmed goes along, so the server refuses anything more.
     await vi.waitFor(() =>
       expect(api.edit).toHaveBeenCalledWith({
         threadId: "thread-1",
         messageId: "m-ask",
         text: "Plan lunch",
+        confirmed: { removes: 3, lastMessageId: "m-last" },
       }),
     );
     await vi.waitFor(() => expect(textarea()).toBeNull());
@@ -312,7 +315,61 @@ describe("an earlier message", () => {
     expect(container.querySelector("[data-confirm]")?.textContent).toBe("Remove");
     await click(container.querySelector("[data-confirm]"));
     await vi.waitFor(() =>
-      expect(api.regenerate).toHaveBeenCalledWith({ threadId: "thread-1", messageId: "m-reply" }),
+      expect(api.regenerate).toHaveBeenCalledWith({
+        threadId: "thread-1",
+        messageId: "m-reply",
+        confirmed: { removes: 1, lastMessageId: "m-last" },
+      }),
     );
+  });
+
+  it("asks again with what goes now when the chat changed since the confirm", async () => {
+    await render(ask);
+    await vi.waitFor(() => expect(item("Edit")).toBeTruthy());
+    await click(item("Edit"));
+    await type("Plan lunch");
+    await submit();
+    // A turn came and finished meanwhile: the server refuses, and now five go.
+    api.edit.mockRejectedValueOnce(
+      Object.assign(new Error("This message can no longer be changed."), {
+        code: "MESSAGE_NOT_REVISABLE",
+      }),
+    );
+    api.revisable.mockResolvedValue({
+      editMessageId: "m-newest",
+      regenerateMessageId: "m-newest-reply",
+      earlierEditMessageIds: ["m-ask"],
+      removedCounts: { "m-ask": 5 },
+      lastMessageId: "m-newest-reply",
+    });
+    await click(container.querySelector("[data-confirm]"));
+    await vi.waitFor(() => expect(confirmation()?.textContent).toContain("Remove 5 messages?"));
+    expect(container.querySelector("[role=alert]")).toBeNull();
+    await click(container.querySelector("[data-confirm]"));
+    await vi.waitFor(() =>
+      expect(api.edit).toHaveBeenLastCalledWith({
+        threadId: "thread-1",
+        messageId: "m-ask",
+        text: "Plan lunch",
+        confirmed: { removes: 5, lastMessageId: "m-newest-reply" },
+      }),
+    );
+  });
+
+  it("says why when the message can no longer change at all", async () => {
+    await render(reply);
+    await vi.waitFor(() => expect(item("Regenerate")).toBeTruthy());
+    api.regenerate.mockRejectedValueOnce(
+      Object.assign(new Error("This message can no longer be changed."), {
+        code: "MESSAGE_NOT_REVISABLE",
+      }),
+    );
+    api.revisable.mockResolvedValue({ editMessageId: null, regenerateMessageId: null });
+    await click(item("Regenerate"));
+    await click(container.querySelector("[data-confirm]"));
+    await vi.waitFor(() =>
+      expect(api.toastError).toHaveBeenCalledWith("This message can no longer be changed."),
+    );
+    expect(confirmation()).toBeNull();
   });
 });
