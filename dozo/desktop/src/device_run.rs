@@ -3,6 +3,7 @@
 //! `destroy`, `prepare`, `isRunning`). The wire format is upstream's host computer protocol
 //! (`packages/adapters/src/host-computer-protocol.ts`); its behaviour follows upstream's desktop
 //! runner (`host-computer-runner.ts`, `desktop-sandbox.ts`). Screen control is not offered.
+//! `pageBrowser` drives the bot's own browser (`browser.rs`).
 
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
@@ -144,6 +145,7 @@ pub struct Runner {
     home: PathBuf,
     calls: AtomicUsize,
     owned: Mutex<Vec<Owned>>,
+    browsers: crate::browser::Browsers,
 }
 
 /// Released when a call ends, however it ends.
@@ -158,12 +160,27 @@ impl Runner {
     /// `root` holds each bot's own folder; `home` is the person's home folder, where commands
     /// may also run.
     pub fn new(root: PathBuf, home: PathBuf) -> Arc<Self> {
+        let browsers = crate::browser::Browsers::new(root.join("browser-profiles"));
+        Self::with_browsers(root, home, browsers)
+    }
+
+    pub fn with_browsers(
+        root: PathBuf,
+        home: PathBuf,
+        browsers: crate::browser::Browsers,
+    ) -> Arc<Self> {
         Arc::new(Self {
             root,
             home,
             calls: AtomicUsize::new(0),
             owned: Mutex::new(Vec::new()),
+            browsers,
         })
+    }
+
+    /// Whether a bot's browser can start here.
+    pub fn browser_available(&self) -> bool {
+        self.browsers.available()
     }
 
     /// Stops every command and what it left running in its group. `escaped`: also what it
@@ -171,6 +188,10 @@ impl Runner {
     /// quitting does, never a dropped connection.
     pub fn stop_all(self: &Arc<Self>, escaped: bool) {
         self.stop_where(|_| true, escaped);
+        // A dropped connection keeps the browsers: the person may be using one.
+        if escaped {
+            self.browsers.close_all();
+        }
     }
 
     /// With `escaped`, the entries go: nothing of them is left. Without, only their groups stop
@@ -277,6 +298,7 @@ impl Runner {
             },
             "stop" | "destroy" => {
                 self.stop_where(|o| o.bot == key, true);
+                self.browsers.close(&key, method == "destroy");
                 let done = if method == "stop" {
                     stop(&home)
                 } else {
@@ -292,6 +314,13 @@ impl Runner {
                     return reply.error("Local computer stopped").await;
                 }
                 return self.execute(&key, run, &home, command, reply).await;
+            }
+            "pageBrowser" => {
+                let command = request.get("command").unwrap_or(&Value::Null);
+                match self.browsers.handle(&key, command).await {
+                    Ok(value) => Ok(value),
+                    Err(error) => return reply.error(&error).await,
+                }
             }
             "screenObserve" | "screenAct" => return reply.error(NO_SCREEN).await,
             "listFiles"

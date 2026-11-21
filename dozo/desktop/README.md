@@ -205,6 +205,37 @@ account and connects to it; the web app's settings then list it under Computers 
   which this app does not ask for). Only the Linux app has been run against a server; the
   Windows code compiles and runs its tests in CI, the macOS code is not built on a pull request.
 
+## The bot's own browser
+
+A bot on this computer can use a browser of its own: the Chrome, Edge, Brave or Chromium already
+installed here (the first found, in that order), started with a profile folder of that bot's own,
+never the person's (`src/browser.rs`). It opens as a normal window with its address bar, so the
+person sees what the bot does and can type into it.
+
+- The app declares `browser` beside `shell` only when it finds one. The server drives the page
+  with `pageBrowser` requests, each one DevTools command.
+- The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port: no
+  other program on this computer can connect to it, and nothing listens on TCP.
+- Only the commands in `ALLOWED` pass, with only the parameters listed there, and only to the
+  bot's one page: reading the accessibility tree, the page's boxes, mouse, keys and text, going to
+  an http or https address, back and forward, and screenshots. Everything that reads cookies or
+  site storage, runs script (`Runtime.evaluate`), opens a debugging session, uploads a file or
+  pastes the clipboard is refused here, before it reaches the browser, so none of it reaches the
+  server. Downloads are refused.
+- None of Playwright's defaults that mark the browser as automated or store its passwords
+  unencrypted (`--enable-automation`, `--use-mock-keychain`, `--password-store=basic`), no `--app`
+  or kiosk mode.
+- Profiles live in the app's data folder, `computers/browser-profiles/<bot>`, open to this user
+  only (mode 700). Deleting the bot deletes its profile.
+- The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
+  also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
+  next start on that profile ends what is left first. A dropped connection keeps it open.
+- Honest limits: a bot that may run commands runs them as this user and can read its own profile
+  folder with a command; the pipe only keeps the browser's channel to the allowed commands. A Snap
+  Chromium is passed over (it cannot use a profile folder in the app's data). Windows: not yet.
+- Proof: `tests/stack_e2e_native.sh` step 0, on Linux in a real window under Xvfb and on macOS,
+  with the browser on the runner.
+
 ## The server on this computer
 
 "Use the server on this computer" makes the app install and run a Dozo server for this user alone,

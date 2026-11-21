@@ -6,6 +6,7 @@
 mod alerts;
 mod background;
 mod backup;
+mod browser;
 mod device;
 mod device_pairing;
 mod device_run;
