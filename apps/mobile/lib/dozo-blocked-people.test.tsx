@@ -9,6 +9,7 @@ import type { MobileMessage } from "./mobile-types";
 const store = vi.hoisted(() => ({
   value: null as string | null,
   readFails: false,
+  saveFails: false,
   saved: [] as string[],
 }));
 
@@ -18,6 +19,7 @@ vi.mock("expo-secure-store", () => ({
     return store.value;
   }),
   setItemAsync: vi.fn(async (_key: string, value: string) => {
+    if (store.saveFails) throw new Error("locked");
     store.saved.push(value);
     store.value = value;
   }),
@@ -59,6 +61,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store.value = null;
   store.readFails = false;
+  store.saveFails = false;
   store.saved = [];
   shown = [];
   root = createRoot(document.createElement("div"));
@@ -101,6 +104,16 @@ describe("people blocked on this phone", () => {
     module = await load();
     await renderChat(module);
     expect(shown).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("keeps a person hidden for now when the list cannot be saved", async () => {
+    store.saveFails = true;
+    const module = await load();
+    await renderChat(module);
+    await act(async () => module.blockPerson("user-ada"));
+    await act(() => flush());
+    expect(shown).toEqual(["2", "3", "4"]);
+    expect(store.saved).toEqual([]);
   });
 
   it("knows who wrote a message", async () => {

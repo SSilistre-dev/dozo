@@ -1,5 +1,4 @@
 import type { MessageAuthor } from "@rakazo/contracts";
-import { bestEffort } from "@rakazo/logging";
 import * as SecureStore from "expo-secure-store";
 import { useMemo, useSyncExternalStore } from "react";
 import type { MobileMessage } from "./mobile-types";
@@ -19,8 +18,14 @@ function publish() {
 }
 
 async function read(): Promise<void> {
-  const raw = await SecureStore.getItemAsync(KEY);
-  const ids: unknown = raw ? JSON.parse(raw) : [];
+  let ids: unknown;
+  try {
+    const raw = await SecureStore.getItemAsync(KEY);
+    ids = raw ? JSON.parse(raw) : [];
+  } catch {
+    // Secure storage locked or the list unreadable: it counts as empty.
+    return;
+  }
   if (!Array.isArray(ids)) return;
   blocked = new Set([...blocked, ...ids.filter((id): id is string => typeof id === "string")]);
   publish();
@@ -28,7 +33,7 @@ async function read(): Promise<void> {
 
 /** Reads the stored list once; an unreadable one counts as empty. */
 function load(): Promise<void> {
-  loading ??= bestEffort("blocked people: read", read()).then(() => undefined);
+  loading ??= read();
   return loading;
 }
 
@@ -44,10 +49,16 @@ function subscribe(listener: () => void) {
 export function blockPerson(id: string): void {
   blocked = new Set([...blocked, id]);
   publish();
-  void bestEffort(
-    "blocked people: save",
-    load().then(() => SecureStore.setItemAsync(KEY, JSON.stringify([...blocked]))),
-  );
+  void save();
+}
+
+async function save(): Promise<void> {
+  await load();
+  try {
+    await SecureStore.setItemAsync(KEY, JSON.stringify([...blocked]));
+  } catch {
+    // Not saved: the person stays hidden until the app restarts.
+  }
 }
 
 /** Whether a message was written by someone this phone hides. */
