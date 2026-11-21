@@ -1,3 +1,5 @@
+import type { Actor, DozoChatExportInput } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { chatMarkdown, chatTimeFormatter } from "./dozo-chat-markdown.js";
 import type { RouterContext } from "./routes/context.js";
 import { loadMessagePage } from "./thread-message-pages.js";
@@ -14,40 +16,48 @@ export function dozoChatExportRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
   return {
     dozoChatExport: {
-      markdown: authed.dozoChatExport.markdown.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
-          includeArchived: true,
-        });
-        const botNames = new Map<string, string>(
-          target.kind === "bot"
-            ? [[target.botId, target.bot.name]]
-            : target.members.map((member) => [member.botId, member.name]),
-        );
-        // Bots that left a group still signed their messages: read their names in this Space.
-        const pending = new Set<string>();
-        const result = await chatMarkdown({
-          title: target.kind === "bot" ? target.bot.name : target.groupName,
-          loadPage: async (before) => {
-            const page = await loadMessagePage(deps.prisma, target.threadId, before, PAGE_SIZE);
-            for (const message of page.messages) {
-              if (message.botId && !botNames.has(message.botId)) pending.add(message.botId);
-            }
-            if (pending.size) {
-              const bots = await deps.prisma.bot.findMany({
-                where: { id: { in: [...pending] }, spaceId: context.actor.spaceId },
-                select: { id: true, name: true },
-              });
-              for (const bot of bots) botNames.set(bot.id, bot.name);
-              pending.clear();
-            }
-            return page;
-          },
-          names: { bot: (botId) => botNames.get(botId) },
-          time: chatTimeFormatter(input.timeZone),
-          since: input.since ? new Date(input.since) : undefined,
-        });
-        return result;
-      }),
+      markdown: authed.dozoChatExport.markdown.handler(({ context, input }) =>
+        exportChat(deps.prisma, context.actor, input),
+      ),
     },
   };
+}
+
+/** The export itself, also read by the MCP endpoint's chat resource with a smaller size limit. */
+export async function exportChat(
+  prisma: PrismaClient,
+  actor: Actor,
+  input: DozoChatExportInput,
+  maxChars?: number,
+) {
+  const target = await resolveThreadTarget(prisma, actor, input, { includeArchived: true });
+  const botNames = new Map<string, string>(
+    target.kind === "bot"
+      ? [[target.botId, target.bot.name]]
+      : target.members.map((member) => [member.botId, member.name]),
+  );
+  // Bots that left a group still signed their messages: read their names in this Space.
+  const pending = new Set<string>();
+  return chatMarkdown({
+    title: target.kind === "bot" ? target.bot.name : target.groupName,
+    loadPage: async (before) => {
+      const page = await loadMessagePage(prisma, target.threadId, before, PAGE_SIZE);
+      for (const message of page.messages) {
+        if (message.botId && !botNames.has(message.botId)) pending.add(message.botId);
+      }
+      if (pending.size) {
+        const bots = await prisma.bot.findMany({
+          where: { id: { in: [...pending] }, spaceId: actor.spaceId },
+          select: { id: true, name: true },
+        });
+        for (const bot of bots) botNames.set(bot.id, bot.name);
+        pending.clear();
+      }
+      return page;
+    },
+    names: { bot: (botId) => botNames.get(botId) },
+    time: chatTimeFormatter(input.timeZone),
+    since: input.since ? new Date(input.since) : undefined,
+    maxChars,
+  });
 }
