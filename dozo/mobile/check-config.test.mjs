@@ -139,13 +139,23 @@ describe("the mobile app's config after the brand rules", () => {
 
 describe("the ids and release fields a store build relies on", () => {
   const root = branded();
-  const expo = () => structuredClone(JSON.parse(fs.readFileSync(path.join(root, FILES[0]), "utf8")).expo);
+  const expo = () =>
+    structuredClone(JSON.parse(fs.readFileSync(path.join(root, FILES[0]), "utf8")).expo);
 
   it("the id family in the check is the literal the brand rules write", () => {
     const rule = shipped.literals.find((entry) => entry.find === "com.rakazo.app");
     assert.equal(expo().ios.bundleIdentifier, rule.replace);
     assert.equal(expo().android.package, rule.replace);
-    assert.deepEqual(problems({ expo: { ...expo(), ios: { ...expo().ios, bundleIdentifier: "dev.example.app" }, android: { ...expo().android, package: "dev.example.app" } } }).filter((line) => line.includes("Dozo id")).length, 2);
+    assert.deepEqual(
+      problems({
+        expo: {
+          ...expo(),
+          ios: { ...expo().ios, bundleIdentifier: "dev.example.app" },
+          android: { ...expo().android, package: "dev.example.app" },
+        },
+      }).filter((line) => line.includes("Dozo id")).length,
+      2,
+    );
   });
 
   it("the link scheme list carries dozo and the version fields are well formed", () => {
@@ -153,6 +163,36 @@ describe("the ids and release fields a store build relies on", () => {
     assert.ok([config.scheme].flat().includes("dozo"));
     assert.match(config.version, /^\d+\.\d+\.\d+$/);
     assert.ok(Number.isInteger(config.android.versionCode) && config.android.versionCode > 0);
+  });
+
+  it("a missing purpose string, a status bar the theme cannot set, or a missing privacy reason fails", () => {
+    const config = expo();
+    delete config.ios.infoPlist.NSPhotoLibraryAddUsageDescription;
+    config.ios.infoPlist.NSCameraUsageDescription = "Rakazo uses the camera.";
+    config.ios.infoPlist.UIViewControllerBasedStatusBarAppearance = true;
+    config.ios.privacyManifests.NSPrivacyAccessedAPITypes.shift();
+    config.plugins = config.plugins.map((plugin) =>
+      [plugin].flat()[0] === "expo-secure-store" ? "expo-secure-store" : plugin,
+    );
+    const found = problems({ expo: config }).join("\n");
+    for (const part of [
+      "NSPhotoLibraryAddUsageDescription is undefined",
+      "NSCameraUsageDescription is",
+      "UIViewControllerBasedStatusBarAppearance is not false",
+      "does not declare reason CA92.1",
+      "Face ID purpose string",
+    ])
+      assert.ok(found.includes(part), `${part}\n${found}`);
+  });
+
+  it("the microphone purpose string names dictation, the same in every plugin that writes it", () => {
+    const texts = expo()
+      .plugins.filter(Array.isArray)
+      .map(([, options]) => options?.microphonePermission)
+      .filter(Boolean);
+    assert.equal(texts.length, 3);
+    assert.equal(new Set(texts).size, 1);
+    assert.match(texts[0], /^Dozo .*dictate/);
   });
 
   it("a missing or malformed version, versionCode or scheme fails", () => {
@@ -181,8 +221,15 @@ describe("build.sh archive and upload without or with bad credentials", () => {
     for (const step of ["archive", "upload"]) {
       const none = run(step, {});
       assert.equal(none.status, 0, none.stderr);
-      assert.match(none.stdout, /skipped: not set: DOZO_ASC_KEY_ID DOZO_ASC_ISSUER_ID DOZO_ASC_KEY_P8 DOZO_APPLE_TEAM_ID/);
-      const some = run(step, { DOZO_ASC_KEY_ID: KEY, DOZO_ASC_ISSUER_ID: ISSUER, DOZO_ASC_KEY_P8: "secret-text" });
+      assert.match(
+        none.stdout,
+        /skipped: not set: DOZO_ASC_KEY_ID DOZO_ASC_ISSUER_ID DOZO_ASC_KEY_P8 DOZO_APPLE_TEAM_ID/,
+      );
+      const some = run(step, {
+        DOZO_ASC_KEY_ID: KEY,
+        DOZO_ASC_ISSUER_ID: ISSUER,
+        DOZO_ASC_KEY_P8: "secret-text",
+      });
       assert.equal(some.status, 0, some.stderr);
       assert.match(some.stdout, /skipped: not set: DOZO_APPLE_TEAM_ID \(/);
       assert.ok(!some.stdout.includes("secret-text") && !some.stderr.includes("secret-text"));
@@ -190,7 +237,12 @@ describe("build.sh archive and upload without or with bad credentials", () => {
   });
 
   it("fails with exit 2 on a malformed key id, team id or issuer id", () => {
-    const all = { DOZO_ASC_KEY_ID: KEY, DOZO_ASC_ISSUER_ID: ISSUER, DOZO_ASC_KEY_P8: "x", DOZO_APPLE_TEAM_ID: KEY };
+    const all = {
+      DOZO_ASC_KEY_ID: KEY,
+      DOZO_ASC_ISSUER_ID: ISSUER,
+      DOZO_ASC_KEY_P8: "x",
+      DOZO_APPLE_TEAM_ID: KEY,
+    };
     for (const [name, text] of [
       ["DOZO_ASC_KEY_ID", /10-character key id/],
       ["DOZO_APPLE_TEAM_ID", /10-character team id/],
@@ -202,8 +254,15 @@ describe("build.sh archive and upload without or with bad credentials", () => {
     }
   });
 
-  it("with valid values stops on a machine that is not a Mac, building nothing", { skip: process.platform === "darwin" }, () => {
-    const res = run("upload", { DOZO_ASC_KEY_ID: KEY, DOZO_ASC_ISSUER_ID: ISSUER, DOZO_ASC_KEY_P8: "x", DOZO_APPLE_TEAM_ID: KEY });
+  it("with valid values stops on a machine that is not a Mac, building nothing", {
+    skip: process.platform === "darwin",
+  }, () => {
+    const res = run("upload", {
+      DOZO_ASC_KEY_ID: KEY,
+      DOZO_ASC_ISSUER_ID: ISSUER,
+      DOZO_ASC_KEY_P8: "x",
+      DOZO_APPLE_TEAM_ID: KEY,
+    });
     assert.equal(res.status, 2);
     assert.match(res.stderr, /run it on a Mac/);
   });
@@ -241,7 +300,10 @@ describe("release-gradle.mjs", () => {
     const { releaseGradle } = await import(script);
     const out = releaseGradle(template, "1.2.3", 4321);
     assert.match(out, /versionCode 4321\n {8}versionName "1\.2\.3"/);
-    assert.match(out, /release \{\n {12}storeFile file\(System\.getenv\("DOZO_ANDROID_KEYSTORE"\)\)/);
+    assert.match(
+      out,
+      /release \{\n {12}storeFile file\(System\.getenv\("DOZO_ANDROID_KEYSTORE"\)\)/,
+    );
     assert.match(out, /debug \{\n {12}signingConfig signingConfigs\.debug/);
     assert.match(out, /\/\/ Caution!\n {12}signingConfig signingConfigs\.release/);
     assert.equal(out.match(/signingConfig signingConfigs\.debug/g).length, 1);
@@ -253,7 +315,10 @@ describe("release-gradle.mjs", () => {
     assert.throws(() => releaseGradle(template, "next", 1), /versionName/);
     for (const code of [0, "x", 2100000001, 1.5])
       assert.throws(() => releaseGradle(template, "1.0.0", code), /versionCode/);
-    assert.throws(() => releaseGradle(template.replace("versionCode 10", ""), "1.0.0", 1), /versionCode/);
+    assert.throws(
+      () => releaseGradle(template.replace("versionCode 10", ""), "1.0.0", 1),
+      /versionCode/,
+    );
     assert.throws(
       () => releaseGradle(template.replace("signingConfigs {", "other {"), "1.0.0", 1),
       /signingConfigs/,
@@ -274,4 +339,3 @@ describe("release-gradle.mjs", () => {
       assert.equal(spawnSync(process.execPath, [script, ...args], { encoding: "utf8" }).status, 2);
   });
 });
-

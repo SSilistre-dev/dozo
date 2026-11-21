@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   rpc: vi.fn(),
   alert: vi.fn(),
   rosterReads: [] as (() => unknown)[],
+  block: vi.fn(),
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -34,6 +35,7 @@ vi.mock("./api", () => ({
   rpc: api.rpc,
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./dozo-blocked-people", () => ({ blockPerson: api.block }));
 vi.mock("./roster-signals", () => ({
   useRosterSignals: (read: () => unknown, enabled: boolean) => {
     if (enabled) api.rosterReads.push(read);
@@ -46,6 +48,7 @@ import {
   dozoSheetGroups,
   pinLabel,
   setDozoEditOpener,
+  setDozoReportOpener,
   takeEditDraft,
   useDozoChatPins,
   useDozoMessageActions,
@@ -78,12 +81,14 @@ function Row({
   m,
   readOnly = false,
   inGroup = false,
+  otherAuthor,
 }: {
   m: MobileMessage;
   readOnly?: boolean;
   inGroup?: boolean;
+  otherAuthor?: { id: string; name: string };
 }) {
-  actions = useDozoMessageActions(m, readOnly, inGroup);
+  actions = useDozoMessageActions(m, readOnly, inGroup, otherAuthor);
   return null;
 }
 
@@ -103,10 +108,12 @@ beforeEach(() => {
   queryClient.clear();
   api.rpc.mockReset().mockImplementation(answer);
   api.alert.mockReset();
+  api.block.mockReset();
   api.rosterReads = [];
   answers = {
     "dozoMessages/revisable": { editMessageId: "m-user", regenerateMessageId: "m-bot" },
     "dozoMessages/pins": { pins: [] },
+    "dozoFeedback/status": { mode: null },
   };
   container = document.createElement("div");
   root = createRoot(container);
@@ -206,6 +213,60 @@ describe("a message's menu on mobile", () => {
     await render(<Row m={message("m-user")} readOnly />);
     await shows(["Pin"]);
     expect(api.rpc.mock.calls.map(([path]) => path)).toEqual(["dozoMessages/pins"]);
+  });
+});
+
+describe("reporting and blocking", () => {
+  const ada = { id: "user-ada", name: "Ada" };
+
+  it("offers Report on a bot's reply while the server takes feedback, and opens it for that message", async () => {
+    answers["dozoMessages/revisable"] = { editMessageId: null, regenerateMessageId: null };
+    answers["dozoFeedback/status"] = { mode: "send" };
+    const open = vi.fn();
+    setDozoReportOpener(open);
+    await render(<Row m={message("m-bot", { role: "bot" })} />);
+    await shows(["Pin", "Report"]);
+    expect(actions.map((action) => [action.symbol, action.icon]).at(-1)).toEqual([
+      "exclamationmark.bubble",
+      "flag-outline",
+    ]);
+    actions.at(-1)!.onPress();
+    expect(open).toHaveBeenCalledWith("thread-1", "m-bot");
+  });
+
+  it("offers no Report where the server takes no feedback, nor on the person's own message", async () => {
+    answers["dozoFeedback/status"] = { mode: null };
+    await render(<Row m={message("m-bot", { role: "bot" })} />);
+    await shows(["Regenerate", "Pin"]);
+    answers["dozoFeedback/status"] = { mode: "save" };
+    await render(<Row m={message("m-other")} />);
+    await shows(["Pin"]);
+    expect(api.rpc.mock.calls.filter(([path]) => path === "dozoFeedback/status")).toHaveLength(1);
+  });
+
+  it("offers Report and Block on another member's message; Block asks, then hides them", async () => {
+    answers["dozoFeedback/status"] = { mode: "save" };
+    await render(<Row m={message("m-other")} inGroup otherAuthor={ada} />);
+    await shows(["Pin", "Report", "Block"]);
+    expect(actions.map((action) => [action.symbol, action.icon]).at(-1)).toEqual([
+      "hand.raised",
+      "hand-left-outline",
+    ]);
+    actions.at(-1)!.onPress();
+    expect(api.block).not.toHaveBeenCalled();
+    const [title, body, buttons] = api.alert.mock.calls[0] as [
+      string,
+      string,
+      { text: string; style: string; onPress?: () => void }[],
+    ];
+    expect(title).toMatch(/^Block .*\?$/);
+    expect(body).toBe("Their messages are hidden on this phone.");
+    expect(buttons.map((entry) => [entry.text, entry.style])).toEqual([
+      ["Cancel", "cancel"],
+      ["Block", "destructive"],
+    ]);
+    buttons[1]!.onPress!();
+    expect(api.block).toHaveBeenCalledWith("user-ada", "thread-1");
   });
 });
 

@@ -18,6 +18,7 @@ const ui = vi.hoisted(() => ({
   back: vi.fn(),
   platform: { OS: "android", Version: 34 as string | number },
   header: undefined as Header | undefined,
+  params: {} as { threadId?: string; messageId?: string },
 }));
 
 vi.mock("react-native", () => ({
@@ -55,6 +56,7 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn(), back: ui.back, canGoBack: () => true }),
+  useLocalSearchParams: () => ui.params,
 }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({
@@ -192,6 +194,7 @@ beforeEach(() => {
   ui.share.mockResolvedValue({ action: "sharedAction" });
   ui.platform.OS = "android";
   ui.header = undefined;
+  ui.params = {};
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -226,6 +229,23 @@ describe("feedback on mobile", () => {
     await settle(() => expect(ui.alert).toHaveBeenCalledWith("Sent"));
     expect(calls("dozoFeedback/send")[0]![1]).toEqual({ message: "  It stopped  " });
     expect(ui.back).toHaveBeenCalledOnce();
+  });
+
+  it("opened from a message's Report, names that message first and sends it as written", async () => {
+    ui.params = { threadId: "thread-1", messageId: "m-9" };
+    answers["dozoFeedback/status"] = status();
+    answers["dozoFeedback/send"] = { sent: true };
+    await render(<DozoFeedback />);
+    await settle(() => expect(note()).not.toBeNull());
+    expect(ui.header?.title).toBe("Report");
+    expect(note().value).toBe("Reported message m-9 in chat thread-1\n\n");
+    expect(button("Send")!.disabled).toBe(false);
+    await write("Reported message m-9 in chat thread-1\n\nAbusive reply");
+    await act(async () => button("Send")!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Sent"));
+    expect(calls("dozoFeedback/send")[0]![1]).toEqual({
+      message: "Reported message m-9 in chat thread-1\n\nAbusive reply",
+    });
   });
 
   it("adds exactly the diagnostics the preview lists, and no more", async () => {
