@@ -119,6 +119,7 @@ export async function loopbackServer() {
 
 function memoryHostStore(): RelayHostStore & { channels: Map<string, RelayHostChannel> } {
   const channels = new Map<string, RelayHostChannel>();
+  const approvals = new Map<string, number>();
   // One promise, so the computer and an offer made while it starts never make two keys.
   let key: Promise<RelayKeyPair> | null = null;
   const listeners = new Set<() => void>();
@@ -128,9 +129,21 @@ function memoryHostStore(): RelayHostStore & { channels: Map<string, RelayHostCh
       key ??= create();
       return key;
     },
-    list: async () => [...channels.values()].map((entry) => structuredClone(entry)),
+    // An approval kept apart from the channel, as the file store keeps it.
+    list: async () =>
+      [...channels.values()].map((entry) => {
+        const copy = structuredClone(entry);
+        if (copy.app && !copy.app.approvedAt) {
+          copy.app.approvedAt = approvals.get(copy.channel) ?? copy.app.approvedAt;
+        }
+        return copy;
+      }),
     async put(entry) {
       channels.set(entry.channel, structuredClone(entry));
+      for (const listener of listeners) listener();
+    },
+    async approve(channel, approvedAt) {
+      approvals.set(channel, approvedAt);
       for (const listener of listeners) listener();
     },
     async remove(channel) {

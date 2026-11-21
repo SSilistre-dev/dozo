@@ -36,6 +36,11 @@ import type { DevRelay } from "./dozo-relay-dev-relay.js";
 import { startDevRelay } from "./dozo-relay-dev-relay.js";
 
 const crypto = webRelayCrypto();
+/**
+ * Waits for what the agent does over real sockets and files (a pairing is two synced writes and
+ * a request to the relay): on a loaded machine that takes longer than `vi.waitFor`'s one second.
+ */
+const eventually = <T>(check: () => T) => vi.waitFor(check, { timeout: 10_000 });
 const SESSION_KEY = "9".repeat(64);
 
 /** The local server's check of the agent's proof (`packages/auth/src/dozo-relay-session.ts`). */
@@ -222,7 +227,7 @@ async function phone(options: {
 /** Pairs a phone through the QR text and returns what it stores afterwards. */
 async function pairPhone(agent: Agent) {
   const offerLine = await pairOffer();
-  await vi.waitFor(() =>
+  await eventually(() =>
     expect(agent.lines).toContainEqual({ event: "connected", channel: offerLine.channel }),
   );
   const offer = parseRelayPairingOffer(offerOf(offerLine.qr), Date.now());
@@ -245,7 +250,7 @@ describe("relay agent end to end", () => {
       marker: RESPONSE_MARKER,
       cookie: "session=abc",
     });
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(agent.lines).toContainEqual({
         event: "paired",
         channel: offer.channel,
@@ -324,11 +329,11 @@ describe("relay agent end to end", () => {
     const agent = runAgent();
     const { offer, appKey, hostKey, first, pairingKey } = await pairPhone(agent);
     expect((await first.client.fetch("/json")).status).toBe(200);
-    await vi.waitFor(() => expect(agent.lines.some((line) => line.event === "paired")).toBe(true));
+    await eventually(() => expect(agent.lines.some((line) => line.event === "paired")).toBe(true));
 
     const { port, state } = relay;
     await relay.close();
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(agent.lines).toContainEqual(
         expect.objectContaining({ event: "disconnected", channel: offer.channel }),
       ),
@@ -337,12 +342,10 @@ describe("relay agent end to end", () => {
 
     const connections = agent.lines.filter((line) => line.event === "connected").length;
     relay = await startDevRelay({ port, state });
-    await vi.waitFor(
-      () =>
-        expect(agent.lines.filter((line) => line.event === "connected")).toHaveLength(
-          connections + 1,
-        ),
-      { timeout: 10_000 },
+    await eventually(() =>
+      expect(agent.lines.filter((line) => line.event === "connected")).toHaveLength(
+        connections + 1,
+      ),
     );
     const token = await relayAppToken(crypto, pairingKey);
     const again = await phone({ channel: offer.channel, token, psk: pairingKey, appKey, hostKey });
@@ -364,7 +367,7 @@ describe("relay agent end to end", () => {
     });
     // The computer shows the code the phone shows, with what the phone said it is.
     const code = await relayApprovalCode(crypto, pairingKey);
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(agent.lines).toContainEqual({
         event: "approval",
         channel: offer.channel,
@@ -377,7 +380,7 @@ describe("relay agent end to end", () => {
     const signIn = await (await asked).json();
     expect(signIn.channel).toBe(offer.channel);
     expect(proven(signIn.proof, "POST", RELAY_SESSION_PATH, offer.channel)).toBe(true);
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(agent.lines).toContainEqual({ event: "approved", channel: offer.channel }),
     );
 
@@ -401,7 +404,7 @@ describe("relay agent end to end", () => {
     const agent = runAgent({ DOZO_RELAY_AGENT_KEY: SESSION_KEY });
     const { first } = await pairPhone(agent);
     const asked = first.client.fetch(RELAY_SESSION_PATH, { method: "POST", body: "{}" });
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(agent.lines.some((line) => line.event === "approval")).toBe(true),
     );
     await agent.stop();
@@ -432,7 +435,7 @@ describe("relay agent end to end", () => {
     const agent = runAgent();
     const { offer, first, pairingKey } = await pairPhone(agent);
     expect((await first.client.fetch("/json")).status).toBe(200);
-    await vi.waitFor(() => expect(agent.lines.some((line) => line.event === "paired")).toBe(true));
+    await eventually(() => expect(agent.lines.some((line) => line.event === "paired")).toBe(true));
 
     const revoked = await cli(["revoke", "--", offer.channel]);
     expect(revoked).toEqual({
@@ -472,7 +475,7 @@ describe("relay agent end to end", () => {
     ).rejects.toMatchObject({ status: 404 });
 
     const agent = runAgent();
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(agent.lines).toContainEqual({ event: "expired", channel: offer.channel }),
     );
     expect(await readdir(path.join(stateDir, "channels"))).toEqual([]);

@@ -43,6 +43,7 @@ const KEY = "e".repeat(64);
 
 function memoryStore(initial: RelayHostChannel[] = []) {
   const channels = new Map(initial.map((entry) => [entry.channel, entry]));
+  const approvals = new Map<string, number>();
   let key: RelayKeyPair | null = null;
   let changed: (() => void) | null = null;
   const store: RelayHostStore & {
@@ -55,12 +56,23 @@ function memoryStore(initial: RelayHostChannel[] = []) {
       key ??= await create();
       return key;
     },
-    list: async () => [...channels.values()].map((entry) => structuredClone(entry)),
+    list: async () =>
+      [...channels.values()].map((entry) => {
+        const copy = structuredClone(entry);
+        if (copy.app && !copy.app.approvedAt) {
+          copy.app.approvedAt = approvals.get(copy.channel) ?? copy.app.approvedAt;
+        }
+        return copy;
+      }),
     async put(entry) {
       channels.set(entry.channel, structuredClone(entry));
     },
+    async approve(channel, approvedAt) {
+      approvals.set(channel, approvedAt);
+    },
     async remove(channel) {
       channels.delete(channel);
+      approvals.delete(channel);
     },
     watch(onChange) {
       changed = onChange;
@@ -389,10 +401,11 @@ describe("approving a phone", () => {
     const store = memoryStore([
       await paired({ app: { ...(await paired()).app!, approvedAt: null } }),
     ]);
+    const approvedAt = async () => (await store.list())[0]?.app?.approvedAt;
     await approveRelayChannel({ store, channel: CHANNEL, now: () => 42 });
-    expect(store.channels.get(CHANNEL)?.app?.approvedAt).toBe(42);
+    expect(await approvedAt()).toBe(42);
     await approveRelayChannel({ store, channel: CHANNEL, now: () => 99 });
-    expect(store.channels.get(CHANNEL)?.app?.approvedAt).toBe(42);
+    expect(await approvedAt()).toBe(42);
     expect((await listRelayChannels(store))[0]).toMatchObject({ approved: true });
     await expect(approveRelayChannel({ store, channel: "other" })).rejects.toThrow(
       "no such channel",
