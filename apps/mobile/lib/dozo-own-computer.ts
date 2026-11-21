@@ -1,9 +1,10 @@
 import { t } from "@lingui/core/macro";
 import type { Bot, ComputerMode } from "@rakazo/contracts";
 import { ownComputerNote } from "@rakazo/contracts";
-import { knownServerText, planLimitCopy } from "@rakazo/i18n/run-error";
+import { knownServerText } from "@rakazo/i18n/run-error";
 import { useQuery } from "@tanstack/react-query";
 import { Alert } from "react-native";
+import { mobilePlanLimitCopy } from "./dozo-store-build";
 import { rpcQuery } from "./query";
 
 /**
@@ -32,7 +33,7 @@ export function useOwnComputerSwitch(
       disabled: true,
     };
   }
-  const note = ownComputerNote(mode, billing, planLimitCopy());
+  const note = ownComputerNote(mode, billing, mobilePlanLimitCopy());
   if (note === "shared") {
     return {
       detail: t`Shared with this Space's other bots, files and sign-ins included.`,

@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoFeedbackStatus } from "@rakazo/contracts";
 import { DOZO_FEEDBACK_MAX_CHARS, dozoFeedbackFooter, dozoFeedbackText } from "@rakazo/contracts";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../components/settings-group";
-import { mobileDiagnostics, useFeedbackStatus } from "../../lib/dozo-feedback";
+import { mobileDiagnostics, reportLine, useFeedbackStatus } from "../../lib/dozo-feedback";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSave } from "../../lib/query";
 import { useScreenHeader } from "../../lib/screen-header";
@@ -25,21 +25,24 @@ import { errorText } from "../../lib/user-error";
 /**
  * A note and, when switched on, the diagnostics. The lines added under the note are shown before
  * anything leaves: the server mails exactly those, or, without mail, the person shares the report
- * and writes to the operator's address themselves.
+ * and writes to the operator's address themselves. Opened from a message's Report, the note starts
+ * with which message it is about.
  */
 export default function DozoFeedback() {
   const { t } = useLingui();
   const status = useFeedbackStatus();
-  useScreenHeader({ title: t`Send feedback` });
-  return status?.mode ? <FeedbackForm status={status} /> : null;
+  const { threadId, messageId } = useLocalSearchParams<{ threadId?: string; messageId?: string }>();
+  const report = threadId && messageId ? `${reportLine(threadId, messageId)}\n\n` : "";
+  useScreenHeader({ title: report ? t`Report` : t`Send feedback` });
+  return status?.mode ? <FeedbackForm status={status} initial={report} /> : null;
 }
 
-function FeedbackForm({ status }: { status: DozoFeedbackStatus }) {
+function FeedbackForm({ status, initial }: { status: DozoFeedbackStatus; initial: string }) {
   const { t } = useLingui();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initial);
   const [withDiagnostics, setWithDiagnostics] = useState(false);
   const [client] = useState(mobileDiagnostics);
   const diagnostics = withDiagnostics ? { ...client, ...status.server } : null;

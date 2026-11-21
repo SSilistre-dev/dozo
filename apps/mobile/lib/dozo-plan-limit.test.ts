@@ -20,7 +20,17 @@ const native = vi.hoisted(() => ({
   billing: null as Partial<BillingStatus> | null,
   fetchFails: false,
   queryEnabled: [] as boolean[],
+  store: false,
 }));
+vi.mock("./dozo-store-build", async (original) => {
+  const real = await original<typeof import("./dozo-store-build")>();
+  return {
+    ...real,
+    mobilePlanLimitCopy: () => real.mobilePlanLimitCopy(native.store),
+    storePlanLimitNotice: <T>(notice: T) =>
+      real.storePlanLimitNotice(notice as never, native.store) as T,
+  };
+});
 
 vi.mock("react-native", () => ({
   Alert: { alert: native.alert },
@@ -75,6 +85,7 @@ beforeEach(() => {
   native.billing = free;
   native.fetchFails = false;
   native.queryEnabled = [];
+  native.store = false;
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -135,6 +146,15 @@ describe("usePlanLimitNotice", () => {
     expect(native.queryEnabled).toEqual([true]);
   });
 
+  it("the store build: Free is told its plan has no computer, with nothing to buy", () => {
+    native.store = true;
+    expect(usePlanLimitNotice("No computer hours left.")).toEqual({
+      code: "computer_not_in_plan",
+      text: "Your plan doesn't include a computer.",
+      action: null,
+    });
+  });
+
   it("needs no billing status for a busy host, and gives nothing for other failures", () => {
     i18n.loadAndActivate({ locale: "tr", messages: tr as Messages });
     expect(usePlanLimitNotice({ code: "COMPUTERS_BUSY" })).toMatchObject({
@@ -165,6 +185,27 @@ describe("showPlanLimitAlert", () => {
     expect(buttons.map((button) => button.text)).toEqual(["Not Now", "Upgrade"]);
     buttons[1]?.onPress?.();
     expect(native.push).toHaveBeenCalledWith("/billing");
+  });
+
+  it("the store build: the owner gets the sentence without Upgrade or any plan to buy", async () => {
+    native.store = true;
+    native.billing = { ...free, byokTier: "pro", state: "active" };
+    expect(showPlanLimitAlert("Failed", full)).toBe(true);
+    await flush();
+    const [title, message, buttons] = lastAlert();
+    expect(title).toBe("Failed");
+    expect(message).toBe("Shared space is full. Delete files to make room.");
+    expect(buttons.map((button) => button.text)).toEqual(["Close"]);
+    expect(native.push).not.toHaveBeenCalled();
+    expect(native.openURL).not.toHaveBeenCalled();
+  });
+
+  it("the store build: a member is not told to ask for an upgrade either", async () => {
+    native.store = true;
+    native.billing = { ...free, canManage: false };
+    showPlanLimitAlert("Failed", full);
+    await flush();
+    expect(lastAlert()[1]).toBe("Shared space is full. Delete files to make room.");
   });
 
   it("a member who cannot manage billing: ask the owner, no Upgrade", async () => {

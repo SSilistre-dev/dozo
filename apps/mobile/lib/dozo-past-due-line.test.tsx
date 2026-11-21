@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   openBillingPage: vi.fn(),
   setQueryData: vi.fn(),
   alert: vi.fn(),
+  store: false,
 }));
 
 vi.mock("@lingui/react/macro", () => ({
@@ -27,6 +28,11 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => <div role="status">{children}</div>,
 }));
 vi.mock("./billing", () => ({ openBillingPage: api.openBillingPage }));
+vi.mock("./dozo-store-build", () => ({
+  get storeBuild() {
+    return api.store;
+  },
+}));
 vi.mock("./native", () => ({ useMobileTokens: () => ({ warning: "warning", border: "border" }) }));
 vi.mock("./query", () => ({
   queryClient: { setQueryData: api.setQueryData },
@@ -70,6 +76,7 @@ beforeEach(() => {
   api.me = { billingEnabled: true };
   api.status = pastDue;
   api.enabled = [];
+  api.store = false;
   for (const mock of [api.rpc, api.openBillingPage, api.setQueryData, api.alert]) mock.mockReset();
   container = document.createElement("div");
   document.body.append(container);
@@ -85,6 +92,14 @@ describe("DozoPastDueLine", () => {
   it("shows one line and the way to fix it while a payment is past due", async () => {
     await render();
     expect(line()?.textContent).toBe("Your last payment didn't go through.Manage billing");
+  });
+
+  it("the store build: no line and no billing read, since the app sells nothing there", async () => {
+    api.store = true;
+    await render();
+    expect(api.enabled).toEqual([false]);
+    expect(line()).toBeNull();
+    expect(container.textContent).not.toContain("Manage billing");
   });
 
   it("does not ask for billing on a server that does not bill", async () => {

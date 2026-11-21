@@ -6,7 +6,10 @@ own; the lengths below fit them.
 
 ## Name [30]
 
-Dozo
+Dozo Bot
+
+The App Store record is "Dozo Bot" ("Dozo" was taken). The name under the icon on the phone stays
+"Dozo" (the app's display name, unchanged).
 
 ## Subtitle (App Store) [30]
 

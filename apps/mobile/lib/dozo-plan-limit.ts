@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Alert, Linking } from "react-native";
 import { currentApiBase } from "./api";
+import { mobilePlanLimitCopy, storePlanLimitNotice } from "./dozo-store-build";
 import { queryClient, rpcQuery } from "./query";
 
 /** The web app's Billing, served from the same origin as the API. */
@@ -43,10 +44,11 @@ function needsBilling(limit: ReturnType<typeof planLimitOf>): boolean {
 
 /** The shared table's notice for a failure, reading the billing status only when it matters. */
 export function usePlanLimitNotice(error: unknown): PlanLimitNotice | null {
-  const copy = planLimitCopy();
-  const limit = planLimitOf(error, copy);
+  // A sentence is recognised in its usual words; the store build only words its own notice.
+  const limit = planLimitOf(error, planLimitCopy());
+  const copy = mobilePlanLimitCopy();
   const billing = useQuery({ ...rpcQuery("billing/status"), enabled: needsBilling(limit) }).data;
-  return limit ? planLimitNotice(limit, billing, copy) : null;
+  return limit ? storePlanLimitNotice(planLimitNotice(limit, billing, copy)) : null;
 }
 
 /**
@@ -54,11 +56,12 @@ export function usePlanLimitNotice(error: unknown): PlanLimitNotice | null {
  * says whether it did. The billing status is read first; without it the sentence offers nothing.
  */
 export function showPlanLimitAlert(title: string, error: unknown): boolean {
-  const copy = planLimitCopy();
-  const limit = planLimitOf(error, copy);
+  // A sentence is recognised in its usual words; the store build only words its own notice.
+  const limit = planLimitOf(error, planLimitCopy());
+  const copy = mobilePlanLimitCopy();
   if (!limit || !needsBilling(limit)) return false;
   const show = (billing: PlanLimitBilling | null) => {
-    const notice = planLimitNotice(limit, billing, copy);
+    const notice = storePlanLimitNotice(planLimitNotice(limit, billing, copy));
     const action = notice?.action;
     const close = {
       text: action?.kind === "upgrade" ? t`Not Now` : t`Close`,

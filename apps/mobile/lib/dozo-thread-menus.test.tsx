@@ -10,6 +10,7 @@ import type { MobileSnapshot } from "./mobile-types";
 
 const api = vi.hoisted(() => ({ rpc: vi.fn(), push: vi.fn() }));
 vi.mock("expo-router", () => ({ router: { push: api.push } }));
+vi.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: vi.fn() }));
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -119,4 +120,30 @@ it("opens the edit screen for the chat's message", async () => {
     params: { threadId: "thread-1", messageId: "m-1" },
   });
   expect(takeEditDraft("m-1")).toBe("Hi");
+});
+
+it("opens a message's Report on the feedback form, naming the message", async () => {
+  api.rpc.mockImplementation(async (path: string) =>
+    path === "dozoFeedback/status"
+      ? { mode: "send" }
+      : path === "dozoMessages/pins"
+        ? { pins: [] }
+        : { editMessageId: null, regenerateMessageId: null },
+  );
+  let actions: ReturnType<typeof useDozoMessageActions> = [];
+  function Row() {
+    actions = useDozoMessageActions(
+      { id: "m-2", threadId: "thread-1", role: "bot", blocks: [{ kind: "text", text: "Hi" }] },
+      false,
+      false,
+    );
+    return null;
+  }
+  await render(<Row />);
+  await act(() => vi.waitFor(() => expect(actions.at(-1)?.name).toBe("dozoReport")));
+  actions.at(-1)!.onPress();
+  expect(api.push).toHaveBeenCalledWith({
+    pathname: "/dozo-feedback",
+    params: { threadId: "thread-1", messageId: "m-2" },
+  });
 });

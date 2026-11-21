@@ -51,6 +51,7 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
+vi.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: vi.fn() }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ui.params,
   useRouter: () => ({ back: ui.back, dismissTo: ui.dismissTo }),

@@ -3112,22 +3112,24 @@
     {
       "file": "apps/mobile/lib/user-error.ts",
       "find": "import { ph, t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n} from \"@rakazo/contracts\";\n",
-      "replace": "import { ph, t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n  planLimitText,\n} from \"@rakazo/contracts\";\nimport { planLimitCopy } from \"@rakazo/i18n/run-error\";\nimport { serverErrorText } from \"@rakazo/i18n/run-error\";\n",
+      "replace": "import { ph, t } from \"@lingui/core/macro\";\nimport {\n  CONNECTOR_AUTH_UNAVAILABLE,\n  isVoiceAccountErrorCode,\n  MCP_OAUTH_CLIENT_REQUIRED,\n  planLimitText,\n} from \"@rakazo/contracts\";\nimport { mobilePlanLimitCopy } from \"./dozo-store-build\";\nimport { serverErrorText } from \"@rakazo/i18n/run-error\";\n",
       "requires": [
         "packages/contracts/src/dozo-plan-limits.ts",
         "packages/i18n/src/dozo-plan-limits.ts",
-        "packages/i18n/src/dozo-server-text.ts"
+        "packages/i18n/src/dozo-server-text.ts",
+        "apps/mobile/lib/dozo-store-build.ts"
       ],
       "reason": "plan limits and server refusals: the imports of the rule below"
     },
     {
       "file": "apps/mobile/lib/user-error.ts",
       "find": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  return (\n    voiceAccountErrorText(error) ??\n    userErrorMessage(error, { fallback, offline: t`Could not reach the server` })\n  );\n",
-      "replace": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  const limit = planLimitText(error, planLimitCopy());\n  if (limit) return limit;\n  return serverErrorText(\n    error,\n    voiceAccountErrorText(error) ??\n      userErrorMessage(error, { fallback, offline: t`Could not reach the server` }),\n    fallback,\n  );\n",
+      "replace": "  if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;\n  const limit = planLimitText(error, mobilePlanLimitCopy());\n  if (limit) return limit;\n  return serverErrorText(\n    error,\n    voiceAccountErrorText(error) ??\n      userErrorMessage(error, { fallback, offline: t`Could not reach the server` }),\n    fallback,\n  );\n",
       "requires": [
         "packages/contracts/src/dozo-plan-limits.ts",
         "packages/i18n/src/dozo-plan-limits.ts",
-        "packages/i18n/src/dozo-server-text.ts"
+        "packages/i18n/src/dozo-server-text.ts",
+        "apps/mobile/lib/dozo-store-build.ts"
       ],
       "reason": "plan limits and server refusals: a refused limit says the shared table's sentence; a refusal people often see reads in the UI's language, and other English the server wrote becomes the caller's own copy in a UI that is not English"
     },
@@ -3182,7 +3184,7 @@
     {
       "file": "apps/mobile/components/thread/thread-run-error.ts",
       "find": "import type { BillingStatus } from \"@rakazo/contracts\";\nimport { computerHoursOut } from \"@rakazo/contracts\";\n",
-      "replace": "import type { BillingStatus } from \"@rakazo/contracts\";\nimport { computerHoursOut, planLimitNotice, planLimitOf } from \"@rakazo/contracts\";\nimport { planLimitCopy } from \"@rakazo/i18n/run-error\";\n",
+      "replace": "import type { BillingStatus } from \"@rakazo/contracts\";\nimport { computerHoursOut, planLimitNotice, planLimitOf } from \"@rakazo/contracts\";\n",
       "requires": [
         "packages/contracts/src/dozo-plan-limits.ts",
         "packages/i18n/src/dozo-plan-limits.ts"
@@ -3192,19 +3194,21 @@
     {
       "file": "apps/mobile/components/thread/thread-run-error.ts",
       "find": "import type { MobileSnapshot } from \"../../lib/mobile-types\";\nimport { openModelSettings } from \"../../lib/model-settings\";\n",
-      "replace": "import type { MobileSnapshot } from \"../../lib/mobile-types\";\nimport { openPlanUpgrade } from \"../../lib/dozo-plan-limit\";\nimport { openModelSettings } from \"../../lib/model-settings\";\n",
+      "replace": "import type { MobileSnapshot } from \"../../lib/mobile-types\";\nimport { openPlanUpgrade } from \"../../lib/dozo-plan-limit\";\nimport { mobilePlanLimitCopy, storeBuild, storePlanLimitNotice } from \"../../lib/dozo-store-build\";\nimport { openModelSettings } from \"../../lib/model-settings\";\n",
       "requires": [
-        "apps/mobile/lib/dozo-plan-limit.ts"
+        "apps/mobile/lib/dozo-plan-limit.ts",
+        "apps/mobile/lib/dozo-store-build.ts"
       ],
       "reason": "plan limits: the import of the rule below"
     },
     {
       "file": "apps/mobile/components/thread/thread-run-error.ts",
       "find": "  const hoursOut = needsPlan && billing ? computerHoursOutCopy(computerHoursOut(billing)) : null;\n",
-      "replace": "  const planCopy = planLimitCopy();\n  const limit = runError ? planLimitOf(runError, planCopy) : null;\n  const limitNotice = limit ? planLimitNotice(limit, billing, planCopy) : null;\n  const hoursOut = limitNotice\n    ? {\n        summary: limitNotice.text,\n        action: limitNotice.action?.kind === \"upgrade\" ? limitNotice.action.label : null,\n      }\n    : needsPlan && billing\n      ? computerHoursOutCopy(computerHoursOut(billing))\n      : null;\n",
+      "replace": "  const planCopy = mobilePlanLimitCopy();\n  const limit = runError ? planLimitOf(runError, planCopy) : null;\n  const limitNotice = limit ? storePlanLimitNotice(planLimitNotice(limit, billing, planCopy)) : null;\n  const hoursOut = limitNotice\n    ? {\n        summary: limitNotice.text,\n        action: limitNotice.action?.kind === \"upgrade\" ? limitNotice.action.label : null,\n      }\n    : needsPlan && billing\n      ? computerHoursOutCopy(computerHoursOut(billing))\n      : null;\n",
       "requires": [
         "packages/contracts/src/dozo-plan-limits.ts",
-        "packages/i18n/src/dozo-plan-limits.ts"
+        "packages/i18n/src/dozo-plan-limits.ts",
+        "apps/mobile/lib/dozo-store-build.ts"
       ],
       "reason": "plan limits: a failed run that hit a limit reads its sentence and action from the shared table, as on the web; trials keep upstream's copy"
     },
@@ -3292,18 +3296,20 @@
     {
       "file": "apps/mobile/app/computer.tsx",
       "find": "      {allowanceUsed ? (\n        <NativeActionButton\n          label={t`Upgrade`}\n          prominence=\"primary\"\n          size=\"default\"\n          style={{ marginBottom: 16 }}\n          onPress={() => router.push(\"/billing\")}\n        />\n      ) : null}\n",
-      "replace": "      {allowanceUsed && (!limitNotice || limitNotice.action) ? (\n        <NativeActionButton\n          label={limitNotice?.action?.label ?? t`Upgrade`}\n          prominence=\"primary\"\n          size=\"default\"\n          style={{ marginBottom: 16 }}\n          onPress={() => openPlanUpgrade(limitNotice?.action, () => router.push(\"/billing\"))}\n        />\n      ) : null}\n",
+      "replace": "      {allowanceUsed && !storeBuild && (!limitNotice || limitNotice.action) ? (\n        <NativeActionButton\n          label={limitNotice?.action?.label ?? t`Upgrade`}\n          prominence=\"primary\"\n          size=\"default\"\n          style={{ marginBottom: 16 }}\n          onPress={() => openPlanUpgrade(limitNotice?.action, () => router.push(\"/billing\"))}\n        />\n      ) : null}\n",
       "requires": [
-        "apps/mobile/lib/dozo-plan-limit.ts"
+        "apps/mobile/lib/dozo-plan-limit.ts",
+        "apps/mobile/lib/dozo-store-build.ts"
       ],
       "reason": "plan limits: the shared table's upgrade, hidden on the top plan and from a member who cannot manage billing; from Free it opens the web app's Billing, which the app's own plan choice cannot start"
     },
     {
       "file": "apps/mobile/app/computer.tsx",
       "find": "import { useAppForeground } from \"../lib/app-foreground\";\nimport {\n",
-      "replace": "import { useAppForeground } from \"../lib/app-foreground\";\nimport { openPlanUpgrade, usePlanLimitNotice } from \"../lib/dozo-plan-limit\";\nimport {\n",
+      "replace": "import { useAppForeground } from \"../lib/app-foreground\";\nimport { openPlanUpgrade, usePlanLimitNotice } from \"../lib/dozo-plan-limit\";\nimport { storeBuild } from \"../lib/dozo-store-build\";\nimport {\n",
       "requires": [
-        "apps/mobile/lib/dozo-plan-limit.ts"
+        "apps/mobile/lib/dozo-plan-limit.ts",
+        "apps/mobile/lib/dozo-store-build.ts"
       ],
       "reason": "plan limits: the import of the rules below"
     },
@@ -5070,7 +5076,7 @@
     {
       "file": "apps/mobile/components/thread/message-row.tsx",
       "find": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
-      "replace": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const dozoActions = useDozoMessageActions(message, readOnly, inGroup);\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
+      "replace": "  if (optimisticLike && !hasLike) displayedReactions.set(\"\ud83d\udc4d\", 1);\n  const dozoActions = useDozoMessageActions(\n    message,\n    readOnly,\n    inGroup,\n    authorName ? message.author : undefined,\n  );\n  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{\n",
       "requires": [
         "apps/mobile/lib/dozo-message-actions.ts"
       ],
@@ -8372,6 +8378,273 @@
         "packages/adapters/src/dozo-watch-command-rules.ts"
       ],
       "reason": "command rules: upstream's routine watch test fakes the database without raw queries, so the fork's block check is replaced there as other fork reads are; it has its own test"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-run-error.ts",
+      "find": "  const label = needsPlan\n    ? billing?.canManage\n      ? (hoursOut?.action ?? null)",
+      "replace": "  const label = needsPlan\n    ? billing?.canManage && !storeBuild\n      ? (hoursOut?.action ?? null)",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: a run that ran out of computer hours names the limit with no button to a plan (App Review 3.1.1)"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "import { useApprovalSettings } from \"../../lib/approval-settings\";\nimport { replaceWithSignIn }",
+      "replace": "import { useApprovalSettings } from \"../../lib/approval-settings\";\nimport { storeBuild } from \"../../lib/dozo-store-build\";\nimport { replaceWithSignIn }",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "          {me?.billingEnabled\n            ? settingsLink({\n                title: t`Billing`,",
+      "replace": "          {me?.billingEnabled && !storeBuild\n            ? settingsLink({\n                title: t`Billing`,",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: no Billing row, so the App Store app offers no plan, price or payment page (App Review 3.1.1)"
+    },
+    {
+      "file": "apps/mobile/lib/use-home-inbox.ts",
+      "find": "import { isPaywallShown } from \"./billing\";\nimport { getActiveUiLocale }",
+      "replace": "import { isPaywallShown } from \"./billing\";\nimport { storeBuild } from \"./dozo-store-build\";\nimport { getActiveUiLocale }",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/use-home-inbox.ts",
+      "find": "      if (!nextMe.billingEnabled) forgetReferrals();",
+      "replace": "      if (!nextMe.billingEnabled || storeBuild) forgetReferrals();",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: reads no billing status, so it never opens the paywall and shows no invite gift (a free month on a paid plan)"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "import { rememberReferral } from \"../../lib/referral\";\nimport { openFromSettingsSheet }",
+      "replace": "import { rememberReferral } from \"../../lib/referral\";\nimport { DozoStoreGate } from \"../../components/dozo-store-gate\";\nimport { openFromSettingsSheet }",
+      "requires": [
+        "apps/mobile/components/dozo-store-gate.tsx"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/billing.tsx",
+      "find": "export default function BillingScreen() {\n  const sideInsets = useSideInsets();",
+      "replace": "export default function BillingScreen() {\n  return (\n    <DozoStoreGate>\n      <UpstreamBillingScreen />\n    </DozoStoreGate>\n  );\n}\n\nfunction UpstreamBillingScreen() {\n  const sideInsets = useSideInsets();",
+      "requires": [
+        "apps/mobile/components/dozo-store-gate.tsx"
+      ],
+      "reason": "store build: a link to Billing (a notification, an old deep link) lands on the chats; the screen buys plans and credits"
+    },
+    {
+      "file": "apps/mobile/app/paywall.tsx",
+      "find": "import { rpc } from \"../lib/api\";\nimport { signOut }",
+      "replace": "import { rpc } from \"../lib/api\";\nimport { DozoStoreGate } from \"../components/dozo-store-gate\";\nimport { signOut }",
+      "requires": [
+        "apps/mobile/components/dozo-store-gate.tsx"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/paywall.tsx",
+      "find": "export default function Paywall() {\n  const { t } = useLingui();",
+      "replace": "export default function Paywall() {\n  return (\n    <DozoStoreGate>\n      <UpstreamPaywall />\n    </DozoStoreGate>\n  );\n}\n\nfunction UpstreamPaywall() {\n  const { t } = useLingui();",
+      "requires": [
+        "apps/mobile/components/dozo-store-gate.tsx"
+      ],
+      "reason": "store build: the paywall sells plans, so a link to it lands on the chats"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "import { continueWithSso } from \"../lib/sso\";\nimport { confirmUnsentSendLoss }",
+      "replace": "import { continueWithSso } from \"../lib/sso\";\nimport { storeSignInProviders } from \"../lib/dozo-store-build\";\nimport { confirmUnsentSendLoss }",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/sign-in.tsx",
+      "find": "  const providers = reset ? signInProviders(reset) : [];",
+      "replace": "  const providers = reset ? storeSignInProviders(signInProviders(reset)) : [];",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: a third-party sign-in shows only beside Sign in with Apple (App Review 4.8); organization sign-in stays"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"usesNonExemptEncryption\": false\n      },\n      \"infoPlist\": {",
+      "replace": "\"usesNonExemptEncryption\": false\n      },\n      \"privacyManifests\": {\n        \"NSPrivacyAccessedAPITypes\": [\n          {\n            \"NSPrivacyAccessedAPIType\": \"NSPrivacyAccessedAPICategoryUserDefaults\",\n            \"NSPrivacyAccessedAPITypeReasons\": [\"CA92.1\"]\n          },\n          {\n            \"NSPrivacyAccessedAPIType\": \"NSPrivacyAccessedAPICategoryFileTimestamp\",\n            \"NSPrivacyAccessedAPITypeReasons\": [\"C617.1\", \"0A2A.1\", \"3B52.1\"]\n          },\n          {\n            \"NSPrivacyAccessedAPIType\": \"NSPrivacyAccessedAPICategorySystemBootTime\",\n            \"NSPrivacyAccessedAPITypeReasons\": [\"35F9.1\"]\n          },\n          {\n            \"NSPrivacyAccessedAPIType\": \"NSPrivacyAccessedAPICategoryDiskSpace\",\n            \"NSPrivacyAccessedAPITypeReasons\": [\"E174.1\", \"85F4.1\"]\n          }\n        ]\n      },\n      \"infoPlist\": {",
+      "reason": "App Store: the privacy manifest declares the required-reason APIs the app's own Swift modules (UserDefaults) and React Native use, so the generated PrivacyInfo.xcprivacy carries them whatever the template holds; the export-compliance value stays upstream's, the owner's decision (dozo/mobile/store/review-checklist.md)"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "to a bot message.\",\n        \"NSLocalNetworkUsageDescription\":",
+      "replace": "to a bot message.\",\n        \"NSPhotoLibraryAddUsageDescription\": \"Rakazo saves images you choose to your photo library.\",\n        \"NSLocalNetworkUsageDescription\":",
+      "reason": "App Store: the share sheet a file or image opens in offers Save Image, which writes to the photo library and needs its own purpose string"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-rows.tsx",
+      "find": "import { MessageRow } from \"./message-row\";\n\n",
+      "replace": "import { MessageRow } from \"./message-row\";\nimport { useWithoutBlocked } from \"../../lib/dozo-blocked-people\";\n\n",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-rows.tsx",
+      "find": "  const { showBotSenderName, reactionView, exchanges, visibleMessages } = transcript;",
+      "replace": "  const { showBotSenderName, reactionView, exchanges } = transcript;\n  const visibleMessages = useWithoutBlocked(transcript.visibleMessages);",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile (App Review 1.2): a person blocked from a message menu has their messages left out of every shared chat on this phone"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"enableBackgroundPlayback\": false,\n          \"microphonePermission\": \"Rakazo uses the microphone for voice calls with your bots.\"",
+      "replace": "\"enableBackgroundPlayback\": false,\n          \"microphonePermission\": \"Rakazo uses the microphone for voice calls with your bots and to dictate messages.\"",
+      "reason": "App Store: the microphone purpose string names every use, dictation in the composer as well as calls (each plugin writes the same key, so all three say the same)"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"speechRecognitionPermission\": \"Rakazo turns your speech into messages during voice calls.\",\n          \"microphonePermission\": \"Rakazo uses the microphone for voice calls with your bots.\"",
+      "replace": "\"speechRecognitionPermission\": \"Rakazo turns your speech into messages during voice calls and dictation.\",\n          \"microphonePermission\": \"Rakazo uses the microphone for voice calls with your bots and to dictate messages.\"",
+      "reason": "App Store: the speech recognition and microphone purpose strings name dictation in the composer as well as calls"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"cameraPermission\": \"Rakazo uses the camera so you can attach photos to a bot message.\",\n          \"microphonePermission\": \"Rakazo uses the microphone for voice calls with your bots.\"",
+      "replace": "\"cameraPermission\": \"Rakazo uses the camera so you can attach photos to a bot message.\",\n          \"microphonePermission\": \"Rakazo uses the microphone for voice calls with your bots and to dictate messages.\"",
+      "reason": "App Store: the same microphone purpose string from every plugin that writes it"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "on your local network.\",\n        \"NSAppTransportSecurity\": {",
+      "replace": "on your local network.\",\n        \"UIViewControllerBasedStatusBarAppearance\": false,\n        \"NSAppTransportSecurity\": {",
+      "reason": "status bar: the layout sets its style from the app's resolved theme (expo-status-bar), which iOS honours only when view controllers do not choose it; the generated plist said true, so the bar followed the system and read dark on the dark sign-in screen"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Fatura dönemi\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/vault.ts\nmsgid \"Block\"",
+      "replace": "msgstr \"Fatura dönemi\"\n\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Block {name}?\"\nmsgstr \"{name} engellensin mi?\"\n\n#: apps/mobile/lib/dozo-message-actions.ts\n#: apps/mobile/app/(settings)/dozo-feedback.tsx\nmsgid \"Report\"\nmsgstr \"Bildir\"\n\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Their messages are hidden on this phone.\"\nmsgstr \"Mesajları bu telefonda gizlenir.\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/vault.ts\nmsgid \"Block\"",
+      "reason": "reporting and blocking on mobile: the Turkish copy of Report, the Block question and its line (\"Block\" is upstream's)"
+    },
+    {
+      "file": "apps/mobile/locales/es.json",
+      "find": "\"NSMicrophoneUsageDescription\": \"Rakazo usa el micrófono para las llamadas de voz con tus bots.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo convierte lo que dices en mensajes durante las llamadas de voz.\",",
+      "replace": "\"NSPhotoLibraryAddUsageDescription\": \"Rakazo guarda en tu fototeca las imágenes que elijas.\",\n    \"NSMicrophoneUsageDescription\": \"Rakazo usa el micrófono para las llamadas de voz con tus bots y para dictar mensajes.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo convierte lo que dices en mensajes durante las llamadas de voz y el dictado.\",",
+      "reason": "App Store: the localized permission prompts follow the English ones in app.json (photo library add, dictation)"
+    },
+    {
+      "file": "apps/mobile/locales/pl.json",
+      "find": "\"NSMicrophoneUsageDescription\": \"Rakazo korzysta z mikrofonu podczas rozmów głosowych z botami.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo zamienia Twoją mowę na wiadomości podczas rozmów głosowych.\",",
+      "replace": "\"NSPhotoLibraryAddUsageDescription\": \"Rakazo zapisuje wybrane obrazy w Twojej bibliotece zdjęć.\",\n    \"NSMicrophoneUsageDescription\": \"Rakazo korzysta z mikrofonu podczas rozmów głosowych z botami i do dyktowania wiadomości.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo zamienia Twoją mowę na wiadomości podczas rozmów głosowych i dyktowania.\",",
+      "reason": "App Store: the localized permission prompts follow the English ones in app.json (photo library add, dictation)"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"expo-router\",\n      \"expo-secure-store\",\n      [",
+      "replace": "\"expo-router\",\n      [\"expo-secure-store\", { \"faceIDPermission\": false }],\n      [",
+      "reason": "App Store: the app never asks for Face ID (no item is stored behind biometrics), so the secure-store plugin writes no Face ID purpose string; its default text named no feature"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "          {me?.paymentWalletProvider\n            ? settingsLink({\n                title: t`Wallet`,",
+      "replace": "          {me?.paymentWalletProvider && !storeBuild\n            ? settingsLink({\n                title: t`Wallet`,",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: no Wallet row; connecting a wallet opens a payment provider's page outside the app, which App Review may read as an external payment path (3.1.1)"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/wallet.tsx",
+      "find": "import { LoadFailure } from \"../../components/load-failure\";\nimport { SettingsGroup",
+      "replace": "import { LoadFailure } from \"../../components/load-failure\";\nimport { DozoStoreGate } from \"../../components/dozo-store-gate\";\nimport { SettingsGroup",
+      "requires": [
+        "apps/mobile/components/dozo-store-gate.tsx"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/wallet.tsx",
+      "find": "export default function WalletSettings() {\n  const { t } = useLingui();",
+      "replace": "export default function WalletSettings() {\n  return (\n    <DozoStoreGate>\n      <UpstreamWalletSettings />\n    </DozoStoreGate>\n  );\n}\n\nfunction UpstreamWalletSettings() {\n  const { t } = useLingui();",
+      "requires": [
+        "apps/mobile/components/dozo-store-gate.tsx"
+      ],
+      "reason": "store build: a link to Wallet lands on the chats"
+    },
+    {
+      "file": "apps/mobile/components/run-error-sheet.tsx",
+      "find": "import { translateRunError } from \"@rakazo/i18n/run-error\";\nimport * as Clipboard",
+      "replace": "import { translateRunError } from \"@rakazo/i18n/run-error\";\nimport { storeRunErrorDetails } from \"../lib/dozo-store-build\";\nimport * as Clipboard",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/run-error-sheet.tsx",
+      "find": "    ? normalizeRunError(\n        details,",
+      "replace": "    ? normalizeRunError(\n        storeRunErrorDetails(details),",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: a run that failed for want of credits or a plan says to connect a model, not to buy in Billing (App Review 3.1.1)"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "import { InboxSwipeRow } from \"./inbox-swipe-row\";\nimport { NativeSymbol }",
+      "replace": "import { InboxSwipeRow } from \"./inbox-swipe-row\";\nimport { useShownPreview } from \"../lib/dozo-blocked-people\";\nimport { NativeSymbol }",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "  const { kind, chat } = target;\n  return (\n    <InboxSwipeRow",
+      "replace": "  const { kind, chat } = target;\n  const shownPreview = useShownPreview(chat);\n  return (\n    <InboxSwipeRow",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the swipe row's preview hides a chat a blocked person wrote in"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "        title: chat.name,\n        message: chat.preview,",
+      "replace": "        title: chat.name,\n        message: shownPreview,",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the swipe row's preview hides a chat a blocked person wrote in"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "  const preview = previewSnippet(bot.preview, 40) || t`No messages yet`;",
+      "replace": "  const preview = previewSnippet(useShownPreview(bot), 40) || t`No messages yet`;",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: a shared bot chat a blocked person wrote in shows no preview line from them"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "    previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(\", \");",
+      "replace": "    previewSnippet(useShownPreview(group), 40) ||\n    group.members.map((member) => member.name).join(\", \");",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: a group a blocked person wrote in shows its members instead of their message"
     },
     {
       "file": "packages/contracts/src/rpc.ts",
