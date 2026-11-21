@@ -50,7 +50,7 @@ export function DozoUsageBreakdown() {
   // being true while it is open, the table falls back to the model grouping.
   const { data: scope } = useQuery(queries.dozoUsage.scope.queryOptions());
   const by = chosen === "person" && !scope?.person ? "model" : chosen;
-  const { data } = useQuery({
+  const { data, isPlaceholderData } = useQuery({
     ...queries.dozoUsage.breakdown.queryOptions({ input: { by } }),
     placeholderData: keepPreviousData,
   });
@@ -152,7 +152,7 @@ export function DozoUsageBreakdown() {
                   {detail(group) ? (
                     <div className="text-label text-muted-foreground">{detail(group)}</div>
                   ) : null}
-                  {by === "day" && mostSpent > 0 ? (
+                  {by === "day" && !isPlaceholderData && mostSpent > 0 ? (
                     <div
                       aria-hidden
                       className="mt-1 h-1 rounded-full bg-muted-foreground/40"

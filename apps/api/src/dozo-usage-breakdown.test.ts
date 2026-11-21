@@ -271,15 +271,29 @@ describe("who sees the breakdown", () => {
 
 describe("who may group by person", () => {
   type Role = "owner" | "member" | null;
-  function clientFor(role: Role, members: number) {
+  function clientFor(role: Role, members: number, timezone = "Europe/Istanbul") {
     const asked: string[] = [];
+    type Key = { spaceId_userId: { spaceId: string; userId: string } };
     const prisma = {
       spaceMember: {
-        findUnique: async () => (role ? { role } : null),
-        count: async () => members,
+        // The role belongs to this caller in this Space only: any other key finds nobody.
+        findUnique: async ({ where }: { where: Key }) =>
+          role &&
+          where.spaceId_userId.spaceId === "space-1" &&
+          where.spaceId_userId.userId === "ada"
+            ? { role }
+            : null,
+        count: async ({ where }: { where: { spaceId: string } }) =>
+          where.spaceId === "space-1" ? members : 0,
       },
-      user: { findUnique: async () => ({ timezone: "Europe/Istanbul" }) },
-      $queryRaw: async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+      user: { findUnique: async () => ({ timezone }) },
+      $queryRaw: async (sql: TemplateStringsArray, ...values: unknown[]) => {
+        // The database knows these zones only.
+        if (sql.join("?").includes("pg_timezone_names")) {
+          return ["UTC", "Europe/Istanbul"].includes(String(values[0]))
+            ? [{ name: values[0] }]
+            : [];
+        }
         asked.push(values.join("|"));
         return [{ userId: "bob", userName: "Bob", userEmail: "bob@example.test", calls: 1 }];
       },
@@ -329,6 +343,13 @@ describe("who may group by person", () => {
     expect(await stranger.client.scope()).toEqual({ person: false });
     await expect(stranger.client.breakdown({ by: "person" })).rejects.toBeDefined();
     expect(stranger.asked).toEqual([]);
+  });
+
+  it("falls back to UTC for a zone name the database does not know", async () => {
+    // JavaScript accepts this name, so only the database lookup can refuse it.
+    const { client, asked } = clientFor("member", 2, "Asia/Kolkata");
+    await client.breakdown({ by: "day" });
+    expect(asked[0]).toContain("UTC|space-1|ada|");
   });
 
   it("reads a member's own days in the account's time zone, from their own records", async () => {

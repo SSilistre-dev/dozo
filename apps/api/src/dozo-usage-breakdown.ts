@@ -1,4 +1,5 @@
 import type { DozoUsageGroup, DozoUsageGrouping } from "@rakazo/contracts";
+import { isValidTimeZone } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 
 /**
@@ -114,6 +115,17 @@ const NO_CELL: UsageCell = {
 };
 
 /**
+ * A zone both JavaScript and the database know, else UTC: a name only one of them accepts would
+ * fail the whole query, and the person would see no usage at all.
+ */
+async function knownZone(prisma: Pick<PrismaClient, "$queryRaw">, name: string): Promise<string> {
+  if (!isValidTimeZone(name)) return "UTC";
+  const known = await prisma.$queryRaw<Array<{ name: string }>>`
+    SELECT name FROM pg_timezone_names WHERE name = ${name}::text`;
+  return known.length > 0 ? name : "UTC";
+}
+
+/**
  * The caller's records per day of `timeZone` over the last `USAGE_DAYS` days. `createdAt` is a
  * `timestamp` holding UTC, so the day is cut from `createdAt AT TIME ZONE 'UTC' AT TIME ZONE zone`
  * and reads the same whatever zone the database session runs in.
@@ -121,9 +133,10 @@ const NO_CELL: UsageCell = {
 export async function readDayCells(
   prisma: Pick<PrismaClient, "$queryRaw">,
   member: { spaceId: string; userId: string },
-  timeZone: string,
+  accountZone: string,
   now = new Date(),
 ): Promise<UsageCell[]> {
+  const timeZone = await knownZone(prisma, accountZone);
   const { firstDay, since } = usageDayWindow(timeZone, now);
   const rows = await prisma.$queryRaw<Array<Partial<UsageCell>>>`
     SELECT day, count(*)::int AS calls,
