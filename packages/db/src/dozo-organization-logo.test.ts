@@ -60,6 +60,17 @@ describe("the sidebar's organization mark", () => {
     expect((await readOrganizationMark(db as never, { userId: "u", spaceId: "s" })).logo).toBe(
       null,
     );
+    const huge = fakeDb({
+      membership: {
+        space: {
+          deletingAt: null,
+          organization: { name: "Acme", logo: `${LOGO}${"A".repeat(200_000)}` },
+        },
+      },
+    });
+    expect((await readOrganizationMark(huge as never, { userId: "u", spaceId: "s" })).logo).toBe(
+      null,
+    );
   });
 
   it("is refused to someone who is not in the Space, and in a Space being deleted", async () => {

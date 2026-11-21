@@ -5,7 +5,7 @@ import { IsolationError } from "./scope.js";
 
 type Db = Pick<PrismaClient, "member" | "organization" | "space" | "spaceMember">;
 
-/** The roles that may change how the organization looks; Better Auth stores a comma list. */
+/** The roles that may change how the organization looks; the auth library stores a comma list. */
 const MANAGER_ROLES = ["owner", "admin"];
 const MANAGER = { OR: MANAGER_ROLES.map((role) => ({ role: { contains: role } })) };
 
@@ -13,12 +13,17 @@ export function managesOrganizationLook(role: string): boolean {
   return role.split(",").some((value) => MANAGER_ROLES.includes(value.trim()));
 }
 
+/** A 128 px WebP the server drew is a few kilobytes; nothing larger is one of them. */
+const STORED_LOGO_MAX_LENGTH = 100_000;
+
 /**
  * Only a logo the server drew itself is shown. The column is the auth library's, so anything else
- * found there (an address, say) is never handed to an app to load.
+ * found there (an address, a value too large to be one) is never handed to an app to load.
  */
 function storedLogo(value: string | null): string | null {
-  return value?.startsWith("data:image/webp;base64,") ? value : null;
+  return value?.startsWith("data:image/webp;base64,") && value.length <= STORED_LOGO_MAX_LENGTH
+    ? value
+    : null;
 }
 
 /**
