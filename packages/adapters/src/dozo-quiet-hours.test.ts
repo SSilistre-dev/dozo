@@ -1,4 +1,6 @@
 import type { BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
+import type { DozoQuietRange } from "@rakazo/contracts";
+import { DOZO_QUIET_DAYS, dozoQuietDayBit } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,11 +15,17 @@ import type { ExecutorDeps } from "./executor-deps.js";
 import { wakeRoutine } from "./run-routines.js";
 
 const HOUR = 60 * 60_000;
-const NIGHT = { startMinute: 22 * 60, endMinute: 7 * 60 };
+const { ALL } = DOZO_QUIET_DAYS;
+const NIGHT = { startMinute: 22 * 60, endMinute: 7 * 60, days: ALL };
+const MONDAY = 0;
+const WEDNESDAY = 2;
+const FRIDAY = 4;
+const SATURDAY = 5;
+const SUNDAY = 6;
 
 describe("quiet hours", () => {
   it("cover a range across midnight, start included and end not", () => {
-    const at = (iso: string) => dozoInQuietHours(NIGHT, new Date(iso), "UTC");
+    const at = (iso: string) => dozoInQuietHours([NIGHT], new Date(iso), "UTC");
     expect(at("2026-11-20T21:59:00Z")).toBe(false);
     expect(at("2026-11-20T22:00:00Z")).toBe(true);
     expect(at("2026-11-21T03:00:00Z")).toBe(true);
@@ -25,7 +33,7 @@ describe("quiet hours", () => {
   });
 
   it("cover a range inside one day", () => {
-    const lunch = { startMinute: 12 * 60, endMinute: 13 * 60 + 30 };
+    const lunch = [{ startMinute: 12 * 60, endMinute: 13 * 60 + 30, days: ALL }];
     expect(dozoInQuietHours(lunch, new Date("2026-11-20T11:59:00Z"), "UTC")).toBe(false);
     expect(dozoInQuietHours(lunch, new Date("2026-11-20T13:29:00Z"), "UTC")).toBe(true);
     expect(dozoInQuietHours(lunch, new Date("2026-11-20T13:30:00Z"), "UTC")).toBe(false);
@@ -34,32 +42,139 @@ describe("quiet hours", () => {
   it("are read in the given zone, and in UTC for a zone that does not exist", () => {
     // 23:30 in Istanbul (UTC+3) is 20:30 UTC.
     const at = new Date("2026-11-20T20:30:00Z");
-    expect(dozoInQuietHours(NIGHT, at, "Europe/Istanbul")).toBe(true);
-    expect(dozoInQuietHours(NIGHT, at, "Not/AZone")).toBe(false);
+    expect(dozoInQuietHours([NIGHT], at, "Europe/Istanbul")).toBe(true);
+    expect(dozoInQuietHours([NIGHT], at, "Not/AZone")).toBe(false);
   });
 
   it("end at the first minute outside them", () => {
-    expect(dozoQuietHoursEnd(NIGHT, new Date("2026-11-20T23:15:30Z"), "UTC")).toEqual(
+    expect(dozoQuietHoursEnd([NIGHT], new Date("2026-11-20T23:15:30Z"), "UTC")).toEqual(
       new Date("2026-11-21T07:00:00Z"),
     );
-    expect(dozoQuietHoursEnd(NIGHT, new Date("2026-11-20T23:00:00Z"), "Europe/Istanbul")).toEqual(
+    expect(dozoQuietHoursEnd([NIGHT], new Date("2026-11-20T23:00:00Z"), "Europe/Istanbul")).toEqual(
       new Date("2026-11-21T04:00:00Z"),
     );
   });
 
   it("end after the gap when a clock change skips their end", () => {
-    // Berlin skips 02:00-03:00 on 29 March 2026; an end at 02:30 becomes 03:00 local (01:00 UTC).
-    const early = { startMinute: 0, endMinute: 2 * 60 + 30 };
+    // Berlin skips 02:00-03:00 on Sunday 29 March 2026; an end at 02:30 becomes 03:00 local (01:00 UTC).
+    const early = [{ startMinute: 0, endMinute: 2 * 60 + 30, days: ALL }];
     expect(dozoQuietHoursEnd(early, new Date("2026-03-28T23:30:00Z"), "Europe/Berlin")).toEqual(
       new Date("2026-03-29T01:00:00Z"),
     );
   });
 
-  it("give up after a day when a range never ends", () => {
-    const always = { startMinute: 60, endMinute: 60 };
+  it("give up after a day when ranges never end", () => {
+    const always = [
+      { startMinute: 0, endMinute: 12 * 60, days: ALL },
+      { startMinute: 12 * 60, endMinute: 0, days: ALL },
+    ];
     expect(dozoQuietHoursEnd(always, new Date("2026-11-20T10:00:00Z"), "UTC")).toEqual(
       new Date("2026-11-21T10:01:00Z"),
     );
+  });
+
+  it("are the union of their ranges, overlapping ones included", () => {
+    const ranges = [
+      { startMinute: 22 * 60, endMinute: 2 * 60, days: ALL },
+      { startMinute: 60, endMinute: 7 * 60, days: ALL },
+    ];
+    const at = (iso: string) => dozoInQuietHours(ranges, new Date(iso), "UTC");
+    expect(at("2026-11-20T21:59:00Z")).toBe(false);
+    expect(at("2026-11-20T23:00:00Z")).toBe(true);
+    expect(at("2026-11-21T01:30:00Z")).toBe(true);
+    expect(at("2026-11-21T06:59:00Z")).toBe(true);
+    expect(at("2026-11-21T07:00:00Z")).toBe(false);
+    expect(dozoQuietHoursEnd(ranges, new Date("2026-11-20T23:00:00Z"), "UTC")).toEqual(
+      new Date("2026-11-21T07:00:00Z"),
+    );
+  });
+
+  it("end where the last of touching ranges ends", () => {
+    const ranges = [
+      { startMinute: 22 * 60, endMinute: 0, days: ALL },
+      { startMinute: 0, endMinute: 6 * 60, days: ALL },
+      { startMinute: 6 * 60, endMinute: 6 * 60 + 30, days: ALL },
+    ];
+    expect(dozoQuietHoursEnd(ranges, new Date("2026-11-20T22:30:00Z"), "UTC")).toEqual(
+      new Date("2026-11-21T06:30:00Z"),
+    );
+  });
+
+  it("follow a range across days, past the old one-day limit", () => {
+    // The whole weekend: Saturday and Sunday, each in two halves. 21 November 2026 is a Saturday.
+    const weekend = dozoQuietDayBit(SATURDAY) | dozoQuietDayBit(SUNDAY);
+    expect(weekend).toBe(DOZO_QUIET_DAYS.WEEKEND);
+    const ranges = [
+      { startMinute: 0, endMinute: 12 * 60, days: weekend },
+      { startMinute: 12 * 60, endMinute: 0, days: weekend },
+    ];
+    expect(dozoQuietHoursEnd(ranges, new Date("2026-11-21T10:00:00Z"), "UTC")).toEqual(
+      new Date("2026-11-23T00:00:00Z"),
+    );
+  });
+
+  it("hold a range to the day it starts on, its morning included", () => {
+    // Friday 22:00 to 07:00: Saturday morning is quiet, Sunday morning and Thursday night are not.
+    const friday = [{ startMinute: 22 * 60, endMinute: 7 * 60, days: dozoQuietDayBit(FRIDAY) }];
+    const at = (iso: string) => dozoInQuietHours(friday, new Date(iso), "UTC");
+    expect(at("2026-11-19T23:00:00Z")).toBe(false);
+    expect(at("2026-11-20T23:00:00Z")).toBe(true);
+    expect(at("2026-11-21T06:00:00Z")).toBe(true);
+    expect(at("2026-11-21T23:00:00Z")).toBe(false);
+    expect(at("2026-11-22T06:00:00Z")).toBe(false);
+    expect(dozoQuietHoursEnd(friday, new Date("2026-11-20T23:00:00Z"), "UTC")).toEqual(
+      new Date("2026-11-21T07:00:00Z"),
+    );
+  });
+
+  it("cover only the days picked", () => {
+    const days = dozoQuietDayBit(MONDAY) | dozoQuietDayBit(WEDNESDAY);
+    const lunch = [{ startMinute: 12 * 60, endMinute: 13 * 60, days }];
+    const at = (iso: string) => dozoInQuietHours(lunch, new Date(iso), "UTC");
+    expect(at("2026-11-16T12:30:00Z")).toBe(true);
+    expect(at("2026-11-17T12:30:00Z")).toBe(false);
+    expect(at("2026-11-18T12:30:00Z")).toBe(true);
+    expect(at("2026-11-22T12:30:00Z")).toBe(false);
+  });
+
+  it("take the day in the given zone", () => {
+    // 22:30 UTC on Friday is 01:30 on Saturday in Istanbul.
+    const saturday = [{ startMinute: 0, endMinute: 3 * 60, days: dozoQuietDayBit(SATURDAY) }];
+    const at = new Date("2026-11-20T22:30:00Z");
+    expect(dozoInQuietHours(saturday, at, "Europe/Istanbul")).toBe(true);
+    expect(dozoInQuietHours(saturday, at, "UTC")).toBe(false);
+  });
+
+  it("keep their day across a clock change", () => {
+    // 29 March 2026, when Berlin skips 02:00-03:00, is a Sunday; 00:30 local is 23:30 UTC on Saturday.
+    const early = { startMinute: 0, endMinute: 2 * 60 + 30 };
+    const sunday = [{ ...early, days: dozoQuietDayBit(SUNDAY) }];
+    const saturday = [{ ...early, days: dozoQuietDayBit(SATURDAY) }];
+    const at = new Date("2026-03-28T23:30:00Z");
+    expect(dozoInQuietHours(sunday, at, "Europe/Berlin")).toBe(true);
+    expect(dozoInQuietHours(saturday, at, "Europe/Berlin")).toBe(false);
+    expect(dozoQuietHoursEnd(sunday, at, "Europe/Berlin")).toEqual(
+      new Date("2026-03-29T01:00:00Z"),
+    );
+    // Berlin repeats 02:00-03:00 on Sunday 25 October 2026: an end at 02:30 is its first one.
+    expect(dozoQuietHoursEnd(sunday, new Date("2026-10-24T23:00:00Z"), "Europe/Berlin")).toEqual(
+      new Date("2026-10-25T00:30:00Z"),
+    );
+  });
+
+  it("ask the zone for its clock once a quarter hour, not once a minute", () => {
+    const always = [
+      { startMinute: 0, endMinute: 12 * 60, days: ALL },
+      { startMinute: 12 * 60, endMinute: 0, days: ALL },
+    ];
+    const asked = vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
+    try {
+      dozoQuietHoursEnd(always, new Date("2026-11-20T10:00:00Z"), "Europe/Istanbul");
+      // The walk covers eight days and two hours: 776 quarter hours.
+      expect(asked.mock.calls.length).toBeLessThanOrEqual(8 * 24 * 4 + 8 + 1);
+    } finally {
+      asked.mockRestore();
+    }
   });
 });
 
@@ -84,33 +199,45 @@ const sameSchedule = (
 function fakeDatabase() {
   const routines = new Map<string, Routine>();
   const holds = new Map<string, Hold>();
+  const ranges = new Map<string, DozoQuietRange[]>();
+  /** The previous release's single range, kept in step with the first of the new ones. */
   const quiet = new Map<string, { startMinute: number; endMinute: number }>();
   const users = new Map<string, { timezone: string | null }>();
   const sql = (strings: TemplateStringsArray) => strings.join("?");
+  /** Both tables as the queries select them: array_agg gives null for no rows. */
+  const quietColumns = (userId: string) => {
+    const list = ranges.get(userId) ?? [];
+    const hours = quiet.get(userId);
+    const column = (pick: (range: DozoQuietRange) => number) =>
+      list.length ? list.map(pick) : null;
+    return {
+      startMinute: hours?.startMinute ?? null,
+      endMinute: hours?.endMinute ?? null,
+      rangeStarts: column((range) => range.startMinute),
+      rangeEnds: column((range) => range.endMinute),
+      rangeDays: column((range) => range.days),
+    };
+  };
   const client = {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = sql(strings);
-      if (text.includes('FROM "user" u')) {
+      if (text.includes("pg_advisory_xact_lock")) return [{ lock: "" }];
+      if (text.includes('FROM "user" u') && text.includes("dozo_routine_holds h ON")) {
         const [routineId, crons, timezone, userId] = values as [string, string[], string, string];
         const user = users.get(userId);
         if (!user) return [];
         const stored = holds.get(routineId);
         const hold = stored && sameSchedule(stored, { crons, timezone }) ? stored : undefined;
-        const hours = quiet.get(userId);
         return [
           {
             dueAt: hold?.dueAt ?? null,
             heldUntil: hold?.heldUntil ?? null,
-            startMinute: hours?.startMinute ?? null,
-            endMinute: hours?.endMinute ?? null,
+            ...quietColumns(userId),
             timezone: user.timezone,
           },
         ];
       }
-      if (text.includes("FROM dozo_quiet_hours")) {
-        const hours = quiet.get(values[0] as string);
-        return hours ? [hours] : [];
-      }
+      if (text.includes("AS id) u")) return [quietColumns(values[0] as string)];
       if (text.includes("FROM dozo_routine_holds h JOIN")) {
         return [...holds.entries()].flatMap(([routineId, hold]) => {
           const routine = routines.get(routineId);
@@ -134,7 +261,19 @@ function fakeDatabase() {
     }),
     $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = sql(strings);
-      if (text.includes("INSERT INTO dozo_quiet_hours")) {
+      if (text.includes("DELETE FROM dozo_quiet_hour_ranges")) {
+        ranges.delete(values[0] as string);
+      } else if (text.includes("INSERT INTO dozo_quiet_hour_ranges")) {
+        const [userId, starts, ends, days] = values as [string, number[], number[], number[]];
+        ranges.set(
+          userId,
+          starts.map((startMinute, index) => ({
+            startMinute,
+            endMinute: ends[index] as number,
+            days: days[index] as number,
+          })),
+        );
+      } else if (text.includes("INSERT INTO dozo_quiet_hours")) {
         const [userId, startMinute, endMinute] = values as [string, number, number];
         quiet.set(userId, { startMinute, endMinute });
       } else if (text.includes("DELETE FROM dozo_quiet_hours")) {
@@ -220,7 +359,18 @@ function fakeDatabase() {
     if (!routine) throw new Error(`no routine ${routineId}`);
     holds.set(routineId, { dueAt, heldUntil, crons: routine.crons, timezone: routine.timezone });
   };
-  return { routines, holds, quiet, users, deps, enqueued, publishSpaceChange, addRoutine, hold };
+  return {
+    routines,
+    holds,
+    ranges,
+    quiet,
+    users,
+    deps,
+    enqueued,
+    publishSpaceChange,
+    addRoutine,
+    hold,
+  };
 }
 
 const NOW = new Date("2026-11-20T23:00:00Z");
@@ -252,7 +402,7 @@ describe("a due routine", () => {
 
   it("runs as before when its quiet hours cannot be read", async () => {
     const db = fakeDatabase();
-    db.quiet.set("user-1", NIGHT);
+    db.ranges.set("user-1", [NIGHT]);
     const routine = db.addRoutine({ nextRunAt: NOW });
     const prisma = db.deps.prisma as unknown as { $queryRaw: ReturnType<typeof vi.fn> };
     prisma.$queryRaw.mockRejectedValueOnce(new Error("database unavailable"));
@@ -262,7 +412,7 @@ describe("a due routine", () => {
 
   it("waits until quiet hours end, remembering when it was due", async () => {
     const db = fakeDatabase();
-    db.quiet.set("user-1", NIGHT);
+    db.ranges.set("user-1", [NIGHT]);
     const routine = db.addRoutine({ nextRunAt: NOW });
     const end = new Date("2026-11-21T07:00:00Z");
     expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(true);
@@ -283,9 +433,29 @@ describe("a due routine", () => {
     expect(db.publishSpaceChange).toHaveBeenCalledWith("space-1", "routines");
   });
 
+  it("waits through touching ranges until the last one ends", async () => {
+    const db = fakeDatabase();
+    db.ranges.set("user-1", [
+      { startMinute: 22 * 60, endMinute: 0, days: ALL },
+      { startMinute: 0, endMinute: 9 * 60, days: dozoQuietDayBit(SATURDAY) },
+    ]);
+    const routine = db.addRoutine({ nextRunAt: NOW });
+    expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(true);
+    expect(routine.nextRunAt).toEqual(new Date("2026-11-21T09:00:00Z"));
+  });
+
+  it("runs on a day its owner's ranges leave out", async () => {
+    const db = fakeDatabase();
+    // NOW is Friday 23:00 UTC; the range is on weekends only.
+    db.ranges.set("user-1", [{ ...NIGHT, days: DOZO_QUIET_DAYS.WEEKEND }]);
+    const routine = db.addRoutine({ nextRunAt: NOW });
+    expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(false);
+    expect(routine.nextRunAt).toEqual(NOW);
+  });
+
   it("reads quiet hours in the owner's zone before the routine's", async () => {
     const db = fakeDatabase();
-    db.quiet.set("user-1", NIGHT);
+    db.ranges.set("user-1", [NIGHT]);
     // 23:00 UTC is 15:00 in Los Angeles: not quiet there, though it is in UTC.
     db.users.set("user-1", { timezone: "America/Los_Angeles" });
     const routine = db.addRoutine({ nextRunAt: NOW });
@@ -294,7 +464,7 @@ describe("a due routine", () => {
 
   it("does nothing when the schedule moved before it could wait", async () => {
     const db = fakeDatabase();
-    db.quiet.set("user-1", NIGHT);
+    db.ranges.set("user-1", [NIGHT]);
     const routine = db.addRoutine({ nextRunAt: new Date(NOW.getTime() + HOUR) });
     expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(true);
     expect(db.holds.size).toBe(0);
@@ -403,7 +573,7 @@ describe("a due routine", () => {
 
   it("waits from the routine wakeup itself", async () => {
     const db = fakeDatabase();
-    db.quiet.set("user-1", NIGHT);
+    db.ranges.set("user-1", [NIGHT]);
     const routine = db.addRoutine({ nextRunAt: NOW });
     await wakeRoutine(db.deps as unknown as ExecutorDeps, "routine-1", NOW.toISOString());
     expect(routine.nextRunAt).toEqual(new Date("2026-11-21T07:00:00Z"));
@@ -419,18 +589,50 @@ describe("a due routine", () => {
 });
 
 describe("saving quiet hours", () => {
+  const LUNCH = { startMinute: 12 * 60, endMinute: 13 * 60, days: DOZO_QUIET_DAYS.WEEKDAYS };
+
   it("reads nothing before they are set", async () => {
     const db = fakeDatabase();
-    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toBeNull();
+    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toEqual([]);
   });
 
   it("sets, changes and clears them", async () => {
     const db = fakeDatabase();
-    await saveDozoQuietHours(db.deps, "user-1", NIGHT);
-    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toEqual(NIGHT);
-    await saveDozoQuietHours(db.deps, "user-1", null);
-    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toBeNull();
+    await saveDozoQuietHours(db.deps, "user-1", [NIGHT]);
+    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toEqual([NIGHT]);
+    await saveDozoQuietHours(db.deps, "user-1", [LUNCH, NIGHT]);
+    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toEqual([LUNCH, NIGHT]);
+    await saveDozoQuietHours(db.deps, "user-1", []);
+    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toEqual([]);
     expect(db.enqueued).toEqual([]);
+  });
+
+  it("keep the previous release's single range in step with the first one", async () => {
+    const db = fakeDatabase();
+    await saveDozoQuietHours(db.deps, "user-1", [LUNCH, NIGHT]);
+    expect(db.quiet.get("user-1")).toEqual({ startMinute: 12 * 60, endMinute: 13 * 60 });
+    await saveDozoQuietHours(db.deps, "user-1", []);
+    expect(db.quiet.has("user-1")).toBe(false);
+  });
+
+  it("read a single range saved by the previous release as one on every day", async () => {
+    const db = fakeDatabase();
+    db.quiet.set("user-1", { startMinute: 22 * 60, endMinute: 7 * 60 });
+    expect(await readDozoQuietHours(db.deps.prisma, "user-1")).toEqual([NIGHT]);
+  });
+
+  it("hold a routine on a single range saved by the previous release", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    try {
+      const db = fakeDatabase();
+      db.quiet.set("user-1", { startMinute: 22 * 60, endMinute: 7 * 60 });
+      const routine = db.addRoutine({ nextRunAt: NOW });
+      expect(await dozoHoldRoutine(db.deps, routine, NOW, vi.fn())).toBe(true);
+      expect(routine.nextRunAt).toEqual(new Date("2026-11-21T07:00:00Z"));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends routines waiting on the old hours back to when they were due", async () => {
@@ -450,7 +652,7 @@ describe("saving quiet hours", () => {
     db.addRoutine({ id: "theirs", userId: "user-2", nextRunAt: end });
     db.hold("theirs", due, end);
 
-    await saveDozoQuietHours(db.deps, "user-1", null);
+    await saveDozoQuietHours(db.deps, "user-1", []);
 
     expect(waiting.nextRunAt).toEqual(due);
     expect(edited.nextRunAt).toEqual(due);

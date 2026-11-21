@@ -645,7 +645,12 @@ Accepted by the owner for now, stated here once:
   without a note in the chat; only the server log names it (`routine.missed`). Quiet hours stop
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
-  which it does not show.
+  which it does not show. The server keeps up to four ranges, each on its own days and belonging
+  to the day it starts on (Friday 22:00-07:00 covers Saturday morning), their union in force;
+  `hours` in the API is the first range, for clients that set one range only, and saving `hours`
+  replaces every range with one on every day. `dozoQuietHours.suggest` fits ranges to the hours of
+  the last four weeks in which the account wrote least (only its own messages, counted per local
+  hour; nothing is kept), or answers null when there is too little or no clear pattern.
 - Generated images and videos leave one usage record each (`packages/adapters/src/dozo-media-usage.ts`,
   provider `media`, model `generate_image` or `generate_video`), so they show in usage. The media
   service reports no price, so their cost reads as unknown; nothing is charged against model credit.
