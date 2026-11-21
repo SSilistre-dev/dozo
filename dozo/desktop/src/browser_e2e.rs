@@ -481,3 +481,97 @@ fn base64_decode(text: &str) -> Vec<u8> {
     }
     out
 }
+
+/// Serves `pages` by path on loopback, from a thread, and returns the port.
+fn serve_pages(pages: Vec<(&'static str, String)>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut request = [0u8; 4096];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let line = String::from_utf8_lossy(&request[..read]);
+            let path = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
+            let body = pages
+                .iter()
+                .find(|(at, _)| *at == path)
+                .map(|(_, body)| body.as_str())
+                .unwrap_or("");
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    port
+}
+
+/// The guard holds where a page would reach around it: through a window it opens, a frame it adds,
+/// a frame of another site (its own process), and the older full screen calls. Every attack runs
+/// on a bot's click, which counts as the person's gesture.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_guard_holds_in_windows_and_frames() {
+    const COPY: &str = "document.addEventListener('copy',e=>{e.clipboardData.setData('text/plain','x');e.preventDefault()},{once:true});";
+    let script = format!(
+        "<p id=probe>probe:</p><script>function r(t){{document.getElementById('probe').textContent+=' '+t}}\
+         addEventListener('message',e=>r(e.data));</script>\
+         <button onclick=\"{COPY}const w=window.open();r(w.Document.prototype.execCommand.call(document,'copy')?'window-wrote':'window-refused');w.close()\">Window</button>\
+         <button onclick=\"{COPY}const f=document.createElement('iframe');document.body.append(f);r(frames[frames.length-1].Document.prototype.execCommand.call(document,'copy')?'frame-wrote':'frame-refused')\">Frame</button>\
+         <button onclick=\"document.documentElement.webkitRequestFullScreen();setTimeout(()=>r(document.fullscreenElement?'webkit-taken':'webkit-refused'),300)\">Webkit</button>"
+    );
+    let inner = format!(
+        "<button style='width:100%;height:100%' onclick=\"{COPY}parent.postMessage(document.execCommand('copy')?'site-wrote':'site-refused','*')\">Inside</button>"
+    );
+    let port = serve_pages(vec![("/inner", inner), ("/", String::new())]);
+    // The outer page names the inner one on another site (localhost against 127.0.0.1), so the
+    // frame runs in a process of its own.
+    let outer = format!(
+        "<!doctype html><title>guard</title>{script}<iframe style='width:300px;height:80px' src='http://127.0.0.1.nip.io:{port}/inner'></iframe>"
+    );
+    let outer_port = serve_pages(vec![("/", outer)]);
+    let root = root();
+    let browsers = browsers(&root);
+    let page = format!("http://127.0.0.1:{outer_port}/");
+    call(&browsers, "Page.navigate", json!({ "url": page })).await;
+    let found = wait_for(&browsers, "Webkit").await;
+    for button in ["Window", "Frame", "Webkit"] {
+        click(&browsers, find_node(&found, "button", button)).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let frame = found
+        .iter()
+        .find(|(role, _, _)| role == "Iframe")
+        .unwrap_or_else(|| panic!("no frame in {found:?}"));
+    click(&browsers, frame.2).await;
+    let mut probe = String::new();
+    for _ in 0..50 {
+        probe = nodes(&browsers)
+            .await
+            .into_iter()
+            .find(|(_, name, _)| name.starts_with("probe:"))
+            .map(|(_, name, _)| name)
+            .unwrap_or_default();
+        if probe.split(' ').count() == 5 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let mut outcomes: Vec<&str> = probe.split(' ').skip(1).collect();
+    outcomes.sort_unstable();
+    assert_eq!(
+        outcomes,
+        [
+            "frame-refused",
+            "site-refused",
+            "webkit-refused",
+            "window-refused"
+        ],
+        "{probe}"
+    );
+    println!(
+        "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, and the older full screen"
+    );
+    browsers.close_all();
+}

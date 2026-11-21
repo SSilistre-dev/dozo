@@ -127,7 +127,7 @@ const ANSWER: Duration = Duration::from_secs(30);
 /// looked for or started (`device_run.rs`), so only this module's own tests reach it.
 pub const DECLARED: bool = false;
 
-pub const NO_BROWSER: &str = "No Chrome, Edge, Brave or Chromium is installed on this computer.";
+pub const NO_BROWSER: &str = "No supported browser is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
 
 /// The browser this computer would start, if any: the first of Chrome, Edge, Brave and Chromium,
@@ -210,7 +210,7 @@ pub fn allowed(command: &Value, local: bool) -> Result<(String, Value), String> 
     let Some((_, keys)) = ALLOWED.iter().find(|(name, _)| *name == method) else {
         return Err(format!("Not allowed in the bot's browser: {method}"));
     };
-    let given = match command.get("params") {
+    let mut given = match command.get("params") {
         None | Some(Value::Null) => Map::new(),
         Some(Value::Object(params)) => params.clone(),
         Some(_) => return Err("pageBrowser params must be an object".to_owned()),
@@ -236,11 +236,21 @@ pub fn allowed(command: &Value, local: bool) -> Result<(String, Value), String> 
     if method == "Input.dispatchKeyEvent" && shortcut(&given) {
         return Err("Not allowed in the bot's browser: that key".to_owned());
     }
-    // A middle click pastes what the person last selected anywhere (Linux).
-    let middle = given.get("button").and_then(Value::as_str) == Some("middle")
-        || given.get("buttons").and_then(Value::as_u64).unwrap_or(0) & 4 != 0;
-    if method == "Input.dispatchMouseEvent" && middle {
-        return Err("Not allowed in the bot's browser: middle click".to_owned());
+    // With Ctrl, Cmd or Alt held, only the key itself is sent: no text, and no system key code,
+    // which macOS reads as a shortcut of its own.
+    let held = given.get("modifiers").and_then(Value::as_u64).unwrap_or(0) & (1 | 2 | 4) != 0;
+    if method == "Input.dispatchKeyEvent" && held {
+        for field in ["text", "unmodifiedText", "nativeVirtualKeyCode"] {
+            given.remove(field);
+        }
+    }
+    // A middle click pastes what the person last selected anywhere (Linux); the back and forward
+    // buttons leave the page.
+    let button = given.get("button").and_then(Value::as_str);
+    let other = matches!(button, Some("middle" | "back" | "forward"))
+        || given.get("buttons").and_then(Value::as_u64).unwrap_or(0) & (4 | 8 | 16) != 0;
+    if method == "Input.dispatchMouseEvent" && other {
+        return Err("Not allowed in the bot's browser: that mouse button".to_owned());
     }
     Ok((method.to_owned(), Value::Object(given)))
 }
@@ -300,8 +310,8 @@ fn public_v4(ip: std::net::Ipv4Addr) -> bool {
         || (a == 100 && (64..128).contains(&b)))
 }
 
-/// A key press that reaches more than the page's text: the clipboard (Ctrl or Cmd with V or C,
-/// Shift with Insert, which copy or paste), or the browser's own shortcuts (Alt with anything, Ctrl
+/// A key press that reaches more than the page's text: the clipboard (Ctrl or Cmd with V, C or X,
+/// Shift with Insert or Delete, Ctrl with Insert), or the browser's own shortcuts (Alt with anything, Ctrl
 /// or Cmd with anything but select all, undo and the editing keys, the function keys and the
 /// browser and media keys).
 fn shortcut(params: &Map<String, Value>) -> bool {
@@ -323,7 +333,10 @@ fn shortcut(params: &Map<String, Value>) -> bool {
     if browser_key || modifiers & 1 != 0 {
         return true;
     }
-    if modifiers & 8 != 0 && (names.iter().any(|name| name == "insert") || code == Some(45)) {
+    // Shift+Insert pastes, Shift+Delete cuts and Ctrl+Insert copies.
+    let insert = names.iter().any(|name| name == "insert") || code == Some(45);
+    let delete = names.iter().any(|name| name == "delete") || code == Some(46);
+    if (modifiers & 8 != 0 && (insert || delete)) || (modifiers & (2 | 4) != 0 && insert) {
         return true;
     }
     if modifiers & (2 | 4) == 0 {
@@ -505,6 +518,10 @@ async fn read(pipe: std::sync::Weak<Pipe>, mut from: impl tokio::io::AsyncRead +
         while let Some(found) = buffer[scanned..].iter().position(|byte| *byte == 0) {
             let end = scanned + found;
             if let Ok(message) = serde_json::from_slice::<Value>(&buffer[..end]) {
+                if message["method"] == "Target.attachedToTarget" {
+                    let params = message["params"].clone();
+                    tokio::spawn(guard_target(Arc::downgrade(&pipe), params));
+                }
                 pipe.receive(message);
             }
             buffer.drain(..=end);
@@ -530,16 +547,18 @@ struct Running {
 }
 
 impl Running {
-    /// The bot's page, attached once: its first tab showing a website or a blank page, or a new one
-    /// when the person closed those (a tab of the browser's own pages or this computer's files is
-    /// never taken).
+    /// The bot's page. The first time, the tab the browser opened with (a blank page; a tab of
+    /// the browser's own pages or this computer's files is never taken). Once that tab is gone
+    /// (the person closed it), always a new blank tab: never another tab, which may be the person's
+    /// own or a window a page opened.
     async fn page(&self, local: bool) -> Result<String, String> {
         let _attaching = self.attach.lock().await;
         if let Some(session) = self.pipe.session.lock().unwrap().clone() {
             return Ok(session);
         }
         let mut target = None;
-        for _ in 0..50 {
+        let first = self.target.lock().unwrap().is_none();
+        for _ in 0..if first { 50 } else { 0 } {
             let targets = self.pipe.call("Target.getTargets", json!({}), None).await?;
             let pages: Vec<&Value> = targets["targetInfos"]
                 .as_array()
@@ -608,17 +627,19 @@ impl Running {
         Ok(info["targetInfo"]["url"].as_str().unwrap_or("").to_owned())
     }
 
-    /// Ends the browser; the profile is free once this returns.
-    async fn end_and_wait(&self) {
+    /// Ends the browser; true once it has ended, so its profile is free.
+    async fn end_and_wait(&self) -> bool {
         self.pipe.close();
         #[cfg(unix)]
         {
             let child = self.child.lock().unwrap().take();
             if let Some(mut child) = child {
                 crate::stack_os::kill(&mut child);
-                let _ = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+                let ended = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+                return matches!(ended, Ok(Ok(_)));
             }
         }
+        true
     }
 
     fn end(&self) {
@@ -716,6 +737,13 @@ impl Browsers {
             self.forget(key, &running);
         }
         let mut result = result?;
+        // The page may have left the web while the command ran (a click on a link, a redirect):
+        // then what the command read is dropped.
+        let after = running.address().await?;
+        if !after.is_empty() && !web_address(&after, self.local) {
+            running.pipe.take_events();
+            return Err(OFF_THE_WEB.to_owned());
+        }
         if method == "Page.getNavigationHistory" {
             hide_off_web_entries(&mut result, self.local);
         }
@@ -781,10 +809,13 @@ impl Browsers {
             self.generation.fetch_add(1, Ordering::SeqCst);
             open.remove(key)
         };
-        if let Some(running) = running {
-            running.end_and_wait().await;
-        }
-        if forget_profile {
+        let ended = match running {
+            Some(running) => running.end_and_wait().await,
+            None => true,
+        };
+        // A browser that would not end keeps its profile: removing it under a running browser
+        // could leave half of it written back.
+        if forget_profile && ended {
             let (root, key) = (self.root.clone(), key.to_owned());
             let _ = tokio::task::spawn_blocking(move || {
                 let _ = std::fs::remove_dir_all(root.join(&key));
@@ -852,23 +883,104 @@ async fn harden(pipe: &Pipe) -> Result<(), String> {
         let denied = json!({ "permission": { "name": name }, "setting": "denied" });
         pipe.call("Browser.setPermission", denied, None).await?;
     }
+    // Every new tab or window holds before its first script until it has the guard
+    // (`guard_target`).
+    pipe.call("Target.setAutoAttach", AUTO_ATTACH.clone(), None)
+        .await?;
     Ok(())
+}
+
+static AUTO_ATTACH: std::sync::LazyLock<Value> = std::sync::LazyLock::new(
+    || json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+);
+
+/// Puts the guard into a tab, window or frame of its own process the browser just made and holds
+/// before its first script, then lets it run; its own frames are held the same way. A worker
+/// only runs on: it has no document to guard.
+async fn guard_target(pipe: std::sync::Weak<Pipe>, params: Value) {
+    let Some(pipe) = pipe.upgrade() else { return };
+    let Some(session) = params["sessionId"].as_str() else {
+        return;
+    };
+    let waiting = params["waitingForDebugger"] == true;
+    if matches!(
+        params["targetInfo"]["type"].as_str(),
+        Some("page" | "iframe")
+    ) {
+        // A frame of its own process takes the script for its documents only once enabled.
+        let _ = pipe.call("Page.enable", json!({}), Some(session)).await;
+        let new_documents = json!({ "source": GUARD });
+        let _ = pipe
+            .call(
+                "Page.addScriptToEvaluateOnNewDocument",
+                new_documents,
+                Some(session),
+            )
+            .await;
+        // One already running (there before the browser was told to hold new ones) gets it now;
+        // one that holds has no script to run it yet, and would not answer until let go.
+        if !waiting {
+            let now = json!({ "expression": GUARD });
+            let _ = pipe.call("Runtime.evaluate", now, Some(session)).await;
+        }
+        let _ = pipe
+            .call("Target.setAutoAttach", AUTO_ATTACH.clone(), Some(session))
+            .await;
+    }
+    if waiting {
+        let _ = pipe
+            .call("Runtime.runIfWaitingForDebugger", json!({}), Some(session))
+            .await;
+    }
 }
 
 /// A click the server sends counts as the person's gesture, so a page could use it to write the
 /// clipboard or take the whole screen. The permission above stops the clipboard API; this stops the
-/// older copy and cut commands and full screen, in every frame. A page that opens a window still
-/// can (sign-ins need it): it opens as a tab the bot cannot reach.
+/// older copy and cut commands and every form of full screen. It is set in every document before
+/// its scripts (and in every new tab, window and frame process, `guard_target`), and it guards a
+/// window a page opens and a frame it reaches, which a page could otherwise use to call the
+/// browser's own functions. A page that opens a window still can (sign-ins need it): it opens as a
+/// tab the bot cannot reach.
 const GUARD: &str = "(() => {
-  const exec = Document.prototype.execCommand;
-  Document.prototype.execCommand = function (command, ...rest) {
-    return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
-      ? false
-      : exec.call(this, command, ...rest);
+  const guarded = new WeakSet();
+  const guard = (w) => {
+    try {
+      if (!w || guarded.has(w)) return w;
+      guarded.add(w);
+      const doc = w.Document.prototype;
+      const exec = doc.execCommand;
+      doc.execCommand = function (command, ...rest) {
+        return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
+          ? false
+          : exec.call(this, command, ...rest);
+      };
+      const refuse = () => w.Promise.reject(new w.DOMException('Not allowed here', 'NotAllowedError'));
+      const element = w.Element.prototype;
+      element.requestFullscreen = refuse;
+      for (const name of ['webkitRequestFullscreen', 'webkitRequestFullScreen'])
+        if (name in element) element[name] = () => {};
+      const video = w.HTMLVideoElement.prototype;
+      for (const name of ['webkitEnterFullscreen', 'webkitEnterFullScreen'])
+        if (name in video) video[name] = () => {};
+      const open = w.open;
+      w.open = function (...rest) { return guard(open.apply(this, rest)); };
+      for (const [type, key] of [
+        [w.HTMLIFrameElement, 'contentWindow'], [w.HTMLIFrameElement, 'contentDocument'],
+        [w.HTMLFrameElement, 'contentWindow'], [w.HTMLFrameElement, 'contentDocument'],
+        [w.HTMLObjectElement, 'contentWindow'], [w.HTMLObjectElement, 'contentDocument'],
+      ]) {
+        const field = Object.getOwnPropertyDescriptor(type.prototype, key);
+        Object.defineProperty(type.prototype, key, { ...field, get() {
+          const value = field.get.call(this);
+          guard(key === 'contentWindow' ? value : value && value.defaultView);
+          return value;
+        } });
+      }
+      for (let index = 0; index < w.frames.length; index += 1) guard(w.frames[index]);
+    } catch {}
+    return w;
   };
-  const refuse = () => Promise.reject(new DOMException('Not allowed here', 'NotAllowedError'));
-  Element.prototype.requestFullscreen = refuse;
-  if (Element.prototype.webkitRequestFullscreen) Element.prototype.webkitRequestFullscreen = () => {};
+  guard(window);
 })();";
 
 /// History as the server gets it: each entry's id, address and title only (the browser also names
@@ -1152,6 +1264,8 @@ mod tests {
             ("F5", "F5", 116, 0),
             ("BrowserBack", "BrowserBack", 166, 0),
             ("Insert", "Insert", 45, 8),
+            ("Delete", "Delete", 46, 8),
+            ("Insert", "Insert", 45, 2),
             ("a", "KeyO", 65, 2),
         ] {
             assert!(
@@ -1178,6 +1292,37 @@ mod tests {
         }
         let bare = json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "modifiers": 2 } });
         assert!(allowed(&bare, false).is_err(), "Ctrl with no key named");
+        let with_text = json!({ "method": "Input.dispatchKeyEvent", "params": {
+            "type": "keyDown", "key": "a", "code": "KeyA", "modifiers": 4, "text": "a",
+            "unmodifiedText": "a", "nativeVirtualKeyCode": 0 } });
+        let (_, sent) = allowed(&with_text, false).unwrap();
+        assert_eq!(
+            sent,
+            json!({ "type": "keyDown", "key": "a", "code": "KeyA", "modifiers": 4 })
+        );
+        let plain = json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "key": "a", "text": "a" } });
+        assert_eq!(
+            allowed(&plain, false).unwrap().1["text"],
+            "a",
+            "text stays without modifiers"
+        );
+        for button in [
+            json!({ "button": "back" }),
+            json!({ "button": "forward" }),
+            json!({ "buttons": 8 }),
+            json!({ "buttons": 16 }),
+        ] {
+            let mut params = json!({ "type": "mousePressed", "x": 1, "y": 1 });
+            params
+                .as_object_mut()
+                .unwrap()
+                .extend(button.as_object().unwrap().clone());
+            let click = json!({ "method": "Input.dispatchMouseEvent", "params": params });
+            assert!(allowed(&click, false).is_err(), "passed: {click}");
+        }
+        for vendor in ["Chrome", "Edge", "Brave", "Chromium"] {
+            assert!(!NO_BROWSER.contains(vendor), "the refusal names {vendor}");
+        }
     }
 
     #[test]
