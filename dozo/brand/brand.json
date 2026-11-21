@@ -4396,10 +4396,11 @@
     {
       "file": "apps/mobile/app/(settings)/account.tsx",
       "find": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { NativeActionButton }",
-      "replace": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { DozoCommandsRow, dozoUsageLink } from \"../../components/dozo-account-rows\";\nimport { DozoSendLimitRow } from \"../../components/dozo-send-limit-row\";\nimport { NativeActionButton }",
+      "replace": "import { ApprovalModeRow, ApprovalRulesRow } from \"../../components/approval-settings-rows\";\nimport { DozoCommandsRow, dozoUsageLink } from \"../../components/dozo-account-rows\";\nimport { DozoHostedAsksRow } from \"../../components/dozo-hosted-asks-row\";\nimport { DozoSendLimitRow } from \"../../components/dozo-send-limit-row\";\nimport { NativeActionButton }",
       "requires": [
         "apps/mobile/components/dozo-account-rows.tsx",
-        "apps/mobile/components/dozo-send-limit-row.tsx"
+        "apps/mobile/components/dozo-send-limit-row.tsx",
+        "apps/mobile/components/dozo-hosted-asks-row.tsx"
       ],
       "reason": "mobile settings: the import of the rules below"
     },
@@ -4426,11 +4427,12 @@
     {
       "file": "apps/mobile/app/(settings)/account.tsx",
       "find": "            leading={icon({ ios: \"checkmark.shield\", android: \"shield-checkmark-outline\" })}\n          />\n          {approvals.ruleCount ? (",
-      "replace": "            leading={icon({ ios: \"checkmark.shield\", android: \"shield-checkmark-outline\" })}\n          />\n          <DozoSendLimitRow\n            key=\"dozo-send-limit\"\n            leading={icon({ ios: \"paperplane\", android: \"send-outline\" })}\n          />\n          {approvals.ruleCount ? (",
+      "replace": "            leading={icon({ ios: \"checkmark.shield\", android: \"shield-checkmark-outline\" })}\n          />\n          <DozoSendLimitRow\n            key=\"dozo-send-limit\"\n            leading={icon({ ios: \"paperplane\", android: \"send-outline\" })}\n          />\n          <DozoHostedAsksRow\n            key=\"dozo-hosted-asks\"\n            leading={icon({ ios: \"terminal\", android: \"terminal-outline\" })}\n          />\n          {approvals.ruleCount ? (",
       "requires": [
-        "apps/mobile/components/dozo-send-limit-row.tsx"
+        "apps/mobile/components/dozo-send-limit-row.tsx",
+        "apps/mobile/components/dozo-hosted-asks-row.tsx"
       ],
-      "reason": "daily sends on mobile: the account's number of sends each bot makes a day without asking, a native menu under its approval mode, as the web app has it"
+      "reason": "daily sends on mobile: the account's number of sends each bot makes a day without asking, a native menu under its approval mode, as the web app has it; beside it, whether commands on bot computers ask, once the Space has one"
     },
     {
       "file": "apps/mobile/app/(settings)/general.tsx",
@@ -5989,20 +5991,22 @@
     {
       "file": "apps/web/src/components/ApprovalRulesSettings.tsx",
       "find": "import { errorText } from \"../lib/user-error\";\nimport { SettingsGroup, SettingsRow } from \"./SettingsRows\";\n",
-      "replace": "import { errorText } from \"../lib/user-error\";\nimport { DozoSendLimitRow } from \"./dozo-send-limit-row\";\nimport { SettingsGroup, SettingsRow } from \"./SettingsRows\";\n",
+      "replace": "import { errorText } from \"../lib/user-error\";\nimport { DozoHostedAsksRow } from \"./dozo-hosted-asks-row\";\nimport { DozoSendLimitRow } from \"./dozo-send-limit-row\";\nimport { SettingsGroup, SettingsRow } from \"./SettingsRows\";\n",
       "requires": [
-        "apps/web/src/components/dozo-send-limit-row.tsx"
+        "apps/web/src/components/dozo-send-limit-row.tsx",
+        "apps/web/src/components/dozo-hosted-asks-row.tsx"
       ],
-      "reason": "daily sends: the import of the rule below"
+      "reason": "daily sends and commands on bot computers: the import of the rule below"
     },
     {
       "file": "apps/web/src/components/ApprovalRulesSettings.tsx",
       "find": "        </SettingsRow>\n      </SettingsGroup>\n      {/* Spending is the person's own",
-      "replace": "        </SettingsRow>\n        {scope === \"account\" ? <DozoSendLimitRow /> : null}\n      </SettingsGroup>\n      {/* Spending is the person's own",
+      "replace": "        </SettingsRow>\n        {scope === \"account\" ? (\n          <>\n            <DozoSendLimitRow />\n            <DozoHostedAsksRow />\n          </>\n        ) : null}\n      </SettingsGroup>\n      {/* Spending is the person's own",
       "requires": [
-        "apps/web/src/components/dozo-send-limit-row.tsx"
+        "apps/web/src/components/dozo-send-limit-row.tsx",
+        "apps/web/src/components/dozo-hosted-asks-row.tsx"
       ],
-      "reason": "daily sends: the account's number sits under its approval mode, which it bounds"
+      "reason": "daily sends: the account's number sits under its approval mode, which it bounds; beside it, whether commands on bot computers ask, once the Space has one"
     },
     {
       "file": "packages/adapters/src/executor-readonly-approval.test.ts",
@@ -6025,11 +6029,12 @@
     {
       "file": "apps/web/src/components/ApprovalRulesSettings.test.tsx",
       "find": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nconst rpcMock = vi.hoisted(() => ({\n",
-      "replace": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-send-limit-row\", () => ({ DozoSendLimitRow: () => null }));\n\nconst rpcMock = vi.hoisted(() => ({\n",
+      "replace": "import { beforeEach, expect, it, vi } from \"vitest\";\n\nvi.mock(\"./dozo-send-limit-row\", () => ({ DozoSendLimitRow: () => null }));\nvi.mock(\"./dozo-hosted-asks-row\", () => ({ DozoHostedAsksRow: () => null }));\n\nconst rpcMock = vi.hoisted(() => ({\n",
       "requires": [
-        "apps/web/src/components/dozo-send-limit-row.tsx"
+        "apps/web/src/components/dozo-send-limit-row.tsx",
+        "apps/web/src/components/dozo-hosted-asks-row.tsx"
       ],
-      "reason": "daily sends: the row that reads the server is mocked out, as the test mocks upstream's server reads; it has its own dozo-send-limit-row test"
+      "reason": "daily sends and commands on bot computers: the rows that read the server are mocked out, as the test mocks upstream's server reads; each has its own test"
     },
     {
       "file": "packages/contracts/src/rpc.ts",

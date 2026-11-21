@@ -343,3 +343,4 @@ packages/ui-web/src/group-avatar.test.tsx	GroupAvatar renders single BotAvatar w
 packages/ui-web/src/notification-avatar.test.tsx	draws the organic notification portrait from the chat avatar's geometry	b	the Dozo avatar art replaces upstream's
 packages/ui-web/src/notification-avatar.test.tsx	draws the rakazo notification portrait from the chat avatar's geometry	b	the Dozo avatar art replaces upstream's
 packages/ui-web/src/notification-avatar.test.tsx	draws the shipped shape notification portrait from the chat avatar's geometry	b	the Dozo avatar art replaces upstream's
+packages/adapters/src/executor-readonly-approval.test.ts	connector read-only metadata and approval enforcement runs shell with a undefined rule in a webhook run	b	a card for a command on the bot's computer offers Always allow for that command only, never the whole tool (dozo-user-computer-gate.ts buildApprovalAskBlock); the test's shell call names no command, so the card offers Allow once and Deny

@@ -8,8 +8,8 @@ export const DOZO_DAILY_SEND_CHOICES = [10, 25, 50, 100, 250] as const;
 
 /**
  * How many sends (an email, a message to someone else's agent, an app action that changes
- * something) each of the account's bots may make in a day of the account's timezone without
- * asking. Past it, each send asks.
+ * something, a press on a page that sends what the bot put into it) each of the account's bots may
+ * make in a day of the account's timezone without asking. Past it, each send asks.
  */
 export const DozoDailySendsSchema = z.number().int().min(1).max(1000);
 

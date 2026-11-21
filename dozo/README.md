@@ -437,11 +437,47 @@ command there unasked. The fork keeps that first card and then reads each comman
 - A command that only reads (`ls`, `cat`, `grep`, `find` without `-exec` or `-delete`, and a few
   more in `READ_ONLY_PROGRAMS`) goes ahead.
 - Any other command asks with Allow once, Always allow this command and Deny. Always allow saves
-  the exact words for that bot, in that folder (table `dozo_command_rules`); Settings > Approvals
-  lists them under Commands, with Remove.
+  the exact words for that bot, in that folder, on that computer (table `dozo_command_policies`);
+  Settings > Approvals lists them under Commands, where each can be changed or removed.
 - Never ask keeps upstream's behaviour: the first card alone. Auto asks like Ask; no approval model
   reads commands yet. A block rule on the tool still refuses every command.
-- Commands on a bot's own cloud computer never ask, as upstream: it is the bot's isolated machine.
+
+### Command rules
+
+Each rule is the member's, for one bot (in a group chat, the rules of the member whose run it is),
+and does one of three things (`packages/core/src/dozo-command-rule-match.ts`):
+
+- **Allow**: exactly these words, in this folder. **Allow with arguments**: these words followed
+  by more words that are not options (nothing starting with `-`, since an option can make a
+  program run another one: `git -c alias.x=!sh`, `find -exec`, `rsync -e`). Both need the command
+  to read as one literal program (above), so chaining, substitution, redirection, a variable
+  before the program, `sudo` or `bash -c` never pass by a rule. A prefix needs at least two words
+  and is refused for programs that run what their arguments name (`sudo`, `env`, shells,
+  interpreters, `xargs`, `timeout`, `ssh`, `npx` and the rest of `RUNNERS`).
+- **Block**: refuses any command containing these words in order within one command of the line,
+  on either computer, in any folder and in every mode, Never ask included, before an allow rule
+  and before the Space's first card. It reads through quotes, backslashes, invisible marks,
+  full-width letters, paths, `.exe`, case, `sudo`, `env`, `bash -c '…'`, substitutions and
+  options between the words. It is a guard, not a boundary: it errs toward refusing (`echo git
+  push` is refused) and does not follow variables, aliases or scripts the bot writes first.
+- A rule saved on the member's own computer allows on it; an exact one also allows on the bot's
+  computer, which holds less of theirs. A rule saved on the bot's computer never allows on the
+  member's own. A prefix rule stays on the computer it was saved on.
+- Settings > Approvals > Commands (web and mobile) changes a rule between the three or removes it;
+  a member sees and changes only their own rules in the current Space.
+
+### Commands on the bot's computer
+
+Upstream never asks before a command on the bot's own computer: it is an isolated machine without
+the member's files. The fork keeps that default (`packages/adapters/src/dozo-command-gate.ts`), so
+no bot starts asking after this change. Block rules refuse there in every mode. In a run that
+outside text started (a webhook), where upstream asks, an exact allow rule lets the command go
+ahead as an always-allow rule for the tool would; a prefix rule does not, and a run a token's text
+reached still asks. "Ask before commands on bot computers" (Settings > Approvals, shown once the
+Space has such a computer) makes a command that does more than read ask, outside Never ask, with
+the same card and Always allow; it is per account (table `dozo_command_settings`). It covers
+`shell` only: typing into a terminal through screen control or writing a script with the file
+tools is not read.
 - Only the owner's own chats reach their computer, never routines, webhooks or chat apps, so no
   card waits on a run nobody watches.
 
@@ -491,10 +527,15 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
 - A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
   something (declared not read-only, or named like a change, the same test that makes it ask in
   Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
-  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
-  including form submits, are not counted yet: telling a submit from another click needs a new
-  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
-  the member's own cloud coding agents are not sends here.
+  sends do not fit in what is left asks, and none of them is counted. Paid service calls
+  (`service_call`, `paid_request`) and the member's own cloud coding agents are not sends here.
+- On a page (`browser_act`), each press that sends what the bot put into the page counts one: a
+  `click`, or `type` with a line break (Enter), after a `fill`, `type`, `upload` or `fill_*` step
+  not yet followed by such a press, in the same call or an earlier one of the run that was not
+  denied (`pageSends`). Navigating, snapshots and a click with nothing put in since the last press
+  never count. Not counted: a press on a form the page filled itself or a link carried in (a
+  prepared share URL), a later press on input already counted, input from an earlier run, and
+  screen control (`computer_act`).
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
   rule, or left to the approval model. A send a person approves on its card is not counted. One
   the approval model then asks about, or that fails, still counts, so the number errs towards
