@@ -6085,6 +6085,24 @@
       "reason": "bot chats: a bot's extra chats (list, create, rename, archive) join the app contract, so the server and the clients share their types"
     },
     {
+      "file": "apps/api/src/router.ts",
+      "find": "import { dozoMessagesRoutes } from \"./dozo-message-revision.js\";\nimport { spacesRoutes } from \"./routes/spaces.js\";\n",
+      "replace": "import { dozoMessagesRoutes } from \"./dozo-message-revision.js\";\nimport { dozoBotChatRoutes } from \"./dozo-bot-chats.js\";\nimport { spacesRoutes } from \"./routes/spaces.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...dozoMessagesRoutes(ctx),\n    ...threadsRoutes(ctx),\n",
+      "replace": "    ...dozoMessagesRoutes(ctx),\n    ...dozoBotChatRoutes(ctx),\n    ...threadsRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: the router checks the bot as for its main chat and keeps a bot's open extra chats under a limit"
+    },
+    {
       "file": "packages/core/src/thread-snapshot-events.ts",
       "find": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
       "replace": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { dozoRemovedMessageId } from \"./dozo-removed-message.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
