@@ -1,5 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { approvalModeFromPreference, literalCommandWords, readOnlyPipeline } from "@rakazo/core";
+import {
+  approvalModeFromPreference,
+  literalCommandWords,
+  readOnlyCwd,
+  readOnlyPipeline,
+} from "@rakazo/core";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
 import {
   commandAsked,
@@ -33,7 +38,7 @@ export async function userComputerGate(
   if (plan !== "allow") return plan;
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
     return "allow";
-  if (readOnlyPipeline(String(args.command ?? ""))) return "allow";
+  if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return "allow";
   if (ruled) return "allow";
   markCommandAsk(args);
   return "ask";

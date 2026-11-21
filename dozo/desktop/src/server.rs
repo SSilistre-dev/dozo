@@ -28,8 +28,15 @@ pub enum Verdict {
     Window,
     /// Opens in the default browser (or mail app), as this URL.
     Browser(Url),
+    /// Opens the app's Settings window (`prefs.rs`), and nothing else: the one address of the app
+    /// a page may go to ([`APP_SETTINGS`]).
+    AppSettings,
     Refused,
 }
+
+/// The address a page of the chosen server goes to for the app's Settings window (the web app's
+/// "Desktop app" row). Exactly this: with a path, query or fragment it is refused like any other.
+pub const APP_SETTINGS: &str = "dozo-app://settings";
 
 /// Turns what the user typed into the server's origin. `https://` is assumed when no scheme is
 /// given, and `http://` only for this computer.
@@ -88,10 +95,20 @@ pub fn outside(url: &Url) -> Option<Url> {
 /// (`packages/auth/src/dozo-hosted-login.ts`), when this build or the environment names one
 /// (`DOZO_HOSTED_LOGIN_ISSUER`): its origin, https or on this computer. Off by default.
 pub fn hosted_login_issuer() -> Option<Url> {
-    const BUILT: Option<&str> = option_env!("DOZO_HOSTED_LOGIN_ISSUER");
-    let named = std::env::var("DOZO_HOSTED_LOGIN_ISSUER")
-        .ok()
-        .or(BUILT.map(str::to_owned))?;
+    issuer_from(
+        option_env!("DOZO_HOSTED_LOGIN_ISSUER"),
+        std::env::var("DOZO_HOSTED_LOGIN_ISSUER").ok(),
+    )
+}
+
+/// A release names the issuer when it is built, and then nothing in the environment can point
+/// its sign-in elsewhere; a build without one (development, tests) reads the environment. An
+/// empty value is no value: the release workflow passes an unset repository variable as "".
+fn issuer_from(built: Option<&str>, environment: Option<String>) -> Option<Url> {
+    let named = match built.filter(|built| !built.is_empty()) {
+        Some(built) => built.to_owned(),
+        None => environment.filter(|named| !named.is_empty())?,
+    };
     parse_server(&named).ok()
 }
 
@@ -114,6 +131,7 @@ pub fn decide_with(url: &Url, server: Option<&Url>, issuer: Option<&Url>) -> Ver
     match url.scheme() {
         _ if is_local(url) => Verdict::Window,
         "about" => Verdict::Window,
+        "dozo-app" if url.as_str() == APP_SETTINGS => Verdict::AppSettings,
         // A blob URL carries the origin of the page that made it.
         "http" | "https" | "blob" if on_server => Verdict::Window,
         "http" | "https" if signing_in => Verdict::Window,
@@ -253,6 +271,38 @@ mod tests {
     }
 
     #[test]
+    fn only_the_exact_settings_address_opens_the_settings_window() {
+        let server = url("https://dozo.example.com/");
+        assert_eq!(
+            decide(&url(APP_SETTINGS), Some(&server)),
+            Verdict::AppSettings
+        );
+        // The address is the same whatever the server: the window checks where the page is.
+        assert_eq!(decide(&url(APP_SETTINGS), None), Verdict::AppSettings);
+        for refused in [
+            "dozo-app://settings?x=1",
+            "dozo-app://settings?",
+            "dozo-app://settings#x",
+            "dozo-app://settings/",
+            "dozo-app://settings/backup",
+            "dozo-app://SETTINGS.evil",
+            "dozo-app://settings.evil.test",
+            "dozo-app://user@settings",
+            "dozo-app://settings:1",
+            "dozo-app://back-up",
+            "dozo-app:settings",
+            "dozo-app:///settings",
+            "DOZO-APP://settings?x=1",
+        ] {
+            assert_eq!(
+                decide(&url(refused), Some(&server)),
+                Verdict::Refused,
+                "{refused}"
+            );
+        }
+    }
+
+    #[test]
     fn a_mail_link_keeps_only_its_address() {
         let link = url("mailto:someone@example.com?subject=Hi&attach=/etc/passwd");
         assert_eq!(outside(&link), Some(url("mailto:someone@example.com")));
@@ -296,6 +346,24 @@ mod tests {
         drop(listener);
         assert!(!reachable(&parse_server(&address).unwrap()));
         assert!(!reachable(&url("https://no-such-host.invalid/")));
+    }
+
+    #[test]
+    fn a_built_in_issuer_wins_over_the_environment() {
+        let env = || Some("http://localhost:6173".to_owned());
+        let built = issuer_from(Some("https://app.dozo.example"), env());
+        assert_eq!(built.unwrap().as_str(), "https://app.dozo.example/");
+        assert_eq!(
+            issuer_from(None, env()).unwrap().as_str(),
+            "http://localhost:6173/"
+        );
+        assert_eq!(
+            issuer_from(Some(""), env()).unwrap().as_str(),
+            "http://localhost:6173/"
+        );
+        assert!(issuer_from(Some(""), Some(String::new())).is_none());
+        assert!(issuer_from(None, None).is_none());
+        assert!(issuer_from(None, Some("not a url".to_owned())).is_none());
     }
 
     #[test]

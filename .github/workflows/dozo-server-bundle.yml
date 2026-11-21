@@ -26,6 +26,10 @@ on:
       - dozo/desktop/**
       - dozo/relay/**
       - packages/*/src/dozo-relay*
+      - packages/auth/src/dozo-hosted-login*
+      - apps/web/src/pages/dozo-hosted-login*
+      - apps/web/src/pages/dozo-auth*
+      - dozo/e2e/hosted-login/**
   push:
     tags:
       - server-v*
@@ -117,18 +121,27 @@ jobs:
     name: Smoke linux-x64
     needs: bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-          sparse-checkout: dozo/server-bundle
+          sparse-checkout: |
+            dozo/server-bundle
+            dozo/e2e/hosted-login
+            apps/web/package.json
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: bundle-linux-x64
           path: dist
       - name: Smoke test
         run: dozo/server-bundle/smoke.sh dist dist/smoke-logs
+      # The same bundle as a hosted server and as computers' servers, with a real browser
+      # (dozo/e2e/hosted-login/README.md). The smoke test wrote the manifest it reads.
+      - name: Hosted login end to end
+        run: dozo/e2e/hosted-login/run.sh
+        env:
+          DOZO_E2E_MANIFEST: dist/manifest.json
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

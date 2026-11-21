@@ -3,6 +3,7 @@ import {
   approvalModeFromPreference,
   commandRuleCwd,
   matchCommandRules,
+  readOnlyCwd,
   readOnlyPipeline,
 } from "@rakazo/core";
 import { readDozoCommandRules, readDozoHostedAsks } from "@rakazo/db";
@@ -66,7 +67,7 @@ export async function dozoHostedCommandGate<Plan extends string>(
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
     return plan;
   if (!(await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId))) return plan;
-  if (readOnlyPipeline(String(args.command ?? ""))) return plan;
+  if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return plan;
   markCommandAsk(args);
   return "ask";
 }

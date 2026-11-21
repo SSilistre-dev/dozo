@@ -24,7 +24,13 @@ const WINDOW: &str = "phone";
 pub struct Item(pub MenuItem<Wry>);
 
 pub fn item(app: &AppHandle) -> tauri::Result<MenuItem<Wry>> {
-    let item = MenuItem::with_id(app, MENU_ID, "Connect Phone…", false, None::<&str>)?;
+    let item = MenuItem::with_id(
+        app,
+        MENU_ID,
+        crate::words::text("Connect Phone…"),
+        false,
+        None::<&str>,
+    )?;
     app.manage(Item(item.clone()));
     Ok(item)
 }
@@ -40,6 +46,7 @@ pub fn follow(app: AppHandle) {
             if let Some(item) = app.try_state::<Item>() {
                 let _ = item.0.set_enabled(on);
             }
+            crate::prefs::changed(&app);
             if !on {
                 close(&app);
             }

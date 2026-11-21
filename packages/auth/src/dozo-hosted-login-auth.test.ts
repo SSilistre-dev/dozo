@@ -42,13 +42,14 @@ type Fake = ReturnType<typeof fakePrisma>;
 /** What createAuth and the hosted login ask Prisma for, over the adapter's own rows. */
 function fakePrisma() {
   const authData: Record<
-    "user" | "account" | "session" | "verification",
+    "user" | "account" | "session" | "verification" | "passkey",
     Record<string, unknown>[]
   > = {
     user: [],
     account: [],
     session: [],
     verification: [],
+    passkey: [],
   };
   const members: string[] = [];
   const accountsOf = (userId: unknown) => authData.account.filter((row) => row.userId === userId);

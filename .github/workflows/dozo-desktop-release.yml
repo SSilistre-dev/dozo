@@ -26,6 +26,10 @@ concurrency:
 env:
   # Build the signed update packages next to the installers.
   UPDATER: '{"bundle":{"createUpdaterArtifacts":true}}'
+  # The hosted origin whose account signs in to the server on the computer
+  # (`dozo/desktop/src/server.rs`, hosted_login_issuer). Built in, it wins over the environment.
+  # The repository variable is unset by default, which builds the app with that sign-in off.
+  DOZO_HOSTED_LOGIN_ISSUER: ${{ vars.DOZO_HOSTED_LOGIN_ISSUER }}
 
 jobs:
   version:

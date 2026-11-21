@@ -18,6 +18,7 @@ mod frames;
 #[cfg(target_os = "linux")]
 mod microphone_gtk;
 mod phone;
+mod prefs;
 mod server;
 mod settings;
 mod stack;
@@ -30,6 +31,7 @@ mod stack_setup;
 mod stack_update;
 mod talk;
 mod update;
+mod words;
 
 use std::time::{Duration, Instant};
 use std::{fs, path::PathBuf, process::Command, sync::Arc, sync::Mutex};
@@ -332,15 +334,53 @@ fn opener() -> Command {
 }
 
 /// Acts on a verdict: true when the address loads in the window.
-fn follow(verdict: Verdict) -> bool {
+fn follow(app: &AppHandle, verdict: Verdict) -> bool {
     match verdict {
         Verdict::Window => true,
         Verdict::Browser(url) => {
             open_outside(url);
             false
         }
+        Verdict::AppSettings => {
+            prefs::asked_by_page(app);
+            false
+        }
         Verdict::Refused => false,
     }
+}
+
+/// Tells the web app it is in this app's window, so it can offer the "Desktop app" row
+/// (`apps/web/src/components/dozo-desktop-app.tsx`); a browser never has it. It gives the page
+/// nothing to call: the row only goes to [`server::APP_SETTINGS`].
+const SHELL_MARK: &str =
+    "Object.defineProperty(window, \"dozoDesktopShell\", { value: true, enumerable: false });";
+
+/// What picking a Dozo menu item does; the Settings window's rows do the same (`prefs.rs`).
+/// Runs on the main thread. A switch has already flipped when this runs.
+fn run(app: &AppHandle, id: &str) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    match id {
+        prefs::MENU_ITEM_ID => prefs::open(app),
+        "change-server" => {
+            show_local(&window, "?change");
+            reveal(app);
+        }
+        "reload" => reload(window),
+        OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID | talk::MENU_ID => flip(app, id),
+        device::MENU_ID => device::clicked(app),
+        phone::MENU_ID => phone::open(app),
+        backup::BACK_UP_ID => backup::open(app, "backup"),
+        backup::RESTORE_ID => backup::open(app, "restore"),
+        backup::RESET_ID => backup::open(app, "reset"),
+        backup::DIAGNOSTICS_ID => backup::save_diagnostics(app),
+        #[cfg(not(target_os = "macos"))]
+        QUIT_ID => app.exit(0),
+        update::MENU_ID => restart_for_update(app),
+        _ => {}
+    }
+    prefs::changed(app);
 }
 
 fn show_local(window: &WebviewWindow, query: &str) {
@@ -373,15 +413,10 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 "Dozo",
                 true,
                 &[
-                    &PredefinedMenuItem::about(app, None, None)?,
+                    &PredefinedMenuItem::about(app, words::standard("About Dozo"), None)?,
                     &separator()?,
-                    &MenuItem::with_id(
-                        app,
-                        "change-server",
-                        "Change Server…",
-                        true,
-                        Some("Cmd+,"),
-                    )?,
+                    &item(app, prefs::MENU_ITEM_ID, "Settings…", Some("Cmd+,"))?,
+                    &item(app, "change-server", "Change Server…", None)?,
                     &separator()?,
                     &device_item(app)?,
                     &phone::item(app)?,
@@ -393,48 +428,48 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &switch(app, talk::MENU_ID, talk::LABEL)?,
                     &separator()?,
-                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::services(app, words::standard("Services"))?,
                     &separator()?,
-                    &PredefinedMenuItem::hide(app, None)?,
-                    &PredefinedMenuItem::hide_others(app, None)?,
-                    &PredefinedMenuItem::show_all(app, None)?,
+                    &PredefinedMenuItem::hide(app, words::standard("Hide Dozo"))?,
+                    &PredefinedMenuItem::hide_others(app, words::standard("Hide Others"))?,
+                    &PredefinedMenuItem::show_all(app, words::standard("Show All"))?,
                     &separator()?,
-                    &PredefinedMenuItem::quit(app, None)?,
+                    &PredefinedMenuItem::quit(app, words::standard("Quit Dozo"))?,
                 ],
             )?,
             &Submenu::with_items(
                 app,
-                "Edit",
+                words::text("Edit"),
                 true,
                 &[
-                    &PredefinedMenuItem::undo(app, None)?,
-                    &PredefinedMenuItem::redo(app, None)?,
+                    &PredefinedMenuItem::undo(app, words::standard("Undo"))?,
+                    &PredefinedMenuItem::redo(app, words::standard("Redo"))?,
                     &separator()?,
-                    &PredefinedMenuItem::cut(app, None)?,
-                    &PredefinedMenuItem::copy(app, None)?,
-                    &PredefinedMenuItem::paste(app, None)?,
-                    &PredefinedMenuItem::select_all(app, None)?,
+                    &PredefinedMenuItem::cut(app, words::standard("Cut"))?,
+                    &PredefinedMenuItem::copy(app, words::standard("Copy"))?,
+                    &PredefinedMenuItem::paste(app, words::standard("Paste"))?,
+                    &PredefinedMenuItem::select_all(app, words::standard("Select All"))?,
                 ],
             )?,
             &Submenu::with_items(
                 app,
-                "View",
+                words::text("View"),
                 true,
                 &[
-                    &MenuItem::with_id(app, "reload", "Reload", true, Some("Cmd+R"))?,
+                    &item(app, "reload", "Reload", Some("Cmd+R"))?,
                     &separator()?,
-                    &PredefinedMenuItem::fullscreen(app, None)?,
+                    &PredefinedMenuItem::fullscreen(app, words::standard("Toggle Full Screen"))?,
                 ],
             )?,
             &Submenu::with_items(
                 app,
-                "Window",
+                words::text("Window"),
                 true,
                 &[
-                    &PredefinedMenuItem::minimize(app, None)?,
-                    &PredefinedMenuItem::maximize(app, None)?,
+                    &PredefinedMenuItem::minimize(app, words::standard("Minimize"))?,
+                    &PredefinedMenuItem::maximize(app, words::standard("Zoom"))?,
                     &separator()?,
-                    &PredefinedMenuItem::close_window(app, None)?,
+                    &PredefinedMenuItem::close_window(app, words::standard("Close Window"))?,
                 ],
             )?,
         ],
@@ -454,8 +489,9 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             "Dozo",
             true,
             &[
-                &MenuItem::with_id(app, "change-server", "Change Server…", true, Some("Ctrl+,"))?,
-                &MenuItem::with_id(app, "reload", "Reload", true, Some("Ctrl+R"))?,
+                &item(app, prefs::MENU_ITEM_ID, "Settings…", Some("Ctrl+,"))?,
+                &item(app, "change-server", "Change Server…", None)?,
+                &item(app, "reload", "Reload", Some("Ctrl+R"))?,
                 &PredefinedMenuItem::separator(app)?,
                 &device_item(app)?,
                 &phone::item(app)?,
@@ -469,7 +505,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &PredefinedMenuItem::separator(app)?,
                 // Ends the app whatever the window does, and does not depend on the menu
                 // toolkit's own handling of a quit item.
-                &MenuItem::with_id(app, QUIT_ID, "Quit", true, None::<&str>)?,
+                &item(app, QUIT_ID, "Quit", None)?,
             ],
         )?],
     )
@@ -487,8 +523,19 @@ fn device_item(app: &AppHandle) -> tauri::Result<CheckMenuItem<Wry>> {
 }
 
 /// A switch in the menu; it starts off and `show_switches` sets it once the saved choice is read.
-fn switch(app: &AppHandle, id: &str, label: &str) -> tauri::Result<CheckMenuItem<Wry>> {
-    CheckMenuItem::with_id(app, id, label, true, false, None::<&str>)
+/// Its words are `label` in the system's language.
+fn switch(app: &AppHandle, id: &str, label: &'static str) -> tauri::Result<CheckMenuItem<Wry>> {
+    CheckMenuItem::with_id(app, id, words::text(label), true, false, None::<&str>)
+}
+
+/// An item of the menu, with its words in the system's language.
+fn item(
+    app: &AppHandle,
+    id: &str,
+    label: &'static str,
+    shortcut: Option<&str>,
+) -> tauri::Result<MenuItem<Wry>> {
+    MenuItem::with_id(app, id, words::text(label), true, shortcut)
 }
 
 fn switch_item(app: &AppHandle, id: &str) -> Option<CheckMenuItem<Wry>> {
@@ -647,8 +694,8 @@ fn add_tray(app: &AppHandle) {
         let menu = Menu::with_items(
             app,
             &[
-                &MenuItem::with_id(app, TRAY_OPEN_ID, "Open Dozo", true, None::<&str>)?,
-                &MenuItem::with_id(app, "tray-quit", "Quit Dozo", true, None::<&str>)?,
+                &item(app, TRAY_OPEN_ID, "Open Dozo", None)?,
+                &item(app, "tray-quit", "Quit Dozo", None)?,
             ],
         )?;
         app.manage(TrayMenu(menu.clone()));
@@ -710,6 +757,7 @@ fn offer_update(app: &AppHandle) -> bool {
         if let Err(error) = &added {
             eprintln!("dozo: could not show the update item: {error}");
         }
+        prefs::changed(app);
         let _ = shown.send(added.is_ok());
     });
     asked.is_ok() && answer.recv().unwrap_or(false)
@@ -745,6 +793,7 @@ fn main() {
                 .build(),
         )
         .manage(update::Pending::default())
+        .manage(prefs::Changes::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -759,31 +808,12 @@ fn main() {
             backup::back_up,
             backup::restore_pick,
             backup::restore,
-            backup::reset_password
+            backup::reset_password,
+            prefs::prefs_list,
+            prefs::prefs_pick
         ])
         .menu(menu)
-        .on_menu_event(|app, event| {
-            let Some(window) = app.get_webview_window("main") else {
-                return;
-            };
-            match event.id().as_ref() {
-                "change-server" => show_local(&window, "?change"),
-                "reload" => reload(window),
-                OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID | talk::MENU_ID => {
-                    flip(app, event.id().as_ref())
-                }
-                device::MENU_ID => device::clicked(app),
-                phone::MENU_ID => phone::open(app),
-                backup::BACK_UP_ID => backup::open(app, "backup"),
-                backup::RESTORE_ID => backup::open(app, "restore"),
-                backup::RESET_ID => backup::open(app, "reset"),
-                backup::DIAGNOSTICS_ID => backup::save_diagnostics(app),
-                #[cfg(not(target_os = "macos"))]
-                QUIT_ID => app.exit(0),
-                update::MENU_ID => restart_for_update(app),
-                _ => {}
-            }
-        })
+        .on_menu_event(|app, event| run(app, event.id().as_ref()))
         .setup(|app| {
             let app = app.handle().clone();
             let mut settings = fs::read_to_string(settings_file(&app)?)
@@ -842,8 +872,9 @@ fn main() {
                     .background_color(Color(20, 20, 20, 255))
                     .on_navigation({
                         let app = app.clone();
-                        move |url| follow(decide(url, chosen(&app).as_ref()))
+                        move |url| follow(&app, decide(url, chosen(&app).as_ref()))
                     })
+                    .initialization_script(SHELL_MARK)
                     // The app has one window: a link that asks for a new one goes to the browser.
                     .on_new_window(|url, _| {
                         if let Some(url) = outside(&url) {
@@ -916,7 +947,10 @@ fn main() {
                         match background::on_close(keep, can_reopen(&app)) {
                             // The app ends with its main window: Connect Phone closes too, or
                             // it would keep the app running on its own.
-                            Close::Quit => phone::close(&app),
+                            Close::Quit => {
+                                phone::close(&app);
+                                prefs::close(&app);
+                            }
                             Close::Hide => {
                                 api.prevent_close();
                                 let _ = window.hide();
@@ -939,7 +973,7 @@ fn main() {
             microphone_gtk::turn_on_capture(&window)?;
             #[cfg(target_os = "linux")]
             frames::only_gate_the_main_frame(&window, move |url, seen| {
-                follow(frames::verdict(url, chosen(&app).as_ref(), seen))
+                follow(&app, frames::verdict(url, chosen(&app).as_ref(), seen))
             })?;
             #[cfg(windows)]
             let _ = window;
