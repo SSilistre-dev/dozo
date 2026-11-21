@@ -8127,6 +8127,12 @@
       "find": "\"NSMicrophoneUsageDescription\": \"Rakazo korzysta z mikrofonu podczas rozmów głosowych z botami.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo zamienia Twoją mowę na wiadomości podczas rozmów głosowych.\",",
       "replace": "\"NSPhotoLibraryAddUsageDescription\": \"Rakazo zapisuje wybrane obrazy w Twojej bibliotece zdjęć.\",\n    \"NSMicrophoneUsageDescription\": \"Rakazo korzysta z mikrofonu podczas rozmów głosowych z botami i do dyktowania wiadomości.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo zamienia Twoją mowę na wiadomości podczas rozmów głosowych i dyktowania.\",",
       "reason": "App Store: the localized permission prompts follow the English ones in app.json (photo library add, dictation)"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"expo-router\",\n      \"expo-secure-store\",\n      [",
+      "replace": "\"expo-router\",\n      [\"expo-secure-store\", { \"faceIDPermission\": false }],\n      [",
+      "reason": "App Store: the app never asks for Face ID (no item is stored behind biometrics), so the secure-store plugin writes no Face ID purpose string; its default text named no feature"
     }
   ],
   "assets": {

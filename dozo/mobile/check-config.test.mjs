@@ -171,12 +171,16 @@ describe("the ids and release fields a store build relies on", () => {
     config.ios.infoPlist.NSCameraUsageDescription = "Rakazo uses the camera.";
     config.ios.infoPlist.UIViewControllerBasedStatusBarAppearance = true;
     config.ios.privacyManifests.NSPrivacyAccessedAPITypes.shift();
+    config.plugins = config.plugins.map((plugin) =>
+      [plugin].flat()[0] === "expo-secure-store" ? "expo-secure-store" : plugin,
+    );
     const found = problems({ expo: config }).join("\n");
     for (const part of [
       "NSPhotoLibraryAddUsageDescription is undefined",
       "NSCameraUsageDescription is",
       "UIViewControllerBasedStatusBarAppearance is not false",
       "does not declare reason CA92.1",
+      "Face ID purpose string",
     ])
       assert.ok(found.includes(part), `${part}\n${found}`);
   });

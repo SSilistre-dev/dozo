@@ -98,6 +98,13 @@ export function problems(input, apiUrl) {
     plist.UIViewControllerBasedStatusBarAppearance === false,
     "ios.infoPlist.UIViewControllerBasedStatusBarAppearance is not false: the status bar ignores the app's theme",
   );
+  const secureStore = (config.plugins ?? []).find(
+    (plugin) => [plugin].flat()[0] === "expo-secure-store",
+  );
+  want(
+    Array.isArray(secureStore) && secureStore[1]?.faceIDPermission === false,
+    "expo-secure-store would add a Face ID purpose string the app never uses",
+  );
   const reasons = (config.ios?.privacyManifests?.NSPrivacyAccessedAPITypes ?? []).flatMap(
     (entry) => entry.NSPrivacyAccessedAPITypeReasons ?? [],
   );

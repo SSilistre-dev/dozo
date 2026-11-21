@@ -195,6 +195,9 @@ store_review_fields() {
   local plist="$APP/ios/Dozo/Info.plist" privacy="$APP/ios/Dozo/PrivacyInfo.xcprivacy"
   [ "$(/usr/libexec/PlistBuddy -c 'Print :UIViewControllerBasedStatusBarAppearance' "$plist" 2>/dev/null)" = false ] \
     || die "$plist: UIViewControllerBasedStatusBarAppearance is not false, so the status bar ignores the app's theme"
+  if /usr/libexec/PlistBuddy -c 'Print :NSFaceIDUsageDescription' "$plist" >/dev/null 2>&1; then
+    die "$plist: NSFaceIDUsageDescription is set, but the app never asks for Face ID"
+  fi
   [ -f "$privacy" ] || die "no $privacy"
   for reason in CA92.1 C617.1 35F9.1 E174.1; do
     grep -q "$reason" "$privacy" || die "$privacy does not declare the required-reason API reason $reason"

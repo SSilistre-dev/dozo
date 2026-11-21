@@ -29,6 +29,9 @@ payment page:
   "ask the owner to upgrade" and without "change the plan" (alerts, the chat's failed run, the
   computer screen, the Own computer switch); deleting files stays the way out of a full space;
 - a plan bought on the web still works in the app; the app only stops offering one.
+- still shown, and selling nothing: Wallet (connects a payment wallet of the user's own that their
+  bots spend from, with approval) and Spending limit (a cap on model spend). Say so in the review notes:
+  neither buys anything from Dozo.
 
 Decision: client-side, not by the server hiding `billing` per client: the server cannot tell a
 store binary from a sideloaded or self-built one, and the store rule is about the binary.
@@ -56,8 +59,9 @@ OK. In `apps/mobile/app.json` through anchored rules, branded Dozo texts, held b
 `dozo/mobile/check-config.mjs`: camera and photo library (attach images), photo library add (the
 share sheet's Save Image), microphone (calls and dictation, the same text from all three plugins
 that write it), speech recognition (calls and dictation), local network (a server on the user's
-network). No location, contacts, calendar, Bluetooth, tracking or Face ID use in the app's code;
-`expo-secure-store` may add its default Face ID string, unused. Background modes `voip`, `audio` and
+network). No location, contacts, calendar, Bluetooth, tracking or Face ID use in the app's code,
+so `expo-secure-store` is told to write no Face ID string (`faceIDPermission: false`); `build.sh`
+fails if the generated plist still has one. Background modes `voip`, `audio` and
 `remote-notification`: App Review expects incoming calls to use CallKit (the app's native call
 module reports them, `lib/incoming-calls.ts`) and background audio to be a call in progress. Say
 so in the review notes. Capabilities the App ID needs (registered by the archive step unless Apple
