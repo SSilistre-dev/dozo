@@ -16,6 +16,8 @@ import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * The caller's spend in this Space grouped by model, bot, routine or day (and, for an owner, person), as the web app's Usage table
  * shows it; Export hands the server's CSV of the same groups to the share sheet.
@@ -46,7 +48,9 @@ export default function DozoUsage() {
     day: "numeric",
   });
   const name = (group: DozoUsageGroup) => {
-    if (by === "day") return dayFormat.format(new Date(`${group.key}T00:00:00Z`));
+    // The previous grouping stays on screen while this one loads, so its keys are not days yet.
+    if (by === "day" && DAY_KEY.test(group.key))
+      return dayFormat.format(new Date(`${group.key}T00:00:00Z`));
     if (group.state === "unknown") return t`Unknown`;
     if (group.state === "none") return by === "bot" ? t`No bot` : t`No routine`;
     return group.name ?? "—";

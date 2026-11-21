@@ -20,6 +20,8 @@ import { useSpaceQueries } from "../lib/query";
 import { UsageSettingsPanel as UpstreamUsageSettingsPanel } from "../pages/AccountSettingsOverlay";
 import { IconTooltip } from "./IconTooltip";
 
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Settings > Usage: upstream's totals, then the caller's spend grouped by model, bot or routine,
  * which replaces upstream's per-model table. The server groups and renders the CSV, from the
@@ -71,7 +73,9 @@ export function DozoUsageBreakdown() {
     day: "numeric",
   });
   const name = (group: DozoUsageGroup) => {
-    if (by === "day") return dayFormat.format(new Date(`${group.key}T00:00:00Z`));
+    // The previous grouping stays on screen while this one loads, so its keys are not days yet.
+    if (by === "day" && DAY_KEY.test(group.key))
+      return dayFormat.format(new Date(`${group.key}T00:00:00Z`));
     if (group.state === "unknown") return t`Unknown`;
     if (group.state === "none") return by === "bot" ? t`No bot` : t`No routine`;
     return group.name ?? "—";
@@ -130,18 +134,10 @@ export function DozoUsageBreakdown() {
               <TableHead>
                 <span className="sr-only">{groupings.find(([value]) => value === by)?.[1]}</span>
               </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Calls`}
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Input`}
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Output`}
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                {t`Cost`}
-              </TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Calls`}</TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Input`}</TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Output`}</TableHead>
+              <TableHead className="text-right text-muted-foreground">{t`Cost`}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

@@ -227,7 +227,13 @@ describePostgres("the usage breakdown query (PostgreSQL)", () => {
       data: { id: bobId, name: "Bob", email: `${bobId}@example.test`, emailVerified: true },
     });
     await system.member.create({
-      data: { id: `m-${bobId}`, organizationId: ada.userId, userId: bobId, role: "member", createdAt },
+      data: {
+        id: `m-${bobId}`,
+        organizationId: ada.userId,
+        userId: bobId,
+        role: "member",
+        createdAt,
+      },
     });
     await system.spaceMember.create({
       data: {
@@ -247,7 +253,11 @@ describePostgres("the usage breakdown query (PostgreSQL)", () => {
 
     const cells = await runAsTenant(ada, () => readPersonCells(prisma, ada.spaceId));
     expect(
-      groupUsage(cells, "person").map((g) => [g.name, g.detail?.endsWith("@example.test"), g.costUsd]),
+      groupUsage(cells, "person").map((g) => [
+        g.name,
+        g.detail?.endsWith("@example.test"),
+        g.costUsd,
+      ]),
     ).toEqual([
       ["Bob", true, 3],
       ["Ada", true, 1],

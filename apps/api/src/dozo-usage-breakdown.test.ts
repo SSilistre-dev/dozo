@@ -172,8 +172,13 @@ describe("grouping usage by day and person", () => {
 describe("usage as CSV", () => {
   it("writes the day and person columns, escaping a name that reads as a formula", () => {
     expect(
-      usageCsv(groupUsage([cell({ day: "2026-11-21" })], "day"), "day").split("\r\n").slice(0, 2),
-    ).toEqual(["day,calls,input_tokens,output_tokens,total_tokens,cost_usd", "2026-11-21,1,100,10,110,0.5"]);
+      usageCsv(groupUsage([cell({ day: "2026-11-21" })], "day"), "day")
+        .split("\r\n")
+        .slice(0, 2),
+    ).toEqual([
+      "day,calls,input_tokens,output_tokens,total_tokens,cost_usd",
+      "2026-11-21,1,100,10,110,0.5",
+    ]);
     const person = usageCsv(
       groupUsage(
         [cell({ userId: "ada", userName: "=cmd|' /C calc'!A0", userEmail: "+ada@example.test" })],
@@ -286,7 +291,12 @@ describe("who may group by person", () => {
     } as unknown as RouterDeps);
     const client = createRouterClient(dozoUsageRoutes(ctx), {
       context: {
-        actor: { userId: "ada", spaceId: "space-1", email: "a@example.test", isDeploymentOwner: false },
+        actor: {
+          userId: "ada",
+          spaceId: "space-1",
+          email: "a@example.test",
+          isDeploymentOwner: false,
+        },
       },
     }).dozoUsage;
     return { client, asked };
@@ -304,8 +314,12 @@ describe("who may group by person", () => {
   it("refuses a member on the server, before any record is read, and hides the option", async () => {
     const { client, asked } = clientFor("member", 2);
     expect(await client.scope()).toEqual({ person: false });
-    await expect(client.breakdown({ by: "person" })).rejects.toMatchObject({ name: "SpaceOwnerRequiredError" });
-    await expect(client.csv({ by: "person" })).rejects.toMatchObject({ name: "SpaceOwnerRequiredError" });
+    await expect(client.breakdown({ by: "person" })).rejects.toMatchObject({
+      name: "SpaceOwnerRequiredError",
+    });
+    await expect(client.csv({ by: "person" })).rejects.toMatchObject({
+      name: "SpaceOwnerRequiredError",
+    });
     expect(asked).toEqual([]);
   });
 

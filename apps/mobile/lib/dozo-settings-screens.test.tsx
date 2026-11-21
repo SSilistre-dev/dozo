@@ -292,7 +292,9 @@ describe("usage on mobile", () => {
             { ...model, key: "2026-11-21", name: "2026-11-21", detail: null },
             { ...model, key: "2026-11-20", name: "2026-11-20", detail: null, costUsd: 0.5 },
           ]
-        : [{ ...model, key: "u", name: "Ada", detail: "ada@example.test" }];
+        : by === "person"
+          ? [{ ...model, key: "u", name: "Ada", detail: "ada@example.test" }]
+          : [model];
     answers["dozoUsage/scope"] = { person: false };
     await render(<DozoUsage />);
     await settle(() => expect(text()).toContain("fast-model"));
