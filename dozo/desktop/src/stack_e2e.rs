@@ -1,7 +1,8 @@
 //! The server on this computer end to end, with the real bundle and without a window (part of
-//! `stack.rs`'s tests): `tests/stack_e2e.sh` runs these on Linux in Docker, and the workflow
-//! `dozo-server-bundle` on Windows (`tests/stack_e2e_windows.ps1`). Each is ignored in a plain
-//! test run: it needs a built bundle and a local manifest.
+//! `stack.rs`'s tests): `tests/stack_e2e_native.sh` runs these on Linux and macOS (in Docker
+//! through `tests/stack_e2e.sh`), and `tests/stack_e2e_windows.ps1` on Windows; the workflow
+//! `dozo-server-bundle` runs all of them. Each is ignored in a plain test run: it needs a built
+//! bundle and a manifest.
 
 use super::*;
 
@@ -59,15 +60,19 @@ async fn e2e_hold_until_killed() {
 #[ignore = "needs a built server bundle and a relay; run by tests/stack_e2e.sh"]
 async fn e2e_pairs_a_phone() {
     let shared = PathBuf::from(std::env::var("DOZO_STACK_E2E_SHARED").unwrap());
-    let relay = std::env::var("DOZO_STACK_E2E_RELAY").unwrap();
-    let port: u16 = relay.rsplit(':').next().unwrap().parse().unwrap();
-    assert!(
-        wait_until(Duration::from_secs(120), move || {
-            TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok()
-        })
-        .await,
-        "no relay at {relay}"
-    );
+    let relay = tauri::Url::parse(&std::env::var("DOZO_STACK_E2E_RELAY").unwrap()).unwrap();
+    // A dev relay beside the test may still be starting; the real one (the nightly canary,
+    // `tests/stack_e2e_native.sh --relay`) is there or the test fails on the offer.
+    if relay.host_str() == Some("127.0.0.1") {
+        let port = relay.port().unwrap();
+        assert!(
+            wait_until(Duration::from_secs(120), move || {
+                TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok()
+            })
+            .await,
+            "no relay at {relay}"
+        );
+    }
     let (local, root, _) = e2e_ready().await;
     let mut events = local.phone_events();
     let agent = local.agent().await.expect("the bundle has the relay agent");
@@ -511,7 +516,8 @@ async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
     exit_on_panic();
     let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
     let options = Options {
-        manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
+        // Without one, the manifest this app was built for: the released server (the canary).
+        manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap_or_else(|_| MANIFEST.into()),
         hosted_login_issuer: std::env::var("DOZO_STACK_E2E_ISSUER").ok(),
         relay: std::env::var("DOZO_STACK_E2E_RELAY").unwrap_or_default(),
         expected: None,
@@ -647,8 +653,19 @@ fn left_after_stop(root: &Path) -> Vec<String> {
     left
 }
 
+/// What of the server is running, one `LEFT: <pid>: <command line>` line each (none: nothing):
+/// how `tests/stack_e2e_native.sh` looks between steps, the same way on every system.
+#[test]
+#[ignore = "lists the processes of DOZO_STACK_E2E_ROOT; run by tests/stack_e2e_native.sh"]
+fn e2e_list_left() {
+    let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
+    for line in processes_under(&root) {
+        println!("LEFT: {line}");
+    }
+}
+
 /// Processes whose program or command line is in the server's folder.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn processes_under(root: &Path) -> Vec<String> {
     let root = root.to_string_lossy().into_owned();
     let me = std::process::id().to_string();
@@ -666,6 +683,42 @@ fn processes_under(root: &Path) -> Vec<String> {
             let cmdline = String::from_utf8_lossy(&cmdline).replace('\0', " ");
             (program.starts_with(&root) || cmdline.contains(&root))
                 .then(|| format!("{}: {cmdline}", path.display()))
+        })
+        .collect()
+}
+
+/// The same on macOS: the program from the kernel (`proc_pidpath`; Postgres rewrites its command
+/// line, as on Linux), the command line from `ps`. The folder is compared as given and as the
+/// system resolves it (`/var` is `/private/var` there).
+#[cfg(target_os = "macos")]
+fn processes_under(root: &Path) -> Vec<String> {
+    let resolved = fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
+    let roots = [root.to_string_lossy(), resolved.to_string_lossy()];
+    let me = std::process::id();
+    let listed = std::process::Command::new("/bin/ps")
+        .args(["-axww", "-o", "pid=,command="])
+        .env("LC_ALL", "en_US.UTF-8")
+        .output()
+        .expect("the process list");
+    String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (pid, command) = line.trim_start().split_once(' ')?;
+            let pid: u32 = pid.parse().ok()?;
+            let mut path = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+            // SAFETY: proc_pidpath writes at most the buffer's length into it.
+            let n = unsafe {
+                libc::proc_pidpath(
+                    pid as libc::c_int,
+                    path.as_mut_ptr().cast(),
+                    path.len() as u32,
+                )
+            };
+            let program = String::from_utf8_lossy(&path[..n.max(0) as usize]).into_owned();
+            let ours = roots
+                .iter()
+                .any(|root| program.starts_with(root.as_ref()) || command.contains(root.as_ref()));
+            (pid != me && ours).then(|| format!("{pid}: {command}"))
         })
         .collect()
 }
