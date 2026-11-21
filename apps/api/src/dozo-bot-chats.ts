@@ -1,10 +1,22 @@
-import type { Actor, DozoBotChat } from "@rakazo/contracts";
-import { DOZO_BOT_CHATS_LIMIT_CODE, DOZO_BOT_CHATS_MAX } from "@rakazo/contracts";
+import type {
+  Actor,
+  DozoBotChat,
+  DozoBotChatArchiveInput,
+  DozoBotChatCreateInput,
+  DozoBotChatRenameInput,
+  DozoBotChatsListInput,
+} from "@rakazo/contracts";
+import {
+  DOZO_BOT_CHATS_LIMIT_CODE,
+  DOZO_BOT_CHATS_MAX,
+  DOZO_BOT_CHATS_TOTAL_LIMIT_CODE,
+  DOZO_BOT_CHATS_TOTAL_MAX,
+} from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import type { RouterContext } from "./routes/context.js";
+import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
 
 type Db = Pick<PrismaClient, "$queryRaw">;
@@ -18,12 +30,15 @@ type ChatRow = {
   archivedAt: Date | null;
 };
 
+/** The bot holds the most open extra chats, or the most it can ever hold, archived ones included. */
 export class DozoBotChatsLimitError extends ClientError {
-  constructor() {
+  constructor(total = false) {
     super(
       "CONFLICT",
-      `A bot holds at most ${DOZO_BOT_CHATS_MAX} open chats. Archive one first.`,
-      DOZO_BOT_CHATS_LIMIT_CODE,
+      total
+        ? `A bot holds at most ${DOZO_BOT_CHATS_TOTAL_MAX} chats, archived ones included.`
+        : `A bot holds at most ${DOZO_BOT_CHATS_MAX} open chats. Archive one first.`,
+      total ? DOZO_BOT_CHATS_TOTAL_LIMIT_CODE : DOZO_BOT_CHATS_LIMIT_CODE,
     );
   }
 }
@@ -70,14 +85,16 @@ async function chatRow(db: Db, actor: Actor, chatId: string): Promise<ChatRow> {
  * deleted since the caller's check is refused. The lock does not hold up writes that only point
  * at the bot (its messages and runs).
  */
-async function assertRoomForOneMore(tx: Tx, botId: string) {
+async function assertRoomForOneMore(tx: Tx, botId: string, creating: boolean) {
   const bot = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM bots WHERE id = ${botId} AND "archivedAt" IS NULL FOR NO KEY UPDATE`;
   if (bot.length === 0) throw new IsolationError();
-  const [{ open }] = await tx.$queryRaw<{ open: number }[]>`
-    SELECT count(*)::int AS open FROM dozo_bot_chats
-    WHERE "botId" = ${botId} AND "archivedAt" IS NULL`;
-  if (open >= DOZO_BOT_CHATS_MAX) throw new DozoBotChatsLimitError();
+  const [counts] = await tx.$queryRaw<{ open: number; total: number }[]>`
+    SELECT count(*) FILTER (WHERE "archivedAt" IS NULL)::int AS open, count(*)::int AS total
+    FROM dozo_bot_chats WHERE "botId" = ${botId}`;
+  if (creating && (counts?.total ?? 0) >= DOZO_BOT_CHATS_TOTAL_MAX)
+    throw new DozoBotChatsLimitError(true);
+  if ((counts?.open ?? 0) >= DOZO_BOT_CHATS_MAX) throw new DozoBotChatsLimitError();
 }
 
 /**
@@ -89,7 +106,7 @@ export async function createChat(
   actor: Actor,
   input: { botId: string; name: string },
 ): Promise<DozoBotChat> {
-  await assertRoomForOneMore(tx, input.botId);
+  await assertRoomForOneMore(tx, input.botId, true);
   const thread = await tx.thread.create({
     data: { spaceId: actor.spaceId, userId: actor.userId },
     select: { id: true },
@@ -118,7 +135,7 @@ export async function archiveChat(
 ): Promise<DozoBotChat> {
   const row = await chatRow(tx, actor, input.chatId);
   if (input.archived === (row.archivedAt !== null)) return toChat(row);
-  if (!input.archived) await assertRoomForOneMore(tx, row.botId);
+  if (!input.archived) await assertRoomForOneMore(tx, row.botId, false);
   await tx.$executeRaw`
     UPDATE dozo_bot_chats
     SET "archivedAt" = CASE WHEN ${input.archived}::boolean THEN CURRENT_TIMESTAMP ELSE NULL END
@@ -129,12 +146,14 @@ export async function archiveChat(
 /**
  * A bot's extra chats, for anyone in the Space who can chat with the bot, under the same check
  * that opens its main chat. Changing one leaves an archived bot's chats as they are, as its main
- * chat takes no new messages either. Sending to or reading an extra chat is not here yet: every
+ * chat takes no new messages either. Inputs are the contract's, already checked.
+ *
+ * Not published yet: no route calls this until the app can show extra chats (the web step wires
+ * `dozoChatsContract` to it). Sending to or reading an extra chat is not here either: every
  * existing route reaches a chat through its bot or group, so it refuses an extra chat's id as not
  * found instead of answering for another chat.
  */
-export function dozoBotChatRoutes(ctx: RouterContext) {
-  const { deps, authed } = ctx;
+export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events">) {
   const { prisma } = deps;
   const changed = (actor: Actor) =>
     bestEffort(
@@ -146,35 +165,27 @@ export function dozoBotChatRoutes(ctx: RouterContext) {
     await resolveThreadTarget(prisma, actor, { botId: row.botId });
   };
   return {
-    dozoChats: {
-      list: authed.dozoChats.list.handler(async ({ context, input }) => {
-        await resolveThreadTarget(
-          prisma,
-          context.actor,
-          { botId: input.botId },
-          { includeArchived: true },
-        );
-        const includeArchived = input.includeArchived ?? false;
-        return { chats: await listChats(prisma, context.actor, input.botId, includeArchived) };
-      }),
-      create: authed.dozoChats.create.handler(async ({ context, input }) => {
-        await resolveThreadTarget(prisma, context.actor, { botId: input.botId });
-        const chat = await prisma.$transaction((tx) => createChat(tx, context.actor, input));
-        await changed(context.actor);
-        return { chat };
-      }),
-      rename: authed.dozoChats.rename.handler(async ({ context, input }) => {
-        await ofBot(context.actor, input.chatId);
-        const chat = await prisma.$transaction((tx) => renameChat(tx, context.actor, input));
-        await changed(context.actor);
-        return { chat };
-      }),
-      archive: authed.dozoChats.archive.handler(async ({ context, input }) => {
-        await ofBot(context.actor, input.chatId);
-        const chat = await prisma.$transaction((tx) => archiveChat(tx, context.actor, input));
-        await changed(context.actor);
-        return { chat };
-      }),
+    async list(actor: Actor, input: DozoBotChatsListInput) {
+      await resolveThreadTarget(prisma, actor, { botId: input.botId }, { includeArchived: true });
+      return { chats: await listChats(prisma, actor, input.botId, input.includeArchived ?? false) };
+    },
+    async create(actor: Actor, input: DozoBotChatCreateInput) {
+      await resolveThreadTarget(prisma, actor, { botId: input.botId });
+      const chat = await prisma.$transaction((tx) => createChat(tx, actor, input));
+      await changed(actor);
+      return { chat };
+    },
+    async rename(actor: Actor, input: DozoBotChatRenameInput) {
+      await ofBot(actor, input.chatId);
+      const chat = await prisma.$transaction((tx) => renameChat(tx, actor, input));
+      await changed(actor);
+      return { chat };
+    },
+    async archive(actor: Actor, input: DozoBotChatArchiveInput) {
+      await ofBot(actor, input.chatId);
+      const chat = await prisma.$transaction((tx) => archiveChat(tx, actor, input));
+      await changed(actor);
+      return { chat };
     },
   };
 }

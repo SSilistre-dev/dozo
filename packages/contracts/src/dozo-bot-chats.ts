@@ -4,10 +4,14 @@ import { Id, IsoDate } from "./ids.js";
 
 /** A bot holds at most this many open extra chats; archived ones do not count. */
 export const DOZO_BOT_CHATS_MAX = 20;
+/** And at most this many in all, archived ones included, so archiving cannot grow it forever. */
+export const DOZO_BOT_CHATS_TOTAL_MAX = 100;
 export const DOZO_BOT_CHAT_NAME_MAX_LENGTH = 80;
 
 /** What `create` and `archive` answer when the bot already holds the most open extra chats. */
 export const DOZO_BOT_CHATS_LIMIT_CODE = "dozo_bot_chats_limit";
+/** What `create` answers when the bot already holds the most chats, archived ones included. */
+export const DOZO_BOT_CHATS_TOTAL_LIMIT_CODE = "dozo_bot_chats_total_limit";
 
 /** A chat's name: one line a person reads in a list, never empty. */
 export const DozoBotChatName = z
@@ -32,13 +36,29 @@ export type DozoBotChat = z.infer<typeof DozoBotChatSchema>;
 
 const ChatOutput = z.object({ chat: DozoBotChatSchema });
 
+export const DozoBotChatsListInputSchema = z.object({
+  botId: Id,
+  includeArchived: z.boolean().optional(),
+});
+export type DozoBotChatsListInput = z.infer<typeof DozoBotChatsListInputSchema>;
+export const DozoBotChatCreateInputSchema = z.object({ botId: Id, name: DozoBotChatName });
+export type DozoBotChatCreateInput = z.infer<typeof DozoBotChatCreateInputSchema>;
+export const DozoBotChatRenameInputSchema = z.object({ chatId: Id, name: DozoBotChatName });
+export type DozoBotChatRenameInput = z.infer<typeof DozoBotChatRenameInputSchema>;
+export const DozoBotChatArchiveInputSchema = z.object({ chatId: Id, archived: z.boolean() });
+export type DozoBotChatArchiveInput = z.infer<typeof DozoBotChatArchiveInputSchema>;
+
+/**
+ * Not part of the app contract yet: the web step adds it, with the routes, once the app can show
+ * extra chats.
+ */
 export const dozoChatsContract = {
   /** The bot's extra chats, oldest first; archived ones only when asked for. */
   list: oc
-    .input(z.object({ botId: Id, includeArchived: z.boolean().optional() }))
+    .input(DozoBotChatsListInputSchema)
     .output(z.object({ chats: z.array(DozoBotChatSchema) })),
-  create: oc.input(z.object({ botId: Id, name: DozoBotChatName })).output(ChatOutput),
-  rename: oc.input(z.object({ chatId: Id, name: DozoBotChatName })).output(ChatOutput),
+  create: oc.input(DozoBotChatCreateInputSchema).output(ChatOutput),
+  rename: oc.input(DozoBotChatRenameInputSchema).output(ChatOutput),
   /** Archives or brings back an extra chat; doing what is already done succeeds. */
-  archive: oc.input(z.object({ chatId: Id, archived: z.boolean() })).output(ChatOutput),
+  archive: oc.input(DozoBotChatArchiveInputSchema).output(ChatOutput),
 };

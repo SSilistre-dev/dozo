@@ -1,16 +1,21 @@
 import type { Actor } from "@rakazo/contracts";
-import { DOZO_BOT_CHATS_LIMIT_CODE, DOZO_BOT_CHATS_MAX, DozoBotChatName } from "@rakazo/contracts";
+import {
+  DOZO_BOT_CHATS_LIMIT_CODE,
+  DOZO_BOT_CHATS_MAX,
+  DOZO_BOT_CHATS_TOTAL_LIMIT_CODE,
+  DOZO_BOT_CHATS_TOTAL_MAX,
+  DozoBotChatName,
+} from "@rakazo/contracts";
 import { IsolationError } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   archiveChat,
   createChat,
   DozoBotChatsLimitError,
-  dozoBotChatRoutes,
+  dozoBotChats,
   listChats,
   renameChat,
 } from "./dozo-bot-chats.js";
-import type { RouterContext } from "./routes/context.js";
 
 const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn() }));
 vi.mock("./thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
@@ -28,7 +33,9 @@ type Row = {
 };
 
 /** Answers SQL as the table would for one chat, and counts open chats as `open`. */
-function fakeDb(options: { row?: Row | null; open?: number; botGone?: boolean } = {}) {
+function fakeDb(
+  options: { row?: Row | null; open?: number; total?: number; botGone?: boolean } = {},
+) {
   const statements: Sql[] = [];
   let row = options.row === undefined ? null : options.row;
   const record = (strings: TemplateStringsArray, values: unknown[]) => {
@@ -39,7 +46,8 @@ function fakeDb(options: { row?: Row | null; open?: number; botGone?: boolean } 
   const db = {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = record(strings, values);
-      if (text.startsWith("SELECT count(*)")) return [{ open: options.open ?? 0 }];
+      if (text.startsWith("SELECT count(*)"))
+        return [{ open: options.open ?? 0, total: options.total ?? options.open ?? 0 }];
       if (text.includes("FOR NO KEY UPDATE")) return options.botGone ? [] : [{ id: values[0] }];
       return row ? [row] : [];
     }),
@@ -133,6 +141,24 @@ describe("createChat", () => {
     });
     expect(db.thread.create).not.toHaveBeenCalled();
   });
+
+  it("refuses past the most chats a bot holds in all, archived ones included", async () => {
+    const { db } = fakeDb({ open: 0, total: DOZO_BOT_CHATS_TOTAL_MAX });
+    await expect(
+      createChat(db as never, actor, { botId: "bot-1", name: "Garden" }),
+    ).rejects.toMatchObject({ kind: "CONFLICT", code: DOZO_BOT_CHATS_TOTAL_LIMIT_CODE });
+    // Bringing one back adds no row, so only the open limit applies to it.
+    const back = fakeDb({
+      row: chat({ archivedAt: createdAt }),
+      open: 0,
+      total: DOZO_BOT_CHATS_TOTAL_MAX,
+    });
+    const chatBack = await archiveChat(back.db as never, actor, {
+      chatId: "thread-2",
+      archived: false,
+    });
+    expect(chatBack.archivedAt).toBeNull();
+  });
 });
 
 describe("renameChat and archiveChat", () => {
@@ -173,61 +199,46 @@ describe("renameChat and archiveChat", () => {
   });
 });
 
-describe("dozoBotChatRoutes", () => {
-  function routes(db: ReturnType<typeof fakeDb>["db"]) {
+describe("dozoBotChats", () => {
+  function service(db: ReturnType<typeof fakeDb>["db"]) {
     const publishRosterChange = vi.fn(async () => undefined);
     const prisma = {
       ...db,
       $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)),
     };
-    const procedure = (name: string) => ({
-      handler: (fn: (options: unknown) => unknown) => ({ name, call: fn }),
-    });
-    const authed = {
-      dozoChats: {
-        list: procedure("list"),
-        create: procedure("create"),
-        rename: procedure("rename"),
-        archive: procedure("archive"),
-      },
-    };
-    const built = dozoBotChatRoutes({
-      deps: { prisma, events: { publishRosterChange } },
-      authed,
-    } as unknown as RouterContext).dozoChats as unknown as Record<
-      string,
-      { call: (options: { context: { actor: Actor }; input: unknown }) => Promise<unknown> }
-    >;
-    const call = (name: string, input: unknown) => built[name]!.call({ context: { actor }, input });
-    return { call, publishRosterChange };
+    const chats = dozoBotChats({
+      prisma,
+      events: { publishRosterChange },
+    } as unknown as Parameters<typeof dozoBotChats>[0]);
+    return { chats, publishRosterChange };
   }
 
   it("checks the bot as for its main chat, archived bots included only for the list", async () => {
-    const { call } = routes(fakeDb({ row: chat() }).db);
-    await call("list", { botId: "bot-1" });
+    const { chats } = service(fakeDb({ row: chat() }).db);
+    expect((await chats.list(actor, { botId: "bot-1" })).chats).toHaveLength(1);
     expect(mocks.resolveThreadTarget).toHaveBeenLastCalledWith(
       expect.anything(),
       actor,
       { botId: "bot-1" },
       { includeArchived: true },
     );
-    await call("create", { botId: "bot-1", name: "Garden" });
+    await chats.create(actor, { botId: "bot-1", name: "Garden" });
     expect(mocks.resolveThreadTarget).toHaveBeenLastCalledWith(expect.anything(), actor, {
       botId: "bot-1",
     });
   });
 
   it("checks the chat's own bot before a change and signals the Space after it", async () => {
-    const { call, publishRosterChange } = routes(fakeDb({ row: chat({ botId: "bot-9" }) }).db);
-    await call("rename", { chatId: "thread-2", name: "Taxes" });
+    const { chats, publishRosterChange } = service(fakeDb({ row: chat({ botId: "bot-9" }) }).db);
+    await chats.rename(actor, { chatId: "thread-2", name: "Taxes" });
     expect(mocks.resolveThreadTarget).toHaveBeenLastCalledWith(expect.anything(), actor, {
       botId: "bot-9",
     });
     expect(publishRosterChange).toHaveBeenCalledWith({ spaceIds: ["space-1"] });
     mocks.resolveThreadTarget.mockRejectedValueOnce(new IsolationError());
-    await expect(call("archive", { chatId: "thread-2", archived: true })).rejects.toBeInstanceOf(
-      IsolationError,
-    );
+    await expect(
+      chats.archive(actor, { chatId: "thread-2", archived: true }),
+    ).rejects.toBeInstanceOf(IsolationError);
     expect(publishRosterChange).toHaveBeenCalledTimes(1);
   });
 });

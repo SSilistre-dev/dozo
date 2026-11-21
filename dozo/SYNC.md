@@ -101,12 +101,21 @@ lists file and string; a rule mismatch names the rule whose anchor no longer mat
 `dozo/brand/brand.json` (or the rule code), never in the upstream file. Commit the fix on the sync
 branch, re-run `make olc` and the gate, then merge.
 
-**A bot's extra chats break** (`dozo-postgres-tests` fails in `dozo-bot-chats.postgres.test.ts`). An
-extra chat is a thread with no owner column set; the fork relaxed upstream's `threads_owner_chk` to
-"at most one owner" and checks the rest with the `dozo_threads_owner` trigger
-(`20270113120000_dozo_bot_chats`). If an upstream migration redefines that check or adds an owner
-column, do not let it restore "exactly one": a deploy would fail once extra chats exist. Add a fork
-migration after it that relaxes the check again and adds the new column to the trigger.
+**Threads owner guard** (`make olc` fails at `threads owner guard`). An extra chat of a bot is a
+thread with no owner column set: the fork relaxed upstream's `threads_owner_chk` to "at most one
+owner" and checks the rest with the `dozo_threads_owner`, `dozo_threads_chat_keeps_no_owner` and
+`dozo_bot_chats_consistent` triggers (`20270113120000_dozo_bot_chats`). Upstream's migrations carry
+earlier dates than the fork's, so a new one always runs first, and the Postgres tests only see the
+final state: they do not catch this. `dozo/db/threads-owner-guard.mjs` therefore fails on every
+upstream migration that names `threads_owner_chk` or adds, drops or renames a column of `threads`
+and is not in `dozo/db/threads-owner-reviewed.txt`. Read each one:
+- it restores "exactly one owner" or validates the check: live extra chats make it fail on deploy.
+  Do not merge the sync until a fork migration keeps the check relaxed before it runs (a fork
+  migration dated before it, or the check redefined so the upstream statement is a no-op);
+- it adds an owner column: the triggers' `num_nonnulls(...)` lists do not count it. Add a fork
+  migration that redefines the three trigger functions and the `WHEN` conditions with it;
+- anything else (an ordinary column): nothing to do.
+Then add its name to `dozo/db/threads-owner-reviewed.txt` and commit that on the sync branch.
 
 ## Upstream's GitHub workflows
 

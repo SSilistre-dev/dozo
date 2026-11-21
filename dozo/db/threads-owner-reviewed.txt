@@ -1,0 +1,14 @@
+# Upstream migrations that change threads_owner_chk or the columns of "threads", read against a
+# bot's extra chats (dozo/db/threads-owner-guard.mjs). Add a name only after reading it.
+0004_thread_sequences
+0006_thread_unread
+0010_add_history_compacted_up_to_seq
+0013_group_chats
+20260821091013_add_history_compaction_summary
+20260830200000_space_scope_names_and_user_credentials
+20260906120000_messaging_team_chat
+20261023000000_thread_read_cursor
+20261111120000_thread_history_compaction_retry_after_seq
+20261202120000_background_helper_threads
+20261202120100_drop_thread_unread
+20261202120400_threads_owner_chk_validate

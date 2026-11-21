@@ -6071,38 +6071,11 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "export * from \"./dozo-message-revision.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
-      "replace": "export * from \"./dozo-message-revision.js\";\nexport * from \"./dozo-bot-chats.js\";\nimport { dozoChatsContract } from \"./dozo-bot-chats.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
+      "replace": "export * from \"./dozo-message-revision.js\";\nexport * from \"./dozo-bot-chats.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
       "requires": [
         "packages/contracts/src/dozo-bot-chats.ts"
       ],
-      "reason": "bot chats: the import of the rule below"
-    },
-    {
-      "file": "packages/contracts/src/rpc.ts",
-      "find": "  dozoMessages: dozoMessagesContract,\n  threads: {\n",
-      "replace": "  dozoMessages: dozoMessagesContract,\n  dozoChats: dozoChatsContract,\n  threads: {\n",
-      "requires": [
-        "packages/contracts/src/dozo-bot-chats.ts"
-      ],
-      "reason": "bot chats: a bot's extra chats (list, create, rename, archive) join the app contract, so the server and the clients share their types"
-    },
-    {
-      "file": "apps/api/src/router.ts",
-      "find": "import { dozoMessagesRoutes } from \"./dozo-message-revision.js\";\nimport { spacesRoutes } from \"./routes/spaces.js\";\n",
-      "replace": "import { dozoMessagesRoutes } from \"./dozo-message-revision.js\";\nimport { dozoBotChatRoutes } from \"./dozo-bot-chats.js\";\nimport { spacesRoutes } from \"./routes/spaces.js\";\n",
-      "requires": [
-        "apps/api/src/dozo-bot-chats.ts"
-      ],
-      "reason": "bot chats: the import of the rule below"
-    },
-    {
-      "file": "apps/api/src/router.ts",
-      "find": "    ...dozoMessagesRoutes(ctx),\n    ...threadsRoutes(ctx),\n",
-      "replace": "    ...dozoMessagesRoutes(ctx),\n    ...dozoBotChatRoutes(ctx),\n    ...threadsRoutes(ctx),\n",
-      "requires": [
-        "apps/api/src/dozo-bot-chats.ts"
-      ],
-      "reason": "bot chats: the router checks the bot as for its main chat and keeps a bot's open extra chats under a limit"
+      "reason": "bot chats: a bot's extra chats' types, limits and contract reach the server from the contracts package; the contract joins the app contract, with its routes, in the web step"
     },
     {
       "file": "packages/core/src/thread-snapshot-events.ts",

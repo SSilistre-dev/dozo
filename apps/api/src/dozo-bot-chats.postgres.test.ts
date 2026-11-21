@@ -2,10 +2,29 @@ import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
-import { DOZO_BOT_CHATS_LIMIT_CODE, DOZO_BOT_CHATS_MAX } from "@rakazo/contracts";
+import {
+  DOZO_BOT_CHATS_LIMIT_CODE,
+  DOZO_BOT_CHATS_MAX,
+  DOZO_BOT_CHATS_TOTAL_LIMIT_CODE,
+  DOZO_BOT_CHATS_TOTAL_MAX,
+  DozoBotChatArchiveInputSchema,
+  DozoBotChatCreateInputSchema,
+  DozoBotChatRenameInputSchema,
+  DozoBotChatsListInputSchema,
+} from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb, createRepos, createThreadEvents, runAsTenant } from "@rakazo/db";
+import {
+  asSystem,
+  createDb,
+  createRepos,
+  createThreadEvents,
+  IsolationError,
+  runAsTenant,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import * as z from "zod";
+import { dozoBotChats } from "./dozo-bot-chats.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
@@ -27,6 +46,7 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
+  let chats: ReturnType<typeof dozoBotChats>;
   const users: string[] = [];
   const publishRosterChange = vi.fn(async () => undefined);
 
@@ -77,17 +97,43 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     return { status: response!.status, json: body.json as Record<string, unknown> };
   }
 
+  const schemas = {
+    list: DozoBotChatsListInputSchema,
+    create: DozoBotChatCreateInputSchema,
+    rename: DozoBotChatRenameInputSchema,
+    archive: DozoBotChatArchiveInputSchema,
+  } as const;
+
+  /**
+   * The chats service as a route will call it: the contract's input check, then the work as the
+   * member, answered with the status the RPC error handler would give.
+   */
+  async function chatCall(actor: Actor, op: keyof typeof schemas, input: unknown) {
+    try {
+      const json = await runAsTenant(actor, () =>
+        chats[op](actor, schemas[op].parse(input) as never),
+      );
+      return { status: 200, json: json as Record<string, unknown> };
+    } catch (error) {
+      if (error instanceof IsolationError) return { status: 404, json: {} };
+      if (error instanceof z.ZodError) return { status: 400, json: {} };
+      if (error instanceof ClientError && error.kind === "CONFLICT")
+        return { status: 409, json: { code: error.code } as Record<string, unknown> };
+      throw error;
+    }
+  }
+
   const create = async (actor: Actor, botId: string, name = "Garden") => {
-    const answer = await call(actor, "dozoChats/create", { botId, name });
+    const answer = await chatCall(actor, "create", { botId, name });
     return { ...answer, chat: answer.json.chat as Chat };
   };
   const list = async (actor: Actor, botId: string, includeArchived?: boolean) => {
-    const answer = await call(actor, "dozoChats/list", { botId, includeArchived });
+    const answer = await chatCall(actor, "list", { botId, includeArchived });
     expect(answer.status).toBe(200);
     return answer.json.chats as Chat[];
   };
   const archive = (actor: Actor, chatId: string, archived = true) =>
-    call(actor, "dozoChats/archive", { chatId, archived });
+    chatCall(actor, "archive", { chatId, archived });
 
   /** Within a minute of now: a time read in the session's zone as if it were UTC is hours off. */
   const recent = (iso: string | null) =>
@@ -112,6 +158,7 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       dataDir: "/tmp/rakazo-bot-chats-test",
     } as unknown as RouterDeps;
+    chats = dozoBotChats(deps);
     handler = new RPCHandler(createRouter(deps), {
       clientInterceptors: [
         onError((error, { path, signal }) => handleRpcError(error, path, signal)),
@@ -140,7 +187,7 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     const second = (await create(me, botId, "Taxes")).chat;
     expect((await list(me, botId)).map((chat) => chat.name)).toEqual(["Garden", "Taxes"]);
 
-    const renamed = await call(me, "dozoChats/rename", { chatId: second.id, name: "Taxes 2026" });
+    const renamed = await chatCall(me, "rename", { chatId: second.id, name: "Taxes 2026" });
     expect(renamed.status).toBe(200);
     expect((renamed.json.chat as Chat).name).toBe("Taxes 2026");
 
@@ -208,11 +255,11 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     const stranger = await person();
     const { botId } = await bot(me);
     const extra = (await create(me, botId)).chat;
-    expect((await call(stranger, "dozoChats/list", { botId })).status).toBe(404);
+    expect((await chatCall(stranger, "list", { botId })).status).toBe(404);
     expect((await create(stranger, botId)).status).toBe(404);
-    expect(
-      (await call(stranger, "dozoChats/rename", { chatId: extra.id, name: "Mine" })).status,
-    ).toBe(404);
+    expect((await chatCall(stranger, "rename", { chatId: extra.id, name: "Mine" })).status).toBe(
+      404,
+    );
     expect((await archive(stranger, extra.id)).status).toBe(404);
     // Row security holds it too, without the route's checks.
     const seen = await runAsTenant(
@@ -287,5 +334,92 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     const rows = await system.$queryRaw<unknown[]>`
       SELECT 1 FROM dozo_bot_chats WHERE "botId" = ${botId}`;
     expect(rows).toEqual([]);
+  });
+  it("is not published: the app's API has no route for it yet", async () => {
+    const me = await person();
+    const { botId } = await bot(me);
+    for (const path of ["dozoChats/list", "dozoChats/create"]) {
+      expect((await call(me, path, { botId, name: "Garden" })).status, path).toBe(404);
+    }
+  });
+
+  it("caps a bot's chats in all, so creating and archiving cannot grow them forever", async () => {
+    const me = await person();
+    const { botId } = await bot(me);
+    for (let i = 0; i < DOZO_BOT_CHATS_TOTAL_MAX; i += 1) {
+      const made = await create(me, botId, `Chat ${i}`);
+      expect(made.status).toBe(200);
+      expect((await archive(me, made.chat.id)).status).toBe(200);
+    }
+    const refused = await create(me, botId, "One too many");
+    expect(refused.status).toBe(409);
+    expect(refused.json).toMatchObject({ code: DOZO_BOT_CHATS_TOTAL_LIMIT_CODE });
+    // Bringing one back adds no row: only the open limit applies.
+    const [oldest] = await list(me, botId, true);
+    expect((await archive(me, oldest!.id, false)).status).toBe(200);
+  });
+
+  it("lets one of a create and a bring-back racing for the last open place through", async () => {
+    const me = await person();
+    const { botId } = await bot(me);
+    const archived = (await create(me, botId, "Archived")).chat;
+    await archive(me, archived.id);
+    for (let i = 0; i < DOZO_BOT_CHATS_MAX - 1; i += 1) await create(me, botId, `Chat ${i}`);
+    const [made, back] = await Promise.all([
+      create(me, botId, "Racing"),
+      archive(me, archived.id, false),
+    ]);
+    expect([made.status, back.status].sort()).toEqual([200, 409]);
+    expect(await list(me, botId)).toHaveLength(DOZO_BOT_CHATS_MAX);
+  });
+
+  it("takes the chat's thread with its row when the row alone is deleted", async () => {
+    const me = await person();
+    const { botId } = await bot(me);
+    const extra = (await create(me, botId)).chat;
+    await system.$executeRaw`DELETE FROM dozo_bot_chats WHERE "threadId" = ${extra.id}`;
+    expect(await system.thread.findUnique({ where: { id: extra.id } })).toBeNull();
+  });
+
+  it("keeps a chat's row, its bot and its thread in one Space, and the thread without an owner", async () => {
+    const me = await person();
+    const other = await person();
+    const { botId, mainThreadId } = await bot(me);
+    const foreign = await bot(other);
+    const extra = (await create(me, botId)).chat;
+    const insert = (threadId: string, rowBotId: string, spaceId: string) =>
+      system.$executeRaw`
+        INSERT INTO dozo_bot_chats ("threadId", "botId", "spaceId", name)
+        VALUES (${threadId}, ${rowBotId}, ${spaceId}, 'x')`;
+    const ownerless = (spaceId: string, userId: string) =>
+      system.$transaction(async (tx) => {
+        const thread = await tx.thread.create({ data: { spaceId, userId }, select: { id: true } });
+        return thread.id;
+      });
+    // Another Space's bot, a thread that already has an owner, a thread of another Space.
+    await expect(
+      system.$transaction(async (tx) => {
+        const thread = await tx.thread.create({
+          data: { spaceId: me.spaceId, userId: me.userId },
+          select: { id: true },
+        });
+        await tx.$executeRaw`
+          INSERT INTO dozo_bot_chats ("threadId", "botId", "spaceId", name)
+          VALUES (${thread.id}, ${foreign.botId}, ${me.spaceId}, 'x')`;
+      }),
+    ).rejects.toThrow(/share its bot/);
+    await expect(insert(mainThreadId, botId, me.spaceId)).rejects.toThrow(/share its bot/);
+    await expect(ownerless(other.spaceId, other.userId)).rejects.toThrow(/threads_owner_chk/);
+    await expect(
+      system.$executeRaw`UPDATE dozo_bot_chats SET "spaceId" = ${other.spaceId} WHERE "threadId" = ${extra.id}`,
+    ).rejects.toThrow(/share its bot|violates/);
+    // A bot chat's thread cannot take an owner.
+    await expect(
+      system.thread.update({ where: { id: extra.id }, data: { helperBotId: botId } }),
+    ).rejects.toThrow(/threads_owner_chk/);
+    // The name has its limit in the table too, not only in the contract.
+    await expect(
+      system.$executeRaw`UPDATE dozo_bot_chats SET name = ${"x".repeat(81)} WHERE "threadId" = ${extra.id}`,
+    ).rejects.toThrow(/check/);
   });
 });
