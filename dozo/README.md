@@ -653,6 +653,22 @@ Accepted by the owner for now, stated here once:
   mobile app, or a data image a bot passes to `update_bot`, is kept only when its first bytes are
   the PNG, JPEG, GIF or WebP its header names, and it is stored as the server's own 256 px WebP
   re-encoding. Values already stored, imported bots and exports are not re-checked.
+- Avatars from a description (`apps/api/src/dozo-avatar-generate.ts`, procedures
+  `dozoAvatarGenerate.status` and `.generate`): the deployment's image service draws a square
+  picture, which goes through the same checks and 256 px WebP re-encoding as an upload and comes back
+  as a data image; nothing is saved until the person saves it as an avatar. It is offered only when
+  the server has an image service that draws images and, on a server that bills, only to an
+  organization that pays (Free is refused, as a bot's own image tool is). Each try leaves one usage
+  record (provider `media`, model `avatar_image`, no run or bot, cost unknown), written before the
+  service is called; if it cannot be written the call does not start. So a try that is cancelled,
+  times out (2 minutes), fails or returns something unusable still counts, since the service may
+  have charged. The limit is 20 in any sliding 24 hours per person, across all their Spaces
+  together, counted from those records (an index on person and time serves it), and a person has
+  one picture being drawn at a time, held by a lease, so two at once cannot both pass the count or
+  be billed twice. The description is never logged or kept. The offline image provider
+  (`MEDIA_GENERATION_PROVIDER=fake`) returns a valid 8x8 PNG (`dozo-fake-image.ts`), so the feature
+  runs on a local server; `dozo-avatar-generate.postgres.test.ts` checks the count and the lease on
+  a real database.
 - Daily digest (Settings > General, web and mobile; off by default;
   `packages/adapters/src/dozo-daily-digest.ts`): a routine on the chosen bot that, at the chosen
   hour in the account's timezone, writes one message in that bot's chat from saved data, with no
