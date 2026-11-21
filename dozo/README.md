@@ -644,6 +644,13 @@ Accepted by the owner for now, stated here once:
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
   which it does not show.
+- Generated images and videos leave one usage record each (`packages/adapters/src/dozo-media-usage.ts`,
+  provider `media`, model `generate_image` or `generate_video`), so they show in usage. The media
+  service reports no price, so their cost reads as unknown; nothing is charged against model credit.
+- Uploaded avatars (`packages/adapters/src/dozo-avatar-upload.ts`): a new picture from the web or
+  mobile app, or a data image a bot passes to `update_bot`, is kept only when its first bytes are
+  the PNG, JPEG, GIF or WebP its header names, and it is stored as the server's own 256 px WebP
+  re-encoding. Values already stored, imported bots and exports are not re-checked.
 - One-time waits (`packages/adapters/src/dozo-wait.ts`): `schedule_create` with a watch and
   `waitMinutes` (5 minutes to a week, at most 10 going per bot) wakes the bot once in that chat, at
   the first change or at the deadline, then ends; no model runs in between and the routine's
