@@ -92,7 +92,9 @@ services:
       traefik.http.middlewares.dozo-api-headers.headers.customFrameOptionsValue: SAMEORIGIN
       # Who may reach these routers (README, Origin behind a CDN). Unset: everyone.
       traefik.http.middlewares.dozo-api-origin.ipallowlist.sourcerange: ${DOZO_ORIGIN_SOURCE_RANGE:-0.0.0.0/0,::/0}
-      traefik.http.routers.dozo-api.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`))"
+      # Also the MCP endpoint's OAuth metadata (RFC 9728 puts it under /.well-known/); every other
+      # /.well-known/ path (the apps' passkey association files) stays on the web container.
+      traefik.http.routers.dozo-api.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`) || PathPrefix(`/.well-known/oauth-protected-resource`))"
       traefik.http.routers.dozo-api.priority: "1002"
       traefik.http.routers.dozo-api.entrypoints: websecure
       traefik.http.routers.dozo-api.tls: "true"
@@ -170,7 +172,7 @@ services:
       # then answer 502 from a port nothing listens on, instead of falling through to this
       # container's own proxy to the API (see the api service for why).
       traefik.http.services.dozo-app-noapi.loadbalancer.server.port: "1"
-      traefik.http.routers.dozo-app-noapi.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`))"
+      traefik.http.routers.dozo-app-noapi.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`) && (PathPrefix(`/api/`) || PathPrefix(`/rpc/`) || PathPrefix(`/.well-known/oauth-protected-resource`))"
       traefik.http.routers.dozo-app-noapi.priority: "1001"
       traefik.http.routers.dozo-app-noapi.entrypoints: websecure
       traefik.http.routers.dozo-app-noapi.tls: "true"

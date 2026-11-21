@@ -6720,6 +6720,15 @@
       "reason": "MCP endpoint: its RFC 9728 metadata answers without credentials, as the protocol requires"
     },
     {
+      "file": "apps/web/src/api-proxy.ts",
+      "find": "  \"/.well-known/assetlinks.json\": false,\n};",
+      "replace": "  \"/.well-known/assetlinks.json\": false,\n  // The MCP endpoint's OAuth metadata (RFC 9728), served by the API.\n  \"/.well-known/oauth-protected-resource\": false,\n};",
+      "requires": [
+        "apps/web/src/dozo-api-proxy.test.ts"
+      ],
+      "reason": "MCP endpoint: a self-hosted or own-computer server's web server forwards the endpoint's OAuth metadata to the API, as it does the passkey association files; any other /.well-known/ path stays with the web app"
+    },
+    {
       "file": "apps/api/src/security-audit.ts",
       "find": "kind: \"webhook\", fields: [\"botId\"] },\n  \"voice.connect\":",
       "replace": "kind: \"webhook\", fields: [\"botId\"] },\n  \"dozoAccessTokens.create\": { type: \"credential.created\", kind: \"access_token\", fields: [\"botId\"] },\n  \"dozoAccessTokens.revoke\": { type: \"credential.deleted\", kind: \"access_token\", fields: [\"id\"] },\n  \"dozoAccessTokens.trustBot\": { type: \"approval.policy.changed\", kind: \"token_mark\", fields: [\"botId\"] },\n  \"voice.connect\":",
