@@ -13,10 +13,12 @@ import {
   lazyStream,
 } from "@earendil-works/pi-ai";
 import { registerLocalProvider as registerServerModels } from "../pi-local-provider.js";
+import { acpAgentDriver } from "./acp/dozo-acp-agent.js";
+import { ACP_AGENTS } from "./acp/dozo-acp-catalog.js";
 import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
 import { codexAgentDriver } from "./codex/dozo-codex-agent.js";
 import type { AgentDriver } from "./dozo-agent.js";
-import { enabledAgentProviders } from "./dozo-agent.js";
+import { AGENT_OWN_MODEL, enabledAgentProviders } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, CliTurn } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -33,7 +35,10 @@ export { LOCAL_PROVIDER_ID } from "../pi-local-provider.js";
 export const CLI_MODEL_DRIVERS: readonly CliModelDriver[] = [claudeCodeDriver];
 
 /** The agents that can run a bot's whole turn on the person's own computer (dozo-agent.ts). */
-export const AGENT_DRIVERS: readonly AgentDriver[] = [codexAgentDriver];
+export const AGENT_DRIVERS: readonly AgentDriver[] = [
+  codexAgentDriver,
+  ...ACP_AGENTS.map((entry) => acpAgentDriver(entry)),
+];
 
 /** The agents turned on for this server (dozo-agent.ts): only those are listed or run. */
 export function enabledAgentDrivers(): AgentDriver[] {
@@ -49,6 +54,22 @@ export const AGENT_CATALOG_ERROR = "An agent's turn runs in agent mode, not as a
  * An agent's connections in the catalog, so a bot can choose it: named as an agent, with the
  * models the agent takes. Agent mode runs the turn (dozo-agent.ts); this copy never streams.
  */
+/** The one model of an agent that chooses its own: whatever it is set to use. */
+function ownModel(driver: AgentDriver): Model<Api> {
+  return {
+    id: AGENT_OWN_MODEL,
+    name: driver.name,
+    api: "dozo-agent",
+    provider: driver.provider,
+    baseUrl: "",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 200_000,
+    maxTokens: 32_000,
+  };
+}
+
 function agentCatalogProvider(driver: AgentDriver, models: MutableModels): Provider {
   const stream = (model: Model<Api>) =>
     lazyStream(model, async () => {
@@ -63,11 +84,13 @@ function agentCatalogProvider(driver: AgentDriver, models: MutableModels): Provi
         resolve: async () => ({ auth: {}, source: driver.command }),
       },
     },
-    models: models.getModels(driver.modelSource).map((model) => ({
-      ...model,
-      provider: driver.provider,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    })),
+    models: driver.modelSource
+      ? models.getModels(driver.modelSource).map((model) => ({
+          ...model,
+          provider: driver.provider,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        }))
+      : [ownModel(driver)],
     api: { stream, streamSimple: stream },
   });
 }

@@ -44,6 +44,8 @@ export interface CliToolView {
   canAdd: boolean;
   /** A sign-in of another account in progress, or one that did not finish. */
   login?: CliLoginView;
+  /** An agent whose maker's terms put the person's account at risk (dozo-agent-accounts.ts). */
+  termsRisk?: true;
 }
 
 /**
@@ -202,7 +204,7 @@ export async function cliHomeConnection(
   deps: CliAccountsDeps,
   userId: string,
   provider: string,
-  options: { consent?: boolean } = {},
+  options: { consent?: boolean; termsConsent?: boolean } = {},
 ): Promise<ReturnType<typeof cliConnection>> {
   const agent = agentDriverFor(provider);
   if (agent) {
@@ -210,7 +212,10 @@ export async function cliHomeConnection(
     if (!host) throw new ClientError("NOT_FOUND", "This tool cannot be used on this server.");
     const connected = await deps.prisma.userModelCredential.count({ where: { userId, provider } });
     if (connected) throw new CliAccountUnavailableError(`${agent.name} is already connected.`);
-    return agentConnection(agent, host, options.consent === true);
+    return agentConnection(agent, host, {
+      agent: options.consent === true,
+      terms: options.termsConsent === true,
+    });
   }
   const { driver, state } = await usableTool(deps, userId, provider);
   if (state.signedIn === false)

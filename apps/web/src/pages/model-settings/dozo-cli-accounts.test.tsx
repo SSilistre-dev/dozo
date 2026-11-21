@@ -45,6 +45,21 @@ vi.mock("@rakazo/ui-web", () => ({
     </button>
   ),
   Input: (props: ComponentProps<"input">) => <input {...props} />,
+  Checkbox: ({
+    checked,
+    onCheckedChange,
+    ...props
+  }: {
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+  }) => (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(event) => onCheckedChange(event.target.checked)}
+      {...props}
+    />
+  ),
 }));
 
 import { DozoCliAccounts, dozoCliAccountsChanged, useDozoCliProviders } from "./dozo-cli-accounts";
@@ -220,7 +235,8 @@ describe("another account", () => {
 });
 
 describe("an agent", () => {
-  const agent = (over: Partial<DozoCliTool> = {}) => tool({ mode: "agent", signedIn: null, ...over });
+  const agent = (over: Partial<DozoCliTool> = {}) =>
+    tool({ mode: "agent", signedIn: null, ...over });
 
   it("says what agent mode means, and connects only once the person agrees", async () => {
     api.list.mockResolvedValue({ tools: [agent()] });
@@ -235,6 +251,25 @@ describe("an agent", () => {
     expect(button("Connect")).toBeUndefined();
     await act(async () => button("I agree, connect")?.click());
     expect(api.connect).toHaveBeenCalledWith({ provider: "tool-a", consent: true });
+  });
+
+  it("asks to accept the risk to the account first where the agent's maker puts one", async () => {
+    api.list.mockResolvedValue({ tools: [agent({ termsRisk: true })] });
+    api.connect.mockResolvedValue({ tools: [agent({ termsRisk: true, connected: true })] });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(button("Connect")).toBeDefined());
+    await act(async () => button("Connect")?.click());
+    expect(container.textContent).toContain("I accept this risk.");
+    expect(button("I agree, connect")?.disabled).toBe(true);
+    const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    await act(async () => box?.click());
+    expect(button("I agree, connect")?.disabled).toBe(false);
+    await act(async () => button("I agree, connect")?.click());
+    expect(api.connect).toHaveBeenCalledWith({
+      provider: "tool-a",
+      consent: true,
+      termsConsent: true,
+    });
   });
 
   it("goes back without connecting when the person cancels", async () => {
