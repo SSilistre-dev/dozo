@@ -57,8 +57,15 @@ export type RelayHostChannel = {
 export type RelayHostStore = {
   /** The host's long-term key pair, made with `create` the first time. */
   hostKey(create: () => Promise<RelayKeyPair>): Promise<RelayKeyPair>;
+  /** Every channel, with an approval given through `approve` as `app.approvedAt`. */
   list(): Promise<RelayHostChannel[]>;
   put(channel: RelayHostChannel): Promise<void>;
+  /**
+   * Records the user's approval of the phone on `channel` apart from the channel itself: the
+   * running agent rewrites the channel (pairing, its verifier), and a copy it read before the
+   * approval must not undo it.
+   */
+  approve(channel: string, approvedAt: number): Promise<void>;
   remove(channel: string): Promise<void>;
   /** Calls back when the store may have changed under this process; returns the stop function. */
   watch?(onChange: () => void): () => void;
@@ -259,7 +266,7 @@ export async function approveRelayChannel(deps: {
   if (!entry) throw new RelayHostError("no such channel");
   if (!entry.app) throw new RelayHostError("no phone has paired on this channel yet");
   if (entry.app.approvedAt) return;
-  await deps.store.put({ ...entry, app: { ...entry.app, approvedAt: (deps.now ?? Date.now)() } });
+  await deps.store.approve(entry.channel, (deps.now ?? Date.now)());
 }
 
 /**
@@ -380,6 +387,8 @@ class ChannelLoop {
   private readonly controller = new AbortController();
   private done: Promise<void> = Promise.resolve();
   private pairingDone = false;
+  /** Whether the pairing reached the store: `approve` reads it there. */
+  private pairingStored: Promise<boolean> = Promise.resolve(true);
 
   constructor(
     private readonly options: RelayHostOptions,
@@ -478,6 +487,8 @@ class ChannelLoop {
     const app = this.entry.app;
     if (!app) return false;
     if (app.approvedAt) return true;
+    // The question goes out once the pairing is stored, so the answer (`approve`) finds it.
+    if (!(await this.pairingStored)) return false;
     let platform: string | null = null;
     try {
       const parsed = RelaySessionRequestSchema.safeParse(JSON.parse(body));
@@ -679,8 +690,14 @@ class ChannelLoop {
         approvedAt: null,
       },
     };
+    const stored = this.options.store.put(this.entry);
+    // A failed write is reported below; the question then never goes out.
+    this.pairingStored = stored.then(
+      () => true,
+      () => false,
+    );
     try {
-      await this.options.store.put(this.entry);
+      await stored;
       await this.setAppVerifier();
       this.options.onEvent({ event: "paired", channel: this.id, appKey });
     } catch (error) {
