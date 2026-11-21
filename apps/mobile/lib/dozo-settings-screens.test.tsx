@@ -460,6 +460,24 @@ describe("general settings on mobile", () => {
     });
   });
 
+  it("opens Access tokens, and Send feedback only where the server takes feedback", async () => {
+    answers["dozoQuietHours/get"] = { hours: null };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["dozoFeedback/status"] = { mode: null };
+    await render(<DozoGeneralRows />);
+    await settle(() => expect(button("Access tokens")).toBeDefined());
+    expect(button("Send feedback")).toBeUndefined();
+    act(() => button("Access tokens")!.click());
+    expect(ui.push).toHaveBeenCalledWith("/dozo-access-tokens");
+
+    queryClient.clear();
+    answers["dozoFeedback/status"] = { mode: "send" };
+    await render(<DozoGeneralRows key="again" />);
+    await settle(() => expect(button("Send feedback")).toBeDefined());
+    act(() => button("Send feedback")!.click());
+    expect(ui.push).toHaveBeenCalledWith("/dozo-feedback");
+  });
+
   it("says when the log is empty or an older page fails", async () => {
     answers["audit/events"] = ({ cursor }: { cursor?: string }) => {
       if (cursor) throw new Error("Offline");

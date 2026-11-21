@@ -14,6 +14,9 @@ tauri-plugin-window-state = "2.5"
 tauri-plugin-updater = "2.14"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+# Push to Talk (talk.rs): the one shortcut that works while another app is in front. Tauri's own
+# plugin; the app's Rust code registers it and no page is granted its commands.
+tauri-plugin-global-shortcut = "2"
 # The language of the one update line (update.rs).
 sys-locale = "0.3"
 # tauri.conf.json's plugin settings are built into the app as JSON.
