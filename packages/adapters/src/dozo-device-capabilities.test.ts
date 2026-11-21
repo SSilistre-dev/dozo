@@ -9,6 +9,7 @@ import WebSocket from "ws";
 import {
   DEVICE_CAPABILITIES_HEADER,
   deviceOffers,
+  offerUserBrowser,
   parseDeviceCapabilities,
 } from "./dozo-device-capabilities.js";
 import {
@@ -101,10 +102,11 @@ async function serve(hub: UserDeviceHub) {
       ]);
       return { ws, opened };
     },
+    // The hub first: it ends the device sockets, which the HTTP server would otherwise wait for.
     async close() {
+      await hub.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      await hub.close();
     },
   };
 }
@@ -124,14 +126,17 @@ describe("deviceOffers", () => {
     expect(deviceOffers({ ...base, capabilities: ["shell"] })).toEqual({
       shell: true,
       screen: false,
+      browser: false,
     });
     expect(deviceOffers({ ...base, capabilities: ["shell", "screen"] })).toEqual({
       shell: true,
       screen: true,
+      browser: false,
     });
     expect(deviceOffers({ ...base, platform: "linux", capabilities: ["screen"] })).toEqual({
       shell: false,
       screen: true,
+      browser: false,
     });
   });
 
@@ -139,10 +144,26 @@ describe("deviceOffers", () => {
     expect(deviceOffers({ deviceId: "d", name: "Mac", platform: "darwin" })).toEqual({
       shell: true,
       screen: true,
+      browser: false,
     });
     expect(
       deviceOffers({ deviceId: "d", name: "This", platform: "linux", screenOnly: true }),
-    ).toEqual({ shell: false, screen: false });
+    ).toEqual({ shell: false, screen: false, browser: false });
+  });
+});
+
+describe("a declared browser", () => {
+  it("offers the page tools for it, except those the bot itself turned off", () => {
+    const base = { deviceId: "d", name: "Mac", platform: "darwin" };
+    expect(deviceOffers({ ...base, capabilities: ["shell", "browser"] }).browser).toBe(true);
+    const withheld = new Set(["shell", "browser_navigate", "browser_snapshot", "browser_act"]);
+    expect(offerUserBrowser(withheld, ["browser_act"])).toBe(true);
+    expect([...withheld]).toEqual(["shell", "browser_act"]);
+    const off = new Set(["browser_navigate", "browser_snapshot", "browser_act"]);
+    expect(offerUserBrowser(off, ["browser_navigate", "browser_snapshot", "browser_act"])).toBe(
+      false,
+    );
+    expect(offerUserBrowser(new Set(), null)).toBe(true);
   });
 });
 
@@ -170,7 +191,7 @@ describe("a connecting computer's declaration", () => {
       await vi.waitFor(async () => expect(await devices.connected("user-1")).not.toBeNull());
       const device = await devices.connected("user-1");
       expect(device?.capabilities).toEqual(["shell", "screen"]);
-      expect(deviceOffers(device!)).toEqual({ shell: true, screen: true });
+      expect(deviceOffers(device!)).toEqual({ shell: true, screen: true, browser: false });
       ws.close();
     } finally {
       await server.close();
@@ -188,7 +209,7 @@ describe("a connecting computer's declaration", () => {
       const device = await devices.connected("user-1");
       expect(device?.capabilities).toEqual(["shell"]);
       // Older desktop apps (0.3.0, 0.4.0) send no header: commands only, no screen tools.
-      expect(deviceOffers(device!)).toEqual({ shell: true, screen: false });
+      expect(deviceOffers(device!)).toEqual({ shell: true, screen: false, browser: false });
       ws.close();
     } finally {
       await server.close();

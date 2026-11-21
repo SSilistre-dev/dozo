@@ -213,7 +213,18 @@ never the person's (`src/browser.rs`). It opens as a normal window with its addr
 person sees what the bot does and can type into it.
 
 - The app declares `browser` beside `shell` only when it finds one. The server drives the page
-  with `pageBrowser` requests, each one DevTools command.
+  with `pageBrowser` requests, each one DevTools command
+  (`packages/adapters/src/dozo-device-browser.ts`): the bot's usual `browser_navigate`,
+  `browser_snapshot` and `browser_act`, with the same results as on its own computer, built from
+  the page's accessibility tree, and a screenshot with a snapshot for a model that can see.
+- Who gets it (`packages/adapters/src/dozo-user-browser.ts`): only chats the person starts with
+  their own bot, as for commands, never a run a message sent with an access token reached. Then
+  the page tools go to this browser, also on Free, where the run has no computer of its own.
+- What asks: a bot's first use of its browser on this computer ("Let this bot use its own browser
+  on your computer?"), and its first action on each site, named by its registrable domain ("Let
+  this bot act on x.com in its browser?"). Each answer holds for that bot on this computer;
+  removing the computer or deleting the bot asks again. Saved logins, cards and uploads do not
+  reach this browser yet; the person can sign in in its window themselves.
 - The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port:
   nothing listens on TCP, so nothing on the network and no program running as another user can
   connect to it.

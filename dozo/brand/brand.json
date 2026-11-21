@@ -5228,20 +5228,82 @@
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "      userComputerShell = !device.screenOnly;\n      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
-      "replace": "      ({ shell: userComputerShell, screen: userComputerScreen } = deviceOffers(device));\n",
+      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      userComputerScreen = offers.screen;\n      if (offers.browser)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
-      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only"
+      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only. One that declares a browser gets the page tools for the bot's own browser there, even in a run without a computer of its own"
     },
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
-      "replace": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { deviceOffers } from \"./dozo-device-capabilities.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
+      "replace": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { deviceOffers, offerUserBrowser } from \"./dozo-device-capabilities.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
       "reason": "device capabilities: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const pageBrowserAllowed = graphical && browser.describe().capabilities.page && !heldForTakeover;\n",
+      "replace": "  let pageBrowserAllowed = graphical && browser.describe().capabilities.page && !heldForTakeover;\n",
+      "reason": "user's browser: the page tools are offered too when the user's connected computer declared a browser (the device rule below sets it)"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "import { computerTools, pageBrowserTool } from \"./run-tools-computer.js\";\n",
+      "replace": "import { pageBrowserTool } from \"./dozo-user-browser.js\";\nimport { computerTools } from \"./run-tools-computer.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-browser.ts"
+      ],
+      "reason": "user's browser: the page tools go to the bot's own browser on the user's computer when the run reaches one, otherwise to the bot's computer as before"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const plan = USER_COMPUTER_TOOLS.has(name)\n",
+      "replace": "  const plan =\n    USER_COMPUTER_TOOLS.has(name) || (await routesToUserBrowser(ctx, name))\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-computer-gate.ts"
+      ],
+      "reason": "user's browser: a page tool that goes to the user's own browser is approved like the user's computer: never in a token's run, its first use by a bot there asks, and so does its first action on each site"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { pageBrowserRequest } from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-browser-protocol.ts"
+      ],
+      "reason": "user's browser: the import of the request below"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n]);\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-browser-protocol.ts"
+      ],
+      "reason": "user's browser: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser)"
+    },
+    {
+      "file": "packages/adapters/src/browser-conformance.test.ts",
+      "find": "    await assertBrowserConformance(provider);\n  });\n\n  it(\"returns computer_act fallback when the page tool cannot operate\", async () => {\n",
+      "replace": "    await assertBrowserConformance(provider);\n  });\n\n  it(\"holds for the browser on the user's computer (offline)\", async () => {\n    const device = new DeviceBrowserProvider(fakeDeviceBrowser(seededDevicePages));\n    expect(device.describe().id).toBe(\"device\");\n    await assertBrowserConformance(device);\n  });\n\n  it(\"returns computer_act fallback when the page tool cannot operate\", async () => {\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-browser.ts",
+        "packages/adapters/src/dozo-device-browser.test-support.ts"
+      ],
+      "reason": "user's browser: the offline conformance holds for its provider too, against a stand-in for the desktop app that answers DevTools commands"
+    },
+    {
+      "file": "packages/adapters/src/browser-conformance.test.ts",
+      "find": "import { EmulatorBrowserProvider } from \"./browser-emulator.js\";\nimport { FakeBrowserProvider } from \"./fake-browser.js\";\n",
+      "replace": "import { EmulatorBrowserProvider } from \"./browser-emulator.js\";\nimport { DeviceBrowserProvider } from \"./dozo-device-browser.js\";\nimport { fakeDeviceBrowser, seededDevicePages } from \"./dozo-device-browser.test-support.js\";\nimport { FakeBrowserProvider } from \"./fake-browser.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-browser.ts",
+        "packages/adapters/src/dozo-device-browser.test-support.ts"
+      ],
+      "reason": "user's browser: the imports of the case above"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -5862,7 +5924,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\n",
-      "replace": "import { MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\nimport { buildApprovalAskBlock, userComputerGate } from \"./dozo-user-computer-gate.js\";\n",
+      "replace": "import { MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\nimport {\n  buildApprovalAskBlock,\n  routesToUserBrowser,\n  userComputerGate,\n} from \"./dozo-user-computer-gate.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-user-computer-gate.ts"
       ],

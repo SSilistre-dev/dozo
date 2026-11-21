@@ -28,8 +28,12 @@ export function noCloudComputerInstruction(options: {
   const why = payment
     ? "the plan's payment is overdue, and its computer hours return once it is paid"
     : "the plan has no computer hours left";
+  // The page tools are offered here only for the bot's own browser there (dozo-user-browser.ts).
+  const browser = options.offered.has("browser_navigate")
+    ? " browser_navigate, browser_snapshot and browser_act use a browser of your own on the user's computer, in a window they can see."
+    : "";
   if (options.userComputer === "connected")
-    return `You have no computer of your own in this run: ${why}. For work that needs a computer, use the user's computer.${web}`;
+    return `You have no computer of your own in this run: ${why}. For work that needs a computer, use the user's computer.${browser}${web}`;
   const fix = payment ? "whoever manages billing can update the payment" : "upgrade the plan";
   return `You have no computer in this run: ${why}. Work without one: answer directly and use connected tools.${web} Never offer to run commands, open a browser, or save files. If a task truly needs a computer, say so in one short sentence: the user can connect their own computer from the desktop app, or ${fix}.`;
 }
