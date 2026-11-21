@@ -7,7 +7,7 @@
 # then prints what each target saw, with its slowest answer (a request the proxy had to send again
 # arrives late but arrives), and last `[probe] longest outage <seconds>s (<target>)`.
 # Usage: outage-probe.sh <base url> <raw log file> [extra curl arguments...]
-# DOZO_PROBE_INTERVAL (seconds, default 0.25) is the pause between two requests of one target and
+# DOZO_PROBE_INTERVAL (seconds, default 0.5) is the pause between two requests of one target and
 # DOZO_PROBE_TIMEOUT (seconds, default 10) how long one may take.
 set -uo pipefail
 export LC_ALL=C
@@ -19,7 +19,7 @@ export LC_ALL=C
 base=${1%/} log=$2
 shift 2
 extra=("$@")
-interval=${DOZO_PROBE_INTERVAL:-0.25} timeout=${DOZO_PROBE_TIMEOUT:-10}
+interval=${DOZO_PROBE_INTERVAL:-0.5} timeout=${DOZO_PROBE_TIMEOUT:-10}
 parent=$PPID
 : >"$log"
 
@@ -42,10 +42,10 @@ probe() {
 }
 
 summary() {
-  # An outage runs from the first failed request to the next one that got through, or to the last
-  # request when none did.
+  # An outage runs from the first failed request to the next one that got through, or to the end
+  # of the last request when none did.
   awk '
-    { t = $1; at = $2 + 0; n[t]++; last[t] = at; if ($5 > slow[t]) slow[t] = $5
+    { t = $1; at = $2 + 0; n[t]++; last[t] = at + $5; if ($5 > slow[t]) slow[t] = $5
       if ($3 == "down") { failed[t]++; if (!(t in from)) from[t] = at; codes[t, $4]++ }
       else if (t in from) { gap = at - from[t]; if (gap > worst[t]) worst[t] = gap; delete from[t] } }
     END {

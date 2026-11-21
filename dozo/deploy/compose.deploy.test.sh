@@ -150,9 +150,9 @@ for svc in api web; do
   [ "$(jq -c '.NetworkingConfig.EndpointsConfig | keys' <<<"$copy")" = '["dozo","dozo_default"]' ] || bad "bridge copy of $svc is not on the same networks"
   [ "$(jq -c '.Env' <<<"$copy")" = "$(jq -c '.Config.Env' <<<"$inspect")" ] || bad "bridge copy of $svc changes the environment"
   [ "$(jq -r '.Image' <<<"$copy")" = "sha256:test" ] || bad "bridge copy of $svc runs another image"
-  case "$(jq -r '.Healthcheck.Test | join(" ")' <<<"$copy")" in
-    "CMD-SHELL test ! -e /dev/shm/dozo-drain && "*) ;; *) bad "bridge copy of $svc does not drain through its health check" ;;
-  esac
+  # The same check as the service's, with the copy's own cadence.
+  [ "$(jq -r '.Healthcheck.Test | join(" ")' <<<"$copy")" = "$(jq -r --arg s "$svc" '.services[$s].healthcheck.test | join(" ")' <<<"$base")" ] ||
+    bad "bridge copy of $svc does not run the service's health check"
 done
 
 [ "$FAILED" = 0 ] && echo "[compose.test] ok"

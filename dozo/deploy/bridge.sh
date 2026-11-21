@@ -72,7 +72,7 @@ engine() {
   curl -fsS --unix-socket "$socket" -X "$method" "$@" "http://docker$path"
 }
 service_container() {
-  docker ps -q -f "label=com.docker.compose.project=$project" -f "label=com.docker.compose.service=$1" | head -1
+  docker ps -q -f "label=com.docker.compose.project=$project" -f "label=com.docker.compose.service=$1" | sed -n 1p
 }
 state() { docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$1" 2>/dev/null; }
 healthy() { [ -n "$1" ] && case $(state "$1") in "running healthy" | "running none") true ;; *) false ;; esac; }
@@ -115,7 +115,7 @@ retire_copies() {
   take_out "${names[@]}"
   for name in "${names[@]}"; do
     docker stop -t 30 "$name" >/dev/null
-    docker rm "$name" >/dev/null
+    docker rm -v "$name" >/dev/null
     say "$name retired"
   done
 }
