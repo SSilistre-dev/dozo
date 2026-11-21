@@ -8,6 +8,7 @@ import {
   findDozoAccessToken,
   listDozoAccessTokens,
   revokeDozoAccessToken,
+  takeDozoApiMinute,
   touchDozoAccessToken,
 } from "./dozo-access-tokens.js";
 import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
@@ -49,8 +50,10 @@ describePostgres("access tokens (PostgreSQL)", () => {
   }
 
   type Member = Awaited<ReturnType<typeof member>>;
-  const make = (owner: Member, botId: string | null = null) =>
-    runAsTenant(owner, () => createDozoAccessToken(prisma, owner, { name: "CI", botId }));
+  const make = (owner: Member, botId: string | null = null, expiresAt: Date | null = null) =>
+    runAsTenant(owner, () =>
+      createDozoAccessToken(prisma, owner, { name: "CI", botId, expiresAt }),
+    );
   const find = (token: string) =>
     runAsSystem("test: find a token", () => findDozoAccessToken(prisma, token));
 
@@ -130,5 +133,35 @@ describePostgres("access tokens (PostgreSQL)", () => {
     const created = await make(owner);
     await system.user.update({ where: { id: owner.userId }, data: { deactivatedAt: new Date() } });
     expect(await find(created!.token)).toMatchObject({ deactivated: true });
+  });
+
+  it("stops a token when it expires, and every token after a password change", async () => {
+    const owner = await member();
+    const expired = await make(owner, null, new Date(Date.now() - 1000));
+    const lasting = await make(owner, null, new Date(Date.now() + 86_400_000));
+    const forever = await make(owner);
+    expect(await find(expired!.token)).toBeNull();
+    expect(await find(lasting!.token)).not.toBeNull();
+    expect(await find(forever!.token)).not.toBeNull();
+    await system.securityEvent.create({
+      data: { type: "auth.password.changed", userId: owner.userId, metadata: {} },
+    });
+    expect(await find(lasting!.token)).toBeNull();
+    expect(await find(forever!.token)).toBeNull();
+    // The settings list reads as the system (apps/api/src/dozo-access-tokens.ts).
+    expect(await runAsSystem("test: list", () => listDozoAccessTokens(prisma, owner))).toEqual([]);
+    // A token made after the change works.
+    expect(await find((await make(owner))!.token)).not.toBeNull();
+  });
+
+  it("counts a key's minute for every instance together, never past its limit", async () => {
+    const key = `token:${randomUUID()}`;
+    const take = () => runAsSystem("test: count", () => takeDozoApiMinute(prisma, key, 5));
+    const answers = await Promise.all(Array.from({ length: 12 }, take));
+    expect(answers.filter(Boolean)).toHaveLength(5);
+    const rows = await system.$queryRaw<{ count: number }[]>`
+      SELECT count FROM dozo_api_minutes WHERE key = ${key}`;
+    expect(rows).toEqual([{ count: 5 }]);
+    await system.$executeRaw`DELETE FROM dozo_api_minutes WHERE key = ${key}`;
   });
 });

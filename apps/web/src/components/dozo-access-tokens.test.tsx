@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   revoke: vi.fn(),
   toastError: vi.fn(),
   copy: vi.fn(),
+  confirmed: vi.fn(),
   copied: false,
 }));
 
@@ -31,6 +32,15 @@ vi.mock("../lib/query", async (importOriginal) => ({
     bots: {
       list: { queryOptions: () => ({ queryKey: ["bots"], queryFn: () => api.bots() }) },
     },
+  }),
+}));
+vi.mock("./ConfirmIdentityDialog", () => ({
+  useIdentityConfirmation: () => ({
+    withIdentityConfirmation: <T,>(action: () => Promise<T>) => {
+      api.confirmed();
+      return action();
+    },
+    identityDialog: null,
   }),
 }));
 vi.mock("../lib/user-error", () => ({
@@ -76,6 +86,7 @@ const tokens: DozoAccessToken[] = [
     hint: "abcd",
     createdAt: "2026-11-20T10:00:00.000Z",
     lastUsedAt: "2026-11-21T10:00:00.000Z",
+    expiresAt: "2027-02-18T10:00:00.000Z",
   },
   {
     id: "token-2",
@@ -85,6 +96,7 @@ const tokens: DozoAccessToken[] = [
     hint: "wxyz",
     createdAt: "2026-11-19T10:00:00.000Z",
     lastUsedAt: null,
+    expiresAt: null,
   },
 ];
 
@@ -137,6 +149,8 @@ it("reads nothing until opened, then lists each token by name, end, bot and last
   expect(rows[0]).toContain("…abcd");
   expect(rows[0]).toContain("Chef");
   expect(rows[0]).toContain("Last used");
+  expect(rows[0]).toContain("Expires");
+  expect(rows[1]).not.toContain("Expires");
   expect(rows[1]).toContain("…wxyz");
   expect(rows[1]).toContain("Never used");
   expect(container.textContent).not.toContain("dozo_pat_");
@@ -178,7 +192,9 @@ it("makes a token for one bot and shows it once", async () => {
     type(container.querySelector("select")!, "bot-1");
   });
   await act(async () => container.querySelector("form")!.requestSubmit());
-  expect(api.create).toHaveBeenCalledWith({ name: "CI", botId: "bot-1" });
+  expect(api.create).toHaveBeenCalledWith({ name: "CI", botId: "bot-1", expiresInDays: 90 });
+  // Making a token goes through the identity check first.
+  expect(api.confirmed).toHaveBeenCalledOnce();
   await vi.waitFor(() =>
     expect(container.querySelector('[data-testid="dozo-new-token"]')?.textContent).toBe(
       "dozo_pat_secret",
@@ -197,9 +213,12 @@ it("makes a token for every bot, and goes back on Cancel", async () => {
   api.create.mockRejectedValue(new Error("limit"));
   await open();
   await click("New token");
-  await act(async () => type(container.querySelector("input")!, "Laptop"));
+  await act(async () => {
+    type(container.querySelector("input")!, "Laptop");
+    type(container.querySelectorAll("select")[1]!, "never");
+  });
   await act(async () => container.querySelector("form")!.requestSubmit());
-  expect(api.create).toHaveBeenCalledWith({ name: "Laptop" });
+  expect(api.create).toHaveBeenCalledWith({ name: "Laptop", expiresInDays: null });
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Could not create token"));
   await click("Cancel");
   expect(container.querySelector("form")).toBeNull();

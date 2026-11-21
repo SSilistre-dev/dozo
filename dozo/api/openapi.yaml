@@ -13,7 +13,11 @@ info:
     (an approval, a question, the computer), the stream ends with that status; answer in the app,
     then follow the run again from the last event id you saw.
 
-    Each token may make 60 requests a minute and hold 3 streams open at once, per API process.
+    A message sent here is not taken as your own word: the bot asks you in the app before any
+    action that reaches outside or changes something, whatever your approval settings.
+
+    Each token may make 60 requests a minute and hold 3 streams open at once; an account may send
+    20 messages a minute with all its tokens. A stop word is refused: stop a run in the app.
 servers:
   - url: "{origin}"
     description: The address you open Dozo at, on your own computer or a hosted server.

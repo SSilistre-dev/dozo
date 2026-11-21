@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DozoTokenCaller } from "./dozo-access-tokens.js";
 import type { DozoBotApiClient, DozoBotApiContext, DozoBotApiDeps } from "./dozo-bot-api.js";
 import {
+  DOZO_BOT_API_ADDRESS_PER_MINUTE,
   DOZO_BOT_API_REQUESTS_PER_MINUTE,
+  DOZO_BOT_API_SENDS_PER_MINUTE,
   DOZO_BOT_API_STREAMS_PER_TOKEN,
   dozoBotApiDeps,
   dozoRouterConnector,
@@ -14,11 +16,12 @@ import {
 } from "./dozo-bot-api.js";
 import { handleHttpError } from "./rpc-errors.js";
 
-const spies = vi.hoisted(() => ({ authenticator: vi.fn(), touch: vi.fn() }));
+const spies = vi.hoisted(() => ({ authenticator: vi.fn(), touch: vi.fn(), take: vi.fn() }));
 vi.mock("./dozo-access-tokens.js", () => ({ dozoTokenAuthenticator: () => spies.authenticator }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   touchDozoAccessToken: spies.touch,
+  takeDozoApiMinute: spies.take,
 }));
 
 import type * as Db from "@rakazo/db";
@@ -112,6 +115,14 @@ let client: ReturnType<typeof fakeClient>;
 let contexts: DozoBotApiContext[];
 let runStatus: Mock<DozoBotApiDeps["runStatus"]>;
 let authenticate: Mock<DozoBotApiDeps["authenticate"]>;
+/** The shared per-minute counts, as Postgres would keep them for every instance. */
+let minutes: Map<string, number>;
+const take = (key: string, limit: number) => {
+  const count = (minutes.get(key) ?? 0) + 1;
+  if (count > limit) return Promise.resolve(false);
+  minutes.set(key, count);
+  return Promise.resolve(true);
+};
 
 function app(overrides: Partial<DozoBotApiDeps> = {}) {
   const hono = new Hono();
@@ -124,6 +135,8 @@ function app(overrides: Partial<DozoBotApiDeps> = {}) {
     },
     runStatus,
     touch: vi.fn(async () => undefined),
+    take,
+    clientIp: () => "203.0.113.5",
     ...overrides,
   });
   return hono;
@@ -143,6 +156,7 @@ const send = (hono: Hono, body: unknown, headers: Record<string, string> = {}) =
   });
 
 beforeEach(() => {
+  minutes = new Map();
   client = fakeClient();
   contexts = [];
   runStatus = vi.fn<DozoBotApiDeps["runStatus"]>(async () => "running");
@@ -186,20 +200,33 @@ describe("who may call", () => {
     expect(await contexts[0]!.stillAuthorized()).toBe(false);
   });
 
-  it("limits each token's requests a minute", async () => {
-    let now = 0;
-    const hono = app({ now: () => now });
+  it("limits each token's requests a minute, counted for every instance together", async () => {
+    const hono = app();
     for (let index = 0; index < DOZO_BOT_API_REQUESTS_PER_MINUTE; index++)
       expect((await call(hono, "/bots")).status).toBe(200);
     const limited = await call(hono, "/bots");
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
-    // Another token is not held back.
+    // Another token is not held back, and a second instance shares the count.
     authenticate.mockResolvedValue({ ...everyBot, tokenId: "token-2" });
     expect((await call(hono, "/bots")).status).toBe(200);
     authenticate.mockResolvedValue(everyBot);
+    expect((await call(app(), "/bots")).status).toBe(429);
+  });
+
+  it("holds an address back before looking up any more of its guesses", async () => {
+    let now = 0;
+    authenticate.mockResolvedValue(null);
+    const hono = app({ now: () => now });
+    for (let index = 0; index < DOZO_BOT_API_ADDRESS_PER_MINUTE; index++)
+      expect((await call(hono, "/bots")).status).toBe(401);
+    expect((await call(hono, "/bots")).status).toBe(429);
+    expect(authenticate).toHaveBeenCalledTimes(DOZO_BOT_API_ADDRESS_PER_MINUTE);
+    // Another address is not held back, and the minute passes.
+    const other = app({ now: () => now, clientIp: () => undefined });
+    expect((await call(other, "/bots")).status).toBe(401);
     now += 61_000;
-    expect((await call(hono, "/bots")).status).toBe(200);
+    expect((await call(hono, "/bots")).status).toBe(401);
   });
 
   it("marks the token used without waiting for it, and a failure there does not fail the call", async () => {
@@ -240,6 +267,25 @@ describe("a token limited to one bot", () => {
 });
 
 describe("sending a message", () => {
+  it("limits an account's messages a minute across all its tokens", async () => {
+    const hono = app();
+    for (let index = 0; index < DOZO_BOT_API_SENDS_PER_MINUTE; index++)
+      expect((await send(hono, { text: "hi" })).status).toBe(202);
+    authenticate.mockResolvedValue({ ...everyBot, tokenId: "token-2" });
+    const limited = await send(hono, { text: "hi" });
+    expect(limited.status).toBe(429);
+    expect(client.threads.send).toHaveBeenCalledTimes(DOZO_BOT_API_SENDS_PER_MINUTE);
+  });
+
+  it("refuses a stop word, which in the app stops every run in the chat", async () => {
+    for (const text of ["stop", "STOP!", "dur"]) {
+      const refused = await send(app(), { text });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "Stop a run in the app" });
+    }
+    expect(client.threads.send).not.toHaveBeenCalled();
+  });
+
   it("sends through the app's own send and answers where the run starts", async () => {
     const sent = await send(app(), { text: "  Plan dinner " }, { "idempotency-key": "abc" });
     expect(sent.status).toBe(202);
@@ -501,7 +547,12 @@ describe("production wiring", () => {
   it("reads a run in the member's chat and marks a token used as the system", async () => {
     const findFirst = vi.fn(async () => ({ status: "completed" }));
     const prisma = { run: { findFirst } } as unknown as Parameters<typeof dozoBotApiDeps>[0];
-    const deps = dozoBotApiDeps(prisma, {} as Parameters<typeof dozoBotApiDeps>[1]);
+    const clientIp = () => "203.0.113.5";
+    const deps = dozoBotApiDeps(prisma, {} as Parameters<typeof dozoBotApiDeps>[1], clientIp);
+    expect(deps.clientIp).toBe(clientIp);
+    spies.take.mockResolvedValue(true);
+    expect(await deps.take("token:token-1", 60)).toBe(true);
+    expect(spies.take).toHaveBeenCalledWith(prisma, "token:token-1", 60);
     expect(await deps.runStatus(actor, "thread-1", "run-1")).toBe("completed");
     expect(findFirst).toHaveBeenCalledWith({
       where: { id: "run-1", threadId: "thread-1", spaceId: "space-1" },

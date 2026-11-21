@@ -4,7 +4,11 @@ import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { dozoAccessTokensRoutes, dozoTokenAuthenticator } from "./dozo-access-tokens.js";
+import {
+  accessTokenNotice,
+  dozoAccessTokensRoutes,
+  dozoTokenAuthenticator,
+} from "./dozo-access-tokens.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 import { AUDITED_PROCEDURES } from "./security-audit.js";
@@ -16,7 +20,10 @@ const spies = vi.hoisted(() => ({
   revoke: vi.fn(),
   find: vi.fn(),
   banned: vi.fn(),
+  confirm: vi.fn(),
+  send: vi.fn(),
 }));
+vi.mock("./identity-confirmation.js", () => ({ requireIdentityConfirmation: spies.confirm }));
 vi.mock("./thread-target.js", () => ({ resolveThreadTarget: spies.resolve }));
 vi.mock("@rakazo/auth", () => ({ emailBanned: spies.banned }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
@@ -35,8 +42,9 @@ const actor: Actor = {
 };
 const prisma = {} as RouterDeps["prisma"];
 
-function client() {
-  const ctx = createRouterContext({ prisma } as RouterDeps);
+function client(withEmail = true) {
+  const email = withEmail ? { send: spies.send } : undefined;
+  const ctx = createRouterContext({ prisma, auth: {}, email } as unknown as RouterDeps);
   return createRouterClient(dozoAccessTokensRoutes(ctx), { context: { actor } });
 }
 
@@ -49,10 +57,12 @@ const row = {
   hint: "abcd",
   createdAt,
   lastUsedAt: null,
+  expiresAt: null,
 };
 
 beforeEach(() => {
   for (const spy of Object.values(spies)) spy.mockReset();
+  spies.send.mockResolvedValue(undefined);
 });
 
 describe("settings procedures", () => {
@@ -69,6 +79,7 @@ describe("settings procedures", () => {
         hint: "abcd",
         createdAt: "2026-11-21T10:00:00.000Z",
         lastUsedAt: "2026-11-21T10:00:00.000Z",
+        expiresAt: null,
       },
     ]);
     expect(spies.list).toHaveBeenCalledWith(prisma, actor);
@@ -80,7 +91,43 @@ describe("settings procedures", () => {
     expect(made.token).toBe("dozo_pat_secret");
     expect(made.accessToken).toMatchObject({ id: "token-1", botId: null, botName: null });
     expect(spies.resolve).not.toHaveBeenCalled();
-    expect(spies.create).toHaveBeenCalledWith(prisma, actor, { name: "CI", botId: null });
+    expect(spies.create).toHaveBeenCalledWith(prisma, actor, {
+      name: "CI",
+      botId: null,
+      expiresAt: expect.any(Date),
+    });
+    // 90 days unless chosen otherwise.
+    const ends = (spies.create.mock.calls[0]![2] as { expiresAt: Date }).expiresAt.getTime();
+    expect(Math.round((ends - Date.now()) / 86_400_000)).toBe(90);
+    expect(spies.confirm).toHaveBeenCalledOnce();
+    expect(spies.send).toHaveBeenCalledWith(accessTokenNotice("user@example.test", "CI", null));
+  });
+
+  it("makes one that never expires when asked, and sends no mail without a mail provider", async () => {
+    spies.create.mockResolvedValue({ token: "dozo_pat_secret", row });
+    await client(false).dozoAccessTokens.create({ name: "CI", expiresInDays: null });
+    expect(spies.send).not.toHaveBeenCalled();
+    expect(spies.create).toHaveBeenCalledWith(prisma, actor, {
+      name: "CI",
+      botId: null,
+      expiresAt: null,
+    });
+  });
+
+  it("makes nothing until the session has just confirmed it is the person", async () => {
+    spies.confirm.mockRejectedValue(new Error("Confirm it's you"));
+    await expect(client().dozoAccessTokens.create({ name: "CI" })).rejects.toThrow();
+    expect(spies.create).not.toHaveBeenCalled();
+    expect(spies.send).not.toHaveBeenCalled();
+  });
+
+  it("tells the account by mail which bots a new token reaches, with no link", () => {
+    const all = accessTokenNotice("user@example.test", "CI", null);
+    expect(all.to).toBe("user@example.test");
+    expect(all.text).toContain('"CI"');
+    expect(all.text).toContain("your bots");
+    expect(all.text).not.toMatch(/https?:/);
+    expect(accessTokenNotice("user@example.test", "CI", "Chef").text).toContain("the bot Chef");
   });
 
   it("limits a token to a bot only the member can talk to", async () => {
@@ -92,7 +139,11 @@ describe("settings procedures", () => {
     spies.create.mockResolvedValue({ token: "dozo_pat_secret", row: { ...row, botId: "bot-1" } });
     const made = await client().dozoAccessTokens.create({ name: "CI", botId: "bot-1" });
     expect(spies.resolve).toHaveBeenCalledWith(prisma, actor, { botId: "bot-1" });
-    expect(spies.create).toHaveBeenCalledWith(prisma, actor, { name: "CI", botId: "bot-1" });
+    expect(spies.create).toHaveBeenCalledWith(prisma, actor, {
+      name: "CI",
+      botId: "bot-1",
+      expiresAt: expect.any(Date),
+    });
     expect(made.accessToken).toMatchObject({ botId: "bot-1", botName: "Chef" });
 
     spies.resolve.mockRejectedValue(new IsolationError());

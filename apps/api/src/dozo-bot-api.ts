@@ -5,7 +5,7 @@ import type { Actor, ThreadMessage } from "@rakazo/contracts";
 import { IsoDate, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import { dozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem, runAsTenant, touchDozoAccessToken } from "@rakazo/db";
+import { runAsSystem, runAsTenant, takeDozoApiMinute, touchDozoAccessToken } from "@rakazo/db";
 import { bestEffort, enrichLogContext } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import * as z from "zod";
@@ -17,12 +17,17 @@ import { messageBody } from "./dozo-chat-markdown.js";
 import { readBoundedBody } from "./http-body.js";
 import type { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
+import { isStopMessage } from "./thread-stop.js";
 import { windowCounter } from "./window-counter.js";
 
 export const DOZO_BOT_API_PREFIX = "/api/v1/dozo";
 
-/** Requests one token may make a minute, in each API process. */
+/** Requests one token may make a minute, across every API instance. */
 export const DOZO_BOT_API_REQUESTS_PER_MINUTE = 60;
+/** Messages one account may send a minute with all its tokens together, across every instance. */
+export const DOZO_BOT_API_SENDS_PER_MINUTE = 20;
+/** Requests one address may make a minute before its token is even looked up, in each process. */
+export const DOZO_BOT_API_ADDRESS_PER_MINUTE = 120;
 /** Streams one token may hold open at once, in each API process. */
 export const DOZO_BOT_API_STREAMS_PER_TOKEN = 3;
 /** A stream ends after this with `status: running`; the client resumes from the last id it saw. */
@@ -58,6 +63,9 @@ export type DozoBotApiDeps = {
   /** A run's status, if the run is in the thread; read as the member. */
   runStatus: (actor: Actor, threadId: string, runId: string) => Promise<string | null>;
   touch: (tokenId: string) => Promise<void>;
+  /** Counts one for `key` this minute, shared by every instance; false past `limit`. */
+  take: (key: string, limit: number) => Promise<boolean>;
+  clientIp: (c: Context) => string | undefined;
   now?: () => number;
   streamMaxMs?: number;
 };
@@ -75,6 +83,7 @@ export function dozoRouterConnector(router: ReturnType<typeof createRouter>) {
 export function dozoBotApiDeps(
   prisma: PrismaClient,
   router: ReturnType<typeof createRouter>,
+  clientIp: DozoBotApiDeps["clientIp"],
 ): DozoBotApiDeps {
   return {
     authenticate: dozoTokenAuthenticator(prisma),
@@ -90,6 +99,9 @@ export function dozoBotApiDeps(
       )?.status ?? null,
     touch: (tokenId) =>
       runAsSystem("mark an access token used", () => touchDozoAccessToken(prisma, tokenId)),
+    take: (key, limit) =>
+      runAsSystem("count bot API requests", () => takeDozoApiMinute(prisma, key, limit)),
+    clientIp,
   };
 }
 
@@ -134,7 +146,7 @@ function apiMessage(message: ThreadMessage) {
  * dozo/api/openapi.yaml.
  */
 export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
-  const requests = windowCounter(60_000, deps.now);
+  const addresses = windowCounter(60_000, deps.now);
   const openStreams = new Map<string, number>();
   const streamMaxMs = deps.streamMaxMs ?? DOZO_BOT_API_STREAM_MAX_MS;
 
@@ -144,10 +156,13 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   };
 
   const caller = async (c: Context): Promise<Caller> => {
+    // Guessing tokens costs a lookup each: an address is held back before any is made.
+    if (addresses(deps.clientIp(c) ?? "unknown") > DOZO_BOT_API_ADDRESS_PER_MINUTE)
+      throw new ApiError(429, "Too many requests");
     const authorization = c.req.header("authorization");
     const found = await deps.authenticate(authorization);
     if (!found) throw new ApiError(401, "Unauthorized");
-    if (requests(found.tokenId) > DOZO_BOT_API_REQUESTS_PER_MINUTE)
+    if (!(await deps.take(`token:${found.tokenId}`, DOZO_BOT_API_REQUESTS_PER_MINUTE)))
       throw new ApiError(429, "Too many requests");
     enrichLogContext({ "user.id": found.actor.userId, "space.id": found.actor.spaceId });
     void bestEffort("bot api token last used", deps.touch(found.tokenId));
@@ -264,6 +279,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       }
       const body = SendBody.safeParse(parsedJson);
       if (!body.success) throw new ApiError(400, "Give the message as text");
+      // In the app a stop word stops every run in the chat, the owner's too; a token may not.
+      if (isStopMessage({ text: body.data.text })) throw new ApiError(400, "Stop a run in the app");
+      if (!(await deps.take(`sends:${found.actor.userId}`, DOZO_BOT_API_SENDS_PER_MINUTE)))
+        throw new ApiError(429, "Too many messages");
       const key = c.req.header("idempotency-key")?.trim();
       if (key && key.length > 190) throw new ApiError(400, "Idempotency-Key is too long");
       // The stream's place is taken before the send, so a refused stream never sent anything.
