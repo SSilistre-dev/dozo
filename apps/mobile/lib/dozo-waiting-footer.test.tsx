@@ -136,10 +136,7 @@ it("uses an alert off iOS, and never offers to stop another's work", () => {
   const [title, message, buttons] = ui.alert.mock.calls[0] ?? [];
   expect(title).toBe("Waiting in line… · #2");
   expect(message).toBe("1  Queued\n2  Queued");
-  expect(buttons.map((button: { text: string }) => button.text)).toEqual([
-    "Stop",
-    "Cancel",
-  ]);
+  expect(buttons.map((button: { text: string }) => button.text)).toEqual(["Stop", "Cancel"]);
   buttons[0].onPress();
   expect(ui.run).toHaveBeenCalledWith(expect.objectContaining({ id: "mine" }));
 });
