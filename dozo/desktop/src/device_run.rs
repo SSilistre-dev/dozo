@@ -1064,7 +1064,9 @@ mod tests {
     }
 
     /// While the person signs in with a bot's browser, that bot runs no command here, and
-    /// stopping it leaves the browser alone.
+    /// stopping it leaves the browser alone. Unix only: Windows has no bot's browser, and the
+    /// command left running is a shell one.
+    #[cfg(unix)]
     #[tokio::test]
     async fn nothing_runs_while_the_person_signs_in_with_a_bot_s_browser() {
         let dir =
