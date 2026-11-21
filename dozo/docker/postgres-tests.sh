@@ -79,9 +79,22 @@ docker run --init --rm --name "$NODE" --network "$NET" --cpus 3 --memory 6g \
     for zone in $ZONES; do
       name=$(printf %s "$zone" | tr -c "A-Za-z0-9" _ | tr A-Z a-z)
       sql "$owner/postgres" "CREATE DATABASE tz_$name TEMPLATE rakazo"
-      sql "$owner/postgres" "ALTER DATABASE tz_$name SET timezone TO '\''$zone'\''"
+      # On every role, not the database: each file runs on its own copy of this one (as the
+      # upstream harness does, so a test that changes a whole table never meets rows of another
+      # file), and a copy does not keep the settings of its template.
+      sql "$owner/postgres" "ALTER ROLE ALL SET timezone TO '\''$zone'\''"
+      # A zone the sessions do not get would pass every test in UTC: check it as the tests connect.
+      (cd packages/db && node -e "
+        const { Client } = require(\"pg\");
+        (async () => {
+          const client = new Client({ connectionString: process.argv[1] });
+          await client.connect();
+          const { rows } = await client.query(\"SELECT current_setting('\''TimeZone'\'') AS zone\");
+          await client.end();
+          if (rows[0].zone !== process.argv[2]) throw new Error(\"sessions run in \" + rows[0].zone);
+        })().catch((error) => { console.error(String(error)); process.exit(1); });" "$app/tz_$name" "$zone")
       echo "[postgres] >> $zone"
-      if TZ="$zone" VERIFY_DATABASE=1 DATABASE_URL="$app/tz_$name" DATABASE_MIGRATION_URL="$owner/tz_$name" \
+      if TZ="$zone" VERIFY_DATABASE=1 COPY_TEST_DATABASE=1 DATABASE_URL="$app/tz_$name" REALTIME_DATABASE_URL="$app/tz_$name" DATABASE_MIGRATION_URL="$owner/tz_$name" \
         node node_modules/vitest/vitest.mjs run --maxWorkers=3 --reporter=default \
         --reporter=json --outputFile.json="/out/$name.json" "$@" >"/out/$name.log" 2>&1; then
         :

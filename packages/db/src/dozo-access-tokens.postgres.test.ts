@@ -154,6 +154,25 @@ describePostgres("access tokens (PostgreSQL)", () => {
     expect(await find((await make(owner))!.token)).not.toBeNull();
   });
 
+  it("stops every token when the owner or an operator signs out everywhere, not for one session", async () => {
+    const owner = await member();
+    const token = await make(owner);
+    const revoked = (metadata: Record<string, string>) =>
+      system.securityEvent.create({
+        data: { type: "auth.session.revoked", userId: owner.userId, metadata },
+      });
+    await revoked({ via: "/revoke-session" });
+    expect(await find(token!.token)).not.toBeNull();
+    await revoked({ via: "/revoke-other-sessions" });
+    expect(await find(token!.token)).toBeNull();
+    const later = await make(owner);
+    await revoked({ by: "operator" });
+    expect(await find(later!.token)).toBeNull();
+    const last = await make(owner);
+    await revoked({ via: "/revoke-sessions" });
+    expect(await find(last!.token)).toBeNull();
+  });
+
   it("counts a key's minute for every instance together, never past its limit", async () => {
     const key = `token:${randomUUID()}`;
     const take = () => runAsSystem("test: count", () => takeDozoApiMinute(prisma, key, 5));

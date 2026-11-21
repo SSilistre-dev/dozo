@@ -172,8 +172,8 @@ pub fn saved_ports(file: &Path) -> Option<Ports> {
 /// The person's own home folder and their login shell's `PATH`, for the server's API and worker
 /// (`HOST_USER_HOME`, `HOST_USER_PATH`). The server runs with its own folder as `HOME` and only
 /// the app's `PATH`, which on macOS, opened from the Dock, lacks what the shell profile adds; a
-/// command-line model provider the person installed and signed in to needs both. Passed on only;
-/// nothing reads them yet.
+/// command-line model provider the person installed and signed in to needs both. The server's
+/// CLI model connections read them (`packages/adapters/src/cli-models/dozo-cli-driver.ts`).
 pub fn user_environment() -> Vec<(&'static str, String)> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -280,21 +280,25 @@ pub fn has_libssl3() -> bool {
 /// set aside and the system's is used; if that does not run either, the carried one goes back.
 pub fn fit_postgres(postgres: &Path) -> Result<(), String> {
     let runs = || {
-        std::process::Command::new(postgres.join("bin").join(if cfg!(windows) {
+        let mut command = std::process::Command::new(postgres.join("bin").join(if cfg!(windows) {
             "postgres.exe"
         } else {
             "postgres"
-        }))
-        .arg("--version")
-        .env_clear()
-        .output()
-        .map_err(|error| error.to_string())
-        .and_then(|out| {
-            out.status
-                .success()
-                .then_some(())
-                .ok_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_owned())
-        })
+        }));
+        // No console window on Windows.
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+        command
+            .arg("--version")
+            .env_clear()
+            .output()
+            .map_err(|error| error.to_string())
+            .and_then(|out| {
+                out.status
+                    .success()
+                    .then_some(())
+                    .ok_or_else(|| String::from_utf8_lossy(&out.stderr).trim().to_owned())
+            })
     };
     let Err(first) = runs() else {
         return Ok(());

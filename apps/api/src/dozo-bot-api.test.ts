@@ -10,6 +10,7 @@ import {
   DOZO_BOT_API_REQUESTS_PER_MINUTE,
   DOZO_BOT_API_SENDS_PER_MINUTE,
   DOZO_BOT_API_STREAMS_PER_TOKEN,
+  DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE,
   dozoBotApiDeps,
   dozoRouterConnector,
   mountDozoBotApi,
@@ -214,6 +215,16 @@ describe("who may call", () => {
     expect((await call(app(), "/bots")).status).toBe(429);
   });
 
+  it("counts an IPv6 caller by its /64, so rotating addresses inside it does not help", async () => {
+    authenticate.mockResolvedValue(null);
+    const hono = app({ clientIp: (c) => c.req.header("x-ip") });
+    const from = (ip: string) => call(hono, "/bots", { headers: { "x-ip": ip } });
+    for (let index = 0; index < DOZO_BOT_API_ADDRESS_PER_MINUTE; index++)
+      expect((await from(`2001:db8:1:2::${(index + 1).toString(16)}`)).status).toBe(401);
+    expect((await from("2001:db8:1:2:ffff::1")).status).toBe(429);
+    expect((await from("2001:db8:9::1")).status).toBe(401);
+  });
+
   it("holds an address back before looking up any more of its guesses", async () => {
     let now = 0;
     authenticate.mockResolvedValue(null);
@@ -267,13 +278,22 @@ describe("a token limited to one bot", () => {
 });
 
 describe("sending a message", () => {
-  it("limits an account's messages a minute across all its tokens", async () => {
+  it("limits each token's messages a minute, and the account's across all its tokens", async () => {
     const hono = app();
-    for (let index = 0; index < DOZO_BOT_API_SENDS_PER_MINUTE; index++)
+    const as = (tokenId: string) => authenticate.mockResolvedValue({ ...everyBot, tokenId });
+    for (let index = 0; index < DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE; index++)
       expect((await send(hono, { text: "hi" })).status).toBe(202);
-    authenticate.mockResolvedValue({ ...everyBot, tokenId: "token-2" });
-    const limited = await send(hono, { text: "hi" });
-    expect(limited.status).toBe(429);
+    expect((await send(hono, { text: "hi" })).status).toBe(429);
+    // Another token of the account still has room, up to the account's total.
+    as("token-2");
+    for (
+      let index = 0;
+      index < DOZO_BOT_API_SENDS_PER_MINUTE - DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE;
+      index++
+    )
+      expect((await send(hono, { text: "hi" })).status).toBe(202);
+    as("token-3");
+    expect((await send(hono, { text: "hi" })).status).toBe(429);
     expect(client.threads.send).toHaveBeenCalledTimes(DOZO_BOT_API_SENDS_PER_MINUTE);
   });
 

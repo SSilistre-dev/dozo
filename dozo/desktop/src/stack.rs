@@ -34,14 +34,18 @@ use std::io;
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
     None => {
-        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-4/manifest.json"
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-5/manifest.json"
     }
 };
 
 /// The server version this app expects: the one `MANIFEST` names. An installed older one is
 /// updated to it at the next start (`stack_update.rs`); when it is already installed, no manifest
 /// is read.
-const SERVER_VERSION: &str = "0.11.0-4";
+const SERVER_VERSION: &str = "0.11.0-5";
+
+/// Where the server on this computer sends in-app feedback to (`apps/api/src/dozo-feedback.ts`),
+/// named by the build (`DOZO_FEEDBACK_EMAIL`); without it the feedback is only kept.
+const FEEDBACK_EMAIL: Option<&str> = option_env!("DOZO_FEEDBACK_EMAIL");
 
 /// The relay a phone reaches this computer through (`dozo/relay/agent/README.md`). A build can
 /// name another (`DOZO_RELAY_URL`), and so can the environment or the settings file (`relay=`).
@@ -187,11 +191,17 @@ pub struct RealChecks;
 
 impl Checks for RealChecks {
     fn postgres(&self, bin: &Path, port: u16) -> bool {
-        std::process::Command::new(bin.join(exe("pg_isready")))
+        let mut command = std::process::Command::new(bin.join(exe("pg_isready")));
+        command
             .args(["-q", "-t", "2", "-h", "127.0.0.1", "-p", &port.to_string()])
-            .env_clear()
-            .status()
-            .is_ok_and(|status| status.success())
+            .env_clear();
+        // Windows opens no socket without it.
+        if let Some(root) = std::env::var_os("SystemRoot").filter(|_| cfg!(windows)) {
+            command.env("SystemRoot", root);
+        }
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
+        command.status().is_ok_and(|status| status.success())
     }
 
     fn server(&self, ports: Ports) -> bool {
@@ -418,7 +428,7 @@ impl Local {
             let mut run = agent.spec("run", &["--origin", &plan.web]);
             run.on_line = Some(OnLine(Arc::new(move |line| {
                 if let Some(event) = phone_event_of(line) {
-                    phone_event.send_replace(Some(event));
+                    phone_event.send_if_modified(|last| keep_phone_event(last, event));
                 }
             })));
             self.keep(run, &launch)
@@ -503,8 +513,22 @@ impl Local {
             fs::remove_dir_all(&target).map_err(|error| (Failure::Start, error.to_string()))?;
         }
         fs::rename(&partial, &target)
-            .and_then(|()| stack_update::set_current(&layout.0, &release.version))
             .map_err(|error| (Failure::Start, format!("install: {error}")))?;
+        // A bundle built on Windows lists its links; a junction holds its target's full path, so
+        // they are made only now that the bundle is where it stays. Should that fail, the next
+        // start installs again.
+        let server = target.join("server/rakazo-server");
+        let root = layout.0.clone();
+        let version = release.version.clone();
+        let linked = tokio::task::spawn_blocking(move || stack_fetch::make_links(&server))
+            .await
+            .map_err(std::io::Error::other)
+            .and_then(|made| made)
+            .and_then(|_| stack_update::set_current(&root, &version));
+        if let Err(error) = linked {
+            let _ = fs::remove_dir_all(&target);
+            return Err((Failure::Start, format!("install: links: {error}")));
+        }
         Ok(release.version.clone())
     }
 
@@ -657,7 +681,24 @@ impl Local {
         if !pgdata.join("PG_VERSION").exists() {
             self.initdb(plan, layout, launch).await?;
         }
-        self.keep(plan.postgres(&pgdata), launch).await?;
+        if cfg!(windows) {
+            // Postgres refuses to run with an administrator's rights, which pg_ctl gives up for
+            // it. It then runs on its own (in pg_ctl's job, ended with the app): pg_ctl stops it,
+            // after the others.
+            self.running
+                .lock()
+                .await
+                .supervisor
+                .at_stop(plan.pg_ctl_stop(&pgdata), launch.clone());
+            stack_proc::run_once(
+                &plan.pg_ctl_start(&pgdata, &layout.at("logs")),
+                launch,
+                Duration::from_secs(90),
+            )
+            .await?;
+        } else {
+            self.keep(plan.postgres(&pgdata), launch).await?;
+        }
         let checks = self.checks.clone();
         let (bin, port) = (plan.pg_bin.clone(), plan.ports.postgres);
         if !wait_until(Duration::from_secs(60), move || checks.postgres(&bin, port)).await {
@@ -751,10 +792,11 @@ fn installed(layout: &Layout) -> Option<String> {
 }
 
 async fn read_manifest(address: &str) -> Result<String, String> {
-    if let Some(path) = address
-        .strip_prefix("file://")
-        .or_else(|| Path::new(address).is_absolute().then_some(address))
-    {
+    if let Some(path) = stack_fetch::local_path(address).or_else(|| {
+        Path::new(address)
+            .is_absolute()
+            .then(|| PathBuf::from(address))
+    }) {
         return fs::read_to_string(path).map_err(|error| error.to_string());
     }
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -824,12 +866,13 @@ pub struct Phone {
 }
 
 impl Agent {
+    /// The command line: options first, a channel last after `--` (`channel_last`).
     fn spec(&self, command: &str, args: &[&str]) -> Spec {
         let mut spec = self.base.clone();
         spec.args.push(command.into());
-        spec.args.extend(args.iter().map(Into::into));
         spec.args.push("--state".into());
         spec.args.push(self.state.clone().into());
+        spec.args.extend(args.iter().map(Into::into));
         spec
     }
 
@@ -875,14 +918,16 @@ impl Agent {
     /// Ends a phone's pairing: on the relay when it can be reached, its session on the server,
     /// and its keys here always. A phone not allowed yet is refused the same way.
     pub async fn remove(&self, channel: &str) -> Result<(), String> {
-        self.ask("revoke", &[channel, "--origin", &self.origin])
+        self.ask("revoke", &["--origin", &self.origin, "--", channel])
             .await
             .map(drop)
     }
 
     /// The person allowed the phone that just paired: it gets its sign-in.
     pub async fn approve(&self, channel: &str) -> Result<(), String> {
-        self.ask("approve", &[channel]).await.map(drop)
+        // After `--`: a channel id is base64url, so one in 64 starts with `-`, which would read
+        // as an option.
+        self.ask("approve", &["--", channel]).await.map(drop)
     }
 }
 
@@ -894,6 +939,20 @@ fn phone_event_of(line: &[u8]) -> Option<Value> {
     ["paired", "approval", "approved", "expired"]
         .contains(&kind)
         .then_some(event)
+}
+
+/// Takes `event` as the last word about a phone, unless it would hide a question the person has
+/// to answer: `paired` comes once the pairing is stored and on the relay, and the phone may ask
+/// for its sign-in (`approval`) before that. True when it was taken.
+fn keep_phone_event(last: &mut Option<Value>, event: Value) -> bool {
+    let asking = last.as_ref().is_some_and(|last| {
+        last["event"] == "approval" && event_channel(last) == event_channel(&event)
+    });
+    if asking && event["event"] == "paired" {
+        return false;
+    }
+    *last = Some(event);
+    true
 }
 
 /// The channel a phone event is about.
@@ -1001,6 +1060,9 @@ impl Plan {
         if cfg!(windows) {
             for key in [
                 "SystemRoot",
+                "windir",
+                "ComSpec",
+                "PATHEXT",
                 "TEMP",
                 "TMP",
                 "USERPROFILE",
@@ -1057,8 +1119,54 @@ impl Plan {
             "listen_addresses=127.0.0.1",
             "-c",
             "unix_socket_directories=",
+            // initdb wrote this computer's zone into the data folder; the server's SQL expects UTC
+            // (`dozo/server-bundle/README.md`, "Start contract").
+            "-c",
+            "timezone=UTC",
         ];
         self.pg_spec("postgres", args.map(str::to_owned).to_vec(), vec![])
+    }
+
+    /// Postgres on Windows (`run`): started by pg_ctl, which waits until it answers. Its log is
+    /// the file pg_ctl names.
+    fn pg_ctl_start(&self, pgdata: &Path, logs: &Path) -> Spec {
+        // UTC as `postgres` above: initdb wrote this computer's zone into the data folder.
+        let options = format!(
+            "-p {} -c listen_addresses=127.0.0.1 -c timezone=UTC",
+            self.ports.postgres
+        );
+        let log = logs.join("postgres.log");
+        let args = [
+            "start",
+            "-D",
+            &pgdata.to_string_lossy(),
+            "-l",
+            &log.to_string_lossy(),
+            "-o",
+            &options,
+            "-w",
+            "-t",
+            "60",
+            "-s",
+        ];
+        self.pg_spec("pg_ctl", args.map(str::to_owned).to_vec(), vec![])
+    }
+
+    fn pg_ctl_stop(&self, pgdata: &Path) -> Spec {
+        let args = [
+            "stop",
+            "-D",
+            &pgdata.to_string_lossy(),
+            "-m",
+            "fast",
+            "-w",
+            "-t",
+            "20",
+            "-s",
+        ];
+        let mut spec = self.pg_spec("pg_ctl", args.map(str::to_owned).to_vec(), vec![]);
+        spec.grace = Duration::from_secs(30);
+        spec
     }
 
     fn createdb(&self) -> Spec {
@@ -1095,11 +1203,14 @@ impl Plan {
     fn agent(&self, layout: &Layout, options: &Options, launch: &Arc<Launch>) -> Option<Agent> {
         let entry = self.entrypoints.get("relay").and_then(Value::as_str)?;
         // By its real path: the agent runs only when Node's path for it is the one it was
-        // loaded from, which a folder reached through a link (macOS's /var) would break.
+        // loaded from, which a folder reached through a link (macOS's /var) would break. Not on
+        // Windows, where the real path starts with `\\?\`, which Node does not give back.
         // The key the agent shows the server when it asks a phone's sign-in.
         let key = vec![("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY"))];
         let mut base = self.node_spec("relay", key);
-        if let Ok(real) = fs::canonicalize(self.server.join(entry)) {
+        if cfg!(unix)
+            && let Ok(real) = fs::canonicalize(self.server.join(entry))
+        {
             base.args = vec![real.into()];
         }
         Some(Agent {
@@ -1162,6 +1273,9 @@ impl Plan {
             // Phones sign in through the relay agent, which shows this key (agent README).
             ("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY")),
         ]);
+        if let Some(email) = FEEDBACK_EMAIL.filter(|email| !email.trim().is_empty()) {
+            env.push(("DOZO_FEEDBACK_EMAIL", email.to_owned()));
+        }
         // The API lets requests finish for up to 20 s after TERM (`apps/api/src/index.ts`).
         Spec {
             grace: Duration::from_secs(25),
@@ -1231,7 +1345,7 @@ mod tests {
       pair) echo '{"event":"offer","channel":"c1","relay":"r","expiresAt":"soon","qr":"dozo://pair#x"}'; exit 0;;
       list) echo '{"channels":[{"channel":"c2","state":"paired","appKey":"k","pairedAt":"then"},{"channel":"c3","state":"pairing","expiresAt":"soon"}]}'; exit 0;;
       revoke) echo '{"event":"error","reason":"no such channel"}'; exit 2;;
-      approve) echo "{\"event\":\"approved\",\"channel\":\"$3\"}"; exit 0;;
+      approve) for a; do last=$a; done; echo "{\"event\":\"approved\",\"channel\":\"$last\"}"; exit 0;;
       run) echo "key=$DOZO_RELAY_AGENT_KEY" >> "$0.env"; echo '{"event":"connected","channel":"c2"}'; sleep 0.3
         echo '{"event":"paired","channel":"c9"}'
         echo '{"event":"approval","channel":"c9","platform":"android","code":"123456"}';;
@@ -1255,7 +1369,7 @@ mod tests {
         let pg = version.join("postgres/bin");
         script(
             &pg.join("postgres"),
-            &format!("echo postgres >> {s}; {LOOP}"),
+            &format!("echo \"$*\" > {s}.pg; echo postgres >> {s}; {LOOP}"),
         );
         script(
             &pg.join("initdb"),
@@ -1316,12 +1430,15 @@ mod tests {
         assert_eq!(
             lines_of(&root.join("said.relay")),
             [format!(
-                "relay.js run --origin http://127.0.0.1:{} --state {}",
-                url[17..].trim_end_matches('/'),
-                root.join("relay").display()
+                "relay.js run --state {} --origin http://127.0.0.1:{}",
+                root.join("relay").display(),
+                url[17..].trim_end_matches('/')
             )]
         );
         assert_eq!(first[..4], ["initdb", "postgres", "createdb", "migrate.js"]);
+        // Postgres runs in UTC whatever this computer's zone, on every start.
+        let pg = lines_of(&root.join("said.pg")).join(" ");
+        assert!(pg.contains("-c timezone=UTC"), "{pg}");
         let mut rest = first[4..].to_vec();
         rest.sort();
         assert_eq!(rest, ["api.js", "web.js", "worker.js"]);
@@ -1395,18 +1512,22 @@ mod tests {
         let commands = lines_of(&root.join("said.relay"));
         let state = root.join("relay").display().to_string();
         assert!(commands.contains(&format!(
-            "relay.js pair --relay http://127.0.0.1:9 --state {state}"
+            "relay.js pair --state {state} --relay http://127.0.0.1:9"
         )));
         let web = local_web(&root);
         assert!(commands.contains(&format!(
-            "relay.js revoke c2 --origin {web} --state {state}"
+            "relay.js revoke --state {state} --origin {web} -- c2"
         )));
         let approval = events.borrow().clone().unwrap();
         assert_eq!(approval["code"], "123456");
         assert_eq!(approval["platform"], "android");
         agent.approve("c9").await.unwrap();
         let commands = lines_of(&root.join("said.relay"));
-        assert!(commands.contains(&format!("relay.js approve c9 --state {state}")));
+        assert!(commands.contains(&format!("relay.js approve --state {state} -- c9")));
+        // A channel id may start with "-" (base64url): it still reaches the agent as a channel.
+        agent.approve("-dash").await.unwrap();
+        let commands = lines_of(&root.join("said.relay"));
+        assert!(commands.contains(&format!("relay.js approve --state {state} -- -dash")));
         // The agent and the API get the same key, made with the other secrets.
         let key = stack_setup::secrets(&root.join("secrets")).unwrap();
         let key = key.get("RELAY_AGENT_KEY").to_owned();
@@ -1415,6 +1536,29 @@ mod tests {
         assert_eq!(lines_of(&node), [format!("key={key}")]);
         assert!(local.stop().await);
         assert!(local.agent().await.is_none());
+    }
+
+    #[test]
+    fn a_late_paired_does_not_hide_the_question_for_the_same_phone() {
+        let event = |line: &[u8]| phone_event_of(line).unwrap();
+        let mut last = None;
+        assert!(keep_phone_event(
+            &mut last,
+            event(br#"{"event":"approval","channel":"c1","code":"1"}"#)
+        ));
+        assert!(!keep_phone_event(
+            &mut last,
+            event(br#"{"event":"paired","channel":"c1","appKey":"k"}"#)
+        ));
+        assert_eq!(last.as_ref().unwrap()["event"], "approval");
+        assert!(keep_phone_event(
+            &mut last,
+            event(br#"{"event":"paired","channel":"c2","appKey":"k"}"#)
+        ));
+        assert!(keep_phone_event(
+            &mut last,
+            event(br#"{"event":"approved","channel":"c2"}"#)
+        ));
     }
 
     #[test]
@@ -1723,6 +1867,32 @@ mod tests {
         assert!(local.stop().await);
     }
 
+    #[test]
+    fn postgres_runs_in_utc_on_every_system() {
+        let root = scratch("utc-everywhere");
+        installed_fakes(&root, &root.join("said"), 0);
+        let secrets = stack_setup::secrets(&root.join("secrets")).unwrap();
+        let ports = Ports {
+            postgres: 1,
+            api: 2,
+            web: 3,
+        };
+        let plan = Plan::new(&Layout(root.clone()), "1", ports, &secrets, &options()).unwrap();
+        let args = |spec: Spec| {
+            spec.args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        // Linux and macOS start postgres itself; Windows starts it through pg_ctl.
+        assert!(args(plan.postgres(&root.join("pgdata"))).contains("-c timezone=UTC"));
+        assert!(
+            args(plan.pg_ctl_start(&root.join("pgdata"), &root.join("logs")))
+                .contains("-c timezone=UTC")
+        );
+    }
+
     #[tokio::test]
     async fn a_failed_migration_stops_postgres_and_says_so() {
         let root = scratch("migrate-fails");
@@ -1766,587 +1936,8 @@ mod tests {
         local.start(Layout(root.clone()), options()).await;
         assert_eq!(settled(&local).await, Status::Failed(Failure::Download));
     }
-
-    /// The real bundle, end to end, without a window: `tests/stack_e2e.sh` runs this with
-    /// `DOZO_STACK_E2E_MANIFEST` (a local manifest) and `DOZO_STACK_E2E_ROOT` (an empty folder).
-    /// Installs, starts, checks `/health`, stops, and checks no process of it is left.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle; run by tests/stack_e2e.sh"]
-    async fn e2e_installs_starts_and_stops_the_real_server() {
-        let (local, root, ports) = e2e_ready().await;
-        assert!(answers_200(ports.api, "/health"));
-        e2e_this_computer_connects(&root, ports).await;
-        assert!(local.stop().await, "a process had to be killed");
-        let left = processes_under(&root);
-        assert!(left.is_empty(), "still running after stop: {left:?}");
-        println!("E2E: stopped, no process left");
-    }
-
-    /// Starts the real server and waits to be killed (`tests/stack_e2e.sh` kills it with
-    /// SIGKILL, then checks that every process of the server ended with it).
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle; run by tests/stack_e2e.sh"]
-    async fn e2e_hold_until_killed() {
-        let (_local, _root, _ports) = e2e_ready().await;
-        println!("E2E: holding");
-        tokio::time::sleep(Duration::from_secs(600)).await;
-    }
-
-    /// A phone pairs through the relay agent in the real bundle: `tests/stack_e2e.sh` runs a dev
-    /// relay and a phone (`tests/relay_phone.mts`) beside it, sharing `DOZO_STACK_E2E_SHARED`.
-    /// The code goes there; the phone pairs, fetches a page of this server through the relay and
-    /// says what it got. Then the phone is listed, removed, and the server stopped.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle and a relay; run by tests/stack_e2e.sh"]
-    async fn e2e_pairs_a_phone() {
-        let shared = PathBuf::from(std::env::var("DOZO_STACK_E2E_SHARED").unwrap());
-        let relay = std::env::var("DOZO_STACK_E2E_RELAY").unwrap();
-        let port: u16 = relay.rsplit(':').next().unwrap().parse().unwrap();
-        assert!(
-            wait_until(Duration::from_secs(120), move || {
-                TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok()
-            })
-            .await,
-            "no relay at {relay}"
-        );
-        let (local, root, _) = e2e_ready().await;
-        let mut events = local.phone_events();
-        let agent = local.agent().await.expect("the bundle has the relay agent");
-        let offer = agent.offer().await.unwrap();
-        // The offer works once the agent's socket for it is open.
-        let log = root.join("logs/relay.log");
-        let connected = format!(r#""event":"connected","channel":"{}""#, offer.channel);
-        assert!(
-            wait_until(Duration::from_secs(30), move || {
-                fs::read_to_string(&log).is_ok_and(|text| text.contains(&connected))
-            })
-            .await,
-            "the agent never connected the new channel"
-        );
-        fs::write(shared.join("qr"), &offer.qr).unwrap();
-        let channel = offer.channel.clone();
-        let heard = events.wait_for(|event| {
-            event.as_ref().is_some_and(|event| {
-                event["event"] == "paired" && event_channel(event) == Some(channel.as_str())
-            })
-        });
-        tokio::time::timeout(Duration::from_secs(60), heard)
-            .await
-            .expect("the phone never paired")
-            .unwrap();
-        println!("E2E: a phone paired on {}", offer.channel);
-        let fetched = shared.join("fetched");
-        assert!(
-            wait_until(Duration::from_secs(30), move || fetched.exists()).await,
-            "the phone never said what it fetched"
-        );
-        let fetched = fs::read_to_string(shared.join("fetched")).unwrap();
-        assert_eq!(
-            fetched.trim(),
-            "200",
-            "the phone's request through the relay"
-        );
-        println!(
-            "E2E: the phone fetched a page through the relay: {}",
-            fetched.trim()
-        );
-        // The phone asks for its sign-in: the window would show the code, which the person
-        // compares with the phone's, and allow it.
-        let channel = offer.channel.clone();
-        let asked = events.wait_for(|event| {
-            event.as_ref().is_some_and(|event| {
-                event["event"] == "approval" && event_channel(event) == Some(channel.as_str())
-            })
-        });
-        let asked = tokio::time::timeout(Duration::from_secs(60), asked)
-            .await
-            .expect("the phone never asked for its sign-in")
-            .unwrap()
-            .clone()
-            .unwrap();
-        let shown = fs::read_to_string(shared.join("code")).unwrap();
-        assert_eq!(
-            asked["code"].as_str(),
-            Some(shown.trim()),
-            "the codes differ"
-        );
-        assert_eq!(asked["platform"], "android");
-        println!("E2E: the phone asks to sign in, same code on both ends");
-        agent.approve(&offer.channel).await.unwrap();
-        let signed_in = shared.join("signed-in");
-        assert!(
-            wait_until(Duration::from_secs(30), move || signed_in.exists()).await,
-            "the phone never got its sign-in"
-        );
-        let signed_in = fs::read_to_string(shared.join("signed-in")).unwrap();
-        assert_eq!(signed_in.trim(), "200 owner@example.test");
-        println!("E2E: allowed here, the phone signed in as owner@example.test");
-        let listed = agent.phones().await.unwrap();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].channel, offer.channel);
-        agent.remove(&offer.channel).await.unwrap();
-        assert!(agent.phones().await.unwrap().is_empty());
-        println!("E2E: listed and removed the phone");
-        assert!(local.stop().await, "a process had to be killed");
-        let left = processes_under(&root);
-        assert!(left.is_empty(), "still running after stop: {left:?}");
-        println!("E2E: stopped, relay agent included, no process left");
-    }
-
-    /// Sign-in with the hosted account, as the window does it: the server on this computer runs
-    /// with `HOSTED_LOGIN_ISSUER` (`DOZO_STACK_E2E_ISSUER`, `tests/fake_issuer.mjs`); its sign-in
-    /// starts, the issuer's page (which the window may open) sends back to the callback (which it
-    /// may open too), and the session that comes back is the hosted account's.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle and a stand-in issuer; run by tests/stack_e2e.sh"]
-    async fn e2e_signs_in_with_the_hosted_account() {
-        use crate::server::{Verdict, decide_with};
-        let issuer = tauri::Url::parse(&std::env::var("DOZO_STACK_E2E_ISSUER").unwrap()).unwrap();
-        let (local, root, ports) = e2e_ready().await;
-        let web = tauri::Url::parse(&format!("http://127.0.0.1:{}/", ports.web)).unwrap();
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .unwrap();
-        let cookies = |response: &reqwest::Response| {
-            response
-                .headers()
-                .get_all("set-cookie")
-                .iter()
-                .filter_map(|value| value.to_str().ok()?.split(';').next().map(str::to_owned))
-                .collect::<Vec<_>>()
-                .join("; ")
-        };
-        // The local sign-in page's button.
-        let start = client
-            .post(web.join("/api/auth/dozo/hosted-login/start").unwrap())
-            .header("origin", web.as_str().trim_end_matches('/'))
-            .header("content-type", "application/json")
-            .body("{}")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(start.status(), 200, "start");
-        let nonce = cookies(&start);
-        let page: Value = start.json().await.unwrap();
-        let page = tauri::Url::parse(page["url"].as_str().unwrap()).unwrap();
-        assert_eq!(page.origin(), issuer.origin());
-        assert_eq!(
-            decide_with(&page, Some(&web), Some(&issuer)),
-            Verdict::Window
-        );
-        // The issuer's page agrees at once and sends the window back.
-        let agreed = client.get(page.clone()).send().await.unwrap();
-        assert_eq!(agreed.status(), 302, "the issuer's page");
-        let back = tauri::Url::parse(agreed.headers()["location"].to_str().unwrap()).unwrap();
-        assert_eq!(
-            decide_with(&back, Some(&web), Some(&issuer)),
-            Verdict::Window
-        );
-        let callback = client
-            .get(back)
-            .header("cookie", &nonce)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(callback.status(), 302, "the callback");
-        assert_eq!(
-            callback.headers()["location"].to_str().unwrap(),
-            web.as_str()
-        );
-        let session = cookies(&callback);
-        let me: Value = client
-            .get(web.join("/api/auth/get-session").unwrap())
-            .header("cookie", session)
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(me["user"]["email"], "owner@example.test", "{me}");
-        println!("E2E: signed in as the hosted account through the stand-in issuer");
-        // Every other way to sign in is closed on such a server.
-        let password = client
-            .post(web.join("/api/auth/sign-in/email").unwrap())
-            .header("origin", web.as_str().trim_end_matches('/'))
-            .header("content-type", "application/json")
-            .body(r#"{"email":"owner@example.test","password":"x"}"#)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(password.status(), 404, "password sign-in");
-        assert!(local.stop().await, "a process had to be killed");
-        let left = processes_under(&root);
-        assert!(left.is_empty(), "still running after stop: {left:?}");
-        println!("E2E: stopped, no process left");
-    }
-
-    /// As `e2e_hold_until_killed`, but started as on a system where nothing ends the server's
-    /// processes with the app (macOS): after the SIGKILL they keep running.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle; run by tests/stack_e2e.sh"]
-    async fn e2e_hold_as_on_macos_until_killed() {
-        crate::stack_os::AS_WITHOUT_PDEATHSIG.store(true, std::sync::atomic::Ordering::SeqCst);
-        let (_local, _root, _ports) = e2e_ready().await;
-        println!("E2E: holding");
-        tokio::time::sleep(Duration::from_secs(600)).await;
-    }
-
-    /// The next start after that: it ends what was left, then starts as usual, and stops clean.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle; run by tests/stack_e2e.sh"]
-    async fn e2e_ends_what_a_crashed_app_left() {
-        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
-        assert!(
-            !processes_under(&root).is_empty(),
-            "nothing was left to end"
-        );
-        let (local, root, ports) = e2e_ready().await;
-        assert!(answers_200(ports.api, "/health"));
-        let events = fs::read_to_string(root.join("logs/manager.log")).unwrap();
-        let ended = events
-            .matches("ended a process left from an earlier start")
-            .count();
-        assert!(ended >= 4, "{events}");
-        println!("E2E: ended {ended} processes left by the killed app, then started");
-        assert!(local.stop().await, "a process had to be killed");
-        let left = processes_under(&root);
-        assert!(left.is_empty(), "still running after stop: {left:?}");
-        println!("E2E: stopped, no process left");
-    }
-
-    /// Updating the real server (`tests/stack_e2e.sh`, step 5): installed from the older bundle
-    /// with an account, it updates to the newer one at the next start and the account still
-    /// signs in; a newer version that cannot start (its Node is broken) puts it back as it was,
-    /// and the start after that runs the version that works without trying again.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs two built server bundles; run by tests/stack_e2e.sh"]
-    async fn e2e_updates_and_goes_back() {
-        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
-        let options = |variable: &str| Options {
-            manifest: std::env::var(variable).unwrap(),
-            hosted_login_issuer: None,
-            relay: String::new(),
-            expected: None,
-        };
-        let local = Local::new(Arc::new(RealChecks));
-        let account = async |path: &str| {
-            let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
-            let web = format!("http://127.0.0.1:{}", ports.web);
-            let _ = rustls::crypto::ring::default_provider().install_default();
-            reqwest::Client::new()
-                .post(format!("{web}{path}"))
-                .header("origin", &web)
-                .header("content-type", "application/json")
-                .body(r#"{"email":"owner@example.test","password":"update-Password-123","name":"Owner"}"#)
-                .send()
-                .await
-                .unwrap()
-                .status()
-        };
-        let current = || fs::read_to_string(root.join("current")).unwrap();
-        let started = std::time::Instant::now();
-
-        local
-            .start(Layout(root.clone()), options("DOZO_STACK_E2E_OLD_MANIFEST"))
-            .await;
-        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
-        let old = current();
-        assert_eq!(account("/api/auth/sign-up/email").await, 200);
-        assert!(local.stop().await);
-        println!(
-            "E2E: installed {old} with an account ({} ms)",
-            started.elapsed().as_millis()
-        );
-
-        let started = std::time::Instant::now();
-        let mut seen = local.status();
-        local
-            .start(Layout(root.clone()), options("DOZO_STACK_E2E_MANIFEST"))
-            .await;
-        let mut updating = false;
-        while !matches!(
-            *seen.borrow_and_update(),
-            Status::Ready(_) | Status::Failed(_)
-        ) {
-            updating |= *seen.borrow() == Status::Updating;
-            tokio::time::timeout(Duration::from_secs(180), seen.changed())
-                .await
-                .unwrap()
-                .unwrap();
-        }
-        assert!(
-            matches!(*seen.borrow(), Status::Ready(_)),
-            "{:?}",
-            seen.borrow()
-        );
-        assert!(updating);
-        let new = current();
-        assert_ne!(new, old);
-        assert_eq!(
-            account("/api/auth/sign-in/email").await,
-            200,
-            "the account after the update"
-        );
-        assert!(local.stop().await);
-        println!(
-            "E2E: updated {old} to {new}, the account signs in ({} ms)",
-            started.elapsed().as_millis()
-        );
-
-        local
-            .start(
-                Layout(root.clone()),
-                options("DOZO_STACK_E2E_BROKEN_MANIFEST"),
-            )
-            .await;
-        assert_eq!(
-            settled_for(&local, 180).await,
-            Status::Failed(Failure::UpdateRolledBack)
-        );
-        assert_eq!(current(), new);
-        println!(
-            "E2E: a broken newer version was put back: {:?}",
-            Failure::UpdateRolledBack.message()
-        );
-        local
-            .start(
-                Layout(root.clone()),
-                options("DOZO_STACK_E2E_BROKEN_MANIFEST"),
-            )
-            .await;
-        assert!(matches!(settled_for(&local, 120).await, Status::Ready(_)));
-        assert_eq!(current(), new);
-        assert_eq!(
-            account("/api/auth/sign-in/email").await,
-            200,
-            "the account after going back"
-        );
-        assert!(local.stop().await);
-        let left = processes_under(&root);
-        assert!(left.is_empty(), "still running after stop: {left:?}");
-        println!(
-            "E2E: started {new} again without retrying, the account signs in, no process left"
-        );
-    }
-
-    /// Back up and restore with the real bundle's command (`tests/stack_e2e.sh`, step 6), on the
-    /// server step 5 left: a backup of the running server; a file added after it; a restore with
-    /// the wrong password changes nothing; one with the right password brings the backup's state
-    /// back over the data in use, and the account still signs in.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "needs a built server bundle with the backup command; run by tests/stack_e2e.sh"]
-    async fn e2e_backs_up_and_restores() {
-        use crate::stack_backup::{Refusal, Tool};
-        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
-        let options = Options {
-            manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
-            hosted_login_issuer: None,
-            relay: String::new(),
-            expected: None,
-        };
-        let local = Local::new(Arc::new(RealChecks));
-        let sign_in = async || {
-            let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
-            let web = format!("http://127.0.0.1:{}", ports.web);
-            let _ = rustls::crypto::ring::default_provider().install_default();
-            reqwest::Client::new()
-                .post(format!("{web}/api/auth/sign-in/email"))
-                .header("origin", &web)
-                .header("content-type", "application/json")
-                .body(r#"{"email":"owner@example.test","password":"update-Password-123"}"#)
-                .send()
-                .await
-                .unwrap()
-                .status()
-        };
-        local.start(Layout(root.clone()), options.clone()).await;
-        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
-        let tool = Tool::of(&root).expect("the bundle has the backup command");
-        let file = root.with_file_name("e2e.dozobackup");
-        let started = std::time::Instant::now();
-        tool.create(&file, "backup-Password-1").await.unwrap();
-        println!(
-            "E2E: backed up the running server ({} KB, {} ms)",
-            fs::metadata(&file).unwrap().len() / 1024,
-            started.elapsed().as_millis()
-        );
-        fs::write(root.join("data/after-the-backup"), "new").unwrap();
-        assert!(local.stop().await);
-
-        assert_eq!(
-            tool.restore(&file, "not-the-password", 1).await,
-            Err(Refusal::WrongPassword)
-        );
-        assert!(
-            root.join("data/after-the-backup").exists(),
-            "a refused restore changed nothing"
-        );
-        println!("E2E: the wrong password was refused, nothing changed");
-
-        let started = std::time::Instant::now();
-        tool.restore(&file, "backup-Password-1", 2).await.unwrap();
-        assert!(!root.join("data/after-the-backup").exists());
-        assert!(
-            root.join("before-restore/2-0/data/after-the-backup")
-                .exists()
-        );
-        local.start(Layout(root.clone()), options).await;
-        assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
-        assert_eq!(sign_in().await, 200, "the account after the restore");
-        println!(
-            "E2E: restored over the data in use ({} ms), the account signs in",
-            started.elapsed().as_millis()
-        );
-        assert!(local.stop().await);
-        let left = processes_under(&root);
-        assert!(left.is_empty(), "still running after stop: {left:?}");
-    }
-
-    async fn settled_for(local: &Local, seconds: u64) -> Status {
-        let mut status = local.status();
-        let wait = status.wait_for(|status| matches!(status, Status::Ready(_) | Status::Failed(_)));
-        tokio::time::timeout(Duration::from_secs(seconds), wait)
-            .await
-            .unwrap()
-            .unwrap()
-            .clone()
-    }
-
-    async fn e2e_ready() -> (Arc<Local>, PathBuf, Ports) {
-        let root = PathBuf::from(std::env::var("DOZO_STACK_E2E_ROOT").unwrap());
-        let options = Options {
-            manifest: std::env::var("DOZO_STACK_E2E_MANIFEST").unwrap(),
-            hosted_login_issuer: std::env::var("DOZO_STACK_E2E_ISSUER").ok(),
-            relay: std::env::var("DOZO_STACK_E2E_RELAY").unwrap_or_default(),
-            expected: None,
-        };
-        let local = Local::new(Arc::new(RealChecks));
-        let started = std::time::Instant::now();
-        let mut seen = local.status();
-        local.start(Layout(root.clone()), options).await;
-        let status = loop {
-            let status = seen.borrow_and_update().clone();
-            println!("E2E: {:?} at {} ms", status, started.elapsed().as_millis());
-            if matches!(status, Status::Ready(_) | Status::Failed(_)) {
-                break status;
-            }
-            seen.changed().await.unwrap();
-        };
-        let Status::Ready(url) = status else {
-            panic!("did not start: {status:?}; see {}/logs", root.display());
-        };
-        println!(
-            "E2E: ready {url} after {} ms",
-            started.elapsed().as_millis()
-        );
-        let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
-        (local, root, ports)
-    }
-
-    /// "Let Bots Use This Computer" against this server: sign up, pair with the app's own pairing
-    /// code, connect with its socket, and see the server list this computer as connected.
-    async fn e2e_this_computer_connects(root: &Path, ports: Ports) {
-        use crate::device_pairing::{Outcome, Pairing, Secrets as Keys, SignIn};
-        struct Keyring(Mutex<std::collections::HashMap<String, String>>);
-        impl Keys for Keyring {
-            fn get(&self, account: &str) -> Result<Option<String>, String> {
-                Ok(self.0.lock().unwrap().get(account).cloned())
-            }
-            fn set(&self, account: &str, secret: &str) -> Result<(), String> {
-                self.0.lock().unwrap().insert(account.into(), secret.into());
-                Ok(())
-            }
-            fn delete(&self, account: &str) -> Result<(), String> {
-                self.0.lock().unwrap().remove(account);
-                Ok(())
-            }
-        }
-        struct Cookie(String);
-        impl SignIn for Cookie {
-            async fn cookies(&self, _: &tauri::Url) -> Option<String> {
-                Some(self.0.clone())
-            }
-        }
-        let web = tauri::Url::parse(&format!("http://127.0.0.1:{}/", ports.web)).unwrap();
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let client = reqwest::Client::new();
-        let signup = client
-            .post(web.join("/api/auth/sign-up/email").unwrap())
-            .header("content-type", "application/json")
-            .header("origin", web.as_str().trim_end_matches('/'))
-            .body(r#"{"email":"owner@example.test","password":"e2e-Password-123","name":"Owner"}"#)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(signup.status(), 200, "sign-up");
-        let cookie = signup
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .filter_map(|value| value.to_str().ok()?.split(';').next().map(str::to_owned))
-            .collect::<Vec<_>>()
-            .join("; ");
-        let pairing = Pairing::new(
-            web.clone(),
-            root.join("e2e-devices"),
-            Arc::new(Keyring(Mutex::default())),
-        );
-        pairing.allow().unwrap();
-        let outcome = pairing.pair(&Cookie(cookie.clone())).await;
-        let Ok(Outcome::Connected(token)) = outcome else {
-            panic!("pairing: {outcome:?}");
-        };
-        println!("E2E: paired this computer");
-        let (stop, stopped) = watch::channel(false);
-        let options = crate::device_socket::Options {
-            server: web.clone(),
-            token,
-            runner: crate::device_run::Runner::new(root.join("e2e-computers"), root.to_owned()),
-            retry: (Duration::from_millis(200), Duration::from_secs(2)),
-            grace: Duration::from_secs(1),
-        };
-        let socket = tokio::spawn(crate::device_socket::run(options, stopped));
-        let devices = web.join("/api/devices").unwrap();
-        let connected = wait_until(Duration::from_secs(20), move || {
-            let list = std::process::Command::new("curl")
-                .args(["-fsS", "-H", &format!("cookie: {cookie}"), devices.as_str()])
-                .output();
-            list.is_ok_and(|out| {
-                String::from_utf8_lossy(&out.stdout).contains(r#""connected":true"#)
-            })
-        })
-        .await;
-        let _ = stop.send(true);
-        let _ = socket.await;
-        assert!(
-            connected,
-            "the server never listed this computer as connected"
-        );
-        println!("E2E: this computer connected over the device socket");
-    }
-
-    /// Processes whose program or command line is in the server's folder.
-    fn processes_under(root: &Path) -> Vec<String> {
-        let root = root.to_string_lossy().into_owned();
-        let me = std::process::id().to_string();
-        fs::read_dir("/proc")
-            .unwrap()
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| {
-                let name = path.file_name().unwrap().to_string_lossy();
-                name.chars().all(|c| c.is_ascii_digit()) && name != me
-            })
-            .filter_map(|path| {
-                let program = fs::read_link(path.join("exe")).unwrap_or_default();
-                let cmdline = fs::read(path.join("cmdline")).unwrap_or_default();
-                let cmdline = String::from_utf8_lossy(&cmdline).replace('\0', " ");
-                (program.starts_with(&root) || cmdline.contains(&root))
-                    .then(|| format!("{}: {cmdline}", path.display()))
-            })
-            .collect()
-    }
 }
+
+#[cfg(test)]
+#[path = "stack_e2e.rs"]
+mod e2e;

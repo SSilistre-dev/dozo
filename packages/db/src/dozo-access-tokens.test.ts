@@ -60,7 +60,7 @@ describe("createDozoAccessToken", () => {
     expect(calls[0]!.values).toContain(dozoAccessTokenHash(token));
     expect(calls[0]!.values).not.toContain(token);
     expect(calls[0]!.values).toContain(DOZO_ACCESS_TOKEN_LIMIT);
-    expect(calls[0]!.values).toContain(expiresAt);
+    expect(calls[0]!.values).toContain(expiresAt.toISOString());
   });
 
   it("makes a different token every time", async () => {
@@ -131,7 +131,7 @@ describe("finding a token", () => {
     const now = new Date("2026-11-21T10:00:00Z");
     await touchDozoAccessToken(db, "token-1", now);
     expect(calls[0]!.sql).toContain('"lastUsedAt" IS NULL OR "lastUsedAt" < ?');
-    expect(calls[0]!.values).toEqual([now, "token-1", new Date("2026-11-21T09:59:00Z")]);
+    expect(calls[0]!.values).toEqual([now.toISOString(), "token-1", "2026-11-21T09:59:00.000Z"]);
     await touchDozoAccessToken(db, "token-1");
     expect(calls).toHaveLength(2);
   });
@@ -144,9 +144,9 @@ describe("takeDozoApiMinute", () => {
     expect(await takeDozoApiMinute(db, "token:t-1", 60, now)).toBe(true);
     const minute = new Date("2026-11-21T10:00:00.000Z");
     expect(calls[0]!.sql).toContain("DELETE FROM dozo_api_minutes");
-    expect(calls[0]!.values).toEqual(["token:t-1", minute]);
+    expect(calls[0]!.values).toEqual(["token:t-1", minute.toISOString()]);
     expect(calls[1]!.sql).toContain("ON CONFLICT (key, minute)");
-    expect(calls[1]!.values).toEqual(["token:t-1", minute, 60]);
+    expect(calls[1]!.values).toEqual(["token:t-1", minute.toISOString(), 60]);
     expect(await takeDozoApiMinute(fakeDb([]).db, "token:t-1", 60)).toBe(false);
   });
 });

@@ -10,14 +10,25 @@ type Member = { userId: string; spaceId: string };
 export const DOZO_ACCESS_TOKEN_PREFIX = "dozo_pat_";
 
 /**
- * A token works until it expires, and only if its account's password has not changed since it was
- * made: a password change or reset revokes every token, so a session taken over cannot leave one
- * behind that outlives the new password.
+ * A token works until it expires, and only if, since it was made, its account's password has not
+ * changed and its owner (or an operator) has not signed out everywhere: either revokes every token,
+ * so a session taken over cannot leave one behind, also on an account without a password.
  */
 const STILL_VALID = Prisma.sql`(t."expiresAt" IS NULL OR t."expiresAt" > now())
   AND NOT EXISTS (SELECT 1 FROM security_events s
-    WHERE s."userId" = t."userId" AND s.type = 'auth.password.changed'
-      AND s."createdAt" >= t."createdAt")`;
+    WHERE s."userId" = t."userId" AND s."createdAt" AT TIME ZONE 'UTC' >= t."createdAt"
+      AND (s.type = 'auth.password.changed'
+        OR s.type = 'auth.session.revoked'
+          AND (s.metadata->>'via' IN ('/revoke-sessions', '/revoke-other-sessions')
+            OR s.metadata->>'by' = 'operator')))`;
+
+/**
+ * A time as UTC text for a `timestamptz` column. A raw query sends a Date without its zone, which
+ * the database would read in its own session zone, as the person's machine may set it.
+ */
+function utc<T extends Date | null>(date: T): T extends Date ? string : null {
+  return (date ? date.toISOString() : null) as T extends Date ? string : null;
+}
 
 /** How many tokens one member may hold in one Space. */
 export const DOZO_ACCESS_TOKEN_LIMIT = 20;
@@ -70,7 +81,7 @@ export async function createDozoAccessToken(
   const rows = await db.$queryRaw<{ id: string; createdAt: Date }[]>`
     INSERT INTO dozo_access_tokens ("userId", "spaceId", "botId", name, "tokenHash", hint, "expiresAt")
     SELECT ${member.userId}, ${member.spaceId}, ${input.botId}, ${input.name},
-      ${dozoAccessTokenHash(token)}, ${hint}, ${input.expiresAt}
+      ${dozoAccessTokenHash(token)}, ${hint}, ${utc(input.expiresAt)}::timestamptz
     WHERE (SELECT count(*) FROM dozo_access_tokens
       WHERE "userId" = ${member.userId} AND "spaceId" = ${member.spaceId})
       < ${DOZO_ACCESS_TOKEN_LIMIT}
@@ -139,9 +150,9 @@ export async function takeDozoApiMinute(
 ): Promise<boolean> {
   const minute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
   await db.$executeRaw`
-    DELETE FROM dozo_api_minutes WHERE key = ${key} AND minute < ${minute}`;
+    DELETE FROM dozo_api_minutes WHERE key = ${key} AND minute < ${utc(minute)}::timestamptz`;
   const rows = await db.$queryRaw<{ count: number }[]>`
-    INSERT INTO dozo_api_minutes (key, minute, count) VALUES (${key}, ${minute}, 1)
+    INSERT INTO dozo_api_minutes (key, minute, count) VALUES (${key}, ${utc(minute)}::timestamptz, 1)
     ON CONFLICT (key, minute) DO UPDATE SET count = dozo_api_minutes.count + 1
       WHERE dozo_api_minutes.count < ${limit}
     RETURNING count`;
@@ -151,7 +162,7 @@ export async function takeDozoApiMinute(
 /** Records that the token was used, at most once a minute. */
 export async function touchDozoAccessToken(db: Db, id: string, now = new Date()): Promise<void> {
   await db.$executeRaw`
-    UPDATE dozo_access_tokens SET "lastUsedAt" = ${now}
+    UPDATE dozo_access_tokens SET "lastUsedAt" = ${utc(now)}::timestamptz
     WHERE id = ${id}
-      AND ("lastUsedAt" IS NULL OR "lastUsedAt" < ${new Date(now.getTime() - TOUCH_INTERVAL_MS)})`;
+      AND ("lastUsedAt" IS NULL OR "lastUsedAt" < ${utc(new Date(now.getTime() - TOUCH_INTERVAL_MS))}::timestamptz)`;
 }
