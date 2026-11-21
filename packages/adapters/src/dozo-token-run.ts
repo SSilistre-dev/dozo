@@ -28,6 +28,7 @@ export const DOZO_TOKEN_CARD_REASON = "Asked by a message sent with an access to
  * the history it stays in keeps every later run of the bot asking.
  *
  * `'api:%'` is DOZO_TOKEN_NONCE_PREFIX written out, so the partial index on messages is used.
+ * Upstream's `createdAt` columns are UTC without a zone, so they are read as UTC before comparing.
  */
 export async function dozoBotTokenTainted(
   db: Db,
@@ -48,7 +49,7 @@ export async function dozoBotTokenTainted(
       OR EXISTS (SELECT 1 FROM lineage l JOIN dozo_token_taints x ON x."botId" = l.id
         WHERE NOT EXISTS (SELECT 1 FROM threads t JOIN events e ON e."threadId" = t.id
           WHERE t."botId" = x."botId" AND e.type = 'thread.cleared'
-            AND e."createdAt" > x."createdAt"))
+            AND e."createdAt" AT TIME ZONE 'UTC' > x."createdAt"))
     ) AS sourced`;
   return rows[0]?.sourced === true;
 }
