@@ -1368,6 +1368,26 @@
       "reason": "cache share and usage breakdown on Usage: a finished run records its usage, and its runs signal re-reads both while Usage is open"
     },
     {
+      "file": "apps/web/src/lib/space-changes.ts",
+      "find": "    [\"dozoUsage\", \"breakdown\"],\n  ],",
+      "replace": "    [\"dozoUsage\", \"breakdown\"],\n    [\"dozoQueue\", \"list\"],\n  ],",
+      "reason": "waiting work: what waits for a bot changes with its runs, so the chat reads it again on the same signal instead of polling"
+    },
+    {
+      "file": "apps/web/src/pages/shell/transcript.tsx",
+      "find": "import { ActiveBotGlyph } from \"../../components/ai/CollaborationMarker\";",
+      "replace": "import { DozoWaitingGlyph } from \"./dozo-waiting-glyph\";",
+      "requires": ["apps/web/src/pages/shell/dozo-waiting-glyph.tsx"],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/transcript.tsx",
+      "find": "<ActiveBotGlyph bots={workingBots} label={workingLabel} />",
+      "replace": "<DozoWaitingGlyph bots={workingBots} label={workingLabel} target={artifactTarget} />",
+      "requires": ["apps/web/src/pages/shell/dozo-waiting-glyph.tsx"],
+      "reason": "waiting work: when the caller's own work waits for the bot, the chat's working line says what it waits for and its place, and lists what waits with a stop for the caller's own"
+    },
+    {
       "file": "apps/web/src/pages/Onboarding.tsx",
       "find": "import { ModelStep } from \"./onboarding/model-step\";",
       "replace": "import { dozoCreditsOnSale, ModelStep } from \"./onboarding/dozo-model-step\";",
@@ -5117,6 +5137,20 @@
       "reason": "message actions on mobile: the iOS menu is built before it opens, so the chat reads what Edit and Regenerate apply to again when a message or run changes, and its pins on each roster signal"
     },
     {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "import { LoadEarlierButton, ThreadWorkingFooter } from \"./thread-list-controls\";",
+      "replace": "import { LoadEarlierButton } from \"./thread-list-controls\";\nimport { DozoWaitingFooter } from \"./dozo-waiting-footer\";",
+      "requires": ["apps/mobile/components/thread/dozo-waiting-footer.tsx"],
+      "reason": "waiting work on mobile: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "<ThreadWorkingFooter\n      bots={workingBots.map((bot) => ({",
+      "replace": "<DozoWaitingFooter\n      target={groupId ? { groupId } : botId ? { botId } : undefined}\n      bots={workingBots.map((bot) => ({",
+      "requires": ["apps/mobile/components/thread/dozo-waiting-footer.tsx"],
+      "reason": "waiting work on mobile: when the caller's own work waits for the bot, the chat's working line says what it waits for and its place, and tapping it opens a native sheet that lists what waits with a stop for the caller's own"
+    },
+    {
       "file": "apps/mobile/app/group-settings.tsx",
       "find": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { rpc, selectedSpaceId }",
       "replace": "import { NativeActionButton } from \"../components/native-action-button\";\nimport { DozoGroupChatActions } from \"../components/dozo-group-chat-actions\";\nimport { rpc, selectedSpaceId }",
@@ -6078,6 +6112,54 @@
       "reason": "bot chats: a bot's extra chats' types, limits and contract reach the server from the contracts package; the contract joins the app contract, with its routes, in the web step"
     },
     {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "./dozo-bot-chats.js\";\nimport { dozoMessagesContract }",
+      "replace": "./dozo-bot-chats.js\";\nexport * from \"./dozo-queue.js\";\nimport { dozoQueueContract } from \"./dozo-queue.js\";\nimport { dozoMessagesContract }",
+      "requires": [
+        "packages/contracts/src/dozo-queue.ts"
+      ],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "dozoMessages: dozoMessagesContract,\n  threads",
+      "replace": "dozoMessages: dozoMessagesContract,\n  dozoQueue: dozoQueueContract,\n  threads",
+      "requires": [
+        "packages/contracts/src/dozo-queue.ts"
+      ],
+      "reason": "waiting work: what waits for a bot, and stopping the caller's own wait, join the app contract so the server and the clients share their types"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { dozoMessagesRoutes } from \"./dozo-message-revision.js\";\nimport { spacesRoutes }",
+      "replace": "import { dozoMessagesRoutes } from \"./dozo-message-revision.js\";\nimport { dozoQueueRoutes } from \"./routes/dozo-queue.js\";\nimport { spacesRoutes }",
+      "requires": [
+        "apps/api/src/routes/dozo-queue.ts"
+      ],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "...dozoMessagesRoutes(ctx),\n    ...threadsRoutes(ctx)",
+      "replace": "...dozoMessagesRoutes(ctx),\n    ...dozoQueueRoutes(ctx),\n    ...threadsRoutes(ctx)",
+      "requires": [
+        "apps/api/src/routes/dozo-queue.ts"
+      ],
+      "reason": "waiting work: the router answers what waits for a bot and cancels the caller's own wait, in the caller's Space only"
+    },
+    {
+      "file": "packages/db/src/events.ts",
+      "find": "if (committed.run) await publishSpaceChange(realtime, input.spaceId, \"runs\");",
+      "replace": "if (committed.run || committed.busy)\n    await publishSpaceChange(realtime, input.spaceId, \"runs\");",
+      "reason": "waiting work: a message sent behind a busy run is held in line and creates no run, so it signals the change too"
+    },
+    {
+      "file": "packages/adapters/src/run-attempt.ts",
+      "find": "      Boolean(heldByAnotherRun),\n    );\n    return;",
+      "replace": "      Boolean(heldByAnotherRun),\n    );\n    await deps.events.publishSpaceChange?.(run.spaceId, \"runs\");\n    return;",
+      "reason": "waiting work: the claim signalled before the computer turned out to be held, so the run going back in line signals again"
+    },
+    {
       "file": "packages/core/src/thread-snapshot-events.ts",
       "find": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
       "replace": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { dozoRemovedMessageId } from \"./dozo-removed-message.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
@@ -6870,6 +6952,12 @@
       "reason": "upstream test fixture: the fork's own-computer row reads the server, which this test does not provide, so it is left out as the test leaves out the other server-backed parts (dozo-own-computer-row.test.tsx covers it)"
     },
     {
+      "file": "apps/web/src/pages/shell/transcript.test.tsx",
+      "find": "vi.mock(\"../../lib/rpc\", () => ({ rpc: {} }));",
+      "replace": "vi.mock(\"./dozo-waiting-glyph\", () => ({\n  DozoWaitingGlyph: ({ label }: { label: string }) => <div role=\"status\">{label}</div>,\n}));\n\nvi.mock(\"../../lib/rpc\", () => ({ rpc: {} as never }));",
+      "reason": "upstream test fixture: the fork's working line reads what waits for the bot from the server, which this test does not provide, so it shows the plain working line as the test leaves out the other server-backed parts (dozo-waiting-glyph.test.tsx covers it)"
+    },
+    {
       "file": "apps/web/src/pages/shell/chat-header.test.tsx",
       "find": "const writeText = vi.hoisted(() => vi.fn(async () => undefined));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
       "replace": "const writeText = vi.hoisted(() => vi.fn(async () => undefined));\n\nvi.mock(\"./dozo-message-pins\", () => ({\n  DozoPinMenuItem: () => null,\n  DozoPinnedMessages: () => null,\n}));\n\nvi.mock(\"@lingui/react/macro\", () => ({",
@@ -7269,6 +7357,15 @@
       "find": "msgid \"Manage\"\nmsgstr \"Yönet\"\n\n#.",
       "replace": "msgid \"Manage\"\nmsgstr \"Yönet\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Access tokens\"\nmsgstr \"Erişim belirteçleri\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"New token\"\nmsgstr \"Yeni belirteç\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Last used {date}\"\nmsgstr \"Son kullanım {date}\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Never used\"\nmsgstr \"Hiç kullanılmadı\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Revoke {name}\"\nmsgstr \"{name} belirtecini iptal et\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Could not revoke token\"\nmsgstr \"Belirteç iptal edilemedi\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Could not create token\"\nmsgstr \"Belirteç oluşturulamadı\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Copy token\"\nmsgstr \"Belirteci kopyala\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Copy it now. It won't be shown again.\"\nmsgstr \"Şimdi kopyalayın. Bir daha gösterilmeyecek.\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Expires in 90 days\"\nmsgstr \"90 gün sonra sona erer\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Never expires\"\nmsgstr \"Süresiz\"\n\n#: apps/web/src/components/dozo-access-tokens.tsx\nmsgid \"Expires {ends}\"\nmsgstr \"Bitiş {ends}\"\n\n#: apps/web/src/pages/shell/dozo-token-mark.tsx\n#: apps/mobile/components/thread/dozo-token-mark.tsx\nmsgid \"Sent with an access token\"\nmsgstr \"Erişim belirteciyle gönderildi\"\n\n#: apps/web/src/pages/shell/dozo-trust-bot.tsx\nmsgid \"Trust this bot again\"\nmsgstr \"Bu bota yeniden güven\"\n\n#: apps/web/src/pages/shell/dozo-trust-bot.tsx\nmsgid \"Could not trust the bot\"\nmsgstr \"Bota güvenilemedi\"\n\n#.",
       "reason": "bot API: the Turkish copy of the Access tokens row and its dialog in Security"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bota güvenilemedi\"\n\n#.",
+      "replace": "msgstr \"Bota güvenilemedi\"\n\n#: apps/web/src/pages/shell/dozo-waiting-glyph.tsx\nmsgid \"After {name}\"\nmsgstr \"{name} sonrası\"\n\n#.",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-waiting-glyph.tsx"
+      ],
+      "reason": "waiting work: the Turkish copy of the chat's waiting line and its list of what waits"
     },
     {
       "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
@@ -8184,6 +8281,34 @@
       "find": "    const missing = BOT_TEMPLATES.flatMap((template) =>",
       "replace": "    const missing = BOT_TEMPLATES.filter((template) => template.id !== \"meeting-prep\").flatMap((template) =>",
       "reason": "meeting prep template: its strings are the fork's, held in the Turkish catalog by a rule, not in upstream's extracted English one"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./voice-chat-groups.js\";\nexport * from \"./voice-response.js\";",
+      "replace": "export * from \"./voice-chat-groups.js\";\nexport * from \"./dozo-queue-line.js\";\nexport * from \"./dozo-queue-order.js\";\nexport * from \"./voice-response.js\";",
+      "requires": [
+        "packages/core/src/dozo-queue-line.ts",
+        "packages/core/src/dozo-queue-order.ts"
+      ],
+      "reason": "waiting work: the chat's line and the list's rows, one reading for web and mobile, and the order work starts in, which the line and the run that starts next share"
+    },
+    {
+      "file": "packages/adapters/src/run-lifecycle.ts",
+      "find": "  nextFence,\n  redactSecrets,",
+      "replace": "  nextFence,\n  queueStartOrder,\n  redactSecrets,",
+      "requires": [
+        "packages/core/src/dozo-queue-order.ts"
+      ],
+      "reason": "waiting work: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-lifecycle.ts",
+      "find": "    orderBy: [{ createdAt: \"asc\" }, { id: \"asc\" }],\n    select: { id: true },\n  });\n  if (next) await wakeRun",
+      "replace": "    orderBy: queueStartOrder(),\n    select: { id: true },\n  });\n  if (next) await wakeRun",
+      "requires": [
+        "packages/core/src/dozo-queue-order.ts"
+      ],
+      "reason": "waiting work: the run that starts when a bot's computer is released is picked in the order the line people are shown is drawn in, from one definition"
     },
     {
       "file": "packages/core/src/index.ts",
