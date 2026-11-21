@@ -325,23 +325,33 @@ into it.
   their own bot, as for commands, never a run a message sent with an access token reached, and
   only when the run has no graphical computer of its own (Free).
 - What asks, in each thread anew: the bot's first use of its browser ("Let this bot use its own
-  browser on your computer and open x.com?"), and the first time it opens, reads or acts on each
-  site, named by its registrable domain ("Let this bot open x.com in its browser?", "... read
-  ...", "... act on ..."). So a page that steers the bot cannot send it, or what it read, to a site
-  the person did not see named. An answer holds for that bot, on this computer, in that thread;
-  the card's site is kept with the call, and a call resumed after the page moved elsewhere is
-  refused. One batch of steps stops when a step took the page to another site. A call that reached
-  this computer without its approval having seen it is refused. Saved logins, cards and uploads do
-  not reach this browser yet; the person can sign in in its window themselves.
+  browser on your computer and open x.com?"), and the first time it opens, reads, acts on or has
+  the person sign in to each site, each of those on its own ("Let this bot open x.com in its
+  browser?", "... read ...", "... act on ...", "... have you sign in to ..."): allowing a look at
+  a site allows no action there. Once content from outside has entered the run (a page it read, a
+  fetched text), opening another site than the one the browser shows asks every time, so a page
+  that steers the bot cannot send it, or what it read, elsewhere unseen. A page whose site cannot
+  be told is asked about before it is read; a blank one is not. An answer holds for that bot, on
+  this computer, in that thread; the card's site is kept with the call, and a call resumed after
+  the page moved elsewhere is refused. The bot has one page: a look at, or a batch of steps on,
+  another site than the one approved (another thread's run moved it) is refused, and a batch stops
+  when a step took the page elsewhere. A call that reached this computer without its approval
+  having seen it is refused. Saved logins, cards and uploads do not reach this browser yet.
 - Signing in: the bot never types a password or a code there. With `browser_sign_in` it names a
   site; this app opens that site's home page in the bot's window (never an address the bot gives)
   and shows the person a small system dialog of its own: "Sign in to x.com in the bot's browser
   window, then choose Done." with Done and Cancel. Until they answer, every command for that
-  bot's browser is refused (no page, screenshot, input, navigation or history), and what the
-  sign-in went through is dropped: its events, and the history it made, which the server then gets
-  without addresses (a code in a return address never reaches it). The bot learns only whether
-  they signed in. Only the person ends it: a request the server or the run gives up on leaves it
-  as it is. Device request: `pageBrowserSignIn`.
+  bot's browser is refused (no page, screenshot, input, navigation or history), and so are that
+  bot's commands on this computer, which could read the screen; stopping the bot leaves its
+  browser open meanwhile. When they answer, the page goes to the site's home page (Done) or a
+  blank page (Cancel) before the bot has it again, so neither a return address with a code nor a
+  half-done step reaches the server; the sign-in's events are dropped, its history entries reach
+  the server without addresses, and going back to one is refused. The bot learns whether they
+  signed in, and then sees the site's home page as anyone signed in would. Only the person ends
+  it; after 15 minutes without an answer it counts as cancelled. A request the server or the run
+  gives up on leaves it as it is. Every site asks a card first, in each thread; a site whose name
+  imitates another's (paypa1.com) gets the same card and dialog, named as it is. Device request:
+  `pageBrowserSignIn`.
 - Screenshots: a model that can see gets one with each snapshot. Like any image a tool returns, it
   is kept with the thread's run history and not redacted (text is); it goes when the thread does.
 - The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port:
@@ -366,14 +376,21 @@ into it.
   forms, `localhost`, single-label names and the names local networks use, such as `.local`,
   `.lan`, `.home.arpa`, `fritz.box`), and connects to the address it checked, so a name that
   changes its answer (DNS rebinding) does not get through either. A refused and a failed
-  connection get the same answer, so a page cannot tell which ports answer. The server on this
-  computer is refused too. The address the bot opens is checked the same way first.
+  connection get the same answer, so a page cannot tell which ports answer. This computer's own
+  addresses and the networks it is on directly are refused too, public ones included, and so is
+  the server on this computer. Plain HTTP passes one request per connection: the browser does send
+  more on a connection it used (measured), which the proxy closes so the request comes again
+  through the check. At most 256 connections at once; one idle for five minutes is closed. The address the bot opens is checked the same way first.
 - While the bot's tab shows anything else (the person sent it to the browser's own pages or a
   file), only going to a website works, and its history and events leave such addresses out. The
   bot's tab is the one the browser opened with; once the person closes it, the bot always gets a
   new blank tab, never another (the person's, or a window a page opened).
 - A click the server sends counts as the person's gesture. The app denies pages the clipboard API
-  and, with its own guard, the copy and cut commands and every form of full screen. The guard is
+  and the browser's prompts (notifications, location, camera, microphone and the like) and, with
+  its own guard, the copy and cut commands, every form of full screen (one a video's own controls
+  start is left at once), picture-in-picture windows, pointer lock, the file and folder pickers,
+  printing, passkeys and payment sheets. A page cannot undo the guard: what it relies on is taken
+  before any page script runs. The guard is
   set before any script of every document, and every new tab, window and frame of its own process
   holds until it has it (`Target.setAutoAttach`); it also guards a window a page opens and a frame
   it reaches, so a page cannot call the browser's own functions through them. A page can still open

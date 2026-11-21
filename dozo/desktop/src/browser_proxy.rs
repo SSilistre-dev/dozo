@@ -19,6 +19,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 const MAX_HEAD: usize = 16 * 1024;
+/// Connections served at once; more wait in the browser's own queue.
+const MAX_CONNECTIONS: usize = 256;
+/// A connection with nothing sent either way for this long is closed.
+const IDLE: Duration = Duration::from_secs(5 * 60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const REFUSED: &[u8] =
     b"HTTP/1.1 502 Bad Gateway\r\nconnection: close\r\ncontent-length: 0\r\n\r\n";
@@ -46,6 +50,9 @@ impl Local {
 /// A running proxy; it stops with this value.
 pub struct Proxy {
     pub port: u16,
+    /// How often the browser sent another request on a connection it had used (tests read it).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub reused: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     accept: tokio::task::JoinHandle<()>,
 }
 
@@ -58,20 +65,48 @@ impl Drop for Proxy {
 impl Proxy {
     /// Starts it on a free loopback port.
     pub async fn start(local: Local) -> std::io::Result<Self> {
+        Self::start_limited(local, MAX_CONNECTIONS).await
+    }
+
+    async fn start_limited(local: Local, limit: usize) -> std::io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
+        let reused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = reused.clone();
+        let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(limit));
         let accept = tokio::spawn(async move {
-            while let Ok((client, _)) = listener.accept().await {
-                tokio::spawn(serve(client, local.clone()));
+            loop {
+                match listener.accept().await {
+                    // Over the limit a connection is closed at once; the browser tries again.
+                    Ok((client, _)) => {
+                        if let Ok(slot) = slots.clone().try_acquire_owned() {
+                            let (local, counted) = (local.clone(), counted.clone());
+                            tokio::spawn(async move {
+                                serve(client, local, counted).await;
+                                drop(slot);
+                            });
+                        }
+                    }
+                    // Out of file handles or the like: wait and go on, never stop serving.
+                    Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+                }
             }
         });
-        Ok(Self { port, accept })
+        Ok(Self {
+            port,
+            reused,
+            accept,
+        })
     }
 }
 
 /// One client connection: a CONNECT tunnel, or one plain HTTP request sent on with
 /// `connection: close`, so the next request (maybe for another host) comes on a new connection.
-async fn serve(mut client: TcpStream, local: Local) {
+async fn serve(
+    mut client: TcpStream,
+    local: Local,
+    reused: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) {
     let Some((head, rest)) = read_head(&mut client).await else {
         return;
     };
@@ -96,7 +131,12 @@ async fn serve(mut client: TcpStream, local: Local) {
         {
             return;
         }
-        let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+        let (mut client_in, mut client_out) = client.split();
+        let (mut server_in, mut server_out) = server.split();
+        tokio::select! {
+            () = pass(&mut client_in, &mut server_out) => {}
+            () = pass(&mut server_in, &mut client_out) => {}
+        }
         return;
     }
     let Ok(url) = tauri::Url::parse(target) else {
@@ -140,10 +180,66 @@ async fn serve(mut client: TcpStream, local: Local) {
         }
     }
     sent.push_str("connection: close\r\n\r\n");
-    if server.write_all(sent.as_bytes()).await.is_err() || server.write_all(&rest).await.is_err() {
+    // Only this request goes to this server: its body (by its length; a body of unknown length
+    // is refused), and nothing the browser sends after it on this connection, which could be
+    // meant for another site.
+    let header = |name: &str| {
+        text.split("\r\n").skip(1).find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.trim()
+                .eq_ignore_ascii_case(name)
+                .then(|| value.trim().to_owned())
+        })
+    };
+    if header("transfer-encoding").is_some() {
+        let _ = client.write_all(REFUSED).await;
         return;
     }
-    let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+    let length: usize = header("content-length")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let mut body = rest;
+    body.truncate(length);
+    if server.write_all(sent.as_bytes()).await.is_err() || server.write_all(&body).await.is_err() {
+        return;
+    }
+    let remaining = (length - body.len()) as u64;
+    let (mut from_client, mut to_client) = client.split();
+    if tokio::io::copy(&mut (&mut from_client).take(remaining), &mut server)
+        .await
+        .is_err()
+    {
+        return;
+    }
+    // The answer goes back until the server ends it. Should the browser send another request on
+    // this connection meanwhile (it does reuse them), both are closed instead: the browser sends
+    // it again on a new connection, through this check.
+    let mut next = [0u8; 1];
+    tokio::select! {
+        () = pass(&mut server, &mut to_client) => {}
+        read = from_client.read(&mut next) => {
+            if matches!(read, Ok(1)) {
+                reused.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
+}
+
+/// Copies one way until the end, an error, or `IDLE` without a byte.
+async fn pass(
+    from: &mut (impl tokio::io::AsyncRead + Unpin),
+    to: &mut (impl tokio::io::AsyncWrite + Unpin),
+) {
+    let mut chunk = vec![0u8; 16 * 1024];
+    loop {
+        let read = match tokio::time::timeout(IDLE, from.read(&mut chunk)).await {
+            Ok(Ok(read)) if read > 0 => read,
+            _ => return,
+        };
+        if to.write_all(&chunk[..read]).await.is_err() {
+            return;
+        }
+    }
 }
 
 /// The request head up to its blank line, and whatever came after it.
@@ -186,9 +282,13 @@ async fn open(host: &str, port: u16, local: &Local) -> Option<TcpStream> {
         Err(_) if *local == Local::None && !public_host(host) => return None,
         Err(_) => tokio::net::lookup_host((host, port)).await.ok()?.collect(),
     };
-    // Every answer must be public: a name with one private answer among public ones is a name
-    // meant to reach in.
-    let allowed = |at: &SocketAddr| public_ip(at.ip()) || local.allows(at.ip(), at.port());
+    // Every answer must be public, and none this computer's own address or on a network it is on
+    // directly (a public IPv6 or IPv4 address of its own, a neighbour's): a name with one such
+    // answer among others is a name meant to reach in.
+    let networks = own_networks();
+    let allowed = |at: &SocketAddr| {
+        (public_ip(at.ip()) && !within(at.ip(), &networks)) || local.allows(at.ip(), at.port())
+    };
     if addresses.is_empty() || !addresses.iter().all(allowed) {
         return None;
     }
@@ -199,6 +299,74 @@ async fn open(host: &str, port: u16, local: &Local) -> Option<TcpStream> {
         }
     }
     None
+}
+
+/// The networks this computer is on directly: each address of its own with its prefix length.
+#[cfg(unix)]
+fn own_networks() -> Vec<(IpAddr, u8)> {
+    let mut found = Vec::new();
+    let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: getifaddrs fills a list this function owns and frees below; each entry's
+    // address and mask are read only for their family's length.
+    unsafe {
+        if libc::getifaddrs(&mut list) != 0 {
+            return found;
+        }
+        let mut entry = list;
+        while !entry.is_null() {
+            let (address, mask) = ((*entry).ifa_addr, (*entry).ifa_netmask);
+            if !address.is_null() && !mask.is_null() {
+                match i32::from((*address).sa_family) {
+                    libc::AF_INET => {
+                        let ip = (*(address as *const libc::sockaddr_in)).sin_addr.s_addr;
+                        let bits = (*(mask as *const libc::sockaddr_in)).sin_addr.s_addr;
+                        let ip = Ipv4Addr::from(u32::from_be(ip));
+                        let prefix = u32::from_be(bits).count_ones() as u8;
+                        // A network wider than /8 (a tunnel with no mask) counts as its address.
+                        found.push((IpAddr::V4(ip), if prefix < 8 { 32 } else { prefix }));
+                    }
+                    libc::AF_INET6 => {
+                        let ip = (*(address as *const libc::sockaddr_in6)).sin6_addr.s6_addr;
+                        let bits = (*(mask as *const libc::sockaddr_in6)).sin6_addr.s6_addr;
+                        let prefix = bits.iter().map(|byte| byte.count_ones()).sum::<u32>();
+                        let prefix = prefix as u8;
+                        found.push((
+                            IpAddr::V6(Ipv6Addr::from(ip)),
+                            if prefix < 32 { 128 } else { prefix },
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            entry = (*entry).ifa_next;
+        }
+        libc::freeifaddrs(list);
+    }
+    found
+}
+
+#[cfg(windows)]
+fn own_networks() -> Vec<(IpAddr, u8)> {
+    Vec::new()
+}
+
+/// Whether `ip` is one of `networks` (an address and its prefix length), of the same family.
+fn within(ip: IpAddr, networks: &[(IpAddr, u8)]) -> bool {
+    networks
+        .iter()
+        .any(|(network, prefix)| match (ip, network) {
+            (IpAddr::V4(ip), IpAddr::V4(network)) => {
+                let shift = 32 - u32::from((*prefix).min(32));
+                let mask = if shift == 32 { 0 } else { u32::MAX << shift };
+                u32::from(ip) & mask == u32::from(*network) & mask
+            }
+            (IpAddr::V6(ip), IpAddr::V6(network)) => {
+                let shift = 128 - u32::from((*prefix).min(128));
+                let mask = if shift == 128 { 0 } else { u128::MAX << shift };
+                u128::from(ip) & mask == u128::from(*network) & mask
+            }
+            _ => false,
+        })
 }
 
 /// A host name that is not this computer's or a local network's: no `localhost`, no single label
@@ -261,6 +429,10 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         (segments[7] >> 8) as u8,
         segments[7] as u8,
     );
+    // 64:ff9b:1::/48 is a NAT64 prefix a network keeps for itself.
+    if segments[..3] == [0x64, 0xff9b, 1] {
+        return false;
+    }
     if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] || segments[..6] == [0, 0, 0, 0, 0, 0] {
         return !ip.is_loopback() && !ip.is_unspecified() && public_v4(embedded);
     }
@@ -421,5 +593,83 @@ mod tests {
         )
         .await;
         assert!(refused.starts_with("HTTP/1.1 502"), "{refused}");
+    }
+
+    #[test]
+    fn this_computer_s_own_addresses_and_networks_are_never_public() {
+        let networks = [
+            ("2001:db9:1:2::10".parse().unwrap(), 64),
+            ("203.0.114.7".parse().unwrap(), 24),
+        ];
+        for ip in [
+            "2001:db9:1:2::10",
+            "2001:db9:1:2:abcd::1",
+            "203.0.114.7",
+            "203.0.114.200",
+        ] {
+            assert!(within(ip.parse().unwrap(), &networks), "{ip}");
+        }
+        for ip in ["2001:db9:1:3::1", "203.0.115.1", "93.184.215.14"] {
+            assert!(!within(ip.parse().unwrap(), &networks), "{ip}");
+        }
+        assert!(within(
+            "1.2.3.4".parse().unwrap(),
+            &[("9.9.9.9".parse().unwrap(), 0)]
+        ));
+        // The real list holds this computer's loopback at least (Windows starts no browser and
+        // reads none).
+        #[cfg(unix)]
+        {
+            let own = own_networks();
+            assert!(within(IpAddr::V4(Ipv4Addr::LOCALHOST), &own), "{own:?}");
+        }
+        assert!(
+            !public_host("64:ff9b:1::a00:1"),
+            "a network's own NAT64 prefix"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_second_request_on_one_connection_is_never_sent_on() {
+        let port = echo().await;
+        let proxy = Proxy::start(Local::All).await.unwrap();
+        let answer = ask(
+            &proxy,
+            &format!(
+                "POST http://127.0.0.1:{port}/one HTTP/1.1\r\ncontent-length: 3\r\n\r\nabcGET http://127.0.0.1:{port}/two HTTP/1.1\r\n\r\n"
+            ),
+        )
+        .await;
+        assert!(answer.contains("POST /one HTTP/1.1|"), "{answer}");
+        assert!(!answer.contains("/two"), "{answer}");
+        let chunked = ask(
+            &proxy,
+            &format!("POST http://127.0.0.1:{port}/c HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\n0\r\n\r\n"),
+        )
+        .await;
+        assert!(chunked.starts_with("HTTP/1.1 502"), "{chunked}");
+    }
+
+    #[tokio::test]
+    async fn past_its_limit_it_closes_a_connection_at_once() {
+        let port = echo().await;
+        let proxy = Proxy::start_limited(Local::All, 1).await.unwrap();
+        let mut held = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy.port))
+            .await
+            .unwrap();
+        held.write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        let mut answer = [0u8; 64];
+        let read = held.read(&mut answer).await.unwrap();
+        assert!(String::from_utf8_lossy(&answer[..read]).contains("200"));
+        let mut over = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy.port))
+            .await
+            .unwrap();
+        let mut rest = Vec::new();
+        let closed =
+            tokio::time::timeout(Duration::from_secs(5), over.read_to_end(&mut rest)).await;
+        assert!(matches!(closed, Ok(Ok(0))), "{closed:?}");
+        drop(held);
     }
 }
