@@ -187,7 +187,7 @@ pub fn open(app: &AppHandle) {
     }
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("prefs.html".into()))
         .title(words::text("Settings"))
-        .inner_size(380.0, 520.0)
+        .inner_size(380.0, 660.0)
         .min_inner_size(320.0, 320.0)
         .center()
         // Only its own page loads here.

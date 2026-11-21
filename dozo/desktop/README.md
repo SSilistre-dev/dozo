@@ -55,7 +55,7 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 - The menu items all stay where they were; Cmd+, (Ctrl+,) now opens Settings instead of Change
   Server. Change Server… also brings the app window forward, as it is picked from Settings too.
 - In the app, the web app's settings show a "Desktop app" row (General) and, while no computer of
-  the account is connected, "Connect this computer" (Computers). Both go to `dozo-app://settings`,
+  the account is connected, "Connect this computer" (in General's Computers group). Both go to `dozo-app://settings`,
   which the window answers by opening Settings and nothing else; see Security. In a browser they
   are not shown: only the app's window sets `window.dozoDesktopShell` before a page loads.
 

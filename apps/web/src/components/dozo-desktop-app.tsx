@@ -39,7 +39,8 @@ export function DozoDesktopAppRow() {
 }
 
 /**
- * Settings > Computers in the desktop app while no computer of the account is connected: opens
+ * The Computers group of Settings > General in the desktop app (`ComputerDeviceSettings`, which
+ * the app shows even before a computer is paired) while no computer of the account is connected: opens
  * the app's own Settings, where "Let Bots Use This Computer" is. The page can only open that
  * window; turning it on stays the app's question to the person.
  */
@@ -63,12 +64,14 @@ export function DozoConnectThisComputer() {
   }, [shell]);
   if (connected !== false) return null;
   return (
-    <a
-      href={DESKTOP_SETTINGS}
-      data-testid="dozo-connect-this-computer"
-      className={buttonVariants({ variant: "outline", size: "sm", className: "mt-3" })}
-    >
-      <Trans>Connect this computer</Trans>
-    </a>
+    <div className="px-4 py-3">
+      <a
+        href={DESKTOP_SETTINGS}
+        data-testid="dozo-connect-this-computer"
+        className={buttonVariants({ variant: "outline", size: "sm" })}
+      >
+        <Trans>Connect this computer</Trans>
+      </a>
+    </div>
   );
 }
