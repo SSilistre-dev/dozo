@@ -82,6 +82,9 @@ export function sseFrame(frame: DozoStreamFrame): string {
   return `${id}event: ${frame.event}\ndata: ${JSON.stringify(frame.data)}\n\n`;
 }
 
+/** What a stream may hold for a reader that stopped reading before it ends. */
+export const DOZO_STREAM_MAX_QUEUED_BYTES = 1024 * 1024;
+
 /** A comment line: proxies and clients see the stream is alive. */
 export const SSE_KEEPALIVE = ": keepalive\n\n";
 
@@ -97,6 +100,8 @@ export type DozoSettledRun = { status: string; headSeq: number };
  */
 export function dozoRunStream(input: {
   runId: string;
+  /** Bytes the stream may hold for a reader that does not read; past it, it ends. */
+  maxQueuedBytes?: number;
   events: (signal: AbortSignal) => DozoRunEvents;
   first?: DozoStreamFrame[];
   /** Replay up to `headSeq`, then end with this status instead of waiting for more. */
@@ -115,45 +120,52 @@ export function dozoRunStream(input: {
     closed = true;
     input.onClose?.();
   };
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (text: string) => controller.enqueue(encoder.encode(text));
-      let ended = false;
-      try {
-        for (const frame of input.first ?? []) send(sseFrame(frame));
-        const { settled } = input;
-        for await (const event of input.events(signal)) {
-          if (signal.aborted) break;
-          const frame = event.type === "heartbeat" ? null : dozoStreamFrame(event, input.runId);
-          if (frame) send(sseFrame(frame));
-          if (frame?.event === "status") {
-            ended = true;
-            break;
+  const maxQueued = input.maxQueuedBytes ?? DOZO_STREAM_MAX_QUEUED_BYTES;
+  return new ReadableStream<Uint8Array>(
+    {
+      async start(controller) {
+        const send = (text: string) => controller.enqueue(encoder.encode(text));
+        let ended = false;
+        try {
+          for (const frame of input.first ?? []) send(sseFrame(frame));
+          const { settled } = input;
+          for await (const event of input.events(signal)) {
+            if (signal.aborted) break;
+            const frame = event.type === "heartbeat" ? null : dozoStreamFrame(event, input.runId);
+            if (frame) send(sseFrame(frame));
+            if (frame?.event === "status") {
+              ended = true;
+              break;
+            }
+            // Replayed up to where the settled run's thread stood: nothing more is coming.
+            if (settled && (event.type === "heartbeat" || event.seq >= settled.headSeq)) {
+              send(sseFrame({ event: "status", data: { status: settled.status } }));
+              ended = true;
+              break;
+            }
+            if (event.type === "heartbeat") send(SSE_KEEPALIVE);
+            // A reader that stopped reading is not queued for without end: the stream ends and the
+            // client follows the run again from the last id it read.
+            if ((controller.desiredSize ?? 0) < -maxQueued) break;
           }
-          // Replayed up to where the settled run's thread stood: nothing more is coming.
-          if (settled && (event.type === "heartbeat" || event.seq >= settled.headSeq)) {
-            send(sseFrame({ event: "status", data: { status: settled.status } }));
-            ended = true;
-            break;
+        } catch (error) {
+          // The client left or the time ran out; anything else ends the stream as an error.
+          if (!signal.aborted) {
+            close();
+            controller.error(error);
+            return;
           }
-          if (event.type === "heartbeat") send(SSE_KEEPALIVE);
         }
-      } catch (error) {
-        // The client left or the time ran out; anything else ends the stream as an error.
-        if (!signal.aborted) {
-          close();
-          controller.error(error);
-          return;
-        }
-      }
-      close();
-      if (input.signal.aborted || cancelled.signal.aborted) return;
-      if (!ended) send(sseFrame({ event: "status", data: { status: "running" } }));
-      controller.close();
+        close();
+        if (input.signal.aborted || cancelled.signal.aborted) return;
+        if (!ended) send(sseFrame({ event: "status", data: { status: "running" } }));
+        controller.close();
+      },
+      cancel() {
+        cancelled.abort();
+        close();
+      },
     },
-    cancel() {
-      cancelled.abort();
-      close();
-    },
-  });
+    new ByteLengthQueuingStrategy({ highWaterMark: 64 * 1024 }),
+  );
 }

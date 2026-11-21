@@ -3,44 +3,27 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DOZO_TOKEN_CARD_LASTING,
   DOZO_TOKEN_CARD_REASON,
-  dozoBotTokenTainted,
   dozoTokenRunAsk,
-  dozoTokenRunMade,
+  dozoTokenRunDone,
   dozoTokenRunPlan,
-  reachedBots,
   runCameByToken,
 } from "./dozo-token-run.js";
 import type { RunContext } from "./run-context.js";
 
+// What the SQL finds is covered against a real database in dozo-token-run.postgres.test.ts; these
+// cover the decisions around it.
+
 const sqlOf = (call: unknown[]) => (call[0] as string[]).join("?");
 
-/**
- * A run whose bot is marked or not. Lookups answer from `bots` (id or lower-case name to ids) and
- * `groups` (id or lower-case name to member ids); anything else answers whether the run is marked.
- */
-function context(
-  sourced: boolean,
-  world: { bots?: Record<string, string[]>; groups?: Record<string, (string | null)[]> } = {},
-) {
-  const queryRaw = vi.fn(async (...call: unknown[]) => {
-    const sql = sqlOf(call);
-    const value = String(call[1]).toLowerCase();
-    if (sql.includes("FROM chat_groups"))
-      return (world.groups?.[value] ?? []).map((id) => ({ id }));
-    if (sql.includes("SELECT id FROM bots"))
-      return (world.bots?.[value] ?? []).map((id) => ({ id }));
-    return [{ sourced }];
-  });
+function context(sourced: boolean) {
+  const queryRaw = vi.fn(async (..._call: unknown[]) => [{ sourced }]);
   const executeRaw = vi.fn(async (..._call: unknown[]) => 1);
   const ctx = {
     run: { id: "run-1", botId: "bot-1", threadId: "thread-1", spaceId: "space-1" },
     deps: { prisma: { $queryRaw: queryRaw, $executeRaw: executeRaw } },
   } as unknown as RunContext;
-  const marks = () =>
-    executeRaw.mock.calls
-      .filter((call) => sqlOf(call).includes("INSERT INTO dozo_token_taints"))
-      .map((call) => call.slice(1));
-  return { ctx, queryRaw, executeRaw, marks };
+  const writes = () => executeRaw.mock.calls.map((call) => [sqlOf(call), ...call.slice(1)]);
+  return { ctx, queryRaw, executeRaw, writes };
 }
 
 const card: MessageBlock = {
@@ -62,23 +45,6 @@ const call = (name: string, extra: Partial<Parameters<typeof dozoTokenRunPlan>[1
   viaConnector: false,
   consequential: false,
   ...extra,
-});
-
-describe("dozoBotTokenTainted", () => {
-  it("looks at the run's chat, the bot and its parents' chats, and marks not cleared or lasting", async () => {
-    const { ctx, queryRaw } = context(true);
-    expect(await dozoBotTokenTainted(ctx.deps.prisma, ctx.run)).toBe(true);
-    const [first, ...values] = queryRaw.mock.calls[0]!;
-    const text = sqlOf([first]);
-    expect(text).toContain("WITH RECURSIVE lineage");
-    expect(text).toContain('b."parentBotId"');
-    expect(text).toContain(`"clientNonce" LIKE 'api:%'`);
-    expect(text).toContain("x.lasting OR NOT EXISTS");
-    expect(text).toContain(`e."createdAt" AT TIME ZONE 'UTC' > x."createdAt"`);
-    expect(values).toEqual(["bot-1", "thread-1"]);
-    queryRaw.mockResolvedValueOnce([]);
-    expect(await dozoBotTokenTainted(ctx.deps.prisma, ctx.run)).toBe(false);
-  });
 });
 
 describe("runCameByToken", () => {
@@ -105,123 +71,107 @@ describe("dozoTokenRunPlan", () => {
       "list_secrets",
     ])
       expect(await dozoTokenRunPlan(context(true).ctx, call(name), "allow")).toBe("ask");
-    expect(
-      await dozoTokenRunPlan(
-        context(true).ctx,
-        call("demo_send", { viaConnector: true, consequential: true }),
-        "judge",
-      ),
-    ).toBe("ask");
-    expect(
-      await dozoTokenRunPlan(
-        context(true).ctx,
-        call("user_computer_shell", { consequential: true }),
-        "allow",
-      ),
-    ).toBe("ask");
+    const send = call("demo_send", { viaConnector: true, consequential: true });
+    expect(await dozoTokenRunPlan(context(true).ctx, send, "judge")).toBe("ask");
+    const own = call("user_computer_shell", { consequential: true });
+    expect(await dozoTokenRunPlan(context(true).ctx, own, "allow")).toBe("ask");
   });
 
   it("lets reads through, upstream's read-only builtins too, keeps a refusal, and leaves runs no token reached alone", async () => {
     const token = context(true);
     for (const name of ["read_file", "board_tickets", "ticket_get"])
       expect(await dozoTokenRunPlan(token.ctx, call(name), "allow")).toBe("allow");
-    expect(
-      await dozoTokenRunPlan(token.ctx, call("demo_get", { viaConnector: true }), "allow"),
-    ).toBe("allow");
+    const read = call("demo_get", { viaConnector: true });
+    expect(await dozoTokenRunPlan(token.ctx, read, "allow")).toBe("allow");
     expect(await dozoTokenRunPlan(token.ctx, call("shell"), "deny")).toBe("deny");
     expect(token.queryRaw).not.toHaveBeenCalled();
     expect(await dozoTokenRunPlan(context(false).ctx, call("shell"), "allow")).toBe("allow");
   });
 
-  it("marks every bot a reaching call names, by id or by name, before asking", async () => {
-    const world = {
-      bots: { "bot-2": ["bot-2"], research: ["bot-3", "bot-4"], scout: ["bot-5"] },
-      groups: { "group-1": ["bot-6", null], team: ["bot-7"] },
-    };
-    const cases: [string, Record<string, unknown>, string[]][] = [
-      ["message_bot", { bot_id: "bot-2" }, ["bot-2"]],
-      ["message_bot", { confirm_name: "Research" }, ["bot-3", "bot-4"]],
-      [
-        "handoff_to_bot",
-        { confirm_name: " research ", group_id: "group-1" },
-        ["bot-3", "bot-4", "bot-6"],
-      ],
-      ["create_child_routine", { bot_name: "Scout" }, ["bot-5"]],
-      ["set_child_instructions", { bot_name: "scout" }, ["bot-5"]],
-      ["create_group", { bot_names: ["Scout"], bot_ids: ["bot-2"] }, ["bot-2", "bot-5"]],
-      ["update_group", { group_name: "Team", add_bot_ids: ["bot-2"] }, ["bot-2", "bot-7"]],
-      ["ticket_create", { ownerBotId: "bot-2" }, ["bot-2"]],
-      ["update_bot", { bot_id: "bot-2" }, ["bot-2"]],
+  it("only asks: it marks nothing, whatever bot a call names", async () => {
+    const token = context(true);
+    const named = call("message_bot", { args: { confirm_name: "Research", message: "Hi" } });
+    expect(await dozoTokenRunPlan(token.ctx, named, "allow")).toBe("ask");
+    expect(token.executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("refuses a call naming another bot by anything but a string, under any name its handler reads", async () => {
+    const odd: [string, Record<string, unknown>][] = [
+      ["message_bot", { bot_id: ["bot-2"] }],
+      ["handoff_to_bot", { confirm_name: 7 }],
+      ["archive_bot", { botId: { id: "bot-2" } }],
+      ["archive_bot", { confirmName: null }],
+      ["create_group", { bot_names: ["Scout", 3] }],
+      ["update_group", { add_bot_ids: "bot-2" }],
+      ["ticket_create", { ownerBotId: 2 }],
     ];
-    for (const [name, args, bots] of cases) {
-      const token = context(true, world);
-      expect(await dozoTokenRunPlan(token.ctx, call(name, { args }), "allow")).toBe("ask");
-      expect(token.marks().map(([space, bot, run]) => [space, run, bot])).toEqual(
-        bots.sort().map((bot) => ["space-1", "run-1", bot]),
-      );
-    }
+    for (const [name, args] of odd)
+      expect(await dozoTokenRunPlan(context(true).ctx, call(name, { args }), "allow")).toBe("deny");
+    const lists = call("create_group", { args: { bot_ids: ["bot-2"], bot_names: ["Scout"] } });
+    expect(await dozoTokenRunPlan(context(true).ctx, lists, "allow")).toBe("ask");
+    // A connector tool's own arguments are its own.
+    const connector = call("message_bot", {
+      viaConnector: true,
+      consequential: true,
+      args: { bot_id: 1 },
+    });
+    expect(await dozoTokenRunPlan(context(true).ctx, connector, "allow")).toBe("ask");
   });
+});
 
-  it("refuses a reaching call whose bot or group it cannot find, and marks nothing", async () => {
-    for (const args of [{ confirm_name: "Nobody" }, { bot_id: "bot-9" }, { group_name: "None" }]) {
+describe("dozoTokenRunDone", () => {
+  it("marks the bot whose instructions or ticket a marked run wrote, once it succeeded", async () => {
+    const cases: [string, Record<string, unknown>, unknown][] = [
+      ["set_child_instructions", {}, { ok: true, botId: "bot-2" }],
+      ["update_bot", { bot_id: "bot-2" }, { ok: true }],
+      ["ticket_create", {}, { ticket: { assigneeBotId: "bot-2" } }],
+      ["ticket_update", {}, { ticket: { assigneeBotId: "bot-2" } }],
+    ];
+    for (const [name, args, result] of cases) {
       const token = context(true);
-      expect(await dozoTokenRunPlan(token.ctx, call("message_bot", { args }), "allow")).toBe(
-        "deny",
-      );
-      expect(token.marks()).toEqual([]);
+      await dozoTokenRunDone(token.ctx, name, args, result);
+      const [[sql, ...values]] = token.writes() as [[string, ...unknown[]]];
+      expect(sql).toContain("ON CONFLICT");
+      expect(values).toEqual(["space-1", "run-1", "bot-2", "space-1"]);
     }
   });
 
-  it("marks nothing for the run's own bot, a run no token reached, or a call with no target", async () => {
-    const self = context(true, { bots: { "bot-1": ["bot-1"] } });
-    await dozoTokenRunPlan(self.ctx, call("update_bot", { args: { bot_id: "bot-1" } }), "allow");
-    const own = context(true);
-    await dozoTokenRunPlan(own.ctx, call("update_bot"), "allow");
-    const clean = context(false, { bots: { "bot-2": ["bot-2"] } });
-    await dozoTokenRunPlan(clean.ctx, call("message_bot", { args: { bot_id: "bot-2" } }), "allow");
-    expect([...self.marks(), ...own.marks(), ...clean.marks()]).toEqual([]);
-  });
-});
-
-describe("reachedBots", () => {
-  it("looks only in the run's Space, and ignores what is not a name or id", async () => {
-    const token = context(true, { bots: { "bot-2": ["bot-2"] } });
-    expect(await reachedBots(token.ctx, { bot_id: "bot-2", bot_names: [3, null] })).toEqual([
-      "bot-2",
-    ]);
-    expect(token.queryRaw.mock.calls[0]).toContain("space-1");
-  });
-});
-
-describe("dozoTokenRunMade", () => {
-  it("marks a bot a marked run spawned, and the bot of a routine it made or changed, for good", async () => {
+  it("marks for good a bot a marked run spawned, and a routine it made or changed", async () => {
     const spawned = context(true);
-    await dozoTokenRunMade(spawned.ctx, "spawn_bot", {}, { ok: true, botId: "bot-8" });
-    const [spawnSql, ...spawnValues] = spawned.executeRaw.mock.calls[0]!;
-    expect(sqlOf([spawnSql])).toContain("lasting");
+    await dozoTokenRunDone(spawned.ctx, "spawn_bot", {}, { ok: true, botId: "bot-8" });
+    const [[spawnSql, ...spawnValues]] = spawned.writes() as [[string, ...unknown[]]];
+    expect(spawnSql).toContain("lasting");
     expect(spawnValues).toEqual(["space-1", "run-1", "bot-8", "space-1"]);
-    for (const [name, args, result] of [
-      ["schedule_create", {}, { routineId: "routine-1" }],
-      ["create_child_routine", {}, { routineId: "routine-1", botId: "bot-2" }],
-      ["schedule_update", { routineId: "routine-1" }, { ok: true }],
-    ] as const) {
+    for (const name of ["schedule_create", "schedule_update", "create_child_routine"]) {
       const token = context(true);
-      await dozoTokenRunMade(token.ctx, name, args, result);
-      const [sql, ...values] = token.executeRaw.mock.calls[0]!;
-      expect(sqlOf([sql])).toContain("FROM routines r");
+      await dozoTokenRunDone(token.ctx, name, {}, { ok: true, routineId: "routine-1" });
+      const [[sql, ...values]] = token.writes() as [[string, ...unknown[]]];
+      expect(sql).toContain("FROM routines r");
       expect(values).toEqual(["space-1", "run-1", "routine-1", "space-1"]);
     }
   });
 
-  it("marks nothing for another call, a run no token reached, or a result without an id", async () => {
-    const calls = [
-      [context(true), "shell", {}, { botId: "bot-8" }],
-      [context(false), "spawn_bot", {}, { botId: "bot-8" }],
+  it("marks nothing for a failure, another call, the run's own bot, or a run no token reached", async () => {
+    const cases: [ReturnType<typeof context>, string, Record<string, unknown>, unknown][] = [
+      [
+        context(true),
+        "schedule_update",
+        { routineId: "routine-1" },
+        { error: "Schedule not found." },
+      ],
       [context(true), "spawn_bot", {}, { error: "Name taken" }],
-      [context(true), "schedule_create", {}, null],
-    ] as const;
-    for (const [token, name, args, result] of calls) {
-      await dozoTokenRunMade(token.ctx, name, args, result);
+      [context(true), "spawn_bot", {}, { ok: true }],
+      [context(true), "schedule_create", {}, { ok: true }],
+      [context(true), "shell", {}, { ok: true }],
+      [context(true), "update_bot", {}, { ok: true }],
+      [context(true), "update_bot", { bot_id: "bot-1" }, { ok: true }],
+      [context(true), "ticket_create", {}, { ticket: { assigneeBotId: null } }],
+      [context(true), "spawn_bot", {}, null],
+      [context(true), "spawn_bot", {}, ["bot-8"]],
+      [context(false), "spawn_bot", {}, { ok: true, botId: "bot-8" }],
+    ];
+    for (const [token, name, args, result] of cases) {
+      await dozoTokenRunDone(token.ctx, name, args, result);
       expect(token.executeRaw).not.toHaveBeenCalled();
     }
   });

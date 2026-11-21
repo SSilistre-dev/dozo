@@ -160,8 +160,11 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
   const caller = async (c: Context): Promise<Caller> => {
     // Guessing tokens costs a lookup each: an address is held back before any is made.
     // By its IPv6 /64 or IPv4 address, as other per-address limits count, so a flood of addresses
-    // from one network shares a coarser window instead of filling the table for everyone.
-    if (addresses(throttleKey(deps.clientIp(c))) > DOZO_BOT_API_ADDRESS_PER_MINUTE)
+    // from one network shares a coarser window instead of filling the table for everyone. A request
+    // whose address the server cannot tell would share one window with every other: refused.
+    const ip = deps.clientIp(c);
+    if (!ip) throw new ApiError(400, "Cannot tell where this request came from");
+    if (addresses(throttleKey(ip)) > DOZO_BOT_API_ADDRESS_PER_MINUTE)
       throw new ApiError(429, "Too many requests");
     const authorization = c.req.header("authorization");
     const found = await deps.authenticate(authorization);
