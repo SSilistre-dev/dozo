@@ -448,18 +448,24 @@ Each rule is the member's, for one bot (in a group chat, the rules of the member
 and does one of three things (`packages/core/src/dozo-command-rule-match.ts`):
 
 - **Allow**: exactly these words, in this folder. **Allow with arguments**: these words followed
-  by more words that are not options (nothing starting with `-`, since an option can make a
-  program run another one: `git -c alias.x=!sh`, `find -exec`, `rsync -e`). Both need the command
+  by more words that are neither options nor settings (nothing starting with `-`, no `=`, since
+  either can make a program run another one: `git -c alias.x=!sh`, `find -exec`,
+  `make all SHELL=/tmp/x`). Both need the command
   to read as one literal program (above), so chaining, substitution, redirection, a variable
   before the program, `sudo` or `bash -c` never pass by a rule. A prefix needs at least two words
   and is refused for programs that run what their arguments name (`sudo`, `env`, shells,
-  interpreters, `xargs`, `timeout`, `ssh`, `npx` and the rest of `RUNNERS`).
+  interpreters, `awk`, `sed`, `xargs`, `timeout`, `ssh`, `npx` and the rest of `RUNNERS`) and for
+  subcommands that install or run code (`git submodule`, `npm install`, `npm run`, `docker run`,
+  `RUNNER_SUBCOMMANDS`).
 - **Block**: refuses any command containing these words in order within one command of the line,
   on either computer, in any folder and in every mode, Never ask included, before an allow rule
   and before the Space's first card. It reads through quotes, backslashes, invisible marks,
   full-width letters, paths, `.exe`, case, `sudo`, `env`, `bash -c '…'`, substitutions and
-  options between the words. It is a guard, not a boundary: it errs toward refusing (`echo git
-  push` is refused) and does not follow variables, aliases or scripts the bot writes first.
+  options between the words, and matches short options in any order (`rm -rf` refuses `rm -fr`
+  and `rm -r -f`). When the line holds a variable, substitution or glob, the rule's program alone
+  is refused (`git $(echo push)`). A routine's command watch is checked too. It is a guard, not a
+  boundary: it errs toward refusing (`echo git push` is refused) and does not follow aliases or
+  scripts the bot writes first.
 - A rule saved on the member's own computer allows on it; an exact one also allows on the bot's
   computer, which holds less of theirs. A rule saved on the bot's computer never allows on the
   member's own. A prefix rule stays on the computer it was saved on.

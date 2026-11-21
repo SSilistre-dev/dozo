@@ -47,6 +47,31 @@ describe("matchCommandRules: allow", () => {
     expect(matchCommandRules([rule(["git", "log", "-n", "5"])], own("git log -n 5"))).toBe("allow");
   });
 
+  it("never lets a prefix rule pass a setting, or a subcommand that runs what it is given", () => {
+    const make = [rule(["make", "all"], "allow_prefix")];
+    expect(matchCommandRules(make, own("make all docs"))).toBe("allow_prefix");
+    expect(matchCommandRules(make, own("make all SHELL=/tmp/x"))).toBeUndefined();
+    for (const words of [
+      ["git", "submodule"],
+      ["npm", "install", "lodash"],
+      ["pnpm", "dlx"],
+      ["docker", "run"],
+      ["awk", "-F:"],
+      ["sed", "-n"],
+      ["pkexec", "ls"],
+      ["GIT", "SUBMODULE"],
+    ]) {
+      expect(prefixRuleAllowed(words), words.join(" ")).toBe(false);
+      const command = `${words.join(" ")} x`;
+      expect(
+        matchCommandRules([rule(words, "allow_prefix")], own(command)),
+        command,
+      ).toBeUndefined();
+    }
+    expect(prefixRuleAllowed(["git", "log"])).toBe(true);
+    expect(prefixRuleAllowed(["npm", "test"])).toBe(true);
+  });
+
   it("names an exact match first when both kinds match", () => {
     const rules = [rule(["git", "status"], "allow_prefix"), rule(["git", "status"])];
     expect(matchCommandRules(rules, own("git status"))).toBe("allow");
@@ -184,6 +209,27 @@ describe("matchCommandRules: block", () => {
   ])("refuses %s", (_name, command) => {
     expect(matchCommandRules(blockPush, own(command))).toBe("block");
     expect(matchCommandRules(blockPush, hosted(command, "/anywhere"))).toBe("block");
+  });
+
+  it("refuses a command that could expand into the blocked words", () => {
+    for (const command of [
+      `git $\{x:-push}`,
+      "git $(echo push)",
+      "git $'\\x70ush'",
+      "git pu*h",
+      "git pus?",
+    ])
+      expect(matchCommandRules(blockPush, own(command)), command).toBe("block");
+    // Without the rule's program there is nothing to refuse.
+    expect(matchCommandRules(blockPush, own("echo $HOME"))).toBeUndefined();
+  });
+
+  it("matches short options in any order or grouping", () => {
+    const rules = [rule(["rm", "-rf"], "block")];
+    for (const command of ["rm -rf /", "rm -fr /", "rm -r -f /", "rm -f -v -r build", "RM -Rf x"])
+      expect(matchCommandRules(rules, own(command)), command).toBe("block");
+    for (const command of ["rm -r build", "rm -f build", "rm build", "ls -rf; rm x"])
+      expect(matchCommandRules(rules, own(command)), command).toBeUndefined();
   });
 
   it("leaves other commands alone", () => {

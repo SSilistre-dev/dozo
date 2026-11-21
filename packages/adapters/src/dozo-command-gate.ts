@@ -8,9 +8,12 @@ import {
 } from "@rakazo/core";
 import { readDozoCommandRules, readDozoHostedAsks } from "@rakazo/db";
 import type { RunContext } from "./run-context.js";
+import { commandWatchFromTool } from "./schedule-tools.js";
 
 /** The tool that runs a command on the bot's own computer. */
 export const HOSTED_SHELL_TOOL = "shell";
+/** The tool whose command watch runs a command on the bot's computer later, unattended. */
+const SCHEDULE_TOOL = "schedule_create";
 
 /** Calls a block rule refused, so the refusal says why. */
 const commandBlocks = new WeakSet<Record<string, unknown>>();
@@ -50,7 +53,9 @@ export async function commandRuleMatch(
  * never does that, and a rule asking for the whole tool still asks. Otherwise nothing changes,
  * unless the member asked for commands on the bot's computer to ask: then, outside Never ask, a
  * command that does more than read and that no allow rule (theirs, or upstream's for the tool)
- * covers asks. A run reached by a token's text is gated after this (dozo-token-run.ts).
+ * covers asks. A routine's command watch, which runs on the bot's computer later, is refused by a
+ * block rule too; upstream asks about it in any other case. A run reached by a token's text is
+ * gated after this (dozo-token-run.ts).
  */
 export async function dozoHostedCommandGate<Plan extends string>(
   ctx: RunContext,
@@ -59,7 +64,15 @@ export async function dozoHostedCommandGate<Plan extends string>(
   resolved: { decision: string; source?: string },
   plan: Plan,
 ): Promise<Plan | "deny" | "ask" | "allow"> {
-  if (name !== HOSTED_SHELL_TOOL || plan === "deny") return plan;
+  if (plan === "deny") return plan;
+  if (name === SCHEDULE_TOOL) {
+    const command = commandWatchFromTool(args.watch);
+    if (command === undefined || (await commandRuleMatch(ctx, { command }, "hosted")) !== "block")
+      return plan;
+    commandBlocks.add(args);
+    return "deny";
+  }
+  if (name !== HOSTED_SHELL_TOOL) return plan;
   const match = await commandRuleMatch(ctx, args, "hosted");
   if (match === "block") return "deny";
   if (plan !== "allow") return match === "allow" && resolved.decision !== "ask" ? "allow" : plan;

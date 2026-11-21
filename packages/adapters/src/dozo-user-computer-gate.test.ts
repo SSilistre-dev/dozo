@@ -8,7 +8,10 @@ vi.mock("./run-tools-user-computer.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./run-tools-user-computer.js")>()),
   userComputerGate: vi.fn(async () => upstream.plan),
 }));
-vi.mock("@rakazo/db", () => ({ readDozoCommandRules: rules.read }));
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  readDozoCommandRules: rules.read,
+}));
 
 import { dozoCommandBlockRefusal } from "./dozo-command-gate.js";
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
@@ -195,9 +198,9 @@ describe("userComputerGate", () => {
   });
 
   it("lets a prefix rule allow the same words with more words that are not options", async () => {
-    rules.read.mockResolvedValue([rule(["npm", "run"], "allow_prefix", { cwd: "~/app" })]);
-    expect((await gate("npm run build", { cwd: "~/app" })).plan).toBe("allow");
-    for (const command of ["npm run build --if-present", "npm run build && rm x", "sudo npm run x"])
+    rules.read.mockResolvedValue([rule(["git", "log"], "allow_prefix", { cwd: "~/app" })]);
+    expect((await gate("git log src", { cwd: "~/app" })).plan).toBe("allow");
+    for (const command of ["git log --output=x", "git log src && rm x", "sudo git log x"])
       expect((await gate(command, { cwd: "~/app" })).plan, command).toBe("ask");
   });
 

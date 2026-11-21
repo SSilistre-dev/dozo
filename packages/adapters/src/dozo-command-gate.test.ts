@@ -5,7 +5,8 @@ const db = vi.hoisted(() => ({
   rules: vi.fn(async (): Promise<DozoCommandRuleView[]> => []),
   hostedAsks: vi.fn(async () => false),
 }));
-vi.mock("@rakazo/db", () => ({
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
   readDozoCommandRules: db.rules,
   readDozoHostedAsks: db.hostedAsks,
 }));
@@ -92,6 +93,18 @@ describe("dozoHostedCommandGate", () => {
     const { plan: decided, args } = await gate("sudo git push --force", { mode, plan });
     expect(decided).toBe("deny");
     expect(dozoCommandBlockRefusal(args)).toContain("blocked for this bot");
+  });
+
+  it("refuses a routine whose command watch runs a blocked command", async () => {
+    db.rules.mockResolvedValue([rule(["git", "push"], "block", "user")]);
+    const watch = (command: string) => ({ watch: { kind: "command", command, everyMinutes: 60 } });
+    const blocked = watch("cd app && git push");
+    const run = (args: Record<string, unknown>, mode: Mode = "never") =>
+      dozoHostedCommandGate(context(mode), "schedule_create", args, NO_RULE, "allow");
+    expect(await run(blocked)).toBe("deny");
+    expect(dozoCommandBlockRefusal(blocked)).toContain("blocked");
+    expect(await run(watch("git status"), "ask")).toBe("allow");
+    expect(await run({ prompt: "Check the build" })).toBe("allow");
   });
 
   it("reads the rules of the member whose run it is, for this bot", async () => {
