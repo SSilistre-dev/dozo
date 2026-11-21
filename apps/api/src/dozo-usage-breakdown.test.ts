@@ -2,7 +2,7 @@ import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { UsageCell } from "./dozo-usage-breakdown.js";
-import { groupUsage, usageCsv } from "./dozo-usage-breakdown.js";
+import { groupUsage, usageCsv, usageDayWindow } from "./dozo-usage-breakdown.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
@@ -125,7 +125,68 @@ describe("grouping usage", () => {
   });
 });
 
+describe("grouping usage by day and person", () => {
+  it("sums per day, newest first, whatever the cost", () => {
+    const groups = groupUsage(
+      [
+        cell({ day: "2026-11-19", costUsd: 5 }),
+        cell({ day: "2026-11-21", costUsd: 1 }),
+        cell({ day: "2026-11-20", costUsd: 3 }),
+      ],
+      "day",
+    );
+    expect(groups.map((g) => [g.key, g.name, g.state, g.costUsd])).toEqual([
+      ["2026-11-21", "2026-11-21", "live", 1],
+      ["2026-11-20", "2026-11-20", "live", 3],
+      ["2026-11-19", "2026-11-19", "live", 5],
+    ]);
+  });
+
+  it("sums per person with the email, costliest first, and tells a gone account apart", () => {
+    const groups = groupUsage(
+      [
+        cell({ userId: "ada", userName: "Ada", userEmail: "ada@example.test", costUsd: 1 }),
+        cell({ userId: "bob", userName: "Bob", userEmail: "bob@example.test", costUsd: 4 }),
+        cell({ userId: "ada", userName: "Ada", userEmail: "ada@example.test", costUsd: 1 }),
+        cell({ userId: "gone", userName: null, userEmail: null, costUsd: 0.5 }),
+      ],
+      "person",
+    );
+    expect(groups.map((g) => [g.name, g.detail, g.state, g.modelCalls, g.costUsd])).toEqual([
+      ["Bob", "bob@example.test", "live", 1, 4],
+      ["Ada", "ada@example.test", "live", 2, 2],
+      [null, null, "unknown", 1, 0.5],
+    ]);
+  });
+
+  it("starts the window 30 local days back, and a day turns over at the zone's midnight", () => {
+    const at = new Date("2026-11-20T21:30:00Z");
+    // Half past midnight in Istanbul is still the 20th in Los Angeles and in UTC.
+    expect(usageDayWindow("Europe/Istanbul", at).firstDay).toBe("2026-10-23");
+    expect(usageDayWindow("UTC", at).firstDay).toBe("2026-10-22");
+    expect(usageDayWindow("America/Los_Angeles", at).firstDay).toBe("2026-10-22");
+    expect(usageDayWindow("UTC", new Date("2026-03-01T00:00:00Z")).firstDay).toBe("2026-01-31");
+  });
+});
+
 describe("usage as CSV", () => {
+  it("writes the day and person columns, escaping a name that reads as a formula", () => {
+    expect(
+      usageCsv(groupUsage([cell({ day: "2026-11-21" })], "day"), "day").split("\r\n").slice(0, 2),
+    ).toEqual(["day,calls,input_tokens,output_tokens,total_tokens,cost_usd", "2026-11-21,1,100,10,110,0.5"]);
+    const person = usageCsv(
+      groupUsage(
+        [cell({ userId: "ada", userName: "=cmd|' /C calc'!A0", userEmail: "+ada@example.test" })],
+        "person",
+      ),
+      "person",
+    );
+    expect(person.split("\r\n").slice(0, 2)).toEqual([
+      "person,email,state,calls,input_tokens,output_tokens,total_tokens,cost_usd",
+      "'=cmd|' /C calc'!A0,'+ada@example.test,live,1,100,10,110,0.5",
+    ]);
+  });
+
   it("writes the grouping's columns and leaves unknown figures empty", () => {
     const csv = usageCsv(
       groupUsage([cell({ ...digest }), cell({ costCount: 0, routineUnknown: true })], "routine"),
@@ -200,5 +261,65 @@ describe("who sees the breakdown", () => {
       ["space-ada", "ada"],
       ["space-ada", "ada"],
     ]);
+  });
+});
+
+describe("who may group by person", () => {
+  type Role = "owner" | "member" | null;
+  function clientFor(role: Role, members: number) {
+    const asked: string[] = [];
+    const prisma = {
+      spaceMember: {
+        findUnique: async () => (role ? { role } : null),
+        count: async () => members,
+      },
+      user: { findUnique: async () => ({ timezone: "Europe/Istanbul" }) },
+      $queryRaw: async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+        asked.push(values.join("|"));
+        return [{ userId: "bob", userName: "Bob", userEmail: "bob@example.test", calls: 1 }];
+      },
+    };
+    const ctx = createRouterContext({
+      prisma,
+      events: { notify: () => undefined, publishSpaceChange: () => undefined },
+      env: {},
+    } as unknown as RouterDeps);
+    const client = createRouterClient(dozoUsageRoutes(ctx), {
+      context: {
+        actor: { userId: "ada", spaceId: "space-1", email: "a@example.test", isDeploymentOwner: false },
+      },
+    }).dozoUsage;
+    return { client, asked };
+  }
+
+  it("shows the owner every member, on screen and as CSV, and offers the option", async () => {
+    const { client, asked } = clientFor("owner", 2);
+    expect(await client.scope()).toEqual({ person: true });
+    expect(await client.breakdown({ by: "person" })).toMatchObject([{ name: "Bob" }]);
+    expect((await client.csv({ by: "person" })).csv).toContain("Bob,bob@example.test,live");
+    // The whole Space is read, not one user.
+    expect(asked).toEqual(["space-1", "space-1"]);
+  });
+
+  it("refuses a member on the server, before any record is read, and hides the option", async () => {
+    const { client, asked } = clientFor("member", 2);
+    expect(await client.scope()).toEqual({ person: false });
+    await expect(client.breakdown({ by: "person" })).rejects.toMatchObject({ name: "SpaceOwnerRequiredError" });
+    await expect(client.csv({ by: "person" })).rejects.toMatchObject({ name: "SpaceOwnerRequiredError" });
+    expect(asked).toEqual([]);
+  });
+
+  it("offers nothing to the sole person of a Space, and nothing to a stranger", async () => {
+    expect(await clientFor("owner", 1).client.scope()).toEqual({ person: false });
+    const stranger = clientFor(null, 2);
+    expect(await stranger.client.scope()).toEqual({ person: false });
+    await expect(stranger.client.breakdown({ by: "person" })).rejects.toBeDefined();
+    expect(stranger.asked).toEqual([]);
+  });
+
+  it("reads a member's own days in the account's time zone, from their own records", async () => {
+    const { client, asked } = clientFor("member", 2);
+    await client.breakdown({ by: "day" });
+    expect(asked[0]).toContain("Europe/Istanbul|space-1|ada|");
   });
 });

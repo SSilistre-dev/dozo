@@ -13,6 +13,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   groups: {} as Record<string, DozoUsageGroup[]>,
+  person: false,
   csv: vi.fn(async ({ by }: { by: string }) => ({ csv: `${by}\r\n` })),
   download: vi.fn(),
   toastError: vi.fn(),
@@ -24,6 +25,12 @@ vi.mock("../lib/query", () => ({
         queryOptions: ({ input }: { input: { by: DozoUsageGrouping } }) => ({
           queryKey: ["breakdown", input.by],
           queryFn: async () => api.groups[input.by] ?? [],
+        }),
+      },
+      scope: {
+        queryOptions: () => ({
+          queryKey: ["scope"],
+          queryFn: async () => ({ person: api.person }),
         }),
       },
       csv: { call: api.csv },
@@ -98,6 +105,15 @@ beforeEach(() => {
       group({ key: "none", name: null, detail: null, state: "none" }),
     ],
   };
+  api.groups.day = [
+    group({ key: "2026-11-21", name: "2026-11-21", detail: null, costUsd: 2 }),
+    group({ key: "2026-11-20", name: "2026-11-20", detail: null, costUsd: 1 }),
+  ];
+  api.groups.person = [
+    group({ key: "u1", name: "Ada", detail: "ada@example.test", costUsd: 3 }),
+    group({ key: "u2", name: null, detail: null, state: "unknown", costUsd: 1 }),
+  ];
+  api.person = false;
   api.csv.mockClear();
   api.download.mockClear();
   api.toastError.mockClear();
@@ -163,6 +179,41 @@ it("groups by routine, with each routine's bot, and what it cannot tell", async 
   await vi.waitFor(() =>
     expect(rows().map((row) => row[0])).toEqual(["Morning digestChef", "Unknown", "No routine"]),
   );
+});
+
+const buttons = () =>
+  [...host.querySelectorAll("[data-testid=usage-breakdown] button")].map((b) => b.textContent);
+
+it("groups by day, newest first, with a bar scaled to the costliest day", async () => {
+  await show(<DozoUsageSettingsPanel usage={summary} />);
+  pick("Day");
+  await vi.waitFor(() =>
+    expect(rows().map((row) => [row[0], row[4]])).toEqual([
+      ["Sat, Nov 21", "$2.00"],
+      ["Fri, Nov 20", "$1.00"],
+    ]),
+  );
+  const bars = [...host.querySelectorAll<HTMLElement>("tbody [aria-hidden]")];
+  expect(bars.map((bar) => bar.style.width)).toEqual(["100%", "50%"]);
+});
+
+it("offers person only when the server says the caller may, and lists everyone", async () => {
+  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await vi.waitFor(() => expect(rows()).toHaveLength(1));
+  expect(buttons()).not.toContain("Person");
+  act(() => root.unmount());
+  root = createRoot(host);
+  api.person = true;
+  await show(<DozoUsageSettingsPanel usage={summary} />);
+  await vi.waitFor(() => expect(buttons()).toContain("Person"));
+  pick("Person");
+  await vi.waitFor(() =>
+    expect(rows().map((row) => row[0])).toEqual(["Adaada@example.test", "Unknown"]),
+  );
+  await act(async () =>
+    (host.querySelector("[aria-label='Download CSV']") as HTMLButtonElement).click(),
+  );
+  expect(api.csv).toHaveBeenCalledWith({ by: "person" });
 });
 
 it("downloads the grouping shown as the server's CSV", async () => {

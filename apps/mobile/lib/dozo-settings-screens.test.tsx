@@ -285,6 +285,33 @@ describe("usage on mobile", () => {
     ]);
   });
 
+  it("groups by day, and offers person only to whom the server says may see it", async () => {
+    answers["dozoUsage/breakdown"] = ({ by }: { by: string }) =>
+      by === "day"
+        ? [
+            { ...model, key: "2026-11-21", name: "2026-11-21", detail: null },
+            { ...model, key: "2026-11-20", name: "2026-11-20", detail: null, costUsd: 0.5 },
+          ]
+        : [{ ...model, key: "u", name: "Ada", detail: "ada@example.test" }];
+    answers["dozoUsage/scope"] = { person: false };
+    await render(<DozoUsage />);
+    await settle(() => expect(text()).toContain("fast-model"));
+    expect(button("Person")).toBeUndefined();
+    act(() => button("Day")!.click());
+    await settle(() => expect(text()).toContain("Sat, Nov 21"));
+    expect(text()).toContain("Fri, Nov 20");
+    expect(calls("dozoUsage/breakdown").map(([, input]) => input)).not.toContainEqual({
+      by: "person",
+    });
+
+    answers["dozoUsage/scope"] = { person: true };
+    queryClient.clear();
+    await render(<DozoUsage />);
+    await settle(() => expect(button("Person")).toBeDefined());
+    act(() => button("Person")!.click());
+    await settle(() => expect(text()).toContain("ada@example.test"));
+  });
+
   it("hands the server's CSV to the share sheet, and says why when it cannot", async () => {
     answers["dozoUsage/breakdown"] = [model];
     answers["dozoUsage/csv"] = { csv: "group,calls\nfast-model,1200\n" };

@@ -25,6 +25,12 @@ export type UsageCell = {
   totalTokens: number;
   costCount: number;
   costUsd: number;
+  /** Set on the cells of the `day` reader: the account-zone day, `YYYY-MM-DD`. */
+  day?: string;
+  /** Set on the cells of the `person` reader. */
+  userId?: string;
+  userName?: string | null;
+  userEmail?: string | null;
 };
 
 /**
@@ -60,9 +66,124 @@ export async function readUsageCells(
     GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9`;
 }
 
+/** How many days the `day` grouping reads, today included. */
+export const USAGE_DAYS = 30;
+
+/** `YYYY-MM-DD` of an instant in a time zone, whatever zone the server or database runs in. */
+function dayIn(timeZone: string, at: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+}
+
+/**
+ * The first day shown, and an instant a safe margin before it so the query can use the table's
+ * time index before the exact day test (a zone is at most a day away from UTC).
+ */
+export function usageDayWindow(timeZone: string, now: Date): { firstDay: string; since: Date } {
+  const [year, month, day] = dayIn(timeZone, now).split("-").map(Number);
+  const first = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) - (USAGE_DAYS - 1)));
+  return {
+    firstDay: first.toISOString().slice(0, 10),
+    since: new Date(first.getTime() - 2 * 86_400_000),
+  };
+}
+
+const NO_CELL: UsageCell = {
+  provider: "",
+  model: "",
+  botId: null,
+  botName: null,
+  deletedBotName: null,
+  routineId: null,
+  routineName: null,
+  routineBotName: null,
+  routineUnknown: false,
+  calls: 0,
+  inputCount: 0,
+  inputTokens: 0,
+  outputCount: 0,
+  outputTokens: 0,
+  totalCount: 0,
+  totalTokens: 0,
+  costCount: 0,
+  costUsd: 0,
+};
+
+/**
+ * The caller's records per day of `timeZone` over the last `USAGE_DAYS` days. `createdAt` is a
+ * `timestamp` holding UTC, so the day is cut from `createdAt AT TIME ZONE 'UTC' AT TIME ZONE zone`
+ * and reads the same whatever zone the database session runs in.
+ */
+export async function readDayCells(
+  prisma: Pick<PrismaClient, "$queryRaw">,
+  member: { spaceId: string; userId: string },
+  timeZone: string,
+  now = new Date(),
+): Promise<UsageCell[]> {
+  const { firstDay, since } = usageDayWindow(timeZone, now);
+  const rows = await prisma.$queryRaw<Array<Partial<UsageCell>>>`
+    SELECT day, count(*)::int AS calls,
+      count("inputTokens")::int AS "inputCount",
+      coalesce(sum("inputTokens"), 0)::float8 AS "inputTokens",
+      count("outputTokens")::int AS "outputCount",
+      coalesce(sum("outputTokens"), 0)::float8 AS "outputTokens",
+      count("totalTokens")::int AS "totalCount",
+      coalesce(sum("totalTokens"), 0)::float8 AS "totalTokens",
+      count("costUsd")::int AS "costCount",
+      coalesce(sum("costUsd"), 0)::float8 AS "costUsd"
+    FROM (
+      SELECT to_char((u."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}::text,
+        'YYYY-MM-DD') AS day, u."inputTokens", u."outputTokens", u."totalTokens", u."costUsd"
+      FROM usage_records u
+      WHERE u."spaceId" = ${member.spaceId} AND u."userId" = ${member.userId}
+        AND u."createdAt" >= (${since.toISOString()}::timestamptz AT TIME ZONE 'UTC')
+    ) days
+    WHERE day >= ${firstDay}
+    GROUP BY day`;
+  return rows.map((row) => ({ ...NO_CELL, ...row }));
+}
+
+/**
+ * Every member's records in the Space, per person. The caller must already be the Space's owner:
+ * this reads other people's spend.
+ */
+export async function readPersonCells(
+  prisma: Pick<PrismaClient, "$queryRaw">,
+  spaceId: string,
+): Promise<UsageCell[]> {
+  const rows = await prisma.$queryRaw<Array<Partial<UsageCell>>>`
+    SELECT u."userId", usr.name AS "userName", usr.email AS "userEmail",
+      count(*)::int AS calls,
+      count(u."inputTokens")::int AS "inputCount",
+      coalesce(sum(u."inputTokens"), 0)::float8 AS "inputTokens",
+      count(u."outputTokens")::int AS "outputCount",
+      coalesce(sum(u."outputTokens"), 0)::float8 AS "outputTokens",
+      count(u."totalTokens")::int AS "totalCount",
+      coalesce(sum(u."totalTokens"), 0)::float8 AS "totalTokens",
+      count(u."costUsd")::int AS "costCount",
+      coalesce(sum(u."costUsd"), 0)::float8 AS "costUsd"
+    FROM usage_records u
+    LEFT JOIN "user" usr ON usr.id = u."userId"
+    WHERE u."spaceId" = ${spaceId}
+    GROUP BY 1, 2, 3`;
+  return rows.map((row) => ({ ...NO_CELL, ...row }));
+}
+
 type Identity = Pick<DozoUsageGroup, "key" | "name" | "detail" | "state">;
 
 function identity(cell: UsageCell, by: DozoUsageGrouping): Identity {
+  if (by === "day") {
+    return { key: cell.day ?? "", name: cell.day ?? null, detail: null, state: "live" };
+  }
+  if (by === "person") {
+    const key = cell.userId ?? "";
+    if (cell.userName == null) return { key, name: null, detail: null, state: "unknown" };
+    return { key, name: cell.userName, detail: cell.userEmail ?? null, state: "live" };
+  }
   if (by === "model") {
     return {
       key: JSON.stringify([cell.provider, cell.model]),
@@ -137,6 +258,8 @@ export function groupUsage(cells: UsageCell[], by: DozoUsageGrouping): DozoUsage
     })
     .sort(
       (a, b) =>
+        // Days read newest first, like a calendar; the rest costliest first.
+        (by === "day" ? b.key.localeCompare(a.key) : 0) ||
         (b.costUsd ?? -1) - (a.costUsd ?? -1) ||
         b.modelCalls - a.modelCalls ||
         STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
@@ -166,6 +289,8 @@ export function usageCsv(groups: DozoUsageGroup[], by: DozoUsageGrouping): strin
     model: ["model", "provider"],
     bot: ["bot", "state"],
     routine: ["routine", "bot", "state"],
+    day: ["day"],
+    person: ["person", "email", "state"],
   }[by];
   const lines = [[...header, ...FIGURES].join(",")];
   for (const group of groups) {
@@ -173,6 +298,8 @@ export function usageCsv(groups: DozoUsageGroup[], by: DozoUsageGrouping): strin
       model: [group.name, group.detail],
       bot: [group.name, group.state],
       routine: [group.name, group.detail, group.state],
+      day: [group.name],
+      person: [group.name, group.detail, group.state],
     }[by];
     const figures = [
       group.modelCalls,

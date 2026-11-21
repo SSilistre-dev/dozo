@@ -1,11 +1,21 @@
-import type { DozoCacheSavings } from "@rakazo/contracts";
+import type { DozoCacheSavings, DozoUsageGrouping } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   monthlyBillingPeriod,
   organizationForMember,
+  requireSpaceOwner,
+  SpaceOwnerRequiredError,
+  spaceIsShared,
 } from "@rakazo/db";
-import { groupUsage, readUsageCells, usageCsv } from "./dozo-usage-breakdown.js";
+import { savedTimeZone } from "./agent-import.js";
+import {
+  groupUsage,
+  readDayCells,
+  readPersonCells,
+  readUsageCells,
+  usageCsv,
+} from "./dozo-usage-breakdown.js";
 import type { RouterContext } from "./routes/context.js";
 
 type CacheSums = {
@@ -58,6 +68,35 @@ export async function usagePeriodStart(
   return monthlyBillingPeriod(billing, now).since;
 }
 
+type Caller = { spaceId: string; userId: string };
+
+/** The owner of a Space that other people belong to; nobody else sees the person grouping. */
+async function canGroupByPerson(prisma: PrismaClient, caller: Caller): Promise<boolean> {
+  try {
+    await requireSpaceOwner(prisma, caller);
+  } catch (error) {
+    if (error instanceof SpaceOwnerRequiredError) return false;
+    throw error;
+  }
+  return spaceIsShared(prisma, caller.spaceId);
+}
+
+/**
+ * The groups of one grouping. Every grouping reads the caller's own records except `person`,
+ * which reads the whole Space and is refused to anyone but its owner, here on the server.
+ */
+async function usageGroups(prisma: PrismaClient, caller: Caller, by: DozoUsageGrouping) {
+  const member = { spaceId: caller.spaceId, userId: caller.userId };
+  if (by === "person") {
+    await requireSpaceOwner(prisma, member);
+    return groupUsage(await readPersonCells(prisma, member.spaceId), by);
+  }
+  if (by === "day") {
+    return groupUsage(await readDayCells(prisma, member, await savedTimeZone(prisma, caller)), by);
+  }
+  return groupUsage(await readUsageCells(prisma, member), by);
+}
+
 /**
  * The caller's own usage in the current Space: its cache share, and its spend grouped by model,
  * bot or routine, on screen and as CSV. Every member sees only their own records, as on the
@@ -76,15 +115,15 @@ export function dozoUsageRoutes(ctx: RouterContext) {
         });
         return cacheSavings(result._sum, since);
       }),
-      breakdown: authed.dozoUsage.breakdown.handler(async ({ context, input }) => {
-        const member = { spaceId: context.actor.spaceId, userId: context.actor.userId };
-        return groupUsage(await readUsageCells(deps.prisma, member), input.by);
-      }),
-      csv: authed.dozoUsage.csv.handler(async ({ context, input }) => {
-        const member = { spaceId: context.actor.spaceId, userId: context.actor.userId };
-        const groups = groupUsage(await readUsageCells(deps.prisma, member), input.by);
-        return { csv: usageCsv(groups, input.by) };
-      }),
+      scope: authed.dozoUsage.scope.handler(async ({ context }) => ({
+        person: await canGroupByPerson(deps.prisma, context.actor),
+      })),
+      breakdown: authed.dozoUsage.breakdown.handler(({ context, input }) =>
+        usageGroups(deps.prisma, context.actor, input.by),
+      ),
+      csv: authed.dozoUsage.csv.handler(async ({ context, input }) => ({
+        csv: usageCsv(await usageGroups(deps.prisma, context.actor, input.by), input.by),
+      })),
     },
   };
 }

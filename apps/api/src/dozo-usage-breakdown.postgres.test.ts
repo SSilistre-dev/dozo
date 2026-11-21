@@ -3,7 +3,12 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createRepos, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { groupUsage, readUsageCells } from "./dozo-usage-breakdown.js";
+import {
+  groupUsage,
+  readDayCells,
+  readPersonCells,
+  readUsageCells,
+} from "./dozo-usage-breakdown.js";
 
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -90,7 +95,13 @@ describePostgres("the usage breakdown query (PostgreSQL)", () => {
 
   function usage(
     actor: Actor,
-    more: { botId?: string; runId?: string; parentRunId?: string; costUsd?: number | null },
+    more: {
+      botId?: string;
+      runId?: string;
+      parentRunId?: string;
+      costUsd?: number | null;
+      createdAt?: Date;
+    },
   ) {
     return system.usageRecord.create({
       data: {
@@ -169,6 +180,77 @@ describePostgres("the usage breakdown query (PostgreSQL)", () => {
       ["Morning digest", "Chef", "live", 2, 0.5],
       [null, null, "unknown", 2, 0.5],
       [null, null, "none", 2, null],
+    ]);
+  });
+
+  it("cuts days at the account's midnight whatever zone the database runs in", async () => {
+    const ada = await person();
+    const at = (iso: string) => usage(ada, { createdAt: new Date(iso) });
+    await at("2026-11-20T20:59:59Z");
+    await at("2026-11-20T21:00:00Z");
+    await at("2026-11-21T07:59:59Z");
+    await at("2026-11-21T08:00:00Z");
+    // Before the 30 days, so never shown.
+    await at("2026-10-01T12:00:00Z");
+    const now = new Date("2026-11-21T09:00:00Z");
+    const days = async (zone: string) =>
+      groupUsage(await runAsTenant(ada, () => readDayCells(prisma, ada, zone, now)), "day").map(
+        (g) => [g.key, g.modelCalls],
+      );
+    expect(await days("Europe/Istanbul")).toEqual([
+      ["2026-11-21", 3],
+      ["2026-11-20", 1],
+    ]);
+    expect(await days("UTC")).toEqual([
+      ["2026-11-21", 2],
+      ["2026-11-20", 2],
+    ]);
+    expect(await days("America/Los_Angeles")).toEqual([
+      ["2026-11-21", 1],
+      ["2026-11-20", 3],
+    ]);
+  });
+
+  it("gives an empty period no days", async () => {
+    const ada = await person();
+    await usage(ada, { createdAt: new Date("2026-01-01T00:00:00Z") });
+    const now = new Date("2026-11-21T09:00:00Z");
+    expect(await runAsTenant(ada, () => readDayCells(prisma, ada, "UTC", now))).toEqual([]);
+  });
+
+  it("reads every member of the Space for the person grouping, and no other Space", async () => {
+    const ada = await person();
+    const bobId = `usage-breakdown-${randomUUID()}`;
+    users.push(bobId);
+    const createdAt = new Date();
+    await system.user.create({
+      data: { id: bobId, name: "Bob", email: `${bobId}@example.test`, emailVerified: true },
+    });
+    await system.member.create({
+      data: { id: `m-${bobId}`, organizationId: ada.userId, userId: bobId, role: "member", createdAt },
+    });
+    await system.spaceMember.create({
+      data: {
+        id: randomUUID(),
+        spaceId: ada.spaceId,
+        organizationId: ada.userId,
+        userId: bobId,
+        role: "member",
+        createdAt,
+      },
+    });
+    const bob: Actor = { ...ada, userId: bobId, email: `${bobId}@example.test` };
+    await usage(ada, { costUsd: 1 });
+    await usage(bob, { costUsd: 3 });
+    const carol = await person();
+    await usage(carol, { costUsd: 99 });
+
+    const cells = await runAsTenant(ada, () => readPersonCells(prisma, ada.spaceId));
+    expect(
+      groupUsage(cells, "person").map((g) => [g.name, g.detail?.endsWith("@example.test"), g.costUsd]),
+    ).toEqual([
+      ["Bob", true, 3],
+      ["Ada", true, 1],
     ]);
   });
 });
