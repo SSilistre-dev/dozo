@@ -127,6 +127,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
       {
         provider: PROVIDER,
         name: claudeCodeDriver.name,
+        mode: "model",
         found: false,
         signedIn: null,
         connected: false,
@@ -141,6 +142,7 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
       {
         provider: PROVIDER,
         name: claudeCodeDriver.name,
+        mode: "model",
         found: true,
         signedIn: true,
         connected: true,

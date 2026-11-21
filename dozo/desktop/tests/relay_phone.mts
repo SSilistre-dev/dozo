@@ -4,7 +4,7 @@
 // <shared>/code, and once the app allowed it, the answer and the session's email to
 // <shared>/signed-in. It keeps the
 // relay up until killed, so the app can remove the phone afterwards.
-// Usage: tsx relay_phone.mts <shared-dir>, in a container that has the workspace at $DOZO_WORKSPACE
+// Usage: tsx relay_phone.mts <shared-dir> [--no-dev-relay], in a container that has the workspace at $DOZO_WORKSPACE
 // (the relay code is imported from there, the same files the bundled agent was built from).
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -21,15 +21,22 @@ const core = await import(from("packages/core/src/index.ts"));
 const { startDevRelay } = await import(from("packages/adapters/src/dozo-relay-dev-relay.ts"));
 const { connectRelaySocket } = await import(from("packages/adapters/src/dozo-relay-agent.ts"));
 
-const relay = await startDevRelay({ port: 8787 });
-say(`relay at ${relay.url}`);
+// With --no-dev-relay the phone uses whatever relay the pairing link names (the canary's real one).
+if (!process.argv.includes("--no-dev-relay")) {
+  const relay = await startDevRelay({ port: 8787 });
+  say(`relay at ${relay.url}`);
+}
 
 let qr = "";
 for (let tries = 0; !qr && tries < 1200; tries++) {
   qr = await readFile(path.join(shared, "qr"), "utf8").catch(() => "");
   if (!qr) await sleep(500);
 }
-if (!qr.startsWith("dozo://pair#")) throw new Error(`no pairing link: ${qr}`);
+// Both links, as the mobile app reads them: a released server's agent (the canary's) may print the
+// older one.
+if (!qr.startsWith("dozo://pair#") && !qr.startsWith("rakazo://dozo-pair#")) {
+  throw new Error(`no pairing link: ${qr}`);
+}
 const crypto = core.webRelayCrypto();
 const offer = core.parseRelayPairingOffer(qr.slice(qr.indexOf("#") + 1), Date.now());
 const { psk, token } = await core.relayPairingSecrets(crypto, core.decodeRelayBytes(offer.secret));

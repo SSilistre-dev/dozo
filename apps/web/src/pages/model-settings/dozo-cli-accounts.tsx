@@ -105,10 +105,47 @@ function LoginSteps({ tool }: { tool: DozoCliTool }) {
   );
 }
 
+/**
+ * What agent mode means, said once before an agent is connected: the person agrees to it, or the
+ * agent is not connected.
+ */
+function AgentConsent({
+  onAgree,
+  onCancel,
+  pending,
+}: {
+  onAgree: () => void;
+  onCancel: () => void;
+  pending: boolean;
+}) {
+  return (
+    <div className="mt-2 flex flex-col gap-2" data-testid="dozo-agent-consent">
+      <p className="text-body-sm text-muted-foreground">
+        <Trans>
+          In agent mode the bot works as you, with everything you can reach. Dozo can show and stop
+          only what the agent asks about or runs through Dozo; reading files and the agent's own web
+          access can happen without asking.
+        </Trans>
+      </p>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={pending} onClick={onAgree}>
+          <Trans>I agree, connect</Trans>
+        </Button>
+        <Button size="sm" variant="text" onClick={onCancel}>
+          <Trans>Cancel</Trans>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function CliToolRow({ tool }: { tool: DozoCliTool }) {
   const { t } = useLingui();
+  const agent = tool.mode === "agent";
+  const [asking, setAsking] = useState(false);
   const connect = useToolAction(
-    (provider, rpc) => rpc.dozoCliAccounts.connect({ provider }),
+    (provider, rpc) =>
+      rpc.dozoCliAccounts.connect({ provider, ...(agent ? { consent: true } : {}) }),
     t`Could not connect`,
   );
   const add = useToolAction(
@@ -117,10 +154,21 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
   );
   return (
     <SettingsRow
-      label={tool.name}
+      label={
+        agent ? (
+          <span className="flex items-center gap-2">
+            {tool.name}
+            <span className="rounded-full border border-border px-2 text-body-sm text-muted-foreground">
+              <Trans>Agent</Trans>
+            </span>
+          </span>
+        ) : (
+          tool.name
+        )
+      }
       control={
         <>
-          {tool.connected ? null : tool.signedIn === false ? (
+          {tool.connected || asking ? null : tool.signedIn === false ? (
             <span className="text-body-sm text-muted-foreground">
               <Trans>Not signed in</Trans>
             </span>
@@ -129,7 +177,7 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
               size="sm"
               variant="outline"
               disabled={connect.pending}
-              onClick={() => connect.run(tool.provider)}
+              onClick={() => (agent ? setAsking(true) : connect.run(tool.provider))}
             >
               <Trans>Connect</Trans>
             </Button>
@@ -147,6 +195,13 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
         </>
       }
     >
+      {asking && !tool.connected ? (
+        <AgentConsent
+          pending={connect.pending}
+          onAgree={() => connect.run(tool.provider)}
+          onCancel={() => setAsking(false)}
+        />
+      ) : null}
       {tool.login ? <LoginSteps tool={tool} /> : null}
     </SettingsRow>
   );

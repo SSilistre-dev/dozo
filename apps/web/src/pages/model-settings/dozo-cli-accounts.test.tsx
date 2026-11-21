@@ -62,6 +62,7 @@ async function render(node: ReactNode) {
 const tool = (over: Partial<DozoCliTool> = {}): DozoCliTool => ({
   provider: "tool-a",
   name: "Tool A",
+  mode: "model",
   found: true,
   signedIn: true,
   connected: false,
@@ -215,6 +216,36 @@ describe("another account", () => {
     await render(<DozoCliAccounts />);
     await vi.waitFor(() => expect(container.textContent).toContain("Sign-in did not finish."));
     expect(codeField()).toBeNull();
+  });
+});
+
+describe("an agent", () => {
+  const agent = (over: Partial<DozoCliTool> = {}) => tool({ mode: "agent", signedIn: null, ...over });
+
+  it("says what agent mode means, and connects only once the person agrees", async () => {
+    api.list.mockResolvedValue({ tools: [agent()] });
+    api.connect.mockResolvedValue({ tools: [agent({ connected: true })] });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(container.textContent).toContain("Agent"));
+    await act(async () => button("Connect")?.click());
+    expect(api.connect).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="dozo-agent-consent"]')?.textContent).toMatch(
+      /^In agent mode the bot works as you/,
+    );
+    expect(button("Connect")).toBeUndefined();
+    await act(async () => button("I agree, connect")?.click());
+    expect(api.connect).toHaveBeenCalledWith({ provider: "tool-a", consent: true });
+  });
+
+  it("goes back without connecting when the person cancels", async () => {
+    api.list.mockResolvedValue({ tools: [agent()] });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(button("Connect")).toBeDefined());
+    await act(async () => button("Connect")?.click());
+    await act(async () => button("Cancel")?.click());
+    expect(container.querySelector('[data-testid="dozo-agent-consent"]')).toBeNull();
+    expect(button("Connect")).toBeDefined();
+    expect(api.connect).not.toHaveBeenCalled();
   });
 });
 
