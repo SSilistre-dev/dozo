@@ -25,6 +25,10 @@ pub const CONNECT_PATH: &str = "/api/devices/connect";
 /// Carries the reason on a refused connection, which has no message to put it in.
 const REVOKED_HEADER: &str = "x-rakazo-device-revoked";
 const PING: Duration = Duration::from_secs(30);
+/// What this computer can do, sent on connecting so the server offers only these tools
+/// (`packages/adapters/src/dozo-device-capabilities.ts`). Commands only: no screen control.
+const CAPABILITIES_HEADER: &str = "x-dozo-device-capabilities";
+const CAPABILITIES: &str = "shell";
 
 /// Why the server ended this computer's pairing. `Some("session-ended")`: the sign-in that
 /// paired it ended, so the next sign-in may pair again.
@@ -116,6 +120,9 @@ async fn session(
         return Ended::Stopped;
     };
     request.headers_mut().insert("authorization", bearer);
+    request
+        .headers_mut()
+        .insert(CAPABILITIES_HEADER, HeaderValue::from_static(CAPABILITIES));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE_BYTES))
         .max_frame_size(Some(MAX_MESSAGE_BYTES));
@@ -262,6 +269,8 @@ mod tests {
                         let auth = request.headers().get("authorization");
                         assert_eq!(request.uri().path(), CONNECT_PATH);
                         if auth.is_some_and(|auth| auth == "Bearer good") {
+                            let declared = request.headers().get(CAPABILITIES_HEADER);
+                            assert_eq!(declared.unwrap(), "shell");
                             return Ok(response);
                         }
                         let mut refused = ErrorResponse::new(None);

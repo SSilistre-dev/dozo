@@ -5218,6 +5218,33 @@
     },
     {
       "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./user-device-gateway.js\";\n",
+      "replace": "export * from \"./dozo-user-device-gateway.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-device-gateway.ts"
+      ],
+      "reason": "device capabilities: the API and the worker build upstream's device hub and gateway under the same names, which also save and read what a connecting computer declares"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "      userComputerShell = !device.screenOnly;\n      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
+      "replace": "      ({ shell: userComputerShell, screen: userComputerScreen } = deviceOffers(device));\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-capabilities.ts"
+      ],
+      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
+      "replace": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { deviceOffers } from \"./dozo-device-capabilities.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-capabilities.ts"
+      ],
+      "reason": "device capabilities: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
       "find": "export * from \"./dozo-job-queue.js\";\nexport * from \"./web-limits.js\";\n",
       "replace": "export * from \"./dozo-job-queue.js\";\nexport * from \"./dozo-no-computer.js\";\nexport * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./web-limits.js\";\n",
       "requires": [
