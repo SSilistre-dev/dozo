@@ -768,14 +768,59 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
         .await
         .unwrap();
     assert!(!answer.to_string().contains("SECRET"), "{answer}");
+    // The page is the site's home now, not the return address: no answer names the code, and
+    // the history entry the sign-in made cannot be gone back to.
+    for method in ["Page.getFrameTree", "DOM.getDocument"] {
+        let answer = call(&browsers, method, json!({})).await;
+        assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
+    }
+    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    let hidden = history["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["url"] == "")
+        .map(|entry| entry["id"].clone())
+        .expect("the sign-in's entries keep their place");
+    let back = json!({ "method": "Page.navigateToHistoryEntry", "params": { "entryId": hidden } });
+    assert!(
+        browsers.handle("bot", &back).await.is_err(),
+        "went back into the sign-in"
+    );
     let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
     assert!(
-        tree.to_string().contains("signed in"),
-        "the page is the bot's again"
+        tree.to_string().contains("Account"),
+        "the page is the site's home"
     );
     println!(
-        "E2E: after Done the page is the bot's again, and no address of the sign-in reaches the server"
+        "E2E: after Done the page is the site's home, and no address of the sign-in reaches the server"
     );
+    // A cancelled sign-in leaves a blank page, not what the person had started there.
+    let cancelling = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.answer.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(false)
+        .unwrap();
+    assert!(!cancelling.await.unwrap().unwrap(), "the person cancelled");
+    let after = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
+    assert!(
+        !after.to_string().contains("Account"),
+        "a cancelled sign-in left its page: {after}"
+    );
+    println!("E2E: a cancelled sign-in leaves a blank page");
     browsers.close_all();
 }
 

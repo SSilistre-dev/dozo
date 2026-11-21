@@ -134,6 +134,9 @@ pub trait SignInPrompt: Send + Sync {
     fn ask(&self, site: &str) -> oneshot::Receiver<bool>;
 }
 
+/// How long a sign-in may wait for the person before it counts as cancelled.
+const SIGN_IN_TIME: Duration = Duration::from_secs(15 * 60);
+
 pub const NO_BROWSER: &str = "No supported browser is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
 
@@ -706,6 +709,15 @@ impl Browsers {
         self
     }
 
+    /// Marks a bot as signing in, for tests of what the pause holds back.
+    #[cfg(test)]
+    pub fn mark_signing(&self, key: &str, site: &str) {
+        self.signing
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), site.to_owned());
+    }
+
     /// Lets tests open only the loopback ports they name, as pages and through the proxy.
     #[cfg(test)]
     pub fn with_local_ports(mut self, ports: Vec<u16>) -> Self {
@@ -716,6 +728,11 @@ impl Browsers {
 
     pub fn available(&self) -> bool {
         self.program.is_some()
+    }
+
+    /// The site the person is signing in to with this bot's browser, if they are.
+    pub fn signing_site(&self, key: &str) -> Option<String> {
+        self.signing.lock().unwrap().get(key).cloned()
     }
 
     /// The prompt the person answers when they sign in (`sign_in`).
@@ -753,12 +770,15 @@ impl Browsers {
         let answer = match opened {
             Ok(_) => {
                 let mut answered = prompt.ask(&site);
+                let deadline = tokio::time::Instant::now() + SIGN_IN_TIME;
                 // A browser that closed meanwhile ends it too: there is nothing to sign in with.
+                // So does the time running out: the sign-in counts as cancelled.
                 loop {
                     tokio::select! {
                         done = &mut answered => break done.unwrap_or(false),
                         () = tokio::time::sleep(Duration::from_secs(1)) => {
-                            if !running.pipe.open.load(Ordering::SeqCst) {
+                            let ended = tokio::time::Instant::now() >= deadline;
+                            if ended || !running.pipe.open.load(Ordering::SeqCst) {
                                 break false;
                             }
                         }
@@ -783,6 +803,24 @@ impl Browsers {
                 .unwrap_or(0);
             running.hidden_through.fetch_max(last, Ordering::SeqCst);
         }
+        // Before the bot has the page again, it leaves where the sign-in left it: the site's home
+        // page once the person is done, a blank page when they cancelled (a typed address or a
+        // half-done second step stays theirs).
+        let after = if answer {
+            format!("{scheme}://{site}/")
+        } else {
+            "about:blank".to_owned()
+        };
+        let _ = running
+            .pipe
+            .call("Page.navigate", json!({ "url": &after }), Some(&session))
+            .await;
+        for _ in 0..100 {
+            if running.address().await.is_ok_and(|now| now == after) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         running.pipe.take_events();
         self.signing.lock().unwrap().remove(key);
         Ok(answer)
@@ -793,8 +831,8 @@ impl Browsers {
     /// works while the page shows anything else.
     pub async fn handle(&self, key: &str, command: &Value) -> Result<Value, String> {
         let (method, params) = allowed(command, self.local)?;
-        if let Some(site) = self.signing.lock().unwrap().get(key) {
-            return Err(signing_message(site));
+        if let Some(site) = self.signing_site(key) {
+            return Err(signing_message(&site));
         }
         let running = self.running(key).await?;
         let session = match running.page(self.local).await {
@@ -821,11 +859,23 @@ impl Browsers {
                 .flatten()
                 .find(|entry| entry["id"] == params["entryId"]);
             let url = entry.and_then(|entry| entry["url"].as_str()).unwrap_or("");
-            if !web_address(url, self.local) {
+            let hidden = running.hidden_through.load(Ordering::SeqCst);
+            let made_signing_in = entry
+                .and_then(|entry| entry["id"].as_u64())
+                .is_some_and(|id| id <= hidden);
+            if !web_address(url, self.local) || made_signing_in {
                 return Err(NOT_WEB.to_owned());
             }
         }
+        if self.signing_site(key).is_some() {
+            return Err(signing_message(&self.signing_site(key).unwrap_or_default()));
+        }
         let result = running.pipe.call(&method, params, Some(&session)).await;
+        // A sign-in that started while the command ran keeps what it read.
+        if let Some(site) = self.signing_site(key) {
+            running.pipe.take_events();
+            return Err(signing_message(&site));
+        }
         if !running.pipe.open.load(Ordering::SeqCst) {
             self.forget(key, &running);
         }
@@ -897,6 +947,10 @@ impl Browsers {
     /// Ends the bot's browser. `forget_profile` also removes its profile (the bot is gone), once
     /// the browser has ended, so it cannot write it back.
     pub async fn close(&self, key: &str, forget_profile: bool) {
+        // Only the person ends a sign-in: stopping the bot leaves its browser open meanwhile.
+        if self.signing_site(key).is_some() {
+            return;
+        }
         let running = {
             let mut open = self.open.lock().unwrap();
             // A browser starting meanwhile is ended rather than kept.
