@@ -39,4 +39,11 @@ export const dozoAccessTokensContract = {
     .input(DozoAccessTokenCreateInputSchema)
     .output(z.object({ token: z.string(), accessToken: DozoAccessTokenSchema })),
   revoke: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  /** Whether a bot is marked by text sent with a token, so its runs ask before acting. */
+  botMark: oc.input(z.object({ botId: Id })).output(z.object({ marked: z.boolean() })),
+  /**
+   * The owner trusts a marked bot again, after confirming it is them: earlier token messages and
+   * marks no longer make it ask. Never reachable with a token.
+   */
+  trustBot: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
 };

@@ -184,6 +184,12 @@ describe("who may call", () => {
     expect(client.bots.list).not.toHaveBeenCalled();
   });
 
+  it("has no way to trust a marked bot again or to reach the app's settings", async () => {
+    const hono = app();
+    for (const path of ["/bots/bot-1/trust", "/tokens", "/bots/bot-1/settings"])
+      expect((await call(hono, path, { method: "POST" })).status).toBe(404);
+  });
+
   it("never echoes the token in an answer", async () => {
     authenticate.mockResolvedValue(null);
     const refused = await call(app(), "/bots");
@@ -234,8 +240,11 @@ describe("who may call", () => {
     expect((await call(hono, "/bots")).status).toBe(429);
     expect(authenticate).toHaveBeenCalledTimes(DOZO_BOT_API_ADDRESS_PER_MINUTE);
     // Another address is not held back, and the minute passes.
-    const other = app({ now: () => now, clientIp: () => undefined });
+    const other = app({ now: () => now, clientIp: () => "198.51.100.7" });
     expect((await call(other, "/bots")).status).toBe(401);
+    // An address the server cannot tell is refused, so it never shares one window with others.
+    const unknown = await call(app({ clientIp: () => undefined }), "/bots");
+    expect(unknown.status).toBe(400);
     now += 61_000;
     expect((await call(hono, "/bots")).status).toBe(401);
   });

@@ -1,0 +1,87 @@
+name: dozo-relay-canary
+
+# Nightly, against the real relay (https://relay.dozo.bot): the desktop app's own code installs the
+# server this app was built for (its pinned release manifest), signs up, and pairs one phone
+# through the relay; the computer allows it, the phone signs in, and the phone is removed
+# (dozo/desktop/tests/stack_e2e_native.sh --relay, steps 1 and 3). Every channel the run made is
+# revoked at the end, also when a step failed. One pairing per run, a handful of relay requests,
+# far below the relay's limits (dozo/relay/worker/wrangler.jsonc).
+# Never on pull requests or forks. A failure turns the run red; the logs stay as an artifact.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same SHAs
+# the upstream workflows use).
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-relay-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: Relay canary
+    if: github.repository == 'SSilistre-dev/dozo'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      # The phone runs the relay code of the branded tree, as the bundled agent was built from it.
+      - name: Stage and brand
+        run: |
+          dozo/docker/build.sh stage
+          dozo/docker/build.sh brand
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      - name: Install the tree
+        working-directory: dozo/.stage/src
+        run: pnpm install --frozen-lockfile
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $(sed -n 's/^LINUX_PACKAGES="\(.*\)"$/\1/p' dozo/desktop/build-linux.sh)
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            dozo/desktop/target
+          key: stack-e2e-linux-x64-${{ hashFiles('dozo/desktop/Cargo.lock', 'dozo/desktop/rust-toolchain.toml') }}
+          restore-keys: stack-e2e-linux-x64-
+      - name: Rust toolchain and icons
+        working-directory: dozo/desktop
+        run: |
+          rustup toolchain install
+          mkdir -p icons
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+          for size in 32x32 128x128 256x256 512x512; do cp ../brand/assets/desktop/icon.png "icons/$size.png"; done
+      - name: Canary
+        run: dozo/desktop/tests/stack_e2e_native.sh --relay https://relay.dozo.bot dozo/.stage/src
+      # Again, whatever happened above: nothing this run paired stays on the relay.
+      - name: Revoke every channel
+        if: always() && env.DOZO_STACK_E2E_SERVER != ''
+        run: dozo/desktop/tests/relay_revoke.sh "$DOZO_STACK_E2E_SERVER"
+      - name: Gather the logs
+        if: always() && env.DOZO_STACK_E2E_LOGS != ''
+        run: cp -R "$DOZO_STACK_E2E_LOGS" "$RUNNER_TEMP/e2e-logs"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: relay-canary-logs
+          path: ${{ runner.temp }}/e2e-logs
+          retention-days: 14
+          if-no-files-found: ignore

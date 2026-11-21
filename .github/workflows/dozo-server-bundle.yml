@@ -1,9 +1,12 @@
 name: dozo-server-bundle
 
 # Builds the local server bundle (dozo/server-bundle/README.md) from the branded tree, one per
-# platform, runs the end-to-end smoke test on linux-x64, and on Windows the desktop app's own code
-# installs, starts and stops the bundle (dozo/desktop/tests/stack_e2e_windows.ps1). linux-x64 and
-# win-x64 have to pass; macOS is built to see that it builds, and does not fail the run.
+# platform, runs the end-to-end smoke test on linux-x64, and the desktop app's own code installs,
+# starts and stops each bundle and pairs a phone through it: natively, without Docker, on Linux and
+# on macOS (Apple silicon and Intel; dozo/desktop/tests/stack_e2e_native.sh, which also updates a
+# server installed from a published release to this bundle), and on Windows
+# (dozo/desktop/tests/stack_e2e_windows.ps1). Every one of those has to pass; a macOS bundle that
+# does not build fails its desktop job rather than the bundle job.
 # On a `server-v<anything>` tag, or a manual run given a tag, the bundles, the Node and Postgres
 # archives runtimes.json pins (downloaded from where they are published and checked against their
 # sha256 first) and manifest.json go on a DRAFT release with that tag, never marked latest (the
@@ -20,8 +23,9 @@ on:
       - scripts/build-server-bundle.mjs
       - scripts/build-server.mjs
       - pnpm-lock.yaml
-      - dozo/desktop/src/stack*.rs
-      - dozo/desktop/tests/stack_e2e_windows.ps1
+      - dozo/desktop/**
+      - dozo/relay/**
+      - packages/*/src/dozo-relay*
   push:
     tags:
       - server-v*
@@ -189,9 +193,119 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The steps and what each proves: the header of tests/stack_e2e_native.sh. The data folder is
+  # under a home whose path has a space and non-ASCII letters. The relay, the phone and the
+  # stand-in issuer run from the branded tree.
+  stack-e2e:
+    name: Desktop stack e2e ${{ matrix.platform }}
+    needs: bundle
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x64, os: ubuntu-22.04 }
+          - { platform: darwin-arm64, os: macos-latest }
+          - { platform: darwin-x64, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      # A test build without debug info: less to compile and to cache.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+      # Not UTC, as on most computers: the server's Postgres must still run in UTC.
+      TZ: Europe/Istanbul
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            dozo/desktop
+            dozo/server-bundle
+            dozo/brand/assets
+            dozo/deps
+            package.json
+            pnpm-lock.yaml
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: branded-tree
+          path: ${{ runner.temp }}
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      # The branded tree's lockfile is upstream's plus the fork's listed packages (dozo/deps).
+      - name: Package store
+        id: store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ${{ steps.store.outputs.path }}
+          key: stack-e2e-pnpm-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml', 'dozo/deps/*.json') }}
+          restore-keys: stack-e2e-pnpm-${{ matrix.platform }}-
+      - name: Unpack and install the tree
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir tree && tar -C tree -xzf tree.tar.gz
+          cd tree && pnpm install --frozen-lockfile
+      - name: System packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $(sed -n 's/^LINUX_PACKAGES="\(.*\)"$/\1/p' dozo/desktop/build-linux.sh)
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            dozo/desktop/target
+          key: stack-e2e-${{ matrix.platform }}-${{ hashFiles('dozo/desktop/Cargo.lock', 'dozo/desktop/rust-toolchain.toml') }}
+          restore-keys: stack-e2e-${{ matrix.platform }}-
+      # The version and components in rust-toolchain.toml. The icons the build embeds, from the
+      # approved brand files (as build.sh and build-linux.sh make them; a test build only needs
+      # them to exist).
+      - name: Rust toolchain and icons
+        working-directory: dozo/desktop
+        run: |
+          rustup toolchain install
+          mkdir -p icons
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+          if [ "$RUNNER_OS" = macOS ]; then
+            mkdir -p icons/Dozo.iconset
+            sips -z 512 512 ../brand/assets/desktop/icon-macos.png --out icons/Dozo.iconset/icon_512x512.png > /dev/null
+            iconutil -c icns icons/Dozo.iconset -o icons/icon.icns
+            cp ../brand/assets/desktop/icon-macos.png icons/icon.png
+          else
+            for size in 32x32 128x128 256x256 512x512; do cp ../brand/assets/desktop/icon.png "icons/$size.png"; done
+          fi
+      # Step 5 updates from the oldest published server (N-1) to this run's bundle (N). No
+      # published release has a Windows bundle yet, so the Windows job has no such step.
+      - name: End to end
+        env:
+          DOZO_STACK_E2E_OLD_MANIFEST: https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-1/manifest.json
+        run: dozo/desktop/tests/stack_e2e_native.sh dist "$RUNNER_TEMP/tree"
+      - name: Gather the logs
+        if: always() && env.DOZO_STACK_E2E_LOGS != ''
+        # Under a plain name: the folder the test used has a space and non-ASCII letters.
+        run: cp -R "$DOZO_STACK_E2E_LOGS" "$RUNNER_TEMP/e2e-logs"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: stack-e2e-${{ matrix.platform }}-logs
+          path: ${{ runner.temp }}/e2e-logs
+          retention-days: 7
+          if-no-files-found: ignore
+
   release:
     name: Draft release
-    needs: [smoke, stack-e2e-windows]
+    needs: [smoke, stack-e2e, stack-e2e-windows]
     if: startsWith(github.ref, 'refs/tags/server-v') || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-latest
     timeout-minutes: 15

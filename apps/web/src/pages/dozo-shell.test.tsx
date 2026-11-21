@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <div data-testid="upstream-shell" /> }));
+vi.mock("./shell/dozo-trust-bot", () => ({ DozoTrustBotHost: () => null }));
 vi.mock("../lib/auth", () => ({
   authClient: {
     useSession: () => ({ data: mocks.userId ? { user: { id: mocks.userId } } : null }),

@@ -350,30 +350,69 @@ Reads are open: a run started with a token reads, without asking, whatever its b
 (chats, files, memory, mail, connected apps) and the reply can carry it back. A token limited to one
 bot reaches everything that bot can read.
 
-Token gate (`packages/adapters/src/dozo-token-run.ts`, shared with MCP). Text sent with a token may
-come from another program or agent, so it is not the owner's word. It is saved with an `api:` client
-nonce (`packages/core/src/dozo-token-source.ts`) and shows a small key above it on web and mobile.
-A bot is marked while its chat holds such a message (clearing the chat ends it), while a marked
-run of another bot has written to it, handed off to it, changed it, grouped it or made it a routine
-(the bot is found by id or by name as the tool's handler would, and a call naming one that does not
-exist is refused; until its chat is cleared after that), or while a bot it was spawned from is
-marked. A bot a marked run spawned, and the bot of a routine a marked run made or changed, stay
+Token gate (`packages/adapters/src/dozo-token-run.ts`, `dozo-token-marks.ts`, shared with MCP). Text
+sent with a token may come from another program or agent, so it is not the owner's word. It is saved
+with an `api:` client nonce (`packages/core/src/dozo-token-source.ts`) and shows a small key above
+it on web and mobile. A bot is marked while its chat holds such a message (clearing the chat ends
+it), while a bot it was spawned from is marked, or while it holds a mark: one is written when text
+from a marked bot's run is delivered to it (a message, a delegated run's automatic answer, a group
+handoff) or a marked run wrote its instructions or a ticket it now owns, until its chat is cleared
+after that. A bot a marked run spawned, and the bot of a routine a marked run made or changed, stay
 marked until that bot or routine is deleted. Background helpers and routines of a marked bot are
-its runs; conversation memory keeps no turn of a marked run. In a run of a marked bot every call that is not a plain read asks the
-person, even in Never ask or Auto review: sends, connector writes, the cloud computer, the browser,
-files, memory, settings, routines, other bots and the user's own computer. Its cards say why and
-have no Always allow, the run starts as having read outside content, and when a token's message
-started it, the sites it names are not trusted. An approved call goes ahead once without asking
-again; the API call does not wait: its stream ends with `waiting_input`. A background helper of a
-marked bot cannot ask, so it refuses such calls.
+its runs; conversation memory keeps no turn of a marked run, and a message sent with a token never
+answers or ends a question the bot is waiting on.
+
+In a run of a marked bot every call that is not a plain read asks the person, even in Never ask or
+Auto review: sends, connector writes, the cloud computer, the browser, files, memory, settings,
+routines, other bots and the user's own computer. The gate only asks: marks are written where the
+approved call delivers or changes something, so a call the person denies leaves none, and a call
+naming another bot by anything but a string is refused. Its cards say why (and, for work that
+outlives the run, that the mark does too) and have no Always allow; the run starts as having read
+outside content, and a marked routine's words and the sites a token's message names are not
+trusted. An approved call goes ahead once without asking again, also when replayed after a restart;
+the API call does not wait: its stream ends with `waiting_input`. A background helper of a marked
+bot cannot ask, so it refuses such calls.
+
+The owner ends a mark from the bot's menu in the web app: Trust this bot again, after confirming it
+is them (logged as an approval change; no token reaches it). Messages and marks from before then no
+longer make the bot ask, though its history still counts as outside content. Not marked: a bot that
+later reads a ticket a marked run commented on or that has no owner.
 
 Limits: 60 requests and 10 messages a minute per token and 20 messages a minute per account,
 counted in Postgres for every API instance (`dozo_api_minutes`); 120 requests a minute per address
-(an IPv6 caller by its /64) before any token is looked up and 3 open streams per token, per
-instance. A stream ends after 10 minutes with
+(an IPv6 caller by its /64; a request whose address the server cannot tell is refused) before any
+token is looked up and 3 open streams per token, per instance. A stream holds at most 1 MB for a
+reader that stopped reading, then ends with `running`. A stream ends after 10 minutes with
 `running`. Not yet: the mobile app has no token screen (a token is for a computer's scripts; make
-one on web or desktop), the notice mail is in English, and there is no group chat or attachment
+one on web or desktop) and no Trust this bot again, the notice mail is in English, and there is no group chat or attachment
 support.
+
+## Agent mode (unverified)
+
+On the local server only (the desktop app runs it and passes `HOST_USER_HOME` and `HOST_USER_PATH`),
+a provider's own agent CLI can run a bot's whole turn as the person: Codex, through its own
+app-server (`packages/adapters/src/cli-models/dozo-agent.ts` and `codex/dozo-codex-agent.ts`). It
+was written against Codex 0.171's protocol schema and has not been run against a real, signed-in
+Codex yet, so it is off until turned on by hand:
+
+- **Turn it on:** put `codex-agent` on its own line in `dozo-agent-tools` in the server's data
+  folder (the `data/` next to the server's other files), then restart the app. Remove the line, or
+  the file, to turn it off. No settings screen shows or changes this.
+- **Connecting:** Settings > Models then shows Codex, marked Agent. Connecting asks the person to
+  agree to what agent mode means and checks, there and then, that Codex is 0.171.x, is signed in,
+  and reaches Dozo's tools through the bridge; a failed check says why and saves nothing.
+- **A turn:** one Codex process per run, in an empty folder of the bot's own under
+  `data/agent-work/`, sandboxed to that folder, asking only the person (never Codex's own reviewer).
+  Codex's requests to run a command, change files or get more access become an approval card with
+  "Allow once" and "Decline"; Dozo never answers for the session. Dozo's own tools reach Codex
+  through a stdio MCP bridge that runs them in the run's tool executor, so approvals, daily sends
+  and the token gate apply; its socket and key last only as long as the run.
+- **Interrupted, never re-run:** a run waiting for the person keeps its Codex process in the server
+  process that started it, for 30 minutes at most. If another process (or the same one after a
+  restart) picks the run up, it ends with "The agent was interrupted" instead of starting Codex
+  again; a mark in `data/agent-runs/` holds this across processes.
+- **Not yet:** more accounts or the model pool for agents, other agents (Grok, Antigravity over
+  ACP), mobile.
 
 ## Commands on your own computer
 

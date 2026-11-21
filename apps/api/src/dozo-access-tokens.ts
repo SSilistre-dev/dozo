@@ -1,3 +1,4 @@
+import { dozoBotTokenTainted } from "@rakazo/adapters";
 import { emailBanned } from "@rakazo/auth";
 import type { Actor, DozoAccessToken } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -10,6 +11,7 @@ import {
   looksLikeDozoAccessToken,
   revokeDozoAccessToken,
   runAsSystem,
+  trustDozoBot,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { requireIdentityConfirmation } from "./identity-confirmation.js";
@@ -79,6 +81,32 @@ export function dozoAccessTokensRoutes(ctx: RouterContext) {
           token: created.token,
           accessToken: accessTokenDto({ ...created.row, botName: bot?.name ?? null }),
         };
+      }),
+      botMark: authed.dozoAccessTokens.botMark.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, {
+          botId: input.botId,
+        });
+        if (target.kind !== "bot") return { marked: false };
+        return {
+          marked: await dozoBotTokenTainted(deps.prisma, {
+            botId: target.botId,
+            threadId: target.threadId,
+          }),
+        };
+      }),
+      trustBot: authed.dozoAccessTokens.trustBot.handler(async ({ context, input }) => {
+        // Lifting the mark is the owner's own act, from a session that just confirmed it is them.
+        await requireIdentityConfirmation(deps.auth, context);
+        const target = await resolveThreadTarget(deps.prisma, context.actor, {
+          botId: input.botId,
+        });
+        if (target.kind !== "bot") throw new ClientError("NOT_FOUND", "Bot not found");
+        await trustDozoBot(deps.prisma, {
+          spaceId: context.actor.spaceId,
+          botId: target.botId,
+          userId: context.actor.userId,
+        });
+        return { ok: true as const };
       }),
       revoke: authed.dozoAccessTokens.revoke.handler(async ({ context, input }) => {
         await revokeDozoAccessToken(deps.prisma, context.actor, input.id);

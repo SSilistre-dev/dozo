@@ -1,4 +1,5 @@
 import { createRouterClient } from "@orpc/server";
+import type * as Adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
@@ -22,6 +23,12 @@ const spies = vi.hoisted(() => ({
   banned: vi.fn(),
   confirm: vi.fn(),
   send: vi.fn(),
+  tainted: vi.fn(),
+  trust: vi.fn(),
+}));
+vi.mock("@rakazo/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof Adapters>()),
+  dozoBotTokenTainted: spies.tainted,
 }));
 vi.mock("./identity-confirmation.js", () => ({ requireIdentityConfirmation: spies.confirm }));
 vi.mock("./thread-target.js", () => ({ resolveThreadTarget: spies.resolve }));
@@ -32,6 +39,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   listDozoAccessTokens: spies.list,
   revokeDozoAccessToken: spies.revoke,
   findDozoAccessToken: spies.find,
+  trustDozoBot: spies.trust,
 }));
 
 const actor: Actor = {
@@ -177,6 +185,47 @@ describe("settings procedures", () => {
     });
     expect(AUDITED_PROCEDURES["dozoAccessTokens.revoke"]).toMatchObject({
       type: "credential.deleted",
+    });
+  });
+});
+
+describe("a bot marked by text sent with a token", () => {
+  const chat = { kind: "bot", botId: "bot-1", threadId: "thread-1", bot: { id: "bot-1" } };
+
+  it("says whether the bot is marked, for a bot the member can reach", async () => {
+    spies.resolve.mockResolvedValue(chat);
+    spies.tainted.mockResolvedValue(true);
+    expect(await client().dozoAccessTokens.botMark({ botId: "bot-1" })).toEqual({ marked: true });
+    expect(spies.resolve).toHaveBeenCalledWith(prisma, actor, { botId: "bot-1" });
+    expect(spies.tainted).toHaveBeenCalledWith(prisma, { botId: "bot-1", threadId: "thread-1" });
+    spies.resolve.mockResolvedValue({ kind: "group" });
+    expect(await client().dozoAccessTokens.botMark({ botId: "bot-1" })).toEqual({ marked: false });
+  });
+
+  it("trusts it again only from a session that just confirmed it is the person", async () => {
+    spies.resolve.mockResolvedValue(chat);
+    expect(await client().dozoAccessTokens.trustBot({ botId: "bot-1" })).toEqual({ ok: true });
+    expect(spies.confirm).toHaveBeenCalledOnce();
+    expect(spies.trust).toHaveBeenCalledWith(prisma, {
+      spaceId: "space-1",
+      botId: "bot-1",
+      userId: "user-1",
+    });
+    spies.confirm.mockRejectedValue(new Error("Confirm it's you"));
+    await expect(client().dozoAccessTokens.trustBot({ botId: "bot-1" })).rejects.toThrow();
+    expect(spies.trust).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a chat that is not a bot's, and is in the activity log", async () => {
+    spies.resolve.mockResolvedValue({ kind: "group" });
+    const refused = await client()
+      .dozoAccessTokens.trustBot({ botId: "group-1" })
+      .catch((error: unknown) => error);
+    expect((refused as ClientError).kind).toBe("NOT_FOUND");
+    expect(spies.trust).not.toHaveBeenCalled();
+    expect(AUDITED_PROCEDURES["dozoAccessTokens.trustBot"]).toMatchObject({
+      type: "approval.policy.changed",
+      fields: ["botId"],
     });
   });
 });

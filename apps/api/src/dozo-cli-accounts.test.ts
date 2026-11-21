@@ -30,6 +30,7 @@ vi.mock("./model-credentials.js", async (importOriginal) => ({
 const TOOL = {
   provider: "tool-a",
   name: "Tool A",
+  mode: "model" as const,
   found: true,
   signedIn: true,
   connected: false,
@@ -82,12 +83,21 @@ describe("CLI account routes", () => {
     expect(await client("ada").connect({ provider: "tool-a" })).toEqual({
       tools: [{ ...TOOL, connected: true }],
     });
-    expect(fake.connection).toHaveBeenCalledWith({ prisma, secretStore: secrets }, "ada", "tool-a");
+    expect(fake.connection).toHaveBeenCalledWith({ prisma, secretStore: secrets }, "ada", "tool-a", {
+      consent: false,
+    });
     const [, actor, input] = fake.persist.mock.calls[0]!;
     expect(actor).toMatchObject({ userId: "ada" });
     // It becomes the main model only while there is none.
     expect(input).toMatchObject({ ...CONNECTION, keepExistingDefault: true });
     expect(publishRosterChange).toHaveBeenCalledWith({ userIds: ["ada"] });
+  });
+
+  it("passes the person's agreement on for an agent", async () => {
+    await client("ada").connect({ provider: "tool-a", consent: true });
+    expect(fake.connection).toHaveBeenCalledWith(expect.anything(), "ada", "tool-a", {
+      consent: true,
+    });
   });
 
   it("passes a refusal on and saves nothing", async () => {

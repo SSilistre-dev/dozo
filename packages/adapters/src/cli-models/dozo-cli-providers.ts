@@ -14,6 +14,9 @@ import {
 } from "@earendil-works/pi-ai";
 import { registerLocalProvider as registerServerModels } from "../pi-local-provider.js";
 import { claudeCodeDriver } from "./claude-code/dozo-driver.js";
+import { codexAgentDriver } from "./codex/dozo-codex-agent.js";
+import type { AgentDriver } from "./dozo-agent.js";
+import { enabledAgentProviders } from "./dozo-agent.js";
 import type { CliAccount, CliModelDriver, CliTurn } from "./dozo-cli-driver.js";
 import {
   cliAccountOverrides,
@@ -28,6 +31,46 @@ export { LOCAL_PROVIDER_ID } from "../pi-local-provider.js";
 
 /** The tools a person may use as models on their own computer. */
 export const CLI_MODEL_DRIVERS: readonly CliModelDriver[] = [claudeCodeDriver];
+
+/** The agents that can run a bot's whole turn on the person's own computer (dozo-agent.ts). */
+export const AGENT_DRIVERS: readonly AgentDriver[] = [codexAgentDriver];
+
+/** The agents turned on for this server (dozo-agent.ts): only those are listed or run. */
+export function enabledAgentDrivers(): AgentDriver[] {
+  // Process groups and the bridge's socket are Unix only, as the desktop app's own server is.
+  if (process.platform === "win32") return [];
+  const enabled = enabledAgentProviders();
+  return AGENT_DRIVERS.filter((driver) => enabled.has(driver.provider));
+}
+
+export const AGENT_CATALOG_ERROR = "An agent's turn runs in agent mode, not as a model.";
+
+/**
+ * An agent's connections in the catalog, so a bot can choose it: named as an agent, with the
+ * models the agent takes. Agent mode runs the turn (dozo-agent.ts); this copy never streams.
+ */
+function agentCatalogProvider(driver: AgentDriver, models: MutableModels): Provider {
+  const stream = (model: Model<Api>) =>
+    lazyStream(model, async () => {
+      throw new Error(AGENT_CATALOG_ERROR);
+    });
+  return createProvider({
+    id: driver.provider,
+    name: `${driver.name} agent`,
+    auth: {
+      apiKey: {
+        name: `${driver.name} on this computer`,
+        resolve: async () => ({ auth: {}, source: driver.command }),
+      },
+    },
+    models: models.getModels(driver.modelSource).map((model) => ({
+      ...model,
+      provider: driver.provider,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    })),
+    api: { stream, streamSimple: stream },
+  });
+}
 
 export const CLI_ACCOUNT_RECONNECT_ERROR =
   "This connection no longer names an account on this computer. Connect it again in Settings.";
@@ -120,6 +163,8 @@ export function registerLocalCliProviders(
   if (!localCliHost()) return models;
   for (const driver of CLI_MODEL_DRIVERS)
     models.setProvider(cliModelProvider(driver, models, accessCheck));
+  for (const driver of enabledAgentDrivers())
+    models.setProvider(agentCatalogProvider(driver, models));
   return models;
 }
 

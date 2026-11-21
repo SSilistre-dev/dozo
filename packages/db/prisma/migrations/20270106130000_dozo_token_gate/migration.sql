@@ -5,8 +5,9 @@
 -- When a token stops working by itself; null for one made to never expire.
 ALTER TABLE "dozo_access_tokens" ADD COLUMN "expiresAt" TIMESTAMPTZ(3);
 
--- A bot that text sent with a token reached through another bot: a marked run wrote to it, handed
--- off to it, changed it or made it (dozo-token-run.ts). Its runs ask before acting until its chat
+-- A bot that text sent with a token reached through another bot: a marked run's message or answer
+-- was delivered to it, it was handed off to, its instructions or tickets were written by one, or a
+-- marked run made it (dozo-token-run.ts). Its runs ask before acting until its chat
 -- is cleared after this; a lasting mark (a bot a marked run made, or one whose routine a marked
 -- run made or changed) stays until that bot, or that routine, is deleted.
 CREATE TABLE "dozo_token_taints" (
@@ -18,8 +19,13 @@ CREATE TABLE "dozo_token_taints" (
   "fromRunId" TEXT,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX "dozo_token_taints_botId_idx" ON "dozo_token_taints"("botId", "createdAt");
-CREATE INDEX "dozo_token_taints_routineId_idx" ON "dozo_token_taints"("routineId");
+-- One mark per bot (passing, or lasting) and per routine: marking again refreshes it.
+CREATE UNIQUE INDEX "dozo_token_taints_passing_key" ON "dozo_token_taints"("botId")
+  WHERE NOT "lasting" AND "routineId" IS NULL;
+CREATE UNIQUE INDEX "dozo_token_taints_lasting_key" ON "dozo_token_taints"("botId")
+  WHERE "lasting" AND "routineId" IS NULL;
+CREATE UNIQUE INDEX "dozo_token_taints_routine_key" ON "dozo_token_taints"("routineId")
+  WHERE "routineId" IS NOT NULL;
 ALTER TABLE "dozo_token_taints" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dozo_token_taints_tenant ON "dozo_token_taints"
   USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
@@ -35,3 +41,18 @@ CREATE TABLE "dozo_api_minutes" (
   "count" INTEGER NOT NULL,
   PRIMARY KEY ("key", "minute")
 );
+
+-- When the owner trusted a marked bot again from the app (after confirming it is them): messages
+-- sent with a token and marks from before this no longer make its runs ask. They stay in its
+-- history, which still counts as outside content.
+CREATE TABLE "dozo_token_trust" (
+  "botId" TEXT NOT NULL PRIMARY KEY REFERENCES "bots"("id") ON DELETE CASCADE,
+  "spaceId" TEXT NOT NULL,
+  "trustedAt" TIMESTAMPTZ(3) NOT NULL,
+  "trustedByUserId" TEXT
+);
+ALTER TABLE "dozo_token_trust" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dozo_token_trust_tenant ON "dozo_token_trust"
+  USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
+CREATE POLICY dozo_token_trust_system ON "dozo_token_trust"
+  USING ((SELECT app_rls_bypass()));

@@ -166,3 +166,20 @@ export async function touchDozoAccessToken(db: Db, id: string, now = new Date())
     WHERE id = ${id}
       AND ("lastUsedAt" IS NULL OR "lastUsedAt" < ${utc(new Date(now.getTime() - TOUCH_INTERVAL_MS))}::timestamptz)`;
 }
+
+/**
+ * The owner trusts a bot marked by text sent with a token again: messages sent with a token and
+ * marks from before now no longer make its runs ask (packages/adapters/src/dozo-token-marks.ts).
+ */
+export async function trustDozoBot(
+  db: Db,
+  input: { spaceId: string; botId: string; userId: string },
+  now = new Date(),
+): Promise<void> {
+  await db.$executeRaw`
+    INSERT INTO dozo_token_trust ("botId", "spaceId", "trustedAt", "trustedByUserId")
+    SELECT b.id, b."spaceId", ${utc(now)}::timestamptz, ${input.userId} FROM bots b
+    WHERE b.id = ${input.botId} AND b."spaceId" = ${input.spaceId}
+    ON CONFLICT ("botId") DO UPDATE
+      SET "trustedAt" = EXCLUDED."trustedAt", "trustedByUserId" = EXCLUDED."trustedByUserId"`;
+}

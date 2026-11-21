@@ -212,6 +212,32 @@ describe("dozoRunStream", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("ends with running when the reader stops reading, instead of queueing without end", async () => {
+    let produced = 0;
+    let stopped = false;
+    const stream = dozoRunStream({
+      runId: "run-1",
+      maxQueuedBytes: 200,
+      events: async function* (signal) {
+        try {
+          while (!signal.aborted && produced < 1000) {
+            produced += 1;
+            yield event("thread.progress", { delta: "x".repeat(50) });
+          }
+        } finally {
+          stopped = true;
+        }
+      },
+      signal: new AbortController().signal,
+      maxMs: 60_000,
+    });
+    // Nobody reads until the stream has stopped following the run by itself.
+    await vi.waitFor(() => expect(stopped).toBe(true));
+    const text = await read(stream);
+    expect(produced).toBeLessThan(1000);
+    expect(text.endsWith('event: status\ndata: {"status":"running"}\n\n')).toBe(true);
+  });
+
   it("closes when the reader cancels", async () => {
     const onClose = vi.fn();
     const stream = dozoRunStream({
