@@ -29,6 +29,12 @@ import { Archive, Bell, BellDot, Check, ChevronDown, Clock, Pencil, Plus } from 
 import { useId, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { errorText, toastError } from "../../lib/dozo-error-text";
+import {
+  dozoChatOf,
+  dozoExtraChatOpen,
+  dozoOpenChat,
+  setDozoOpenChat,
+} from "../../lib/dozo-open-chat";
 import { queryClient, useSave, useSpaceQueries } from "../../lib/query";
 import { rpc as selectedSpaceRpc } from "../../lib/rpc";
 import { useEventListener } from "../../lib/use-event-listener";
@@ -42,39 +48,41 @@ import { DozoChatExportMenu } from "./dozo-chat-export-menu";
  * makes (`dozoChatRpc`).
  */
 
-type OpenChat = { botId: string; chatId: string };
-
-/** The extra chat the shell shows, set while the shell's wrapper renders. */
-let openChat: OpenChat | null = null;
-
 /** Reads the open chat from the address; the shell wrapper keys the shell by what it returns. */
 export function useDozoOpenChat(): string | undefined {
   const { botId } = useParams();
   const [params] = useSearchParams();
   const chatId = (botId && params.get("chat")) || undefined;
-  openChat = botId && chatId ? { botId, chatId } : null;
+  setDozoOpenChat(botId && chatId ? { botId, chatId } : null);
   return chatId;
 }
 
-/** `{ chatId }` when this bot's extra chat is the open one, for a request about the open chat. */
-export function dozoChatOf(botId: string | undefined): { chatId?: string } {
-  return openChat && botId && openChat.botId === botId ? { chatId: openChat.chatId } : {};
-}
+export { dozoChatOf, dozoExtraChatOpen };
 
-/** True when an extra chat is open, of this bot when one is named. */
-export function dozoExtraChatOpen(botId?: string): boolean {
-  return Boolean(openChat && (botId === undefined || openChat.botId === botId));
+/**
+ * The target of a request about this bot's chat on screen: its extra chat as `chatBotId` with
+ * `chatId` (never `botId`, which an API from before extra chats would read as the main chat), or
+ * its main chat as `botId`.
+ */
+export function dozoChatTarget(
+  botId: string,
+): { botId: string } | { chatBotId: string; chatId: string } {
+  const chatId = dozoChatOf(botId).chatId;
+  return chatId ? { chatBotId: botId, chatId } : { botId };
 }
 
 /** The open chat's address in a target of the chat requests, for its cache key. */
 export function dozoChatInput<T extends object>(target: T): T {
-  const botId = (target as { botId?: unknown }).botId;
-  return typeof botId === "string" ? { ...target, ...dozoChatOf(botId) } : target;
+  const { botId, ...rest } = target as { botId?: unknown };
+  return typeof botId === "string" && dozoChatOf(botId).chatId
+    ? ({ ...rest, ...dozoChatTarget(botId) } as T)
+    : target;
 }
 
 /**
- * The chat requests that act on the chat on screen. A request naming the open chat's bot without
- * a chat is about the open chat; one naming a chat or a group is left as it is. Reads and Mark as
+ * The chat requests that act on the chat on screen. A request naming the open chat's bot by
+ * `botId` is about the open chat and goes as its `chatBotId` and `chatId`; one naming a chat or a
+ * group is left as it is. Reads and Mark as
  * Unread from the roster go elsewhere (`use-chat-read` rules, the roster's own client), so a menu
  * on the bot's row still acts on its main chat.
  */
@@ -94,13 +102,18 @@ const OPEN_CHAT_REQUESTS: ReadonlySet<string> = new Set([
 ]);
 
 export function dozoChatRpc<T extends object>(client: T): T {
-  const chat = openChat;
+  const chat = dozoOpenChat();
   if (!chat) return client;
   const scope = (input: unknown) => {
     if (!input || typeof input !== "object") return input;
-    const target = input as { botId?: string; groupId?: string; chatId?: string };
-    return target.botId === chat.botId && !target.chatId && !target.groupId
-      ? { ...target, chatId: chat.chatId }
+    const { botId, ...rest } = input as {
+      botId?: string;
+      groupId?: string;
+      chatBotId?: string;
+      chatId?: string;
+    };
+    return botId === chat.botId && !rest.groupId && !rest.chatBotId && !rest.chatId
+      ? { ...rest, chatBotId: botId, chatId: chat.chatId }
       : input;
   };
   return new Proxy(client, {
@@ -132,7 +145,8 @@ export function dozoChatPath(botId: string, threadId?: string | null): string {
 
 /** True when an alert about this bot's thread is about the chat on screen. */
 export function dozoIsOpenChat(botId: string, threadId: string | undefined): boolean {
-  if (openChat && openChat.botId === botId) return threadId === openChat.chatId;
+  const open = dozoChatOf(botId).chatId;
+  if (open) return threadId === open;
   return !threadId || !knownChats.has(threadId);
 }
 
@@ -143,6 +157,24 @@ export function useDozoBotChats(): DozoBotChat[] {
   const chats = list.data?.chats ?? [];
   for (const chat of chats) knownChats.set(chat.id, chat.botId);
   return chats;
+}
+
+/**
+ * Where an address that names no open extra chat of its bot goes instead (an unknown, another
+ * bot's or Space's, or an archived chat): the bot's main chat, once the chat list has answered.
+ */
+export function useDozoChatRedirect(chatId: string | undefined): string | null {
+  const { botId } = useParams();
+  const queries = useSpaceQueries();
+  const list = useQuery({
+    ...queries.dozoChats.list.queryOptions({ input: {} }),
+    enabled: Boolean(chatId),
+  });
+  if (!botId || !chatId || !list.isSuccess) return null;
+  const known = list.data.chats.some(
+    (chat) => chat.id === chatId && chat.botId === botId && !chat.archivedAt,
+  );
+  return known ? null : `/app/${botId}`;
 }
 
 /** Reads the chat lists again; the roster signal carries a change to a chat or its read state. */
@@ -359,7 +391,7 @@ function DozoBotChatMenu({
   const { t, i18n } = useLingui();
   const navigate = useNavigate();
   const listKey = useListKey();
-  const target = { botId: chat.botId, chatId: chat.id };
+  const target = { chatBotId: chat.botId, chatId: chat.id };
   const presetLabels: Record<SnoozePreset, string> = {
     hour: t`1 hour`,
     threeHours: t`3 hours`,

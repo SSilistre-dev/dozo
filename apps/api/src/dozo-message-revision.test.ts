@@ -432,7 +432,7 @@ describe("dozoMessagesRoutes", () => {
       regenerateMessageId: "m-reply",
     });
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
-      botId: "bot-1",
+      chatBotId: "bot-1",
       chatId: "thread-1",
     });
   });
@@ -444,7 +444,7 @@ describe("dozoMessagesRoutes", () => {
       regenerateMessageId: "m-reply",
     });
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
-      botId: "bot-1",
+      chatBotId: "bot-1",
       chatId: "thread-1",
     });
   });

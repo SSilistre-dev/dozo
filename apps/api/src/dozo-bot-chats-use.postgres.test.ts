@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import {
   createRunExecutor,
   EncryptedSecretStore,
@@ -12,6 +13,8 @@ import {
   LocalAgentHomeStore,
 } from "@rakazo/adapters";
 import type { AccountExportRecord, Actor } from "@rakazo/contracts";
+import { DOZO_BOT_CHATS_LIMIT_CODE, DOZO_BOT_CHATS_MAX } from "@rakazo/contracts";
+import { BACKGROUND_HELPER_TRIGGER } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -22,9 +25,11 @@ import {
   createThreadMessageInTransaction,
   readAccountExport,
   runAsTenant,
+  searchHistory,
 } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { dozoImportChat } from "./dozo-bot-chats.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
@@ -65,8 +70,9 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
         sandboxProvider: "fake",
       },
       events: createThreadEvents(prisma),
-      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn().mockResolvedValue(undefined) },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
+      memoryProviders: { resolve: async () => null },
       dataDir,
     } as unknown as RouterDeps;
     handler = new RPCHandler(createRouter(deps), {
@@ -163,9 +169,9 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
   it("sends, reads and starts a run in the extra chat, and leaves the main chat as it was", async () => {
     const { actor, botId, mainId, chatId } = await setup();
     const mainBefore = await snapshot(actor, { botId });
-    const sent = await send(actor, { botId, chatId }, "Plan the garden");
+    const sent = await send(actor, { chatBotId: botId, chatId }, "Plan the garden");
     expect(sent.status).toBe(200);
-    const extra = await snapshot(actor, { botId, chatId });
+    const extra = await snapshot(actor, { chatBotId: botId, chatId });
     expect(extra.threadId).toBe(chatId);
     expect(texts(extra)).toContain("Plan the garden");
     const main = await snapshot(actor, { botId });
@@ -174,14 +180,14 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     expect(main.messages).toEqual(mainBefore.messages);
     const runs = await system.run.findMany({ where: { botId }, select: { threadId: true } });
     expect(runs).toEqual([{ threadId: chatId }]);
-    expect((await call(actor, "threads/head", { botId, chatId })).status).toBe(200);
+    expect((await call(actor, "threads/head", { chatBotId: botId, chatId })).status).toBe(200);
   });
 
   it("keeps two chats of one bot working side by side", async () => {
     const { actor, botId, mainId, chatId } = await setup();
     const [main, extra] = await Promise.all([
       send(actor, { botId }, "Main question"),
-      send(actor, { botId, chatId }, "Garden question"),
+      send(actor, { chatBotId: botId, chatId }, "Garden question"),
     ]);
     expect([main.status, extra.status]).toEqual([200, 200]);
     const runs = await system.run.findMany({
@@ -191,7 +197,9 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     });
     expect(runs.map((run) => run.threadId).sort()).toEqual([chatId, mainId].sort());
     expect(texts(await snapshot(actor, { botId }))).not.toContain("Garden question");
-    expect(texts(await snapshot(actor, { botId, chatId }))).not.toContain("Main question");
+    expect(texts(await snapshot(actor, { chatBotId: botId, chatId }))).not.toContain(
+      "Main question",
+    );
   });
 
   it("refuses another bot's or another Space's chat, never answering with the main chat", async () => {
@@ -199,24 +207,26 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     const theirs = await setup();
     // Another bot's chat named under my bot.
     expect(
-      (await call(mine.actor, "threads/get", { botId: mine.botId, chatId: theirs.chatId })).status,
+      (await call(mine.actor, "threads/get", { chatBotId: mine.botId, chatId: theirs.chatId }))
+        .status,
     ).toBe(404);
     // My chat, asked for by someone else under their own bot and under mine.
     expect(
-      (await call(theirs.actor, "threads/get", { botId: theirs.botId, chatId: mine.chatId }))
+      (await call(theirs.actor, "threads/get", { chatBotId: theirs.botId, chatId: mine.chatId }))
         .status,
     ).toBe(404);
     expect(
-      (await call(theirs.actor, "threads/get", { botId: mine.botId, chatId: mine.chatId })).status,
+      (await call(theirs.actor, "threads/get", { chatBotId: mine.botId, chatId: mine.chatId }))
+        .status,
     ).toBe(404);
     expect(
-      (await send(theirs.actor, { botId: mine.botId, chatId: mine.chatId }, "hi")).status,
+      (await send(theirs.actor, { chatBotId: mine.botId, chatId: mine.chatId }, "hi")).status,
     ).toBe(404);
     expect(await system.message.count({ where: { threadId: mine.chatId } })).toBe(0);
   });
 
-  it("keeps unread, read and snooze per chat, and counts an unread chat until it is archived", async () => {
-    const { actor, botId, chatId } = await setup();
+  it("keeps unread, read and snooze per chat, and leaves extra chats out of the phone's badge", async () => {
+    const { actor, botId, mainId, chatId } = await setup();
     await botSays(chatId, botId, actor.spaceId, "Tomatoes need sun.");
     const listed = async () =>
       (
@@ -229,19 +239,25 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     expect(await listed()).toMatchObject({ id: chatId, unread: true, snoozedUntil: null });
     const inbox = () =>
       countUnreadInboxChats(prisma, { userId: actor.userId, spaceId: actor.spaceId });
-    expect(await inbox()).toBe(1);
-    expect((await call(actor, "threads/markRead", { botId, chatId })).status).toBe(200);
-    expect((await listed()).unread).toBe(false);
+    // The push badge counts what the phone can open; it shows a bot's main chat only.
     expect(await inbox()).toBe(0);
-    expect((await call(actor, "threads/markUnread", { botId, chatId })).status).toBe(200);
+    await botSays(mainId, botId, actor.spaceId, "Main chat news.");
+    expect(await inbox()).toBe(1);
+    expect((await call(actor, "threads/markRead", { chatBotId: botId, chatId })).status).toBe(200);
+    expect((await listed()).unread).toBe(false);
+    expect((await call(actor, "threads/markUnread", { chatBotId: botId, chatId })).status).toBe(
+      200,
+    );
     expect((await listed()).unread).toBe(true);
     const until = new Date(Date.now() + 3_600_000).toISOString();
-    expect((await call(actor, "threads/snooze", { botId, chatId, until })).status).toBe(200);
+    expect((await call(actor, "threads/snooze", { chatBotId: botId, chatId, until })).status).toBe(
+      200,
+    );
     expect(Date.parse((await listed()).snoozedUntil ?? "")).toBe(Date.parse(until));
-    expect((await call(actor, "threads/snooze", { botId, chatId, until: null })).status).toBe(200);
+    expect(
+      (await call(actor, "threads/snooze", { chatBotId: botId, chatId, until: null })).status,
+    ).toBe(200);
     expect(await inbox()).toBe(1);
-    await call(actor, "dozoChats/archive", { chatId, archived: true });
-    expect(await inbox()).toBe(0);
   });
 
   it("finds the extra chat's messages in search, naming the chat", async () => {
@@ -271,10 +287,10 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
       1,
     );
     expect((await call(actor, "dozoMessages/revisable", { threadId: chatId })).status).toBe(200);
-    const exported = await call(actor, "dozoChatExport/markdown", { botId, chatId });
+    const exported = await call(actor, "dozoChatExport/markdown", { chatBotId: botId, chatId });
     expect(exported.json.markdown).toContain("Water at dawn.");
     expect(exported.json.markdown).not.toContain("Main chat words.");
-    const cleared = await call(actor, "threads/clear", { botId, chatId });
+    const cleared = await call(actor, "threads/clear", { chatBotId: botId, chatId });
     expect(cleared.status).toBe(400);
     expect(cleared.json).toMatchObject({ code: "dozo_extra_chat_unsupported" });
     expect(await system.message.count({ where: { threadId: chatId } })).toBe(1);
@@ -302,7 +318,7 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     const { actor, botId, mainId, chatId } = await setup();
     await botSays(mainId, botId, actor.spaceId, "Main chat only.");
     await botSays(chatId, botId, actor.spaceId, "Earlier garden note.");
-    await send(actor, { botId, chatId }, "Which seeds first?");
+    await send(actor, { chatBotId: botId, chatId }, "Which seeds first?");
     const run = await system.run.findFirstOrThrow({ where: { threadId: chatId } });
     const requests: AgentRunRequest[] = [];
     const runtime = {
@@ -347,7 +363,7 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     const request = JSON.stringify(requests[0]);
     expect(JSON.stringify(requests[0]!.history)).toContain("Earlier garden note.");
     expect(request).not.toContain("Main chat only.");
-    const extra = await snapshot(actor, { botId, chatId });
+    const extra = await snapshot(actor, { chatBotId: botId, chatId });
     expect(texts(extra)).toContain(`"kind":"steps"`);
     expect(texts(extra)).toContain("Web search");
     expect(texts(extra)).toContain("Indoors or outdoors?");
@@ -360,7 +376,7 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
       orderBy: { seq: "desc" },
     });
     const answered = await call(actor, "threads/answer", {
-      botId,
+      chatBotId: botId,
       chatId,
       runId: run.id,
       messageId: card.id,
@@ -368,7 +384,188 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
     });
     expect(answered.status).toBe(200);
     // The answer went to that chat's card, and nothing reached the main chat.
-    expect(texts(await snapshot(actor, { botId, chatId }))).toContain("Indoors");
+    expect(texts(await snapshot(actor, { chatBotId: botId, chatId }))).toContain("Indoors");
     expect(texts(await snapshot(actor, { botId }))).not.toContain("Indoors");
+  });
+
+  it("refuses an extra chat named beside botId, writing nowhere (the shape an old API would misread)", async () => {
+    const { actor, botId, mainId, chatId } = await setup();
+    expect((await send(actor, { botId, chatId }, "Wrong shape")).status).toBe(400);
+    expect((await call(actor, "threads/get", { botId, chatId })).status).toBe(400);
+    expect((await send(actor, { chatBotId: botId }, "No chat")).status).toBe(400);
+    expect(await system.message.count({ where: { threadId: { in: [mainId, chatId] } } })).toBe(0);
+  });
+
+  it("refuses another bot's extra chat in the same Space", async () => {
+    const { actor, botId, chatId } = await setup();
+    const other = await system.bot.create({
+      data: { spaceId: actor.spaceId, userId: actor.userId, name: "Scout", color: "test" },
+    });
+    await system.thread.create({
+      data: { spaceId: actor.spaceId, userId: actor.userId, botId: other.id },
+    });
+    expect((await call(actor, "threads/get", { chatBotId: other.id, chatId })).status).toBe(404);
+    expect((await send(actor, { chatBotId: other.id, chatId }, "Hi")).status).toBe(404);
+    expect((await call(actor, "threads/get", { chatBotId: botId, chatId })).status).toBe(200);
+    expect(await system.message.count({ where: { threadId: chatId } })).toBe(0);
+  });
+
+  it("keeps an archived extra chat readable, takes nothing new into it, and leaves it out of search", async () => {
+    const { actor, botId, chatId } = await setup();
+    await botSays(chatId, botId, actor.spaceId, "Rosemary likes dry soil.");
+    await call(actor, "dozoChats/archive", { chatId, archived: true });
+    expect((await send(actor, { chatBotId: botId, chatId }, "Still there?")).status).toBe(404);
+    const read = await call(actor, "threads/get", { chatBotId: botId, chatId });
+    expect(read.status).toBe(200);
+    expect(JSON.stringify(read.json)).toContain("Rosemary");
+    const { hits } = (await call(actor, "search/query", { q: "rosemary" })).json as {
+      hits: unknown[];
+    };
+    expect(hits).toEqual([]);
+  });
+
+  it("clears the main chat's own helper threads, and not one an extra chat's helper is working in", async () => {
+    const { actor, botId, mainId, chatId } = await setup();
+    await botSays(mainId, botId, actor.spaceId, "Main asks for help.");
+    await botSays(chatId, botId, actor.spaceId, "Extra asks for help.");
+    const helper = async (sourceThreadId: string, text: string) => {
+      const source = await system.message.findFirstOrThrow({ where: { threadId: sourceThreadId } });
+      const thread = await system.thread.create({
+        data: { spaceId: actor.spaceId, userId: actor.userId, helperBotId: botId },
+      });
+      const owner = { spaceId: actor.spaceId, userId: actor.userId, botId, threadId: thread.id };
+      const task = await system.task.create({
+        data: { ...owner, prompt: text, status: "running" },
+      });
+      const run = await system.run.create({
+        data: {
+          ...owner,
+          taskId: task.id,
+          trigger: BACKGROUND_HELPER_TRIGGER,
+          sourceMessageId: source.id,
+          status: "running",
+        },
+      });
+      await botSays(thread.id, botId, actor.spaceId, text);
+      return { threadId: thread.id, runId: run.id };
+    };
+    const mainHelper = await helper(mainId, "Main helper notes.");
+    const extraHelper = await helper(chatId, "Extra helper notes.");
+    expect((await call(actor, "threads/clear", { botId })).status).toBe(200);
+    expect(await system.message.count({ where: { threadId: mainHelper.threadId } })).toBe(0);
+    expect(await system.message.count({ where: { threadId: extraHelper.threadId } })).toBe(1);
+    expect((await system.run.findUniqueOrThrow({ where: { id: extraHelper.runId } })).status).toBe(
+      "running",
+    );
+    expect(await system.message.count({ where: { threadId: chatId } })).toBe(1);
+  });
+
+  it("finds an extra chat's history from it, and all the bot's chats across them", async () => {
+    const { actor, botId, mainId, chatId } = await setup();
+    await botSays(mainId, botId, actor.spaceId, "Lavender in the main chat.");
+    await botSays(chatId, botId, actor.spaceId, "Lavender in the garden chat.");
+    const scope = { spaceId: actor.spaceId, threadId: chatId, botId, allowMyChats: true };
+    const texts = async (where: "this_chat" | "my_chats") =>
+      JSON.stringify(
+        await runAsTenant(actor, () =>
+          searchHistory(prisma, scope, { query: "lavender", scope: where } as never),
+        ),
+      );
+    const here = await texts("this_chat");
+    expect(here).toContain("garden chat");
+    expect(here).not.toContain("main chat");
+    const everywhere = await texts("my_chats");
+    expect(everywhere).toContain("garden chat");
+    expect(everywhere).toContain("main chat");
+    // Another Space's search never reaches them.
+    const stranger = await setup();
+    const theirs = JSON.stringify(
+      await runAsTenant(stranger.actor, () =>
+        searchHistory(prisma, { ...scope, spaceId: stranger.actor.spaceId }, {
+          query: "lavender",
+          scope: "my_chats",
+        } as never),
+      ),
+    );
+    expect(theirs).not.toContain("Lavender");
+  });
+
+  it("lets two chats of one bot write the same memory file at once without losing a write", async () => {
+    const { actor, botId, mainId, chatId } = await setup();
+    const store = new MarkdownMemoryStore(prisma);
+    const context = {
+      ...actor,
+      operationId: "memory",
+      traceId: "memory",
+      signal: new AbortController().signal,
+    };
+    const write = (threadId: string, content: string, expectedRevision?: number) =>
+      runAsTenant(actor, () =>
+        store.commit(
+          {
+            scope: "bot",
+            botId,
+            path: "garden.md",
+            content,
+            sourceThreadId: threadId,
+            expectedRevision,
+          },
+          context as never,
+        ),
+      );
+    await Promise.all([
+      write(mainId, "From the main chat."),
+      write(chatId, "From the garden chat."),
+    ]);
+    const doc = await system.memoryDocument.findFirstOrThrow({
+      where: { botId, path: "garden.md" },
+    });
+    expect(doc.revision).toBe(2);
+    const revisions = await system.memoryRevision.findMany({
+      where: { documentId: doc.id },
+      orderBy: { revision: "asc" },
+    });
+    expect(revisions.map((row) => row.sourceThreadId).sort()).toEqual([chatId, mainId].sort());
+    // A write that read an older revision is refused, from either chat, never silently lost.
+    const raced = await Promise.allSettled([write(mainId, "A", 2), write(chatId, "B", 2)]);
+    expect(raced.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const refused = raced.find((result) => result.status === "rejected") as PromiseRejectedResult;
+    expect(String(refused.reason)).toContain(MEMORY_REVISION_CONFLICT_ERROR);
+  });
+
+  it("holds an imported archive to the chat limits, and deleting the Space takes every extra chat", async () => {
+    const { actor, botId, chatId } = await setup();
+    await botSays(chatId, botId, actor.spaceId, "Mulch in spring.");
+    for (let i = 1; i < DOZO_BOT_CHATS_MAX; i += 1) {
+      expect((await call(actor, "dozoChats/create", { botId, name: `Chat ${i}` })).status).toBe(
+        200,
+      );
+    }
+    const imported = (archivedAt: string | null) =>
+      runAsTenant(actor, () =>
+        dozoImportChat(prisma, {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          botId,
+          chat: { name: "From the archive", archivedAt },
+          thread: {
+            historyCompactedUpToSeq: null,
+            historyCompactionSummary: null,
+            createdAt: new Date().toISOString(),
+          },
+        }),
+      );
+    await expect(imported(null)).rejects.toMatchObject({ code: DOZO_BOT_CHATS_LIMIT_CODE });
+    expect(await imported(new Date().toISOString())).toEqual(expect.any(String));
+    const chats = await system.$queryRaw<{ threadId: string }[]>`
+      SELECT "threadId" FROM dozo_bot_chats WHERE "botId" = ${botId}`;
+    expect(chats).toHaveLength(DOZO_BOT_CHATS_MAX + 1);
+    await system.space.delete({ where: { id: actor.spaceId } });
+    const ids = chats.map((row) => row.threadId);
+    expect(await system.thread.count({ where: { id: { in: ids } } })).toBe(0);
+    expect(await system.message.count({ where: { threadId: { in: ids } } })).toBe(0);
+    expect(
+      await system.$queryRaw<unknown[]>`SELECT 1 FROM dozo_bot_chats WHERE "botId" = ${botId}`,
+    ).toEqual([]);
   });
 });

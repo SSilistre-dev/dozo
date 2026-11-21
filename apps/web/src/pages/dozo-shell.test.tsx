@@ -11,8 +11,17 @@ const mocks = vi.hoisted(() => ({
   me: vi.fn(),
   status: vi.fn(),
   track: vi.fn(),
+  chatRedirect: null as string | null,
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <div data-testid="upstream-shell" /> }));
+vi.mock("./shell/dozo-bot-chats", async () => {
+  const { useLocation } = await import("react-router-dom");
+  return {
+    useDozoOpenChat: () => undefined,
+    // The list answered and has no such chat: only an address naming one is sent on.
+    useDozoChatRedirect: () => (useLocation().search.includes("chat=") ? mocks.chatRedirect : null),
+  };
+});
 vi.mock("../lib/auth", () => ({
   authClient: {
     useSession: () => ({ data: mocks.userId ? { user: { id: mocks.userId } } : null }),
@@ -71,6 +80,7 @@ const navigate = (to: string) => act(async () => go(to));
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.userId = "user-a";
+  mocks.chatRedirect = null;
   mocks.me.mockReset().mockResolvedValue({ billingEnabled: true, productEvents: true });
   mocks.status.mockReset().mockResolvedValue(free);
   mocks.track.mockReset().mockResolvedValue({ ok: true });
@@ -262,4 +272,10 @@ it("holds the app on a spinner while it checks, then opens it without the offer 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("opens the bot's main chat at an address naming none of its open extra chats", async () => {
+  mocks.chatRedirect = "/app/bot-1";
+  await open("/app/bot-1?chat=gone");
+  await vi.waitFor(() => expect(where()).toBe("/app/bot-1"));
 });

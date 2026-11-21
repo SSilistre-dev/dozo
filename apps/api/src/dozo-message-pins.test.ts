@@ -66,7 +66,7 @@ describe("readableThread", () => {
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(
       db,
       actor,
-      { botId: "bot-1", chatId: "thread-1" },
+      { chatBotId: "bot-1", chatId: "thread-1" },
       { includeArchived: true },
     );
   });
@@ -79,7 +79,7 @@ describe("readableThread", () => {
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(
       db,
       actor,
-      { botId: "bot-1", chatId: "chat-1" },
+      { chatBotId: "bot-1", chatId: "chat-1" },
       { includeArchived: true },
     );
   });

@@ -8259,12 +8259,21 @@
     },
     {
       "file": "packages/contracts/src/rpc.ts",
-      "find": "const threadTarget = z\n  .object({\n    botId: Id.optional(),\n    groupId: Id.optional(),\n  })\n",
-      "replace": "const threadTarget = z\n  .object({\n    botId: Id.optional(),\n    groupId: Id.optional(),\n    /** One of the bot's extra chats; without it, the bot's main chat. */\n    chatId: Id.optional(),\n  })\n",
+      "find": "const threadTarget = z\n  .object({\n    botId: Id.optional(),\n    groupId: Id.optional(),\n  })\n  .superRefine((input, ctx) => {\n    const hasBot = Boolean(input.botId);\n    const hasGroup = Boolean(input.groupId);\n    if (hasBot === hasGroup) {\n      ctx.addIssue({\n        code: \"custom\",\n        message: \"Provide exactly one of botId or groupId\",\n        path: [\"botId\"],\n      });\n    }\n  });\n",
+      "replace": "const threadTarget = z\n  .object({\n    botId: Id.optional(),\n    groupId: Id.optional(),\n    /** A bot's extra chat: its bot and the chat, never with botId. */\n    chatBotId: Id.optional(),\n    chatId: Id.optional(),\n  })\n  .superRefine(dozoThreadTargetCheck);\n",
       "requires": [
         "packages/contracts/src/dozo-bot-chats.ts"
       ],
-      "reason": "bot chats: a chat request names one of the bot's extra chats with chatId; without it, the main chat as before"
+      "reason": "bot chats: a chat request names a bot's extra chat as chatBotId with chatId, never as botId, so an API from before extra chats refuses it (its one-of-botId-or-groupId check) instead of dropping chatId and acting on the main chat"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { dozoChatsContract } from \"./dozo-bot-chats.js\";\nimport { dozoMessagesContract }",
+      "replace": "import { dozoChatsContract, dozoThreadTargetCheck } from \"./dozo-bot-chats.js\";\nimport { dozoMessagesContract }",
+      "requires": [
+        "packages/contracts/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: the import of the rule above (it applies after the contract's own import rule)"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -8305,7 +8314,7 @@
     {
       "file": "apps/api/src/thread-target.ts",
       "find": "  input: { botId?: string; groupId?: string },\n  options: { includeArchived?: boolean } = {},\n): Promise<ThreadTarget> {\n",
-      "replace": "  input: { botId?: string; groupId?: string; chatId?: string },\n  options: { includeArchived?: boolean } = {},\n): Promise<ThreadTarget> {\n",
+      "replace": "  input: { botId?: string; groupId?: string; chatBotId?: string; chatId?: string },\n  options: { includeArchived?: boolean } = {},\n): Promise<ThreadTarget> {\n",
       "requires": [
         "apps/api/src/dozo-chat-target.ts"
       ],
@@ -8314,7 +8323,7 @@
     {
       "file": "apps/api/src/thread-target.ts",
       "find": "      threadId: bot.thread.id,\n      bot,\n",
-      "replace": "      threadId: await dozoChatThreadId(prisma, actor, bot.id, bot.thread.id, input.chatId),\n      bot,\n",
+      "replace": "      threadId: await dozoChatThreadId(prisma, actor, bot.id, bot.thread.id, input, options),\n      bot,\n",
       "requires": [
         "apps/api/src/dozo-chat-target.ts"
       ],
@@ -8328,6 +8337,15 @@
         "apps/api/src/dozo-chat-target.ts"
       ],
       "reason": "bot chats: a group has one chat, so a group target naming an extra chat is not found"
+    },
+    {
+      "file": "apps/api/src/thread-target.ts",
+      "find": "  if (input.botId) {\n    const bot = await repos.getBot(actor, input.botId, options);\n",
+      "replace": "  const dozoBotId = input.botId ?? input.chatBotId;\n  if (dozoBotId) {\n    const bot = await repos.getBot(actor, dozoBotId, options);\n",
+      "requires": [
+        "apps/api/src/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats: a bot's extra chat is resolved through its bot (chatBotId), under the same check that opens the bot's main chat"
     },
     {
       "file": "packages/adapters/src/run-assembly-records.ts",
@@ -8440,11 +8458,11 @@
     {
       "file": "apps/api/src/search.ts",
       "find": "          botId: string;\n          botName: string;\n        }>\n      >`\n      SELECT m.id, m.\"threadId\", m.seq, m.blocks, b.id AS \"botId\", b.name AS \"botName\"\n      FROM messages m\n      INNER JOIN threads t ON t.id = m.\"threadId\"\n      INNER JOIN bots b ON b.id = t.\"botId\"\n",
-      "replace": "          botId: string;\n          botName: string;\n          dozoChatId: string | null;\n        }>\n      >`\n      SELECT m.id, m.\"threadId\", m.seq, m.blocks, b.id AS \"botId\", b.name AS \"botName\",\n        dc.\"threadId\" AS \"dozoChatId\"\n      FROM messages m\n      INNER JOIN threads t ON t.id = m.\"threadId\"\n      LEFT JOIN dozo_bot_chats dc ON dc.\"threadId\" = t.id\n      INNER JOIN bots b ON b.id = COALESCE(t.\"botId\", dc.\"botId\")\n",
+      "replace": "          botId: string;\n          botName: string;\n          dozoChatId: string | null;\n        }>\n      >`\n      SELECT m.id, m.\"threadId\", m.seq, m.blocks, b.id AS \"botId\", b.name AS \"botName\",\n        dc.\"threadId\" AS \"dozoChatId\"\n      FROM messages m\n      INNER JOIN threads t ON t.id = m.\"threadId\"\n      LEFT JOIN dozo_bot_chats dc ON dc.\"threadId\" = t.id\n      INNER JOIN bots b ON b.id = COALESCE(t.\"botId\", dc.\"botId\")\n        AND (dc.\"threadId\" IS NULL OR dc.\"archivedAt\" IS NULL)\n",
       "requires": [
         "packages/contracts/src/dozo-bot-chats.ts"
       ],
-      "reason": "bot chats: search finds messages in a bot's extra chats too, under the bot, in the caller's Space as before"
+      "reason": "bot chats: search finds messages in a bot's open extra chats too, under the bot, in the caller's Space as before; an archived extra chat is left out, as an archived bot is"
     },
     {
       "file": "apps/api/src/search.ts",
@@ -8454,15 +8472,6 @@
         "packages/contracts/src/dozo-bot-chats.ts"
       ],
       "reason": "bot chats: a hit from an extra chat carries the chat"
-    },
-    {
-      "file": "packages/db/src/unread-inbox-chats.ts",
-      "find": "              WHERE gm.\"groupId\" = g.id AND b.\"archivedAt\" IS NULL) >= ${GROUP_MEMBER_MIN})\n        )`;\n",
-      "replace": "              WHERE gm.\"groupId\" = g.id AND b.\"archivedAt\" IS NULL) >= ${GROUP_MEMBER_MIN})\n          OR EXISTS (SELECT 1 FROM dozo_bot_chats dc JOIN bots b ON b.id = dc.\"botId\"\n            WHERE dc.\"threadId\" = t.id AND dc.\"spaceId\" = t.\"spaceId\"\n              AND dc.\"archivedAt\" IS NULL AND b.\"archivedAt\" IS NULL)\n        )`;\n",
-      "requires": [
-        "packages/db/src/dozo-bot-chats.ts"
-      ],
-      "reason": "bot chats: an unread extra chat counts toward the unread badge as its bot's main chat does, until it is archived"
     },
     {
       "file": "packages/contracts/src/account-export.ts",
@@ -8602,7 +8611,7 @@
     {
       "file": "apps/web/src/pages/shell/use-chat-read.ts",
       "find": "import { autoReadStillWanted } from \"../../lib/auto-read\";\nimport type { createSpaceRpc } from \"../../lib/rpc\";\n",
-      "replace": "import { autoReadStillWanted } from \"../../lib/auto-read\";\nimport { dozoBotChatsChanged, dozoChatOf } from \"./dozo-bot-chats\";\nimport type { createSpaceRpc } from \"../../lib/rpc\";\n",
+      "replace": "import { autoReadStillWanted } from \"../../lib/auto-read\";\nimport { dozoBotChatsChanged, dozoChatOf, dozoChatTarget } from \"./dozo-bot-chats\";\nimport type { createSpaceRpc } from \"../../lib/rpc\";\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-bot-chats.tsx"
       ],
@@ -8611,7 +8620,7 @@
     {
       "file": "apps/web/src/pages/shell/use-chat-read.ts",
       "find": "        !stillWanted || stillWanted() ? rpc.threads.markRead({ botId: id }) : Promise.resolve(null),\n      );\n      if (!answer) return undefined;\n      endBotWake(id);\n",
-      "replace": "        !stillWanted || stillWanted()\n          ? rpc.threads.markRead({ botId: id, ...(stillWanted ? dozoChatOf(id) : {}) })\n          : Promise.resolve(null),\n      );\n      if (!answer) return undefined;\n      if (stillWanted && dozoChatOf(id).chatId) {\n        void dozoBotChatsChanged();\n        return answer.unreadAfterSeq;\n      }\n      endBotWake(id);\n",
+      "replace": "        !stillWanted || stillWanted()\n          ? rpc.threads.markRead(stillWanted ? dozoChatTarget(id) : { botId: id })\n          : Promise.resolve(null),\n      );\n      if (!answer) return undefined;\n      if (stillWanted && dozoChatOf(id).chatId) {\n        void dozoBotChatsChanged();\n        return answer.unreadAfterSeq;\n      }\n      endBotWake(id);\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-bot-chats.tsx"
       ],
@@ -8620,7 +8629,7 @@
     {
       "file": "apps/web/src/pages/shell/use-chat-read.ts",
       "find": "          rpc.threads.markUnread({ botId: id, ...(messageId ? { messageId } : {}) }),\n",
-      "replace": "          rpc.threads.markUnread({\n            botId: id,\n            ...(messageId ? { messageId, ...dozoChatOf(id) } : {}),\n          }),\n",
+      "replace": "          rpc.threads.markUnread(\n            messageId ? { ...dozoChatTarget(id), messageId } : { botId: id },\n          ),\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-bot-chats.tsx"
       ],
@@ -8784,6 +8793,111 @@
         "packages/db/src/dozo-bot-chats.ts"
       ],
       "reason": "upstream test fixture: connection cards now also look for the bot's extra chats with SQL, which this fake database answers with none, as the bots here have none (the lookup has its own test in packages/db/src/dozo-bot-chats.test.ts)"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "import { contentEncryptionOf, INDEXED_MESSAGE, UNINDEXED_MESSAGE } from \"./content-encryption.js\";\nimport {\n  historyAttachmentBlocks,\n",
+      "replace": "import { contentEncryptionOf, INDEXED_MESSAGE, UNINDEXED_MESSAGE } from \"./content-encryption.js\";\nimport { DOZO_CHAT_BOT } from \"./dozo-bot-chats.js\";\nimport {\n  historyAttachmentBlocks,\n",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: the import of the rules below"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "    ? Prisma.sql`COALESCE(t.\"botId\", ${scope.botId})`\n",
+      "replace": "    ? Prisma.sql`COALESCE(t.\"botId\", ${DOZO_CHAT_BOT}, ${scope.botId})`\n",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: across the person's chats, an extra chat's messages wait for its own bot, as a main chat's do"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "      SELECT 1 FROM bots b WHERE b.id = t.\"botId\" AND b.\"spaceId\" = ${scope.spaceId}\n        AND b.\"archivedAt\" IS NULL\n    )) OR (t.\"botId\" IS NULL AND EXISTS (",
+      "replace": "      SELECT 1 FROM bots b WHERE b.id = COALESCE(t.\"botId\", ${DOZO_CHAT_BOT})\n        AND b.\"spaceId\" = ${scope.spaceId} AND b.\"archivedAt\" IS NULL\n    )) OR (t.\"botId\" IS NULL AND EXISTS (",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: my_chats searches a bot's extra chats with its main chat, in the Space only"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "    AND (t.\"botId\" = ${scope.botId} OR (t.\"botId\" IS NULL AND EXISTS (\n",
+      "replace": "    AND (t.\"botId\" = ${scope.botId} OR ${DOZO_CHAT_BOT} = ${scope.botId} OR (t.\"botId\" IS NULL AND EXISTS (\n",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: this_chat in a bot's extra chat is that chat's own history (the thread id still holds it to the one chat)"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "        ? Prisma.sql`AND (t.\"botId\" = ${input.botId} OR EXISTS (\n",
+      "replace": "        ? Prisma.sql`AND (t.\"botId\" = ${input.botId} OR ${DOZO_CHAT_BOT} = ${input.botId} OR EXISTS (\n",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: a search for one bot's chats finds its extra chats too"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "    LEFT JOIN bots b ON b.id = t.\"botId\" LEFT JOIN chat_groups g ON g.id = t.\"groupId\"\n",
+      "replace": "    LEFT JOIN bots b ON b.id = COALESCE(t.\"botId\", ${DOZO_CHAT_BOT})\n    LEFT JOIN chat_groups g ON g.id = t.\"groupId\"\n",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: a hit in an extra chat is labelled with its bot's name, as one in the main chat is"
+    },
+    {
+      "file": "packages/db/src/history-retrieval.ts",
+      "find": "    SELECT ${columns}, t.\"botId\" FROM messages m JOIN threads t ON t.id = m.\"threadId\"\n",
+      "replace": "    SELECT ${columns}, COALESCE(t.\"botId\", ${DOZO_CHAT_BOT}) AS \"botId\"\n    FROM messages m JOIN threads t ON t.id = m.\"threadId\"\n",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: reading around a message of an extra chat reads it as its bot's chat"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "              key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}\n              draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}\n",
+      "replace": "              key={inGroup ? `group:${groupId}` : dozoDraftKey(`bot:${active?.id}`, active?.id)}\n              draftKey={inGroup ? `group:${groupId}` : dozoDraftKey(`bot:${active?.id}`, active?.id)}\n",
+      "requires": [
+        "apps/web/src/lib/dozo-open-chat.ts"
+      ],
+      "reason": "bot chats: each chat of a bot keeps its own draft and its own pending send, so text typed in one never shows up or goes out in another"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { createSpaceRpc, selectedSpaceId } from \"../lib/rpc\";\nimport { SpaceRpcProvider } from \"../lib/space-rpc\";\n",
+      "replace": "import { createSpaceRpc, selectedSpaceId } from \"../lib/rpc\";\nimport { dozoDraftKey } from \"../lib/dozo-open-chat\";\nimport { SpaceRpcProvider } from \"../lib/space-rpc\";\n",
+      "requires": [
+        "apps/web/src/lib/dozo-open-chat.ts"
+      ],
+      "reason": "bot chats: the import of the rule above"
+    },
+    {
+      "file": "apps/web/src/lib/composer-draft.ts",
+      "find": "  return \"botId\" in target ? `bot:${target.botId}` : `group:${target.groupId}`;\n",
+      "replace": "  return \"botId\" in target\n    ? dozoDraftKey(`bot:${target.botId}`, target.botId)\n    : `group:${target.groupId}`;\n",
+      "requires": [
+        "apps/web/src/lib/dozo-open-chat.ts"
+      ],
+      "reason": "bot chats: a card handing text to the composer hands it to the chat it is in"
+    },
+    {
+      "file": "apps/web/src/lib/composer-draft.ts",
+      "find": "import { createKeyedListeners, validateComposerMentionBindings } from \"@rakazo/core\";\n\nexport const COMPOSER_DRAFT_STORAGE_PREFIX",
+      "replace": "import { createKeyedListeners, validateComposerMentionBindings } from \"@rakazo/core\";\nimport { dozoDraftKey } from \"./dozo-open-chat\";\n\nexport const COMPOSER_DRAFT_STORAGE_PREFIX",
+      "requires": [
+        "apps/web/src/lib/dozo-open-chat.ts"
+      ],
+      "reason": "bot chats: the import of the rule below"
+    },
+    {
+      "file": "packages/db/src/events.ts",
+      "find": "    const helperThreads = { spaceId: input.spaceId, helperBotId: input.botId };\n",
+      "replace": "    const helperThreads = {\n      spaceId: input.spaceId,\n      helperBotId: input.botId,\n      // A helper started from one of the bot's extra chats is that chat's, not this one's.\n      NOT: {\n        runs: {\n          some: {\n            trigger: BACKGROUND_HELPER_TRIGGER,\n            sourceMessage: { threadId: { not: input.threadId } },\n          },\n        },\n      },\n    };\n",
+      "reason": "bot chats: clearing a bot's main chat clears the helper threads its own messages started (and imported ones with no runs), not those an extra chat's helper is still working in"
     }
   ],
   "assets": {

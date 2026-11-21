@@ -178,7 +178,7 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
     if (!thread?.botId) throw new IsolationError();
     // The bot's own visibility rules decide who may reach its chat, main or extra.
     const target = await resolveThreadTarget(deps.prisma, actor, {
-      botId: thread.botId,
+      chatBotId: thread.botId,
       chatId: threadId,
     });
     if (target.threadId !== threadId) throw new IsolationError();

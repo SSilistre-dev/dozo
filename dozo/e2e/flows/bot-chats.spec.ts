@@ -93,6 +93,13 @@ test("bot chats: a second chat with a bot, from its row to archive", async ({ pa
   await shot(page, "app-chats-sidebar-light");
 
   await archive(page, row, world.chiefId);
+
+  // An address naming a chat that is gone, archived or someone else's opens the bot's main chat.
+  for (const chat of ["no-such-chat", chatId]) {
+    await page.goto(`/app/${world.chiefId}?chat=${chat}`);
+    await expect(page).toHaveURL(new RegExp(`/app/${world.chiefId}$`));
+    await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible();
+  }
 });
 
 test("bot chats: the sidebar, the header's chats and a chat's menu in the dark", async ({

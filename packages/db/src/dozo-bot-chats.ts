@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 
 type Db = Pick<PrismaClient | Prisma.TransactionClient, "$queryRaw">;
 
@@ -108,3 +109,9 @@ export function dozoExportChat(chats: Map<string, DozoExportedChat>, threadId: s
   const chat = chats.get(threadId);
   return chat ? { dozoChat: chat } : {};
 }
+
+/**
+ * In SQL over `threads t`: the bot of an extra chat, or NULL. History search reads a chat's bot as
+ * `COALESCE(t."botId", <this>)`, so an extra chat is its bot's own chat there too.
+ */
+export const DOZO_CHAT_BOT = Prisma.sql`(SELECT dc."botId" FROM dozo_bot_chats dc WHERE dc."threadId" = t.id)`;

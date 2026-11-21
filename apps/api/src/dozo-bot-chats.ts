@@ -221,6 +221,14 @@ export async function dozoImportChat(
   },
 ): Promise<string> {
   return prisma.$transaction(async (tx) => {
+    // The limits hold for an archive too: a crafted one cannot give a bot more chats.
+    await tx.$queryRaw`SELECT id FROM bots WHERE id = ${input.botId} FOR NO KEY UPDATE`;
+    const [counts] = await tx.$queryRaw<{ open: number; total: number }[]>`
+      SELECT count(*) FILTER (WHERE "archivedAt" IS NULL)::int AS open, count(*)::int AS total
+      FROM dozo_bot_chats WHERE "botId" = ${input.botId}`;
+    if ((counts?.total ?? 0) >= DOZO_BOT_CHATS_TOTAL_MAX) throw new DozoBotChatsLimitError(true);
+    if (!input.chat.archivedAt && (counts?.open ?? 0) >= DOZO_BOT_CHATS_MAX)
+      throw new DozoBotChatsLimitError();
     const createdAt = new Date(input.thread.createdAt);
     const thread = await tx.thread.create({
       data: {

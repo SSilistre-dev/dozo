@@ -359,3 +359,39 @@ describe("dozoImportChat", () => {
     ).toBeNull();
   });
 });
+
+describe("dozoImportChat's limits", () => {
+  const input = (archivedAt: string | null) => ({
+    spaceId: "space-1",
+    userId: "user-me",
+    botId: "bot-1",
+    chat: { name: "Garden", archivedAt },
+    thread: {
+      historyCompactedUpToSeq: null,
+      historyCompactionSummary: null,
+      createdAt: "2026-11-01T09:00:00.000Z",
+    },
+  });
+  const importing = (db: ReturnType<typeof fakeDb>["db"], archivedAt: string | null) =>
+    dozoImportChat(
+      { $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)) } as never,
+      input(archivedAt),
+    );
+
+  it("holds an archive to the most open chats a bot holds, archived ones aside", async () => {
+    const full = fakeDb({ open: DOZO_BOT_CHATS_MAX, total: DOZO_BOT_CHATS_MAX });
+    await expect(importing(full.db, null)).rejects.toMatchObject({
+      code: DOZO_BOT_CHATS_LIMIT_CODE,
+    });
+    expect(full.db.thread.create).not.toHaveBeenCalled();
+    expect(await importing(full.db, "2026-11-20T10:00:00.000Z")).toBe("thread-new");
+  });
+
+  it("holds an archive to the most chats a bot holds in all", async () => {
+    const full = fakeDb({ open: 0, total: DOZO_BOT_CHATS_TOTAL_MAX });
+    await expect(importing(full.db, "2026-11-20T10:00:00.000Z")).rejects.toMatchObject({
+      code: DOZO_BOT_CHATS_TOTAL_LIMIT_CODE,
+    });
+    expect(full.db.thread.create).not.toHaveBeenCalled();
+  });
+});

@@ -134,8 +134,10 @@ import {
   dozoChatOf,
   dozoChatPath,
   dozoChatRpc,
+  dozoChatTarget,
   dozoExtraChatOpen,
   dozoIsOpenChat,
+  useDozoChatRedirect,
   useDozoOpenChat,
 } from "./dozo-bot-chats";
 
@@ -228,8 +230,12 @@ describe("the open chat", () => {
     expect(dozoChatOf("bot-1")).toEqual({ chatId: "chat-1" });
     expect(dozoChatOf("bot-2")).toEqual({});
     expect(dozoChatOf(undefined)).toEqual({});
-    expect(dozoChatInput({ botId: "bot-1" })).toEqual({ botId: "bot-1", chatId: "chat-1" });
+    expect(dozoChatInput({ botId: "bot-1" })).toEqual({ chatBotId: "bot-1", chatId: "chat-1" });
+    expect(dozoChatTarget("bot-1")).toEqual({ chatBotId: "bot-1", chatId: "chat-1" });
+    expect(dozoChatTarget("bot-2")).toEqual({ botId: "bot-2" });
     expect(dozoChatInput({ groupId: "g" })).toEqual({ groupId: "g" });
+    await render(null, "/app/bot-1");
+    expect(dozoChatInput({ botId: "bot-1" })).toEqual({ botId: "bot-1" });
   });
 
   it("names the open chat in the shell's requests about its bot, and nothing else", async () => {
@@ -238,9 +244,11 @@ describe("the open chat", () => {
     const markUnread = vi.fn((input: unknown) => input);
     const list = vi.fn();
     const scoped = dozoChatRpc({ threads: { send, markUnread, label: "x" }, dozoChats: { list } });
+    // The open chat goes as chatBotId and chatId, never as botId: an API that does not know
+    // extra chats refuses it instead of writing to the main chat.
     expect(scoped.threads.send({ botId: "bot-1", text: "hi" } as never)).toEqual({
-      botId: "bot-1",
       text: "hi",
+      chatBotId: "bot-1",
       chatId: "chat-1",
     });
     expect(scoped.threads.send({ botId: "bot-2" } as never)).toEqual({ botId: "bot-2" });
@@ -350,14 +358,14 @@ describe("the roster's extra chat rows", () => {
     expect(container.querySelector("[data-export]")?.getAttribute("data-export")).toBe("chat-1");
     await click(item("Mark as Read"));
     await vi.waitFor(() =>
-      expect(api.markRead).toHaveBeenCalledWith({ botId: "bot-1", chatId: "chat-1" }),
+      expect(api.markRead).toHaveBeenCalledWith({ chatBotId: "bot-1", chatId: "chat-1" }),
     );
     const hour = [...container.querySelectorAll('[role="menuitem"]')].find((node) =>
       node.textContent?.startsWith("1 hour"),
     );
     await click(hour);
     await vi.waitFor(() => expect(api.snooze).toHaveBeenCalled());
-    expect(api.snooze.mock.calls[0]![0]).toMatchObject({ botId: "bot-1", chatId: "chat-1" });
+    expect(api.snooze.mock.calls[0]![0]).toMatchObject({ chatBotId: "bot-1", chatId: "chat-1" });
     await click(item("Archive"));
     await vi.waitFor(() =>
       expect(api.archive).toHaveBeenCalledWith({ chatId: "chat-1", archived: true }),
@@ -378,7 +386,7 @@ describe("the roster's extra chat rows", () => {
         expect.any(Error),
       ),
     );
-    expect(api.markUnread).toHaveBeenCalledWith({ botId: "bot-1", chatId: "chat-1" });
+    expect(api.markUnread).toHaveBeenCalledWith({ chatBotId: "bot-1", chatId: "chat-1" });
   });
 
   it("archives a chat that is not open without leaving the one on screen", async () => {
@@ -518,5 +526,44 @@ describe("the header's chats", () => {
     expect(location()).toBe("/app/bot-1?chat=chat-1");
     await click(item("New chat"));
     await vi.waitFor(() => expect(location()).toBe("/app/bot-1?chat=chat-9"));
+  });
+});
+
+describe("an address naming an extra chat", () => {
+  function Redirect() {
+    const chatId = useDozoOpenChat();
+    return <output data-redirect>{useDozoChatRedirect(chatId) ?? "stay"}</output>;
+  }
+  const redirect = () => container.querySelector("[data-redirect]")?.textContent;
+
+  it("stays on one of the bot's open extra chats", async () => {
+    api.list.mockResolvedValue({ chats: [chat()] });
+    await render(<Redirect />, "/app/bot-1?chat=chat-1");
+    await vi.waitFor(() => expect(api.list).toHaveBeenCalled());
+    await act(async () => undefined);
+    expect(redirect()).toBe("stay");
+  });
+
+  it("goes to the bot's main chat for an unknown, another bot's or an archived chat", async () => {
+    api.list.mockResolvedValue({
+      chats: [
+        chat({ id: "theirs", botId: "bot-2" }),
+        chat({ id: "old", archivedAt: "2026-11-20T11:00:00.000Z" }),
+      ],
+    });
+    for (const id of ["gone", "theirs", "old"]) {
+      await render(<Redirect />, `/app/bot-1?chat=${id}`);
+      await vi.waitFor(() => expect(redirect()).toBe("/app/bot-1"));
+    }
+  });
+
+  it("waits for the list, and reads none on a main chat", async () => {
+    api.list.mockReturnValue(new Promise(() => undefined));
+    await render(<Redirect />, "/app/bot-1?chat=chat-1");
+    expect(redirect()).toBe("stay");
+    api.list.mockClear();
+    await render(<Redirect />, "/app/bot-1");
+    expect(redirect()).toBe("stay");
+    expect(api.list).not.toHaveBeenCalled();
   });
 });

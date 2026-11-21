@@ -22,7 +22,7 @@ export async function readableThread(prisma: PrismaClient, actor: Actor, threadI
     }),
   );
   const input = thread?.botId
-    ? { botId: thread.botId, chatId: threadId }
+    ? { chatBotId: thread.botId, chatId: threadId }
     : thread?.groupId
       ? { groupId: thread.groupId }
       : null;

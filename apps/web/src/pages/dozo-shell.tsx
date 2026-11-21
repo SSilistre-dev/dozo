@@ -14,7 +14,7 @@ import {
 } from "../lib/dozo-plan-intent";
 import { rpc } from "../lib/rpc";
 import { ShellPage as UpstreamShellPage } from "./Shell";
-import { useDozoOpenChat } from "./shell/dozo-bot-chats";
+import { useDozoChatRedirect, useDozoOpenChat } from "./shell/dozo-bot-chats";
 import { DozoTrustBotHost } from "./shell/dozo-trust-bot";
 
 /**
@@ -37,7 +37,9 @@ export function ShellPage() {
   const { ready, redirect } = useBillingOffer();
   // A bot's extra chat is its own shell: switching chats starts the shell's hooks afresh.
   const chatId = useDozoOpenChat();
+  const chatRedirect = useDozoChatRedirect(chatId);
   if (redirect) return <Navigate to={redirect} replace />;
+  if (chatRedirect) return <Navigate to={chatRedirect} replace />;
   return ready ? (
     <>
       <UpstreamShellPage key={chatId ?? ""} />

@@ -13,25 +13,46 @@ const actor = { userId: "me", spaceId: "space-1" } as Actor;
 const db = (rows: unknown[]) => ({ $queryRaw: vi.fn(async () => rows) });
 
 describe("which chat of a bot a request names", () => {
-  it("is the main chat without a chat id, or with the main chat's own", async () => {
+  it("is the main chat for botId, or for chatBotId with the main chat's own id", async () => {
     const none = db([]);
-    expect(await dozoChatThreadId(none as never, actor, "bot-1", "main", undefined)).toBe("main");
-    expect(await dozoChatThreadId(none as never, actor, "bot-1", "main", "main")).toBe("main");
+    expect(await dozoChatThreadId(none as never, actor, "bot-1", "main", {})).toBe("main");
+    expect(
+      await dozoChatThreadId(none as never, actor, "bot-1", "main", {
+        chatBotId: "bot-1",
+        chatId: "main",
+      }),
+    ).toBe("main");
     expect(none.$queryRaw).not.toHaveBeenCalled();
   });
 
-  it("is the bot's extra chat in the caller's Space, or not found, never the main chat", async () => {
+  it("is the bot's open extra chat in the caller's Space, or not found, never the main chat", async () => {
     const found = db([{ threadId: "chat-1" }]);
-    expect(await dozoChatThreadId(found as never, actor, "bot-1", "main", "chat-1")).toBe("chat-1");
-    const values = found.$queryRaw.mock.calls[0]!.slice(1);
-    expect(values).toEqual(["chat-1", "bot-1", "space-1"]);
+    const named = { chatBotId: "bot-1", chatId: "chat-1" };
+    expect(await dozoChatThreadId(found as never, actor, "bot-1", "main", named)).toBe("chat-1");
+    expect(found.$queryRaw.mock.calls[0]!.slice(1)).toEqual(["chat-1", "bot-1", "space-1", false]);
+    await dozoChatThreadId(found as never, actor, "bot-1", "main", named, {
+      includeArchived: true,
+    });
+    expect(found.$queryRaw.mock.calls[1]!.slice(1)).toEqual(["chat-1", "bot-1", "space-1", true]);
     await expect(
-      dozoChatThreadId(db([]) as never, actor, "bot-1", "main", "chat-9"),
+      dozoChatThreadId(db([]) as never, actor, "bot-1", "main", named),
     ).rejects.toBeInstanceOf(IsolationError);
+  });
+
+  it("refuses a chat id beside botId, and chatBotId without a chat", async () => {
+    const none = db([{ threadId: "chat-1" }]);
+    await expect(
+      dozoChatThreadId(none as never, actor, "bot-1", "main", { chatId: "chat-1" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    await expect(
+      dozoChatThreadId(none as never, actor, "bot-1", "main", { chatBotId: "bot-1" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    expect(none.$queryRaw).not.toHaveBeenCalled();
   });
 
   it("is never a group's", () => {
     expect(() => dozoRefuseChatOnGroup({ chatId: "chat-1" })).toThrow(IsolationError);
+    expect(() => dozoRefuseChatOnGroup({ chatBotId: "bot-1" })).toThrow(IsolationError);
     expect(() => dozoRefuseChatOnGroup({})).not.toThrow();
   });
 });
