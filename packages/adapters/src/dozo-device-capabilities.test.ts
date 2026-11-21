@@ -135,10 +135,10 @@ describe("deviceOffers", () => {
     });
   });
 
-  it("keeps upstream's rule for a computer that did not come through the hub", () => {
+  it("offers a computer that did not come through the hub upstream's commands and no screen", () => {
     expect(deviceOffers({ deviceId: "d", name: "Mac", platform: "darwin" })).toEqual({
       shell: true,
-      screen: true,
+      screen: false,
     });
     expect(
       deviceOffers({ deviceId: "d", name: "This", platform: "linux", screenOnly: true }),

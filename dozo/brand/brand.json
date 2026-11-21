@@ -7589,12 +7589,6 @@
       "reason": "media usage: every generated image or video leaves one usage record, so generations show in usage; upstream recorded none"
     },
     {
-      "file": "packages/adapters/src/run-assembly-capabilities.ts",
-      "find": "      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
-      "replace": "      // The Dozo desktop has no screen driver yet: no connected computer is offered the screen\n      // tools until devices declare screen control.\n      userComputerScreen = false;\n",
-      "reason": "screen control: the Dozo desktop answers every screen request with a refusal, so offering the tools by platform sent the user an approval card that ended nowhere and the bot promised browsing it could not do"
-    },
-    {
       "file": "packages/adapters/src/run-instructions.prompt.ts",
       "find": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
       "replace": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from \"./dozo-device-screen.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
