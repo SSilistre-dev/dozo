@@ -1,7 +1,7 @@
 import { ClientError, prefixRuleAllowed } from "@rakazo/core";
 import {
   dozoSpaceHasComputer,
-  findDozoCommandRuleWords,
+  findDozoCommandRule,
   listDozoCommandRules,
   readDozoHostedAsks,
   removeDozoCommandRule,
@@ -43,15 +43,17 @@ export function dozoCommandRulesRoutes(ctx: RouterContext) {
         listDozoCommandRules(deps.prisma, context.actor),
       ),
       update: authed.dozoCommandRules.update.handler(async ({ context, input }) => {
-        const words = await findDozoCommandRuleWords(deps.prisma, context.actor, input.id);
-        if (!words) throw new CommandRuleNotFoundError();
-        if (input.effect === "allow_prefix" && !prefixRuleAllowed(words))
+        const rule = await findDozoCommandRule(deps.prisma, context.actor, input.id);
+        if (!rule) throw new CommandRuleNotFoundError();
+        if (input.effect === "allow_prefix" && !prefixRuleAllowed(rule.words, rule.cwd))
           throw new CommandPrefixNotAllowedError();
-        await updateDozoCommandRule(deps.prisma, context.actor, input.id, input.effect);
+        await deps.prisma.$transaction((tx) =>
+          updateDozoCommandRule(tx, context.actor, input.id, input.effect),
+        );
         return { ok: true as const };
       }),
       remove: authed.dozoCommandRules.remove.handler(async ({ context, input }) => {
-        await removeDozoCommandRule(deps.prisma, context.actor, input.id);
+        await deps.prisma.$transaction((tx) => removeDozoCommandRule(tx, context.actor, input.id));
         return { ok: true as const };
       }),
       getHostedAsks: authed.dozoCommandRules.getHostedAsks.handler(({ context }) =>

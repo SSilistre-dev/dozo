@@ -452,20 +452,25 @@ one bot does not hold for another. A rule does one of three things
 - **Allow**: exactly these words, in this folder. It needs the command to read as one literal
   program (above), so chaining, substitution, redirection, a variable before the program, `sudo`
   or `bash -c` never pass by a rule.
-- **Allow with arguments**: these words followed by more plain words, offered only for a short
-  list of commands whose plain arguments only name what to read, show or test (`PREFIX_PROGRAMS`:
-  `ls`, `cat`, `grep`, `head`, `diff`, `pytest` and a few more; `PREFIX_SUBCOMMANDS`: read-only git
-  subcommands such as `git status`, `git log`, `git diff`, and the test subcommands of npm, pnpm,
-  yarn, bun, cargo and go, with the subcommand right after the program). Every other command,
-  any Windows program included, is allowed exactly or not at all, and the settings do not offer
-  the choice. An added word may not be an option or a setting (nothing starting with `-`, no `=`),
-  and must pass the read-only gate's check for secret places (`readableWord`: no absolute path
-  outside the system folders, no `..`, no hidden or private location, no drive, no `/S`).
+- **Allow with arguments**: these words followed by more plain words, offered only for plain
+  readers whose arguments only name what to read or print (`PREFIX_PROGRAMS`: `basename`, `cat`,
+  `cmp`, `df`, `diff`, `dirname`, `du`, `echo`, `file`, `grep`, `head`, `ls`, `pwd`, `readlink`,
+  `realpath`, `stat`, `tail`, `tree`, `wc`, `which`), by their plain name, and never for a rule
+  whose folder is a secret place (`.ssh`, `.aws`, Library, an absolute path outside the system
+  folders). Every other command is allowed exactly or not at all, and the settings do not offer
+  the choice: test runners (`pytest evil.py` picks the code that runs), git (a repository the bot
+  can edit can make `git status` or `git diff` run a program through its configuration or hooks),
+  any Windows program, and everything unknown. An added word may not be an option or a setting
+  (nothing starting with `-`, no `=`), and must pass the read-only gate's check for secret places
+  (`readableWord`: no absolute path outside the system folders, no `..`, no hidden or private
+  location, no drive, no `/S`).
+- An exact rule runs the same words every time, but not always the same code: `npm test`, `make`
+  or `git status` run what the project's files say today, and the bot may have edited those files.
 - **Block**: refuses any command containing these words on either computer, in any folder and in
   every mode, Never ask included, before an allow rule and before the Space's first card. From the
   program (by name: a path, case, `.exe`, an escape), the rule's other words follow in order within
-  that command, with anything between, compared as paths (`./build/` is `build`; only slashes
-  mean the root `/`), and its short options appear in any order or form (`rm -rf` refuses `rm -fr`,
+  that command, with anything between, compared as paths (`./x/../build/` is `build`; only slashes
+  mean the root `/`; `../build` stays another folder), and its short options appear in any order or form (`rm -rf` refuses `rm -fr`,
   `rm -r --force`; `git push -f` refuses `--force`, `--force-with-lease` and `+main`). A variable or
   substitution after the program in the same command can stand for the rest (`git $(echo push)`),
   and an unquoted glob for a word it matches (`git pu*h`). It reads through quotes, invisible marks,
@@ -473,7 +478,8 @@ one bot does not hold for another. A rule does one of three things
   when it is made and at every check. A best effort, not a security boundary: it errs toward
   refusing (`echo git push` is refused) and does not follow a program name built from variables
   (`X=r; Y=m; $X$Y`), `eval`, encoded text (`base64 -d | sh`), `python -c`, aliases or scripts the
-  bot writes first.
+  bot writes first, and it does not know PowerShell's own names and abbreviations (`Remove-Item -r
+  -fo build` is not `rm -rf build`; block the PowerShell form as its own rule).
 - A rule saved on the member's own computer allows on it; an exact one also allows on the bot's
   computer, which holds less of theirs. A rule saved on the bot's computer never allows on the
   member's own. A prefix rule stays on the computer it was saved on.

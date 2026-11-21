@@ -3,7 +3,7 @@
  * the bot's computer. Kept apart from dozo-shell-command.ts, which decides what a command is; this
  * file only compares it with the rules.
  */
-import { literalCommandWords, readableWord } from "./dozo-shell-command.js";
+import { literalCommandWords, readableWord, readOnlyCwd } from "./dozo-shell-command.js";
 
 /**
  * What a rule does: `allow` runs exactly these words, `allow_prefix` runs these words followed by
@@ -24,13 +24,13 @@ export type DozoCommandRuleView = {
 };
 
 /**
- * The commands whose plain arguments (no options, no settings) only name what to read, print or
- * test, so a rule may allow them with more arguments. Everything else is allowed exactly or not at
- * all: an unknown program, an editor or pager that can run commands, a program that writes where
- * its arguments say (`cp`, `mv`, `tee`, `rm`, `chmod`), a transfer (`scp`, `rsync`), a build, and
- * any Windows program. The reading programs are also PowerShell's aliases of cmdlets that only read
- * (`ls`, `cat`, `echo`). The test runners run the project's own tests, which the member chose by
- * allowing the runner; a plain argument only picks which tests.
+ * The commands whose plain arguments (no options, no settings) only name what to read or print, so
+ * a rule may allow them with more arguments. Everything else is allowed exactly or not at all: an
+ * unknown program, an editor or pager that can run commands, a program that writes where its
+ * arguments say (`cp`, `mv`, `tee`, `rm`, `chmod`), a transfer, a build, any Windows program, a
+ * test runner (its argument picks the file it runs: `pytest evil.py`), and git (a repository the
+ * bot can edit can make `git status` or `git diff` run a program through its configuration or
+ * hooks). They are also PowerShell's aliases of cmdlets that only read (`ls`, `cat`, `echo`).
  */
 const PREFIX_PROGRAMS: ReadonlySet<string> = new Set([
   "basename",
@@ -44,44 +44,25 @@ const PREFIX_PROGRAMS: ReadonlySet<string> = new Set([
   "file",
   "grep",
   "head",
-  "jest",
   "ls",
   "pwd",
-  "pytest",
   "readlink",
   "realpath",
   "stat",
   "tail",
   "tree",
-  "vitest",
   "wc",
   "which",
 ]);
-/** Subcommands that only show something (git) or run the project's tests. */
-const PREFIX_SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
-  git: ["blame", "describe", "diff", "log", "ls-files", "shortlog", "show", "status"],
-  npm: ["test"],
-  pnpm: ["test"],
-  yarn: ["test"],
-  bun: ["test"],
-  cargo: ["test"],
-  go: ["test", "vet"],
-};
 
 /**
  * Whether these words may be allowed with more arguments after them: the program, by its plain
- * name, is one of `PREFIX_PROGRAMS`, or one of `PREFIX_SUBCOMMANDS` with that subcommand right
- * after it (`git -C repo config` and `npm --prefix web install` are not).
+ * name, is one of `PREFIX_PROGRAMS`, and the folder the rule is for is not a secret place
+ * (`readOnlyCwd`: `.ssh`, `.aws`, Library, an absolute path outside the system folders).
  */
-export function prefixRuleAllowed(words: readonly string[]): boolean {
-  const [program, subcommand] = words;
-  if (!program) return false;
-  if (PREFIX_PROGRAMS.has(program)) return true;
-  return (
-    Object.hasOwn(PREFIX_SUBCOMMANDS, program) &&
-    subcommand !== undefined &&
-    PREFIX_SUBCOMMANDS[program]!.includes(subcommand)
-  );
+export function prefixRuleAllowed(words: readonly string[], cwd = ""): boolean {
+  const [program] = words;
+  return program !== undefined && PREFIX_PROGRAMS.has(program) && readOnlyCwd(cwd);
 }
 
 /**
@@ -97,7 +78,7 @@ function allows(rule: DozoCommandRuleView, words: readonly string[], cwd: string
   if (rule.effect === "allow") return sameWords(rule.words, words);
   const extra = words.slice(rule.words.length);
   return (
-    prefixRuleAllowed(rule.words) &&
+    prefixRuleAllowed(rule.words, rule.cwd) &&
     words.length >= rule.words.length &&
     sameWords(rule.words, words.slice(0, rule.words.length)) &&
     extra.every(
@@ -120,15 +101,21 @@ function programName(word: string): string {
 }
 
 /**
- * A path word as a block compares it: without case, a leading `./` or a trailing `/` or `\`, so
- * `./build/` is `build`; a path of slashes alone stays the root `/`.
+ * A path word as a block compares it: without case, `.` and `name/..` parts, or a trailing `/` or
+ * `\\`, so `./x/../build/` is `build`; a path of slashes alone stays the root `/`, and a `..` that
+ * climbs out of the folder stays (`../build` is another folder).
  */
 function pathName(word: string): string {
-  let path = word.toLowerCase();
-  const root = /^[/\\]+$/.test(path);
-  while (path.startsWith("./") || path.startsWith(".\\")) path = path.slice(2);
-  path = path.replace(/[/\\]+$/, "");
-  return path || (root ? "/" : ".");
+  const path = word.toLowerCase();
+  const rooted = /^[/\\]/.test(path);
+  const parts: string[] = [];
+  for (const part of path.split(/[/\\]+/)) {
+    if (part === "" || part === ".") continue;
+    if (part === ".." && parts.length && parts.at(-1) !== "..") parts.pop();
+    else if (part !== ".." || !rooted) parts.push(part);
+  }
+  const joined = parts.join("/");
+  return rooted ? `/${joined}` : joined || ".";
 }
 
 /** Long options that mean the same as a short one in the programs blocks are usually set for. */

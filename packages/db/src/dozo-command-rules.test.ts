@@ -3,7 +3,7 @@ import type { Prisma } from "./client.js";
 import {
   dozoCommandComputer,
   dozoSpaceHasComputer,
-  findDozoCommandRuleWords,
+  findDozoCommandRule,
   listDozoCommandRules,
   readDozoCommandRules,
   readDozoHostedAsks,
@@ -87,15 +87,18 @@ describe("readDozoCommandRules", () => {
 
 describe("the member's rules in the Space", () => {
   it("lists, finds, changes and removes only the member's rules in the Space", async () => {
-    const row = { id: "rule-1", botId: "bot-1", botName: "Chef", words: ["make"], cwd: "" };
+    const row = { id: "rule-1", botId: "bot-1", botName: "Chef", words: ["make"], cwd: "~/app" };
     const { db, calls } = fakeDb([row]);
     expect(await listDozoCommandRules(db, member)).toEqual([row]);
-    expect(await findDozoCommandRuleWords(db, member, "rule-1")).toEqual(["make"]);
+    expect(await findDozoCommandRule(db, member, "rule-1")).toMatchObject({
+      words: ["make"],
+      cwd: "~/app",
+    });
     expect(calls.map((call) => call.values)).toEqual([
       ["user-1", "space-1"],
       ["rule-1", "user-1", "space-1"],
     ]);
-    expect(await findDozoCommandRuleWords(fakeDb([]).db, member, "rule-2")).toBeUndefined();
+    expect(await findDozoCommandRule(fakeDb([]).db, member, "rule-2")).toBeUndefined();
   });
 
   it("removes a rule, or one that no longer allows exactly, from the previous release's table too", async () => {
@@ -112,8 +115,9 @@ describe("the member's rules in the Space", () => {
       "SELECT to_regclass('dozo_comma",
       "DELETE FROM dozo_command_rules",
     ]);
-    expect(present.calls[0]!.values).toEqual(["block", "rule-1", "user-1", "space-1"]);
-    expect(present.calls[2]!.values).toEqual(["rule-1", "user-1", "space-1"]);
+    // The old copy goes first, so no moment exists where only the new rule changed.
+    expect(present.calls[1]!.values).toEqual(["rule-1", "user-1", "space-1"]);
+    expect(present.calls[2]!.values).toEqual(["block", "rule-1", "user-1", "space-1"]);
     // Once the deferred migration dropped it, nothing more is asked of it.
     const gone = fakeDb([{ found: false }]);
     await removeDozoCommandRule(gone.db, member, "rule-1");

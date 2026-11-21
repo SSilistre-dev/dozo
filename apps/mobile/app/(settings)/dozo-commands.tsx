@@ -53,7 +53,7 @@ export default function DozoCommands() {
             const allows = effect !== "block";
             const effects: { id: Effect; title: string }[] = [
               { id: "allow", title: t`Allow` },
-              ...(prefixRuleAllowed(rule.words) || effect === "allow_prefix"
+              ...(prefixRuleAllowed(rule.words, rule.cwd) || effect === "allow_prefix"
                 ? [{ id: "allow_prefix" as const, title: t`Allow with arguments` }]
                 : []),
               { id: "block", title: t`Block` },

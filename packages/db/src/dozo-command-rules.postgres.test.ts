@@ -4,7 +4,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import {
   dozoSpaceHasComputer,
-  findDozoCommandRuleWords,
+  findDozoCommandRule,
   listDozoCommandRules,
   readDozoCommandRules,
   readDozoHostedAsks,
@@ -115,7 +115,8 @@ describePostgres("command rules (PostgreSQL)", () => {
     const owner = await member();
     await always(owner, "git push");
     const [rule] = await runAsTenant(owner, () => listDozoCommandRules(prisma, owner));
-    await runAsTenant(owner, () => updateDozoCommandRule(prisma, owner, rule!.id, "block"));
+    await runAsTenant(owner, () =>
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, rule!.id, "block")));
     await always(owner, "git push");
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toMatchObject([
       { id: rule!.id, effect: "block" },
@@ -133,24 +134,29 @@ describePostgres("command rules (PostgreSQL)", () => {
     // Row security hides another member's rules, even when the query names them.
     expect(await runAsTenant(other, () => listDozoCommandRules(prisma, owner))).toEqual([]);
     expect(
-      await runAsTenant(other, () => findDozoCommandRuleWords(prisma, owner, rule!.id)),
+      await runAsTenant(other, () => findDozoCommandRule(prisma, owner, rule!.id)),
     ).toBeUndefined();
     expect(
       await runAsTenant(other, () =>
         readDozoCommandRules(prisma, { userId: owner.userId, botId: owner.botId }),
       ),
     ).toEqual([]);
-    await runAsTenant(other, () => updateDozoCommandRule(prisma, other, rule!.id, "block"));
-    await runAsTenant(other, () => updateDozoCommandRule(prisma, owner, rule!.id, "block"));
-    await runAsTenant(other, () => removeDozoCommandRule(prisma, other, rule!.id));
-    await runAsTenant(other, () => removeDozoCommandRule(prisma, owner, rule!.id));
+    await runAsTenant(other, () =>
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, other, rule!.id, "block")));
+    await runAsTenant(other, () =>
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, rule!.id, "block")));
+    await runAsTenant(other, () =>
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, other, rule!.id)));
+    await runAsTenant(other, () =>
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, rule!.id)));
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toMatchObject([
       { id: rule!.id, effect: "allow" },
     ]);
     expect(
-      await runAsTenant(owner, () => findDozoCommandRuleWords(prisma, owner, rule!.id)),
-    ).toEqual(["make"]);
-    await runAsTenant(owner, () => removeDozoCommandRule(prisma, owner, rule!.id));
+      await runAsTenant(owner, () => findDozoCommandRule(prisma, owner, rule!.id)),
+    ).toEqual({ words: ["make"], cwd: "" });
+    await runAsTenant(owner, () =>
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, rule!.id)));
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toEqual([]);
   });
 
@@ -281,6 +287,29 @@ describePostgres("command rules (PostgreSQL)", () => {
     ).toMatchObject({ status: "approved" });
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toEqual([]);
     expect(await toolRules(owner)).toBe(0);
+  });
+
+  it("removes the previous release's copy of a rule removed or no longer an exact allow", async () => {
+    const owner = await member();
+    await always(owner, "make");
+    await always(owner, "npm test");
+    const rules = await runAsTenant(owner, () => listDozoCommandRules(prisma, owner));
+    // The deferred migration has not dropped the old table yet, as in the release after this one.
+    for (const rule of rules)
+      await system.$executeRaw`
+        INSERT INTO dozo_command_rules (id, "userId", "spaceId", "botId", words, cwd)
+        VALUES (${rule.id}, ${owner.userId}, ${owner.spaceId}, ${owner.botId},
+          ${rule.words}::text[], ${rule.cwd})`;
+    const [first, second] = rules;
+    await runAsTenant(owner, () =>
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, first!.id)),
+    );
+    await runAsTenant(owner, () =>
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, second!.id, "block")),
+    );
+    expect(
+      await system.$queryRaw`SELECT id FROM dozo_command_rules WHERE "botId" = ${owner.botId}`,
+    ).toEqual([]);
   });
 
   it("goes with the bot", async () => {

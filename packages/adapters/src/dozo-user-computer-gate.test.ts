@@ -198,9 +198,9 @@ describe("userComputerGate", () => {
   });
 
   it("lets a prefix rule allow the same words with more words that are not options", async () => {
-    rules.read.mockResolvedValue([rule(["git", "log"], "allow_prefix", { cwd: "~/app" })]);
-    expect((await gate("git log src", { cwd: "~/app" })).plan).toBe("allow");
-    for (const command of ["git log --output=x", "git log src && rm x", "sudo git log x"])
+    rules.read.mockResolvedValue([rule(["grep", "todo"], "allow_prefix", { cwd: "~/app" })]);
+    expect((await gate("grep todo src", { cwd: "~/app" })).plan).toBe("allow");
+    for (const command of ["grep todo --output=x", "grep todo src && rm x", "sudo grep todo x"])
       expect((await gate(command, { cwd: "~/app" })).plan, command).toBe("ask");
   });
 

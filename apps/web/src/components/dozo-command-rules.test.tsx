@@ -57,7 +57,7 @@ const rules: DozoCommandRule[] = [
     id: "rule-1",
     botId: "bot-1",
     botName: "Chef",
-    words: ["npm", "test"],
+    words: ["cat", "notes"],
     cwd: "~/app",
     effect: "allow",
     computer: "user",
@@ -129,10 +129,10 @@ it("lists each command with its bot and folder", async () => {
   api.list.mockResolvedValue(rules);
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Commands"));
-  expect(codes()).toEqual(["npm test", "git commit -m wip"]);
+  expect(codes()).toEqual(["cat notes", "git commit -m wip"]);
   expect(details()).toEqual([["Chef", "~/app"], ["Scout"]]);
-  expect(effect("npm test")?.value).toBe("allow");
-  expect(choices("npm test")).toEqual(["allow", "allow_prefix", "block"]);
+  expect(effect("cat notes")?.value).toBe("allow");
+  expect(choices("cat notes")).toEqual(["allow", "allow_prefix", "block"]);
 });
 
 it("marks a rule that allows arguments, and names the bot's computer", async () => {
@@ -142,10 +142,10 @@ it("marks a rule that allows arguments, and names the bot's computer", async () 
   ]);
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Commands"));
-  expect(codes()).toEqual(["npm test …", "git commit -m wip"]);
+  expect(codes()).toEqual(["cat notes …", "git commit -m wip"]);
   // A block applies in every folder and on every computer.
   expect(details()).toEqual([["Chef", "~/app", "Bot computer"], ["Scout"]]);
-  expect(effect("npm test")?.value).toBe("allow_prefix");
+  expect(effect("cat notes")?.value).toBe("allow_prefix");
   expect(effect("git commit -m wip")?.value).toBe("block");
 });
 
@@ -154,11 +154,16 @@ it("offers arguments only where a prefix rule is allowed, or already saved", asy
     { ...rules[0], id: "a", words: ["bash", "-c"] },
     { ...rules[0], id: "b", words: ["make"] },
     { ...rules[0], id: "c", words: ["sh", "-c"], effect: "allow_prefix" },
+    { ...rules[0], id: "d", words: ["head", "notes"], cwd: ".ssh" },
+    { ...rules[0], id: "e", words: ["npm", "test"] },
   ]);
   await render();
   await vi.waitFor(() => expect(effect("bash -c")).not.toBeNull());
   expect(choices("bash -c")).toEqual(["allow", "block"]);
   expect(choices("make")).toEqual(["allow", "block"]);
+  // A reader in a secret folder, and a test runner, stay exact.
+  expect(choices("head notes")).toEqual(["allow", "block"]);
+  expect(choices("npm test")).toEqual(["allow", "block"]);
   expect(choices("sh -c")).toEqual(["allow", "allow_prefix", "block"]);
 });
 
@@ -169,10 +174,10 @@ it("changes what a rule does and reads the list again", async () => {
     return { ok: true };
   });
   await render();
-  await vi.waitFor(() => expect(effect("npm test")).not.toBeNull());
-  await choose("npm test", "block");
+  await vi.waitFor(() => expect(effect("cat notes")).not.toBeNull());
+  await choose("cat notes", "block");
   expect(api.update).toHaveBeenCalledWith({ id: "rule-1", effect: "block" });
-  await vi.waitFor(() => expect(effect("npm test")?.value).toBe("block"));
+  await vi.waitFor(() => expect(effect("cat notes")?.value).toBe("block"));
   expect(details()[0]).toEqual(["Chef"]);
 });
 
@@ -180,11 +185,11 @@ it("says so when a change fails, and shows what the rule does again", async () =
   api.list.mockResolvedValue(rules);
   api.update.mockRejectedValue(new Error("down"));
   await render();
-  await vi.waitFor(() => expect(effect("npm test")).not.toBeNull());
-  await choose("npm test", "allow_prefix");
+  await vi.waitFor(() => expect(effect("cat notes")).not.toBeNull());
+  await choose("cat notes", "allow_prefix");
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Could not update rule"));
-  await vi.waitFor(() => expect(effect("npm test")?.value).toBe("allow"));
-  expect(codes()[0]).toBe("npm test");
+  await vi.waitFor(() => expect(effect("cat notes")?.value).toBe("allow"));
+  expect(codes()[0]).toBe("cat notes");
 });
 
 it("removes a rule and reads the list again", async () => {
@@ -194,10 +199,10 @@ it("removes a rule and reads the list again", async () => {
     return { ok: true };
   });
   await render();
-  await vi.waitFor(() => expect(remove("npm test")).not.toBeNull());
-  await act(async () => remove("npm test")?.click());
+  await vi.waitFor(() => expect(remove("cat notes")).not.toBeNull());
+  await act(async () => remove("cat notes")?.click());
   expect(api.remove).toHaveBeenCalledWith({ id: "rule-1" });
-  await vi.waitFor(() => expect(remove("npm test")).toBeNull());
+  await vi.waitFor(() => expect(remove("cat notes")).toBeNull());
   expect(remove("git commit -m wip")).not.toBeNull();
 });
 
@@ -205,10 +210,10 @@ it("says so when a removal fails, and keeps the rule", async () => {
   api.list.mockResolvedValue(rules);
   api.remove.mockRejectedValue(new Error("down"));
   await render();
-  await vi.waitFor(() => expect(remove("npm test")).not.toBeNull());
-  await act(async () => remove("npm test")?.click());
+  await vi.waitFor(() => expect(remove("cat notes")).not.toBeNull());
+  await act(async () => remove("cat notes")?.click());
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Could not remove rule"));
-  expect(remove("npm test")).not.toBeNull();
+  expect(remove("cat notes")).not.toBeNull();
 });
 
 it("names the card's Always allow after the command only when the server says so", () => {

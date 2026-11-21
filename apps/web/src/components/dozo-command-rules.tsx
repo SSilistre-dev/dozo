@@ -71,7 +71,7 @@ export function DozoCommandRules() {
                   className="w-48"
                 >
                   <NativeSelectOption value="allow">{t`Allow`}</NativeSelectOption>
-                  {prefixRuleAllowed(rule.words) || effect === "allow_prefix" ? (
+                  {prefixRuleAllowed(rule.words, rule.cwd) || effect === "allow_prefix" ? (
                     <NativeSelectOption value="allow_prefix">
                       {t`Allow with arguments`}
                     </NativeSelectOption>

@@ -76,23 +76,24 @@ export function listDozoCommandRules(db: Db, member: Member): Promise<DozoComman
     ORDER BY r."createdAt" DESC, r.id DESC`;
 }
 
-/** The words of one of the member's rules in the Space; another member's id finds nothing. */
-export async function findDozoCommandRuleWords(
+/** The words and folder of one of the member's rules in the Space; another member's id finds nothing. */
+export async function findDozoCommandRule(
   db: Db,
   member: Member,
   id: string,
-): Promise<string[] | undefined> {
-  const rows = await db.$queryRaw<{ words: string[] }[]>`
-    SELECT words FROM dozo_command_policies
+): Promise<{ words: string[]; cwd: string } | undefined> {
+  const rows = await db.$queryRaw<{ words: string[]; cwd: string }[]>`
+    SELECT words, cwd FROM dozo_command_policies
     WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
-  return rows[0]?.words;
+  return rows[0];
 }
 
 /**
  * The previous release reads every row of dozo_command_rules as an exact allow, and this one copied
  * its rows here with the same ids. Until the deferred 20270112120100_dozo_drop_command_rules drops
  * that table, a rule removed or turned into anything but an exact allow here is removed there too,
- * so a previous release still running during a deploy, or rolled back to, never allows it.
+ * so a previous release still running during a deploy, or rolled back to, never allows it. Callers
+ * run it first, in the transaction that changes the rule here.
  */
 async function retirePreviousRule(db: Db, member: Member, id: string): Promise<void> {
   const [table] = await db.$queryRaw<{ found: boolean }[]>`
@@ -103,25 +104,35 @@ async function retirePreviousRule(db: Db, member: Member, id: string): Promise<v
     WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
 }
 
-/** Changes what one of the member's rules in the Space does; another member's id changes nothing. */
+/**
+ * Changes what one of the member's rules in the Space does, in one transaction with removing its
+ * old copy; another member's id changes nothing.
+ */
 export async function updateDozoCommandRule(
-  db: Db,
+  tx: Prisma.TransactionClient,
   member: Member,
   id: string,
   effect: DozoCommandRuleEffect,
 ): Promise<void> {
-  await db.$executeRaw`
+  if (effect !== "allow") await retirePreviousRule(tx, member, id);
+  await tx.$executeRaw`
     UPDATE dozo_command_policies SET effect = ${effect}, "updatedAt" = CURRENT_TIMESTAMP
     WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
-  if (effect !== "allow") await retirePreviousRule(db, member, id);
 }
 
-/** Removes one of the member's command rules in the Space; another member's id removes nothing. */
-export async function removeDozoCommandRule(db: Db, member: Member, id: string): Promise<void> {
-  await db.$executeRaw`
+/**
+ * Removes one of the member's command rules in the Space, in one transaction with its old copy;
+ * another member's id removes nothing.
+ */
+export async function removeDozoCommandRule(
+  tx: Prisma.TransactionClient,
+  member: Member,
+  id: string,
+): Promise<void> {
+  await retirePreviousRule(tx, member, id);
+  await tx.$executeRaw`
     DELETE FROM dozo_command_policies
     WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
-  await retirePreviousRule(db, member, id);
 }
 
 /** Whether commands that change something on the bot's computer ask this member first. */
