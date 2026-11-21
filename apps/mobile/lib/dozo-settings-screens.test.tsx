@@ -412,6 +412,87 @@ describe("general settings on mobile", () => {
     );
   });
 
+  it("turns the daily digest on at eight in the first bot's chat, then moves it", async () => {
+    answers["dozoQuietHours/get"] = { hours: null };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["bots/list"] = [
+      { id: "bot-1", name: "Ada" },
+      { id: "bot-2", name: "Bob" },
+    ];
+    answers["dozoDailyDigest/get"] = { digest: null };
+    await render(<DozoGeneralRows />);
+    const digest = () => container.querySelectorAll("input")[1]!;
+    await settle(() => expect(digest().disabled).toBe(false));
+    expect(digest().checked).toBe(false);
+    expect(text()).not.toContain("Time");
+
+    answers["dozoDailyDigest/set"] = ({ digest }: { digest: unknown }) => ({ digest });
+    answers["dozoDailyDigest/get"] = { digest: { botId: "bot-1", botName: "Ada", minute: 480 } };
+    await act(async () => digest().click());
+    await settle(() => expect(text()).toContain("Time8:00 AM"));
+    expect(text()).toContain("BotAda");
+    expect(calls("dozoDailyDigest/set")[0]![1]).toEqual({
+      digest: { botId: "bot-1", minute: 480 },
+    });
+
+    const bot = ui.menus.filter((menu) => menu.title === "Bot").at(-1)!;
+    answers["dozoDailyDigest/get"] = { digest: { botId: "bot-2", botName: "Bob", minute: 480 } };
+    await act(async () => bot.press("bot-2"));
+    await settle(() => expect(text()).toContain("BotBob"));
+    expect(calls("dozoDailyDigest/set")[1]![1]).toEqual({
+      digest: { botId: "bot-2", minute: 480 },
+    });
+
+    const time = ui.menus.filter((menu) => menu.title === "Time").at(-1)!;
+    expect(time.actions).toHaveLength(24);
+    answers["dozoDailyDigest/get"] = { digest: { botId: "bot-2", botName: "Bob", minute: 1200 } };
+    await act(async () => time.press("1200"));
+    await settle(() => expect(text()).toContain("Time8:00 PM"));
+    expect(calls("dozoDailyDigest/set")[2]![1]).toEqual({
+      digest: { botId: "bot-2", minute: 1200 },
+    });
+  });
+
+  it("keeps a digest from another Space, and says when a change fails", async () => {
+    answers["dozoQuietHours/get"] = { hours: null };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["bots/list"] = [{ id: "bot-1", name: "Ada" }];
+    answers["dozoDailyDigest/get"] = { digest: { botId: "bot-9", botName: "Cy", minute: 510 } };
+    await render(<DozoGeneralRows />);
+    await settle(() => expect(text()).toContain("BotCy"));
+    expect(text()).toContain("Time8:30 AM");
+    expect(ui.menus.filter((menu) => menu.title === "Time").at(-1)!.actions).toHaveLength(25);
+
+    answers["dozoDailyDigest/set"] = new Error("Try later");
+    await act(async () => container.querySelectorAll("input")[1]!.click());
+    await settle(() =>
+      expect(ui.alert).toHaveBeenCalledWith("Couldn't update the daily digest", "Try later"),
+    );
+  });
+
+  it("shows no digest switch while this Space has no bot", async () => {
+    answers["dozoQuietHours/get"] = { hours: null };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["bots/list"] = [];
+    answers["dozoDailyDigest/get"] = { digest: null };
+    await render(<DozoGeneralRows />);
+    await settle(() => expect(calls("bots/list")).toHaveLength(1));
+    await act(() => flush());
+    expect(text()).not.toContain("Daily digest");
+  });
+
+  it("shows no time for a schedule edited in the Routines list", async () => {
+    answers["dozoQuietHours/get"] = { hours: null };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["bots/list"] = [{ id: "bot-1", name: "Ada" }];
+    answers["dozoDailyDigest/get"] = { digest: { botId: "bot-1", botName: "Ada", minute: null } };
+    await render(<DozoGeneralRows />);
+    await settle(() => expect(container.querySelectorAll("input")[1]?.checked).toBe(true));
+    expect(text()).not.toContain("BotAda");
+    const time = ui.menus.filter((menu) => menu.title === "Time").at(-1)!;
+    expect(time.actions.some((action) => action.state === "on")).toBe(false);
+  });
+
   it("offers Activity to those who may read the log, and lists it a page at a time", async () => {
     answers["dozoQuietHours/get"] = { hours: null };
     const event = (id: string, extra = {}) => ({
