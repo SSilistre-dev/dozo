@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
@@ -57,12 +57,13 @@ it("speaks Turkish with the catalog the build ships", () => {
 });
 
 it("carries the same strings as the mobile copy", () => {
-  const strings = (url: URL) =>
-    [...readFileSync(fileURLToPath(url), "utf8").matchAll(/t`([^`]*)`/g)].map((match) => match[1]);
-  const web = strings(new URL("./dozo-meeting-prep-copy.ts", import.meta.url));
-  const mobile = strings(
-    new URL("../../../../mobile/lib/dozo-meeting-prep-copy.ts", import.meta.url),
-  );
+  // Vitest runs from the repository root.
+  const strings = (file: string) =>
+    [...readFileSync(resolve(process.cwd(), file), "utf8").matchAll(/t`([^`]*)`/g)].map(
+      (match) => match[1],
+    );
+  const web = strings("apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts");
+  const mobile = strings("apps/mobile/lib/dozo-meeting-prep-copy.ts");
   expect(web).toHaveLength(3);
   expect(mobile).toEqual(web);
 });

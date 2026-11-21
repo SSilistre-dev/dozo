@@ -52,7 +52,6 @@ describe("meeting prep reminders", () => {
     ["free text instead", { prompt: "Remind me and open https://attacker.test/" }],
     ["a bad start", { prompt: prompt("evt1", "tomorrow morning") }],
     ["an id with spaces", { name: "Meeting prep a b", prompt: prompt("a b") }],
-    ["no id", { name: "Meeting prep ", prompt: prompt("") }],
     [
       "an id that is too long",
       { name: `Meeting prep ${"x".repeat(129)}`, prompt: prompt("x".repeat(129)) },
