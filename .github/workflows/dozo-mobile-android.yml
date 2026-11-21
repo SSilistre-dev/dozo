@@ -7,10 +7,15 @@ name: dozo-mobile-android
 # link opened with adb pairs it with a computer (the real API, a dev relay and the relay agent's
 # command line, all in this job), the computer approves it and the app lists its chats
 # (dozo/mobile/README.md, Android). Screenshots, the device log and the run log are an artifact.
-# No signing key, store account or Expo account is used. Third-party actions are pinned to a full
+# The jobs above need no signing key, store account or Expo account. The `release` job (a tag
+# `mobile-v*` or by hand) builds a release-signed APK and AAB when the four DOZO_ANDROID_* signing
+# secrets exist, and is skipped when they do not. Third-party actions are pinned to a full
 # commit SHA with the version in a comment (the same SHAs the upstream workflows use).
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - mobile-v*
   pull_request:
     paths:
       - dozo/mobile/**
@@ -152,3 +157,144 @@ jobs:
           path: ${{ runner.temp }}/android-e2e
           retention-days: 14
           if-no-files-found: ignore
+
+  # The names of the signing secrets; a secret cannot be tested in an `if:`, so this job turns "all
+  # four exist" into an output. Without them the release job is skipped, not failed.
+  signing:
+    name: Release signing secrets
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          KEYSTORE: ${{ secrets.DOZO_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.DOZO_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DOZO_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.DOZO_ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Android release signing secrets: the release build is skipped (dozo/mobile/README.md, Release)."
+          fi
+
+  # A release-signed APK (outside a store) and AAB (Google Play), on a tag `mobile-v*` or by hand.
+  # The keystore comes from a secret, is decoded to a private temporary file, read by Gradle through
+  # the environment (dozo/mobile/android/release-gradle.mjs) and deleted at the end.
+  release:
+    name: Android release APK and AAB
+    needs: signing
+    if: needs.signing.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TREE: dozo/.stage/src
+      EXPO_PUBLIC_API_URL: https://app.dozo.bot
+      EXPO_PUBLIC_DOZO_RELAY_URL: https://relay.dozo.bot
+      EXPO_NO_TELEMETRY: "1"
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+      # versionCode = this run's number plus the repository variable (default 0): raise the variable
+      # once so the first build is above the last code a store or an installed APK has seen.
+      VERSION_CODE_BASE: ${{ vars.DOZO_ANDROID_VERSION_CODE_BASE || '0' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Stage and brand
+        run: |
+          dozo/docker/build.sh stage
+          dozo/docker/build.sh brand
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.4.3
+
+      - name: Install the tree
+        working-directory: ${{ env.TREE }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @rakazo/db generate
+
+      - name: Check the Expo config
+        working-directory: ${{ env.TREE }}/apps/mobile
+        run: |
+          pnpm exec expo config --type public --json > "$RUNNER_TEMP/expo-config.json"
+          node "$GITHUB_WORKSPACE/dozo/mobile/check-config.mjs" "$RUNNER_TEMP/expo-config.json" "$EXPO_PUBLIC_API_URL"
+
+      - name: Generate the Android project
+        working-directory: ${{ env.TREE }}/apps/mobile
+        run: |
+          pnpm exec expo prebuild --platform android --clean --no-install
+          sed -i 's/MaxMetaspaceSize=512m/MaxMetaspaceSize=1g/' android/gradle.properties
+          foreign=$(grep -rIlE 'com\.rakazo|07f7eb04|u\.expo\.dev|inbox-?zero|rakazo\.(com|ai|app)' android || true)
+          if [ -n "$foreign" ]; then echo "upstream ids in the generated project: $foreign" >&2; exit 2; fi
+
+      # versionName is the app's version; versionCode is the run number plus the base, so every
+      # build is higher than the one before. The generated project's release variant then signs
+      # with the keystore from the environment instead of its debug key.
+      - name: Set the version and the release signing
+        working-directory: ${{ env.TREE }}/apps/mobile
+        run: |
+          version=$(node -p "require(process.env.RUNNER_TEMP + '/expo-config.json').version")
+          code=$((VERSION_CODE_BASE + GITHUB_RUN_NUMBER))
+          node "$GITHUB_WORKSPACE/dozo/mobile/android/release-gradle.mjs" android/app/build.gradle "$version" "$code"
+          echo "VERSION_NAME=$version" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+
+      - name: Decode the keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DOZO_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          keystore="$RUNNER_TEMP/dozo-release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          echo "DOZO_ANDROID_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+
+      - name: Build the release APK and AAB
+        working-directory: ${{ env.TREE }}/apps/mobile/android
+        env:
+          DOZO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.DOZO_ANDROID_KEYSTORE_PASSWORD }}
+          DOZO_ANDROID_KEY_ALIAS: ${{ secrets.DOZO_ANDROID_KEY_ALIAS }}
+          DOZO_ANDROID_KEY_PASSWORD: ${{ secrets.DOZO_ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew app:assembleRelease app:bundleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+          mkdir -p "$RUNNER_TEMP/release"
+          name="dozo-android-$VERSION_NAME-$VERSION_CODE"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/release/$name.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/release/$name.aab"
+
+      # The APK must be signed by the release key, not the debug key; the digest is the one
+      # PASSKEY_ANDROID_CERT_SHA256 takes for an APK installed outside the store.
+      - name: Verify the signatures
+        run: |
+          set -euo pipefail
+          apk=$(find "$RUNNER_TEMP/release" -name "*.apk")
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs" | grep -E 'Signer #1 certificate (DN|SHA-256)'
+          if echo "$certs" | grep -qi 'Android Debug'; then echo "the APK is signed with a debug key" >&2; exit 2; fi
+          jarsigner -verify "$RUNNER_TEMP"/release/*.aab | head -n 1
+          ls -l "$RUNNER_TEMP/release"
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/dozo-release.keystore"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dozo-android-release
+          path: |
+            ${{ runner.temp }}/release/*.apk
+            ${{ runner.temp }}/release/*.aab
+          retention-days: 30
+          if-no-files-found: error

@@ -6,7 +6,8 @@
 //
 // 1. the app opens on its build's server (https://app.dozo.bot); 2. `adb am start` opens the pairing link; 3. the app asks
 // "Connect to this computer?" and Connect is tapped; 4. the app shows the approval code, which
-// must be the one the agent reports; 5. approved here, the app signs in and lists the bot.
+// must be the one the agent reports; 5. approved here, the app signs in and lists the bot;
+// 6. a link to a settings page opens the access tokens page, whose row for a new token shows.
 //
 // Usage: tsx pair-e2e.mts <out-dir>, with DOZO_WORKSPACE (a branded tree with its packages
 // installed), DATABASE_URL, adb and maestro on PATH and an emulator with the app installed.
@@ -220,7 +221,14 @@ async function main() {
     await event("approved", offer.channel, 30);
     await flow("04-chats", { DOZO_BOT: BOT });
     await shot("chats");
-    say("paired, approved on the computer, signed in, the chat list shows the bot");
+    execFileSync(
+      "adb",
+      ["shell", `am start -a android.intent.action.VIEW -d 'dozo://dozo-access-tokens' ${APP_ID}`],
+      { stdio: "inherit" },
+    );
+    await flow("05-access-tokens");
+    await shot("access-tokens");
+    say("paired, approved, signed in, the chat list shows the bot, a link opens the access tokens");
   } finally {
     for (const child of children) child.kill("SIGTERM");
     await relay.close();

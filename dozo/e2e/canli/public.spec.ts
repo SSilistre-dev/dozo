@@ -5,6 +5,7 @@ import {
   measure,
   note,
   openAndSee,
+  openPasswordForm,
   placeholderLinks,
   SIGNED_OUT,
   test,
@@ -29,8 +30,7 @@ test("yanlış parola: Türkçe hata iletisi", async ({ page, guard }) => {
   await openAndSee(page, "/sign-in?lang=tr", (shown) =>
     shown.getByRole("heading", { name: "Dozo'da oturum açın" }),
   );
-  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
-  if (await choice.isVisible()) await choice.click();
+  await openPasswordForm(page);
   const id = Math.random().toString(36).slice(2, 10);
   await page.getByPlaceholder("E-posta adresiniz").fill(`info+dozo-probe-yok${id}@ssilistre.dev`);
   await page.getByPlaceholder("Parola").fill(`yanlis-${id}`);

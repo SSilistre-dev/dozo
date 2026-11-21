@@ -1,5 +1,5 @@
-import type { Page } from "@playwright/test";
-import { expect, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
+import type { Locator, Page } from "@playwright/test";
+import { expect, outDirFile, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
 import { gotoStable, openAccountMenu, openBot, openBotSettings, openUserSettings } from "./ui";
 
 // The Dozo look on the screens the design mockups cover (dozo/design, the chat window from
@@ -168,7 +168,6 @@ test("the chat is a narrow column of tonal bubbles with a one-pill composer in t
   const send = page.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeEnabled();
   expect(await send.getAttribute("class")).toContain("bg-chat-user");
-  expect(await send.getAttribute("style")).toContain("light-dark(");
   await draft.fill("");
 });
 
@@ -189,6 +188,59 @@ test("the chat header and the bot panel show the bot's character", async ({ page
     "background-color",
     await tokenColor(page, "--sidebar"),
   );
+});
+
+test("the colour picked for a new bot is the one its preview, its row and its chat wear", async ({
+  page,
+  theme,
+}) => {
+  const tile = (avatar: Locator) =>
+    avatar.evaluate((el) => (el as HTMLElement).style.getPropertyValue("--dozo-tile"));
+  const wanted = (hex: string) =>
+    hex.toLowerCase() === "#ffffff" ? "var(--dozo-body)" : hex.toLowerCase();
+  await openBot(page, readWorld().chiefId, "Chief");
+  await page
+    .getByTestId("create-menu-trigger")
+    .or(page.getByRole("button", { name: "Create" }))
+    .first()
+    .click();
+  await page.getByTestId("create-new-bot").click();
+  const dialog = page.getByTestId("create-bot-dialog");
+  const preview = dialog.locator(".dozo-avatar").first();
+  const swatches = dialog.getByRole("button", { name: /^Color #/ });
+  await expect(swatches).toHaveCount(11);
+  for (const label of await swatches.evaluateAll((all) => all.map((el) => el.ariaLabel ?? ""))) {
+    const hex = label.replace("Color ", "");
+    await dialog.getByRole("button", { name: label, exact: true }).click();
+    await expect.poll(() => tile(preview)).toBe(wanted(hex));
+    await dialog.screenshot({ path: outDirFile(`new-bot-${theme}-${hex.slice(1)}.png`) });
+  }
+  const picked = (await swatches.nth(9).getAttribute("aria-label"))?.replace("Color ", "") ?? "";
+  await swatches.nth(9).click();
+  const name = `Hue ${Math.random().toString(36).slice(2, 7)}`;
+  await dialog.getByPlaceholder("Name your Bot").fill(name);
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByPlaceholder(`Message ${name}`)).toBeVisible();
+  const botId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1) as string;
+  try {
+    for (const reload of [false, true]) {
+      if (reload) await openBot(page, botId, name);
+      await expect
+        .poll(() => tile(page.locator(`${ROW}[data-roster-bot-id="${botId}"] .dozo-avatar`).first()))
+        .toBe(wanted(picked));
+      await expect
+        .poll(() => tile(page.getByTestId("bot-settings-trigger").locator(".dozo-avatar")))
+        .toBe(wanted(picked));
+    }
+    const draft = page.getByRole("combobox", { name: `Message ${name}` });
+    await draft.fill("hello");
+    expect(
+      await page.getByRole("button", { name: "Send", exact: true }).getAttribute("style"),
+    ).toMatch(/--chat-user: #[0-9a-f]{6};/);
+    await draft.fill("");
+  } finally {
+    await rpc(page, "bots/remove", { botId, deleteMemories: true });
+  }
 });
 
 test("tables, files and questions in the thread share the card surface", async ({ page }) => {
@@ -452,6 +504,115 @@ test.describe("signed out", () => {
     await expect(page.locator(".dozo-avatar")).toHaveCount(0);
     await expect(page.locator(UPSTREAM_AVATAR_ART)).toHaveCount(0);
     await expect(page.locator('[data-slot="button"]').first()).toHaveCSS("border-radius", "999px");
+  });
+
+  test("the sign-in page is a narrow column of borderless fields and the one ink button", async ({
+    page,
+  }) => {
+    const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+    // Where the server mails codes the address comes first and the password is one step away;
+    // without codes sign-in is upstream's password form. Both share the look.
+    await gotoStable(page, capabilities.emailCode ? "/sign-in/email" : "/sign-in");
+    const surface = page.locator('[data-rakazo-surface="auth"]');
+    await expect(surface).toHaveCSS("background-color", await tokenColor(page, "--background"));
+    expect(await styleOf(page, '[data-rakazo-surface="auth"]', "mask-image", "::before")).toContain(
+      "data:image/svg+xml",
+    );
+    const email = page.getByPlaceholder("Your email address");
+    const password = page.getByPlaceholder("Password");
+    await expect(password).toBeVisible();
+    for (const field of [email, password]) {
+      await expect(field).toHaveCSS("height", "44px");
+      await expect(field).toHaveCSS("border-radius", "12px");
+      await expect(field).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    }
+    // Upstream's button reads "Continue" while the password is empty (a blank password asks for a
+    // code where the server has them) and "Sign in" otherwise.
+    const submit = page.locator('[data-rakazo-surface="auth"] form button[type="submit"]');
+    await expect(submit).toHaveCSS("height", "44px");
+    await expect(submit).toHaveCSS("border-radius", "999px");
+    expect((await page.locator('[data-rakazo-surface="auth"] form').boundingBox())?.width).toBe(
+      380,
+    );
+    await expect(page.getByRole("button", { name: "Email me a code instead" })).toHaveCount(
+      capabilities.emailCode ? 1 : 0,
+    );
+    // Keyboard focus stays visible on the quiet field.
+    await email.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect
+      .poll(() =>
+        page.evaluate(() => getComputedStyle(document.activeElement as Element).outlineStyle),
+      )
+      .toBe("solid");
+  });
+
+  test("sign-in by emailed code: the address, then six boxes, one line of error", async ({
+    page,
+    theme,
+  }) => {
+    const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+    test.skip(
+      !capabilities.emailCode,
+      "the stack sends no mail: start it with DOZO_EMAIL_EMULATOR=1",
+    );
+    // One code request per run, not one per theme: the stack's auth limit is small.
+    test.skip(theme !== "dark", "asks the server for a code once, in the dark project");
+    await gotoStable(page, "/sign-in");
+    await expect(page.getByPlaceholder("Password")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Use a password instead" })).toBeVisible();
+    const quiet = page.getByRole("button", { name: "Use a password instead" });
+    await expect(quiet).toHaveCSS("color", await tokenColor(page, "--dozo-ink-2"));
+    await page
+      .getByPlaceholder("Your email address")
+      .fill(`look-${Math.random().toString(36).slice(2, 8)}@example.test`);
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    const box = page.getByLabel("Code", { exact: true });
+    await expect(box).toHaveAttribute("autocomplete", "one-time-code");
+    await expect(box).toHaveAttribute("inputmode", "numeric");
+    const slot = page.locator('[data-dozo-code] [data-slot="input-otp-slot"]').first();
+    await expect(slot).toHaveCSS("width", "48px");
+    await expect(slot).toHaveCSS("height", "56px");
+    await expect(slot).toHaveCSS("border-radius", "12px");
+    await expect(page.locator('[data-dozo-code] [data-slot="input-otp-slot"]')).toHaveCount(6);
+    // The focused box carries the focus ring.
+    await expect(page.locator('[data-dozo-code] [data-active="true"]')).toHaveCSS(
+      "outline-style",
+      "solid",
+    );
+    await expect(page.getByRole("button", { name: /^Resend code/ })).toBeDisabled();
+    await box.fill("000000");
+    const error = page.getByRole("alert");
+    await expect(error).toBeVisible();
+    await expect(error).toHaveCSS("color", await tokenColor(page, "--dozo-danger-text"));
+    await expect(page.locator("[data-dozo-code]")).toHaveCSS("animation-name", "dozo-code-shake");
+  });
+
+  test("a wrong code does not shake for someone who asked for less motion", async ({
+    browser,
+    theme,
+  }, testInfo) => {
+    test.skip(theme !== "dark", "does not depend on the project's theme");
+    const context = await browser.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      reducedMotion: "reduce",
+    });
+    const page = await context.newPage();
+    await gotoStable(page, "/sign-in");
+    // The rule is read from the stylesheet on a stand-in element, so no code is asked for.
+    const animation = await page.evaluate(() => {
+      const el = document.createElement("div");
+      el.setAttribute("data-dozo-code", "");
+      el.setAttribute("data-missed", "true");
+      document.body.append(el);
+      const name = getComputedStyle(el).animationName;
+      el.remove();
+      return name;
+    });
+    expect(animation).toBe("none");
+    await context.close();
   });
 
   test("sign-up is offered while the server takes new accounts, as it does here", async ({

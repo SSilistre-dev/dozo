@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoCliTool } from "@rakazo/contracts";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, Checkbox, Input } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { SettingsRow } from "../../components/SettingsRows";
@@ -110,14 +110,18 @@ function LoginSteps({ tool }: { tool: DozoCliTool }) {
  * agent is not connected.
  */
 function AgentConsent({
+  termsRisk,
   onAgree,
   onCancel,
   pending,
 }: {
+  termsRisk: boolean;
   onAgree: () => void;
   onCancel: () => void;
   pending: boolean;
 }) {
+  const { t } = useLingui();
+  const [riskAccepted, setRiskAccepted] = useState(false);
   return (
     <div className="mt-2 flex flex-col gap-2" data-testid="dozo-agent-consent">
       <p className="text-body-sm text-muted-foreground">
@@ -127,8 +131,26 @@ function AgentConsent({
           access can happen without asking.
         </Trans>
       </p>
+      {termsRisk ? (
+        <div className="flex items-start gap-2 text-body-sm text-foreground">
+          <Checkbox
+            checked={riskAccepted}
+            aria-label={t`I accept this risk`}
+            onCheckedChange={(checked) => setRiskAccepted(checked === true)}
+          />
+          <Trans>
+            Its maker's terms count using this sign-in outside their own products as a reason to
+            close your account. I accept this risk.
+          </Trans>
+        </div>
+      ) : null}
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" disabled={pending} onClick={onAgree}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending || (termsRisk && !riskAccepted)}
+          onClick={onAgree}
+        >
           <Trans>I agree, connect</Trans>
         </Button>
         <Button size="sm" variant="text" onClick={onCancel}>
@@ -145,7 +167,11 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
   const [asking, setAsking] = useState(false);
   const connect = useToolAction(
     (provider, rpc) =>
-      rpc.dozoCliAccounts.connect({ provider, ...(agent ? { consent: true } : {}) }),
+      rpc.dozoCliAccounts.connect({
+        provider,
+        ...(agent ? { consent: true } : {}),
+        ...(tool.termsRisk ? { termsConsent: true } : {}),
+      }),
     t`Could not connect`,
   );
   const add = useToolAction(
@@ -197,6 +223,7 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
     >
       {asking && !tool.connected ? (
         <AgentConsent
+          termsRisk={tool.termsRisk === true}
           pending={connect.pending}
           onAgree={() => connect.run(tool.provider)}
           onCancel={() => setAsking(false)}

@@ -73,8 +73,12 @@ dc() {
   # Only real KEY=value lines count (an optional leading `export`, indentation allowed): a comment,
   # a blank line or a commented-out key is not a key. Names only; values are never read out.
   if [ -f "$ENVF" ]; then while IFS= read -r k; do clean+=(-u "$k"); done < <(sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)=.*/\2/p' "$ENVF"); fi
+  # The email emulator layer (compose.email-emulator.yml) follows the env file, so `down` stops
+  # what `up` started.
+  local extra=()
+  if [ -f "$ENVF" ] && grep -q '^DOZO_EMAIL_EMULATOR=1$' "$ENVF"; then extra=(-f "$HERE/compose.email-emulator.yml"); fi
   (cd "$SRC" && env ${clean[@]+"${clean[@]}"} DOZO_THEME_DIR="$ROOT/dozo/theme" docker compose -p "$PROJECT" --env-file "$ENVF" \
-    -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" -f "$ROOT/dozo/theme/compose.theme.yml" "$@")
+    -f "$COMPOSE_REL" -f "$HERE/compose.ports.yml" -f "$ROOT/dozo/theme/compose.theme.yml" ${extra[@]+"${extra[@]}"} "$@")
 }
 
 # A swap cut short leaves a partial tree that still has the compose file: only the marker says it is whole.
@@ -213,6 +217,9 @@ genenv() {
   # The admin of the e2e suite (dozo/e2e/run.sh signs it up and verifies it), a reserved .test
   # address nobody can own. Only added when the file names no admin, so a chosen one is kept.
   grep -q '^RAKAZO_ADMIN_EMAILS=.' "$ENVF" || setenv RAKAZO_ADMIN_EMAILS admin@dozo-e2e.test
+  # Upstream's email emulator for the e2e suite's emailed codes, only when this run asks for it
+  # (DOZO_EMAIL_EMULATOR=1); every other run turns it off again. See compose.email-emulator.yml.
+  setenv DOZO_EMAIL_EMULATOR "$([ "${DOZO_EMAIL_EMULATOR:-}" = 1 ] && echo 1 || echo 0)"
   # Keep the port if our own web container is running; otherwise pick a free one, starting from
   # DOZO_WEB_PORT of the caller (a seed only: once the file has the port, the file decides).
   # The service list is captured first: `dc ps | grep -q` under pipefail can fail on SIGPIPE.
