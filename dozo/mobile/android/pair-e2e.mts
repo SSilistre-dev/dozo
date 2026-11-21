@@ -141,6 +141,7 @@ async function main() {
   const key = randomBytes(32).toString("hex");
   configureEnvironment();
   Object.assign(process.env, { DOZO_RELAY_AGENT_KEY: key, SIGNUPS_ENABLED: "true" });
+  await mkdir(process.env.DATA_DIR ?? "", { recursive: true });
   execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
     cwd: path.join(workspace, "packages/db"),
     env: process.env,

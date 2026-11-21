@@ -1,4 +1,4 @@
-# Dozo iOS app
+# Dozo mobile app
 
 Upstream ships a complete Expo (React Native) app in `apps/mobile`. The Dozo iOS app is that app,
 built from the branded staged tree: nothing here is a second app, and `apps/mobile` is never edited
@@ -42,6 +42,42 @@ Variables: `DOZO_MOBILE_API_URL` is the server the app opens with (default
 the simulator device type (default `iPhone 17`).
 
 There is no CI job: an iOS build needs a macOS runner.
+
+## Android
+
+The `dozo-mobile-android` workflow builds the Android app from the branded tree on a GitHub runner
+(nothing Android is installed on a maintainer's machine). It runs on pull requests that touch
+`dozo/mobile/`, a mobile `dozo-*` file or the workflow, and by hand.
+
+- The APK (artifact `dozo-android-apk`) is for phones (arm64-v8a) and the emulator (x86_64), with
+  the same server and relay defaults as `build.sh`. It is a release build signed with the debug key
+  of the generated project: it installs outside a store ("install unknown apps"), but no store
+  takes it, and an APK signed with another key cannot update it in place.
+- On an Android 14 emulator, `android/e2e.sh` installs that APK and `android/pair-e2e.mts` plays the
+  computer: the real API with one account and a bot, a dev relay, and the relay agent's command
+  line as the desktop app runs it. The relay's port is reversed into the emulator (`adb reverse`),
+  so the offer's loopback address is the same on both ends. The steps, each with a screenshot in
+  the artifact `dozo-android-e2e` (with the device log and the run log): the app opens; `adb shell
+  am start` opens the `dozo://pair#…` link, as the camera would; the app asks "Connect to this
+  computer?", naming the test relay, and Connect is tapped (Maestro, `android/flows/`); the app
+  shows the approval code, which must be the one the agent reports; `approve` on the computer; the
+  app signs in and lists the bot. Last line: `ANDROID PAIRING E2E: PASS|FAIL`.
+
+What a release needs from the owner (none of it is in the repository):
+
+- The lasting application id: `dev.ssilistre.dozo` was chosen without the owner, and a store app
+  can never change it.
+- A release keystore: the upload key for Google Play (Play App Signing keeps the app key), or one
+  key for APKs offered outside the store. Kept as CI secrets (the keystore, its password, the key
+  alias and password); the build then needs a signing config for the release variant, which the
+  generated project does not have.
+- `PASSKEY_ANDROID_CERT_SHA256` on the server, the SHA-256 of the key the installed app is signed
+  with (`dozo/deploy/README.md`): passkeys and verified links need it.
+- A Play Console developer account, the app created there, and its listing (privacy policy, data
+  safety answers, content rating, screenshots).
+- Push notifications: a Firebase project with the app registered (`GOOGLE_SERVICES_JSON`) and an
+  Expo project of ours, as on iOS; without them the app registers for no push.
+- A `versionCode` higher than the last one for every build a store or an installed APK should take.
 
 ## What makes it Dozo
 
