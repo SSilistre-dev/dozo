@@ -112,13 +112,11 @@ function sameWords(left: readonly string[], right: readonly string[]): boolean {
 
 /** A program word as a shell finds it: its last path part, without case or a Windows `.exe`. */
 function programName(word: string): string {
-  return (
-    word
-      .split(/[/\\]/)
-      .pop()!
-      .toLowerCase()
-      .replace(/\.exe$/, "")
-  );
+  return word
+    .split(/[/\\]/)
+    .pop()!
+    .toLowerCase()
+    .replace(/\.exe$/, "");
 }
 
 /**
@@ -181,7 +179,11 @@ function looseWord(word: string): LooseWord {
     ? new RegExp(
         `^${[...pathName(word.replace(/\\/g, ""))]
           .map((char) =>
-            char === "*" ? ".*" : char === "?" ? "." : char.replace(/[.+^${}()|[\]\\\uE001-\uE003]/g, "\\$&"),
+            char === "*"
+              ? ".*"
+              : char === "?"
+                ? "."
+                : char.replace(/[.+^${}()|[\]\\\uE001-\uE003]/g, "\\$&"),
           )
           .join("")
           .replace(/[\uE001-\uE003]/g, (kept) => `\\${UNQUOTED[kept]}`)}$`,
@@ -242,7 +244,9 @@ function blocks(rule: DozoCommandRuleView, commands: readonly LooseWord[][]): bo
   if (!program) return false;
   const name = program.names[0]!;
   const options = rest.flatMap((word) => optionsOf(word.paths[0]!));
-  const words = rest.filter((word) => !optionsOf(word.paths[0]!).length).map((word) => word.paths[0]!);
+  const words = rest
+    .filter((word) => !optionsOf(word.paths[0]!).length)
+    .map((word) => word.paths[0]!);
   return commands.some((command) =>
     command.some((word, at) => {
       if (word.expansion || !word.names.includes(name)) return false;
@@ -251,7 +255,8 @@ function blocks(rule: DozoCommandRuleView, commands: readonly LooseWord[][]): bo
       for (const later of command.slice(at + 1)) {
         if (later.expansion) return true;
         const wanted = words[next];
-        if (wanted !== undefined && (later.paths.includes(wanted) || later.glob?.test(wanted))) next++;
+        if (wanted !== undefined && (later.paths.includes(wanted) || later.glob?.test(wanted)))
+          next++;
         for (const option of optionsOf(later.paths[0]!)) seen.add(option);
       }
       return next === words.length && options.every((option) => seen.has(option));

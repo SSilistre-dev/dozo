@@ -444,33 +444,48 @@ command there unasked. The fork keeps that first card and then reads each comman
 
 ### Command rules
 
-Each rule is the member's, for one bot (in a group chat, the rules of the member whose run it is),
-and does one of three things (`packages/core/src/dozo-command-rule-match.ts`):
+Each rule is the member's, for one bot (in a group chat, the rules of the member whose run it is).
+A bot another bot starts or messages runs under its own rules, which start empty, so a block for
+one bot does not hold for another. A rule does one of three things
+(`packages/core/src/dozo-command-rule-match.ts`):
 
-- **Allow**: exactly these words, in this folder. **Allow with arguments**: these words followed
-  by more words that are neither options nor settings (nothing starting with `-`, no `=`, since
-  either can make a program run another one: `git -c alias.x=!sh`, `find -exec`,
-  `make all SHELL=/tmp/x`). Both need the command
-  to read as one literal program (above), so chaining, substitution, redirection, a variable
-  before the program, `sudo` or `bash -c` never pass by a rule. A prefix needs at least two words
-  and is refused for programs that run what their arguments name (`sudo`, `env`, shells,
-  interpreters, `awk`, `sed`, `xargs`, `timeout`, `ssh`, `npx` and the rest of `RUNNERS`) and for
-  subcommands that install or run code (`git submodule`, `npm install`, `npm run`, `docker run`,
-  `RUNNER_SUBCOMMANDS`).
-- **Block**: refuses any command containing these words in order within one command of the line,
-  on either computer, in any folder and in every mode, Never ask included, before an allow rule
-  and before the Space's first card. It reads through quotes, backslashes, invisible marks,
-  full-width letters, paths, `.exe`, case, `sudo`, `env`, `bash -c '…'`, substitutions and
-  options between the words, and matches short options in any order (`rm -rf` refuses `rm -fr`
-  and `rm -r -f`). When the line holds a variable, substitution or glob, the rule's program alone
-  is refused (`git $(echo push)`). A routine's command watch is checked too. It is a guard, not a
-  boundary: it errs toward refusing (`echo git push` is refused) and does not follow aliases or
-  scripts the bot writes first.
+- **Allow**: exactly these words, in this folder. It needs the command to read as one literal
+  program (above), so chaining, substitution, redirection, a variable before the program, `sudo`
+  or `bash -c` never pass by a rule.
+- **Allow with arguments**: these words followed by more plain words, offered only for a short
+  list of commands whose plain arguments only name what to read, show or test (`PREFIX_PROGRAMS`:
+  `ls`, `cat`, `grep`, `head`, `diff`, `pytest` and a few more; `PREFIX_SUBCOMMANDS`: read-only git
+  subcommands such as `git status`, `git log`, `git diff`, and the test subcommands of npm, pnpm,
+  yarn, bun, cargo and go, with the subcommand right after the program). Every other command,
+  any Windows program included, is allowed exactly or not at all, and the settings do not offer
+  the choice. An added word may not be an option or a setting (nothing starting with `-`, no `=`),
+  and must pass the read-only gate's check for secret places (`readableWord`: no absolute path
+  outside the system folders, no `..`, no hidden or private location, no drive, no `/S`).
+- **Block**: refuses any command containing these words on either computer, in any folder and in
+  every mode, Never ask included, before an allow rule and before the Space's first card. From the
+  program (by name: a path, case, `.exe`, an escape), the rule's other words follow in order within
+  that command, with anything between, compared as paths (`./build/` is `build`; only slashes
+  mean the root `/`), and its short options appear in any order or form (`rm -rf` refuses `rm -fr`,
+  `rm -r --force`; `git push -f` refuses `--force`, `--force-with-lease` and `+main`). A variable or
+  substitution after the program in the same command can stand for the rest (`git $(echo push)`),
+  and an unquoted glob for a word it matches (`git pu*h`). It reads through quotes, invisible marks,
+  full-width letters, `sudo`, `env` and `bash -c '…'`, and checks a routine's command watch both
+  when it is made and at every check. A best effort, not a security boundary: it errs toward
+  refusing (`echo git push` is refused) and does not follow a program name built from variables
+  (`X=r; Y=m; $X$Y`), `eval`, encoded text (`base64 -d | sh`), `python -c`, aliases or scripts the
+  bot writes first.
 - A rule saved on the member's own computer allows on it; an exact one also allows on the bot's
   computer, which holds less of theirs. A rule saved on the bot's computer never allows on the
   member's own. A prefix rule stays on the computer it was saved on.
 - Settings > Approvals > Commands (web and mobile) changes a rule between the three or removes it;
   a member sees and changes only their own rules in the current Space.
+- The rules moved to `dozo_command_policies`. Until the deferred migration drops
+  `dozo_command_rules`, removing a rule or making it anything but an exact allow also removes its
+  copy there, so a previous release still running during a deploy, or rolled back to, never allows
+  it. A rule saved during that window by the previous release is not carried over: it asks again.
+- The card for a command on the bot's computer reads "Run on the bot's computer?" ("Botun
+  bilgisayarında çalıştırılsın mı?"). Like every approval card title, the server writes it in
+  English and no surface translates it yet.
 
 ### Commands on the bot's computer
 
@@ -535,13 +550,19 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
   Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
   sends do not fit in what is left asks, and none of them is counted. Paid service calls
   (`service_call`, `paid_request`) and the member's own cloud coding agents are not sends here.
-- On a page (`browser_act`), each press that sends what the bot put into the page counts one: a
-  `click`, or `type` with a line break (Enter), after a `fill`, `type`, `upload` or `fill_*` step
-  not yet followed by such a press, in the same call or an earlier one of the run that was not
-  denied (`pageSends`). Navigating, snapshots and a click with nothing put in since the last press
-  never count. Not counted: a press on a form the page filled itself or a link carried in (a
-  prepared share URL), a later press on input already counted, input from an earlier run, and
-  screen control (`computer_act`).
+- On a page (`browser_act`), each press that sends what the bot put into that page counts one: a
+  `click`, or `type` with a line break (Enter), after a `fill`, `type` or `upload` step not yet
+  followed by a press, in the same call or an earlier one while the page stays the same (the run's
+  last known address); navigating, or a press that moved the page on, drops unsent input. A search
+  box filled and submitted counts: the search goes to the site. A press after a saved login or a
+  code was typed (`fill_secret`, `fill_code`) is a sign-in and counts nothing; a saved card or pay
+  token is a purchase, which its own card approves. Snapshots and a click with nothing put in since
+  the last press never count. The browser is not asked which element a click presses, so a click
+  on a checkbox after filling a form counts for that form, and the submit after it does not count
+  again. Not counted: a press on a form the page filled itself or a link carried in (a prepared
+  share URL), input left from an earlier attempt of the run, and screen control (`computer_act`).
+  Bots that fill and send forms unattended can now reach the daily number and then ask; raise it
+  in Settings > Approvals where that is expected.
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
   rule, or left to the approval model. A send a person approves on its card is not counted. One
   the approval model then asks about, or that fails, still counts, so the number errs towards

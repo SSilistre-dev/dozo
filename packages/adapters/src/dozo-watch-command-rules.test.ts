@@ -18,7 +18,9 @@ beforeEach(() => db.rules.mockReset().mockResolvedValue([]));
 
 describe("dozoWatchCommandRefusal", () => {
   it("refuses a running watch once a block rule added later covers its command", async () => {
-    expect(await dozoWatchCommandRefusal({} as never, routine, "cd app && git push")).toBeUndefined();
+    expect(
+      await dozoWatchCommandRefusal({} as never, routine, "cd app && git push"),
+    ).toBeUndefined();
     db.rules.mockResolvedValue([block(["git", "push"])]);
     expect(await dozoWatchCommandRefusal({} as never, routine, "cd app && git push")).toContain(
       "blocked",

@@ -238,10 +238,7 @@ describe("matchCommandRules: block", () => {
   });
 
   it("wins over an allow rule for the same command", () => {
-    const rules = [
-      rule(["git", "log"], "allow_prefix"),
-      rule(["git", "log", "secrets"], "block"),
-    ];
+    const rules = [rule(["git", "log"], "allow_prefix"), rule(["git", "log", "secrets"], "block")];
     expect(matchCommandRules(rules, own("git log src"))).toBe("allow_prefix");
     expect(matchCommandRules(rules, own("git log secrets"))).toBe("block");
     expect(
@@ -325,11 +322,20 @@ describe("review findings", () => {
 
   it("B2: git push with a prefix rule never pushes a forced ref", () => {
     for (const command of ["git push origin +main", "git push origin :main"])
-      expect(matchCommandRules([rule(["git", "push"], "allow_prefix")], own(command))).toBeUndefined();
+      expect(
+        matchCommandRules([rule(["git", "push"], "allow_prefix")], own(command)),
+      ).toBeUndefined();
   });
 
   it("B2: a short list of reading and test commands may take arguments", () => {
-    for (const words of [["ls"], ["cat", "notes"], ["git", "status"], ["git", "log"], ["npm", "test"], ["pytest", "tests"]])
+    for (const words of [
+      ["ls"],
+      ["cat", "notes"],
+      ["git", "status"],
+      ["git", "log"],
+      ["npm", "test"],
+      ["pytest", "tests"],
+    ])
       expect(prefixRuleAllowed(words), words.join(" ")).toBe(true);
   });
 
@@ -342,13 +348,15 @@ describe("review findings", () => {
     ["a Windows drive", "cat notes C:/Users/x"],
     ["a Windows option", "cat notes /S"],
   ])("B2b: a prefix rule asks before an added word that reaches %s", (_name, command) => {
-    expect(matchCommandRules([rule(["cat", "notes"], "allow_prefix")], own(command))).toBeUndefined();
+    expect(
+      matchCommandRules([rule(["cat", "notes"], "allow_prefix")], own(command)),
+    ).toBeUndefined();
   });
 
   it("B2b: a prefix rule passes an added plain file", () => {
-    expect(matchCommandRules([rule(["cat", "notes"], "allow_prefix")], own("cat notes todo.txt"))).toBe(
-      "allow_prefix",
-    );
+    expect(
+      matchCommandRules([rule(["cat", "notes"], "allow_prefix")], own("cat notes todo.txt")),
+    ).toBe("allow_prefix");
   });
 
   it.each([
@@ -381,7 +389,7 @@ describe("review findings", () => {
   });
 
   it("B5: an expansion that can stand for the words still refuses", () => {
-    for (const command of ["git pu*h", "git $(echo push)", "git `echo push`", "git ${X}"])
+    for (const command of ["git pu*h", "git $(echo push)", "git `echo push`", `git $\{X}`])
       expect(matchCommandRules(block(["git", "push"]), own(command)), command).toBe("block");
   });
 
