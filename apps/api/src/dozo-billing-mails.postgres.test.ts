@@ -34,6 +34,7 @@ describePostgres("billing mails (PostgreSQL)", () => {
     status: string | null;
     cancelAtPeriodEnd?: boolean;
     customerId?: string;
+    currentPeriodEndsAt?: Date;
   }) {
     const id = `billing-mail-${suffix}-${organizations.length}`;
     organizations.push(id);
@@ -272,6 +273,26 @@ describePostgres("billing mails (PostgreSQL)", () => {
     await prisma.$executeRaw`UPDATE "dozo_billing_mails" SET "finishedAt" = CURRENT_TIMESTAMP - interval '100 days' WHERE "id" = ${id}`;
     expect(await store.purge(90 * 86_400_000)).toBeGreaterThanOrEqual(1);
     expect(await mails(organizationId)).toEqual([]);
+  });
+
+  it("tells a period that ends soon from one that has ended, in any database time zone", async () => {
+    const hours = (n: number) => new Date(Date.now() + n * 3_600_000);
+    const ending = await organization({
+      status: "active",
+      cancelAtPeriodEnd: true,
+      currentPeriodEndsAt: hours(2),
+    });
+    const ended = await organization({
+      status: "active",
+      cancelAtPeriodEnd: true,
+      currentPeriodEndsAt: hours(-2),
+    });
+    const gaps = await sqlMailStore(prisma, { jobs: true }).reminderGaps(
+      `dozo.plan-ending-zone-${suffix}:`,
+      10_000,
+    );
+    expect(gaps).toContain(ending);
+    expect(gaps).not.toContain(ended);
   });
 
   it("reaches a missing reminder however many organizations never need one", async () => {

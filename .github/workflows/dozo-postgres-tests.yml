@@ -1,0 +1,40 @@
+name: dozo-postgres-tests
+
+# The fork's Postgres tests (every dozo-*.postgres.test.ts) on the branded tree, against a throwaway
+# Postgres, in UTC and in two other database time zones: the local server's Postgres can take the
+# zone of the person's machine. What it runs: dozo/docker/README.md, Postgres tests. Needs only
+# Docker, which stock GitHub runners have.
+# Third-party actions are pinned to a full commit SHA with the version in a comment.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-postgres-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-tests:
+    name: fork Postgres tests in three time zones
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Pull the Node and Postgres images
+        run: docker pull node:24.22-slim && docker pull postgres:18-alpine
+
+      # Not DOZO_STAGE_WORKTREE: the PR checkout is committed content, stage exports HEAD.
+      - name: Stage tree
+        run: dozo/docker/build.sh stage
+
+      - name: Apply brand and run leak gate
+        run: dozo/docker/build.sh brand
+
+      - name: Fork Postgres tests in UTC, Europe/Istanbul and America/Los_Angeles
+        run: dozo/docker/postgres-tests.sh

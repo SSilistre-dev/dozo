@@ -120,9 +120,11 @@ describePostgres("the model pool store (PostgreSQL)", () => {
     expect(written.filter(Boolean).length).toBeGreaterThanOrEqual(1);
     // An older observation arriving late does not undo the newer one.
     expect(await rest(id, new Date(now - 1000), new Date(now + 9 * HOUR), model)).toBe(false);
-    const rows = await owner.$queryRaw<Array<{ resetsAt: Date }>>`
-      SELECT "resetsAt" FROM "dozo_model_connection_cooldowns" WHERE "credentialId" = ${id}`;
-    expect(rows.map((row) => row.resetsAt.getTime())).toEqual([now + 5 * HOUR]);
+    // The instant itself, compared in SQL, so it holds in any database time zone.
+    const rows = await owner.$queryRaw<Array<{ exact: boolean }>>`
+      SELECT "resetsAt" = ${new Date(now + 5 * HOUR).toISOString()}::timestamptz AS "exact"
+      FROM "dozo_model_connection_cooldowns" WHERE "credentialId" = ${id}`;
+    expect(rows).toEqual([{ exact: true }]);
     expect(
       await me(() => readModelPool(prisma, { userId, credentialIds: [id], modelId: model })),
     ).toEqual([{ credentialId: id, resetsAt: new Date(now + 5 * HOUR) }]);

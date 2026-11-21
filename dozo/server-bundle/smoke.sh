@@ -6,13 +6,14 @@
 #   <dist-dir>/manifest.json (manifest.mjs, bundle url file:///dist/...) and the server logs to
 #   [log-dir] (default <dist-dir>/smoke-logs).
 # Steps: without libssl3 the start refuses with a clear message; then, with it: Node, Postgres and
-# the bundle downloaded from the manifest and checked against its sha256, initdb, migrate, api,
-# worker and web up, /health 200, sign-up without an email sender, a bot, an answer from a fake
-# local model, a diagnostics report while it runs (searched for the folder's secrets, the account's
-# email and the message sent), a backup while it runs restored into a new folder that signs in and
-# answers again, a password reset while that one runs (old session and password refused, the new
-# one signs in) and another while it is stopped, and a clean stop (no process needed KILL). Node
-# and Postgres come from the dist folder, as a release serves them (runtimes.mjs, manifest.mjs).
+# the bundle downloaded from the manifest and checked against its sha256, initdb (with the machine
+# in Europe/Istanbul), migrate, api, worker and web up, /health 200, sign-up without an email
+# sender, a bot, an answer from a fake local model, a diagnostics report while it runs (searched for
+# the folder's secrets, the account's email and the message sent), a backup while it runs restored
+# into a new folder that signs in and answers again, a password reset while that one runs (old
+# session and password refused, the new one signs in) and another while it is stopped, sessions in
+# UTC, no missing-crontab line in the logs, and a clean stop (no process needed KILL). Node and
+# Postgres come from the dist folder, as a release serves them (runtimes.mjs, manifest.mjs).
 # Last line: SERVER-BUNDLE SMOKE: PASS|FAIL. Exit 0 pass, 2 fail, 64 usage.
 # Containers: --cpus 3 --memory 6g, named dozo-server-smoke-<pid>[-pre], removed at exit.
 set -uo pipefail
@@ -59,8 +60,16 @@ if [ "${1:-}" = --as-user ]; then
   ! command -v psql > /dev/null || { say "FAILED: the container has a system Postgres"; exit 2; }
   node /bundle/fake-model.mjs 8001 > /tmp/fake-model.log 2>&1 &
   rc=0
-  bash /bundle/run.sh start || rc=$?
+  # A machine outside UTC: initdb takes its zone, and the start must still run sessions in UTC.
+  TZ=Europe/Istanbul bash /bundle/run.sh start || rc=$?
   [ $rc != 0 ] || node /bundle/smoke-client.mjs http://127.0.0.1:5173 http://127.0.0.1:8001/v1 || rc=$?
+  if [ $rc = 0 ]; then
+    zone=$(set -a; . "$H/secrets.env"; PGPASSWORD="$PG_OWNER_PASSWORD" "$R/postgres/bin/psql" \
+      -h 127.0.0.1 -p 54329 -U rakazo -d rakazo -tAc 'SHOW timezone') || zone="(psql failed)"
+    [ "$zone" = UTC ] || { say "FAILED: Postgres sessions run in $zone, not UTC"; rc=2; }
+    ! grep -q "cron is disabled" "$H/logs/worker.log" "$H/logs/api.log" \
+      || { say "FAILED: the job queue found no crontab file"; rc=2; }
+  fi
   # Backup while it runs, then restore into a new folder and use it: same sign-in, bot, history
   # and model key (README.md, "Backup and restore").
   backup() { echo "smoke-backup-password" | node "$R/server/rakazo-server/dozo-local-backup.mjs" "$@"; }

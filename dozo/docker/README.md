@@ -236,6 +236,21 @@ reviewed change with its reason; a fixed cause turns its tests green, which fail
 line is removed, so the list only shrinks on its own. Each tree installs its own lockfile in a
 scratch copy inside the container; reports and logs are in `<stage>/upstream-tests/`.
 
+## Postgres tests
+
+`dozo/docker/postgres-tests.sh`, after `build.sh stage` and `build.sh brand`: every
+`dozo-*.postgres.test.ts` on the branded stage against a throwaway Postgres (`postgres:18-alpine`,
+`DOZO_POSTGRES_IMAGE`) on a network of its own, once per time zone in `DOZO_PG_ZONES` (default
+`UTC Europe/Istanbul America/Los_Angeles`). It migrates one database as upstream's integration
+harness does (owner login for migrations, `rakazo_app` for the tests), copies it once per zone, sets
+that database's `TimeZone` and the test process's `TZ` to the zone, and runs the files with three
+workers. The local server's Postgres can take the zone of the person's machine, so fork SQL must
+answer the same in every zone (`dozo/AGENTS.md`, Recurring mistakes). A skipped test fails the run:
+every file runs only with a database, so a skip means it was never reached. Not part of `olc` or
+`qa`; the workflow `dozo-postgres-tests` runs it on every pull request (about 5 minutes). Last line
+`POSTGRES: PASS (<n> files in <zones>)` or `POSTGRES: FAIL (...)`; exit 0, 2 failed, 64 usage. Logs
+and one JSON report per zone are in `<stage>/postgres-tests/`.
+
 ## Variables
 
 | Variable | Default | Meaning |
@@ -278,7 +293,9 @@ e2e variables are in `dozo/e2e/README.md`; the sync ones in `dozo/SYNC.md`.
 - Images: `dozo-<service>` for the app images. The sandbox image stays `rakazo/computer:local`: its
   name is hard-coded upstream and the leak gate allows it as an identifier shape.
 - Volumes: `dozo-qa-deps` (unit dependencies), `dozo-e2e-npm` (e2e),
-  `dozo-upstream-tests-store` (the upstream tests' pnpm store), and the project's `dozo_*`
+  `dozo-upstream-tests-store` (the upstream tests' pnpm store), `dozo-postgres-tests-store` (the
+  Postgres tests' pnpm store; that run's network and containers are `dozo-pgt-<pid>[-db|-node]` and
+  go when it ends), and the project's `dozo_*`
   volumes. Do not stop or remove what you did not create.
 
 ## Generated files

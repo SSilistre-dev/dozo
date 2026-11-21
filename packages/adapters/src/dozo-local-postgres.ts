@@ -173,7 +173,8 @@ export async function withPostgres<T>(
       "-l",
       log,
       "-o",
-      `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=`,
+      // In UTC, as the server itself starts it (dozo/server-bundle/README.md, "Start contract").
+      `-p ${port} -c listen_addresses=127.0.0.1 -c unix_socket_directories= -c timezone=UTC`,
       "start",
     ]);
     result = await work({ port, password, pgBin });
