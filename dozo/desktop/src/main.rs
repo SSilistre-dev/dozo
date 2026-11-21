@@ -8,6 +8,7 @@ mod background;
 mod backup;
 mod browser;
 mod browser_proxy;
+mod browser_signin;
 mod device;
 mod device_pairing;
 mod device_run;

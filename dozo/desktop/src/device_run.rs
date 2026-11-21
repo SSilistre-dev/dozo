@@ -183,6 +183,11 @@ impl Runner {
         self.browsers.available()
     }
 
+    /// The prompt a person answers when they sign in in a bot's browser.
+    pub fn set_sign_in_prompt(&self, prompt: Arc<dyn crate::browser::SignInPrompt>) {
+        self.browsers.set_sign_in_prompt(prompt);
+    }
+
     /// Stops every command and what it left running in its group. `escaped`: also what it
     /// started outside the group (Linux), which only an explicit stop, turning access off or
     /// quitting does, never a dropped connection.
@@ -319,7 +324,19 @@ impl Runner {
             }
             // Not offered until the app declares it (`browser::DECLARED`): a server that asks
             // anyway gets what an unoffered method gets, and no browser starts.
-            "pageBrowser" if !crate::browser::DECLARED => return reply.error(NOT_HERE).await,
+            "pageBrowser" | "pageBrowserSignIn" if !crate::browser::DECLARED => {
+                return reply.error(NOT_HERE).await;
+            }
+            "pageBrowserSignIn" => {
+                if !running(&home) {
+                    return reply.error("Local computer stopped").await;
+                }
+                let site = request.get("site").and_then(Value::as_str).unwrap_or("");
+                match self.browsers.sign_in(&key, site).await {
+                    Ok(signed_in) => Ok(json!({ "signedIn": signed_in })),
+                    Err(error) => return reply.error(&error).await,
+                }
+            }
             "pageBrowser" => {
                 if !running(&home) {
                     return reply.error("Local computer stopped").await;

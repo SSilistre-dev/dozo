@@ -9,9 +9,8 @@ import {
 import { dozoCommandRuleExists } from "@rakazo/db";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
 import { dozoSendLimitCard } from "./dozo-send-limit.js";
-import { userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
+import { isUserBrowserTool, userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
-import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import {
   USER_COMPUTER_SHELL_TOOL,
   userComputerGate as upstreamUserComputerGate,
@@ -34,7 +33,7 @@ export async function userComputerGate(
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
   // The page tools reach this gate only when they go to the user's own browser.
-  if (PAGE_BROWSER_TOOL_NAMES.has(name)) return userBrowserGate(ctx, blocked, name, args);
+  if (isUserBrowserTool(name)) return userBrowserGate(ctx, blocked, name, args);
   const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
   if (plan !== "allow" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
@@ -112,7 +111,7 @@ function userBrowserCard(
   const detail = redactSecrets(doing, secrets).slice(0, 2000);
   // What the page tool would do on the site, as its card says it.
   const verb =
-    toolName === "browser_navigate" ? "open" : toolName === "browser_snapshot" ? "read" : "act on";
+    toolName === "browser_snapshot" ? "read" : toolName === "browser_act" ? "act on" : "open";
   return {
     kind: "ask",
     approvalEffectId: effectId,

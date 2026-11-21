@@ -4,13 +4,15 @@ const withheld = vi.hoisted(() => ({ value: false }));
 vi.mock("./run-tools-computer.js", () => ({
   pageBrowserTool: vi.fn(async () => "the bot's computer"),
 }));
-vi.mock("./dozo-no-computer.js", () => ({
+vi.mock("./dozo-no-computer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./dozo-no-computer.js")>()),
   filesWithoutComputer: () => (withheld.value ? { error: "none" } : undefined),
 }));
 
 import type { DeviceBrowserEvent } from "./dozo-device-browser.js";
 import { fakeDeviceBrowser, seededDevicePages } from "./dozo-device-browser.test-support.js";
-import { pageBrowserTool, USER_BROWSER_NOTE } from "./dozo-user-browser.js";
+import { withoutCloudComputerTools } from "./dozo-no-computer.js";
+import { pageBrowserTool, USER_BROWSER_NOTE, userBrowserSignIn } from "./dozo-user-browser.js";
 import { pageSite, routesToUserBrowser, userBrowserGate } from "./dozo-user-browser-gate.js";
 import { buildApprovalAskBlock } from "./dozo-user-computer-gate.js";
 import type { RunContext } from "./run-context.js";
@@ -21,6 +23,7 @@ const FORM = "https://example.test/form";
 /** A run with the user's computer connected, a consent table, effects and a token mark, in memory. */
 function setup(options: { capabilities?: string[]; owner?: string; token?: boolean } = {}) {
   const consents = new Set<string>();
+  const signIn = { answer: true as unknown };
   const effects = new Map<string, { id: string; request: unknown }>();
   const device = fakeDeviceBrowser(seededDevicePages);
   const requests: Array<{ method: string }> = [];
@@ -34,6 +37,10 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
     pairedSince: async () => new Date(0),
     async *request(_owner: string, request: { method: string; command?: never }) {
       requests.push(request);
+      if (request.method === "pageBrowserSignIn") {
+        yield { signedIn: signIn.answer };
+        return;
+      }
       if (request.method === "pageBrowser") {
         const answer: { result?: unknown; events?: DeviceBrowserEvent[] } = await device(
           request.command as never,
@@ -76,7 +83,7 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
     computer: { acceptsImages: true, stored: {}, graphical: false },
     tools: { disabled: new Set<string>() },
   } as unknown as RunContext;
-  return { ctx, consents, effects, device, requests, devices };
+  return { ctx, consents, effects, device, requests, devices, signIn };
 }
 
 let effectCount = 0;
@@ -375,5 +382,93 @@ describe("its handler", () => {
     stopped.abort(new Error("stopped"));
     (run.ctx as { context: { signal: AbortSignal } }).context = { signal: stopped.signal };
     await expect(pageBrowserTool(run.ctx, call("browser_snapshot", args))).rejects.toBe("gone");
+  });
+});
+
+describe("the sign-in", () => {
+  it("is held off in every run until the user's browser is offered", async () => {
+    const { offerUserBrowser } = await import("./dozo-device-capabilities.js");
+    const off = withoutCloudComputerTools(new Set(), false);
+    expect(off.has("browser_sign_in")).toBe(true);
+    offerUserBrowser(off, []);
+    expect(off.has("browser_sign_in")).toBe(false);
+    const kept = withoutCloudComputerTools(new Set(), false);
+    offerUserBrowser(kept, ["browser_sign_in"]);
+    expect(kept.has("browser_sign_in")).toBe(true);
+  });
+
+  it("asks only for the browser itself, then tells the bot only whether the user signed in", async () => {
+    const run = setup();
+    const args = { site: "www.X.com" };
+    expect(await userBrowserGate(run.ctx, false, "browser_sign_in", args)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_sign_in", args, [])).toMatchObject({
+      text: "Let this bot use its own browser on your computer and open x.com?",
+    });
+    const first = call("browser_sign_in", args);
+    run.effects.set(first.effectKey, { id: first.effectKey, request: { ...args } });
+    expect(await userBrowserSignIn(run.ctx, first)).toEqual({ site: "x.com", signedIn: true });
+    expect(run.requests.at(-1)).toMatchObject({ method: "pageBrowserSignIn", site: "x.com" });
+    // With the browser allowed the person answers on their computer alone; no card here.
+    const again = { site: "x.com" };
+    expect(await userBrowserGate(run.ctx, false, "browser_sign_in", again)).toBe("allow");
+    run.signIn.answer = false;
+    expect(await userBrowserSignIn(run.ctx, call("browser_sign_in", again))).toEqual({
+      site: "x.com",
+      signedIn: false,
+    });
+  });
+
+  it("refuses what its approval did not see, a site it cannot name, and a computer that is gone", async () => {
+    const run = setup();
+    const unseen = call("browser_sign_in", { site: "x.com" });
+    await userBrowserSignIn(run.ctx, unseen);
+    expect(unseen.finish.mock.calls[0]![0]).toMatchObject({
+      error: expect.stringContaining("not part of this call's approval"),
+    });
+    await approved(run, "browser_navigate", { url: FORM });
+    const nameless = { site: "not a site" };
+    await userBrowserGate(run.ctx, false, "browser_sign_in", nameless);
+    const refused = call("browser_sign_in", nameless);
+    await userBrowserSignIn(run.ctx, refused);
+    expect(refused.finish).toHaveBeenCalledWith({
+      error: "Name the site to sign in to, such as x.com.",
+    });
+    const gone = setup({ capabilities: ["shell"] });
+    const away = call("browser_sign_in", { site: "x.com" });
+    await userBrowserSignIn(gone.ctx, away);
+    expect(away.finish.mock.calls[0]![0]).toMatchObject({
+      error: expect.stringContaining("not connected"),
+    });
+  });
+
+  it("says when the computer did not finish it, and stops with the run", async () => {
+    const run = setup();
+    await approved(run, "browser_navigate", { url: FORM });
+    const args = { site: "x.com" };
+    await userBrowserGate(run.ctx, false, "browser_sign_in", args);
+    run.devices.request = async function* () {
+      yield* [];
+      throw "gone";
+    } as never;
+    const failed = call("browser_sign_in", args);
+    await userBrowserSignIn(run.ctx, failed);
+    expect(failed.finish).toHaveBeenCalledWith({
+      error: "The user's computer did not finish the sign-in: failed",
+    });
+    run.devices.request = async function* () {
+      yield* [];
+      throw new Error("closed");
+    } as never;
+    const closed = call("browser_sign_in", args);
+    await userBrowserSignIn(run.ctx, closed);
+    expect(closed.finish).toHaveBeenCalledWith({
+      error: "The user's computer did not finish the sign-in: closed",
+    });
+    const stopped = new AbortController();
+    stopped.abort(new Error("stopped"));
+    (run.ctx as { context: { signal: AbortSignal } }).context = { signal: stopped.signal };
+    await expect(userBrowserSignIn(run.ctx, call("browser_sign_in", args))).rejects.toThrow(
+      "closed",
+    );
   });
 });

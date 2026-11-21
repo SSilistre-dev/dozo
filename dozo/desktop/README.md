@@ -301,6 +301,15 @@ into it.
   refused. One batch of steps stops when a step took the page to another site. A call that reached
   this computer without its approval having seen it is refused. Saved logins, cards and uploads do
   not reach this browser yet; the person can sign in in its window themselves.
+- Signing in: the bot never types a password or a code there. With `browser_sign_in` it names a
+  site; this app opens that site's home page in the bot's window (never an address the bot gives)
+  and shows the person a small system dialog of its own: "Sign in to x.com in the bot's browser
+  window, then choose Done." with Done and Cancel. Until they answer, every command for that
+  bot's browser is refused (no page, screenshot, input, navigation or history), and what the
+  sign-in went through is dropped: its events, and the history it made, which the server then gets
+  without addresses (a code in a return address never reaches it). The bot learns only whether
+  they signed in. Only the person ends it: a request the server or the run gives up on leaves it
+  as it is. Device request: `pageBrowserSignIn`.
 - Screenshots: a model that can see gets one with each snapshot. Like any image a tool returns, it
   is kept with the thread's run history and not redacted (text is); it goes when the thread does.
 - The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port:

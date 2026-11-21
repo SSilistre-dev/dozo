@@ -2,6 +2,7 @@ import { hostSite } from "@rakazo/core/egress";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
 import { deviceOffers } from "./dozo-device-capabilities.js";
 import { runCameByToken } from "./dozo-token-run.js";
@@ -39,9 +40,14 @@ export async function userBrowserRoute(ctx: RunContext): Promise<Route | undefin
     : undefined;
 }
 
+/** The tools of the bot's own browser on the user's computer: the page tools and the sign-in. */
+export function isUserBrowserTool(name: string): boolean {
+  return PAGE_BROWSER_TOOL_NAMES.has(name) || name === BROWSER_SIGN_IN_TOOL;
+}
+
 /** Whether this call goes to the user's own browser, and so through its approval. */
 export async function routesToUserBrowser(ctx: RunContext, name: string): Promise<boolean> {
-  return PAGE_BROWSER_TOOL_NAMES.has(name) && Boolean(await userBrowserRoute(ctx));
+  return isUserBrowserTool(name) && Boolean(await userBrowserRoute(ctx));
 }
 
 /** The site an action on the current page acts on: its registrable domain, or "" when unknown. */
@@ -118,15 +124,21 @@ export async function userBrowserGate(
   if (!route) return "ask";
   const allowed = await consents(ctx.deps.prisma, ctx.bot.id, route.deviceId, ctx.thread.id);
   const browser = !allowed.has("");
-  // Before the browser is allowed it is not started, so what it shows is a blank page.
-  const site =
-    name === "browser_navigate"
-      ? pageSite(String(args.url ?? ""))
-      : browser
-        ? ""
-        : pageSite(await currentUrl(ctx, route));
+  // Before the browser is allowed it is not started, so what it shows is a blank page. A sign-in
+  // names its site, and the person sees it named and answers on their computer.
+  const named = name === "browser_navigate" || name === BROWSER_SIGN_IN_TOOL;
+  const site = named
+    ? pageSite(
+        name === "browser_navigate"
+          ? String(args.url ?? "")
+          : `https://${String(args.site ?? "")}/`,
+      )
+    : browser
+      ? ""
+      : pageSite(await currentUrl(ctx, route));
   // A blank page has nothing to read; an action on an unknown page always asks.
-  const newSite = site ? !allowed.has(site) : name !== "browser_snapshot";
+  const newSite =
+    name === BROWSER_SIGN_IN_TOOL ? false : site ? !allowed.has(site) : name !== "browser_snapshot";
   const ask: UserBrowserAsk = { deviceId: route.deviceId, browser, site, newSite };
   asks.set(args, ask);
   args[APPROVED_SITE] = site;

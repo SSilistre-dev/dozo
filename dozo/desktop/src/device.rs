@@ -107,8 +107,12 @@ impl Access {
     pub fn new(app: &AppHandle) -> tauri::Result<Self> {
         let root = app.path().app_data_dir()?.join("computers");
         let home = app.path().home_dir()?;
+        let runner = Runner::new(root, home);
+        runner.set_sign_in_prompt(std::sync::Arc::new(crate::browser_signin::DialogPrompt(
+            app.clone(),
+        )));
         Ok(Self {
-            runner: Runner::new(root, home),
+            runner,
             secrets: Arc::new(Keyring),
             lock: tokio::sync::Mutex::new(()),
             withdrawn: AtomicU64::new(0),

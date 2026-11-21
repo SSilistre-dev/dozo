@@ -655,3 +655,108 @@ async fn e2e_browser_reaches_nothing_on_this_computer_or_its_network() {
     );
     browsers.close_all();
 }
+
+/// The person's answer, held by the test: who was asked, and the answer to give.
+#[derive(Default)]
+struct HeldPrompt {
+    asked: Mutex<Option<String>>,
+    answer: Mutex<Option<oneshot::Sender<bool>>>,
+}
+
+impl SignInPrompt for HeldPrompt {
+    fn ask(&self, site: &str) -> oneshot::Receiver<bool> {
+        let (answer, answered) = oneshot::channel();
+        *self.asked.lock().unwrap() = Some(site.to_owned());
+        *self.answer.lock().unwrap() = Some(answer);
+        answered
+    }
+}
+
+/// While the person signs in, the bot's browser passes nothing on: no page, screenshot, input,
+/// navigation or history, and what the sign-in went through (a code in a return address) never
+/// reaches the server, during it or after. Only the person's Done ends it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
+    let port = serve_pages(vec![
+        (
+            "/",
+            "<!doctype html><title>Home</title><button>Account</button>".to_owned(),
+        ),
+        (
+            "/callback?code=SECRET",
+            "<!doctype html><title>Back</title>signed in".to_owned(),
+        ),
+    ]);
+    let site = format!("127.0.0.1:{port}");
+    let root = root();
+    let browsers = Arc::new(browsers(&root));
+    let prompt = Arc::new(HeldPrompt::default());
+    browsers.set_sign_in_prompt(prompt.clone());
+    call(
+        &browsers,
+        "Page.navigate",
+        json!({ "url": format!("http://{site}/") }),
+    )
+    .await;
+    let signing = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.asked.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(prompt.asked.lock().unwrap().as_deref(), Some(site.as_str()));
+    // The person goes through the sign-in, which comes back with a code in its address.
+    let (running, session) = person(&browsers);
+    let back = json!({ "url": format!("http://{site}/callback?code=SECRET") });
+    running
+        .pipe
+        .call("Page.navigate", back, Some(&session))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    for command in [
+        json!({ "method": "Accessibility.getFullAXTree" }),
+        json!({ "method": "Page.captureScreenshot", "params": { "format": "png" } }),
+        json!({ "method": "Page.getNavigationHistory" }),
+        json!({ "method": "Input.insertText", "params": { "text": "x" } }),
+        json!({ "method": "Page.navigate", "params": { "url": format!("http://{site}/") } }),
+    ] {
+        let error = browsers.handle("bot", &command).await.unwrap_err();
+        assert!(error.contains("signing in"), "{command}: {error}");
+    }
+    let again = browsers.sign_in("bot", &site).await.unwrap_err();
+    assert!(again.contains("signing in"), "{again}");
+    assert!(!signing.is_finished(), "only the person ends it");
+    println!("E2E: while the person signs in every command is refused");
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(true)
+        .unwrap();
+    assert!(
+        signing.await.unwrap().unwrap(),
+        "the person said they signed in"
+    );
+    let answer = browsers
+        .handle("bot", &json!({ "method": "Page.getNavigationHistory" }))
+        .await
+        .unwrap();
+    assert!(!answer.to_string().contains("SECRET"), "{answer}");
+    let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
+    assert!(
+        tree.to_string().contains("signed in"),
+        "the page is the bot's again"
+    );
+    println!(
+        "E2E: after Done the page is the bot's again, and no address of the sign-in reaches the server"
+    );
+    browsers.close_all();
+}

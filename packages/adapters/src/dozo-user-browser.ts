@@ -81,20 +81,20 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   return computerPageBrowserTool(ctx, call);
 }
 
-async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
-  const { name, args } = call;
+/**
+ * Why a call to the user's browser may not run, after it records what its approval allowed; or
+ * nothing. Only a call this browser's approval saw runs: one that reached the user's computer
+ * after its approval went the other way is refused, not run without a card. A call that asked
+ * runs only on the site its card named (kept with its effect), and only on that computer.
+ */
+async function refusal(ctx: RunContext, call: ToolCall, route: Route) {
   if (await runCameByToken(ctx)) return call.finish({ error: TOKEN_RUN });
-  const { prisma } = ctx.deps;
-  const { signal } = ctx.context;
-  // Only a call this browser's approval saw runs here: one that reached the user's computer
-  // after its approval went the other way is refused, not run without a card.
-  const asked = userBrowserAsk(args);
+  const asked = userBrowserAsk(call.args);
   if (!asked) return call.finish({ error: CHANGED });
   if (asked.deviceId !== route.deviceId)
     return call.finish({
       error: "The user's computer changed since this was approved. Try again.",
     });
-  // A call that asked runs only on the site its card named (kept with its effect).
   if (asked.browser || asked.newSite) {
     const approved = await approvedSite(ctx, call);
     if (approved !== asked.site) return call.finish({ error: MOVED });
@@ -102,8 +102,16 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
   // The call passed its approval: what it asked is now allowed for this bot, on this computer,
   // in this thread.
   const key = { botId: ctx.bot.id, deviceId: route.deviceId, threadId: ctx.thread.id };
-  if (asked.browser) await recordConsent(prisma, key, "");
-  if (asked.newSite && asked.site) await recordConsent(prisma, key, asked.site);
+  if (asked.browser) await recordConsent(ctx.deps.prisma, key, "");
+  if (asked.newSite && asked.site) await recordConsent(ctx.deps.prisma, key, asked.site);
+  return undefined;
+}
+
+async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
+  const { name, args } = call;
+  const refused = await refusal(ctx, call, route);
+  if (refused) return refused;
+  const { signal } = ctx.context;
   const first = !providers.has(ctx);
   const provider = providerFor(ctx, route);
   const computer: ComputerRef = {
@@ -179,5 +187,43 @@ async function approvedSite(ctx: RunContext, call: ToolCall): Promise<string | u
     // An effect from before the site was kept names none: it does not approve a site.
     if (error instanceof JsonColumnMismatchError) return undefined;
     throw error;
+  }
+}
+
+/**
+ * browser_sign_in: the person signs in to a site themselves in the bot's browser on their
+ * computer. The app there opens the site's home page and shows them Done and Cancel; nothing of
+ * the page reaches the server until they answer, and the bot learns only whether they signed in.
+ */
+export async function userBrowserSignIn(ctx: RunContext, call: ToolCall) {
+  const route = await userBrowserRoute(ctx);
+  if (!route) return call.finish({ error: UNAVAILABLE });
+  const refused = await refusal(ctx, call, route);
+  if (refused) return refused;
+  const asked = userBrowserAsk(call.args)!;
+  if (!asked.site) return call.finish({ error: "Name the site to sign in to, such as x.com." });
+  const { signal } = ctx.context;
+  try {
+    await lastValue(
+      route.devices.request(
+        route.owner,
+        { method: "provision", botId: ctx.bot.id, runId: ctx.runId },
+        signal,
+        route.deviceId,
+      ),
+    );
+    const answer = await lastValue(
+      route.devices.request<{ signedIn?: unknown }>(
+        route.owner,
+        { method: "pageBrowserSignIn", botId: ctx.bot.id, runId: ctx.runId, site: asked.site },
+        signal,
+        route.deviceId,
+      ),
+    );
+    return call.finish({ site: asked.site, signedIn: answer.signedIn === true });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    const reason = redactSecrets(error instanceof Error ? error.message : "failed", ctx.secrets);
+    return call.finish({ error: `The user's computer did not finish the sign-in: ${reason}` });
   }
 }

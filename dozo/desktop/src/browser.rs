@@ -127,6 +127,13 @@ const ANSWER: Duration = Duration::from_secs(30);
 /// looked for or started (`device_run.rs`), so only this module's own tests reach it.
 pub const DECLARED: bool = false;
 
+/// Asks the person to sign in to a site in the bot's browser window; answers true once they say
+/// they are done, false when they cancel. Only the person can answer: nothing the server or the
+/// bot sends ends it.
+pub trait SignInPrompt: Send + Sync {
+    fn ask(&self, site: &str) -> oneshot::Receiver<bool>;
+}
+
 pub const NO_BROWSER: &str = "No supported browser is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
 
@@ -514,6 +521,9 @@ struct Running {
     attach: tokio::sync::Mutex<()>,
     /// The bot's page, once attached.
     target: Mutex<Option<String>>,
+    /// History entries up to this id were made while the person signed in (with what came
+    /// before): the server gets them without address or title.
+    hidden_through: AtomicU64,
     #[cfg(unix)]
     child: Mutex<Option<tokio::process::Child>>,
 }
@@ -623,6 +633,23 @@ impl Running {
     }
 }
 
+fn signing_message(site: &str) -> String {
+    format!(
+        "The person is signing in to {site} in the bot's browser; nothing reaches it until they are done."
+    )
+}
+
+/// The site a sign-in opens: a registrable domain or host on the web, lower case, nothing more
+/// (tests may name a loopback host and port).
+fn sign_in_site(site: &str, local: bool) -> Option<String> {
+    let site = site.trim().trim_end_matches('/').to_ascii_lowercase();
+    let allowed =
+        |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '-' || (local && c == ':');
+    (!site.is_empty() && site.chars().all(allowed) && !site.starts_with(['.', '-']))
+        .then(|| site.clone())
+        .filter(|site| web_address(&format!("https://{site}/"), local))
+}
+
 const OFF_THE_WEB: &str = "The bot's page shows no website now (a page of the browser or of this computer). Open a website with Page.navigate first.";
 
 /// Every bot's browser on this computer, each with its own profile under `root`.
@@ -638,6 +665,10 @@ pub struct Browsers {
     open: Mutex<HashMap<String, Arc<Running>>>,
     /// The bots' browsers' only way out, started with the first of them.
     proxy: tokio::sync::Mutex<Option<crate::browser_proxy::Proxy>>,
+    /// The person's sign-in prompt; the app sets it.
+    prompt: std::sync::OnceLock<Arc<dyn SignInPrompt>>,
+    /// Bots whose browser the person is signing in with, by key, with the site.
+    signing: Mutex<HashMap<String, String>>,
     /// One start at a time.
     starting: tokio::sync::Mutex<()>,
     /// Moves on with every `close` and `close_all`, so a browser that was starting meanwhile is
@@ -660,6 +691,8 @@ impl Browsers {
             local_hosts: crate::browser_proxy::Local::None,
             open: Mutex::default(),
             proxy: tokio::sync::Mutex::default(),
+            prompt: std::sync::OnceLock::new(),
+            signing: Mutex::default(),
             starting: tokio::sync::Mutex::default(),
             generation: AtomicU64::new(0),
         }
@@ -685,11 +718,84 @@ impl Browsers {
         self.program.is_some()
     }
 
+    /// The prompt the person answers when they sign in (`sign_in`).
+    pub fn set_sign_in_prompt(&self, prompt: Arc<dyn SignInPrompt>) {
+        let _ = self.prompt.set(prompt);
+    }
+
+    /// The person signs in to `site` in the bot's browser: its home page opens (never an address
+    /// the bot names), and until the person says they are done or cancel, every command is
+    /// refused, so the server sees nothing of it: no page, no screenshot, no address, no event.
+    /// What the page did meanwhile is dropped. Answers whether they say they signed in. Ending
+    /// the request does not end it: only the person does.
+    pub async fn sign_in(&self, key: &str, site: &str) -> Result<bool, String> {
+        let site = sign_in_site(site, self.local).ok_or(NOT_WEB)?;
+        let prompt = self
+            .prompt
+            .get()
+            .cloned()
+            .ok_or("Signing in is not available here.")?;
+        let running = self.running(key).await?;
+        let session = running.page(self.local).await?;
+        {
+            let mut signing = self.signing.lock().unwrap();
+            if signing.contains_key(key) {
+                return Err(signing_message(&signing[key]));
+            }
+            signing.insert(key.to_owned(), site.clone());
+        }
+        let scheme = if self.local { "http" } else { "https" };
+        let home = json!({ "url": format!("{scheme}://{site}/") });
+        let opened = running
+            .pipe
+            .call("Page.navigate", home, Some(&session))
+            .await;
+        let answer = match opened {
+            Ok(_) => {
+                let mut answered = prompt.ask(&site);
+                // A browser that closed meanwhile ends it too: there is nothing to sign in with.
+                loop {
+                    tokio::select! {
+                        done = &mut answered => break done.unwrap_or(false),
+                        () = tokio::time::sleep(Duration::from_secs(1)) => {
+                            if !running.pipe.open.load(Ordering::SeqCst) {
+                                break false;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => false,
+        };
+        // The addresses the sign-in went through (a code in a return address) stay out of what the
+        // server reads: its events are dropped, and the history it made keeps no address.
+        if let Ok(history) = running
+            .pipe
+            .call("Page.getNavigationHistory", json!({}), Some(&session))
+            .await
+        {
+            let last = history["entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| entry["id"].as_u64())
+                .max()
+                .unwrap_or(0);
+            running.hidden_through.fetch_max(last, Ordering::SeqCst);
+        }
+        running.pipe.take_events();
+        self.signing.lock().unwrap().remove(key);
+        Ok(answer)
+    }
+
     /// Runs one allowed command on the bot's page, starting its browser when none runs, and
     /// answers with the result and the page events since the last answer. Only going to a website
     /// works while the page shows anything else.
     pub async fn handle(&self, key: &str, command: &Value) -> Result<Value, String> {
         let (method, params) = allowed(command, self.local)?;
+        if let Some(site) = self.signing.lock().unwrap().get(key) {
+            return Err(signing_message(site));
+        }
         let running = self.running(key).await?;
         let session = match running.page(self.local).await {
             Ok(session) => session,
@@ -732,7 +838,8 @@ impl Browsers {
             return Err(OFF_THE_WEB.to_owned());
         }
         if method == "Page.getNavigationHistory" {
-            hide_off_web_entries(&mut result, self.local);
+            let hidden = running.hidden_through.load(Ordering::SeqCst);
+            hide_off_web_entries(&mut result, self.local, hidden);
         }
         let events: Vec<Value> = running
             .pipe
@@ -850,6 +957,7 @@ impl Browsers {
             pipe,
             attach: tokio::sync::Mutex::default(),
             target: Mutex::default(),
+            hidden_through: AtomicU64::new(0),
             child: Mutex::new(Some(child)),
         };
         if let Err(error) = harden(&running.pipe).await {
@@ -979,11 +1087,13 @@ const GUARD: &str = "(() => {
 })();";
 
 /// History as the server gets it: each entry's id, address and title only (the browser also names
-/// what was typed), and an entry that is no website keeps its place without address or title.
-fn hide_off_web_entries(history: &mut Value, local: bool) {
+/// what was typed), and an entry that is no website, or was made while the person signed in, keeps
+/// its place without address or title.
+fn hide_off_web_entries(history: &mut Value, local: bool, hidden_through: u64) {
     for entry in history["entries"].as_array_mut().into_iter().flatten() {
         let url = entry["url"].as_str().unwrap_or("").to_owned();
-        *entry = if web_address(&url, local) {
+        let signing = entry["id"].as_u64().is_some_and(|id| id <= hidden_through);
+        *entry = if web_address(&url, local) && !signing {
             json!({ "id": entry["id"], "url": url, "title": entry["title"] })
         } else {
             json!({ "id": entry["id"], "url": "", "title": "" })
@@ -1328,13 +1438,49 @@ mod tests {
     }
 
     #[test]
+    fn history_made_while_signing_in_keeps_no_address() {
+        let mut history = json!({ "currentIndex": 1, "entries": [
+            { "id": 4, "url": "https://x.test/callback?code=SECRET", "title": "Signed in" },
+            { "id": 7, "url": "https://x.test/home", "title": "Home" },
+        ] });
+        hide_off_web_entries(&mut history, false, 4);
+        assert_eq!(
+            history["entries"][0],
+            json!({ "id": 4, "url": "", "title": "" })
+        );
+        assert_eq!(history["entries"][1]["url"], "https://x.test/home");
+    }
+
+    #[test]
+    fn a_sign_in_opens_only_a_site_s_home() {
+        assert_eq!(sign_in_site(" X.com/ ", false).as_deref(), Some("x.com"));
+        for site in [
+            "https://x.com",
+            "x.com/login",
+            "x.com?next=/",
+            "localhost",
+            "router",
+            "10.0.0.1",
+            ".x.com",
+            "",
+            "x.com:8080",
+        ] {
+            assert!(sign_in_site(site, false).is_none(), "{site}");
+        }
+        assert_eq!(
+            sign_in_site("127.0.0.1:8080", true).as_deref(),
+            Some("127.0.0.1:8080")
+        );
+    }
+
+    #[test]
     fn history_of_pages_that_are_not_websites_keeps_no_address() {
         let mut history = json!({ "currentIndex": 1, "entries": [
             { "id": 1, "url": "file:///home/ada/notes.txt", "title": "notes.txt" },
             { "id": 2, "url": "https://example.test/", "title": "Example", "userTypedURL": "file:///x" },
             { "id": 3, "url": "chrome://password-manager/passwords", "title": "Passwords" },
         ] });
-        hide_off_web_entries(&mut history, false);
+        hide_off_web_entries(&mut history, false, 0);
         assert_eq!(
             history["entries"][0],
             json!({ "id": 1, "url": "", "title": "" })
