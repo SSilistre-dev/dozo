@@ -9,7 +9,7 @@ import type { UserDevice } from "./user-device-protocol.js";
 export const DEVICE_CAPABILITIES_HEADER = "x-dozo-device-capabilities";
 
 /** What a paired computer can declare. Anything else it sends is ignored. */
-export const DEVICE_CAPABILITIES = ["shell", "screen"] as const;
+export const DEVICE_CAPABILITIES = ["shell", "screen", "browser"] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
@@ -63,10 +63,31 @@ export async function readDeviceCapabilities(
  * computer, a test emulator) declares nothing: commands as upstream has them, and no screen, which
  * no app the fork ships can answer.
  */
-export function deviceOffers(device: DeclaredUserDevice): { shell: boolean; screen: boolean } {
-  if (!device.capabilities) return { shell: !device.screenOnly, screen: false };
+export function deviceOffers(device: DeclaredUserDevice): {
+  shell: boolean;
+  screen: boolean;
+  browser: boolean;
+} {
+  if (!device.capabilities) return { shell: !device.screenOnly, screen: false, browser: false };
   return {
     shell: device.capabilities.includes("shell"),
     screen: device.capabilities.includes("screen"),
+    // A browser of the bot's own there (dozo-user-browser.ts).
+    browser: device.capabilities.includes("browser"),
   };
 }
+
+/**
+ * When the computer has a browser, the run is offered the page tools for it: they leave the run's
+ * turned-off tools (where a run without a computer of its own put them), unless the bot itself
+ * turned them off.
+ */
+export function offerUserBrowser(
+  disabled: Set<string>,
+  botDisabled: readonly string[] | null | undefined,
+): boolean {
+  for (const name of USER_BROWSER_TOOLS) if (!botDisabled?.includes(name)) disabled.delete(name);
+  return USER_BROWSER_TOOLS.some((name) => !disabled.has(name));
+}
+
+const USER_BROWSER_TOOLS = ["browser_navigate", "browser_snapshot", "browser_act"];

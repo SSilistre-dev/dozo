@@ -1,0 +1,483 @@
+//! The bot's own browser end to end, with the browser installed on this computer and a test page
+//! served on loopback (part of `browser.rs`'s tests). `tests/stack_e2e_native.sh` runs these on
+//! Linux and macOS; each is ignored in a plain test run, as it needs Chrome, Edge, Brave or
+//! Chromium. `DOZO_BROWSER_E2E_WINDOW=1` opens a real window (Xvfb on Linux) instead of a headless
+//! browser, and `DOZO_BROWSER_E2E_SHOT` names a file for a screenshot of the page.
+
+use super::*;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+
+const PAGE: &str = "<!doctype html><html><head><title>Dozo browser test</title></head><body>\
+<label>Name <input id=\"name\"></label>\
+<button onclick=\"document.getElementById('out').textContent='Hello, '+document.getElementById('name').value\">Greet</button>\
+<p id=\"out\"></p>\
+<button onclick=\"navigator.clipboard.writeText('x').then(()=>r('api-wrote'),()=>r('api-refused'))\">Copy API</button>\
+<button onclick=\"document.addEventListener('copy',e=>{e.clipboardData.setData('text/plain','x');e.preventDefault()},{once:true});r(document.execCommand('copy')?'exec-wrote':'exec-refused')\">Copy command</button>\
+<button onclick=\"document.documentElement.requestFullscreen().then(()=>r('screen-taken'),()=>r('screen-refused'))\">Full screen</button>\
+<p id=\"probe\">probe:</p><script>function r(t){document.getElementById('probe').textContent+=' '+t}</script>\
+</body></html>";
+
+/// Serves `PAGE` to every request on loopback, from a thread, and returns its address.
+fn serve() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}/", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\nset-cookie: secret=kept-here\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{PAGE}",
+                PAGE.len()
+            );
+        }
+    });
+    address
+}
+
+fn browsers(root: &Path) -> Browsers {
+    let program = find().expect("a Chromium-family browser on this computer");
+    println!("E2E: browser {}", program.display());
+    let window = std::env::var_os("DOZO_BROWSER_E2E_WINDOW").is_some();
+    Browsers::with(root.join("browser-profiles"), Some(program), !window).with_local_pages()
+}
+
+/// The bot's running browser and page session, to do what the person could do in its window.
+fn person(browsers: &Browsers) -> (Arc<Running>, String) {
+    let running = browsers.open.lock().unwrap().get("bot").cloned().unwrap();
+    let session = running.pipe.session.lock().unwrap().clone().unwrap();
+    (running, session)
+}
+
+/// `DOZO_BROWSER_E2E_ROOT` when given (kept, so a later test finds what an earlier left), else a
+/// fresh folder.
+fn root() -> PathBuf {
+    if let Some(root) = std::env::var_os("DOZO_BROWSER_E2E_ROOT") {
+        return PathBuf::from(root);
+    }
+    let root = std::env::temp_dir().join(format!("dozo-browser-e2e-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    root
+}
+
+async fn call(browsers: &Browsers, method: &str, params: Value) -> Value {
+    let command = json!({ "method": method, "params": params });
+    match browsers.handle("bot", &command).await {
+        Ok(answer) => answer["result"].clone(),
+        Err(error) => panic!("{method}: {error}"),
+    }
+}
+
+/// The page's accessibility nodes that are not ignored, as (role, name, backend node id).
+async fn nodes(browsers: &Browsers) -> Vec<(String, String, u64)> {
+    let tree = call(browsers, "Accessibility.getFullAXTree", json!({})).await;
+    tree["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|node| node["ignored"] != true)
+        .map(|node| {
+            (
+                node["role"]["value"].as_str().unwrap_or("").to_owned(),
+                node["name"]["value"].as_str().unwrap_or("").to_owned(),
+                node["backendDOMNodeId"].as_u64().unwrap_or(0),
+            )
+        })
+        .collect()
+}
+
+async fn wait_for(browsers: &Browsers, name: &str) -> Vec<(String, String, u64)> {
+    for _ in 0..100 {
+        let found = nodes(browsers).await;
+        if found.iter().any(|(_, text, _)| text.contains(name)) {
+            return found;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("{name} never appeared on the page");
+}
+
+async fn click(browsers: &Browsers, node: u64) {
+    let model = call(
+        browsers,
+        "DOM.getBoxModel",
+        json!({ "backendNodeId": node }),
+    )
+    .await;
+    let quad = model["model"]["content"].as_array().unwrap();
+    let x = (quad[0].as_f64().unwrap() + quad[4].as_f64().unwrap()) / 2.0;
+    let y = (quad[1].as_f64().unwrap() + quad[5].as_f64().unwrap()) / 2.0;
+    for kind in ["mousePressed", "mouseReleased"] {
+        let event = json!({ "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1 });
+        call(browsers, "Input.dispatchMouseEvent", event).await;
+    }
+}
+
+fn find_node(found: &[(String, String, u64)], role: &str, name: &str) -> u64 {
+    found
+        .iter()
+        .find(|(r, n, _)| r == role && n.contains(name))
+        .unwrap_or_else(|| panic!("no {role} {name:?} in {found:?}"))
+        .2
+}
+
+/// The pid of the bot's browser, from the file its start left.
+fn browser_pid(root: &Path) -> u32 {
+    let file = root.join("browser-profiles").join(format!("{}.pid", key()));
+    std::fs::read_to_string(file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap()
+}
+
+fn key() -> &'static str {
+    "bot"
+}
+
+/// The TCP ports anything in the browser's process group listens on.
+#[cfg(target_os = "linux")]
+fn listening(group: u32) -> Vec<String> {
+    let mut inodes = std::collections::HashSet::new();
+    for entry in std::fs::read_dir("/proc").unwrap().flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+        // The group is the fifth field, after the name in parentheses.
+        let after = stat.rsplit_once(')').map(|(_, rest)| rest).unwrap_or("");
+        if after.split_whitespace().nth(2) != Some(&group.to_string()) {
+            continue;
+        }
+        for fd in std::fs::read_dir(format!("/proc/{pid}/fd"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let link = std::fs::read_link(fd.path()).unwrap_or_default();
+            let link = link.to_string_lossy();
+            if let Some(inode) = link
+                .strip_prefix("socket:[")
+                .and_then(|s| s.strip_suffix(']'))
+            {
+                inodes.insert(inode.to_owned());
+            }
+        }
+    }
+    let mut ports = Vec::new();
+    for table in ["/proc/net/tcp", "/proc/net/tcp6"] {
+        for line in std::fs::read_to_string(table)
+            .unwrap_or_default()
+            .lines()
+            .skip(1)
+        {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            // State 0A is LISTEN; the inode is the tenth field.
+            if fields.len() > 9 && fields[3] == "0A" && inodes.contains(fields[9]) {
+                ports.push(fields[1].to_owned());
+            }
+        }
+    }
+    ports
+}
+
+#[cfg(target_os = "macos")]
+fn listening(group: u32) -> Vec<String> {
+    let out = std::process::Command::new("lsof")
+        .args([
+            "-nP",
+            "-a",
+            "-g",
+            &group.to_string(),
+            "-iTCP",
+            "-sTCP:LISTEN",
+        ])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .skip(1)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A real browser with a profile of its own and no debugging port: the page tools work through
+/// the pipe, and what is not allowed is refused before it reaches the browser.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_page_tools_work_through_the_pipe_only() {
+    let root = root();
+    let browsers = browsers(&root);
+    let page = serve();
+    call(&browsers, "Page.navigate", json!({ "url": page })).await;
+    let found = wait_for(&browsers, "Greet").await;
+    click(&browsers, find_node(&found, "textbox", "Name")).await;
+    call(&browsers, "Input.insertText", json!({ "text": "Ada" })).await;
+    click(&browsers, find_node(&found, "button", "Greet")).await;
+    wait_for(&browsers, "Hello, Ada").await;
+    println!("E2E: navigated, typed and clicked through the pipe");
+
+    // A click of the bot's counts as a gesture: the page still cannot write the clipboard or take
+    // the screen with it.
+    for button in ["Copy API", "Copy command", "Full screen"] {
+        click(&browsers, find_node(&found, "button", button)).await;
+    }
+    let mut probe = String::new();
+    for _ in 0..50 {
+        let shown = nodes(&browsers).await;
+        probe = shown
+            .iter()
+            .find(|(_, name, _)| name.starts_with("probe:"))
+            .map(|(_, name, _)| name.clone())
+            .unwrap_or_default();
+        if probe.split(' ').count() == 4 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let mut outcomes: Vec<&str> = probe.split(' ').skip(1).collect();
+    outcomes.sort_unstable();
+    assert_eq!(
+        outcomes,
+        ["api-refused", "exec-refused", "screen-refused"],
+        "{probe}"
+    );
+    println!("E2E: the page's clipboard writes and full screen refused after a bot's click");
+
+    let events = browsers
+        .handle("bot", &json!({ "method": "Page.getFrameTree" }))
+        .await
+        .unwrap();
+    assert!(
+        events["result"]["frameTree"]["frame"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with(&page)
+    );
+
+    let shot = call(
+        &browsers,
+        "Page.captureScreenshot",
+        json!({ "format": "png" }),
+    )
+    .await;
+    let data = shot["data"].as_str().unwrap();
+    assert!(data.len() > 1000, "a screenshot of the page");
+    if let Some(path) = std::env::var_os("DOZO_BROWSER_E2E_SHOT") {
+        let bytes = base64_decode(data);
+        assert_eq!(&bytes[..4], b"\x89PNG");
+        std::fs::write(&path, bytes).unwrap();
+        println!("E2E: screenshot written");
+    }
+
+    for refused in [
+        json!({ "method": "Runtime.evaluate", "params": { "expression": "document.cookie" } }),
+        json!({ "method": "Network.getCookies" }),
+        json!({ "method": "Storage.getCookies" }),
+        json!({ "method": "Page.navigate", "params": { "url": "javascript:document.cookie" } }),
+        json!({ "method": "Page.navigate", "params": { "url": "file:///etc/hosts" } }),
+    ] {
+        let error = browsers.handle("bot", &refused).await.unwrap_err();
+        assert!(
+            error.starts_with("Not allowed") || error.contains("only websites"),
+            "{error}"
+        );
+    }
+    println!("E2E: cookie, storage and script commands refused");
+
+    // The person sends the bot's tab to the browser's own pages, then to a file: nothing but going
+    // to a website works there, and the page's events and history name neither.
+    for elsewhere in ["chrome://version/", "file:///etc/hosts"] {
+        let (running, session) = person(&browsers);
+        let to = json!({ "url": elsewhere });
+        running
+            .pipe
+            .call("Page.navigate", to, Some(&session))
+            .await
+            .unwrap();
+        for _ in 0..50 {
+            if running
+                .address()
+                .await
+                .unwrap()
+                .starts_with(&elsewhere[..6])
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        for method in [
+            "Accessibility.getFullAXTree",
+            "Page.captureScreenshot",
+            "Page.reload",
+            "Page.getNavigationHistory",
+        ] {
+            let error = browsers
+                .handle("bot", &json!({ "method": method }))
+                .await
+                .unwrap_err();
+            assert_eq!(error, OFF_THE_WEB, "{method} on {elsewhere}");
+        }
+        let click = json!({ "method": "Input.dispatchMouseEvent", "params": { "type": "mousePressed", "x": 5, "y": 5, "button": "left", "clickCount": 1 } });
+        assert_eq!(
+            browsers.handle("bot", &click).await.unwrap_err(),
+            OFF_THE_WEB
+        );
+        let back = browsers
+            .handle(
+                "bot",
+                &json!({ "method": "Page.navigate", "params": { "url": page } }),
+            )
+            .await
+            .unwrap();
+        let named = back["events"].to_string();
+        assert!(
+            !named.contains("chrome://") && !named.contains("file://"),
+            "{named}"
+        );
+        wait_for(&browsers, "Greet").await;
+        let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+        assert!(!history.to_string().contains(&elsewhere[..9]), "{history}");
+    }
+    println!(
+        "E2E: a tab moved to the browser's own pages or a file is refused until it shows a website"
+    );
+
+    // The person closes the bot's tab with only a page of the browser's own left: the bot gets a
+    // new blank tab, never that one.
+    let (running, _) = person(&browsers);
+    let target = running.target.lock().unwrap().clone().unwrap();
+    let own = json!({ "url": "chrome://version/" });
+    let settings = running
+        .pipe
+        .call("Target.createTarget", own, None)
+        .await
+        .unwrap();
+    let close = json!({ "targetId": target });
+    running
+        .pipe
+        .call("Target.closeTarget", close, None)
+        .await
+        .unwrap();
+    for _ in 0..50 {
+        if running.pipe.session.lock().unwrap().is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    call(&browsers, "Page.navigate", json!({ "url": page })).await;
+    wait_for(&browsers, "Greet").await;
+    let attached = running.target.lock().unwrap().clone().unwrap();
+    assert_ne!(Some(attached.as_str()), settings["targetId"].as_str());
+    println!("E2E: with the bot's tab closed it opens a new one, not the browser's own page");
+
+    let strict = Browsers::with(root.join("strict-profiles"), find(), true);
+    let local = json!({ "method": "Page.navigate", "params": { "url": page } });
+    assert!(
+        strict
+            .handle("bot", &local)
+            .await
+            .unwrap_err()
+            .contains("only websites")
+    );
+    println!("E2E: a page on this computer is refused outside tests");
+
+    let pid = browser_pid(&root);
+    let profile = root.join("browser-profiles").join(key());
+    let line = command_line(pid).expect("the browser runs");
+    assert!(
+        line.contains(&format!("--user-data-dir={}", profile.display())),
+        "{line}"
+    );
+    assert!(!line.contains("--remote-debugging-port"), "{line}");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&profile).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "the profile folder is the user's alone");
+    }
+    assert!(
+        std::fs::read_dir(&profile).unwrap().next().is_some(),
+        "the browser wrote its profile"
+    );
+    println!(
+        "E2E: the profile is the bot's own ({}), mode 700",
+        profile.display()
+    );
+    let ports = listening(pid);
+    assert!(ports.is_empty(), "the browser listens on TCP: {ports:?}");
+    println!("E2E: no TCP port listened on by the browser's processes");
+
+    browsers.close_all();
+    for _ in 0..100 {
+        if command_line(pid).is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        command_line(pid).is_none(),
+        "the browser still runs after close_all"
+    );
+    println!("E2E: closed with access turned off");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Starts the bot's browser and waits to be killed: `tests/stack_e2e_native.sh` kills this test
+/// with SIGKILL and checks the browser ends with it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_hold_until_killed() {
+    let root = root();
+    let browsers = browsers(&root);
+    call(&browsers, "Page.navigate", json!({ "url": serve() })).await;
+    println!("E2E: browser pid {}", browser_pid(&root));
+    println!("E2E: holding");
+    tokio::time::sleep(Duration::from_secs(600)).await;
+}
+
+/// After a killed app left its browser running (macOS, where nothing ends it with the app), the
+/// next start on that profile ends it first: `tests/stack_e2e_native.sh` runs this after
+/// `e2e_browser_hold_until_killed` with the same `DOZO_BROWSER_E2E_ROOT`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_ends_what_a_crashed_app_left() {
+    let root = root();
+    let left = browser_pid(&root);
+    let browsers = browsers(&root);
+    call(&browsers, "Page.navigate", json!({ "url": serve() })).await;
+    assert!(
+        command_line(left).is_none(),
+        "the browser a killed app left still runs"
+    );
+    assert_ne!(browser_pid(&root), left);
+    println!("E2E: the next start ended the browser a killed app left");
+    // The bot is deleted: its browser ends first, then its profile goes and stays gone.
+    let pid = browser_pid(&root);
+    browsers.close("bot", true).await;
+    assert!(command_line(pid).is_none(), "the browser outlived its bot");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        !root.join("browser-profiles").join(key()).exists(),
+        "the profile came back"
+    );
+    println!("E2E: a deleted bot's browser ended before its profile was removed");
+}
+
+fn base64_decode(text: &str) -> Vec<u8> {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let mut buffer = 0u32;
+    let mut bits = 0;
+    for byte in text.bytes().filter(|byte| *byte != b'=') {
+        let value = ALPHABET.iter().position(|c| *c == byte).unwrap() as u32;
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buffer >> bits) as u8);
+        }
+    }
+    out
+}

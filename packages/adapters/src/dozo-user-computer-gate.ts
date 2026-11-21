@@ -5,15 +5,20 @@ import {
   literalCommandWords,
   readOnlyCwd,
   readOnlyPipeline,
+  redactSecrets,
 } from "@rakazo/core";
 import { dozoCommandRuleExists } from "@rakazo/db";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
 import { dozoSendLimitCard } from "./dozo-send-limit.js";
+import { userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
+import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import {
   USER_COMPUTER_SHELL_TOOL,
   userComputerGate as upstreamUserComputerGate,
 } from "./run-tools-user-computer.js";
+
+export { routesToUserBrowser } from "./dozo-user-browser-gate.js";
 
 /** The calls this gate asked about one by one, so their card asks about the command alone. */
 const commandAsks = new WeakSet<Record<string, unknown>>();
@@ -29,6 +34,8 @@ export async function userComputerGate(
   name: string,
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
+  // The page tools reach this gate only when they go to the user's own browser.
+  if (PAGE_BROWSER_TOOL_NAMES.has(name)) return userBrowserGate(ctx, blocked, name, args);
   const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
   if (plan !== "allow" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
@@ -57,6 +64,8 @@ export function buildApprovalAskBlock(
   ...input: Parameters<typeof buildUpstreamAskBlock>
 ): MessageBlock {
   const [effectId, toolName, args, secrets, options] = input;
+  const browserAsk = userBrowserAsk(args);
+  if (browserAsk) return userBrowserCard(effectId, toolName, args, secrets, browserAsk);
   const block = buildUpstreamAskBlock(
     effectId,
     toolName,
@@ -77,6 +86,41 @@ export function buildApprovalAskBlock(
       ...(shown && literalCommandWords(command)
         ? [{ id: "always", label: "Always allow this command" }]
         : []),
+      { id: "deny", label: "Deny" },
+    ],
+  };
+}
+
+/**
+ * The card for the bot's own browser on the user's computer: its first use there, or its first
+ * action on a site, named by its registrable domain.
+ */
+function userBrowserCard(
+  effectId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  secrets: Parameters<typeof buildUpstreamAskBlock>[3],
+  ask: NonNullable<ReturnType<typeof userBrowserAsk>>,
+): MessageBlock {
+  // What it would do: the address it opens, or the steps it takes (text it types included).
+  const doing =
+    toolName === "browser_navigate"
+      ? String(args.url)
+      : toolName === "browser_act"
+        ? JSON.stringify(args.actions)
+        : "";
+  const detail = redactSecrets(doing, secrets).slice(0, 2000);
+  return {
+    kind: "ask",
+    approvalEffectId: effectId,
+    text:
+      ask.site === undefined
+        ? "Let this bot use its own browser on your computer?"
+        : `Let this bot act on ${ask.site || "this page"} in its browser?`,
+    ...(detail ? { detail, detailFormat: "code" as const } : {}),
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow" },
       { id: "deny", label: "Deny" },
     ],
   };

@@ -26,9 +26,9 @@ pub const CONNECT_PATH: &str = "/api/devices/connect";
 const REVOKED_HEADER: &str = "x-rakazo-device-revoked";
 const PING: Duration = Duration::from_secs(30);
 /// What this computer can do, sent on connecting so the server offers only these tools
-/// (`packages/adapters/src/dozo-device-capabilities.ts`). Commands only: no screen control.
+/// (`packages/adapters/src/dozo-device-capabilities.ts`): commands, and the bot's own browser
+/// when one is installed and `browser::DECLARED` (off until the sign-in pause). No screen control.
 const CAPABILITIES_HEADER: &str = "x-dozo-device-capabilities";
-const CAPABILITIES: &str = "shell";
 
 /// Why the server ended this computer's pairing. `Some("session-ended")`: the sign-in that
 /// paired it ended, so the next sign-in may pair again.
@@ -120,9 +120,14 @@ async fn session(
         return Ended::Stopped;
     };
     request.headers_mut().insert("authorization", bearer);
+    let capabilities = if crate::browser::DECLARED && options.runner.browser_available() {
+        "shell,browser"
+    } else {
+        "shell"
+    };
     request
         .headers_mut()
-        .insert(CAPABILITIES_HEADER, HeaderValue::from_static(CAPABILITIES));
+        .insert(CAPABILITIES_HEADER, HeaderValue::from_static(capabilities));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE_BYTES))
         .max_frame_size(Some(MAX_MESSAGE_BYTES));
@@ -270,6 +275,7 @@ mod tests {
                         assert_eq!(request.uri().path(), CONNECT_PATH);
                         if auth.is_some_and(|auth| auth == "Bearer good") {
                             let declared = request.headers().get(CAPABILITIES_HEADER);
+                            // No browser until the sign-in pause (`browser::DECLARED`).
                             assert_eq!(declared.unwrap(), "shell");
                             return Ok(response);
                         }

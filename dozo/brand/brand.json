@@ -5304,20 +5304,91 @@
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "      userComputerShell = !device.screenOnly;\n      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
-      "replace": "      ({ shell: userComputerShell, screen: userComputerScreen } = deviceOffers(device));\n",
+      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      userComputerScreen = offers.screen;\n      // Only a run without a graphical computer of its own: one that has it keeps its browser.\n      if (offers.browser && !graphical)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
-      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only"
+      "reason": "device capabilities: a paired computer's commands and screen tools are offered only when it declared them on connecting; one that declares nothing runs commands only. One that declares a browser gets the page tools for the bot's own browser there in a run without a graphical computer of its own (Free)"
     },
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
-      "replace": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { deviceOffers } from \"./dozo-device-capabilities.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
+      "replace": "import type { UserComputerState } from \"./run-tools-user-computer.js\";\nimport { deviceOffers, offerUserBrowser } from \"./dozo-device-capabilities.js\";\nimport { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from \"./run-tools-user-computer.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
       "reason": "device capabilities: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  const pageBrowserAllowed = graphical && browser.describe().capabilities.page && !heldForTakeover;\n",
+      "replace": "  let pageBrowserAllowed = graphical && browser.describe().capabilities.page && !heldForTakeover;\n",
+      "reason": "user's browser: the page tools are offered too when the user's connected computer declared a browser (the device rule below sets it)"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "import { computerTools, pageBrowserTool } from \"./run-tools-computer.js\";\n",
+      "replace": "import { pageBrowserTool } from \"./dozo-user-browser.js\";\nimport { computerTools } from \"./run-tools-computer.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-browser.ts"
+      ],
+      "reason": "user's browser: the page tools go to the bot's own browser on the user's computer when the run reaches one, otherwise to the bot's computer as before"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const plan = USER_COMPUTER_TOOLS.has(name)\n",
+      "replace": "  const plan =\n    USER_COMPUTER_TOOLS.has(name) || (await routesToUserBrowser(ctx, name))\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-computer-gate.ts"
+      ],
+      "reason": "user's browser: a page tool that goes to the user's own browser is approved like the user's computer: never in a token's run, its first use by a bot there asks, and so does its first action on each site"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "    READ_ONLY_AGENT_TOOLS.has(name) &&\n    siteGate !== \"new\" &&\n",
+      "replace": "    READ_ONLY_AGENT_TOOLS.has(name) &&\n    !(await routesToUserBrowser(ctx, name)) &&\n    siteGate !== \"new\" &&\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-computer-gate.ts"
+      ],
+      "reason": "user's browser: a look (browser_snapshot) at the user's own browser records its call like any other, so its approval card is shown instead of skipped as a read"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { pageBrowserRequest } from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-browser-protocol.ts"
+      ],
+      "reason": "user's browser: the import of the request below"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-protocol.ts",
+      "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n]);\n",
+      "requires": [
+        "packages/adapters/src/dozo-page-browser-protocol.ts"
+      ],
+      "reason": "user's browser: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser)"
+    },
+    {
+      "file": "packages/adapters/src/browser-conformance.test.ts",
+      "find": "    await assertBrowserConformance(provider);\n  });\n\n  it(\"returns computer_act fallback when the page tool cannot operate\", async () => {\n",
+      "replace": "    await assertBrowserConformance(provider);\n  });\n\n  it(\"holds for the browser on the user's computer (offline)\", async () => {\n    const device = new DeviceBrowserProvider(fakeDeviceBrowser(seededDevicePages));\n    expect(device.describe().id).toBe(\"device\");\n    await assertBrowserConformance(device);\n  });\n\n  it(\"returns computer_act fallback when the page tool cannot operate\", async () => {\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-browser.ts",
+        "packages/adapters/src/dozo-device-browser.test-support.ts"
+      ],
+      "reason": "user's browser: the offline conformance holds for its provider too, against a stand-in for the desktop app that answers DevTools commands"
+    },
+    {
+      "file": "packages/adapters/src/browser-conformance.test.ts",
+      "find": "import { EmulatorBrowserProvider } from \"./browser-emulator.js\";\nimport { FakeBrowserProvider } from \"./fake-browser.js\";\n",
+      "replace": "import { EmulatorBrowserProvider } from \"./browser-emulator.js\";\nimport { DeviceBrowserProvider } from \"./dozo-device-browser.js\";\nimport { fakeDeviceBrowser, seededDevicePages } from \"./dozo-device-browser.test-support.js\";\nimport { FakeBrowserProvider } from \"./fake-browser.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-browser.ts",
+        "packages/adapters/src/dozo-device-browser.test-support.ts"
+      ],
+      "reason": "user's browser: the imports of the case above"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -5955,7 +6026,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\n",
-      "replace": "import { MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\nimport { buildApprovalAskBlock, userComputerGate } from \"./dozo-user-computer-gate.js\";\n",
+      "replace": "import { MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\nimport {\n  buildApprovalAskBlock,\n  routesToUserBrowser,\n  userComputerGate,\n} from \"./dozo-user-computer-gate.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-user-computer-gate.ts"
       ],
@@ -7806,6 +7877,100 @@
       "find": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
       "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
       "reason": "desktop app settings: the Turkish copy of the Computers link (\"Desktop app\" and \"Open\" are upstream's)"
+    },
+    {
+      "file": "packages/core/src/bot-templates.ts",
+      "find": "from \"./app-connect.js\";\n\n/**\n * Reviewed",
+      "replace": "from \"./app-connect.js\";\nimport { DOZO_BOT_TEMPLATES } from \"./dozo-bot-templates.js\";\n\n/**\n * Reviewed",
+      "requires": [
+        "packages/core/src/dozo-bot-templates.ts"
+      ],
+      "reason": "meeting prep template: the import of the fork's template list"
+    },
+    {
+      "file": "packages/core/src/bot-templates.ts",
+      "find": "    apps: [],\n  },\n];\n\nexport function findBotTemplate",
+      "replace": "    apps: [],\n  },\n  ...DOZO_BOT_TEMPLATES,\n];\n\nexport function findBotTemplate",
+      "requires": [
+        "packages/core/src/dozo-bot-templates.ts"
+      ],
+      "reason": "meeting prep template: the fork's templates follow upstream's in the one list the apps and the API read"
+    },
+    {
+      "file": "apps/web/src/components/bot-templates/bot-template-copy.ts",
+      "find": "import type { BotTemplate } from \"@rakazo/contracts\";\n\nexport type BotTemplateCopy",
+      "replace": "import type { BotTemplate } from \"@rakazo/contracts\";\nimport { useDozoMeetingPrepCopy } from \"./dozo-meeting-prep-copy\";\n\nexport type BotTemplateCopy",
+      "requires": [
+        "apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts"
+      ],
+      "reason": "meeting prep template: the import of its web copy"
+    },
+    {
+      "file": "apps/web/src/components/bot-templates/bot-template-copy.ts",
+      "find": "  const { t } = useLingui();\n  return (template) => {\n    switch (template.id) {\n      case \"morning-briefing\":",
+      "replace": "  const { t } = useLingui();\n  const meetingPrep = useDozoMeetingPrepCopy();\n  return (template) => {\n    switch (template.id) {\n      case \"meeting-prep\":\n        return meetingPrep;\n      case \"morning-briefing\":",
+      "requires": [
+        "apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts"
+      ],
+      "reason": "meeting prep template: its name, summary and sample in the app's language on the web"
+    },
+    {
+      "file": "apps/mobile/lib/bot-template-copy.ts",
+      "find": "import type { BotTemplate } from \"@rakazo/contracts\";\n\nexport type BotTemplateCopy",
+      "replace": "import type { BotTemplate } from \"@rakazo/contracts\";\nimport { dozoMeetingPrepCopy } from \"./dozo-meeting-prep-copy\";\n\nexport type BotTemplateCopy",
+      "requires": [
+        "apps/mobile/lib/dozo-meeting-prep-copy.ts"
+      ],
+      "reason": "meeting prep template: the import of its mobile copy"
+    },
+    {
+      "file": "apps/mobile/lib/bot-template-copy.ts",
+      "find": "  switch (template.id) {\n    case \"morning-briefing\":",
+      "replace": "  switch (template.id) {\n    case \"meeting-prep\":\n      return dozoMeetingPrepCopy();\n    case \"morning-briefing\":",
+      "requires": [
+        "apps/mobile/lib/dozo-meeting-prep-copy.ts"
+      ],
+      "reason": "meeting prep template: its name, summary and sample in the app's language on mobile"
+    },
+    {
+      "file": "apps/web/src/components/bot-templates/bot-templates-dialog.tsx",
+      "find": "  Bot as BotIcon,\n  Check,",
+      "replace": "  Bot as BotIcon,\n  CalendarClock,\n  Check,",
+      "reason": "meeting prep template: the calendar mark's import"
+    },
+    {
+      "file": "apps/web/src/components/bot-templates/bot-templates-dialog.tsx",
+      "find": "  \"topic-watch\": Telescope,\n};",
+      "replace": "  \"topic-watch\": Telescope,\n  \"meeting-prep\": CalendarClock,\n};",
+      "reason": "meeting prep template: its mark in the template list on the web"
+    },
+    {
+      "file": "apps/mobile/components/bot-template-icon.tsx",
+      "find": "  \"topic-watch\": { ios: \"binoculars\", android: \"telescope-outline\" },\n};",
+      "replace": "  \"topic-watch\": { ios: \"binoculars\", android: \"telescope-outline\" },\n  \"meeting-prep\": { ios: \"calendar\", android: \"calendar-outline\" },\n};",
+      "reason": "meeting prep template: its mark in the template list on mobile"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Konu takibi\"\n\n#: apps/mobile/components/ask-receipt.tsx",
+      "replace": "msgstr \"Konu takibi\"\n\n#: apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts\n#: apps/mobile/lib/dozo-meeting-prep-copy.ts\nmsgid \"Meeting prep\"\nmsgstr \"Toplantı hazırlığı\"\n\n#: apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts\n#: apps/mobile/lib/dozo-meeting-prep-copy.ts\nmsgid \"A short prep note before each meeting\"\nmsgstr \"Her toplantıdan önce kısa bir hazırlık notu\"\n\n#: apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts\n#: apps/mobile/lib/dozo-meeting-prep-copy.ts\nmsgid \"**Design review, 11:30**\\n\"\n\"\\n\"\n\"With Priya, Sam and Dana (Acme)\\n\"\n\"\\n\"\n\"**Agenda**\\n\"\n\"- Walk through the new onboarding flow\\n\"\n\"- Decide on the launch date\\n\"\n\"- Attached: onboarding-v3.pdf\\n\"\n\"\\n\"\n\"**From before**\\n\"\n\"- Priya asked to cut the signup step on Tuesday\\n\"\n\"- Sam is still waiting on the API limits\"\nmsgstr \"**Tasarım incelemesi, 11:30**\\n\"\n\"\\n\"\n\"Priya, Sam ve Dana (Acme) ile\\n\"\n\"\\n\"\n\"**Gündem**\\n\"\n\"- Yeni kayıt akışını gözden geçirmek\\n\"\n\"- Yayın tarihine karar vermek\\n\"\n\"- Ekte: onboarding-v3.pdf\\n\"\n\"\\n\"\n\"**Önceden**\\n\"\n\"- Priya salı günü kayıt adımının kaldırılmasını istedi\\n\"\n\"- Sam hâlâ API sınırlarını bekliyor\"\n\n#: apps/mobile/components/ask-receipt.tsx",
+      "requires": [
+        "apps/web/src/components/bot-templates/dozo-meeting-prep-copy.ts",
+        "apps/mobile/lib/dozo-meeting-prep-copy.ts"
+      ],
+      "reason": "meeting prep template: the Turkish copy of its name, summary and sample"
+    },
+    {
+      "file": "apps/mobile/lib/bot-template-copy.test.ts",
+      "find": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES) {",
+      "replace": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES.filter((item) => item.id !== \"meeting-prep\")) {",
+      "reason": "meeting prep template: the fork translates it into Turkish only, so the every-language check leaves it out; dozo-meeting-prep-copy.test.ts holds its Turkish"
+    },
+    {
+      "file": "apps/web/src/lib/bot-templates-locales.test.ts",
+      "find": "    const missing = BOT_TEMPLATES.flatMap((template) =>",
+      "replace": "    const missing = BOT_TEMPLATES.filter((template) => template.id !== \"meeting-prep\").flatMap((template) =>",
+      "reason": "meeting prep template: its strings are the fork's, held in the Turkish catalog by a rule, not in upstream's extracted English one"
     }
   ],
   "assets": {

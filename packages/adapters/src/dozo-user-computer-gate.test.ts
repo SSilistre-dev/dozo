@@ -7,7 +7,10 @@ vi.mock("./run-tools-user-computer.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./run-tools-user-computer.js")>()),
   userComputerGate: vi.fn(async () => upstream.plan),
 }));
-vi.mock("@rakazo/db", () => ({ dozoCommandRuleExists: rules.exists }));
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  dozoCommandRuleExists: rules.exists,
+}));
 
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
 import type { RunContext } from "./run-context.js";

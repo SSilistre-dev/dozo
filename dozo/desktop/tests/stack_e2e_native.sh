@@ -11,7 +11,8 @@
 # it to <dist-dir>'s and the account still signs in, then a newer version whose Node is broken is
 # put back and the server runs as it was (src/stack_update.rs); a sixth backs that server up and
 # restores it over newer data (src/stack_backup.rs). After each, no process of the server is left.
-# The data folder is under a home whose path holds a space and non-ASCII letters.
+# The data folder is under a home whose path holds a space and non-ASCII letters. Step 0 first
+# drives the bot's own browser (src/browser_e2e.rs) with the Chrome installed on the runner.
 #
 # Usage:
 #   stack_e2e_native.sh <dist-dir> <workspace>      steps 1-4 against a dev relay (hermetic)
@@ -175,6 +176,54 @@ kill_app() {
   wait $app 2> /dev/null
   say "the app was killed with SIGKILL"
 }
+
+if [ -z "$RELAY" ]; then
+  # The bot's own browser (src/browser.rs, src/browser_e2e.rs): the installed Chrome with a profile
+  # of its own, driven through the pipe only (no TCP port), what is not allowed refused, and the
+  # browser ends with a killed app. On Linux in a real window under Xvfb, with a screenshot of the
+  # page and, when ImageMagick is there, of the whole screen (the window and its address bar).
+  say "0. the bot's own browser"
+  browser_test() {
+    "$BIN" --ignored --exact "browser::e2e::$1" --nocapture > "$LOGS/$1.log" 2>&1
+    local rc=$?
+    grep -E 'E2E: [a-zA-Z]|panicked|assert|test result' "$LOGS/$1.log"
+    [ $rc = 0 ] || fail "$1"
+  }
+  export DOZO_BROWSER_E2E_SHOT="$LOGS/browser-page.png"
+  if [ "$OS" = linux ] && command -v Xvfb > /dev/null; then
+    Xvfb :87 -screen 0 1280x800x24 > /dev/null 2>&1 &
+    helpers+=($!)
+    export DISPLAY=:87 DOZO_BROWSER_E2E_WINDOW=1
+    sleep 1
+  fi
+  browser_test e2e_browser_page_tools_work_through_the_pipe_only
+  export DOZO_BROWSER_E2E_ROOT="$BASE/browser"
+  "$BIN" --ignored --exact browser::e2e::e2e_browser_hold_until_killed --nocapture \
+    > "$LOGS/e2e_browser_hold_until_killed.log" 2>&1 &
+  app=$!
+  for _ in $(seq 120); do
+    grep -q 'E2E: holding' "$LOGS/e2e_browser_hold_until_killed.log" 2> /dev/null && break
+    kill -0 $app 2> /dev/null || break
+    sleep 0.5
+  done
+  browser=$(sed -n 's/^E2E: browser pid //p' "$LOGS/e2e_browser_hold_until_killed.log")
+  [ -n "$browser" ] || { tail -n 20 "$LOGS/e2e_browser_hold_until_killed.log"; fail "the browser did not start"; }
+  if [ -n "${DOZO_BROWSER_E2E_WINDOW:-}" ] && command -v import > /dev/null; then
+    sleep 2
+    import -window root "$LOGS/browser-window.png" && say "the browser's window captured"
+  fi
+  kill_app
+  for _ in $(seq 40); do kill -0 "$browser" 2> /dev/null || break; sleep 0.25; done
+  if kill -0 "$browser" 2> /dev/null; then
+    [ "$OS" = linux ] && fail "the browser outlived the killed app (PR_SET_PDEATHSIG)"
+    say "the browser outlived the killed app; the next start ends it"
+  else
+    say "the browser ended with the killed app"
+  fi
+  browser_test e2e_browser_ends_what_a_crashed_app_left
+  unset DOZO_BROWSER_E2E_ROOT DOZO_BROWSER_E2E_SHOT DOZO_BROWSER_E2E_WINDOW
+  took "step 0"
+fi
 
 say "1. install, start, /health, sign up, this computer connects, stop"
 run_test e2e_installs_starts_and_stops_the_real_server "$ROOT"
