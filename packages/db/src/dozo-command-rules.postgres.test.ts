@@ -301,12 +301,16 @@ describePostgres("command rules (PostgreSQL)", () => {
     await always(owner, "make");
     await always(owner, "npm test");
     const rules = await runAsTenant(owner, () => listDozoCommandRules(prisma, owner));
-    // The deferred migration has not dropped the old table yet, as in the release after this one.
-    for (const rule of rules)
-      await system.$executeRaw`
-        INSERT INTO dozo_command_rules (id, "userId", "spaceId", "botId", words, cwd)
-        VALUES (${rule.id}, ${owner.userId}, ${owner.spaceId}, ${owner.botId},
-          ${rule.words}::text[], ${rule.cwd})`;
+    const [table] = await system.$queryRaw<{ found: boolean }[]>`
+      SELECT to_regclass('dozo_command_rules') IS NOT NULL AS found`;
+    // Before the deferred migration drops it, as in the release after this one, each rule has an
+    // old copy with the same id; after it, there is nothing to remove and nothing fails.
+    if (table?.found)
+      for (const rule of rules)
+        await system.$executeRaw`
+          INSERT INTO dozo_command_rules (id, "userId", "spaceId", "botId", words, cwd)
+          VALUES (${rule.id}, ${owner.userId}, ${owner.spaceId}, ${owner.botId},
+            ${rule.words}::text[], ${rule.cwd})`;
     const [first, second] = rules;
     await runAsTenant(owner, () =>
       prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, first!.id)),
@@ -314,9 +318,13 @@ describePostgres("command rules (PostgreSQL)", () => {
     await runAsTenant(owner, () =>
       prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, second!.id, "block")),
     );
-    expect(
-      await system.$queryRaw`SELECT id FROM dozo_command_rules WHERE "botId" = ${owner.botId}`,
-    ).toEqual([]);
+    expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toMatchObject([
+      { id: second!.id, effect: "block" },
+    ]);
+    if (table?.found)
+      expect(
+        await system.$queryRaw`SELECT id FROM dozo_command_rules WHERE "botId" = ${owner.botId}`,
+      ).toEqual([]);
   });
 
   it("goes with the bot", async () => {
