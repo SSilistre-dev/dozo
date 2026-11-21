@@ -4626,7 +4626,7 @@
     {
       "file": "packages/auth/src/index.ts",
       "find": "from \"./identity-confirmation.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
-      "replace": "from \"./identity-confirmation.js\";\nimport { finishPendingVerification, verifyEmailAdapter } from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
+      "replace": "from \"./identity-confirmation.js\";\nimport {\n  finishPendingVerification,\n  proveHeldVerification,\n  verifyEmailAdapter,\n} from \"./dozo-verify-email.js\";\nimport type { OidcConfig } from \"./oidc.js\";",
       "requires": [
         "packages/auth/src/dozo-verify-email.ts"
       ],
@@ -4639,7 +4639,7 @@
       "requires": [
         "packages/auth/src/dozo-verify-email.ts"
       ],
-      "reason": "verification link: opened outside a browser signed in to the account, it verifies nothing and changes nothing; that browser keeps the link until it signs in to the account, which finishes the verification"
+      "reason": "verification link: opened outside a browser signed in to the account, it verifies nothing and changes nothing; that browser keeps the link until it signs in to the account (with a session it already had, or with the password: proveHeldVerification), which finishes the verification"
     },
     {
       "file": "packages/auth/src/index.ts",
@@ -4648,7 +4648,28 @@
       "requires": [
         "packages/auth/src/dozo-verify-email.ts"
       ],
-      "reason": "verification link: a sign-in from the browser that opened the account's link finishes the verification the link held"
+      "reason": "verification link: a sign-in from the browser that opened the account's link finishes the verification the link held, for a sign-in by any method that creates a new session"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "        }\n        if (isUnusedEmailCodePath(ctx.path, ctx.body)) throw new APIError(\"NOT_FOUND\");\n",
+      "replace": "        }\n        if (ctx.path === \"/sign-in/email\") await proveHeldVerification(ctx);\n        if (isUnusedEmailCodePath(ctx.path, ctx.body)) throw new APIError(\"NOT_FOUND\");\n",
+      "requires": [
+        "packages/auth/src/dozo-verify-email.ts"
+      ],
+      "reason": "verification link: where a mailbox is required before a password sign-in, the browser holding the account's link finishes the verification by signing in with the account's password, before the sign-in checks it; any miss leaves the sign-in to answer as it would"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "          requireEmailVerification = policy.allowlist.length > 0;\n        } else if (policy) {\n          requireEmailVerification = policy.allowlist.length > 0;\n",
+      "replace": "          // With a mail provider a password signup proves its address before it gets a session; without one there is nothing to prove with, so it stays as it was.\n          requireEmailVerification = policy.allowlist.length > 0 || Boolean(env.email);\n        } else if (policy) {\n          requireEmailVerification = policy.allowlist.length > 0 || Boolean(env.email);\n",
+      "reason": "required verification: with a mail provider, password signup returns no session and an unverified account cannot sign in with its password (a refused one gets a new link); without a provider both stay as upstream has them. The session lookup and session creation gates are untouched, so sessions that already exist and OIDC or social sign-in are unchanged"
+    },
+    {
+      "file": "packages/auth/src/index.ts",
+      "find": "      // Open signups get a session at once; the link only marks the address verified.\n",
+      "replace": "      // With a mail provider a signup gets no session until the address is verified (see the\n      // before hook); without one it gets a session at once and nothing marks it verified.\n",
+      "reason": "required verification: the comment above sendOnSignUp said open signups get a session at once, which no longer holds with a mail provider"
     },
     {
       "file": "packages/adapter-kit/src/types.ts",

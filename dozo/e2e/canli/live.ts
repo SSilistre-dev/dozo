@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { existsSync } from "node:fs";
+import type { Locator, Page } from "@playwright/test";
 import { expect as expectFlow, test as flow } from "../flows/flow";
 import { watchLoad } from "../load-watch";
 import { outDir } from "../scan";
@@ -8,28 +8,8 @@ import { fenceVerdict, isNetworkFlap } from "./fence";
 
 export { expect, SIGNED_OUT } from "../flows/flow";
 
-/** The throwaway account of this run: created by the sign-up scenario, deleted at the end. */
-export type Probe = { email: string; password: string; deleted: boolean };
-
-const PROBE_FILE = () => `${outDir()}/probe.json`;
+/** The signed-in session of the run's trial account, saved by the sign-in scenario. */
 export const STATE_FILE = () => `${outDir()}/probe-state.json`;
-
-/** A fresh address on the owner's own mailbox; the password never leaves this run's files. */
-export function newProbe(): Probe {
-  const id = Math.random().toString(36).slice(2, 10);
-  const secret = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2)).join("");
-  return { email: `info+dozo-probe${id}@ssilistre.dev`, password: `Pp-${secret}`, deleted: false };
-}
-
-export function readProbe(): Probe | null {
-  return existsSync(PROBE_FILE())
-    ? (JSON.parse(readFileSync(PROBE_FILE(), "utf8")) as Probe)
-    : null;
-}
-
-export function saveProbe(probe: Probe) {
-  writeFileSync(PROBE_FILE(), JSON.stringify(probe), { mode: 0o600 });
-}
 
 /** Records a measured number for the report's budget table (canli/budgets.ts). */
 export function measure(key: string, value: number) {
@@ -126,40 +106,6 @@ export async function firstContent(page: Page): Promise<number | null> {
         setTimeout(() => resolve(null), 10_000);
       }),
   );
-}
-
-/**
- * Deletes the probe with its own session and proves it is gone: the same email and password are
- * refused and no session is left. Returns what it saw, for the report.
- */
-export async function deleteProbe(request: APIRequestContext, probe: Probe): Promise<string> {
-  const origin = process.env.CANLI_URL as string;
-  const headers = { origin, "content-type": "application/json" };
-  let session = await request.get("/api/auth/get-session", { headers });
-  let signedIn = session.ok() && (await session.text()).includes(probe.email);
-  if (!signedIn) {
-    const signIn = await request.post("/api/auth/sign-in/email", {
-      headers,
-      data: { email: probe.email, password: probe.password },
-    });
-    if (signIn.status() === 401) return "already gone: sign-in refused with 401";
-    signedIn = signIn.ok();
-  }
-  if (!signedIn) throw new Error("cannot sign the probe in to delete it");
-  const deleted = await request.post("/api/auth/delete-user", {
-    headers,
-    data: { password: probe.password },
-  });
-  if (!deleted.ok()) throw new Error(`delete-user answered ${deleted.status()}`);
-  const again = await request.post("/api/auth/sign-in/email", {
-    headers,
-    data: { email: probe.email, password: probe.password },
-  });
-  session = await request.get("/api/auth/get-session", { headers });
-  const left = (await session.text()).trim();
-  if (again.status() !== 401) throw new Error(`sign-in after delete answered ${again.status()}`);
-  if (left !== "null" && left !== "") throw new Error("a session is left after the delete");
-  return `delete-user ${deleted.status()}; sign-in again 401; session null`;
 }
 
 /**

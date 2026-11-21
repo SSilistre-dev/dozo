@@ -1,5 +1,5 @@
-import { PASSWORD } from "../support";
-import { BASE, uniqueEmail } from "./accounts";
+import { PASSWORD, verificationLinkAfter } from "../support";
+import { BASE, emailFormTr as emailForm, uniqueEmail } from "./accounts";
 import { expect, SIGNED_OUT, test } from "./flow";
 
 /**
@@ -7,19 +7,6 @@ import { expect, SIGNED_OUT, test } from "./flow";
  * fork's main language: the error lines are the fork's own translations). Each test starts signed out.
  */
 test.use({ storageState: SIGNED_OUT });
-
-async function emailForm(page: import("@playwright/test").Page, path: string) {
-  await page.goto(`${path}?lang=tr`);
-  // Sign-in by emailed code offers the password one step away; sign-up and a server without codes
-  // show the form, or a choice of providers first.
-  const password = page.getByRole("button", { name: "Bunun yerine şifre kullan" });
-  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
-  const field = page.getByPlaceholder("Parola");
-  await expect(password.or(choice).or(field).first()).toBeVisible();
-  if (await password.isVisible()) await password.click();
-  else if (await choice.isVisible()) await choice.click();
-  await expect(field).toBeVisible();
-}
 
 test("kayıt, çıkış, yeniden giriş", async ({ page }) => {
   const email = uniqueEmail("auth");
@@ -29,6 +16,17 @@ test("kayıt, çıkış, yeniden giriş", async ({ page }) => {
   await page.getByPlaceholder("E-posta adresiniz").fill(email);
   await page.getByPlaceholder("Parola").fill(PASSWORD);
   await page.getByRole("button", { name: "Hesap oluştur" }).click();
+  // A server with mail asks for the mailbox first: the mail's link, then the password.
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  if (capabilities.emailCode) {
+    await expect(page.getByRole("heading", { name: "E-postanızı kontrol edin" })).toBeVisible();
+    await page.goto(await verificationLinkAfter(page.request, email, 0));
+    await expect(page.getByRole("heading", { name: "Devam etmek için oturum açın" })).toBeVisible();
+    await page.getByRole("link", { name: "Oturum aç", exact: true }).click();
+    await page.waitForURL(/\/sign-in\/email/);
+    await page.getByPlaceholder("Parola").fill(PASSWORD);
+    await page.getByRole("button", { name: "Oturum aç", exact: true }).click();
+  }
   await page.waitForURL(/\/onboarding/);
   // Signing out from the model step's account menu is not offered: sign out through the app.
   await page.getByRole("button", { name: "Daha sonra" }).click();
@@ -55,11 +53,18 @@ test("yanlış parola: Türkçe hata", async ({ page, guard }) => {
   await expect(page).toHaveURL(/\/sign-in/);
 });
 
-test("var olan e-postayla kayıt: Türkçe hata", async ({ page, guard }) => {
-  guard.allow(
-    /422 POST [^ ]*\/api\/auth\/sign-up\/email/,
-    "the second sign-up is refused on purpose",
-  );
+test("var olan e-postayla kayıt: Türkçe hata (posta varsa aynı kontrol ekranı)", async ({
+  page,
+  guard,
+}) => {
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  // A server with mail answers a repeated sign-up like a first one (no 422, nothing to tell an
+  // address from a new one); a server without mail still says the address is taken.
+  if (!capabilities.emailCode)
+    guard.allow(
+      /422 POST [^ ]*\/api\/auth\/sign-up\/email/,
+      "the second sign-up is refused on purpose",
+    );
   const email = uniqueEmail("twice");
   const first = await page.request.post("/api/auth/sign-up/email", {
     data: { email, password: PASSWORD, name: "E2E Twice" },
@@ -72,7 +77,13 @@ test("var olan e-postayla kayıt: Türkçe hata", async ({ page, guard }) => {
   await page.getByPlaceholder("E-posta adresiniz").fill(email);
   await page.getByPlaceholder("Parola").fill(PASSWORD);
   await page.getByRole("button", { name: "Hesap oluştur" }).click();
-  await expect(page.getByText("Bu e-postayla bir hesap zaten var")).toBeVisible();
+  if (capabilities.emailCode) {
+    await expect(page.getByRole("heading", { name: "E-postanızı kontrol edin" })).toBeVisible();
+    const session = await (await page.request.get("/api/auth/get-session")).json();
+    expect(session, "the second sign-up opened no session").toBeNull();
+  } else {
+    await expect(page.getByText("Bu e-postayla bir hesap zaten var")).toBeVisible();
+  }
 });
 
 test("parola sıfırlama: bağlantı isteği ve geçersiz bağlantı", async ({ page }) => {

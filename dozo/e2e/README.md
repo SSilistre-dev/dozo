@@ -60,10 +60,21 @@ Options:
 | `DOZO_E2E_REUSE_DIR` | unset | Development: a directory with `auth.json` and `world.json`; skips the sign-up |
 
 `run.sh` itself sets `DOZO_E2E_OUT`, `DOZO_E2E_SRC`, `DOZO_E2E_MODEL_URL` and the
-`DOZO_E2E_VERIFY_*` variables inside the container; do not set them. The stack sends no mail, so for
-`flows/verify.spec.ts` run.sh signs up an account only that run uses and makes the two verification
-links its mail would carry (one valid, one expired: the link's token and the result page's mark),
-signed inside the api container with the api's own secret, which is never printed or written.
+`DOZO_E2E_VERIFY_*` variables inside the container; do not set them. For `flows/verify.spec.ts`
+run.sh signs up an account only that run uses (HTTP 200 on both kinds of stack) and makes the two
+verification links its mail would carry (one valid, one expired: the link's token and the result
+page's mark), signed inside the api container with the api's own secret, which is never printed or
+written.
+
+Two kinds of local stack, and the suite runs on both. Without a mail provider (plain `make up`) a
+password sign-up opens a session at once and a second sign-up for an address is refused (422). With
+the email emulator (`DOZO_EMAIL_EMULATOR=1 make up`, mail readable at `/api/dev/emails`) a password
+sign-up opens no session (`token: null`, "Check your email") and an unverified account cannot sign in
+with its password: `signUpThroughForm` and `newAccount` finish through the mail's link (opened in
+the same browser, which holds it) and then the password. Each spec that depends on the kind reads
+the server's own `capabilities.emailCode` and asserts what that kind does; one that cannot run on
+a kind skips with its reason (`flows/signup-verification.spec.ts` needs mail,
+`flows/verify.spec.ts`'s reminder scenario needs a session without it).
 
 The app only accepts its configured origin (`127.0.0.1:<port>`), so the browser must see that name.
 Linux: `--network host`. Docker Desktop (macOS): a TCP forwarder inside the container relays
@@ -195,11 +206,13 @@ the features below: 38 surfaces in the table, 36 checked, 2 not (each row is one
 
 | Surface | Scenario | Status |
 | --- | --- | --- |
-| Sign-up | real form, Turkish; lands on the model step | flow; live |
+| Sign-up | real form, Turkish; lands on the model step (with mail: the "Check your email" screen, the mail's link, the password) | flow |
+| Sign-up asks for the mailbox | with mail: no session, an unverified account's password sign-in is refused with the verification line and a new mail, the link then the password verifies and keeps the password; a code sign-in verifies but drops the password; no sign-in or sign-up answer tells an address from a new one | flow (mail stack) |
 | Sign-in / sign-out | sign out from the account menu, sign in again | flow |
-| Sign-in errors | wrong password, address already registered: Turkish lines | flow; live |
+| Sign-in errors | wrong password; address already registered (without mail: the Turkish line; with mail: the same "Check your email" screen) | flow |
 | Forgot / reset password | request (this stack says recovery is not configured), invalid token form | flow; live (form) |
-| E-mail verification | the reminder line, a real link → verified, a second click still verified, the line gone, signed out → still verified and sign-in filled in; expired link → address filled in, new link asked (no mail: the server's refusal shown); unreadable link; a hand-made result address claims nothing | flow (mail capability faked) |
+| E-mail verification | (no-mail stack) the reminder line, a real link → verified, a second click still verified, the line gone, signed out → still verified and sign-in filled in; expired link → address filled in, new link asked (no mail: the server's refusal shown); unreadable link; a hand-made result address claims nothing; (mail stack) the expired link's new mail goes out and the page says to whom | flow (mail capability faked without mail) |
+| Live: trial account | its sign-in with the standing account, and the sign-up form for its address (asks for the mailbox, or still the old line) | live |
 | Onboarding: model step | connect the offline model (setup); every provider's form | crawl; setup |
 | Onboarding: "Later" | new account goes on to the app with its first bot | flow; live |
 | Onboarding: survey, first bot | opened | crawl |
@@ -239,21 +252,46 @@ the features below: 38 surfaces in the table, 36 checked, 2 not (each row is one
 
 `CANLI_URL=https://... make canli` (no default address, so it never runs against the live site by
 accident) runs `canli.sh`: the Playwright image with the same module cache, `--cpus 3 --memory 6g`,
-the browser in Turkish, `canli/playwright.config.ts`. Only safe steps, limited to an account it
-makes itself:
+the browser in Turkish, `canli/playwright.config.ts`. Only safe steps, limited to one standing
+trial account:
 
+- The trial account. The live server asks for the mailbox before a password sign-in, and a run
+  cannot read a mailbox there, so a run cannot open an account of its own (it would leave an
+  unverified orphan and a mail in the owner's inbox each time, and no bypass of the verification is
+  added for it). The owner opens one account once, verifies it, and keeps its credentials outside
+  the repository in a JSON file, `{"email": "...", "password": "..."}`, at
+  `$HOME/.config/dozo/canli-hesap.json` or the path in `DOZO_CANLI_ACCOUNT_FILE`, mode 0600 (`canli.sh`
+  warns otherwise). `canli.sh` mounts it read-only into the container, never reads it itself and
+  never writes its content to a command line, a log or a report; it says only "deneme hesabı: var
+  (path)" or "deneme hesabı: yok (path)". With no file every account scenario skips and its reason
+  names the file's path and what its owner writes into it; `RAPOR.md` Notlar says "deneme hesabı
+  dosyası yok: hesap senaryoları atlandı". A file that is there but unreadable, not JSON or without
+  an address and a password fails the scenarios with a message naming the path (never a skip, never
+  the content): `canli/account-file.ts`, tested offline by `canli-account.test.mjs`.
 - `canli/public.spec.ts`: no account. Cold first paint of `/sign-in`, the wrong-password line, the
   reset form, the 404 page, placeholder links (`dozo.example`, `OWNER/`) and our own links on the
   public pages (each must answer), `/assets` cache headers.
-- `canli/account.spec.ts`, in order: sign up `info+dozo-probe<random>@ssilistre.dev` → model step →
-  "Daha sonra"; the same address again is refused in Turkish; cold first paint of `/app`; the Apps
-  window (time to window and first tile, every logo loaded from our own host); Settings → Models
-  (responses counted); Billing and `?billing=canceled`; the payment page opens with the plan's
-  name and the amount the server's own status gives (no card entered); Free's computer refusal;
-  then the account is deleted with its own session and proven gone (the same sign-in answers 401,
-  no session left). A failed step does not skip the next ones. The global teardown
-  (`canli/cleanup.ts`) is the finally step: whatever failed, an account the run made is deleted
-  there; what happened is the report's "Temizlik" line.
+- `canli/account.spec.ts`, in order: (1) "kayıt e-posta doğrulaması ister": a signed-out browser
+  submits the sign-up form with the trial account's address and a random password. Before the
+  verification change reaches the live server it answers 422 and "Bu e-postayla bir hesap zaten
+  var"; after, 200 with no session and the "E-postanızı kontrol edin" screen. Either is accepted and
+  the report's Notlar says which was seen ("sunucu henüz eski davranışta" / "sunucu kayıtta
+  doğrulama istiyor"); anything else fails. It opens no account and sends no mail (an address that
+  already has an account gets the generic answer and no mail). (2) Sign-in with the trial account
+  through the password form; its first run meets onboarding (survey, "Daha sonra"), later runs go
+  straight to the app; the session is saved for the rest. Then, with that session: cold first paint
+  of `/app`; the Apps window (time to window and first tile, every logo loaded from our own host);
+  Settings → Models (responses counted); Billing and `?billing=canceled`; the payment page opens
+  with the plan's name and the amount the server's own status gives (no card entered); Free's
+  computer refusal. A failed sign-in skips the later account steps as "giriş yapılamadı", so the
+  report shows the one root cause.
+- No account deletion. Earlier versions of this run opened an account, deleted it with its own
+  session and proved the sign-in then answered 401. The live run no longer tries to delete an
+  account, because the account is now permanent and an account deletion cannot be undone on it:
+  the claim "an account can be deleted from the live site and is gone afterwards" is not checked by
+  `make canli`. No scenario changes the trial account's data. The global teardown
+  (`canli/cleanup.ts`) only removes the run's session file; the report's "Temizlik" line says
+  "kalıcı deneme hesabı, silinmedi; oturum dosyası silindi".
 - `canli/admin.spec.ts`: only with `DOZO_CANLI_ADMIN_EMAIL` and `DOZO_CANLI_ADMIN_PASSWORD` in the
   environment (passed to the container by name, never written to a file or a log). Signs in and
   opens every admin section read only. No picture of member lists is kept.
@@ -265,9 +303,7 @@ read/write mark, so the fence lists each procedure of the namespaces it guards (
 or a procedure in neither list is aborted and fails the scenario ("unknown procedure ..., if it
 only reads, add it to READS"). `canli-fence.test.mjs` (`make olc`) reads those namespaces from
 `packages/contracts/src` and fails while any procedure is unlisted or a listed one is gone. No
-payment, no ban, no admin action. A billing scenario skips itself on a server that does not bill;
-when the sign-up scenario fails, every later account step is skipped as "hesap açılamadı", so the
-report shows the one root cause.
+payment, no ban, no admin action. A billing scenario skips itself on a server that does not bill.
 
 The run waits for the machine's local-stack lock when the file exists (`DOZO_STACK_LOCK`, default
 `/tmp/dozo-yigin.lock`, through `flock -w 7200`): another run starting or stopping containers changes
@@ -275,21 +311,32 @@ the host's network under the browser. A caller that already holds the lock sets
 `DOZO_CANLI_LOCKED=1`. A navigation that still meets `net::ERR_NETWORK_CHANGED` or
 `ERR_INTERNET_DISCONNECTED` is tried again, at most twice; a site error is never retried.
 
-Output in `dozo/.stage/canli/`: `RAPOR.md`, `rapor.html`, `shots/`, `results.json`. The probe's
-password and session files are removed when the run ends. Budgets (`canli/budgets.ts`, tested
+Output in `dozo/.stage/canli/`: `RAPOR.md`, `rapor.html`, `shots/`, `results.json`. The trial
+account's session file is removed when the run ends (its password is never written there). Budgets (`canli/budgets.ts`, tested
 offline by `canli-budgets.test.mjs`) only warn: the numbers come from one machine over the public
 internet. The last line is `CANLI: PASS|FAIL (n senaryo)`; exit 0 or 2.
 
 ## Rate limit
 
 The auth endpoints allow 10 credential calls per 15 minutes per address and path
-(`packages/auth/src/index.ts`). run.sh clears the stack's rate-limit rows before each run; a run
-spends about eight sign-ups and five sign-ins (the admin signs in once, its session is reused). The
-suite reports a 429 with its retry-after if the limit is hit. `make canli` spends two sign-ups and
-up to three sign-ins on the live site.
+(`packages/auth/src/index.ts`), and only when the api runs with `NODE_ENV=production`. run.sh clears
+the stack's rate-limit rows before each run. The suite reports a 429 with its retry-after if the
+limit is hit.
+
+- Without mail (plain `make up`, production mode): the limit is on and this change adds no call: a
+  run spends about eight sign-ups and five sign-ins (the admin signs in once, its session is
+  reused). The mail-only specs skip and spend nothing.
+- With the email emulator (`compose.email-emulator.yml` sets `NODE_ENV=development`): the limit is
+  off. A full run there makes fourteen sign-up calls (admin, verification account, setup, four
+  `newAccount`, three in `auth.spec.ts`, four in `signup-verification.spec.ts`) and about sixteen
+  sign-in calls (setup, the admin, four `newAccount` that finish through the mail, three in
+  `auth.spec.ts`, six in `signup-verification.spec.ts`, the round trip). Both are over 10, so a
+  mail stack must not run in production mode.
+- `make canli` on the live site: one sign-up form submission (the refusal check) and up to two
+  sign-ins (the wrong-password line, the trial account); no account is opened.
 
 ## Not covered
 
-See `NOT_REACHABLE` in `surfaces.ts` (also printed by every run): e-mails (no mail server), desktop
+See `NOT_REACHABLE` in `surfaces.ts` (also printed by every run): e-mails (a stack without the email emulator has no mail server; with it only the verification and sign-in-code mails are read), desktop
 only screens, voice, real integrations, passkeys and social sign-in, the mobile app. Tool calls,
 admin pages with real data and billing's screens are now covered by the scenarios above.

@@ -79,6 +79,9 @@ it("is what upstream's authErrorText falls back on", () => {
   expect(
     authErrorText({ code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" }, "x"),
   ).toBe("Incorrect email or password");
+  expect(authErrorText({ code: "EMAIL_NOT_VERIFIED", message: "Email not verified" }, "x")).toBe(
+    "Email verification required",
+  );
   expect(
     authErrorText({ code: "USER_NOT_FOUND", message: "User not found" }, "Could not sign in"),
   ).toBe("Could not sign in");
@@ -94,6 +97,7 @@ it("speaks Turkish with the catalog the build ships", () => {
   );
   expect(authErrorText({ code: "PASSWORD_TOO_SHORT" }, "x")).toBe("Parola en az 8 karakter olmalı");
   expect(authErrorText({ code: "INVALID_EMAIL" }, "x")).toBe("Geçerli bir e-posta girin");
+  expect(authErrorText({ code: "EMAIL_NOT_VERIFIED" }, "x")).toBe("E-posta doğrulaması gerekiyor");
   for (const code of [
     "INVALID_PASSWORD",
     "PASSWORD_COMPROMISED",

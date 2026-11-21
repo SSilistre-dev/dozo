@@ -39,12 +39,18 @@ export default class CanliReport implements Reporter {
     const pass = result.status === "passed" && failed.length === 0 && counted.length > 0;
     const verdict = verdictLine(pass, counted.length);
     const budgets = budgetVerdicts(this.measures);
-    // What the finally step of the account scenarios did (canli/account.spec.ts).
+    // What the finally step of the account scenarios did (canli/cleanup.ts), and whether the
+    // trial account's file was there (canli/account.spec.ts).
     const cleanup = `${out}/cleanup.json`;
-    if (existsSync(cleanup))
-      this.notes.push(
-        `Temizlik: ${(JSON.parse(readFileSync(cleanup, "utf8")) as { account: string }).account}`,
-      );
+    if (existsSync(cleanup)) {
+      const done = JSON.parse(readFileSync(cleanup, "utf8")) as {
+        account: string;
+        accountFile?: boolean;
+      };
+      if (done.accountFile === false)
+        this.notes.push("deneme hesabı dosyası yok: hesap senaryoları atlandı");
+      this.notes.push(`Temizlik: ${done.account}`);
+    }
     const when = new Date().toISOString();
     const md = [
       `# make canli: ${process.env.CANLI_URL ?? "?"}`,

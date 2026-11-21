@@ -1,11 +1,19 @@
 import type { Page } from "@playwright/test";
+import { openPasswordFormTr } from "./accounts";
 import { expect, SIGNED_OUT, test } from "./flow";
 
 /**
- * The verification link, end to end, in Turkish. The stack sends no mail, so run.sh signs up an
- * account for this run and makes the links its mail would carry (a valid and an expired one) with
- * the api's own secret: through the server's verify endpoint, back to the result page with the
- * signed mark and, when the link did not verify, an error code.
+ * The verification link, end to end, in Turkish. run.sh signs up an account for this run and makes
+ * the links its mail would carry (a valid and an expired one) with the api's own secret: through
+ * the server's verify endpoint, back to the result page with the signed mark and, when the link
+ * did not verify, an error code.
+ *
+ * Two kinds of stack. Without a mail provider the account signs up with a session, the server
+ * refuses to send a new link, and the second scenario (a signed-in, unverified account and its
+ * reminder) runs. With the email emulator (DOZO_EMAIL_EMULATOR=1) the server sends and a
+ * password sign-in of an unverified account is refused, so that account cannot be signed in with
+ * its password: the second scenario is skipped there, and signup-verification.spec.ts walks the
+ * mailbox-first flow for it instead.
  */
 test.use({ storageState: SIGNED_OUT });
 
@@ -13,6 +21,11 @@ const EMAIL = process.env.DOZO_E2E_VERIFY_EMAIL ?? "";
 const PASSWORD = process.env.DOZO_E2E_VERIFY_PASSWORD ?? "";
 const LINK = process.env.DOZO_E2E_VERIFY_LINK ?? "";
 const EXPIRED = process.env.DOZO_E2E_VERIFY_EXPIRED ?? "";
+
+async function stackSendsMail(page: Page) {
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  return capabilities.emailCode === true;
+}
 
 /** The stack sends no mail; the page is told it does, so the parts that need mail show. */
 async function serverSendsMail(page: Page) {
@@ -33,10 +46,12 @@ test("süresi dolmuş bağlantı: kısa ileti, yeni bağlantı isteği; okunamay
   guard,
 }) => {
   expect(EMAIL && PASSWORD && LINK && EXPIRED, "run.sh makes the verification links").toBeTruthy();
-  guard.allow(
-    /400 POST [^ ]*\/api\/auth\/send-verification-email/,
-    "the stack has no mail provider, so the server refuses to send; the request itself is the point",
-  );
+  const sends = await stackSendsMail(page);
+  if (!sends)
+    guard.allow(
+      /400 POST [^ ]*\/api\/auth\/send-verification-email/,
+      "the stack has no mail provider, so the server refuses to send; the request itself is the point",
+    );
   await serverSendsMail(page);
   await signInPage(page);
   await page.goto(EXPIRED);
@@ -47,7 +62,10 @@ test("süresi dolmuş bağlantı: kısa ileti, yeni bağlantı isteği; okunamay
   const asked = page.waitForRequest("**/api/auth/send-verification-email");
   await page.getByRole("button", { name: "Yeni bağlantı gönder" }).click();
   expect((await asked).postDataJSON()).toMatchObject({ email: EMAIL });
-  await expect(page.getByRole("alert")).toHaveText("Bağlantı gönderilemedi");
+  // With a provider the new link goes out and the page says to whom; without one the server
+  // refuses and the page says it could not.
+  if (sends) await expect(page.getByRole("status")).toContainText("yeni bir bağlantı gönderdik");
+  else await expect(page.getByRole("alert")).toHaveText("Bağlantı gönderilemedi");
 
   // A link the server cannot read.
   await page.goto(LINK.replace(/token=[^&]+/, "token=e2e-not-a-token"));
@@ -65,12 +83,18 @@ test("doğrulama bağlantısı: hatırlatma, doğrulandı, ikinci tıklama, otur
   page,
   guard,
 }) => {
+  test.skip(
+    await stackSendsMail(page),
+    "with a mail provider an unverified account cannot sign in with its password (the mailbox comes first), so this account has no session to show the reminder in; signup-verification.spec.ts covers that stack",
+  );
   guard.allow(
     /404 POST [^ ]*\/rpc\/billing\/status/,
     "FINDING: the model step asks for the billing status on a server without billing, which answers 404",
   );
   await serverSendsMail(page);
   await signInPage(page);
+  // A server that sends mail starts sign-in with the emailed code; the password is one step away.
+  await openPasswordFormTr(page);
   await page.getByPlaceholder("E-posta adresiniz").fill(EMAIL);
   await page.getByPlaceholder("Parola").fill(PASSWORD);
   await page.getByRole("button", { name: "Oturum aç", exact: true }).click();
