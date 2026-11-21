@@ -8109,6 +8109,24 @@
       "find": "on your local network.\",\n        \"NSAppTransportSecurity\": {",
       "replace": "on your local network.\",\n        \"UIViewControllerBasedStatusBarAppearance\": false,\n        \"NSAppTransportSecurity\": {",
       "reason": "status bar: the layout sets its style from the app's resolved theme (expo-status-bar), which iOS honours only when view controllers do not choose it; the generated plist said true, so the bar followed the system and read dark on the dark sign-in screen"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Fatura dönemi\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/vault.ts\nmsgid \"Block\"",
+      "replace": "msgstr \"Fatura dönemi\"\n\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Block {name}?\"\nmsgstr \"{name} engellensin mi?\"\n\n#: apps/mobile/lib/dozo-message-actions.ts\n#: apps/mobile/app/(settings)/dozo-feedback.tsx\nmsgid \"Report\"\nmsgstr \"Bildir\"\n\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Their messages are hidden on this phone.\"\nmsgstr \"Mesajları bu telefonda gizlenir.\"\n\n#. js-lingui-explicit-id\n#: packages/i18n/src/vault.ts\nmsgid \"Block\"",
+      "reason": "reporting and blocking on mobile: the Turkish copy of Report, the Block question and its line (\"Block\" is upstream's)"
+    },
+    {
+      "file": "apps/mobile/locales/es.json",
+      "find": "\"NSMicrophoneUsageDescription\": \"Rakazo usa el micrófono para las llamadas de voz con tus bots.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo convierte lo que dices en mensajes durante las llamadas de voz.\",",
+      "replace": "\"NSPhotoLibraryAddUsageDescription\": \"Rakazo guarda en tu fototeca las imágenes que elijas.\",\n    \"NSMicrophoneUsageDescription\": \"Rakazo usa el micrófono para las llamadas de voz con tus bots y para dictar mensajes.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo convierte lo que dices en mensajes durante las llamadas de voz y el dictado.\",",
+      "reason": "App Store: the localized permission prompts follow the English ones in app.json (photo library add, dictation)"
+    },
+    {
+      "file": "apps/mobile/locales/pl.json",
+      "find": "\"NSMicrophoneUsageDescription\": \"Rakazo korzysta z mikrofonu podczas rozmów głosowych z botami.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo zamienia Twoją mowę na wiadomości podczas rozmów głosowych.\",",
+      "replace": "\"NSPhotoLibraryAddUsageDescription\": \"Rakazo zapisuje wybrane obrazy w Twojej bibliotece zdjęć.\",\n    \"NSMicrophoneUsageDescription\": \"Rakazo korzysta z mikrofonu podczas rozmów głosowych z botami i do dyktowania wiadomości.\",\n    \"NSSpeechRecognitionUsageDescription\": \"Rakazo zamienia Twoją mowę na wiadomości podczas rozmów głosowych i dyktowania.\",",
+      "reason": "App Store: the localized permission prompts follow the English ones in app.json (photo library add, dictation)"
     }
   ],
   "assets": {
