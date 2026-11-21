@@ -45,17 +45,13 @@ function Waiting({
       );
       return;
     }
-    Alert.alert(
-      line,
-      message,
-      [
-        ...own.slice(0, 2).map((item) => ({
-          text: stopText(item),
-          onPress: () => cancel.run(item),
-        })),
-        { text: t`Cancel`, style: "cancel" as const },
-      ],
-    );
+    Alert.alert(line, message, [
+      ...own.slice(0, 2).map((item) => ({
+        text: stopText(item),
+        onPress: () => cancel.run(item),
+      })),
+      { text: t`Cancel`, style: "cancel" as const },
+    ]);
   };
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={line} onPress={open}>

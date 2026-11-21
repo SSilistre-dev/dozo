@@ -146,9 +146,9 @@ it("stops waiting for your own run or message and reads the line again", async (
   await vi.waitFor(() => expect(reads()).toBe(2));
   await act(async () => queue.cancel.run(item({ id: "msg-1", kind: "message" })));
   await vi.waitFor(() =>
-    expect(api.rpc.mock.calls.filter(([path]) => path === "dozoQueue/cancelWaiting")[1]?.[1]).toEqual(
-      { messageId: "msg-1" },
-    ),
+    expect(
+      api.rpc.mock.calls.filter(([path]) => path === "dozoQueue/cancelWaiting")[1]?.[1],
+    ).toEqual({ messageId: "msg-1" }),
   );
 });
 

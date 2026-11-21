@@ -54,7 +54,10 @@ export function useDozoQueue(target: QueueTarget) {
   useSpaceChanges("runs", () => queryClient.invalidateQueries({ queryKey: read.queryKey }), true);
   const cancel = useSave({
     save: (item: DozoQueueItem, send) =>
-      send("dozoQueue/cancelWaiting", item.kind === "run" ? { runId: item.id } : { messageId: item.id }),
+      send(
+        "dozoQueue/cancelWaiting",
+        item.kind === "run" ? { runId: item.id } : { messageId: item.id },
+      ),
     stale: [read.queryKey],
     onFailed: (error) => Alert.alert(errorText(error)),
   });

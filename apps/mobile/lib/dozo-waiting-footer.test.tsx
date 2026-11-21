@@ -103,7 +103,10 @@ it("is the plain working line without a target or while nothing of yours waits",
 });
 
 it("opens a native sheet that lists what waits and stops your own", () => {
-  ui.items = [item({ id: "other", mine: false }), item({ id: "mine", position: 2, label: "Report" })];
+  ui.items = [
+    item({ id: "other", mine: false }),
+    item({ id: "mine", position: 2, label: "Report" }),
+  ];
   render(footer({ botId: "bot-1" }));
   expect(container.textContent).toBe("Waiting in line… · Busy elsewhere · #2");
   act(() => container.querySelector("button")?.click());
@@ -133,7 +136,10 @@ it("uses an alert off iOS, and never offers to stop another's work", () => {
   const [title, message, buttons] = ui.alert.mock.calls[0] ?? [];
   expect(title).toBe("Waiting in line… · Busy elsewhere · #2");
   expect(message).toBe("1  Another task\n2  Busy elsewhere");
-  expect(buttons.map((button: { text: string }) => button.text)).toEqual(["Stop waiting", "Cancel"]);
+  expect(buttons.map((button: { text: string }) => button.text)).toEqual([
+    "Stop waiting",
+    "Cancel",
+  ]);
   buttons[0].onPress();
   expect(ui.run).toHaveBeenCalledWith(expect.objectContaining({ id: "mine" }));
 });
