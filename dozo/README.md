@@ -476,8 +476,10 @@ desktop app answers every screen request with "Screen control is not available o
 (`dozo/desktop/src/device_run.rs`) and a bot's browser tools never run on the member's computer
 (a computer on the user's machine is not graphical), so no browser or screen action reaches it
 yet; only upstream's Electron app, which the fork does not ship, drives apps there. Asking per
-action belongs with adding screen control to the fork's app. The server still offers the screen
-tools to a paired Mac or Windows computer, whose first card then ends in that refusal.
+action belongs with adding screen control to the fork's app. Until devices declare screen
+control, the server offers no screen tool to a connected computer (an anchored rule in
+`run-assembly-capabilities.ts`), tells the bot it can only run commands there, and answers a
+refused screen request with that fact (`packages/adapters/src/dozo-device-screen.ts`).
 
 ## Daily sends
 
