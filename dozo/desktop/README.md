@@ -242,6 +242,9 @@ account and connects to it; the web app's settings then list it under Computers 
   the web view's sign-in cookie to `/api/devices/pair` (only to the chosen server's origin) and
   keeps the device token it gets back in the system keyring (`src/device_pairing.rs`). It then holds one outbound WebSocket to
   `/api/devices/connect` with that token (`src/device_socket.rs`); the server never connects in.
+  On connecting it says what it can do (`x-dozo-device-capabilities: shell`), and the server
+  offers a run only those tools (`packages/adapters/src/dozo-device-capabilities.ts`). A computer
+  that says nothing, as 0.4.0 and older do, gets commands only.
   Lost connections come back with backoff; a ping every 30 seconds notices a silent drop. A
   dropped connection stops the commands in flight (their answers could not arrive), and what
   they left running gets 60 seconds to see it come back before its process groups stop.
@@ -250,8 +253,8 @@ account and connects to it; the web app's settings then list it under Computers 
   shell tool sends `<shell> -lc <command>`, as upstream does). They run as this user, in the
   bot's own folder or anywhere in the home folder; any other working folder is refused. They get
   only the usual shell variables of this app's environment, stop at their timeout, and each one
-  leads its own process group. Screen control is not offered: a bot asking to use an app on
-  screen is told it is not available here.
+  leads its own process group. Screen control is not declared, so the server offers no screen
+  tools; a screen request that arrives anyway is refused.
 - What stopping a command reaches: its process group. On Linux each command also carries its own
   mark in its environment, so what it started in a new session or group (`setsid`, a double
   fork) is found in `/proc`; that is stopped only by an explicit stop (a run's cancel, the bot's
