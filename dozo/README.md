@@ -2,8 +2,8 @@
 
 Dozo runs persistent AI bots, each with its own computer. Run it on your own server for free, use
 the hosted version at [app.dozo.bot](https://app.dozo.bot) (a free plan and paid plans; sign-up is
-open), or install the desktop app for macOS, Windows or Linux and keep the server, the bots and
-their data on your own computer. This repository is its
+open), or install the desktop app for macOS, Windows or Linux and keep the server and your chats
+and files on your own computer (what is sent to a model goes to the provider you chose). This repository is its
 source code: source available, with Dozo's own files under the Elastic License 2.0 and the code it
 builds on under Apache-2.0. Dozo is an independent fork of
 [Rakazo](https://github.com/elie222/rakazo) and is not affiliated with or endorsed by the

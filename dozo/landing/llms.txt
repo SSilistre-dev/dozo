@@ -10,7 +10,7 @@ Dozo is source available: its own files are under the Elastic License 2.0, the c
 - A bot asks before it acts on anything that matters. You approve, edit or deny.
 - Routines run a bot on a schedule. Bots keep memory between chats.
 - Every plan uses your own model connection (your key or your subscription); model costs come from there.
-- The desktop app can run the server on your own computer, so your bots and their data stay there.
+- The desktop app can run the server on your own computer, so chats and files are stored there; what is sent to a model goes to the provider you chose (a local model stays on the computer).
 
 ## Plans (hosted, prices in US dollars as shown on the site)
 

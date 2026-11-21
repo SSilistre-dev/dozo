@@ -27,7 +27,7 @@ ask before they do anything that matters. This repository is the source code.
 - Approvals before consequential actions
 - Any model: connect an OpenAI-compatible server or another provider with your own keys, spread over several connections that take over from one another, or run a local model
 - Bots that use your own computer, each command approved first
-- Your data on your computer: the desktop app can run the server, the bots and their data locally
+- Your data on your computer: the desktop app can run the server locally, so chats and files are stored there; what is sent to a model goes to the provider you chose (a local model stays on the computer)
 - Exports and housekeeping: export a chat, edit and pin messages, set quiet hours, see usage and an activity log, back up and restore
 - Skills and MCP servers to give bots more tools
 - Spaces to share bots with other people
@@ -64,8 +64,8 @@ Every bot has a face you can tell apart at a glance. Pick the shape and the colo
 **Hosted.** [dozo.bot](https://dozo.bot), sign-up is open: [app.dozo.bot](https://app.dozo.bot). A free plan uses your own model connection and your own computer for the bots.
 
 **Desktop app.** [Latest release](https://github.com/SSilistre-dev/dozo/releases/latest) for macOS,
-Windows and Linux. "Use the server on this computer" runs the server, the bots and their data on
-your machine. The macOS app is signed; the Windows and Linux builds are not signed yet.
+Windows and Linux. "Use the server on this computer" runs the server on your machine and stores
+chats and files there; what is sent to a model goes to the provider you chose. The macOS app is signed; the Windows and Linux builds are not signed yet.
 
 ### Run it yourself
 
