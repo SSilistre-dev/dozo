@@ -38,7 +38,11 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 const roots: { container: HTMLElement; unmount: () => void }[] = [];
 
-async function show(tex: string, display: boolean) {
+// KaTeX loads on demand, so a formula has no page until that import settles. Tests wait for the
+// page to mount (or, for a formula that has none, for a probe formula after it to mount, which
+// the one shared import settles later), never for a tick.
+async function show(tex: string, display: boolean, draws = true) {
+  const before = web.mounts;
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -54,11 +58,28 @@ async function show(tex: string, display: boolean) {
       />,
     );
   });
-  // KaTeX loads on the next tick.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  if (draws) await vi.waitFor(() => expect(web.mounts).toBeGreaterThan(before));
+  else await probe();
   return container;
+}
+
+async function probe() {
+  const before = web.mounts;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.push({ container, unmount: () => root.unmount() });
+  await act(async () => {
+    root.render(
+      <MathView
+        tex="probe"
+        display={false}
+        palette={darkTokens}
+        colorScheme="dark"
+        fallback={null}
+      />,
+    );
+  });
+  await vi.waitFor(() => expect(web.mounts).toBeGreaterThan(before));
 }
 
 const handler = (name: string) =>
@@ -139,9 +160,10 @@ it("blocks every page but its own and every kind of file access", async () => {
 });
 
 it("keeps the code for broken TeX, without a page", async () => {
-  const page = await show("\\frac{1}{", false);
+  const page = await show("\\frac{1}{", false, false);
   expect(page.textContent).toBe("code:\\frac{1}{");
-  expect(web.mounts).toBe(0);
+  // Only the probe has a page.
+  expect(web.mounts).toBe(1);
 });
 
 it("keeps the code when the page says it cannot draw, or sends a size no formula has", async () => {
@@ -174,6 +196,7 @@ it("gives up after the timeout, but not once drawn", async () => {
 });
 
 async function showWithTimers(tex: string) {
+  const before = web.mounts;
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -188,8 +211,8 @@ async function showWithTimers(tex: string) {
         fallback={<code>{`code:${tex}`}</code>}
       />,
     );
-    await vi.dynamicImportSettled();
   });
+  await vi.waitFor(() => expect(web.mounts).toBeGreaterThan(before));
   return container;
 }
 
@@ -202,10 +225,9 @@ it("stops waiting for KaTeX when the message goes away", async () => {
     ),
   );
   act(() => root.unmount());
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-  expect(web.mounts).toBe(0);
+  await probe();
+  // Only the probe has a page.
+  expect(web.mounts).toBe(1);
 });
 
 it("draws a formula it has measured before at once, as a list does when a row comes back", async () => {
