@@ -175,6 +175,15 @@ EOF
   done
   printf '%s' "$title" | grep -qi 'dozo' || die "$url has the wrong title: $title"
   say "site: $url answers, title ${title#*>}"
+  # The server sends no-cache for the unhashed scripts the page runs before first paint. A CDN that
+  # replaces it with its own browser cache time keeps the previous release's copy in browsers for
+  # hours after a deploy, next to the new page.
+  local boot="https://$DOZO_DEPLOY_DOMAIN/dozo-boot.js" cache
+  cache=$(curl -fsSI -m 20 "$boot" 2>/dev/null | tr -d '\r' | sed -n 's/^cache-control: *//Ip' | head -1 || true)
+  case "$cache" in
+    *no-cache*) say "site: $boot keeps cache-control: $cache" ;;
+    *) die "$boot is served with cache-control '${cache:-none}' instead of the server's no-cache: set the CDN's browser cache TTL to respect the server's headers" ;;
+  esac
   [ -z "$previous" ] || [ "$previous" = "$tag" ] ||
     say "to go back: dozo/deploy/deploy.sh rollback $previous"
 }
