@@ -100,9 +100,21 @@ describe("chatExportSince", () => {
 
 describe("chatExportFilename", () => {
   it("takes out what file systems refuse and keeps the date", () => {
-    const now = new Date("2026-11-20T12:00:00.000Z");
+    const now = new Date(2026, 10, 20, 12);
     expect(chatExportFilename(' Ada / "Bot" ', now)).toBe("Ada-Bot-2026-11-20.md");
     expect(chatExportFilename("  ", now)).toBe("chat-2026-11-20.md");
+  });
+
+  it("dates the file with the person's own day", () => {
+    const zone = process.env.TZ;
+    process.env.TZ = "Europe/Istanbul";
+    try {
+      // Half past midnight in Istanbul, still the day before in UTC.
+      expect(chatExportFilename("Ada", new Date("2026-11-20T21:30:00Z"))).toBe("Ada-2026-11-21.md");
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
   });
 });
 

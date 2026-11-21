@@ -118,13 +118,14 @@ describePostgres("one-time waits (PostgreSQL)", () => {
 
   async function waitRow(id: string) {
     const rows = await system.$queryRaw<Array<{ endsAt: Date; minutes: number }>>`
-      SELECT "endsAt", minutes FROM dozo_routine_waits WHERE "routineId" = ${id}`;
+      SELECT "endsAt" AT TIME ZONE 'UTC' AS "endsAt", minutes
+      FROM dozo_routine_waits WHERE "routineId" = ${id}`;
     return rows[0];
   }
 
   /** Puts a wait's deadline, and its routine's next wake, at `at`. */
   async function dueAt(id: string, at: Date) {
-    await system.$executeRaw`UPDATE dozo_routine_waits SET "endsAt" = ${at} WHERE "routineId" = ${id}`;
+    await system.$executeRaw`UPDATE dozo_routine_waits SET "endsAt" = ${at.toISOString()}::timestamptz WHERE "routineId" = ${id}`;
     await system.routine.update({ where: { id }, data: { nextRunAt: at } });
   }
 
@@ -164,7 +165,7 @@ describePostgres("one-time waits (PostgreSQL)", () => {
     const id = routineId(await wait("page"));
     const deadline = new Date(Date.now() + 5 * MINUTE);
     await dueAt(id, new Date(Date.now() - 1_000));
-    await system.$executeRaw`UPDATE dozo_routine_waits SET "endsAt" = ${deadline} WHERE "routineId" = ${id}`;
+    await system.$executeRaw`UPDATE dozo_routine_waits SET "endsAt" = ${deadline.toISOString()}::timestamptz WHERE "routineId" = ${id}`;
     const routine = await system.routine.findUniqueOrThrow({ where: { id } });
     const later = new Date(Date.now() + 15 * MINUTE);
     const quietCheck = (async () => {

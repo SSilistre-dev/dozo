@@ -63,8 +63,10 @@ start() {
     rm -f "$H/run/pwfile"
   fi
   # TCP on loopback only; no Unix socket, whose path length the user's folder could exceed.
+  # Sessions in UTC, whatever zone initdb copied from this machine: the database client reads a
+  # timestamptz in the session's zone as if it were UTC (README.md, "Start contract").
   "$PG/pg_ctl" -D "$H/pgdata" -l "$H/logs/postgres.log" -w -t 60 \
-    -o "-p $PG_PORT -c listen_addresses=127.0.0.1 -c unix_socket_directories=" start > /dev/null \
+    -o "-p $PG_PORT -c listen_addresses=127.0.0.1 -c unix_socket_directories= -c timezone=UTC" start > /dev/null \
     || die "Postgres did not start (logs/postgres.log)"
   if [ $first = 1 ]; then
     PGPASSWORD="$PG_OWNER_PASSWORD" "$PG/createdb" -h 127.0.0.1 -p "$PG_PORT" -U rakazo rakazo \

@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ChatExportRange } from "@rakazo/contracts";
 import { chatExportSince } from "@rakazo/contracts";
+import { dozoLocalDay } from "@rakazo/core";
 import {
   ContextMenuItem,
   ContextMenuRadioGroup,
@@ -24,7 +25,7 @@ export type ChatExportTarget = { botId: string } | { groupId: string };
 /** A file name from the chat's name, with what file systems refuse taken out. */
 export function chatExportFilename(name: string, now: Date): string {
   const base = name.replace(/[\\/:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "") || "chat";
-  return `${base}-${now.toISOString().slice(0, 10)}.md`;
+  return `${base}-${dozoLocalDay(now)}.md`;
 }
 
 export type DozoChatExportMenuProps = {

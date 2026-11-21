@@ -158,7 +158,7 @@ export async function changePlanQuota(
 ): Promise<{ before: PlanQuota; after: PlanQuota }> {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`
-      INSERT INTO "dozo_plan_quotas" ("tier", "updatedAt") VALUES (${tier}, CURRENT_TIMESTAMP)
+      INSERT INTO "dozo_plan_quotas" ("tier", "updatedAt") VALUES (${tier}, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
       ON CONFLICT ("tier") DO NOTHING`;
     const rows = await tx.$queryRaw<Row[]>`
       SELECT "tier", "sharedSpaceMb", "computerHours"
@@ -172,7 +172,7 @@ export async function changePlanQuota(
         "sharedSpaceMb" = ${after.sharedSpaceMb},
         "computerHours" = ${after.computerHours},
         "updatedByUserId" = ${byUserId},
-        "updatedAt" = CURRENT_TIMESTAMP
+        "updatedAt" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
       WHERE "tier" = ${tier}`;
     for (const key of DOZO_PLAN_QUOTA_KEYS)
       if (before[key] !== after[key])

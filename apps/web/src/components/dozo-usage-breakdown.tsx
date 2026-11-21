@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoUsageGroup, DozoUsageGrouping, UsageSummary } from "@rakazo/contracts";
+import { dozoLocalDay } from "@rakazo/core";
 import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import {
   Table,
@@ -67,7 +68,7 @@ export function DozoUsageBreakdown() {
   async function download() {
     try {
       const { csv } = await queries.dozoUsage.csv.call({ by });
-      const day = new Date().toISOString().slice(0, 10);
+      const day = dozoLocalDay(new Date());
       downloadArtifactBytes(`usage-${by}-${day}.csv`, "text/csv", new TextEncoder().encode(csv));
     } catch (error) {
       toastError(t`Could not export`, error);
