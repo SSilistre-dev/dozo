@@ -15,3 +15,8 @@ export function dozoTokenNonce(key: string): string {
 export function isDozoTokenNonce(nonce: string | null | undefined): boolean {
   return Boolean(nonce?.startsWith(DOZO_TOKEN_NONCE_PREFIX));
 }
+
+/** What a message's payload carries to say it came in with a token, from its client nonce. */
+export function dozoViaTokenField(nonce: string | null | undefined): { dozoViaToken?: true } {
+  return isDozoTokenNonce(nonce) ? { dozoViaToken: true } : {};
+}

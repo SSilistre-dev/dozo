@@ -331,29 +331,40 @@ server-sent events, read the chat, export it. Each call carries a personal acces
 Settings > General > Security > Access tokens (`apps/web/src/components/dozo-access-tokens.tsx`).
 
 A token belongs to one member in one Space and can be limited to one bot. Only its SHA-256 and last
-four characters are stored (`dozo_access_tokens`); it is shown once. It is read from the
-`Authorization` header only, never a cookie or the address, so another site cannot call the API
-with a signed-in browser. It reaches the app's own send, transcript and export procedures as its
-member (`createRouterClient`), so access checks, approvals and model limits are the app's: an
-approval ends the stream with `waiting_input`, and the client follows the run again afterwards
-with `Last-Event-ID`. Settings, billing, members and tokens are out of its reach: the app's RPC
-never accepts a token. Making and revoking one is in the activity log; the list shows when each was
-last used (written at most once a minute). A token goes with its bot, with the member's place in
-the Space, and stops working for a deactivated or banned account. Like other personal access
-tokens it does not expire and outlives signing out or a password change: revoke it in the list.
+four characters are stored (`dozo_access_tokens`); it is shown once. Making one asks the person to
+confirm it is them (as revealing a secret does) and mails the account's address when a mail
+provider is set. It lasts 90 days unless made to never expire, and every token stops when the
+account's password changes or is reset. It goes with its bot and with the member's place in the
+Space, and stops for a deactivated or banned account. Revoking ends open streams within 10 seconds;
+runs already started go on. Making and revoking one is in the activity log; the list shows when
+each was last used.
 
-A message sent with a token is not the owner's own word: it may come from another program or
-agent. It is saved with an `api:` client nonce (`packages/core/src/dozo-token-source.ts`, shared
-with MCP), shows a small key above it in the web chat, and a run it starts, steers or answers
-(`packages/adapters/src/dozo-token-run.ts`) asks the person before every action with an outside
-effect (a send, a connector write, a command on their own computer), even in Never ask or Auto
-review; its approval cards have no Always allow, and the sites and recipients it names are not
-trusted as the owner's. The API call does not wait: its stream ends with `waiting_input`.
+It is read from the `Authorization` header only, never a cookie or the address, so another site
+cannot call the API with a signed-in browser. It reaches the app's own send, transcript and export
+procedures as its member (`createRouterClient`), so access checks, approvals and model limits are
+the app's. Settings, billing, members and tokens are out of its reach: the app's RPC never accepts a
+token. A stop word is refused (in the app it stops every run in the chat): stop a run in the app.
 
-Limits: 60 requests a minute and 3 open streams per token, per API instance; a stream ends after 10
-minutes with `running`. Not yet: the mobile app has no token screen (a token is for a computer's
-scripts; make one on web or desktop) and shows no key on a message sent with one, and there is no
-group chat or attachment support.
+Token gate (`packages/adapters/src/dozo-token-run.ts`, shared with MCP). Text sent with a token may
+come from another program or agent, so it is not the owner's word. It is saved with an `api:` client
+nonce (`packages/core/src/dozo-token-source.ts`) and shows a small key above it on web and mobile.
+A bot is marked while its chat holds such a message (clearing the chat ends it), while a marked
+run of another bot has written to it, handed off to it or made it a routine (until its chat is
+cleared after that), or while a bot it was spawned from is marked; background helpers and routines
+of a marked bot are its runs. In a run of a marked bot every call that is not a plain read asks the
+person, even in Never ask or Auto review: sends, connector writes, the cloud computer, the browser,
+files, memory, settings, routines, other bots and the user's own computer. Its cards say why and
+have no Always allow, the run starts as having read outside content, and when a token's message
+started it, the sites it names are not trusted. An approved call goes ahead once without asking
+again; the API call does not wait: its stream ends with `waiting_input`. A background helper of a
+marked bot cannot ask, so it refuses such calls.
+
+Limits: 60 requests a minute per token and 20 messages a minute per account, counted in Postgres
+for every API instance (`dozo_api_minutes`); 120 requests a minute per address before any token is
+looked up and 3 open streams per token, per instance. A stream ends after 10 minutes with
+`running`. Not yet: the mobile app has no token screen (a token is for a computer's scripts; make
+one on web or desktop), the notice mail is in English, and there is no group chat or attachment
+support.
 
 ## Commands on your own computer
 

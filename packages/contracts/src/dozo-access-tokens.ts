@@ -14,13 +14,20 @@ export const DozoAccessTokenSchema = z.object({
   hint: z.string(),
   createdAt: IsoDate,
   lastUsedAt: IsoDate.nullable(),
+  /** Null for a token made to never expire. */
+  expiresAt: IsoDate.nullable(),
 });
 export type DozoAccessToken = z.infer<typeof DozoAccessTokenSchema>;
+
+/** How long a new token lasts unless its maker chooses never. */
+export const DOZO_ACCESS_TOKEN_DAYS = 90;
 
 export const DozoAccessTokenCreateInputSchema = z.object({
   name: z.string().trim().min(1).max(60),
   /** Absent: every bot the member can talk to in the Space. */
   botId: Id.optional(),
+  /** Days until it stops working by itself; null never. */
+  expiresInDays: z.union([z.literal(90), z.null()]).default(DOZO_ACCESS_TOKEN_DAYS),
 });
 export type DozoAccessTokenCreateInput = z.infer<typeof DozoAccessTokenCreateInputSchema>;
 

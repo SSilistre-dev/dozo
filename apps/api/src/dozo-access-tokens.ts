@@ -11,6 +11,8 @@ import {
   revokeDozoAccessToken,
   runAsSystem,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
+import { requireIdentityConfirmation } from "./identity-confirmation.js";
 import type { RouterContext } from "./routes/context.js";
 import { resolveThreadTarget } from "./thread-target.js";
 
@@ -23,6 +25,7 @@ function accessTokenDto(row: DozoAccessTokenRow): DozoAccessToken {
     hint: row.hint,
     createdAt: row.createdAt.toISOString(),
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
   };
 }
 
@@ -36,9 +39,18 @@ export function dozoAccessTokensRoutes(ctx: RouterContext) {
   return {
     dozoAccessTokens: {
       list: authed.dozoAccessTokens.list.handler(async ({ context }) =>
-        (await listDozoAccessTokens(deps.prisma, context.actor)).map(accessTokenDto),
+        // As the system, so the account's password changes (security events, which a member cannot
+        // read) leave out the tokens they revoked; the query names the member's own tokens only.
+        (
+          await runAsSystem("list a member's access tokens", () =>
+            listDozoAccessTokens(deps.prisma, context.actor),
+          )
+        ).map(accessTokenDto),
       ),
       create: authed.dozoAccessTokens.create.handler(async ({ context, input }) => {
+        // A token outlives the session that makes it, so that session must have just confirmed it is
+        // the person: a session taken over cannot quietly leave one behind.
+        await requireIdentityConfirmation(deps.auth, context);
         // Only a bot the member can talk to: the same check a send makes.
         const target = input.botId
           ? await resolveThreadTarget(deps.prisma, context.actor, { botId: input.botId })
@@ -47,11 +59,21 @@ export function dozoAccessTokensRoutes(ctx: RouterContext) {
         const created = await createDozoAccessToken(deps.prisma, context.actor, {
           name: input.name,
           botId: bot?.id ?? null,
+          expiresAt:
+            input.expiresInDays === null
+              ? null
+              : new Date(Date.now() + input.expiresInDays * DAY_MS),
         });
         if (!created)
           throw new ClientError(
             "CONFLICT",
             `You can have ${DOZO_ACCESS_TOKEN_LIMIT} tokens; revoke one first`,
+          );
+        // The account's address hears of every new token, so one made without them is noticed.
+        if (deps.email)
+          void bestEffort(
+            "access token notice",
+            deps.email.send(accessTokenNotice(context.actor.email, input.name, bot?.name ?? null)),
           );
         return {
           token: created.token,
@@ -63,6 +85,21 @@ export function dozoAccessTokensRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
     },
+  };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The mail that tells an account a token was made for it. Plain words, no link to follow. */
+export function accessTokenNotice(to: string, name: string, botName: string | null) {
+  const reach = botName ? `the bot ${botName}` : "your bots";
+  return {
+    to,
+    subject: "A new access token for your Dozo account",
+    text: [
+      `An access token named "${name}" was made for your account. It can send messages to ${reach} and read their chats.`,
+      "If you did not make it, revoke it in Settings > General > Security > Access tokens and change your password.",
+    ].join("\n\n"),
   };
 }
 
