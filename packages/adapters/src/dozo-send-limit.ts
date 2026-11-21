@@ -45,14 +45,17 @@ export function pageSends(
     if (typeof step.kind === "string" && SIGN_IN_STEPS.has(step.kind)) signIn = true;
     // Typed text with a line break is both: it goes in, and Enter sends it.
     if (typeof step.kind === "string" && ENTRY_STEPS.has(step.kind)) held = true;
-    if (presses(step) && held) {
-      if (!signIn) sends++;
+    if (presses(step)) {
+      if (held && !signIn) sends++;
       held = false;
       signIn = false;
     }
   }
   return { sends, after: { held, signIn } };
 }
+
+/** Calls held for the daily limit, with the number the card names. */
+const limitAsks = new WeakMap<Record<string, unknown>, number>();
 
 /** Input left unsent on a page, per run, with the address of that page. */
 const unsent = new WeakMap<RunContext, PendingInput & { url: string | undefined }>();
@@ -63,10 +66,12 @@ const unsent = new WeakMap<RunContext, PendingInput & { url: string | undefined 
  * on, drops it. Kept in this process for the run; a resumed run starts with none.
  */
 function pageActSends(ctx: RunContext, args: Record<string, unknown>): number {
+  const steps = stepsOf(args);
+  if (!steps.length) return 0;
   const url = ctx.state.pageUrl;
   const kept = unsent.get(ctx);
   const before = kept && kept.url === url ? kept : { held: false, signIn: false };
-  const { sends, after } = pageSends(stepsOf(args), before);
+  const { sends, after } = pageSends(steps, before);
   if (after.held) unsent.set(ctx, { ...after, url });
   else unsent.delete(ctx);
   return sends;

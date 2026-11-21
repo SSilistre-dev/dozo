@@ -7761,6 +7761,15 @@
         "packages/adapters/src/dozo-watch-command-rules.ts"
       ],
       "reason": "command rules: a routine's command watch checks the member's block rules at every check, so a block added after the routine was made stops it"
+    },
+    {
+      "file": "packages/adapters/src/routine-watch.test.ts",
+      "find": "vi.mock(\"./computer-idle.js\", () => ({ scheduleComputerSleep: vi.fn() }));\n\nconst NOW = ",
+      "replace": "vi.mock(\"./computer-idle.js\", () => ({ scheduleComputerSleep: vi.fn() }));\n// The fork's block rules read the database, which this test's fake does not answer; they have\n// their own test (dozo-watch-command-rules.test.ts).\nvi.mock(\"./dozo-watch-command-rules.js\", () => ({ dozoWatchCommandRefusal: async () => undefined }));\n\nconst NOW = ",
+      "requires": [
+        "packages/adapters/src/dozo-watch-command-rules.ts"
+      ],
+      "reason": "command rules: upstream's routine watch test fakes the database without raw queries, so the fork's block check is replaced there as other fork reads are; it has its own test"
     }
   ],
   "assets": {

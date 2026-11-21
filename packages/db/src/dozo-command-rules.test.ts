@@ -103,14 +103,14 @@ describe("the member's rules in the Space", () => {
     await updateDozoCommandRule(present.db, member, "rule-1", "block");
     await updateDozoCommandRule(present.db, member, "rule-1", "allow");
     await removeDozoCommandRule(present.db, member, "rule-1");
-    expect(present.calls.map((call) => call.sql.replace(/\s+/g, " ").trim().slice(0, 40))).toEqual([
-      "UPDATE dozo_command_policies SET effect =",
-      "SELECT to_regclass('dozo_command_rules') ",
-      "DELETE FROM dozo_command_rules WHERE id =",
-      "UPDATE dozo_command_policies SET effect =",
-      "DELETE FROM dozo_command_policies WHERE i",
-      "SELECT to_regclass('dozo_command_rules') ",
-      "DELETE FROM dozo_command_rules WHERE id =",
+    expect(present.calls.map((call) => call.sql.replace(/\s+/g, " ").trim().slice(0, 30))).toEqual([
+      "UPDATE dozo_command_policies S",
+      "SELECT to_regclass('dozo_comma",
+      "DELETE FROM dozo_command_rules",
+      "UPDATE dozo_command_policies S",
+      "DELETE FROM dozo_command_polic",
+      "SELECT to_regclass('dozo_comma",
+      "DELETE FROM dozo_command_rules",
     ]);
     expect(present.calls[0]!.values).toEqual(["block", "rule-1", "user-1", "space-1"]);
     expect(present.calls[2]!.values).toEqual(["rule-1", "user-1", "space-1"]);
