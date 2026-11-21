@@ -256,7 +256,8 @@ describe("dozoBotChats", () => {
     const back = service(fakeDb({ row: chat({ archivedAt: createdAt }) }).db);
     await back.chats.archive(actor, { chatId: "thread-2", archived: false });
     // Archiving an archived chat again is a no-op: nothing to stop there.
-    await back.chats.archive(actor, { chatId: "thread-2", archived: true });
+    const again = service(fakeDb({ row: chat({ archivedAt: createdAt }) }).db);
+    await again.chats.archive(actor, { chatId: "thread-2", archived: true });
     expect(mocks.stopThreadRuns).toHaveBeenCalledTimes(1);
   });
 
