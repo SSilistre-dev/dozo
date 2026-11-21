@@ -79,8 +79,14 @@ test("parola sıfırlama: bağlantı isteği ve geçersiz bağlantı", async ({ 
   await page.goto("/forgot-password?lang=tr");
   await page.getByPlaceholder("E-posta adresiniz").fill(uniqueEmail("reset"));
   await page.getByRole("button", { name: "Sıfırlama bağlantısı gönder" }).click();
-  // This stack sends no mail: the page says so instead of pretending a link went out.
-  await expect(page.getByText("Bu sunucu için parola kurtarma yapılandırılmamış")).toBeVisible();
+  // A stack that sends no mail says so instead of pretending a link went out; one with the email
+  // emulator (DOZO_EMAIL_EMULATOR=1) sends it.
+  const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
+  await expect(
+    capabilities.passwordReset
+      ? page.getByRole("heading", { name: "E-postanızı kontrol edin" })
+      : page.getByText("Bu sunucu için parola kurtarma yapılandırılmamış"),
+  ).toBeVisible();
   await page.goto("/reset-password?token=e2e-not-a-token&lang=tr");
   await expect(page.getByRole("button", { name: "Parolayı sıfırla" })).toBeVisible();
 });

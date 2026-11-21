@@ -474,7 +474,9 @@ test.describe("signed out", () => {
       await expect(field).toHaveCSS("border-radius", "12px");
       await expect(field).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
     }
-    const submit = page.getByRole("button", { name: "Sign in", exact: true });
+    // Upstream's button reads "Continue" while the password is empty (a blank password asks for a
+    // code where the server has them) and "Sign in" otherwise.
+    const submit = page.locator('[data-rakazo-surface="auth"] form button[type="submit"]');
     await expect(submit).toHaveCSS("height", "44px");
     await expect(submit).toHaveCSS("border-radius", "999px");
     expect((await page.locator('[data-rakazo-surface="auth"] form').boundingBox())?.width).toBe(

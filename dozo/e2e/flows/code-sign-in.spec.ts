@@ -1,12 +1,17 @@
 import type { Page } from "@playwright/test";
-import { readWorld } from "../fixtures";
+import { uniqueEmail } from "./accounts";
 import { expect, SIGNED_OUT, test } from "./flow";
 
 /**
- * Sign-in by emailed code, end to end with a real code: the setup's account asks for a code, the
- * stack's email emulator captures the mail (start the stack with DOZO_EMAIL_EMULATOR=1, see
+ * Sign-in by emailed code, end to end with a real code: an address asks for a code, the stack's
+ * email emulator captures the mail (start the stack with DOZO_EMAIL_EMULATOR=1, see
  * dozo/docker/README.md), and the code read back from it signs in. A wrong code first gets the one
  * line of error. A stack that sends no mail skips this, and its sign-in page is upstream's form.
+ *
+ * A new address, not the setup's account: this stack opens sign-up, so the code makes the account
+ * (the server's sign-up policy decides that, not the page). And a code that proves an unverified
+ * account's mailbox drops its earlier logins, its password included (upstream's guard against an
+ * address someone else registered first), which would sign the shared account out of later tests.
  */
 test.use({ storageState: SIGNED_OUT });
 
@@ -29,7 +34,7 @@ test("an emailed code signs in; a wrong one is said in one line", async ({ page,
     "the stack sends no mail: start it with DOZO_EMAIL_EMULATOR=1",
   );
   guard.allow(/400 POST [^ ]*\/api\/auth\/sign-in\/email-otp/, "the wrong code is the point");
-  const { user } = readWorld();
+  const user = { email: uniqueEmail("code") };
   const before = (await mailsTo(page, user.email)).length;
 
   await page.goto("/sign-in");
@@ -55,6 +60,8 @@ test("an emailed code signs in; a wrong one is said in one line", async ({ page,
   await expect(page).toHaveURL(/\/sign-in/);
 
   await box.fill(code as string);
+  // A new account goes on to onboarding; the session is the address's.
   await page.waitForURL(/\/(app|onboarding)/);
-  await expect(page.getByTestId("user-menu-trigger")).toBeVisible();
+  const session = await (await page.request.get("/api/auth/get-session")).json();
+  expect(session?.user?.email).toBe(user.email);
 });
