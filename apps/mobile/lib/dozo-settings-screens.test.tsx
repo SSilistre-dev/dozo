@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
 import { dozoLocalDay } from "@rakazo/core";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -32,6 +32,7 @@ const ui = vi.hoisted(() => ({
   header: undefined as Header | undefined,
   rosterReads: [] as (() => unknown)[],
   menus: [] as { title: string; actions: MenuAction[]; press: (id: string) => void }[],
+  a11y: {} as Record<string, { names: string[]; act: (name: string) => void }>,
 }));
 
 vi.mock("react-native", () => ({
@@ -144,6 +145,7 @@ vi.mock("../components/settings-group", () => ({
     value,
     dimmed,
     onPress,
+    accessibilityActions,
     onAccessibilityAction,
   }: {
     title: string;
@@ -151,20 +153,28 @@ vi.mock("../components/settings-group", () => ({
     value?: string;
     dimmed?: boolean;
     onPress?: () => void;
+    accessibilityActions?: { name: string; label: string }[];
     onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
-  }) => (
-    <li data-dimmed={dimmed ? "yes" : undefined}>
-      <button
-        type="button"
-        onClick={onPress}
-        onDoubleClick={() => onAccessibilityAction?.({ nativeEvent: { actionName: "remove" } })}
-      >
-        {title}
-      </button>
-      {detail ? <small>{detail}</small> : null}
-      {value ? <b>{value}</b> : null}
-    </li>
-  ),
+  }) => {
+    if (accessibilityActions)
+      ui.a11y[title] = {
+        names: accessibilityActions.map((action) => `${action.name}:${action.label}`),
+        act: (name) => onAccessibilityAction?.({ nativeEvent: { actionName: name } }),
+      };
+    return (
+      <li data-dimmed={dimmed ? "yes" : undefined}>
+        <button
+          type="button"
+          onClick={onPress}
+          onDoubleClick={() => onAccessibilityAction?.({ nativeEvent: { actionName: "remove" } })}
+        >
+          {title}
+        </button>
+        {detail ? <small>{detail}</small> : null}
+        {value ? <b>{value}</b> : null}
+      </li>
+    );
+  },
   SettingsSwitch: ({
     label,
     detail,
@@ -232,6 +242,7 @@ beforeEach(() => {
   ui.header = undefined;
   ui.rosterReads = [];
   ui.menus = [];
+  ui.a11y = {};
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -366,9 +377,26 @@ describe("usage on mobile", () => {
 
 describe("commands on mobile", () => {
   const rules = [
-    { id: "r1", botId: "b", botName: "Ada", words: ["npm", "test"], cwd: "~/app" },
-    { id: "r2", botId: "b", botName: "Ada", words: ["make"], cwd: "" },
+    {
+      id: "r1",
+      botId: "b",
+      botName: "Ada",
+      words: ["cat", "notes"],
+      cwd: "~/app",
+      effect: "allow",
+      computer: "user",
+    },
+    {
+      id: "r2",
+      botId: "b",
+      botName: "Ada",
+      words: ["make"],
+      cwd: "",
+      effect: "allow",
+      computer: "user",
+    },
   ];
+  const menu = (title: string) => ui.menus.filter((entry) => entry.title === title).at(-1)!;
 
   it("shows the Commands row only while a command is always allowed", async () => {
     const open = vi.fn();
@@ -386,17 +414,20 @@ describe("commands on mobile", () => {
   it("lists each command with its bot and folder, and removes one", async () => {
     answers["dozoCommandRules/list"] = rules;
     await render(<DozoCommands />);
-    await settle(() => expect(text()).toContain("npm test"));
+    await settle(() => expect(text()).toContain("cat notes"));
     expect(ui.header?.title).toBe("Commands");
     expect(text()).toContain("Ada, ~/app");
-    expect(ui.menus.at(-1)!.actions).toEqual([
+    expect(menu("cat notes").actions).toEqual([
+      { id: "allow", title: "Allow", state: "on" },
+      { id: "allow_prefix", title: "Allow with arguments", state: "off" },
+      { id: "block", title: "Block", state: "off" },
       { id: "remove", title: "Remove", attributes: { destructive: true } },
     ]);
 
     answers["dozoCommandRules/remove"] = { ok: true };
     answers["dozoCommandRules/list"] = [rules[1]];
-    await act(async () => ui.menus.find((menu) => menu.title === "npm test")!.press("remove"));
-    await settle(() => expect(text()).not.toContain("npm test"));
+    await act(async () => ui.menus.find((menu) => menu.title === "cat notes")!.press("remove"));
+    await settle(() => expect(text()).not.toContain("cat notes"));
     expect(calls("dozoCommandRules/remove")[0]![1]).toEqual({ id: "r1" });
 
     answers["dozoCommandRules/remove"] = new Error("Gone");
@@ -404,6 +435,100 @@ describe("commands on mobile", () => {
       button("make")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
     );
     await settle(() => expect(ui.alert).toHaveBeenCalledWith("Could not remove rule", "Gone"));
+  });
+
+  it("marks arguments, names the bot's computer, and leaves both off a block", async () => {
+    answers["dozoCommandRules/list"] = [
+      { ...rules[0], effect: "allow_prefix", computer: "hosted" },
+      { ...rules[1], cwd: "~/repo", effect: "block", computer: "hosted" },
+    ];
+    await render(<DozoCommands />);
+    await settle(() => expect(text()).toContain("cat notes …"));
+    expect(text()).toContain("Ada, ~/app, Bot computer");
+    expect([...container.querySelectorAll("small")].map((entry) => entry.textContent)).toEqual([
+      "Ada, ~/app, Bot computer",
+      "Ada",
+    ]);
+    expect(menu("cat notes").actions.find((action) => action.state === "on")!.id).toBe(
+      "allow_prefix",
+    );
+    expect(menu("make").actions.map((action) => [action.id, action.state])).toEqual([
+      ["allow", "off"],
+      ["block", "on"],
+      ["remove", undefined],
+    ]);
+  });
+
+  it("offers arguments only where a prefix rule is allowed, or already saved", async () => {
+    answers["dozoCommandRules/list"] = [
+      { ...rules[0], id: "a", words: ["bash", "-c"] },
+      { ...rules[0], id: "b", words: ["sh", "-c"], effect: "allow_prefix" },
+      { ...rules[0], id: "c", words: ["head", "notes"], cwd: ".ssh" },
+    ];
+    await render(<DozoCommands />);
+    await settle(() => expect(text()).toContain("bash -c"));
+    // A reader in a secret folder stays exact.
+    expect(menu("head notes").actions.map((action) => action.id)).toEqual([
+      "allow",
+      "block",
+      "remove",
+    ]);
+    expect(menu("bash -c").actions.map((action) => action.id)).toEqual([
+      "allow",
+      "block",
+      "remove",
+    ]);
+    expect(menu("sh -c").actions.map((action) => action.id)).toEqual([
+      "allow",
+      "allow_prefix",
+      "block",
+      "remove",
+    ]);
+    expect(ui.a11y["bash -c"]!.names).toEqual(["allow:Allow", "block:Block", "remove:Remove"]);
+  });
+
+  it("changes what a rule does from its menu or its accessibility actions", async () => {
+    answers["dozoCommandRules/list"] = rules;
+    await render(<DozoCommands />);
+    await settle(() => expect(text()).toContain("cat notes"));
+    expect(ui.a11y["cat notes"]!.names).toEqual([
+      "allow:Allow",
+      "allow_prefix:Allow with arguments",
+      "block:Block",
+      "remove:Remove",
+    ]);
+
+    // Choosing what the rule already does sends nothing.
+    await act(async () => menu("cat notes").press("allow"));
+    expect(calls("dozoCommandRules/update")).toHaveLength(0);
+
+    answers["dozoCommandRules/update"] = { ok: true };
+    answers["dozoCommandRules/list"] = [{ ...rules[0], effect: "allow_prefix" }, rules[1]];
+    await act(async () => menu("cat notes").press("allow_prefix"));
+    await settle(() => expect(text()).toContain("cat notes …"));
+    expect(calls("dozoCommandRules/update")[0]![1]).toEqual({ id: "r1", effect: "allow_prefix" });
+
+    answers["dozoCommandRules/list"] = [rules[0], { ...rules[1], effect: "block" }];
+    await act(async () => ui.a11y.make!.act("block"));
+    await settle(() =>
+      expect(menu("make").actions.find((action) => action.state === "on")!.id).toBe("block"),
+    );
+    expect(calls("dozoCommandRules/update")[1]![1]).toEqual({ id: "r2", effect: "block" });
+  });
+
+  it("holds the rule at its new effect while the change is in flight, then says when it fails", async () => {
+    answers["dozoCommandRules/list"] = rules;
+    await render(<DozoCommands />);
+    await settle(() => expect(text()).toContain("cat notes"));
+    const saving = deferred<unknown>();
+    answers["dozoCommandRules/update"] = () => saving.promise;
+    await act(async () => menu("cat notes").press("block"));
+    expect(text()).toContain("cat notes");
+    expect(text()).not.toContain("~/app");
+    expect(container.querySelectorAll("[data-dimmed]")).toHaveLength(2);
+    await act(async () => saving.reject(new Error("Refused")));
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Could not update rule", "Refused"));
+    await settle(() => expect(text()).toContain("Ada, ~/app"));
   });
 });
 
