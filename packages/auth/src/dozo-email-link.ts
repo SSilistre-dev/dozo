@@ -3,6 +3,7 @@ import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
+import { emailBanned } from "./dozo-operator.js";
 import type { EmailLocaleOf } from "./email.js";
 import { verificationEmail } from "./email.js";
 
@@ -98,16 +99,20 @@ export type VerificationMailDeps = {
 };
 
 /**
- * Sends one verification mail unless the address had its share this hour. Never rejects: a
- * failure goes to `onError`, the caller does not wait for it.
+ * Sends one verification mail unless the account is deactivated, its address is banned, or the
+ * address had its share this hour. A deactivated account or a banned address gets nothing and is
+ * not counted: the auth library sends this mail before it refuses an unverified password sign-in,
+ * so the checks where a session is made come too late to stop it. Never rejects: a failure goes
+ * to `onError`, the caller does not wait for it.
  */
 export async function sendVerificationMail(
   deps: VerificationMailDeps,
-  user: { id: string; email: string },
+  user: { id: string; email: string; deactivatedAt?: Date | null },
   url: string,
   headers?: Headers | null,
 ): Promise<void> {
   try {
+    if (user.deactivatedAt || (await emailBanned(deps.prisma, user.email))) return;
     if (!(await takeVerificationMail(deps.prisma, user.email))) return;
     const link = new URL(url);
     link.searchParams.set(

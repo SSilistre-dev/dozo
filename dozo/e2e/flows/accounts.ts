@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { Browser, BrowserContext, Page, Route } from "@playwright/test";
 import { expect } from "@playwright/test";
 import { outDir } from "../scan";
-import { PASSWORD } from "../support";
+import { PASSWORD, verificationLinkAfter } from "../support";
 
 /** The stack's admin, signed up and verified by run.sh (RAKAZO_ADMIN_EMAILS, first address). */
 export const ADMIN = {
@@ -24,6 +24,26 @@ async function authCall(page: Page, path: string, data: unknown) {
     headers: { origin: BASE },
   });
   expect(response.status(), `${path} answered ${response.status()}`).toBe(200);
+  return response;
+}
+
+/**
+ * Turkish page, password form open. Sign-in by emailed code offers the password one step away;
+ * sign-up and a server without codes show the form, or a choice of providers first.
+ */
+export async function openPasswordFormTr(page: Page) {
+  const password = page.getByRole("button", { name: "Bunun yerine şifre kullan" });
+  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
+  const field = page.getByPlaceholder("Parola");
+  await expect(password.or(choice).or(field).first()).toBeVisible();
+  if (await password.isVisible()) await password.click();
+  else if (await choice.isVisible()) await choice.click();
+  await expect(field).toBeVisible();
+}
+
+export async function emailFormTr(page: Page, path: string) {
+  await page.goto(`${path}?lang=tr`);
+  await openPasswordFormTr(page);
 }
 
 /** A browser of its own, signed in through the auth API (one credential call). */
@@ -38,12 +58,22 @@ export async function signedInAs(
   return { context, page };
 }
 
-/** A new account through the auth API, in a browser of its own (one credential call). */
+/**
+ * A new account through the auth API, in a browser of its own. A stack with mail asks for the
+ * mailbox first (`token: null`, no session): the mail's link is opened with the same browser, which
+ * holds it, and the password sign-in then verifies the address and opens the session. That is a
+ * second credential call; a stack without mail needs one.
+ */
 export async function newAccount(browser: Browser, prefix: string) {
   const user = { email: uniqueEmail(prefix), name: `E2E ${prefix}`, password: PASSWORD };
   const context = await browser.newContext({ baseURL: BASE, viewport: VIEWPORT });
   const page = await context.newPage();
-  await authCall(page, "sign-up/email", user);
+  const signUp = await authCall(page, "sign-up/email", user);
+  if (((await signUp.json()) as { token?: string | null }).token === null) {
+    const link = await verificationLinkAfter(page.request, user.email, 0);
+    expect((await page.request.get(link)).ok(), "the verification link opened").toBe(true);
+    await authCall(page, "sign-in/email", { email: user.email, password: user.password });
+  }
   return { context, page, user };
 }
 

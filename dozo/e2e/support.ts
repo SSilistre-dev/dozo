@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
 export const PASSWORD = "dozo-e2e-pass-12";
@@ -34,7 +34,71 @@ export function expectNotRateLimited(
   }
 }
 
-/** Signs up through the real form. Fails with a clear message when mail confirmation is required. */
+export type Mail = { to?: string | string[]; subject?: string; text?: string; html?: string };
+
+/**
+ * Everything the stack's email emulator captured since the stack started. On a loaded machine the
+ * whole mailbox can take long or arrive cut short through the web server; a caller that polls
+ * reads it again.
+ */
+const readMailbox = (request: APIRequestContext) =>
+  request.get("/api/dev/emails", { timeout: 30_000 });
+
+/** What the stack's email emulator holds for `address`; empty on a stack that has none. */
+export async function mailsTo(request: APIRequestContext, address: string): Promise<Mail[]> {
+  const response = await readMailbox(request);
+  if (!response.ok()) return [];
+  const all = (await response.json()) as Mail[];
+  return all.filter((mail) => [mail.to].flat().includes(address));
+}
+
+/** Whether this stack captures mail (started with DOZO_EMAIL_EMULATOR=1). */
+export async function stackReadsMail(request: APIRequestContext) {
+  return (await readMailbox(request)).ok();
+}
+
+/** The six digits of a sign-in code mail. */
+export const codeIn = (mail: Mail | undefined) =>
+  /\b(\d{6})\b/.exec(`${mail?.text ?? ""} ${mail?.html ?? ""}`)?.[1];
+
+/**
+ * The verification link of a mail as a path on the stack under test (`/api/auth/verify-email?...`),
+ * whatever host the mail names. The HTML form writes `&` as `&amp;`.
+ */
+export function linkIn(mail: Mail | undefined): string | undefined {
+  const found = /https?:\/\/[^\s"'<>)\]]*\/api\/auth\/verify-email\?[^\s"'<>)\]]+/.exec(
+    `${mail?.text ?? ""} ${mail?.html ?? ""}`,
+  );
+  if (!found) return undefined;
+  const url = new URL(found[0].replaceAll("&amp;", "&"));
+  return `${url.pathname}${url.search}`;
+}
+
+/** Waits for a verification mail to `address` newer than the `before` mails already there. */
+export async function verificationLinkAfter(
+  request: APIRequestContext,
+  address: string,
+  before: number,
+) {
+  let link: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        const mails = await mailsTo(request, address);
+        link = mails.length > before ? linkIn(mails.at(-1)) : undefined;
+        return link;
+      },
+      { message: `a verification mail to ${address}`, timeout: 60_000 },
+    )
+    .toBeTruthy();
+  return link as string;
+}
+
+/**
+ * Signs up through the real form. A stack that asks for the mailbox first (it has a mail provider)
+ * is finished through its mail: the link opens in this browser, the result page asks to sign in,
+ * and the password does. A stack that asks for a mailbox but captures none fails with a clear message.
+ */
 export async function signUpThroughForm(page: Page, user = throwawayUser()) {
   await page.goto("/sign-up");
   await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
@@ -42,6 +106,7 @@ export async function signUpThroughForm(page: Page, user = throwawayUser()) {
   await page.getByPlaceholder("Your name").fill(user.name);
   await page.getByPlaceholder("Your email address").fill(user.email);
   await page.getByPlaceholder("Password").fill(user.password);
+  const before = (await mailsTo(page.request, user.email)).length;
   const signUp = page.waitForResponse((r) => r.url().includes("/api/auth/sign-up/email"));
   await page.getByRole("button", { name: "Create account" }).click();
   const response = await signUp;
@@ -51,9 +116,20 @@ export async function signUpThroughForm(page: Page, user = throwawayUser()) {
   const verify = page.getByRole("heading", { name: "Check your email" });
   await Promise.race([landed, verify.waitFor({ timeout: 30_000 })]);
   if (await verify.isVisible().catch(() => false)) {
-    throw new Error(
-      "sign-up needs mail confirmation; this stack cannot create an account without it",
-    );
+    if (!(await stackReadsMail(page.request))) {
+      throw new Error(
+        "sign-up needs mail confirmation; this stack cannot create an account without it",
+      );
+    }
+    await page.goto(await verificationLinkAfter(page.request, user.email, before));
+    await expect(page.getByRole("heading", { name: "Sign in to continue" })).toBeVisible();
+    await page.getByRole("link", { name: "Sign in", exact: true }).click();
+    await page.waitForURL(/\/sign-in\/email/);
+    await openEmailForm(page);
+    await page.getByPlaceholder("Your email address").fill(user.email);
+    await page.getByPlaceholder("Password").fill(user.password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.waitForURL(/\/(onboarding|app)/, { timeout: 30_000 });
   }
   return user;
 }

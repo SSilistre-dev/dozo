@@ -693,6 +693,14 @@ Accepted by the owner for now, stated here once:
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and
   does not require it). On the Linux host of `dozo/deploy/`, where the home is a named volume, the first
   boot succeeded.
+- With a mail provider, password sign-up gives no session until the address is verified, and an
+  unverified account cannot sign in with its password (`dozo-verify-email.ts`). A link opened
+  without a session is held by that browser, and signing in there with the password finishes the
+  verification. A sign-in code proves the address too, but drops an unverified account's earlier
+  logins, its password included (upstream's protection). Without a provider nothing changes. Old
+  unverified accounts keep their open sessions and are asked to verify at their next password
+  sign-in. A passkey sign-in on an old unverified account is not closed; a new account cannot have
+  one, since a passkey is added only with a session.
 
 ## Licence and attribution
 

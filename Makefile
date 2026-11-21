@@ -22,8 +22,10 @@ down:
 e2e:
 	@dozo/e2e/run.sh
 .PHONY: canli
-# The safe live smoke run: CANLI_URL=https://... make canli (no default). A throwaway account,
-# read-only steps, deleted at the end. Last line CANLI: PASS|FAIL (n senaryo); exit 0 or 2.
+# The safe live smoke run: CANLI_URL=https://... make canli (no default). The owner's standing,
+# pre-verified trial account (file outside the repo, DOZO_CANLI_ACCOUNT_FILE, default
+# $HOME/.config/dozo/canli-hesap.json; never deleted; without it the account steps are skipped),
+# read-only steps. Last line CANLI: PASS|FAIL (n senaryo); exit 0 or 2.
 # Report in dozo/.stage/canli/. See dozo/e2e/README.md.
 canli:
 	@dozo/e2e/canli.sh
