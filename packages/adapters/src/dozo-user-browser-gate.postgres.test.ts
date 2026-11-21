@@ -63,7 +63,7 @@ describePostgres("browser consents (PostgreSQL)", () => {
       }),
     );
     const thread = () =>
-      system.thread.create({ data: { spaceId, userId: id } });
+      system.thread.create({ data: { spaceId, userId: id, helperBotId: bot.id } });
     const [first, second] = [await thread(), await thread()];
     const device = await system.userDevice.create({
       data: {
