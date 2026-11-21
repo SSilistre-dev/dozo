@@ -196,9 +196,9 @@ export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events" | "sandb
     },
     async archive(actor: Actor, input: DozoBotChatArchiveInput) {
       await ofBot(actor, input.chatId);
-      if (input.archived) {
+      const row = await chatRow(prisma, actor, input.chatId);
+      if (input.archived && !row.archivedAt) {
         // Nothing new is written to an archived chat, so a turn working in it stops first.
-        const row = await chatRow(prisma, actor, input.chatId);
         const target = await resolveThreadTarget(prisma, actor, {
           chatBotId: row.botId,
           chatId: input.chatId,
