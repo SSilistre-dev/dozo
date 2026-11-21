@@ -107,13 +107,13 @@ describe("the member's rules in the Space", () => {
     await updateDozoCommandRule(present.db, member, "rule-1", "allow");
     await removeDozoCommandRule(present.db, member, "rule-1");
     expect(present.calls.map((call) => call.sql.replace(/\s+/g, " ").trim().slice(0, 30))).toEqual([
-      "UPDATE dozo_command_policies S",
       "SELECT to_regclass('dozo_comma",
       "DELETE FROM dozo_command_rules",
       "UPDATE dozo_command_policies S",
+      "UPDATE dozo_command_policies S",
+      "SELECT to_regclass('dozo_comma",
+      "DELETE FROM dozo_command_rules",
       "DELETE FROM dozo_command_polic",
-      "SELECT to_regclass('dozo_comma",
-      "DELETE FROM dozo_command_rules",
     ]);
     // The old copy goes first, so no moment exists where only the new rule changed.
     expect(present.calls[1]!.values).toEqual(["rule-1", "user-1", "space-1"]);
