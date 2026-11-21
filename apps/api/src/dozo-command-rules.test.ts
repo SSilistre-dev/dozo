@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   list: vi.fn(async () => [{ id: "rule-1" }]),
-  find: vi.fn(async (): Promise<{ words: string[]; cwd: string } | undefined> => ({
-    words: ["cat", "notes"],
-    cwd: "",
-  })),
+  find: vi.fn(
+    async (): Promise<{ words: string[]; cwd: string } | undefined> => ({
+      words: ["cat", "notes"],
+      cwd: "",
+    }),
+  ),
   update: vi.fn(async () => undefined),
   remove: vi.fn(async () => undefined),
   hasComputer: vi.fn(async () => true),

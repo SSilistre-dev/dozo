@@ -44,7 +44,9 @@ describe("matchCommandRules: allow", () => {
     ])
       expect(matchCommandRules(rules, own(command)), command).toBeUndefined();
     // An exact rule still runs the command with its options.
-    expect(matchCommandRules([rule(["grep", "todo", "-n", "5"])], own("grep todo -n 5"))).toBe("allow");
+    expect(matchCommandRules([rule(["grep", "todo", "-n", "5"])], own("grep todo -n 5"))).toBe(
+      "allow",
+    );
   });
 
   it("never lets a prefix rule pass a setting, or a subcommand that runs what it is given", () => {
@@ -238,7 +240,10 @@ describe("matchCommandRules: block", () => {
   });
 
   it("wins over an allow rule for the same command", () => {
-    const rules = [rule(["grep", "todo"], "allow_prefix"), rule(["grep", "todo", "secrets"], "block")];
+    const rules = [
+      rule(["grep", "todo"], "allow_prefix"),
+      rule(["grep", "todo", "secrets"], "block"),
+    ];
     expect(matchCommandRules(rules, own("grep todo src"))).toBe("allow_prefix");
     expect(matchCommandRules(rules, own("grep todo secrets"))).toBe("block");
     expect(
@@ -328,7 +333,14 @@ describe("review findings", () => {
   });
 
   it("B2: a short list of reading commands may take arguments", () => {
-    for (const words of [["ls"], ["cat", "notes"], ["grep", "todo"], ["head", "log.txt"], ["wc"], ["diff", "a"]])
+    for (const words of [
+      ["ls"],
+      ["cat", "notes"],
+      ["grep", "todo"],
+      ["head", "log.txt"],
+      ["wc"],
+      ["diff", "a"],
+    ])
       expect(prefixRuleAllowed(words), words.join(" ")).toBe(true);
   });
 
@@ -380,15 +392,19 @@ describe("review findings", () => {
 describe("second review", () => {
   const block = (words: string[]) => [rule(words, "block")];
 
-  it.each(["rm -rf x/../build", "rm -rf build/../build", "rm -rf ./x/../build/", "rm -rf a/b/../../build"])(
-    "a block on a folder catches %s",
-    (command) => {
-      expect(matchCommandRules(block(["rm", "-rf", "build"]), own(command))).toBe("block");
-    },
-  );
+  it.each([
+    "rm -rf x/../build",
+    "rm -rf build/../build",
+    "rm -rf ./x/../build/",
+    "rm -rf a/b/../../build",
+  ])("a block on a folder catches %s", (command) => {
+    expect(matchCommandRules(block(["rm", "-rf", "build"]), own(command))).toBe("block");
+  });
 
   it("keeps a path that climbs out of the folder apart", () => {
-    expect(matchCommandRules(block(["rm", "-rf", "build"]), own("rm -rf ../build"))).toBeUndefined();
+    expect(
+      matchCommandRules(block(["rm", "-rf", "build"]), own("rm -rf ../build")),
+    ).toBeUndefined();
     expect(matchCommandRules(block(["rm", "-rf", "/"]), own("rm -rf /x/.."))).toBe("block");
   });
 
@@ -409,7 +425,9 @@ describe("second review", () => {
     ["git", "blame"],
   ])("%s %s runs code it is given, so it is allowed exactly only", (...words) => {
     expect(prefixRuleAllowed(words)).toBe(false);
-    expect(matchCommandRules([rule(words, "allow_prefix")], own(`${words.join(" ")} evil.py`))).toBeUndefined();
+    expect(
+      matchCommandRules([rule(words, "allow_prefix")], own(`${words.join(" ")} evil.py`)),
+    ).toBeUndefined();
     expect(matchCommandRules([rule(words)], own(words.join(" ")))).toBe("allow");
   });
 
@@ -417,7 +435,10 @@ describe("second review", () => {
     for (const cwd of [".ssh", "~/.aws", "Library/Keychains", "/etc"]) {
       expect(prefixRuleAllowed(["cat", "notes"], cwd), cwd).toBe(false);
       expect(
-        matchCommandRules([rule(["cat", "notes"], "allow_prefix", { cwd })], own("cat notes x", cwd)),
+        matchCommandRules(
+          [rule(["cat", "notes"], "allow_prefix", { cwd })],
+          own("cat notes x", cwd),
+        ),
         cwd,
       ).toBeUndefined();
     }

@@ -116,7 +116,8 @@ describePostgres("command rules (PostgreSQL)", () => {
     await always(owner, "git push");
     const [rule] = await runAsTenant(owner, () => listDozoCommandRules(prisma, owner));
     await runAsTenant(owner, () =>
-      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, rule!.id, "block")));
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, rule!.id, "block")),
+    );
     await always(owner, "git push");
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toMatchObject([
       { id: rule!.id, effect: "block" },
@@ -142,21 +143,27 @@ describePostgres("command rules (PostgreSQL)", () => {
       ),
     ).toEqual([]);
     await runAsTenant(other, () =>
-      prisma.$transaction((tx) => updateDozoCommandRule(tx, other, rule!.id, "block")));
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, other, rule!.id, "block")),
+    );
     await runAsTenant(other, () =>
-      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, rule!.id, "block")));
+      prisma.$transaction((tx) => updateDozoCommandRule(tx, owner, rule!.id, "block")),
+    );
     await runAsTenant(other, () =>
-      prisma.$transaction((tx) => removeDozoCommandRule(tx, other, rule!.id)));
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, other, rule!.id)),
+    );
     await runAsTenant(other, () =>
-      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, rule!.id)));
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, rule!.id)),
+    );
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toMatchObject([
       { id: rule!.id, effect: "allow" },
     ]);
-    expect(
-      await runAsTenant(owner, () => findDozoCommandRule(prisma, owner, rule!.id)),
-    ).toEqual({ words: ["make"], cwd: "" });
+    expect(await runAsTenant(owner, () => findDozoCommandRule(prisma, owner, rule!.id))).toEqual({
+      words: ["make"],
+      cwd: "",
+    });
     await runAsTenant(owner, () =>
-      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, rule!.id)));
+      prisma.$transaction((tx) => removeDozoCommandRule(tx, owner, rule!.id)),
+    );
     expect(await runAsTenant(owner, () => listDozoCommandRules(prisma, owner))).toEqual([]);
   });
 
