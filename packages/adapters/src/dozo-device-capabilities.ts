@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import type { UserDevice } from "./user-device-protocol.js";
 
 /**
@@ -78,15 +79,16 @@ export function deviceOffers(device: DeclaredUserDevice): {
 }
 
 /**
- * When the computer has a browser, the run is offered the page tools for it: they leave the run's
- * turned-off tools (where a run without a computer of its own put them), unless the bot itself
- * turned them off.
+ * When the computer has a browser, the run is offered the page tools for it and the sign-in: they
+ * leave the run's turned-off tools (where a run without a computer of its own, or every run for the
+ * sign-in, put them), unless the bot itself turned them off.
  */
 export function offerUserBrowser(
   disabled: Set<string>,
   botDisabled: readonly string[] | null | undefined,
 ): boolean {
-  for (const name of USER_BROWSER_TOOLS) if (!botDisabled?.includes(name)) disabled.delete(name);
+  for (const name of [...USER_BROWSER_TOOLS, BROWSER_SIGN_IN_TOOL])
+    if (!botDisabled?.includes(name)) disabled.delete(name);
   return USER_BROWSER_TOOLS.some((name) => !disabled.has(name));
 }
 

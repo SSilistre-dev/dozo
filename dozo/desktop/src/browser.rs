@@ -127,7 +127,14 @@ const ANSWER: Duration = Duration::from_secs(30);
 /// looked for or started (`device_run.rs`), so only this module's own tests reach it.
 pub const DECLARED: bool = false;
 
-pub const NO_BROWSER: &str = "No Chrome, Edge, Brave or Chromium is installed on this computer.";
+/// Asks the person to sign in to a site in the bot's browser window; answers true once they say
+/// they are done, false when they cancel. Only the person can answer: nothing the server or the
+/// bot sends ends it.
+pub trait SignInPrompt: Send + Sync {
+    fn ask(&self, site: &str) -> oneshot::Receiver<bool>;
+}
+
+pub const NO_BROWSER: &str = "No supported browser is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
 
 /// The browser this computer would start, if any: the first of Chrome, Edge, Brave and Chromium,
@@ -186,12 +193,17 @@ pub fn find() -> Option<PathBuf> {
 /// or keep its passwords unencrypted (`--enable-automation`, `--use-mock-keychain`,
 /// `--password-store=basic`), never `--app` or kiosk (the address bar stays), and never a
 /// debugging port.
-fn arguments(profile: &Path, headless: bool) -> Vec<String> {
+fn arguments(profile: &Path, headless: bool, proxy: u16) -> Vec<String> {
     let mut args = vec![
         format!("--user-data-dir={}", profile.display()),
         "--remote-debugging-pipe".to_owned(),
         "--no-first-run".to_owned(),
         "--no-default-browser-check".to_owned(),
+        // Every request through this app's proxy (`browser_proxy.rs`), loopback included, which
+        // the browser would otherwise reach directly, and no WebRTC traffic around it.
+        format!("--proxy-server=http://127.0.0.1:{proxy}"),
+        "--proxy-bypass-list=<-loopback>".to_owned(),
+        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_owned(),
     ];
     if headless {
         args.push("--headless=new".to_owned());
@@ -210,7 +222,7 @@ pub fn allowed(command: &Value, local: bool) -> Result<(String, Value), String> 
     let Some((_, keys)) = ALLOWED.iter().find(|(name, _)| *name == method) else {
         return Err(format!("Not allowed in the bot's browser: {method}"));
     };
-    let given = match command.get("params") {
+    let mut given = match command.get("params") {
         None | Some(Value::Null) => Map::new(),
         Some(Value::Object(params)) => params.clone(),
         Some(_) => return Err("pageBrowser params must be an object".to_owned()),
@@ -236,11 +248,21 @@ pub fn allowed(command: &Value, local: bool) -> Result<(String, Value), String> 
     if method == "Input.dispatchKeyEvent" && shortcut(&given) {
         return Err("Not allowed in the bot's browser: that key".to_owned());
     }
-    // A middle click pastes what the person last selected anywhere (Linux).
-    let middle = given.get("button").and_then(Value::as_str) == Some("middle")
-        || given.get("buttons").and_then(Value::as_u64).unwrap_or(0) & 4 != 0;
-    if method == "Input.dispatchMouseEvent" && middle {
-        return Err("Not allowed in the bot's browser: middle click".to_owned());
+    // With Ctrl, Cmd or Alt held, only the key itself is sent: no text, and no system key code,
+    // which macOS reads as a shortcut of its own.
+    let held = given.get("modifiers").and_then(Value::as_u64).unwrap_or(0) & (1 | 2 | 4) != 0;
+    if method == "Input.dispatchKeyEvent" && held {
+        for field in ["text", "unmodifiedText", "nativeVirtualKeyCode"] {
+            given.remove(field);
+        }
+    }
+    // A middle click pastes what the person last selected anywhere (Linux); the back and forward
+    // buttons leave the page.
+    let button = given.get("button").and_then(Value::as_str);
+    let other = matches!(button, Some("middle" | "back" | "forward"))
+        || given.get("buttons").and_then(Value::as_u64).unwrap_or(0) & (4 | 8 | 16) != 0;
+    if method == "Input.dispatchMouseEvent" && other {
+        return Err("Not allowed in the bot's browser: that mouse button".to_owned());
     }
     Ok((method.to_owned(), Value::Object(given)))
 }
@@ -264,44 +286,11 @@ fn web_address(url: &str, local: bool) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
-    // The address parser has already written any form of an IP address the usual way.
-    let bare = host.trim_start_matches('[').trim_end_matches(']');
-    local
-        || match bare.parse::<std::net::IpAddr>() {
-            Ok(std::net::IpAddr::V4(ip)) => public_v4(ip),
-            Ok(std::net::IpAddr::V6(ip)) => match ip.to_ipv4_mapped() {
-                Some(ip) => public_v4(ip),
-                None => {
-                    let first = ip.segments()[0];
-                    !(ip.is_loopback()
-                        || ip.is_unspecified()
-                        || first & 0xfe00 == 0xfc00
-                        || first & 0xffc0 == 0xfe80)
-                }
-            },
-            Err(_) => {
-                let name = bare.trim_end_matches('.').to_ascii_lowercase();
-                !(name == "localhost"
-                    || [".localhost", ".local", ".internal", ".home.arpa"]
-                        .iter()
-                        .any(|suffix| name.ends_with(suffix)))
-            }
-        }
+    local || crate::browser_proxy::public_host(host.trim_start_matches('[').trim_end_matches(']'))
 }
 
-fn public_v4(ip: std::net::Ipv4Addr) -> bool {
-    let [a, b, ..] = ip.octets();
-    !(ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_unspecified()
-        || ip.is_broadcast()
-        || a == 0
-        || (a == 100 && (64..128).contains(&b)))
-}
-
-/// A key press that reaches more than the page's text: the clipboard (Ctrl or Cmd with V or C,
-/// Shift with Insert, which copy or paste), or the browser's own shortcuts (Alt with anything, Ctrl
+/// A key press that reaches more than the page's text: the clipboard (Ctrl or Cmd with V, C or X,
+/// Shift with Insert or Delete, Ctrl with Insert), or the browser's own shortcuts (Alt with anything, Ctrl
 /// or Cmd with anything but select all, undo and the editing keys, the function keys and the
 /// browser and media keys).
 fn shortcut(params: &Map<String, Value>) -> bool {
@@ -323,7 +312,10 @@ fn shortcut(params: &Map<String, Value>) -> bool {
     if browser_key || modifiers & 1 != 0 {
         return true;
     }
-    if modifiers & 8 != 0 && (names.iter().any(|name| name == "insert") || code == Some(45)) {
+    // Shift+Insert pastes, Shift+Delete cuts and Ctrl+Insert copies.
+    let insert = names.iter().any(|name| name == "insert") || code == Some(45);
+    let delete = names.iter().any(|name| name == "delete") || code == Some(46);
+    if (modifiers & 8 != 0 && (insert || delete)) || (modifiers & (2 | 4) != 0 && insert) {
         return true;
     }
     if modifiers & (2 | 4) == 0 {
@@ -505,6 +497,10 @@ async fn read(pipe: std::sync::Weak<Pipe>, mut from: impl tokio::io::AsyncRead +
         while let Some(found) = buffer[scanned..].iter().position(|byte| *byte == 0) {
             let end = scanned + found;
             if let Ok(message) = serde_json::from_slice::<Value>(&buffer[..end]) {
+                if message["method"] == "Target.attachedToTarget" {
+                    let params = message["params"].clone();
+                    tokio::spawn(guard_target(Arc::downgrade(&pipe), params));
+                }
                 pipe.receive(message);
             }
             buffer.drain(..=end);
@@ -525,21 +521,26 @@ struct Running {
     attach: tokio::sync::Mutex<()>,
     /// The bot's page, once attached.
     target: Mutex<Option<String>>,
+    /// History entries up to this id were made while the person signed in (with what came
+    /// before): the server gets them without address or title.
+    hidden_through: AtomicU64,
     #[cfg(unix)]
     child: Mutex<Option<tokio::process::Child>>,
 }
 
 impl Running {
-    /// The bot's page, attached once: its first tab showing a website or a blank page, or a new one
-    /// when the person closed those (a tab of the browser's own pages or this computer's files is
-    /// never taken).
+    /// The bot's page. The first time, the tab the browser opened with (a blank page; a tab of
+    /// the browser's own pages or this computer's files is never taken). Once that tab is gone
+    /// (the person closed it), always a new blank tab: never another tab, which may be the person's
+    /// own or a window a page opened.
     async fn page(&self, local: bool) -> Result<String, String> {
         let _attaching = self.attach.lock().await;
         if let Some(session) = self.pipe.session.lock().unwrap().clone() {
             return Ok(session);
         }
         let mut target = None;
-        for _ in 0..50 {
+        let first = self.target.lock().unwrap().is_none();
+        for _ in 0..if first { 50 } else { 0 } {
             let targets = self.pipe.call("Target.getTargets", json!({}), None).await?;
             let pages: Vec<&Value> = targets["targetInfos"]
                 .as_array()
@@ -608,17 +609,19 @@ impl Running {
         Ok(info["targetInfo"]["url"].as_str().unwrap_or("").to_owned())
     }
 
-    /// Ends the browser; the profile is free once this returns.
-    async fn end_and_wait(&self) {
+    /// Ends the browser; true once it has ended, so its profile is free.
+    async fn end_and_wait(&self) -> bool {
         self.pipe.close();
         #[cfg(unix)]
         {
             let child = self.child.lock().unwrap().take();
             if let Some(mut child) = child {
                 crate::stack_os::kill(&mut child);
-                let _ = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+                let ended = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+                return matches!(ended, Ok(Ok(_)));
             }
         }
+        true
     }
 
     fn end(&self) {
@@ -628,6 +631,23 @@ impl Running {
             crate::stack_os::kill(&mut child);
         }
     }
+}
+
+fn signing_message(site: &str) -> String {
+    format!(
+        "The person is signing in to {site} in the bot's browser; nothing reaches it until they are done."
+    )
+}
+
+/// The site a sign-in opens: a registrable domain or host on the web, lower case, nothing more
+/// (tests may name a loopback host and port).
+fn sign_in_site(site: &str, local: bool) -> Option<String> {
+    let site = site.trim().trim_end_matches('/').to_ascii_lowercase();
+    let allowed =
+        |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '-' || (local && c == ':');
+    (!site.is_empty() && site.chars().all(allowed) && !site.starts_with(['.', '-']))
+        .then(|| site.clone())
+        .filter(|site| web_address(&format!("https://{site}/"), local))
 }
 
 const OFF_THE_WEB: &str = "The bot's page shows no website now (a page of the browser or of this computer). Open a website with Page.navigate first.";
@@ -640,7 +660,15 @@ pub struct Browsers {
     /// Pages on this computer and its network may be opened: tests only, which serve their page
     /// on loopback.
     local: bool,
+    /// What of them the proxy lets through, for those tests.
+    local_hosts: crate::browser_proxy::Local,
     open: Mutex<HashMap<String, Arc<Running>>>,
+    /// The bots' browsers' only way out, started with the first of them.
+    proxy: tokio::sync::Mutex<Option<crate::browser_proxy::Proxy>>,
+    /// The person's sign-in prompt; the app sets it.
+    prompt: std::sync::OnceLock<Arc<dyn SignInPrompt>>,
+    /// Bots whose browser the person is signing in with, by key, with the site.
+    signing: Mutex<HashMap<String, String>>,
     /// One start at a time.
     starting: tokio::sync::Mutex<()>,
     /// Moves on with every `close` and `close_all`, so a browser that was starting meanwhile is
@@ -660,7 +688,11 @@ impl Browsers {
             program,
             headless,
             local: false,
+            local_hosts: crate::browser_proxy::Local::None,
             open: Mutex::default(),
+            proxy: tokio::sync::Mutex::default(),
+            prompt: std::sync::OnceLock::new(),
+            signing: Mutex::default(),
             starting: tokio::sync::Mutex::default(),
             generation: AtomicU64::new(0),
         }
@@ -670,6 +702,15 @@ impl Browsers {
     #[cfg(test)]
     pub fn with_local_pages(mut self) -> Self {
         self.local = true;
+        self.local_hosts = crate::browser_proxy::Local::All;
+        self
+    }
+
+    /// Lets tests open only the loopback ports they name, as pages and through the proxy.
+    #[cfg(test)]
+    pub fn with_local_ports(mut self, ports: Vec<u16>) -> Self {
+        self.local = true;
+        self.local_hosts = crate::browser_proxy::Local::Ports(ports);
         self
     }
 
@@ -677,11 +718,84 @@ impl Browsers {
         self.program.is_some()
     }
 
+    /// The prompt the person answers when they sign in (`sign_in`).
+    pub fn set_sign_in_prompt(&self, prompt: Arc<dyn SignInPrompt>) {
+        let _ = self.prompt.set(prompt);
+    }
+
+    /// The person signs in to `site` in the bot's browser: its home page opens (never an address
+    /// the bot names), and until the person says they are done or cancel, every command is
+    /// refused, so the server sees nothing of it: no page, no screenshot, no address, no event.
+    /// What the page did meanwhile is dropped. Answers whether they say they signed in. Ending
+    /// the request does not end it: only the person does.
+    pub async fn sign_in(&self, key: &str, site: &str) -> Result<bool, String> {
+        let site = sign_in_site(site, self.local).ok_or(NOT_WEB)?;
+        let prompt = self
+            .prompt
+            .get()
+            .cloned()
+            .ok_or("Signing in is not available here.")?;
+        let running = self.running(key).await?;
+        let session = running.page(self.local).await?;
+        {
+            let mut signing = self.signing.lock().unwrap();
+            if signing.contains_key(key) {
+                return Err(signing_message(&signing[key]));
+            }
+            signing.insert(key.to_owned(), site.clone());
+        }
+        let scheme = if self.local { "http" } else { "https" };
+        let home = json!({ "url": format!("{scheme}://{site}/") });
+        let opened = running
+            .pipe
+            .call("Page.navigate", home, Some(&session))
+            .await;
+        let answer = match opened {
+            Ok(_) => {
+                let mut answered = prompt.ask(&site);
+                // A browser that closed meanwhile ends it too: there is nothing to sign in with.
+                loop {
+                    tokio::select! {
+                        done = &mut answered => break done.unwrap_or(false),
+                        () = tokio::time::sleep(Duration::from_secs(1)) => {
+                            if !running.pipe.open.load(Ordering::SeqCst) {
+                                break false;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => false,
+        };
+        // The addresses the sign-in went through (a code in a return address) stay out of what the
+        // server reads: its events are dropped, and the history it made keeps no address.
+        if let Ok(history) = running
+            .pipe
+            .call("Page.getNavigationHistory", json!({}), Some(&session))
+            .await
+        {
+            let last = history["entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| entry["id"].as_u64())
+                .max()
+                .unwrap_or(0);
+            running.hidden_through.fetch_max(last, Ordering::SeqCst);
+        }
+        running.pipe.take_events();
+        self.signing.lock().unwrap().remove(key);
+        Ok(answer)
+    }
+
     /// Runs one allowed command on the bot's page, starting its browser when none runs, and
     /// answers with the result and the page events since the last answer. Only going to a website
     /// works while the page shows anything else.
     pub async fn handle(&self, key: &str, command: &Value) -> Result<Value, String> {
         let (method, params) = allowed(command, self.local)?;
+        if let Some(site) = self.signing.lock().unwrap().get(key) {
+            return Err(signing_message(site));
+        }
         let running = self.running(key).await?;
         let session = match running.page(self.local).await {
             Ok(session) => session,
@@ -716,8 +830,16 @@ impl Browsers {
             self.forget(key, &running);
         }
         let mut result = result?;
+        // The page may have left the web while the command ran (a click on a link, a redirect):
+        // then what the command read is dropped.
+        let after = running.address().await?;
+        if !after.is_empty() && !web_address(&after, self.local) {
+            running.pipe.take_events();
+            return Err(OFF_THE_WEB.to_owned());
+        }
         if method == "Page.getNavigationHistory" {
-            hide_off_web_entries(&mut result, self.local);
+            let hidden = running.hidden_through.load(Ordering::SeqCst);
+            hide_off_web_entries(&mut result, self.local, hidden);
         }
         let events: Vec<Value> = running
             .pipe
@@ -781,10 +903,13 @@ impl Browsers {
             self.generation.fetch_add(1, Ordering::SeqCst);
             open.remove(key)
         };
-        if let Some(running) = running {
-            running.end_and_wait().await;
-        }
-        if forget_profile {
+        let ended = match running {
+            Some(running) => running.end_and_wait().await,
+            None => true,
+        };
+        // A browser that would not end keeps its profile: removing it under a running browser
+        // could leave half of it written back.
+        if forget_profile && ended {
             let (root, key) = (self.root.clone(), key.to_owned());
             let _ = tokio::task::spawn_blocking(move || {
                 let _ = std::fs::remove_dir_all(root.join(&key));
@@ -814,7 +939,15 @@ impl Browsers {
         let pid_file = self.root.join(format!("{key}.pid"));
         let (pid, marked) = (pid_file.clone(), profile.clone());
         let _ = tokio::task::spawn_blocking(move || end_leftover(&pid, &marked)).await;
-        let (child, pipe) = launch(program, &arguments(&profile, self.headless))
+        let proxy = {
+            let mut proxy = self.proxy.lock().await;
+            if proxy.is_none() {
+                let started = crate::browser_proxy::Proxy::start(self.local_hosts.clone()).await;
+                *proxy = Some(started.map_err(|_| "The bot's browser could not start".to_owned())?);
+            }
+            proxy.as_ref().map_or(0, |proxy| proxy.port)
+        };
+        let (child, pipe) = launch(program, &arguments(&profile, self.headless, proxy))
             .await
             .map_err(|_| "The bot's browser could not start".to_owned())?;
         if let Some(pid) = child.id() {
@@ -824,6 +957,7 @@ impl Browsers {
             pipe,
             attach: tokio::sync::Mutex::default(),
             target: Mutex::default(),
+            hidden_through: AtomicU64::new(0),
             child: Mutex::new(Some(child)),
         };
         if let Err(error) = harden(&running.pipe).await {
@@ -852,31 +986,114 @@ async fn harden(pipe: &Pipe) -> Result<(), String> {
         let denied = json!({ "permission": { "name": name }, "setting": "denied" });
         pipe.call("Browser.setPermission", denied, None).await?;
     }
+    // Every new tab or window holds before its first script until it has the guard
+    // (`guard_target`).
+    pipe.call("Target.setAutoAttach", AUTO_ATTACH.clone(), None)
+        .await?;
     Ok(())
+}
+
+static AUTO_ATTACH: std::sync::LazyLock<Value> = std::sync::LazyLock::new(
+    || json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+);
+
+/// Puts the guard into a tab, window or frame of its own process the browser just made and holds
+/// before its first script, then lets it run; its own frames are held the same way. A worker
+/// only runs on: it has no document to guard.
+async fn guard_target(pipe: std::sync::Weak<Pipe>, params: Value) {
+    let Some(pipe) = pipe.upgrade() else { return };
+    let Some(session) = params["sessionId"].as_str() else {
+        return;
+    };
+    let waiting = params["waitingForDebugger"] == true;
+    if matches!(
+        params["targetInfo"]["type"].as_str(),
+        Some("page" | "iframe")
+    ) {
+        // A frame of its own process takes the script for its documents only once enabled.
+        let _ = pipe.call("Page.enable", json!({}), Some(session)).await;
+        let new_documents = json!({ "source": GUARD });
+        let _ = pipe
+            .call(
+                "Page.addScriptToEvaluateOnNewDocument",
+                new_documents,
+                Some(session),
+            )
+            .await;
+        // One already running (there before the browser was told to hold new ones) gets it now;
+        // one that holds has no script to run it yet, and would not answer until let go.
+        if !waiting {
+            let now = json!({ "expression": GUARD });
+            let _ = pipe.call("Runtime.evaluate", now, Some(session)).await;
+        }
+        let _ = pipe
+            .call("Target.setAutoAttach", AUTO_ATTACH.clone(), Some(session))
+            .await;
+    }
+    if waiting {
+        let _ = pipe
+            .call("Runtime.runIfWaitingForDebugger", json!({}), Some(session))
+            .await;
+    }
 }
 
 /// A click the server sends counts as the person's gesture, so a page could use it to write the
 /// clipboard or take the whole screen. The permission above stops the clipboard API; this stops the
-/// older copy and cut commands and full screen, in every frame. A page that opens a window still
-/// can (sign-ins need it): it opens as a tab the bot cannot reach.
+/// older copy and cut commands and every form of full screen. It is set in every document before
+/// its scripts (and in every new tab, window and frame process, `guard_target`), and it guards a
+/// window a page opens and a frame it reaches, which a page could otherwise use to call the
+/// browser's own functions. A page that opens a window still can (sign-ins need it): it opens as a
+/// tab the bot cannot reach.
 const GUARD: &str = "(() => {
-  const exec = Document.prototype.execCommand;
-  Document.prototype.execCommand = function (command, ...rest) {
-    return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
-      ? false
-      : exec.call(this, command, ...rest);
+  const guarded = new WeakSet();
+  const guard = (w) => {
+    try {
+      if (!w || guarded.has(w)) return w;
+      guarded.add(w);
+      const doc = w.Document.prototype;
+      const exec = doc.execCommand;
+      doc.execCommand = function (command, ...rest) {
+        return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
+          ? false
+          : exec.call(this, command, ...rest);
+      };
+      const refuse = () => w.Promise.reject(new w.DOMException('Not allowed here', 'NotAllowedError'));
+      const element = w.Element.prototype;
+      element.requestFullscreen = refuse;
+      for (const name of ['webkitRequestFullscreen', 'webkitRequestFullScreen'])
+        if (name in element) element[name] = () => {};
+      const video = w.HTMLVideoElement.prototype;
+      for (const name of ['webkitEnterFullscreen', 'webkitEnterFullScreen'])
+        if (name in video) video[name] = () => {};
+      const open = w.open;
+      w.open = function (...rest) { return guard(open.apply(this, rest)); };
+      for (const [type, key] of [
+        [w.HTMLIFrameElement, 'contentWindow'], [w.HTMLIFrameElement, 'contentDocument'],
+        [w.HTMLFrameElement, 'contentWindow'], [w.HTMLFrameElement, 'contentDocument'],
+        [w.HTMLObjectElement, 'contentWindow'], [w.HTMLObjectElement, 'contentDocument'],
+      ]) {
+        const field = Object.getOwnPropertyDescriptor(type.prototype, key);
+        Object.defineProperty(type.prototype, key, { ...field, get() {
+          const value = field.get.call(this);
+          guard(key === 'contentWindow' ? value : value && value.defaultView);
+          return value;
+        } });
+      }
+      for (let index = 0; index < w.frames.length; index += 1) guard(w.frames[index]);
+    } catch {}
+    return w;
   };
-  const refuse = () => Promise.reject(new DOMException('Not allowed here', 'NotAllowedError'));
-  Element.prototype.requestFullscreen = refuse;
-  if (Element.prototype.webkitRequestFullscreen) Element.prototype.webkitRequestFullscreen = () => {};
+  guard(window);
 })();";
 
 /// History as the server gets it: each entry's id, address and title only (the browser also names
-/// what was typed), and an entry that is no website keeps its place without address or title.
-fn hide_off_web_entries(history: &mut Value, local: bool) {
+/// what was typed), and an entry that is no website, or was made while the person signed in, keeps
+/// its place without address or title.
+fn hide_off_web_entries(history: &mut Value, local: bool, hidden_through: u64) {
     for entry in history["entries"].as_array_mut().into_iter().flatten() {
         let url = entry["url"].as_str().unwrap_or("").to_owned();
-        *entry = if web_address(&url, local) {
+        let signing = entry["id"].as_u64().is_some_and(|id| id <= hidden_through);
+        *entry = if web_address(&url, local) && !signing {
             json!({ "id": entry["id"], "url": url, "title": entry["title"] })
         } else {
             json!({ "id": entry["id"], "url": "", "title": "" })
@@ -1003,7 +1220,7 @@ mod tests {
 
     #[test]
     fn it_starts_with_a_profile_of_its_own_and_none_of_the_flags_that_weaken_it() {
-        let args = arguments(Path::new("/data/browser-profiles/abc"), false);
+        let args = arguments(Path::new("/data/browser-profiles/abc"), false, 4242);
         assert_eq!(args[0], "--user-data-dir=/data/browser-profiles/abc");
         assert!(args.contains(&"--remote-debugging-pipe".to_owned()));
         for forbidden in [
@@ -1020,7 +1237,9 @@ mod tests {
                 "{forbidden} in {args:?}"
             );
         }
-        assert!(arguments(Path::new("/p"), true).contains(&"--headless=new".to_owned()));
+        assert!(arguments(Path::new("/p"), true, 1).contains(&"--headless=new".to_owned()));
+        assert!(args.contains(&"--proxy-server=http://127.0.0.1:4242".to_owned()));
+        assert!(args.contains(&"--proxy-bypass-list=<-loopback>".to_owned()));
     }
 
     #[test]
@@ -1095,6 +1314,11 @@ mod tests {
             "http://app.localhost/",
             "http://printer.local/",
             "http://router.home.arpa/",
+            "http://router/",
+            "http://fritz.box/",
+            "http://nas.lan/",
+            "http://198.18.0.1/",
+            "http://[64:ff9b::a00:1]/",
             "http://db.internal/",
             "http://10.0.0.1/",
             "http://172.16.5.4/",
@@ -1152,6 +1376,8 @@ mod tests {
             ("F5", "F5", 116, 0),
             ("BrowserBack", "BrowserBack", 166, 0),
             ("Insert", "Insert", 45, 8),
+            ("Delete", "Delete", 46, 8),
+            ("Insert", "Insert", 45, 2),
             ("a", "KeyO", 65, 2),
         ] {
             assert!(
@@ -1178,6 +1404,73 @@ mod tests {
         }
         let bare = json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "modifiers": 2 } });
         assert!(allowed(&bare, false).is_err(), "Ctrl with no key named");
+        let with_text = json!({ "method": "Input.dispatchKeyEvent", "params": {
+            "type": "keyDown", "key": "a", "code": "KeyA", "modifiers": 4, "text": "a",
+            "unmodifiedText": "a", "nativeVirtualKeyCode": 0 } });
+        let (_, sent) = allowed(&with_text, false).unwrap();
+        assert_eq!(
+            sent,
+            json!({ "type": "keyDown", "key": "a", "code": "KeyA", "modifiers": 4 })
+        );
+        let plain = json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "key": "a", "text": "a" } });
+        assert_eq!(
+            allowed(&plain, false).unwrap().1["text"],
+            "a",
+            "text stays without modifiers"
+        );
+        for button in [
+            json!({ "button": "back" }),
+            json!({ "button": "forward" }),
+            json!({ "buttons": 8 }),
+            json!({ "buttons": 16 }),
+        ] {
+            let mut params = json!({ "type": "mousePressed", "x": 1, "y": 1 });
+            params
+                .as_object_mut()
+                .unwrap()
+                .extend(button.as_object().unwrap().clone());
+            let click = json!({ "method": "Input.dispatchMouseEvent", "params": params });
+            assert!(allowed(&click, false).is_err(), "passed: {click}");
+        }
+        for vendor in ["Chrome", "Edge", "Brave", "Chromium"] {
+            assert!(!NO_BROWSER.contains(vendor), "the refusal names {vendor}");
+        }
+    }
+
+    #[test]
+    fn history_made_while_signing_in_keeps_no_address() {
+        let mut history = json!({ "currentIndex": 1, "entries": [
+            { "id": 4, "url": "https://x.test/callback?code=SECRET", "title": "Signed in" },
+            { "id": 7, "url": "https://x.test/home", "title": "Home" },
+        ] });
+        hide_off_web_entries(&mut history, false, 4);
+        assert_eq!(
+            history["entries"][0],
+            json!({ "id": 4, "url": "", "title": "" })
+        );
+        assert_eq!(history["entries"][1]["url"], "https://x.test/home");
+    }
+
+    #[test]
+    fn a_sign_in_opens_only_a_site_s_home() {
+        assert_eq!(sign_in_site(" X.com/ ", false).as_deref(), Some("x.com"));
+        for site in [
+            "https://x.com",
+            "x.com/login",
+            "x.com?next=/",
+            "localhost",
+            "router",
+            "10.0.0.1",
+            ".x.com",
+            "",
+            "x.com:8080",
+        ] {
+            assert!(sign_in_site(site, false).is_none(), "{site}");
+        }
+        assert_eq!(
+            sign_in_site("127.0.0.1:8080", true).as_deref(),
+            Some("127.0.0.1:8080")
+        );
     }
 
     #[test]
@@ -1187,7 +1480,7 @@ mod tests {
             { "id": 2, "url": "https://example.test/", "title": "Example", "userTypedURL": "file:///x" },
             { "id": 3, "url": "chrome://password-manager/passwords", "title": "Passwords" },
         ] });
-        hide_off_web_entries(&mut history, false);
+        hide_off_web_entries(&mut history, false, 0);
         assert_eq!(
             history["entries"][0],
             json!({ "id": 1, "url": "", "title": "" })

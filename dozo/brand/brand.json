@@ -5493,7 +5493,7 @@
     {
       "file": "packages/adapters/src/run-tools.ts",
       "find": "import { computerTools, pageBrowserTool } from \"./run-tools-computer.js\";\n",
-      "replace": "import { pageBrowserTool } from \"./dozo-user-browser.js\";\nimport { computerTools } from \"./run-tools-computer.js\";\n",
+      "replace": "import { pageBrowserTool, userBrowserSignIn } from \"./dozo-user-browser.js\";\nimport { computerTools } from \"./run-tools-computer.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-user-browser.ts"
       ],
@@ -5520,7 +5520,7 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport { pageBrowserRequest } from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { pageBrowserRequest, pageBrowserSignInRequest } from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts"
       ],
@@ -5529,7 +5529,7 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
-      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n]);\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts"
       ],
@@ -5554,6 +5554,39 @@
         "packages/adapters/src/dozo-device-browser.test-support.ts"
       ],
       "reason": "user's browser: the imports of the case above"
+    },
+    {
+      "file": "packages/contracts/src/builtin-tools.ts",
+      "find": "  \"browser_act\",\n  \"list_files\",\n",
+      "replace": "  \"browser_act\",\n  \"browser_sign_in\",\n  \"list_files\",\n",
+      "reason": "user's browser: the person signs in to a site themselves in the bot's browser on their computer (browser_sign_in), a built-in a bot may turn off like the other page tools"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n];\n",
+      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n];\n",
+      "requires": [
+        "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts"
+      ],
+      "reason": "user's browser: browser_sign_in among the built-ins, last, so it takes no listed place from the others; only a run offered the bot's browser on the user's computer gets it"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "import { z } from \"zod\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts"
+      ],
+      "reason": "user's browser: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n]);\n",
+      "replace": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n  [\"browser_sign_in\", userBrowserSignIn],\n]);\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-browser.ts"
+      ],
+      "reason": "user's browser: browser_sign_in runs on the user's computer, which opens the site's home page and passes nothing on until the person is done"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -7902,7 +7935,7 @@
     {
       "file": "packages/adapters/src/run-instructions.prompt.ts",
       "find": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
-      "replace": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from \"./dozo-device-screen.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
+      "replace": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { connectedComputerInstruction } from \"./dozo-device-screen.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-device-screen.prompt.ts"
       ],
@@ -7911,7 +7944,7 @@
     {
       "file": "packages/adapters/src/run-instructions.prompt.ts",
       "find": "    userComputerInstruction(parts.userComputer),\n    parts.groupContext,\n",
-      "replace": "    userComputerInstruction(parts.userComputer),\n    parts.userComputer === \"connected\" ? COMPUTER_WITHOUT_SCREEN_INSTRUCTION : undefined,\n    parts.groupContext,\n",
+      "replace": "    userComputerInstruction(parts.userComputer),\n    parts.userComputer === \"connected\"\n      ? connectedComputerInstruction(parts.disabledBuiltinTools)\n      : undefined,\n    parts.groupContext,\n",
       "requires": [
         "packages/adapters/src/dozo-device-screen.prompt.ts"
       ],
