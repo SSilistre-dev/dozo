@@ -34,8 +34,8 @@ vi.mock("./model-credit-observer.js", async (importOriginal) => ({
 const NO_COMPUTER = "You have no computer in this run";
 const NO_OWN_COMPUTER = "You have no computer of your own in this run";
 const HAS_COMPUTER = "You have a persistent computer";
-const HOW_TO_GET_ONE =
-  "the user can connect their own computer from the desktop app, or upgrade the plan";
+const MENU_ITEM = "Let Bots Use This Computer";
+const CONNECT_OWN = `the user can connect their own computer: open the Dozo app menu and turn on "${MENU_ITEM}"`;
 const PERIOD_START = new Date("2026-11-01T00:00:00Z");
 
 type Plan =
@@ -275,7 +275,9 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
     for (const name of CLOUD_COMPUTER_TOOL_NAMES) expect(free.tools).not.toContain(name);
     expect(free.tools).toContain("ask_user");
     expect(free.instructions).toContain(NO_COMPUTER);
-    expect(free.instructions).toContain(HOW_TO_GET_ONE);
+    expect(free.instructions).toContain(CONNECT_OWN);
+    expect(free.instructions).not.toContain("upgrade");
+    expect(free.instructions).not.toContain("hours left");
     expect(free.instructions).not.toContain(HAS_COMPUTER);
     expect(free.instructions).not.toContain("computer workspace is your private home");
     expect(free.instructions).not.toContain("request_takeover");
@@ -289,6 +291,9 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
     });
     for (const name of CLOUD_COMPUTER_TOOL_NAMES) expect(spent.tools).not.toContain(name);
     expect(spent.instructions).toContain(NO_COMPUTER);
+    expect(spent.instructions).toContain("the plan has no computer hours left");
+    expect(spent.instructions).toContain(MENU_ITEM);
+    expect(spent.instructions).toContain("more computer hours");
     expect(spent.instructions).not.toContain(HAS_COMPUTER);
   });
 
@@ -310,7 +315,9 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
     for (const name of CLOUD_COMPUTER_TOOL_NAMES) expect(free.tools).not.toContain(name);
     expect(free.instructions).toContain(NO_OWN_COMPUTER);
     expect(free.instructions).toContain("use the user's computer");
-    expect(free.instructions).not.toContain(HOW_TO_GET_ONE);
+    expect(free.instructions).not.toContain(MENU_ITEM);
+    expect(free.instructions).not.toContain("upgrade");
+    expect(free.instructions).not.toContain("hours left");
   });
 
   it.each(["darwin", "win32"])(
@@ -328,15 +335,26 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
     },
   );
 
-  it("on Free with the user's computer offline, says how to connect it or upgrade", async () => {
+  it("on Free with the user's computer offline, says how to connect it, never to upgrade", async () => {
     const free = await ownerRun({
       plan: { kind: "free" },
       billingEnabled: true,
       userComputer: "offline",
     });
     expect(free.tools).not.toContain("user_computer_shell");
-    expect(free.instructions).toContain(HOW_TO_GET_ONE);
+    expect(free.instructions).toContain(CONNECT_OWN);
+    expect(free.instructions).toContain("Never offer to run commands, open a browser");
+    expect(free.instructions).not.toContain("upgrade");
+    expect(free.instructions).not.toContain("hours left");
     expect(free.instructions).toContain("The user's computer is not connected.");
+    expect(free.instructions).toContain(`turn on "${MENU_ITEM}".`);
+  });
+
+  it("on Free without a connectable computer, still never says to upgrade", async () => {
+    const free = await ownerRun({ plan: { kind: "free" }, billingEnabled: true });
+    expect(free.instructions).toContain(MENU_ITEM);
+    expect(free.instructions).not.toContain("upgrade");
+    expect(free.instructions).not.toContain("hours left");
   });
 
   it("on a server that does not bill, never withholds the computer nor reads the allowance", async () => {
@@ -368,6 +386,7 @@ describe("plans that pay for a computer keep it", () => {
     for (const name of CLOUD_COMPUTER_TOOL_NAMES) expect(overdue.tools).not.toContain(name);
     expect(overdue.instructions).toContain("the plan's payment is overdue");
     expect(overdue.instructions).toContain("whoever manages billing can update the payment");
+    expect(overdue.instructions).toContain(MENU_ITEM);
     expect(overdue.instructions).not.toContain("upgrade the plan");
   });
 });
@@ -444,7 +463,7 @@ describe("a resumed turn of a plan without computer hours", () => {
 
   it("stays without the computer when it never used it, such as one waiting on an approval", async () => {
     const gated = await gate(holdOf(false), { turnCheckpoint: checkpoint("web_search") });
-    expect(gated).toMatchObject({ graphical: false, cloudComputerWithheld: "hours" });
+    expect(gated).toMatchObject({ graphical: false, cloudComputerWithheld: "plan" });
   });
 
   it("keeps the computer when it paused in computer mode, for a takeover, or after using it", async () => {
@@ -487,7 +506,7 @@ describe("a resumed turn of a plan without computer hours", () => {
 
   it("is decided again from a checkpoint it cannot read", async () => {
     const gated = await gate(holdOf(false), { turnCheckpoint: "not a checkpoint" });
-    expect(gated).toMatchObject({ cloudComputerWithheld: "hours" });
+    expect(gated).toMatchObject({ cloudComputerWithheld: "plan" });
   });
 });
 
@@ -513,7 +532,8 @@ describe("what a run without a computer is told", () => {
     expect(fetch).not.toContain("web_search");
     const none = noCloudComputerInstruction({ userComputer: undefined, offered: new Set() });
     expect(none).not.toContain("web_");
-    expect(none).toContain(HOW_TO_GET_ONE);
+    expect(none).toContain(MENU_ITEM);
+    expect(none).not.toContain("upgrade");
   });
 
   it("names attachments without paths it cannot open", () => {

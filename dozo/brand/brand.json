@@ -6208,14 +6208,50 @@
     {
       "file": "packages/adapters/src/executor-readonly-approval.test.ts",
       "find": "ask them to open the Rakazo desktop app and turn on \"Let bots use this computer\" in its settings.';",
-      "replace": "ask them to open the Dozo desktop app and turn on \"Let bots use this computer\" in its settings.';",
+      "replace": "ask them to open the Dozo app menu and turn on \"Let Bots Use This Computer\".';",
       "reason": "test files keep upstream's name; the offline line the bot is told carries the product name (prompt line)"
     },
     {
       "file": "packages/adapters/src/executor-readonly-approval.test.ts",
       "find": "ask them to open the Rakazo desktop app and turn on \"Let bots use this computer\" in its settings.',",
-      "replace": "ask them to open the Dozo desktop app and turn on \"Let bots use this computer\" in its settings.',",
+      "replace": "ask them to open the Dozo app menu and turn on \"Let Bots Use This Computer\".',",
       "reason": "test files keep upstream's name; the offline error a bot reads carries the product name"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-user-computer.ts",
+      "find": "import { z } from \"zod\";\nimport type { HostComputerEnvironment } from \"./host-computer-protocol.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { USER_COMPUTER_OFFLINE } from \"./dozo-own-computer.prompt.js\";\nimport type { HostComputerEnvironment } from \"./host-computer-protocol.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-own-computer.prompt.ts"
+      ],
+      "reason": "the line a bot reads about connecting the user's own computer comes from one fork constant: the switch is in the Dozo app menu, not in a settings page (dozo-no-computer.test.ts)"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-user-computer.ts",
+      "find": "const USER_COMPUTER_UNAVAILABLE =\n  'The user\\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on \"Let bots use this computer\" in its settings.';",
+      "replace": "const USER_COMPUTER_UNAVAILABLE = USER_COMPUTER_OFFLINE;",
+      "requires": [
+        "packages/adapters/src/dozo-own-computer.prompt.ts"
+      ],
+      "reason": "the line a bot reads about connecting the user's own computer comes from one fork constant: the switch is in the Dozo app menu, not in a settings page (dozo-no-computer.test.ts)"
+    },
+    {
+      "file": "packages/adapters/src/run-instructions.prompt.ts",
+      "find": "import { runReadsThreadHistory, toolRequiresExplicitApproval } from \"@rakazo/core\";\nimport { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\n",
+      "replace": "import { runReadsThreadHistory, toolRequiresExplicitApproval } from \"@rakazo/core\";\nimport { USER_COMPUTER_OFFLINE } from \"./dozo-own-computer.prompt.js\";\nimport { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-own-computer.prompt.ts"
+      ],
+      "reason": "the line a bot reads about connecting the user's own computer comes from one fork constant: the switch is in the Dozo app menu, not in a settings page (dozo-no-computer.test.ts)"
+    },
+    {
+      "file": "packages/adapters/src/run-instructions.prompt.ts",
+      "find": "    return 'The user\\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on \"Let bots use this computer\" in its settings.';",
+      "replace": "    return USER_COMPUTER_OFFLINE;",
+      "requires": [
+        "packages/adapters/src/dozo-own-computer.prompt.ts"
+      ],
+      "reason": "the line a bot reads about connecting the user's own computer comes from one fork constant: the switch is in the Dozo app menu, not in a settings page (dozo-no-computer.test.ts)"
     },
     {
       "file": "packages/adapters/src/executor-readonly-approval.test.ts",
@@ -7482,6 +7518,51 @@
       "find": "    const f = fixture({ ...ownRun, userDevices: devices(\"win32\", true).gateway });\n    await f.run();\n    expect(f.offeredTools()).toEqual(\n      expect.arrayContaining([\"user_computer_observe\", \"user_computer_act\"]),\n    );\n",
       "replace": "    const f = fixture({ ...ownRun, userDevices: devices(\"win32\", true).gateway });\n    await f.run();\n    expect(f.offeredTools()).not.toContain(\"user_computer_observe\");\n",
       "reason": "screen control: no connected computer is offered the screen tools, whichever way it is connected"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-actions.ts",
+      "find": "  resolveComposerSendPlan,\n} from \"@rakazo/core\";",
+      "replace": "  resolveComposerSendPlan,\n  retryWhenUnreached,\n} from \"@rakazo/core\";",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-actions.ts",
+      "find": "      await rpc.threads.answer({",
+      "replace": "      await retryWhenUnreached(rpc.threads.answer)({",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: an answer sent while the API is being replaced is sent again for about a minute; a card can be answered only once, so a repeat never applies twice"
+    },
+    {
+      "file": "apps/mobile/lib/thread-answer.ts",
+      "find": "import type { LoginFieldInput, RpcInput } from \"@rakazo/contracts\";\nimport { hapticSuccess } from \"./haptics\";",
+      "replace": "import type { LoginFieldInput, RpcInput } from \"@rakazo/contracts\";\nimport { retryWhenUnreached } from \"@rakazo/core\";\nimport { hapticSuccess } from \"./haptics\";",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/thread-answer.ts",
+      "find": "  await rpc(\"threads/answer\", {",
+      "replace": "  await retryWhenUnreached(rpc)(\"threads/answer\", {",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the same retry as on web while the API is being replaced"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./retry-policy.js\";\nexport * from \"./room-settings.js\";",
+      "replace": "export * from \"./retry-policy.js\";\nexport * from \"./dozo-unreached-retry.js\";\nexport * from \"./room-settings.js\";",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the retry that web and mobile share"
     }
   ],
   "assets": {
