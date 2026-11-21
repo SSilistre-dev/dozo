@@ -5,11 +5,17 @@
 # (Traefik v3.5.0, its docker provider), while outage-probe.sh watches through that proxy.
 #
 # It starts a release on the first layer, then replaces it with a release of new images on the
-# second layer, with or without bridge.sh around the replacement, and prints the probe's summary
-# and the proxy's answers during the replacement. Everything it creates is named after
+# second layer, and prints the probe's summary and the proxy's answers during the replacement:
+#   plain    the panel's deploy alone, as before bridge.sh;
+#   bridge   as deploy.sh runs it: `bridge.sh up`, the panel's deploy, `bridge.sh wait`;
+#   abandon  the caller goes away once the panel has started (a dropped connection, a timeout):
+#            nothing but bridge.sh's own `watch` retires the copies;
+#   abort    the panel never deploys after `bridge.sh up`: `watch` starts the originals again
+#            (after DOZO_BRIDGE_RESTORE_AFTER, 20 seconds here) and retires the copies.
+# Each ends by checking that no copy is left and that api and web run healthy. Everything it creates is named after
 # DOZO_REHEARSAL_PROJECT (default dozo-rehearsal) and removed at the end, its volumes too.
 #
-# Usage: rehearse.sh <running layer> <new layer> bridge|plain
+# Usage: rehearse.sh <running layer> <new layer> plain|bridge|abandon|abort
 # Needs: the local stack's images (DOZO_REHEARSAL_APP_IMAGE, default dozo-api:latest;
 # DOZO_REHEARSAL_SUPERVISOR_IMAGE, dozo-supervisor:latest; DOZO_REHEARSAL_COMPUTER_IMAGE,
 # rakazo/computer:local, which only has to run `true` here), curl, jq, openssl. Traefik v3.5.0 cannot
@@ -20,8 +26,8 @@
 set -Eeuo pipefail
 export LC_ALL=C
 
-[ $# -eq 3 ] && case $3 in bridge | plain) true ;; *) false ;; esac || {
-  echo "usage: rehearse.sh <running layer> <new layer> bridge|plain" >&2
+[ $# -eq 3 ] && case $3 in plain | bridge | abandon | abort) true ;; *) false ;; esac || {
+  echo "usage: rehearse.sh <running layer> <new layer> plain|bridge|abandon|abort" >&2
   exit 64
 }
 here=$(cd "$(dirname "$0")" && pwd)
@@ -183,29 +189,41 @@ from=$(date -u +%Y-%m-%dT%H:%M:%S)
 t0=$EPOCHREALTIME
 mark() { say "at $(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.1f", b - a }')s: $*"; }
 
-if [ "$mode" = bridge ]; then
+export DOZO_BRIDGE_LOG=$work/bridge.log
+[ "$mode" != abort ] || export DOZO_BRIDGE_RESTORE_AFTER=20
+if [ "$mode" != plain ]; then
   bash "$here/bridge.sh" up "$P" 2>&1 | while IFS= read -r line; do mark "$line"; done
   docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | grep "^$P-" | sed 's/^/[rehearse] memory: /'
 fi
 mark "new release: $(basename "$new_layer") ($mode)"
 set_tag b
-# Compose's own steps for the api and web, timed, with anything that is not a step (an error).
-dc "$work/merged-new.yml" up -d --remove-orphans 2>&1 | while IFS= read -r line; do
-  case $line in
-    *Container*-api-1*Recreate* | *Container*-web-1*Recreate* | *Container*-api-1*Start* | \
-      *Container*-web-1*Start* | *Container*-api-1*Healthy*) mark "compose:${line#*Container}" ;;
-    *Container* | *Network* | *Volume*) ;;
-    *) mark "compose: $line" ;;
-  esac
-done
-mark "the panel's compose up returned"
-if [ "$mode" = bridge ]; then
-  DOZO_BRIDGE_WAIT=300 bash "$here/bridge.sh" down "$P" 2>&1 | while IFS= read -r line; do mark "$line"; done
+no_copies() { [ -z "$(docker ps -aq -f "name=^$P-bridge-")" ]; }
+if [ "$mode" = abort ]; then
+  # The panel never runs: watch has to put the originals back.
+  wait_for 300 no_copies || say "copies still there"
+else
+  # Compose's own steps for the api and web, timed, with anything that is not a step (an error).
+  dc "$work/merged-new.yml" up -d --remove-orphans 2>&1 | while IFS= read -r line; do
+    case $line in
+      *Container*-api-1*Recreate* | *Container*-web-1*Recreate* | *Container*-api-1*Start* | \
+        *Container*-web-1*Start* | *Container*-api-1*Healthy*) mark "compose:${line#*Container}" ;;
+      *Container* | *Network* | *Volume*) ;;
+      *) mark "compose: $line" ;;
+    esac
+  done
+  mark "the panel's compose up returned"
 fi
-wait_for 300 healthy api || say "the new api did not become healthy"
-wait_for 300 healthy web || say "the new web did not become healthy"
-mark "new api and web healthy"
+case $mode in
+  bridge) bash "$here/bridge.sh" wait "$P" 300 2>&1 | while IFS= read -r line; do mark "$line"; done ;;
+  # The caller is gone: only watch is left to retire the copies.
+  abandon) wait_for 300 no_copies || true ;;
+esac
+wait_for 300 healthy api || say "api is not healthy"
+wait_for 300 healthy web || say "web is not healthy"
+mark "api and web healthy"
 sleep 10
+[ ! -f "$work/bridge.log" ] || sed 's/^\[deploy\] host: /[rehearse] watch: /' "$work/bridge.log"
+say "result: copies left: $(docker ps -aq -f "name=^$P-bridge-" | wc -l); api: $(healthy api && echo healthy || echo NOT healthy), web: $(healthy web && echo healthy || echo NOT healthy)"
 kill "$probe_pid"
 wait "$probe_pid" || true
 probe_pid=""

@@ -69,9 +69,11 @@ remote() { ssh -o BatchMode=yes "${alive[@]}" "$DOZO_DEPLOY_SSH" "$@"; }
 
 compose_json() { panel "compose.one?composeId=$DOKPLOY_COMPOSE_ID"; }
 
-# What a run leaves behind, cleared on any exit: the temporary stage, the outage probe, and the
-# copies of the api and web that bridge.sh keeps serving while the panel replaces them.
-stage="" probe_dir="" probe_pid="" bridged=""
+# What a run leaves behind, cleared on any exit: the temporary stage and the outage probe. The
+# copies of the api and web that bridge.sh keeps serving are retired on the host by its own
+# `watch`, whatever happens to this run; a run that ends before the panel started puts the
+# originals back at once.
+stage="" probe_dir="" probe_pid="" bridged="" panel_started=""
 stop_probe() {
   kill "$probe_pid" 2>/dev/null || true
   wait "$probe_pid" 2>/dev/null || true
@@ -80,13 +82,16 @@ stop_probe() {
 }
 finish() {
   [ -z "$probe_pid" ] || stop_probe
-  # After a failure a copy stays only while its service is not healthy again.
-  [ -z "$bridged" ] || DOZO_BRIDGE_WAIT=0 bridge down "$bridged" || true
+  if [ -n "$bridged" ] && [ -z "$panel_started" ]; then
+    bridge restore "$bridged" || true
+  elif [ -n "$bridged" ]; then
+    say "the host retires the copies of api and web once those run healthy ($remote_dir/bridge.log)"
+  fi
   rm -rf ${stage:+"$stage"} ${probe_dir:+"$probe_dir"}
 }
 trap finish EXIT
 
-bridge() { remote "DOZO_BRIDGE_WAIT=${DOZO_BRIDGE_WAIT:-$timeout}" bash -s -- "$@" <"$here/bridge.sh"; }
+bridge() { remote "DOZO_BRIDGE_LOG=$remote_dir/bridge.log" bash "$remote_dir/bridge.sh" "$@"; }
 
 # The panel runs the stack under its own project name; containers are found by that label.
 project_name() { compose_json | jq -er '.appName'; }
@@ -117,12 +122,15 @@ run_tag() {
   "$here/outage-probe.sh" "https://$DOZO_DEPLOY_DOMAIN" "$probe_dir/requests" >"$probe_dir/summary" &
   probe_pid=$!
   say "host: copying api and web to serve while they are replaced"
+  # Moved into place, so a `watch` already running keeps reading the file it started with.
+  remote "cat >$remote_dir/bridge.sh.new && chmod 700 $remote_dir/bridge.sh.new && mv $remote_dir/bridge.sh.new $remote_dir/bridge.sh" <"$here/bridge.sh"
   bridged=$project
   bridge up "$project" || say "WARNING: deploying without a copy of every service (see above)"
 
   say "panel: deploying $tag (was ${previous:-nothing})"
   jq -n --arg id "$DOKPLOY_COMPOSE_ID" --arg title "dozo $tag" '{composeId: $id, title: $title}' |
     panel compose.deploy --data-binary @- >/dev/null
+  panel_started=1
 
   # The panel queues the deployment: wait for a record newer than the last one to finish.
   local waited=0
@@ -139,10 +147,9 @@ run_tag() {
     waited=$((waited + 2))
   done
 
-  local kept=0
-  bridge down "$project" || kept=1
+  bridge wait "$project" "$timeout" ||
+    die "the new api or web is not healthy; the previous release keeps serving through its copy (dozo/deploy/README.md, Deploys without a gap)"
   bridged=""
-  [ "$kept" = 0 ] || die "the new api or web is not healthy; the previous release keeps serving through its copy (dozo/deploy/README.md, Deploys without a gap)"
   say "host: waiting for api and worker to be healthy"
   remote bash -s -- "$project" "$tag" "$timeout" <<'EOF' || die "health check on the host failed"
 set -euo pipefail

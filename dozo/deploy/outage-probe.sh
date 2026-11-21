@@ -7,7 +7,8 @@
 # then prints what each target saw, with its slowest answer (a request the proxy had to send again
 # arrives late but arrives), and last `[probe] longest outage <seconds>s (<target>)`.
 # Usage: outage-probe.sh <base url> <raw log file> [extra curl arguments...]
-# DOZO_PROBE_INTERVAL (seconds, default 0.5) is the pause between two requests of one target and
+# DOZO_PROBE_INTERVAL (seconds, default 2, so about two requests a second in all) is the pause
+# between two requests of one target and
 # DOZO_PROBE_TIMEOUT (seconds, default 10) how long one may take.
 set -uo pipefail
 export LC_ALL=C
@@ -19,7 +20,7 @@ export LC_ALL=C
 base=${1%/} log=$2
 shift 2
 extra=("$@")
-interval=${DOZO_PROBE_INTERVAL:-0.5} timeout=${DOZO_PROBE_TIMEOUT:-10}
+interval=${DOZO_PROBE_INTERVAL:-2} timeout=${DOZO_PROBE_TIMEOUT:-10}
 parent=$PPID
 : >"$log"
 
