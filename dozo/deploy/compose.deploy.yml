@@ -10,7 +10,11 @@
 #   - the stack's network has a fixed subnet, so it takes none of the host's few Docker address
 #     pools, which every bot computer's network needs one of;
 #   - what upstream's own proxy (Caddyfile.prod) does and the panel's does not: its response
-#     headers, and API requests sent to the API directly; and one public form closed.
+#     headers, and API requests sent to the API directly; and one public form closed;
+#   - what a deploy without a gap needs (README, Deploys without a gap): as in upstream's production
+#     compose file, health checks that probe every second while starting (web gets one) and the
+#     30 seconds the api's shutdown expects; and checks that fail on a marker, so a deploy can take
+#     a running api or web out of the proxy before it stops it.
 services:
   postgres:
     restart: unless-stopped
@@ -57,6 +61,20 @@ services:
     restart: unless-stopped
     mem_limit: 1536m
     ports: !reset []
+    # Lets a replaced api finish its requests (apps/api/src/index.ts waits up to 20 seconds).
+    stop_grace_period: 30s
+    # Probe every second while starting, so the proxy routes to a new api as soon as it answers.
+    # A deploy takes the running api out of the proxy before it stops it: it creates the marker,
+    # and the proxy drops the api once the check has failed three times (README, Deploys without
+    # a gap). /dev/shm starts empty with every start of the container.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test ! -e /dev/shm/dozo-drain && node -e "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 5s
+      retries: 3
+      start_period: 2m
+      start_interval: 1s
     environment:
       # What each plan's computer gets on this host, size=vCPUs:GB (README, Bot computers on a
       # shared host). The api shows it and the api and worker start computers with it, so both
@@ -133,6 +151,17 @@ services:
     ports: !reset []
     environment:
       RAKAZO_THEME: /theme/theme.json
+    # Upstream's production check (without one the proxy routes to web before it listens), with
+    # the api's marker and cadence.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test ! -e /dev/shm/dozo-drain && node -e "fetch('http://127.0.0.1:5173/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+      start_interval: 1s
     # Routers beside the one the panel adds for the domain, ahead of it by priority. The panel's
     # router keeps getting the certificate; these only add what it lacks.
     labels:
