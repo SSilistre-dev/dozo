@@ -6067,6 +6067,24 @@
       "reason": "message revision: the router decides which message can be edited or regenerated and does it under the thread's lock"
     },
     {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "export * from \"./dozo-message-revision.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
+      "replace": "export * from \"./dozo-message-revision.js\";\nexport * from \"./dozo-bot-chats.js\";\nimport { dozoChatsContract } from \"./dozo-bot-chats.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  dozoMessages: dozoMessagesContract,\n  threads: {\n",
+      "replace": "  dozoMessages: dozoMessagesContract,\n  dozoChats: dozoChatsContract,\n  threads: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: a bot's extra chats (list, create, rename, archive) join the app contract, so the server and the clients share their types"
+    },
+    {
       "file": "packages/core/src/thread-snapshot-events.ts",
       "find": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
       "replace": "import { payloadAuthor, replyMetadata } from \"./message-replies.js\";\nimport { dozoRemovedMessageId } from \"./dozo-removed-message.js\";\nimport { isActive, isBackgroundRunTrigger, QUEUE_HOLDING_RUN_STATUSES } from \"./run-state.js\";\n",
