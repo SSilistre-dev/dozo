@@ -385,7 +385,11 @@ describe("reviseInTransaction", () => {
 
 describe("dozoMessagesRoutes", () => {
   type Handler = (args: { context: { actor: Actor }; input: Record<string, unknown> }) => unknown;
-  function setup(state: Chat, threadRow: { botId: string | null } | null = { botId: "bot-1" }) {
+  function setup(
+    state: Chat,
+    threadRow: { botId: string | null } | null = { botId: "bot-1" },
+    extraChatOf: string | null = null,
+  ) {
     const db = fakeDb(state);
     const deps = {
       prisma: {
@@ -394,6 +398,8 @@ describe("dozoMessagesRoutes", () => {
           ...db.thread,
           findFirst: vi.fn(async () => threadRow && { ...thread, ...threadRow }),
         },
+        // A bot's extra chat's row, when the thread is one.
+        $queryRaw: vi.fn(async () => (extraChatOf ? [{ botId: extraChatOf }] : [])),
         $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)),
       },
       events: { notify: vi.fn(async () => undefined), publishSpaceChange: vi.fn() },
@@ -427,6 +433,19 @@ describe("dozoMessagesRoutes", () => {
     });
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
       botId: "bot-1",
+      chatId: "thread-1",
+    });
+  });
+
+  it("names them in a bot's extra chat too, through that chat of its bot", async () => {
+    const { call } = setup(chat(), { botId: null }, "bot-1");
+    expect(await call("revisable", { threadId: "thread-1" })).toEqual({
+      editMessageId: "m-ask",
+      regenerateMessageId: "m-reply",
+    });
+    expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
+      botId: "bot-1",
+      chatId: "thread-1",
     });
   });
 
