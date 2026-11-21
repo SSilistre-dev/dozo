@@ -1,0 +1,29 @@
+# Opt-in, local stack only (DOZO_EMAIL_EMULATOR=1 make up): upstream's email emulator, so sign-in
+# codes and other mails are captured instead of sent and the e2e suite reads them back from
+# /api/dev/emails. Upstream runs the emulator only outside production and only for an API bound to
+# a loopback address, while this stack's API binds 0.0.0.0 so the web container can reach it. So
+# here the API binds 127.0.0.1:3101 and a few lines of Node, sharing its network namespace, relay
+# 0.0.0.0:3100 to it: the web's api:3100 and the API's own health check keep working unchanged.
+# Never part of the live stack (dozo/deploy/compose.deploy.yml).
+services:
+  api:
+    environment:
+      NODE_ENV: development
+      EMAIL_EMULATOR: "true"
+      API_HOST: "127.0.0.1"
+      API_PORT: "3101"
+  api-relay:
+    image: ${DOZO_NODE_IMAGE:-node:24.22-slim}
+    network_mode: "service:api"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    command:
+      - node
+      - -e
+      - >-
+        require("net").createServer((c) => { const u = require("net").connect(3101, "127.0.0.1");
+        c.pipe(u); u.pipe(c); const e = () => { c.destroy(); u.destroy(); };
+        c.on("error", e); u.on("error", e); c.on("close", e); u.on("close", e);
+        }).listen(3100, "0.0.0.0")

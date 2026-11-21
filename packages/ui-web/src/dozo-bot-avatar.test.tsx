@@ -74,6 +74,18 @@ describe("BotAvatar", () => {
     expect(DOZO_CHARACTERS).toContain(of(""));
   });
 
+  it("paints the accessory in the colour picked for the bot, the one its swatch shows", () => {
+    const tile = (color: string) =>
+      avatarIn(
+        mount(<BotAvatar color={color} identity="bot-1" />).container,
+      ).style.getPropertyValue("--dozo-tile");
+    for (const { id, hex } of BOT_COLOR_LIST) {
+      expect(tile(hex)).toBe(id === "white" ? "var(--dozo-body)" : hex.toLowerCase());
+    }
+    expect(tile(`${hexOf("red")}::shape_2`)).toBe(hexOf("red").toLowerCase());
+    expect(new Set(BOT_COLOR_LIST.map(({ hex }) => tile(hex))).size).toBe(BOT_COLOR_LIST.length);
+  });
+
   it("keeps a saved photo as upstream draws it", () => {
     const { container } = mount(<BotAvatar color={PHOTO} identity="bot-1" />);
     expect(container.querySelector("img")?.getAttribute("src")).toBe(PHOTO);
@@ -297,6 +309,34 @@ describe("dozo-overlays.css", () => {
     for (const [, used] of overlays.matchAll(/var\((--dozo-[a-z0-9-]+)\)/g)) {
       expect(named.has(used as string), `${used} is not named in dozo-shell.css`).toBe(true);
     }
+  });
+});
+
+describe("dozo-auth.css", () => {
+  const auth = readFileSync(join(import.meta.dirname, "dozo-auth.css"), "utf8");
+
+  it("is imported by the shell stylesheet before any rule of its own", () => {
+    expect(css.indexOf('@import "./dozo-auth.css";')).toBeGreaterThan(-1);
+    expect(css.indexOf('@import "./dozo-auth.css";')).toBeLessThan(css.indexOf(":root"));
+  });
+
+  it("takes every colour from a tone the shell names and moves only without reduced motion", () => {
+    expect(auth).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(auth).not.toMatch(/color-mix\(|rgba?\(|hsla?\(|oklch\(/);
+    expect(auth).not.toContain("!important");
+    const quiet = "@media (prefers-reduced-motion: no-preference) {";
+    const start = auth.indexOf(quiet);
+    expect(start).toBeGreaterThan(-1);
+    expect(auth.slice(0, start)).not.toMatch(/\b(?:animation|transition)\b\s*:/);
+    const named = new Set([...css.matchAll(/^\s*(--dozo-[a-z0-9-]+):/gm)].map(([, name]) => name));
+    for (const [, used] of auth.matchAll(/var\((--dozo-[a-z0-9-]+)\)/g)) {
+      expect(named.has(used as string), `${used} is not named in dozo-shell.css`).toBe(true);
+    }
+  });
+
+  it("keeps keyboard focus and an invalid field visible", () => {
+    expect(auth).toMatch(/:focus-visible \{\s*outline: 2px solid var\(--dozo-focus\);/);
+    expect(auth).toContain('[data-slot="input"][aria-invalid="true"]');
   });
 });
 

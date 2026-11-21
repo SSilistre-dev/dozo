@@ -83,9 +83,15 @@ describe("CLI account routes", () => {
     expect(await client("ada").connect({ provider: "tool-a" })).toEqual({
       tools: [{ ...TOOL, connected: true }],
     });
-    expect(fake.connection).toHaveBeenCalledWith({ prisma, secretStore: secrets }, "ada", "tool-a", {
-      consent: false,
-    });
+    expect(fake.connection).toHaveBeenCalledWith(
+      { prisma, secretStore: secrets },
+      "ada",
+      "tool-a",
+      {
+        consent: false,
+        termsConsent: false,
+      },
+    );
     const [, actor, input] = fake.persist.mock.calls[0]!;
     expect(actor).toMatchObject({ userId: "ada" });
     // It becomes the main model only while there is none.
@@ -94,9 +100,10 @@ describe("CLI account routes", () => {
   });
 
   it("passes the person's agreement on for an agent", async () => {
-    await client("ada").connect({ provider: "tool-a", consent: true });
+    await client("ada").connect({ provider: "tool-a", consent: true, termsConsent: true });
     expect(fake.connection).toHaveBeenCalledWith(expect.anything(), "ada", "tool-a", {
       consent: true,
+      termsConsent: true,
     });
   });
 

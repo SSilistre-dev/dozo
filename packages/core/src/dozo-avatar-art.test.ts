@@ -6,6 +6,7 @@ import {
   DOZO_BOT_PALETTE,
   DOZO_CHARACTERS,
   dozoAvatarSvg,
+  dozoBotColor,
   dozoCharacterForLook,
   dozoCharacterForSeed,
   dozoHashSeed,
@@ -66,6 +67,24 @@ describe("Dozo avatar art", () => {
     expect(dozoHashSeed("bot-1")).not.toBe(dozoHashSeed("bot-2"));
     const seen = new Set(Array.from({ length: 200 }, (_, i) => dozoCharacterForSeed(`bot-${i}`)));
     expect(seen.size).toBe(6);
+  });
+});
+
+describe("the colour a bot wears", () => {
+  it("is the colour picked for it, as #rrggbb, whatever shape it has", () => {
+    for (const { id, hex } of BOT_COLOR_LIST) {
+      const want = id === "white" ? undefined : hex.toLowerCase();
+      expect(dozoBotColor("bot-1", hex)).toBe(want);
+      expect(dozoBotColor("bot-2", `${hex}::shape_3`)).toBe(want);
+    }
+    expect(dozoBotColor("bot-1", "#07F")).toBe("#0077ff");
+    expect(dozoBotColor("bot-1", "blue")).toBe(hexOf("blue").toLowerCase());
+  });
+
+  it("is the one upstream assigns a bot with no valid colour, the same every time", () => {
+    for (const value of [undefined, null, "", "nonsense"]) {
+      expect(dozoBotColor("bot-1", value)).toBe(dozoBotColor("bot-1", undefined));
+    }
   });
 });
 
@@ -153,8 +172,19 @@ describe("the notification portrait", () => {
       const source = notificationAvatarSource({ id: "bot-1", color });
       expect(source.startsWith("data:image/svg+xml,")).toBe(true);
       const drawing = decodeURIComponent(source.slice(source.indexOf(",") + 1));
-      expect(drawing).toBe(dozoAvatarSvg(dozoCharacterForLook("bot-1", color)));
+      expect(drawing).toBe(
+        dozoAvatarSvg(dozoCharacterForLook("bot-1", color), 96, dozoBotColor("bot-1", color)),
+      );
     }
+  });
+
+  it("paints the accessory in the bot's own colour, and a white bot's in the head's ink", () => {
+    const drawing = (color: string) => {
+      const source = notificationAvatarSource({ id: "bot-1", color });
+      return decodeURIComponent(source.slice(source.indexOf(",") + 1));
+    };
+    expect(drawing(hexOf("magenta"))).toContain(`fill="${hexOf("magenta").toLowerCase()}"/>`);
+    expect(drawing(hexOf("white"))).not.toMatch(/fill="#(?!FFFFFF|141414)/i);
   });
 
   it("is the one the package exports, in place of upstream's drawing", () => {

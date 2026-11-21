@@ -3,7 +3,7 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { defaultCatalogModelId } from "../model-selection.js";
 import type { AgentDriver } from "./dozo-agent.js";
-import { agentDataFolder } from "./dozo-agent.js";
+import { AGENT_OWN_MODEL, agentDataFolder } from "./dozo-agent.js";
 import type { LocalCliHost } from "./dozo-cli-driver.js";
 import { cliAccountRef } from "./dozo-cli-driver.js";
 import { enabledAgentDrivers } from "./dozo-cli-providers.js";
@@ -17,11 +17,19 @@ export interface AgentToolView {
   signedIn: null;
   connected: boolean;
   canAdd: false;
+  /** Its maker's terms put the person's account at risk; connecting asks them to accept that. */
+  termsRisk?: true;
 }
 
 export class AgentConsentError extends ClientError {
   constructor() {
     super("BAD_REQUEST", "Agent mode needs your agreement first.", "agent_consent");
+  }
+}
+
+export class AgentTermsConsentError extends ClientError {
+  constructor() {
+    super("BAD_REQUEST", "Accept the risk to your account first.", "agent_terms_consent");
   }
 }
 
@@ -56,6 +64,7 @@ export async function readAgentTools(
       signedIn: null,
       connected: connected.has(driver.provider),
       canAdd: false as const,
+      ...(driver.termsRisk ? { termsRisk: true as const } : {}),
     })),
   );
 }
@@ -72,10 +81,12 @@ export function agentDriverFor(provider: string): AgentDriver | undefined {
 export async function agentConnection(
   driver: AgentDriver,
   host: LocalCliHost,
-  consent: boolean,
+  consent: { agent: boolean; terms?: boolean },
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  if (!consent) throw new AgentConsentError();
+  if (!consent.agent) throw new AgentConsentError();
+  // The person accepted, separately, that the agent's maker may close their account for it.
+  if (driver.termsRisk && !consent.terms) throw new AgentTermsConsentError();
   const workDir = agentDataFolder(env, "agent-work", "check");
   await mkdir(workDir, { recursive: true, mode: 0o700 });
   const reason = await driver.selfTest(host, workDir);
@@ -84,6 +95,8 @@ export async function agentConnection(
     provider: driver.provider,
     label: `${driver.name} agent`,
     plaintext: cliAccountRef({ kind: "home" }),
-    modelId: defaultCatalogModelId(driver.modelSource) ?? undefined,
+    modelId: driver.modelSource
+      ? (defaultCatalogModelId(driver.modelSource) ?? undefined)
+      : AGENT_OWN_MODEL,
   };
 }

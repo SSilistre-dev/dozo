@@ -171,6 +171,19 @@ describe("send", () => {
     expect(text).toContain("Failed runs: none\n");
   });
 
+  it("takes the mobile app's diagnostics and writes its surface under the note", async () => {
+    await caller().dozoFeedback.send({
+      message: "Crash",
+      diagnostics: {
+        client: { ...client, surface: "mobile", userAgent: "Dozo ios 26.1" },
+        runIds: [],
+      },
+    });
+    const text = send.mock.calls[0]?.[0].text ?? "";
+    expect(text).toContain("Surface: mobile\n");
+    expect(text).toContain("Browser: Dozo ios 26.1\n");
+  });
+
   it("refuses diagnostics fields the preview does not list", async () => {
     await expect(
       caller().dozoFeedback.send({
