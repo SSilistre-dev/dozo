@@ -26,7 +26,10 @@ travels in the page's address and in its links to the site's other pages. Nothin
 privacy pages' one-cookie statement stays true. The home page's own script is `landing.js`.
 
 Legal pages: `privacy/`, `terms/` and `refunds/`, one `index.html` each per language, linked from
-every footer. Plain text under the landing page's header and footer. They state only what the code does (the data flows were read
+every footer. `delete-account/` is built the same way (the stores require a web page that explains
+account deletion) and is linked from the privacy page, not the footer. `support/` is the stores'
+Support URL: the same template, but indexable and listed in `sitemap.xml`; it points to the contact
+address, the deletion page and the legal pages. Plain text under the landing page's header and footer. They state only what the code does (the data flows were read
 from the code) and what the owner's own published policies say; a lawyer has not reviewed them
 (`dozo/LAUNCH-CHECKLIST.md`). The app's privacy and terms links open them through two anchored rules
 in `dozo/brand/brand.json`. A value only the owner can supply is written `[[NAME]]`, and `make olc`
@@ -42,8 +45,8 @@ the calls to action, every page's `canonical` and `hreflang` links, `dozo/e2e/la
 and the site links in `dozo/brand/brand.json` and the `dozo-*` files that name it (`git grep`).
 
 Search and answer engines: the site is open to them. `robots.txt` allows every crawler, names the
-AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages with
-their `hreflang` alternates. The legal pages stay `noindex` (plain boilerplate with no search value;
+AI crawlers each vendor documents and points to `sitemap.xml`, which lists the two home pages and the two
+support pages with their `hreflang` alternates. The legal pages and the deletion page stay `noindex` (plain boilerplate with no search value;
 crawlers still follow their links) and are not in the sitemap, like the 404 pages. `llms.txt` is a
 short factual summary for answer engines: its prices are held to the page by the test. Each home
 page carries one JSON-LD block (Organization, WebSite, SoftwareApplication with the page's prices).

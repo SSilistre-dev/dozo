@@ -88,7 +88,7 @@ function sameShape(actual, expected, file) {
 const find = (page, name, where) =>
   page.tags.filter((tag) => tag.name === name && where(tag.attrs));
 // Every language has the same pages: the landing page and, each in its own directory, the legal pages.
-const pages = ["", "privacy/", "terms/", "refunds/", "delete-account/"];
+const pages = ["", "privacy/", "terms/", "refunds/", "delete-account/", "support/"];
 const english = Object.fromEntries(
   ["404.html", ...pages.map((page) => `${page}index.html`)].map((file) => [
     file,

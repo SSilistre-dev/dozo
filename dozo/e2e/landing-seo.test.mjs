@@ -9,6 +9,7 @@ const read = (path) => readFileSync(new URL(path, dir), "utf8");
 const nginx = readFileSync(new URL("../deploy/site.nginx.conf", import.meta.url), "utf8");
 const pages = { en: "index.html", tr: "tr/index.html" };
 const home = { en: "https://dozo.bot/", tr: "https://dozo.bot/tr/" };
+const support = { en: "https://dozo.bot/support/", tr: "https://dozo.bot/tr/support/" };
 
 const jsonLd = (file) => {
   const blocks = [...read(file).matchAll(/<script type="application\/ld\+json">([^<]*)<\/script>/g)];
@@ -44,12 +45,20 @@ test("the server does not send noindex, and redirects www to the bare domain", (
 test("the sitemap lists the indexable pages with their alternates, and nothing else", () => {
   const xml = read("sitemap.xml");
   const locs = [...xml.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
-  assert.deepEqual(locs, [home.en, home.tr]);
+  assert.deepEqual(locs, [home.en, home.tr, support.en, support.tr]);
   const alternates = (xml.match(/hreflang="[^"]+" href="[^"]+"/g) ?? []).length;
-  assert.equal(alternates, 6);
+  assert.equal(alternates, 12);
   for (const [lang, file] of Object.entries(pages)) {
     const html = read(file);
     assert.match(html, new RegExp(`<link rel="canonical" href="${home[lang]}">`));
+    assert.doesNotMatch(html, /name="robots"/, `${file} must be indexable`);
+  }
+  for (const [lang, file] of [
+    ["en", "support/index.html"],
+    ["tr", "tr/support/index.html"],
+  ]) {
+    const html = read(file);
+    assert.match(html, new RegExp(`<link rel="canonical" href="${support[lang]}">`));
     assert.doesNotMatch(html, /name="robots"/, `${file} must be indexable`);
   }
 });
