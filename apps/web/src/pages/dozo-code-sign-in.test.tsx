@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   passkeySupported: false,
   providers: vi.fn(),
   now: 0,
+  complete: true,
 }));
 
 vi.mock("@lingui/react/macro", () => ({
@@ -55,7 +56,7 @@ vi.mock("@rakazo/ui-web", () => ({
       value={props.value}
       onChange={(event) => {
         props.onChange(event.target.value);
-        if (event.target.value.length === 6) props.onComplete(event.target.value);
+        if (mocks.complete && event.target.value.length === 6) props.onComplete(event.target.value);
       }}
     />
   ),
@@ -126,6 +127,7 @@ beforeEach(() => {
   mocks.providers.mockClear();
   mocks.passkeyStart.mockClear();
   mocks.passkeySupported = false;
+  mocks.complete = true;
   clock = 1_000_000;
   mocks.now = clock;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -398,4 +400,82 @@ it("offers a way back from the password form only where the server signs in with
     ),
   );
   expect(button("Email me a code instead")).toBeUndefined();
+});
+
+it("verifies a full code submitted from the form, and an emptied box leaves the error in place", async () => {
+  mocks.verify.mockResolvedValueOnce({ error: { code: "INVALID_OTP", message: "Invalid OTP" } });
+  await open();
+  await toCode();
+  const code = () =>
+    host.querySelector<HTMLInputElement>('[data-testid="code"]') as HTMLInputElement;
+  mocks.complete = false;
+  await type(code(), "246810");
+  expect(mocks.verify).not.toHaveBeenCalled();
+  await submit();
+  expect(mocks.verify).toHaveBeenCalledWith({ email: "maya@example.com", otp: "246810" });
+  expect(alerts()).toHaveLength(1);
+  await type(code(), "");
+  expect(alerts()).toHaveLength(1);
+});
+
+it("sends a provider sign-in back to where the person was going", async () => {
+  mocks.sso.mockResolvedValueOnce({ data: {} });
+  await open("/sign-in?next=%2Fdocs", [{ id: "google", name: "Google" } as SignInProvider]);
+  await act(async () => button("google")?.click());
+  expect(alerts()).toEqual([]);
+  const [start, allowed] = mocks.sso.mock.calls[0] as [
+    (d: boolean, cb: (p: string) => string) => unknown,
+    string[],
+  ];
+  expect(allowed).toContain("/docs");
+  start(false, (path) => `cb:${path}`);
+  expect(mocks.social).toHaveBeenCalledWith(expect.objectContaining({ callbackURL: "cb:/docs" }));
+});
+
+it("hands over an empty address when the password form has no email field", async () => {
+  const capabilities = { passwordAuth: true, emailCode: true } as never;
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/sign-in/email"]}>
+        <Where />
+        <Routes>
+          <Route
+            path="/sign-in/email"
+            element={
+              <>
+                <form>
+                  <DozoEmailCodeLink capabilities={capabilities} />
+                </form>
+                <DozoEmailCodeLink capabilities={capabilities} />
+              </>
+            }
+          />
+          <Route path="/sign-in" element={<p>code form</p>} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () => button("Email me a code instead")?.click());
+  expect(where()).toBe('/sign-in|{"email":""}');
+});
+
+it("hands over an empty address from a link outside any form", async () => {
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/sign-in/email"]}>
+        <Where />
+        <Routes>
+          <Route
+            path="/sign-in/email"
+            element={
+              <DozoEmailCodeLink capabilities={{ passwordAuth: true, emailCode: true } as never} />
+            }
+          />
+          <Route path="/sign-in" element={<p>code form</p>} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () => button("Email me a code instead")?.click());
+  expect(where()).toBe('/sign-in|{"email":""}');
 });
