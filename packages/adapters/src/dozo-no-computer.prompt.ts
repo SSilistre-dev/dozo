@@ -33,8 +33,12 @@ export function noCloudComputerInstruction(options: {
       : options.reason === "plan"
         ? "the plan includes no cloud computer, so you work on the user's own computer"
         : "the plan has no computer hours left";
+  // The page tools are offered here only for the bot's own browser there (dozo-user-browser.ts).
+  const browser = options.offered.has("browser_navigate")
+    ? " browser_navigate, browser_snapshot and browser_act use a browser of your own on the user's computer, in a window they can see."
+    : "";
   if (options.userComputer === "connected")
-    return `You have no computer of your own in this run: ${why}. For work that needs a computer, use the user's computer.${web}`;
+    return `You have no computer of your own in this run: ${why}. For work that needs a computer, use the user's computer.${browser}${web}`;
   const fix =
     options.reason === "payment"
       ? `the user can connect their own computer (${CONNECT_OWN_COMPUTER}), or whoever manages billing can update the payment`
