@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
+
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { DozoSettingsNavGroups, dozoSettingsNavGroups } from "./dozo-settings-nav";
+import { DozoSettingsNavGroups, dozoSettingsNavGroups, NOTICES_PAGE } from "./dozo-settings-nav";
 import type { SettingsNavItem } from "./settings-nav";
 import type { SettingsSection } from "./shell-overlay";
+
+const capabilities = vi.hoisted(() => ({
+  fetchAuthCapabilities: vi.fn<() => Promise<{ notices?: boolean }>>(async () => ({})),
+}));
+vi.mock("../lib/auth-capabilities", () => capabilities);
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
@@ -68,10 +75,15 @@ it("puts a section it does not know yet under App instead of dropping it", () =>
 const mounted: Array<() => void> = [];
 afterEach(() => {
   for (const unmount of mounted.splice(0)) unmount();
+  vi.unstubAllGlobals();
 });
+
+/** No request of its own: the nav reads the capabilities the app already loaded. */
+const fetchSpy = vi.fn<typeof fetch>(async () => new Response(null, { status: 500 }));
 
 function render(section: SettingsSection, disabled = false) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("fetch", fetchSpy);
   const container = document.createElement("nav");
   document.body.append(container);
   const root = createRoot(container);
@@ -118,4 +130,37 @@ it("marks General while a space's page is open, and disables every button while 
     "settings-nav-general",
   );
   expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
+});
+
+it("links the third-party notices only where the server says it has them", async () => {
+  capabilities.fetchAuthCapabilities.mockResolvedValueOnce({ notices: true });
+  const local = render("general");
+  await act(async () => {});
+  const link = local.container.querySelector<HTMLAnchorElement>(
+    '[data-testid="settings-nav-licenses"]',
+  );
+  expect(link?.getAttribute("href")).toBe(NOTICES_PAGE);
+  expect(link?.textContent).toBe("Licenses");
+  expect(link?.target).toBe("_blank");
+
+  // A hosted server says nothing (or no): no link, and no request for a page it does not have.
+  const hosted = render("general");
+  capabilities.fetchAuthCapabilities.mockResolvedValueOnce({ notices: false });
+  const refused = render("general");
+  capabilities.fetchAuthCapabilities.mockRejectedValueOnce(new TypeError("offline"));
+  const offline = render("general");
+  await act(async () => {});
+  for (const nav of [hosted, refused, offline]) {
+    expect(nav.container.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
+  }
+  expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+it("ignores an answer that arrives after the nav closed", async () => {
+  const late = deferred<{ notices?: boolean }>();
+  capabilities.fetchAuthCapabilities.mockReturnValueOnce(late.promise);
+  render("general");
+  for (const unmount of mounted.splice(0)) unmount();
+  await act(async () => late.resolve({ notices: true }));
+  expect(document.querySelector('[data-testid="settings-nav-licenses"]')).toBeNull();
 });

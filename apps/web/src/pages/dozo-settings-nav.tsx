@@ -1,4 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
+import { Scale } from "lucide-react";
+import { useEffect, useState } from "react";
+import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import type { SettingsNavItem } from "./settings-nav";
 import type { SettingsSection } from "./shell-overlay";
 
@@ -33,6 +36,33 @@ export function dozoSettingsNavGroups(
     .filter((group) => group.items.length > 0);
 }
 
+/** The third-party notices the local server bundle carries (`dozo/server-bundle/notices.mjs`). */
+export const NOTICES_PAGE = "/third-party-notices.html";
+
+/**
+ * Whether this server ships the notices page, as its public capabilities say (`notices`, set by
+ * the local server bundle only). The app loads those once at start, so this sends no request of
+ * its own and a hosted server, which has no such page, is never asked for it.
+ */
+function useNoticesPage(): boolean {
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    let current = true;
+    fetchAuthCapabilities()
+      .then(
+        (capabilities) => capabilities.notices === true,
+        () => false,
+      )
+      .then((shipped) => {
+        if (current) setPresent(shipped);
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return present;
+}
+
 /** The settings nav's buttons, upstream's markup and behaviour, grouped under their headings. */
 export function DozoSettingsNavGroups({
   items,
@@ -46,12 +76,13 @@ export function DozoSettingsNavGroups({
   onSectionChange: (section: SettingsSection) => void;
 }) {
   const { t } = useLingui();
+  const notices = useNoticesPage();
   const labels: Record<DozoSettingsNavGroupId, string> = {
     account: t`Account`,
     bots: t`Bots`,
     app: t`App`,
   };
-  return dozoSettingsNavGroups(items).map((group) => (
+  const groups = dozoSettingsNavGroups(items).map((group) => (
     <fieldset
       key={group.id}
       aria-labelledby={`dozo-settings-nav-${group.id}`}
@@ -90,4 +121,19 @@ export function DozoSettingsNavGroups({
       })}
     </fieldset>
   ));
+  if (!notices) return groups;
+  return [
+    ...groups,
+    <a
+      key="licenses"
+      href={NOTICES_PAGE}
+      target="_blank"
+      rel="noreferrer"
+      data-testid="settings-nav-licenses"
+      className="flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    >
+      <Scale className="size-4 shrink-0" strokeWidth={1.75} />
+      <span className="whitespace-nowrap">{t`Licenses`}</span>
+    </a>,
+  ];
 }

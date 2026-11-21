@@ -306,6 +306,23 @@ Mobile pins from the same long-press menu, and lists a chat's pins from the bot 
 group settings, only while there are some; choosing one opens the chat at it. The app reads a
 chat's pins again on every roster signal.
 
+## Feedback
+
+The account menu's Send feedback opens a short note with an optional Include diagnostics switch
+(`apps/api/src/dozo-feedback.ts`, `apps/web/src/components/dozo-feedback*.tsx`). It goes to the
+address in `DOZO_FEEDBACK_EMAIL`; without one the item is not shown. With an email provider the
+server mails it there, as plain text with the sender's own address to reply to. Without one the
+dialog saves the report as a text file and shows the address to send it to.
+
+Diagnostics are the surface (web or desktop), the browser's user agent, language and time zone,
+the server's revision, and the ids and times of the sender's own failed runs in the last 7 days
+(never their error text). The dialog shows the exact lines added under the note before anything is
+sent, and the server sends only the runs it showed. Nothing is sent without the person pressing
+Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
+
+Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
+it an address. There is no anonymous path to the hosted service from a local server.
+
 ## Commands on your own computer
 
 Upstream asks once per Space before a bot first runs a command on the member's own computer (the
@@ -349,8 +366,47 @@ How a command is read, and what that does not cover:
   does for a denied tool; the next message starts afresh.
 
 The mobile app lists them too, from a Commands row beside approval Rules that shows only while
-there is one (`apps/mobile/app/(settings)/dozo-commands.tsx`). Not done yet: screen control on the member's computer keeps upstream's approval per app; browser actions
-and a daily limit on what a bot sends are later work.
+there is one (`apps/mobile/app/(settings)/dozo-commands.tsx`). Not done yet: screen control on
+the member's computer keeps upstream's approval per app. The fork's
+desktop app answers every screen request with "Screen control is not available on this computer"
+(`dozo/desktop/src/device_run.rs`) and a bot's browser tools never run on the member's computer
+(a computer on the user's machine is not graphical), so no browser or screen action reaches it
+yet; only upstream's Electron app, which the fork does not ship, drives apps there. Asking per
+action belongs with adding screen control to the fork's app. The server still offers the screen
+tools to a paired Mac or Windows computer, whose first card then ends in that refusal.
+
+## Daily sends
+
+Each bot may make a number of sends a day for a member without asking them
+(`packages/adapters/src/dozo-send-limit.ts`, `packages/db/src/dozo-send-limit.ts`); past it, each
+send asks with a card that says why and offers Allow once and Deny only. Settings > Approvals sets
+the number for the account (50 until changed, 1 to 1000), under the mode.
+
+- A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
+  something (declared not read-only, or named like a change, the same test that makes it ask in
+  Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
+  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
+  including form submits, are not counted yet: telling a submit from another click needs a new
+  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
+  the member's own cloud coding agents are not sends here.
+- Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
+  rule, or left to the approval model. A send a person approves on its card is not counted. One
+  the approval model then asks about, or that fails, still counts, so the number errs towards
+  asking sooner. A run resumed after a crash may count a call twice for the same reason.
+- Per member, per bot, per day of the member's timezone (UTC until one is set), so each new bot
+  has its own number. One conditional upsert per call (table `dozo_daily_sends`), so concurrent
+  sends on any number of instances never count past the number. Rows older than yesterday go when that bot next sends. A bot that
+  changes the member's timezone (`update_preferences`, offered in the member's own chats only)
+  can move to a date that has not started elsewhere: the timezones in use span at most three
+  dates at once, so that is at most three days' sends in one real day.
+- It asks in every mode, Never ask included; a block rule still refuses. Where a card cannot wait,
+  upstream's rules hold: a background helper refuses instead. Webhook and routine runs post the
+  card as they do for any other gated action.
+- The card's reason is English, like every card detail the server writes. Mode's description
+  for Never ask ("Asks only before purchases and the first use of your computer") does not mention
+  it. The mobile app has no setting for the number; it shows the card.
+- `send_email` keeps upstream's own account-wide cap of recipients a day (`botEmailDailyLimit`,
+  set by the operator), which refuses rather than asks.
 
 ## Status and known limits
 
@@ -462,6 +518,15 @@ Accepted by the owner for now, stated here once:
   routines from starting, not a run already going or its one retry, and webhook, email and chat
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
   which it does not show.
+- One-time waits (`packages/adapters/src/dozo-wait.ts`): `schedule_create` with a watch and
+  `waitMinutes` (5 minutes to a week, at most 10 going per bot) wakes the bot once in that chat, at
+  the first change or at the deadline, then ends; no model runs in between and the routine's
+  wakeup job carries it across restarts. It is a routine, so the user sees and stops it in the
+  bot's Routines list (web and mobile). A deadline missed by more than 12 hours ends it without a
+  run, as a missed one-time routine does. A wait for a set time is the existing one-shot reminder.
+  A wait that cannot start is refused before the approval card; the per-bot count and the insert
+  share an advisory lock. `dozo-wait.postgres.test.ts` checks it on a migrated database
+  (`VERIFY_DATABASE=1`, `DATABASE_URL` of the runtime login); the unit gate skips it.
 - Known upstream defect, not caused by the rename: the first boot of a new team's computer can answer
   500 "computer home is not usable by uid 1000" on macOS Docker Desktop or Colima bind mounts. Retry
   succeeds. It is upstream's ownership check. The e2e suite allows it on that first start (and

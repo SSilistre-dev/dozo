@@ -75,6 +75,8 @@ services:
       # api only; unset, nothing changes.
       HOSTED_LOGIN_SIGNING_KEY:
       HOSTED_LOGIN_OVERLAP_KEY:
+      # Where in-app feedback goes (dozo/README.md, Feedback). Empty: the app offers none.
+      DOZO_FEEDBACK_EMAIL: ${DOZO_FEEDBACK_EMAIL:-}
     volumes: !override
       - data:/data
     # The panel's proxy reaches the API itself, as upstream's own proxy does, instead of through

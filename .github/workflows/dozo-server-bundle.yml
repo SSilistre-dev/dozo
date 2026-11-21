@@ -3,18 +3,22 @@ name: dozo-server-bundle
 # Builds the local server bundle (dozo/server-bundle/README.md) from the branded tree, one per
 # platform, runs the end-to-end smoke test on linux-x64, and the desktop app's own code installs,
 # starts and stops each bundle and pairs a phone through it: natively, without Docker, on Linux and
-# on macOS (Apple silicon and Intel; dozo/desktop/tests/stack_e2e_native.sh), and on Windows
+# on macOS (Apple silicon and Intel; dozo/desktop/tests/stack_e2e_native.sh, which also updates a
+# server installed from a published release to this bundle), and on Windows
 # (dozo/desktop/tests/stack_e2e_windows.ps1). Every one of those has to pass; a macOS bundle that
 # does not build fails its desktop job rather than the bundle job.
-# On a `server-v<anything>` tag, or a manual run given a tag, the bundles and manifest.json go on a
-# DRAFT release with that tag, never marked latest (the desktop app's own updates read the latest
-# release). Pull requests only build and smoke.
+# On a `server-v<anything>` tag, or a manual run given a tag, the bundles, the Node and Postgres
+# archives runtimes.json pins (downloaded from where they are published and checked against their
+# sha256 first) and manifest.json go on a DRAFT release with that tag, never marked latest (the
+# desktop app's own updates read the latest release). The manifest points at that release for all
+# three parts. Pull requests only build and smoke.
 # Third-party actions are pinned to a full commit SHA with the version in a comment (the same SHAs
 # the upstream workflows use).
 on:
   pull_request:
     paths:
       - dozo/server-bundle/**
+      - packages/adapters/src/dozo-local-*
       - .github/workflows/dozo-server-bundle.yml
       - scripts/build-server-bundle.mjs
       - scripts/build-server.mjs
@@ -279,7 +283,11 @@ jobs:
           else
             for size in 32x32 128x128 256x256 512x512; do cp ../brand/assets/desktop/icon.png "icons/$size.png"; done
           fi
+      # Step 5 updates from the oldest published server (N-1) to this run's bundle (N). No
+      # published release has a Windows bundle yet, so the Windows job has no such step.
       - name: End to end
+        env:
+          DOZO_STACK_E2E_OLD_MANIFEST: https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-1/manifest.json
         run: dozo/desktop/tests/stack_e2e_native.sh dist "$RUNNER_TEMP/tree"
       - name: Gather the logs
         if: always() && env.DOZO_STACK_E2E_LOGS != ''
@@ -316,6 +324,8 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.22.0
+      - name: Node and Postgres
+        run: node dozo/server-bundle/runtimes.mjs dist
       - name: Manifest
         run: node dozo/server-bundle/manifest.mjs dist "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
       - name: Upload to the draft release
@@ -325,4 +335,5 @@ jobs:
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --latest=false \
               --target "$GITHUB_SHA" --title "Local server $TAG" --notes "Local server bundles and manifest.json."
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber dist/dozo-server-*.tar.xz dist/manifest.json
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber dist/dozo-server-*.tar.xz \
+            dist/node-v* dist/postgresql-* dist/manifest.json

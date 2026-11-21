@@ -7,6 +7,7 @@ import {
 } from "@rakazo/core";
 import { dozoCommandRuleExists } from "@rakazo/db";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
+import { dozoSendLimitCard } from "./dozo-send-limit.js";
 import type { RunContext } from "./run-context.js";
 import {
   USER_COMPUTER_SHELL_TOOL,
@@ -48,13 +49,20 @@ export async function userComputerGate(
 
 /**
  * Upstream's card, except for a command asked about on its own: Allow once, Deny, and Always allow
- * this command when the card shows the whole command as it will be saved.
+ * this command when the card shows the whole command as it will be saved. A send held for the
+ * daily limit says so (dozo-send-limit.ts).
  */
 export function buildApprovalAskBlock(
   ...input: Parameters<typeof buildUpstreamAskBlock>
 ): MessageBlock {
-  const block = buildUpstreamAskBlock(...input);
-  const [, toolName, args] = input;
+  const [effectId, toolName, args, secrets, options] = input;
+  const block = buildUpstreamAskBlock(
+    effectId,
+    toolName,
+    args,
+    secrets,
+    dozoSendLimitCard(args, options),
+  );
   if (toolName !== USER_COMPUTER_SHELL_TOOL || !commandAsks.has(args) || block.kind !== "ask")
     return block;
   const command = String(args.command ?? "");

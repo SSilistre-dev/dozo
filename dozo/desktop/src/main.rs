@@ -5,6 +5,7 @@
 
 mod alerts;
 mod background;
+mod backup;
 mod device;
 mod device_pairing;
 mod device_run;
@@ -18,11 +19,13 @@ mod phone;
 mod server;
 mod settings;
 mod stack;
+mod stack_backup;
 mod stack_fetch;
 mod stack_manifest;
 mod stack_os;
 mod stack_proc;
 mod stack_setup;
+mod stack_update;
 mod update;
 
 use std::time::{Duration, Instant};
@@ -33,7 +36,7 @@ use server::{LOCAL, Verdict, decide, is_local, outside, parse_server, reachable}
 use settings::Settings;
 use stack::{Local, Status};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
-use tauri::webview::{NewWindowResponse, PageLoadEvent};
+use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent};
 use tauri::{
     AppHandle, Manager, Theme, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
     Wry, window::Color,
@@ -103,6 +106,47 @@ fn local_options(app: &AppHandle) -> stack::Options {
         options.relay = relay;
     }
     options
+}
+
+/// Ends the app the way Quit does when the system asks it to (logging out, shutting down,
+/// `kill`): the server on this computer stops first instead of being left running.
+#[cfg(unix)]
+fn end_on_signals(app: AppHandle) {
+    use tokio::signal::unix::{SignalKind, signal};
+    tauri::async_runtime::spawn(async move {
+        let (Ok(mut term), Ok(mut int), Ok(mut hup)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::interrupt()),
+            signal(SignalKind::hangup()),
+        ) else {
+            eprintln!("dozo: cannot listen for the system's quit signals");
+            return;
+        };
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = int.recv() => {}
+            _ = hup.recv() => {}
+        }
+        app.exit(0);
+    });
+}
+
+#[cfg(windows)]
+fn end_on_signals(_app: AppHandle) {}
+
+/// Makes the folder a download goes to: the one the web view chose, or else the system's
+/// Downloads folder, which a person may have deleted.
+fn download_folder(destination: &std::path::Path, downloads: Option<PathBuf>) {
+    let folder = destination
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .map(std::path::Path::to_path_buf)
+        .or(downloads);
+    if let Some(folder) = folder
+        && let Err(error) = fs::create_dir_all(&folder)
+    {
+        eprintln!("dozo: no folder for downloads: {error}");
+    }
 }
 
 /// The server on this computer (`stack.rs`), and the folder it keeps everything in.
@@ -315,6 +359,7 @@ fn reload(window: WebviewWindow) {
 
 #[cfg(target_os = "macos")]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let backup_items = backup::items(app)?;
     let separator = || PredefinedMenuItem::separator(app);
     Menu::with_items(
         app,
@@ -337,6 +382,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     &separator()?,
                     &device_item(app)?,
                     &phone::item(app)?,
+                    &backup_items.0,
+                    &backup_items.1,
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &separator()?,
@@ -392,6 +439,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 /// itself: one short menu.
 #[cfg(not(target_os = "macos"))]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let backup_items = backup::items(app)?;
     Menu::with_items(
         app,
         &[&Submenu::with_id_and_items(
@@ -405,6 +453,8 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &PredefinedMenuItem::separator(app)?,
                 &device_item(app)?,
                 &phone::item(app)?,
+                &backup_items.0,
+                &backup_items.1,
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                 &PredefinedMenuItem::separator(app)?,
@@ -679,7 +729,10 @@ fn main() {
             phone::phones,
             phone::remove_phone,
             phone::phone_wait,
-            phone::approve_phone
+            phone::approve_phone,
+            backup::back_up,
+            backup::restore_pick,
+            backup::restore
         ])
         .menu(menu)
         .on_menu_event(|app, event| {
@@ -692,6 +745,8 @@ fn main() {
                 OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, event.id().as_ref()),
                 device::MENU_ID => device::clicked(app),
                 phone::MENU_ID => phone::open(app),
+                backup::BACK_UP_ID => backup::open(app, "backup"),
+                backup::RESTORE_ID => backup::open(app, "restore"),
                 #[cfg(not(target_os = "macos"))]
                 QUIT_ID => app.exit(0),
                 update::MENU_ID => restart_for_update(app),
@@ -719,12 +774,14 @@ fn main() {
             app.manage(LocalServer(Local::new(Arc::new(stack::RealChecks))));
             follow_local(app.clone());
             phone::follow(app.clone());
+            backup::follow(app.clone());
             start_local_if_chosen(&app);
             app.manage(device::Access::new(&app)?);
             device::select(&app, chosen(&app));
             #[cfg(not(target_os = "macos"))]
             add_tray(&app);
             update::watch(app.clone(), offer_update);
+            end_on_signals(app.clone());
             // Read once and gone, so only the start right after Restart to Update sees it.
             let restarted = restart_marker(&app).is_some_and(|file| fs::remove_file(file).is_ok());
             let hidden = background::start_hidden(
@@ -753,8 +810,17 @@ fn main() {
                         }
                         NewWindowResponse::Deny
                     })
-                    // Downloads go to the Downloads folder under a name that is not taken.
-                    .on_download(|_, _| true)
+                    // Downloads go to the Downloads folder under a name that is not taken; a
+                    // missing folder is made first, or the web view drops the download unsaid.
+                    .on_download({
+                        let app = app.clone();
+                        move |_, event| {
+                            if let DownloadEvent::Requested { destination, .. } = event {
+                                download_folder(destination, app.path().download_dir().ok());
+                            }
+                            true
+                        }
+                    })
                     // Notifications for the server's own origin; camera, microphone and the
                     // like are refused (the web view grants them unless told otherwise).
                     .on_permission_request({
@@ -868,4 +934,22 @@ fn main() {
                 reveal(app);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::download_folder;
+
+    #[test]
+    fn a_missing_downloads_folder_is_made_before_the_download() {
+        let dir = std::env::temp_dir().join(format!("dozo-downloads-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // The web view named a file in a folder that is gone.
+        download_folder(&dir.join("Downloads/report.md"), None);
+        assert!(dir.join("Downloads").is_dir());
+        // It named none: the system's Downloads folder is made.
+        download_folder(std::path::Path::new("report.md"), Some(dir.join("Other")));
+        assert!(dir.join("Other").is_dir());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

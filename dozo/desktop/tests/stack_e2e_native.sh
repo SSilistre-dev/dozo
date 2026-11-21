@@ -6,7 +6,11 @@
 # with SIGKILL: on Linux nothing of the server outlives it, on macOS what is left is ended by the
 # next start (2); a phone pairs through the bundled relay agent, the codes match on both ends, the
 # computer allows it, the phone signs in, is listed and removed (3); a second install signs in
-# with the hosted account against a stand-in (4). After each, no process of the server is left.
+# with the hosted account against a stand-in (4). With DOZO_STACK_E2E_OLD_MANIFEST (an older
+# server, e.g. a release's manifest.json) a fifth step installs that one with an account, updates
+# it to <dist-dir>'s and the account still signs in, then a newer version whose Node is broken is
+# put back and the server runs as it was (src/stack_update.rs); a sixth backs that server up and
+# restores it over newer data (src/stack_backup.rs). After each, no process of the server is left.
 # The data folder is under a home whose path holds a space and non-ASCII letters.
 #
 # Usage:
@@ -57,6 +61,7 @@ BASE="${BASE%/}/Dozo e2e ğüş"
 E2E_HOME="$BASE/home of a user"
 ROOT="$E2E_HOME/server data"
 HOSTED="$E2E_HOME/hosted server"
+UPDATED="$E2E_HOME/updated server"
 LOGS="$BASE/logs"
 export DOZO_STACK_E2E_SHARED="${DOZO_STACK_E2E_SHARED:-$BASE/shared}"
 export DOZO_STACK_E2E_RELAY="${RELAY:-${DOZO_STACK_E2E_RELAY:-http://127.0.0.1:8787}}"
@@ -72,6 +77,7 @@ finish() {
   [ $rc = 0 ] || [ ! -f "$LOGS/phone.log" ] || { echo "----- phone"; tail -n 10 "$LOGS/phone.log"; }
   cp -R "$ROOT/logs" "$LOGS/server" 2> /dev/null
   cp -R "$HOSTED/logs" "$LOGS/hosted server" 2> /dev/null
+  cp -R "$UPDATED/logs" "$LOGS/updated server" 2> /dev/null
   if [ -n "$RELAY" ]; then bash "$HERE/tests/relay_revoke.sh" "$ROOT" || rc=2; fi
   local status=PASS
   [ $rc = 0 ] || status=FAIL
@@ -88,8 +94,30 @@ took() { say "$1 took $((SECONDS - clock)) s"; clock=$SECONDS; }
 if [ -n "$RELAY" ]; then
   say "the released server, the relay at $RELAY"
 elif [ -z "${DOZO_STACK_E2E_MANIFEST:-}" ]; then
+  # Node and Postgres from where they are published, and the manifest, by the scripts a release
+  # uses; all three parts are then read from <dist-dir>, as a release serves them.
+  platform=$(cd "$DIST" && ls dozo-server-*.json | sed -n 's/^dozo-server-\(.*\)\.json$/\1/p' | head -n 1)
+  [ -n "$platform" ] || fail "no bundle in $DIST"
+  node "$HERE/../server-bundle/runtimes.mjs" "$DIST" "$platform" || fail "runtimes.mjs"
   node "$HERE/../server-bundle/manifest.mjs" "$DIST" "file://$DIST" || fail "manifest.mjs"
   export DOZO_STACK_E2E_MANIFEST="file://$DIST/manifest.json"
+  # For step 5: the same server as a newer version whose Node exits 1, so it cannot start.
+  # In <dist-dir>, whose path is plain, so the file addresses need no escaping.
+  mkdir -p "$BASE/broken/node-broken/bin" && printf '#!/bin/sh\nexit 1\n' > "$BASE/broken/node-broken/bin/node"
+  chmod +x "$BASE/broken/node-broken/bin/node"
+  tar -C "$BASE/broken" -czf "$DIST/node-broken.tar.gz" node-broken || exit 2
+  node -e '
+    const fs = require("node:fs");
+    const dist = process.argv[1];
+    const m = JSON.parse(fs.readFileSync(`${dist}/manifest.json`, "utf8"));
+    const bytes = fs.readFileSync(`${dist}/node-broken.tar.gz`);
+    const sha256 = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+    m.version = "99.0.0";
+    for (const p of Object.values(m.platforms))
+      p.node = { version: "broken", url: `file://${dist}/node-broken.tar.gz`, size: bytes.length, sha256 };
+    fs.writeFileSync(`${dist}/broken-manifest.json`, JSON.stringify(m, null, 2));
+  ' "$DIST" || fail "the broken manifest"
+  export DOZO_STACK_E2E_BROKEN_MANIFEST="file://$DIST/broken-manifest.json"
 fi
 
 cd "$HERE" || exit 2
@@ -200,5 +228,16 @@ if [ -z "$RELAY" ]; then
   DOZO_STACK_E2E_ISSUER=http://127.0.0.1:8788 run_test e2e_signs_in_with_the_hosted_account "$HOSTED"
   none_left "$HOSTED" "after stop"
   took "step 4"
+fi
+if [ -z "$RELAY" ] && [ -n "${DOZO_STACK_E2E_OLD_MANIFEST:-}" ]; then
+  say "5. update a server installed from $DOZO_STACK_E2E_OLD_MANIFEST, then try a broken newer one"
+  mkdir -p "$UPDATED" || exit 2
+  run_test e2e_updates_and_goes_back "$UPDATED"
+  none_left "$UPDATED" "after stop"
+  took "step 5"
+  say "6. back up that server, then restore it over newer data"
+  run_test e2e_backs_up_and_restores "$UPDATED"
+  none_left "$UPDATED" "after stop"
+  took "step 6"
 fi
 say "all steps passed in $SECONDS s"

@@ -7,8 +7,9 @@ The desktop app downloads it on first start; it is not inside the app.
 Upstream's `scripts/build-server-bundle.mjs` makes the archive and is not edited. `build.mjs` wraps
 it: it runs it on the branded tree, leaves out the packages a local server never loads, repacks and
 describes the result. Node and Postgres are not in the archive: `runtimes.json` pins their version,
-address and sha256 per platform (Node from nodejs.org, Postgres from the theseus-rs
-`postgresql-binaries` releases, which carry `pg_dump` and their own libraries).
+first address and sha256 per platform (Node from nodejs.org, Postgres from the theseus-rs
+`postgresql-binaries` releases, which carry `pg_dump` and their own libraries), and each release
+carries its own copy of them (Runtimes, below).
 
 | File                                 | What it is                                                                              |
 | ------------------------------------ | --------------------------------------------------------------------------------------- |
@@ -16,9 +17,12 @@ address and sha256 per platform (Node from nodejs.org, Postgres from the theseus
 | `build.sh`                           | Local linux-x64 build in Docker: stage, brand, then `build.mjs` in `node:24.22-slim`    |
 | `manifest.mjs`                       | Joins the built bundles with `runtimes.json` into `manifest.json`                       |
 | `runtimes.json`                      | Pinned Node and Postgres downloads                                                      |
+| `runtimes.mjs`                       | Downloads the pinned runtimes and checks size and sha256, for a release's own copy      |
+| `notices.mjs`, `licenses.json`       | Third-party notices written into the bundle, and which licences may ship                |
 | `run.sh`                             | Reference start and stop (Linux, macOS): the start contract below, as a script          |
 | `smoke.sh`                           | End-to-end test in a bare Debian container; last line `SERVER-BUNDLE SMOKE: PASS\|FAIL` |
 | `fake-model.mjs`, `smoke-client.mjs` | The smoke test's local model and its user                                               |
+| `*.test.mjs`                         | Offline tests of the notices and runtimes scripts, run by `make olc`                    |
 
 ## Build and test locally
 
@@ -34,10 +38,11 @@ local stack. `build.sh` keeps the pnpm store in the volume `dozo-server-bundle-s
 CI (`.github/workflows/dozo-server-bundle.yml`) builds linux-x64, macOS arm64 and x64 and Windows
 x64, runs the smoke test on linux-x64, and the desktop app installs, starts and stops each bundle
 it built and pairs a phone through it: on Linux and macOS (Apple silicon and Intel) natively
-(`dozo/desktop/tests/stack_e2e_native.sh`), on Windows with `dozo/desktop/tests/stack_e2e_windows.ps1`.
-All of those have to pass, the macOS ones included. A `server-v*` tag, or a
-manual run given a tag, puts the bundles and `manifest.json` on a draft release that is never
-marked latest; publishing the draft makes the addresses in the manifest live.
+(`dozo/desktop/tests/stack_e2e_native.sh`, which also updates a server installed from a published
+release to it), on Windows with `dozo/desktop/tests/stack_e2e_windows.ps1`. All of those have to
+pass. A `server-v*` tag, or a manual run given a tag, puts the bundles, the Node and Postgres
+archives and `manifest.json` on a draft release that is never marked latest; publishing the draft
+makes the addresses in the manifest live.
 
 ## Manifest
 
@@ -48,8 +53,8 @@ marked latest; publishing the draft makes the addresses in the manifest live.
   "platforms": {
     "linux-x64": {
       "server": { "url": "…/dozo-server-linux-x64.tar.xz", "sha256": "…", "size": 0 },
-      "node": { "version": "24.22.0", "url": "…", "sha256": "…", "size": 0 },
-      "postgres": { "version": "16.16.0", "url": "…", "sha256": "…", "size": 0 }
+      "node": { "version": "24.22.0", "url": "…", "sha256": "…", "size": 0, "source": "…" },
+      "postgres": { "version": "16.16.0", "url": "…", "sha256": "…", "size": 0, "source": "…" }
     }
   }
 }
@@ -57,13 +62,70 @@ marked latest; publishing the draft makes the addresses in the manifest live.
 
 Platforms: `linux-x64`, `darwin-arm64`, `darwin-x64`, `win-x64`; one is missing when its build
 failed. The version is upstream's with the fork's revision after it (`REVISION` in `build.mjs`,
-`0.11.0-3`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
+`0.11.0-5`): raise it when what the fork adds changes, and tag the release `server-v<version>`.
 The app reads the manifest of the server version it was built for
 (`releases/download/<tag>/manifest.json`), downloads the three parts, checks size and sha256 before
 unpacking, and unpacks Node and Postgres one folder down (their archives hold one top folder). The
 server archive holds `rakazo-server/`; its `manifest.json` names the entrypoints: upstream's
 four, `relay`, the relay host agent (`dozo/relay/agent/README.md`) as one file,
-`dozo-relay-agent.mjs`, and `backup`, `dozo-local-backup.mjs` (below); plain Node runs both.
+`dozo-relay-agent.mjs`, and the local commands below, one file each: `backup`
+(`dozo-local-backup.mjs`), `account` (`dozo-local-account.mjs`) and `diagnostics`
+(`dozo-diagnostics.mjs`). Plain Node runs them all.
+
+## Runtimes
+
+Each release holds the Node and Postgres archives `runtimes.json` pins, under the same file names,
+and the manifest's `url` for both points there; `source` is where the archive was first published,
+for reference only. The release job downloads them with `runtimes.mjs`, which refuses a file whose
+size or sha256 differs from the pin, and `manifest.mjs` refuses to name a runtime the release
+folder does not hold. So a new install needs nothing but our release: a publisher deleting a
+release breaks no install. The copy is only from our release, with no fall-back to the first
+address, because the app reads one address per part and both copies would be the same bytes.
+
+The archives are passed on unchanged, which both allow: Node's licence (MIT, with the licences of
+OpenSSL, ICU and the rest it carries, in `LICENSE`) and PostgreSQL's (the PostgreSQL Licence, in
+`COPYRIGHT`) permit redistribution with their notices kept, and the `postgresql-binaries` build adds
+its own permissive `LICENSE` and the Debian copyright file of every library it ships under
+`dependency-notices/`. All of these stay inside the archives and are repeated in the notices.
+
+## Third-party notices
+
+`build.mjs` writes into `rakazo-server/`:
+
+- `THIRD-PARTY-NOTICES.txt`: every package in pnpm's production list for the API, the worker and
+  the web app (which covers what esbuild folds into the entrypoints as well as `node_modules`), with
+  name, version, licence and the licence files it ships, then the licence files of this platform's
+  Node and Postgres archives (downloaded and checked against `runtimes.json` for it);
+- `apps/web/dist/third-party-notices.html`: the same text, which the web server serves. The app
+  links it as "Licenses" at the end of the settings nav where the public auth capabilities say
+  `notices: true` (the API sees the notices file in its folder, `apps/api/src/dozo-notices.ts`),
+  so a hosted server shows no link and is never asked for the page;
+- `LICENSE`, `NOTICE`, `LICENSE-DOZO` and `NOTICE-DOZO` (the repository's `dozo/NOTICE`).
+
+`licenses.json` decides which licences ship. A package whose licence is in neither `allowed` nor
+`review` fails the build (exit 2) with its name; read the licence before adding it to either list.
+`review` licences pass and are printed and listed in the build's `.json` (`notices.review`) because
+they carry conditions someone has to accept. `packages` corrects a licence pnpm reads wrong.
+
+## Diagnostics
+
+```sh
+node rakazo-server/dozo-diagnostics.mjs --home <server folder> --out <file.tar.gz> [--lines 400]
+```
+
+Writes one `.tar.gz` (mode 0600, never over an existing file) holding `dozo-diagnostics/summary.json`
+(server, Node and Postgres versions, platform, which processes run from `pgdata/postmaster.pid` and
+`run/*.pid`, the folder's top-level names and sizes, every setting by name with secret values
+shown only as `set` or `empty` and ports as numbers) and the last `--lines` lines (1 to 5000) of
+each `logs/*.log`. Each line is cleaned first: every value of the secrets file (plain and
+URL-encoded), then the logger's own redaction (fields that carry what someone wrote, emails,
+tokens, keys, credentials in addresses, home paths), Postgres's `DETAIL`, `STATEMENT`, `QUERY`,
+`CONTEXT` and `HINT` text, and any run of 32 or more token characters. The smoke test searches a
+real report for the secrets, the account's email and the message sent.
+
+One JSON line on stdout: `{"written": <path>, "files": <n>}`, or `{"error", "reason"}` with
+`no-server` (no such folder), `failed` or `usage`; exit 0, 2 or 64. For an app menu item: pick the
+file with a save dialog, run the command with `--out` set to it, then reveal the file.
 
 Windows: Node's archive is a zip. The server archive built there has no links: pnpm makes
 junctions on Windows, which hold absolute paths, so upstream's script (through anchored rules in
@@ -88,7 +150,15 @@ its child processes never get it).
    2.34. Where `postgres --version` fails as unpacked (Ubuntu 22.04 has glibc 2.35), set that file
    aside so the system's `libstdc++` (with `GLIBCXX_3.4.30`, as 22.04's has) is used.
 2. First start: `initdb -U rakazo -A scram-sha-256 -E UTF8 --locale=C`, then `createdb rakazo`.
-3. `pg_ctl start` with `-p <pg port> -c listen_addresses=127.0.0.1 -c unix_socket_directories=`.
+3. `pg_ctl start` with `-p <pg port> -c listen_addresses=127.0.0.1 -c unix_socket_directories=
+   -c timezone=UTC`. `initdb` writes this machine's zone into `postgresql.conf`, and the database
+   client reads a `timestamptz` in the session's zone as if it were UTC, so any other zone shifts
+   times (a quiet-hours hold was never let go in Istanbul). The flag overrides the file on every
+   start, so an existing folder needs nothing else. Its data keeps its meaning: `timestamp` columns
+   hold UTC wall clocks whatever the session (the client writes them in UTC, its own
+   `@default(now())` included), and a `timestamptz` holds an instant. Only an instant the client wrote in another
+   zone (a lease, a model connection's rest) reads that many hours off once; each is short-lived
+   and replaced by the next write.
 4. `migrate`, run to completion, every start (a no-op takes about 1.6 s). Owner role for
    `DATABASE_MIGRATION_URL`; it creates the `rakazo_app` role that `DATABASE_URL` uses.
 5. `api`, `worker` and `web` together; ready when the API's `/health` and the web page answer 200.
@@ -196,6 +266,7 @@ that folder can make them. Source: `packages/adapters/src/dozo-local-account.ts`
 
 ```sh
 node rakazo-server/dozo-local-account.mjs unlink-hosted --home <server folder>
+echo '<new password>' | node rakazo-server/dozo-local-account.mjs reset-password --home <server folder>
 ```
 
 - `unlink-hosted` removes every link to a hosted account, ends those users' sessions and marks
@@ -203,9 +274,21 @@ node rakazo-server/dozo-local-account.mjs unlink-hosted --home <server folder>
   marked user again, whichever hosted account it is (`packages/auth/src/dozo-hosted-login.ts`);
   no other user is ever handed to a hosted account. It is the way back when the linked hosted
   account was deleted or can no longer sign in.
+- `reset-password` sets a new password, because a local server sends no email and a forgotten one
+  has no other way back. The new password is the first line of standard input (8 to 128
+  characters). Whoever runs it must be able to read the folder's secrets file and, on Linux and
+  macOS, own it (or be root). In one statement it sets the account's password hash (the sign-in
+  library's scrypt format), ends every session of the account, and writes `auth.password.changed`
+  to the security events and, with actor `local-reset`, to the audit log of each organization the
+  account belongs to. It answers `{"reset": true, "sessionsEnded": <n>}`. Its own reasons:
+  `hosted-login` (the install signs in with the hosted account, which has no password here:
+  `HOSTED_LOGIN_ISSUER` is set for the command, or the account has no password sign-in),
+  `no-account`, `several-accounts` (not a folder the app made) and `not-owner`. For an app
+  screen: ask for the new password twice, pipe it in, show the sentence on failure; after success
+  the window signs in again.
 
 It works with the app open or closed, with the bundle's Postgres, as `backup` does (same
 `DOZO_PG_BIN` and `DOZO_SERVER_DIR`). One JSON line on stdout: `{"unlinked": <n>,
-"sessionsEnded": <n>}` or `{"error": <sentence>, "reason": <code>}` (`usage`, `no-server`,
-`failed`). Exit 0 done, 2 failed, 64 usage. Further repairs join this command as subcommands
+"sessionsEnded": <n>}` (or the reset's answer above) or `{"error": <sentence>, "reason": <code>}`
+(`usage`, `no-server`, `failed`, and the reset's own). Exit 0 done, 2 failed, 64 usage. Further repairs join this command as subcommands
 with the same `--home`, output and exit codes.

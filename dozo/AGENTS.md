@@ -16,7 +16,7 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - Put work in `dozo/`, or in new `dozo-*` files inside upstream directories (see below).
 - To change upstream behaviour or wording, add an anchored rule in `dozo/brand/brand.json`. It is
   applied to a staged copy at build time. Do not patch the source.
-- A dependency upstream does not ship goes in `dozo/deps/mobile.json` with exact versions and the
+- A dependency upstream does not ship goes in `dozo/deps/<list>.json` with exact versions and the
   integrity of every package it adds, never in an upstream `package.json` or lockfile. The brand
   step adds it to the staged tree and fails (exit 2) when the lockfile would move any version or
   integrity upstream locked, or gain a package the list does not name: `dozo/deps/README.md`.
@@ -75,6 +75,8 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
 - `dozo/docker/upstream-tests.sh` (CI job `dozo-upstream-tests`): upstream's tests on the branded tree
   against `dozo/brand/upstream-tests-known.tsv`; a fork change that turns one red fixes it or lists it
   with its class and reason (`dozo/docker/README.md`, Upstream tests).
+- `dozo/docker/postgres-tests.sh` (CI job `dozo-postgres-tests`): every `dozo-*.postgres.test.ts` on
+  the branded tree against a throwaway Postgres, in UTC and two other database time zones.
 - `make olcum`: code quality and readability scores against `dozo/metrics/baseline.json`; the
   fork's target is 90 for both (`dozo/metrics/README.md`). Not part of `olc` or `qa`.
 - `dozo/sync.sh`: merge upstream. Read `dozo/SYNC.md` first.
@@ -136,6 +138,14 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   the server's name for a computer's home; files under `dozo/` are not branded, so it never became
   `/home/dozo` and commands sent there were refused. Correct way: a fork file that repeats a value
   the brand step renames writes the renamed value, and a test sends what the branded server sends.
+
+- 2026-11-21, fork SQL read a `timestamptz` and compared a `timestamp` column with
+  `CURRENT_TIMESTAMP`; it passed in UTC and broke on a local server whose Postgres took the Mac's
+  zone (a quiet-hours hold was never let go). The database client reads a `timestamptz` in the
+  session's zone as if it were UTC. Correct way: select a `timestamptz` as `col AT TIME ZONE 'UTC'`,
+  send a time as `${date.toISOString()}::timestamptz`, compare a `timestamp` column with
+  `CURRENT_TIMESTAMP AT TIME ZONE 'UTC'`, and give new fork SQL a `dozo-*.postgres.test.ts` that
+  `dozo/docker/postgres-tests.sh` runs green in UTC, Europe/Istanbul and America/Los_Angeles.
 
 Add entries as `date, mistake, correct way`. Keep at most 15. Delete an entry once a hook or test
 enforces it.

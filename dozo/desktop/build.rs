@@ -12,6 +12,9 @@ fn main() {
         "remove_phone",
         "phone_wait",
         "approve_phone",
+        "back_up",
+        "restore_pick",
+        "restore",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands))
         .expect("tauri-build failed");
