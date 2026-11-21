@@ -56,6 +56,7 @@ export DOZO_STAGE_WORKTREE="${DOZO_STAGE_WORKTREE-1}"
 SRC="$DOZO_STAGE_DIR/src"
 APP="$SRC/apps/mobile"
 HOST_RUBY="$(command -v ruby || true)"
+HOST_HOME="${HOME:-}"
 
 say() { echo "[mobile] $*"; }
 die() { echo "[mobile] FAILED: $1" >&2; exit "${2:-2}"; }
@@ -268,6 +269,7 @@ archive() {
   native_project
   set_build_number "$number"
   asc_key
+  keychains
   auth=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY"
     -authenticationKeyID "$DOZO_ASC_KEY_ID" -authenticationKeyIssuerID "$DOZO_ASC_ISSUER_ID")
   rm -rf "$OUT/Dozo.xcarchive" "$OUT/ipa"
@@ -306,6 +308,16 @@ store_archive_fields() {
   done < <(find "$OUT/Dozo.xcarchive/Products/Applications" -maxdepth 4 \( -path '*.app/Info.plist' -o -path '*.appex/Info.plist' \) -print0)
   [ "$found" = 1 ] || die "no Info.plist in the archive"
   [ "$EXPO_PUBLIC_DOZO_STORE_BUILD" = 1 ] || die "the archive was not bundled as the store build"
+}
+
+# Signing reads the login keychain from $HOME/Library/Keychains, and HOME is the toolchain's here:
+# a link to the user's own keychains lets codesign find the certificate. Nothing is copied.
+keychains() {
+  local link="$TC/home/Library/Keychains"
+  [ -n "$HOST_HOME" ] && [ -d "$HOST_HOME/Library/Keychains" ] || die "no keychains in $HOST_HOME/Library/Keychains"
+  [ -L "$link" ] || [ ! -e "$link" ] || die "$link exists and is not a link: move it away"
+  mkdir -p "$TC/home/Library"
+  ln -sfn "$HOST_HOME/Library/Keychains" "$link"
 }
 
 # Sets the build number in every generated Info.plist (the app and each extension) before the

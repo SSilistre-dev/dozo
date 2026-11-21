@@ -51,6 +51,18 @@ Sign in with Apple (`apps/mobile/lib/dozo-store-build.ts`, `store/review-checkli
 also writes the build number into the app's and each extension's `Info.plist`, and fails when the
 archive's differ.
 
+Signing: `archive` runs with `HOME` in `.toolchain/home`, so it links
+`.toolchain/home/Library/Keychains` to the user's own `~/Library/Keychains` (a link, nothing is
+copied); without it codesign stops with "A default keychain could not be found".
+
+One-time setup in the Apple Developer portal before the first archive, for the app id
+`dev.ssilistre.dozo` (Xcode registers the ids through the API key, the last two need the portal):
+
+- extension ids `dev.ssilistre.dozo.notifications`, `dev.ssilistre.dozo.widgets` and
+  `dev.ssilistre.dozo.expo-sharing-extension`;
+- the App Group `group.dev.ssilistre.dozo`, assigned to the app and to the sharing extension;
+- Communication Notifications on `dev.ssilistre.dozo.notifications`.
+
 There is no CI job: an iOS build needs a macOS runner.
 
 ## Android
