@@ -6528,6 +6528,24 @@
       ]
     },
     {
+      "file": "scripts/build-server.mjs",
+      "find": "            if (args.pluginData?.inner) return undefined;\n",
+      "replace": "            if (args.pluginData?.inner || args.kind === \"entry-point\") return undefined;\n",
+      "reason": "the server bundle on Windows (dozo/server-bundle): an entry point's absolute path starts with a drive letter, which the filter for bare package names takes for one, and esbuild refuses an entry point marked external"
+    },
+    {
+      "file": "scripts/build-server-bundle.mjs",
+      "find": "function link(at) {\n  const target = fs.readlinkSync(at);\n  fs.mkdirSync(path.dirname(staged(at)), { recursive: true });\n",
+      "replace": "// Windows: pnpm's links are junctions, which hold absolute paths and which an archive cannot\n// carry; each is listed instead, relative, in dozo-links.json for the desktop app to make again.\nconst dozoLinks = new Map();\nfunction link(at) {\n  fs.mkdirSync(path.dirname(staged(at)), { recursive: true });\n  if (process.platform === \"win32\") {\n    const posix = (file) => file.split(path.sep).join(\"/\");\n    const target = path.relative(path.dirname(at), fs.realpathSync(at));\n    dozoLinks.set(posix(path.relative(stage, staged(at))), posix(target));\n    return;\n  }\n  const target = fs.readlinkSync(at);\n",
+      "reason": "the server bundle on Windows (dozo/server-bundle/README.md, Windows): pnpm's junctions would go into the archive as links to the build machine's own folders; they are listed relative instead"
+    },
+    {
+      "file": "scripts/build-server-bundle.mjs",
+      "find": "execFileSync(\"tar\", [\"-C\", work, \"-cJf\", archive, \"rakazo-server\"], { stdio: \"inherit\" });",
+      "replace": "if (dozoLinks.size > 0) {\n  const links = Object.fromEntries([...dozoLinks].sort());\n  fs.writeFileSync(path.join(stage, \"dozo-links.json\"), `${JSON.stringify(links, null, 1)}\\n`);\n}\nexecFileSync(\"tar\", [\"-cJf\", path.relative(work, archive), \"rakazo-server\"], {\n  cwd: work,\n  stdio: \"inherit\",\n});",
+      "reason": "the server bundle on Windows: writes the links the rule on link() listed into the bundle, and names the archive relative to the folder tar runs in, because GNU tar there reads the drive letter of an absolute name (D:) as a remote host"
+    },
+    {
       "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
       "find": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { SettingsGroup",
       "replace": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { DozoHostedLinkRow } from \"../components/dozo-hosted-link-row\";\nimport { SettingsGroup",

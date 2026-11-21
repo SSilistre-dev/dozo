@@ -108,11 +108,11 @@ BIN=$(cargo test --locked --no-run 2>&1 | sed -n 's/.*Executable unittests src\/
 [ -x "$BIN" ] || { say "FAILED: no test binary"; exit 2; }
 rm -rf /tmp/e2e
 say "1. install, start, /health, stop"
-"$BIN" --ignored --exact stack::tests::e2e_installs_starts_and_stops_the_real_server --nocapture \
+"$BIN" --ignored --exact stack::e2e::e2e_installs_starts_and_stops_the_real_server --nocapture \
   2>&1 | grep -E 'E2E|panicked|test result' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/*.log; exit 2; }
 [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 say "2. start again from what is installed, then SIGKILL the app"
-"$BIN" --ignored --exact stack::tests::e2e_hold_until_killed --nocapture > /tmp/e2e/hold.log 2>&1 &
+"$BIN" --ignored --exact stack::e2e::e2e_hold_until_killed --nocapture > /tmp/e2e/hold.log 2>&1 &
 app=$!
 for _ in $(seq 1 240); do grep -q 'E2E: holding' /tmp/e2e/hold.log && break; kill -0 $app 2>/dev/null || break; sleep 0.5; done
 grep -E 'E2E' /tmp/e2e/hold.log
@@ -127,36 +127,36 @@ say "data folder: $(cd "$DOZO_STACK_E2E_ROOT" && ls | tr '\n' ' ')"
 say "versions: $(ls "$DOZO_STACK_E2E_ROOT/versions" | tr '\n' ' ')"
 say "secrets: $(stat -c %a "$DOZO_STACK_E2E_ROOT/secrets"), downloads left: $(ls "$DOZO_STACK_E2E_ROOT/downloads" | wc -l)"
 say "2b. as on macOS (no PDEATHSIG): SIGKILL the app, then the next start ends what it left"
-"$BIN" --ignored --exact stack::tests::e2e_hold_as_on_macos_until_killed --nocapture > /tmp/e2e/hold2.log 2>&1 &
+"$BIN" --ignored --exact stack::e2e::e2e_hold_as_on_macos_until_killed --nocapture > /tmp/e2e/hold2.log 2>&1 &
 app=$!
 for _ in $(seq 240); do grep -q 'E2E: holding' /tmp/e2e/hold2.log && break; kill -0 $app 2>/dev/null || break; sleep 0.5; done
 grep -q 'E2E: holding' /tmp/e2e/hold2.log || { say "FAILED: the start did not get ready"; tail -5 /tmp/e2e/hold2.log; exit 2; }
 kill -KILL $app; wait $app 2>/dev/null; sleep 2
 say "left running after SIGKILL, as on macOS: $(left | wc -l) processes"
-"$BIN" --ignored --exact stack::tests::e2e_ends_what_a_crashed_app_left --nocapture \
-  2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/manager.log; exit 2; }
+"$BIN" --ignored --exact stack::e2e::e2e_ends_what_a_crashed_app_left --nocapture \
+  2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert|still running' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/manager.log; exit 2; }
 [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 say "3. start again and pair a phone through the relay agent"
-"$BIN" --ignored --exact stack::tests::e2e_pairs_a_phone --nocapture \
-  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
+"$BIN" --ignored --exact stack::e2e::e2e_pairs_a_phone --nocapture \
+  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert|still running' || { say "FAILED: see the lines above"; tail -n 15 "$DOZO_STACK_E2E_ROOT"/logs/{manager,relay,relay-command}.log; exit 2; }
 [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 say "4. a server of its own signs in with the hosted account (stand-in issuer)"
 # A server that has accounts of its own refuses that mode: a new folder, the same install.
 mkdir -p /tmp/e2e/hosted && cp -a "$DOZO_STACK_E2E_ROOT"/{versions,current} /tmp/e2e/hosted/
 DOZO_STACK_E2E_ROOT=/tmp/e2e/hosted DOZO_STACK_E2E_ISSUER=http://127.0.0.1:8788 \
-  "$BIN" --ignored --exact stack::tests::e2e_signs_in_with_the_hosted_account --nocapture \
-  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 15 /tmp/e2e/hosted/logs/{manager,api}.log; exit 2; }
+  "$BIN" --ignored --exact stack::e2e::e2e_signs_in_with_the_hosted_account --nocapture \
+  2>&1 | grep -E 'E2E: [^SDP]|panicked|test result|assert|still running' || { say "FAILED: see the lines above"; tail -n 15 /tmp/e2e/hosted/logs/{manager,api}.log; exit 2; }
 DOZO_STACK_E2E_ROOT=/tmp/e2e/hosted; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 if [ "$DOZO_STACK_E2E_UPDATE" = 1 ]; then
   say "5. update a server installed from the older bundle, then try a broken newer one"
   DOZO_STACK_E2E_ROOT=/tmp/e2e/update DOZO_STACK_E2E_OLD_MANIFEST=file:///dist/e2e-old-manifest.json \
     DOZO_STACK_E2E_BROKEN_MANIFEST=file:///dist/e2e-broken-manifest.json \
-    "$BIN" --ignored --exact stack::tests::e2e_updates_and_goes_back --nocapture \
+    "$BIN" --ignored --exact stack::e2e::e2e_updates_and_goes_back --nocapture \
     2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 25 /tmp/e2e/update/logs/manager.log; exit 2; }
   DOZO_STACK_E2E_ROOT=/tmp/e2e/update; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
   say "6. back up that server, then restore it over newer data"
   DOZO_STACK_E2E_ROOT=/tmp/e2e/update \
-    "$BIN" --ignored --exact stack::tests::e2e_backs_up_and_restores --nocapture \
+    "$BIN" --ignored --exact stack::e2e::e2e_backs_up_and_restores --nocapture \
     2>&1 | grep -E 'E2E: [^SDPR]|panicked|test result|assert' || { say "FAILED: see the lines above"; tail -n 25 /tmp/e2e/update/logs/{manager,backup}.log; exit 2; }
   DOZO_STACK_E2E_ROOT=/tmp/e2e/update; [ -z "$(left)" ] || { say "FAILED: left after stop: $(left)"; exit 2; }
 fi
