@@ -60,20 +60,15 @@ export async function readDeviceCapabilities(
 /**
  * Which of the user's own computer tools a run is offered on this computer. A computer from the
  * hub is held to what it declared. One that did not come through it (the desktop server's own
- * screen, a test emulator) keeps upstream's rule.
+ * computer, a test emulator) declares nothing: commands as upstream has them, and no screen, which
+ * no app the fork ships can answer.
  */
 export function deviceOffers(device: DeclaredUserDevice): {
   shell: boolean;
   screen: boolean;
   browser: boolean;
 } {
-  if (!device.capabilities)
-    return {
-      shell: !device.screenOnly,
-      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      screen: device.platform === "darwin" || device.platform === "win32",
-      browser: false,
-    };
+  if (!device.capabilities) return { shell: !device.screenOnly, screen: false, browser: false };
   return {
     shell: device.capabilities.includes("shell"),
     screen: device.capabilities.includes("screen"),

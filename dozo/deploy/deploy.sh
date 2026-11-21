@@ -69,12 +69,37 @@ remote() { ssh -o BatchMode=yes "${alive[@]}" "$DOZO_DEPLOY_SSH" "$@"; }
 
 compose_json() { panel "compose.one?composeId=$DOKPLOY_COMPOSE_ID"; }
 
+# What a run leaves behind, cleared on any exit: the temporary stage and the outage probe. The
+# copies of the api and web that bridge.sh keeps serving are retired on the host by its own
+# `watch`, whatever happens to this run; a run that ends before the panel started puts the
+# originals back at once.
+stage="" probe_dir="" probe_pid="" bridged="" panel_started=""
+stop_probe() {
+  kill "$probe_pid" 2>/dev/null || true
+  wait "$probe_pid" 2>/dev/null || true
+  probe_pid=""
+  sed 's/^/[deploy] /' "$probe_dir/summary"
+}
+finish() {
+  [ -z "$probe_pid" ] || stop_probe
+  if [ -n "$bridged" ] && [ -z "$panel_started" ]; then
+    bridge restore "$bridged" || true
+  elif [ -n "$bridged" ]; then
+    say "the host retires the copies of api and web once those run healthy ($remote_dir/bridge.log)"
+  fi
+  rm -rf ${stage:+"$stage"} ${probe_dir:+"$probe_dir"}
+}
+trap finish EXIT
+
+bridge() { remote "DOZO_BRIDGE_LOG=$remote_dir/bridge.log" bash "$remote_dir/bridge.sh" "$@"; }
+
 # The panel runs the stack under its own project name; containers are found by that label.
 project_name() { compose_json | jq -er '.appName'; }
 
 # run_tag <tag> [merged compose file]: point the panel at the tag, deploy, wait, check health.
 run_tag() {
   local tag=$1 file=${2:-} current env before status project
+  project=$(project_name)
   # The environment holds secrets: it stays in memory and in pipes, never in an argument or a file.
   current=$(compose_json)
   env=$(printf '%s' "$current" | jq -r '.env // ""')
@@ -92,9 +117,20 @@ run_tag() {
       jq -Rs --arg id "$DOKPLOY_COMPOSE_ID" '{composeId: $id, env: .}'
     fi | panel compose.update --data-binary @- >/dev/null
 
+  # Watch from outside, as a user's open tab would, until the last check below.
+  probe_dir=$(mktemp -d "$HOME/.dozo-probe.XXXXXX")
+  "$here/outage-probe.sh" "https://$DOZO_DEPLOY_DOMAIN" "$probe_dir/requests" >"$probe_dir/summary" &
+  probe_pid=$!
+  say "host: copying api and web to serve while they are replaced"
+  # Moved into place, so a `watch` already running keeps reading the file it started with.
+  remote "cat >$remote_dir/bridge.sh.new && chmod 700 $remote_dir/bridge.sh.new && mv $remote_dir/bridge.sh.new $remote_dir/bridge.sh" <"$here/bridge.sh"
+  bridged=$project
+  bridge up "$project" || say "WARNING: deploying without a copy of every service (see above)"
+
   say "panel: deploying $tag (was ${previous:-nothing})"
   jq -n --arg id "$DOKPLOY_COMPOSE_ID" --arg title "dozo $tag" '{composeId: $id, title: $title}' |
     panel compose.deploy --data-binary @- >/dev/null
+  panel_started=1
 
   # The panel queues the deployment: wait for a record newer than the last one to finish.
   local waited=0
@@ -107,11 +143,13 @@ run_tag() {
       error) die "the panel reports a failed deployment; read its log in the panel" ;;
     esac
     [ "$waited" -lt "$timeout" ] || die "the panel did not finish in ${timeout}s (last status: $status)"
-    sleep 5
-    waited=$((waited + 5))
+    sleep 2
+    waited=$((waited + 2))
   done
 
-  project=$(project_name)
+  bridge wait "$project" "$timeout" ||
+    die "the new api or web is not healthy; the previous release keeps serving through its copy (dozo/deploy/README.md, Deploys without a gap)"
+  bridged=""
   say "host: waiting for api and worker to be healthy"
   remote bash -s -- "$project" "$tag" "$timeout" <<'EOF' || die "health check on the host failed"
 set -euo pipefail
@@ -194,6 +232,12 @@ EOF
   resource=$(curl -fsS -m 20 "$metadata" 2>/dev/null | jq -r '.resource // empty' 2>/dev/null || true)
   [ "$resource" = "$mcp" ] || die "$metadata does not answer the MCP endpoint's metadata (resource '${resource:-none}')"
   say "site: $metadata names $mcp"
+  stop_probe
+  local longest warn=${DOZO_DEPLOY_OUTAGE_WARN:-5}
+  longest=$(sed -n 's/^\[probe\] longest outage \([0-9.]*\)s.*/\1/p' "$probe_dir/summary")
+  if awk -v seen="${longest:-0}" -v limit="$warn" 'BEGIN { exit !(seen > limit) }'; then
+    say "WARNING: from outside, the app was down for ${longest}s during this deploy (more than ${warn}s)"
+  fi
   [ -z "$previous" ] || [ "$previous" = "$tag" ] ||
     say "to go back: dozo/deploy/deploy.sh rollback $previous"
 }
@@ -229,7 +273,6 @@ if [ "$action" = site ]; then
   site_json() { panel "compose.one?composeId=$id"; }
   # Same rule as a deploy: the committed tree, not the working tree.
   stage=$(mktemp -d "$HOME/.dozo-site.XXXXXX")
-  trap 'rm -rf "$stage"' EXIT
   git -C "$repo" archive HEAD dozo/landing dozo/deploy/site.nginx.conf dozo/deploy/compose.site.yml |
     tar -x -C "$stage"
   # Version the asset addresses by content, so a cache in front cannot pair the new page with an
@@ -281,7 +324,6 @@ tag=$(git -C "$repo" rev-parse --short=12 HEAD)
 
 # Under HOME: Docker Desktop cannot mount the system temporary folder.
 stage=$(mktemp -d "$HOME/.dozo-deploy.XXXXXX")
-trap 'rm -rf "$stage"' EXIT
 say "stage and brand $tag"
 DOZO_STAGE_DIR=$stage DOZO_STAGE_WORKTREE='' DOZO_STAGE_REF=$tag "$repo/dozo/docker/build.sh" stage
 DOZO_STAGE_DIR=$stage "$repo/dozo/docker/build.sh" brand

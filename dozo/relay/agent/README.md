@@ -145,8 +145,12 @@ into place.
   `pairing` is `{ psk, expiresAt }` while the offer is open; `app` is
   `{ key, pairingKey, verifierSet, pairedAt, approvedAt }` after pairing. The pairing secret itself is never
   stored.
+- `channels/<channel>.approved`: `{ approvedAt }`, written by `approve` only and read back as
+  `app.approvedAt`. Kept apart because `run` rewrites the channel's file (pairing, then its
+  verifier) from the copy it holds, which must not undo an approval given meanwhile.
 
-One file per channel lets `pair`, `run` and `revoke` work at the same time without a lock. The
+One file per channel lets `pair`, `run` and `revoke` work at the same time without a lock. `run`
+asks for a phone's approval only once its pairing is in the channel's file, so `approve` finds it. The
 storage is one interface (`RelayHostStore`), so the keys can move to the system key store without
 touching the rest.
 

@@ -10,7 +10,8 @@ import * as z from "zod";
 /**
  * The host agent's state on disk: `host-key.json` (the long-term key pair) and one
  * `channels/<id>.json` per channel, so processes that pair, run and revoke at once never write the
- * same file. Directories are the user's only (0700), files too (0600); every write is a new file
+ * same file; the user's approval of a channel's phone is `channels/<id>.approved`, which only
+ * `approve` writes, so `run` rewriting the channel never undoes it. Directories are the user's only (0700), files too (0600); every write is a new file
  * renamed into place. Layout: `dozo/relay/agent/README.md`.
  */
 
@@ -32,6 +33,7 @@ const ChannelSchema = z.object({
     .nullable(),
 });
 const KeyPairSchema = z.object({ publicKey: RelayKey, privateKey: RelayKey });
+const ApprovalSchema = z.object({ approvedAt: z.number() });
 
 const PRIVATE_DIR = 0o700;
 const PRIVATE_FILE = 0o600;
@@ -43,6 +45,7 @@ export function fileRelayStore(dir: string): RelayHostStore {
     if (!RelayChannelId.safeParse(channel).success) throw new Error(`not a channel id: ${channel}`);
     return path.join(channelsDir, `${channel}.json`);
   };
+  const approvalFile = (channel: string) => channelFile(channel).replace(/\.json$/, ".approved");
   const ensureDirs = async () => {
     for (const each of [dir, channelsDir]) {
       await mkdir(each, { recursive: true, mode: PRIVATE_DIR });
@@ -57,6 +60,19 @@ export function fileRelayStore(dir: string): RelayHostStore {
       publicKey: decodeRelayBytes(parsed.data.publicKey),
       privateKey: decodeRelayBytes(parsed.data.privateKey),
     };
+  };
+
+  const readApproval = async (channel: string) => {
+    try {
+      const parsed = ApprovalSchema.safeParse(
+        JSON.parse(await readFile(approvalFile(channel), "utf8")),
+      );
+      if (!parsed.success) throw new Error(`${approvalFile(channel)} is not an approval`);
+      return parsed.data.approvedAt;
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
+    }
   };
 
   return {
@@ -97,6 +113,9 @@ export function fileRelayStore(dir: string): RelayHostStore {
         const file = path.join(channelsDir, name);
         const parsed = ChannelSchema.safeParse(JSON.parse(await readFile(file, "utf8")));
         if (!parsed.success) throw new Error(`${file} is not a relay channel`);
+        const { app } = parsed.data;
+        if (app && !app.approvedAt)
+          app.approvedAt = (await readApproval(parsed.data.channel)) ?? app.approvedAt;
         channels.push(parsed.data);
       }
       return channels;
@@ -108,8 +127,15 @@ export function fileRelayStore(dir: string): RelayHostStore {
       await replaceFile(await writePrivate(file, channel), file);
     },
 
+    async approve(channel, approvedAt) {
+      const file = approvalFile(channel);
+      await ensureDirs();
+      await replaceFile(await writePrivate(file, { approvedAt }), file);
+    },
+
     async remove(channel) {
       await rm(channelFile(channel), { force: true });
+      await rm(approvalFile(channel), { force: true });
     },
 
     watch(onChange) {
