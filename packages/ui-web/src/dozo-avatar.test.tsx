@@ -100,6 +100,12 @@ describe("DozoAvatar identity", () => {
     expect(painted).not.toContain("light-dark");
   });
 
+  it("paints a colourless bot's accessory in the head's ink", () => {
+    const html = renderToString(<DozoAvatar seed="bot-7" color={null} />);
+    expect(html).toContain("--dozo-tile:var(--dozo-body)");
+    expect(html).not.toContain("light-dark");
+  });
+
   it("draws the character it is given, and keeps the seed for the blink rhythm", () => {
     const given = renderToString(<DozoAvatar seed="bot-1" character="hana" />);
     expect(given).toContain('data-character="hana"');

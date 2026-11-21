@@ -123,7 +123,30 @@ describe.skipIf(process.platform === "win32")("connecting an agent", () => {
         throw new Error("unused");
       },
     };
-    const connection = await agentConnection(driver, { home: "/h" }, true);
+    const connection = await agentConnection(driver, { home: "/h" }, { agent: true });
     expect(connection.modelId).toBeUndefined();
+  });
+
+  it("asks, separately, to accept the risk to the account an agent's maker puts on it", async () => {
+    computer("reply");
+    const risky = {
+      provider: "agent-x",
+      name: "X",
+      command: "x",
+      termsRisk: true as const,
+      installed: async () => true,
+      selfTest: async () => undefined,
+      start: async () => {
+        throw new Error("unused");
+      },
+    };
+    await expect(agentConnection(risky, { home: "/h" }, { agent: true })).rejects.toMatchObject({
+      code: "agent_terms_consent",
+    });
+    expect(
+      await agentConnection(risky, { home: "/h" }, { agent: true, terms: true }),
+    ).toMatchObject({
+      modelId: "default",
+    });
   });
 });

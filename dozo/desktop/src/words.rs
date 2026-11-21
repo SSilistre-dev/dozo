@@ -2,7 +2,7 @@
 //! English, and Turkish when the system's language is Turkish. The other windows are English only.
 
 /// English, and its Turkish.
-const TURKISH: [(&str, &str); 34] = [
+const TURKISH: [(&str, &str); 36] = [
     ("Settings…", "Ayarlar…"),
     ("Settings", "Ayarlar"),
     ("Change Server…", "Sunucuyu Değiştir…"),
@@ -14,6 +14,12 @@ const TURKISH: [(&str, &str); 34] = [
     ("Save Diagnostics…", "Tanılamayı Kaydet…"),
     ("Open at Login", "Açılışta Aç"),
     ("Keep Running in Background", "Arka Planda Çalış"),
+    // `talk::LABEL` on macOS, and on Windows and Linux.
+    ("Push to Talk (⇧⌘Space)", "Bas ve Konuş (⇧⌘Space)"),
+    (
+        "Push to Talk (Ctrl+Shift+Space)",
+        "Bas ve Konuş (Ctrl+Shift+Space)",
+    ),
     ("Licenses", "Lisanslar"),
     ("Version", "Sürüm"),
     ("Quit", "Çık"),
@@ -81,6 +87,8 @@ mod tests {
         assert_eq!(in_language(false, "Back Up…"), "Back Up…");
         // Words without a Turkish entry stay English.
         assert_eq!(in_language(true, "Dozo"), "Dozo");
+        // A label kept elsewhere still has its Turkish.
+        assert_ne!(in_language(true, crate::talk::LABEL), crate::talk::LABEL);
     }
 
     #[test]

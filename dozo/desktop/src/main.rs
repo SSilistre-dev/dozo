@@ -15,6 +15,8 @@ mod frames;
 #[cfg(target_os = "linux")]
 #[path = "frames_gtk.rs"]
 mod frames;
+#[cfg(target_os = "linux")]
+mod microphone_gtk;
 mod phone;
 mod prefs;
 mod server;
@@ -27,6 +29,7 @@ mod stack_os;
 mod stack_proc;
 mod stack_setup;
 mod stack_update;
+mod talk;
 mod update;
 mod words;
 
@@ -365,7 +368,7 @@ fn run(app: &AppHandle, id: &str) {
             reveal(app);
         }
         "reload" => reload(window),
-        OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID => flip(app, id),
+        OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID | talk::MENU_ID => flip(app, id),
         device::MENU_ID => device::clicked(app),
         phone::MENU_ID => phone::open(app),
         backup::BACK_UP_ID => backup::open(app, "backup"),
@@ -423,6 +426,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     &backup_items[3],
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
+                    &switch(app, talk::MENU_ID, talk::LABEL)?,
                     &separator()?,
                     &PredefinedMenuItem::services(app, words::standard("Services"))?,
                     &separator()?,
@@ -497,6 +501,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &backup_items[3],
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
+                &switch(app, talk::MENU_ID, talk::LABEL)?,
                 &PredefinedMenuItem::separator(app)?,
                 // Ends the app whatever the window does, and does not depend on the menu
                 // toolkit's own handling of a quit item.
@@ -547,6 +552,7 @@ fn show_switches(app: &AppHandle, settings: &Settings) {
     for (id, on) in [
         (OPEN_AT_LOGIN_ID, settings.open_at_login),
         (KEEP_RUNNING_ID, settings.keep_running),
+        (talk::MENU_ID, settings.push_to_talk),
     ] {
         if let Some(item) = switch_item(app, id) {
             let _ = item.set_checked(on);
@@ -576,6 +582,20 @@ fn flip(app: &AppHandle, id: &str) {
         let actual = login.is_enabled().unwrap_or(known);
         let _ = item.set_checked(actual);
         config.lock().unwrap().open_at_login = actual;
+    } else if id == talk::MENU_ID {
+        let on = match talk::set(app, wanted) {
+            Ok(()) => wanted,
+            Err(reason) if wanted => {
+                talk::refused(app, reason);
+                false
+            }
+            Err(reason) => {
+                eprintln!("dozo: could not turn the push-to-talk shortcut off: {reason}");
+                false
+            }
+        };
+        let _ = item.set_checked(on);
+        config.lock().unwrap().push_to_talk = on;
     } else {
         config.lock().unwrap().keep_running = wanted;
     }
@@ -764,6 +784,8 @@ fn main() {
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        // Registered by the app's Rust code only (talk.rs): no page is granted its commands.
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("Dozo")
@@ -803,10 +825,20 @@ fn main() {
             if let Ok(actual) = app.autolaunch().is_enabled() {
                 settings.open_at_login = actual;
             }
-            if settings.open_at_login != saved
+            // Push to Talk stays on only while the system lets the app have the shortcut; when it
+            // no longer does, the switch goes off and the person is told why.
+            let refused = settings
+                .push_to_talk
+                .then(|| talk::set(&app, true).err())
+                .flatten();
+            settings.push_to_talk &= refused.is_none();
+            if (settings.open_at_login != saved || refused.is_some())
                 && let Err(error) = settings::save(&settings_file(&app)?, &settings)
             {
-                eprintln!("dozo: could not save the login entry: {error}");
+                eprintln!("dozo: could not save the switches: {error}");
+            }
+            if let Some(reason) = refused {
+                talk::refused(&app, reason);
             }
             show_switches(&app, &settings);
             app.manage(Config(Mutex::new(settings.clone())));
@@ -861,8 +893,9 @@ fn main() {
                             true
                         }
                     })
-                    // Notifications for the server's own origin; camera, microphone and the
-                    // like are refused (the web view grants them unless told otherwise).
+                    // Notifications and the microphone for the server's own origin; camera,
+                    // location and the like are refused (the web view grants them unless told
+                    // otherwise).
                     .on_permission_request({
                         let app = app.clone();
                         move |webview, kind| {
@@ -936,6 +969,8 @@ fn main() {
             frames::only_gate_the_main_frame(&window)?;
             #[cfg(target_os = "linux")]
             alerts::reveal_on_click(&window)?;
+            #[cfg(target_os = "linux")]
+            microphone_gtk::turn_on_capture(&window)?;
             #[cfg(target_os = "linux")]
             frames::only_gate_the_main_frame(&window, move |url, seen| {
                 follow(&app, frames::verdict(url, chosen(&app).as_ref(), seen))

@@ -47,10 +47,11 @@ and public-repo hygiene. Where the two differ on how to change files, this one w
   `apps/web/src/lib/dozo-local-model-catalog.ts`, not in `packages/core/src`. It has a single
   consumer and core placement would need an extra anchor. Move it to core when a second surface
   needs it.
-- Deviation: the six Dozo avatar identity colours live in one typed constant, `DOZO_BOT_PALETTE` in
-  `packages/core/src/dozo-avatar-art.ts` (next to the art, shared by the web component and the
-  server-side notification portrait), not in `@rakazo/ui-tokens`, because upstream's `botColors`
-  has seven different hues. `packages/ui-web/src/dozo-shell.css` writes two colours no token
+- A bot's colour is the one picked for it from upstream's `BOT_COLOR_LIST`: `dozoBotColor` in
+  `packages/core/src/dozo-avatar-art.ts` is the one reader, for the accessory, your own bubble and
+  the notification portrait. Deviation: each character's own colour, used only to choose the
+  character nearest a bot's hue, lives in `DOZO_BOT_PALETTE` there, not in `@rakazo/ui-tokens`,
+  because upstream's `botColors` has seven different hues. `packages/ui-web/src/dozo-shell.css` writes two colours no token
   carries: the seal dot's red, and the logo band's red for `packages/ui-web/src/dozo-logo.tsx`, as
   the brand file `dozo/brand/assets/logo-dark.svg` has it (a test holds drawing and file equal).
 - Closed registration: `SIGNUPS_ENABLED=false` reaches the client as `signupsOpen` in the public

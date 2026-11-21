@@ -1,5 +1,5 @@
 import type { LogoAvatarActivity } from "@rakazo/core";
-import { botLookWithShape, dozoCharacterForLook } from "@rakazo/core";
+import { botLookWithShape, dozoBotColor, dozoCharacterForLook } from "@rakazo/core";
 import type { ComponentProps } from "react";
 import { memo } from "react";
 import type { BotAvatarProps, BotShapePreview as UpstreamBotShapePreview } from "./bot-avatar.js";
@@ -22,7 +22,10 @@ function stateOf(activity: LogoAvatarActivity): DozoAvatarState {
   return activity === "idle" || activity === "error" ? "idle" : "working";
 }
 
-/** A bot's avatar. A saved photo stays the photo; every drawn avatar is a Dozo character. */
+/**
+ * A bot's avatar. A saved photo stays the photo; every drawn avatar is a Dozo character whose
+ * accessory wears the colour picked for the bot.
+ */
 export const BotAvatar = memo(function BotAvatar(props: BotAvatarProps) {
   const { color, activity, size = 36, status, identity = "", className } = props;
   const live = useBotAvatarActivity(identity, status);
@@ -32,6 +35,7 @@ export const BotAvatar = memo(function BotAvatar(props: BotAvatarProps) {
     <DozoAvatar
       seed={seed}
       character={dozoCharacterForLook(seed, color)}
+      color={dozoBotColor(seed, color) ?? null}
       size={size}
       state={stateOf(activity ?? live)}
       className={className}

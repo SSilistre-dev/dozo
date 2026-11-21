@@ -15,6 +15,8 @@ export const DozoCliToolSchema = z.object({
   connected: z.boolean(),
   /** Another account may still be added. */
   canAdd: z.boolean(),
+  /** An agent whose maker's terms count this use as a reason to close the account. */
+  termsRisk: z.boolean().optional(),
   /** Another account's sign-in in progress, with the address the tool printed, or why it ended. */
   login: z
     .object({
@@ -37,7 +39,9 @@ export const dozoCliAccountsContract = {
    * to what agent mode means.
    */
   connect: oc
-    .input(Provider.extend({ consent: z.boolean().optional() }))
+    .input(
+      Provider.extend({ consent: z.boolean().optional(), termsConsent: z.boolean().optional() }),
+    )
     .output(DozoCliToolsSchema),
   /** Starts the tool's own sign-in of another account, in a home of its own. */
   addAccount: oc.input(Provider).output(DozoCliToolsSchema),

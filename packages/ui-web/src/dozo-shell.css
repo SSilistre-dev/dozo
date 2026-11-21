@@ -9,6 +9,7 @@
    dozo-overlays.css, which reads the tone steps named here. */
 
 @import "./dozo-overlays.css";
+@import "./dozo-auth.css";
 
 :root {
   /* The one red of the brand, the seal dot. No semantic token carries it, so it is written here. */
@@ -51,6 +52,8 @@
   --dozo-danger-text: color-mix(in srgb, var(--dozo-seal) 70%, var(--foreground));
   /* Keyboard focus: the second ink, at least 3:1 against every floating surface. */
   --dozo-focus: var(--muted-foreground);
+  /* Sign-in: the waves behind the column, very faint. */
+  --dozo-signin-waves: color-mix(in srgb, var(--foreground) 7%, transparent);
   /* Motion of the design: drawers and the reveal of controls. */
   --dozo-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --dozo-out: cubic-bezier(0.22, 1, 0.36, 1);
