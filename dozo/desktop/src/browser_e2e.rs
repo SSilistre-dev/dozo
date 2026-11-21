@@ -15,7 +15,8 @@ const PAGE: &str = "<!doctype html><html><head><title>Dozo browser test</title><
 <button onclick=\"navigator.clipboard.writeText('x').then(()=>r('api-wrote'),()=>r('api-refused'))\">Copy API</button>\
 <button onclick=\"document.addEventListener('copy',e=>{e.clipboardData.setData('text/plain','x');e.preventDefault()},{once:true});r(document.execCommand('copy')?'exec-wrote':'exec-refused')\">Copy command</button>\
 <button onclick=\"document.documentElement.requestFullscreen().then(()=>r('screen-taken'),()=>r('screen-refused'))\">Full screen</button>\
-<p id=\"probe\">probe:</p><script>function r(t){document.getElementById('probe').textContent+=' '+t}</script>\
+<p id=\"probe\">probe:</p><script>function r(t){document.getElementById('probe').textContent+=' '+t}\
+document.addEventListener('copy',()=>r('copied'));document.addEventListener('paste',()=>r('pasted'));document.addEventListener('cut',()=>r('snipped'));</script>\
 </body></html>";
 
 /// Serves `PAGE` to every request on loopback, from a thread, and returns its address.
@@ -285,6 +286,32 @@ async fn e2e_browser_page_tools_work_through_the_pipe_only() {
         );
     }
     println!("E2E: cookie, storage and script commands refused");
+
+    // The keyboard's own Copy, Cut and Paste keys never reach the page.
+    click(&browsers, find_node(&found, "textbox", "Name")).await;
+    for key in ["Copy", "Cut", "Paste"] {
+        for params in [
+            json!({ "type": "keyDown", "key": key }),
+            json!({ "type": "rawKeyDown", "code": key }),
+        ] {
+            let press = json!({ "method": "Input.dispatchKeyEvent", "params": params });
+            assert!(
+                browsers.handle("bot", &press).await.is_err(),
+                "{key} passed"
+            );
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let probe = nodes(&browsers)
+        .await
+        .into_iter()
+        .find(|(_, name, _)| name.starts_with("probe:"))
+        .unwrap()
+        .1;
+    for word in ["copied", "pasted", "snipped"] {
+        assert!(!probe.contains(word), "{probe}");
+    }
+    println!("E2E: the Copy, Cut and Paste keys refused");
 
     // The person sends the bot's tab to the browser's own pages, then to a file: nothing but going
     // to a website works there, and the page's events and history name neither.
@@ -699,7 +726,7 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
     let port = serve_pages(vec![
         (
             "/",
-            "<!doctype html><title>Home</title><button>Account</button>".to_owned(),
+            "<!doctype html><title>Home</title><button>Account</button><button onclick=\"history.go(-2)\">Back</button>".to_owned(),
         ),
         (
             "/callback?code=SECRET",
@@ -774,24 +801,29 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
         let answer = call(&browsers, method, json!({})).await;
         assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
     }
-    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
-    let hidden = history["entries"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["url"] == "")
-        .map(|entry| entry["id"].clone())
-        .expect("the sign-in's entries keep their place");
-    let back = json!({ "method": "Page.navigateToHistoryEntry", "params": { "entryId": hidden } });
-    assert!(
-        browsers.handle("bot", &back).await.is_err(),
-        "went back into the sign-in"
-    );
     let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
     assert!(
         tree.to_string().contains("Account"),
         "the page is the site's home"
     );
+    // The tab keeps no way back: a page that goes back, or a Back link the bot clicks, finds
+    // nothing behind it, and the history is the home page alone.
+    let home = wait_for(&browsers, "Back").await;
+    click(&browsers, find_node(&home, "button", "Back")).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    for method in [
+        "Page.getFrameTree",
+        "DOM.getDocument",
+        "Page.getNavigationHistory",
+    ] {
+        let answer = browsers
+            .handle("bot", &json!({ "method": method }))
+            .await
+            .unwrap();
+        assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
+    }
+    let entries = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    assert_eq!(entries["entries"].as_array().unwrap().len(), 1, "{entries}");
     println!(
         "E2E: after Done the page is the site's home, and no address of the sign-in reaches the server"
     );

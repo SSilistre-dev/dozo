@@ -312,7 +312,11 @@ fn shortcut(params: &Map<String, Value>) -> bool {
             || (name.len() > 1 && name.starts_with('f') && name[1..].parse::<u8>().is_ok())
     }) || code
         .is_some_and(|code| (112..=135).contains(&code) || (166..=183).contains(&code));
-    if browser_key || modifiers & 1 != 0 {
+    // The keyboards' own Copy, Cut and Paste keys act on the clipboard with no modifier.
+    let clipboard_key = names
+        .iter()
+        .any(|name| matches!(name.as_str(), "copy" | "cut" | "paste"));
+    if browser_key || clipboard_key || modifiers & 1 != 0 {
         return true;
     }
     // Shift+Insert pastes, Shift+Delete cuts and Ctrl+Insert copies.
@@ -821,6 +825,12 @@ impl Browsers {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        // The tab keeps no way back into the sign-in: a page that goes back (`history.go`), or a
+        // Back link the bot clicks, finds nothing behind it.
+        let _ = running
+            .pipe
+            .call("Page.resetNavigationHistory", json!({}), Some(&session))
+            .await;
         running.pipe.take_events();
         self.signing.lock().unwrap().remove(key);
         Ok(answer)
@@ -1492,6 +1502,10 @@ mod tests {
             ("Insert", "Insert", 45, 8),
             ("Delete", "Delete", 46, 8),
             ("Insert", "Insert", 45, 2),
+            ("Copy", "Copy", 0, 0),
+            ("Cut", "Cut", 0, 0),
+            ("Paste", "Paste", 0, 0),
+            ("x", "Paste", 88, 0),
             ("a", "KeyO", 65, 2),
         ] {
             assert!(
