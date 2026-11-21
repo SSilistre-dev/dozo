@@ -155,12 +155,18 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
     error?: unknown;
     note?: unknown;
   };
-  // The bot has one page, which another thread's run may have moved since the approval: a look
-  // at another site than the one approved is not given.
+  // What a call returns is the page it ended on: only a page of the site it was approved for is
+  // given. A look at a page another thread's run moved elsewhere (a blank one included) is
+  // refused; a navigation or action that ended on another site (a redirect, a link, a form) says
+  // where, and that site is read only once it is asked about.
   const now = typeof page.url === "string" ? pageSite(page.url) : "";
-  if (name === "browser_snapshot" && asked.site && now !== asked.site)
-    return call.finish({ error: MOVED });
   if (typeof page.url === "string" && page.url) ctx.state.pageUrl = page.url;
+  if (now && now !== asked.site) {
+    if (name === "browser_snapshot") return call.finish({ error: MOVED });
+    return call.finish({
+      error: `The page went on to ${now}, which is not shown here until the user allows reading it: call browser_snapshot to ask.`,
+    });
+  }
   if (first) page.note = [USER_BROWSER_NOTE, page.note].filter(Boolean).join(" ");
   const formatted = browserResultForModel(page);
   if (name !== "browser_snapshot" || page.error || !ctx.computer.acceptsImages)

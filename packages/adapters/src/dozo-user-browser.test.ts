@@ -306,11 +306,51 @@ describe("its handler", () => {
     expect(looked.finish).toHaveBeenCalledWith({
       error: "The browser shows another site than the one the user approved. Ask again.",
     });
-    const acted = (await pageBrowserTool(run.ctx, call("browser_act", act))) as {
-      details: { ok: boolean; completed: number; error: string };
-    };
-    expect(acted.details).toMatchObject({ ok: false, completed: 0 });
-    expect(acted.details.error).toContain("another site");
+    const acted = (await pageBrowserTool(run.ctx, call("browser_act", act))) as { error: string };
+    expect(acted.error).toMatch(/another site|went on to other\.test/);
+  });
+
+  it("gives no page of another site than the one approved, after a redirect, a link or a blank look", async () => {
+    const run = setup();
+    allow(run, "open:example.test", "act:example.test");
+    // The bot opens example.test and the page goes on to other.test.
+    const args = { url: FORM };
+    expect(await userBrowserGate(run.ctx, false, "browser_navigate", args)).toBe("allow");
+    const original = run.device;
+    const redirecting = Object.assign(
+      async (command: { method: string; params?: Record<string, unknown> }) =>
+        command.method === "Page.navigate"
+          ? original({ method: "Page.navigate", params: { url: "https://other.test/" } })
+          : original(command),
+      { commands: original.commands, value: original.value },
+    );
+    run.devices.request = async function* (
+      _owner: string,
+      req: { method: string; command?: never },
+    ) {
+      if (req.method === "pageBrowser") {
+        yield await redirecting(req.command as never);
+        return;
+      }
+      yield { id: "desktop-x" };
+    } as never;
+    const went = call("browser_navigate", args);
+    await pageBrowserTool(run.ctx, went);
+    expect(went.finish).toHaveBeenCalledWith({
+      error: expect.stringMatching(/^The page went on to other\.test, which is not shown here/),
+    });
+    expect(JSON.stringify(went.finish.mock.calls)).not.toContain("Elsewhere");
+    // A look allowed at a blank page is not given once the page shows a site.
+    const blank = setup();
+    allow(blank);
+    const look = {};
+    expect(await userBrowserGate(blank.ctx, false, "browser_snapshot", look)).toBe("allow");
+    await blank.device({ method: "Page.navigate", params: { url: "https://other.test/" } });
+    const looked = call("browser_snapshot", look);
+    await pageBrowserTool(blank.ctx, looked);
+    expect(looked.finish).toHaveBeenCalledWith({
+      error: "The browser shows another site than the one the user approved. Ask again.",
+    });
   });
 
   it("runs an approved call only on the computer it asked about", async () => {

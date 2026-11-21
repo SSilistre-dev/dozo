@@ -132,6 +132,9 @@ pub const DECLARED: bool = false;
 /// bot sends ends it.
 pub trait SignInPrompt: Send + Sync {
     fn ask(&self, site: &str) -> oneshot::Receiver<bool>;
+    /// The sign-in ended without the person's answer (the time ran out, the browser closed or the
+    /// bot was deleted): they are told the bot has its browser again.
+    fn ended(&self, site: &str);
 }
 
 /// How long a sign-in may wait for the person before it counts as cancelled.
@@ -312,7 +315,11 @@ fn shortcut(params: &Map<String, Value>) -> bool {
             || (name.len() > 1 && name.starts_with('f') && name[1..].parse::<u8>().is_ok())
     }) || code
         .is_some_and(|code| (112..=135).contains(&code) || (166..=183).contains(&code));
-    if browser_key || modifiers & 1 != 0 {
+    // The keyboards' own Copy, Cut and Paste keys act on the clipboard with no modifier.
+    let clipboard_key = names
+        .iter()
+        .any(|name| matches!(name.as_str(), "copy" | "cut" | "paste"));
+    if browser_key || clipboard_key || modifiers & 1 != 0 {
         return true;
     }
     // Shift+Insert pastes, Shift+Delete cuts and Ctrl+Insert copies.
@@ -672,6 +679,11 @@ pub struct Browsers {
     prompt: std::sync::OnceLock<Arc<dyn SignInPrompt>>,
     /// Bots whose browser the person is signing in with, by key, with the site.
     signing: Mutex<HashMap<String, String>>,
+    /// Told when the first sign-in starts (true) and the last one ends (false): the app holds
+    /// every bot's commands on this computer meanwhile.
+    on_pause: std::sync::OnceLock<Box<dyn Fn(bool) + Send + Sync>>,
+    /// How long a sign-in waits for the person (`SIGN_IN_TIME`; tests shorten it).
+    sign_in_time: Duration,
     /// One start at a time.
     starting: tokio::sync::Mutex<()>,
     /// Moves on with every `close` and `close_all`, so a browser that was starting meanwhile is
@@ -696,6 +708,8 @@ impl Browsers {
             proxy: tokio::sync::Mutex::default(),
             prompt: std::sync::OnceLock::new(),
             signing: Mutex::default(),
+            on_pause: std::sync::OnceLock::new(),
+            sign_in_time: SIGN_IN_TIME,
             starting: tokio::sync::Mutex::default(),
             generation: AtomicU64::new(0),
         }
@@ -709,13 +723,52 @@ impl Browsers {
         self
     }
 
-    /// Marks a bot as signing in, for tests of what the pause holds back.
+    /// Marks a bot as signing in, or no longer, for tests of what the pause holds back.
     #[cfg(test)]
-    pub fn mark_signing(&self, key: &str, site: &str) {
-        self.signing
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), site.to_owned());
+    pub fn mark_signing(&self, key: &str, site: Option<&str>) {
+        match site {
+            Some(site) => self.start_signing(key, site),
+            None => self.stop_signing(key),
+        }
+    }
+
+    /// Shortens how long a sign-in waits, for tests.
+    #[cfg(test)]
+    pub fn with_sign_in_time(mut self, time: Duration) -> Self {
+        self.sign_in_time = time;
+        self
+    }
+
+    /// Whom to tell when sign-ins start and end (`on_pause`).
+    pub fn set_on_pause(&self, tell: Box<dyn Fn(bool) + Send + Sync>) {
+        let _ = self.on_pause.set(tell);
+    }
+
+    /// Whether the person is signing in with any bot's browser on this computer.
+    pub fn anyone_signing(&self) -> Option<String> {
+        self.signing.lock().unwrap().values().next().cloned()
+    }
+
+    fn start_signing(&self, key: &str, site: &str) {
+        let first = {
+            let mut signing = self.signing.lock().unwrap();
+            let first = signing.is_empty();
+            signing.insert(key.to_owned(), site.to_owned());
+            first
+        };
+        if let (true, Some(tell)) = (first, self.on_pause.get()) {
+            tell(true);
+        }
+    }
+
+    fn stop_signing(&self, key: &str) {
+        let last = {
+            let mut signing = self.signing.lock().unwrap();
+            signing.remove(key).is_some() && signing.is_empty()
+        };
+        if let (true, Some(tell)) = (last, self.on_pause.get()) {
+            tell(false);
+        }
     }
 
     /// Lets tests open only the loopback ports they name, as pages and through the proxy.
@@ -754,13 +807,10 @@ impl Browsers {
             .ok_or("Signing in is not available here.")?;
         let running = self.running(key).await?;
         let session = running.page(self.local).await?;
-        {
-            let mut signing = self.signing.lock().unwrap();
-            if signing.contains_key(key) {
-                return Err(signing_message(&signing[key]));
-            }
-            signing.insert(key.to_owned(), site.clone());
+        if let Some(already) = self.signing_site(key) {
+            return Err(signing_message(&already));
         }
+        self.start_signing(key, &site);
         let scheme = if self.local { "http" } else { "https" };
         let home = json!({ "url": format!("{scheme}://{site}/") });
         let opened = running
@@ -770,15 +820,19 @@ impl Browsers {
         let answer = match opened {
             Ok(_) => {
                 let mut answered = prompt.ask(&site);
-                let deadline = tokio::time::Instant::now() + SIGN_IN_TIME;
+                let deadline = tokio::time::Instant::now() + self.sign_in_time;
                 // A browser that closed meanwhile ends it too: there is nothing to sign in with.
-                // So does the time running out: the sign-in counts as cancelled.
+                // So does the time running out, or the bot being deleted (`close`): the sign-in
+                // counts as cancelled, and the person is told.
                 loop {
                     tokio::select! {
                         done = &mut answered => break done.unwrap_or(false),
-                        () = tokio::time::sleep(Duration::from_secs(1)) => {
-                            let ended = tokio::time::Instant::now() >= deadline;
-                            if ended || !running.pipe.open.load(Ordering::SeqCst) {
+                        () = tokio::time::sleep(Duration::from_millis(250)) => {
+                            let ended = tokio::time::Instant::now() >= deadline
+                                || !running.pipe.open.load(Ordering::SeqCst)
+                                || self.signing_site(key).is_none();
+                            if ended {
+                                prompt.ended(&site);
                                 break false;
                             }
                         }
@@ -821,8 +875,14 @@ impl Browsers {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        // The tab keeps no way back into the sign-in: a page that goes back (`history.go`), or a
+        // Back link the bot clicks, finds nothing behind it.
+        let _ = running
+            .pipe
+            .call("Page.resetNavigationHistory", json!({}), Some(&session))
+            .await;
         running.pipe.take_events();
-        self.signing.lock().unwrap().remove(key);
+        self.stop_signing(key);
         Ok(answer)
     }
 
@@ -948,8 +1008,12 @@ impl Browsers {
     /// the browser has ended, so it cannot write it back.
     pub async fn close(&self, key: &str, forget_profile: bool) {
         // Only the person ends a sign-in: stopping the bot leaves its browser open meanwhile.
+        // Deleting it ends the sign-in (the person is told) and then the browser and profile go.
         if self.signing_site(key).is_some() {
-            return;
+            if !forget_profile {
+                return;
+            }
+            self.stop_signing(key);
         }
         let running = {
             let mut open = self.open.lock().unwrap();
@@ -1492,6 +1556,10 @@ mod tests {
             ("Insert", "Insert", 45, 8),
             ("Delete", "Delete", 46, 8),
             ("Insert", "Insert", 45, 2),
+            ("Copy", "Copy", 0, 0),
+            ("Cut", "Cut", 0, 0),
+            ("Paste", "Paste", 0, 0),
+            ("x", "Paste", 88, 0),
             ("a", "KeyO", 65, 2),
         ] {
             assert!(
@@ -1701,6 +1769,21 @@ mod tests {
             pipe.call("Page.enable", json!({}), None).await.unwrap_err(),
             CLOSED
         );
+    }
+
+    #[tokio::test]
+    async fn deleting_a_bot_ends_its_sign_in_and_stopping_it_does_not() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-delete-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), None, true);
+        std::fs::create_dir_all(dir.join("k")).unwrap();
+        browsers.mark_signing("k", Some("x.com"));
+        browsers.close("k", false).await;
+        assert_eq!(browsers.signing_site("k").as_deref(), Some("x.com"));
+        assert!(dir.join("k").exists());
+        browsers.close("k", true).await;
+        assert!(browsers.signing_site("k").is_none());
+        assert!(!dir.join("k").exists(), "the deleted bot's profile stayed");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
