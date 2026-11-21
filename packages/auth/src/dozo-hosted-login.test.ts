@@ -898,6 +898,10 @@ describe("signing in to a local server with the hosted account", () => {
     expect(w.local.data.account).toEqual([
       expect.objectContaining({ userId: ada, providerId: HOSTED_PROVIDER_ID }),
     ]);
+    // The hosted account now says who this is.
+    expect(w.local.data.user).toEqual([
+      expect.objectContaining({ id: ada, email: "ada.hosted@dozo.example" }),
+    ]);
     // The password and the passkey are gone, and the server signs in only with the hosted
     // account, as that user.
     expect(w.local.data.passkey).toEqual([]);

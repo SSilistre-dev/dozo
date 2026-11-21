@@ -322,6 +322,24 @@ async function cases(browser) {
       await tab.getByPlaceholder("Password").fill(PASSWORD);
       await tab.getByRole("button", { name: "Create account" }).click();
       const ownerId = await landed(tab, LEGACY, local);
+      // A computer someone has used: its first bot exists, so the app opens on the shell.
+      const made = await tab.evaluate(async () => {
+        const response = await fetch("/rpc/bots/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            json: {
+              name: "Chief",
+              title: "",
+              description: "",
+              notifyOnFinish: true,
+              computerMode: "team",
+            },
+          }),
+        });
+        return `${response.status} ${(await response.text()).slice(0, 200)}`;
+      });
+      check(made.startsWith("200"), `first bot: ${made}`);
       await signOut(tab, LEGACY);
       await computer("stop", LEGACY);
       // The update turns hosted sign-in on: the server starts, and passwords still work.

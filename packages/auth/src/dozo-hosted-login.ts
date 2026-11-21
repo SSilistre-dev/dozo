@@ -687,6 +687,8 @@ async function linkSignedInUser(
     const accounts = await adapter.findAccounts(userId);
     if (accounts.some((account) => account.providerId === HOSTED_PROVIDER_ID)) return false;
     await adapter.linkAccount({ userId, providerId: HOSTED_PROVIDER_ID, accountId: claims.sub });
+    // From now on the hosted account says who this is: its address and name, as a sign-in would.
+    await refreshed(ctx, session.user, claims);
     // The password and the passkeys go: the account now signs in with the hosted one only.
     await ctx.context.adapter.deleteMany({
       model: "account",
