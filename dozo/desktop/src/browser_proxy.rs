@@ -19,6 +19,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 const MAX_HEAD: usize = 16 * 1024;
+/// Connections served at once; more wait in the browser's own queue.
+const MAX_CONNECTIONS: usize = 256;
+/// A connection with nothing sent either way for this long is closed.
+const IDLE: Duration = Duration::from_secs(5 * 60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const REFUSED: &[u8] =
     b"HTTP/1.1 502 Bad Gateway\r\nconnection: close\r\ncontent-length: 0\r\n\r\n";
@@ -61,13 +65,31 @@ impl Drop for Proxy {
 impl Proxy {
     /// Starts it on a free loopback port.
     pub async fn start(local: Local) -> std::io::Result<Self> {
+        Self::start_limited(local, MAX_CONNECTIONS).await
+    }
+
+    async fn start_limited(local: Local, limit: usize) -> std::io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
         let reused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counted = reused.clone();
+        let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(limit));
         let accept = tokio::spawn(async move {
-            while let Ok((client, _)) = listener.accept().await {
-                tokio::spawn(serve(client, local.clone(), counted.clone()));
+            loop {
+                match listener.accept().await {
+                    // Over the limit a connection is closed at once; the browser tries again.
+                    Ok((client, _)) => {
+                        if let Ok(slot) = slots.clone().try_acquire_owned() {
+                            let (local, counted) = (local.clone(), counted.clone());
+                            tokio::spawn(async move {
+                                serve(client, local, counted).await;
+                                drop(slot);
+                            });
+                        }
+                    }
+                    // Out of file handles or the like: wait and go on, never stop serving.
+                    Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+                }
             }
         });
         Ok(Self {
@@ -109,7 +131,12 @@ async fn serve(
         {
             return;
         }
-        let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+        let (mut client_in, mut client_out) = client.split();
+        let (mut server_in, mut server_out) = server.split();
+        tokio::select! {
+            () = pass(&mut client_in, &mut server_out) => {}
+            () = pass(&mut server_in, &mut client_out) => {}
+        }
         return;
     }
     let Ok(url) = tauri::Url::parse(target) else {
@@ -189,11 +216,28 @@ async fn serve(
     // it again on a new connection, through this check.
     let mut next = [0u8; 1];
     tokio::select! {
-        _ = tokio::io::copy(&mut server, &mut to_client) => {}
+        () = pass(&mut server, &mut to_client) => {}
         read = from_client.read(&mut next) => {
             if matches!(read, Ok(1)) {
                 reused.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
+        }
+    }
+}
+
+/// Copies one way until the end, an error, or `IDLE` without a byte.
+async fn pass(
+    from: &mut (impl tokio::io::AsyncRead + Unpin),
+    to: &mut (impl tokio::io::AsyncWrite + Unpin),
+) {
+    let mut chunk = vec![0u8; 16 * 1024];
+    loop {
+        let read = match tokio::time::timeout(IDLE, from.read(&mut chunk)).await {
+            Ok(Ok(read)) if read > 0 => read,
+            _ => return,
+        };
+        if to.write_all(&chunk[..read]).await.is_err() {
+            return;
         }
     }
 }
@@ -600,5 +644,28 @@ mod tests {
         )
         .await;
         assert!(chunked.starts_with("HTTP/1.1 502"), "{chunked}");
+    }
+
+    #[tokio::test]
+    async fn past_its_limit_it_closes_a_connection_at_once() {
+        let port = echo().await;
+        let proxy = Proxy::start_limited(Local::All, 1).await.unwrap();
+        let mut held = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy.port))
+            .await
+            .unwrap();
+        held.write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        let mut answer = [0u8; 64];
+        let read = held.read(&mut answer).await.unwrap();
+        assert!(String::from_utf8_lossy(&answer[..read]).contains("200"));
+        let mut over = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy.port))
+            .await
+            .unwrap();
+        let mut rest = Vec::new();
+        let closed =
+            tokio::time::timeout(Duration::from_secs(5), over.read_to_end(&mut rest)).await;
+        assert!(matches!(closed, Ok(Ok(0))), "{closed:?}");
+        drop(held);
     }
 }
