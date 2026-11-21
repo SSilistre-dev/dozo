@@ -317,6 +317,18 @@ into it.
   and `/usr/bin` on Linux, the first of Chrome, Edge, Brave and Chromium), never on `PATH` or in
   the home folder. It starts with only the variables a desktop browser needs, so nothing like
   `CHROMIUM_FLAGS` or `LD_PRELOAD` adds to it.
+- The server side (`packages/adapters/src/dozo-device-browser.ts`): `pageBrowser` requests,
+  each one DevTools command, give the bot its usual `browser_navigate`, `browser_snapshot` and
+  `browser_act` with the same results as on its own computer, built from the page's accessibility
+  tree, and a screenshot with a snapshot for a model that can see.
+- Who gets it (`packages/adapters/src/dozo-user-browser.ts`): only chats the person starts with
+  their own bot, as for commands, never a run a message sent with an access token reached, and
+  only when the run has no graphical computer of its own (Free).
+- What asks: a bot's first use of its browser on this computer ("Let this bot use its own browser
+  on your computer?"), and its first action on each site, named by its registrable domain ("Let
+  this bot act on x.com in its browser?"). Each answer holds for that bot on this computer;
+  removing the computer or deleting the bot asks again. Saved logins, cards and uploads do not
+  reach this browser yet; the person can sign in in its window themselves.
 - The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port:
   nothing listens on TCP, so nothing on the network and no program running as another user can
   connect to it.
