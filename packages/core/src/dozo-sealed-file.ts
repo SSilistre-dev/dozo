@@ -365,8 +365,9 @@ async function* oneFileOf(
     if ((await bytes.length()) !== 0 || !(await bytes.atEnd())) throw sealedDamaged();
     finished = true;
   } finally {
-    // Stops reading the file: a failure, or a caller that gave up, needs none of the rest.
-    if (!finished) await reader.cancel().then(undefined, () => undefined);
+    // Stops reading the file: a failure, or a caller that gave up, needs none of the rest. On a
+    // stream that already failed this rejects with that same failure, which is what is thrown.
+    if (!finished) await reader.cancel();
   }
 }
 

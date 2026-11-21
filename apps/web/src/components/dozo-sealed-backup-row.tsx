@@ -4,6 +4,7 @@ import {
   dozoLocalDay,
   MIN_PASSWORD_LENGTH,
   SEALED_ACCOUNT_FILE_MAX_BYTES,
+  SEALED_ACCOUNT_MAX_BYTES,
   SealedFileError,
 } from "@rakazo/core";
 import {
@@ -18,7 +19,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { queryClient, useSave } from "../lib/query";
 import { recheckSessionOnUnauthorized } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
@@ -37,6 +38,18 @@ export function DozoSealedBackupRow({ onImported }: { onImported?: () => Promise
   const [open, setOpen] = useState<{ restore: File | null } | null>(null);
   const [done, setDone] = useState(false);
   const [tooLarge, setTooLarge] = useState(false);
+  // The last download's URL stays readable until the next one or until settings close: WebKit
+  // reads it after the click returns.
+  const lastUrl = useRef<string | null>(null);
+  useEffect(() => () => forget(lastUrl), []);
+  const download = (blob: Blob, name: string) => {
+    forget(lastUrl);
+    lastUrl.current = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = lastUrl.current;
+    link.download = name;
+    link.click();
+  };
   const start = (restore: File | null) => {
     setDone(false);
     setTooLarge(false);
@@ -98,9 +111,15 @@ export function DozoSealedBackupRow({ onImported }: { onImported?: () => Promise
         <QueryClientProvider client={queryClient}>
           <SealDialog
             restore={open.restore}
+            download={download}
             onClose={() => setOpen(null)}
             onDone={async () => {
-              if (open.restore) await onImported?.().catch(() => undefined);
+              // The import is done; a list that did not refresh shows it on the next read.
+              if (open.restore) {
+                await onImported?.().catch((error: unknown) => {
+                  console.warn("Restored, but the refresh after it failed:", error);
+                });
+              }
               setOpen(null);
               setDone(true);
             }}
@@ -111,10 +130,30 @@ export function DozoSealedBackupRow({ onImported }: { onImported?: () => Promise
   );
 }
 
+function forget(url: { current: string | null }) {
+  if (url.current) URL.revokeObjectURL(url.current);
+  url.current = null;
+}
+
 /** A refusal from the server, with the sentence it sent when it sent one. */
 class Refused extends Error {}
 /** The server could not be reached at all. */
 class Unreachable extends Error {}
+/** An export no restore would take back. */
+class TooLarge extends Error {}
+
+/** The server's own sentence for a refusal (`{ "error": "..." }`), or "" when it sent none. */
+function sentence(body: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    // A body that is not JSON (a proxy's page, nothing at all) carries no sentence to show.
+    return "";
+  }
+  const error = (parsed as { error?: unknown } | null)?.error;
+  return typeof error === "string" ? error : "";
+}
 
 async function request(url: string, init: RequestInit): Promise<Response> {
   let response: Response;
@@ -125,17 +164,7 @@ async function request(url: string, init: RequestInit): Promise<Response> {
   }
   recheckSessionOnUnauthorized(response.status);
   if (response.ok) return response;
-  const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-  throw new Refused(typeof body?.error === "string" ? body.error : "");
-}
-
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
+  throw new Refused(sentence(await response.text()));
 }
 
 /**
@@ -144,10 +173,12 @@ function download(blob: Blob, name: string) {
  */
 function SealDialog({
   restore,
+  download,
   onClose,
   onDone,
 }: {
   restore: File | null;
+  download: (blob: Blob, name: string) => void;
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
@@ -173,7 +204,9 @@ function SealDialog({
       }
       const { token } = await withIdentityConfirmation(() => rpc.export.accountToken());
       const exported = await request(`/api/account/export?token=${encodeURIComponent(token)}`, {});
-      const sealed = await codec.sealAccountExport(await exported.blob(), password);
+      const zip = await exported.blob();
+      if (zip.size > SEALED_ACCOUNT_MAX_BYTES) throw new TooLarge();
+      const sealed = await codec.sealAccountExport(zip, password);
       download(sealed, `Dozo ${dozoLocalDay(new Date())}.dozobackup`);
     },
     onSaved: onDone,
@@ -187,6 +220,7 @@ function SealDialog({
     if (!failure || isIdentityConfirmationRequired(failure)) return null;
     if (failure instanceof SealedFileError) return t`Wrong password, or the file is damaged`;
     if (failure instanceof Unreachable) return t`Could not reach the server`;
+    if (failure instanceof TooLarge) return t`The file is too large`;
     if (failure instanceof Refused) return failure.message || t`Could not continue`;
     return errorText(failure, t`Could not continue`);
   };

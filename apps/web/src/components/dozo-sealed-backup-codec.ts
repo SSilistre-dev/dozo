@@ -29,7 +29,7 @@ export async function sealAccountExport(
 ): Promise<Blob> {
   const file = { path: SEALED_ACCOUNT_ENTRY, size: zip.size, mode: 0o600 };
   const sealed = sealOneFile(file, zip.stream(), password, deriveKey, kdf);
-  return collect(readAll(sealed));
+  return collectBlob(readAll(sealed));
 }
 
 /**
@@ -39,7 +39,7 @@ export async function sealAccountExport(
  */
 export async function openAccountBackup(file: Blob, password: string): Promise<Blob> {
   const limit = { path: SEALED_ACCOUNT_ENTRY, maxSize: SEALED_ACCOUNT_MAX_BYTES };
-  return collect(openOneFile(file.stream(), password, deriveKey, limit), "application/zip");
+  return collectBlob(openOneFile(file.stream(), password, deriveKey, limit), "application/zip");
 }
 
 async function* readAll(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
@@ -51,9 +51,25 @@ async function* readAll(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uint
   }
 }
 
-/** The parts as one `Blob`, which the browser may keep out of the page's memory. */
-async function collect(parts: AsyncIterable<Uint8Array>, type = ""): Promise<Blob> {
-  const blobs: BlobPart[] = [];
-  for await (const part of parts) blobs.push(part as Uint8Array<ArrayBuffer>);
-  return new Blob(blobs, { type });
+/**
+ * The parts as one `Blob`, folded in every `foldBytes` so the page never holds more than that in
+ * its own arrays: the browser may keep a Blob out of the page's memory, an array it cannot.
+ */
+export async function collectBlob(
+  parts: AsyncIterable<Uint8Array>,
+  type = "",
+  foldBytes = 64 * 1024 ** 2,
+): Promise<Blob> {
+  let blob = new Blob([], { type });
+  let batch: BlobPart[] = [];
+  let held = 0;
+  for await (const part of parts) {
+    batch.push(part as Uint8Array<ArrayBuffer>);
+    held += part.length;
+    if (held < foldBytes) continue;
+    blob = new Blob([blob, ...batch], { type });
+    batch = [];
+    held = 0;
+  }
+  return new Blob([blob, ...batch], { type });
 }

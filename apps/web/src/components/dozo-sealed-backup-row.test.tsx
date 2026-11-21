@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Blob as NodeBlob, File as NodeFile } from "node:buffer";
 import type { SealedKdf } from "@rakazo/core";
-import { SEALED_ACCOUNT_FILE_MAX_BYTES } from "@rakazo/core";
+import { SEALED_ACCOUNT_FILE_MAX_BYTES, SEALED_ACCOUNT_MAX_BYTES } from "@rakazo/core";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -223,7 +223,8 @@ describe("backing up the account into one sealed file", () => {
     );
     const [download] = downloads;
     expect(download?.name).toMatch(/^Dozo \d{4}-\d{2}-\d{2}\.dozobackup$/);
-    expect(download?.revoked).toBe(true);
+    // Still readable while the browser saves it: a WebKit download reads the URL after the click.
+    expect(download?.revoked).toBe(false);
     const sealed = await bodyBytes(download?.blob);
     expect(new TextDecoder().decode(sealed.subarray(0, 8))).toBe("DOZOBAK\n");
     expect(Buffer.from(sealed).includes(Buffer.from(PASSWORD))).toBe(false);
@@ -231,6 +232,28 @@ describe("backing up the account into one sealed file", () => {
     expect(await bodyBytes(zip)).toEqual(ZIP);
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(byTestId("success")).not.toBeNull();
+    // The next backup lets the last one's URL go, and so does leaving the settings.
+    api.fetch.mockResolvedValue(new Response(ZIP, { status: 200 }));
+    await click(byTestId("dozo-backup-create"));
+    await type("Password", PASSWORD);
+    await type("Confirm password", PASSWORD);
+    await click(submit());
+    await vi.waitFor(() => expect(downloads).toHaveLength(2), { timeout: 20_000 });
+    expect(downloads.map((each) => each.revoked)).toEqual([true, false]);
+    await act(async () => root.render(<div />));
+    expect(downloads.map((each) => each.revoked)).toEqual([true, true]);
+  });
+
+  it("refuses an export larger than a restore would take, before sealing it", async () => {
+    const huge = { size: SEALED_ACCOUNT_MAX_BYTES + 1 };
+    api.fetch.mockResolvedValue({ ok: true, status: 200, blob: async () => huge });
+    await render();
+    await click(byTestId("dozo-backup-create"));
+    await type("Password", PASSWORD);
+    await type("Confirm password", PASSWORD);
+    await click(submit());
+    await vi.waitFor(() => expect(alertText()).toBe("The file is too large"));
+    expect(downloads).toHaveLength(0);
   });
 
   it("asks for matching passwords of at least 8 characters before anything is fetched", async () => {
@@ -322,6 +345,18 @@ describe("restoring the account from a sealed file", () => {
     expect(api.recheck).toHaveBeenCalledWith(200);
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(byTestId("success")).not.toBeNull();
+  });
+
+  it("keeps a done restore done when the refresh after it fails, and says so in the console", async () => {
+    api.fetch.mockResolvedValue(new Response(null, { status: 200 }));
+    api.onImported.mockRejectedValue(new Error("refresh failed"));
+    await render();
+    await pick(await sealedFile());
+    await type("Password", PASSWORD);
+    await click(submit());
+    await vi.waitFor(() => expect(byTestId("success")).not.toBeNull(), { timeout: 20_000 });
+    expect(dialog()).toBeNull();
+    expect(consoleCalls.flat().map(String).join(" ")).toContain("refresh failed");
   });
 
   it("says a wrong password or a damaged file in one message and imports nothing", async () => {
