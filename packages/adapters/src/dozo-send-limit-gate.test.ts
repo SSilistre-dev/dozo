@@ -36,7 +36,10 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
   }),
 }));
 
-function gate(name: string, options: { readOnly?: boolean; approved?: boolean } = {}) {
+function gate(
+  name: string,
+  options: { readOnly?: boolean; approved?: boolean; token?: boolean } = {},
+) {
   const args = { to: "someone@example.test", text: "hello" };
   const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
   const request: ToolRequest = {
@@ -57,7 +60,13 @@ function gate(name: string, options: { readOnly?: boolean; approved?: boolean } 
     loginUse: undefined,
   };
   const ctx = {
-    deps: { prisma: { attempt: { count: async () => 1 } } },
+    deps: {
+      // No message sent with an access token reached this run (dozo-token-run.ts).
+      prisma: {
+        attempt: { count: async () => 1 },
+        $queryRaw: async () => [{ sourced: options.token === true }],
+      },
+    },
     run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "user" },
     runId: "run-1",
     bot: { id: "bot-1", name: "Helper" },
@@ -93,6 +102,11 @@ beforeEach(() => {
 });
 
 describe("gateToolCall: the daily send limit", () => {
+  it("hands the limit an ask for a send a token's message asked for, so it takes none of the day's sends", async () => {
+    await gate("send_email", { token: true }).catch(() => undefined);
+    expect(limit.calls[0]?.plan).toBe("ask");
+  });
+
   it("hands each call and upstream's plan to the limit", async () => {
     expect(await gate("send_email")).toBe("recorded");
     expect(limit.calls).toEqual([

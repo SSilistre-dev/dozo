@@ -323,6 +323,70 @@ Send. Limits: 5 reports per person and 60 in all per hour, per API instance.
 Not yet: the mobile app has no entry, and the local server shows none until the desktop app passes
 it an address. There is no anonymous path to the hosted service from a local server.
 
+## Bot API
+
+Scripts talk to a member's own bots under `/api/v1/dozo` (`apps/api/src/dozo-bot-api*.ts`,
+OpenAPI in `dozo/api/openapi.yaml`): list bots, send a message and follow the reply as
+server-sent events, read the chat, export it. Each call carries a personal access token made under
+Settings > General > Security > Access tokens (`apps/web/src/components/dozo-access-tokens.tsx`).
+
+A token belongs to one member in one Space and can be limited to one bot. Only its SHA-256 and last
+four characters are stored (`dozo_access_tokens`); it is shown once. Making one asks the person to
+confirm it is them (as revealing a secret does) and mails the account's address when a mail
+provider is set. It lasts 90 days unless made to never expire, and every token stops when the
+account's password changes or is reset, or its owner or an operator signs out everywhere. It goes with its bot and with the member's place in the
+Space, and stops for a deactivated or banned account. Revoking ends open streams within 10 seconds;
+runs already started go on. Making and revoking one is in the activity log; the list shows when
+each was last used.
+
+It is read from the `Authorization` header only, never a cookie or the address, so another site
+cannot call the API with a signed-in browser. It reaches the app's own send, transcript and export
+procedures as its member (`createRouterClient`), so access checks, approvals and model limits are
+the app's. Settings, billing, members and tokens are out of its reach: the app's RPC never accepts a
+token. A stop word is refused (in the app it stops every run in the chat): stop a run in the app.
+A message sent with a token never answers or ends a question the bot is waiting on.
+
+Reads are open: a run started with a token reads, without asking, whatever its bot can read
+(chats, files, memory, mail, connected apps) and the reply can carry it back. A token limited to one
+bot reaches everything that bot can read.
+
+Token gate (`packages/adapters/src/dozo-token-run.ts`, `dozo-token-marks.ts`, shared with MCP). Text
+sent with a token may come from another program or agent, so it is not the owner's word. It is saved
+with an `api:` client nonce (`packages/core/src/dozo-token-source.ts`) and shows a small key above
+it on web and mobile. A bot is marked while its chat holds such a message (clearing the chat ends
+it), while a bot it was spawned from is marked, or while it holds a mark: one is written when text
+from a marked bot's run is delivered to it (a message, a delegated run's automatic answer, a group
+handoff) or a marked run wrote its instructions or a ticket it now owns, until its chat is cleared
+after that. A bot a marked run spawned, and the bot of a routine a marked run made or changed, stay
+marked until that bot or routine is deleted. Background helpers and routines of a marked bot are
+its runs; conversation memory keeps no turn of a marked run, and a message sent with a token never
+answers or ends a question the bot is waiting on.
+
+In a run of a marked bot every call that is not a plain read asks the person, even in Never ask or
+Auto review: sends, connector writes, the cloud computer, the browser, files, memory, settings,
+routines, other bots and the user's own computer. The gate only asks: marks are written where the
+approved call delivers or changes something, so a call the person denies leaves none, and a call
+naming another bot by anything but a string is refused. Its cards say why (and, for work that
+outlives the run, that the mark does too) and have no Always allow; the run starts as having read
+outside content, and a marked routine's words and the sites a token's message names are not
+trusted. An approved call goes ahead once without asking again, also when replayed after a restart;
+the API call does not wait: its stream ends with `waiting_input`. A background helper of a marked
+bot cannot ask, so it refuses such calls.
+
+The owner ends a mark from the bot's menu in the web app: Trust this bot again, after confirming it
+is them (logged as an approval change; no token reaches it). Messages and marks from before then no
+longer make the bot ask, though its history still counts as outside content. Not marked: a bot that
+later reads a ticket a marked run commented on or that has no owner.
+
+Limits: 60 requests and 10 messages a minute per token and 20 messages a minute per account,
+counted in Postgres for every API instance (`dozo_api_minutes`); 120 requests a minute per address
+(an IPv6 caller by its /64; a request whose address the server cannot tell is refused) before any
+token is looked up and 3 open streams per token, per instance. A stream holds at most 1 MB for a
+reader that stopped reading, then ends with `running`. A stream ends after 10 minutes with
+`running`. Not yet: the mobile app has no token screen (a token is for a computer's scripts; make
+one on web or desktop) and no Trust this bot again, the notice mail is in English, and there is no group chat or attachment
+support.
+
 ## Agent mode (unverified)
 
 On the local server only (the desktop app runs it and passes `HOST_USER_HOME` and `HOST_USER_PATH`),

@@ -75,17 +75,22 @@ function blockMarkdown(block: MessageBlock): string | undefined {
   }
 }
 
+/** What a message's blocks show as Markdown, or nothing when it has nothing to show. */
+export function messageBody(message: Pick<ThreadMessage, "role" | "blocks">): string | undefined {
+  if (message.role === "system") return undefined;
+  // A delivery is the prompt that woke the bot, and receipts are chips the transcript hides.
+  if (message.blocks.some((block) => block.kind === "delivery")) return undefined;
+  if (isPeerReceiptBlocks(message.blocks)) return undefined;
+  return message.blocks.flatMap((block) => blockMarkdown(block) ?? []).join("\n\n") || undefined;
+}
+
 /** One message as a heading line and its body, or nothing when it has nothing to show. */
 export function messageMarkdown(
   message: ThreadMessage,
   names: ChatMarkdownNames,
   time: (iso: string) => string,
 ): string | undefined {
-  if (message.role === "system") return undefined;
-  // A delivery is the prompt that woke the bot, and receipts are chips the transcript hides.
-  if (message.blocks.some((block) => block.kind === "delivery")) return undefined;
-  if (isPeerReceiptBlocks(message.blocks)) return undefined;
-  const body = message.blocks.flatMap((block) => blockMarkdown(block) ?? []).join("\n\n");
+  const body = messageBody(message);
   if (!body) return undefined;
   const who =
     message.role === "bot"
