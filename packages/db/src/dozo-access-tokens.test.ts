@@ -9,8 +9,13 @@ import {
   listDozoAccessTokens,
   looksLikeDozoAccessToken,
   revokeDozoAccessToken,
+  takeDozoApiMinute,
   touchDozoAccessToken,
 } from "./dozo-access-tokens.js";
+
+/** The text of a nested SQL fragment among a call's values. */
+const fragment = (values: unknown[]) =>
+  values.map((value) => (value as { sql?: string })?.sql ?? "").join("");
 
 function fakeDb(answer: unknown = []) {
   const calls: { sql: string; values: unknown[] }[] = [];
@@ -28,7 +33,12 @@ describe("createDozoAccessToken", () => {
   it("stores only the hash and the last four characters, under the member's limit", async () => {
     const createdAt = new Date("2026-11-21T10:00:00Z");
     const { db, calls } = fakeDb([{ id: "token-1", createdAt }]);
-    const created = await createDozoAccessToken(db, member, { name: "CI", botId: "bot-1" });
+    const expiresAt = new Date("2027-02-19T10:00:00Z");
+    const created = await createDozoAccessToken(db, member, {
+      name: "CI",
+      botId: "bot-1",
+      expiresAt,
+    });
 
     expect(created).not.toBeNull();
     const { token, row } = created!;
@@ -42,6 +52,7 @@ describe("createDozoAccessToken", () => {
       hint: token.slice(-4),
       createdAt,
       lastUsedAt: null,
+      expiresAt,
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.sql).toContain("INSERT INTO dozo_access_tokens");
@@ -49,18 +60,29 @@ describe("createDozoAccessToken", () => {
     expect(calls[0]!.values).toContain(dozoAccessTokenHash(token));
     expect(calls[0]!.values).not.toContain(token);
     expect(calls[0]!.values).toContain(DOZO_ACCESS_TOKEN_LIMIT);
+    expect(calls[0]!.values).toContain(expiresAt);
   });
 
   it("makes a different token every time", async () => {
     const { db } = fakeDb([{ id: "token-1", createdAt: new Date() }]);
-    const first = await createDozoAccessToken(db, member, { name: "a", botId: null });
-    const second = await createDozoAccessToken(db, member, { name: "b", botId: null });
+    const first = await createDozoAccessToken(db, member, {
+      name: "a",
+      botId: null,
+      expiresAt: null,
+    });
+    const second = await createDozoAccessToken(db, member, {
+      name: "b",
+      botId: null,
+      expiresAt: null,
+    });
     expect(first!.token).not.toBe(second!.token);
   });
 
   it("answers null when the member holds the most tokens allowed", async () => {
     const { db } = fakeDb([]);
-    expect(await createDozoAccessToken(db, member, { name: "CI", botId: null })).toBeNull();
+    expect(
+      await createDozoAccessToken(db, member, { name: "CI", botId: null, expiresAt: null }),
+    ).toBeNull();
   });
 });
 
@@ -69,7 +91,10 @@ describe("tokens by member", () => {
     const { db, calls } = fakeDb([{ id: "token-1" }]);
     expect(await listDozoAccessTokens(db, member)).toEqual([{ id: "token-1" }]);
     expect(calls[0]!.sql).toContain('t."userId" = ? AND t."spaceId" = ?');
-    expect(calls[0]!.values).toEqual(["user-1", "space-1"]);
+    expect(calls[0]!.values.slice(0, 2)).toEqual(["user-1", "space-1"]);
+    // Expired tokens and those older than a password change are not listed.
+    expect(fragment(calls[0]!.values)).toContain('"expiresAt" > now()');
+    expect(fragment(calls[0]!.values)).toContain("'auth.password.changed'");
   });
 
   it("revokes only the member's own token and says whether one went", async () => {
@@ -87,7 +112,8 @@ describe("finding a token", () => {
     const { db, calls } = fakeDb([owner]);
     const token = `${DOZO_ACCESS_TOKEN_PREFIX}${"a".repeat(43)}`;
     expect(await findDozoAccessToken(db, token)).toEqual(owner);
-    expect(calls[0]!.values).toEqual([dozoAccessTokenHash(token)]);
+    expect(calls[0]!.values[0]).toBe(dozoAccessTokenHash(token));
+    expect(fragment(calls[0]!.values)).toContain("'auth.password.changed'");
     expect(await findDozoAccessToken(fakeDb([]).db, token)).toBeNull();
   });
 
@@ -108,5 +134,19 @@ describe("finding a token", () => {
     expect(calls[0]!.values).toEqual([now, "token-1", new Date("2026-11-21T09:59:00Z")]);
     await touchDozoAccessToken(db, "token-1");
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe("takeDozoApiMinute", () => {
+  it("counts in the current minute and drops older ones", async () => {
+    const { db, calls } = fakeDb([{ count: 3 }]);
+    const now = new Date("2026-11-21T10:00:42.500Z");
+    expect(await takeDozoApiMinute(db, "token:t-1", 60, now)).toBe(true);
+    const minute = new Date("2026-11-21T10:00:00.000Z");
+    expect(calls[0]!.sql).toContain("DELETE FROM dozo_api_minutes");
+    expect(calls[0]!.values).toEqual(["token:t-1", minute]);
+    expect(calls[1]!.sql).toContain("ON CONFLICT (key, minute)");
+    expect(calls[1]!.values).toEqual(["token:t-1", minute, 60]);
+    expect(await takeDozoApiMinute(fakeDb([]).db, "token:t-1", 60)).toBe(false);
   });
 });

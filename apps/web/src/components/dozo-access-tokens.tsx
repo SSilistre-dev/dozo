@@ -16,6 +16,7 @@ import { useState } from "react";
 import { useCopyText } from "../lib/copy-text";
 import { toastError } from "../lib/dozo-error-text";
 import { queryClient, useSave, useSpaceQueries } from "../lib/query";
+import { useIdentityConfirmation } from "./ConfirmIdentityDialog";
 import { SettingsRow } from "./SettingsRows";
 
 /**
@@ -117,6 +118,9 @@ function TokenRow({
     token.lastUsedAt &&
     new Date(token.lastUsedAt).toLocaleDateString(i18n.locale, { dateStyle: "medium" });
   const used = date ? t`Last used ${date}` : t`Never used`;
+  const ends =
+    token.expiresAt &&
+    new Date(token.expiresAt).toLocaleDateString(i18n.locale, { dateStyle: "medium" });
   return (
     <li data-testid="dozo-access-token" className="flex items-center gap-3 py-2.5 text-body">
       <div className="min-w-0 flex-1">
@@ -125,6 +129,7 @@ function TokenRow({
           <span className="font-mono">…{token.hint}</span>
           {token.botName ? <span className="truncate">{token.botName}</span> : null}
           <span>{used}</span>
+          {ends ? <span>{t`Expires ${ends}`}</span> : null}
         </p>
       </div>
       <Button
@@ -153,8 +158,12 @@ function CreateToken({
   const bots = useQuery(queries.bots.list.queryOptions());
   const [name, setName] = useState("");
   const [botId, setBotId] = useState("");
+  const [lasting, setLasting] = useState(false);
+  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   const create = useSave({
-    save: (input: { name: string; botId?: string }, rpc) => rpc.dozoAccessTokens.create(input),
+    // Making a token asks the person to confirm it is them, as revealing a secret does.
+    save: (input: { name: string; botId?: string; expiresInDays: 90 | null }, rpc) =>
+      withIdentityConfirmation(() => rpc.dozoAccessTokens.create(input)),
     stale: [queries.dozoAccessTokens.list.key()],
     onSaved: (created) => onCreated(created.token),
     onFailed: (error) => toastError(t`Could not create token`, error),
@@ -164,7 +173,12 @@ function CreateToken({
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (name.trim()) create.run({ name: name.trim(), ...(botId ? { botId } : {}) });
+        if (name.trim())
+          create.run({
+            name: name.trim(),
+            ...(botId ? { botId } : {}),
+            expiresInDays: lasting ? null : 90,
+          });
       }}
     >
       <Input
@@ -187,6 +201,16 @@ function CreateToken({
           </NativeSelectOption>
         ))}
       </NativeSelect>
+      <NativeSelect
+        aria-label={t`Expires`}
+        className="w-full"
+        value={lasting ? "never" : "90"}
+        onChange={(event) => setLasting(event.target.value === "never")}
+      >
+        <NativeSelectOption value="90">{t`Expires in 90 days`}</NativeSelectOption>
+        <NativeSelectOption value="never">{t`Never expires`}</NativeSelectOption>
+      </NativeSelect>
+      {identityDialog}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel}>
           <Trans>Cancel</Trans>
