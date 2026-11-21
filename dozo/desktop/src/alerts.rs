@@ -1,6 +1,6 @@
-//! The server page's notifications and the unread badge, with no way for the page to call the
-//! app: the web view shows the page's own notifications once the server's origin may, and the
-//! badge is read from the page title. What each system does: README.md, "Notifications and the
+//! The server page's permissions (notifications and the microphone) and the unread badge, with
+//! no way for the page to call the app: the web view shows the page's own notifications once the
+//! server's origin may, and the badge is read from the page title. What each system does: README.md, "Notifications and the
 //! unread badge".
 
 use std::sync::Mutex;
@@ -23,20 +23,25 @@ pub fn on_server(page: Option<&Url>, server: Option<&Url>) -> bool {
 }
 
 /// The answer to a page asking for a permission, `page` being the window's own page. Only the
-/// server's origin may show notifications. The answer is about the window's own page because
-/// the web view asks only for it: Windows (Chromium) and Linux (WebKitGTK) refuse a frame of
-/// another origin themselves before asking, and Linux also wants a click or key press behind the
-/// request. macOS never asks: its web view has no public way to grant a page notifications.
-/// Camera, microphone, location and every other kind: refused.
+/// server's origin may show notifications and use the microphone (dictation and calls; the
+/// system still asks the person once, and its own setting can refuse). The answer is about the
+/// window's own page because the web view asks only for it: a frame of another origin is refused
+/// by the web view itself before asking (the microphone and, on Windows and Linux,
+/// notifications), and Linux also wants a click or key press behind a notification request.
+/// macOS never asks about notifications: its web view has no public way to grant them.
+/// Camera, location and every other kind: refused, and so is a request for the camera and the
+/// microphone together.
 pub fn answer(
     kind: PermissionKind,
     page: Option<&Url>,
     server: Option<&Url>,
 ) -> PermissionResponse {
-    if !cfg!(target_os = "macos")
-        && kind == PermissionKind::Notifications
-        && on_server(page, server)
-    {
+    let allowed = match kind {
+        PermissionKind::Notifications => !cfg!(target_os = "macos"),
+        PermissionKind::Microphone => true,
+        _ => false,
+    };
+    if allowed && on_server(page, server) {
         PermissionResponse::Allow
     } else {
         PermissionResponse::Deny
@@ -257,11 +262,41 @@ mod tests {
     }
 
     #[test]
+    fn only_the_server_s_page_may_use_the_microphone() {
+        let server = url("https://dozo.example.com/");
+        let mic = |page: Option<&str>, server: Option<&Url>| {
+            answer(PermissionKind::Microphone, page.map(url).as_ref(), server)
+        };
+        assert_eq!(
+            mic(Some("https://dozo.example.com/space/1"), Some(&server)),
+            PermissionResponse::Allow
+        );
+        for page in [
+            "https://evil.test/",
+            "https://dozo.example.com:8443/",
+            "http://dozo.example.com/",
+            "tauri://localhost/index.html",
+            "http://tauri.localhost/index.html?change",
+            "about:blank",
+        ] {
+            assert_eq!(
+                mic(Some(page), Some(&server)),
+                PermissionResponse::Deny,
+                "{page}"
+            );
+        }
+        assert_eq!(mic(None, Some(&server)), PermissionResponse::Deny);
+        assert_eq!(
+            mic(Some("https://dozo.example.com/"), None),
+            PermissionResponse::Deny
+        );
+    }
+
+    #[test]
     fn every_other_permission_is_refused() {
         let server = url("https://dozo.example.com/");
         for kind in [
             PermissionKind::Camera,
-            PermissionKind::Microphone,
             PermissionKind::Geolocation,
             PermissionKind::DisplayCapture,
             PermissionKind::ClipboardRead,

@@ -2670,6 +2670,15 @@
       "reason": "no GitHub star prompt in Dozo: a sent message no longer counts towards one"
     },
     {
+      "file": "apps/web/src/pages/shell/composer.tsx",
+      "find": "import { HoldToTalkStrip, useHoldToTalk } from \"../../components/composer/HoldToTalk\";",
+      "replace": "import { HoldToTalkStrip, useHoldToTalk } from \"../../components/composer/dozo-hold-to-talk\";",
+      "requires": [
+        "apps/web/src/components/composer/dozo-hold-to-talk.ts"
+      ],
+      "reason": "desktop push to talk: the fork's desktop shell, which has no bridge into the page, drives the composer's own hold-to-talk with a window event from its shortcut"
+    },
+    {
       "file": "packages/adapters/src/builtin-skills.prompt.ts",
       "find": "const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [\n  [\"Getting started, first bot, what Rakazo does\", \"https://rakazo.com/docs.md\"],\n  [\n    \"Creating bots, chatting, bot settings, sidebar, search\",\n    \"https://rakazo.com/docs/bots-and-chats.md\",\n  ],\n  [\"Importing an OpenClaw, Hermes or ChatGPT agent\", \"https://rakazo.com/docs/import-an-agent.md\"],\n  [\n    \"Connecting apps and integrations (Gmail, GitHub, MCP tools)\",\n    \"https://rakazo.com/docs/integrations.md\",\n  ],\n  [\"Slack, Telegram, WhatsApp and other chat apps\", \"https://rakazo.com/docs/messaging-apps.md\"],\n  [\"Routines, schedules and triggers\", \"https://rakazo.com/docs/routines.md\"],\n  [\"The bot's computer, files, using your own computer\", \"https://rakazo.com/docs/computer.md\"],\n  [\"Memory\", \"https://rakazo.com/docs/memory.md\"],\n  [\"Skills\", \"https://rakazo.com/docs/skills.md\"],\n  [\"Approvals, Allow and Block lists\", \"https://rakazo.com/docs/approvals.md\"],\n  [\"Group chats, bots working together, subagents\", \"https://rakazo.com/docs/groups.md\"],\n  [\"Voice, calls, spoken replies\", \"https://rakazo.com/docs/voice-and-calls.md\"],\n  [\"Models, providers, API keys, fallbacks, usage\", \"https://rakazo.com/docs/models.md\"],\n  [\"Spaces\", \"https://rakazo.com/docs/spaces.md\"],\n  [\"Saved credentials and website logins\", \"https://rakazo.com/docs/bot-secrets.md\"],\n  [\n    \"Account, preferences, data export, credits, plans, billing\",\n    \"https://rakazo.com/docs/account.md\",\n  ],\n  [\"Desktop app\", \"https://rakazo.com/docs/desktop-app.md\"],\n  [\"Mobile app\", \"https://rakazo.com/docs/mobile-app.md\"],\n  [\"Bots that create and manage bots\", \"https://rakazo.com/docs/fleet-management.md\"],\n  [\"Building a plugin\", \"https://rakazo.com/docs/build-a-plugin.md\"],\n  [\"Self-hosting\", \"https://rakazo.com/docs/self-host.md\"],\n  [\"Self-hosted server configuration\", \"https://rakazo.com/docs/self-host-configuration.md\"],\n];\n",
       "replace": "const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [];\n",
