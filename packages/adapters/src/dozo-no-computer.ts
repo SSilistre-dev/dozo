@@ -27,8 +27,11 @@ export const CLOUD_COMPUTER_TOOL_NAMES: ReadonlySet<string> = new Set([
   "request_takeover",
 ]);
 
-/** Why a run has no computer: no hours left, or a subscription whose payment is overdue. */
-export type NoComputerReason = "hours" | "payment";
+/**
+ * Why a run has no computer: its plan includes none (Free), the hours are spent, or a
+ * subscription's payment is overdue.
+ */
+export type NoComputerReason = "plan" | "hours" | "payment";
 
 type AllowanceDeps = Pick<ExecutorDeps, "prisma" | "sandbox" | "billingEnabled">;
 
@@ -36,7 +39,7 @@ type AllowanceDeps = Pick<ExecutorDeps, "prisma" | "sandbox" | "billingEnabled">
 const withheldComputers = new WeakSet<object>();
 
 /**
- * Why the organization of this Space has no computer hours left, or null when it has some or the
+ * Why the organization of this Space has no computer hours left (or none at all), or null when it has some or the
  * server does not bill. The same allowance the computer's start checks, plus the billing status
  * read beside it, to tell an overdue payment (which closes the allowance) from spent hours.
  */
@@ -58,7 +61,8 @@ async function hoursMissing(
     }),
   ]);
   if (allowance === null || allowance.usedMicros < allowance.limitMicros) return null;
-  return organization?.billing?.status === "past_due" ? "payment" : "hours";
+  if (organization?.billing?.status === "past_due") return "payment";
+  return allowance.limitMicros <= 0 ? "plan" : "hours";
 }
 
 /** Whether a paused turn already called a computer tool: it then resumes with them. */

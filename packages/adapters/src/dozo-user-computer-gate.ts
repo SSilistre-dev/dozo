@@ -3,7 +3,7 @@ import {
   approvalModeFromPreference,
   commandRuleCwd,
   literalCommandWords,
-  readOnlyCommand,
+  readOnlyPipeline,
 } from "@rakazo/core";
 import { dozoCommandRuleExists } from "@rakazo/db";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
@@ -33,7 +33,7 @@ export async function userComputerGate(
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
     return "allow";
   const words = literalCommandWords(String(args.command ?? ""));
-  if (words && readOnlyCommand(words)) return "allow";
+  if (readOnlyPipeline(String(args.command ?? ""))) return "allow";
   const ruled =
     words &&
     (await dozoCommandRuleExists(ctx.deps.prisma, {

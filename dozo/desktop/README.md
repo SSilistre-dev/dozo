@@ -31,10 +31,71 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   A link that asks for a new window also opens in the browser, even on the same origin.
 - The server address must be the one the pages are served from. An address that redirects to
   another host (a bare domain to `www.`) opens the browser and ends on the "Can't reach" screen.
-- Camera, microphone, location and similar requests from a page are denied. Notifications are
-  allowed for the server's own origin only (below).
+- Camera, location and similar requests from a page are denied. The microphone and notifications
+  are allowed for the server's own origin only (below).
 - Links to the browser are limited to one a second, so a page cannot flood it.
 - Menus and the local screens are English only.
+
+## The microphone
+
+The server's page may use the microphone, so dictation (hold the microphone in the composer) and
+calls work as in a browser. Nothing else may: the decision is `answer` in `src/alerts.rs`, taken
+when the page asks, for a page whose origin is exactly the chosen server's. A frame from another
+origin is refused by the web view itself before it asks, as a browser refuses it without the
+page's permission. The camera stays refused, and a request for the camera and the microphone
+together is refused whole. The page asks only when the person starts dictation or a call.
+
+The system decides as well, once per app, and its answer is what counts:
+
+- macOS: the first request shows the system's question with the sentence in `Info.plist`
+  ("Dozo uses the microphone only while you talk to your bots."); the app's signature carries the
+  hardened runtime's microphone entitlement (`Entitlements.plist`). A refusal, there or later in
+  System Settings, Privacy & Security, Microphone, reaches the page as a denied request and the
+  composer shows its own error. Web speech recognition is not offered to the page (no speech
+  recognition usage description), so dictation goes to the server's voice provider. Not built or
+  tried on a Mac yet.
+- Windows: Settings, Privacy & security, Microphone, "Let desktop apps access your microphone"
+  decides; the system shows its microphone icon in the taskbar while it is in use. Compiled, not
+  tried.
+- Linux: no system question. WebKitGTK has media capture off until the app turns it on
+  (`src/microphone_gtk.rs`), and records through GStreamer from PulseAudio or PipeWire. Tried by
+  `tests/linux_gate.py` against a PulseAudio sine source: the server's page gets the microphone,
+  a frame from another origin and a camera request do not.
+
+While the microphone is open, the system shows it: the menu bar indicator on macOS, the taskbar
+icon on Windows, and on Linux the desktop's own indicator where it has one (GNOME 41 and later).
+The app adds no indicator of its own; Push to Talk brings the window forward, so the composer's
+recording strip is in view as well.
+
+## Push to Talk
+
+A switch in the Dozo menu, off until chosen: Push to Talk (⇧⌘Space on macOS, Ctrl+Shift+Space on
+Windows and Linux; the label names the keys). While on, the shortcut works with another app in
+front. Held down, it brings the window forward and starts the composer's dictation, the same one
+its microphone button starts; let go, it sends what was heard. No other voice path was added.
+
+- The app has no bridge into the page: on the server's page only, it dispatches a `dozo-talk-key`
+  window event (`down` or `up`) and reads nothing back (`src/talk.rs`). The web app's composer
+  answers it (`apps/web/src/components/composer/dozo-hold-to-talk.ts`, reached through one
+  anchored rule in `composer.tsx`): only the newest composer on screen, and only where its
+  microphone could work. With no voice provider that transcribes and no recognizer in the web
+  view, the shortcut only brings the window forward and the microphone stays closed.
+- Refused shortcuts are said, not swallowed: when the system or another program already holds
+  the keys, the switch goes back off, is saved off, and a message names the keys. The same
+  happens at launch if the keys were taken since. On a Wayland desktop an app cannot have a
+  shortcut that works while another app is in front, so the switch is refused there with a
+  message (an app forced onto X11 with `GDK_BACKEND=x11` may use it).
+- Saved as `push_to_talk=true` in the settings file below; missing means off. Registered from the
+  app's Rust code only: no page is granted the shortcut plugin's commands.
+
+Per system:
+
+- Linux (X11): tried by `tests/linux_gate.py`: the shortcut reaches the server's page down and up,
+  a frame from another origin hears nothing, the shortcut brings back a closed window, and a
+  shortcut another program holds turns the switch off with a message.
+- Windows: compiled, not tried. The system refuses keys another app registered, which is reported.
+- macOS: not built or tried yet. macOS does not always refuse keys the system or another app uses,
+  so there a clash may show only as the shortcut doing nothing.
 
 ## Open at Login and Keep Running in Background
 
@@ -550,10 +611,11 @@ without a warning. The identity and the notary credentials stay in the keychain 
 builds: nothing about them is in this repository, and CI does not sign.
 
 - Hardened runtime, secure timestamp.
-- Entitlements: none. The app does not use the App Sandbox, and the hardened runtime needs an
-  exception only for what a process does itself. This one runs no JIT and loads no unsigned code:
-  the system web view compiles JavaScript in its own processes, which carry Apple's entitlements.
-  Camera and microphone requests are denied, so there is no device entitlement either.
+- Entitlements: the microphone only (`Entitlements.plist`, `com.apple.security.device.audio-input`),
+  which the hardened runtime needs before the system asks the person about it. The app does not
+  use the App Sandbox. It runs no JIT and loads no unsigned code: the system web view compiles
+  JavaScript in its own processes, which carry Apple's entitlements. Camera requests are denied,
+  so there is no camera entitlement.
 
 Without that file the app is signed ad hoc and `build.sh` says so. It then opens without a warning
 only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.

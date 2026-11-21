@@ -13,7 +13,7 @@ export const DOZO_FEEDBACK_MAX_RUNS = 5;
  */
 export const DozoClientDiagnosticsSchema = z
   .object({
-    surface: z.enum(["web", "desktop"]),
+    surface: z.enum(["web", "desktop", "mobile"]),
     userAgent: z.string().max(300),
     language: z.string().max(35),
     timeZone: z.string().max(64),
