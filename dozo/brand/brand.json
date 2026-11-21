@@ -7660,6 +7660,33 @@
         "packages/core/src/dozo-unreached-retry.ts"
       ],
       "reason": "approval cards: the retry that web and mobile share"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
+      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoCommandBlockRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "consequential: requiresApprovalByDefault }, planActionGate({\n          resolved: approvalResolved,\n",
+      "replace": "consequential: requiresApprovalByDefault }, await dozoHostedCommandGate(ctx, name, args, approvalResolved, planActionGate({\n          resolved: approvalResolved,\n",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: a command on the bot's computer follows the member's command rules (a block refuses it in every mode, an allow passes it), and asks when it changes something once the member turned that on; the default stays upstream's. Inside the token gate, so a run a token's text reached still asks"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "          purchase: paying,\n        })),\n      );\n  // Nobody is there",
+      "replace": "          purchase: paying,\n        }))),\n      );\n  // A command a block rule refuses says so, on either computer.\n  const dozoBlocked = plan === \"deny\" ? dozoCommandBlockRefusal(args) : undefined;\n  if (dozoBlocked) {\n    await auditToolCall(ctx, name, \"denied\", { reason: \"rule\" });\n    return { result: refusal(\"approval_denied\", dozoBlocked) };\n  }\n  // Nobody is there",
+      "requires": [
+        "packages/adapters/src/dozo-command-gate.ts"
+      ],
+      "reason": "command rules: closes the call above, and a command refused by a block rule is refused as blocked, not as needing approval"
     }
   ],
   "assets": {
