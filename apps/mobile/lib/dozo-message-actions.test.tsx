@@ -266,7 +266,7 @@ describe("reporting and blocking", () => {
       ["Block", "destructive"],
     ]);
     buttons[1]!.onPress!();
-    expect(api.block).toHaveBeenCalledWith("user-ada");
+    expect(api.block).toHaveBeenCalledWith("user-ada", "thread-1");
   });
 });
 

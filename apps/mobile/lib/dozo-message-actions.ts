@@ -207,7 +207,11 @@ export function useDozoMessageActions(
             t`Their messages are hidden on this phone.`,
             [
               { text: t`Cancel`, style: "cancel" },
-              { text: t`Block`, style: "destructive", onPress: () => blockPerson(otherAuthor.id) },
+              {
+                text: t`Block`,
+                style: "destructive",
+                onPress: () => blockPerson(otherAuthor.id, threadId),
+              },
             ],
           ),
       });

@@ -18,6 +18,7 @@ import {
   storeBuild,
   storePlanLimitCopy,
   storePlanLimitNotice,
+  storeRunErrorDetails,
   storeSignInProviders,
 } from "./dozo-store-build";
 
@@ -73,6 +74,26 @@ describe("plan-limit notices", () => {
     expect(storePlanLimitNotice(upgrade, true)).toEqual({ ...upgrade, action: null });
     expect(storePlanLimitNotice(retry, true)).toBe(retry);
     expect(storePlanLimitNotice(null, true)).toBeNull();
+  });
+});
+
+describe("failed runs", () => {
+  const credits = "Connect your own API key in Models or choose Dozo credits in Billing.";
+  const exhausted = "Not enough model credits. Add credits in Billing or connect your own API key.";
+  const plan = "Subscribe in Billing to keep running bots.";
+  const connect = "Connect a model in Settings before running bots.";
+
+  it("off: the saved error as written", () => {
+    expect(storeRunErrorDetails(credits, false)).toBe(credits);
+  });
+
+  it("on: advice to buy in Billing becomes advice to connect a model; other errors stay", () => {
+    for (const text of [credits, exhausted, plan])
+      expect(storeRunErrorDetails(text, true)).toBe(connect);
+    expect(storeRunErrorDetails(`Run failed: ${plan}`, true)).toBe(`Run failed: ${connect}`);
+    expect(storeRunErrorDetails("The model provider returned an error.", true)).toBe(
+      "The model provider returned an error.",
+    );
   });
 });
 

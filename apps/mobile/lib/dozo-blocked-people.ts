@@ -1,15 +1,18 @@
 import type { MessageAuthor } from "@rakazo/contracts";
 import * as SecureStore from "expo-secure-store";
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { MobileMessage } from "./mobile-types";
 
 /**
- * People this phone hides: their messages in shared chats are not shown (App Review 1.2). Kept on
- * the device only; the person is not told and stays in the Space.
+ * People this phone hides: their messages in shared chats are not shown (App Review 1.2), and a
+ * chat they wrote in shows no preview line in the inbox, since the preview does not say who wrote
+ * it. Kept on the device only; the person is not told and stays in the Space.
  */
 const KEY = "dozo.blocked-people";
 
-let blocked: ReadonlySet<string> = new Set();
+type Blocked = { people: ReadonlySet<string>; chats: ReadonlySet<string> };
+
+let blocked: Blocked = { people: new Set(), chats: new Set() };
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
@@ -17,17 +20,24 @@ function publish() {
   for (const listener of listeners) listener();
 }
 
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+
 async function read(): Promise<void> {
-  let ids: unknown;
+  let stored: unknown;
   try {
     const raw = await SecureStore.getItemAsync(KEY);
-    ids = raw ? JSON.parse(raw) : [];
+    stored = raw ? JSON.parse(raw) : null;
   } catch {
     // Secure storage locked or the list unreadable: it counts as empty.
     return;
   }
-  if (!Array.isArray(ids)) return;
-  blocked = new Set([...blocked, ...ids.filter((id): id is string => typeof id === "string")]);
+  if (!stored || typeof stored !== "object") return;
+  const { people, chats } = stored as { people?: unknown; chats?: unknown };
+  blocked = {
+    people: new Set([...blocked.people, ...strings(people)]),
+    chats: new Set([...blocked.chats, ...strings(chats)]),
+  };
   publish();
 }
 
@@ -45,17 +55,25 @@ function subscribe(listener: () => void) {
   };
 }
 
-/** Hides this person's messages from now on, on this phone. */
-export function blockPerson(id: string): void {
-  blocked = new Set([...blocked, id]);
+function remember(next: Blocked): void {
+  blocked = next;
   publish();
   void save();
 }
 
+/** Hides this person's messages from now on, on this phone, and the preview of the chat. */
+export function blockPerson(id: string, threadId?: string): void {
+  remember({
+    people: new Set([...blocked.people, id]),
+    chats: threadId ? new Set([...blocked.chats, threadId]) : blocked.chats,
+  });
+}
+
 async function save(): Promise<void> {
   await load();
+  const { people, chats } = blocked;
   try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify([...blocked]));
+    await SecureStore.setItemAsync(KEY, JSON.stringify({ people: [...people], chats: [...chats] }));
   } catch {
     // Not saved: the person stays hidden until the app restarts.
   }
@@ -69,12 +87,32 @@ export function fromBlockedPerson(
   return message.role === "user" && Boolean(message.author && people.has(message.author.id));
 }
 
-/** The messages to show: those of people this phone hides are left out. */
+const useBlocked = () => useSyncExternalStore(subscribe, () => blocked);
+
+/**
+ * The messages to show: those of people this phone hides are left out, and a chat found holding
+ * one is remembered, so its inbox preview stays hidden too.
+ */
 export function useWithoutBlocked<T extends MobileMessage>(messages: T[]): T[] {
-  const people = useSyncExternalStore(subscribe, () => blocked);
-  return useMemo(
+  const { people, chats } = useBlocked();
+  const shown = useMemo(
     () =>
       people.size ? messages.filter((message) => !fromBlockedPerson(message, people)) : messages,
     [messages, people],
   );
+  const threadId =
+    shown.length < messages.length
+      ? messages.find((message) => fromBlockedPerson(message, people))?.threadId
+      : undefined;
+  useEffect(() => {
+    if (threadId && !chats.has(threadId))
+      remember({ people: blocked.people, chats: new Set([...blocked.chats, threadId]) });
+  }, [threadId, chats]);
+  return shown;
+}
+
+/** A chat's inbox preview, empty where someone this phone hides has written in it. */
+export function useShownPreview(chat: { preview: string; threadId?: string }): string {
+  const { chats } = useBlocked();
+  return chat.threadId && chats.has(chat.threadId) ? "" : chat.preview;
 }

@@ -28,6 +28,7 @@ vi.mock("expo-secure-store", () => ({
 const message = (id: string, role: string, author?: string) =>
   ({
     id,
+    threadId: "thread-1",
     role,
     blocks: [],
     ...(author ? { author: { id: author, name: author } } : {}),
@@ -42,6 +43,8 @@ const chat = [
 
 let root: Root;
 let shown: string[] = [];
+let previews: string[] = [];
+const saved = () => JSON.parse(store.saved.at(-1) ?? "null");
 
 async function load() {
   vi.resetModules();
@@ -53,7 +56,22 @@ async function renderChat(module: Awaited<ReturnType<typeof load>>) {
     shown = module.useWithoutBlocked(chat).map((entry) => entry.id);
     return null;
   }
-  await act(async () => root.render(<Chat />));
+  function Inbox() {
+    previews = [
+      module.useShownPreview({ preview: "Ada: hi", threadId: "thread-1" }),
+      module.useShownPreview({ preview: "Bot: done", threadId: "thread-2" }),
+      module.useShownPreview({ preview: "Another Space" }),
+    ];
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <>
+        <Chat />
+        <Inbox />
+      </>,
+    ),
+  );
   await act(() => flush());
 }
 
@@ -64,6 +82,7 @@ beforeEach(() => {
   store.saveFails = false;
   store.saved = [];
   shown = [];
+  previews = [];
   root = createRoot(document.createElement("div"));
 });
 
@@ -72,25 +91,29 @@ afterEach(() => {
 });
 
 describe("people blocked on this phone", () => {
-  it("shows every message while nobody is blocked", async () => {
+  it("shows every message and preview while nobody is blocked", async () => {
     await renderChat(await load());
     expect(shown).toEqual(["1", "2", "3", "4"]);
+    expect(previews).toEqual(["Ada: hi", "Bot: done", "Another Space"]);
   });
 
-  it("leaves out the stored people's messages, and only messages people wrote", async () => {
-    store.value = JSON.stringify(["user-ada", 7]);
+  it("leaves out the stored people's messages, and remembers the chat that held one", async () => {
+    store.value = JSON.stringify({ people: ["user-ada", 7], chats: [] });
     await renderChat(await load());
     expect(shown).toEqual(["2", "3", "4"]);
+    expect(previews).toEqual(["", "Bot: done", "Another Space"]);
+    expect(saved()).toEqual({ people: ["user-ada"], chats: ["thread-1"] });
   });
 
   it("hides a person at once when blocked, and keeps them with those already stored", async () => {
-    store.value = JSON.stringify(["user-ada"]);
+    store.value = JSON.stringify({ people: ["user-ada"], chats: ["thread-1"] });
     const module = await load();
     await renderChat(module);
-    await act(async () => module.blockPerson("user-bo"));
+    await act(async () => module.blockPerson("user-bo", "thread-2"));
     await act(() => flush());
     expect(shown).toEqual(["2", "4"]);
-    expect(JSON.parse(store.saved.at(-1) ?? "[]")).toEqual(["user-ada", "user-bo"]);
+    expect(previews).toEqual(["", "", "Another Space"]);
+    expect(saved()).toEqual({ people: ["user-ada", "user-bo"], chats: ["thread-1", "thread-2"] });
   });
 
   it("counts an unreadable or malformed list as empty, and still saves a new block", async () => {
@@ -98,9 +121,9 @@ describe("people blocked on this phone", () => {
     let module = await load();
     module.blockPerson("user-bo");
     await act(() => flush());
-    expect(JSON.parse(store.saved.at(-1) ?? "[]")).toEqual(["user-bo"]);
+    expect(saved()).toEqual({ people: ["user-bo"], chats: [] });
     store.readFails = false;
-    store.value = JSON.stringify({ not: "a list" });
+    store.value = JSON.stringify("not a list");
     module = await load();
     await renderChat(module);
     expect(shown).toEqual(["1", "2", "3", "4"]);

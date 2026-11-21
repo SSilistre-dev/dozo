@@ -8457,6 +8457,69 @@
         "apps/mobile/components/dozo-store-gate.tsx"
       ],
       "reason": "store build: a link to Wallet lands on the chats"
+    },
+    {
+      "file": "apps/mobile/components/run-error-sheet.tsx",
+      "find": "import { translateRunError } from \"@rakazo/i18n/run-error\";\nimport * as Clipboard",
+      "replace": "import { translateRunError } from \"@rakazo/i18n/run-error\";\nimport { storeRunErrorDetails } from \"../lib/dozo-store-build\";\nimport * as Clipboard",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/run-error-sheet.tsx",
+      "find": "    ? normalizeRunError(\n        details,",
+      "replace": "    ? normalizeRunError(\n        storeRunErrorDetails(details),",
+      "requires": [
+        "apps/mobile/lib/dozo-store-build.ts"
+      ],
+      "reason": "store build: a run that failed for want of credits or a plan says to connect a model, not to buy in Billing (App Review 3.1.1)"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "import { InboxSwipeRow } from \"./inbox-swipe-row\";\nimport { NativeSymbol }",
+      "replace": "import { InboxSwipeRow } from \"./inbox-swipe-row\";\nimport { useShownPreview } from \"../lib/dozo-blocked-people\";\nimport { NativeSymbol }",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "  const { kind, chat } = target;\n  return (\n    <InboxSwipeRow",
+      "replace": "  const { kind, chat } = target;\n  const shownPreview = useShownPreview(chat);\n  return (\n    <InboxSwipeRow",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the swipe row's preview hides a chat a blocked person wrote in"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "        title: chat.name,\n        message: chat.preview,",
+      "replace": "        title: chat.name,\n        message: shownPreview,",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: the swipe row's preview hides a chat a blocked person wrote in"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "  const preview = previewSnippet(bot.preview, 40) || t`No messages yet`;",
+      "replace": "  const preview = previewSnippet(useShownPreview(bot), 40) || t`No messages yet`;",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: a shared bot chat a blocked person wrote in shows no preview line from them"
+    },
+    {
+      "file": "apps/mobile/components/inbox-rows.tsx",
+      "find": "    previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(\", \");",
+      "replace": "    previewSnippet(useShownPreview(group), 40) ||\n    group.members.map((member) => member.name).join(\", \");",
+      "requires": [
+        "apps/mobile/lib/dozo-blocked-people.ts"
+      ],
+      "reason": "blocking on mobile: a group a blocked person wrote in shows its members instead of their message"
     }
   ],
   "assets": {

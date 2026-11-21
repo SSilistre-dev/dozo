@@ -29,13 +29,15 @@ payment page:
   "ask the owner to upgrade" and without "change the plan" (alerts, the chat's failed run, the
   computer screen, the Own computer switch); deleting files stays the way out of a full space;
 - a plan bought on the web still works in the app; the app only stops offering one.
+- a run that failed for want of credits or a plan says "Connect a model in Settings before running
+  bots." instead of pointing at Billing (`storeRunErrorDetails`, on the run-error sheet).
 - no Wallet row either: connecting the wallet bots spend from opens the payment provider's page
   outside the app, which a reviewer may read as an external payment path. Spending limit stays: it
   only caps the user's own model spend and buys nothing.
 
 Decision: client-side, not by the server hiding `billing` per client: the server cannot tell a
 store binary from a sideloaded or self-built one, and the store rule is about the binary.
-Not covered: what a bot writes. A Free run is never told to suggest an upgrade
+Not covered: what a bot writes, and a paid tool's "Add credits in Billing" result a bot may repeat. A Free run is never told to suggest an upgrade
 (`packages/adapters/src/dozo-no-computer.prompt.ts`); a paid plan out of hours may say "get more
 computer hours" or "update the payment" in prose, with no link. An organization without any plan
 (rare: a new one starts on Free) sees its runs fail with the server's reason and no way to buy.
@@ -109,7 +111,9 @@ OK, with limits. Guideline 1.2 and Play's AI-generated-content policy:
 - Block: another member's message has Block, which asks first and then hides that person's
   messages in every shared chat on this phone (`apps/mobile/lib/dozo-blocked-people.ts`). Kept on
   the device only: not synced, not undone in the app, the person is not told and stays in the Space.
-  Removing a member stays the Space owner's (`app/space-members.tsx`).
+  A chat they wrote in shows no preview line in the inbox (the preview does not say who wrote it);
+  push notifications from them still arrive. Removing a member stays the Space owner's
+  (`app/space-members.tsx`).
 - People join a Space only by invitation; say so in the review notes.
 
 ## Age rating and content declarations

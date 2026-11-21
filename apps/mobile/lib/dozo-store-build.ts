@@ -1,4 +1,10 @@
 import type { PlanLimitCopy, PlanLimitNotice, SignInProvider } from "@rakazo/contracts";
+import {
+  HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
+  MISSING_MODEL_RUN_ERROR,
+  MODEL_ACCESS_REQUIRED_RUN_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
+} from "@rakazo/core";
 import { planLimitCopy } from "@rakazo/i18n/run-error";
 
 /**
@@ -35,6 +41,25 @@ export function storePlanLimitNotice<T extends PlanLimitNotice | null>(
 ): T {
   if (!store || notice?.action?.kind !== "upgrade") return notice;
   return { ...notice, action: null };
+}
+
+/** Run failures whose advice is to buy credits or a plan in Billing. */
+const PURCHASE_RUN_ERRORS = [
+  HOSTED_MODEL_CREDITS_REQUIRED_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
+  MODEL_ACCESS_REQUIRED_RUN_ERROR,
+];
+
+/**
+ * A failed run's saved error, with advice to buy in Billing replaced in the store build by the
+ * advice that is open to everyone there: connect a model. It is then read as that failure.
+ */
+export function storeRunErrorDetails(details: string, store = storeBuild): string {
+  if (!store) return details;
+  return PURCHASE_RUN_ERRORS.reduce(
+    (text, sentence) => text.split(sentence).join(MISSING_MODEL_RUN_ERROR),
+    details,
+  );
 }
 
 /**
