@@ -647,10 +647,18 @@ Accepted by the owner for now, stated here once:
   triggers run at once. The mobile app sets them in General too, in the account's timezone,
   which it does not show. The server keeps up to four ranges, each on its own days and belonging
   to the day it starts on (Friday 22:00-07:00 covers Saturday morning), their union in force;
-  `hours` in the API is the first range, for clients that set one range only, and saving `hours`
-  replaces every range with one on every day. `dozoQuietHours.suggest` fits ranges to the hours of
-  the last four weeks in which the account wrote least (only its own messages, counted per local
-  hour; nothing is kept), or answers null when there is too little or no clear pattern.
+  ranges that leave no minute of the week outside them are refused. `hours` in the API is the
+  first range, for clients that set one range only: saving `hours` changes that range's times and
+  keeps its days and the other ranges (one range on every day when there is none), and `null`
+  turns all of them off. The previous release's single-range table is always written with the
+  first range's times in the same save, so while a deploy or a rollback runs that release, its
+  range gone reads as quiet hours off and other times as a change to the first range.
+  `dozoQuietHours.suggest` (at most 5 a minute per account, per API process) fits ranges to the
+  hours of the last four weeks in which the account wrote least (only messages it wrote itself,
+  in the app or from a linked messaging app, counted per local hour; nothing is kept), or answers
+  null when there is too little or no clear pattern. Known limit: a message after midnight counts
+  for the calendar day it was written on, so a Friday night out shows as Saturday activity, while
+  a range belongs to the day it starts on.
 - Generated images and videos leave one usage record each (`packages/adapters/src/dozo-media-usage.ts`,
   provider `media`, model `generate_image` or `generate_video`), so they show in usage. The media
   service reports no price, so their cost reads as unknown; nothing is charged against model credit.

@@ -58,8 +58,10 @@ const QuietHoursState = z.object({ hours: DozoQuietHoursSchema.nullable(), range
 export const dozoQuietHoursContract = {
   get: oc.output(QuietHoursState),
   /**
-   * `ranges` wins when given; otherwise `hours` becomes one range on every day. An empty list,
-   * or null for both, turns quiet hours off.
+   * `ranges` wins when given; otherwise `hours` sets the first range's times, keeping its days
+   * and the other ranges (one range on every day when there is none). An empty list, or null,
+   * turns quiet hours off; a save of neither, or ranges that leave no time outside them, is
+   * refused.
    */
   set: oc
     .input(

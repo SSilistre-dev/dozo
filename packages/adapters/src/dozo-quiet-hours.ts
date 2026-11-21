@@ -1,8 +1,8 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
-import type { DozoQuietRange } from "@rakazo/contracts";
+import type { DozoQuietHours, DozoQuietRange } from "@rakazo/contracts";
 import { DOZO_QUIET_DAYS, dozoQuietDayBit, dozoQuietHoursOf } from "@rakazo/contracts";
-import { isOneShotRoutineCrons, nextRoutineRunDateAcross } from "@rakazo/core";
+import { ClientError, isOneShotRoutineCrons, nextRoutineRunDateAcross } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -15,6 +15,7 @@ export const DOZO_ROUTINE_CATCH_UP_MS = 12 * 60 * 60_000;
 
 const MINUTE_MS = 60_000;
 const DAY_MINUTES = 24 * 60;
+const WEEK_MINUTES = 7 * DAY_MINUTES;
 /** How far an end is looked for: a week of touching ranges plus a day, and a clock change. */
 const END_SEARCH_MINUTES = 8 * DAY_MINUTES + 120;
 /** Zones change their offset on a quarter hour, so one lookup holds for the quarter hour it is in. */
@@ -90,6 +91,48 @@ function covered(
   );
 }
 
+/** Whether the ranges together leave no minute of the week outside them, on any day. */
+export function dozoQuietHoursCoverWeek(ranges: readonly DozoQuietRange[]): boolean {
+  for (let minute = 0; minute < WEEK_MINUTES; minute += 1) {
+    const weekday = Math.floor(minute / DAY_MINUTES);
+    if (!covered(ranges, { weekday, minute: minute % DAY_MINUTES })) return false;
+  }
+  return true;
+}
+
+/** What a save sets: every range, or new times for the first range only. */
+export type DozoQuietHoursChange = readonly DozoQuietRange[] | { hours: DozoQuietHours };
+
+/** The first range with these times, its days and the other ranges kept; one on every day for none. */
+function withFirstHours(
+  ranges: readonly DozoQuietRange[],
+  hours: DozoQuietHours,
+): DozoQuietRange[] {
+  const [first, ...rest] = ranges;
+  return [
+    {
+      startMinute: hours.startMinute,
+      endMinute: hours.endMinute,
+      days: first?.days ?? DOZO_QUIET_DAYS.ALL,
+    },
+    ...rest,
+  ];
+}
+
+/**
+ * The ranges a change leaves the account with. Refused when they would leave no time at all
+ * outside them: routines would never start.
+ */
+export function dozoQuietRangesAfter(
+  current: readonly DozoQuietRange[],
+  change: DozoQuietHoursChange,
+): DozoQuietRange[] {
+  const next = "hours" in change ? withFirstHours(current, change.hours) : [...change];
+  if (dozoQuietHoursCoverWeek(next))
+    throw new ClientError("BAD_REQUEST", "Quiet hours need some time outside them");
+  return next;
+}
+
 /** Whether `at` falls in any of the ranges, read on the local day and clock of `timeZone`. */
 export function dozoInQuietHours(
   ranges: readonly DozoQuietRange[],
@@ -128,30 +171,33 @@ interface QuietColumns {
 }
 
 /**
- * The account's ranges: the fork's own rows when there are any, otherwise the single range the
- * previous release saved, on every day, otherwise none.
+ * The account's ranges. Every save writes the previous release's single range as the first
+ * range's times, in the same transaction, so while a deploy (or a rollback) runs that release
+ * the two tables tell what it did since: its range gone means it turned quiet hours off, and
+ * other times mean it changed them, which go on the first range as a save of `hours` does. With
+ * no rows of the fork's own, its single range is one on every day.
  */
 function quietRanges(row: QuietColumns | undefined): DozoQuietRange[] {
-  if (row?.rangeStarts?.length) {
-    // The three arrays come from the same rows in the same order.
-    const ends = row.rangeEnds as number[];
-    const days = row.rangeDays as number[];
-    return row.rangeStarts.map((startMinute, index) => ({
-      startMinute,
-      endMinute: ends[index] as number,
-      days: days[index] as number,
-    }));
-  }
-  if (row?.startMinute == null || row.endMinute == null) return [];
-  return [{ startMinute: row.startMinute, endMinute: row.endMinute, days: DOZO_QUIET_DAYS.ALL }];
+  const legacy =
+    row?.startMinute != null && row.endMinute != null
+      ? { startMinute: row.startMinute, endMinute: row.endMinute }
+      : null;
+  if (!row?.rangeStarts?.length) return legacy ? withFirstHours([], legacy) : [];
+  if (!legacy) return [];
+  // The three arrays come from the same rows in the same order.
+  const ends = row.rangeEnds as number[];
+  const days = row.rangeDays as number[];
+  const ranges = row.rangeStarts.map((startMinute, index) => ({
+    startMinute,
+    endMinute: ends[index] as number,
+    days: days[index] as number,
+  }));
+  return withFirstHours(ranges, legacy);
 }
 
-/** The account's quiet hours, in the order they were saved; an empty list when they are off. */
-export async function readDozoQuietHours(
-  prisma: PrismaClient,
-  userId: string,
-): Promise<DozoQuietRange[]> {
-  const rows = await prisma.$queryRaw<QuietColumns[]>`
+/** Both quiet-hours tables of one account, as one row. */
+function selectQuiet(db: Pick<PrismaClient, "$queryRaw">, userId: string) {
+  return db.$queryRaw<QuietColumns[]>`
     SELECT q."startMinute", q."endMinute", r."rangeStarts", r."rangeEnds", r."rangeDays"
     FROM (SELECT ${userId}::text AS id) u
     LEFT JOIN dozo_quiet_hours q ON q."userId" = u.id
@@ -160,7 +206,14 @@ export async function readDozoQuietHours(
         array_agg("endMinute" ORDER BY position) AS "rangeEnds",
         array_agg(days::int ORDER BY position) AS "rangeDays"
       FROM dozo_quiet_hour_ranges WHERE "userId" = u.id) r ON true`;
-  return quietRanges(rows[0]);
+}
+
+/** The account's quiet hours, in the order they were saved; an empty list when they are off. */
+export async function readDozoQuietHours(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<DozoQuietRange[]> {
+  return quietRanges((await selectQuiet(prisma, userId))[0]);
 }
 
 interface SaveDeps {
@@ -170,62 +223,68 @@ interface SaveDeps {
 }
 
 /**
- * Sets the account's quiet hours to these ranges, or clears them with none. Routines held for the
- * old hours go back to when they were due and wake now, so the new hours decide again whether they
- * run or wait.
+ * Changes the account's quiet hours (see {@link dozoQuietRangesAfter}), or clears them with no
+ * ranges, and returns what they are now. Routines held for the old hours go back to when they were
+ * due and wake now, so the new hours decide again whether they run or wait.
  */
 export async function saveDozoQuietHours(
   deps: SaveDeps,
   userId: string,
-  ranges: readonly DozoQuietRange[],
-): Promise<void> {
-  const released = await runAsSystem("set an account's quiet hours and release its routines", () =>
-    deps.prisma.$transaction(async (tx) => {
-      // One save at a time per account, so two at once cannot both write position 0.
-      await tx.$queryRaw`
+  change: DozoQuietHoursChange,
+): Promise<DozoQuietRange[]> {
+  const { ranges, released } = await runAsSystem(
+    "set an account's quiet hours and release its routines",
+    () =>
+      deps.prisma.$transaction(async (tx) => {
+        // One save at a time per account, so two at once cannot both write position 0, and new
+        // times for the first range land on the ranges as they are.
+        await tx.$queryRaw`
         SELECT pg_advisory_xact_lock(hashtextextended(${`dozo-quiet-hours:${userId}`}, 0))::text AS "lock"`;
-      await tx.$executeRaw`DELETE FROM dozo_quiet_hour_ranges WHERE "userId" = ${userId}`;
-      if (ranges.length)
-        await tx.$executeRaw`
+        const current = "hours" in change ? quietRanges((await selectQuiet(tx, userId))[0]) : [];
+        const ranges = dozoQuietRangesAfter(current, change);
+        await tx.$executeRaw`DELETE FROM dozo_quiet_hour_ranges WHERE "userId" = ${userId}`;
+        if (ranges.length)
+          await tx.$executeRaw`
           INSERT INTO dozo_quiet_hour_ranges ("userId", position, "startMinute", "endMinute", days)
           SELECT ${userId}, r.position - 1, r."startMinute", r."endMinute", r.days
           FROM unnest(${ranges.map((range) => range.startMinute)}::int[],
             ${ranges.map((range) => range.endMinute)}::int[],
             ${ranges.map((range) => range.days)}::int[])
             WITH ORDINALITY AS r("startMinute", "endMinute", days, position)`;
-      // The previous release reads only this table while a deploy runs: it gets the first range,
-      // on every day, which is close enough for those few minutes.
-      const hours = dozoQuietHoursOf(ranges);
-      if (hours) {
-        await tx.$executeRaw`
+        // The previous release reads only this table while a deploy runs: it gets the first range,
+        // on every day, which is close enough for those few minutes. Always written with the first
+        // range's times, it also tells a later read what that release changed (quietRanges).
+        const hours = dozoQuietHoursOf(ranges);
+        if (hours) {
+          await tx.$executeRaw`
           INSERT INTO dozo_quiet_hours ("userId", "startMinute", "endMinute")
           VALUES (${userId}, ${hours.startMinute}, ${hours.endMinute})
           ON CONFLICT ("userId") DO UPDATE SET "startMinute" = EXCLUDED."startMinute",
             "endMinute" = EXCLUDED."endMinute", "updatedAt" = CURRENT_TIMESTAMP`;
-      } else {
-        await tx.$executeRaw`DELETE FROM dozo_quiet_hours WHERE "userId" = ${userId}`;
-      }
-      // Times as UTC wall clocks: the client reads a timestamptz in the session's zone as if it
-      // were UTC, so a database in another zone would shift them (dozo/AGENTS.md).
-      const held = await tx.$queryRaw<
-        Array<{ routineId: string; spaceId: string; dueAt: Date; heldUntil: Date }>
-      >`
+        } else {
+          await tx.$executeRaw`DELETE FROM dozo_quiet_hours WHERE "userId" = ${userId}`;
+        }
+        // Times as UTC wall clocks: the client reads a timestamptz in the session's zone as if it
+        // were UTC, so a database in another zone would shift them (dozo/AGENTS.md).
+        const held = await tx.$queryRaw<
+          Array<{ routineId: string; spaceId: string; dueAt: Date; heldUntil: Date }>
+        >`
         SELECT h."routineId", r."spaceId", h."dueAt" AT TIME ZONE 'UTC' AS "dueAt",
           h."heldUntil" AT TIME ZONE 'UTC' AS "heldUntil"
         FROM dozo_routine_holds h JOIN routines r ON r.id = h."routineId"
         WHERE r."userId" = ${userId} AND r.active AND h."heldUntil" > CURRENT_TIMESTAMP
           AND h.crons = r.crons AND h.timezone = r.timezone`;
-      const woken: typeof held = [];
-      for (const hold of held) {
-        // Only a routine still waiting on this hold moves; an edit since then already rescheduled it.
-        const { count } = await tx.routine.updateMany({
-          where: { id: hold.routineId, active: true, nextRunAt: hold.heldUntil },
-          data: { nextRunAt: hold.dueAt },
-        });
-        if (count === 1) woken.push(hold);
-      }
-      return woken;
-    }),
+        const woken: typeof held = [];
+        for (const hold of held) {
+          // Only a routine still waiting on this hold moves; an edit since then already rescheduled it.
+          const { count } = await tx.routine.updateMany({
+            where: { id: hold.routineId, active: true, nextRunAt: hold.heldUntil },
+            data: { nextRunAt: hold.dueAt },
+          });
+          if (count === 1) woken.push(hold);
+        }
+        return { ranges, released: woken };
+      }),
   );
   for (const spaceId of new Set(released.map((hold) => hold.spaceId)))
     await bestEffort(
@@ -238,6 +297,7 @@ export async function saveDozoQuietHours(
       "quiet hours routine wakeup",
       deps.jobs.enqueue(routineWakeupJob(hold.routineId, hold.dueAt)),
     );
+  return ranges;
 }
 
 interface WakeDeps {

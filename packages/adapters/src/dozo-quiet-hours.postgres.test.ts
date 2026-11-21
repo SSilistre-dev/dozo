@@ -167,6 +167,63 @@ describePostgres("quiet hours on routines (PostgreSQL)", () => {
     ]);
   });
 
+  it("follows the previous release's change or clearing made after a save", async () => {
+    const actor = await person();
+    const deps = { prisma, jobs: { enqueue: vi.fn() } as unknown as JobPublisher };
+    const lunch = { startMinute: 12 * 60, endMinute: 13 * 60, days: DOZO_QUIET_DAYS.WEEKDAYS };
+    const night = { startMinute: 22 * 60, endMinute: 7 * 60, days: ALL };
+    // The previous release's own statements, as it saves and clears its one range.
+    const previousSave = (startMinute: number, endMinute: number) =>
+      system.$executeRaw`
+        INSERT INTO dozo_quiet_hours ("userId", "startMinute", "endMinute")
+        VALUES (${actor.userId}, ${startMinute}, ${endMinute})
+        ON CONFLICT ("userId") DO UPDATE SET "startMinute" = EXCLUDED."startMinute",
+          "endMinute" = EXCLUDED."endMinute", "updatedAt" = CURRENT_TIMESTAMP`;
+    const previousClear = () =>
+      system.$executeRaw`DELETE FROM dozo_quiet_hours WHERE "userId" = ${actor.userId}`;
+
+    await saveDozoQuietHours(deps, actor.userId, [lunch, night]);
+    expect(await readDozoQuietHours(prisma, actor.userId)).toEqual([lunch, night]);
+    await previousSave(8 * 60, 9 * 60);
+    const changed = [{ startMinute: 8 * 60, endMinute: 9 * 60, days: lunch.days }, night];
+    expect(await readDozoQuietHours(prisma, actor.userId)).toEqual(changed);
+    // New times start from what is read, and put both tables back in step.
+    const later = { startMinute: 9 * 60, endMinute: 10 * 60 };
+    expect(await saveDozoQuietHours(deps, actor.userId, { hours: later })).toEqual([
+      { ...later, days: lunch.days },
+      night,
+    ]);
+    await previousClear();
+    expect(await readDozoQuietHours(prisma, actor.userId)).toEqual([]);
+    // Turned on again by the previous release: its range on the first one's days, the rest back.
+    await previousSave(later.startMinute, later.endMinute);
+    expect(await readDozoQuietHours(prisma, actor.userId)).toEqual([
+      { ...later, days: lunch.days },
+      night,
+    ]);
+  });
+
+  it("holds no routine on ranges the previous release cleared", async () => {
+    const { actor, deps, routine, dueAt } = await heldRoutine();
+    await system.$executeRaw`DELETE FROM dozo_quiet_hours WHERE "userId" = ${actor.userId}`;
+    // The hold's own wake ends it; a fresh due time inside the old ranges now runs.
+    await system.routine.update({ where: { id: routine.id }, data: { nextRunAt: dueAt } });
+    await system.$executeRaw`DELETE FROM dozo_routine_holds WHERE "routineId" = ${routine.id}`;
+    expect(await dozoHoldRoutine(deps, routine, dueAt, vi.fn())).toBe(false);
+  });
+
+  it("refuses ranges that leave no minute outside them, and keeps the saved ones", async () => {
+    const actor = await person();
+    const deps = { prisma, jobs: { enqueue: vi.fn() } as unknown as JobPublisher };
+    const first = { startMinute: 60, endMinute: 120, days: ALL };
+    const rest = { startMinute: 12 * 60, endMinute: 0, days: ALL };
+    await saveDozoQuietHours(deps, actor.userId, [first, rest]);
+    await expect(
+      saveDozoQuietHours(deps, actor.userId, { hours: { startMinute: 0, endMinute: 12 * 60 } }),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+    expect(await readDozoQuietHours(prisma, actor.userId)).toEqual([first, rest]);
+  });
+
   it("refuses a range on no day, or a fifth range", async () => {
     const actor = await person();
     await expect(
@@ -186,7 +243,7 @@ describePostgres("quiet hours on routines (PostgreSQL)", () => {
     actor: Actor,
     zone: { offsetHours: number },
     hours: readonly number[],
-    options: { from?: number; days?: number; role?: string; author?: string } = {},
+    options: { from?: number; days?: number; role?: string; author?: string | null } = {},
   ) {
     // A chat of its own: a bot's.
     const bot = await runAsTenant(actor, () =>
@@ -212,7 +269,7 @@ describePostgres("quiet hours on routines (PostgreSQL)", () => {
           threadId: thread.id,
           seq: 1000 + data.length,
           role: options.role ?? "user",
-          authorUserId: options.author ?? actor.userId,
+          authorUserId: options.author === undefined ? actor.userId : options.author,
           blocks: [{ kind: "text", text: "hello" }],
           createdAt: new Date(midnight - day * DAY + hour * HOUR + 5 * MINUTE),
         });
@@ -233,6 +290,8 @@ describePostgres("quiet hours on routines (PostgreSQL)", () => {
     const eve = await person("Asia/Tokyo");
     await writes(ada, { offsetHours: 9 }, nightOnly, { author: eve.userId });
     await writes(ada, { offsetHours: 9 }, nightOnly, { role: "bot" });
+    // Nor do messages no person wrote: a webhook's delivery, an imported history.
+    await writes(ada, { offsetHours: 9 }, nightOnly, { author: null });
     // Nor does anything older than four weeks.
     await writes(ada, { offsetHours: 9 }, nightOnly, { from: 30, days: 40 });
     expect(await suggestDozoQuietHours(prisma, ada.userId)).toEqual(before);
