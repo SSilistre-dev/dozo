@@ -114,6 +114,15 @@ describe("userComputerGate", () => {
       ["ls", "C:\\Users"],
       ["ls", "AppData\\Local"],
       ["ls", "Env:"],
+      ["cat 'Local/Google/Chrome/User Data/Local State'", "AppData."],
+      ["cat x", "AppData. ./Local"],
+      ["cat x", "Library..."],
+      ["cat x", "Application Data"],
+      ["cat x", "Local Settings/Application Data"],
+      ["cat x", "AppData\\Local"],
+      ["cat x", "Lib\u200Brary"],
+      ["cat x", "Library\u202E"],
+      ["cat x", "a\u0001b"],
     ] as const)
       expect((await gate(command, { cwd })).plan, `${command} in ${cwd}`).toBe("ask");
     for (const cwd of ["Documents", "", "~", " ~ ", "~/app", "src/app"])

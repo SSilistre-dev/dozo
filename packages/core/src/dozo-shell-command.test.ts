@@ -149,6 +149,22 @@ describe("readOnlyCommand", () => {
     "cat Library/Application Support/Google/Chrome/Default/Cookies",
     "cat Cookies",
     "cat NTUSER.DAT",
+    "cat NTUSER.DAT.",
+    "ls AppData.",
+    "cat AppData./Local/x",
+    "cat 'AppData. /Local/x'",
+    "cat Library.../x",
+    "ls 'Library '",
+    "ls Library.",
+    "ls Keychains.",
+    "ls 'Application Data'",
+    "cat 'Application Data/x'",
+    "cat 'Local Settings/x'",
+    "ls NetHood",
+    "ls PrintHood",
+    "ls Templates",
+    "ls '.. '",
+    "ls ' '",
     "cat ntuser.ini",
     "find -L . -name x",
     "find -H .",
@@ -353,7 +369,22 @@ describe("readOnlyCwd", () => {
   });
 
   it("asks for a secret folder or a value that is not a path", () => {
-    for (const cwd of [".ssh", "~/.aws", "..", "/etc", "Library/Keychains", "AppData", 5, {}])
+    for (const cwd of [
+      ".ssh",
+      "~/.aws",
+      "..",
+      "/etc",
+      "Library/Keychains",
+      "AppData",
+      "AppData.",
+      "Library ...",
+      "Application Data",
+      "Local Settings",
+      "Lib\u200Brary",
+      "\u202Ex",
+      5,
+      {},
+    ])
       expect(readOnlyCwd(cwd), String(cwd)).toBe(false);
   });
 });

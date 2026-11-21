@@ -105,9 +105,24 @@ const FIND_ACTIONS = ["-exec", "-ok", "-delete", "-fprint", "-fls"];
 const OPEN_ROOTS = ["/applications", "/system/applications", "/usr", "/bin", "/sbin", "/opt"];
 /**
  * Folders and file names that hold secrets or private data, matched on a whole path component
- * (macOS and Windows ignore case).
+ * after `componentName` (macOS and Windows ignore case). The last five are the legacy Windows
+ * junctions that lead into AppData or hold user data.
  */
-const PRIVATE_COMPONENTS = new Set(["library", "appdata", "keychains", "cookies"]);
+const PRIVATE_COMPONENTS = new Set([
+  "library",
+  "appdata",
+  "keychains",
+  "cookies",
+  "application data",
+  "local settings",
+  "nethood",
+  "printhood",
+  "templates",
+]);
+/** A path component as Windows reads it: it drops trailing dots and spaces. */
+const componentName = (part: string) => part.replace(/[. ]+$/, "");
+/** A component that stripping empties (`...`, a space) is not one a name check can judge. */
+const emptiedByStripping = (part: string) => part !== "" && part !== "." && !componentName(part);
 /** File names that hold a private key or a browser's stored data, wherever they sit. */
 const KEY_FILE = /^id_(rsa|dsa|ecdsa|ed25519)|keychain|cookies|login data/;
 
@@ -135,14 +150,17 @@ function touchesSecretLocation(word: string, program: string): boolean {
     if (segment.startsWith("/") && !open) return true;
   }
   if (KEY_FILE.test(lower)) return true;
+  const components = lower.split("/").map(componentName);
+  if (lower.split("/").some(emptiedByStripping)) return true;
+  if (components.some((c) => PRIVATE_COMPONENTS.has(c) || c.startsWith("ntuser"))) return true;
   return lower
     .split(/[^\p{L}\p{N}_\-.]+/u)
     .some(
       (part) =>
         (part.startsWith(".") && part !== ".") ||
         (part.startsWith("-") && part.includes(".")) ||
-        PRIVATE_COMPONENTS.has(part) ||
-        part.startsWith("ntuser") ||
+        PRIVATE_COMPONENTS.has(componentName(part)) ||
+        componentName(part).startsWith("ntuser") ||
         KEY_FILE.test(part),
     );
 }
@@ -156,6 +174,7 @@ export function readOnlyCwd(cwd: unknown): boolean {
   if (cwd === undefined || cwd === null) return true;
   if (typeof cwd !== "string") return false;
   const folder = cwd.trim();
+  if (hasNeverCharacter(folder)) return false;
   if (folder === "" || folder === "~") return true;
   return !touchesSecretLocation(folder.startsWith("~/") ? folder.slice(2) : folder, "");
 }
