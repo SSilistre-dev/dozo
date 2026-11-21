@@ -121,9 +121,10 @@ const EVENTS: &[&str] = &[
 const MAX_EVENTS: usize = 64;
 const ANSWER: Duration = Duration::from_secs(30);
 
-/// Whether this app tells servers it has a browser for bots. Off until the sign-in pause comes
-/// (the person signs in while the app passes on nothing): until then no server offers the bot's
-/// browser, and this module is reached only by its tests.
+/// Whether this app has a browser for bots. Off until the sign-in pause comes (the person signs in
+/// while the app passes on nothing). While off, the app does not declare it to servers
+/// (`device_socket.rs`) and refuses a `pageBrowser` a server sends anyway, before any browser is
+/// looked for or started (`device_run.rs`), so only this module's own tests reach it.
 pub const DECLARED: bool = false;
 
 pub const NO_BROWSER: &str = "No Chrome, Edge, Brave or Chromium is installed on this computer.";

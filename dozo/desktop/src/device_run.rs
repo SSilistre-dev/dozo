@@ -298,7 +298,9 @@ impl Runner {
             },
             "stop" | "destroy" => {
                 self.stop_where(|o| o.bot == key, true);
-                self.browsers.close(&key, method == "destroy").await;
+                if crate::browser::DECLARED {
+                    self.browsers.close(&key, method == "destroy").await;
+                }
                 let done = if method == "stop" {
                     stop(&home)
                 } else {
@@ -315,6 +317,9 @@ impl Runner {
                 }
                 return self.execute(&key, run, &home, command, reply).await;
             }
+            // Not offered until the app declares it (`browser::DECLARED`): a server that asks
+            // anyway gets what an unoffered method gets, and no browser starts.
+            "pageBrowser" if !crate::browser::DECLARED => return reply.error(NOT_HERE).await,
             "pageBrowser" => {
                 if !running(&home) {
                     return reply.error("Local computer stopped").await;
@@ -984,6 +989,25 @@ mod tests {
         assert_eq!(
             frames(&runner, execute).await,
             vec![json!({ "error": "Local computer stopped" })]
+        );
+    }
+
+    /// Until the app declares its browser, a server's `pageBrowser` is refused before any browser
+    /// is looked for or started, even for a provisioned, running bot.
+    #[tokio::test]
+    async fn the_bot_s_browser_is_refused_while_it_is_not_declared() {
+        let (runner, dir) = runner();
+        let provision = json!({ "method": "provision", "botId": "b" });
+        assert!(frames(&runner, provision).await[0].get("value").is_some());
+        let page = json!({ "method": "pageBrowser", "botId": "b",
+            "command": { "method": "Page.navigate", "params": { "url": "https://example.com/" } } });
+        assert_eq!(
+            frames(&runner, page).await,
+            vec![json!({ "error": NOT_HERE })]
+        );
+        assert!(
+            !dir.join("data").join("browser-profiles").exists(),
+            "no profile was made"
         );
     }
 
