@@ -589,6 +589,21 @@
       "reason": "the pairing link dozo://pair opens the pairing screen (the router would read its host as a route named pair)"
     },
     {
+      "file": "apps/mobile/lib/i18n.ts",
+      "find": "from \"./plural-rules\";\nimport type { UiLocale }",
+      "replace": "from \"./plural-rules\";\nimport { compileMissingMessages } from \"./dozo-i18n-fallback\";\nimport type { UiLocale }",
+      "requires": [
+        "apps/mobile/lib/dozo-i18n-fallback.ts"
+      ],
+      "reason": "a release build showed a string its catalogs do not list with its placeholders unfilled (\"Uses the relay at {0}.\")"
+    },
+    {
+      "file": "apps/mobile/lib/i18n.ts",
+      "find": "installPluralRules();\ni18n.load(catalogs);",
+      "replace": "installPluralRules();\ncompileMissingMessages(i18n);\ni18n.load(catalogs);",
+      "reason": "compile the English fallback of an unlisted string when it is used, so its placeholders are filled in"
+    },
+    {
       "file": "apps/web/index.html",
       "find": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta name=\"theme-color\"",
       "replace": "    <meta name=\"description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:type\" content=\"website\" />\n    <meta property=\"og:title\" content=\"Dozo\" />\n    <meta property=\"og:description\" content=\"Your team of always-on agents.\" />\n    <meta property=\"og:image\" content=\"https://dozo.bot/og.png\" />\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"theme-color\"",

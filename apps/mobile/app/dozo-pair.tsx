@@ -30,6 +30,12 @@ const usedLinks = new Set<string>();
 
 const hostOf = (address: string) => new URL(address).host;
 
+/** An error and the causes under it, one line: what a generic message on screen leaves out. */
+const causes = (error: unknown): string =>
+  error instanceof Error
+    ? `${error.name}: ${error.message}${error.cause === undefined ? "" : ` <- ${causes(error.cause)}`}`
+    : String(error);
+
 /**
  * Pairs the phone with the user's own computer. The computer shows a QR code holding a link
  * (`dozo/relay/PROTOCOL.md`, Pairing link); the phone's camera opens it here. The code can also be
@@ -111,6 +117,8 @@ export default function DozoPairScreen() {
       keepOnlyRelayConnection(connection.origin);
       router.replace("/");
     } catch (caught) {
+      // The screen names only the kind of failure; the device log keeps its cause.
+      console.warn("Pairing failed:", causes(caught));
       setError(failure((caught as RelayPairingError).kind));
     } finally {
       running.current = false;
