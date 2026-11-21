@@ -7364,6 +7364,51 @@
         "packages/adapters/src/dozo-token-run.ts"
       ],
       "reason": "agent mode and the token gate: upstream's executor test with a fake Codex calling a tool through the real MCP bridge into the real executor: in a run a token's message reached, a write asks even in Never ask, the call never runs, and no mark is left"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-actions.ts",
+      "find": "  resolveComposerSendPlan,\n} from \"@rakazo/core\";",
+      "replace": "  resolveComposerSendPlan,\n  retryWhenUnreached,\n} from \"@rakazo/core\";",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-composer-actions.ts",
+      "find": "      await rpc.threads.answer({",
+      "replace": "      await retryWhenUnreached(rpc.threads.answer)({",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: an answer sent while the API is being replaced is sent again for about a minute; a card can be answered only once, so a repeat never applies twice"
+    },
+    {
+      "file": "apps/mobile/lib/thread-answer.ts",
+      "find": "import type { LoginFieldInput, RpcInput } from \"@rakazo/contracts\";\nimport { hapticSuccess } from \"./haptics\";",
+      "replace": "import type { LoginFieldInput, RpcInput } from \"@rakazo/contracts\";\nimport { retryWhenUnreached } from \"@rakazo/core\";\nimport { hapticSuccess } from \"./haptics\";",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/lib/thread-answer.ts",
+      "find": "  await rpc(\"threads/answer\", {",
+      "replace": "  await retryWhenUnreached(rpc)(\"threads/answer\", {",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the same retry as on web while the API is being replaced"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./retry-policy.js\";\nexport * from \"./room-settings.js\";",
+      "replace": "export * from \"./retry-policy.js\";\nexport * from \"./dozo-unreached-retry.js\";\nexport * from \"./room-settings.js\";",
+      "requires": [
+        "packages/core/src/dozo-unreached-retry.ts"
+      ],
+      "reason": "approval cards: the retry that web and mobile share"
     }
   ],
   "assets": {
