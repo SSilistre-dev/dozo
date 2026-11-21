@@ -45,10 +45,14 @@ vi.mock("./ios-action-sheet", () => ({ showIOSActionSheet: ui.sheet }));
 vi.mock("../components/thread/thread-list-controls", () => ({
   ThreadWorkingFooter: ({ label }: { label: string }) => <div role="status">{label}</div>,
 }));
-vi.mock("./dozo-queue", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./dozo-queue")>()),
-  useDozoQueue: () => ({ items: ui.items, cancel: { run: ui.run, pending: ui.pending } }),
+vi.mock("./query", () => ({
+  queryClient: {},
+  rpcQuery: () => ({ queryKey: [] }),
+  useSave: () => ({ run: ui.run, pending: ui.pending }),
 }));
+vi.mock("./roster-signals", () => ({ useSpaceChanges: () => undefined }));
+vi.mock("./screen-query", () => ({ useScreenQuery: () => ({ data: { items: ui.items } }) }));
+vi.mock("./user-error", () => ({ errorText: () => "failed" }));
 
 import { DozoWaitingFooter } from "../components/thread/dozo-waiting-footer";
 
