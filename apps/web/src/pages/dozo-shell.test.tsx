@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -15,11 +16,18 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <div data-testid="upstream-shell" /> }));
 vi.mock("./shell/dozo-bot-chats", async () => {
-  const { useLocation } = await import("react-router-dom");
+  const { Navigate, useSearchParams } = await import("react-router-dom");
   return {
-    useDozoOpenChat: () => undefined,
-    // The list answered and has no such chat: only an address naming one is sent on.
-    useDozoChatRedirect: () => (useLocation().search.includes("chat=") ? mocks.chatRedirect : null),
+    useDozoOpenChat: () => useSearchParams()[0].get("chat") ?? undefined,
+    // The list said the chat is not there (a path), is still loading (undefined), or is (null).
+    DozoChatAddress: ({ children }: { children: ReactNode }) =>
+      mocks.chatRedirect ? (
+        <Navigate to={mocks.chatRedirect} replace />
+      ) : mocks.chatRedirect === undefined ? (
+        <p>checking</p>
+      ) : (
+        children
+      ),
   };
 });
 vi.mock("../lib/auth", () => ({
@@ -283,5 +291,14 @@ it("opens the bot's main chat at an address naming none of its open extra chats"
 it("waits for the chat list before opening an address that names an extra chat", async () => {
   mocks.chatRedirect = undefined;
   await open("/app/bot-1?chat=chat-1");
+  await vi.waitFor(() => expect(container.textContent).toContain("checking"));
   expect(container.querySelector('[data-testid="upstream-shell"]')).toBeNull();
+});
+
+it("opens an address naming one of the bot's open extra chats", async () => {
+  await open("/app/bot-1?chat=chat-1");
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="upstream-shell"]')).not.toBeNull(),
+  );
+  expect(where()).toBe("/app/bot-1?chat=chat-1");
 });

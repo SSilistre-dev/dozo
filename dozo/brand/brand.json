@@ -8842,20 +8842,11 @@
     {
       "file": "packages/db/src/history-retrieval.ts",
       "find": "    LEFT JOIN bots b ON b.id = t.\"botId\" LEFT JOIN chat_groups g ON g.id = t.\"groupId\"\n",
-      "replace": "    LEFT JOIN bots b ON b.id = COALESCE(t.\"botId\", ${DOZO_CHAT_BOT})\n    LEFT JOIN chat_groups g ON g.id = t.\"groupId\"\n",
+      "replace": "    LEFT JOIN bots b\n      ON b.id = CASE WHEN t.\"botId\" IS NULL THEN ${DOZO_CHAT_BOT} ELSE t.\"botId\" END\n    LEFT JOIN chat_groups g ON g.id = t.\"groupId\"\n",
       "requires": [
         "packages/db/src/dozo-bot-chats.ts"
       ],
       "reason": "bot chats: a hit in an extra chat is labelled with its bot's name, as one in the main chat is"
-    },
-    {
-      "file": "packages/db/src/history-retrieval.ts",
-      "find": "    SELECT ${columns}, t.\"botId\" FROM messages m JOIN threads t ON t.id = m.\"threadId\"\n",
-      "replace": "    SELECT ${columns}, COALESCE(t.\"botId\", ${DOZO_CHAT_BOT}) AS \"botId\"\n    FROM messages m JOIN threads t ON t.id = m.\"threadId\"\n",
-      "requires": [
-        "packages/db/src/dozo-bot-chats.ts"
-      ],
-      "reason": "bot chats: reading around a message of an extra chat reads it as its bot's chat"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",

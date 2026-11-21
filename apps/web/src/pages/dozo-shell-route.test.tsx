@@ -53,7 +53,7 @@ vi.mock("../lib/auth", () => ({
 vi.mock("./Shell", () => ({ ShellPage: () => <RosterShell /> }));
 vi.mock("./shell/dozo-bot-chats", () => ({
   useDozoOpenChat: () => undefined,
-  useDozoChatRedirect: () => null,
+  DozoChatAddress: ({ children }: { children: unknown }) => children,
 }));
 
 import { readPlanIntent, savePlanIntent } from "../lib/dozo-plan-intent";

@@ -127,6 +127,7 @@ vi.mock("@rakazo/ui-web", () => {
 import type * as Query from "../../lib/query";
 import {
   DozoBotChatRows,
+  DozoChatAddress,
   DozoChatSwitcher,
   DozoNewChatItem,
   dozoBotChatsChanged,
@@ -570,5 +571,22 @@ describe("an address naming an extra chat", () => {
     await render(<Redirect />, "/app/bot-1");
     expect(redirect()).toBe("stay");
     expect(api.list).not.toHaveBeenCalled();
+  });
+});
+
+describe("the shell at an extra chat's address", () => {
+  /** As the shell wrapper uses it: only an address naming a chat goes through the check. */
+  function Address() {
+    const chatId = useDozoOpenChat();
+    return chatId ? <DozoChatAddress chatId={chatId}>shell</DozoChatAddress> : <p>main</p>;
+  }
+
+  it("opens once the chat is known, and sends an unknown one to the bot's main chat", async () => {
+    api.list.mockResolvedValue({ chats: [chat()] });
+    await render(<Address />, "/app/bot-1?chat=chat-1");
+    await vi.waitFor(() => expect(container.textContent).toContain("shell"));
+    await render(<Address />, "/app/bot-1?chat=gone");
+    await vi.waitFor(() => expect(location()).toBe("/app/bot-1"));
+    expect(container.textContent).toContain("main");
   });
 });

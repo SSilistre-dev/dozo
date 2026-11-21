@@ -26,8 +26,10 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Archive, Bell, BellDot, Check, ChevronDown, Clock, Pencil, Plus } from "lucide-react";
+import type { ReactNode } from "react";
 import { useId, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { PageLoading } from "../../components/PageLoading";
 import { errorText, toastError } from "../../lib/dozo-error-text";
 import {
   dozoChatOf,
@@ -178,6 +180,16 @@ export function useDozoChatRedirect(chatId: string | undefined): string | null |
     (chat) => chat.id === chatId && chat.botId === botId && !chat.archivedAt,
   );
   return known ? null : `/app/${botId}`;
+}
+
+/**
+ * The shell at an address naming an extra chat: opened once the chat list says it is one of the
+ * bot's open chats, and the bot's main chat otherwise. Only such an address reads the list here.
+ */
+export function DozoChatAddress({ chatId, children }: { chatId: string; children: ReactNode }) {
+  const to = useDozoChatRedirect(chatId);
+  if (to) return <Navigate to={to} replace />;
+  return to === undefined ? <PageLoading /> : children;
 }
 
 /** Reads the chat lists again; the roster signal carries a change to a chat or its read state. */
