@@ -265,9 +265,7 @@ test("the colour picked for a new bot is the one its preview, its row and its ch
     for (const reload of [false, true]) {
       if (reload) await openBot(page, botId, name);
       await expect
-        .poll(() =>
-          tile(page.locator(`${ROW}[data-roster-bot-id="${botId}"] .dozo-avatar`).first()),
-        )
+        .poll(() => tile(page.locator(`${ROW}[data-roster-bot-id="${botId}"] .dozo-avatar`).first()))
         .toBe(wanted(picked));
       await expect
         .poll(() => tile(page.getByTestId("bot-settings-trigger").locator(".dozo-avatar")))
