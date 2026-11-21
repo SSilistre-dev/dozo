@@ -14,6 +14,7 @@ import {
 } from "../lib/dozo-plan-intent";
 import { rpc } from "../lib/rpc";
 import { ShellPage as UpstreamShellPage } from "./Shell";
+import { DozoTrustBotHost } from "./shell/dozo-trust-bot";
 
 /**
  * Upstream's app shell, which also opens Billing when there is a plan to offer:
@@ -34,7 +35,14 @@ import { ShellPage as UpstreamShellPage } from "./Shell";
 export function ShellPage() {
   const { ready, redirect } = useBillingOffer();
   if (redirect) return <Navigate to={redirect} replace />;
-  return ready ? <UpstreamShellPage /> : <PageLoading />;
+  return ready ? (
+    <>
+      <UpstreamShellPage />
+      <DozoTrustBotHost />
+    </>
+  ) : (
+    <PageLoading />
+  );
 }
 
 /** How long the app waits for the server before it opens without offering the pick. */
