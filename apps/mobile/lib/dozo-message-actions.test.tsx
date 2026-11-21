@@ -192,6 +192,49 @@ describe("a message's menu on mobile", () => {
     expect(takeEditDraft("m-user")).toBe("");
   });
 
+  it("asks before an earlier message's Edit or Regenerate removes the later ones", async () => {
+    const open = vi.fn();
+    setDozoEditOpener(open);
+    answers["dozoMessages/revisable"] = {
+      editMessageId: "m-later",
+      regenerateMessageId: "m-later-reply",
+      earlierEditMessageIds: ["m-user"],
+      earlierRegenerateMessageIds: ["m-bot"],
+    };
+    await render(<Row m={message("m-user")} />);
+    await shows(["Edit", "Pin"]);
+    actions[0]!.onPress();
+    expect(open).not.toHaveBeenCalled();
+    const [title, body, buttons] = api.alert.mock.calls[0]!;
+    expect([title, body]).toEqual(["Remove the messages after it?", undefined]);
+    expect(buttons.map((b: { text: string; style: string }) => [b.text, b.style])).toEqual([
+      ["Cancel", "cancel"],
+      ["Edit", "destructive"],
+    ]);
+    buttons[1].onPress();
+    expect(open).toHaveBeenCalledWith("thread-1", "m-user");
+
+    await render(<Row m={message("m-bot", { role: "bot" })} />);
+    await shows(["Regenerate", "Pin"]);
+    answers["dozoMessages/regenerate"] = { runId: "run-2" };
+    actions[0]!.onPress();
+    expect(api.rpc).not.toHaveBeenCalledWith(
+      "dozoMessages/regenerate",
+      expect.anything(),
+      expect.anything(),
+    );
+    const regenerate = api.alert.mock.calls[1]![2];
+    expect(regenerate[1].text).toBe("Regenerate");
+    await act(async () => regenerate[1].onPress());
+    await vi.waitFor(() =>
+      expect(api.rpc).toHaveBeenCalledWith(
+        "dozoMessages/regenerate",
+        { threadId: "thread-1", messageId: "m-bot" },
+        expect.anything(),
+      ),
+    );
+  });
+
   it("reads nothing for a message the chat is still writing or one without a chat", async () => {
     await render(<Row m={message("progress:run-1")} />);
     await shows([]);

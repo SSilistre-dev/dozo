@@ -9,9 +9,10 @@ import { useRosterSignals } from "./roster-signals";
 import { errorText } from "./user-error";
 
 /**
- * Edit, Regenerate and Pin in a message's menu. The server names the one message Edit and
- * Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
- * current (`useDozoThreadMenus`) and each message only reads it.
+ * Edit, Regenerate and Pin in a message's menu. The server names the messages Edit and Regenerate
+ * apply to; the iOS menu is built before it opens, so the chat keeps that answer current
+ * (`useDozoThreadMenus`) and each message only reads it. An earlier message removes every later
+ * one, so it is confirmed first.
  */
 export type DozoMessageAction = {
   name: "dozoEdit" | "dozoRegenerate" | "dozoPin";
@@ -116,8 +117,11 @@ export function useDozoMessageActions(
     stale: [pinsRead(threadId).queryKey],
     onFailed: failed,
   });
-  const canEdit = sent && revisable?.editMessageId === messageId;
-  const canRegenerate = sent && revisable?.regenerateMessageId === messageId;
+  const earlierEdit = sent && (revisable?.earlierEditMessageIds?.includes(messageId) ?? false);
+  const earlierRegenerate =
+    sent && (revisable?.earlierRegenerateMessageIds?.includes(messageId) ?? false);
+  const canEdit = earlierEdit || (sent && revisable?.editMessageId === messageId);
+  const canRegenerate = earlierRegenerate || (sent && revisable?.regenerateMessageId === messageId);
   const pinned = pins?.some((entry) => entry.messageId === messageId) ?? false;
   const showPin = sent && pins !== undefined;
   // The menu keeps its entries while only a save's state changes; a press runs the latest save.
@@ -125,6 +129,15 @@ export function useDozoMessageActions(
   saves.current = { regenerate, pin };
   const text = canEdit ? messageText(message) : "";
   return useMemo(() => {
+    // Going back to an earlier message removes the later ones: the person says so first.
+    const confirmed = (earlier: boolean, label: string, act: () => void) =>
+      earlier
+        ? () =>
+            Alert.alert(t`Remove the messages after it?`, undefined, [
+              { text: t`Cancel`, style: "cancel" },
+              { text: label, style: "destructive", onPress: act },
+            ])
+        : act;
     const actions: DozoMessageAction[] = [];
     if (canEdit)
       actions.push({
@@ -132,10 +145,10 @@ export function useDozoMessageActions(
         text: t`Edit`,
         symbol: "pencil",
         icon: "create-outline",
-        onPress: () => {
+        onPress: confirmed(earlierEdit, t`Edit`, () => {
           editDrafts.set(messageId, text);
           openEdit?.(threadId, messageId);
-        },
+        }),
       });
     if (canRegenerate)
       actions.push({
@@ -143,7 +156,7 @@ export function useDozoMessageActions(
         text: t`Regenerate`,
         symbol: "arrow.clockwise",
         icon: "refresh-outline",
-        onPress: () => saves.current.regenerate.run(),
+        onPress: confirmed(earlierRegenerate, t`Regenerate`, () => saves.current.regenerate.run()),
       });
     if (showPin)
       actions.push({
@@ -154,7 +167,18 @@ export function useDozoMessageActions(
         onPress: () => saves.current.pin.run(!pinned),
       });
     return actions;
-  }, [canEdit, canRegenerate, showPin, pinned, text, threadId, messageId, t]);
+  }, [
+    canEdit,
+    canRegenerate,
+    earlierEdit,
+    earlierRegenerate,
+    showPin,
+    pinned,
+    text,
+    threadId,
+    messageId,
+    t,
+  ]);
 }
 
 /** The iOS menu's section for these actions, after upstream's. */

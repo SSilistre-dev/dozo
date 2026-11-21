@@ -7368,6 +7368,16 @@
       "reason": "waiting work: the Turkish copy of the chat's waiting line and its list of what waits"
     },
     {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Clear conversation\"\nmsgstr \"Sohbeti temizle\"\n\n#",
+      "replace": "msgid \"Clear conversation\"\nmsgstr \"Sohbeti temizle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Remove the messages after it?\"\nmsgstr \"Sonraki mesajlar kaldırılsın mı?\"\n\n#",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-message-revision.tsx",
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message revision: the Turkish copy of the question before an earlier message is edited or regenerated"
+    },
+    {
       "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
       "find": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
       "replace": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\nvi.mock(\"../components/dozo-access-tokens\", () => ({ DozoAccessTokensRow: () => null }));\nvi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",

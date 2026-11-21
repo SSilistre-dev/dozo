@@ -21,7 +21,7 @@ import { handleRpcError } from "./rpc-errors.js";
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
-describePostgres("editing the last message and regenerating the last reply (PostgreSQL)", () => {
+describePostgres("editing a message and regenerating a reply (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
   let system: PrismaClient;
@@ -61,23 +61,31 @@ describePostgres("editing the last message and regenerating the last reply (Post
       }),
     );
     const threadId = (await system.thread.findFirstOrThrow({ where: { botId: bot.id } })).id;
-    const sent = await createThreadEvents(system).sendUserMessage({
+    return { botId: bot.id, ...(await turn(actor, { threadId, botId: bot.id }, "Plan dinner")) };
+  }
+
+  async function turn(actor: Actor, at: { threadId: string; botId: string }, text: string) {
+    const sent = await send(actor, at, text);
+    const runId = sent.runId!;
+    await system.run.update({ where: { id: runId }, data: { status: "running" } });
+    const reply = await botSays(actor, { ...at, runId }, `${text}: done.`);
+    await system.run.update({ where: { id: runId }, data: { status: "completed" } });
+    return { threadId: at.threadId, askId: sent.messageId, askSeq: sent.seq, runId, reply };
+  }
+
+  function send(actor: Actor, at: { threadId: string; botId: string }, text: string) {
+    return createThreadEvents(system).sendUserMessage({
       spaceId: actor.spaceId,
-      threadId,
-      botId: bot.id,
+      threadId: at.threadId,
+      botId: at.botId,
       userId: actor.userId,
       authorUserId: actor.userId,
-      blocks: [{ kind: "text", text: "Plan dinner" }],
-      prompt: "Plan dinner",
+      blocks: [{ kind: "text", text }],
+      prompt: text,
       trigger: "user",
       clientNonce: randomUUID(),
       linkMessageToRun: true,
     });
-    const runId = sent.runId!;
-    await system.run.update({ where: { id: runId }, data: { status: "running" } });
-    const reply = await botSays(actor, { threadId, botId: bot.id, runId }, "Pasta.");
-    await system.run.update({ where: { id: runId }, data: { status: "completed" } });
-    return { botId: bot.id, threadId, askId: sent.messageId, askSeq: sent.seq, runId, reply };
   }
 
   function botSays(
@@ -260,6 +268,156 @@ describePostgres("editing the last message and regenerating the last reply (Post
     });
     expect(refused.status).toBe(409);
     expect((await messagesOf(turn.threadId)).map((m) => m.id)).toEqual([turn.askId, turn.reply.id]);
+  });
+
+  /** Two finished turns, the earlier one pinned and the whole chat read. */
+  async function twoTurns(me: Actor) {
+    const first = await chat(me);
+    const at = { threadId: first.threadId, botId: first.botId };
+    const second = await turn(me, at, "Make it vegan");
+    for (const messageId of [first.reply.id, second.reply.id])
+      expect(
+        (await call(me, "dozoMessages/pin", { threadId: at.threadId, messageId, pinned: true }))
+          .status,
+      ).toBe(200);
+    await system.threadRead.upsert({
+      where: { threadId_userId: { threadId: first.threadId, userId: me.userId } },
+      create: {
+        threadId: first.threadId,
+        userId: me.userId,
+        spaceId: me.spaceId,
+        lastReadSeq: second.reply.seq,
+      },
+      update: { lastReadSeq: second.reply.seq },
+    });
+    return { first, second, at };
+  }
+
+  it("edits an earlier message: every later message, its events and pins go, and the run starts there", async () => {
+    const me = await person();
+    const { first, second } = await twoTurns(me);
+    const read = await call(me, "dozoMessages/revisable", { threadId: first.threadId });
+    expect(read.json).toEqual({
+      editMessageId: second.askId,
+      regenerateMessageId: second.reply.id,
+      earlierEditMessageIds: [first.askId],
+      earlierRegenerateMessageIds: [first.reply.id],
+    });
+
+    const edited = await call(me, "dozoMessages/edit", {
+      threadId: first.threadId,
+      messageId: first.askId,
+      text: "Plan lunch",
+    });
+    expect(edited.status).toBe(200);
+    const [ask, ...rest] = await messagesOf(first.threadId);
+    expect(rest).toEqual([]);
+    expect(readMessageBlocks(ask!).blocks).toEqual([{ kind: "text", text: "Plan lunch" }]);
+    for (const removed of [first.reply.id, second.askId, second.reply.id])
+      expect((await eventsAbout(first.threadId, removed)).map((e) => e.payload)).toEqual([
+        { messageId: removed, removed: true },
+      ]);
+    // Both pins were on removed replies: they went with them.
+    expect((await call(me, "dozoMessages/pins", { threadId: first.threadId })).json).toEqual({
+      pins: [],
+    });
+    const state = await system.threadRead.findUniqueOrThrow({
+      where: { threadId_userId: { threadId: first.threadId, userId: me.userId } },
+    });
+    expect(state.lastReadSeq).toBe(first.askSeq);
+    const run = await system.run.findUniqueOrThrow({ where: { id: edited.json.runId as string } });
+    expect(run).toMatchObject({ status: "queued", sourceMessageId: first.askId });
+    // The old runs stay for usage; the later one no longer points at a message.
+    expect(
+      (await system.run.findUniqueOrThrow({ where: { id: second.runId } })).sourceMessageId,
+    ).toBeNull();
+
+    await system.run.update({ where: { id: run.id }, data: { status: "running" } });
+    const next = await botSays(me, { ...first, runId: run.id }, "Salad.");
+    expect(next.seq).toBe(first.reply.seq);
+  });
+
+  it("regenerates an earlier reply from the message it answered", async () => {
+    const me = await person();
+    const { first } = await twoTurns(me);
+    const regenerated = await call(me, "dozoMessages/regenerate", {
+      threadId: first.threadId,
+      messageId: first.reply.id,
+    });
+    expect(regenerated.status).toBe(200);
+    expect((await messagesOf(first.threadId)).map((m) => m.id)).toEqual([first.askId]);
+    const task = await system.task.findFirstOrThrow({
+      where: { runs: { some: { id: regenerated.json.runId as string } } },
+    });
+    expect(task.prompt).toBe("Plan dinner");
+  });
+
+  it.each([["memory.revised"], ["routine.created"], ["agent.tool.called"]])(
+    "refuses to go back over a later turn that recorded %s, and changes nothing",
+    async (type) => {
+      const me = await person();
+      const { first, second, at } = await twoTurns(me);
+      await system.$transaction((tx) =>
+        appendEventInTransaction(tx, {
+          spaceId: me.spaceId,
+          ...at,
+          type,
+          runId: second.runId,
+          payload: { path: "notes.md" },
+        }),
+      );
+      expect((await call(me, "dozoMessages/revisable", { threadId: first.threadId })).json).toEqual(
+        {
+          editMessageId: null,
+          regenerateMessageId: null,
+        },
+      );
+      const refused = await call(me, "dozoMessages/edit", {
+        threadId: first.threadId,
+        messageId: first.askId,
+        text: "Plan lunch",
+      });
+      expect(refused.status).toBe(409);
+      expect((await messagesOf(first.threadId)).map((m) => m.id)).toEqual([
+        first.askId,
+        first.reply.id,
+        second.askId,
+        second.reply.id,
+      ]);
+    },
+  );
+
+  it("lets one of two clients go back and refuses the other", async () => {
+    const me = await person();
+    const { first } = await twoTurns(me);
+    const both = await Promise.all([
+      call(me, "dozoMessages/edit", {
+        threadId: first.threadId,
+        messageId: first.askId,
+        text: "Plan lunch",
+      }),
+      call(me, "dozoMessages/regenerate", { threadId: first.threadId, messageId: first.reply.id }),
+    ]);
+    expect(both.map((each) => each.status).sort()).toEqual([200, 409]);
+    expect((await messagesOf(first.threadId)).map((m) => m.id)).toEqual([first.askId]);
+    expect(await system.run.count({ where: { threadId: first.threadId, status: "queued" } })).toBe(
+      1,
+    );
+  });
+
+  it("refuses once a new message arrived after the menu was read", async () => {
+    const me = await person();
+    const { first, at } = await twoTurns(me);
+    const read = await call(me, "dozoMessages/revisable", { threadId: first.threadId });
+    expect(read.json.earlierEditMessageIds).toEqual([first.askId]);
+    const arrived = await send(me, at, "And dessert");
+    const refused = await call(me, "dozoMessages/edit", {
+      threadId: first.threadId,
+      messageId: first.askId,
+      text: "Plan lunch",
+    });
+    expect(refused.status).toBe(409);
+    expect((await messagesOf(first.threadId)).at(-1)?.id).toBe(arrived.messageId);
   });
 
   it("hides another person's chat", async () => {

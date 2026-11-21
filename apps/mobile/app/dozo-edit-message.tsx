@@ -12,7 +12,7 @@ import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 /**
- * Edits the person's last message in a chat with a bot and sends it again; the bot answers it
+ * Edits a message of the person's in a chat with a bot and sends it again; the bot answers it
  * anew. The chat shows the change from its own events.
  */
 export default function DozoEditMessage() {
