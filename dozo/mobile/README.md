@@ -297,9 +297,11 @@ What does not cross the relay, because the system loads it rather than JavaScrip
 - Android's background notification service. It stays off for a computer, and turning it on says
   why.
 - A computer's live screen, which loads in a web view. The screen shows its usual cannot-reach line.
-- Images and videos the native views load from the server's address (avatars, inline images,
-  video). They do not load; each asks DNS for the random `.invalid` name, which carries nothing
-  about the channel.
+- A picture or video the app would give a native view as a URL on the server's address. The app
+  has none today: bot avatars and link icons arrive inside the data, and attachments, previews and
+  video are fetched through the RPC and shown from a local cache file, all of which cross the
+  relay. A native view asked for such a URL would ask DNS for the random `.invalid` name, which
+  carries nothing about the channel. Add a relay-aware loader only when a screen needs one.
 - Sign-in through the system browser and passkeys. They need the server's real address.
 - Push notifications and incoming-call pushes need the server's push credentials, which a local
   server does not have, with or without the relay.
