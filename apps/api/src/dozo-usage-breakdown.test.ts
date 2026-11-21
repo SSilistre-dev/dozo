@@ -2,7 +2,7 @@ import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 import { dozoUsageRoutes } from "./dozo-usage.js";
 import type { UsageCell } from "./dozo-usage-breakdown.js";
-import { groupUsage, usageCsv, usageDayWindow } from "./dozo-usage-breakdown.js";
+import { groupUsage, readDayCells, usageCsv, usageDayWindow } from "./dozo-usage-breakdown.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
@@ -166,6 +166,44 @@ describe("grouping usage by day and person", () => {
     expect(usageDayWindow("UTC", at).firstDay).toBe("2026-10-22");
     expect(usageDayWindow("America/Los_Angeles", at).firstDay).toBe("2026-10-22");
     expect(usageDayWindow("UTC", new Date("2026-03-01T00:00:00Z")).firstDay).toBe("2026-01-31");
+  });
+});
+
+describe("reading days", () => {
+  const asked = (rows: unknown[][]) => ({
+    $queryRaw: async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+      return rows.shift() ?? (values.length ? [] : []);
+    },
+  });
+
+  it("reads a name JavaScript refuses as UTC without asking the database about it", async () => {
+    const seen: unknown[][] = [];
+    const prisma = {
+      $queryRaw: async (_sql: TemplateStringsArray, ...values: unknown[]) => {
+        seen.push(values);
+        return [];
+      },
+    };
+    await readDayCells(prisma, { spaceId: "s", userId: "u" }, "Not/AZone", new Date("2026-11-21Z"));
+    // One read, the days themselves, cut in UTC.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("UTC");
+  });
+
+  it("keeps a zone both know, and groups cells that lack the optional fields", async () => {
+    const prisma = asked([[{ name: "Europe/Istanbul" }], [{ day: "2026-11-21", calls: 1 }]]);
+    const cells = await readDayCells(
+      prisma,
+      { spaceId: "s", userId: "u" },
+      "Europe/Istanbul",
+      new Date("2026-11-21T12:00:00Z"),
+    );
+    expect(cells).toMatchObject([{ day: "2026-11-21", calls: 1, provider: "" }]);
+    expect(groupUsage([cell(), cell({ userId: "x", userName: "X" })], "person")).toMatchObject([
+      { key: "x", name: "X", detail: null },
+      { key: "", state: "unknown" },
+    ]);
+    expect(groupUsage([cell()], "day")).toMatchObject([{ key: "", name: null }]);
   });
 });
 
