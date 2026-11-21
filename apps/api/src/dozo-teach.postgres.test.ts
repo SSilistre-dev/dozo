@@ -187,7 +187,8 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     const [row] = await system.$queryRaw<
       Array<{ values: string; targets: string | null; expiresAt: Date }>
     >`
-      SELECT "values", "targets", "expiresAt" FROM dozo_teach_values WHERE "skillId" = ${skillId}`;
+      SELECT "values", "targets", "expiresAt" AT TIME ZONE 'UTC' AS "expiresAt"
+      FROM dozo_teach_values WHERE "skillId" = ${skillId}`;
     return row;
   }
 
@@ -247,7 +248,7 @@ describePostgres("typed values stay with the teacher, briefly (PostgreSQL)", () 
     expect(hours).toBeGreaterThan(23.9);
     expect(hours).toBeLessThanOrEqual(24);
     const jobs = await system.$queryRaw<Array<{ task_identifier: string; run_at: Date }>>`
-      SELECT task_identifier, run_at FROM graphile_worker.jobs
+      SELECT task_identifier, run_at AT TIME ZONE 'UTC' AS run_at FROM graphile_worker.jobs
       WHERE key = ${`dozo.teach-values:${skill.id}`}`;
     expect(jobs).toEqual([{ task_identifier: "skill.teaching-expire", run_at: row!.expiresAt }]);
 

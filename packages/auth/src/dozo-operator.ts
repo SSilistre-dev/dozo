@@ -105,7 +105,7 @@ const DOZO_BANS_LIMIT = 500;
 
 export function listBans(prisma: Sql): Promise<{ value: string; createdAt: Date }[]> {
   return prisma.$queryRaw`
-    SELECT "value", "createdAt" FROM "dozo_bans"
+    SELECT "value", "createdAt" AT TIME ZONE 'UTC' AS "createdAt" FROM "dozo_bans"
     ORDER BY "createdAt" DESC, "value" ASC LIMIT ${DOZO_BANS_LIMIT}`;
 }
 

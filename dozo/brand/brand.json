@@ -6927,6 +6927,69 @@
         "packages/adapters/src/dozo-token-run.ts"
       ],
       "reason": "token gate: upstream's approval tests, run through the real executor: in a run reached by text sent with an access token (an injection), a send asks even in Never ask with no Always allow and the reason on the card, Auto Review is skipped, a read still runs, an approved send goes ahead once, the computer, files, memory, routines and child bots ask, and a message to another bot marks that bot"
+    },
+    {
+      "file": "packages/adapters/src/executor-backup-start.test.ts",
+      "find": "      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),\n      user: { findUnique: vi.fn(async () => null) },\n",
+      "replace": "      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),\n      $queryRaw: vi.fn(async () => []),\n      user: { findUnique: vi.fn(async () => null) },\n",
+      "requires": [
+        "packages/adapters/src/dozo-token-run.ts"
+      ],
+      "reason": "token gate: upstream test of a run's backup model; the fork's run start asks the database whether a message sent with an access token is in the bot's chat, which this fake did not answer, so it answers none (dozo-token-run.test.ts and dozo-token-run.postgres.test.ts cover the question)"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.test.ts",
+      "find": "    deps: { prisma: {} },\n    run: { id: \"run-1\"",
+      "replace": "    deps: { prisma: { $queryRaw: async () => [] } },\n    run: { id: \"run-1\"",
+      "requires": [
+        "packages/adapters/src/dozo-token-run.ts"
+      ],
+      "reason": "token gate: upstream test of the tool gate; the fork's gate asks the database whether a message sent with an access token is in the bot's chat, which this fake did not answer, so it answers none (dozo-token-run.test.ts covers the question)"
+    },
+    {
+      "file": "apps/api/src/runs.ts",
+      "find": "import { Prisma } from \"@rakazo/db\";\n\nconst RECENT_LIMIT",
+      "replace": "import { Prisma } from \"@rakazo/db\";\nimport { dozoActivityPrompt } from \"./dozo-activity-preview.js\";\n\nconst RECENT_LIMIT",
+      "requires": [
+        "apps/api/src/dozo-activity-preview.ts"
+      ],
+      "reason": "activity list: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/runs.ts",
+      "find": "      prompt: row.task.prompt,\n      sourceBlocks: row.sourceMessage?.blocks,",
+      "replace": "      prompt: dozoActivityPrompt({ ...row, prompt: row.task.prompt }),\n      sourceBlocks: row.sourceMessage?.blocks,",
+      "requires": [
+        "apps/api/src/dozo-activity-preview.ts"
+      ],
+      "reason": "activity list: a run woken by a prompt the server wrote (the creation intro, a call's end, an approved connector) shows no prompt; its instructions to the bot appeared as the chat's preview"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./time-separators.js\";\nexport * from \"./tool-activity.js\";",
+      "replace": "export * from \"./time-separators.js\";\nexport * from \"./dozo-local-day.js\";\nexport * from \"./tool-activity.js\";",
+      "requires": [
+        "packages/core/src/dozo-local-day.ts"
+      ],
+      "reason": "downloads: the person's own date for a file's name (usage CSV, chat export), shared by web and mobile"
+    },
+    {
+      "file": "apps/api/src/model-credentials.ts",
+      "find": "} from \"@rakazo/db\";\nimport { mayUsePrivateEndpoint } from \"./mcp-servers.js\";\n",
+      "replace": "} from \"@rakazo/db\";\nimport { dozoBecomesMain } from \"./dozo-main-model.js\";\nimport { mayUsePrivateEndpoint } from \"./mcp-servers.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-main-model.ts"
+      ],
+      "reason": "main model: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/model-credentials.ts",
+      "find": "  const becomesMain =\n    input.makeDefault !== false &&\n    Boolean(defaultModel) &&\n    (!input.keepExistingDefault || !mainRole.primary);",
+      "replace": "  const becomesMain =\n    Boolean(defaultModel) && dozoBecomesMain(input, mainRole.primary, credential);",
+      "requires": [
+        "apps/api/src/dozo-main-model.ts"
+      ],
+      "reason": "main model: a save that does not ask for it (the web form of an existing connection sends no makeDefault) changes the main model only while there is none or this connection already runs it, instead of moving it to that connection"
     }
   ],
   "assets": {

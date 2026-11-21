@@ -143,7 +143,8 @@ export async function dozoTickWait(
   ...[deps, routine, target, scheduledAt]: Parameters<Tick>
 ): Promise<DozoWaitTick> {
   const [wait] = await deps.prisma.$queryRaw<Array<{ endsAt: Date; minutes: number }>>`
-    SELECT "endsAt", minutes FROM dozo_routine_waits WHERE "routineId" = ${routine.id}`;
+    SELECT "endsAt" AT TIME ZONE 'UTC' AS "endsAt", minutes
+    FROM dozo_routine_waits WHERE "routineId" = ${routine.id}`;
   if (!wait) return tick(deps, routine, target, scheduledAt);
   const now = Date.now();
   if (now < wait.endsAt.getTime()) {
