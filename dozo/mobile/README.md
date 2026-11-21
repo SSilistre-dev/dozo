@@ -61,7 +61,8 @@ The `dozo-mobile-android` workflow builds the Android app from the branded tree 
   am start` opens the `dozo://pair#…` link, as the camera would; the app asks "Connect to this
   computer?", naming the test relay, and Connect is tapped (Maestro, `android/flows/`); the app
   shows the approval code, which must be the one the agent reports; `approve` on the computer; the
-  app signs in and lists the bot. Last line: `ANDROID PAIRING E2E: PASS|FAIL`.
+  app signs in and lists the bot; a `dozo://dozo-access-tokens` link then opens a settings page,
+  the access tokens, whose "New token" row shows. Last line: `ANDROID PAIRING E2E: PASS|FAIL`.
 
 What a release needs from the owner (none of it is in the repository):
 
