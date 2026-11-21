@@ -166,6 +166,8 @@ export function readAccessibilityTree(
 
 export class DeviceBrowserProvider implements BrowserProvider {
   private loads = 0;
+  /** The site the next batch was approved for, when the caller knows it. */
+  expectedSite: string | undefined;
   private dialog: string | undefined;
   private notes: string[] = [];
 
@@ -299,6 +301,9 @@ export class DeviceBrowserProvider implements BrowserProvider {
       const page = await this.page().catch(() => ({ url: "", title: "" }));
       return { ok: false, completed, uncertain, ...page, error, ...this.pageNotice() };
     };
+    // The page is another site's than the one approved (another thread's run moved it).
+    if (this.expectedSite !== undefined && site !== this.expectedSite)
+      return stop(MOVED_SITE, false);
     for (const step of request.actions) {
       context.signal.throwIfAborted();
       if (completed > 0 && siteOf((await this.where()).url) !== site)

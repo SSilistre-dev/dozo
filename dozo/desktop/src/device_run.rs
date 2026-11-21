@@ -314,6 +314,13 @@ impl Runner {
                 done.map(|()| Value::Null)
             }
             "execute" => {
+                // While the person signs in with this bot's browser, the bot runs nothing here
+                // either: a command could read the screen or reach the browser.
+                if let Some(site) = self.browsers.signing_site(&key) {
+                    let refused =
+                        format!("The person is signing in to {site}; wait until they are done.");
+                    return reply.error(&refused).await;
+                }
                 let Some(command) = request.get("command").and_then(parse_command) else {
                     return reply.error(INVALID).await;
                 };
@@ -1031,6 +1038,38 @@ mod tests {
             !dir.join("data").join("browser-profiles").exists(),
             "no profile was made"
         );
+    }
+
+    /// While the person signs in with a bot's browser, that bot runs no command here, and
+    /// stopping it leaves the browser alone.
+    #[tokio::test]
+    async fn nothing_runs_for_a_bot_whose_browser_the_person_signs_in_with() {
+        let dir =
+            std::env::temp_dir().join(format!("dozo-device-run-signing-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("home")).unwrap();
+        let browsers =
+            crate::browser::Browsers::with(dir.join("data/browser-profiles"), None, true);
+        browsers.mark_signing(&bot_key("b"), "example.com");
+        let runner = Runner::with_browsers(dir.join("data"), dir.join("home"), browsers);
+        let provision = json!({ "method": "provision", "botId": "b" });
+        assert!(frames(&runner, provision).await[0].get("value").is_some());
+        let execute = json!({ "method": "execute", "botId": "b", "command": { "argv": ["true"] } });
+        assert_eq!(
+            frames(&runner, execute).await,
+            vec![
+                json!({ "error": "The person is signing in to example.com; wait until they are done." })
+            ]
+        );
+        let other = json!({ "method": "provision", "botId": "c" });
+        assert!(frames(&runner, other).await[0].get("value").is_some());
+        let theirs = json!({ "method": "execute", "botId": "c", "command": { "argv": ["true"] } });
+        assert_ne!(
+            frames(&runner, theirs).await[0].get("error"),
+            Some(&json!(
+                "The person is signing in to example.com; wait until they are done."
+            ))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

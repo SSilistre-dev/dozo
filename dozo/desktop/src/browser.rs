@@ -134,6 +134,9 @@ pub trait SignInPrompt: Send + Sync {
     fn ask(&self, site: &str) -> oneshot::Receiver<bool>;
 }
 
+/// How long a sign-in may wait for the person before it counts as cancelled.
+const SIGN_IN_TIME: Duration = Duration::from_secs(15 * 60);
+
 pub const NO_BROWSER: &str = "No supported browser is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
 
@@ -706,6 +709,15 @@ impl Browsers {
         self
     }
 
+    /// Marks a bot as signing in, for tests of what the pause holds back.
+    #[cfg(test)]
+    pub fn mark_signing(&self, key: &str, site: &str) {
+        self.signing
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), site.to_owned());
+    }
+
     /// Lets tests open only the loopback ports they name, as pages and through the proxy.
     #[cfg(test)]
     pub fn with_local_ports(mut self, ports: Vec<u16>) -> Self {
@@ -716,6 +728,11 @@ impl Browsers {
 
     pub fn available(&self) -> bool {
         self.program.is_some()
+    }
+
+    /// The site the person is signing in to with this bot's browser, if they are.
+    pub fn signing_site(&self, key: &str) -> Option<String> {
+        self.signing.lock().unwrap().get(key).cloned()
     }
 
     /// The prompt the person answers when they sign in (`sign_in`).
@@ -753,12 +770,15 @@ impl Browsers {
         let answer = match opened {
             Ok(_) => {
                 let mut answered = prompt.ask(&site);
+                let deadline = tokio::time::Instant::now() + SIGN_IN_TIME;
                 // A browser that closed meanwhile ends it too: there is nothing to sign in with.
+                // So does the time running out: the sign-in counts as cancelled.
                 loop {
                     tokio::select! {
                         done = &mut answered => break done.unwrap_or(false),
                         () = tokio::time::sleep(Duration::from_secs(1)) => {
-                            if !running.pipe.open.load(Ordering::SeqCst) {
+                            let ended = tokio::time::Instant::now() >= deadline;
+                            if ended || !running.pipe.open.load(Ordering::SeqCst) {
                                 break false;
                             }
                         }
@@ -783,6 +803,24 @@ impl Browsers {
                 .unwrap_or(0);
             running.hidden_through.fetch_max(last, Ordering::SeqCst);
         }
+        // Before the bot has the page again, it leaves where the sign-in left it: the site's home
+        // page once the person is done, a blank page when they cancelled (a typed address or a
+        // half-done second step stays theirs).
+        let after = if answer {
+            format!("{scheme}://{site}/")
+        } else {
+            "about:blank".to_owned()
+        };
+        let _ = running
+            .pipe
+            .call("Page.navigate", json!({ "url": &after }), Some(&session))
+            .await;
+        for _ in 0..100 {
+            if running.address().await.is_ok_and(|now| now == after) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         running.pipe.take_events();
         self.signing.lock().unwrap().remove(key);
         Ok(answer)
@@ -793,8 +831,8 @@ impl Browsers {
     /// works while the page shows anything else.
     pub async fn handle(&self, key: &str, command: &Value) -> Result<Value, String> {
         let (method, params) = allowed(command, self.local)?;
-        if let Some(site) = self.signing.lock().unwrap().get(key) {
-            return Err(signing_message(site));
+        if let Some(site) = self.signing_site(key) {
+            return Err(signing_message(&site));
         }
         let running = self.running(key).await?;
         let session = match running.page(self.local).await {
@@ -821,11 +859,23 @@ impl Browsers {
                 .flatten()
                 .find(|entry| entry["id"] == params["entryId"]);
             let url = entry.and_then(|entry| entry["url"].as_str()).unwrap_or("");
-            if !web_address(url, self.local) {
+            let hidden = running.hidden_through.load(Ordering::SeqCst);
+            let made_signing_in = entry
+                .and_then(|entry| entry["id"].as_u64())
+                .is_some_and(|id| id <= hidden);
+            if !web_address(url, self.local) || made_signing_in {
                 return Err(NOT_WEB.to_owned());
             }
         }
+        if self.signing_site(key).is_some() {
+            return Err(signing_message(&self.signing_site(key).unwrap_or_default()));
+        }
         let result = running.pipe.call(&method, params, Some(&session)).await;
+        // A sign-in that started while the command ran keeps what it read.
+        if let Some(site) = self.signing_site(key) {
+            running.pipe.take_events();
+            return Err(signing_message(&site));
+        }
         if !running.pipe.open.load(Ordering::SeqCst) {
             self.forget(key, &running);
         }
@@ -897,6 +947,10 @@ impl Browsers {
     /// Ends the bot's browser. `forget_profile` also removes its profile (the bot is gone), once
     /// the browser has ended, so it cannot write it back.
     pub async fn close(&self, key: &str, forget_profile: bool) {
+        // Only the person ends a sign-in: stopping the bot leaves its browser open meanwhile.
+        if self.signing_site(key).is_some() {
+            return;
+        }
         let running = {
             let mut open = self.open.lock().unwrap();
             // A browser starting meanwhile is ended rather than kept.
@@ -986,6 +1040,22 @@ async fn harden(pipe: &Pipe) -> Result<(), String> {
         let denied = json!({ "permission": { "name": name }, "setting": "denied" });
         pipe.call("Browser.setPermission", denied, None).await?;
     }
+    // Nothing a page asks the person through the browser's own prompts. A name an older browser
+    // does not know is left: the guard refuses those features anyway.
+    for name in [
+        "notifications",
+        "geolocation",
+        "camera",
+        "microphone",
+        "midi",
+        "window-management",
+        "local-fonts",
+        "idle-detection",
+        "storage-access",
+    ] {
+        let denied = json!({ "permission": { "name": name }, "setting": "denied" });
+        let _ = pipe.call("Browser.setPermission", denied, None).await;
+    }
     // Every new tab or window holds before its first script until it has the guard
     // (`guard_target`).
     pipe.call("Target.setAutoAttach", AUTO_ATTACH.clone(), None)
@@ -1038,53 +1108,97 @@ async fn guard_target(pipe: std::sync::Weak<Pipe>, params: Value) {
 }
 
 /// A click the server sends counts as the person's gesture, so a page could use it to write the
-/// clipboard or take the whole screen. The permission above stops the clipboard API; this stops the
-/// older copy and cut commands and every form of full screen. It is set in every document before
-/// its scripts (and in every new tab, window and frame process, `guard_target`), and it guards a
-/// window a page opens and a frame it reaches, which a page could otherwise use to call the
-/// browser's own functions. A page that opens a window still can (sign-ins need it): it opens as a
-/// tab the bot cannot reach.
-const GUARD: &str = "(() => {
+/// clipboard, take the whole screen, or reach past the page. The permissions above stop the
+/// clipboard API and the prompts; this stops the older copy and cut commands, every form of full
+/// screen (a full screen that starts anyway, from a video's own controls, is left at once),
+/// picture-in-picture windows, pointer lock, the file and folder pickers, printing, passkeys and
+/// payment sheets. It is set in every document before its scripts (and in every new tab, window
+/// and frame process, `guard_target`), and it guards a window a page opens and a frame it reaches.
+/// A page cannot undo it: everything it relies on is taken before any page script runs, so a page
+/// that later replaces `Function.prototype.call`, `Array.prototype.includes` or the like changes
+/// nothing, and the browser's own functions stay out of its reach. A page that opens a window still
+/// can (sign-ins need it): it opens as a tab the bot cannot reach.
+const GUARD: &str = r#"(() => {
+  const apply = Reflect.apply;
+  const lower = String.prototype.toLowerCase;
+  const text = String;
+  const has = WeakSet.prototype.has;
+  const add = WeakSet.prototype.add;
+  const own = Object.getOwnPropertyDescriptor;
+  const define = Object.defineProperty;
+  const listen = EventTarget.prototype.addEventListener;
   const guarded = new WeakSet();
   const guard = (w) => {
     try {
-      if (!w || guarded.has(w)) return w;
-      guarded.add(w);
+      if (!w || apply(has, guarded, [w])) return w;
+      apply(add, guarded, [w]);
+      const refuse = () => w.Promise.reject(new w.DOMException('Not allowed here', 'NotAllowedError'));
+      const nothing = () => {};
+      const set = (target, name, value) => {
+        if (target && name in target) define(target, name, { value, writable: true, configurable: true });
+      };
       const doc = w.Document.prototype;
       const exec = doc.execCommand;
-      doc.execCommand = function (command, ...rest) {
-        return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
-          ? false
-          : exec.call(this, command, ...rest);
-      };
-      const refuse = () => w.Promise.reject(new w.DOMException('Not allowed here', 'NotAllowedError'));
+      set(doc, 'execCommand', function () {
+        const name = apply(lower, text(arguments[0]), []);
+        if (name === 'copy' || name === 'cut' || name === 'paste') return false;
+        return apply(exec, this, [name, arguments[1], arguments[2]]);
+      });
       const element = w.Element.prototype;
-      element.requestFullscreen = refuse;
-      for (const name of ['webkitRequestFullscreen', 'webkitRequestFullScreen'])
-        if (name in element) element[name] = () => {};
+      set(element, 'requestFullscreen', refuse);
+      set(element, 'webkitRequestFullscreen', nothing);
+      set(element, 'webkitRequestFullScreen', nothing);
+      set(element, 'requestPointerLock', refuse);
       const video = w.HTMLVideoElement.prototype;
-      for (const name of ['webkitEnterFullscreen', 'webkitEnterFullScreen'])
-        if (name in video) video[name] = () => {};
+      set(video, 'webkitEnterFullscreen', nothing);
+      set(video, 'webkitEnterFullScreen', nothing);
+      set(video, 'requestPictureInPicture', refuse);
+      if (w.DocumentPictureInPicture) set(w.DocumentPictureInPicture.prototype, 'requestWindow', refuse);
+      set(w, 'showOpenFilePicker', refuse);
+      set(w, 'showSaveFilePicker', refuse);
+      set(w, 'showDirectoryPicker', refuse);
+      set(w, 'print', nothing);
+      if (w.CredentialsContainer) {
+        set(w.CredentialsContainer.prototype, 'get', refuse);
+        set(w.CredentialsContainer.prototype, 'create', refuse);
+      }
+      if (w.PaymentRequest) set(w.PaymentRequest.prototype, 'show', refuse);
+      if (w.Notification) set(w.Notification, 'requestPermission', () => w.Promise.resolve('denied'));
+      const leave = w.Document.prototype.exitFullscreen;
+      const shown = own(w.Document.prototype, 'fullscreenElement').get;
+      const away = () => {
+        const doc = w.document;
+        if (apply(shown, doc, [])) apply(leave, doc, []);
+      };
+      apply(listen, w, ['fullscreenchange', away, true]);
+      apply(listen, w, ['webkitfullscreenchange', away, true]);
       const open = w.open;
-      w.open = function (...rest) { return guard(open.apply(this, rest)); };
-      for (const [type, key] of [
+      set(w, 'open', function () { return guard(apply(open, this, arguments)); });
+      const fields = [
         [w.HTMLIFrameElement, 'contentWindow'], [w.HTMLIFrameElement, 'contentDocument'],
         [w.HTMLFrameElement, 'contentWindow'], [w.HTMLFrameElement, 'contentDocument'],
         [w.HTMLObjectElement, 'contentWindow'], [w.HTMLObjectElement, 'contentDocument'],
-      ]) {
-        const field = Object.getOwnPropertyDescriptor(type.prototype, key);
-        Object.defineProperty(type.prototype, key, { ...field, get() {
-          const value = field.get.call(this);
-          guard(key === 'contentWindow' ? value : value && value.defaultView);
-          return value;
-        } });
+      ];
+      for (let index = 0; index < fields.length; index += 1) {
+        const type = fields[index][0];
+        const key = fields[index][1];
+        const field = own(type.prototype, key);
+        define(type.prototype, key, {
+          configurable: true,
+          enumerable: field.enumerable,
+          get() {
+            const value = apply(field.get, this, []);
+            guard(key === 'contentWindow' ? value : value && value.defaultView);
+            return value;
+          },
+        });
       }
       for (let index = 0; index < w.frames.length; index += 1) guard(w.frames[index]);
     } catch {}
     return w;
   };
   guard(window);
-})();";
+})();"#;
 
 /// History as the server gets it: each entry's id, address and title only (the browser also names
 /// what was typed), and an entry that is no website, or was made while the person signed in, keeps

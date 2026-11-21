@@ -25,7 +25,10 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
   const consents = new Set<string>();
   const signIn = { answer: true as unknown };
   const effects = new Map<string, { id: string; request: unknown }>();
-  const device = fakeDeviceBrowser(seededDevicePages);
+  const device = fakeDeviceBrowser({
+    ...seededDevicePages,
+    "https://other.test/": { title: "Other", nodes: [{ role: "button", name: "Elsewhere" }] },
+  });
   const requests: Array<{ method: string }> = [];
   const devices = {
     connected: vi.fn(async () => ({
@@ -69,6 +72,7 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
       findUnique: async ({ where }: { where: { idempotencyKey: string } }) =>
         effects.get(where.idempotencyKey) ?? null,
     },
+    attempt: { count: async () => 1 },
   };
   const ctx = {
     source: { userComputerOwner: "owner" in options ? options.owner : "user-1" },
@@ -79,11 +83,17 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
     runId: "run-1",
     context: { signal: new AbortController().signal },
     secrets: new Set<string>(["ada-secret"]),
-    state: {} as { pageUrl?: string },
+    state: {} as { pageUrl?: string; tainted?: boolean },
+    trust: { receivedOutsideMessage: async () => false },
     computer: { acceptsImages: true, stored: {}, graphical: false },
     tools: { disabled: new Set<string>() },
   } as unknown as RunContext;
   return { ctx, consents, effects, device, requests, devices, signIn };
+}
+
+/** What the person already allowed in thread-1: the browser, and each "verb:site" given. */
+function allow(run: ReturnType<typeof setup>, ...given: string[]) {
+  for (const entry of ["", ...given]) run.consents.add(`bot-1|device-1|thread-1|${entry}`);
 }
 
 let effectCount = 0;
@@ -152,7 +162,7 @@ describe("its approval", () => {
     );
   });
 
-  it("asks once per thread for the browser, then once per site it opens, reads or acts on", async () => {
+  it("asks once per thread for the browser, then once per site for each of open, read and act", async () => {
     const run = setup();
     const { ctx } = run;
     const first = { url: FORM };
@@ -168,12 +178,22 @@ describe("its approval", () => {
     });
     expect((await approved(run, "browser_navigate", { url: FORM })).plan).toBe("ask");
     expect(run.consents).toEqual(
-      new Set(["bot-1|device-1|thread-1|", "bot-1|device-1|thread-1|example.test"]),
+      new Set(["bot-1|device-1|thread-1|", "bot-1|device-1|thread-1|open:example.test"]),
     );
-    // The site it was allowed: looking, acting and opening it again go ahead.
-    expect(await userBrowserGate(ctx, false, "browser_snapshot", {})).toBe("allow");
-    expect(await userBrowserGate(ctx, false, "browser_act", { actions: [] })).toBe("allow");
     expect(await userBrowserGate(ctx, false, "browser_navigate", { url: FORM })).toBe("allow");
+    // Opening a site allows neither reading nor acting there: each asks on its own.
+    const look = {};
+    expect(await userBrowserGate(ctx, false, "browser_snapshot", look)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_snapshot", look, [])).toMatchObject({
+      text: "Let this bot read example.test in its browser?",
+    });
+    expect((await approved(run, "browser_snapshot", {})).plan).toBe("ask");
+    expect(await userBrowserGate(ctx, false, "browser_snapshot", {})).toBe("allow");
+    const act = { actions: [{ kind: "fill", ref: "e11", text: "ada-secret" }] };
+    expect(await userBrowserGate(ctx, false, "browser_act", act)).toBe("ask");
+    const card = buildApprovalAskBlock("e", "browser_act", act, ["ada-secret"]);
+    expect(card).toMatchObject({ text: "Let this bot act on example.test in its browser?" });
+    expect((card as { detail: string }).detail).not.toContain("ada-secret");
     // Another site asks, naming it.
     const other = { url: "https://www.other.test/?d=secret" };
     expect(await userBrowserGate(ctx, false, "browser_navigate", other)).toBe("ask");
@@ -182,35 +202,48 @@ describe("its approval", () => {
     });
     // Another thread asks again from the start.
     (ctx as { thread: { id: string } }).thread = { id: "thread-2" };
-    const look = {};
-    expect(await userBrowserGate(ctx, false, "browser_snapshot", look)).toBe("ask");
-    expect(buildApprovalAskBlock("e", "browser_snapshot", look, [])).toMatchObject({
+    const fresh = {};
+    expect(await userBrowserGate(ctx, false, "browser_snapshot", fresh)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_snapshot", fresh, [])).toMatchObject({
       text: "Let this bot use its own browser on your computer?",
     });
-    expect(buildApprovalAskBlock("e", "browser_snapshot", look, [])).not.toHaveProperty("detail");
+    expect(buildApprovalAskBlock("e", "browser_snapshot", fresh, [])).not.toHaveProperty("detail");
   });
 
-  it("names the site it reads or acts on from the browser, or this page when it cannot tell", async () => {
+  it("asks again before opening another site once the run read something from outside", async () => {
     const run = setup();
+    allow(run, "open:example.test", "open:other.test", "read:example.test");
     await approved(run, "browser_navigate", { url: FORM });
-    run.consents.delete("bot-1|device-1|thread-1|example.test");
-    const look = {};
-    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", look)).toBe("ask");
-    expect(buildApprovalAskBlock("e", "browser_snapshot", look, [])).toMatchObject({
-      text: "Let this bot read example.test in its browser?",
+    // Allowed before, and nothing from outside read yet: it goes ahead.
+    expect(
+      await userBrowserGate(run.ctx, false, "browser_navigate", { url: "https://other.test/" }),
+    ).toBe("allow");
+    run.ctx.state.tainted = true;
+    const away = { url: "https://other.test/?d=what-the-page-said" };
+    expect(await userBrowserGate(run.ctx, false, "browser_navigate", away)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_navigate", away, [])).toMatchObject({
+      text: "Let this bot open other.test in its browser?",
     });
-    const act = { actions: [{ kind: "fill", ref: "e11", text: "ada-secret" }] };
-    expect(await userBrowserGate(run.ctx, false, "browser_act", act)).toBe("ask");
-    const card = buildApprovalAskBlock("e", "browser_act", act, ["ada-secret"]);
-    expect(card).toMatchObject({ text: "Let this bot act on example.test in its browser?" });
-    expect((card as { detail: string }).detail).not.toContain("ada-secret");
+    // The site it shows stays the bot's to open again.
+    expect(await userBrowserGate(run.ctx, false, "browser_navigate", { url: FORM })).toBe("allow");
+  });
+
+  it("asks before reading a page whose site it cannot tell, but not a blank one", async () => {
+    const run = setup();
+    allow(run);
+    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", {})).toBe("allow");
     run.devices.request = async function* () {
       yield* [];
       throw new Error("the browser closed");
     } as never;
-    const unknown = { actions: [] };
-    expect(await userBrowserGate(run.ctx, false, "browser_act", unknown)).toBe("ask");
-    expect(buildApprovalAskBlock("e", "browser_act", unknown, [])).toMatchObject({
+    const unknown = {};
+    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", unknown)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_snapshot", unknown, [])).toMatchObject({
+      text: "Let this bot read this page in its browser?",
+    });
+    const act = { actions: [] };
+    expect(await userBrowserGate(run.ctx, false, "browser_act", act)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_act", act, [])).toMatchObject({
       text: "Let this bot act on this page in its browser?",
     });
   });
@@ -256,6 +289,28 @@ describe("its handler", () => {
       error: expect.stringContaining("another site"),
     });
     expect(run.consents.size).toBe(0);
+  });
+
+  it("gives no look at, and takes no action on, a site the page left for since its approval", async () => {
+    const run = setup();
+    allow(run, "open:example.test", "read:example.test", "act:example.test");
+    await approved(run, "browser_navigate", { url: FORM });
+    const look = {};
+    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", look)).toBe("allow");
+    const act = { actions: [{ kind: "click", ref: "e12" }] };
+    expect(await userBrowserGate(run.ctx, false, "browser_act", act)).toBe("allow");
+    // Another thread's run moves the bot's one page meanwhile.
+    await run.device({ method: "Page.navigate", params: { url: "https://other.test/" } });
+    const looked = call("browser_snapshot", look);
+    await pageBrowserTool(run.ctx, looked);
+    expect(looked.finish).toHaveBeenCalledWith({
+      error: "The browser shows another site than the one the user approved. Ask again.",
+    });
+    const acted = (await pageBrowserTool(run.ctx, call("browser_act", act))) as {
+      details: { ok: boolean; completed: number; error: string };
+    };
+    expect(acted.details).toMatchObject({ ok: false, completed: 0 });
+    expect(acted.details.error).toContain("another site");
   });
 
   it("runs an approved call only on the computer it asked about", async () => {
@@ -356,6 +411,7 @@ describe("its handler", () => {
 
   it("says when the computer did not finish, and stops with the run", async () => {
     const run = setup();
+    allow(run, "open:example.test", "read:example.test");
     await approved(run, "browser_navigate", { url: FORM });
     const args = {};
     await userBrowserGate(run.ctx, false, "browser_snapshot", args);
@@ -397,24 +453,28 @@ describe("the sign-in", () => {
     expect(kept.has("browser_sign_in")).toBe(true);
   });
 
-  it("asks only for the browser itself, then tells the bot only whether the user signed in", async () => {
+  it("asks once per site in a thread, then tells the bot only whether the user signed in", async () => {
     const run = setup();
     const args = { site: "www.X.com" };
     expect(await userBrowserGate(run.ctx, false, "browser_sign_in", args)).toBe("ask");
     expect(buildApprovalAskBlock("e", "browser_sign_in", args, [])).toMatchObject({
-      text: "Let this bot use its own browser on your computer and open x.com?",
+      text: "Let this bot use its own browser on your computer and have you sign in to x.com?",
     });
     const first = call("browser_sign_in", args);
     run.effects.set(first.effectKey, { id: first.effectKey, request: { ...args } });
     expect(await userBrowserSignIn(run.ctx, first)).toEqual({ site: "x.com", signedIn: true });
     expect(run.requests.at(-1)).toMatchObject({ method: "pageBrowserSignIn", site: "x.com" });
-    // With the browser allowed the person answers on their computer alone; no card here.
     const again = { site: "x.com" };
     expect(await userBrowserGate(run.ctx, false, "browser_sign_in", again)).toBe("allow");
     run.signIn.answer = false;
     expect(await userBrowserSignIn(run.ctx, call("browser_sign_in", again))).toEqual({
       site: "x.com",
       signedIn: false,
+    });
+    const elsewhere = { site: "paypa1.com" };
+    expect(await userBrowserGate(run.ctx, false, "browser_sign_in", elsewhere)).toBe("ask");
+    expect(buildApprovalAskBlock("e", "browser_sign_in", elsewhere, [])).toMatchObject({
+      text: "Let this bot have you sign in to paypa1.com in its browser?",
     });
   });
 
@@ -425,7 +485,7 @@ describe("the sign-in", () => {
     expect(unseen.finish.mock.calls[0]![0]).toMatchObject({
       error: expect.stringContaining("not part of this call's approval"),
     });
-    await approved(run, "browser_navigate", { url: FORM });
+    allow(run, "signin:");
     const nameless = { site: "not a site" };
     await userBrowserGate(run.ctx, false, "browser_sign_in", nameless);
     const refused = call("browser_sign_in", nameless);
@@ -443,7 +503,7 @@ describe("the sign-in", () => {
 
   it("says when the computer did not finish it, and stops with the run", async () => {
     const run = setup();
-    await approved(run, "browser_navigate", { url: FORM });
+    allow(run, "signin:x.com");
     const args = { site: "x.com" };
     await userBrowserGate(run.ctx, false, "browser_sign_in", args);
     run.devices.request = async function* () {

@@ -7,6 +7,7 @@ import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
 import { deviceOffers } from "./dozo-device-capabilities.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { RunContext } from "./run-context.js";
+import { isRunTainted } from "./run-context.js";
 import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import { USER_COMPUTER_SHELL_TOOL } from "./user-computer-tools.js";
 
@@ -66,7 +67,9 @@ export interface UserBrowserAsk {
   deviceId: string;
   browser: boolean;
   site: string;
-  /** The site is not allowed in this thread yet (or is unknown), so the card names it. */
+  /** What the call does there: its consent is for that alone. */
+  verb: "open" | "read" | "act" | "signin";
+  /** That is not allowed in this thread yet (or the site is unknown), so the card names it. */
   newSite: boolean;
 }
 const asks = new WeakMap<Record<string, unknown>, UserBrowserAsk>();
@@ -105,12 +108,23 @@ export async function recordConsent(
   );
 }
 
+/** What a call does on its site, as its consent and its card name it. */
+export function browserVerb(name: string): "open" | "read" | "act" | "signin" {
+  if (name === "browser_navigate") return "open";
+  if (name === "browser_snapshot") return "read";
+  if (name === BROWSER_SIGN_IN_TOOL) return "signin";
+  return "act";
+}
+
 /**
- * The approval of a page tool on the user's own browser, in every approval mode. A block or a run a
+ * The approval of a tool of the user's own browser, in every approval mode. A block or a run a
  * token's message reached refuses it. Each thread asks again: the bot's first use of the browser
- * there, and the first time it opens, reads or acts on each site, so a page that steers the bot
- * cannot send it, or what it read, to a site the person did not see named. The site comes from the
- * address it opens, or from the browser itself for what it shows (the person may have moved it).
+ * there, and the first time it opens, reads, acts on or signs in to each site, each of those on its
+ * own, so allowing a look at a site allows no action there. Once content from outside has entered
+ * the run (a page it read, a fetched text), opening another site than the one the browser shows
+ * asks every time: a page that steers the bot cannot send it, or what it read, elsewhere unseen.
+ * The site comes from the address it opens, or from the browser itself for what it shows (the
+ * person may have moved it); a page whose site cannot be told is asked about, a blank one is not.
  * The card's site is kept with the call (`APPROVED_SITE`), so a resumed call runs only on it.
  */
 export async function userBrowserGate(
@@ -124,22 +138,18 @@ export async function userBrowserGate(
   if (!route) return "ask";
   const allowed = await consents(ctx.deps.prisma, ctx.bot.id, route.deviceId, ctx.thread.id);
   const browser = !allowed.has("");
-  // Before the browser is allowed it is not started, so what it shows is a blank page. A sign-in
-  // names its site, and the person sees it named and answers on their computer.
-  const named = name === "browser_navigate" || name === BROWSER_SIGN_IN_TOOL;
+  const verb = browserVerb(name);
+  // Before the browser is allowed it is not started, so what it shows is a blank page.
+  const shown = browser ? "about:blank" : await currentUrl(ctx, route);
+  const named = verb === "open" || verb === "signin";
   const site = named
-    ? pageSite(
-        name === "browser_navigate"
-          ? String(args.url ?? "")
-          : `https://${String(args.site ?? "")}/`,
-      )
-    : browser
-      ? ""
-      : pageSite(await currentUrl(ctx, route));
-  // A blank page has nothing to read; an action on an unknown page always asks.
-  const newSite =
-    name === BROWSER_SIGN_IN_TOOL ? false : site ? !allowed.has(site) : name !== "browser_snapshot";
-  const ask: UserBrowserAsk = { deviceId: route.deviceId, browser, site, newSite };
+    ? pageSite(verb === "open" ? String(args.url ?? "") : `https://${String(args.site ?? "")}/`)
+    : pageSite(shown);
+  const blank = shown === "about:blank";
+  let newSite = site ? !allowed.has(`${verb}:${site}`) : !(verb === "read" && blank);
+  if (verb === "open" && !newSite && site !== pageSite(shown) && (await isRunTainted(ctx)))
+    newSite = true;
+  const ask: UserBrowserAsk = { deviceId: route.deviceId, browser, site, verb, newSite };
   asks.set(args, ask);
   args[APPROVED_SITE] = site;
   return browser || newSite ? "ask" : "allow";
