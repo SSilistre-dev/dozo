@@ -121,6 +121,7 @@ vi.mock("@rakazo/ui-web", () => {
     ),
     DropdownMenuSeparator: () => <hr />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
+    Spinner: () => <span>loading</span>,
   };
 });
 
