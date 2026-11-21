@@ -62,3 +62,17 @@ export function dozoMainChatOnly(
 ): void {
   if (isDozoExtraChat(target)) throw new DozoExtraChatUnsupportedError(what);
 }
+
+/**
+ * For a route that takes a chat target but reads its bot or group itself (an attachment, a
+ * section): a bot's extra chat is not a target there. Without this, the bot and group would both
+ * be unset and the route would act on the Space's first one.
+ */
+export function dozoBotOrGroupOnly(input: { chatBotId?: string; chatId?: string }): void {
+  if (input.chatBotId || input.chatId)
+    throw new ClientError(
+      "BAD_REQUEST",
+      "Name the bot or the group here, not one of a bot's chats.",
+      "dozo_extra_chat_not_a_target",
+    );
+}

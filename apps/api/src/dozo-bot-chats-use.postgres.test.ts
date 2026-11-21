@@ -568,4 +568,52 @@ describePostgres("using a bot's extra chat (PostgreSQL)", () => {
       await system.$queryRaw<unknown[]>`SELECT 1 FROM dozo_bot_chats WHERE "botId" = ${botId}`,
     ).toEqual([]);
   });
+
+  it("refuses an extra chat as the target of an attachment or a section, writing none", async () => {
+    const { actor, botId, chatId } = await setup();
+    const target = { chatBotId: botId, chatId };
+    const created = await call(actor, "artifacts/create", {
+      ...target,
+      name: "notes.txt",
+      mimeType: "text/plain",
+      contentBase64: Buffer.from("hi").toString("base64"),
+    });
+    expect(created.status).toBe(400);
+    expect(created.json).toMatchObject({ code: "dozo_extra_chat_not_a_target" });
+    expect((await call(actor, "artifacts/get", { ...target, artifactId: "a-1" })).status).toBe(400);
+    const section = await call(actor, "botSections/create", { ...target, name: "Garden" });
+    expect(section.status).toBe(400);
+    expect(await system.artifact.count({ where: { spaceId: actor.spaceId } })).toBe(0);
+    expect(await system.botSection.count({ where: { spaceId: actor.spaceId } })).toBe(0);
+  });
+
+  it("stops a turn working in an extra chat when it is archived, and still lets it be stopped", async () => {
+    const { actor, botId, chatId } = await setup();
+    expect((await send(actor, { chatBotId: botId, chatId }, "Plan the beds")).status).toBe(200);
+    const run = await system.run.findFirstOrThrow({ where: { threadId: chatId } });
+    expect(["queued", "running"]).toContain(run.status);
+    expect((await call(actor, "dozoChats/archive", { chatId, archived: true })).status).toBe(200);
+    expect((await system.run.findUniqueOrThrow({ where: { id: run.id } })).status).toBe(
+      "cancelled",
+    );
+    expect((await call(actor, "threads/stop", { chatBotId: botId, chatId })).status).toBe(200);
+  });
+
+  it("leaves an archived extra chat out of the bot's search across its chats, as search does", async () => {
+    const { actor, botId, mainId, chatId } = await setup();
+    await botSays(chatId, botId, actor.spaceId, "Thyme by the door.");
+    await botSays(mainId, botId, actor.spaceId, "Thyme in the main chat.");
+    await call(actor, "dozoChats/archive", { chatId, archived: true });
+    const found = JSON.stringify(
+      await runAsTenant(actor, () =>
+        searchHistory(
+          prisma,
+          { spaceId: actor.spaceId, threadId: mainId, botId, allowMyChats: true },
+          { query: "thyme", scope: "my_chats" } as never,
+        ),
+      ),
+    );
+    expect(found).toContain("main chat");
+    expect(found).not.toContain("by the door");
+  });
 });

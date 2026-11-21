@@ -84,7 +84,8 @@ export function dozoChatInput<T extends object>(target: T): T {
 /**
  * The chat requests that act on the chat on screen. A request naming the open chat's bot by
  * `botId` is about the open chat and goes as its `chatBotId` and `chatId`; one naming a chat or a
- * group is left as it is. Reads and Mark as
+ * group is left as it is. Clear is not one of them: it is asked from the bot's row or panel, about
+ * the bot's main chat (an extra chat is archived, not cleared). Reads and Mark as
  * Unread from the roster go elsewhere (`use-chat-read` rules, the roster's own client), so a menu
  * on the bot's row still acts on its main chat.
  */
@@ -100,7 +101,6 @@ const OPEN_CHAT_REQUESTS: ReadonlySet<string> = new Set([
   "stopHelper",
   "followUp",
   "answer",
-  "clear",
 ]);
 
 export function dozoChatRpc<T extends object>(client: T): T {

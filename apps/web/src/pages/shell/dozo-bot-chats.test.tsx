@@ -244,8 +244,12 @@ describe("the open chat", () => {
     await render(null, "/app/bot-1?chat=chat-1");
     const send = vi.fn((input: unknown) => input);
     const markUnread = vi.fn((input: unknown) => input);
+    const clear = vi.fn((input: unknown) => input);
     const list = vi.fn();
-    const scoped = dozoChatRpc({ threads: { send, markUnread, label: "x" }, dozoChats: { list } });
+    const scoped = dozoChatRpc({
+      threads: { send, markUnread, clear, label: "x" },
+      dozoChats: { list },
+    });
     // The open chat goes as chatBotId and chatId, never as botId: an API that does not know
     // extra chats refuses it instead of writing to the main chat.
     expect(scoped.threads.send({ botId: "bot-1", text: "hi" } as never)).toEqual({
@@ -262,6 +266,8 @@ describe("the open chat", () => {
     expect(scoped.threads.send(undefined as never)).toBeUndefined();
     // A roster read or Mark as Unread is about the row it was asked from.
     expect(scoped.threads.markUnread({ botId: "bot-1" } as never)).toEqual({ botId: "bot-1" });
+    // Clear from the bot's row or panel clears its main chat, even with an extra chat open.
+    expect(scoped.threads.clear({ botId: "bot-1" } as never)).toEqual({ botId: "bot-1" });
     expect(scoped.threads.label).toBe("x");
     expect(scoped.dozoChats.list).toBe(list);
     await render(null, "/app/bot-1");

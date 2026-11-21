@@ -18,6 +18,7 @@ import { IsolationError } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
+import { stopThreadRuns } from "./thread-stop.js";
 import { resolveThreadTarget } from "./thread-target.js";
 
 type Db = Pick<PrismaClient, "$queryRaw">;
@@ -164,7 +165,7 @@ export async function archiveChat(
  * chat takes no new messages either. Inputs are the contract's, already checked. Reading and
  * writing an extra chat go through the chat routes, which take its id as `chatId`.
  */
-export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events">) {
+export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events" | "sandbox">) {
   const { prisma } = deps;
   const changed = (actor: Actor) =>
     bestEffort(
@@ -195,6 +196,15 @@ export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events">) {
     },
     async archive(actor: Actor, input: DozoBotChatArchiveInput) {
       await ofBot(actor, input.chatId);
+      if (input.archived) {
+        // Nothing new is written to an archived chat, so a turn working in it stops first.
+        const row = await chatRow(prisma, actor, input.chatId);
+        const target = await resolveThreadTarget(prisma, actor, {
+          chatBotId: row.botId,
+          chatId: input.chatId,
+        });
+        await stopThreadRuns(deps, actor, target);
+      }
       const chat = await prisma.$transaction((tx) => archiveChat(tx, actor, input));
       await changed(actor);
       return { chat };

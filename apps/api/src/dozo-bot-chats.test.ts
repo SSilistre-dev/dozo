@@ -20,8 +20,9 @@ import {
 } from "./dozo-bot-chats.js";
 import type { RouterContext } from "./routes/context.js";
 
-const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn() }));
+const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn(), stopThreadRuns: vi.fn() }));
 vi.mock("./thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
+vi.mock("./thread-stop.js", () => ({ stopThreadRuns: mocks.stopThreadRuns }));
 
 const actor = { userId: "user-me", spaceId: "space-1", email: "me@example.test" } as Actor;
 const createdAt = new Date("2026-11-21T10:00:00.000Z");
@@ -241,6 +242,20 @@ describe("dozoBotChats", () => {
     expect(mocks.resolveThreadTarget).toHaveBeenLastCalledWith(expect.anything(), actor, {
       botId: "bot-1",
     });
+  });
+
+  it("stops the chat's working turn before archiving it, and nothing when bringing it back", async () => {
+    mocks.stopThreadRuns.mockReset().mockResolvedValue(undefined);
+    const { chats } = service(fakeDb({ row: chat() }).db);
+    await chats.archive(actor, { chatId: "thread-2", archived: true });
+    expect(mocks.resolveThreadTarget).toHaveBeenLastCalledWith(expect.anything(), actor, {
+      chatBotId: "bot-1",
+      chatId: "thread-2",
+    });
+    expect(mocks.stopThreadRuns).toHaveBeenCalledTimes(1);
+    const back = service(fakeDb({ row: chat({ archivedAt: createdAt }) }).db);
+    await back.chats.archive(actor, { chatId: "thread-2", archived: false });
+    expect(mocks.stopThreadRuns).toHaveBeenCalledTimes(1);
   });
 
   it("lists every chat of the Space without checking one bot", async () => {

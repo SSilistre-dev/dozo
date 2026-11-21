@@ -3,6 +3,7 @@ import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   DozoExtraChatUnsupportedError,
+  dozoBotOrGroupOnly,
   dozoChatThreadId,
   dozoMainChatOnly,
   dozoRefuseChatOnGroup,
@@ -76,5 +77,20 @@ describe("what only a bot's main chat does", () => {
       });
     }
     expect(() => dozoMainChatOnly({ kind: "bot", threadId: "main", bot }, "x")).not.toThrow();
+  });
+});
+
+describe("a route that reads its bot or group itself", () => {
+  it("refuses a bot's extra chat, and takes a bot or a group", () => {
+    for (const input of [
+      { chatBotId: "bot-1", chatId: "c" },
+      { chatId: "c" },
+      { chatBotId: "b" },
+    ]) {
+      expect(() => dozoBotOrGroupOnly(input)).toThrow(
+        expect.objectContaining({ kind: "BAD_REQUEST", code: "dozo_extra_chat_not_a_target" }),
+      );
+    }
+    expect(() => dozoBotOrGroupOnly({})).not.toThrow();
   });
 });
