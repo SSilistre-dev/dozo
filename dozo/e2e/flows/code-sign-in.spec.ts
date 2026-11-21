@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { codeIn, mailsTo } from "../support";
 import { uniqueEmail } from "./accounts";
 import { expect, SIGNED_OUT, test } from "./flow";
 
@@ -18,18 +18,6 @@ import { expect, SIGNED_OUT, test } from "./flow";
  */
 test.use({ storageState: SIGNED_OUT });
 
-type Mail = { to?: string | string[]; subject?: string; text?: string; html?: string };
-
-async function mailsTo(page: Page, address: string): Promise<Mail[]> {
-  const response = await page.request.get("/api/dev/emails");
-  if (!response.ok()) return [];
-  const all = (await response.json()) as Mail[];
-  return all.filter((mail) => [mail.to].flat().includes(address));
-}
-
-const codeIn = (mail: Mail | undefined) =>
-  /\b(\d{6})\b/.exec(`${mail?.text ?? ""} ${mail?.html ?? ""}`)?.[1];
-
 test("an emailed code signs in; a wrong one is said in one line", async ({ page, guard }) => {
   const capabilities = await (await page.request.get("/api/auth/capabilities")).json();
   test.skip(
@@ -38,7 +26,7 @@ test("an emailed code signs in; a wrong one is said in one line", async ({ page,
   );
   guard.allow(/400 POST [^ ]*\/api\/auth\/sign-in\/email-otp/, "the wrong code is the point");
   const user = { email: uniqueEmail("code") };
-  const before = (await mailsTo(page, user.email)).length;
+  const before = (await mailsTo(page.request, user.email)).length;
 
   await page.goto("/sign-in");
   await expect(page.getByRole("button", { name: "Use a password instead" })).toBeVisible();
@@ -50,11 +38,14 @@ test("an emailed code signs in; a wrong one is said in one line", async ({ page,
 
   let code: string | undefined;
   await expect
-    .poll(async () => {
-      const mails = await mailsTo(page, user.email);
-      code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
-      return code;
-    })
+    .poll(
+      async () => {
+        const mails = await mailsTo(page.request, user.email);
+        code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
+        return code;
+      },
+      { timeout: 60_000 },
+    )
     .toMatch(/^\d{6}$/);
 
   const box = page.getByLabel("Code", { exact: true });

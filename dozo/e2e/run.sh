@@ -134,8 +134,9 @@ else
   say "the api has no RAKAZO_ADMIN_EMAILS: the admin scenarios will fail; run make up again (build.sh adds one)"
 fi
 
-# Verification links for flows/verify.spec.ts. The stack sends no mail, so the account is signed up
-# here through the auth API and the links its mail would carry are made as the server makes them:
+# Verification links for flows/verify.spec.ts. The account is signed up here through the auth API
+# (HTTP 200 either way: with a session on a stack without mail, `token: null` on one with the email
+# emulator) and the links its mail would carry are made as the server makes them:
 # the link's token (HS256 over the address, with its expiry) and the result page's mark (an HMAC
 # over the account id, packages/auth/src/dozo-email-link.ts), signed inside the api container with
 # the api's own secret, which is never printed or written. One valid and one expired link, for an

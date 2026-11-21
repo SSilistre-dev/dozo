@@ -3,7 +3,8 @@ import type { DeviceBrowserEvent, DeviceBrowserSend } from "./dozo-device-browse
 /** A page as the browser's accessibility tree has it: names already computed, as Chrome does. */
 export interface DevicePage {
   title: string;
-  nodes: Array<{ role: string; name: string; value?: string; checked?: boolean }>;
+  /** `opens`: a click on it goes to that page. */
+  nodes: Array<{ role: string; name: string; value?: string; checked?: boolean; opens?: string }>;
   /** A dialog the page opens once loaded. */
   dialog?: { type: "alert" | "confirm"; message: string };
 }
@@ -90,8 +91,14 @@ export function fakeDeviceBrowser(pages: Record<string, DevicePage>) {
       case "Input.dispatchMouseEvent": {
         if (params.type !== "mousePressed") return {};
         const id = FIRST_NODE + Math.floor(Number(params.y) / ROW);
+        const opens = node(id)?.opens;
         focused = node(id) ? id : undefined;
         selected = Number(params.clickCount) >= 3;
+        if (opens) {
+          url = opens;
+          values.clear();
+          events.push({ method: "Page.loadEventFired", params: {} });
+        }
         return {};
       }
       case "Input.insertText":

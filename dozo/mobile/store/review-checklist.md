@@ -11,7 +11,7 @@ OK in the app. Settings, profile screen, "Delete account" (`apps/mobile/app/(set
 fresh sign-in with the single-sign-on provider, or an emailed code, then calls the server's
 `/api/auth/delete-user` (`apps/mobile/lib/api-auth.ts`, `deleteAccount`) and returns to sign-in.
 The paywall screen offers the same action. Play also wants a web page for deletion requests, named
-in the Data safety form: TODO owner (a page on `dozo.bot`; none exists in `dozo/landing/` today).
+in the Data safety form: OK, `https://dozo.bot/delete-account/` (`dozo/landing/delete-account/`, also in Turkish); TODO owner: enter it in the form.
 TODO owner: what deletion removes on the server and what is kept (billing records), for the
 privacy page and `privacy.md`.
 
@@ -29,9 +29,9 @@ payment page:
   "ask the owner to upgrade" and without "change the plan" (alerts, the chat's failed run, the
   computer screen, the Own computer switch); deleting files stays the way out of a full space;
 - a plan bought on the web still works in the app; the app only stops offering one.
-- still shown, and selling nothing: Wallet (connects a payment wallet of the user's own that their
-  bots spend from, with approval) and Spending limit (a cap on model spend). Say so in the review notes:
-  neither buys anything from Dozo.
+- no Wallet row either: connecting the wallet bots spend from opens the payment provider's page
+  outside the app, which a reviewer may read as an external payment path. Spending limit stays: it
+  only caps the user's own model spend and buys nothing.
 
 Decision: client-side, not by the server hiding `billing` per client: the server cannot tell a
 store binary from a sideloaded or self-built one, and the store rule is about the binary.

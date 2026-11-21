@@ -204,10 +204,10 @@ made from the server bundle, with a real browser (`dozo/e2e/hosted-login`).
    then `dozo/deploy/deploy.sh` (or redeploy from the panel: only the environment changed).
 3. Check from outside, through the CDN:
    - `curl -s https://dozo.example/api/auth/dozo/hosted-login/keys` lists one key
-     (`"kty":"OKP","crv":"Ed25519"`), and `curl -sI` of it shows
-     `cache-control: public, max-age=60`. A CDN in front must pass this path through (no challenge
-     page, no rewrite): every computer reads the keys from it. It may cache the answer for its 60
-     seconds.
+     (`"kty":"OKP","crv":"Ed25519"`). It answers GET only (a HEAD, so `curl -I`, gets 404), with
+     `cache-control: no-store`, as every `/api/auth` reply has (`apps/api/src/app.ts`): no CDN
+     keeps a copy, and each computer keeps the keys in memory. A CDN in front must pass this path
+     through (no challenge page, no rewrite): every computer reads the keys from it.
    - `curl -s -o /dev/null -w '%{http_code}' -X POST -H 'origin: https://dozo.example'
      -H 'content-type: application/json' -d '{}' https://dozo.example/api/auth/dozo/hosted-login/issue`
      answers `401` (no session); `404` means the key did not reach the api.
@@ -224,7 +224,7 @@ made from the server bundle, with a real browser (`dozo/e2e/hosted-login`).
 Changing the key, with no sign-in failing:
 
 1. Make a new key as above. Set it as `HOSTED_LOGIN_OVERLAP_KEY` (published, not used to sign)
-   and deploy. Wait at least two minutes, for the CDN's copy of the keys (60 s) to expire.
+   and deploy. Nothing caches the keys, so the next step can follow once `/keys` lists both.
 2. Swap: the new key in `HOSTED_LOGIN_SIGNING_KEY`, the old one in `HOSTED_LOGIN_OVERLAP_KEY`.
    Deploy. Tokens signed by the old key in the last minute still check out, and a computer reads
    the keys again the first time a token names one it does not know.

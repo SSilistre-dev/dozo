@@ -13,11 +13,12 @@ import {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
-  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
-const store = (value: unknown) =>
-  window.sessionStorage.setItem("dozo:plan-intent", JSON.stringify(value));
+/** A value as the store holds it, kept for the next half hour unless `expiresAt` says otherwise. */
+const store = (value: unknown, expiresAt = Date.now() + PLAN_INTENT_TTL_MS / 2) =>
+  window.localStorage.setItem("dozo:plan-intent", JSON.stringify({ value, expiresAt }));
 
 it.each([
   ["premium", "month", { tier: "pro", period: "month" }],
@@ -46,7 +47,7 @@ it.each([
   expect(planIntentFromParams(plan, "year")).toBeNull();
 });
 
-it("keeps a pick for the tab until it is cleared", () => {
+it("keeps a pick for this browser until it is cleared", () => {
   expect(readPlanIntent()).toBeNull();
   savePlanIntent({ tier: "max", period: "year" });
   expect(readPlanIntent()).toEqual({ tier: "max", period: "year" });
@@ -65,6 +66,21 @@ it("gives an unclaimed pick to the first account and hides it from every other",
   expect(readPlanIntent()).toBeNull();
 });
 
+it("keeps a pick for another tab of the same browser", () => {
+  savePlanIntent({ tier: "max", period: "year" });
+  // A new tab starts with its own empty session storage; the pick is not kept there.
+  window.sessionStorage.clear();
+  expect(bindPlanIntent("user-a")).toEqual({ tier: "max", period: "year" });
+});
+
+it("removes a pick older than an hour when it is read", () => {
+  vi.useFakeTimers({ now: 1_000_000 });
+  savePlanIntent({ tier: "pro", period: "month" });
+  vi.setSystemTime(1_000_000 + PLAN_INTENT_TTL_MS + 1);
+  expect(readPlanIntent()).toBeNull();
+  expect(window.localStorage.getItem("dozo:plan-intent")).toBeNull();
+});
+
 it("forgets a pick after an hour", () => {
   vi.useFakeTimers({ now: 1_000_000 });
   savePlanIntent({ tier: "pro", period: "year" });
@@ -73,12 +89,21 @@ it("forgets a pick after an hour", () => {
   vi.setSystemTime(1_000_000 + PLAN_INTENT_TTL_MS + 1);
   expect(readPlanIntent()).toBeNull();
   expect(bindPlanIntent("user-a")).toBeNull();
-  expect(window.sessionStorage.getItem("dozo:plan-intent")).toBeNull();
+  expect(window.localStorage.getItem("dozo:plan-intent")).toBeNull();
 });
 
-it("counts a pick from the future as none", () => {
-  store({ tier: "pro", period: "month", savedAt: Date.now() + 60_000 });
+it("counts a pick kept for longer than an hour from now as none", () => {
+  store({ tier: "pro", period: "month" }, Date.now() + PLAN_INTENT_TTL_MS + 60_000);
   expect(readPlanIntent()).toBeNull();
+});
+
+it("does not keep a pick longer once an account claims it", () => {
+  vi.useFakeTimers({ now: 1_000_000 });
+  savePlanIntent({ tier: "pro", period: "month" });
+  vi.setSystemTime(1_000_000 + PLAN_INTENT_TTL_MS / 2);
+  expect(bindPlanIntent("user-a")).toEqual({ tier: "pro", period: "month" });
+  vi.setSystemTime(1_000_000 + PLAN_INTENT_TTL_MS + 1);
+  expect(readPlanIntent("user-a")).toBeNull();
 });
 
 it.each([
@@ -87,20 +112,28 @@ it.each([
   "7",
   '"pro"',
   "{}",
-  '{"tier":"standard","period":"month","savedAt":1}',
-  '{"tier":"pro","period":"week","savedAt":1}',
-  '{"tier":"pro","savedAt":1}',
-  '{"tier":"premium","period":"month","savedAt":1}',
-  '{"tier":"pro","period":"month"}',
-  '{"tier":"pro","period":"month","savedAt":"now"}',
-])("reads %j written by anything else in the tab as no pick", (raw) => {
-  window.sessionStorage.setItem("dozo:plan-intent", raw);
+  '{"value":{"tier":"pro","period":"month"}}',
+  '{"value":{"tier":"pro","period":"month"},"expiresAt":"soon"}',
+  '{"tier":"pro","period":"month","savedAt":1}',
+])("reads %j written by anything else on the site as no pick, and removes it", (raw) => {
+  window.localStorage.setItem("dozo:plan-intent", raw);
   expect(readPlanIntent()).toBeNull();
+  expect(window.localStorage.getItem("dozo:plan-intent")).toBeNull();
 });
 
-it("reads a pick claimed by something that is not an account as none", () => {
-  store({ tier: "pro", period: "month", savedAt: Date.now(), userId: 7 });
+it.each([
+  null,
+  "pro",
+  {},
+  { tier: "standard", period: "month" },
+  { tier: "pro", period: "week" },
+  { tier: "pro" },
+  { tier: "premium", period: "month" },
+  { tier: "pro", period: "month", userId: 7 },
+])("reads a kept %j as no pick, and removes it", (value) => {
+  store(value);
   expect(readPlanIntent()).toBeNull();
+  expect(window.localStorage.getItem("dozo:plan-intent")).toBeNull();
 });
 
 it("has no pick where storage is refused, and saves none where it is full", () => {
@@ -113,7 +146,7 @@ it("has no pick where storage is refused, and saves none where it is full", () =
     throw new DOMException("denied", "SecurityError");
   });
   expect(() => clearPlanIntent()).not.toThrow();
-  vi.spyOn(window, "sessionStorage", "get").mockImplementation(() => {
+  vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
     throw new DOMException("denied", "SecurityError");
   });
   expect(readPlanIntent()).toBeNull();

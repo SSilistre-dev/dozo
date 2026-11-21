@@ -38,7 +38,7 @@ import { HostedSignIn } from "./dozo-hosted-login";
  * form its endpoints may no longer answer; and sign-in waits for the answer instead of flashing one.
  *
  * The landing page's links may also name a paid plan (`plan` and `period`). A valid one is kept
- * for this tab (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
+ * for an hour in this browser (`dozo-plan-intent`), anything else is ignored, and both parameters leave the address
  * the same way. The tab's title names the page, so it reads as sign-in or sign-up, not only the app.
  *
  * Where the server signs in with an emailed code, sign-in starts with the address alone and then

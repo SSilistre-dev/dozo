@@ -1,4 +1,5 @@
 import { bestEffort } from "@rakazo/logging";
+import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import { noComputerFilesInstruction } from "./dozo-no-computer.prompt.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { modelCreditBillingEnabled } from "./run-model.js";
@@ -87,12 +88,18 @@ function checkpointUsedComputer(
   );
 }
 
-/** The run's turned-off built-ins, with the computer's when it has none. */
+/**
+ * The run's turned-off built-ins, with the computer's when it has none. The sign-in in the bot's
+ * browser on the user's computer is off too: only a run offered that browser turns it on
+ * (`offerUserBrowser`).
+ */
 export function withoutCloudComputerTools(
   disabled: Set<string>,
   withheld: NoComputerReason | false | undefined,
 ): Set<string> {
-  return withheld ? new Set([...disabled, ...CLOUD_COMPUTER_TOOL_NAMES]) : disabled;
+  const off = withheld ? new Set([...disabled, ...CLOUD_COMPUTER_TOOL_NAMES]) : disabled;
+  off.add(BROWSER_SIGN_IN_TOOL);
+  return off;
 }
 
 /**

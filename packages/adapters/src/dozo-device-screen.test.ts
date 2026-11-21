@@ -4,7 +4,11 @@ import {
   COMPUTER_NO_SCREEN_RESULT,
   screenFailureMessage,
 } from "./dozo-device-screen.js";
-import { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from "./dozo-device-screen.prompt.js";
+import {
+  COMPUTER_WITH_BROWSER_INSTRUCTION,
+  COMPUTER_WITHOUT_SCREEN_INSTRUCTION,
+  connectedComputerInstruction,
+} from "./dozo-device-screen.prompt.js";
 import { userTurnInstructions } from "./run-instructions.prompt.js";
 
 function instructions(userComputer?: "connected" | "offline") {
@@ -47,5 +51,15 @@ describe("a refused screen request", () => {
     expect(screenFailureMessage("Device disconnected")).toBe(
       "The user's computer did not finish: Device disconnected",
     );
+  });
+});
+
+describe("a computer with the bot's own browser", () => {
+  it("is described as such only when the run is offered that browser (and its sign-in)", () => {
+    expect(connectedComputerInstruction(new Set())).toBe(COMPUTER_WITH_BROWSER_INSTRUCTION);
+    expect(connectedComputerInstruction(new Set(["browser_sign_in"]))).toBe(
+      COMPUTER_WITHOUT_SCREEN_INSTRUCTION,
+    );
+    expect(connectedComputerInstruction(undefined)).toBe(COMPUTER_WITHOUT_SCREEN_INSTRUCTION);
   });
 });

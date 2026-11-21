@@ -1,34 +1,48 @@
-import { rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { outDir } from "../scan";
-import type { Probe } from "./live";
+import type { TrialAccount } from "./account-file";
+import { loadAccount, missingReason } from "./account-file";
 import {
-  deleteProbe,
   expect,
   firstContent,
   measure,
-  newProbe,
   note,
   openAndSee,
+  openPasswordForm,
   placeholderLinks,
-  readProbe,
   STATE_FILE,
-  saveProbe,
   test,
 } from "./live";
 
 /**
- * The live run's own account, in file order (one worker): sign up, walk read-only screens of that
- * account, delete it. A failed step does not skip the others. Whatever fails, the run's global
- * teardown (canli/cleanup.ts) deletes the account if it is still there: the finally step.
+ * The live run's standing trial account, in file order (one worker). The server asks for the
+ * mailbox before a password sign-in and a run cannot read a mailbox on the live site, so the run
+ * does not open an account: its owner opens one trial account once, verifies it, and keeps its
+ * address and password in a file outside the repository (canli/account-file.ts, `canli.sh`). With
+ * no file every scenario here skips, saying where the file goes; a broken file fails them.
+ *
+ * The run no longer deletes an account or tries to: the trial account is permanent. No scenario
+ * changes its data (no name, password, setting or plan), and signing in again each run only ends in
+ * a session the run's own teardown forgets (canli/cleanup.ts).
  */
 
-const SIGN_UP = "kayıt → model adımı → 'Daha sonra' → uygulama";
+const SIGN_IN = "giriş → (ilk koşuda anket ve model adımları) → uygulama";
+const SIGN_UP_ASKS = "kayıt e-posta doğrulaması ister (hesap açmaz, posta yollamaz)";
 
-// Every later step needs the account: without it they report the one root cause, not their own.
+function trialAccount(): TrialAccount | null {
+  const state = loadAccount(process.env);
+  return state.kind === "ok" ? state.account : null;
+}
+
+// Every step needs the file; the steps after the sign-in need its session too, so a failed sign-in
+// reports its own cause once and the rest say they were not reached.
 // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a hook's first parameter as an object pattern
 test.beforeEach(({}, info) => {
-  if (info.title !== SIGN_UP && !readProbe()) test.skip(true, "atlandı: hesap açılamadı");
+  const state = loadAccount(process.env);
+  if (state.kind === "none") test.skip(true, missingReason(state.hostPath));
+  if (info.title !== SIGN_IN && info.title !== SIGN_UP_ASKS && !existsSync(STATE_FILE()))
+    test.skip(true, "atlandı: giriş yapılamadı");
 });
 
 /** The page's language is Turkish from the first screen: the run reads Turkish copy. */
@@ -39,60 +53,77 @@ async function openApp(page: Page, path = "/app") {
   if (path !== "/app") await page.goto(path);
 }
 
-test(SIGN_UP, async ({ page, guard }) => {
+test(SIGN_UP_ASKS, async ({ browser }) => {
+  const account = trialAccount() as TrialAccount;
+  // A signed-out browser of its own. The trial account's own address with a password nobody
+  // chose: a server that asks for the mailbox answers any address alike (200, no session, and no
+  // mail to an address that already has an account); one that does not yet says it is taken (422).
+  // Its 422 is the answer under test, so this browser is not watched.
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  try {
+    const page = await context.newPage();
+    await page.goto("/sign-up?lang=tr");
+    const choice = page.getByRole("button", { name: "E-posta ile devam et" });
+    if (await choice.isVisible()) await choice.click();
+    const secret = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2)).join("");
+    await page.getByPlaceholder("Adınız").fill("Dozo Probe");
+    await page.getByPlaceholder("E-posta adresiniz").fill(account.email);
+    await page.getByPlaceholder("Parola").fill(`Pp-${secret}`);
+    const signUp = page.waitForResponse((r) => r.url().includes("/api/auth/sign-up/email"));
+    await page.getByRole("button", { name: "Hesap oluştur" }).click();
+    const answer = await signUp;
+    if (answer.status() === 422) {
+      await expect(page.getByText("Bu e-postayla bir hesap zaten var")).toBeVisible();
+      note("sunucu henüz eski davranışta (422: bu e-postayla bir hesap zaten var)");
+    } else {
+      expect(answer.status(), "sign-up answer").toBe(200);
+      expect(((await answer.json()) as { token?: unknown }).token, "no session token").toBeNull();
+      await expect(page.getByRole("heading", { name: "E-postanızı kontrol edin" })).toBeVisible();
+      const session = await (await context.request.get("/api/auth/get-session")).text();
+      expect(session.trim(), "the sign-up opened no session").toMatch(/^(null)?$/);
+      note("sunucu kayıtta doğrulama istiyor (200, oturum yok, E-postanızı kontrol edin)");
+    }
+    await page.screenshot({ path: `${outDir()}/shots/canli--kayit-dogrulama-ister.png` });
+  } finally {
+    await context.close();
+  }
+});
+
+test(SIGN_IN, async ({ page, guard }) => {
   guard.allow(
     /404 POST [^ ]*\/rpc\/billing\/status/,
     "a server without billing answers 404 (local runs)",
   );
-  const probe = newProbe();
-  await page.goto("/sign-up?lang=tr");
-  await expect(page.getByRole("heading", { name: "Hesabınızı oluşturun" })).toBeVisible();
-  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
-  if (await choice.isVisible()) await choice.click();
-  await page.getByPlaceholder("Adınız").fill("Dozo Probe");
-  await page.getByPlaceholder("E-posta adresiniz").fill(probe.email);
-  await page.getByPlaceholder("Parola").fill(probe.password);
-  const signUp = page.waitForResponse((r) => r.url().includes("/api/auth/sign-up/email"));
-  await page.getByRole("button", { name: "Hesap oluştur" }).click();
-  const answer = await signUp;
-  expect(answer.status(), "sign-up answer").toBe(200);
-  // From here on the account exists: the global teardown deletes it whatever happens next.
-  saveProbe(probe);
-  await page.waitForURL(/\/onboarding/, { timeout: 45_000 });
-  // A server that asks the survey first (the live one does): answer the one required question.
+  const account = trialAccount() as TrialAccount;
+  await page.goto("/sign-in?lang=tr");
+  await openPasswordForm(page);
+  await page.getByPlaceholder("E-posta adresiniz").fill(account.email);
+  await page.getByPlaceholder("Parola").fill(account.password);
+  const signIn = page.waitForResponse((r) => r.url().includes("/api/auth/sign-in/email"));
+  await page.getByRole("button", { name: "Oturum aç", exact: true }).click();
+  expect((await signIn).status(), "trial account sign-in (is its address verified?)").toBe(200);
+  // The first run of a new trial account meets onboarding (the app sends it there after landing on
+  // /app); later runs go straight to the app. Wait for what the page shows, not for the address.
+  // The live server may ask the survey first: answer the one required question.
   const model = page.getByRole("heading", { name: "Model bağla" });
   const survey = page.getByRole("heading", { name: "Dozo'ya hoş geldiniz" });
-  await expect(model.or(survey)).toBeVisible();
-  if (await survey.isVisible()) {
-    await page
-      .getByRole("radio", { name: "Kişisel" })
-      .or(page.getByText("Kişisel", { exact: true }))
-      .first()
-      .click();
-    await page.getByRole("button", { name: "Devam", exact: true }).click();
+  const app = page.getByRole("button", { name: "Uygulamaları bağla" });
+  await expect(model.or(survey).or(app).first()).toBeVisible({ timeout: 45_000 });
+  if (!(await app.isVisible())) {
+    if (await survey.isVisible()) {
+      await page
+        .getByRole("radio", { name: "Kişisel" })
+        .or(page.getByText("Kişisel", { exact: true }))
+        .first()
+        .click();
+      await page.getByRole("button", { name: "Devam", exact: true }).click();
+    }
+    await expect(model).toBeVisible();
+    await page.getByRole("button", { name: "Daha sonra" }).click();
   }
-  await expect(model).toBeVisible();
-  await page.getByRole("button", { name: "Daha sonra" }).click();
   await page.waitForURL(/\/app\/[^/?]+/, { timeout: 45_000 });
   await expect(page.getByRole("button", { name: "Uygulamaları bağla" })).toBeVisible();
   await page.context().storageState({ path: STATE_FILE() });
-});
-
-test("aynı e-postayla ikinci kayıt Türkçe hata verir", async ({ browser }) => {
-  const probe = readProbe() as Probe;
-  // A signed-out browser of its own; its 422 is the answer under test, so it is not watched.
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-  const page = await context.newPage();
-  await page.goto("/sign-up?lang=tr");
-  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
-  if (await choice.isVisible()) await choice.click();
-  await page.getByPlaceholder("Adınız").fill("Dozo Probe");
-  await page.getByPlaceholder("E-posta adresiniz").fill(probe.email);
-  await page.getByPlaceholder("Parola").fill(probe.password);
-  await page.getByRole("button", { name: "Hesap oluştur" }).click();
-  await expect(page.getByText("Bu e-postayla bir hesap zaten var")).toBeVisible();
-  await page.screenshot({ path: `${outDir()}/shots/canli--ikinci-kayit.png` });
-  await context.close();
 });
 
 test("soğuk açılış: /app ilk içerik", async ({ page }) => {
@@ -241,12 +272,4 @@ test("Free: bilgisayar uyandırma reddedilir, Türkçe ileti ve Yükselt", async
   const screen = page.getByTestId("computer-viewport");
   await expect(screen.getByText("Planınızda bilgisayar yok.")).toBeVisible({ timeout: 30_000 });
   await expect(screen.getByRole("button", { name: "Yükselt" })).toBeVisible();
-});
-
-test("hesap silinir ve silindiği doğrulanır", async ({ page }) => {
-  const probe = readProbe() as Probe;
-  const seen = await deleteProbe(page.request, probe);
-  saveProbe({ ...probe, deleted: true });
-  rmSync(STATE_FILE(), { force: true });
-  note(`${probe.email.replace(/\+.*@/, "+…@")}: ${seen}`);
 });

@@ -324,11 +324,36 @@ into it.
 - Who gets it (`packages/adapters/src/dozo-user-browser.ts`): only chats the person starts with
   their own bot, as for commands, never a run a message sent with an access token reached, and
   only when the run has no graphical computer of its own (Free).
-- What asks: a bot's first use of its browser on this computer ("Let this bot use its own browser
-  on your computer?"), and its first action on each site, named by its registrable domain ("Let
-  this bot act on x.com in its browser?"). Each answer holds for that bot on this computer;
-  removing the computer or deleting the bot asks again. Saved logins, cards and uploads do not
-  reach this browser yet; the person can sign in in its window themselves.
+- What asks, in each thread anew: the bot's first use of its browser ("Let this bot use its own
+  browser on your computer and open x.com?"), and the first time it opens, reads, acts on or has
+  the person sign in to each site, each of those on its own ("Let this bot open x.com in its
+  browser?", "... read ...", "... act on ...", "... have you sign in to ..."): allowing a look at
+  a site allows no action there. Once content from outside has entered the run (a page it read, a
+  fetched text), opening another site than the one the browser shows asks every time, so a page
+  that steers the bot cannot send it, or what it read, elsewhere unseen. A page whose site cannot
+  be told is asked about before it is read; a blank one is not. An answer holds for that bot, on
+  this computer, in that thread; the card's site is kept with the call, and a call resumed after
+  the page moved elsewhere is refused. The bot has one page: a look at, or a batch of steps on,
+  another site than the one approved (another thread's run moved it) is refused, and a batch stops
+  when a step took the page elsewhere. A call that reached this computer without its approval
+  having seen it is refused. Saved logins, cards and uploads do not reach this browser yet.
+- Signing in: the bot never types a password or a code there. With `browser_sign_in` it names a
+  site; this app opens that site's home page in the bot's window (never an address the bot gives)
+  and shows the person a small system dialog of its own: "Sign in to x.com in the bot's browser
+  window, then choose Done." with Done and Cancel. Until they answer, every command for that
+  bot's browser is refused (no page, screenshot, input, navigation or history), and so are that
+  bot's commands on this computer, which could read the screen; stopping the bot leaves its
+  browser open meanwhile. When they answer, the page goes to the site's home page (Done) or a
+  blank page (Cancel) before the bot has it again, so neither a return address with a code nor a
+  half-done step reaches the server; the sign-in's events are dropped, its history entries reach
+  the server without addresses, and going back to one is refused. The bot learns whether they
+  signed in, and then sees the site's home page as anyone signed in would. Only the person ends
+  it; after 15 minutes without an answer it counts as cancelled. A request the server or the run
+  gives up on leaves it as it is. Every site asks a card first, in each thread; a site whose name
+  imitates another's (paypa1.com) gets the same card and dialog, named as it is. Device request:
+  `pageBrowserSignIn`.
+- Screenshots: a model that can see gets one with each snapshot. Like any image a tool returns, it
+  is kept with the thread's run history and not redacted (text is); it goes when the thread does.
 - The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port:
   nothing listens on TCP, so nothing on the network and no program running as another user can
   connect to it.
@@ -336,38 +361,63 @@ into it.
   bot's one page: reading the accessibility tree, the page's boxes, mouse, keys and text, going to
   a website, back and forward, and screenshots of the visible page. Refused before they reach the
   browser, so none of it reaches the server: reading cookies or site storage, running script
-  (`Runtime.evaluate`), a debugging session, uploads, bringing the window forward, and keys that
-  reach past the page's text (Alt with anything, Ctrl or Cmd with anything but select all, undo
-  and moving or deleting by word, the clipboard keys, function and browser keys). Numbers must be
-  whole where the browser reads whole numbers. Downloads are refused.
-- Websites only: http and https outside this computer and its network. Loopback, link-local
-  (`169.254.0.0/16`), private and shared ranges, `localhost`, `.local`, `.internal` and
-  `.home.arpa` are refused, so the server on this computer is too. While the bot's tab shows
-  anything else (the person sent it to the browser's own pages, a file, or a local address), only
-  going to a website works, and its history and events leave such addresses out. If the person
-  closed the bot's tab, the bot gets a new blank one, never a tab of the browser's own pages.
+  (`Runtime.evaluate`), a debugging session, uploads, bringing the window forward, the middle,
+  back and forward mouse buttons, and keys that reach past the page's text (Alt with anything,
+  Ctrl or Cmd with anything but select all, undo and moving or deleting by word, the clipboard
+  keys: Ctrl or Cmd with V, C or X, Shift with Insert or Delete, Ctrl with Insert; function and
+  browser keys). With Ctrl, Cmd or Alt only the key itself is sent, no text or system key code.
+  Numbers must be whole where the browser reads whole numbers. Downloads are refused. A command
+  whose page left the web while it ran (a click on a link) has its answer dropped.
+- Websites only, enforced on the network: every request of the bot's browser, pages, frames,
+  scripts' requests, forms, redirects and web sockets, goes through this app's own proxy on
+  loopback (`src/browser_proxy.rs`, `--proxy-server`, loopback not bypassed, no WebRTC around it).
+  The proxy resolves each name itself, refuses one that names or resolves to this computer or its
+  network (loopback, private, link-local, shared, benchmark and reserved ranges and their IPv6
+  forms, `localhost`, single-label names and the names local networks use, such as `.local`,
+  `.lan`, `.home.arpa`, `fritz.box`), and connects to the address it checked, so a name that
+  changes its answer (DNS rebinding) does not get through either. A refused and a failed
+  connection get the same answer, so a page cannot tell which ports answer. This computer's own
+  addresses and the networks it is on directly are refused too, public ones included, and so is
+  the server on this computer. Plain HTTP passes one request per connection: the browser does send
+  more on a connection it used (measured), which the proxy closes so the request comes again
+  through the check. At most 256 connections at once; one idle for five minutes is closed. The address the bot opens is checked the same way first.
+- While the bot's tab shows anything else (the person sent it to the browser's own pages or a
+  file), only going to a website works, and its history and events leave such addresses out. The
+  bot's tab is the one the browser opened with; once the person closes it, the bot always gets a
+  new blank tab, never another (the person's, or a window a page opened).
 - A click the server sends counts as the person's gesture. The app denies pages the clipboard API
-  and, in every frame, the copy and cut commands and full screen (its own guard, set before any
-  page script). A page can still open a window or tab with such a click (sign-ins need it); the
-  bot cannot reach it. A link to another program (`mailto:`, a meeting app) asks the person first.
+  and the browser's prompts (notifications, location, camera, microphone and the like) and, with
+  its own guard, the copy and cut commands, every form of full screen (one a video's own controls
+  start is left at once), picture-in-picture windows, pointer lock, the file and folder pickers,
+  printing, passkeys and payment sheets. A page cannot undo the guard: what it relies on is taken
+  before any page script runs. The guard is
+  set before any script of every document, and every new tab, window and frame of its own process
+  holds until it has it (`Target.setAutoAttach`); it also guards a window a page opens and a frame
+  it reaches, so a page cannot call the browser's own functions through them. A page can still open
+  a window or tab with such a click (sign-ins need it); the bot cannot reach it, and while it is in
+  front the bot's page is behind it. A link to another program (`mailto:`, a meeting app) asks the
+  person first.
 - None of Playwright's defaults that mark the browser as automated or store its passwords
   unencrypted (`--enable-automation`, `--use-mock-keychain`, `--password-store=basic`), no `--app`
   or kiosk mode.
 - Profiles live in the app's data folder, `computers/browser-profiles/<bot>`, open to this user
-  only (mode 700). Deleting the bot ends its browser, waits for it, then deletes its profile. A bot
-  deleted while this computer was offline keeps its profile until a later sweep (not built yet).
+  only (mode 700). Deleting the bot ends its browser, waits for it, then deletes its profile; a
+  browser that would not end keeps it. A bot deleted while this computer was offline keeps its
+  profile until a later sweep (not built yet).
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
   also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
   next start on that profile ends what is left first. A dropped connection keeps it open.
 - Honest limits: anything running as this user, the bot's own commands included, can read the
   profile folder, and on Linux can open the browser's pipe through `/proc` and send it any
-  command. A public name that resolves to a private address is not caught. Synthetic keys did not
-  reach the browser's shortcuts in Chrome 158 on Linux (measured); they are refused anyway, and
-  macOS was not measured. On macOS the pipe is made and then marked close-on-exec, so a command
+  command. Anyone on this computer can use the proxy, which reaches only what they already can.
+  Synthetic keys did not reach the browser's shortcuts in Chrome 158 on Linux (measured); they are
+  refused anyway, and macOS was not measured. On macOS the pipe is made and then marked close-on-exec, so a command
   started in that instant could inherit it. `/Applications` is writable by admin accounts. A
   stopped bot starts no browser. A Snap Chromium is passed over. Windows: not yet.
 - Proof: `tests/stack_e2e_native.sh` step 0, on Linux in a real window under Xvfb and on macOS,
-  with the browser on the runner: the page tools, refusals, the guard, a tab moved off the web or
+  with the browser on the runner: the page tools, refusals, the guard in windows, added frames,
+  a frame of another site and the older full screen, nothing reaching this computer through a
+  picture, a script's request, a form, a redirect or a rebound name, a tab moved off the web or
   closed, the profile, no TCP port, ending with a killed app and with a deleted bot.
 
 ## The server on this computer

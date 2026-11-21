@@ -55,6 +55,6 @@ Dozo mobil uygulamasının ilk sürümü.
 
 ## Bağlantılar
 
-- Destek adresi: TODO sahibi
+- Destek adresi: https://dozo.bot/tr/support/
 - Gizlilik politikası: https://dozo.bot/privacy/
 - Tanıtım sayfası: https://dozo.bot

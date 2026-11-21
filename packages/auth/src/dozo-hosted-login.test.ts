@@ -1284,7 +1284,6 @@ describe("the hosted server", () => {
     const { auth } = hostedServer(key);
     const response = await auth.handler(new Request(`${HOSTED}/api/auth/dozo/hosted-login/keys`));
     expect(await response.json()).toEqual({ keys: [publicJwk(key)] });
-    expect(response.headers.get("cache-control")).toBe("public, max-age=60");
   });
 
   it("issues nothing without a session", async () => {

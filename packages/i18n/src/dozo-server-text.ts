@@ -10,6 +10,8 @@ export const NO_COMPUTER_HOURS = "No computer hours left.";
  */
 export const SERVER_SENTENCES: ReadonlySet<string> = new Set([
   "Connect a model to start a run.",
+  "This rule no longer exists.",
+  "This command can only be allowed exactly.",
   "Choose a model",
   "Choose a model that can see images",
   "Connect that model provider first",

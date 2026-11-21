@@ -183,6 +183,11 @@ impl Runner {
         self.browsers.available()
     }
 
+    /// The prompt a person answers when they sign in in a bot's browser.
+    pub fn set_sign_in_prompt(&self, prompt: Arc<dyn crate::browser::SignInPrompt>) {
+        self.browsers.set_sign_in_prompt(prompt);
+    }
+
     /// Stops every command and what it left running in its group. `escaped`: also what it
     /// started outside the group (Linux), which only an explicit stop, turning access off or
     /// quitting does, never a dropped connection.
@@ -309,6 +314,13 @@ impl Runner {
                 done.map(|()| Value::Null)
             }
             "execute" => {
+                // While the person signs in with this bot's browser, the bot runs nothing here
+                // either: a command could read the screen or reach the browser.
+                if let Some(site) = self.browsers.signing_site(&key) {
+                    let refused =
+                        format!("The person is signing in to {site}; wait until they are done.");
+                    return reply.error(&refused).await;
+                }
                 let Some(command) = request.get("command").and_then(parse_command) else {
                     return reply.error(INVALID).await;
                 };
@@ -319,7 +331,19 @@ impl Runner {
             }
             // Not offered until the app declares it (`browser::DECLARED`): a server that asks
             // anyway gets what an unoffered method gets, and no browser starts.
-            "pageBrowser" if !crate::browser::DECLARED => return reply.error(NOT_HERE).await,
+            "pageBrowser" | "pageBrowserSignIn" if !crate::browser::DECLARED => {
+                return reply.error(NOT_HERE).await;
+            }
+            "pageBrowserSignIn" => {
+                if !running(&home) {
+                    return reply.error("Local computer stopped").await;
+                }
+                let site = request.get("site").and_then(Value::as_str).unwrap_or("");
+                match self.browsers.sign_in(&key, site).await {
+                    Ok(signed_in) => Ok(json!({ "signedIn": signed_in })),
+                    Err(error) => return reply.error(&error).await,
+                }
+            }
             "pageBrowser" => {
                 if !running(&home) {
                     return reply.error("Local computer stopped").await;
@@ -1005,10 +1029,47 @@ mod tests {
             frames(&runner, page).await,
             vec![json!({ "error": NOT_HERE })]
         );
+        let sign_in = json!({ "method": "pageBrowserSignIn", "botId": "b", "site": "example.com" });
+        assert_eq!(
+            frames(&runner, sign_in).await,
+            vec![json!({ "error": NOT_HERE })]
+        );
         assert!(
             !dir.join("data").join("browser-profiles").exists(),
             "no profile was made"
         );
+    }
+
+    /// While the person signs in with a bot's browser, that bot runs no command here, and
+    /// stopping it leaves the browser alone.
+    #[tokio::test]
+    async fn nothing_runs_for_a_bot_whose_browser_the_person_signs_in_with() {
+        let dir =
+            std::env::temp_dir().join(format!("dozo-device-run-signing-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("home")).unwrap();
+        let browsers =
+            crate::browser::Browsers::with(dir.join("data/browser-profiles"), None, true);
+        browsers.mark_signing(&bot_key("b"), "example.com");
+        let runner = Runner::with_browsers(dir.join("data"), dir.join("home"), browsers);
+        let provision = json!({ "method": "provision", "botId": "b" });
+        assert!(frames(&runner, provision).await[0].get("value").is_some());
+        let execute = json!({ "method": "execute", "botId": "b", "command": { "argv": ["true"] } });
+        assert_eq!(
+            frames(&runner, execute).await,
+            vec![
+                json!({ "error": "The person is signing in to example.com; wait until they are done." })
+            ]
+        );
+        let other = json!({ "method": "provision", "botId": "c" });
+        assert!(frames(&runner, other).await[0].get("value").is_some());
+        let theirs = json!({ "method": "execute", "botId": "c", "command": { "argv": ["true"] } });
+        assert_ne!(
+            frames(&runner, theirs).await[0].get("error"),
+            Some(&json!(
+                "The person is signing in to example.com; wait until they are done."
+            ))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

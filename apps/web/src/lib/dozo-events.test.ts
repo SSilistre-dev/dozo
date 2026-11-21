@@ -15,7 +15,7 @@ beforeEach(() => {
   api.me.mockReset().mockResolvedValue({ productEvents: true });
   api.track.mockReset().mockResolvedValue({ ok: true });
 });
-afterEach(() => window.sessionStorage.clear());
+afterEach(() => window.localStorage.clear());
 
 it("says where the paid plans were shown from", async () => {
   reportUpgradeViewed(false);
