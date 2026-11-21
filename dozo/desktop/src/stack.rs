@@ -34,14 +34,18 @@ use std::io;
 const MANIFEST: &str = match option_env!("DOZO_SERVER_MANIFEST") {
     Some(manifest) => manifest,
     None => {
-        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-4/manifest.json"
+        "https://github.com/SSilistre-dev/dozo/releases/download/server-v0.11.0-5/manifest.json"
     }
 };
 
 /// The server version this app expects: the one `MANIFEST` names. An installed older one is
 /// updated to it at the next start (`stack_update.rs`); when it is already installed, no manifest
 /// is read.
-const SERVER_VERSION: &str = "0.11.0-4";
+const SERVER_VERSION: &str = "0.11.0-5";
+
+/// Where the server on this computer sends in-app feedback to (`apps/api/src/dozo-feedback.ts`),
+/// named by the build (`DOZO_FEEDBACK_EMAIL`); without it the feedback is only kept.
+const FEEDBACK_EMAIL: Option<&str> = option_env!("DOZO_FEEDBACK_EMAIL");
 
 /// The relay a phone reaches this computer through (`dozo/relay/agent/README.md`). A build can
 /// name another (`DOZO_RELAY_URL`), and so can the environment or the settings file (`relay=`).
@@ -1115,6 +1119,10 @@ impl Plan {
             "listen_addresses=127.0.0.1",
             "-c",
             "unix_socket_directories=",
+            // initdb wrote this computer's zone into the data folder; the server's SQL expects UTC
+            // (`dozo/server-bundle/README.md`, "Start contract").
+            "-c",
+            "timezone=UTC",
         ];
         self.pg_spec("postgres", args.map(str::to_owned).to_vec(), vec![])
     }
@@ -1122,7 +1130,11 @@ impl Plan {
     /// Postgres on Windows (`run`): started by pg_ctl, which waits until it answers. Its log is
     /// the file pg_ctl names.
     fn pg_ctl_start(&self, pgdata: &Path, logs: &Path) -> Spec {
-        let options = format!("-p {} -c listen_addresses=127.0.0.1", self.ports.postgres);
+        // UTC as `postgres` above: initdb wrote this computer's zone into the data folder.
+        let options = format!(
+            "-p {} -c listen_addresses=127.0.0.1 -c timezone=UTC",
+            self.ports.postgres
+        );
         let log = logs.join("postgres.log");
         let args = [
             "start",
@@ -1261,6 +1273,9 @@ impl Plan {
             // Phones sign in through the relay agent, which shows this key (agent README).
             ("DOZO_RELAY_AGENT_KEY", self.secret("RELAY_AGENT_KEY")),
         ]);
+        if let Some(email) = FEEDBACK_EMAIL.filter(|email| !email.trim().is_empty()) {
+            env.push(("DOZO_FEEDBACK_EMAIL", email.to_owned()));
+        }
         // The API lets requests finish for up to 20 s after TERM (`apps/api/src/index.ts`).
         Spec {
             grace: Duration::from_secs(25),
@@ -1354,7 +1369,7 @@ mod tests {
         let pg = version.join("postgres/bin");
         script(
             &pg.join("postgres"),
-            &format!("echo postgres >> {s}; {LOOP}"),
+            &format!("echo \"$*\" > {s}.pg; echo postgres >> {s}; {LOOP}"),
         );
         script(
             &pg.join("initdb"),
@@ -1421,6 +1436,9 @@ mod tests {
             )]
         );
         assert_eq!(first[..4], ["initdb", "postgres", "createdb", "migrate.js"]);
+        // Postgres runs in UTC whatever this computer's zone, on every start.
+        let pg = lines_of(&root.join("said.pg")).join(" ");
+        assert!(pg.contains("-c timezone=UTC"), "{pg}");
         let mut rest = first[4..].to_vec();
         rest.sort();
         assert_eq!(rest, ["api.js", "web.js", "worker.js"]);
@@ -1506,6 +1524,10 @@ mod tests {
         agent.approve("c9").await.unwrap();
         let commands = lines_of(&root.join("said.relay"));
         assert!(commands.contains(&format!("relay.js approve --state {state} -- c9")));
+        // A channel id may start with "-" (base64url): it still reaches the agent as a channel.
+        agent.approve("-dash").await.unwrap();
+        let commands = lines_of(&root.join("said.relay"));
+        assert!(commands.contains(&format!("relay.js approve --state {state} -- -dash")));
         // The agent and the API get the same key, made with the other secrets.
         let key = stack_setup::secrets(&root.join("secrets")).unwrap();
         let key = key.get("RELAY_AGENT_KEY").to_owned();
@@ -1843,6 +1865,32 @@ mod tests {
         let events = fs::read_to_string(root.join("logs/manager.log")).unwrap();
         assert!(events.contains("older than 3: not going back"), "{events}");
         assert!(local.stop().await);
+    }
+
+    #[test]
+    fn postgres_runs_in_utc_on_every_system() {
+        let root = scratch("utc-everywhere");
+        installed_fakes(&root, &root.join("said"), 0);
+        let secrets = stack_setup::secrets(&root.join("secrets")).unwrap();
+        let ports = Ports {
+            postgres: 1,
+            api: 2,
+            web: 3,
+        };
+        let plan = Plan::new(&Layout(root.clone()), "1", ports, &secrets, &options()).unwrap();
+        let args = |spec: Spec| {
+            spec.args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        // Linux and macOS start postgres itself; Windows starts it through pg_ctl.
+        assert!(args(plan.postgres(&root.join("pgdata"))).contains("-c timezone=UTC"));
+        assert!(
+            args(plan.pg_ctl_start(&root.join("pgdata"), &root.join("logs")))
+                .contains("-c timezone=UTC")
+        );
     }
 
     #[tokio::test]

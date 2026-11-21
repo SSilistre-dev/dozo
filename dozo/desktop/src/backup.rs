@@ -1,6 +1,7 @@
-//! Back Up… and Restore… in the Dozo menu, for the server on this computer: a small window asks
-//! the password (twice when backing up), the system's file dialog picks the file, and the
-//! bundle's command does the work (`stack_backup.rs`). The window's page (`ui/backup.html`) only
+//! Back Up…, Restore…, Reset Password… and Save Diagnostics… in the Dozo menu, for the server on
+//! this computer: a small window asks the password (twice when backing up or setting a new one),
+//! the system's file dialog picks the file, and the bundle's commands do the work
+//! (`stack_backup.rs`). The window's page (`ui/backup.html`) only
 //! ever sees the file's name: the path stays here, and the password goes on to the command's
 //! standard input. The items are on only while that server runs.
 
@@ -21,6 +22,8 @@ use crate::{LocalServer, local_layout, local_options};
 
 pub const BACK_UP_ID: &str = "back-up";
 pub const RESTORE_ID: &str = "restore";
+pub const RESET_ID: &str = "reset-password";
+pub const DIAGNOSTICS_ID: &str = "save-diagnostics";
 const WINDOW: &str = "backup";
 const EXTENSION: &str = "dozobackup";
 const SHORT: &str = "Use at least 8 characters.";
@@ -47,18 +50,23 @@ impl Drop for Busy {
 }
 
 /// The two menu items, kept to switch them on and off.
-pub struct Items(pub MenuItem<Wry>, pub MenuItem<Wry>);
+pub struct Items(pub [MenuItem<Wry>; 4]);
 
 /// The file picked for a restore, until its password comes.
 #[derive(Default)]
 pub struct Picked(Mutex<Option<PathBuf>>);
 
-pub fn items(app: &AppHandle) -> tauri::Result<(MenuItem<Wry>, MenuItem<Wry>)> {
-    let back_up = MenuItem::with_id(app, BACK_UP_ID, "Back Up…", false, None::<&str>)?;
-    let restore = MenuItem::with_id(app, RESTORE_ID, "Restore…", false, None::<&str>)?;
-    app.manage(Items(back_up.clone(), restore.clone()));
+pub fn items(app: &AppHandle) -> tauri::Result<[MenuItem<Wry>; 4]> {
+    let item = |id, label| MenuItem::with_id(app, id, label, false, None::<&str>);
+    let items = [
+        item(BACK_UP_ID, "Back Up…")?,
+        item(RESTORE_ID, "Restore…")?,
+        item(RESET_ID, "Reset Password…")?,
+        item(DIAGNOSTICS_ID, "Save Diagnostics…")?,
+    ];
+    app.manage(Items(items.clone()));
     app.manage(Picked::default());
-    Ok((back_up, restore))
+    Ok(items)
 }
 
 /// Keeps the items in step with the server on this computer.
@@ -69,8 +77,9 @@ pub fn follow(app: AppHandle) {
         loop {
             let on = matches!(*status.borrow_and_update(), Status::Ready(_));
             if let Some(items) = app.try_state::<Items>() {
-                let _ = items.0.set_enabled(on);
-                let _ = items.1.set_enabled(on);
+                for item in &items.0 {
+                    let _ = item.set_enabled(on);
+                }
             }
             if status.changed().await.is_err() {
                 return;
@@ -90,10 +99,10 @@ pub fn open(app: &AppHandle, mode: &str) {
         let _ = window.close();
     }
     let page = format!("backup.html?{mode}");
-    let title = if mode == "restore" {
-        "Restore"
-    } else {
-        "Back Up"
+    let title = match mode {
+        "restore" => "Restore",
+        "reset" => "Reset Password",
+        _ => "Back Up",
     };
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App(page.into()))
         .title(title)
@@ -235,6 +244,87 @@ pub async fn restore(app: AppHandle, password: String) -> Result<(), String> {
         None => Ok(()),
         Some(message) => Err(message.to_owned()),
     }
+}
+
+/// Sets a new password for the account on this computer; its sessions end, so the main window
+/// signs in again.
+#[tauri::command]
+pub async fn reset_password(app: AppHandle, password: String) -> Result<(), String> {
+    let length = password.chars().count();
+    if !(8..=128).contains(&length) {
+        return Err(SHORT.into());
+    }
+    let _busy = Busy::take()?;
+    let layout = local_layout(&app).map_err(|error| error.to_string())?;
+    let tool = Tool::named(&layout.0, "account").ok_or("Update the server first.")?;
+    tool.reset_password(&password)
+        .await
+        .map_err(|refusal| refusal.message().to_owned())?;
+    if let Some(window) = app.get_webview_window("main") {
+        crate::show_local(&window, "");
+    }
+    Ok(())
+}
+
+/// Save Diagnostics…: the system's save dialog, the bundle's report (logs cleaned of secrets and
+/// what people wrote, `dozo/server-bundle/README.md`, "Diagnostics"), then the file shown in its
+/// folder. Only a failure says anything.
+pub fn save_diagnostics(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(layout) = local_layout(&app) else {
+            return;
+        };
+        let Some(tool) = Tool::named(&layout.0, "diagnostics") else {
+            return tell(&app, "Update the server first.");
+        };
+        let dialog = app
+            .dialog()
+            .file()
+            .set_file_name(format!("Dozo diagnostics {}.tar.gz", today()));
+        let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+            .await
+            .ok()
+            .flatten();
+        let Some(file) = picked.and_then(|file| file.into_path().ok()) else {
+            return;
+        };
+        // The command never writes over a file; the dialog already asked about replacing it.
+        let _ = std::fs::remove_file(&file);
+        match tool.diagnostics(&file).await {
+            Ok(()) => reveal(&file),
+            Err(_) => tell(
+                &app,
+                "Could not save the diagnostics. The details are in the log.",
+            ),
+        }
+    });
+}
+
+fn tell(app: &AppHandle, message: &str) {
+    app.dialog().message(message).title("Dozo").show(|_| {});
+}
+
+/// Shows `file` in the system's file manager.
+fn reveal(file: &std::path::Path) {
+    let mut command;
+    #[cfg(target_os = "macos")]
+    {
+        command = std::process::Command::new("/usr/bin/open");
+        command.arg("-R").arg(file);
+    }
+    #[cfg(windows)]
+    {
+        command = std::process::Command::new("explorer");
+        command.arg(format!("/select,{}", file.display()));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        command = std::process::Command::new("xdg-open");
+        command.arg(file.parent().unwrap_or(file));
+    }
+    // Waited for on its own thread so the finished process is reaped.
+    std::thread::spawn(move || command.status());
 }
 
 async fn hold(root: &std::path::Path) -> Option<std::fs::File> {
