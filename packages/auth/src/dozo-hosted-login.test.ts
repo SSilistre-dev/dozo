@@ -1,9 +1,12 @@
 import type { KeyObject } from "node:crypto";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { passkey } from "@better-auth/passkey";
 import { deferred } from "@rakazo/core/test-async";
+import type { BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { APIError } from "better-auth/api";
+import { makeSignature } from "better-auth/crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostedLoginClaims, HostedLoginConfig } from "./dozo-hosted-login.js";
 import {
@@ -32,6 +35,7 @@ import {
   TOKEN_TYPE,
   verifyLoginToken,
 } from "./dozo-hosted-login.js";
+import { RELAY_SESSION_USER_AGENT } from "./dozo-relay-session.js";
 
 const HOSTED = "https://accounts.dozo.example";
 const LOCAL = "http://127.0.0.1:5173";
@@ -283,7 +287,7 @@ describe("the issuer's keys on the local server", () => {
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ redirect: "error" });
   });
 
-  it("asks again for an unknown key at most once a minute, which picks up a rotated key", async () => {
+  it("asks again for an unknown key every few seconds at most, which picks up a rotated key", async () => {
     const next = ed25519();
     const fetcher = vi
       .fn()
@@ -297,6 +301,9 @@ describe("the issuer's keys on the local server", () => {
     expect(await keyFor(publicJwk(next).kid, later)).not.toBeNull();
     expect(await keyFor(jwk.kid, later + 1)).toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(2);
+    // A key swapped in seconds after a read (found by the end-to-end test of a key change) does
+    // not wait for a minute-long window.
+    expect(KEY_REFRESH_SECONDS).toBeLessThanOrEqual(10);
   });
 
   it("shares one request among everyone waiting for it", async () => {
@@ -307,7 +314,7 @@ describe("the issuer's keys on the local server", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("after a failure tries again a few seconds later, not a minute", async () => {
+  it("after a failure tries again sooner than after a read", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(new Response("", { status: 503 }))
@@ -471,7 +478,10 @@ describe("what a local server closes", () => {
 });
 
 type Row = Record<string, unknown>;
-type Store = Record<"user" | "session" | "account" | "verification" | "rateLimit", Row[]>;
+type Store = Record<
+  "user" | "session" | "account" | "verification" | "rateLimit" | "passkey",
+  Row[]
+>;
 type Handler = { handler: (request: Request) => Promise<Response> };
 const store = (): Store => ({
   user: [],
@@ -479,6 +489,7 @@ const store = (): Store => ({
   account: [],
   verification: [],
   rateLimit: [],
+  passkey: [],
 });
 
 /**
@@ -584,13 +595,16 @@ function localServer(fetcher: typeof fetch, options: LocalOptions = {}) {
         },
       },
     },
-    plugins: dozoHostedLogin({
-      prisma: localPrisma(data) as never,
-      webOrigin: LOCAL,
-      config: { mode: "verifier", issuer: HOSTED },
-      fetcher,
-      lock: options.lock ?? mutex(),
-    }),
+    plugins: [
+      passkey({ rpID: "127.0.0.1", rpName: "Dozo", origin: LOCAL }) as BetterAuthPlugin,
+      ...dozoHostedLogin({
+        prisma: localPrisma(data) as never,
+        webOrigin: LOCAL,
+        config: { mode: "verifier", issuer: HOSTED },
+        fetcher,
+        lock: options.lock ?? mutex(),
+      }),
+    ],
   });
   return { auth, data };
 }
@@ -849,6 +863,16 @@ describe("signing in to a local server with the hosted account", () => {
   it("keeps a server with a password account on passwords, then links it from its own session", async () => {
     const w = world();
     const ada = await passwordAccount(w, "ada@dozo.example");
+    w.local.data.passkey.push({
+      id: "key-1",
+      userId: ada,
+      publicKey: "k",
+      credentialID: "c",
+      counter: 0,
+      deviceType: "singleDevice",
+      backedUp: false,
+      createdAt: new Date(),
+    });
     const hostedCookie = await signUp(w.hosted.auth, "ada.hosted@dozo.example", "Ada");
     // Password sign-in still works; no new account is made while it waits.
     const signUpLocal = await w.local.auth.handler(
@@ -879,7 +903,9 @@ describe("signing in to a local server with the hosted account", () => {
     expect(w.local.data.account).toEqual([
       expect.objectContaining({ userId: ada, providerId: HOSTED_PROVIDER_ID }),
     ]);
-    // The password is gone and the server signs in only with the hosted account, as that user.
+    // The password and the passkey are gone, and the server signs in only with the hosted
+    // account, as that user.
+    expect(w.local.data.passkey).toEqual([]);
     expect((await passwordSignIn(w, "ada@dozo.example")).status).toBe(404);
     const again = await w.signIn(hostedCookie);
     expect(location(again.done)).toBe(`${LOCAL}/`);
@@ -907,6 +933,36 @@ describe("signing in to a local server with the hosted account", () => {
       .filter((cookie) => cookie.includes("dozo_hosted_login="))
       .join("; ");
     expect(location(await w.get(w.local.auth, callback, nonceOnly))).toBe(FAILED);
+    expect(w.local.data.account.map((row) => row.providerId)).toEqual(["credential"]);
+  });
+
+  it("never links from a paired phone's session", async () => {
+    const w = world();
+    const ada = await passwordAccount(w, "ada@dozo.example");
+    const hostedCookie = await signUp(w.hosted.auth, "ada.hosted@dozo.example", "Ada");
+    const context = await w.local.auth.$context;
+    const phone = await context.internalAdapter.createSession(ada, false, {
+      userAgent: RELAY_SESSION_USER_AGENT,
+    });
+    const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(
+      `${phone.token}.${await makeSignature(phone.token, SECRET)}`,
+    )}`;
+    // Starting is refused outright.
+    expect(
+      (await w.local.auth.handler(startRequest({ origin: LOCAL, cookie }, { link: true }))).status,
+    ).toBe(403);
+    // A link the computer started cannot be finished by the phone either.
+    const session = cookieHeader(await passwordSignIn(w, "ada@dozo.example"));
+    const started = await w.local.auth.handler(
+      startRequest({ origin: LOCAL, cookie: session }, { link: true }),
+    );
+    const page = new URL(((await started.json()) as { url: string }).url);
+    const callback = await w.agree(page, hostedCookie);
+    const nonce = cookieHeader(started)
+      .split("; ")
+      .filter((part) => part.includes("dozo_hosted_login="))
+      .join("; ");
+    expect(location(await w.get(w.local.auth, callback, `${cookie}; ${nonce}`))).toBe(FAILED);
     expect(w.local.data.account.map((row) => row.providerId)).toEqual(["credential"]);
   });
 

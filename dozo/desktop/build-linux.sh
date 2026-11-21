@@ -3,6 +3,7 @@
 # Usage: dozo/desktop/build-linux.sh [check]
 #   (no argument)  build the AppImage and the .deb (x86_64) into dist/ and print their paths
 #   check          cargo fmt --check, cargo clippy -D warnings, cargo test
+#   DOZO_HOSTED_LOGIN_ISSUER, when set, is built in (src/server.rs, hosted_login_issuer).
 # The image is Ubuntu 22.04, so the AppImage runs on that release's glibc and newer. Rust and the
 # Tauri CLI go into .toolchain/linux (git-ignored), the build into target/ (git-ignored). The
 # versions are the ones build.sh and the workflow use: rust-toolchain.toml, TAURI_CLI in
@@ -39,7 +40,8 @@ docker run --rm -i --cpus 3 --memory 6g -e CARGO_BUILD_JOBS=3 -u "$(id -u):$(id 
   -e RUSTUP_HOME=/dozo/desktop/.toolchain/linux/rustup \
   -e CARGO_HOME=/dozo/desktop/.toolchain/linux/cargo \
   -e TAURI_CLI="$(sed -n 's/^TAURI_CLI=//p' build.sh)" \
-  -e APPIMAGE_EXTRACT_AND_RUN=1 -e MODE="${1:-build}" "$IMAGE" bash -s <<'EOF'
+  -e APPIMAGE_EXTRACT_AND_RUN=1 -e MODE="${1:-build}" \
+  -e DOZO_HOSTED_LOGIN_ISSUER="${DOZO_HOSTED_LOGIN_ISSUER:-}" "$IMAGE" bash -s <<'EOF'
 set -euo pipefail
 export PATH="$CARGO_HOME/bin:$PATH"
 say() { echo "[desktop] $*"; }

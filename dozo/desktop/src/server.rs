@@ -88,10 +88,20 @@ pub fn outside(url: &Url) -> Option<Url> {
 /// (`packages/auth/src/dozo-hosted-login.ts`), when this build or the environment names one
 /// (`DOZO_HOSTED_LOGIN_ISSUER`): its origin, https or on this computer. Off by default.
 pub fn hosted_login_issuer() -> Option<Url> {
-    const BUILT: Option<&str> = option_env!("DOZO_HOSTED_LOGIN_ISSUER");
-    let named = std::env::var("DOZO_HOSTED_LOGIN_ISSUER")
-        .ok()
-        .or(BUILT.map(str::to_owned))?;
+    issuer_from(
+        option_env!("DOZO_HOSTED_LOGIN_ISSUER"),
+        std::env::var("DOZO_HOSTED_LOGIN_ISSUER").ok(),
+    )
+}
+
+/// A release names the issuer when it is built, and then nothing in the environment can point
+/// its sign-in elsewhere; a build without one (development, tests) reads the environment. An
+/// empty value is no value: the release workflow passes an unset repository variable as "".
+fn issuer_from(built: Option<&str>, environment: Option<String>) -> Option<Url> {
+    let named = match built.filter(|built| !built.is_empty()) {
+        Some(built) => built.to_owned(),
+        None => environment.filter(|named| !named.is_empty())?,
+    };
     parse_server(&named).ok()
 }
 
@@ -296,6 +306,18 @@ mod tests {
         drop(listener);
         assert!(!reachable(&parse_server(&address).unwrap()));
         assert!(!reachable(&url("https://no-such-host.invalid/")));
+    }
+
+    #[test]
+    fn a_built_in_issuer_wins_over_the_environment() {
+        let env = || Some("http://localhost:6173".to_owned());
+        let built = issuer_from(Some("https://app.dozo.example"), env());
+        assert_eq!(built.unwrap().as_str(), "https://app.dozo.example/");
+        assert_eq!(issuer_from(None, env()).unwrap().as_str(), "http://localhost:6173/");
+        assert_eq!(issuer_from(Some(""), env()).unwrap().as_str(), "http://localhost:6173/");
+        assert!(issuer_from(Some(""), Some(String::new())).is_none());
+        assert!(issuer_from(None, None).is_none());
+        assert!(issuer_from(None, Some("not a url".to_owned())).is_none());
     }
 
     #[test]

@@ -5,7 +5,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakazo/core";
+import { MAX_PASSWORD_LENGTH, MESSAGING_EMAIL_SUFFIX, MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import {
   LocalRefused,
   readLine,
@@ -47,7 +47,6 @@ export type AccountIo = {
   pgBin: string;
   /** Where `reset-password` reads the new password. */
   stdin?: NodeJS.ReadableStream;
-  env?: NodeJS.ProcessEnv;
   /** This process's user id, or `undefined` where there is none (Windows). */
   uid?: number;
 };
@@ -56,11 +55,15 @@ export type AccountIo = {
 const ADOPT_USER = "dozo-hosted-adopt:user:";
 
 /**
- * In one statement: the links go, those users' sessions end, and each user is marked so the next
- * hosted sign-in links it again.
+ * In one statement: the links go, those users' sessions end, their personal access tokens stop
+ * (the revocation event `packages/db/src/dozo-access-tokens.ts` reads), and each user is marked so
+ * the next hosted sign-in links it again.
  */
 const UNLINK_SQL = `WITH gone AS (DELETE FROM "account" WHERE "providerId" = '${HOSTED_PROVIDER_ID}' RETURNING "userId"),
 ended AS (DELETE FROM "session" WHERE "userId" IN (SELECT "userId" FROM gone) RETURNING 1),
+revoked AS (INSERT INTO security_events (id, type, "userId", metadata, "createdAt")
+  SELECT gen_random_uuid()::text, 'auth.session.revoked', "userId", '{"via":"dozo-unlink-hosted"}', now() AT TIME ZONE 'UTC'
+  FROM (SELECT DISTINCT "userId" FROM gone) AS users RETURNING 1),
 marked AS (INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
   SELECT gen_random_uuid()::text, '${ADOPT_USER}' || "userId", '1', now() + interval '10 years', now(), now()
   FROM (SELECT DISTINCT "userId" FROM gone) AS users RETURNING 1)
@@ -123,7 +126,6 @@ SELECT (SELECT count(*) FROM changed), (SELECT count(*) FROM ended), (SELECT cou
 };
 
 async function resetPassword(home: string, io: AccountIo) {
-  if (io.env?.HOSTED_LOGIN_ISSUER) throw new LocalRefused("hosted-login", HOSTED_ONLY);
   const password = await readNewPassword(io.stdin ?? Readable.from([]));
   // Reading the secrets file is the permission; a file someone else owns is not this person's.
   const secrets = await secretsFile(home);
@@ -137,7 +139,8 @@ async function resetPassword(home: string, io: AccountIo) {
     const psql = (sql: string) => run(["-v", "ON_ERROR_STOP=1", "-Atc", sql]);
     const users = (
       await psql(
-        `SELECT u.id, count(a.id) FROM "user" u LEFT JOIN account a ON a."userId" = u.id AND a."providerId" = '${CREDENTIAL}' GROUP BY u.id`,
+        // Messaging identities are not people: the hosted login and the relay leave them out too.
+        `SELECT u.id, count(a.id) FROM "user" u LEFT JOIN account a ON a."userId" = u.id AND a."providerId" = '${CREDENTIAL}' WHERE u.email NOT LIKE '%${MESSAGING_EMAIL_SUFFIX}' GROUP BY u.id`,
       )
     )
       .split("\n")
@@ -212,7 +215,6 @@ export function localAccountProcess(
     write: (line) => proc.stdout.write(`${line}\n`),
     pgBin: proc.env.DOZO_PG_BIN ?? path.join(serverDir, "..", "..", "postgres", "bin"),
     stdin: proc.stdin,
-    env: proc.env,
     uid: process.getuid?.(),
   });
 }

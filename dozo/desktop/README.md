@@ -262,7 +262,9 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).
 - Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server,
   `packages/auth/src/dozo-hosted-login.ts`) is off: a build or the environment turns it on with
-  `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). Without it the
+  `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). A build that
+  names it keeps it: the environment is read only by a build without one. The release workflow
+  builds it from the repository variable of the same name, unset (off) by default. Without it the
   server opens with its own single account, as a self-hosted one does: its first page is the sign-up
   page, and the account made there is the only one it will ever have. With it, the local
   sign-in page's one button opens the hosted page that asks the person to agree in the app's own
@@ -273,7 +275,9 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   browser as before, so such a sign-in cannot finish in the app. A move inside the hosted web app
   that loads no new page (its own routing) is not a navigation and stays in the window; those
   pages, like the server's, can call nothing in the app. A server that already has accounts of
-  its own refuses to start in that mode.
+  its own starts as before and keeps their password sign-in; each person links their account from
+  Settings, and once every account is linked only the hosted sign-in is left
+  (`packages/auth/src/dozo-hosted-login.ts`).
 - Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
 
 ### Updating the server

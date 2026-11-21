@@ -63,6 +63,8 @@ describe("account unlink-hosted", () => {
     expect(calls).toContain(`DELETE FROM "session" WHERE "userId" IN (SELECT "userId" FROM gone)`);
     // Each unlinked user is marked for the next hosted sign-in to link.
     expect(calls).toContain(`INSERT INTO "verification"`);
+    // Their personal access tokens stop, as after a session revocation.
+    expect(calls).toContain(`'auth.session.revoked', "userId"`);
     expect(calls).toContain(`'dozo-hosted-adopt:user:' || "userId"`);
     expect(calls).toMatch(/^pg_ctl -D .*pgdata -m fast -w stop$/m);
   });

@@ -20,6 +20,7 @@ import {
   sessionMiddleware,
 } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
+import { RELAY_SESSION_USER_AGENT } from "./dozo-relay-session.js";
 
 /**
  * Sign-in to a local server with an account kept on the hosted server.
@@ -34,7 +35,8 @@ import { setSessionCookie } from "better-auth/cookies";
  * A local server that already has users of its own never refuses to start: until each is linked
  * it keeps password and passkey sign-in, makes no new account and offers no hosted sign-in
  * ("legacy" mode). A signed-in user links their account from the settings with the same flow
- * (`start` with `link`, proven by their own session); the password goes with it, and once no
+ * (`start` with `link`, proven by their own session, never a paired phone's); the password and
+ * passkeys go with it, and once no
  * such user is left the server is in hosted mode. Each existing user links their own hosted
  * account; once any is linked, a hosted account that is not linked is refused, as a new account
  * would be. A user marked for it (`ADOPT_PREFIX`) is linked by the next hosted sign-in. Sessions
@@ -66,8 +68,12 @@ export const TOKEN_LIFETIME_SECONDS = 60;
 export const CLOCK_LEEWAY_SECONDS = 60;
 /** How long a started sign-in may take, on the local clock. */
 export const NONCE_LIFETIME_SECONDS = 5 * 60;
-/** After keys were read, an unknown key id reads them again only this much later. */
-export const KEY_REFRESH_SECONDS = 60;
+/**
+ * After keys were read, an unknown key id reads them again only this much later. Short, so a key
+ * swapped in right after a read is picked up on the next try; a flood of made-up key ids still
+ * costs the hosted server one request in this time per computer.
+ */
+export const KEY_REFRESH_SECONDS = 10;
 /** After reading the keys failed, the next try waits this long. */
 export const KEY_RETRY_SECONDS = 5;
 /** The largest key list the local server reads. */
@@ -320,7 +326,7 @@ export async function verifyLoginToken(
  * The hosted server's public keys, fetched from it over its own origin and kept in memory. A key
  * id not seen yet reads them again, at most once a `KEY_REFRESH_SECONDS` after a read and once a
  * `KEY_RETRY_SECONDS` after a failure, with one request shared by everyone waiting, so a new key
- * is picked up on its first token and a flood of unknown ids costs one request a minute. Only
+ * is picked up on its first token and a flood of unknown ids costs one request that often. Only
  * Ed25519 keys whose id matches their key are kept.
  */
 export function issuerKeys(issuer: string, fetcher?: typeof fetch) {
@@ -577,6 +583,8 @@ function verifierPlugin(
           if (link) {
             const session = await getSessionFromCtx(ctx);
             if (!session) throw new APIError("UNAUTHORIZED");
+            // A paired phone's session may not change how the account signs in.
+            if (fromPhone(session)) throw new APIError("FORBIDDEN");
             const accounts = await ctx.context.internalAdapter.findAccounts(session.user.id);
             if (accounts.some((account) => account.providerId === HOSTED_PROVIDER_ID))
               throw new APIError("CONFLICT");
@@ -672,7 +680,7 @@ async function linkSignedInUser(
   lock: Locked,
 ): Promise<boolean> {
   const session = await getSessionFromCtx(ctx);
-  if (session?.user.id !== userId) return false;
+  if (!session || fromPhone(session) || session.user.id !== userId) return false;
   const adapter = ctx.context.internalAdapter;
   return lock(async () => {
     const owner = await adapter.findAccountOwnerByKey({
@@ -683,6 +691,7 @@ async function linkSignedInUser(
     const accounts = await adapter.findAccounts(userId);
     if (accounts.some((account) => account.providerId === HOSTED_PROVIDER_ID)) return false;
     await adapter.linkAccount({ userId, providerId: HOSTED_PROVIDER_ID, accountId: claims.sub });
+    // The password and the passkeys go: the account now signs in with the hosted one only.
     await ctx.context.adapter.deleteMany({
       model: "account",
       where: [
@@ -690,9 +699,18 @@ async function linkSignedInUser(
         { field: "providerId", value: "credential" },
       ],
     });
+    if ("passkey" in ctx.context.tables)
+      await ctx.context.adapter.deleteMany({
+        model: "passkey",
+        where: [{ field: "userId", value: userId }],
+      });
     return true;
   });
 }
+
+/** A session a paired phone signed in with (`dozo-relay-session.ts`). */
+const fromPhone = (session: { session: { userAgent?: string | null } }) =>
+  session.session.userAgent === RELAY_SESSION_USER_AGENT;
 
 /**
  * The local user the hosted account signs in as, under the install lock: the one linked to it;
