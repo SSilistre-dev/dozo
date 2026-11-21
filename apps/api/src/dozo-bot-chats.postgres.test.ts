@@ -339,7 +339,15 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     const me = await person();
     const { botId } = await bot(me);
     for (const path of ["dozoChats/list", "dozoChats/create"]) {
-      expect((await call(me, path, { botId, name: "Garden" })).status, path).toBe(404);
+      const { matched } = await handler.handle(
+        new Request(`http://127.0.0.1/rpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId, name: "Garden" } }),
+        }),
+        { prefix: "/rpc", context: { actor: me } },
+      );
+      expect(matched, path).toBe(false);
     }
   });
 
