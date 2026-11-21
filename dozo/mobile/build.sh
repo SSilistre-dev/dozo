@@ -2,11 +2,14 @@
 # Builds the Dozo iOS app for the simulator. It runs on the host: Docker cannot build an iOS app.
 # The app is upstream's Expo app (apps/mobile), built from the branded staged tree, never from the
 # source tree. No Apple account, signing, device or cloud build is involved (README.md).
-# Usage: dozo/mobile/build.sh check|sim|clean
+# Usage: dozo/mobile/build.sh check|sim|archive|upload|clean
 #   check   stage and brand, install the JavaScript dependencies, resolve the Expo config and fail
 #           unless it carries the Dozo values and nothing of upstream's accounts
 #   sim     check, then prebuild, pod install, a Release build for the simulator, and install and
 #           launch it on a simulator this script creates ("Dozo build")
+#   archive Mac only: check, then a signed Release archive and an .ipa for the App Store
+#           (.build/ipa), signed through an App Store Connect API key (below)
+#   upload  Mac only: upload that .ipa to TestFlight with the same key
 #   clean   delete that simulator and the build output (.build); the toolchain stays
 # Node, pnpm, CocoaPods and every cache go into dozo/mobile/.toolchain (git-ignored), the staged
 # tree, node_modules, the Xcode project and DerivedData into dozo/mobile/.build. HOME points into
@@ -16,9 +19,17 @@
 # DOZO_MOBILE_API_URL: the server the app opens with (default https://app.dozo.bot).
 # DOZO_MOBILE_RELAY_URL: the relay the app pairs through without naming it (default https://relay.dozo.bot).
 # DOZO_MOBILE_DEVICE: the simulator device type (default "iPhone 17").
+# archive and upload need an App Store Connect API key and the Apple team; with any of these unset
+# they print "skipped" and exit 0 without building anything:
+# DOZO_ASC_KEY_ID: the key's id (10 characters). DOZO_ASC_ISSUER_ID: the issuer id (a UUID).
+# DOZO_ASC_KEY_P8: the .p8 file, as a path or as its base64 text. DOZO_APPLE_TEAM_ID: the team id.
+# DOZO_IOS_BUILD_NUMBER: the build number a TestFlight upload must raise (default: the UTC time as
+# yymmddHHMM). The key is copied for the length of the run into a private directory under .build and
+# removed on exit; it is never printed or kept in the repository.
 # Exit 0 ok, 2 failed, 64 usage.
 set -euo pipefail
-on_exit() { local rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 64 ] || exit 2; }
+KEYDIR=""
+on_exit() { local rc=$?; [ -z "$KEYDIR" ] || rm -rf "$KEYDIR"; [ "$rc" -eq 0 ] || [ "$rc" -eq 64 ] || exit 2; }
 trap on_exit EXIT
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -159,11 +170,9 @@ device() {
   echo "$udid"
 }
 
-build() {
-  local udid app id foreign
-  xcrun --find xcodebuild >/dev/null 2>&1 || die "Xcode not found"
-  cocoapods
-  udid=$(device)
+# The generated Xcode project and Pods, from the staged tree.
+native_project() {
+  local foreign
   # The generated project is throwaway: prebuild always starts from nothing.
   ( cd "$APP" && pnpm exec expo prebuild --platform ios --clean --no-install ) >"$OUT/prebuild.log" 2>&1 \
     || die "expo prebuild failed ($OUT/prebuild.log)"
@@ -174,6 +183,14 @@ build() {
   # config it came from: nothing of upstream's accounts, ids or domain may have reached it.
   foreign=$(grep -rIlE 'com\.rakazo|07f7eb04|u\.expo\.dev|inbox-?zero|rakazo\.(com|ai|app)' "$APP/ios" --exclude-dir=Pods || true)
   [ -z "$foreign" ] || die "the generated iOS project names upstream's account, ids or domain: $foreign"
+}
+
+build() {
+  local udid app id
+  xcrun --find xcodebuild >/dev/null 2>&1 || die "Xcode not found"
+  cocoapods
+  udid=$(device)
+  native_project
   say "xcodebuild (Release, simulator): the log is $OUT/xcodebuild.log"
   xcodebuild -workspace "$APP/ios/Dozo.xcworkspace" -scheme Dozo -configuration Release \
     -sdk iphonesimulator -destination "id=$udid" -derivedDataPath "$OUT/derived" \
@@ -190,6 +207,86 @@ build() {
   say "simulator: $udid (screenshot: xcrun simctl io $udid screenshot shot.png)"
 }
 
+# archive and upload sign and upload through an App Store Connect API key. Missing values are a
+# skip, not a failure: a build without the owner's Apple account is the normal case. Values that
+# are set but malformed are a failure. Only the names are ever printed, never a value.
+asc_credentials() {
+  local v missing=""
+  for v in DOZO_ASC_KEY_ID DOZO_ASC_ISSUER_ID DOZO_ASC_KEY_P8 DOZO_APPLE_TEAM_ID; do
+    [ -n "${!v:-}" ] || missing="$missing $v"
+  done
+  if [ -n "$missing" ]; then
+    say "$1 skipped: not set:$missing (README, Release)"
+    return 1
+  fi
+  [[ "$DOZO_ASC_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || die "DOZO_ASC_KEY_ID is not a 10-character key id"
+  [[ "$DOZO_APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || die "DOZO_APPLE_TEAM_ID is not a 10-character team id"
+  [[ "$DOZO_ASC_ISSUER_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || die "DOZO_ASC_ISSUER_ID is not an issuer id (a UUID)"
+}
+
+# The key in a private directory of this run, where xcodebuild takes it by path and altool finds it
+# as private_keys/AuthKey_<id>.p8 from its working directory. DOZO_ASC_KEY_P8 is a path or the
+# file's base64 text. The directory goes on exit (on_exit).
+asc_key() {
+  KEYDIR=$(umask 077 && mktemp -d "$OUT/asc.XXXXXX")
+  ASC_KEY="$KEYDIR/private_keys/AuthKey_$DOZO_ASC_KEY_ID.p8"
+  ( umask 077
+    mkdir "$KEYDIR/private_keys"
+    if [ -f "$DOZO_ASC_KEY_P8" ]; then cp "$DOZO_ASC_KEY_P8" "$ASC_KEY"
+    else printf '%s' "$DOZO_ASC_KEY_P8" | base64 --decode >"$ASC_KEY" 2>/dev/null || true; fi )
+  [ "$(head -c 27 "$ASC_KEY" 2>/dev/null)" = "-----BEGIN PRIVATE KEY-----" ] \
+    || die "DOZO_ASC_KEY_P8 is neither a .p8 file nor its base64 text"
+}
+
+# A signed Release archive, exported as an .ipa for the App Store. Xcode creates and renews the
+# certificate and profiles itself through the API key (-allowProvisioningUpdates); the key needs
+# the App Manager or Admin role. Every build needs a higher build number than the last upload.
+archive() {
+  local number="${DOZO_IOS_BUILD_NUMBER:-$(date -u +%y%m%d%H%M)}"
+  local auth ipa
+  xcrun --find xcodebuild >/dev/null 2>&1 || die "Xcode not found"
+  cocoapods
+  native_project
+  asc_key
+  auth=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY"
+    -authenticationKeyID "$DOZO_ASC_KEY_ID" -authenticationKeyIssuerID "$DOZO_ASC_ISSUER_ID")
+  rm -rf "$OUT/Dozo.xcarchive" "$OUT/ipa"
+  say "xcodebuild archive (build number $number): the log is $OUT/archive.log"
+  xcodebuild archive -workspace "$APP/ios/Dozo.xcworkspace" -scheme Dozo -configuration Release \
+    -destination "generic/platform=iOS" -archivePath "$OUT/Dozo.xcarchive" \
+    -derivedDataPath "$OUT/derived" -clonedSourcePackagesDirPath "$OUT/derived/SourcePackages" \
+    CLANG_MODULE_CACHE_PATH="$OUT/derived/ModuleCache.noindex" COMPILER_INDEX_STORE_ENABLE=NO \
+    DEVELOPMENT_TEAM="$DOZO_APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$number" \
+    "${auth[@]}" >"$OUT/archive.log" 2>&1 || die "xcodebuild archive failed ($OUT/archive.log)"
+  printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0"><dict>' \
+    '<key>method</key><string>app-store-connect</string>' \
+    '<key>destination</key><string>export</string>' \
+    "<key>teamID</key><string>$DOZO_APPLE_TEAM_ID</string>" \
+    '<key>signingStyle</key><string>automatic</string>' \
+    '</dict></plist>' >"$OUT/ExportOptions.plist"
+  xcodebuild -exportArchive -archivePath "$OUT/Dozo.xcarchive" -exportPath "$OUT/ipa" \
+    -exportOptionsPlist "$OUT/ExportOptions.plist" "${auth[@]}" >"$OUT/export.log" 2>&1 \
+    || die "xcodebuild -exportArchive failed ($OUT/export.log)"
+  ipa=$(find "$OUT/ipa" -name '*.ipa' | head -n 1)
+  [ -n "$ipa" ] || die "the export left no .ipa ($OUT/export.log)"
+  say "ipa: $ipa ($(du -sh "$ipa" | cut -f1)), build number $number"
+}
+
+# Uploads the exported .ipa to App Store Connect; it shows in TestFlight once Apple has processed it.
+upload() {
+  local ipa
+  ipa=$(find "$OUT/ipa" -name '*.ipa' 2>/dev/null | head -n 1)
+  [ -n "$ipa" ] || die "no .ipa in $OUT/ipa: run archive first"
+  asc_key
+  say "uploading $(basename "$ipa"): the log is $OUT/upload.log"
+  ( cd "$KEYDIR" && xcrun altool --upload-app -f "$ipa" -t ios \
+    --apiKey "$DOZO_ASC_KEY_ID" --apiIssuer "$DOZO_ASC_ISSUER_ID" ) >"$OUT/upload.log" 2>&1 \
+    || die "altool --upload-app failed ($OUT/upload.log)"
+  say "uploaded: processing in App Store Connect takes a few minutes before TestFlight lists it"
+}
+
 clean() {
   local udid
   udid=$(xcrun simctl list devices 2>/dev/null | sed -n "s/^ *$DEVICE_NAME (\([0-9A-F-]*\)).*/\1/p" | head -n 1)
@@ -204,6 +301,8 @@ clean() {
 case "${1:-}" in
   check) preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; say "check PASS" ;;
   sim) preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; timed build; say "sim PASS" ;;
+  archive) asc_credentials archive || exit 0; preflight; mkdir -p "$OUT"; timed stage; seal; toolchain; timed deps; check_config; timed archive; say "archive PASS" ;;
+  upload) asc_credentials upload || exit 0; preflight; mkdir -p "$OUT"; upload; say "upload PASS" ;;
   clean) clean ;;
-  *) echo "usage: $0 check|sim|clean" >&2; exit 64 ;;
+  *) echo "usage: $0 check|sim|archive|upload|clean" >&2; exit 64 ;;
 esac
