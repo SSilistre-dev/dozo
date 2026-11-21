@@ -1,6 +1,11 @@
-import { ph } from "@lingui/core/macro";
+import { ph, plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { DozoMessagePin, MessageAuthor } from "@rakazo/contracts";
+import type {
+  DozoMessagePin,
+  DozoRevisable,
+  DozoRevisionConfirmed,
+  MessageAuthor,
+} from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { Alert } from "react-native";
@@ -11,9 +16,10 @@ import { useRosterSignals } from "./roster-signals";
 import { errorText } from "./user-error";
 
 /**
- * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the one message Edit and
- * Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
- * current (`useDozoThreadMenus`) and each message only reads it.
+ * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the messages Edit
+ * and Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
+ * current (`useDozoThreadMenus`) and each message only reads it. An earlier message removes every
+ * later one, so it is confirmed first.
  */
 export type DozoMessageAction = {
   name: "dozoEdit" | "dozoRegenerate" | "dozoPin" | "dozoReport" | "dozoBlock";
@@ -72,8 +78,89 @@ export function pinLabel({ preview }: DozoMessagePin, page: string, message: str
   return preview.text || preview.attachment?.name || (preview.page ? page : message);
 }
 
+/**
+ * Going back to an earlier message removes the later ones: the person says so first, told how
+ * many go.
+ */
+export function confirmRemoval(
+  t: ReturnType<typeof useLingui>["t"],
+  count: number,
+  act: () => void,
+): void {
+  Alert.alert(
+    t`${plural(count, { one: "Remove # message?", other: "Remove # messages?" })}`,
+    undefined,
+    [
+      { text: t`Cancel`, style: "cancel" },
+      { text: t`Remove`, style: "destructive", onPress: act },
+    ],
+  );
+}
+
+/** What changing this message removes, as the server named it, sent back as what was confirmed. */
+export function confirmedFor(
+  revisable: DozoRevisable | undefined,
+  messageId: string,
+): DozoRevisionConfirmed | undefined {
+  return revisable?.removedCounts
+    ? {
+        removes: revisable.removedCounts[messageId] ?? 0,
+        lastMessageId: revisable.lastMessageId ?? null,
+      }
+    : undefined;
+}
+
+function isNamed(revisable: DozoRevisable, kind: "edit" | "regenerate", messageId: string) {
+  return kind === "edit"
+    ? revisable.editMessageId === messageId ||
+        (revisable.earlierEditMessageIds?.includes(messageId) ?? false)
+    : revisable.regenerateMessageId === messageId ||
+        (revisable.earlierRegenerateMessageIds?.includes(messageId) ?? false);
+}
+
+/**
+ * After a refusal the chat may have changed since the confirm (a turn arrived and finished): read
+ * again and, when the message can still change this way, ask again with what would go now. Whether
+ * it asked.
+ */
+export async function askAgain(
+  t: ReturnType<typeof useLingui>["t"],
+  change: { threadId: string; messageId: string; kind: "edit" | "regenerate" },
+  error: Error,
+  act: (confirmed: DozoRevisionConfirmed | undefined) => void,
+): Promise<boolean> {
+  if ((error as { code?: unknown }).code !== "MESSAGE_NOT_REVISABLE") return false;
+  const { threadId, messageId, kind } = change;
+  const fresh = await queryClient.fetchQuery({ ...revisableRead(threadId), staleTime: 0 });
+  if (!isNamed(fresh, kind, messageId)) return false;
+  const confirmed = confirmedFor(fresh, messageId);
+  confirmRemoval(t, confirmed?.removes ?? 0, () => act(confirmed));
+  return true;
+}
+
+/** How many messages changing this one removes when it is an earlier one, else null. */
+function earlierRemoves(
+  revisable: DozoRevisable | undefined,
+  kind: "edit" | "regenerate",
+  messageId: string,
+): number | null {
+  const ids =
+    kind === "edit" ? revisable?.earlierEditMessageIds : revisable?.earlierRegenerateMessageIds;
+  return ids?.includes(messageId) ? (revisable?.removedCounts?.[messageId] ?? 0) : null;
+}
+
 // The edit screen takes the text from here rather than from its route, which would carry it.
-const editDrafts = new Map<string, string>();
+const editDrafts = new Map<string, EditDraft>();
+
+/**
+ * The text Edit opens with, how many later messages sending it removes (null: none, so it does
+ * not ask), and what to send back as confirmed.
+ */
+export type EditDraft = {
+  text: string;
+  removes: number | null;
+  confirmed?: DozoRevisionConfirmed;
+};
 
 /**
  * How Edit opens its screen, set by the chat's module (`dozo-thread-menus.ts`) so a message row
@@ -92,11 +179,11 @@ export function setDozoReportOpener(open: (threadId: string, messageId: string) 
   openReport = open;
 }
 
-/** The text the edit screen opens with, once. */
-export function takeEditDraft(messageId: string): string {
-  const text = editDrafts.get(messageId) ?? "";
+/** What the edit screen opens with, once. */
+export function takeEditDraft(messageId: string): EditDraft {
+  const draft = editDrafts.get(messageId) ?? { text: "", removes: null };
   editDrafts.delete(messageId);
-  return text;
+  return draft;
 }
 
 function messageText(message: MobileMessage): string {
@@ -139,17 +226,26 @@ export function useDozoMessageActions(
   ).data;
   const failed = (error: Error) => Alert.alert(errorText(error, t`Try again.`));
   const regenerate = useSave({
-    save: (_, send) => send("dozoMessages/regenerate", { threadId, messageId }),
+    save: (confirmed: DozoRevisionConfirmed | undefined, send) =>
+      send("dozoMessages/regenerate", { threadId, messageId, confirmed }),
     stale: [revisableRead(threadId).queryKey],
-    onFailed: failed,
+    onFailed: (error) =>
+      void askAgain(t, { threadId, messageId, kind: "regenerate" }, error, (confirmed) =>
+        saves.current.regenerate.run(confirmed),
+      ).then((asked) => {
+        if (!asked) failed(error);
+      }),
   });
   const pin = useSave({
     save: (pinned: boolean, send) => send("dozoMessages/pin", { threadId, messageId, pinned }),
     stale: [pinsRead(threadId).queryKey],
     onFailed: failed,
   });
-  const canEdit = sent && revisable?.editMessageId === messageId;
-  const canRegenerate = sent && revisable?.regenerateMessageId === messageId;
+  const editRemoves = sent ? earlierRemoves(revisable, "edit", messageId) : null;
+  const regenerateRemoves = sent ? earlierRemoves(revisable, "regenerate", messageId) : null;
+  const canEdit = editRemoves !== null || (sent && revisable?.editMessageId === messageId);
+  const canRegenerate =
+    regenerateRemoves !== null || (sent && revisable?.regenerateMessageId === messageId);
   const pinned = pins?.some((entry) => entry.messageId === messageId) ?? false;
   const showPin = sent && pins !== undefined;
   const showReport = sent && reportable && Boolean(feedback?.mode);
@@ -157,6 +253,7 @@ export function useDozoMessageActions(
   const saves = useRef({ regenerate, pin });
   saves.current = { regenerate, pin };
   const text = canEdit ? messageText(message) : "";
+  const confirmed = confirmedFor(revisable, messageId);
   return useMemo(() => {
     const actions: DozoMessageAction[] = [];
     if (canEdit)
@@ -166,7 +263,7 @@ export function useDozoMessageActions(
         symbol: "pencil",
         icon: "create-outline",
         onPress: () => {
-          editDrafts.set(messageId, text);
+          editDrafts.set(messageId, { text, removes: editRemoves, confirmed });
           openEdit?.(threadId, messageId);
         },
       });
@@ -176,7 +273,11 @@ export function useDozoMessageActions(
         text: t`Regenerate`,
         symbol: "arrow.clockwise",
         icon: "refresh-outline",
-        onPress: () => saves.current.regenerate.run(),
+        onPress: () => {
+          const run = () => saves.current.regenerate.run(confirmed);
+          if (regenerateRemoves === null) run();
+          else confirmRemoval(t, regenerateRemoves, run);
+        },
       });
     if (showPin)
       actions.push({
@@ -219,6 +320,9 @@ export function useDozoMessageActions(
   }, [
     canEdit,
     canRegenerate,
+    editRemoves,
+    regenerateRemoves,
+    confirmed,
     showPin,
     pinned,
     showReport,

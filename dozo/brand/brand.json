@@ -7374,6 +7374,35 @@
       "reason": "waiting work: the Turkish copy of the chat's waiting line and its list of what waits"
     },
     {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Sohbeti temizle\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
+      "replace": "msgstr \"Sohbeti temizle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"{count, plural, one {Remove # message?} other {Remove # messages?}}\"\nmsgstr \"{count, plural, one {# mesaj kaldırılsın mı?} other {# mesaj kaldırılsın mı?}}\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-message-revision.tsx",
+        "apps/mobile/lib/dozo-message-actions.ts"
+      ],
+      "reason": "message revision: the Turkish copy of the question before an earlier message is edited or regenerated"
+    },
+    {
+      "file": "packages/db/prisma/schema.prisma",
+      "find": "  historyCompactionRetryAfterSeq Int?\n  reads                       ThreadRead[]\n",
+      "replace": "  historyCompactionRetryAfterSeq Int?\n  /// Times the chat went back to an earlier message (fork): a summary begun before one is dropped.\n  dozoRewinds                 Int        @default(0)\n  reads                       ThreadRead[]\n",
+      "requires": [
+        "packages/db/prisma/migrations/20270114120000_dozo_thread_rewinds/migration.sql"
+      ],
+      "reason": "message revision: the rewind count a history summary compares before it lands"
+    },
+    {
+      "file": "packages/adapters/src/history-compaction.ts",
+      "find": "      historyCompactionGeneration: previousGeneration,\n    },\n    data: {\n      historyCompactedUpToSeq: lastSeq,\n",
+      "replace": "      historyCompactionGeneration: previousGeneration,\n      dozoRewinds: thread.dozoRewinds,\n    },\n    data: {\n      historyCompactedUpToSeq: lastSeq,\n",
+      "requires": [
+        "packages/db/prisma/migrations/20270114120000_dozo_thread_rewinds/migration.sql",
+        "apps/api/src/dozo-message-revision.ts"
+      ],
+      "reason": "message revision: a summary read before the chat went back to an earlier message covers messages that are gone, so it is not written"
+    },
+    {
       "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
       "find": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
       "replace": "vi.mock(\"../components/dozo-quiet-hours-row\", () => ({ DozoQuietHoursRow: () => null }));\nvi.mock(\"../components/dozo-access-tokens\", () => ({ DozoAccessTokensRow: () => null }));\nvi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
