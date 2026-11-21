@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { DOZO_AVATAR_GENERATE_ERRORS, DOZO_AVATAR_PROMPT_MAX_CHARS } from "@rakazo/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { useMobileTokens } from "../lib/native";
@@ -11,6 +11,18 @@ import { GrowingTextInput } from "./growing-text-input";
 import { NativeActionButton } from "./native-action-button";
 
 /**
+ * The status read, or none where no server session is known yet (a screen rendered bare): the read
+ * names its scope, and a screen without one offers nothing rather than failing.
+ */
+function statusRead() {
+  try {
+    return rpcQuery("dozoAvatarGenerate/status");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Draws a bot's avatar from a few words, in the avatar sheet: description, Generate, then the
  * picture with Use and Try again. Nothing shows unless the server can draw one for this person.
  * Use hands the picture to the sheet as its draft; the screen's Save stores it like any photo.
@@ -18,12 +30,19 @@ import { NativeActionButton } from "./native-action-button";
  * `send` carries no abort signal.
  */
 export function DozoAvatarGenerate({ onUse }: { onUse: (image: string) => void }) {
-  const { t } = useLingui();
-  const tokens = useMobileTokens();
+  const read = statusRead();
   const status = useQuery(
-    { ...rpcQuery("dozoAvatarGenerate/status"), refetchOnMount: "always" },
+    read
+      ? { ...read, refetchOnMount: "always" }
+      : { queryKey: ["dozo-avatar-generate-no-session"], queryFn: skipToken },
     queryClient,
   );
+  return status.data?.available === true ? <Generator onUse={onUse} /> : null;
+}
+
+function Generator({ onUse }: { onUse: (image: string) => void }) {
+  const { t } = useLingui();
+  const tokens = useMobileTokens();
   const [prompt, setPrompt] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const generate = useSave({
@@ -31,7 +50,6 @@ export function DozoAvatarGenerate({ onUse }: { onUse: (image: string) => void }
       send("dozoAvatarGenerate/generate", { prompt: description }),
     onSaved: (result) => setImage(result.image),
   });
-  if (status.data?.available !== true) return null;
   const description = prompt.trim();
   // Another picture is already being drawn for this person: this one goes back to waiting.
   const failure =
