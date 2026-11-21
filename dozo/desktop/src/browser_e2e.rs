@@ -525,7 +525,14 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
          addEventListener('message',e=>r(e.data));</script>\
          <button onclick=\"{COPY}const w=window.open();r(w.Document.prototype.execCommand.call(document,'copy')?'window-wrote':'window-refused');w.close()\">Window</button>\
          <button onclick=\"{COPY}const f=document.createElement('iframe');document.body.append(f);r(frames[frames.length-1].Document.prototype.execCommand.call(document,'copy')?'frame-wrote':'frame-refused')\">Frame</button>\
-         <button onclick=\"document.documentElement.webkitRequestFullScreen();setTimeout(()=>r(document.fullscreenElement?'webkit-taken':'webkit-refused'),300)\">Webkit</button>"
+         <button onclick=\"document.documentElement.webkitRequestFullScreen();setTimeout(()=>r(document.fullscreenElement?'webkit-taken':'webkit-refused'),300)\">Webkit</button>\
+         <button onclick=\"{COPY}Array.prototype.includes=()=>false;String.prototype.toLowerCase=function(){{return 'bold'}};r(document.execCommand('copy')?'includes-wrote':'includes-refused')\">Includes</button>\
+         <button onclick=\"{COPY}const seen=[];const call=Function.prototype.call;Function.prototype.call=function(t,...a){{seen.push(this);return Reflect.apply(this,t,a)}};Reflect.apply=(f,t,a)=>{{seen.push(f);return call.apply(f,[t,...a])}};document.execCommand('bold');const f=seen.find(x=>x&&x.name==='execCommand'&&!String(x).includes('arguments'));r(f&&call.apply(f,[document,'copy'])?'call-wrote':'call-refused')\">Call</button>\
+         <button onclick=\"document.body.requestPointerLock().then(()=>r('lock-taken'),()=>r('lock-refused'))\">Lock</button>\
+         <button onclick=\"(window.showOpenFilePicker?showOpenFilePicker():Promise.reject()).then(()=>r('picker-opened'),()=>r('picker-refused'))\">Picker</button>\
+         <button onclick=\"(window.documentPictureInPicture?documentPictureInPicture.requestWindow():Promise.reject()).then(()=>r('pip-opened'),()=>r('pip-refused'))\">PiP</button>\
+         <button onclick=\"navigator.credentials.get({{publicKey:{{challenge:new Uint8Array(16)}}}}).then(()=>r('passkey-asked'),()=>r('passkey-refused'))\">Passkey</button>\
+         <button onclick=\"Notification.requestPermission().then(p=>r(p==='granted'?'notify-granted':'notify-refused'))\">Notify</button>"
     );
     let inner = format!(
         "<button style='width:100%;height:100%' onclick=\"{COPY}parent.postMessage(document.execCommand('copy')?'site-wrote':'site-refused','*')\">Inside</button>"
@@ -542,7 +549,11 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
     let page = format!("http://127.0.0.1:{outer_port}/");
     call(&browsers, "Page.navigate", json!({ "url": page })).await;
     let found = wait_for(&browsers, "Webkit").await;
-    for button in ["Window", "Frame", "Webkit"] {
+    let buttons = [
+        "Window", "Frame", "Webkit", "Includes", "Call", "Lock", "Picker", "PiP", "Passkey",
+        "Notify",
+    ];
+    for button in buttons {
         click(&browsers, find_node(&found, "button", button)).await;
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
@@ -559,7 +570,7 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
             .find(|(_, name, _)| name.starts_with("probe:"))
             .map(|(_, name, _)| name)
             .unwrap_or_default();
-        if probe.split(' ').count() == 5 {
+        if probe.split(' ').count() == buttons.len() + 2 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -569,15 +580,22 @@ async fn e2e_browser_guard_holds_in_windows_and_frames() {
     assert_eq!(
         outcomes,
         [
+            "call-refused",
             "frame-refused",
+            "includes-refused",
+            "lock-refused",
+            "notify-refused",
+            "passkey-refused",
+            "picker-refused",
+            "pip-refused",
             "site-refused",
             "webkit-refused",
-            "window-refused"
+            "window-refused",
         ],
         "{probe}"
     );
     println!(
-        "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, and the older full screen"
+        "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, the older full screen, against a page that replaces what it relies on, and for pointer lock, pickers, picture-in-picture, passkeys and notifications"
     );
     browsers.close_all();
 }

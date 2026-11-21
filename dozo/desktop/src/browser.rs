@@ -986,6 +986,22 @@ async fn harden(pipe: &Pipe) -> Result<(), String> {
         let denied = json!({ "permission": { "name": name }, "setting": "denied" });
         pipe.call("Browser.setPermission", denied, None).await?;
     }
+    // Nothing a page asks the person through the browser's own prompts. A name an older browser
+    // does not know is left: the guard refuses those features anyway.
+    for name in [
+        "notifications",
+        "geolocation",
+        "camera",
+        "microphone",
+        "midi",
+        "window-management",
+        "local-fonts",
+        "idle-detection",
+        "storage-access",
+    ] {
+        let denied = json!({ "permission": { "name": name }, "setting": "denied" });
+        let _ = pipe.call("Browser.setPermission", denied, None).await;
+    }
     // Every new tab or window holds before its first script until it has the guard
     // (`guard_target`).
     pipe.call("Target.setAutoAttach", AUTO_ATTACH.clone(), None)
@@ -1038,53 +1054,97 @@ async fn guard_target(pipe: std::sync::Weak<Pipe>, params: Value) {
 }
 
 /// A click the server sends counts as the person's gesture, so a page could use it to write the
-/// clipboard or take the whole screen. The permission above stops the clipboard API; this stops the
-/// older copy and cut commands and every form of full screen. It is set in every document before
-/// its scripts (and in every new tab, window and frame process, `guard_target`), and it guards a
-/// window a page opens and a frame it reaches, which a page could otherwise use to call the
-/// browser's own functions. A page that opens a window still can (sign-ins need it): it opens as a
-/// tab the bot cannot reach.
-const GUARD: &str = "(() => {
+/// clipboard, take the whole screen, or reach past the page. The permissions above stop the
+/// clipboard API and the prompts; this stops the older copy and cut commands, every form of full
+/// screen (a full screen that starts anyway, from a video's own controls, is left at once),
+/// picture-in-picture windows, pointer lock, the file and folder pickers, printing, passkeys and
+/// payment sheets. It is set in every document before its scripts (and in every new tab, window
+/// and frame process, `guard_target`), and it guards a window a page opens and a frame it reaches.
+/// A page cannot undo it: everything it relies on is taken before any page script runs, so a page
+/// that later replaces `Function.prototype.call`, `Array.prototype.includes` or the like changes
+/// nothing, and the browser's own functions stay out of its reach. A page that opens a window still
+/// can (sign-ins need it): it opens as a tab the bot cannot reach.
+const GUARD: &str = r#"(() => {
+  const apply = Reflect.apply;
+  const lower = String.prototype.toLowerCase;
+  const text = String;
+  const has = WeakSet.prototype.has;
+  const add = WeakSet.prototype.add;
+  const own = Object.getOwnPropertyDescriptor;
+  const define = Object.defineProperty;
+  const listen = EventTarget.prototype.addEventListener;
   const guarded = new WeakSet();
   const guard = (w) => {
     try {
-      if (!w || guarded.has(w)) return w;
-      guarded.add(w);
+      if (!w || apply(has, guarded, [w])) return w;
+      apply(add, guarded, [w]);
+      const refuse = () => w.Promise.reject(new w.DOMException('Not allowed here', 'NotAllowedError'));
+      const nothing = () => {};
+      const set = (target, name, value) => {
+        if (target && name in target) define(target, name, { value, writable: true, configurable: true });
+      };
       const doc = w.Document.prototype;
       const exec = doc.execCommand;
-      doc.execCommand = function (command, ...rest) {
-        return ['copy', 'cut', 'paste'].includes(String(command).toLowerCase())
-          ? false
-          : exec.call(this, command, ...rest);
-      };
-      const refuse = () => w.Promise.reject(new w.DOMException('Not allowed here', 'NotAllowedError'));
+      set(doc, 'execCommand', function () {
+        const name = apply(lower, text(arguments[0]), []);
+        if (name === 'copy' || name === 'cut' || name === 'paste') return false;
+        return apply(exec, this, [name, arguments[1], arguments[2]]);
+      });
       const element = w.Element.prototype;
-      element.requestFullscreen = refuse;
-      for (const name of ['webkitRequestFullscreen', 'webkitRequestFullScreen'])
-        if (name in element) element[name] = () => {};
+      set(element, 'requestFullscreen', refuse);
+      set(element, 'webkitRequestFullscreen', nothing);
+      set(element, 'webkitRequestFullScreen', nothing);
+      set(element, 'requestPointerLock', refuse);
       const video = w.HTMLVideoElement.prototype;
-      for (const name of ['webkitEnterFullscreen', 'webkitEnterFullScreen'])
-        if (name in video) video[name] = () => {};
+      set(video, 'webkitEnterFullscreen', nothing);
+      set(video, 'webkitEnterFullScreen', nothing);
+      set(video, 'requestPictureInPicture', refuse);
+      if (w.DocumentPictureInPicture) set(w.DocumentPictureInPicture.prototype, 'requestWindow', refuse);
+      set(w, 'showOpenFilePicker', refuse);
+      set(w, 'showSaveFilePicker', refuse);
+      set(w, 'showDirectoryPicker', refuse);
+      set(w, 'print', nothing);
+      if (w.CredentialsContainer) {
+        set(w.CredentialsContainer.prototype, 'get', refuse);
+        set(w.CredentialsContainer.prototype, 'create', refuse);
+      }
+      if (w.PaymentRequest) set(w.PaymentRequest.prototype, 'show', refuse);
+      if (w.Notification) set(w.Notification, 'requestPermission', () => w.Promise.resolve('denied'));
+      const leave = w.Document.prototype.exitFullscreen;
+      const shown = own(w.Document.prototype, 'fullscreenElement').get;
+      const away = () => {
+        const doc = w.document;
+        if (apply(shown, doc, [])) apply(leave, doc, []);
+      };
+      apply(listen, w, ['fullscreenchange', away, true]);
+      apply(listen, w, ['webkitfullscreenchange', away, true]);
       const open = w.open;
-      w.open = function (...rest) { return guard(open.apply(this, rest)); };
-      for (const [type, key] of [
+      set(w, 'open', function () { return guard(apply(open, this, arguments)); });
+      const fields = [
         [w.HTMLIFrameElement, 'contentWindow'], [w.HTMLIFrameElement, 'contentDocument'],
         [w.HTMLFrameElement, 'contentWindow'], [w.HTMLFrameElement, 'contentDocument'],
         [w.HTMLObjectElement, 'contentWindow'], [w.HTMLObjectElement, 'contentDocument'],
-      ]) {
-        const field = Object.getOwnPropertyDescriptor(type.prototype, key);
-        Object.defineProperty(type.prototype, key, { ...field, get() {
-          const value = field.get.call(this);
-          guard(key === 'contentWindow' ? value : value && value.defaultView);
-          return value;
-        } });
+      ];
+      for (let index = 0; index < fields.length; index += 1) {
+        const type = fields[index][0];
+        const key = fields[index][1];
+        const field = own(type.prototype, key);
+        define(type.prototype, key, {
+          configurable: true,
+          enumerable: field.enumerable,
+          get() {
+            const value = apply(field.get, this, []);
+            guard(key === 'contentWindow' ? value : value && value.defaultView);
+            return value;
+          },
+        });
       }
       for (let index = 0; index < w.frames.length; index += 1) guard(w.frames[index]);
     } catch {}
     return w;
   };
   guard(window);
-})();";
+})();"#;
 
 /// History as the server gets it: each entry's id, address and title only (the browser also names
 /// what was typed), and an entry that is no website, or was made while the person signed in, keeps
