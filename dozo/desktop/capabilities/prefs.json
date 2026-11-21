@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "prefs",
+  "description": "The Settings window (ui/prefs.html): the list of what the Dozo menu offers, and picking one. Like the app's other screens it has no `remote` entry.",
+  "windows": ["prefs"],
+  "permissions": ["allow-prefs-list", "allow-prefs-pick"]
+}

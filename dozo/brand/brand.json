@@ -7659,6 +7659,57 @@
         "packages/core/src/dozo-unreached-retry.ts"
       ],
       "reason": "approval cards: the retry that web and mobile share"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { ComputerDeviceSettings } from \"../components/ComputerDeviceSettings\";\nimport { ComputerProviderSettings }",
+      "replace": "import { ComputerDeviceSettings } from \"../components/ComputerDeviceSettings\";\nimport { DozoDesktopAppRow } from \"../components/dozo-desktop-app\";\nimport { ComputerProviderSettings }",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "      <ComputerDeviceSettings />\n\n      {showPassword",
+      "replace": "      <ComputerDeviceSettings />\n      <DozoDesktopAppRow />\n\n      {showPassword",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: in the desktop app, General settings have a row that opens the app's own Settings window (dozo/desktop/src/prefs.rs); in a browser it shows nothing"
+    },
+    {
+      "file": "apps/web/src/components/ComputerDeviceSettings.tsx",
+      "find": "import { listUserDevices, removeUserDevice } from \"../lib/user-devices\";\nimport { SettingsGroup",
+      "replace": "import { listUserDevices, removeUserDevice } from \"../lib/user-devices\";\nimport { DozoConnectThisComputer, inDesktopShell } from \"./dozo-desktop-app\";\nimport { SettingsGroup",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: the import of the two rules below"
+    },
+    {
+      "file": "apps/web/src/components/ComputerDeviceSettings.tsx",
+      "find": "  if (devices.length === 0 && !thisComputer && !plainHttp) return null;",
+      "replace": "  if (devices.length === 0 && !thisComputer && !plainHttp && !inDesktopShell()) return null;",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: in the desktop app the Computers group shows even before any computer is paired, so it can offer to connect this one (the rule below)"
+    },
+    {
+      "file": "apps/web/src/components/ComputerDeviceSettings.tsx",
+      "find": "      ))}\n      {error ? (",
+      "replace": "      ))}\n      <DozoConnectThisComputer />\n      {error ? (",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: in the desktop app, while no computer of the account is connected, Computers offers to connect this one by opening the app's Settings window, where the switch and its consent are; in a browser it shows nothing"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
+      "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
+      "reason": "desktop app settings: the Turkish copy of the Computers link (\"Desktop app\" and \"Open\" are upstream's)"
     }
   ],
   "assets": {

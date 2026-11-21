@@ -165,10 +165,19 @@ mod tests {
             "mailto:someone@example.com",
             "file:///etc/passwd",
             "data:text/html,x",
+            "dozo-app://settings?x=1",
+            "dozo-app://back-up",
         ] {
             assert_eq!(
                 verdict(&url(refused), Some(&server), Seen::Script),
                 Verdict::Refused
+            );
+        }
+        // The one app address a page may go to: the window decides whether the page may.
+        for seen in [Seen::Script, Seen::Click, Seen::MainPage] {
+            assert_eq!(
+                verdict(&url(crate::server::APP_SETTINGS), Some(&server), seen),
+                Verdict::AppSettings
             );
         }
     }

@@ -28,8 +28,15 @@ pub enum Verdict {
     Window,
     /// Opens in the default browser (or mail app), as this URL.
     Browser(Url),
+    /// Opens the app's Settings window (`prefs.rs`), and nothing else: the one address of the app
+    /// a page may go to ([`APP_SETTINGS`]).
+    AppSettings,
     Refused,
 }
+
+/// The address a page of the chosen server goes to for the app's Settings window (the web app's
+/// "Desktop app" row). Exactly this: with a path, query or fragment it is refused like any other.
+pub const APP_SETTINGS: &str = "dozo-app://settings";
 
 /// Turns what the user typed into the server's origin. `https://` is assumed when no scheme is
 /// given, and `http://` only for this computer.
@@ -114,6 +121,7 @@ pub fn decide_with(url: &Url, server: Option<&Url>, issuer: Option<&Url>) -> Ver
     match url.scheme() {
         _ if is_local(url) => Verdict::Window,
         "about" => Verdict::Window,
+        "dozo-app" if url.as_str() == APP_SETTINGS => Verdict::AppSettings,
         // A blob URL carries the origin of the page that made it.
         "http" | "https" | "blob" if on_server => Verdict::Window,
         "http" | "https" if signing_in => Verdict::Window,
@@ -249,6 +257,38 @@ mod tests {
             "x-apple-helpbasic://x",
         ] {
             assert_eq!(window(refused), Verdict::Refused, "{refused}");
+        }
+    }
+
+    #[test]
+    fn only_the_exact_settings_address_opens_the_settings_window() {
+        let server = url("https://dozo.example.com/");
+        assert_eq!(
+            decide(&url(APP_SETTINGS), Some(&server)),
+            Verdict::AppSettings
+        );
+        // The address is the same whatever the server: the window checks where the page is.
+        assert_eq!(decide(&url(APP_SETTINGS), None), Verdict::AppSettings);
+        for refused in [
+            "dozo-app://settings?x=1",
+            "dozo-app://settings?",
+            "dozo-app://settings#x",
+            "dozo-app://settings/",
+            "dozo-app://settings/backup",
+            "dozo-app://SETTINGS.evil",
+            "dozo-app://settings.evil.test",
+            "dozo-app://user@settings",
+            "dozo-app://settings:1",
+            "dozo-app://back-up",
+            "dozo-app:settings",
+            "dozo-app:///settings",
+            "DOZO-APP://settings?x=1",
+        ] {
+            assert_eq!(
+                decide(&url(refused), Some(&server)),
+                Verdict::Refused,
+                "{refused}"
+            );
         }
     }
 
