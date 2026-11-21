@@ -1,11 +1,12 @@
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { APPEARANCE_KEY, type Theme } from "../fixtures";
+import type { Theme } from "../fixtures";
+import { APPEARANCE_KEY } from "../fixtures";
+import { outDir } from "../scan";
 import { connectModelThroughOnboarding } from "../support";
 import { openBot } from "../ui";
 import { newAccount, rpcAs } from "./accounts";
 import { expect, test } from "./flow";
-import { outDir } from "../scan";
 
 type Item = {
   id: string;
@@ -49,6 +50,8 @@ async function setTheme(page: Page, theme: Theme) {
 }
 
 type Routine = { id: string };
+type RunRow = { botId: string; status: string };
+type Started = { runId: string };
 
 /**
  * A bot that is busy with one long answer a member asked for, and the work that waits behind it:
@@ -78,15 +81,16 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
   // A member runs on a model of their own.
   await connectModelThroughOnboarding(member.page);
   await rpcAs(member.page, "spaces/invites/accept", { token: invite.url.split("/").pop() });
-  const mine = (procedure: string, body: unknown) => rpcIn<any>(page, spaceId, procedure, body);
-  const theirs = (procedure: string, body: unknown) =>
-    rpcIn<any>(member.page, spaceId, procedure, body);
+  const mine = <T = unknown>(procedure: string, body: unknown) =>
+    rpcIn<T>(page, spaceId, procedure, body);
+  const theirs = <T = unknown>(procedure: string, body: unknown) =>
+    rpcIn<T>(member.page, spaceId, procedure, body);
   const target = { botId: bot.id };
-  const list = async () => (await mine("dozoQueue/list", target)).items as Item[];
+  const list = async () => (await mine<{ items: Item[] }>("dozoQueue/list", target)).items;
   const statusOf = async (routineId: string, runId: string) =>
     (
-      (await mine("routines/history", { routineId })).runs as Array<{ id: string; status: string }>
-    ).find((run) => run.id === runId)?.status;
+      await mine<{ runs: Array<{ id: string; status: string }> }>("routines/history", { routineId })
+    ).runs.find((run) => run.id === runId)?.status;
   const secret = "Member secret routine";
   const secretWords = "The member's private words";
 
@@ -94,10 +98,7 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
   await theirs("threads/send", { ...target, text: "Keep the bot busy [e2e-slow:200]" });
   await expect
     .poll(async () => {
-      const rows = (await theirs("runs/list", { filter: "active" })).runs as Array<{
-        botId: string;
-        status: string;
-      }>;
+      const rows = (await theirs<{ runs: RunRow[] }>("runs/list", { filter: "active" })).runs;
       return rows.some((run) => run.botId === bot.id && run.status === "running");
     })
     .toBe(true);
@@ -105,27 +106,33 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
 
   // Work in line behind it, in the order it was made: the caller's two routine runs around the
   // member's routine run, then a message of each.
-  const digest: Routine = await mine("routines/create", {
+  const digest = await mine<Routine>("routines/create", {
     botId: bot.id,
     name: "Weekly digest",
     prompt: "Summarize the week",
     crons: ["0 9 * * 1"],
   });
-  const other: Routine = await theirs("routines/create", {
+  const other = await theirs<Routine>("routines/create", {
     botId: bot.id,
     name: secret,
     prompt: "Summarize the week",
     crons: ["0 9 * * 1"],
   });
-  const first = await mine("routines/testRun", { routineId: digest.id });
-  const theirRun = await theirs("routines/testRun", { routineId: other.id });
-  const second = await mine("routines/testRun", { routineId: digest.id });
+  const first = await mine<Started>("routines/testRun", { routineId: digest.id });
+  const theirRun = await theirs<Started>("routines/testRun", { routineId: other.id });
+  const second = await mine<Started>("routines/testRun", { routineId: digest.id });
   await mine("threads/send", { ...target, text: "A thought of my own" });
   await theirs("threads/send", { ...target, text: secretWords });
 
   let items: Item[] = [];
   await expect
-    .poll(async () => (items = await list()).length, { timeout: 60_000 })
+    .poll(
+      async () => {
+        items = await list();
+        return items.length;
+      },
+      { timeout: 60_000 },
+    )
     .toBe(4);
   console.log(`QUEUE-LIST ${JSON.stringify(items)}`);
   const order = items.map((item) => item.id);
@@ -217,18 +224,15 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
   expect(afterCancel.map((item) => item.position)).toEqual([1, 2, 3]);
   expect(afterCancel.some((item) => item.id === first.runId)).toBe(false);
   // The job under way was not touched.
-  const active = (await theirs("runs/list", { filter: "active" })).runs as Array<{
-    botId: string;
-    status: string;
-  }>;
+  const active = (await theirs<{ runs: RunRow[] }>("runs/list", { filter: "active" })).runs;
   expect(active.some((run) => run.botId === bot.id && run.status === "running")).toBe(true);
 
   // Stopping the second wait from its own row in the list.
   const own = rows.filter({ hasText: "Weekly digest" });
   await own.getByRole("button", { name: "Stop" }).click();
-  await expect.poll(async () => statusOf(digest.id, second.runId), { timeout: 30_000 }).toBe(
-    "cancelled",
-  );
+  await expect
+    .poll(async () => statusOf(digest.id, second.runId), { timeout: 30_000 })
+    .toBe("cancelled");
   await expect(page.getByText(/Waiting in line…/).first()).toBeVisible();
   console.log(`QUEUE-UI-CANCEL ${JSON.stringify(await list())}`);
 
@@ -240,9 +244,7 @@ test("queue: waiting work is listed, the caller's own wait can be stopped, and t
 
   // The first job ends (stopped): the line follows without a reload and its work starts.
   await theirs("threads/stop", target);
-  await expect
-    .poll(async () => (await list()).length, { timeout: 90_000 })
-    .toBeLessThan(2);
+  await expect.poll(async () => (await list()).length, { timeout: 90_000 }).toBeLessThan(2);
   await expect(page.getByText(/Waiting in line…/)).toHaveCount(0, { timeout: 30_000 });
   console.log(`QUEUE-AFTER-END ${JSON.stringify(await list())}`);
   expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
