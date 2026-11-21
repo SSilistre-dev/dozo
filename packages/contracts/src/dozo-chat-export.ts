@@ -1,20 +1,21 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
+import { dozoThreadTargetCheck } from "./dozo-bot-chats.js";
 import { Id, IsoDate } from "./ids.js";
 
 export const DozoChatExportInputSchema = z
   .object({
     botId: Id.optional(),
     groupId: Id.optional(),
+    /** A bot's extra chat: its bot and the chat, in place of botId. */
+    chatBotId: Id.optional(),
+    chatId: Id.optional(),
     /** Only messages sent at or after this time; absent exports the whole chat. */
     since: IsoDate.optional(),
     /** The reader's IANA time zone for message times; absent or unknown means UTC. */
     timeZone: z.string().max(64).optional(),
   })
-  .refine((input) => Boolean(input.botId) !== Boolean(input.groupId), {
-    message: "Provide exactly one of botId or groupId",
-    path: ["botId"],
-  });
+  .superRefine(dozoThreadTargetCheck);
 export type DozoChatExportInput = z.infer<typeof DozoChatExportInputSchema>;
 
 export const DozoChatExportSchema = z.object({

@@ -117,6 +117,20 @@ and is not in `dozo/db/threads-owner-reviewed.txt`. Read each one:
 - anything else (an ordinary column): nothing to do.
 Then add its name to `dozo/db/threads-owner-reviewed.txt` and commit that on the sync branch.
 
+**Thread bot guard** (`make olc` fails at the thread bot guard). A bot's extra chat is a thread
+with no `botId`; anchored rules ("bot chats:" in `dozo/brand/brand.json`) give it its bot wherever
+upstream reads a chat's bot from the thread for a turn, a summary, memory, search or a notice.
+`dozo/db/thread-bot-guard.mjs` fails on every upstream source line that reads `thread.botId` or
+`t."botId"` and is not in `dozo/db/thread-bot-reviewed.tsv` (lines are compared by their text, so a
+line that only moves passes and an edited one counts as new). It is a watchman, not a proof: it
+does not see a read through destructuring (`const { botId } = thread`), a `select: { botId: true }`
+whose result is read under another name, or SQL with another table alias, so a sync that changes
+how runs, summaries, memory, search or notices load a chat still needs a read. Read
+each: where it decides something about the chat it is in, add a rule that reads the extra chat's bot
+(`withDozoChatBot`, `DOZO_CHAT_BOT` from `@rakazo/db`) and a test in an extra chat; where it is about
+the bot's main chat only, nothing to do. Then run `node dozo/db/thread-bot-guard.mjs --write` in the
+Node image and commit the list on the sync branch.
+
 ## Upstream's GitHub workflows
 
 Status: not done (what is published: `dozo/README.md`, Status and known limits). Upstream's

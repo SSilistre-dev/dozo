@@ -12,13 +12,17 @@ import {
   archiveChat,
   createChat,
   DozoBotChatsLimitError,
+  dozoBotChatRoutes,
   dozoBotChats,
+  dozoImportChat,
   listChats,
   renameChat,
 } from "./dozo-bot-chats.js";
+import type { RouterContext } from "./routes/context.js";
 
-const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn() }));
+const mocks = vi.hoisted(() => ({ resolveThreadTarget: vi.fn(), stopThreadRuns: vi.fn() }));
 vi.mock("./thread-target.js", () => ({ resolveThreadTarget: mocks.resolveThreadTarget }));
+vi.mock("./thread-stop.js", () => ({ stopThreadRuns: mocks.stopThreadRuns }));
 
 const actor = { userId: "user-me", spaceId: "space-1", email: "me@example.test" } as Actor;
 const createdAt = new Date("2026-11-21T10:00:00.000Z");
@@ -30,6 +34,8 @@ type Row = {
   name: string;
   createdAt: Date;
   archivedAt: Date | null;
+  unread?: boolean | null;
+  snoozedUntil?: Date | null;
 };
 
 /** Answers SQL as the table would for one chat, and counts open chats as `open`. */
@@ -104,10 +110,20 @@ describe("listChats", () => {
         name: "Garden",
         createdAt: "2026-11-21T10:00:00.000Z",
         archivedAt: null,
+        unread: false,
+        snoozedUntil: null,
       },
     ]);
-    expect(statements[0]?.values).toEqual(["bot-1", "space-1", false]);
+    expect(statements[0]?.values).toEqual(["user-me", "space-1", "bot-1", "bot-1", "bot-1", false]);
     expect(statements[0]?.text).toContain("AT TIME ZONE 'UTC'");
+  });
+
+  it("reads every bot's chats with the caller's own read state when no bot is named", async () => {
+    const snoozedUntil = new Date("2026-11-22T08:00:00.000Z");
+    const { db, statements } = fakeDb({ row: chat({ unread: true, snoozedUntil }) });
+    const [listed] = await listChats(db as never, actor, undefined, true);
+    expect(listed).toMatchObject({ unread: true, snoozedUntil: "2026-11-22T08:00:00.000Z" });
+    expect(statements[0]?.values).toEqual(["user-me", "space-1", null, null, null, true]);
   });
 });
 
@@ -228,6 +244,29 @@ describe("dozoBotChats", () => {
     });
   });
 
+  it("stops the chat's working turn before archiving it, and nothing when bringing it back", async () => {
+    mocks.stopThreadRuns.mockReset().mockResolvedValue(undefined);
+    const { chats } = service(fakeDb({ row: chat() }).db);
+    await chats.archive(actor, { chatId: "thread-2", archived: true });
+    expect(mocks.resolveThreadTarget).toHaveBeenLastCalledWith(expect.anything(), actor, {
+      chatBotId: "bot-1",
+      chatId: "thread-2",
+    });
+    expect(mocks.stopThreadRuns).toHaveBeenCalledTimes(1);
+    const back = service(fakeDb({ row: chat({ archivedAt: createdAt }) }).db);
+    await back.chats.archive(actor, { chatId: "thread-2", archived: false });
+    // Archiving an archived chat again is a no-op: nothing to stop there.
+    const again = service(fakeDb({ row: chat({ archivedAt: createdAt }) }).db);
+    await again.chats.archive(actor, { chatId: "thread-2", archived: true });
+    expect(mocks.stopThreadRuns).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists every chat of the Space without checking one bot", async () => {
+    const { chats } = service(fakeDb({ row: chat() }).db);
+    expect((await chats.list(actor, {})).chats).toHaveLength(1);
+    expect(mocks.resolveThreadTarget).not.toHaveBeenCalled();
+  });
+
   it("checks the chat's own bot before a change and signals the Space after it", async () => {
     const { chats, publishRosterChange } = service(fakeDb({ row: chat({ botId: "bot-9" }) }).db);
     await chats.rename(actor, { chatId: "thread-2", name: "Taxes" });
@@ -240,5 +279,137 @@ describe("dozoBotChats", () => {
       chats.archive(actor, { chatId: "thread-2", archived: true }),
     ).rejects.toBeInstanceOf(IsolationError);
     expect(publishRosterChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dozoBotChatRoutes", () => {
+  it("answers each route with the service, as the caller", async () => {
+    const procedure = () => ({
+      handler: (fn: (options: unknown) => unknown) => ({ call: fn }),
+    });
+    const db = fakeDb({ row: chat() }).db;
+    const prisma = {
+      ...db,
+      $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)),
+    };
+    const routes = dozoBotChatRoutes({
+      deps: { prisma, events: {} },
+      authed: {
+        dozoChats: {
+          list: procedure(),
+          create: procedure(),
+          rename: procedure(),
+          archive: procedure(),
+        },
+      },
+    } as unknown as RouterContext).dozoChats as unknown as Record<
+      string,
+      { call: (options: unknown) => Promise<unknown> }
+    >;
+    const context = { actor };
+    expect(await routes.list!.call({ context, input: {} })).toMatchObject({
+      chats: [{ id: "thread-2" }],
+    });
+    expect(
+      await routes.create!.call({ context, input: { botId: "bot-1", name: "Garden" } }),
+    ).toMatchObject({ chat: { name: "Garden" } });
+    expect(
+      await routes.rename!.call({ context, input: { chatId: "thread-2", name: "Taxes" } }),
+    ).toMatchObject({ chat: { name: "Taxes" } });
+    expect(
+      await routes.archive!.call({ context, input: { chatId: "thread-new", archived: true } }),
+    ).toMatchObject({ chat: { id: "thread-new" } });
+  });
+});
+
+describe("dozoImportChat", () => {
+  it("writes the chat's thread and row in one transaction, with the archive's times", async () => {
+    const { db, statements } = fakeDb();
+    const prisma = { $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)) };
+    const id = await dozoImportChat(prisma as never, {
+      spaceId: "space-1",
+      userId: "user-me",
+      botId: "bot-1",
+      chat: { name: "Garden", archivedAt: "2026-11-20T10:00:00.000Z" },
+      thread: {
+        historyCompactedUpToSeq: 4,
+        historyCompactionSummary: "Talked about tomatoes.",
+        createdAt: "2026-11-01T09:00:00.000Z",
+      },
+    });
+    expect(id).toBe("thread-new");
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.thread.create).toHaveBeenCalledWith({
+      data: {
+        spaceId: "space-1",
+        userId: "user-me",
+        historyCompactedUpToSeq: 4,
+        historyCompactionSummary: "Talked about tomatoes.",
+        createdAt: new Date("2026-11-01T09:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    const insert = statements.find((statement) => statement.text.startsWith("INSERT"));
+    expect(insert?.values).toEqual([
+      "thread-new",
+      "bot-1",
+      "space-1",
+      "Garden",
+      "2026-11-01T09:00:00.000Z",
+      "2026-11-20T10:00:00.000Z",
+    ]);
+    await dozoImportChat(prisma as never, {
+      spaceId: "space-1",
+      userId: "user-me",
+      botId: "bot-1",
+      chat: { name: "Open", archivedAt: null },
+      thread: {
+        historyCompactedUpToSeq: null,
+        historyCompactionSummary: null,
+        createdAt: "2026-11-01T09:00:00.000Z",
+      },
+    });
+    expect(
+      statements
+        .filter((statement) => statement.text.startsWith("INSERT"))
+        .at(-1)
+        ?.values.at(-1),
+    ).toBeNull();
+  });
+});
+
+describe("dozoImportChat's limits", () => {
+  const input = (archivedAt: string | null) => ({
+    spaceId: "space-1",
+    userId: "user-me",
+    botId: "bot-1",
+    chat: { name: "Garden", archivedAt },
+    thread: {
+      historyCompactedUpToSeq: null,
+      historyCompactionSummary: null,
+      createdAt: "2026-11-01T09:00:00.000Z",
+    },
+  });
+  const importing = (db: ReturnType<typeof fakeDb>["db"], archivedAt: string | null) =>
+    dozoImportChat(
+      { $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)) } as never,
+      input(archivedAt),
+    );
+
+  it("holds an archive to the most open chats a bot holds, archived ones aside", async () => {
+    const full = fakeDb({ open: DOZO_BOT_CHATS_MAX, total: DOZO_BOT_CHATS_MAX });
+    await expect(importing(full.db, null)).rejects.toMatchObject({
+      code: DOZO_BOT_CHATS_LIMIT_CODE,
+    });
+    expect(full.db.thread.create).not.toHaveBeenCalled();
+    expect(await importing(full.db, "2026-11-20T10:00:00.000Z")).toBe("thread-new");
+  });
+
+  it("holds an archive to the most chats a bot holds in all", async () => {
+    const full = fakeDb({ open: 0, total: DOZO_BOT_CHATS_TOTAL_MAX });
+    await expect(importing(full.db, "2026-11-20T10:00:00.000Z")).rejects.toMatchObject({
+      code: DOZO_BOT_CHATS_TOTAL_LIMIT_CODE,
+    });
+    expect(full.db.thread.create).not.toHaveBeenCalled();
   });
 });

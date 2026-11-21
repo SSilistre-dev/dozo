@@ -66,7 +66,20 @@ describe("readableThread", () => {
     expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(
       db,
       actor,
-      { botId: "bot-1" },
+      { chatBotId: "bot-1", chatId: "thread-1" },
+      { includeArchived: true },
+    );
+  });
+
+  it("checks a bot's extra chat as that chat of its bot", async () => {
+    const { db } = fakeDb({ thread: { botId: null, groupId: null } });
+    db.$queryRaw.mockResolvedValueOnce([{ botId: "bot-1" }] as never);
+    mocks.resolveThreadTarget.mockResolvedValue({ kind: "bot", threadId: "chat-1" });
+    await readableThread(db as never, actor, "chat-1");
+    expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(
+      db,
+      actor,
+      { chatBotId: "bot-1", chatId: "chat-1" },
       { includeArchived: true },
     );
   });

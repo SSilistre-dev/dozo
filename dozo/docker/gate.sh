@@ -238,9 +238,9 @@ olc() {
     # An upstream migration that changes what owns a thread runs before the fork's and can break a
     # bot's extra chats: the guard holds the sync until it is read (dozo/SYNC.md).
     if [ -f dozo/db/threads-owner-guard.test.mjs ]; then
-      if out=$(drun threads-owner --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'node --test dozo/db/threads-owner-guard.test.mjs >/tmp/t.log 2>&1 || { cat /tmp/t.log; exit 1; }; node dozo/db/threads-owner-guard.mjs --root /r' 2>&1); then
-        echo "[olc] $out (dozo/db/threads-owner-guard.mjs)"
-      else printf '%s\n' "$out"; fail "threads owner guard (dozo/db/threads-owner-guard.mjs)"; fi
+      if out=$(drun threads-owner --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'node --test dozo/db/threads-owner-guard.test.mjs dozo/db/thread-bot-guard.test.mjs >/tmp/t.log 2>&1 || { cat /tmp/t.log; exit 1; }; node dozo/db/threads-owner-guard.mjs --root /r && node dozo/db/thread-bot-guard.mjs --root=/r' 2>&1); then
+        printf '%s\n' "$out" | sed 's/^/[olc] /'
+      else printf '%s\n' "$out"; fail "threads owner or thread bot guard (dozo/db/*-guard.mjs)"; fi
     else fail "dozo/db/threads-owner-guard.test.mjs missing: upstream changes to thread owners are not checked"; fi
     # The server bundle's licence notices and runtime copies (dozo/server-bundle): which licences
     # pass, what the notices hold, and that no manifest points at a runtime it does not carry.

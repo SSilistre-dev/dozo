@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
+import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -11,8 +12,24 @@ const mocks = vi.hoisted(() => ({
   me: vi.fn(),
   status: vi.fn(),
   track: vi.fn(),
+  chatRedirect: null as string | null | undefined,
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <div data-testid="upstream-shell" /> }));
+vi.mock("./shell/dozo-bot-chats", async () => {
+  const { Navigate, useSearchParams } = await import("react-router-dom");
+  return {
+    useDozoOpenChat: () => useSearchParams()[0].get("chat") ?? undefined,
+    // The list said the chat is not there (a path), is still loading (undefined), or is (null).
+    DozoChatAddress: ({ children }: { children: ReactNode }) =>
+      mocks.chatRedirect ? (
+        <Navigate to={mocks.chatRedirect} replace />
+      ) : mocks.chatRedirect === undefined ? (
+        <p>checking</p>
+      ) : (
+        children
+      ),
+  };
+});
 vi.mock("../lib/auth", () => ({
   authClient: {
     useSession: () => ({ data: mocks.userId ? { user: { id: mocks.userId } } : null }),
@@ -71,6 +88,7 @@ const navigate = (to: string) => act(async () => go(to));
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.userId = "user-a";
+  mocks.chatRedirect = null;
   mocks.me.mockReset().mockResolvedValue({ billingEnabled: true, productEvents: true });
   mocks.status.mockReset().mockResolvedValue(free);
   mocks.track.mockReset().mockResolvedValue({ ok: true });
@@ -262,4 +280,25 @@ it("holds the app on a spinner while it checks, then opens it without the offer 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("opens the bot's main chat at an address naming none of its open extra chats", async () => {
+  mocks.chatRedirect = "/app/bot-1";
+  await open("/app/bot-1?chat=gone");
+  await vi.waitFor(() => expect(where()).toBe("/app/bot-1"));
+});
+
+it("waits for the chat list before opening an address that names an extra chat", async () => {
+  mocks.chatRedirect = undefined;
+  await open("/app/bot-1?chat=chat-1");
+  await vi.waitFor(() => expect(container.textContent).toContain("checking"));
+  expect(container.querySelector('[data-testid="upstream-shell"]')).toBeNull();
+});
+
+it("opens an address naming one of the bot's open extra chats", async () => {
+  await open("/app/bot-1?chat=chat-1");
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="upstream-shell"]')).not.toBeNull(),
+  );
+  expect(where()).toBe("/app/bot-1?chat=chat-1");
 });
