@@ -165,6 +165,11 @@ function touchesSecretLocation(word: string, program: string): boolean {
     );
 }
 
+/** Whether a word of a command only names a place the command may read without asking. */
+export function readableWord(word: string, program: string): boolean {
+  return !touchesSecretLocation(word, program);
+}
+
 /**
  * Whether the folder a command runs in is one the command may read without asking: the home
  * folder (`''` or `~`), or a path that passes the same check as a word (`~/` first is the home

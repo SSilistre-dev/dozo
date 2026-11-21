@@ -91,17 +91,36 @@ describe("the member's rules in the Space", () => {
     const { db, calls } = fakeDb([row]);
     expect(await listDozoCommandRules(db, member)).toEqual([row]);
     expect(await findDozoCommandRuleWords(db, member, "rule-1")).toEqual(["make"]);
-    await updateDozoCommandRule(db, member, "rule-1", "block");
-    await removeDozoCommandRule(db, member, "rule-1");
     expect(calls.map((call) => call.values)).toEqual([
       ["user-1", "space-1"],
       ["rule-1", "user-1", "space-1"],
-      ["block", "rule-1", "user-1", "space-1"],
-      ["rule-1", "user-1", "space-1"],
     ]);
-    expect(calls[2]!.sql).toContain("UPDATE dozo_command_policies");
-    expect(calls[3]!.sql).toContain("DELETE FROM dozo_command_policies");
     expect(await findDozoCommandRuleWords(fakeDb([]).db, member, "rule-2")).toBeUndefined();
+  });
+
+  it("removes a rule, or one that no longer allows exactly, from the previous release's table too", async () => {
+    const present = fakeDb([{ found: true }]);
+    await updateDozoCommandRule(present.db, member, "rule-1", "block");
+    await updateDozoCommandRule(present.db, member, "rule-1", "allow");
+    await removeDozoCommandRule(present.db, member, "rule-1");
+    expect(present.calls.map((call) => call.sql.replace(/\s+/g, " ").trim().slice(0, 40))).toEqual([
+      "UPDATE dozo_command_policies SET effect =",
+      "SELECT to_regclass('dozo_command_rules') ",
+      "DELETE FROM dozo_command_rules WHERE id =",
+      "UPDATE dozo_command_policies SET effect =",
+      "DELETE FROM dozo_command_policies WHERE i",
+      "SELECT to_regclass('dozo_command_rules') ",
+      "DELETE FROM dozo_command_rules WHERE id =",
+    ]);
+    expect(present.calls[0]!.values).toEqual(["block", "rule-1", "user-1", "space-1"]);
+    expect(present.calls[2]!.values).toEqual(["rule-1", "user-1", "space-1"]);
+    // Once the deferred migration dropped it, nothing more is asked of it.
+    const gone = fakeDb([{ found: false }]);
+    await removeDozoCommandRule(gone.db, member, "rule-1");
+    expect(gone.calls).toHaveLength(2);
+    const unknown = fakeDb([]);
+    await updateDozoCommandRule(unknown.db, member, "rule-1", "allow_prefix");
+    expect(unknown.calls).toHaveLength(2);
   });
 });
 

@@ -48,9 +48,9 @@ describe("matchCommandRules: allow", () => {
   });
 
   it("never lets a prefix rule pass a setting, or a subcommand that runs what it is given", () => {
-    const make = [rule(["make", "all"], "allow_prefix")];
-    expect(matchCommandRules(make, own("make all docs"))).toBe("allow_prefix");
-    expect(matchCommandRules(make, own("make all SHELL=/tmp/x"))).toBeUndefined();
+    const log = [rule(["git", "log"], "allow_prefix")];
+    expect(matchCommandRules(log, own("git log docs"))).toBe("allow_prefix");
+    expect(matchCommandRules(log, own("git log GIT_PAGER=x"))).toBeUndefined();
     for (const words of [
       ["git", "submodule"],
       ["npm", "install", "lodash"],
@@ -168,12 +168,12 @@ describe("matchCommandRules: allow", () => {
     expect(matchCommandRules(fromOwn, own("rm -rf build"))).toBe("allow");
     expect(matchCommandRules(fromOwn, hosted("rm -rf build"))).toBe("allow");
     // A prefix rule stays on the computer it was saved for: the same folder name is another place.
-    const prefixOwn = [rule(["make", "build"], "allow_prefix")];
-    expect(matchCommandRules(prefixOwn, own("make build all"))).toBe("allow_prefix");
-    expect(matchCommandRules(prefixOwn, hosted("make build all"))).toBeUndefined();
-    const prefixHosted = [rule(["make", "build"], "allow_prefix", { computer: "hosted" })];
-    expect(matchCommandRules(prefixHosted, hosted("make build all"))).toBe("allow_prefix");
-    expect(matchCommandRules(prefixHosted, own("make build all"))).toBeUndefined();
+    const prefixOwn = [rule(["git", "log"], "allow_prefix")];
+    expect(matchCommandRules(prefixOwn, own("git log src"))).toBe("allow_prefix");
+    expect(matchCommandRules(prefixOwn, hosted("git log src"))).toBeUndefined();
+    const prefixHosted = [rule(["git", "log"], "allow_prefix", { computer: "hosted" })];
+    expect(matchCommandRules(prefixHosted, hosted("git log src"))).toBe("allow_prefix");
+    expect(matchCommandRules(prefixHosted, own("git log src"))).toBeUndefined();
   });
 });
 
@@ -239,11 +239,11 @@ describe("matchCommandRules: block", () => {
 
   it("wins over an allow rule for the same command", () => {
     const rules = [
-      rule(["git", "push"], "allow_prefix"),
-      rule(["git", "push", "--force"], "block"),
+      rule(["git", "log"], "allow_prefix"),
+      rule(["git", "log", "secrets"], "block"),
     ];
-    expect(matchCommandRules(rules, own("git push origin"))).toBe("allow_prefix");
-    expect(matchCommandRules(rules, own("git push --force origin"))).toBe("block");
+    expect(matchCommandRules(rules, own("git log src"))).toBe("allow_prefix");
+    expect(matchCommandRules(rules, own("git log secrets"))).toBe("block");
     expect(
       matchCommandRules([rule(["git", "push"]), rule(["git", "push"], "block")], own("git push")),
     ).toBe("block");
@@ -257,5 +257,135 @@ describe("matchCommandRules: block", () => {
 
   it("ignores a block rule with no words", () => {
     expect(matchCommandRules([rule(["''"], "block")], own("git push"))).toBeUndefined();
+  });
+});
+
+describe("review findings", () => {
+  const block = (words: string[]) => [rule(words, "block")];
+
+  it.each([
+    ["a trailing slash", "rm -rf build/"],
+    ["a leading ./", "rm -rf ./build"],
+    ["a trailing backslash", "rm -rf build\\\\"],
+    ["both", "rm -rf ./build//"],
+  ])("B1: a block on a folder catches it written with %s", (_name, command) => {
+    expect(matchCommandRules(block(["rm", "-rf", "build"]), own(command))).toBe("block");
+  });
+
+  it("B1: a block on the root folder catches the root only", () => {
+    for (const command of ["rm -rf /", "rm -rf //"])
+      expect(matchCommandRules(block(["rm", "-rf", "/"]), own(command)), command).toBe("block");
+    for (const command of ["rm -rf build/", "rm -rf x/", "rm -rf /tmp/x/"])
+      expect(matchCommandRules(block(["rm", "-rf", "/"]), own(command)), command).toBeUndefined();
+  });
+
+  it.each([
+    ["tmux", "new"],
+    ["screen", "-dm"],
+    ["sqlite3", "db"],
+    ["vim", "notes"],
+    ["less", "notes"],
+    ["man", "ls"],
+    ["gdb", "app"],
+    ["parallel", "echo"],
+    ["at", "now"],
+    ["crontab", "jobs"],
+    ["tsx", "script.ts"],
+    ["ts-node", "script.ts"],
+    ["iex", "x"],
+    ["icm", "x"],
+    ["start-process", "x"],
+    ["cscript", "x.vbs"],
+    ["mshta", "x.hta"],
+    ["rundll32", "x.dll"],
+    ["rm", "a"],
+    ["mv", "a"],
+    ["cp", "a"],
+    ["chmod", "644"],
+    ["tee", "out"],
+    ["scp", "a"],
+    ["rsync", "a"],
+    ["make", "all"],
+    ["yarn", "build"],
+    ["docker", "cp"],
+    ["docker", "rm"],
+    ["kubectl", "delete"],
+    ["git", "push"],
+    ["git", "checkout"],
+    ["git", "branch"],
+    ["dir", "/s"],
+    ["Get-ChildItem", "x"],
+    ["/usr/bin/git", "status"],
+  ])("B2/B6: %s %s can only be allowed exactly", (...words) => {
+    expect(prefixRuleAllowed(words)).toBe(false);
+    expect(
+      matchCommandRules([rule(words, "allow_prefix")], own(`${words.join(" ")} more`)),
+    ).toBeUndefined();
+  });
+
+  it("B2: git push with a prefix rule never pushes a forced ref", () => {
+    for (const command of ["git push origin +main", "git push origin :main"])
+      expect(matchCommandRules([rule(["git", "push"], "allow_prefix")], own(command))).toBeUndefined();
+  });
+
+  it("B2: a short list of reading and test commands may take arguments", () => {
+    for (const words of [["ls"], ["cat", "notes"], ["git", "status"], ["git", "log"], ["npm", "test"], ["pytest", "tests"]])
+      expect(prefixRuleAllowed(words), words.join(" ")).toBe(true);
+  });
+
+  it.each([
+    ["a parent folder", "cat notes ../../.ssh/id_rsa"],
+    ["an absolute path", "cat notes /etc/passwd"],
+    ["a hidden file", "cat notes .env"],
+    ["a keychain folder", "cat notes Library/Keychains/login.keychain"],
+    ["a private key name", "cat notes id_ed25519"],
+    ["a Windows drive", "cat notes C:/Users/x"],
+    ["a Windows option", "cat notes /S"],
+  ])("B2b: a prefix rule asks before an added word that reaches %s", (_name, command) => {
+    expect(matchCommandRules([rule(["cat", "notes"], "allow_prefix")], own(command))).toBeUndefined();
+  });
+
+  it("B2b: a prefix rule passes an added plain file", () => {
+    expect(matchCommandRules([rule(["cat", "notes"], "allow_prefix")], own("cat notes todo.txt"))).toBe(
+      "allow_prefix",
+    );
+  });
+
+  it.each([
+    ["npm", "--prefix", "web", "install"],
+    ["docker", "compose", "run", "web"],
+    ["kubectl", "-n", "x", "exec", "pod"],
+    ["git", "-C", "repo", "config"],
+  ])("B3: %s %s %s %s is no prefix rule", (...words) => {
+    expect(prefixRuleAllowed(words)).toBe(false);
+  });
+
+  it.each([
+    [["rm", "--recursive", "--force"], "rm -rf x"],
+    [["rm", "-rf"], "rm --recursive --force x"],
+    [["rm", "-rf"], "rm -r --force x"],
+    [["git", "push", "--force"], "git push -f"],
+    [["git", "push", "--force"], "git push origin +main"],
+    [["git", "push", "-f"], "git push --force-with-lease"],
+  ])("B4: a block on %j catches %s", (words, command) => {
+    expect(matchCommandRules(block(words), own(command))).toBe("block");
+  });
+
+  it.each([
+    ["a glob that cannot be the word", ["git", "push"], "git add *.ts"],
+    ["a quoted pattern", ["git", "push"], "git log --grep='x?'"],
+    ["a glob in another command", ["git", "push"], "ls *.ts && git status"],
+    ["a query in a URL", ["curl", "--upload-file"], "curl 'https://a.test/?q=1'"],
+  ])("B5: no false refusal for %s", (_name, words, command) => {
+    expect(matchCommandRules(block(words), own(command))).toBeUndefined();
+  });
+
+  it("B5: an expansion that can stand for the words still refuses", () => {
+    for (const command of ["git pu*h", "git $(echo push)", "git `echo push`", "git ${X}"])
+      expect(matchCommandRules(block(["git", "push"]), own(command)), command).toBe("block");
+  });
+
+  it("B4: a name built from variables is a documented limit", () => {
+    expect(matchCommandRules(block(["rm"]), own("X=r; Y=m; $X$Y -rf /"))).toBeUndefined();
   });
 });

@@ -3,11 +3,12 @@
  * the bot's computer. Kept apart from dozo-shell-command.ts, which decides what a command is; this
  * file only compares it with the rules.
  */
-import { literalCommandWords } from "./dozo-shell-command.js";
+import { literalCommandWords, readableWord } from "./dozo-shell-command.js";
 
 /**
  * What a rule does: `allow` runs exactly these words, `allow_prefix` runs these words followed by
- * any literal arguments, `block` refuses any command that contains these words, in every mode.
+ * more plain words (only for the commands `prefixRuleAllowed` lists), `block` refuses any command
+ * that contains these words, in every mode.
  */
 export const DOZO_COMMAND_RULE_EFFECTS = ["allow", "allow_prefix", "block"] as const;
 export type DozoCommandRuleEffect = (typeof DOZO_COMMAND_RULE_EFFECTS)[number];
@@ -23,121 +24,73 @@ export type DozoCommandRuleView = {
 };
 
 /**
- * Programs that run another program, a script or code given in their arguments. A prefix rule for
- * one of them would allow anything, so the rule stays exact.
+ * The commands whose plain arguments (no options, no settings) only name what to read, print or
+ * test, so a rule may allow them with more arguments. Everything else is allowed exactly or not at
+ * all: an unknown program, an editor or pager that can run commands, a program that writes where
+ * its arguments say (`cp`, `mv`, `tee`, `rm`, `chmod`), a transfer (`scp`, `rsync`), a build, and
+ * any Windows program. The reading programs are also PowerShell's aliases of cmdlets that only read
+ * (`ls`, `cat`, `echo`). The test runners run the project's own tests, which the member chose by
+ * allowing the runner; a plain argument only picks which tests.
  */
-const RUNNERS = new Set([
-  "awk",
-  "bash",
-  "builtin",
-  "bun",
-  "bunx",
-  "busybox",
-  "chroot",
-  "chrt",
-  "cmd",
-  "command",
-  "dash",
-  "deno",
-  "doas",
-  "env",
-  "eval",
-  "exec",
-  "fish",
-  "flock",
-  "gawk",
-  "ionice",
-  "java",
-  "ksh",
-  "lua",
-  "mawk",
-  "nawk",
-  "nice",
-  "node",
-  "nohup",
-  "npx",
-  "nsenter",
-  "osascript",
-  "perl",
-  "php",
-  "pkexec",
-  "pnpx",
-  "powershell",
-  "pwsh",
-  "python",
-  "python3",
-  "ruby",
-  "runuser",
-  "script",
-  "sed",
-  "setsid",
-  "sh",
-  "ssh",
-  "stdbuf",
-  "strace",
-  "su",
-  "sudo",
-  "systemd-run",
-  "taskset",
-  "tclsh",
-  "tcsh",
-  "time",
-  "timeout",
-  "unshare",
-  "uvx",
-  "watch",
-  "xargs",
-  "zsh",
+const PREFIX_PROGRAMS: ReadonlySet<string> = new Set([
+  "basename",
+  "cat",
+  "cmp",
+  "df",
+  "diff",
+  "dirname",
+  "du",
+  "echo",
+  "file",
+  "grep",
+  "head",
+  "jest",
+  "ls",
+  "pwd",
+  "pytest",
+  "readlink",
+  "realpath",
+  "stat",
+  "tail",
+  "tree",
+  "vitest",
+  "wc",
+  "which",
 ]);
-
-/**
- * Subcommands that install or run code their arguments name, or that the project defines (a
- * package's install and run scripts, a submodule's commands, a container's command).
- */
-const RUNNER_SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
-  git: ["bisect", "config", "filter-branch", "rebase", "submodule"],
-  npm: ["add", "ci", "exec", "i", "install", "run", "run-script", "x"],
-  pnpm: ["add", "dlx", "exec", "i", "install", "run"],
-  yarn: ["add", "dlx", "exec", "install", "run"],
-  pip: ["install"],
-  pip3: ["install"],
-  docker: ["exec", "run"],
-  podman: ["exec", "run"],
-  kubectl: ["exec", "run"],
-  cargo: ["install", "run"],
-  go: ["generate", "install", "run"],
-  uv: ["run", "tool"],
+/** Subcommands that only show something (git) or run the project's tests. */
+const PREFIX_SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
+  git: ["blame", "describe", "diff", "log", "ls-files", "shortlog", "show", "status"],
+  npm: ["test"],
+  pnpm: ["test"],
+  yarn: ["test"],
+  bun: ["test"],
+  cargo: ["test"],
+  go: ["test", "vet"],
 };
 
-/** A program word as a shell finds it: its last path part, without case or a Windows `.exe`. */
-function programName(word: string): string {
-  return word
-    .split(/[/\\]/)
-    .pop()!
-    .toLowerCase()
-    .replace(/\.exe$/, "");
-}
-
 /**
- * Whether these words may be allowed with any arguments after them: at least a program and one
- * word, a program that does not run what its arguments name, and not one of its subcommands that
- * does.
+ * Whether these words may be allowed with more arguments after them: the program, by its plain
+ * name, is one of `PREFIX_PROGRAMS`, or one of `PREFIX_SUBCOMMANDS` with that subcommand right
+ * after it (`git -C repo config` and `npm --prefix web install` are not).
  */
 export function prefixRuleAllowed(words: readonly string[]): boolean {
   const [program, subcommand] = words;
-  if (!program || subcommand === undefined) return false;
-  const name = programName(program);
-  if (RUNNERS.has(name) || /^python\d/.test(name)) return false;
-  return !RUNNER_SUBCOMMANDS[name]?.includes(subcommand.toLowerCase());
+  if (!program) return false;
+  if (PREFIX_PROGRAMS.has(program)) return true;
+  return (
+    Object.hasOwn(PREFIX_SUBCOMMANDS, program) &&
+    subcommand !== undefined &&
+    PREFIX_SUBCOMMANDS[program]!.includes(subcommand)
+  );
 }
 
 /**
  * Whether an allow rule runs this command: the command must read as one literal program and its
  * words (dozo-shell-command.ts), so a command that chains, substitutes, redirects, expands or sets
  * a variable is never allowed by a rule. An exact rule needs the same words. A prefix rule needs
- * them first, followed only by words that are not options or settings (nothing starting with `-`,
- * no `=`): either can make a program run another one (`git -c alias.x=!sh`, `find -exec`,
- * `make all SHELL=/tmp/x`). Same folder only.
+ * them first, followed only by words that are neither options nor settings (nothing starting with
+ * `-`, no `=`) and that pass the read-only gate's check for secret places (no absolute path outside
+ * the system folders, no `..`, no hidden or private location, no drive). Same folder only.
  */
 function allows(rule: DozoCommandRuleView, words: readonly string[], cwd: string): boolean {
   if (rule.effect === "block" || rule.cwd !== cwd) return false;
@@ -147,12 +100,56 @@ function allows(rule: DozoCommandRuleView, words: readonly string[], cwd: string
     prefixRuleAllowed(rule.words) &&
     words.length >= rule.words.length &&
     sameWords(rule.words, words.slice(0, rule.words.length)) &&
-    extra.every((word) => !word.startsWith("-") && !word.includes("="))
+    extra.every(
+      (word) => !word.startsWith("-") && !word.includes("=") && readableWord(word, words[0]!),
+    )
   );
 }
 
 function sameWords(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((word, index) => word === right[index]);
+}
+
+/** A program word as a shell finds it: its last path part, without case or a Windows `.exe`. */
+function programName(word: string): string {
+  return (
+    word
+      .split(/[/\\]/)
+      .pop()!
+      .toLowerCase()
+      .replace(/\.exe$/, "")
+  );
+}
+
+/**
+ * A path word as a block compares it: without case, a leading `./` or a trailing `/` or `\`, so
+ * `./build/` is `build`; a path of slashes alone stays the root `/`.
+ */
+function pathName(word: string): string {
+  let path = word.toLowerCase();
+  const root = /^[/\\]+$/.test(path);
+  while (path.startsWith("./") || path.startsWith(".\\")) path = path.slice(2);
+  path = path.replace(/[/\\]+$/, "");
+  return path || (root ? "/" : ".");
+}
+
+/** Long options that mean the same as a short one in the programs blocks are usually set for. */
+const LONG_OPTIONS: Readonly<Record<string, string>> = {
+  "--recursive": "-r",
+  "--force": "-f",
+  "--force-with-lease": "-f",
+  "--force-if-includes": "-f",
+  "--delete": "-d",
+};
+/** A short option, or several run together (`-rf`), as the single options it holds. */
+const SHORT_OPTIONS = /^-[a-z0-9]+$/;
+
+/** The single short options a word stands for: `-rf`, `--force`, and a forced git ref `+main`. */
+function optionsOf(word: string): string[] {
+  const option = LONG_OPTIONS[word] ?? word;
+  if (SHORT_OPTIONS.test(option))
+    return option.length > 2 ? [...option.slice(1)].map((letter) => `-${letter}`) : [option];
+  return /^\+[^%+]/.test(word) ? ["-f"] : [];
 }
 
 /** Invisible format marks, which a shell keeps but a person cannot see. */
@@ -161,75 +158,105 @@ const FORMAT = /[\p{Cf}\u2028\u2029]/gu;
 const COMMAND_BREAKS = /[;&|`()\p{Cc}\u2028\u2029]+/u;
 /** Marks that split a command into words in some shell. */
 const WORD_BREAKS = /[\s$={},<>]+/u;
+/** A word a shell fills in when it runs the line: a variable or a substitution. */
+const EXPANSION = "\uE000";
+/** Glob marks written inside quotes, which no POSIX shell expands, kept apart from real globs. */
+const QUOTED: Readonly<Record<string, string>> = { "*": "\uE001", "?": "\uE002", "[": "\uE003" };
+const UNQUOTED = Object.fromEntries(Object.entries(QUOTED).map(([mark, kept]) => [kept, mark]));
+
+type LooseWord = {
+  /** The word as a program name and as a path, with its backslashes dropped and kept. */
+  names: string[];
+  paths: string[];
+  /** A variable or substitution: it can be any words. */
+  expansion: boolean;
+  /** An unquoted glob, as the words it can match. */
+  glob?: RegExp;
+};
+
+function looseWord(word: string): LooseWord {
+  const plain = word.replace(/[\uE001-\uE003]/g, (kept) => UNQUOTED[kept]!);
+  const forms = [plain.replace(/\\/g, ""), plain];
+  const glob = /[*?[]/.test(word)
+    ? new RegExp(
+        `^${[...pathName(word.replace(/\\/g, ""))]
+          .map((char) =>
+            char === "*" ? ".*" : char === "?" ? "." : char.replace(/[.+^${}()|[\]\\\uE001-\uE003]/g, "\\$&"),
+          )
+          .join("")
+          .replace(/[\uE001-\uE003]/g, (kept) => `\\${UNQUOTED[kept]}`)}$`,
+      )
+    : undefined;
+  return {
+    names: forms.map(programName),
+    paths: forms.map(pathName),
+    expansion: word.includes(EXPANSION),
+    ...(glob ? { glob } : {}),
+  };
+}
 
 /**
  * The commands a person would read in a command line, each as its words, however it is quoted,
  * escaped or wrapped: invisible marks and quotes are dropped, a line continued with a backslash is
  * joined, the text is folded to its plain letters (NFKC: a full-width `ｇｉｔ` is `git`), and it
- * splits on every mark a shell uses between commands and then between words. Each word is kept as
- * a program name, both with its backslashes dropped (an escape, `gi\t`) and read as a Windows path.
+ * splits on every mark a shell uses between commands and then between words. A variable or a
+ * substitution becomes one word that can be anything; a glob outside quotes, a word that can match.
  */
-function looseCommands(command: string): string[][][] {
+function looseCommands(command: string): LooseWord[][] {
   return (
     command
       .normalize("NFKC")
       .replace(FORMAT, "")
       .replace(/\\\r?\n/g, "")
+      .replace(/\$(\{[^}]*\}|'[^']*'|\(|[\w@*#?!$-])/g, (found) =>
+        found === "$(" ? ` ${EXPANSION} (` : ` ${EXPANSION} `,
+      )
+      .replace(/`/g, ` ${EXPANSION} \``)
+      .replace(/'([^']*)'|"([^"]*)"/g, (_quoted, single?: string, double?: string) =>
+        (single ?? double ?? "").replace(/[*?[]/g, (mark) => QUOTED[mark]!),
+      )
       .replace(/['"]/g, "")
       // A tab only separates words; every other control character ends a command.
       .replace(/\t/g, " ")
       .split(COMMAND_BREAKS)
-      .map((part) =>
-        part
-          .split(WORD_BREAKS)
-          .filter(Boolean)
-          .map((word) => [programName(word.replace(/\\/g, "")), programName(word)]),
-      )
+      .map((part) => part.split(WORD_BREAKS).filter(Boolean).map(looseWord))
       .filter((words) => words.length > 0)
   );
 }
 
-/** A short option, or several run together (`-rf`), as the single options it holds. */
-const SHORT_OPTIONS = /^-[a-z0-9]+$/;
-const shortOptions = (word: string) =>
-  word.length > 2 ? [...word.slice(1)].map((letter) => `-${letter}`) : [word];
-
-/** Text a shell expands into other words: a variable, a substitution, a glob. */
-const INDIRECTION = /[$`*?[]/;
-
 /**
- * Whether a block rule matches one command of the line: its words appear in order, with anything
- * between them, and its short options anywhere after its program in any order or grouping (`rm -rf`
- * matches `rm -fr` and `rm -r -f`). It reads through `bash -c '…'`, `sudo`, `env X=1`, options
- * between the words (`git --no-pager push`), quotes, escapes (`g''it`, `gi\t`), paths
- * (`/usr/bin/git`), case and `.exe`. When the line expands text a shell would turn into other words
- * (`git $(echo push)`, `git ${x:-push}`, `git pu*h`), the rule's program alone is enough. This errs
- * toward refusing (`echo git push` is refused too); it does not follow aliases or scripts.
+ * Whether a block rule matches one command of the line. From its program (by name: `/usr/bin/git`,
+ * `GIT`, `git.exe`, `gi\t`), its other words follow in order with anything between them (`git
+ * --no-pager push`), compared as paths (`./build/` is `build`), and its short options appear in
+ * any order or grouping, long or short (`rm -rf` matches `rm -fr`, `rm -r --force`; `git push -f`
+ * matches `--force-with-lease` and `+main`). A variable or substitution after the program can be
+ * the rest (`git $(echo push)`), and a glob can be a word it matches (`git pu*h`). It reads through
+ * `bash -c '…'`, `sudo`, `env X=1` and quotes, and errs toward refusing (`echo git push` is refused
+ * too). A best effort, not a boundary: it does not follow a program name built from variables
+ * (`$X$Y`), `eval`, encoded text, aliases or scripts.
  */
-function blocks(
-  rule: DozoCommandRuleView,
-  commands: readonly string[][][],
-  indirect: boolean,
-): boolean {
+function blocks(rule: DozoCommandRuleView, commands: readonly LooseWord[][]): boolean {
   if (rule.effect !== "block") return false;
-  const want = looseCommands(rule.words.join(" "))
-    .flat()
-    .map(([name]) => name!);
-  const words = want.filter((word) => !SHORT_OPTIONS.test(word));
-  const options = want.filter((word) => SHORT_OPTIONS.test(word)).flatMap(shortOptions);
-  if (!words.length) return false;
-  return commands.some((command) => {
-    let next = 0;
-    const seen = new Set<string>();
-    for (const forms of command) {
-      if (next === 0 && !forms.includes(words[0]!)) continue;
-      if (next === 0 && indirect) return true;
-      if (next < words.length && forms.includes(words[next]!)) next++;
-      for (const form of forms)
-        if (SHORT_OPTIONS.test(form)) for (const option of shortOptions(form)) seen.add(option);
-    }
-    return next === words.length && options.every((option) => seen.has(option));
-  });
+  const want = looseCommands(rule.words.join(" ")).flat();
+  const [program, ...rest] = want;
+  if (!program) return false;
+  const name = program.names[0]!;
+  const options = rest.flatMap((word) => optionsOf(word.paths[0]!));
+  const words = rest.filter((word) => !optionsOf(word.paths[0]!).length).map((word) => word.paths[0]!);
+  return commands.some((command) =>
+    command.some((word, at) => {
+      if (word.expansion || !word.names.includes(name)) return false;
+      let next = 0;
+      const seen = new Set<string>();
+      for (const later of command.slice(at + 1)) {
+        if (later.expansion) return true;
+        const wanted = words[next];
+        if (wanted !== undefined && (later.paths.includes(wanted) || later.glob?.test(wanted))) next++;
+        for (const option of optionsOf(later.paths[0]!)) seen.add(option);
+      }
+      return next === words.length && options.every((option) => seen.has(option));
+    }),
+  );
 }
 
 /**
@@ -244,8 +271,7 @@ export function matchCommandRules(
   command: { command: string; cwd: string; computer: DozoCommandComputer },
 ): "block" | "allow" | "allow_prefix" | undefined {
   const commands = looseCommands(command.command);
-  const indirect = INDIRECTION.test(command.command);
-  if (rules.some((rule) => blocks(rule, commands, indirect))) return "block";
+  if (rules.some((rule) => blocks(rule, commands))) return "block";
   const words = literalCommandWords(command.command);
   if (!words) return undefined;
   const usable = rules.filter(

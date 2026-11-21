@@ -88,6 +88,21 @@ export async function findDozoCommandRuleWords(
   return rows[0]?.words;
 }
 
+/**
+ * The previous release reads every row of dozo_command_rules as an exact allow, and this one copied
+ * its rows here with the same ids. Until the deferred 20270112120100_dozo_drop_command_rules drops
+ * that table, a rule removed or turned into anything but an exact allow here is removed there too,
+ * so a previous release still running during a deploy, or rolled back to, never allows it.
+ */
+async function retirePreviousRule(db: Db, member: Member, id: string): Promise<void> {
+  const [table] = await db.$queryRaw<{ found: boolean }[]>`
+    SELECT to_regclass('dozo_command_rules') IS NOT NULL AS found`;
+  if (!table?.found) return;
+  await db.$executeRaw`
+    DELETE FROM dozo_command_rules
+    WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
+}
+
 /** Changes what one of the member's rules in the Space does; another member's id changes nothing. */
 export async function updateDozoCommandRule(
   db: Db,
@@ -98,6 +113,7 @@ export async function updateDozoCommandRule(
   await db.$executeRaw`
     UPDATE dozo_command_policies SET effect = ${effect}, "updatedAt" = CURRENT_TIMESTAMP
     WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
+  if (effect !== "allow") await retirePreviousRule(db, member, id);
 }
 
 /** Removes one of the member's command rules in the Space; another member's id removes nothing. */
@@ -105,6 +121,7 @@ export async function removeDozoCommandRule(db: Db, member: Member, id: string):
   await db.$executeRaw`
     DELETE FROM dozo_command_policies
     WHERE id = ${id} AND "userId" = ${member.userId} AND "spaceId" = ${member.spaceId}`;
+  await retirePreviousRule(db, member, id);
 }
 
 /** Whether commands that change something on the bot's computer ask this member first. */

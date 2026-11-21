@@ -7743,6 +7743,24 @@
         "packages/adapters/src/dozo-command-gate.ts"
       ],
       "reason": "command rules: closes the call above, and a command refused by a block rule is refused as blocked, not as needing approval"
+    },
+    {
+      "file": "packages/adapters/src/routine-watch.ts",
+      "find": "import { scheduleComputerSleep } from \"./computer-idle.js\";\nimport { ComputerBusyError, provisionComputer }",
+      "replace": "import { scheduleComputerSleep } from \"./computer-idle.js\";\nimport { dozoWatchCommandRefusal } from \"./dozo-watch-command-rules.js\";\nimport { ComputerBusyError, provisionComputer }",
+      "requires": [
+        "packages/adapters/src/dozo-watch-command-rules.ts"
+      ],
+      "reason": "command rules: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/routine-watch.ts",
+      "find": "      );\n    }\n  }\n  // Loaded before the computer wakes, so a key manager outage",
+      "replace": "      );\n    }\n    const dozoBlocked = await dozoWatchCommandRefusal(deps.prisma, routine, watch.command ?? \"\");\n    if (dozoBlocked) throw new RoutineWatchError(dozoBlocked);\n  }\n  // Loaded before the computer wakes, so a key manager outage",
+      "requires": [
+        "packages/adapters/src/dozo-watch-command-rules.ts"
+      ],
+      "reason": "command rules: a routine's command watch checks the member's block rules at every check, so a block added after the routine was made stops it"
     }
   ],
   "assets": {

@@ -159,13 +159,13 @@ describe("dozoHostedCommandGate", () => {
     it("lets a command an allow rule covers go ahead", async () => {
       db.rules.mockResolvedValue([
         rule(["npm", "test"]),
-        rule(["make", "build"], "allow_prefix"),
+        rule(["git", "log"], "allow_prefix"),
         rule(["git", "pull"], "allow", "user"),
       ]);
-      for (const command of ["npm test", "make build all", "git pull"])
+      for (const command of ["npm test", "git log src", "git pull"])
         expect((await gate(command)).plan, command).toBe("allow");
       expect((await gate("npm test", { cwd: "/tmp" })).plan).toBe("ask");
-      expect((await gate("make build -j8")).plan).toBe("ask");
+      expect((await gate("git log --all")).plan).toBe("ask");
     });
 
     it("keeps upstream's always-allow rule for the tool, and Never ask", async () => {
