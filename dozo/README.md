@@ -311,12 +311,25 @@ chat's pins again on every roster signal.
 ## A bot's extra chats
 
 A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`, table
-`dozo_bot_chats`; web and desktop only for now). They are the Space's, like the bot's main chat:
+`dozo_bot_chats`; web, desktop and mobile). They are the Space's, like the bot's main chat:
 every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
 100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
-archived bot does. The bot's memory and computer are one across its chats. Mobile, the bot API,
-CLI and MCP, chat apps and routines use the main chat only; a routine started from an extra chat
-posts in the main chat. The phone's badge counts main chats only, as the phone shows nothing else.
+archived bot does. The bot's memory and computer are one across its chats. The bot API, CLI and
+MCP, chat apps and routines use the main chat only; a routine started from an extra chat posts in
+the main chat. The phone's badge and the inbox rows count main chats only, as web's Dock badge and
+bot rows do; an extra chat has its own unread dot.
+
+On the phone a bot's extra chats are on its profile (reached from the chat's title), under Chats,
+only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
+as read or unread, snooze, pinned, export, archive). New chat is in the profile's "..." menu, and
+names the chat by when it began, as on web. A chat route holds one chat (`DozoChatScope`, from its
+`chatId`, or from the `threadId` of a notification, which the bot's chat list says is an extra chat
+or not); its main chat and an extra chat of the same bot can be stacked and share nothing: draft,
+unsent sends, read visit, saved copy, pages, live stream and notifications are each the chat's own,
+and every request about the chat on screen is built by `dozoChatTarget` in
+`apps/mobile/lib/dozo-chat-target.ts`. In an extra chat there are no calls, no attachments and no
+waiting line (the contract names a bot or a group only); `dozo-chat-callsites.test.ts` counts every
+place the app asks about a chat.
 
 Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
 (or with) the web app: an API from before extra chats answers such a request with 400 (its own
