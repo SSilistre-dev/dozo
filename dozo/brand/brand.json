@@ -9377,6 +9377,39 @@
         "packages/db/src/dozo-bot-chats.ts"
       ],
       "reason": "bot chats: the import of the rule above"
+    },
+    {
+      "file": "packages/testkit/src/cli/ios-screenshot-seed.ts",
+      "find": "import { PNG } from \"pngjs\";\nimport { sessionCookieHeader }",
+      "replace": "import { PNG } from \"pngjs\";\nimport { dozoVerifyFixtureEmail } from \"./dozo-fixture-email.js\";\nimport { sessionCookieHeader }",
+      "requires": [
+        "packages/testkit/src/cli/dozo-fixture-email.ts"
+      ],
+      "reason": "iOS screenshot fixture: the import of the rules below"
+    },
+    {
+      "file": "packages/testkit/src/cli/ios-screenshot-seed.ts",
+      "find": "  const populated = await ensureUser(input.apiUrl, input.email, input.password, \"Screenshot User\");\n  const empty = await ensureUser(input.apiUrl, input.emptyEmail, input.password, \"Empty User\");\n  // Signs in without a plan or a survey answer, to show what a new account meets first.\n  await ensureUser(input.apiUrl, input.freeEmail, input.password, \"Free User\");",
+      "replace": "  const { apiUrl, password, databaseUrl } = input;\n  const populated = await ensureUser(apiUrl, input.email, password, \"Screenshot User\", databaseUrl);\n  const empty = await ensureUser(apiUrl, input.emptyEmail, password, \"Empty User\", databaseUrl);\n  // Signs in without a plan or a survey answer, to show what a new account meets first.\n  await ensureUser(apiUrl, input.freeEmail, password, \"Free User\", databaseUrl);",
+      "requires": [
+        "packages/testkit/src/cli/dozo-fixture-email.ts"
+      ],
+      "reason": "iOS screenshot fixture: each account is signed up with the database at hand, to prove its address (rule below)"
+    },
+    {
+      "file": "packages/testkit/src/cli/ios-screenshot-seed.ts",
+      "find": "async function ensureUser(apiUrl: string, email: string, password: string, name: string) {\n  const signup = await postAuth(apiUrl, \"sign-up\", { email, password, name });\n  const session = signup.ok ? signup : await postAuth(apiUrl, \"sign-in\", { email, password });",
+      "replace": "async function ensureUser(\n  apiUrl: string,\n  email: string,\n  password: string,\n  name: string,\n  databaseUrl: string,\n) {\n  const signup = await postAuth(apiUrl, \"sign-up\", { email, password, name });\n  // With mail, a sign-up gets no session until its address is proven: prove it, then sign in.\n  if (!signup.token) await dozoVerifyFixtureEmail(databaseUrl, email);\n  const session = signup.token ? signup : await postAuth(apiUrl, \"sign-in\", { email, password });",
+      "requires": [
+        "packages/testkit/src/cli/dozo-fixture-email.ts"
+      ],
+      "reason": "iOS screenshot fixture: the catalog API has an email emulator, so since password sign-ups must prove their address the fixture accounts got no session and could not sign in; their addresses are marked proven in the database first (test tooling only)"
+    },
+    {
+      "file": "packages/testkit/src/cli/ios-screenshot-seed.ts",
+      "find": "{ value: \"4.2%\", label: \"Trial to paid\" }",
+      "replace": "{ value: \"42\", label: \"Tasks done\" }",
+      "reason": "iOS screenshot fixture: the sample dashboard shows a neutral figure, not a business metric"
     }
   ],
   "assets": {
