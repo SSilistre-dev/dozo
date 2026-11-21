@@ -308,6 +308,22 @@ Mobile pins from the same long-press menu, and lists a chat's pins from the bot 
 group settings, only while there are some; choosing one opens the chat at it. The app reads a
 chat's pins again on every roster signal.
 
+## A bot's extra chats
+
+A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`, table
+`dozo_bot_chats`; web and desktop only for now). They are the Space's, like the bot's main chat:
+every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
+100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
+archived bot does. The bot's memory and computer are one across its chats. Mobile, the bot API,
+CLI and MCP, chat apps and routines use the main chat only; a routine started from an extra chat
+posts in the main chat. The phone's badge counts main chats only, as the phone shows nothing else.
+
+Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
+(or with) the web app: an API from before extra chats answers such a request with 400 (its own
+"one of botId or groupId" check) and the app shows that error, instead of dropping `chatId` and
+writing to the main chat. Clearing works in the main chat only; it clears the helper threads the
+main chat started, not those of an extra chat.
+
 ## Feedback
 
 The account menu's Send feedback opens a short note with an optional Include diagnostics switch

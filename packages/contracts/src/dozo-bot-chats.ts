@@ -31,13 +31,44 @@ export const DozoBotChatSchema = z.object({
   name: z.string(),
   createdAt: IsoDate,
   archivedAt: IsoDate.nullable(),
+  /** The caller's own state of the chat, as for the bot's main chat. */
+  unread: z.boolean(),
+  snoozedUntil: IsoDate.nullable(),
 });
 export type DozoBotChat = z.infer<typeof DozoBotChatSchema>;
 
 const ChatOutput = z.object({ chat: DozoBotChatSchema });
 
+/**
+ * A chat request names exactly one chat: a bot's main chat (`botId`), a group's (`groupId`), or a
+ * bot's extra chat (`chatBotId` with `chatId`). An extra chat never travels as `botId`: an API from
+ * before extra chats drops fields it does not know, and would act on the bot's main chat, so a
+ * request it cannot understand must fail its own "one of botId or groupId" check instead.
+ */
+export function dozoThreadTargetCheck(
+  input: { botId?: string; groupId?: string; chatBotId?: string; chatId?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const named = [input.botId, input.groupId, input.chatBotId].filter(Boolean).length;
+  if (named !== 1) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Provide exactly one of botId, groupId or chatBotId",
+      path: ["botId"],
+    });
+  }
+  if (Boolean(input.chatBotId) !== Boolean(input.chatId)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "A bot's extra chat is named with chatBotId and chatId together",
+      path: ["chatId"],
+    });
+  }
+}
+
 export const DozoBotChatsListInputSchema = z.object({
-  botId: Id,
+  /** One bot's chats; without it, every chat of the Space's bots that are not archived. */
+  botId: Id.optional(),
   includeArchived: z.boolean().optional(),
 });
 export type DozoBotChatsListInput = z.infer<typeof DozoBotChatsListInputSchema>;
@@ -48,12 +79,8 @@ export type DozoBotChatRenameInput = z.infer<typeof DozoBotChatRenameInputSchema
 export const DozoBotChatArchiveInputSchema = z.object({ chatId: Id, archived: z.boolean() });
 export type DozoBotChatArchiveInput = z.infer<typeof DozoBotChatArchiveInputSchema>;
 
-/**
- * Not part of the app contract yet: the web step adds it, with the routes, once the app can show
- * extra chats.
- */
 export const dozoChatsContract = {
-  /** The bot's extra chats, oldest first; archived ones only when asked for. */
+  /** Extra chats, oldest first; archived ones only when asked for. */
   list: oc
     .input(DozoBotChatsListInputSchema)
     .output(z.object({ chats: z.array(DozoBotChatSchema) })),

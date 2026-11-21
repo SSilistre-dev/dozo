@@ -16,6 +16,7 @@ import {
   runAsSystemInTransaction,
   spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
+  withDozoChatBot,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { buildSendPrompt } from "./artifacts.js";
@@ -230,15 +231,22 @@ type Revision = { kind: "edit"; text: string } | { kind: "regenerate" };
 export function dozoMessagesRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
 
-  /** The caller's direct chat with a bot they can reach; group and helper chats are not. */
+  /** A direct chat with a bot they can reach, main or extra; group and helper chats are not. */
   async function directThread(actor: Actor, threadId: string) {
-    const thread = await deps.prisma.thread.findFirst({
-      where: { id: threadId, spaceId: actor.spaceId },
-      select: { id: true, botId: true, historyCompactedUpToSeq: true },
-    });
+    const thread = await withDozoChatBot(
+      deps.prisma,
+      threadId,
+      await deps.prisma.thread.findFirst({
+        where: { id: threadId, spaceId: actor.spaceId },
+        select: { id: true, botId: true, groupId: true, historyCompactedUpToSeq: true },
+      }),
+    );
     if (!thread?.botId) throw new IsolationError();
-    // The bot's own visibility rules decide who may reach its chat.
-    const target = await resolveThreadTarget(deps.prisma, actor, { botId: thread.botId });
+    // The bot's own visibility rules decide who may reach its chat, main or extra.
+    const target = await resolveThreadTarget(deps.prisma, actor, {
+      chatBotId: thread.botId,
+      chatId: threadId,
+    });
     if (target.threadId !== threadId) throw new IsolationError();
     return { ...thread, botId: thread.botId };
   }
