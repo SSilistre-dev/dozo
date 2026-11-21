@@ -6750,7 +6750,61 @@
       "file": "packages/chat-ui/src/markdown.native.tsx",
       "find": "markTaskListItems(markdownParser);\n\n/** A node's place",
       "replace": "markTaskListItems(markdownParser);\nmathAsCode(markdownParser);\n\n/** A node's place",
-      "reason": "chat math on mobile: the app draws no formulas, so $…$ and $$…$$ show as code, not as raw delimiters Markdown mangles"
+      "reason": "chat math on mobile: $…$ and $$…$$ are read as math tokens the app draws as formulas, or shows as code where it cannot"
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.native.tsx",
+      "find": "export { RemoteMarkdownImage } from \"./native/images\";\nexport { LinkifiedText }",
+      "replace": "export { RemoteMarkdownImage } from \"./native/images\";\nexport type { MarkdownCopy } from \"./markdown-copy\";\nexport { MarkdownCopyProvider, useMarkdownCopy } from \"./markdown-copy\";\nexport type { MathViewProps } from \"./native/dozo-math\";\nexport { MathViewContext } from \"./native/dozo-math\";\nexport type { TableToolsProps } from \"./native/dozo-table\";\nexport { TableToolsContext } from \"./native/dozo-table\";\nexport { LinkifiedText }",
+      "reason": "chat math and tables on mobile: the native entry exports the formula and table-tool contexts and the table labels the app fills in",
+      "requires": [
+        "packages/chat-ui/src/native/dozo-math.tsx",
+        "packages/chat-ui/src/native/dozo-table.tsx"
+      ]
+    },
+    {
+      "file": "packages/chat-ui/package.json",
+      "find": "    \"./hooks\": \"./src/hooks.ts\",\n    \"./mermaid\"",
+      "replace": "    \"./hooks\": \"./src/hooks.ts\",\n    \"./math\": \"./src/dozo-math-options.ts\",\n    \"./mermaid\"",
+      "reason": "chat math on mobile: the app reads the shared KaTeX options and MathML writer from a light entry, without loading the Markdown renderer",
+      "requires": [
+        "packages/chat-ui/src/dozo-math-options.ts"
+      ]
+    },
+    {
+      "file": "packages/chat-ui/src/native/render-rules.tsx",
+      "find": "import { TableCell, TableRow, TableScrollView } from \"./table\";",
+      "replace": "import { mathRules } from \"./dozo-math\";\nimport { TableCell, TableRow, TableScrollView } from \"./dozo-table\";",
+      "reason": "chat tables on mobile: the table rules come from the fork's wrapper, which sorts by header and adds the app's CSV and full screen controls, around the same layout",
+      "requires": [
+        "packages/chat-ui/src/native/dozo-table.tsx",
+        "packages/chat-ui/src/native/dozo-math.tsx"
+      ]
+    },
+    {
+      "file": "packages/chat-ui/src/native/render-rules.tsx",
+      "find": "  list_item: listItemRule,\n  fence:",
+      "replace": "  list_item: listItemRule,\n  ...mathRules,\n  fence:",
+      "reason": "chat math on mobile: draws the formula tokens the math parser makes"
+    },
+    {
+      "file": "apps/mobile/app/_layout.tsx",
+      "find": "import { IncomingCall } from \"../components/IncomingCall\";\nimport { MermaidDiagram }",
+      "replace": "import { IncomingCall } from \"../components/IncomingCall\";\nimport { DozoMarkdownProviders } from \"../components/dozo-markdown-providers\";\nimport { MermaidDiagram }",
+      "reason": "chat math and tables on mobile: import of the provider that gives chat Markdown its formula drawing, table controls and table labels",
+      "requires": [
+        "apps/mobile/components/dozo-markdown-providers.tsx",
+        "apps/mobile/components/dozo-math-view.tsx",
+        "apps/mobile/components/dozo-table-tools.tsx",
+        "apps/mobile/lib/dozo-math-webview.ts",
+        "apps/mobile/lib/dozo-table-share.ts"
+      ]
+    },
+    {
+      "file": "apps/mobile/app/_layout.tsx",
+      "find": "<OpenPageContext.Provider value={openPage}>{children}</OpenPageContext.Provider>",
+      "replace": "<OpenPageContext.Provider value={openPage}>\n                <DozoMarkdownProviders>{children}</DozoMarkdownProviders>\n              </OpenPageContext.Provider>",
+      "reason": "chat math and tables on mobile: wraps the app in the formula, table-control and table-label providers"
     },
     {
       "file": "packages/db/src/index.ts",

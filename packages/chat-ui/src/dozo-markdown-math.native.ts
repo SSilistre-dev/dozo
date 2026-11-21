@@ -1,11 +1,12 @@
 import type { createMarkdownIt } from "@ronradtke/react-native-markdown-display";
 
 /**
- * Math in mobile chat Markdown. The web draws `$…$` and `$$…$$` as formulas with KaTeX; drawing
- * them on a phone needs a browser engine and a script the paired-computer relay cannot carry, so
- * here the TeX shows as written, in the code style: `$…$` and a `$$…$$` on one line become an
- * inline code span, and a `$$` block a code block. Code is never read as Markdown, so `_`, `*`,
- * backslashes and HTML inside a formula stay exactly as the bot wrote them.
+ * Math in mobile chat Markdown. The web draws `$…$` and `$$…$$` as formulas with KaTeX; here the
+ * parser reads them into `dozo_math_inline` (`$…$`, and a `$$…$$` on one line) and
+ * `dozo_math_block` (a `$$` block) tokens that hold the TeX exactly as the bot wrote it. The
+ * render rules in `native/dozo-math.tsx` draw them when the app can, and otherwise show the TeX in
+ * the code style. Like code, the TeX is never read as Markdown, so `_`, `*`, backslashes and HTML
+ * inside a formula stay as written.
  *
  * The delimiter rules are the web's (`dozo-markdown-math.ts`): a single dollar opens math only
  * before a non-space and closes it only after a non-space and not before a digit, so prices
@@ -15,8 +16,15 @@ import type { createMarkdownIt } from "@ronradtke/react-native-markdown-display"
 type Parser = ReturnType<typeof createMarkdownIt>;
 
 /** The parts of a markdown-it token, and of the parser state a rule reads and writes. */
-type Token = { markup: string; content: string; info: string; map: [number, number] | null };
+type Token = {
+  markup: string;
+  content: string;
+  info: string;
+  map: [number, number] | null;
+  meta: unknown;
+};
 type InlineState = {
+  env: { formulas?: number };
   src: string;
   pos: number;
   posMax: number;
@@ -24,6 +32,7 @@ type InlineState = {
   push(type: string, tag: string, nesting: number): Token;
 };
 type BlockState = {
+  env: { formulas?: number };
   src: string;
   bMarks: number[];
   eMarks: number[];
@@ -41,6 +50,12 @@ type BlockRule = (
   endLine: number,
   silent: boolean,
 ) => boolean;
+
+/** The place of a formula among those of one message, so the app can draw only the first few. */
+function nextFormula(env: { formulas?: number }) {
+  env.formulas = (env.formulas ?? 0) + 1;
+  return { formula: env.formulas - 1 };
+}
 
 /** A line-table entry; markdown-it fills one for every line it asks about. */
 const entry = (list: number[], line: number) => list[line] as number;
@@ -87,8 +102,9 @@ const mathSpan: InlineRule = (state, silent) => {
     return true;
   }
   if (!silent) {
-    const token = state.push("code_inline", "code", 0);
+    const token = state.push("dozo_math_inline", "span", 0);
     token.markup = "$".repeat(run);
+    token.meta = nextFormula(state.env);
     token.content = content.replace(/\s*\n\s*/g, " ").trim();
   }
   state.pos = close + run;
@@ -115,9 +131,9 @@ const mathBlock: BlockRule = (state, startLine, endLine, silent) => {
   }
   if (line >= endLine) return false;
   if (silent) return true;
-  const token = state.push("fence", "code", 0);
-  token.info = "tex";
+  const token = state.push("dozo_math_block", "div", 0);
   token.markup = "$".repeat(run);
+  token.meta = nextFormula(state.env);
   token.map = [startLine, line + 1];
   token.content =
     (first.trim() ? `${first.trim()}\n` : "") +
@@ -126,7 +142,7 @@ const mathBlock: BlockRule = (state, startLine, endLine, silent) => {
   return true;
 };
 
-/** Makes the chat's Markdown parser read math as code. */
+/** Makes the chat's Markdown parser read `$…$` and `$$…$$` as math tokens. */
 export function mathAsCode<T extends Parser>(parser: T): T {
   parser.block.ruler.before("fence", "dozo_math", mathBlock, {
     alt: ["paragraph", "reference", "blockquote", "list"],

@@ -1,8 +1,10 @@
 import type { KatexOptions } from "katex";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MAX_MATH_SOURCE, mathOptions } from "./dozo-math-options";
 import "./dozo-markdown-math.css";
 
 export { mathSource, remarkChatMath } from "./dozo-markdown-math";
+export { MAX_MATH_SOURCE, mathOptions };
 
 type Katex = { render(tex: string, element: HTMLElement, options: KatexOptions): void };
 
@@ -37,25 +39,6 @@ function useKatex(): Katex | undefined {
     );
   }, [katex]);
   return katex;
-}
-
-/** Longer source is shown as written: it is far past any formula a reply needs. */
-export const MAX_MATH_SOURCE = 4000;
-
-// Model output is untrusted. `trust: false` refuses \href, \url, \includegraphics and the \html*
-// commands; the size and expansion caps stop a formula from drawing huge boxes or looping macros.
-// Every render gets fresh macros, so \gdef in one formula cannot change another.
-export function mathOptions(displayMode: boolean): KatexOptions {
-  return {
-    displayMode,
-    throwOnError: true,
-    trust: false,
-    strict: "ignore",
-    maxSize: 20,
-    maxExpand: 100,
-    macros: {},
-    output: "htmlAndMathml",
-  };
 }
 
 /** The element `remarkChatMath` makes: its one child is the formula's TeX. */
