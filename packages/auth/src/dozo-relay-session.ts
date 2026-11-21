@@ -38,6 +38,8 @@ const COMPUTER_ONLY_PATHS = [
   "/unlink-account",
   "/passkey/",
   "/two-factor/",
+  // Linking the account to a hosted one (`dozo-hosted-login.ts`).
+  "/dozo/hosted-login/",
 ];
 /** A computer session counts as signed in only if it was used this recently. */
 export const RECENT_SESSION_MS = 30 * 24 * 60 * 60 * 1000;

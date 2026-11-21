@@ -3,6 +3,7 @@ import {
   approvalModeFromPreference,
   commandRuleCwd,
   literalCommandWords,
+  readOnlyCwd,
   readOnlyPipeline,
 } from "@rakazo/core";
 import { dozoCommandRuleExists } from "@rakazo/db";
@@ -33,7 +34,7 @@ export async function userComputerGate(
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
     return "allow";
   const words = literalCommandWords(String(args.command ?? ""));
-  if (readOnlyPipeline(String(args.command ?? ""))) return "allow";
+  if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return "allow";
   const ruled =
     words &&
     (await dozoCommandRuleExists(ctx.deps.prisma, {

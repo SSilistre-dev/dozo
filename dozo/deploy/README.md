@@ -10,6 +10,9 @@ the images are built there, so they match the host's CPU and never leave it.
 | File | What it is |
 | --- | --- |
 | `deploy.sh` | Deploy, roll back, create the owner's account |
+| `bridge.sh` | Runs on the host during a deploy: keeps a copy of the api and web serving while the panel replaces them (see Deploys without a gap) |
+| `outage-probe.sh` | Watches the app from outside during a deploy and reports the longest outage |
+| `rehearse.sh` | Rehearses a deploy on your machine, behind the panel's proxy, and measures the outage |
 | `compose.deploy.yml` | The production layer over upstream's compose file (which stays unedited) |
 | `compose.site.yml`, `site.nginx.conf`, `site-assets.sh`, `site-reload.sh` | The landing page: its own static nginx service (see Landing page) |
 | `host-egress.sh` | Run once on the host: firewall rules that keep bot computers off the host and its networks |
@@ -28,14 +31,19 @@ also those to the layer and the theme):
    tagged with the commit: `dozo/app` (api, worker, web, migrate; the theme file is added as a last
    layer), `dozo/supervisor` and `rakazo/computer` (the supervisor accepts no other name for the
    stock computer image). `host-jobs.sh` is copied to `<dir>` too.
-4. Gives the panel the merged file and sets `DOZO_IMAGE_TAG` in the panel's environment, starts a
-   deployment and waits for it.
+4. Gives the panel the merged file and sets `DOZO_IMAGE_TAG` in the panel's environment. Starts
+   `outage-probe.sh` against the public address, copies the running api and web on the host with
+   `bridge.sh up`, starts the panel's deployment and waits for it, then waits until the host has
+   retired the copies, which it does once api and web are healthy again (Deploys without a gap).
 5. Checks health: on the host, postgres, supervisor, web, api and worker are running, api and
    worker are `healthy`, the app containers and the supervisor run the new tag, the api answers
    `/health` and no service restarts within 15 seconds;
    from outside, `https://<domain>/` answers with a title that names Dozo, and `/dozo-boot.js`
    still carries the server's `cache-control: no-cache` (a CDN that sets its own browser cache time
    fails this; on Cloudflare: Caching, Browser Cache TTL, Respect Existing Headers).
+   Last, it prints what the probe saw and `WARNING: from outside, the app was down for <n>s` when
+   the longest outage passed `DOZO_DEPLOY_OUTAGE_WARN` seconds (default 5). That never fails the
+   deploy.
 6. Removes older tags of the three images, keeping the new one, the one it replaced and the
    newest other one.
 
@@ -55,10 +63,12 @@ DOKPLOY_COMPOSE_ID=<id of the compose service in the panel>
 DOKPLOY_API_KEY_CMD='<command that prints the panel API key>'   # or export DOKPLOY_API_KEY
 DOZO_DEPLOY_DIR=/opt/dozo        # optional, the folder on the host
 DOZO_DEPLOY_TIMEOUT=900          # optional, seconds to wait for the panel and for health
+DOZO_DEPLOY_OUTAGE_WARN=5        # optional, seconds of outage seen from outside before a warning
 ```
 
 Your machine needs `git`, `rsync`, `ssh`, `curl`, `jq` and Docker (for the brand step and the
-merge). The host needs Docker Engine 26 or newer with Compose 2.24.4 or newer.
+merge). The host needs Docker Engine 26 or newer with Compose 2.24.4 or newer, and `curl` and
+`jq` (for `bridge.sh`).
 
 ## First-time setup
 
@@ -184,37 +194,54 @@ https://dozo.example/`).
 The hosted server can sign people in on their own computer's Dozo server with the account they
 have here (`packages/auth/src/dozo-hosted-login.ts`). It is off until the api has a signing key;
 the panel variable reaches the api and nothing else (`compose.deploy.yml`, held by
-`compose.deploy.test.sh`).
+`compose.deploy.test.sh`). Every step below was run against a hosted server and computers' servers
+made from the server bundle, with a real browser (`dozo/e2e/hosted-login`).
 
-1. Make an Ed25519 key on a trusted machine and keep the output only in the panel's secret store:
-   `openssl genpkey -algorithm ed25519 -outform DER | base64 -w0`.
-2. Set `HOSTED_LOGIN_SIGNING_KEY` to that one line in the panel and deploy.
-3. Check `https://dozo.example/api/auth/dozo/hosted-login/keys`: one key, `Cache-Control:
-   public, max-age=60`. A CDN in front must pass this path through (no challenge page, no
-   rewrite): every computer reads the keys from it. It may cache the answer for its 60 seconds.
+1. Make an Ed25519 key on a trusted machine and keep the output only in the panel's secret store
+   (PKCS#8, base64 on one line; the api also takes it as PEM):
+   `openssl genpkey -algorithm ed25519 -outform DER | base64 -w0`
+2. In the panel's environment of the compose service, add `HOSTED_LOGIN_SIGNING_KEY=<that line>`,
+   then `dozo/deploy/deploy.sh` (or redeploy from the panel: only the environment changed).
+3. Check from outside, through the CDN:
+   - `curl -s https://dozo.example/api/auth/dozo/hosted-login/keys` lists one key
+     (`"kty":"OKP","crv":"Ed25519"`), and `curl -sI` of it shows
+     `cache-control: public, max-age=60`. A CDN in front must pass this path through (no challenge
+     page, no rewrite): every computer reads the keys from it. It may cache the answer for its 60
+     seconds.
+   - `curl -s -o /dev/null -w '%{http_code}' -X POST -H 'origin: https://dozo.example'
+     -H 'content-type: application/json' -d '{}' https://dozo.example/api/auth/dozo/hosted-login/issue`
+     answers `401` (no session); `404` means the key did not reach the api.
+   - `https://dozo.example/dozo/hosted-login?audience=x&return=y` opens the sign-in page when
+     signed out.
 4. `WEB_ORIGIN` must be exactly the origin computers are configured with (`HOSTED_LOGIN_ISSUER`,
    built into the desktop app): it is the token's issuer and the one origin the confirmation page
-   accepts a request from. A second name for the site, or a trailing path, fails every sign-in.
+   accepts a request from. A second name for the site, or a trailing path, fails every sign-in. The
+   web origin must also answer `/api` (it does here: the proxy sends `/api/` to the api).
+5. The desktop app turns it on only when built with the issuer: set the repository variable
+   (`gh variable set DOZO_HOSTED_LOGIN_ISSUER --body https://dozo.example`) before tagging a
+   desktop release. A build that names it ignores the environment (`dozo/desktop/README.md`).
 
 Changing the key, with no sign-in failing:
 
 1. Make a new key as above. Set it as `HOSTED_LOGIN_OVERLAP_KEY` (published, not used to sign)
-   and deploy. Wait at least two minutes: caches and computers then know it.
+   and deploy. Wait at least two minutes, for the CDN's copy of the keys (60 s) to expire.
 2. Swap: the new key in `HOSTED_LOGIN_SIGNING_KEY`, the old one in `HOSTED_LOGIN_OVERLAP_KEY`.
-   Deploy. Tokens signed by the old key in the last minute still check out.
+   Deploy. Tokens signed by the old key in the last minute still check out, and a computer reads
+   the keys again the first time a token names one it does not know.
 3. After a few minutes remove `HOSTED_LOGIN_OVERLAP_KEY` and deploy.
 
 A leaked key: skip the overlap. Put a new key in `HOSTED_LOGIN_SIGNING_KEY`, remove the overlap
 variable and deploy at once; computers pick the new key up on their next sign-in.
 
-To watch: the api log line `Hosted login refused: <reason>` is on the computer's side, so here
-watch the rate of `/api/auth/dozo/hosted-login/issue` answers (200 versus 4xx) and `/keys`
-errors at the CDN.
+To watch: the reason a computer refused a token (`Hosted login refused: <reason>`) is logged on
+the computer, not here. Here, watch the rate of `/api/auth/dozo/hosted-login/issue` answers (200
+versus 4xx) in the api's request log and `/keys` errors at the CDN.
 
 To turn it off: remove `HOSTED_LOGIN_SIGNING_KEY` (and any overlap key) and deploy. `/keys` and
 `/issue` then answer 404, and computers' sign-in fails with "Could not continue" until it is back;
 people already signed in on a computer stay signed in (sessions there last 90 days, renewed by
-use).
+use). Turn the desktop variable off too (`gh variable delete DOZO_HOSTED_LOGIN_ISSUER`) so the
+next release is built without it.
 
 ## Admin page
 
@@ -246,8 +273,9 @@ and apply to the host in `RAKAZO_HOST` only, so that must be the domain the pane
   and `X-Frame-Options` come from the app.
 - `/api/` and `/rpc/` go to the api container directly. Through the web container a live stream
   stayed open after the API behind it restarted, and open tabs stopped following changes until
-  reloaded. While the api container is starting or unhealthy these paths answer 502 (about ten
-  seconds after a restart); the app retries by itself.
+  reloaded. While no api container is healthy these paths answer 502 instead of reaching the web
+  container; a deploy keeps one healthy (Deploys without a gap), so this happens only when the
+  api is down for another reason.
 - `/api/v1/plugin-submissions`, the one write that needs no account, answers 403 to everyone,
   from the proxy and from the api itself (`DOZO_PLUGIN_SUBMISSIONS=closed`, the default here). To
   open it, set that to `open` and remove the proxy's lines from `compose.deploy.yml`.
@@ -283,6 +311,104 @@ DOZO_SITE_DOMAIN=site.example
 The first `deploy.sh site` writes the compose file into the service. To remove: delete the service
 in the panel and `<dir>/site` on the host.
 
+## Deploys without a gap
+
+The panel deploys with `docker compose up -d`, which first stops every container whose image
+changed (api, web, worker, supervisor) and only then starts the new ones: the api after the
+migrations, the worker after the api is healthy, and the proxy routes to a container only once it
+passes its health check. That left nothing to route to for most of the deploy: the live access
+log of 21 November showed 502s, then 404s with no router at all, then 502s again, from 3 to 29
+seconds after the panel started (up to 58 seconds before a request got through again), and the
+panel takes 31 to 42 seconds per deploy. An owner's tap on an approval card in that window was
+lost. Compose has no "start the new one first" for a service that is not in a swarm, and the
+panel runs Compose, so `deploy.sh` keeps the previous release serving around it with `bridge.sh`
+(copied to `<dir>` and run there):
+
+- `bridge.sh up` copies the running api and web into `<project>-bridge-api` and
+  `<project>-bridge-web`: same image, environment, volumes, networks and proxy labels, no Compose
+  labels (so Compose neither replaces nor removes them), restarting with Docker as the originals
+  do. The proxy merges services of the same name, so each copy joins its service. Migrations
+  already have to work with the previous release (root `AGENTS.md`), which is all the copies are.
+- Then it takes the originals out of the proxy and stops them itself, before the panel starts.
+  A container leaves the proxy only by failing its health check: one that just stops is still
+  routed to for the second or two the proxy takes to apply the event, and a request sent to its
+  address in that moment hangs (about 20 seconds in the rehearsal) instead of being refused. So the
+  api and web checks fail while `/dev/shm/dozo-drain` exists (`bridge.sh` creates it; a new start
+  clears it), and they run every 5 seconds with 3 retries, so a marked container is out within
+  15 to 20 seconds. That, with the api's 30 seconds to finish its requests, is what this adds to
+  a deploy.
+- The panel then replaces them as before; the proxy routes to the new api and web once they pass
+  their checks, which probe every second while starting (upstream's production compose file does
+  the same).
+- `bridge.sh up` leaves `bridge.sh watch` running on the host, detached from the deploy: it
+  retires each copy (out of the proxy the same way, then removed) once its service runs healthy
+  in a container that took over from it. If the panel has not replaced an original 15 minutes
+  after it stopped (`DOZO_BRIDGE_RESTORE_AFTER`), it starts it again and then retires the copy.
+  A deploy that dies before the panel started puts the originals back at once (`bridge.sh
+  restore`). Whatever happens to `deploy.sh` (a timeout, Ctrl-C, a dropped connection), the copies
+  go away by themselves, and `deploy.sh` waits for that before its health check. Its log:
+  `<dir>/bridge.log`.
+- Open live streams and device sockets on a stopping api close at once and reconnect
+  (`apps/api/src/drain.ts`).
+- The worker keeps upstream's rule: the old one finishes its running jobs before it stops. Compose
+  starts nothing new until it has, so a long job delays the deploy; the copies serve meanwhile and
+  `watch` waits up to four hours.
+
+Measured with `rehearse.sh` (same layer and Compose command as the panel, Traefik v3.5.0 on Docker
+28.4, `outage-probe.sh` sending each of its four requests every quarter second, 60 seconds allowed
+per request). Each run ends with no copy left and api and web healthy.
+
+| Deploy | Requests | Failed | Longest outage | Slowest answer |
+| --- | --- | --- | --- | --- |
+| Before (`main`'s layer, no copies), two image builds | 601 / 432 | 305 / 138 | 27.2 s / 8.2 s | |
+| With this change | 1213 | 0 | 0 s | 0.1 s |
+| With this change, the caller gone after the panel started | 1230 | 0 | 0 s | 0.1 s |
+| With this change, the panel never deploying | 1131 | 0 | 0 s | 0.1 s |
+| The first deploy of this change (from `main`'s layer) | 801 | 46 | 8.0 s | 7.2 s |
+
+The first deploy still has originals whose check ignores the marker, so the panel stops them
+while routed: about half of the API requests got 502 for the eight seconds the old api took to
+stop. The proxy labels do not change in this change, so nothing else differs from later deploys.
+`deploy.sh` prints the probe's lines at the end of every deploy (from outside it sends about two
+requests a second); compare them with these.
+
+Memory: the copies hold what the originals did (about 0.5 GB for the api and 0.2 GB for web on the
+live host; 0.3 and 0.2 GB in the rehearsal) while the new ones start, for about a minute; the live
+host had about 8 GB available.
+
+When something is left over (placeholders: `<dir>`, `<project>` is the panel's project name, as
+in `docker ps`):
+
+```sh
+ssh <host> tail -n 50 <dir>/bridge.log                      # what bridge.sh did
+# Copies still serving (`docker ps -f name=bridge`): let them retire once api and web are healthy,
+ssh <host> 'nohup <dir>/bridge.sh watch <project> >/dev/null 2>&1 &'
+# Originals stopped and no deploy coming: start them now (the copies retire once they are healthy)
+ssh <host> <dir>/bridge.sh restore <project>
+# The marker left in a running api or web (it stays out of the proxy):
+ssh <host> 'docker exec <container> rm -f /dev/shm/dozo-drain'
+# Last resort, with the api and web of the stack running healthy:
+ssh <host> docker rm -f <project>-bridge-api <project>-bridge-web
+```
+
+Known limits:
+
+- The api and web leave the proxy after three failed checks 5 seconds apart, where upstream's
+  checks allow twenty 10 seconds apart. With one api, a hung api fails requests either way; the
+  shorter count only drops it sooner.
+- Two api processes run for that minute, as when upstream runs several. A Telegram bot set by
+  environment variable without a webhook (`TELEGRAM_BOT_TOKEN`) is polled by one process at a
+  time, so the other logs conflicts until the copy is gone; the live host sets none.
+- A host restart during a deploy brings the copies back (they restart with Docker) but not
+  `watch`: start it as above.
+- The supervisor still restarts with every deploy (its image changes): starting or controlling a
+  bot computer fails for those seconds.
+- To rehearse: `flock -w 7200 /tmp/dozo-yigin.lock dozo/deploy/rehearse.sh <running layer> <new
+  layer> plain|bridge|abandon|abort` (the running layer of `main`: `git show
+  main:dozo/deploy/compose.deploy.yml`). On Docker 29 or newer the proxy cannot read the daemon;
+  set `DOCKER_HOST` to a `docker:28.4.0-dind` that mounts the work folder at the same path,
+  `DOCKER_SOCKET` to its socket and `DOZO_REHEARSAL_BIND=0.0.0.0` with its port 18443 published.
+
 ## Roll back
 
 A deploy ends with the tag it replaced. `dozo/deploy/deploy.sh rollback <tag>` points the panel at
@@ -290,6 +416,11 @@ that tag again and checks health; three tags stay on the host
 (`ssh <host> docker images dozo/app`). It restores the code and the theme, not the data: migrations
 that ran stay applied, which upstream keeps compatible with the previous release. The compose file
 in the panel stays the newest one.
+
+Before going back to a commit without `bridge.sh`, or deploying from the panel by hand, make sure
+no copy is left: `ssh <host> docker ps -f name=bridge` shows none, or remove them as above (the
+commands under Deploys without a gap). The panel does not know them, and an older `deploy.sh`
+would never retire them.
 
 ## Data
 
@@ -447,7 +578,8 @@ team computer outside the compose project. What bounds them:
   firewall reload on the host that flushes them goes unnoticed until the supervisor restarts. They
   return on boot (two systemd units).
 - A worker that is running jobs is given upstream's grace period (50 minutes) to finish them
-  before it is replaced, so a deploy can outlast `DOZO_DEPLOY_TIMEOUT`; the panel still finishes it.
+  before it is replaced, so a deploy can outlast `DOZO_DEPLOY_TIMEOUT`; the panel still finishes it,
+  and the copies of the api and web keep serving until the next deploy retires them.
 - The build cache on the host grows with each deploy and is shared with the host's other builds, so
   the script does not prune it.
 - The api's `/health` is not routed from outside; the deploy and the health check ask it inside

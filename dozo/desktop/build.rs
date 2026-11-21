@@ -16,6 +16,8 @@ fn main() {
         "restore_pick",
         "restore",
         "reset_password",
+        "prefs_list",
+        "prefs_pick",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(commands))
         .expect("tauri-build failed");
