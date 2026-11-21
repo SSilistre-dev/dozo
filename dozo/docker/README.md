@@ -243,8 +243,9 @@ scratch copy inside the container; reports and logs are in `<stage>/upstream-tes
 `DOZO_POSTGRES_IMAGE`) on a network of its own, once per time zone in `DOZO_PG_ZONES` (default
 `UTC Europe/Istanbul America/Los_Angeles`). It migrates one database as upstream's integration
 harness does (owner login for migrations, `rakazo_app` for the tests), copies it once per zone, sets
-that database's `TimeZone` and the test process's `TZ` to the zone, and runs the files with three
-workers. The local server's Postgres can take the zone of the person's machine, so fork SQL must
+`TimeZone` on every role and the test process's `TZ` to the zone, and runs the files with three
+workers, each file on its own copy of that database (`COPY_TEST_DATABASE`, as upstream's harness):
+a test that changes a whole table never meets another file's rows. The local server's Postgres can take the zone of the person's machine, so fork SQL must
 answer the same in every zone (`dozo/AGENTS.md`, Recurring mistakes). A skipped test fails the run:
 every file runs only with a database, so a skip means it was never reached. Not part of `olc` or
 `qa`; the workflow `dozo-postgres-tests` runs it on every pull request (about 5 minutes). Last line

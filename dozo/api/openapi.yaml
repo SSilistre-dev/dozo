@@ -16,8 +16,12 @@ info:
     A message sent here is not taken as your own word: the bot asks you in the app before any
     action that reaches outside or changes something, whatever your approval settings.
 
-    Each token may make 60 requests a minute and hold 3 streams open at once; an account may send
-    20 messages a minute with all its tokens. A stop word is refused: stop a run in the app.
+    Reads are not asked about: what your bot can read (chats, files, memory, mail, connected apps),
+    a reply can carry back.
+
+    Each token may make 60 requests and send 10 messages a minute and hold 3 streams open at once;
+    an account may send 20 messages a minute with all its tokens. A stop word is refused: stop a
+    run in the app. A message sent here never answers a question the bot is waiting on.
 servers:
   - url: "{origin}"
     description: The address you open Dozo at, on your own computer or a hosted server.

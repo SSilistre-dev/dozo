@@ -334,7 +334,7 @@ A token belongs to one member in one Space and can be limited to one bot. Only i
 four characters are stored (`dozo_access_tokens`); it is shown once. Making one asks the person to
 confirm it is them (as revealing a secret does) and mails the account's address when a mail
 provider is set. It lasts 90 days unless made to never expire, and every token stops when the
-account's password changes or is reset. It goes with its bot and with the member's place in the
+account's password changes or is reset, or its owner or an operator signs out everywhere. It goes with its bot and with the member's place in the
 Space, and stops for a deactivated or banned account. Revoking ends open streams within 10 seconds;
 runs already started go on. Making and revoking one is in the activity log; the list shows when
 each was last used.
@@ -344,14 +344,22 @@ cannot call the API with a signed-in browser. It reaches the app's own send, tra
 procedures as its member (`createRouterClient`), so access checks, approvals and model limits are
 the app's. Settings, billing, members and tokens are out of its reach: the app's RPC never accepts a
 token. A stop word is refused (in the app it stops every run in the chat): stop a run in the app.
+A message sent with a token never answers or ends a question the bot is waiting on.
+
+Reads are open: a run started with a token reads, without asking, whatever its bot can read
+(chats, files, memory, mail, connected apps) and the reply can carry it back. A token limited to one
+bot reaches everything that bot can read.
 
 Token gate (`packages/adapters/src/dozo-token-run.ts`, shared with MCP). Text sent with a token may
 come from another program or agent, so it is not the owner's word. It is saved with an `api:` client
 nonce (`packages/core/src/dozo-token-source.ts`) and shows a small key above it on web and mobile.
 A bot is marked while its chat holds such a message (clearing the chat ends it), while a marked
-run of another bot has written to it, handed off to it or made it a routine (until its chat is
-cleared after that), or while a bot it was spawned from is marked; background helpers and routines
-of a marked bot are its runs. In a run of a marked bot every call that is not a plain read asks the
+run of another bot has written to it, handed off to it, changed it, grouped it or made it a routine
+(the bot is found by id or by name as the tool's handler would, and a call naming one that does not
+exist is refused; until its chat is cleared after that), or while a bot it was spawned from is
+marked. A bot a marked run spawned, and the bot of a routine a marked run made or changed, stay
+marked until that bot or routine is deleted. Background helpers and routines of a marked bot are
+its runs; conversation memory keeps no turn of a marked run. In a run of a marked bot every call that is not a plain read asks the
 person, even in Never ask or Auto review: sends, connector writes, the cloud computer, the browser,
 files, memory, settings, routines, other bots and the user's own computer. Its cards say why and
 have no Always allow, the run starts as having read outside content, and when a token's message
@@ -359,9 +367,10 @@ started it, the sites it names are not trusted. An approved call goes ahead once
 again; the API call does not wait: its stream ends with `waiting_input`. A background helper of a
 marked bot cannot ask, so it refuses such calls.
 
-Limits: 60 requests a minute per token and 20 messages a minute per account, counted in Postgres
-for every API instance (`dozo_api_minutes`); 120 requests a minute per address before any token is
-looked up and 3 open streams per token, per instance. A stream ends after 10 minutes with
+Limits: 60 requests and 10 messages a minute per token and 20 messages a minute per account,
+counted in Postgres for every API instance (`dozo_api_minutes`); 120 requests a minute per address
+(an IPv6 caller by its /64) before any token is looked up and 3 open streams per token, per
+instance. A stream ends after 10 minutes with
 `running`. Not yet: the mobile app has no token screen (a token is for a computer's scripts; make
 one on web or desktop), the notice mail is in English, and there is no group chat or attachment
 support.

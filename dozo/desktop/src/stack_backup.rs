@@ -33,6 +33,8 @@ pub enum Refusal {
     NotABackup,
     Newer,
     NothingToBackUp,
+    /// Reset Password on a computer that signs in with the hosted account.
+    HostedLogin,
     /// Anything else: the details are in `logs/backup.log`.
     Failed,
 }
@@ -44,6 +46,7 @@ impl Refusal {
             "damaged" | "not-a-backup" | "no-backup-data" => Refusal::NotABackup,
             "newer" => Refusal::Newer,
             "no-server" => Refusal::NothingToBackUp,
+            "hosted-login" => Refusal::HostedLogin,
             _ => Refusal::Failed,
         }
     }
@@ -55,6 +58,9 @@ impl Refusal {
             Refusal::NotABackup => "This file is not a Dozo backup, or it is damaged.",
             Refusal::Newer => "This backup is from a newer Dozo. Update the app first.",
             Refusal::NothingToBackUp => "There is nothing to back up yet.",
+            Refusal::HostedLogin => {
+                "This computer signs in with your Dozo account, so it has no password here."
+            }
             Refusal::Failed => "It did not work. The details are in the log.",
         }
     }
@@ -70,12 +76,17 @@ pub struct Tool {
 impl Tool {
     /// The command in `root`'s current version, if it has one (bundles before 0.11.0-2 do not).
     pub fn of(root: &Path) -> Option<Tool> {
+        Tool::named(root, "backup")
+    }
+
+    /// Another of the bundle's commands (`account`, `diagnostics`), by its entrypoint's name.
+    pub fn named(root: &Path, name: &str) -> Option<Tool> {
         let version = fs::read_to_string(root.join("current")).ok()?;
         let installed = root.join("versions").join(version.trim());
         let server = installed.join("server/rakazo-server");
         let manifest: Value =
             serde_json::from_str(&fs::read_to_string(server.join("manifest.json")).ok()?).ok()?;
-        let entry = server.join(manifest.get("entrypoints")?.get("backup")?.as_str()?);
+        let entry = server.join(manifest.get("entrypoints")?.get(name)?.as_str()?);
         let node = if cfg!(windows) {
             installed.join("node/node.exe")
         } else {
@@ -91,13 +102,24 @@ impl Tool {
     /// Runs `create` or `restore` on `file` with `password` on its standard input; its one JSON
     /// line, or why not. Its error output goes to `logs/backup.log`.
     async fn run(&self, command: &str, file: &Path, password: &str) -> Result<Value, Refusal> {
+        let args = [
+            command.as_ref(),
+            file.as_os_str(),
+            "--home".as_ref(),
+            self.root.as_os_str(),
+        ];
+        self.call(&args, Some(password)).await
+    }
+
+    /// Runs the command with `args`, and `input` as the first line of its standard input.
+    async fn call(&self, args: &[&std::ffi::OsStr], input: Option<&str>) -> Result<Value, Refusal> {
+        let command = args
+            .first()
+            .map_or_else(String::new, |arg| arg.to_string_lossy().into_owned());
         let mut child = Command::new(&self.node);
         child
             .arg(&self.entry)
-            .arg(command)
-            .arg(file)
-            .arg("--home")
-            .arg(&self.root)
+            .args(args)
             .current_dir(self.entry.parent().unwrap_or(&self.root))
             .env_clear()
             .envs(passed_on())
@@ -109,7 +131,7 @@ impl Tool {
         let mut child = stack_os::spawn(child).await.map_err(|_| Refusal::Failed)?;
         let mut stdin = child.stdin.take().ok_or(Refusal::Failed)?;
         stdin
-            .write_all(format!("{password}\n").as_bytes())
+            .write_all(format!("{}\n", input.unwrap_or_default()).as_bytes())
             .await
             .map_err(|_| Refusal::Failed)?;
         drop(stdin);
@@ -144,6 +166,28 @@ impl Tool {
             None if status.success() => Ok(answer),
             None => Err(Refusal::Failed),
         }
+    }
+
+    /// Sets a new password for the computer's one account (`account reset-password`); its
+    /// sessions end, so the window signs in again.
+    pub async fn reset_password(&self, password: &str) -> Result<(), Refusal> {
+        let args = [
+            "reset-password".as_ref(),
+            "--home".as_ref(),
+            self.root.as_os_str(),
+        ];
+        self.call(&args, Some(password)).await.map(drop)
+    }
+
+    /// Writes the diagnostics report (`diagnostics --out`) to `file`.
+    pub async fn diagnostics(&self, file: &Path) -> Result<(), Refusal> {
+        let args = [
+            "--home".as_ref(),
+            self.root.as_os_str(),
+            "--out".as_ref(),
+            file.as_os_str(),
+        ];
+        self.call(&args, None).await.map(drop)
     }
 
     /// Seals the server's data into `file`, running or not.
@@ -439,6 +483,42 @@ mod tests {
         assert_eq!(read(&root, "pgdata/table"), "rows now");
         assert_eq!(read(&root, "secrets"), "KEY=now");
         assert!(!root.join("before-restore/5-0").exists());
+    }
+
+    #[tokio::test]
+    async fn reset_and_diagnostics_call_their_commands() {
+        let root = installed(
+            "account-tools",
+            r#"echo '{"reset":true,"sessionsEnded":1}'"#,
+        );
+        let server = root.join("versions/1/server/rakazo-server");
+        fs::write(
+            server.join("manifest.json"),
+            r#"{"entrypoints":{"backup":"backup.mjs","account":"account.mjs","diagnostics":"diag.mjs"}}"#,
+        )
+        .unwrap();
+        fs::write(server.join("account.mjs"), "").unwrap();
+        fs::write(server.join("diag.mjs"), "").unwrap();
+        let account = Tool::named(&root, "account").unwrap();
+        account.reset_password("new password 1").await.unwrap();
+        assert_eq!(read(&root, "stdin").trim(), "new password 1");
+        let called = read(&root, "called");
+        assert!(
+            called.contains("account.mjs reset-password --home"),
+            "{called}"
+        );
+        assert!(!called.contains("new password"));
+        let diagnostics = Tool::named(&root, "diagnostics").unwrap();
+        diagnostics
+            .diagnostics(&root.join("report.tar.gz"))
+            .await
+            .unwrap();
+        let called = read(&root, "called");
+        assert!(
+            called.ends_with(&format!("--out {}\n", root.join("report.tar.gz").display())),
+            "{called}"
+        );
+        assert!(Tool::named(&root, "nothing").is_none());
     }
 
     #[test]

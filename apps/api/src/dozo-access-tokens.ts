@@ -97,7 +97,7 @@ export function accessTokenNotice(to: string, name: string, botName: string | nu
     to,
     subject: "A new access token for your Dozo account",
     text: [
-      `An access token named "${name}" was made for your account. It can send messages to ${reach} and read their chats.`,
+      `An access token named "${name}" was made for your account. It can send messages to ${reach} and read whatever they can read: their chats, files, memory and connected apps.`,
       "If you did not make it, revoke it in Settings > General > Security > Access tokens and change your password.",
     ].join("\n\n"),
   };
