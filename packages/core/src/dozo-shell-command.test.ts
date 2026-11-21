@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { commandWordsLabel, literalCommandWords, readOnlyCommand } from "./dozo-shell-command.js";
+import {
+  commandWordsLabel,
+  literalCommandWords,
+  readOnlyCommand,
+  readOnlyPipeline,
+} from "./dozo-shell-command.js";
 
 describe("literalCommandWords", () => {
   it("reads one program and its literal arguments", () => {
@@ -156,5 +161,69 @@ describe("commandWordsLabel", () => {
       "git commit -m 'fix the build'",
     );
     expect(commandWordsLabel(["npm", "test"])).toBe("npm test");
+  });
+});
+
+describe("readOnlyPipeline", () => {
+  it("passes one read-only command and read-only commands joined by single pipes", () => {
+    for (const command of [
+      "ls -la",
+      'ls /Applications | grep -iE "chrome|safari"',
+      "ls /Applications|grep -i safari",
+      "cat notes.txt | grep todo | wc -l",
+      "echo 'a|b' | grep 'a|b'",
+      'grep "a|b" notes.txt | head -n 3',
+      "ls | tail -n 5",
+    ])
+      expect(readOnlyPipeline(command), command).toBe(true);
+  });
+
+  it("asks for every other form", () => {
+    for (const command of [
+      "uname -a 2>/dev/null || ver",
+      'ls /Applications | grep -iE "chrome|safari" ; ls /System/Applications 2>/dev/null | grep -i safari',
+      "ls || ls",
+      "ls |& cat",
+      "ls |",
+      "| ls",
+      "ls | | cat",
+      "",
+      "|",
+      "ls | sh",
+      "ls | xargs rm",
+      "ls | tee f",
+      "cat a | sort -o f",
+      "ls | find . -exec rm '{}' ';'",
+      "ls | find . -delete",
+      "ls | bash",
+      "ls | iex",
+      "ls | % { rm $_ }",
+      "ls | ForEach-Object { rm $_ }",
+      "ls \\| cat",
+      "grep a\\|b notes | cat",
+      "ls | `rm x`",
+      "ls | grep $(rm x)",
+      "ls | grep `rm x`",
+      "ls | cat > out",
+      "ls | cat; rm x",
+      "ls && cat x",
+      "ls | cat &",
+      "ls | (cat)",
+      "ls | grep \"a|b",
+      "ls | grep 'a|b",
+      "ls | grep \"$HOME\"",
+      "ls\ncat x",
+      "ls | cat\nrm x",
+      "ls | cat‮ x",
+      "ls | cat​",
+      "ls | “a|b”",
+      "ls | grep a'b|c'd",
+      "ls | =cat",
+      "ls | @cat",
+      "ls | //host/share",
+      "ls | FOO=1 cat x",
+      "ls | -x",
+    ])
+      expect(readOnlyPipeline(command), JSON.stringify(command)).toBe(false);
   });
 });
