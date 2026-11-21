@@ -31,19 +31,6 @@ vi.mock("react-native-webview", () => ({
     return createElement("webview");
   },
 }));
-// The options the web draws with (`packages/chat-ui/src/dozo-math-options.ts`, which has its own test).
-vi.mock("@rakazo/chat-ui/native", () => ({
-  mathOptions: (displayMode: boolean) => ({
-    displayMode,
-    throwOnError: true,
-    trust: false,
-    strict: "ignore",
-    maxSize: 20,
-    maxExpand: 100,
-    macros: {},
-    output: "htmlAndMathml",
-  }),
-}));
 
 import { MathView } from "../components/dozo-math-view";
 
@@ -140,6 +127,8 @@ it("blocks every page but its own and every kind of file access", async () => {
   expect(allow({ url: "about:blank/" })).toBe(true);
   expect(allow({ url: "https://example.test/" })).toBe(false);
   expect(allow({ url: "file:///etc/passwd" })).toBe(false);
+  // Every address passes the library's list, so none is handed to the system to open.
+  expect(web.props?.originWhitelist).toEqual(["*"]);
   expect(web.props).toMatchObject({
     allowFileAccess: false,
     allowUniversalAccessFromFileURLs: false,
@@ -217,4 +206,27 @@ it("stops waiting for KaTeX when the message goes away", async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(web.mounts).toBe(0);
+});
+
+it("draws a formula it has measured before at once, as a list does when a row comes back", async () => {
+  const first = await show("m_cached", false);
+  await message({ type: "drawn", width: 60, height: 30 });
+  expect(first.textContent).toBe("");
+  const again = await show("m_cached", false);
+  expect(again.textContent).toBe("");
+  expect(JSON.parse(again.querySelector("div")?.getAttribute("data-style") ?? "{}")).toEqual({
+    width: 60,
+    height: 30,
+  });
+});
+
+it("forgets the oldest sizes past its limit", async () => {
+  for (let i = 0; i < 202; i++) {
+    await show(`m_${i}`, false);
+    await message({ type: "drawn", width: 10, height: 10 });
+  }
+  const oldest = await show("m_0", false);
+  expect(oldest.textContent).toBe("code:m_0");
+  const newest = await show("m_201", false);
+  expect(newest.textContent).toBe("");
 });

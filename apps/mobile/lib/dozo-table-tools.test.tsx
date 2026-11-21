@@ -4,7 +4,12 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-const host = vi.hoisted(() => ({ shared: [] as string[], shareFails: false }));
+const host = vi.hoisted(() => ({
+  shared: [] as string[],
+  shareFails: false,
+  labels: [] as string[],
+  failed: 0,
+}));
 
 vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
@@ -50,6 +55,16 @@ vi.mock("../components/native-action-button", () => ({
       onClick: props.onPress,
     }),
 }));
+vi.mock("@rakazo/logging", () => ({
+  bestEffort: async (label: string, work: Promise<unknown>) => {
+    host.labels.push(label);
+    try {
+      await work;
+    } catch {
+      host.failed++;
+    }
+  },
+}));
 vi.mock("../lib/dozo-table-share", () => ({
   shareCsv: async (csv: string) => {
     host.shared.push(csv);
@@ -87,6 +102,8 @@ afterEach(() => {
   for (const container of containers.splice(0)) container.remove();
   host.shared.length = 0;
   host.shareFails = false;
+  host.labels.length = 0;
+  host.failed = 0;
 });
 
 it("shares the table as CSV from the share control", async () => {
@@ -98,11 +115,13 @@ it("shares the table as CSV from the share control", async () => {
   expect(host.shared).toEqual(["a,b\n1,2"]);
 });
 
-it("does not fail a press when sharing fails", async () => {
+it("hands a failed share to bestEffort, which logs it, instead of dropping it silently", async () => {
   host.shareFails = true;
   const page = show();
   await act(async () => button(page, "Download CSV")?.click());
   expect(host.shared).toHaveLength(1);
+  expect(host.labels).toEqual(["share table as CSV"]);
+  expect(host.failed).toBe(1);
   expect(page.querySelector("dialog")).toBeNull();
 });
 

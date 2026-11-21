@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", async () => (await import("./dozo-native-mock.test.helper")).nativeMock());
 
+import { MAX_FORMULAS_PER_MESSAGE } from "./dozo-math-options";
 import type { MathViewProps, TableToolsProps } from "./markdown.native";
 import {
   ChatMarkdown,
@@ -85,6 +86,19 @@ describe("math on mobile", () => {
     expect(withMath(long).querySelector("i")).toBeNull();
     expect(withMath("$$\n \n$$").querySelector("i")).toBeNull();
     expect(drawn).toEqual([]);
+  });
+
+  it("draws the first formulas of a message and leaves the rest as code", () => {
+    const formulas = Array.from({ length: 14 }, (_, i) => `$f_${i}$`).join(" and ");
+    const page = withMath(`${formulas}\n\n$$\nblock\n$$`);
+    expect(drawn).toHaveLength(MAX_FORMULAS_PER_MESSAGE);
+    // The block is read first, so it and eleven inline formulas are drawn; the last three are code.
+    expect(drawn.map(({ tex }) => tex)).toContain("block\n");
+    expect(drawn.map(({ tex }) => tex)).not.toContain("f_11");
+    expect(page.textContent).toContain("f_11 and f_12 and f_13");
+    // The formulas of another message start again from the first.
+    withMath("$g$");
+    expect(drawn.map(({ tex }) => tex)).toEqual(["g"]);
   });
 
   it("leaves prices as text", () => {

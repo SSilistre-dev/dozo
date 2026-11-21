@@ -16,8 +16,15 @@ import type { createMarkdownIt } from "@ronradtke/react-native-markdown-display"
 type Parser = ReturnType<typeof createMarkdownIt>;
 
 /** The parts of a markdown-it token, and of the parser state a rule reads and writes. */
-type Token = { markup: string; content: string; info: string; map: [number, number] | null };
+type Token = {
+  markup: string;
+  content: string;
+  info: string;
+  map: [number, number] | null;
+  meta: unknown;
+};
 type InlineState = {
+  env: { formulas?: number };
   src: string;
   pos: number;
   posMax: number;
@@ -25,6 +32,7 @@ type InlineState = {
   push(type: string, tag: string, nesting: number): Token;
 };
 type BlockState = {
+  env: { formulas?: number };
   src: string;
   bMarks: number[];
   eMarks: number[];
@@ -42,6 +50,12 @@ type BlockRule = (
   endLine: number,
   silent: boolean,
 ) => boolean;
+
+/** The place of a formula among those of one message, so the app can draw only the first few. */
+function nextFormula(env: { formulas?: number }) {
+  env.formulas = (env.formulas ?? 0) + 1;
+  return { formula: env.formulas - 1 };
+}
 
 /** A line-table entry; markdown-it fills one for every line it asks about. */
 const entry = (list: number[], line: number) => list[line] as number;
@@ -90,6 +104,7 @@ const mathSpan: InlineRule = (state, silent) => {
   if (!silent) {
     const token = state.push("dozo_math_inline", "span", 0);
     token.markup = "$".repeat(run);
+    token.meta = nextFormula(state.env);
     token.content = content.replace(/\s*\n\s*/g, " ").trim();
   }
   state.pos = close + run;
@@ -118,6 +133,7 @@ const mathBlock: BlockRule = (state, startLine, endLine, silent) => {
   if (silent) return true;
   const token = state.push("dozo_math_block", "div", 0);
   token.markup = "$".repeat(run);
+  token.meta = nextFormula(state.env);
   token.map = [startLine, line + 1];
   token.content =
     (first.trim() ? `${first.trim()}\n` : "") +

@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from "react";
 import { createContext, useContext } from "react";
 import type { TextStyle } from "react-native";
 import { Text } from "react-native";
-import { MAX_MATH_SOURCE } from "../dozo-math-options";
+import { MAX_FORMULAS_PER_MESSAGE, MAX_MATH_SOURCE } from "../dozo-math-options";
 import { CodeFence, DiagramSurfaceContext } from "./code";
 
 export type MathViewProps = {
@@ -24,18 +24,27 @@ export type MathViewProps = {
  */
 export const MathViewContext = createContext<ComponentType<MathViewProps> | null>(null);
 
+/** Where the parser put the formula among those of its message; the first few are drawn. */
+function drawnFormula(meta: unknown) {
+  const place = (meta as { formula?: number } | null)?.formula;
+  return place === undefined || place < MAX_FORMULAS_PER_MESSAGE;
+}
+
 function Formula({
   tex,
   display,
+  allowed,
   fallback,
 }: {
   tex: string;
   display: boolean;
+  allowed: boolean;
   fallback: ReactNode;
 }) {
   const View = useContext(MathViewContext);
   const { streaming, palette, colorScheme } = useContext(DiagramSurfaceContext);
-  if (!View || streaming || tex.length > MAX_MATH_SOURCE || !/\S/.test(tex)) return fallback;
+  if (!View || !allowed || streaming || tex.length > MAX_MATH_SOURCE || !/\S/.test(tex))
+    return fallback;
   return (
     <View
       tex={tex}
@@ -72,6 +81,7 @@ export const mathRules: RenderRules = {
     <Formula
       key={node.key}
       tex={node.content}
+      allowed={drawnFormula(node.sourceMeta)}
       display={false}
       fallback={
         <Text style={[inheritedTextStyle(inherited), styleMap.code_inline]}>{node.content}</Text>
@@ -82,6 +92,7 @@ export const mathRules: RenderRules = {
     <Formula
       key={node.key}
       tex={node.content}
+      allowed={drawnFormula(node.sourceMeta)}
       display
       fallback={<BlockSource tex={node.content} styleMap={styleMap} />}
     />

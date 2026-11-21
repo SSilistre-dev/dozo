@@ -1,63 +1,12 @@
 import katex from "katex";
-import { describe, expect, it, vi } from "vitest";
-
-// The options the web draws with (`packages/chat-ui/src/dozo-math-options.ts`, which has its own test).
-vi.mock("@rakazo/chat-ui/native", () => ({
-  mathOptions: (displayMode: boolean) => ({
-    displayMode,
-    throwOnError: true,
-    trust: false,
-    strict: "ignore",
-    maxSize: 20,
-    maxExpand: 100,
-    macros: {},
-    output: "htmlAndMathml",
-  }),
-}));
+import { describe, expect, it } from "vitest";
 
 import { mathBootScript, mathDocument, mathMarkup, parseMathMessage } from "./dozo-math-webview";
 
 describe("formula markup", () => {
-  it("writes MathML, with the TeX kept for readers, and no font or script", () => {
-    const markup = mathMarkup(katex, "\\frac{a}{b}+x^2", false) ?? "";
-    expect(markup).toContain("<math");
-    expect(markup).toContain("<mfrac");
-    expect(markup).toContain("application/x-tex");
-    expect(markup).not.toContain("<script");
-    expect(markup).not.toContain("katex-html");
-  });
-
-  it("makes a display formula block-level", () => {
-    expect(mathMarkup(katex, "x", true)).toContain('display="block"');
-    expect(mathMarkup(katex, "x", false)).not.toContain('display="block"');
-  });
-
-  it("is null for broken TeX instead of throwing", () => {
+  it("is the shared writer, so the app uses the web's options", () => {
+    expect(mathMarkup(katex, "x^2", false)).toContain("<math");
     expect(mathMarkup(katex, "\\frac{1}{", false)).toBeNull();
-    expect(mathMarkup(katex, "\\notacommand{x}", false)).toBeNull();
-    expect(mathMarkup(katex, "}{", true)).toBeNull();
-  });
-
-  it("writes no link, image or attribute for what KaTeX does not trust, as the web does", () => {
-    for (const tex of [
-      "\\href{https://example.test}{x}",
-      "\\url{https://example.test}",
-      "\\includegraphics{https://example.test/a.png}",
-      "\\htmlClass{a}{x}",
-      "\\htmlData{k=v}{x}",
-    ]) {
-      const markup = mathMarkup(katex, tex, false) ?? "";
-      expect(markup).not.toMatch(/<a[ >]|<img|href=|src=|class="a"|data-k/);
-    }
-  });
-
-  it("is null when the engine returns no MathML", () => {
-    expect(mathMarkup({ renderToString: () => "<span>x</span>" }, "x", false)).toBeNull();
-  });
-
-  it("does not let one formula's macros reach the next", () => {
-    expect(mathMarkup(katex, "\\gdef\\a{1}\\a", false)).toContain("<math");
-    expect(mathMarkup(katex, "\\a", false)).toBeNull();
   });
 });
 

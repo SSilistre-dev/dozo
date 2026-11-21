@@ -13,6 +13,17 @@ import {
   parseMathMessage,
 } from "../lib/dozo-math-webview";
 
+// Where a formula has been measured: a message that scrolls out of a list and back builds its
+// formulas again, and a known size lets them appear drawn instead of as code first.
+const measured = new Map<string, { width: number; height: number }>();
+const MEASURED_LIMIT = 200;
+
+function remember(html: string, width: number, height: number) {
+  measured.delete(html);
+  measured.set(html, { width, height });
+  if (measured.size > MEASURED_LIMIT) measured.delete(measured.keys().next().value as string);
+}
+
 type Drawing =
   | { status: "drawing" }
   | { status: "drawn"; width: number; height: number }
@@ -66,9 +77,9 @@ function FormulaPage({
   display: boolean;
   fallback: MathViewProps["fallback"];
 }) {
-  const [state, setState] = useState<{ html: string; drawing: Drawing }>({
-    html,
-    drawing: { status: "drawing" },
+  const [state, setState] = useState<{ html: string; drawing: Drawing }>(() => {
+    const known = measured.get(html);
+    return { html, drawing: known ? { status: "drawn", ...known } : { status: "drawing" } };
   });
   const drawing = state.html === html ? state.drawing : { status: "drawing" as const };
   useTimeout(
@@ -103,9 +114,14 @@ function FormulaPage({
         key={html}
         source={{ html, baseUrl: "about:blank" }}
         injectedJavaScript={mathBootScript}
+        // Matches every address, so the library never hands one to the system to open (it does so
+        // for any address outside this list, whatever the load handler below answers). The
+        // handler then lets only the formula's own page load.
+        originWhitelist={["*"]}
         onMessage={(event) => {
           const message = parseMathMessage(event.nativeEvent.data);
           if (!message) return;
+          if (message.type === "drawn") remember(html, message.width, message.height);
           setState({
             html,
             drawing:

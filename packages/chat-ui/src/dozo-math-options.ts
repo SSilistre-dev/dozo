@@ -19,3 +19,23 @@ export function mathOptions(displayMode: boolean): KatexOptions {
     output: "htmlAndMathml",
   };
 }
+
+/** Formulas drawn in one message on mobile: each is a WebView, so the rest stay as code. */
+export const MAX_FORMULAS_PER_MESSAGE = 12;
+
+type Katex = { renderToString(tex: string, options: KatexOptions): string };
+
+/**
+ * The formula as MathML, or null when KaTeX cannot read it. MathML needs no font files and no
+ * script in the page: the WebView's own engine draws it. The TeX is untrusted, which is why the
+ * options are the web's (`trust: false`, size and expansion caps) and why KaTeX, not the app,
+ * writes the markup.
+ */
+export function mathMarkup(katex: Katex, tex: string, display: boolean): string | null {
+  try {
+    const markup = katex.renderToString(tex, { ...mathOptions(display), output: "mathml" });
+    return markup.includes("<math") ? markup : null;
+  } catch {
+    return null;
+  }
+}

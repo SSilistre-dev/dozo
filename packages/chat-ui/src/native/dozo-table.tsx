@@ -156,17 +156,21 @@ export function TableScrollView(props: ComponentProps<typeof BaseTableScrollView
     onSort: (column) =>
       model && setPicked({ schemaKey: model.schemaKey, sort: nextSort(sort, column) }),
   };
-  const order = model && sort ? orderOf(model, sort) : null;
+  const order = useMemo(() => (model && sort ? orderOf(model, sort) : null), [model, sort]);
+  const csv = useMemo(() => {
+    if (!model) return "";
+    const rows = order ? order.map((i) => model.rows[i] as string[]) : model.rows;
+    return tableToCsv(model.columns, rows);
+  }, [model, order]);
   const shown = (
     <BaseTableScrollView table={table} style={style}>
       {shownSections(table, children, order, header)}
     </BaseTableScrollView>
   );
   if (!Tools || !model) return shown;
-  const rows = order ? order.map((i) => model.rows[i] as string[]) : model.rows;
   return (
     <>
-      <Tools csv={tableToCsv(model.columns, rows)} renderTable={() => shown} />
+      <Tools csv={csv} renderTable={() => shown} />
       {shown}
     </>
   );

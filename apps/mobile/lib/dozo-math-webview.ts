@@ -1,4 +1,4 @@
-import { mathOptions } from "@rakazo/chat-ui/native";
+export { mathMarkup } from "@rakazo/chat-ui/math";
 
 /** How long a formula may take to report its size before it stays as code. */
 export const MATH_TIMEOUT_MS = 5_000;
@@ -9,23 +9,6 @@ export const MAX_INLINE_MATH_WIDTH = 320;
 export const MAX_MATH_HEIGHT = 2_000;
 
 export type MathMessage = { type: "drawn"; width: number; height: number } | { type: "failed" };
-
-type Katex = { renderToString(tex: string, options: ReturnType<typeof mathOptions>): string };
-
-/**
- * The formula as MathML, or null when KaTeX cannot read it. MathML needs no font files and no
- * script in the page: the WebView's own engine draws it, so nothing is fetched and the only code
- * that runs in the page is `mathBootScript`. The TeX is untrusted, which is why the options are the
- * web's (`trust: false`, size and expansion caps) and why KaTeX, not this file, writes the markup.
- */
-export function mathMarkup(katex: Katex, tex: string, display: boolean): string | null {
-  try {
-    const markup = katex.renderToString(tex, { ...mathOptions(display), output: "mathml" });
-    return markup.includes("<math") ? markup : null;
-  } catch {
-    return null;
-  }
-}
 
 // A color the page puts into its style: only what the app's tokens look like.
 const CSS_COLOR = /^(#[0-9a-f]{3,8}|[a-z]+|(rgb|hsl)a?\([0-9a-z%.,\s/]+\))$/i;

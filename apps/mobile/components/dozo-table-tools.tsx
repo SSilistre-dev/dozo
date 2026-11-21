@@ -1,5 +1,6 @@
 import type { TableToolsProps } from "@rakazo/chat-ui/native";
 import { useMarkdownCopy } from "@rakazo/chat-ui/native";
+import { bestEffort } from "@rakazo/logging";
 import { useState } from "react";
 import { Modal, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,7 +18,7 @@ export function TableTools({ csv, renderTable }: TableToolsProps) {
         icon={{ ios: "square.and.arrow.up", android: "share-outline" }}
         prominence="quiet"
         size="compact"
-        onPress={() => void shareCsv(csv).catch(() => undefined)}
+        onPress={() => void bestEffort("share table as CSV", shareCsv(csv))}
       />
       <NativeActionButton
         accessibilityLabel={copy.expandTable}
