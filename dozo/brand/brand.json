@@ -7364,6 +7364,39 @@
         "packages/adapters/src/dozo-token-run.ts"
       ],
       "reason": "agent mode and the token gate: upstream's executor test with a fake Codex calling a tool through the real MCP bridge into the real executor: in a run a token's message reached, a write asks even in Never ask, the call never runs, and no mark is left"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { ComputerDeviceSettings } from \"../components/ComputerDeviceSettings\";\nimport { ComputerProviderSettings }",
+      "replace": "import { ComputerDeviceSettings } from \"../components/ComputerDeviceSettings\";\nimport { DozoConnectThisComputer, DozoDesktopAppRow } from \"../components/dozo-desktop-app\";\nimport { ComputerProviderSettings }",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: the import of the two rules below"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "      <ComputerDeviceSettings />\n\n      {showPassword",
+      "replace": "      <ComputerDeviceSettings />\n      <DozoDesktopAppRow />\n\n      {showPassword",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: in the desktop app, General settings have a row that opens the app's own Settings window (dozo/desktop/src/prefs.rs); in a browser it shows nothing"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "      </SectionHeading>\n      {hintShown ? (",
+      "replace": "      </SectionHeading>\n      <DozoConnectThisComputer />\n      {hintShown ? (",
+      "requires": [
+        "apps/web/src/components/dozo-desktop-app.tsx"
+      ],
+      "reason": "desktop app settings: in the desktop app, while no computer of the account is connected, Computers offers to connect this one by opening the app's Settings window, where the switch and its consent are; in a browser it shows nothing"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
+      "replace": "msgstr \"Masaüstü uygulaması\"\n\n#: apps/web/src/components/dozo-desktop-app.tsx\nmsgid \"Connect this computer\"\nmsgstr \"Bu bilgisayarı bağla\"\n\n#: apps/web/src/components/ComputerProviderSettings.tsx\nmsgid \"Desktop ID\"",
+      "reason": "desktop app settings: the Turkish copy of the Computers link (\"Desktop app\" and \"Open\" are upstream's)"
     }
   ],
   "assets": {
