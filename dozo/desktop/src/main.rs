@@ -382,8 +382,10 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                     &separator()?,
                     &device_item(app)?,
                     &phone::item(app)?,
-                    &backup_items.0,
-                    &backup_items.1,
+                    &backup_items[0],
+                    &backup_items[1],
+                    &backup_items[2],
+                    &backup_items[3],
                     &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                     &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                     &separator()?,
@@ -453,8 +455,10 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &PredefinedMenuItem::separator(app)?,
                 &device_item(app)?,
                 &phone::item(app)?,
-                &backup_items.0,
-                &backup_items.1,
+                &backup_items[0],
+                &backup_items[1],
+                &backup_items[2],
+                &backup_items[3],
                 &switch(app, OPEN_AT_LOGIN_ID, "Open at Login")?,
                 &switch(app, KEEP_RUNNING_ID, "Keep Running in Background")?,
                 &PredefinedMenuItem::separator(app)?,
@@ -732,7 +736,8 @@ fn main() {
             phone::approve_phone,
             backup::back_up,
             backup::restore_pick,
-            backup::restore
+            backup::restore,
+            backup::reset_password
         ])
         .menu(menu)
         .on_menu_event(|app, event| {
@@ -747,6 +752,8 @@ fn main() {
                 phone::MENU_ID => phone::open(app),
                 backup::BACK_UP_ID => backup::open(app, "backup"),
                 backup::RESTORE_ID => backup::open(app, "restore"),
+                backup::RESET_ID => backup::open(app, "reset"),
+                backup::DIAGNOSTICS_ID => backup::save_diagnostics(app),
                 #[cfg(not(target_os = "macos"))]
                 QUIT_ID => app.exit(0),
                 update::MENU_ID => restart_for_update(app),
