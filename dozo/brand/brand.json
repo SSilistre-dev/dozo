@@ -7369,8 +7369,8 @@
     },
     {
       "file": "packages/i18n/locales/tr/messages.po",
-      "find": "msgid \"Clear conversation\"\nmsgstr \"Sohbeti temizle\"\n\n#",
-      "replace": "msgid \"Clear conversation\"\nmsgstr \"Sohbeti temizle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Remove the messages after it?\"\nmsgstr \"Sonraki mesajlar kaldırılsın mı?\"\n\n#",
+      "find": "msgstr \"Sohbeti temizle\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
+      "replace": "msgstr \"Sohbeti temizle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Remove the messages after it?\"\nmsgstr \"Sonraki mesajlar kaldırılsın mı?\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
       "requires": [
         "apps/web/src/pages/shell/dozo-message-revision.tsx",
         "apps/mobile/lib/dozo-message-actions.ts"
