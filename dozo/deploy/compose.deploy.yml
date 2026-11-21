@@ -10,7 +10,12 @@
 #   - the stack's network has a fixed subnet, so it takes none of the host's few Docker address
 #     pools, which every bot computer's network needs one of;
 #   - what upstream's own proxy (Caddyfile.prod) does and the panel's does not: its response
-#     headers, and API requests sent to the API directly; and one public form closed.
+#     headers, API requests sent to the API directly, and a retry while a container stops; and one
+#     public form closed;
+#   - what a deploy without a gap needs (README, Deploys without a gap): as in upstream's production
+#     compose file, health checks that probe every second while starting (web gets one) and the
+#     30 seconds the api's shutdown expects; and checks that fail on a marker, so a deploy can take
+#     a running api or web out of the proxy before it stops it.
 services:
   postgres:
     restart: unless-stopped
@@ -57,6 +62,20 @@ services:
     restart: unless-stopped
     mem_limit: 1536m
     ports: !reset []
+    # Lets a replaced api finish its requests (apps/api/src/index.ts waits up to 20 seconds).
+    stop_grace_period: 30s
+    # Probe every second while starting, so the proxy routes to a new api as soon as it answers.
+    # A deploy takes the running api out of the proxy before it stops it: it creates the marker,
+    # and the proxy drops the api once the check has failed three times (README, Deploys without
+    # a gap). /dev/shm starts empty with every start of the container.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test ! -e /dev/shm/dozo-drain && node -e "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 5s
+      retries: 3
+      start_period: 2m
+      start_interval: 1s
     environment:
       # What each plan's computer gets on this host, size=vCPUs:GB (README, Bot computers on a
       # shared host). The api shows it and the api and worker start computers with it, so both
@@ -90,6 +109,10 @@ services:
       traefik.http.middlewares.dozo-api-headers.headers.stsSeconds: "31536000"
       traefik.http.middlewares.dozo-api-headers.headers.contentTypeNosniff: "true"
       traefik.http.middlewares.dozo-api-headers.headers.customFrameOptionsValue: SAMEORIGIN
+      # A container that is stopping refuses connections until the proxy drops it; the request is
+      # sent again, to the next container of the service (README, Deploys without a gap).
+      traefik.http.middlewares.dozo-api-retry.retry.attempts: "3"
+      traefik.http.middlewares.dozo-api-retry.retry.initialinterval: 100ms
       # Who may reach these routers (README, Origin behind a CDN). Unset: everyone.
       traefik.http.middlewares.dozo-api-origin.ipallowlist.sourcerange: ${DOZO_ORIGIN_SOURCE_RANGE:-0.0.0.0/0,::/0}
       # Also the MCP endpoint's OAuth metadata (RFC 9728 puts it under /.well-known/); every other
@@ -99,7 +122,7 @@ services:
       traefik.http.routers.dozo-api.entrypoints: websecure
       traefik.http.routers.dozo-api.tls: "true"
       traefik.http.routers.dozo-api.service: dozo-api
-      traefik.http.routers.dozo-api.middlewares: dozo-api-origin,dozo-api-headers
+      traefik.http.routers.dozo-api.middlewares: dozo-api-origin,dozo-api-headers,dozo-api-retry
       # Closed pre-release: the one write that needs no account answers 403 to everyone. On this
       # container, so it holds while the web container restarts; the api itself answers 403 too
       # (DOZO_PLUGIN_SUBMISSIONS above). Remove these seven lines and set that to open to open
@@ -133,6 +156,17 @@ services:
     ports: !reset []
     environment:
       RAKAZO_THEME: /theme/theme.json
+    # Upstream's production check (without one the proxy routes to web before it listens), with
+    # the api's marker and cadence.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test ! -e /dev/shm/dozo-drain && node -e "fetch('http://127.0.0.1:5173/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+      start_interval: 1s
     # Routers beside the one the panel adds for the domain, ahead of it by priority. The panel's
     # router keeps getting the certificate; these only add what it lacks.
     labels:
@@ -142,12 +176,14 @@ services:
       # Shared pages (/p/) keep their stricter no-referrer below, so this is not in dozo-app-headers.
       traefik.http.middlewares.dozo-app-referrer.headers.referrerPolicy: strict-origin-when-cross-origin
       traefik.http.middlewares.dozo-app-origin.ipallowlist.sourcerange: ${DOZO_ORIGIN_SOURCE_RANGE:-0.0.0.0/0,::/0}
+      traefik.http.middlewares.dozo-app-retry.retry.attempts: "3"
+      traefik.http.middlewares.dozo-app-retry.retry.initialinterval: 100ms
       traefik.http.routers.dozo-app.rule: "Host(`${RAKAZO_HOST:?Set RAKAZO_HOST}`)"
       traefik.http.routers.dozo-app.priority: "1000"
       traefik.http.routers.dozo-app.entrypoints: websecure
       traefik.http.routers.dozo-app.tls: "true"
       traefik.http.routers.dozo-app.service: dozo-app
-      traefik.http.routers.dozo-app.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-referrer
+      traefik.http.routers.dozo-app.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-referrer,dozo-app-retry
       # A shared page's link is its only key: keep it out of search results and Referer headers.
       traefik.http.middlewares.dozo-app-shared.headers.customResponseHeaders.X-Robots-Tag: "noindex, nofollow"
       traefik.http.middlewares.dozo-app-shared.headers.referrerPolicy: no-referrer
@@ -156,7 +192,7 @@ services:
       traefik.http.routers.dozo-app-shared.entrypoints: websecure
       traefik.http.routers.dozo-app-shared.tls: "true"
       traefik.http.routers.dozo-app-shared.service: dozo-app
-      traefik.http.routers.dozo-app-shared.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-shared
+      traefik.http.routers.dozo-app-shared.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-shared,dozo-app-retry
       # Built assets in brotli: the web server compresses only with gzip, so the proxy compresses
       # instead and asks the web server for an uncompressed copy. An empty value would not do: the
       # proxy drops the header and its HTTP client then asks for gzip on its own.
@@ -167,7 +203,7 @@ services:
       traefik.http.routers.dozo-app-assets.entrypoints: websecure
       traefik.http.routers.dozo-app-assets.tls: "true"
       traefik.http.routers.dozo-app-assets.service: dozo-app
-      traefik.http.routers.dozo-app-assets.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-referrer,dozo-app-compress,dozo-app-identity
+      traefik.http.routers.dozo-app-assets.middlewares: dozo-app-origin,dozo-app-headers,dozo-app-referrer,dozo-app-compress,dozo-app-identity,dozo-app-retry
       # The proxy drops the api's router while that container is starting or unhealthy. API paths
       # then answer 502 from a port nothing listens on, instead of falling through to this
       # container's own proxy to the API (see the api service for why).

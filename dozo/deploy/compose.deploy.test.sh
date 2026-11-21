@@ -99,5 +99,61 @@ done
 [ "$(label "$base" web traefik.http.routers.dozo-app-noapi.rule)" = "$api_rule" ] ||
   bad "dozo-app-noapi does not take the same paths as dozo-api"
 
+# Deploys without a gap (README): the proxy routes to a new api or web only once it answers, and
+# probes it every second while it starts; bridge.sh takes a running one out of the proxy with the
+# marker its check honours, within 30 seconds; the api gets the 30 seconds its shutdown expects; every
+# router to a container retries a refused request (dozo-app-noapi answers nothing, dozo-api-closed
+# only 403).
+for svc in api web; do
+  hc=$(jq -c --arg s "$svc" '.services[$s].healthcheck // {}' <<<"$base")
+  [ "$(jq -r '.test | join(" ")' <<<"$hc" 2>/dev/null)" != "" ] || bad "$svc: no health check"
+  [ "$(jq -r '.start_interval // empty' <<<"$hc")" = "1s" ] || bad "$svc: health check start_interval want 1s, got '$(jq -r '.start_interval // empty' <<<"$hc")'"
+  [ -n "$(jq -r '.start_period // empty' <<<"$hc")" ] || bad "$svc: health check has no start_period"
+  case "$(jq -r '.test | join(" ")' <<<"$hc" 2>/dev/null)" in
+    "CMD-SHELL test ! -e /dev/shm/dozo-drain && "*) ;; *) bad "$svc: health check ignores /dev/shm/dozo-drain" ;;
+  esac
+  drain=$(jq -r '((.interval // "30s") | rtrimstr("s") | tonumber) * (.retries // 3)' <<<"$hc" 2>/dev/null)
+  [ "${drain:-999}" -le 30 ] 2>/dev/null || bad "$svc: a marked container fails its check only after ${drain}s (interval x retries, want 30 or less)"
+  retry="dozo-${svc/web/app}-retry"
+  [ "$(label "$base" "$svc" "traefik.http.middlewares.$retry.retry.attempts")" -ge 2 ] 2>/dev/null || bad "$retry: want at least 2 attempts"
+  for r in $(jq -r --arg s "$svc" '.services[$s].labels | keys[] | capture("^traefik\\.http\\.routers\\.(?<r>[^.]+)\\.rule$").r' <<<"$base"); do
+    case "$r" in dozo-api-closed | dozo-app-noapi) continue ;; esac
+    case ",$(label "$base" "$svc" "traefik.http.routers.$r.middlewares")," in
+      *",$retry,"*) ;; *) bad "router $r does not use $retry" ;;
+    esac
+  done
+done
+[ "$(jq -r '.services.api.stop_grace_period // empty' <<<"$base")" = "30s" ] ||
+  bad "api: stop_grace_period want 30s, got '$(jq -r '.services.api.stop_grace_period // empty' <<<"$base")'"
+
+# bridge.sh's copy of a running api or web (built here from what Compose would give the container)
+# keeps the proxy labels exactly, so the proxy merges it into the same service, and nothing that
+# makes Compose or Docker treat it as part of the stack: no Compose label, no restart, no
+# published port, no DNS alias. It keeps the environment and drains through its health check.
+for svc in api web; do
+  inspect=$(jq --arg s "$svc" '.services[$s] as $c | {
+      Image: "sha256:test",
+      Config: {Image: $c.image, Env: ["SECRET_KEY=a value\nwith a newline"], Cmd: $c.command,
+        WorkingDir: $c.working_dir, User: "node",
+        Labels: ($c.labels + {"com.docker.compose.project": "dozo", "com.docker.compose.service": $s})},
+      HostConfig: {Memory: 1, RestartPolicy: {Name: "unless-stopped"},
+        PortBindings: {"3100/tcp": [{HostIp: "127.0.0.1", HostPort: "3100"}]}},
+      NetworkSettings: {Networks: {dozo: {Aliases: [$s]}, dozo_default: {Aliases: [$s]}}}
+    }' <<<"$base")
+  copy=$(bash "$REPO/dozo/deploy/bridge.sh" spec "$svc" <<<"$inspect") || { bad "bridge.sh spec $svc failed"; continue; }
+  [ "$(jq -c '.Labels' <<<"$copy")" = "$(jq -c --arg s "$svc" '.services[$s].labels | with_entries(select(.key | startswith("traefik.")))' <<<"$base")" ] ||
+    bad "bridge copy of $svc: proxy labels differ from the service's"
+  [ "$(jq -r '.Labels | keys[] | select(startswith("traefik.") | not)' <<<"$copy")" = "" ] || bad "bridge copy of $svc keeps a non-proxy label"
+  [ "$(jq -r '.HostConfig.RestartPolicy.Name' <<<"$copy")" = "no" ] || bad "bridge copy of $svc restarts"
+  [ "$(jq -r '.HostConfig.PortBindings // "none"' <<<"$copy")" = "none" ] || bad "bridge copy of $svc publishes a port"
+  [ "$(jq -c '[.NetworkingConfig.EndpointsConfig[] | .Aliases // empty] | add // []' <<<"$copy")" = "[]" ] || bad "bridge copy of $svc takes a DNS alias"
+  [ "$(jq -c '.NetworkingConfig.EndpointsConfig | keys' <<<"$copy")" = '["dozo","dozo_default"]' ] || bad "bridge copy of $svc is not on the same networks"
+  [ "$(jq -c '.Env' <<<"$copy")" = "$(jq -c '.Config.Env' <<<"$inspect")" ] || bad "bridge copy of $svc changes the environment"
+  [ "$(jq -r '.Image' <<<"$copy")" = "sha256:test" ] || bad "bridge copy of $svc runs another image"
+  case "$(jq -r '.Healthcheck.Test | join(" ")' <<<"$copy")" in
+    "CMD-SHELL test ! -e /dev/shm/dozo-drain && "*) ;; *) bad "bridge copy of $svc does not drain through its health check" ;;
+  esac
+done
+
 [ "$FAILED" = 0 ] && echo "[compose.test] ok"
 exit "$FAILED"
