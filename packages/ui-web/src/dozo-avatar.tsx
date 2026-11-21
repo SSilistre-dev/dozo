@@ -281,8 +281,12 @@ export interface DozoAvatarProps {
   seed: string;
   /** The character to draw, when something other than the seed decides it. */
   character?: DozoCharacter;
-  /** Explicit accessory colour, a hex value (the bot's `color` field). The character stays seed-based. */
-  color?: string;
+  /**
+   * Explicit accessory colour, a hex value (the bot's own colour); `null` for a bot with none, whose
+   * accessory takes the head's ink. Left out, the character's palette colour. The character stays
+   * seed-based.
+   */
+  color?: string | null;
   size?: number;
   state?: DozoAvatarState;
   className?: string;
@@ -320,8 +324,13 @@ export const DozoAvatar = memo(function DozoAvatar({
     "--dozo-blink-delay": `${-(((hash >>> 16) % 100) / 100) * blinkPeriod}s`,
     // The character's colour: its accessory, and the tint dozo-shell.css gives the open bot's row
     // (which reads this name, kept from the tile the colour once filled). light-dark() follows the
-    // theme's color-scheme; an explicit hex colour wins.
-    "--dozo-tile": color && HEX_COLOR.test(color) ? color : `light-dark(${light}, ${dark})`,
+    // theme's color-scheme; an explicit hex colour wins, and a colourless bot wears the head's ink.
+    "--dozo-tile":
+      color === null
+        ? "var(--dozo-body)"
+        : color && HEX_COLOR.test(color)
+          ? color
+          : `light-dark(${light}, ${dark})`,
   } as CSSProperties;
 
   useEffect(() => {

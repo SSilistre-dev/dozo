@@ -1,5 +1,5 @@
-import type { Page } from "@playwright/test";
-import { expect, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
+import type { Locator, Page } from "@playwright/test";
+import { expect, outDirFile, readWorld, rpc, test, UPSTREAM_AVATAR_ART } from "./fixtures";
 import { gotoStable, openAccountMenu, openBot, openBotSettings, openUserSettings } from "./ui";
 
 // The Dozo look on the screens the design mockups cover (dozo/design, the chat window from
@@ -168,7 +168,6 @@ test("the chat is a narrow column of tonal bubbles with a one-pill composer in t
   const send = page.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeEnabled();
   expect(await send.getAttribute("class")).toContain("bg-chat-user");
-  expect(await send.getAttribute("style")).toContain("light-dark(");
   await draft.fill("");
 });
 
@@ -189,6 +188,59 @@ test("the chat header and the bot panel show the bot's character", async ({ page
     "background-color",
     await tokenColor(page, "--sidebar"),
   );
+});
+
+test("the colour picked for a new bot is the one its preview, its row and its chat wear", async ({
+  page,
+  theme,
+}) => {
+  const tile = (avatar: Locator) =>
+    avatar.evaluate((el) => (el as HTMLElement).style.getPropertyValue("--dozo-tile"));
+  const wanted = (hex: string) =>
+    hex.toLowerCase() === "#ffffff" ? "var(--dozo-body)" : hex.toLowerCase();
+  await openBot(page, readWorld().chiefId, "Chief");
+  await page
+    .getByTestId("create-menu-trigger")
+    .or(page.getByRole("button", { name: "Create" }))
+    .first()
+    .click();
+  await page.getByTestId("create-new-bot").click();
+  const dialog = page.getByTestId("create-bot-dialog");
+  const preview = dialog.locator(".dozo-avatar").first();
+  const swatches = dialog.getByRole("button", { name: /^Color #/ });
+  await expect(swatches).toHaveCount(11);
+  for (const label of await swatches.evaluateAll((all) => all.map((el) => el.ariaLabel ?? ""))) {
+    const hex = label.replace("Color ", "");
+    await dialog.getByRole("button", { name: label, exact: true }).click();
+    await expect.poll(() => tile(preview)).toBe(wanted(hex));
+    await dialog.screenshot({ path: outDirFile(`new-bot-${theme}-${hex.slice(1)}.png`) });
+  }
+  const picked = (await swatches.nth(9).getAttribute("aria-label"))?.replace("Color ", "") ?? "";
+  await swatches.nth(9).click();
+  const name = `Hue ${Math.random().toString(36).slice(2, 7)}`;
+  await dialog.getByPlaceholder("Name your Bot").fill(name);
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByPlaceholder(`Message ${name}`)).toBeVisible();
+  const botId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1) as string;
+  try {
+    for (const reload of [false, true]) {
+      if (reload) await openBot(page, botId, name);
+      await expect
+        .poll(() => tile(page.locator(`${ROW}[data-roster-bot-id="${botId}"] .dozo-avatar`).first()))
+        .toBe(wanted(picked));
+      await expect
+        .poll(() => tile(page.getByTestId("bot-settings-trigger").locator(".dozo-avatar")))
+        .toBe(wanted(picked));
+    }
+    const draft = page.getByRole("combobox", { name: `Message ${name}` });
+    await draft.fill("hello");
+    expect(
+      await page.getByRole("button", { name: "Send", exact: true }).getAttribute("style"),
+    ).toMatch(/--chat-user: #[0-9a-f]{6};/);
+    await draft.fill("");
+  } finally {
+    await rpc(page, "bots/remove", { botId, deleteMemories: true });
+  }
 });
 
 test("tables, files and questions in the thread share the card surface", async ({ page }) => {
