@@ -6,7 +6,11 @@ xdg-open records what the app hands the browser. A second part runs the app unde
 and checks what a second launch and closing the window do (src/background.rs). The session bus is
 a fresh one without a tray host, which is the case where a hidden window could not come back.
 A third part checks notifications and the unread badge (src/alerts.rs) against a stand-in for the
-desktop's notification service (tests/fake_notifications.py, which needs python3-gi).
+desktop's notification service (tests/fake_notifications.py, which needs python3-gi). A fourth
+checks the microphone (src/alerts.rs, src/microphone_gtk.rs) against a PulseAudio sine source and
+Push to Talk (src/talk.rs): the shortcut reaches the server's page, brings the window back, and a
+shortcut another program holds turns the switch off with a message (needs pulseaudio and
+gstreamer1.0-pulseaudio).
 Exit 0 pass, 2 fail.
 """
 
@@ -268,6 +272,157 @@ def notify_gate(binary):
         wm.kill()
 
 
+def grab_shortcut():
+    """Another program holding Ctrl+Shift+Space, as a desktop's own shortcut would: an X connection
+    that grabs it (with and without NumLock and CapsLock) and keeps it until closed."""
+    import ctypes
+    x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XDefaultRootWindow.restype = ctypes.c_ulong
+    x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x11.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    x11.XGrabKey.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    display = x11.XOpenDisplay(None)
+    root = x11.XDefaultRootWindow(display)
+    space = x11.XKeysymToKeycode(display, 0x20)
+    for extra in (0, 2, 16, 18):  # none, CapsLock, NumLock, both
+        x11.XGrabKey(display, space, 1 | 4 | extra, root, 1, 1, 1)  # Shift | Control
+    x11.XSync(display, 0)
+    return x11, display
+
+
+def talk_gate(binary):
+    """The server's page may use the microphone and nothing else may; Push to Talk reaches that
+    page only, brings the window back, and a shortcut held by another program turns it off with a
+    message instead of failing silently."""
+    report = {"a": [], "b": []}
+
+    def reporting(name, pages):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                path, _, query = self.path.partition("?")
+                if path == "/report":
+                    report[name].append(query)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(pages.get(path, "").encode())
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    # On a click: the microphone, the camera, then both, each reported as granted or the error's
+    # name. The page also reports every push-to-talk event it hears.
+    ask = """<body style="margin:0;height:100vh"><script>
+addEventListener('dozo-talk-key', (e) => fetch('/report?key=' + e.detail));
+document.body.onclick = async () => {{
+  for (const [what, wants] of [['audio', {{ audio: true }}], ['video', {{ video: true }}], ['both', {{ audio: true, video: true }}]]) {{
+    let result;
+    try {{
+      const stream = await navigator.mediaDevices.getUserMedia(wants);
+      stream.getTracks().forEach((track) => track.stop());
+      result = 'granted';
+    }} catch (error) {{
+      result = error.name;
+    }}
+    await fetch('/report?who={who}&' + what + '=' + result);
+  }}
+}};</script>"""
+    other = reporting("b", {"/frame": ask.format(who="other")})
+    server = reporting("a", {
+        "/": ask.format(who="server")
+        + f"""<iframe src="{other}/frame" style="position:fixed;top:0;left:0;width:200px;height:120px;border:0"></iframe>""",
+    })
+
+    # A sound server of its own with one microphone that plays a tone, on a socket the app finds
+    # without a cookie: the app's home is a fresh one.
+    socket = pathlib.Path(tempfile.mkdtemp(prefix="dozo-pulse-")) / "native"
+    pulse = subprocess.run([
+        "pulseaudio", "-n", "--daemonize=yes", "--exit-idle-time=-1",
+        f"--load=module-native-protocol-unix socket={socket} auth-anonymous=1",
+        "--load=module-sine-source source_name=gate",
+    ], capture_output=True, text=True)
+    if pulse.returncode != 0:
+        print(f"FAIL: pulseaudio did not start: {pulse.stderr.strip()}")
+        sys.exit(2)
+    os.environ["PULSE_SERVER"] = f"unix:{socket}"
+    wm = subprocess.Popen(["openbox"], stderr=subprocess.DEVNULL)
+    apps = []
+    try:
+        work, _, env = sandbox(server, "keep_running=true\npush_to_talk=true\n")
+        app = subprocess.Popen([binary], env=env, stderr=(work / "app.log").open("w"))
+        apps.append(app)
+
+        def check(what, condition):
+            if not condition:
+                print(f"FAIL: {what}\n  server: {report['a']}\n  frame: {report['b']}")
+                print(f"  app stderr:\n{(work / 'app.log').read_text()[-3000:]}")
+                sys.exit(2)
+            print(f"ok: {what}")
+
+        def answers(name, who):
+            """What `who` got for each request, once it has asked for all three."""
+            got = dict(r.split("&", 1)[1].split("=", 1) for r in report[name] if r.startswith(f"who={who}&"))
+            return got if "both" in got else None
+
+        def click(x, y):
+            subprocess.run(["xdotool", "mousemove", "--window", windows()[0], str(x), str(y), "click", "1"], check=True)
+
+        def shortcut(action):
+            subprocess.run(["xdotool", action, "ctrl+shift+space"], check=True)
+
+        until("the window is on screen", lambda: len(windows()) == 1)
+        time.sleep(1)  # the page and its frame have loaded
+        click(100, 90)
+        until("a frame from another origin asked for the microphone and the camera", lambda: answers("b", "other"))
+        check("and was given neither", "granted" not in answers("b", "other").values())
+        click(600, 400)
+        until("the server's page asked for them", lambda: answers("a", "server"))
+        got = answers("a", "server")
+        check(f"the server's page is given the microphone ({got})", got["audio"] == "granted")
+        check("and not the camera, alone or with the microphone", got["video"] != "granted" and got["both"] != "granted")
+
+        shortcut("keydown")
+        until("the shortcut down reaches the server's page", lambda: "key=down" in report["a"])
+        shortcut("keyup")
+        until("and so does up", lambda: "key=up" in report["a"])
+        check("the frame from another origin hears neither", not any(r.startswith("key=") for r in report["b"]))
+        wmctrl_close()
+        until("closing the window takes it off the screen", lambda: not windows())
+        shortcut("keydown")
+        until("the shortcut brings the window back", lambda: len(windows()) == 1)
+        shortcut("keyup")
+        until("and the page hears it again", lambda: report["a"].count("key=up") == 2)
+        app.kill()
+        app.wait()
+
+        # Another program holds the shortcut: the switch goes off, is saved off, and a message
+        # says so (a second window titled Dozo).
+        x11, display = grab_shortcut()
+        work, _, env = sandbox(server, "push_to_talk=true\n")
+        app = subprocess.Popen([binary], env=env, stderr=(work / "app.log").open("w"))
+        apps.append(app)
+        settings = work / "home/.config/dev.ssilistre.dozo/server"
+        until("a shortcut held elsewhere turns Push to Talk off and saves it", lambda: "push_to_talk" not in settings.read_text())
+        until("and a message says so", lambda: len(windows()) == 2)
+        stays("and the app keeps running", lambda: app.poll() is None)
+        x11.XCloseDisplay(display)
+    finally:
+        for app in apps:
+            app.kill()
+        wm.kill()
+        subprocess.run(["pactl", "exit"], capture_output=True)
+        os.environ.pop("PULSE_SERVER", None)
+
+
 def wmctrl_close():
     subprocess.run(["wmctrl", "-c", "Dozo"], check=True)
 
@@ -344,6 +499,7 @@ setInterval(async () => {{
         app.wait()
         background_gate(binary, a)
         notify_gate(binary)
+        talk_gate(binary)
         print("linux gate: PASS")
     finally:
         app.kill()

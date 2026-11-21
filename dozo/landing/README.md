@@ -55,11 +55,11 @@ Closed pre-release state (lifted):
 
 - The repository is published at github.com/SSilistre-dev/dozo. The header and footer navs link
   to "GitHub", the footer's "Licence" to `dozo/NOTICE` (which file is under which licence), and "Self-host", the primary buttons and the self-hosting row's "Set it up" point at the fork guide, `dozo/README.md`, there (the upstream guide names the upstream product).
-- The "Desktop app." block links the macOS and Windows installers by the fixed asset names of the
+- The "Desktop app." block links the macOS, Windows and Linux installers by the fixed asset names of the
   latest GitHub release (`releases/latest/download/Dozo-macOS.dmg`,
-  `Dozo-Windows-x64-setup.exe`), so a new release needs no edit here; renaming an asset breaks them.
-  The "not signed yet" note is the one `<p>` in that block, once per language: edit that line when
-  a package is signed.
+  `Dozo-Windows-x64-setup.exe`, `Dozo-Linux-x86_64.AppImage`), so a new release needs no edit here; renaming an asset breaks them.
+  The "not signed yet" note (Windows and Linux; macOS is signed) is in the one `<p>` in that block,
+  once per language: edit that line when a package is signed.
 - Plans: the "Plans." section shows the three hosted plans as cards, one under the other on a
   phone, with self-hosting as one row under them. Each card holds both the monthly and the yearly
   price; the Monthly / Yearly switch (`landing.js`, yearly first) shows one and sets `period=` on the

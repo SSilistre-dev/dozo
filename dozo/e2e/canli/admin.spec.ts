@@ -1,4 +1,4 @@
-import { expect, SIGNED_OUT, test } from "./live";
+import { expect, openPasswordForm, SIGNED_OUT, test } from "./live";
 
 /**
  * The optional admin mode: only when DOZO_CANLI_ADMIN_EMAIL and DOZO_CANLI_ADMIN_PASSWORD are in
@@ -24,8 +24,7 @@ const SECTIONS: [path: string, label: string][] = [
 
 test("admin bölümleri salt okunur açılır", async ({ page }) => {
   await page.goto("/sign-in?lang=tr");
-  const choice = page.getByRole("button", { name: "E-posta ile devam et" });
-  if (await choice.isVisible()) await choice.click();
+  await openPasswordForm(page);
   await page.getByPlaceholder("E-posta adresiniz").fill(email as string);
   await page.getByPlaceholder("Parola").fill(password as string);
   await page.getByRole("button", { name: "Oturum aç", exact: true }).click();

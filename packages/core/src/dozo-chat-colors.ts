@@ -1,5 +1,5 @@
 import { parseBotAvatarValue } from "@rakazo/contracts";
-import { DOZO_BOT_PALETTE, dozoCharacterForLook } from "./dozo-avatar-art.js";
+import { dozoBotColor } from "./dozo-avatar-art.js";
 
 /** Text on a bot-coloured fill: your own bubble and the send button. */
 const ON_BOT_INK = "#ffffff";
@@ -40,16 +40,15 @@ export function dozoBotFill(hex: string): string {
 }
 
 /**
- * Your own bubble and the send button in a bot's chat wear that bot's identity colour, one value
- * per theme (`light-dark()` follows the page's color-scheme). A photo avatar has no identity
- * colour, so its chat keeps the theme's neutral bubble.
+ * Your own bubble and the send button in a bot's chat wear the colour picked for that bot, the one
+ * its avatar's accessory shows. A photo avatar and a white bot have none, so their chat keeps the
+ * theme's neutral bubble.
  */
 export function dozoChatUserColors(
   avatarValue: string,
   identity: string,
 ): { background: string; foreground: string } | undefined {
   if (parseBotAvatarValue(avatarValue).kind === "image") return undefined;
-  const [light, dark] =
-    DOZO_BOT_PALETTE[dozoCharacterForLook(identity || avatarValue, avatarValue)];
-  return { background: `light-dark(${dozoBotFill(light)}, ${dozoBotFill(dark)})`, foreground: ON_BOT_INK };
+  const color = dozoBotColor(identity || avatarValue, avatarValue);
+  return color ? { background: dozoBotFill(color), foreground: ON_BOT_INK } : undefined;
 }

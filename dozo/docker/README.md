@@ -263,6 +263,7 @@ and one JSON report per zone are in `<stage>/postgres-tests/`.
 | `DOZO_NODE_IMAGE` | `node:24.22-slim` | Image for every Node step, including the e2e model stub |
 | `DOZO_WEB_PORT` | `5173` | First port tried when the env file has none. A seed only (see Generated files) |
 | `DOZO_UP_TIMEOUT` | `240` | Seconds `up` waits for the web app |
+| `DOZO_EMAIL_EMULATOR` | off | `1` on `up` starts the local stack with upstream's email emulator (`compose.email-emulator.yml`): mails are captured, not sent, and readable at `/api/dev/emails`, so sign-in by emailed code works end to end. The choice is written to the env file, so `down` matches; the next `up` without it turns it off. Local only |
 | `DOZO_SMOKE_TIMEOUT` | `150` | Seconds `smoke` waits for the api, then for the worker, to be healthy |
 | `DOZO_STOP_TIMEOUT` | unset; qa sets `60` | Seconds for `up` and `down` to stop containers |
 | `DOZO_QA_STEPS` | all steps | Subset of qa steps |

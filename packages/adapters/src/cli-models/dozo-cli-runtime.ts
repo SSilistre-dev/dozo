@@ -1,10 +1,11 @@
 import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { dozoBotTokenTainted } from "../dozo-token-marks.js";
 import { createRuntimeModels } from "../pi-runtime-models.js";
 import { withRuntimeModels } from "../pi-runtime-scope.js";
 import type { RunRuntimeEnv } from "../run-runtime.js";
-import { AGENT_OWN_RUNS_ONLY, withAgentRuntime } from "./dozo-agent.js";
+import { AGENT_OWN_RUNS_ONLY, AGENT_TOKEN_TEXT, withAgentRuntime } from "./dozo-agent.js";
 import { localCliHost } from "./dozo-cli-driver.js";
 import {
   AGENT_DRIVERS,
@@ -49,12 +50,24 @@ export async function ownRun(prisma: PrismaClient, runId: string): Promise<strin
   const run = await runAsSystem("check who started an agent run", () =>
     prisma.run.findUnique({
       where: { id: runId },
-      select: { trigger: true, userId: true, sourceMessage: { select: { authorUserId: true } } },
+      select: {
+        trigger: true,
+        userId: true,
+        botId: true,
+        threadId: true,
+        sourceMessage: { select: { authorUserId: true } },
+      },
     }),
   );
   const own =
     run !== null &&
     OWN_TRIGGERS.has(run.trigger) &&
     (!run.sourceMessage || run.sourceMessage.authorUserId === run.userId);
-  return own ? undefined : AGENT_OWN_RUNS_ONLY;
+  if (!own) return AGENT_OWN_RUNS_ONLY;
+  // Text sent with an access token is not the person's own (dozo-token-marks.ts): an agent reads
+  // without asking, so none of it may reach one.
+  const tainted = await runAsSystem("check an agent run for token text", () =>
+    dozoBotTokenTainted(prisma, run),
+  );
+  return tainted ? AGENT_TOKEN_TEXT : undefined;
 }

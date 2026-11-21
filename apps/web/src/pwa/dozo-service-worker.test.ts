@@ -1,6 +1,6 @@
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { installServiceWorker, NETWORK_WAIT_MS } from "./dozo-service-worker";
+import { BOOT_SCRIPTS, installServiceWorker, NETWORK_WAIT_MS } from "./dozo-service-worker";
 import type { ServiceWorkerScope } from "./service-worker.js";
 import { SKIP_WAITING } from "./service-worker.js";
 
@@ -50,8 +50,8 @@ function setup(precache = ["/", "/assets/index-abc.js"]) {
         return undefined;
       },
     } as unknown as CacheStorage,
-    clients: { matchAll: async () => [{}] },
-    registration: { waiting: null },
+    clients: { matchAll: async (): Promise<unknown[]> => [{}] },
+    registration: { waiting: null } as { waiting: unknown },
     skipWaiting: vi.fn(async () => undefined),
     fetch: vi.fn((request: Request) => network(request)),
     addEventListener: (type: string, listener: (event: unknown) => void) => {
@@ -177,6 +177,56 @@ describe("dozo service worker", () => {
       expect(settled).toBe(false);
       late.resolve(new Response("slow /assets/lazy-1.js"));
       expect(await uncached).toBe("slow /assets/lazy-1.js");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("answers a navigation from the network at once while a new version waits, then hands over", async () => {
+    vi.useFakeTimers();
+    try {
+      network = async (request) => new Response(`network ${new URL(request.url).pathname}`);
+      const sw = setup();
+      await sw.dispatch("install", {});
+      // A new version installed by a deploy; it never reports a state change on its own.
+      const waiting = {
+        postMessage: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+      sw.scope.registration.waiting = waiting;
+      let settled: string | undefined;
+      void sw.fetch("/sign-in?lang=en", { resultingClientId: "page" }, "navigate").then((text) => {
+        settled = text;
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe("network /sign-in");
+      expect(waiting.postMessage).toHaveBeenCalledWith(SKIP_WAITING);
+      // With another tab open, the new version keeps waiting, as upstream decides.
+      waiting.postMessage.mockClear();
+      sw.scope.clients.matchAll = async () => [{}, {}];
+      settled = undefined;
+      void sw.fetch("/app", { resultingClientId: "page2" }, "navigate").then((text) => {
+        settled = text;
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe("network /app");
+      expect(waiting.postMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("answers the head's blocking scripts from the cache when the network hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      network = async (request) => new Response(`v1 ${new URL(request.url).pathname}`);
+      const sw = setup();
+      await sw.dispatch("install", {});
+      network = () => deferred<Response>().promise;
+      const scripts = BOOT_SCRIPTS.map((path) => sw.fetch(path, { clientId: "page" }));
+      await vi.advanceTimersByTimeAsync(NETWORK_WAIT_MS);
+      expect(await Promise.all(scripts)).toEqual(BOOT_SCRIPTS.map((path) => `v1 ${path}`));
     } finally {
       vi.useRealTimers();
     }

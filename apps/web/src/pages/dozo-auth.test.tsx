@@ -47,6 +47,15 @@ vi.mock("../lib/i18n", () => ({
 }));
 
 vi.mock("../lib/auth-capabilities", () => ({ fetchAuthCapabilities: mocks.capabilities }));
+vi.mock("@rakazo/contracts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/contracts")>()),
+  signInProviders: (capabilities: { providers?: { id: string }[] }) => capabilities.providers ?? [],
+}));
+vi.mock("./dozo-code-sign-in", () => ({
+  DozoCodeSignIn: ({ providers }: { providers: { id: string }[] }) => (
+    <div data-testid="code-first">{providers.map((provider) => provider.id).join(",")}</div>
+  ),
+}));
 vi.mock("./dozo-hosted-login", () => ({
   HostedSignIn: () => <div data-testid="hosted">hosted</div>,
 }));
@@ -110,6 +119,7 @@ async function open(path: string) {
         <Where />
         <Routes>
           <Route path="/sign-in" element={<AuthPage mode="in" />} />
+          <Route path="/sign-in/email" element={<AuthPage mode="in" />} />
           <Route path="/sign-up" element={<AuthPage mode="up" />} />
           <Route path="/forgot-password" element={<AuthPage mode="forgot" />} />
         </Routes>
@@ -178,8 +188,15 @@ it("holds sign-up back until the server answers, and shows sign-in meanwhile wit
 
   act(() => root?.unmount());
   container.remove();
+  // Sign-in waits too (the email-first form or upstream's depends on the answer); the password
+  // form at its own address shows meanwhile, with the link to sign-up hidden.
   mocks.capabilities.mockReturnValue(deferred().promise);
   await open("/sign-in");
+  expect(shown()).toBeUndefined();
+  expect(container.querySelector('[data-testid="code-first"]')).toBeNull();
+  act(() => root?.unmount());
+  container.remove();
+  await open("/sign-in/email");
   expect(shown()).toBe("in");
   expect(signups()).toBe("pending");
 });
@@ -205,11 +222,70 @@ it.each([
 ])("drops an %s that arrives after the page is gone", async (_, settle) => {
   const held = deferred<{ signupsOpen: boolean }>();
   mocks.capabilities.mockReturnValue(held.promise);
-  await open("/sign-in");
+  await open("/sign-in/email");
   act(() => root?.unmount());
   await act(async () => settle(held));
   expect(container.querySelector("[data-dozo-signups]")).toBeNull();
   expect(mocks.upstream).toHaveBeenCalledTimes(1);
+});
+
+describe("email-first sign-in", () => {
+  const codeFirst = () => container.querySelector('[data-testid="code-first"]')?.textContent;
+
+  it("starts sign-in with the address and a code where the server mails codes", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: true,
+      passwordAuth: true,
+      emailCode: true,
+      providers: [{ id: "google" }],
+    });
+    await open("/sign-in?next=%2Fapp");
+    expect(codeFirst()).toBe("google");
+    expect(shown()).toBeUndefined();
+    expect(signups()).toBe("open");
+    expect(where()).toBe("/sign-in?next=%2Fapp");
+  });
+
+  it("keeps upstream's password form one step away, and sign-up unchanged", async () => {
+    mocks.capabilities.mockResolvedValue({ passwordAuth: true, emailCode: true });
+    await open("/sign-in/email");
+    expect(shown()).toBe("in");
+    expect(codeFirst()).toBeUndefined();
+    act(() => root?.unmount());
+    container.remove();
+    await open("/sign-up");
+    expect(shown()).toBe("up");
+    expect(codeFirst()).toBeUndefined();
+  });
+
+  it.each([
+    ["no mail sender", { passwordAuth: true, emailCode: false }],
+    ["password sign-in off", { passwordAuth: false, emailCode: true }],
+  ])("falls back to upstream's page with %s", async (_, capabilities) => {
+    mocks.capabilities.mockResolvedValue(capabilities);
+    await open("/sign-in");
+    expect(shown()).toBe("in");
+    expect(codeFirst()).toBeUndefined();
+  });
+
+  it("leaves a failed capabilities request at sign-in to upstream's page", async () => {
+    mocks.capabilities.mockRejectedValue(new Error("offline"));
+    await open("/sign-in");
+    expect(shown()).toBe("in");
+    expect(codeFirst()).toBeUndefined();
+  });
+
+  it("keeps closed registration's mark on the email-first form", async () => {
+    mocks.capabilities.mockResolvedValue({
+      signupsOpen: false,
+      passwordAuth: true,
+      emailCode: true,
+    });
+    await open("/sign-up");
+    expect(where()).toBe("/sign-in");
+    expect(codeFirst()).toBe("");
+    expect(signups()).toBe("closed");
+  });
 });
 
 const language = () => container.querySelector<HTMLSelectElement>('select[aria-label="Language"]');

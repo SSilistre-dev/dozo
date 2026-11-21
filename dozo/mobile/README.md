@@ -4,15 +4,18 @@ Upstream ships a complete Expo (React Native) app in `apps/mobile`. The Dozo iOS
 built from the branded staged tree: nothing here is a second app, and `apps/mobile` is never edited
 or built in place. This directory holds the build script and the check of its config.
 
-Phase 1, which is all there is so far, stops at the simulator. No Apple account, certificate,
-provisioning profile, App Store Connect, TestFlight, real device or cloud build is involved, and
-`build.sh` never runs `eas`.
+The simulator build needs no Apple account, certificate, provisioning profile, App Store Connect,
+real device or cloud build. The release steps (`archive`, `upload`, and the Android `release` job)
+need the owner's accounts and keys and do nothing without them. `build.sh` never runs `eas`.
+Release: below. Store texts and review notes: `store/`.
 
 ## Build
 
 ```
 dozo/mobile/build.sh check   # stage, brand, install JS dependencies, check the resolved Expo config
 dozo/mobile/build.sh sim     # check, then build for the simulator, install and launch it
+dozo/mobile/build.sh archive # Mac, with the Apple secrets below: a signed Release archive and .ipa
+dozo/mobile/build.sh upload  # Mac, with the same: upload that .ipa to TestFlight
 dozo/mobile/build.sh clean   # delete the build output and the simulator; the toolchain stays
 ```
 
@@ -46,8 +49,9 @@ There is no CI job: an iOS build needs a macOS runner.
 ## Android
 
 The `dozo-mobile-android` workflow builds the Android app from the branded tree on a GitHub runner
-(nothing Android is installed on a maintainer's machine). It runs on pull requests that touch
-`dozo/mobile/`, a mobile `dozo-*` file or the workflow, and by hand.
+(nothing Android is installed on a maintainer's machine). Its test job runs on pull requests that
+touch `dozo/mobile/`, a mobile `dozo-*` file or the workflow, and by hand; the store-signed build
+is its `release` job (`## Release`).
 
 - The APK (artifact `dozo-android-apk`) is for phones (arm64-v8a) and the emulator (x86_64), with
   the same server and relay defaults as `build.sh`. It is a release build signed with the debug key
@@ -61,23 +65,124 @@ The `dozo-mobile-android` workflow builds the Android app from the branded tree 
   am start` opens the `dozo://pair#…` link, as the camera would; the app asks "Connect to this
   computer?", naming the test relay, and Connect is tapped (Maestro, `android/flows/`); the app
   shows the approval code, which must be the one the agent reports; `approve` on the computer; the
-  app signs in and lists the bot. Last line: `ANDROID PAIRING E2E: PASS|FAIL`.
+  app signs in and lists the bot; a `dozo://dozo-access-tokens` link then opens a settings page,
+  the access tokens, whose "New token" row shows. Last line: `ANDROID PAIRING E2E: PASS|FAIL`.
 
-What a release needs from the owner (none of it is in the repository):
+What a release needs from the owner: "What the owner must do", below.
 
-- The lasting application id: `dev.ssilistre.dozo` was chosen without the owner, and a store app
-  can never change it.
-- A release keystore: the upload key for Google Play (Play App Signing keeps the app key), or one
-  key for APKs offered outside the store. Kept as CI secrets (the keystore, its password, the key
-  alias and password); the build then needs a signing config for the release variant, which the
-  generated project does not have.
-- `PASSKEY_ANDROID_CERT_SHA256` on the server, the SHA-256 of the key the installed app is signed
-  with (`dozo/deploy/README.md`): passkeys and verified links need it.
-- A Play Console developer account, the app created there, and its listing (privacy policy, data
-  safety answers, content rating, screenshots).
-- Push notifications: a Firebase project with the app registered (`GOOGLE_SERVICES_JSON`) and an
-  Expo project of ours, as on iOS; without them the app registers for no push.
-- A `versionCode` higher than the last one for every build a store or an installed APK should take.
+## Release
+
+Nothing a release needs is in the repository: the secrets below are the owner's, and without them
+each step prints that it was skipped and exits 0 (iOS) or is skipped by the workflow (Android).
+
+### Android (GitHub Actions)
+
+The `release` job of `dozo-mobile-android` runs on a tag `mobile-v*` (any suffix) or by hand
+(Actions, run workflow), never on a pull request. It builds a release-signed APK (for installing
+outside a store) and an AAB (for Google Play) and keeps them in the artifact `dozo-android-release`
+for 30 days. A tag also runs the emulator job next to it; the release does not wait for it.
+
+```
+git tag mobile-v1.0.14 && git push origin mobile-v1.0.14
+```
+
+- Secrets (repository secrets): `DOZO_ANDROID_KEYSTORE_BASE64` (the keystore file, base64: `base64 -i
+  release.keystore | pbcopy`), `DOZO_ANDROID_KEYSTORE_PASSWORD`, `DOZO_ANDROID_KEY_ALIAS`,
+  `DOZO_ANDROID_KEY_PASSWORD`. If any of the four is empty a small `signing` job says so and the
+  `release` job is skipped, not failed.
+- Signing: the generated Gradle project signs its release variant with a debug key.
+  `android/release-gradle.mjs` patches that generated `app/build.gradle` (never a file in the
+  repository): a `release` signing config that reads the keystore, its passwords and the alias from
+  environment variables when Gradle runs, so nothing secret is written into the project, and the
+  version. It stops with exit 2 if the generated file no longer looks as expected, so a build never
+  falls back to the debug key unnoticed. The workflow then checks the APK is not signed by a debug
+  key and prints its certificate's SHA-256, which is what `PASSKEY_ANDROID_CERT_SHA256` takes for an
+  APK installed outside the store. The keystore is decoded into a private temporary file and
+  deleted at the end of the job.
+- Why a patch and not Gradle's `android.injected.signing.*` properties: those are an undocumented
+  internal of the Android Gradle plugin and may stop working with it, while the patch fails loudly
+  when the template changes. Why not an Expo config plugin: it would need an anchor in upstream's
+  `app.json` and would change every build, including the debug-key one that CI tests.
+- Version: `versionName` is the app's `version` in the Expo config (upstream's `app.json`);
+  `versionCode` is the workflow run number plus the repository variable
+  `DOZO_ANDROID_VERSION_CODE_BASE` (default 0). Play and an installed APK take only a higher code:
+  set the variable once, above the last code used, and every later run is higher. Re-running a run
+  keeps its number; start a new run. The file name carries both: `dozo-android-<name>-<code>.apk`.
+- The AAB holds arm64-v8a and x86_64, like the APK: 32-bit ARM phones are not served.
+- The first Play upload is made by hand in the Play Console (an app must exist there before any API
+  takes a bundle); Play App Signing keeps the app key and this keystore is the upload key.
+
+### iOS (a Mac)
+
+```
+DOZO_ASC_KEY_ID=... DOZO_ASC_ISSUER_ID=... DOZO_ASC_KEY_P8=/path/AuthKey_XXXX.p8 \
+DOZO_APPLE_TEAM_ID=... dozo/mobile/build.sh archive
+(same variables)      dozo/mobile/build.sh upload
+```
+
+- `archive` runs the same stage, brand, config check and prebuild as `sim`, then `xcodebuild
+  archive` (Release, generic iOS device, automatic signing for the team) and `xcodebuild
+  -exportArchive` with the method `app-store-connect`. Xcode creates and renews the certificate and
+  profiles itself through the API key (`-allowProvisioningUpdates`), so the key needs the Admin or
+  App Manager role. The .ipa lands in `.build/ipa`.
+- `upload` sends that .ipa with `xcrun altool --upload-app` and the same key; TestFlight lists the
+  build a few minutes after Apple has processed it. Only Xcode's own tools are used.
+- Variables: `DOZO_ASC_KEY_ID` (10 characters), `DOZO_ASC_ISSUER_ID` (a UUID),
+  `DOZO_ASC_KEY_P8` (the .p8 file's path, or its base64 text), `DOZO_APPLE_TEAM_ID` (10 characters),
+  and `DOZO_IOS_BUILD_NUMBER` (optional; every upload needs a higher one than the last; the default
+  is the UTC time as `yymmddHHMM`). The version shown is the Expo config's `version`.
+- With any of the four secrets unset, both steps print `skipped: not set: <names>` and exit 0.
+  A set but malformed value exits 2. Nothing but the names is printed.
+- The key is copied for the run into a private directory under `.build` (where `altool` looks for
+  `private_keys/AuthKey_<id>.p8`) and removed when the script exits, however it ends. It is never
+  written to the repository or a log.
+- Unverified: the steps need a Mac with Xcode and the owner's account, so only the skip and
+  validation logic ran (`check-config.test.mjs`) and the script passes `bash -n` and shellcheck.
+  The first real archive may need adjusting (a capability Apple has to approve, `altool`'s current
+  flags in the Xcode in use).
+
+## What the owner must do
+
+One list; each item is something only the owner's accounts or decisions can do.
+
+Accounts
+- Apple Developer Program membership, an App Store Connect app record for the bundle id, a
+  TestFlight group.
+- A Google Play Console developer account and the app created there.
+- A Firebase project with the Android app registered, and an Expo project of ours, only if push
+  notifications are wanted (`GOOGLE_SERVICES_JSON`; the Dozo build has neither, so it registers no
+  push token). Calls need the server's own APNs key (`dozo/deploy/README.md`, Mobile app ids).
+
+Decisions
+- The lasting application id and bundle id. `dev.ssilistre.dozo` was chosen without the owner and a
+  store app can never change it; it is one line in `dozo/brand/brand.json` and `check-config.mjs`
+  holds the build to it.
+- How paid plans are sold from the mobile apps (`store/review-checklist.md`, the first risk).
+- The export-compliance answer (`ios.config.usesNonExemptEncryption`), whether to add a report
+  action for user content, the age rating and content declarations, and which sign-in providers the
+  hosted server offers (Sign in with Apple when Google is offered): all in `store/review-checklist.md`.
+- The version: `version` comes from upstream's `app.json` (1.0.x as upstream bumps it). A Dozo
+  version of its own would need an anchored rule.
+
+Keys and secrets
+- Android, repository secrets: `DOZO_ANDROID_KEYSTORE_BASE64`, `DOZO_ANDROID_KEYSTORE_PASSWORD`,
+  `DOZO_ANDROID_KEY_ALIAS`, `DOZO_ANDROID_KEY_PASSWORD`; repository variable
+  `DOZO_ANDROID_VERSION_CODE_BASE` (above the last versionCode used). Generate the keystore once,
+  keep an offline copy: losing the upload key means a Play support request.
+- iOS, in the shell of the Mac that archives: `DOZO_ASC_KEY_ID`, `DOZO_ASC_ISSUER_ID`,
+  `DOZO_ASC_KEY_P8`, `DOZO_APPLE_TEAM_ID` (an App Store Connect API key with the App Manager or
+  Admin role).
+- On the server: `PASSKEY_APPLE_APP_IDS=<team id>.dev.ssilistre.dozo` and
+  `PASSKEY_ANDROID_CERT_SHA256` (the digest the release job prints; for a Play install, Play's app
+  signing key digest from the Play Console instead), and the `APNS_VOIP_*` values for calls
+  (`dozo/deploy/README.md`).
+
+Store listing
+- Edit and enter `store/listing.en.md` and `store/listing.tr.md`; make the screenshots and the
+  Android feature graphic; a support URL; the category.
+- Answer the privacy forms from `store/privacy.md` (resolve its TODOs); a web page for account
+  deletion requests (Play); the lawyer's review of the privacy and terms pages.
+- A demo account for review with a working model connection (`store/review-checklist.md`).
 
 ## What makes it Dozo
 
@@ -109,6 +214,9 @@ Each is upstream's own behaviour for a build without the piece, not new code.
   is signed in to, and that server sends with the Dozo bundle id as the topic, but only once it has
   an APNs key of the owner's team (`dozo/deploy/README.md`, Mobile app ids). Until then no call
   push arrives.
+- Chat math: a formula in a reply (`$…$`, `$$…$$`) shows as its TeX in the code style, not drawn
+  (`packages/chat-ui/src/dozo-markdown-math.native.ts`). Drawing it needs a browser engine in a web
+  view and KaTeX served to it, and the relay carries neither (the diagram view has the same limit).
 - Over-the-air updates: off. A new version is a new build.
 - Passkeys: the app asks for the server's domain as an associated domain. The server's association
   files carry the Dozo ids, and exist only once the deployment sets the Apple team id and the
@@ -123,7 +231,7 @@ Each is upstream's own behaviour for a build without the piece, not new code.
 Still upstream's on purpose: the `rakazo://` link scheme, which the server trusts as the app's
 origin (`dozo/brand/README.md`, Identifiers). An upstream app on the same phone claims it too, so
 the app also registers `dozo://`, which pairing links use.
-There is no store listing: the app's update fallback opens the landing page, and the privacy and
+There is no store listing yet (drafts: `store/`): the app's update fallback opens the landing page, and the privacy and
 terms links open the landing site's pages (`dozo/landing/README.md`).
 
 ## Connection
@@ -193,9 +301,11 @@ What does not cross the relay, because the system loads it rather than JavaScrip
 - Android's background notification service. It stays off for a computer, and turning it on says
   why.
 - A computer's live screen, which loads in a web view. The screen shows its usual cannot-reach line.
-- Images and videos the native views load from the server's address (avatars, inline images,
-  video). They do not load; each asks DNS for the random `.invalid` name, which carries nothing
-  about the channel.
+- A picture or video the app would give a native view as a URL on the server's address. The app
+  has none today: bot avatars and link icons arrive inside the data, and attachments, previews and
+  video are fetched through the RPC and shown from a local cache file, all of which cross the
+  relay. A native view asked for such a URL would ask DNS for the random `.invalid` name, which
+  carries nothing about the channel. Add a relay-aware loader only when a screen needs one.
 - Sign-in through the system browser and passkeys. They need the server's real address.
 - Push notifications and incoming-call pushes need the server's push credentials, which a local
   server does not have, with or without the relay.
@@ -218,7 +328,6 @@ Not tried yet:
 
 ## Phase 2
 
-Needs the owner (`dozo/LAUNCH-CHECKLIST.md`, "iOS app"): the lasting bundle id, an Apple Developer
-team with the app, its three extensions and the app group registered, signing and a TestFlight
-group, the store listing, and a decision on push: it needs an Expo project and APNs key of ours. The server's push topic
-and association files already use the Dozo id.
+The release steps are above (`## Release`); what is still the owner's is one list, `## What the
+owner must do`. `dozo/LAUNCH-CHECKLIST.md`, "iOS app", points here. The server's push topic and
+association files already use the Dozo id.

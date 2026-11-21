@@ -10,10 +10,15 @@ export function throwawayUser() {
 
 /** Opens the email form when the server offers a provider chooser first. */
 export async function openEmailForm(page: Page) {
-  const email = page.getByLabel("Email", { exact: true });
+  // Email-first sign-in shows the address alone with "Use a password instead"; a server without
+  // emailed codes shows the password form, or a choice of providers with "Continue with email".
+  const password = page.getByRole("button", { name: "Use a password instead" });
   const choice = page.getByRole("button", { name: "Continue with email" });
-  await expect(email.or(choice)).toBeVisible();
-  if (await choice.isVisible()) await choice.click();
+  const field = page.getByPlaceholder("Password");
+  await expect(password.or(choice).or(field).first()).toBeVisible();
+  if (await password.isVisible()) await password.click();
+  else if (await choice.isVisible()) await choice.click();
+  await expect(field).toBeVisible();
 }
 
 /** Fails with a clear message when the stack's auth limit (10 credential calls per 15 min per address) is hit. */

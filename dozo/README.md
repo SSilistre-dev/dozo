@@ -1,7 +1,9 @@
 # Dozo
 
-Dozo runs persistent AI bots, each with its own computer. Run it on your own server for free, or use
-the hosted version (a free plan and paid plans). This repository is its
+Dozo runs persistent AI bots, each with its own computer. Run it on your own server for free, use
+the hosted version at [app.dozo.bot](https://app.dozo.bot) (a free plan and paid plans; sign-up is
+open), or install the desktop app for macOS, Windows or Linux and keep the server and your chats
+and files on your own computer (what is sent to a model goes to the provider you chose). This repository is its
 source code: source available, with Dozo's own files under the Elastic License 2.0 and the code it
 builds on under Apache-2.0. Dozo is an independent fork of
 [Rakazo](https://github.com/elie222/rakazo) and is not affiliated with or endorsed by the
@@ -33,7 +35,7 @@ Branded output is never committed.
 | `dozo/theme/` | Theme tokens for the Dozo look and the compose override that loads them. See `dozo/theme/README.md` |
 | `dozo/design/` | Design reference: the source of truth for how Dozo should look |
 | `dozo/deploy/` | Running the server side on one host behind a Dokploy panel: deploy and roll back, the production compose layer, firewall rules for bot computers, backups and a health check. See `dozo/deploy/README.md` |
-| `dozo/desktop/` | The macOS app: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
+| `dozo/desktop/` | The desktop app for macOS, Windows and Linux: a Rust (Tauri 2) window around the web app, built on the host. See `dozo/desktop/README.md` |
 | `dozo/mobile/` | The iOS app: upstream's Expo app built as Dozo from the staged tree, simulator only so far. See `dozo/mobile/README.md` |
 | `dozo/sync.sh`, `dozo/SYNC.md` | Merging upstream. See `dozo/SYNC.md` |
 | `dozo/LICENSE`, `dozo/NOTICE` | The licence of the fork's own files, which files those are, and the notice of changes |
@@ -411,8 +413,19 @@ Codex yet, so it is off until turned on by hand:
   process that started it, for 30 minutes at most. If another process (or the same one after a
   restart) picks the run up, it ends with "The agent was interrupted" instead of starting Codex
   again; a mark in `data/agent-runs/` holds this across processes.
-- **Not yet:** more accounts or the model pool for agents, other agents (Grok, Antigravity over
-  ACP), mobile.
+- **ACP agents:** Antigravity (`antigravity-agent`, run as `agy acp`) and Grok (`grok-agent`, run
+  as `grok agent stdio`) are driven over the Agent Client Protocol
+  (`packages/adapters/src/cli-models/acp/`), turned on the same way, one id per line. Dozo offers
+  them no file or terminal methods: they use their own tools and ask through ACP permission
+  requests, answered only with the one-time allow or reject option (never an "always" one), and
+  every waiting request is answered as cancelled when a turn stops. The connection check reads the
+  agent's version from `initialize` (Antigravity 1.5.x; no Grok version has been checked yet, so
+  Grok cannot be connected), its sign-in from `session/new`, and waits for it to list Dozo's tools.
+  Antigravity also asks the person to accept, separately, that Google's terms count this use as a
+  reason to close their account. ACP reports no usage limits: an agent's own error is shown as is.
+- **Not in agent mode:** runs that text sent with an access token reached (until the bot is trusted
+  again), and every run the person did not start with their own message in Dozo.
+- **Not yet:** more accounts or the model pool for agents, mobile.
 
 ## Commands on your own computer
 
@@ -498,6 +511,28 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
   it. The mobile app has no setting for the number; it shows the card.
 - `send_email` keeps upstream's own account-wide cap of recipients a day (`botEmailDailyLimit`,
   set by the operator), which refuses rather than asks.
+
+## MCP endpoint
+
+Outside MCP clients (code editors, other agents) reach a person's own bots over Streamable HTTP at
+`/api/v1/dozo/mcp`, with one of the Bot API's personal access tokens in an
+`Authorization: Bearer` header (`apps/api/src/dozo-mcp.ts`, `packages/adapters/src/dozo-mcp*.ts`).
+Tools: `list_bots` and `send_message`, which waits up to 45 seconds for the reply and returns at
+once when the bot asks a question or needs an approval (that is answered in the app); each bot's
+chat is the resource `dozo-chat://<bot id>`, the newest 64,000 characters of the chat export. A
+token reaches only the bots its owner made in its Space, or its one bot. The server keeps no
+session (each request is authenticated on its own) and answers protocol versions up to 2025-11-25;
+a newer client falls back to those. A token's requests and an account's messages count against the
+Bot API's budgets (a token's share and the account's total of messages), shared by every instance; an address that presents 20 refused tokens in a minute
+waits a minute (per instance); bodies up to 64 KiB. A bare stop word is refused: stop a run in the app.
+
+A message sent over MCP carries the token mark, so the Bot API's token gate holds its run: it asks
+in the app before any outside effect, whatever the approval mode, and nothing it names is taken as
+the owner's own word.
+
+On the server on your own computer, point a local client at
+`http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
+the app window opens.
 
 ## Status and known limits
 
