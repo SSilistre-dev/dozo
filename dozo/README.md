@@ -548,21 +548,10 @@ the number for the account (50 until changed, 1 to 1000), under the mode.
 - A send is `send_email`, `message_agent`, or an app action upstream's gate counts as changing
   something (declared not read-only, or named like a change, the same test that makes it ask in
   Ask mode). A batch counts each such action, plus one for an entry that names none; a call whose
-  sends do not fit in what is left asks, and none of them is counted. Paid service calls
-  (`service_call`, `paid_request`) and the member's own cloud coding agents are not sends here.
-- On a page (`browser_act`), each press that sends what the bot put into that page counts one: a
-  `click`, or `type` with a line break (Enter), after a `fill`, `type` or `upload` step not yet
-  followed by a press, in the same call or an earlier one while the page stays the same (the run's
-  last known address); navigating, or a press that moved the page on, drops unsent input. A search
-  box filled and submitted counts: the search goes to the site. A press after a saved login or a
-  code was typed (`fill_secret`, `fill_code`) is a sign-in and counts nothing; a saved card or pay
-  token is a purchase, which its own card approves. Snapshots and a click with nothing put in since
-  the last press never count. The browser is not asked which element a click presses, so a click
-  on a checkbox after filling a form counts for that form, and the submit after it does not count
-  again. Not counted: a press on a form the page filled itself or a link carried in (a prepared
-  share URL), input left from an earlier attempt of the run, and screen control (`computer_act`).
-  Bots that fill and send forms unattended can now reach the daily number and then ask; raise it
-  in Settings > Approvals where that is expected.
+  sends do not fit in what is left asks, and none of them is counted. Page browser presses,
+  including form submits, are not counted yet: telling a submit from another click needs a new
+  probe in the computer's page browser. Paid service calls (`service_call`, `paid_request`) and
+  the member's own cloud coding agents are not sends here.
 - Counted when the gate would let it go without a person: allowed by Never ask or an Always allow
   rule, or left to the approval model. A send a person approves on its card is not counted. One
   the approval model then asks about, or that fails, still counts, so the number errs towards

@@ -10,7 +10,7 @@ const db = vi.hoisted(() => ({
 vi.mock("@rakazo/db", () => ({ takeDozoDailySend: db.take }));
 
 import { buildApprovalAskBlock } from "./approval-ask.js";
-import { dozoSendLimitCard, dozoSendLimitGate, pageSends } from "./dozo-send-limit.js";
+import { dozoSendLimitCard, dozoSendLimitGate } from "./dozo-send-limit.js";
 import type { RunContext } from "./run-context.js";
 
 const ctx = {
@@ -109,98 +109,5 @@ describe("dozoSendLimitCard", () => {
     const options = { reviewReason: "Off task" };
     expect(dozoSendLimitCard({ to: "x" }, options)).toBe(options);
     expect(dozoSendLimitCard({ to: "x" }, undefined)).toBeUndefined();
-  });
-});
-
-const fill = (text = "hello") => ({ kind: "fill", ref: "e1", text });
-const click = { kind: "click", ref: "e2" };
-const enter = { kind: "type", ref: "e1", text: "hello\n" };
-const NONE = { held: false, signIn: false };
-const HELD = { held: true, signIn: false };
-
-describe("pageSends", () => {
-  it.each([
-    ["a click with nothing put in", [click], NONE, 0, NONE],
-    ["a fill and nothing pressed", [fill()], NONE, 0, HELD],
-    ["a fill then a click", [fill(), click], NONE, 1, NONE],
-    ["two fills then a click", [fill(), fill("b"), click], NONE, 1, NONE],
-    ["a click on input from an earlier call", [click], HELD, 1, NONE],
-    ["text typed with Enter, as in a search box", [enter], NONE, 1, NONE],
-    ["text typed without Enter", [{ kind: "type", ref: "e1", text: "a" }], NONE, 0, HELD],
-    ["a carriage return", [{ kind: "type", ref: "e1", text: "a\r" }], NONE, 1, NONE],
-    ["two forms in one call", [fill(), click, fill(), click], NONE, 2, NONE],
-    ["a second click after a send", [fill(), click, click], NONE, 1, NONE],
-    [
-      "a file put in, then sent",
-      [{ kind: "upload", ref: "e3", paths: ["a"] }, click],
-      NONE,
-      1,
-      NONE,
-    ],
-    ["a sign-in form", [fill("ada"), { kind: "fill_secret", ref: "e1" }, click], NONE, 0, NONE],
-    ["a code form", [{ kind: "fill_code", ref: "e1" }, click], NONE, 0, NONE],
-    ["a saved card alone", [{ kind: "fill_card" }, click], NONE, 0, NONE],
-    ["a pay token alone", [{ kind: "fill_pay_token" }, click], NONE, 0, NONE],
-    ["a form after a sign-in", [{ kind: "fill_secret" }, click, fill(), click], NONE, 1, NONE],
-    ["an unknown step", [{ kind: "scroll" }, { kind: 3 }, {}], HELD, 0, HELD],
-  ])("%s", (_name, steps, before, sends, after) => {
-    expect(pageSends(steps, before)).toEqual({ sends, after });
-  });
-});
-
-describe("dozoSendLimitGate on page presses", () => {
-  const pageCtx = (url?: string) =>
-    ({
-      deps: { prisma: {} },
-      run: { userId: "user-1" },
-      bot: { id: "bot-1" },
-      state: { pageUrl: url },
-    }) as unknown as RunContext;
-  const act = (...actions: unknown[]) => call("browser_act", { args: { actions } });
-
-  it("counts a press that sends what the same call put in", async () => {
-    const ctx = pageCtx("https://a.test/contact");
-    expect(await dozoSendLimitGate(ctx, act(fill(), click), "allow")).toBe("allow");
-    expect(db.take).toHaveBeenCalledWith({}, { userId: "user-1", botId: "bot-1", sends: 1 });
-    db.take.mockResolvedValue({ full: true, dailySends: 10 });
-    expect(await dozoSendLimitGate(ctx, act(enter), "allow")).toBe("ask");
-  });
-
-  it("counts a press on the same page that sends what an earlier call put in", async () => {
-    const ctx = pageCtx("https://a.test/contact");
-    expect(await dozoSendLimitGate(ctx, act(fill()), "allow")).toBe("allow");
-    expect(db.take).not.toHaveBeenCalled();
-    expect(await dozoSendLimitGate(ctx, act(click), "allow")).toBe("allow");
-    expect(db.take).toHaveBeenCalledTimes(1);
-  });
-
-  it("drops unsent input once the page moved on", async () => {
-    const ctx = pageCtx("https://a.test/contact");
-    await dozoSendLimitGate(ctx, act(fill()), "allow");
-    (ctx.state as { pageUrl?: string }).pageUrl = "https://a.test/other";
-    expect(await dozoSendLimitGate(ctx, act(click), "allow")).toBe("allow");
-    expect(db.take).not.toHaveBeenCalled();
-  });
-
-  it("never counts navigation, reading, a sign-in, or a press on nothing put in", async () => {
-    const ctx = pageCtx("https://a.test/");
-    expect(await dozoSendLimitGate(ctx, act(click, click), "allow")).toBe("allow");
-    expect(await dozoSendLimitGate(ctx, act(fill(), { kind: "fill_secret" }, click), "allow")).toBe(
-      "allow",
-    );
-    for (const name of ["browser_navigate", "browser_snapshot"])
-      expect(
-        await dozoSendLimitGate(ctx, call(name, { args: { actions: [fill(), click] } }), "allow"),
-      ).toBe("allow");
-    expect(db.take).not.toHaveBeenCalled();
-  });
-
-  it("does not count a press that asks, is refused or was approved", async () => {
-    const ctx = pageCtx("https://a.test/");
-    expect(await dozoSendLimitGate(ctx, act(fill(), click), "ask")).toBe("ask");
-    expect(await dozoSendLimitGate(ctx, { ...act(fill(), click), approved: true }, "allow")).toBe(
-      "allow",
-    );
-    expect(db.take).not.toHaveBeenCalled();
   });
 });
