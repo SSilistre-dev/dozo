@@ -7177,6 +7177,15 @@
         "packages/adapters/src/dozo-token-run.ts"
       ],
       "reason": "token gate: upstream's run loop fake answers the token gate's question when the test asks it to"
+    },
+    {
+      "file": "packages/adapters/src/strategic-initiative-run.test.ts",
+      "find": "    prisma: {\n      attempt: { count: async () => options.attempts ?? 1 },\n",
+      "replace": "    prisma: {\n      // No message sent with an access token is in the bot's chat (dozo-token-run.ts).\n      $queryRaw: async () => [],\n      attempt: { count: async () => options.attempts ?? 1 },\n",
+      "requires": [
+        "packages/adapters/src/dozo-token-run.ts"
+      ],
+      "reason": "token gate: upstream test of a run's finish; the fork asks the database whether a message sent with an access token is in the bot's chat before memory keeps the turn, which this fake did not answer, so it answers none (executor-loop-guard.test.ts covers the question)"
     }
   ],
   "assets": {
