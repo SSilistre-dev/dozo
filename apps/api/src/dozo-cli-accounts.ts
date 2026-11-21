@@ -26,6 +26,7 @@ export function dozoCliAccountsRoutes(ctx: RouterContext) {
       connect: authed.dozoCliAccounts.connect.handler(async ({ context, input }) => {
         const connection = await cliHomeConnection(cliDeps, context.actor.userId, input.provider, {
           consent: input.consent === true,
+          termsConsent: input.termsConsent === true,
         });
         await persistModelCredential(
           deps,

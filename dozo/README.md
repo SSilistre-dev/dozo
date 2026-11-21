@@ -411,8 +411,19 @@ Codex yet, so it is off until turned on by hand:
   process that started it, for 30 minutes at most. If another process (or the same one after a
   restart) picks the run up, it ends with "The agent was interrupted" instead of starting Codex
   again; a mark in `data/agent-runs/` holds this across processes.
-- **Not yet:** more accounts or the model pool for agents, other agents (Grok, Antigravity over
-  ACP), mobile.
+- **ACP agents:** Antigravity (`antigravity-agent`, run as `agy acp`) and Grok (`grok-agent`, run
+  as `grok agent stdio`) are driven over the Agent Client Protocol
+  (`packages/adapters/src/cli-models/acp/`), turned on the same way, one id per line. Dozo offers
+  them no file or terminal methods: they use their own tools and ask through ACP permission
+  requests, answered only with the one-time allow or reject option (never an "always" one), and
+  every waiting request is answered as cancelled when a turn stops. The connection check reads the
+  agent's version from `initialize` (Antigravity 1.5.x; no Grok version has been checked yet, so
+  Grok cannot be connected), its sign-in from `session/new`, and waits for it to list Dozo's tools.
+  Antigravity also asks the person to accept, separately, that Google's terms count this use as a
+  reason to close their account. ACP reports no usage limits: an agent's own error is shown as is.
+- **Not in agent mode:** runs that text sent with an access token reached (until the bot is trusted
+  again), and every run the person did not start with their own message in Dozo.
+- **Not yet:** more accounts or the model pool for agents, mobile.
 
 ## Commands on your own computer
 
