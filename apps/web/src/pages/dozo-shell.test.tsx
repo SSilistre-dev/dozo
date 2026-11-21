@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   me: vi.fn(),
   status: vi.fn(),
   track: vi.fn(),
-  chatRedirect: null as string | null,
+  chatRedirect: null as string | null | undefined,
 }));
 vi.mock("./Shell", () => ({ ShellPage: () => <div data-testid="upstream-shell" /> }));
 vi.mock("./shell/dozo-bot-chats", async () => {
@@ -278,4 +278,10 @@ it("opens the bot's main chat at an address naming none of its open extra chats"
   mocks.chatRedirect = "/app/bot-1";
   await open("/app/bot-1?chat=gone");
   await vi.waitFor(() => expect(where()).toBe("/app/bot-1"));
+});
+
+it("waits for the chat list before opening an address that names an extra chat", async () => {
+  mocks.chatRedirect = undefined;
+  await open("/app/bot-1?chat=chat-1");
+  expect(container.querySelector('[data-testid="upstream-shell"]')).toBeNull();
 });

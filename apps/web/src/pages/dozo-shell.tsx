@@ -40,6 +40,7 @@ export function ShellPage() {
   const chatRedirect = useDozoChatRedirect(chatId);
   if (redirect) return <Navigate to={redirect} replace />;
   if (chatRedirect) return <Navigate to={chatRedirect} replace />;
+  if (chatRedirect === undefined) return <PageLoading />;
   return ready ? (
     <>
       <UpstreamShellPage key={chatId ?? ""} />

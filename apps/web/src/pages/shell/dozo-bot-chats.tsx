@@ -161,16 +161,19 @@ export function useDozoBotChats(): DozoBotChat[] {
 
 /**
  * Where an address that names no open extra chat of its bot goes instead (an unknown, another
- * bot's or Space's, or an archived chat): the bot's main chat, once the chat list has answered.
+ * bot's or Space's, or an archived chat): the bot's main chat. `undefined` while the chat list has
+ * not answered, so the shell does not open, and read, a chat that is not there; `null` to stay
+ * (also when the list cannot be read: the chat's own requests then answer for themselves).
  */
-export function useDozoChatRedirect(chatId: string | undefined): string | null {
+export function useDozoChatRedirect(chatId: string | undefined): string | null | undefined {
   const { botId } = useParams();
   const queries = useSpaceQueries();
   const list = useQuery({
     ...queries.dozoChats.list.queryOptions({ input: {} }),
     enabled: Boolean(chatId),
   });
-  if (!botId || !chatId || !list.isSuccess) return null;
+  if (!botId || !chatId || list.isError) return null;
+  if (!list.isSuccess) return undefined;
   const known = list.data.chats.some(
     (chat) => chat.id === chatId && chat.botId === botId && !chat.archivedAt,
   );

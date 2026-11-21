@@ -532,7 +532,8 @@ describe("the header's chats", () => {
 describe("an address naming an extra chat", () => {
   function Redirect() {
     const chatId = useDozoOpenChat();
-    return <output data-redirect>{useDozoChatRedirect(chatId) ?? "stay"}</output>;
+    const to = useDozoChatRedirect(chatId);
+    return <output data-redirect>{to === undefined ? "checking" : (to ?? "stay")}</output>;
   }
   const redirect = () => container.querySelector("[data-redirect]")?.textContent;
 
@@ -557,10 +558,13 @@ describe("an address naming an extra chat", () => {
     }
   });
 
-  it("waits for the list, and reads none on a main chat", async () => {
+  it("waits for the list, stays when it cannot be read, and reads none on a main chat", async () => {
     api.list.mockReturnValue(new Promise(() => undefined));
     await render(<Redirect />, "/app/bot-1?chat=chat-1");
-    expect(redirect()).toBe("stay");
+    expect(redirect()).toBe("checking");
+    api.list.mockRejectedValue(new Error("No such route"));
+    await render(<Redirect />, "/app/bot-1?chat=chat-2");
+    await vi.waitFor(() => expect(redirect()).toBe("stay"));
     api.list.mockClear();
     await render(<Redirect />, "/app/bot-1");
     expect(redirect()).toBe("stay");
