@@ -186,9 +186,13 @@ async fn open(host: &str, port: u16, local: &Local) -> Option<TcpStream> {
         Err(_) if *local == Local::None && !public_host(host) => return None,
         Err(_) => tokio::net::lookup_host((host, port)).await.ok()?.collect(),
     };
-    // Every answer must be public: a name with one private answer among public ones is a name
-    // meant to reach in.
-    let allowed = |at: &SocketAddr| public_ip(at.ip()) || local.allows(at.ip(), at.port());
+    // Every answer must be public, and none this computer's own address or on a network it is on
+    // directly (a public IPv6 or IPv4 address of its own, a neighbour's): a name with one such
+    // answer among others is a name meant to reach in.
+    let networks = own_networks();
+    let allowed = |at: &SocketAddr| {
+        (public_ip(at.ip()) && !within(at.ip(), &networks)) || local.allows(at.ip(), at.port())
+    };
     if addresses.is_empty() || !addresses.iter().all(allowed) {
         return None;
     }
@@ -199,6 +203,74 @@ async fn open(host: &str, port: u16, local: &Local) -> Option<TcpStream> {
         }
     }
     None
+}
+
+/// The networks this computer is on directly: each address of its own with its prefix length.
+#[cfg(unix)]
+fn own_networks() -> Vec<(IpAddr, u8)> {
+    let mut found = Vec::new();
+    let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: getifaddrs fills a list this function owns and frees below; each entry's
+    // address and mask are read only for their family's length.
+    unsafe {
+        if libc::getifaddrs(&mut list) != 0 {
+            return found;
+        }
+        let mut entry = list;
+        while !entry.is_null() {
+            let (address, mask) = ((*entry).ifa_addr, (*entry).ifa_netmask);
+            if !address.is_null() && !mask.is_null() {
+                match i32::from((*address).sa_family) {
+                    libc::AF_INET => {
+                        let ip = (*(address as *const libc::sockaddr_in)).sin_addr.s_addr;
+                        let bits = (*(mask as *const libc::sockaddr_in)).sin_addr.s_addr;
+                        let ip = Ipv4Addr::from(u32::from_be(ip));
+                        let prefix = u32::from_be(bits).count_ones() as u8;
+                        // A network wider than /8 (a tunnel with no mask) counts as its address.
+                        found.push((IpAddr::V4(ip), if prefix < 8 { 32 } else { prefix }));
+                    }
+                    libc::AF_INET6 => {
+                        let ip = (*(address as *const libc::sockaddr_in6)).sin6_addr.s6_addr;
+                        let bits = (*(mask as *const libc::sockaddr_in6)).sin6_addr.s6_addr;
+                        let prefix = bits.iter().map(|byte| byte.count_ones()).sum::<u32>();
+                        let prefix = prefix as u8;
+                        found.push((
+                            IpAddr::V6(Ipv6Addr::from(ip)),
+                            if prefix < 32 { 128 } else { prefix },
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            entry = (*entry).ifa_next;
+        }
+        libc::freeifaddrs(list);
+    }
+    found
+}
+
+#[cfg(windows)]
+fn own_networks() -> Vec<(IpAddr, u8)> {
+    Vec::new()
+}
+
+/// Whether `ip` is one of `networks` (an address and its prefix length), of the same family.
+fn within(ip: IpAddr, networks: &[(IpAddr, u8)]) -> bool {
+    networks
+        .iter()
+        .any(|(network, prefix)| match (ip, network) {
+            (IpAddr::V4(ip), IpAddr::V4(network)) => {
+                let shift = 32 - u32::from((*prefix).min(32));
+                let mask = if shift == 32 { 0 } else { u32::MAX << shift };
+                u32::from(ip) & mask == u32::from(*network) & mask
+            }
+            (IpAddr::V6(ip), IpAddr::V6(network)) => {
+                let shift = 128 - u32::from((*prefix).min(128));
+                let mask = if shift == 128 { 0 } else { u128::MAX << shift };
+                u128::from(ip) & mask == u128::from(*network) & mask
+            }
+            _ => false,
+        })
 }
 
 /// A host name that is not this computer's or a local network's: no `localhost`, no single label
@@ -261,6 +333,10 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         (segments[7] >> 8) as u8,
         segments[7] as u8,
     );
+    // 64:ff9b:1::/48 is a NAT64 prefix a network keeps for itself.
+    if segments[..3] == [0x64, 0xff9b, 1] {
+        return false;
+    }
     if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] || segments[..6] == [0, 0, 0, 0, 0, 0] {
         return !ip.is_loopback() && !ip.is_unspecified() && public_v4(embedded);
     }
@@ -421,5 +497,35 @@ mod tests {
         )
         .await;
         assert!(refused.starts_with("HTTP/1.1 502"), "{refused}");
+    }
+
+    #[test]
+    fn this_computer_s_own_addresses_and_networks_are_never_public() {
+        let networks = [
+            ("2001:db9:1:2::10".parse().unwrap(), 64),
+            ("203.0.114.7".parse().unwrap(), 24),
+        ];
+        for ip in [
+            "2001:db9:1:2::10",
+            "2001:db9:1:2:abcd::1",
+            "203.0.114.7",
+            "203.0.114.200",
+        ] {
+            assert!(within(ip.parse().unwrap(), &networks), "{ip}");
+        }
+        for ip in ["2001:db9:1:3::1", "203.0.115.1", "93.184.215.14"] {
+            assert!(!within(ip.parse().unwrap(), &networks), "{ip}");
+        }
+        assert!(within(
+            "1.2.3.4".parse().unwrap(),
+            &[("9.9.9.9".parse().unwrap(), 0)]
+        ));
+        // The real list holds this computer's loopback at least.
+        let own = own_networks();
+        assert!(within(IpAddr::V4(Ipv4Addr::LOCALHOST), &own), "{own:?}");
+        assert!(
+            !public_host("64:ff9b:1::a00:1"),
+            "a network's own NAT64 prefix"
+        );
     }
 }
