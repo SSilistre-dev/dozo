@@ -101,6 +101,13 @@ lists file and string; a rule mismatch names the rule whose anchor no longer mat
 `dozo/brand/brand.json` (or the rule code), never in the upstream file. Commit the fix on the sync
 branch, re-run `make olc` and the gate, then merge.
 
+**A bot's extra chats break** (`dozo-postgres-tests` fails in `dozo-bot-chats.postgres.test.ts`). An
+extra chat is a thread with no owner column set; the fork relaxed upstream's `threads_owner_chk` to
+"at most one owner" and checks the rest with the `dozo_threads_owner` trigger
+(`20270113120000_dozo_bot_chats`). If an upstream migration redefines that check or adds an owner
+column, do not let it restore "exactly one": a deploy would fail once extra chats exist. Add a fork
+migration after it that relaxes the check again and adds the new column to the trigger.
+
 ## Upstream's GitHub workflows
 
 Status: not done (what is published: `dozo/README.md`, Status and known limits). Upstream's

@@ -260,6 +260,21 @@ describePostgres("a bot's extra chats (PostgreSQL)", () => {
     expect((await archive(me, extra.id)).status).toBe(404);
   });
 
+  it("still gives every thread one owner: a bot chat's row counts, nothing else is let through", async () => {
+    const me = await person();
+    const { botId, mainThreadId } = await bot(me);
+    const ownerless = system.thread.create({ data: { spaceId: me.spaceId, userId: me.userId } });
+    await expect(ownerless).rejects.toThrow(/threads_owner_chk/);
+    const twoOwners = system.thread.create({
+      data: { spaceId: me.spaceId, userId: me.userId, botId, helperBotId: botId },
+    });
+    await expect(twoOwners).rejects.toThrow(/threads_owner_chk/);
+    // Giving up an owner is checked too: the main chat cannot lose its bot.
+    const orphaned = system.thread.update({ where: { id: mainThreadId }, data: { botId: null } });
+    await expect(orphaned).rejects.toThrow(/threads_owner_chk/);
+    expect((await create(me, botId)).status).toBe(200);
+  });
+
   it("deletes a deleted bot's extra chats with it, and a deleted chat's row with it", async () => {
     const me = await person();
     const { botId } = await bot(me);
