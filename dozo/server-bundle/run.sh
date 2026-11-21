@@ -5,6 +5,8 @@
 #   DOZO_RUNTIME  folder with node/ (Node), postgres/ (Postgres) and server/rakazo-server/
 #   DOZO_HOME     the user's state: secrets.env (0600), pgdata/, data/, logs/, run/*.pid
 #   DOZO_PG_PORT (54329), DOZO_API_PORT (3100), DOZO_WEB_PORT (5173): all on 127.0.0.1 only
+#   DOZO_HOSTED_LOGIN_ISSUER  optional: the hosted origin whose account signs in (the api's
+#     HOSTED_LOGIN_ISSUER, as the desktop app passes it; README.md, "Start contract")
 # start: secrets on first run, initdb, Postgres, migrate, then api, worker and web; returns once
 #   the API's /health and the web page answer 200 (at most 120 s). Prints `ready <web-url>`.
 # stop: web, worker, api with TERM (10 s each), then Postgres fast shutdown.
@@ -83,7 +85,9 @@ start() {
     WAKEUP_DRIVER=graphile AGENT_RUNTIME=pi MCP_ALLOW_PRIVATE_ENDPOINT=true BETTER_AUTH_URL="$WEB"
     WEB_ORIGIN="$WEB" API_URL="$WEB" RAKAZO_DESKTOP_STACK_TOKEN="$STACK_TOKEN"
     SCREEN_PROXY_SECRET="$SCREEN_PROXY_SECRET" BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET" ENCRYPTION_KEY="$ENCRYPTION_KEY")
-  env -i "${base[@]}" "${app[@]}" API_HOST=127.0.0.1 API_PORT="$API_PORT" AUTH_PASSWORD_ENABLED=true \
+  local hosted=()
+  [ -z "${DOZO_HOSTED_LOGIN_ISSUER:-}" ] || hosted=(HOSTED_LOGIN_ISSUER="$DOZO_HOSTED_LOGIN_ISSUER")
+  env -i "${base[@]}" "${app[@]}" "${hosted[@]}" API_HOST=127.0.0.1 API_PORT="$API_PORT" AUTH_PASSWORD_ENABLED=true \
     AUTH_BREACHED_PASSWORD_CHECK_ENABLED=false node "$(entry api)" > "$H/logs/api.log" 2>&1 &
   echo $! > "$H/run/api.pid"
   env -i "${base[@]}" "${app[@]}" node "$(entry worker)" > "$H/logs/worker.log" 2>&1 &

@@ -355,7 +355,9 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).
 - Sign-in with the hosted account (`HOSTED_LOGIN_ISSUER` on the server,
   `packages/auth/src/dozo-hosted-login.ts`) is off: a build or the environment turns it on with
-  `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). Without it the
+  `DOZO_HOSTED_LOGIN_ISSUER`, the hosted origin (https, or http on this computer). A build that
+  names it keeps it: the environment is read only by a build without one. The release workflow
+  builds it from the repository variable of the same name, unset (off) by default. Without it the
   server opens with its own single account, as a self-hosted one does: its first page is the sign-up
   page, and the account made there is the only one it will ever have. With it, the local
   sign-in page's one button opens the hosted page that asks the person to agree in the app's own
@@ -366,7 +368,9 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   browser as before, so such a sign-in cannot finish in the app. A move inside the hosted web app
   that loads no new page (its own routing) is not a navigation and stays in the window; those
   pages, like the server's, can call nothing in the app. A server that already has accounts of
-  its own refuses to start in that mode.
+  its own starts as before and keeps their password sign-in; each person links their account from
+  Settings, and once every account is linked only the hosted sign-in is left
+  (`packages/auth/src/dozo-hosted-login.ts`).
 - Let Bots Use This Computer works against it: the end-to-end test pairs and connects.
 
 ### Updating the server
@@ -482,7 +486,13 @@ dozo/desktop/tests/stack_e2e.sh <dist> [<older dist>]   # last line DESKTOP STAC
    Allow button does, through the agent's `approve` (`phone::approve_phone`); the click itself is
    covered by the window tests under "Linux" (Xvfb), not here.
 4. A server of its own in hosted sign-in mode signs in through a stand-in hosted server
-   (`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule.
+   (`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule. The real
+   window against a real hosted server is `tests/hosted_login_window.sh <dozo-desktop binary>`
+   (Linux, in Docker on Xvfb, driven through WebKit's WebDriver with tauri-driver; last line
+   `HOSTED LOGIN WINDOW: PASS|FAIL`): a binary built with
+   `DOZO_HOSTED_LOGIN_ISSUER=http://localhost:6173` opens a new computer's server, signs up on the
+   hosted page, agrees and is signed in, in one window and with nothing handed to the browser,
+   against the servers of `dozo/e2e/hosted-login` (`run.sh serve`). Run by hand, not in CI.
 5. With an older server (`DOZO_STACK_E2E_OLD_MANIFEST`; CI uses the published `server-v0.11.0-1`,
    locally an older dist): installs it with an account, updates it to this bundle at the next
    start and the account still signs in; then a newer version whose Node is broken is put back and

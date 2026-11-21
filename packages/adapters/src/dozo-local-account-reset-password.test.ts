@@ -61,12 +61,11 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-function main(argv: string[], options: { stdin?: string; env?: NodeJS.ProcessEnv; uid?: number }) {
+function main(argv: string[], options: { stdin?: string; uid?: number }) {
   const io: AccountIo = {
     write: (line) => lines.push(line),
     stdin: Readable.from(options.stdin === undefined ? [] : [options.stdin]),
     pgBin,
-    env: options.env ?? {},
     uid: "uid" in options ? options.uid : process.getuid?.(),
   };
   return localAccountMain(["reset-password", ...argv], io);
@@ -124,9 +123,10 @@ describe("account reset-password", () => {
     vi.stubEnv("FAKE_PG_USERS", "user_1|0\\n");
     expect(await main(["--home", home], { stdin: `${NEW_PASSWORD}\n` })).toBe(2);
     expect(last()).toMatchObject({ reason: "hosted-login" });
-    const env = { HOSTED_LOGIN_ISSUER: "https://example.invalid" };
-    expect(await main(["--home", home], { stdin: `${NEW_PASSWORD}\n`, env })).toBe(2);
-    expect(last()).toMatchObject({ reason: "hosted-login" });
+    // Messaging identities are not counted as accounts of their own.
+    expect((await log()).join("\n")).toContain(
+      `WHERE u.email NOT LIKE '%@messaging.invalid' GROUP BY u.id`,
+    );
 
     vi.stubEnv("FAKE_PG_USERS", "");
     expect(await main(["--home", home], { stdin: `${NEW_PASSWORD}\n` })).toBe(2);
