@@ -19,7 +19,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 const MAX_HEAD: usize = 16 * 1024;
-/// Connections served at once; more wait in the browser's own queue.
+/// Connections served at once, for every bot's browser together. One past it is closed at
+/// once, not queued: that request fails in the page (a browser may try it again), and one bot's
+/// pages can take every connection from the others while they last.
 const MAX_CONNECTIONS: usize = 256;
 /// A connection with nothing sent either way for this long is closed.
 const IDLE: Duration = Duration::from_secs(5 * 60);
@@ -77,7 +79,7 @@ impl Proxy {
         let accept = tokio::spawn(async move {
             loop {
                 match listener.accept().await {
-                    // Over the limit a connection is closed at once; the browser tries again.
+                    // Over the limit a connection is closed at once (see `MAX_CONNECTIONS`).
                     Ok((client, _)) => {
                         if let Ok(slot) = slots.clone().try_acquire_owned() {
                             let (local, counted) = (local.clone(), counted.clone());

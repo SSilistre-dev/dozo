@@ -14,7 +14,7 @@ impl crate::browser::SignInPrompt for DialogPrompt {
         self.0
             .dialog()
             .message(format!(
-                "Sign in to {site} in the bot's browser window, then choose Done. The bot sees nothing there until then."
+                "Sign in to {site} in the bot's browser window, then choose Done. Until you choose, for up to 15 minutes, the bot sees nothing there."
             ))
             .title("Dozo")
             .buttons(MessageDialogButtons::OkCancelCustom(
@@ -25,5 +25,15 @@ impl crate::browser::SignInPrompt for DialogPrompt {
                 let _ = answer.send(done);
             });
         answered
+    }
+
+    fn ended(&self, site: &str) {
+        self.0
+            .dialog()
+            .message(format!(
+                "The sign-in to {site} ended without your answer: the bot has its browser again, and Done or Cancel there no longer does anything."
+            ))
+            .title("Dozo")
+            .show(|_| {});
     }
 }

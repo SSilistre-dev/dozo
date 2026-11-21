@@ -706,6 +706,7 @@ async fn e2e_browser_reaches_nothing_on_this_computer_or_its_network() {
 struct HeldPrompt {
     asked: Mutex<Option<String>>,
     answer: Mutex<Option<oneshot::Sender<bool>>>,
+    ended: Mutex<Vec<String>>,
 }
 
 impl SignInPrompt for HeldPrompt {
@@ -714,6 +715,10 @@ impl SignInPrompt for HeldPrompt {
         *self.asked.lock().unwrap() = Some(site.to_owned());
         *self.answer.lock().unwrap() = Some(answer);
         answered
+    }
+
+    fn ended(&self, site: &str) {
+        self.ended.lock().unwrap().push(site.to_owned());
     }
 }
 
@@ -735,7 +740,7 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
     ]);
     let site = format!("127.0.0.1:{port}");
     let root = root();
-    let browsers = Arc::new(browsers(&root));
+    let browsers = Arc::new(browsers(&root).with_sign_in_time(Duration::from_secs(10)));
     let prompt = Arc::new(HeldPrompt::default());
     browsers.set_sign_in_prompt(prompt.clone());
     call(
@@ -853,6 +858,13 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
         "a cancelled sign-in left its page: {after}"
     );
     println!("E2E: a cancelled sign-in leaves a blank page");
+    // One nobody answers counts as cancelled when its time runs out, and the person is told.
+    *prompt.answer.lock().unwrap() = None;
+    let unanswered = browsers.sign_in("bot", &site).await.unwrap();
+    assert!(!unanswered, "an unanswered sign-in is cancelled");
+    assert_eq!(*prompt.ended.lock().unwrap(), vec![site.clone()]);
+    assert!(browsers.signing_site("bot").is_none());
+    println!("E2E: an unanswered sign-in ends when its time runs out, and the person is told");
     browsers.close_all();
 }
 
