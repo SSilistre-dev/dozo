@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -37,11 +37,11 @@ vi.mock("@rakazo/ui-web", () => ({
   toast: { error: api.toastError },
 }));
 
+import { queryClient as client } from "../../lib/query";
 import { DozoTrustBotHost, DozoTrustBotItem } from "./dozo-trust-bot";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
-let client: QueryClient;
 const rpc = { dozoAccessTokens: { botMark: api.botMark } } as never;
 
 async function render(node: ReactNode) {
@@ -53,7 +53,8 @@ async function render(node: ReactNode) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   for (const mock of Object.values(api)) mock.mockReset();
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The app's own client, as the shell and the loaded dialog share it.
+  client.clear();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -88,12 +89,15 @@ it("trusts a marked bot again after the person confirms it is them, and reads th
       <DozoTrustBotItem rpc={rpc} botId="bot-1" onClose={onClose} />
     </>,
   );
-  expect(container.querySelector('[data-testid="identity-dialog"]')).not.toBeNull();
   await vi.waitFor(() => expect(item()).toBeDefined());
   await act(async () => item()!.click());
   expect(onClose).toHaveBeenCalledOnce();
   await vi.waitFor(() => expect(api.trustBot).toHaveBeenCalledWith({ botId: "bot-1" }));
   expect(api.confirmed).toHaveBeenCalledOnce();
+  // Done: the dialog's host lets go of it.
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="identity-dialog"]')).toBeNull(),
+  );
   await vi.waitFor(() => expect(item()).toBeUndefined());
 });
 
@@ -109,6 +113,27 @@ it("says so when trusting fails", async () => {
   await vi.waitFor(() => expect(item()).toBeDefined());
   await act(async () => item()!.click());
   await vi.waitFor(() => expect(api.toastError).toHaveBeenCalledWith("Could not trust the bot"));
+});
+
+it("lets a second host take over when the first goes", async () => {
+  api.botMark.mockResolvedValue({ marked: true });
+  api.trustBot.mockResolvedValue({ ok: true });
+  await render(
+    <>
+      <DozoTrustBotHost key="a" />
+      <DozoTrustBotHost key="b" />
+      <DozoTrustBotItem rpc={rpc} botId="bot-1" onClose={() => undefined} />
+    </>,
+  );
+  await render(
+    <>
+      <DozoTrustBotHost key="b" />
+      <DozoTrustBotItem rpc={rpc} botId="bot-1" onClose={() => undefined} />
+    </>,
+  );
+  await vi.waitFor(() => expect(item()).toBeDefined());
+  await act(async () => item()!.click());
+  await vi.waitFor(() => expect(api.trustBot).toHaveBeenCalledOnce());
 });
 
 it("does nothing from the menu when no host is mounted", async () => {
