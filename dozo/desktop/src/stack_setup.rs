@@ -172,8 +172,8 @@ pub fn saved_ports(file: &Path) -> Option<Ports> {
 /// The person's own home folder and their login shell's `PATH`, for the server's API and worker
 /// (`HOST_USER_HOME`, `HOST_USER_PATH`). The server runs with its own folder as `HOME` and only
 /// the app's `PATH`, which on macOS, opened from the Dock, lacks what the shell profile adds; a
-/// command-line model provider the person installed and signed in to needs both. Passed on only;
-/// nothing reads them yet.
+/// command-line model provider the person installed and signed in to needs both. The server's
+/// CLI model connections read them (`packages/adapters/src/cli-models/dozo-cli-driver.ts`).
 pub fn user_environment() -> Vec<(&'static str, String)> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))

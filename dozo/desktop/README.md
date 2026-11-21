@@ -250,7 +250,8 @@ end to end (below); the code builds for macOS, where it has run by hand only.
 - The server runs with its own folder as `HOME` and the app's `PATH`. The API and the worker are
   also told the person's own home folder and their login shell's `PATH` (`HOST_USER_HOME`,
   `HOST_USER_PATH`; the shell is asked once per start, for at most 5 s), which a command-line
-  model provider the person installed and signed in to will need. Nothing reads them yet.
+  model provider the person installed and signed in to needs: with them, the server offers that
+  tool as a model connection (`packages/adapters/src/cli-models/dozo-cli-*.ts`).
 - Linux needs `libssl3` (Prisma's migration engine); without it the start says to install it.
   Postgres's Linux build carries a `libstdc++` that needs glibc 2.36; where it does not run
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).
