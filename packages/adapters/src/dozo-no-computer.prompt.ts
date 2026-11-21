@@ -1,11 +1,14 @@
 import type { NoComputerReason } from "./dozo-no-computer.js";
+import { CONNECT_OWN_COMPUTER } from "./dozo-own-computer.prompt.js";
 import type { UserComputerState } from "./run-tools-user-computer.js";
 
 /**
  * In place of the computer guidance when the run has no computer of its own: the plan has no
- * computer hours left, or its payment is overdue. The bot works without one and, when a task truly
- * needs one, says how to get it: the user's own computer, connected through the desktop app, or a
- * plan with hours (or the payment fixed).
+ * computer hours left, its payment is overdue, or it includes no cloud computer at all (Free, which
+ * works on the user's own computer by design). The bot works without one and, when a task truly
+ * needs one, says how to get it: the user's own computer, connected through the desktop app, or
+ * for spent hours more of them, or for an overdue payment the payment fixed. A plan without a
+ * cloud computer is never told to upgrade.
  */
 export function noCloudComputerInstruction(options: {
   /** Absent reads as no hours left. */
@@ -24,18 +27,25 @@ export function noCloudComputerInstruction(options: {
         : fetch
           ? " Read pages with web_fetch."
           : "";
-  const payment = options.reason === "payment";
-  const why = payment
-    ? "the plan's payment is overdue, and its computer hours return once it is paid"
-    : "the plan has no computer hours left";
+  const why =
+    options.reason === "payment"
+      ? "the plan's payment is overdue, and its computer hours return once it is paid"
+      : options.reason === "plan"
+        ? "the plan includes no cloud computer, so you work on the user's own computer"
+        : "the plan has no computer hours left";
   // The page tools are offered here only for the bot's own browser there (dozo-user-browser.ts).
   const browser = options.offered.has("browser_navigate")
     ? " browser_navigate, browser_snapshot and browser_act use a browser of your own on the user's computer, in a window they can see."
     : "";
   if (options.userComputer === "connected")
     return `You have no computer of your own in this run: ${why}. For work that needs a computer, use the user's computer.${browser}${web}`;
-  const fix = payment ? "whoever manages billing can update the payment" : "upgrade the plan";
-  return `You have no computer in this run: ${why}. Work without one: answer directly and use connected tools.${web} Never offer to run commands, open a browser, or save files. If a task truly needs a computer, say so in one short sentence: the user can connect their own computer from the desktop app, or ${fix}.`;
+  const fix =
+    options.reason === "payment"
+      ? `the user can connect their own computer (${CONNECT_OWN_COMPUTER}), or whoever manages billing can update the payment`
+      : options.reason === "plan"
+        ? `the user can connect their own computer: ${CONNECT_OWN_COMPUTER}`
+        : `the user can connect their own computer (${CONNECT_OWN_COMPUTER}), or get more computer hours`;
+  return `You have no computer in this run: ${why}. Work without one: answer directly and use connected tools.${web} Never offer to run commands, open a browser, or save files. If a task truly needs a computer, say so in one short sentence: ${fix}.`;
 }
 
 /** Attachments are named, but without a computer there is nowhere to open them. */

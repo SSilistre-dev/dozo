@@ -55,6 +55,25 @@ describe("userComputerGate", () => {
     expect(rules.exists).not.toHaveBeenCalled();
   });
 
+  it("lets read-only commands joined by pipes go ahead, and asks about anything else", async () => {
+    expect((await gate('ls /Applications | grep -iE "chrome|safari"')).plan).toBe("allow");
+    expect((await gate("cat notes.txt | grep todo | wc -l")).plan).toBe("allow");
+    expect(rules.exists).not.toHaveBeenCalled();
+    for (const command of [
+      "ls | sh",
+      "ls | tee f",
+      "uname -a 2>/dev/null || ver",
+      "ls; ls | grep a",
+      "ls |& cat",
+    ])
+      expect((await gate(command)).plan, command).toBe("ask");
+  });
+
+  it("offers Always allow for a single command only, never for a pipeline", async () => {
+    const piped = (await gate("ls | sh")).args;
+    expect(actions(piped)).toEqual(["Allow once", "Deny"]);
+  });
+
   it("lets a command that only reads go ahead", async () => {
     expect((await gate("ls -la")).plan).toBe("allow");
     expect((await gate("grep -rn TODO src", { cwd: "~/app" })).plan).toBe("allow");

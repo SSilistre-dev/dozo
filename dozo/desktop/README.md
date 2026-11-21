@@ -31,10 +31,71 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   A link that asks for a new window also opens in the browser, even on the same origin.
 - The server address must be the one the pages are served from. An address that redirects to
   another host (a bare domain to `www.`) opens the browser and ends on the "Can't reach" screen.
-- Camera, microphone, location and similar requests from a page are denied. Notifications are
-  allowed for the server's own origin only (below).
+- Camera, location and similar requests from a page are denied. The microphone and notifications
+  are allowed for the server's own origin only (below).
 - Links to the browser are limited to one a second, so a page cannot flood it.
 - Menus and the local screens are English only.
+
+## The microphone
+
+The server's page may use the microphone, so dictation (hold the microphone in the composer) and
+calls work as in a browser. Nothing else may: the decision is `answer` in `src/alerts.rs`, taken
+when the page asks, for a page whose origin is exactly the chosen server's. A frame from another
+origin is refused by the web view itself before it asks, as a browser refuses it without the
+page's permission. The camera stays refused, and a request for the camera and the microphone
+together is refused whole. The page asks only when the person starts dictation or a call.
+
+The system decides as well, once per app, and its answer is what counts:
+
+- macOS: the first request shows the system's question with the sentence in `Info.plist`
+  ("Dozo uses the microphone only while you talk to your bots."); the app's signature carries the
+  hardened runtime's microphone entitlement (`Entitlements.plist`). A refusal, there or later in
+  System Settings, Privacy & Security, Microphone, reaches the page as a denied request and the
+  composer shows its own error. Web speech recognition is not offered to the page (no speech
+  recognition usage description), so dictation goes to the server's voice provider. Not built or
+  tried on a Mac yet.
+- Windows: Settings, Privacy & security, Microphone, "Let desktop apps access your microphone"
+  decides; the system shows its microphone icon in the taskbar while it is in use. Compiled, not
+  tried.
+- Linux: no system question. WebKitGTK has media capture off until the app turns it on
+  (`src/microphone_gtk.rs`), and records through GStreamer from PulseAudio or PipeWire. Tried by
+  `tests/linux_gate.py` against a PulseAudio sine source: the server's page gets the microphone,
+  a frame from another origin and a camera request do not.
+
+While the microphone is open, the system shows it: the menu bar indicator on macOS, the taskbar
+icon on Windows, and on Linux the desktop's own indicator where it has one (GNOME 41 and later).
+The app adds no indicator of its own; Push to Talk brings the window forward, so the composer's
+recording strip is in view as well.
+
+## Push to Talk
+
+A switch in the Dozo menu, off until chosen: Push to Talk (⇧⌘Space on macOS, Ctrl+Shift+Space on
+Windows and Linux; the label names the keys). While on, the shortcut works with another app in
+front. Held down, it brings the window forward and starts the composer's dictation, the same one
+its microphone button starts; let go, it sends what was heard. No other voice path was added.
+
+- The app has no bridge into the page: on the server's page only, it dispatches a `dozo-talk-key`
+  window event (`down` or `up`) and reads nothing back (`src/talk.rs`). The web app's composer
+  answers it (`apps/web/src/components/composer/dozo-hold-to-talk.ts`, reached through one
+  anchored rule in `composer.tsx`): only the newest composer on screen, and only where its
+  microphone could work. With no voice provider that transcribes and no recognizer in the web
+  view, the shortcut only brings the window forward and the microphone stays closed.
+- Refused shortcuts are said, not swallowed: when the system or another program already holds
+  the keys, the switch goes back off, is saved off, and a message names the keys. The same
+  happens at launch if the keys were taken since. On a Wayland desktop an app cannot have a
+  shortcut that works while another app is in front, so the switch is refused there with a
+  message (an app forced onto X11 with `GDK_BACKEND=x11` may use it).
+- Saved as `push_to_talk=true` in the settings file below; missing means off. Registered from the
+  app's Rust code only: no page is granted the shortcut plugin's commands.
+
+Per system:
+
+- Linux (X11): tried by `tests/linux_gate.py`: the shortcut reaches the server's page down and up,
+  a frame from another origin hears nothing, the shortcut brings back a closed window, and a
+  shortcut another program holds turns the switch off with a message.
+- Windows: compiled, not tried. The system refuses keys another app registered, which is reported.
+- macOS: not built or tried yet. macOS does not always refuse keys the system or another app uses,
+  so there a clash may show only as the shortcut doing nothing.
 
 ## Open at Login and Keep Running in Background
 
@@ -207,19 +268,30 @@ account and connects to it; the web app's settings then list it under Computers 
 
 ## The bot's own browser
 
-A bot on this computer can use a browser of its own: the Chrome, Edge, Brave or Chromium already
-installed here (the first found, in that order), started with a profile folder of that bot's own,
-never the person's (`src/browser.rs`). It opens as a normal window with its address bar, so the
-person sees what the bot does and can type into it.
+Not offered yet: the app does not declare it (`browser::DECLARED` is off) until the sign-in pause
+comes, during which the person signs in and the app passes nothing on. Until then no server offers
+it, and only the tests below reach it.
 
-- The app declares `browser` beside `shell` only when it finds one. The server drives the page
-  with `pageBrowser` requests, each one DevTools command
-  (`packages/adapters/src/dozo-device-browser.ts`): the bot's usual `browser_navigate`,
-  `browser_snapshot` and `browser_act`, with the same results as on its own computer, built from
-  the page's accessibility tree, and a screenshot with a snapshot for a model that can see.
+A bot on this computer can use a browser of its own: the Chrome, Edge, Brave or Chromium installed
+here, started with a profile folder of that bot's own, never the person's (`src/browser.rs`). It
+opens as a normal window with its address bar, so the person sees what the bot does and can type
+into it.
+
+- What the allowlist is for: the server's channel into the browser. A bot that may also run
+  commands already runs them as the person and can reach anything they can, its browser profile
+  included. The allowlist means most where the browser is offered without commands, or beside the
+  per-command approval.
+- The browser is looked for only where the system installs it (`/Applications` on macOS; `/opt`
+  and `/usr/bin` on Linux, the first of Chrome, Edge, Brave and Chromium), never on `PATH` or in
+  the home folder. It starts with only the variables a desktop browser needs, so nothing like
+  `CHROMIUM_FLAGS` or `LD_PRELOAD` adds to it.
+- The server side (`packages/adapters/src/dozo-device-browser.ts`): `pageBrowser` requests,
+  each one DevTools command, give the bot its usual `browser_navigate`, `browser_snapshot` and
+  `browser_act` with the same results as on its own computer, built from the page's accessibility
+  tree, and a screenshot with a snapshot for a model that can see.
 - Who gets it (`packages/adapters/src/dozo-user-browser.ts`): only chats the person starts with
-  their own bot, as for commands, never a run a message sent with an access token reached. Then
-  the page tools go to this browser, also on Free, where the run has no computer of its own.
+  their own bot, as for commands, never a run a message sent with an access token reached, and
+  only when the run has no graphical computer of its own (Free).
 - What asks: a bot's first use of its browser on this computer ("Let this bot use its own browser
   on your computer?"), and its first action on each site, named by its registrable domain ("Let
   this bot act on x.com in its browser?"). Each answer holds for that bot on this computer;
@@ -230,28 +302,41 @@ person sees what the bot does and can type into it.
   connect to it.
 - Only the commands in `ALLOWED` pass, with only the parameters listed there, and only to the
   bot's one page: reading the accessibility tree, the page's boxes, mouse, keys and text, going to
-  an http or https address, back and forward, and screenshots of the visible page. Everything
-  that reads cookies or site storage, runs script (`Runtime.evaluate`), opens a debugging session,
-  uploads a file, pastes the clipboard (Ctrl or Cmd+V, Shift+Insert, a middle click) or brings
-  the window forward is refused here, before it reaches the browser, so none of it reaches the
-  server. Numbers must be whole where the browser reads whole numbers. Downloads are refused.
+  a website, back and forward, and screenshots of the visible page. Refused before they reach the
+  browser, so none of it reaches the server: reading cookies or site storage, running script
+  (`Runtime.evaluate`), a debugging session, uploads, bringing the window forward, and keys that
+  reach past the page's text (Alt with anything, Ctrl or Cmd with anything but select all, undo
+  and moving or deleting by word, the clipboard keys, function and browser keys). Numbers must be
+  whole where the browser reads whole numbers. Downloads are refused.
+- Websites only: http and https outside this computer and its network. Loopback, link-local
+  (`169.254.0.0/16`), private and shared ranges, `localhost`, `.local`, `.internal` and
+  `.home.arpa` are refused, so the server on this computer is too. While the bot's tab shows
+  anything else (the person sent it to the browser's own pages, a file, or a local address), only
+  going to a website works, and its history and events leave such addresses out. If the person
+  closed the bot's tab, the bot gets a new blank one, never a tab of the browser's own pages.
+- A click the server sends counts as the person's gesture. The app denies pages the clipboard API
+  and, in every frame, the copy and cut commands and full screen (its own guard, set before any
+  page script). A page can still open a window or tab with such a click (sign-ins need it); the
+  bot cannot reach it. A link to another program (`mailto:`, a meeting app) asks the person first.
 - None of Playwright's defaults that mark the browser as automated or store its passwords
   unencrypted (`--enable-automation`, `--use-mock-keychain`, `--password-store=basic`), no `--app`
   or kiosk mode.
 - Profiles live in the app's data folder, `computers/browser-profiles/<bot>`, open to this user
-  only (mode 700). Deleting the bot deletes its profile.
+  only (mode 700). Deleting the bot ends its browser, waits for it, then deletes its profile. A bot
+  deleted while this computer was offline keeps its profile until a later sweep (not built yet).
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
   also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
   next start on that profile ends what is left first. A dropped connection keeps it open.
 - Honest limits: anything running as this user, the bot's own commands included, can read the
   profile folder, and on Linux can open the browser's pipe through `/proc` and send it any
-  command: the allowlist holds the server's channel, not the person's own programs. The page
-  browses from this computer's network, local addresses included. On macOS the pipe is made and
-  then marked close-on-exec, so a command started in that instant could inherit it. A stopped bot
-  starts no browser. A Snap Chromium is passed over (it cannot use a profile folder in the app's
-  data). Windows: not yet.
+  command. A public name that resolves to a private address is not caught. Synthetic keys did not
+  reach the browser's shortcuts in Chrome 158 on Linux (measured); they are refused anyway, and
+  macOS was not measured. On macOS the pipe is made and then marked close-on-exec, so a command
+  started in that instant could inherit it. `/Applications` is writable by admin accounts. A
+  stopped bot starts no browser. A Snap Chromium is passed over. Windows: not yet.
 - Proof: `tests/stack_e2e_native.sh` step 0, on Linux in a real window under Xvfb and on macOS,
-  with the browser on the runner.
+  with the browser on the runner: the page tools, refusals, the guard, a tab moved off the web or
+  closed, the profile, no TCP port, ending with a killed app and with a deleted bot.
 
 ## The server on this computer
 
@@ -561,10 +646,11 @@ without a warning. The identity and the notary credentials stay in the keychain 
 builds: nothing about them is in this repository, and CI does not sign.
 
 - Hardened runtime, secure timestamp.
-- Entitlements: none. The app does not use the App Sandbox, and the hardened runtime needs an
-  exception only for what a process does itself. This one runs no JIT and loads no unsigned code:
-  the system web view compiles JavaScript in its own processes, which carry Apple's entitlements.
-  Camera and microphone requests are denied, so there is no device entitlement either.
+- Entitlements: the microphone only (`Entitlements.plist`, `com.apple.security.device.audio-input`),
+  which the hardened runtime needs before the system asks the person about it. The app does not
+  use the App Sandbox. It runs no JIT and loads no unsigned code: the system web view compiles
+  JavaScript in its own processes, which carry Apple's entitlements. Camera requests are denied,
+  so there is no camera entitlement.
 
 Without that file the app is signed ad hoc and `build.sh` says so. It then opens without a warning
 only on the Mac that built it; a downloaded copy is blocked by Gatekeeper.

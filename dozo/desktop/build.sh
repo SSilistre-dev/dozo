@@ -63,12 +63,13 @@ check() {
   say "check PASS"
 }
 
-# Developer ID signature with the hardened runtime and a secure timestamp, and no entitlements
-# (README, "Signing and distribution"). codesign waits forever when the keychain asks for approval
-# on a locked screen, so it gets two minutes. Its output can name the identity: it goes to a file.
+# Developer ID signature with the hardened runtime and a secure timestamp; the app gets its one
+# entitlement, the microphone, as a second argument (README, "Signing and distribution"). codesign
+# waits forever when the keychain asks for approval on a locked screen, so it gets two minutes. Its
+# output can name the identity: it goes to a file.
 sign() {
   perl -e 'alarm 120; exec @ARGV' codesign --force --options runtime --timestamp \
-    --sign "$DOZO_SIGN_IDENTITY" "$1" >target/sign.log 2>&1 \
+    ${2:+--entitlements "$2"} --sign "$DOZO_SIGN_IDENTITY" "$1" >target/sign.log 2>&1 \
     || die "codesign failed or waited for a keychain approval (target/sign.log)"
 }
 
@@ -112,7 +113,7 @@ build() {
   ditto "$out" "$app"
   [ "$(lipo -archs "$app"/Contents/MacOS/* | xargs -n1 | sort | xargs)" = "arm64 x86_64" ] \
     || die "the app is not universal (arm64 and x86_64)"
-  [ -z "$signed" ] || sign "$app"
+  [ -z "$signed" ] || sign "$app" Entitlements.plist
   codesign --verify --deep --strict "$app" || die "the app's signature does not verify"
   if [ -n "$signed" ]; then
     # The service takes an archive, the ticket goes on the app itself.

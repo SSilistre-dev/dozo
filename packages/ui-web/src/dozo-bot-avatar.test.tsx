@@ -312,6 +312,34 @@ describe("dozo-overlays.css", () => {
   });
 });
 
+describe("dozo-auth.css", () => {
+  const auth = readFileSync(join(import.meta.dirname, "dozo-auth.css"), "utf8");
+
+  it("is imported by the shell stylesheet before any rule of its own", () => {
+    expect(css.indexOf('@import "./dozo-auth.css";')).toBeGreaterThan(-1);
+    expect(css.indexOf('@import "./dozo-auth.css";')).toBeLessThan(css.indexOf(":root"));
+  });
+
+  it("takes every colour from a tone the shell names and moves only without reduced motion", () => {
+    expect(auth).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(auth).not.toMatch(/color-mix\(|rgba?\(|hsla?\(|oklch\(/);
+    expect(auth).not.toContain("!important");
+    const quiet = "@media (prefers-reduced-motion: no-preference) {";
+    const start = auth.indexOf(quiet);
+    expect(start).toBeGreaterThan(-1);
+    expect(auth.slice(0, start)).not.toMatch(/\b(?:animation|transition)\b\s*:/);
+    const named = new Set([...css.matchAll(/^\s*(--dozo-[a-z0-9-]+):/gm)].map(([, name]) => name));
+    for (const [, used] of auth.matchAll(/var\((--dozo-[a-z0-9-]+)\)/g)) {
+      expect(named.has(used as string), `${used} is not named in dozo-shell.css`).toBe(true);
+    }
+  });
+
+  it("keeps keyboard focus and an invalid field visible", () => {
+    expect(auth).toMatch(/:focus-visible \{\s*outline: 2px solid var\(--dozo-focus\);/);
+    expect(auth).toContain('[data-slot="input"][aria-invalid="true"]');
+  });
+});
+
 describe("closed registration", () => {
   it("hides the way to sign-up until the page says registration is open", () => {
     expect(css).toContain(
