@@ -17,9 +17,11 @@ function cookiePath(ctx: HookContext): string {
  * The emailed verification link proves the mailbox, not that whoever opens it holds the account.
  * Opened in a browser signed in to that account, it verifies as before. Opened anywhere else, it
  * verifies nothing and changes nothing: the browser keeps the link and lands on the link's own
- * result page, which asks to sign in, and signing in there finishes the verification
- * (`finishPendingVerification`). Returned as the request's adapter override for `/verify-email`;
- * Better Auth calls `updateUserByEmail` there only to mark an unverified address verified.
+ * result page, which asks to sign in. Signing in there finishes the verification, either with a
+ * session the account already had (`finishPendingVerification`) or, where a mailbox is required
+ * before a password sign-in, with the password itself (`proveHeldVerification`). Returned as the
+ * request's adapter override for `/verify-email`; Better Auth calls `updateUserByEmail` there only
+ * to mark an unverified address verified.
  */
 export function verifyEmailAdapter(ctx: HookContext): Pick<InternalAdapter, "updateUserByEmail"> {
   const adapter = ctx.context.internalAdapter;
@@ -60,4 +62,29 @@ export async function finishPendingVerification(ctx: HookContext): Promise<void>
   if (link?.email === user.email.toLowerCase() && link.updateTo === undefined) {
     await ctx.context.internalAdapter.updateUserByEmail(user.email, { emailVerified: true });
   }
+}
+
+/**
+ * /sign-in/email before hook: the browser holding this account's link signs in with its password.
+ * The link proves the mailbox and the password proves the account's own way in; shown together in
+ * one browser they verify the address, and the sign-in that follows then finds it verified. Whoever
+ * set the password (maybe an attacker) cannot get the cookie, and whoever opened the link (the
+ * mailbox owner) does not know the password. Never throws and never clears the cookie
+ * (`finishPendingVerification` does): any miss leaves the sign-in to answer as it would anyway.
+ */
+export async function proveHeldVerification(ctx: HookContext): Promise<void> {
+  const token = ctx.getCookie(PENDING_VERIFICATION_COOKIE);
+  const body: { email?: unknown; password?: unknown } | undefined = ctx.body;
+  if (!token || typeof body?.email !== "string" || typeof body.password !== "string") return;
+  const email = body.email.trim().toLowerCase();
+  const link = await verifyJWT<{ email?: unknown; updateTo?: unknown }>(token, ctx.context.secret);
+  if (link?.email !== email || link.updateTo !== undefined) return;
+  const { internalAdapter, password } = ctx.context;
+  const found = await internalAdapter.findUserByEmail(email, { includeAccounts: true });
+  if (!found || found.user.emailVerified) return;
+  const hash = found.accounts.find(
+    (account) => account.providerId === "credential" && account.accountId === found.user.id,
+  )?.password;
+  if (!hash || !(await password.verify({ hash, password: body.password }))) return;
+  await internalAdapter.updateUserByEmail(email, { emailVerified: true });
 }

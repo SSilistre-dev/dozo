@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # `make canli`: the safe live smoke run against CANLI_URL (no default, so it never reaches the live
-# site by accident). It opens a throwaway account, walks read-only steps limited to that account,
-# deletes it in a finally step and proves it is gone. No payment, no ban, no admin action. With
+# site by accident). It signs in to the owner's standing, pre-verified trial account (its address and
+# password in a file outside the repository, DOZO_CANLI_ACCOUNT_FILE, default
+# $HOME/.config/dozo/canli-hesap.json, {"email": "...", "password": "..."}) and walks read-only steps
+# limited to that account. The account is never deleted. Without the file the account steps are
+# skipped and the report says where it goes. No payment, no ban, no admin action. With
 # DOZO_CANLI_ADMIN_EMAIL and DOZO_CANLI_ADMIN_PASSWORD in the environment it also walks the admin
 # pages read only; the two are passed to the container by name and never written anywhere.
 # Output: dozo/.stage/canli/ (RAPOR.md, rapor.html, shots/, results.json). Last line:
@@ -36,6 +39,20 @@ VERSION="$(sed -n 's/.*"@playwright\/test": "\([0-9.]*\)".*/\1/p' "$REPO/apps/we
 [ -n "$VERSION" ] || { say "cannot read the pinned Playwright version"; verdict; }
 IMAGE="mcr.microsoft.com/playwright:v${VERSION}-noble"
 
+# The trial account's file: mounted read-only when it exists, never read here, never printed. Only
+# its place and its mode are said.
+ACCOUNT_FILE="${DOZO_CANLI_ACCOUNT_FILE:-${HOME:-}/.config/dozo/canli-hesap.json}"
+SHOWN_ACCOUNT_FILE="$ACCOUNT_FILE"; [ -n "${HOME:-}" ] && SHOWN_ACCOUNT_FILE="${ACCOUNT_FILE/#$HOME/\~}"
+ACCOUNT=(-e "CANLI_ACCOUNT_HOST_PATH=$SHOWN_ACCOUNT_FILE")
+if [ -f "$ACCOUNT_FILE" ]; then
+  mode="$(stat -c %a "$ACCOUNT_FILE" 2>/dev/null || stat -f %Lp "$ACCOUNT_FILE" 2>/dev/null || echo ?)"
+  [ "$mode" = 600 ] || say "WARNING: $SHOWN_ACCOUNT_FILE has mode $mode; it holds a password, make it 0600 (chmod 600)"
+  ACCOUNT+=(-v "$ACCOUNT_FILE:/run/canli-hesap.json:ro" -e CANLI_ACCOUNT_FILE=/run/canli-hesap.json)
+  ACCOUNT_SAYS="deneme hesabı: var ($SHOWN_ACCOUNT_FILE)"
+else
+  ACCOUNT_SAYS="deneme hesabı: yok ($SHOWN_ACCOUNT_FILE); hesap senaryoları atlanacak"
+fi
+
 mkdir -p "$OUT"
 find "$OUT" -mindepth 1 -delete
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
@@ -49,13 +66,13 @@ CACHE=(-v "dozo-e2e-npm:/npm" -e npm_config_cache=/npm/cache)
 
 # Linux: the host's network, so a CANLI_URL on this machine (a local stack) is reachable too.
 NET=(); [ "$(uname -s)" = Linux ] && NET=(--network host)
-say "target $CANLI_URL, admin pages: $([ -n "${DOZO_CANLI_ADMIN_EMAIL:-}" ] && echo on || echo off)"
+say "target $CANLI_URL, $ACCOUNT_SAYS, admin pages: $([ -n "${DOZO_CANLI_ADMIN_EMAIL:-}" ] && echo on || echo off)"
 # -e NAME without a value: docker copies it from this environment, so no secret is on a command line.
 # shellcheck disable=SC2016
 docker run --init --rm --name "$NAME" --cpus "${DOZO_E2E_CPUS:-3}" --memory "${DOZO_E2E_MEMORY:-6g}" \
   --ipc=host --user "$(id -u):$(id -g)" "${NET[@]}" \
   -e HOME=/tmp -e CANLI_URL -e DOZO_CANLI_ADMIN_EMAIL -e DOZO_CANLI_ADMIN_PASSWORD \
-  -e DOZO_E2E_OUT=/out -e VERSION="$VERSION" \
+  -e DOZO_E2E_OUT=/out -e VERSION="$VERSION" "${ACCOUNT[@]}" \
   -v "$HERE:/suite:ro" -v "$OUT:/out" ${CACHE[@]+"${CACHE[@]}"} \
   "$IMAGE" bash -c '
     set -e
@@ -75,8 +92,8 @@ docker run --init --rm --name "$NAME" --cpus "${DOZO_E2E_CPUS:-3}" --memory "${D
     npx playwright test -c canli/playwright.config.ts
   ' &
 wait $!; rc=$?
-# The probe's password and session are only needed while the run lasts.
-rm -f "$OUT/probe.json" "$OUT/probe-state.json"
+# The trial account's session is only needed while the run lasts (its password is never written).
+rm -f "$OUT/probe-state.json"
 line="$(cat "$OUT/verdict.txt" 2>/dev/null || true)"
 [ -n "$line" ] || line="CANLI: FAIL (0 senaryo)"
 say "report: $OUT/RAPOR.md, $OUT/rapor.html"

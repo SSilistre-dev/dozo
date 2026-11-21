@@ -1,31 +1,28 @@
-import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { request } from "@playwright/test";
+import { rmSync, writeFileSync } from "node:fs";
 import { outDir } from "../scan";
-import { deleteProbe, readProbe, STATE_FILE, saveProbe } from "./live";
+import { loadAccount } from "./account-file";
+import { STATE_FILE } from "./live";
 
 /**
- * The live run's finally step (global teardown): an account the run opened never stays, whatever
- * failed. What it did goes to cleanup.json, the report's "Temizlik" line.
+ * The live run's finally step (global teardown). The trial account is permanent and is never
+ * deleted: the run only forgets its own session file. What it did goes to cleanup.json, the
+ * report's "Temizlik" line, with whether an account file was there at all.
  */
 export default async function cleanup() {
-  const probe = readProbe();
-  const file = `${outDir()}/cleanup.json`;
-  if (!probe) return writeFileSync(file, JSON.stringify({ account: "none was created" }));
-  if (probe.deleted)
-    return writeFileSync(file, JSON.stringify({ account: "deleted by its scenario" }));
-  const context = await request.newContext({
-    baseURL: process.env.CANLI_URL,
-    storageState: existsSync(STATE_FILE()) ? STATE_FILE() : undefined,
-  });
+  rmSync(STATE_FILE(), { force: true });
+  let used = false;
   try {
-    const seen = await deleteProbe(context, probe);
-    saveProbe({ ...probe, deleted: true });
-    writeFileSync(file, JSON.stringify({ account: `deleted in the finally step: ${seen}` }));
-  } catch (error) {
-    writeFileSync(file, JSON.stringify({ account: `NOT deleted: ${String(error)}` }));
-    throw error;
-  } finally {
-    await context.dispose();
-    rmSync(STATE_FILE(), { force: true });
+    used = loadAccount(process.env).kind === "ok";
+  } catch {
+    // A broken file already failed the scenarios that read it; the teardown only reports.
   }
+  writeFileSync(
+    `${outDir()}/cleanup.json`,
+    JSON.stringify({
+      accountFile: used,
+      account: used
+        ? "kalıcı deneme hesabı, silinmedi; oturum dosyası silindi"
+        : "deneme hesabı kullanılmadı; oturum dosyası silindi",
+    }),
+  );
 }

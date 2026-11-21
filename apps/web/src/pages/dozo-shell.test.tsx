@@ -83,7 +83,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
-  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 it("is upstream's shell and asks nothing without a picked plan", async () => {

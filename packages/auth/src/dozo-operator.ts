@@ -3,6 +3,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { APIError } from "better-auth/api";
 
 type Sql = Pick<PrismaClient, "$queryRaw" | "$executeRaw">;
+type Read = Pick<PrismaClient, "$queryRaw">;
 
 const LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
@@ -75,7 +76,7 @@ export function banKeys(email: string): string[] {
 }
 
 /** The entries on the list that refuse any of these addresses. */
-export async function bannedEntries(prisma: Sql, emails: string[]): Promise<Set<string>> {
+export async function bannedEntries(prisma: Read, emails: string[]): Promise<Set<string>> {
   const keys = [...new Set(emails.flatMap(banKeys))];
   if (keys.length === 0) return new Set();
   const rows = await prisma.$queryRaw<{ value: string }[]>`
@@ -83,7 +84,7 @@ export async function bannedEntries(prisma: Sql, emails: string[]): Promise<Set<
   return new Set(rows.map((row) => row.value));
 }
 
-export async function emailBanned(prisma: Sql, email: string): Promise<boolean> {
+export async function emailBanned(prisma: Read, email: string): Promise<boolean> {
   return (await bannedEntries(prisma, [email])).size > 0;
 }
 

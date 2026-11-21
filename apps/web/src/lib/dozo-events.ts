@@ -18,7 +18,7 @@ export function reportUpgradeViewed(dismissible: boolean): void {
 }
 
 /**
- * Reports when this tab opened the sign-up form, once, for the account now signed in. The server
+ * Reports when this browser opened the sign-up form (within the hour, in any tab), once, for the account now signed in. The server
  * drops it unless the account was made within the hour after.
  */
 export function reportSignupStarted(): void {
