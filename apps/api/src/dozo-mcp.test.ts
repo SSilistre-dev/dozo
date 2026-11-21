@@ -33,6 +33,7 @@ vi.mock("./dozo-bot-api.js", () => ({
   dozoBotApiDeps: spies.botApiDeps,
   DOZO_BOT_API_REQUESTS_PER_MINUTE: 60,
   DOZO_BOT_API_SENDS_PER_MINUTE: 20,
+  DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE: 10,
 }));
 
 const ORIGIN = "https://app.dozo.test";
@@ -200,12 +201,17 @@ describe("the MCP endpoint's HTTP layer", () => {
     await expect(context.stillAuthorized()).resolves.toBe(false);
   });
 
-  it("counts a send in the account's message budget, shared with the Bot API", async () => {
+  it("counts a send in the token's and the account's message budgets, shared with the Bot API", async () => {
     const { hono, take } = app();
     await hono.request(post(bearer()));
     const ops = spies.handle.mock.calls[0]?.[1] as DozoMcpOperations;
     findBot.mockResolvedValue({ id: "bot-1" });
     take.mockResolvedValueOnce(false);
+    await expect(ops.sendMessage("bot-1", "hi", AbortSignal.abort())).rejects.toThrow(
+      "Too many messages. Wait a minute.",
+    );
+    expect(take).toHaveBeenLastCalledWith("sends:token:tok-1", 10);
+    take.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     await expect(ops.sendMessage("bot-1", "hi", AbortSignal.abort())).rejects.toThrow(
       "Too many messages. Wait a minute.",
     );

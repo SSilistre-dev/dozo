@@ -16,6 +16,7 @@ import type { DozoBotApiClient, DozoBotApiDeps } from "./dozo-bot-api.js";
 import {
   DOZO_BOT_API_REQUESTS_PER_MINUTE,
   DOZO_BOT_API_SENDS_PER_MINUTE,
+  DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE,
   dozoBotApiDeps,
 } from "./dozo-bot-api.js";
 import { exportChat } from "./dozo-chat-export.js";
@@ -121,7 +122,11 @@ export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
       stillAuthorized: async () => (await deps.authenticate(authorization))?.tokenId === tokenId,
     });
     const operations = dozoMcpOperations(deps.prisma, actor, caller.botId, client, async () => {
-      if (!(await deps.take(`sends:${actor.userId}`, DOZO_BOT_API_SENDS_PER_MINUTE)))
+      // The same two budgets as a Bot API send: this token's share, and the account's total.
+      if (
+        !(await deps.take(`sends:token:${tokenId}`, DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE)) ||
+        !(await deps.take(`sends:${actor.userId}`, DOZO_BOT_API_SENDS_PER_MINUTE))
+      )
         throw new ClientError("TOO_MANY_REQUESTS", "Too many messages. Wait a minute.");
     });
     getLogger().info("dozo.mcp.request", { "token.id": tokenId, "user.id": actor.userId });
