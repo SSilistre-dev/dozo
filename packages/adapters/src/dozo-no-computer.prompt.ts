@@ -37,7 +37,7 @@ export function noCloudComputerInstruction(options: {
     return `You have no computer of your own in this run: ${why}. For work that needs a computer, use the user's computer.${web}`;
   const fix =
     options.reason === "payment"
-      ? "whoever manages billing can update the payment"
+      ? `the user can connect their own computer (${CONNECT_OWN_COMPUTER}), or whoever manages billing can update the payment`
       : options.reason === "plan"
         ? `the user can connect their own computer: ${CONNECT_OWN_COMPUTER}`
         : `the user can connect their own computer (${CONNECT_OWN_COMPUTER}), or get more computer hours`;

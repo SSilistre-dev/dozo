@@ -368,6 +368,7 @@ describe("plans that pay for a computer keep it", () => {
     for (const name of CLOUD_COMPUTER_TOOL_NAMES) expect(overdue.tools).not.toContain(name);
     expect(overdue.instructions).toContain("the plan's payment is overdue");
     expect(overdue.instructions).toContain("whoever manages billing can update the payment");
+    expect(overdue.instructions).toContain(MENU_ITEM);
     expect(overdue.instructions).not.toContain("upgrade the plan");
   });
 });
