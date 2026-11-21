@@ -19,7 +19,9 @@ type MenuAction = {
   id: string;
   title: string;
   state?: string;
-  attributes?: { disabled?: boolean };
+  attributes?: { disabled?: boolean; destructive?: boolean };
+  subactions?: MenuAction[];
+  displayInline?: boolean;
 };
 
 const ui = vi.hoisted(() => ({
@@ -408,42 +410,65 @@ describe("commands on mobile", () => {
 describe("general settings on mobile", () => {
   const checkbox = () => container.querySelector("input")!;
 
+  const NIGHT = { startMinute: 1320, endMinute: 420, days: 127 };
+  const MORNING = { startMinute: 360, endMinute: 600, days: 96 };
+  /** Quiet hours read back as the last save left them. */
+  const saving = () => {
+    answers["dozoQuietHours/set"] = ({ ranges }: { ranges: unknown }) => {
+      answers["dozoQuietHours/get"] = { hours: null, ranges };
+      return { hours: null, ranges };
+    };
+  };
+  const rangeMenu = (title: string) => ui.menus.filter((menu) => menu.title === title).at(-1)!;
+  const sub = (actions: MenuAction[], id: string) =>
+    actions.find((action) => action.id === id)!.subactions!;
+  const dayActions = (menu: { actions: MenuAction[] }) => sub(sub(menu.actions, "days"), "each");
+  const sets = () => calls("dozoQuietHours/set").map(([, input]) => input);
+  const settled = () => settle(() => expect(checkbox().disabled).toBe(false));
+
   it("turns quiet hours on with the night and moves their start and end", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     answers["audit/events"] = new Error("Forbidden");
     await render(<DozoGeneralRows />);
     await settle(() => expect(checkbox().disabled).toBe(false));
     expect(checkbox().checked).toBe(false);
     expect(text()).not.toContain("Activity");
+    expect(text()).not.toContain("Add range");
+    expect(button("Suggest")).toBeDefined();
 
-    answers["dozoQuietHours/set"] = ({ hours }: { hours: unknown }) => ({ hours });
-    answers["dozoQuietHours/get"] = { hours: { startMinute: 1320, endMinute: 420 } };
+    saving();
     await act(async () => checkbox().click());
-    await settle(() => expect(text()).toContain("Quiet hours start10:00 PM"));
-    expect(text()).toContain("Quiet hours end7:00 AM");
-    expect(calls("dozoQuietHours/set")[0]![1]).toEqual({
-      hours: { startMinute: 1320, endMinute: 420 },
-    });
+    await settle(() => expect(text()).toContain("10:00 PM – 7:00 AMEvery day"));
+    expect(sets()[0]).toEqual({ ranges: [NIGHT] });
 
-    const start = ui.menus.filter((menu) => menu.title === "Quiet hours start").at(-1)!;
-    expect(start.actions).toHaveLength(24);
-    expect(start.actions.find((action) => action.state === "on")!.title).toBe("10:00 PM");
-    expect(start.actions.find((action) => action.attributes?.disabled)!.title).toBe("7:00 AM");
-    answers["dozoQuietHours/get"] = { hours: { startMinute: 1380, endMinute: 420 } };
-    await act(async () => start.press("1380"));
-    await settle(() => expect(text()).toContain("Quiet hours start11:00 PM"));
-    expect(calls("dozoQuietHours/set")[1]![1]).toEqual({
-      hours: { startMinute: 1380, endMinute: 420 },
-    });
+    const range = rangeMenu("10:00 PM – 7:00 AM");
+    // One range goes with the switch, not a Remove of its own.
+    expect(range.actions.map((action) => action.id)).toEqual(["start", "end", "days"]);
+    const start = sub(range.actions, "start");
+    expect(start).toHaveLength(24);
+    expect(start.find((action) => action.state === "on")!.title).toBe("10:00 PM");
+    expect(start.find((action) => action.attributes?.disabled)!.title).toBe("7:00 AM");
+    const end = sub(range.actions, "end");
+    expect(end.find((action) => action.attributes?.disabled)!.title).toBe("10:00 PM");
+    await act(async () => range.press("start:1380"));
+    await settle(() => expect(text()).toContain("11:00 PM – 7:00 AM"));
+    expect(sets()[1]).toEqual({ ranges: [{ ...NIGHT, startMinute: 1380 }] });
+    await settled();
+    await act(async () => rangeMenu("11:00 PM – 7:00 AM").press("end:480"));
+    await settle(() => expect(text()).toContain("11:00 PM – 8:00 AM"));
+    expect(sets()[2]).toEqual({ ranges: [{ ...NIGHT, startMinute: 1380, endMinute: 480 }] });
+    expect(calls("dozoQuietHours/suggest")).toHaveLength(0);
   });
 
   it("keeps a start off the hour among the choices, and says when a change fails", async () => {
-    answers["dozoQuietHours/get"] = { hours: { startMinute: 1350, endMinute: 420 } };
+    answers["dozoQuietHours/get"] = {
+      hours: null,
+      ranges: [{ startMinute: 1350, endMinute: 420, days: 127 }],
+    };
     answers["audit/events"] = new Error("Forbidden");
     await render(<DozoGeneralRows />);
     await settle(() => expect(text()).toContain("10:30 PM"));
-    const start = ui.menus.filter((menu) => menu.title === "Quiet hours start").at(-1)!;
-    expect(start.actions).toHaveLength(25);
+    expect(sub(rangeMenu("10:30 PM – 7:00 AM").actions, "start")).toHaveLength(25);
 
     answers["dozoQuietHours/set"] = new Error("Try later");
     await act(async () => checkbox().click());
@@ -452,8 +477,129 @@ describe("general settings on mobile", () => {
     );
   });
 
+  it("adds ranges up to four, removes one while there are more, and turns off", async () => {
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [NIGHT, MORNING, MORNING] };
+    answers["audit/events"] = new Error("Forbidden");
+    await render(<DozoGeneralRows />);
+    await settle(() => expect(text()).toContain("6:00 AM – 10:00 AMWeekends"));
+    expect(rangeMenu("10:00 PM – 7:00 AM").actions.at(-1)).toMatchObject({
+      id: "remove",
+      title: "Remove",
+      attributes: { destructive: true },
+    });
+
+    saving();
+    await act(async () => button("Add range")!.click());
+    await settle(() => expect(button("Add range")).toBeUndefined());
+    expect(sets()[0]).toEqual({ ranges: [NIGHT, MORNING, MORNING, NIGHT] });
+    await settled();
+
+    await act(async () => rangeMenu("6:00 AM – 10:00 AM").press("remove"));
+    await settle(() => expect(button("Add range")).toBeDefined());
+    expect(sets()[1]).toEqual({ ranges: [NIGHT, MORNING, NIGHT] });
+    await settled();
+
+    await act(async () => checkbox().click());
+    await settle(() => expect(checkbox().checked).toBe(false));
+    expect(sets()[2]).toEqual({ ranges: [] });
+    expect(text()).not.toContain("10:00 PM");
+  });
+
+  it("picks the days by name or one by one, never none", async () => {
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [NIGHT] };
+    answers["audit/events"] = new Error("Forbidden");
+    await render(<DozoGeneralRows />);
+    await settle(() => expect(text()).toContain("Every day"));
+    const range = () => rangeMenu("10:00 PM – 7:00 AM");
+    expect(sub(sub(range().actions, "days"), "named")).toMatchObject([
+      { id: "days:ALL", title: "Every day", state: "on" },
+      { id: "days:WEEKDAYS", title: "Weekdays", state: "off" },
+      { id: "days:WEEKEND", title: "Weekends", state: "off" },
+    ]);
+    expect(dayActions(range()).map((day) => [day.title, day.state])).toEqual([
+      ["Monday", "on"],
+      ["Tuesday", "on"],
+      ["Wednesday", "on"],
+      ["Thursday", "on"],
+      ["Friday", "on"],
+      ["Saturday", "on"],
+      ["Sunday", "on"],
+    ]);
+
+    saving();
+    await act(async () => range().press("days:WEEKEND"));
+    await settle(() => expect(text()).toContain("Weekends"));
+    expect(sets()[0]).toEqual({ ranges: [{ ...NIGHT, days: 96 }] });
+    await settled();
+
+    await act(async () => range().press("day:6"));
+    await settle(() => expect(text()).toContain("10:00 PM – 7:00 AMSat"));
+    expect(sets()[1]).toEqual({ ranges: [{ ...NIGHT, days: 32 }] });
+    await settled();
+
+    // The last day left cannot be taken out.
+    expect(dayActions(range())[5]).toMatchObject({ state: "on", attributes: { disabled: true } });
+    await act(async () => range().press("day:5"));
+    await act(() => flush());
+    expect(sets()).toHaveLength(2);
+
+    await act(async () => range().press("day:0"));
+    await settle(() => expect(text()).toContain("Mon, Sat"));
+    expect(sets()[2]).toEqual({ ranges: [{ ...NIGHT, days: 33 }] });
+  });
+
+  it("asks for a suggestion only when pressed, and saves it only when it is used", async () => {
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["dozoQuietHours/suggest"] = { ranges: [NIGHT, MORNING] };
+    await render(<DozoGeneralRows />);
+    await settled();
+    expect(calls("dozoQuietHours/suggest")).toHaveLength(0);
+
+    await act(async () => button("Suggest")!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalled());
+    expect(calls("dozoQuietHours/suggest")).toHaveLength(1);
+    const [title, message, choices] = ui.alert.mock.lastCall! as [
+      string,
+      string,
+      { text: string; style?: string; onPress?: () => void }[],
+    ];
+    expect(title).toBe("Quiet hours");
+    expect(message).toBe("10:00 PM – 7:00 AM, Every day\n6:00 AM – 10:00 AM, Weekends");
+    expect(choices.map((choice) => choice.text)).toEqual(["Cancel", "Use"]);
+    expect(choices[0]!.style).toBe("cancel");
+    expect(calls("dozoQuietHours/set")).toHaveLength(0);
+
+    // Cancel is the alert closing: nothing is saved.
+    choices[0]!.onPress?.();
+    await act(() => flush());
+    expect(calls("dozoQuietHours/set")).toHaveLength(0);
+
+    saving();
+    await act(async () => choices[1]!.onPress!());
+    await settle(() => expect(checkbox().checked).toBe(true));
+    expect(sets()).toEqual([{ ranges: [NIGHT, MORNING] }]);
+    expect(text()).toContain("6:00 AM – 10:00 AMWeekends");
+  });
+
+  it("says in one line when there is too little to suggest from, or the ask fails", async () => {
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
+    answers["audit/events"] = new Error("Forbidden");
+    answers["dozoQuietHours/suggest"] = { ranges: null };
+    await render(<DozoGeneralRows />);
+    await settled();
+    await act(async () => button("Suggest")!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Not enough activity yet."));
+    expect(calls("dozoQuietHours/set")).toHaveLength(0);
+
+    answers["dozoQuietHours/suggest"] = new Error("Offline");
+    await act(async () => button("Suggest")!.click());
+    await settle(() => expect(ui.alert).toHaveBeenCalledWith("Quiet hours", "Offline"));
+    expect(calls("dozoQuietHours/set")).toHaveLength(0);
+  });
+
   it("turns the daily digest on at eight in the first bot's chat, then moves it", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     answers["audit/events"] = new Error("Forbidden");
     answers["bots/list"] = [
       { id: "bot-1", name: "Ada" },
@@ -494,7 +640,7 @@ describe("general settings on mobile", () => {
   });
 
   it("keeps a digest from another Space, and says when a change fails", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     answers["audit/events"] = new Error("Forbidden");
     answers["bots/list"] = [{ id: "bot-1", name: "Ada" }];
     answers["dozoDailyDigest/get"] = { digest: { botId: "bot-9", botName: "Cy", minute: 510 } };
@@ -511,7 +657,7 @@ describe("general settings on mobile", () => {
   });
 
   it("shows no digest switch while this Space has no bot", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     answers["audit/events"] = new Error("Forbidden");
     answers["bots/list"] = [];
     answers["dozoDailyDigest/get"] = { digest: null };
@@ -522,7 +668,7 @@ describe("general settings on mobile", () => {
   });
 
   it("shows no time for a schedule edited in the Routines list", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     answers["audit/events"] = new Error("Forbidden");
     answers["bots/list"] = [{ id: "bot-1", name: "Ada" }];
     answers["dozoDailyDigest/get"] = { digest: { botId: "bot-1", botName: "Ada", minute: null } };
@@ -534,7 +680,7 @@ describe("general settings on mobile", () => {
   });
 
   it("offers Activity to those who may read the log, and lists it a page at a time", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     const event = (id: string, extra = {}) => ({
       id,
       createdAt: "2026-11-20T10:00:00.000Z",
@@ -582,7 +728,7 @@ describe("general settings on mobile", () => {
   });
 
   it("opens Access tokens, and Send feedback only where the server takes feedback", async () => {
-    answers["dozoQuietHours/get"] = { hours: null };
+    answers["dozoQuietHours/get"] = { hours: null, ranges: [] };
     answers["audit/events"] = new Error("Forbidden");
     answers["dozoFeedback/status"] = { mode: null };
     await render(<DozoGeneralRows />);

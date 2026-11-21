@@ -1,7 +1,22 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
-import type { DozoQuietHours } from "@rakazo/contracts";
-import { DOZO_DEFAULT_DIGEST_MINUTE, DOZO_DEFAULT_QUIET_HOURS } from "@rakazo/contracts";
+import type { DozoQuietRange } from "@rakazo/contracts";
+import {
+  DOZO_DEFAULT_DIGEST_MINUTE,
+  DOZO_MAX_QUIET_RANGES,
+  DOZO_QUIET_DAYS,
+} from "@rakazo/contracts";
+import type { DozoQuietDayPreset } from "@rakazo/core";
+import {
+  DOZO_DEFAULT_QUIET_RANGE,
+  DOZO_QUIET_DAY_PRESETS,
+  DOZO_WEEKDAYS,
+  dozoQuietDayList,
+  dozoQuietDayPreset,
+  dozoQuietHasDay,
+  dozoQuietToggleDay,
+  dozoWeekdayName,
+} from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Alert } from "react-native";
@@ -131,7 +146,10 @@ function DozoDailyDigestRows() {
   );
 }
 
-/** Off shows the switch alone; on adds when quiet hours start and end. */
+/**
+ * Off shows the switch alone; on adds one row per range, its start, end and days in its menu, and
+ * Add range while there is room. Suggest asks the server once and saves only what is used.
+ */
 function DozoQuietHoursRows() {
   const { t } = useLingui();
   const colorScheme = useResolvedAppearance();
@@ -139,45 +157,125 @@ function DozoQuietHoursRows() {
   const read = rpcQuery("dozoQuietHours/get");
   const quiet = useQuery({ ...read, refetchOnMount: "always" }, queryClient);
   const save = useSave({
-    save: (hours: DozoQuietHours | null, send) => send("dozoQuietHours/set", { hours }),
+    save: (ranges: DozoQuietRange[], send) => send("dozoQuietHours/set", { ranges }),
     stale: [read.queryKey],
     onFailed: (error) =>
       Alert.alert(t`Couldn't update quiet hours`, errorText(error, t`Try again.`)),
   });
-  const hours = save.pending ? (save.input ?? null) : (quiet.data?.hours ?? null);
+  const ranges = save.pending ? (save.input ?? []) : (quiet.data?.ranges ?? []);
   const time = new Intl.DateTimeFormat(locale, {
     hour: "numeric",
     minute: "2-digit",
     timeZone: "UTC",
   });
   const label = (minute: number) => time.format(new Date(Date.UTC(2000, 0, 1, 0, minute)));
-  const edge = (side: keyof DozoQuietHours, title: string) => {
-    if (!hours) return null;
-    const other = side === "startMinute" ? hours.endMinute : hours.startMinute;
-    const options = HOUR_MINUTES.includes(hours[side])
+  const presetLabel: Record<DozoQuietDayPreset, string> = {
+    ALL: t`Every day`,
+    WEEKDAYS: t`Weekdays`,
+    WEEKEND: t`Weekends`,
+  };
+  const daysLabel = (days: number) => {
+    const preset = dozoQuietDayPreset(days);
+    return preset ? presetLabel[preset] : dozoQuietDayList(days, locale);
+  };
+  const span = (range: DozoQuietRange) => `${label(range.startMinute)} – ${label(range.endMinute)}`;
+  const suggest = useSave({
+    save: (_, send) => send("dozoQuietHours/suggest", undefined),
+    onSaved: ({ ranges: suggested }) => {
+      if (!suggested) return Alert.alert(t`Not enough activity yet.`);
+      Alert.alert(
+        t`Quiet hours`,
+        suggested.map((range) => `${span(range)}, ${daysLabel(range.days)}`).join("\n"),
+        [
+          { text: t`Cancel`, style: "cancel" },
+          { text: t`Use`, onPress: () => save.run(suggested) },
+        ],
+      );
+    },
+    onFailed: (error) => Alert.alert(t`Quiet hours`, errorText(error, t`Try again.`)),
+  });
+
+  const edgeActions = (range: DozoQuietRange, edge: "startMinute" | "endMinute") => {
+    const other = edge === "startMinute" ? range.endMinute : range.startMinute;
+    const options = HOUR_MINUTES.includes(range[edge])
       ? HOUR_MINUTES
-      : [...HOUR_MINUTES, hours[side]].sort((a, b) => a - b);
+      : [...HOUR_MINUTES, range[edge]].sort((a, b) => a - b);
+    return options.map((minute) => ({
+      id: `${edge === "startMinute" ? "start" : "end"}:${minute}`,
+      title: label(minute),
+      state: minute === range[edge] ? ("on" as const) : ("off" as const),
+      attributes: { disabled: minute === other },
+    }));
+  };
+  const rangeRow = (range: DozoQuietRange, index: number) => {
+    const change = (next: DozoQuietRange) =>
+      save.run(ranges.map((entry, at) => (at === index ? next : entry)));
+    const onPressAction = ({ nativeEvent }: { nativeEvent: { event: string } }) => {
+      const [kind, value] = nativeEvent.event.split(":");
+      if (kind === "start") change({ ...range, startMinute: Number(value) });
+      else if (kind === "end") change({ ...range, endMinute: Number(value) });
+      else if (kind === "days")
+        change({ ...range, days: DOZO_QUIET_DAYS[value as DozoQuietDayPreset] });
+      else if (kind === "day") {
+        const days = dozoQuietToggleDay(range.days, Number(value));
+        if (days !== range.days) change({ ...range, days });
+      } else if (kind === "remove") save.run(ranges.filter((_, at) => at !== index));
+    };
+    const title = span(range);
     return (
       <MenuView
-        key={side}
+        // Ranges have no id of their own; a row is its place in the list.
+        key={index}
         title={title}
         colorScheme={colorScheme}
-        actions={options.map((minute) => ({
-          id: String(minute),
-          title: label(minute),
-          state: minute === hours[side] ? ("on" as const) : ("off" as const),
-          attributes: { disabled: minute === other },
-        }))}
-        onPressAction={({ nativeEvent }) =>
-          save.run({ ...hours, [side]: Number(nativeEvent.event) })
-        }
+        actions={[
+          {
+            id: "start",
+            title: t`Quiet hours start`,
+            subactions: edgeActions(range, "startMinute"),
+          },
+          { id: "end", title: t`Quiet hours end`, subactions: edgeActions(range, "endMinute") },
+          {
+            id: "days",
+            title: t`Days`,
+            subactions: [
+              {
+                id: "named",
+                title: "",
+                displayInline: true,
+                subactions: DOZO_QUIET_DAY_PRESETS.map((preset) => ({
+                  id: `days:${preset}`,
+                  title: presetLabel[preset],
+                  state:
+                    DOZO_QUIET_DAYS[preset] === range.days ? ("on" as const) : ("off" as const),
+                })),
+              },
+              {
+                id: "each",
+                title: "",
+                displayInline: true,
+                subactions: DOZO_WEEKDAYS.map((day) => ({
+                  id: `day:${day}`,
+                  title: dozoWeekdayName(day, locale, "long"),
+                  state: dozoQuietHasDay(range.days, day) ? ("on" as const) : ("off" as const),
+                  // The only day left stays: a range is on at least one day.
+                  attributes: { disabled: dozoQuietToggleDay(range.days, day) === range.days },
+                })),
+              },
+            ],
+          },
+          ...(ranges.length > 1
+            ? [{ id: "remove", title: t`Remove`, attributes: { destructive: true } }]
+            : []),
+        ]}
+        onPressAction={onPressAction}
       >
         <SettingsRow
           accessible
           accessibilityRole="button"
           dimmed={save.pending}
           title={title}
-          value={label(hours[side])}
+          value={daysLabel(range.days)}
         />
       </MenuView>
     );
@@ -186,12 +284,27 @@ function DozoQuietHoursRows() {
     <SettingsGroup>
       <SettingsSwitch
         label={t`Quiet hours`}
-        value={hours !== null}
+        value={ranges.length > 0}
         disabled={!quiet.data || save.pending}
-        onChange={(on) => save.run(on ? DOZO_DEFAULT_QUIET_HOURS : null)}
+        onChange={(on) => save.run(on ? [DOZO_DEFAULT_QUIET_RANGE] : [])}
       />
-      {edge("startMinute", t`Quiet hours start`)}
-      {edge("endMinute", t`Quiet hours end`)}
+      {ranges.map(rangeRow)}
+      {ranges.length > 0 && ranges.length < DOZO_MAX_QUIET_RANGES ? (
+        <SettingsRow
+          accessibilityRole="button"
+          dimmed={save.pending}
+          onPress={() => save.run([...ranges, DOZO_DEFAULT_QUIET_RANGE])}
+          title={t`Add range`}
+        />
+      ) : null}
+      {quiet.data ? (
+        <SettingsRow
+          accessibilityRole="button"
+          dimmed={suggest.pending}
+          onPress={() => suggest.run()}
+          title={t`Suggest`}
+        />
+      ) : null}
     </SettingsGroup>
   );
 }
