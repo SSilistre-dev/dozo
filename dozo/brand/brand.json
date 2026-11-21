@@ -6630,6 +6630,21 @@
       "reason": "chat math: dollars that are prices, not math delimiters, stay text; same length, so parser offsets still match the source"
     },
     {
+      "file": "packages/chat-ui/src/markdown.native.tsx",
+      "find": "import { Text, View } from \"react-native\";\nimport type { ChatMarkdownProps }",
+      "replace": "import { Text, View } from \"react-native\";\nimport { mathAsCode } from \"./dozo-markdown-math.native\";\nimport type { ChatMarkdownProps }",
+      "reason": "chat math on mobile: import of the fork's rule that shows TeX as code",
+      "requires": [
+        "packages/chat-ui/src/dozo-markdown-math.native.ts"
+      ]
+    },
+    {
+      "file": "packages/chat-ui/src/markdown.native.tsx",
+      "find": "markTaskListItems(markdownParser);\n\n/** A node's place",
+      "replace": "markTaskListItems(markdownParser);\nmathAsCode(markdownParser);\n\n/** A node's place",
+      "reason": "chat math on mobile: the app draws no formulas, so $…$ and $$…$$ show as code, not as raw delimiters Markdown mangles"
+    },
+    {
       "file": "packages/db/src/index.ts",
       "find": "export * from \"./account-status.js\";\nexport * from \"./approval-settings.js\";\n",
       "replace": "export * from \"./account-status.js\";\nexport * from \"./dozo-access-tokens.js\";\nexport * from \"./approval-settings.js\";\n",
