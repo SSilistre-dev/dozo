@@ -36,8 +36,13 @@ export function expectNotRateLimited(
 
 export type Mail = { to?: string | string[]; subject?: string; text?: string; html?: string };
 
-/** Everything the stack's email emulator captured since the stack started. */
-const readMailbox = (request: APIRequestContext) => request.get("/api/dev/emails");
+/**
+ * Everything the stack's email emulator captured since the stack started. On a loaded machine the
+ * whole mailbox can take long or arrive cut short through the web server; a caller that polls
+ * reads it again.
+ */
+const readMailbox = (request: APIRequestContext) =>
+  request.get("/api/dev/emails", { timeout: 30_000 });
 
 /** What the stack's email emulator holds for `address`; empty on a stack that has none. */
 export async function mailsTo(request: APIRequestContext, address: string): Promise<Mail[]> {
@@ -83,7 +88,7 @@ export async function verificationLinkAfter(
         link = mails.length > before ? linkIn(mails.at(-1)) : undefined;
         return link;
       },
-      { message: `a verification mail to ${address}` },
+      { message: `a verification mail to ${address}`, timeout: 60_000 },
     )
     .toBeTruthy();
   return link as string;

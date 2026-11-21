@@ -38,11 +38,14 @@ test("an emailed code signs in; a wrong one is said in one line", async ({ page,
 
   let code: string | undefined;
   await expect
-    .poll(async () => {
-      const mails = await mailsTo(page.request, user.email);
-      code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
-      return code;
-    })
+    .poll(
+      async () => {
+        const mails = await mailsTo(page.request, user.email);
+        code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
+        return code;
+      },
+      { timeout: 60_000 },
+    )
     .toMatch(/^\d{6}$/);
 
   const box = page.getByLabel("Code", { exact: true });

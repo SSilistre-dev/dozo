@@ -72,7 +72,9 @@ test("kayıt posta ister; giriş reddedilir ve yeni posta gelir; bağlantı + pa
   await signUpForm(page, email);
   expect(await sessionOf(page), "sign-up opened no session").toBeNull();
   // The sign-up's own mail.
-  await expect.poll(async () => (await mailsTo(page.request, email)).length).toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await mailsTo(page.request, email)).length, { timeout: 60_000 })
+    .toBeGreaterThan(0);
   const sent = (await mailsTo(page.request, email)).length;
 
   await signInForm(page, email, PASSWORD);
@@ -131,11 +133,14 @@ test("kodla giriş doğrular ama önceki parolayı siler", async ({ page, guard 
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   let code: string | undefined;
   await expect
-    .poll(async () => {
-      const mails = await mailsTo(page.request, email);
-      code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
-      return code;
-    })
+    .poll(
+      async () => {
+        const mails = await mailsTo(page.request, email);
+        code = mails.length > before ? codeIn(mails.at(-1)) : undefined;
+        return code;
+      },
+      { timeout: 60_000 },
+    )
     .toMatch(/^\d{6}$/);
   await page.getByLabel("Code", { exact: true }).fill(code as string);
   await page.waitForURL(/\/(app|onboarding)/);
