@@ -49,6 +49,27 @@ describe("media usage", () => {
     ]);
   });
 
+  it("records a picture drawn for an avatar with no run and no bot", async () => {
+    const db = usageDatabase();
+    await dozoRecordMediaUsage(
+      db as unknown as PrismaClient,
+      { userId: "owner", spaceId: "space" },
+      "avatar_image",
+      "avatar:one",
+    );
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0]).toMatchObject({
+      provider: DOZO_MEDIA_USAGE_PROVIDER,
+      model: "avatar_image",
+      callId: "media:avatar:one",
+      spaceId: "space",
+      userId: "owner",
+      botId: undefined,
+      runId: undefined,
+      parentRunId: undefined,
+    });
+  });
+
   it("never fails the delivered media when the record cannot be written", async () => {
     const broken = {
       $transaction: async () => {

@@ -653,6 +653,24 @@ Accepted by the owner for now, stated here once:
   mobile app, or a data image a bot passes to `update_bot`, is kept only when its first bytes are
   the PNG, JPEG, GIF or WebP its header names, and it is stored as the server's own 256 px WebP
   re-encoding. Values already stored, imported bots and exports are not re-checked.
+- Avatars from a description (`apps/api/src/dozo-avatar-generate.ts`, procedures
+  `dozoAvatarGenerate.status` and `.generate`): the deployment's image service draws a square
+  picture, which goes through the same checks and 256 px WebP re-encoding as an upload and comes back
+  as a data image; nothing is saved until the person saves it as an avatar. It is offered only when
+  the server has an image service that draws images and, on a server that bills, only to an
+  organization that pays (Free is refused, as a bot's own image tool is). Each picture leaves one
+  usage record (provider `media`, model `avatar_image`, no run or bot, cost unknown), recorded as
+  soon as the service returns one, usable or not; a caller who leaves or the 2-minute deadline stops
+  the call first and records nothing. The limit is 20 a day per person and Space, counted from those
+  records, and one picture at a time per person, held by a lease, so two at once cannot both pass
+  the count or be billed twice. The description is never logged or kept. The count is per Space,
+  not across a person's Spaces.
+  On web and desktop it is a third tab, Generate, in the Avatar Studio beside Bot and Upload
+  (`dozo-avatar-generate.tsx`); on mobile it is a field and Generate under the shapes in a bot's
+  avatar sheet (`apps/mobile/components/dozo-avatar-generate.tsx`). Both draw one picture, show it
+  with Use and Try again, and offer nothing unless `status` says it is available (a spent daily
+  allowance hides it too). Web cancels the request when the tab or studio closes; mobile cannot
+  (a save's `send` has no abort signal), so it drops the answer and the picture is still counted.
 - Daily digest (Settings > General, web and mobile; off by default;
   `packages/adapters/src/dozo-daily-digest.ts`): a routine on the chosen bot that, at the chosen
   hour in the account's timezone, writes one message in that bot's chat from saved data, with no

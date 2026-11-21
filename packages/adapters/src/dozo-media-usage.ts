@@ -9,12 +9,13 @@ export const DOZO_MEDIA_USAGE_PROVIDER = "media";
  * One usage record per generated image or video, once it is stored and shown, so generations
  * appear in usage beside model calls. The media service reports no price, so the cost stays
  * unknown rather than guessed. The record is keyed by the generation, so a repeated delivery
- * records it once; a failed write only loses the record, never the delivered media.
+ * records it once; a failed write only loses the record, never the delivered media. A picture
+ * drawn for an avatar belongs to no run or bot (`avatar_image`), so those two may be absent.
  */
 export async function dozoRecordMediaUsage(
   prisma: Pick<PrismaClient, "$transaction">,
-  run: { id: string; botId: string; userId: string; spaceId: string },
-  tool: "generate_image" | "generate_video",
+  run: { id?: string; botId?: string; userId: string; spaceId: string },
+  tool: "generate_image" | "generate_video" | "avatar_image",
   generationId: string,
 ): Promise<void> {
   const callId = `media:${generationId}`;
@@ -35,8 +36,8 @@ export async function dozoRecordMediaUsage(
       {
         spaceId: run.spaceId,
         userId: run.userId,
-        botId: run.botId,
-        runId: run.id,
+        ...(run.botId ? { botId: run.botId } : {}),
+        ...(run.id ? { runId: run.id } : {}),
         operationId: callId,
       },
     ),
