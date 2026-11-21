@@ -5167,6 +5167,12 @@
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
+      "find": "or network. cwd defaults to their home folder",
+      "replace": "or network. Send one simple command per call, with no ; && || redirections, variables or subshells: a plain read-only command, or read-only commands joined by |, runs without asking, anything else asks. Use the platform you have learned instead of an a || b fallback. cwd defaults to their home folder",
+      "reason": "command approval: the bot is told to send one plain command per call, so read-only commands run without asking"
+    },
+    {
+      "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "the workspace root on a Private Computer.",
       "replace": "the workspace root on its Own computer.",
       "reason": "one name for a bot's own computer: the bot reads the setting's name, as the person sees it"
@@ -7536,6 +7542,60 @@
         "packages/adapters/src/dozo-media-usage.ts"
       ],
       "reason": "media usage: every generated image or video leaves one usage record, so generations show in usage; upstream recorded none"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
+      "replace": "      // The Dozo desktop has no screen driver yet: no connected computer is offered the screen\n      // tools until devices declare screen control.\n      userComputerScreen = false;\n",
+      "reason": "screen control: the Dozo desktop answers every screen request with a refusal, so offering the tools by platform sent the user an approval card that ended nowhere and the bot promised browsing it could not do"
+    },
+    {
+      "file": "packages/adapters/src/run-instructions.prompt.ts",
+      "find": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
+      "replace": "import { MODEL_CANNOT_SEE_MESSAGE } from \"./model-vision.prompt.js\";\nimport { COMPUTER_WITHOUT_SCREEN_INSTRUCTION } from \"./dozo-device-screen.prompt.js\";\nimport { replyGuidanceForOfferedTools } from \"./run-replies.prompt.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-screen.prompt.ts"
+      ],
+      "reason": "screen control: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-instructions.prompt.ts",
+      "find": "    userComputerInstruction(parts.userComputer),\n    parts.groupContext,\n",
+      "replace": "    userComputerInstruction(parts.userComputer),\n    parts.userComputer === \"connected\" ? COMPUTER_WITHOUT_SCREEN_INSTRUCTION : undefined,\n    parts.groupContext,\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-screen.prompt.ts"
+      ],
+      "reason": "screen control: a connected computer only runs commands, so the bot must not promise to browse or sign in with the user"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-user-computer.ts",
+      "find": "import { nativeShellCommandArgv } from \"./native-shell.js\";\nimport type { RunContext } from \"./run-context.js\";\n",
+      "replace": "import { nativeShellCommandArgv } from \"./native-shell.js\";\nimport { screenFailureMessage } from \"./dozo-device-screen.js\";\nimport type { RunContext } from \"./run-context.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-screen.ts"
+      ],
+      "reason": "screen control: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-user-computer.ts",
+      "find": "    return call.finish({ error: `The user's computer did not finish: ${reason}` });\n",
+      "replace": "    return call.finish({ error: screenFailureMessage(reason) });\n",
+      "requires": [
+        "packages/adapters/src/dozo-device-screen.ts"
+      ],
+      "reason": "screen control: when the Dozo desktop refuses a screen request the bot is told plainly that no permission turns screen control on, instead of a bare refusal it filled in with a permissions story"
+    },
+    {
+      "file": "packages/adapters/src/executor-readonly-approval.test.ts",
+      "find": "  it(\"is offered only with a connected Mac or Windows PC\", async () => {\n    for (const platform of [\"darwin\", \"win32\"]) {\n      const connected = fixture({ ...ownRun, userDevices: devices(platform).gateway });\n      await connected.run();\n      expect(connected.offeredTools()).toEqual(\n        expect.arrayContaining([\"user_computer_observe\", \"user_computer_act\"]),\n      );\n    }\n",
+      "replace": "  it(\"is offered to no connected computer: the Dozo desktop has no screen driver yet\", async () => {\n    for (const platform of [\"darwin\", \"win32\"]) {\n      const connected = fixture({ ...ownRun, userDevices: devices(platform).gateway });\n      await connected.run();\n      expect(connected.offeredTools()).toContain(\"user_computer_shell\");\n      expect(connected.offeredTools()).not.toContain(\"user_computer_observe\");\n      expect(connected.offeredTools()).not.toContain(\"user_computer_act\");\n    }\n",
+      "reason": "screen control: the server no longer offers the screen tools to a paired Mac or Windows computer, so the test asserts that instead of upstream's platform rule"
+    },
+    {
+      "file": "packages/adapters/src/executor-readonly-approval.test.ts",
+      "find": "    const f = fixture({ ...ownRun, userDevices: devices(\"win32\", true).gateway });\n    await f.run();\n    expect(f.offeredTools()).toEqual(\n      expect.arrayContaining([\"user_computer_observe\", \"user_computer_act\"]),\n    );\n",
+      "replace": "    const f = fixture({ ...ownRun, userDevices: devices(\"win32\", true).gateway });\n    await f.run();\n    expect(f.offeredTools()).not.toContain(\"user_computer_observe\");\n",
+      "reason": "screen control: no connected computer is offered the screen tools, whichever way it is connected"
     },
     {
       "file": "apps/web/src/pages/shell/use-composer-actions.ts",
