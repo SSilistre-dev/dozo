@@ -2,6 +2,7 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatchState } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import { dozoMeetingPrepRefusal } from "./dozo-meeting-prep-guard.js";
 import { DOZO_ROUTINE_CATCH_UP_MS } from "./dozo-quiet-hours.js";
 import { DOZO_WAIT_CHANGED_NOTE, dozoWaitTimedOutNote } from "./dozo-wait.prompt.js";
 import { DOZO_WAIT_MAX_MINUTES, DOZO_WAIT_MIN_MINUTES } from "./dozo-wait.tool-definition.js";
@@ -78,13 +79,21 @@ export async function dozoWaitRefusal(
   return waitRefusal(prisma, input.botId, input.watch);
 }
 
-/** schedule_create, which becomes a one-time wait when the call gives `waitMinutes`. */
+/**
+ * schedule_create, which becomes a one-time wait when the call gives `waitMinutes`, and which
+ * holds a meeting prep reminder to its shape (dozo-meeting-prep-guard.ts).
+ */
 export async function dozoCreateSchedule(
   create: CreateSchedule,
   rawMinutes: unknown,
   deps: CreateDeps,
   input: CreateInput,
 ) {
+  const guarded = await dozoMeetingPrepRefusal(deps.prisma, {
+    ...input,
+    botId: input.target?.botId ?? input.botId,
+  });
+  if (guarded) return { error: guarded };
   const minutes = readWaitMinutes(rawMinutes);
   if (minutes === undefined) return create(deps, input);
   if (typeof minutes === "string") return { error: minutes };

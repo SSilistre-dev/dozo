@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
@@ -52,4 +54,15 @@ it("speaks Turkish with the catalog the build ships", () => {
   expect(copy.name).toBe("Toplantı hazırlığı");
   expect(copy.summary).not.toBe(findBotTemplate("meeting-prep")!.summary);
   expect(copy.sample).not.toBe(findBotTemplate("meeting-prep")!.sample);
+});
+
+it("carries the same strings as the mobile copy", () => {
+  const strings = (url: URL) =>
+    [...readFileSync(fileURLToPath(url), "utf8").matchAll(/t`([^`]*)`/g)].map((match) => match[1]);
+  const web = strings(new URL("./dozo-meeting-prep-copy.ts", import.meta.url));
+  const mobile = strings(
+    new URL("../../../../mobile/lib/dozo-meeting-prep-copy.ts", import.meta.url),
+  );
+  expect(web).toHaveLength(3);
+  expect(mobile).toEqual(web);
 });

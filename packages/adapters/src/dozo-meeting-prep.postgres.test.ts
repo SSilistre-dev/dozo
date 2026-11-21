@@ -9,6 +9,7 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { dozoCreateSchedule } from "./dozo-wait.js";
 import type { ScheduleToolDeps } from "./schedule-tools.js";
 import { createScheduleFromTool, listSchedulesFromTool } from "./schedule-tools.js";
 
@@ -116,7 +117,7 @@ describePostgres("meeting prep with a fake calendar (PostgreSQL)", () => {
         const runAt = new Date(event.start.getTime() - 15 * MINUTE);
         if (runAt <= now) continue;
         results.push(
-          await createScheduleFromTool(deps, {
+          await dozoCreateSchedule(createScheduleFromTool, undefined, deps, {
             ...actor(),
             name,
             prompt: `Write the prep note for calendar event ${event.id}, which starts at ${event.start.toISOString()}, with the Meeting prep skill.`,
@@ -201,14 +202,30 @@ describePostgres("meeting prep with a fake calendar (PostgreSQL)", () => {
     // Planning again, or the tool itself, never adds a second reminder for the same meeting.
     expect(await plan(calendar, now)).toEqual([]);
     const again = await runAsTenant(owner, () =>
-      createScheduleFromTool(deps, {
+      dozoCreateSchedule(createScheduleFromTool, undefined, deps, {
         ...actor(),
         name: `${DOZO_MEETING_PREP_REMINDER} evt-review`,
-        prompt: "again",
+        prompt: `Write the prep note for calendar event evt-review, which starts at ${at(2).toISOString()}, with the Meeting prep skill.`,
         timezone: "UTC",
         schedule: { runAt: at(2).toISOString() },
       }),
     );
     expect(again).toHaveProperty("error");
+  });
+
+  it("refuses a reminder that carries calendar text, and saves nothing for it", async () => {
+    const before = await runAsTenant(owner, () => listSchedulesFromTool(deps, actor()));
+    const refused = await runAsTenant(owner, () =>
+      dozoCreateSchedule(createScheduleFromTool, undefined, deps, {
+        ...actor(),
+        name: `${DOZO_MEETING_PREP_REMINDER} evt-new`,
+        prompt: `Prep for "${INJECTION}"`,
+        timezone: "UTC",
+        schedule: { runAt: new Date(Date.now() + 3 * HOUR).toISOString() },
+      }),
+    );
+    expect(refused).toHaveProperty("error");
+    const after = await runAsTenant(owner, () => listSchedulesFromTool(deps, actor()));
+    expect(after.routines).toHaveLength(before.routines.length);
   });
 });

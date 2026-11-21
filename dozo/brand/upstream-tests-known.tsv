@@ -42,7 +42,6 @@ apps/mobile/lib/bot-avatar-render.test.tsx	BotAvatar renders the thinking pose o
 apps/mobile/lib/bot-profile.test.tsx	bot profile keeps the bot's less common actions in its … menu, and clears the open chat	b	chat export: the bot profile menu gains Export
 apps/mobile/lib/bot-settings-voice.test.tsx	bot settings device voice menu keeps a legacy set until explicitly switched, saves the choice, and reloads it	b	switching a bot's computer asks first (its files move with it), and the avatar sets are Dozo's
 apps/mobile/lib/bot-settings-voice.test.tsx	bot settings device voice menu saves read aloud and computer mode after expanding Advanced	b	switching a bot's computer asks first (its files move with it), and the avatar sets are Dozo's
-apps/mobile/lib/bot-template-copy.test.ts	botTemplateCopy translates every template	b	the fork's Meeting prep template (dozo-bot-templates.ts) has English and Turkish copy only; other languages show the English until a translation-only PR adds them
 apps/mobile/lib/computer-screen.test.tsx	<file>	c	the fork's relay and plan-limit modules load Expo's native runtime, which this test does not stub
 apps/mobile/lib/incoming-share.test.ts	incoming share on iOS deletes an expired share's copies when it is taken late	a	the iOS share app group is the fork's id (group.dev.ssilistre.dozo)
 apps/mobile/lib/incoming-share.test.ts	incoming share on iOS deletes the extension's copies when the share is cancelled or expires	a	the iOS share app group is the fork's id (group.dev.ssilistre.dozo)
@@ -66,7 +65,6 @@ apps/web/src/components/ai/CollaborationMarker.test.tsx	collaboration transcript
 apps/web/src/components/ai/CollaborationMarker.test.tsx	collaboration transcript markers shows a centred peer event with its avatar and full label	b	the Dozo avatar art replaces upstream's
 apps/web/src/components/integrations/plugin-marketplace.test.tsx	plugin detail offers the shared troubleshooting guide for a documented sign-in error	b	Dozo has no docs site: no troubleshooting link
 apps/web/src/lib/account-security.test.ts	posts an identity proof and surfaces the server's error	b	error copy: the fork's wording for a wrong password
-apps/web/src/lib/bot-templates-locales.test.ts	bot template translations translates the server's English for every template	b	the fork's Meeting prep template (dozo-bot-templates.ts) has English and Turkish copy only; other languages show the English until a translation-only PR adds them
 apps/web/src/lib/bots-sidebar-pref.test.ts	bots sidebar width preference allows resizing without storage access	b	Dozo look: the sidebar starts at the chat design's width
 apps/web/src/lib/bots-sidebar-pref.test.ts	bots sidebar width preference remembers expanded widths independently for each user and clamps invalid limits	b	Dozo look: the sidebar starts at the chat design's width
 apps/web/src/lib/desktop-speech.test.ts	Dictation on the desktop app explains where to allow dictation after macOS refused it	a	the permission prompt names Dozo

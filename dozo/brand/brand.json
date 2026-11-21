@@ -7867,6 +7867,18 @@
         "apps/mobile/lib/dozo-meeting-prep-copy.ts"
       ],
       "reason": "meeting prep template: the Turkish copy of its name, summary and sample"
+    },
+    {
+      "file": "apps/mobile/lib/bot-template-copy.test.ts",
+      "find": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES) {",
+      "replace": "    resetI18nForTests(\"de\");\n    for (const template of BOT_TEMPLATES.filter((item) => item.id !== \"meeting-prep\")) {",
+      "reason": "meeting prep template: the fork translates it into Turkish only, so the every-language check leaves it out; dozo-meeting-prep-copy.test.ts holds its Turkish"
+    },
+    {
+      "file": "apps/web/src/lib/bot-templates-locales.test.ts",
+      "find": "    const missing = BOT_TEMPLATES.flatMap((template) =>",
+      "replace": "    const missing = BOT_TEMPLATES.filter((template) => template.id !== \"meeting-prep\").flatMap((template) =>",
+      "reason": "meeting prep template: its strings are the fork's, held in the Turkish catalog by a rule, not in upstream's extracted English one"
     }
   ],
   "assets": {
