@@ -42,12 +42,7 @@ function OrganizationTitle({
   const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.title} testID="organization-mark">
-      <Image
-        source={{ uri: logo }}
-        accessible
-        accessibilityLabel={name}
-        style={styles.logo}
-      />
+      <Image source={{ uri: logo }} accessible accessibilityLabel={name} style={styles.logo} />
       {menu?.()}
     </View>
   );

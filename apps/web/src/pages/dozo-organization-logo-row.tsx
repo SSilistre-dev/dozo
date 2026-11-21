@@ -41,7 +41,9 @@ export function DozoOrganizationLogoRow({ organizationId }: { organizationId: st
     stale: [queries.dozoOrganizationLogo.key()],
   });
   if (!read || (!read.logo && !read.canManage)) return null;
-  const error = unusable ? t`Couldn't use that image as a logo` : save.error && errorText(save.error);
+  const error = unusable
+    ? t`Couldn't use that image as a logo`
+    : save.error && errorText(save.error);
   return (
     <SettingsRow
       label={<Trans>Logo</Trans>}

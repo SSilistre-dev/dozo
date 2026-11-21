@@ -36,14 +36,26 @@ describePostgres("organization logo (PostgreSQL)", () => {
 
   async function member(organizationId: string, userId: string, role: string) {
     await db.member.create({
-      data: { id: id(`m-${organizationId}-${userId}`), organizationId, userId, role, createdAt: new Date() },
+      data: {
+        id: id(`m-${organizationId}-${userId}`),
+        organizationId,
+        userId,
+        role,
+        createdAt: new Date(),
+      },
     });
   }
 
   async function joinSpace(spaceId: string, organizationId: string, userId: string) {
     await db.spaceMember.upsert({
       where: { spaceId_userId: { spaceId, userId } },
-      create: { id: id(`sm-${spaceId}-${userId}`), spaceId, organizationId, userId, createdAt: new Date() },
+      create: {
+        id: id(`sm-${spaceId}-${userId}`),
+        spaceId,
+        organizationId,
+        userId,
+        createdAt: new Date(),
+      },
       update: {},
     });
   }
@@ -61,7 +73,12 @@ describePostgres("organization logo (PostgreSQL)", () => {
       await db.user.create({ data: { id: user, name: user, email: `${user}@example.test` } });
     for (const org of [acme, other]) {
       await db.organization.create({
-        data: { id: org.id, name: org === acme ? "Acme" : "Other", slug: org.id, createdAt: new Date() },
+        data: {
+          id: org.id,
+          name: org === acme ? "Acme" : "Other",
+          slug: org.id,
+          createdAt: new Date(),
+        },
       });
       await db.space.create({
         data: { id: org.home, organizationId: org.id, name: "Home", isDefault: true },
@@ -153,8 +170,13 @@ describePostgres("organization logo (PostgreSQL)", () => {
 
   it("is removed with null, and an owner who lost the role changes nothing", async () => {
     await setOrganizationLogo(db, { userId: owner, organizationId: acme.id, logo: null });
-    expect((await readOrganizationMark(db, { userId: guest, spaceId: acme.shared })).logo).toBe(null);
-    await db.member.updateMany({ where: { organizationId: acme.id, userId: admin }, data: { role: "member" } });
+    expect((await readOrganizationMark(db, { userId: guest, spaceId: acme.shared })).logo).toBe(
+      null,
+    );
+    await db.member.updateMany({
+      where: { organizationId: acme.id, userId: admin },
+      data: { role: "member" },
+    });
     await expect(
       setOrganizationLogo(db, { userId: admin, organizationId: acme.id, logo: LOGO }),
     ).rejects.toBeInstanceOf(IsolationError);

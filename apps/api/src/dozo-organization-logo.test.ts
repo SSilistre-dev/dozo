@@ -58,7 +58,10 @@ function world() {
       findFirst: async ({ where }: { where: Where }) => {
         const role = members.get(`${where.organizationId}:${where.userId}`);
         if (!role || role === "guest") return null;
-        return { role, organization: { logo: organizations[where.organizationId as string]!.logo } };
+        return {
+          role,
+          organization: { logo: organizations[where.organizationId as string]!.logo },
+        };
       },
     },
     organization: {
@@ -127,7 +130,10 @@ describe("organization logo routes", () => {
       organizationId: "acme",
       logo: await upload(),
     });
-    expect(saved).toEqual({ logo: expect.stringMatching(/^data:image\/webp;base64,/), canManage: true });
+    expect(saved).toEqual({
+      logo: expect.stringMatching(/^data:image\/webp;base64,/),
+      canManage: true,
+    });
     expect(w.organizations.acme!.logo).toBe(saved.logo);
     expect(publishRosterChange).toHaveBeenCalledWith({ spaceIds: ["acme-home", "acme-shared"] });
     expect(fake.audit).toHaveBeenCalledWith(
@@ -153,9 +159,11 @@ describe("organization logo routes", () => {
   });
 
   it("refuse a guest member before the picture is decoded, and show them the logo only", async () => {
-    expect(await refusal(as("guest", "acme-shared").set({ organizationId: "acme", logo: await upload() }))).toBe(
-      "NOT_FOUND",
-    );
+    expect(
+      await refusal(
+        as("guest", "acme-shared").set({ organizationId: "acme", logo: await upload() }),
+      ),
+    ).toBe("NOT_FOUND");
     expect(await refusal(as("guest", "acme-shared").get({ organizationId: "acme" }))).toBe(
       "NOT_FOUND",
     );
@@ -209,7 +217,12 @@ describe("organization logo routes", () => {
     expect(w.organizations.acme!.logo).toBeNull();
     expect(publishRosterChange).not.toHaveBeenCalled();
     expect(
-      await refusal(as("owner", "acme-home").set({ organizationId: "acme", logo: "data:image/svg+xml;base64,PHN2Zz4=" })),
+      await refusal(
+        as("owner", "acme-home").set({
+          organizationId: "acme",
+          logo: "data:image/svg+xml;base64,PHN2Zz4=",
+        }),
+      ),
     ).toBe("BAD_REQUEST");
   });
 
