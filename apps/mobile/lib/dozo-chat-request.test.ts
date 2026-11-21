@@ -54,7 +54,7 @@ it("asks consent about an extra chat's bot before a message goes", async () => {
   await expect(
     rpc("threads/send", { chatBotId: "bot-1", chatId: "chat-1", text: "private content" } as never),
   ).rejects.toThrow("AI data sharing");
-  const [[url, init]] = fetchMock.mock.calls;
+  const [url, init] = fetchMock.mock.calls[0]!;
   expect(String(url)).toContain("/rpc/aiConsent/status");
   expect(JSON.parse(String(init?.body)).json).toEqual({
     uses: ["model", "memory"],

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import type { ComponentProps, ReactNode, Ref } from "react";
-import { act, Children, createElement, isValidElement } from "react";
+import { act, Children, createElement, createRef, isValidElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 
 const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
@@ -247,8 +248,9 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
 
 let root: Root;
 let container: HTMLDivElement;
+const composer = createRef<ThreadComposerHandle>();
 const render = (changes: Partial<typeof props> = {}) =>
-  act(() => root.render(<ThreadComposer {...props} {...changes} />));
+  act(() => root.render(<ThreadComposer ref={composer} {...props} {...changes} />));
 const attachButton = () => container.querySelector('[data-glass="circle"]');
 const call = () => container.querySelector('button[aria-label="Call"]');
 

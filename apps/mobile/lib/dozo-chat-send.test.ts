@@ -33,31 +33,30 @@ function payload(overrides: Partial<SendPayload>): SendPayload {
 }
 
 async function sent(overrides: Partial<SendPayload>) {
-  const request = vi.fn(async () => ({ runId: "run-1", taskId: "task-1", seq: 4 }));
+  const request = vi.fn(async (_name: string, _body: Record<string, unknown>) => ({
+    runId: "run-1",
+    taskId: "task-1",
+    seq: 4,
+  }));
   await deliverSend(payload(overrides), attempt, request as never);
-  return request.mock.calls.map(([name, body]) => [name, body]) as [
-    string,
-    Record<string, unknown>,
-  ][];
+  return request.mock.calls;
 }
 
 // Delivery, which a retry and a restart repeat, is the one place an unsent message learns its chat.
 it("sends a message in a bot's extra chat as chatBotId and chatId, never as botId", async () => {
-  const [[name, body]] = await sent({ originThreadKey: "chat-1", chatId: "chat-1" });
+  const [name, body] = (await sent({ originThreadKey: "chat-1", chatId: "chat-1" }))[0]!;
   expect(name).toBe("threads/send");
   expect(body).toMatchObject({ chatBotId: "bot-1", chatId: "chat-1", text: "hello" });
   expect(body).not.toHaveProperty("botId");
 });
 
 it("sends a bot's main chat and a group as before", async () => {
-  const [[, main]] = await sent({});
+  const [, main] = (await sent({}))[0]!;
   expect(main).toMatchObject({ botId: "bot-1" });
   expect(main).not.toHaveProperty("chatId");
-  const [[, group]] = await sent({
-    botTarget: undefined,
-    groupTarget: "group-1",
-    originThreadKey: "group-1",
-  });
+  const [, group] = (
+    await sent({ botTarget: undefined, groupTarget: "group-1", originThreadKey: "group-1" })
+  )[0]!;
   expect(group).toMatchObject({ groupId: "group-1" });
   expect(group).not.toHaveProperty("botId");
 });
@@ -73,7 +72,11 @@ it("runs routines in the extra chat the message was written in", async () => {
 it("remembers the extra chat of an unsent message through a restart", async () => {
   // The outbox keeps the payload as JSON and sends what it reads back.
   const stored = JSON.parse(JSON.stringify(payload({ chatId: "chat-1" }))) as SendPayload;
-  const request = vi.fn(async () => ({ runId: "run-1", taskId: "task-1", seq: 4 }));
+  const request = vi.fn(async (_name: string, _body: Record<string, unknown>) => ({
+    runId: "run-1",
+    taskId: "task-1",
+    seq: 4,
+  }));
   await deliverSend(stored, attempt, request as never);
   expect(request.mock.calls[0]![1]).toMatchObject({ chatBotId: "bot-1", chatId: "chat-1" });
 });

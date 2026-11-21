@@ -182,7 +182,21 @@ function show(chat: string | undefined) {
       createElement(
         DozoChatContext.Provider,
         { value: chat },
-        <MessageBubble botId="bot-1" bots={[]} message={runningHelper} actionProps={{}} />,
+        <MessageBubble
+          botId="bot-1"
+          bots={[]}
+          showBotSenderName={false}
+          canAnswer={false}
+          canDismiss={false}
+          onAnswer={async () => undefined}
+          onOpenBot={() => undefined}
+          onOpenComputer={() => undefined}
+          onPreviewFile={() => undefined}
+          onPreviewImage={() => undefined}
+          onOpenPeerChat={() => undefined}
+          message={runningHelper}
+          actionProps={{}}
+        />,
       ),
     ),
   );

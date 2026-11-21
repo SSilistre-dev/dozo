@@ -19,7 +19,8 @@ export function useDozoRouteChat(params: {
   const botId = dozoChatParam(params.botId);
   const named = dozoChatParam(params.chatId);
   const threadId = dozoChatParam(params.threadId);
-  const inboxMain = useInboxBot(botId)?.threadId;
+  const inbox = useInboxBot(botId);
+  const inboxMain = inbox && "threadId" in inbox ? inbox.threadId : undefined;
   const lookup = !named && Boolean(botId && threadId) && inboxMain !== threadId;
   const list = useQuery(
     { ...rpcQuery("dozoChats/list", { botId: botId ?? "" }), enabled: lookup },
