@@ -1,0 +1,6 @@
+# The code the phone shows is the one the computer's agent reported.
+appId: dev.ssilistre.dozo
+name: Dozo Android approval code
+---
+- assertVisible: "Approve this phone on your computer."
+- assertVisible: ${DOZO_CODE}

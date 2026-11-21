@@ -1,0 +1,154 @@
+name: dozo-mobile-android
+
+# Builds the Dozo Android app (upstream's Expo app in apps/mobile) from the branded tree, as an APK
+# signed with the debug key the generated project carries, and keeps it as an artifact for
+# installing outside a store. It has the production defaults (https://app.dozo.bot, the relay at
+# https://relay.dozo.bot), so the same APK is the one tested: on an emulator it opens, a pairing
+# link opened with adb pairs it with a computer (the real API, a dev relay and the relay agent's
+# command line, all in this job), the computer approves it and the app lists its chats
+# (dozo/mobile/README.md, Android). Screenshots, the device log and the run log are an artifact.
+# No signing key, store account or Expo account is used. Third-party actions are pinned to a full
+# commit SHA with the version in a comment (the same SHAs the upstream workflows use).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - dozo/mobile/**
+      - apps/mobile/**/dozo-*
+      - .github/workflows/dozo-mobile-android.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-mobile-android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android APK and pairing on an emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: dozo
+          POSTGRES_PASSWORD: dozo
+          POSTGRES_DB: dozo
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U dozo"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TREE: dozo/.stage/src
+      DATABASE_URL: postgres://dozo:dozo@127.0.0.1:5433/dozo
+      # The build's defaults, as dozo/mobile/build.sh passes them; no telemetry, no Expo account.
+      EXPO_PUBLIC_API_URL: https://app.dozo.bot
+      EXPO_PUBLIC_DOZO_RELAY_URL: https://relay.dozo.bot
+      EXPO_NO_TELEMETRY: "1"
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Stage and brand
+        run: |
+          dozo/docker/build.sh stage
+          dozo/docker/build.sh brand
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.0
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4.4.3
+
+      - name: Install the tree
+        working-directory: ${{ env.TREE }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @rakazo/db generate
+
+      # The config the native project is generated from carries the Dozo values (as build.sh check).
+      - name: Check the Expo config
+        working-directory: ${{ env.TREE }}/apps/mobile
+        run: |
+          pnpm exec expo config --type public --json > "$RUNNER_TEMP/expo-config.json"
+          node "$GITHUB_WORKSPACE/dozo/mobile/check-config.mjs" "$RUNNER_TEMP/expo-config.json" "$EXPO_PUBLIC_API_URL"
+
+      - name: Generate the Android project
+        working-directory: ${{ env.TREE }}/apps/mobile
+        run: |
+          pnpm exec expo prebuild --platform android --clean --no-install
+          sed -i 's/MaxMetaspaceSize=512m/MaxMetaspaceSize=1g/' android/gradle.properties
+          # Nothing of upstream's accounts, ids or domain may reach the generated project.
+          foreign=$(grep -rIlE 'com\.rakazo|07f7eb04|u\.expo\.dev|inbox-?zero|rakazo\.(com|ai|app)' android || true)
+          if [ -n "$foreign" ]; then echo "upstream ids in the generated project: $foreign" >&2; exit 2; fi
+
+      # Phones (arm64-v8a) and the emulator (x86_64) in one APK.
+      - name: Build the APK
+        working-directory: ${{ env.TREE }}/apps/mobile/android
+        run: |
+          ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+          apk=app/build/outputs/apk/release/app-release.apk
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp "$apk" "$RUNNER_TEMP/apk/dozo-android.apk"
+          ls -l "$RUNNER_TEMP/apk/dozo-android.apk"
+          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$RUNNER_TEMP/apk/dozo-android.apk" | head -n 3
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dozo-android-apk
+          path: ${{ runner.temp }}/apk/dozo-android.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Install the pinned Maestro CLI
+        run: |
+          set -euo pipefail
+          maestro_tmp=$(mktemp -d)
+          base_url=https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.6.1
+          curl --fail --silent --show-error --location "$base_url/maestro.zip" --output "$maestro_tmp/maestro.zip"
+          echo "3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b  maestro.zip" |
+            (cd "$maestro_tmp" && sha256sum --check --strict -)
+          unzip -q "$maestro_tmp/maestro.zip" -d "$maestro_tmp"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$maestro_tmp/maestro/." "$HOME/.maestro/"
+          rm -rf "$maestro_tmp"
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm",GROUP="kvm",MODE="0666",OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Pair on an emulator
+        uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash dozo/mobile/android/e2e.sh "$RUNNER_TEMP/apk/dozo-android.apk" "$TREE" "$RUNNER_TEMP/android-e2e"
+
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dozo-android-e2e
+          path: ${{ runner.temp }}/android-e2e
+          retention-days: 14
+          if-no-files-found: ignore

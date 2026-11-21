@@ -1,0 +1,16 @@
+# After the pairing link opened the app: its one question, which names the test relay because it
+# is not the build's own, then Connect. The phone pairs and asks the computer for its sign-in.
+# Connect is the dialog's positive button: the pairing screen's header has a Connect action too.
+appId: dev.ssilistre.dozo
+name: Dozo Android pairing question
+---
+- extendedWaitUntil:
+    visible: "Connect to this computer?"
+    timeout: 60000
+- assertVisible: "(?s).*Uses the relay at ${DOZO_RELAY_HOST}.*"
+- takeScreenshot: question
+- tapOn:
+    id: "android:id/button1"
+- extendedWaitUntil:
+    visible: "Approve this phone on your computer."
+    timeout: 60000
