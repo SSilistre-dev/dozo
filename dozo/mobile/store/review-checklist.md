@@ -11,7 +11,7 @@ OK in the app. Settings, profile screen, "Delete account" (`apps/mobile/app/(set
 fresh sign-in with the single-sign-on provider, or an emailed code, then calls the server's
 `/api/auth/delete-user` (`apps/mobile/lib/api-auth.ts`, `deleteAccount`) and returns to sign-in.
 The paywall screen offers the same action. Play also wants a web page for deletion requests, named
-in the Data safety form: TODO owner (a page on `dozo.bot`; none exists in `dozo/landing/` today).
+in the Data safety form: OK, `https://dozo.bot/delete-account/` (`dozo/landing/delete-account/`, also in Turkish); TODO owner: enter it in the form.
 TODO owner: what deletion removes on the server and what is kept (billing records), for the
 privacy page and `privacy.md`.
 
