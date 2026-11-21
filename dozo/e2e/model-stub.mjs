@@ -7,6 +7,8 @@
 // offers a tool of that name, the answer is that one tool call; once the newest message is the
 // tool's result, the answer is TOOL_DONE. A tool the request does not offer is said so in text.
 // `[e2e-table]` asks for a reply that is a markdown table (TABLE).
+// `[e2e-slow:<seconds>]` in the newest user message holds the answer back that long (at most
+// MAX_SLOW_SECONDS), so a bot stays busy while the scenario puts work in line behind it.
 // A request whose key is SPENT_KEY is told its quota ran out (429, `insufficient_quota`), as a
 // provider says it; any other key, or none, is answered as above.
 import { createServer } from "node:http";
@@ -21,6 +23,8 @@ export const TABLE = "| Topic | Open |\n| --- | --- |\n| Billing | 3 |\n| Export
 // Arguments as JSON, or as `b64:<base64 JSON>` so the message does not name what they hold (a
 // site the owner names in their own words counts as one they asked for, and is not asked about).
 const TOOL_ASK = /\[e2e-tool:([a-z_]+)(?:\s+(\{[^\]]*\}|b64:[A-Za-z0-9+/=]+))?\]/;
+const SLOW_ASK = /\[e2e-slow:(\d{1,3})\]/;
+export const MAX_SLOW_SECONDS = 300;
 let completions = 0;
 
 /** The text of a chat message, whose content is a string or a list of parts. */
@@ -29,6 +33,14 @@ function textOf(message) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map((part) => part?.text ?? "").join(" ");
   return "";
+}
+
+/** How long to hold the answer back, in milliseconds: 0 unless the newest user message asks. */
+export function delayMs(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const user = [...messages].reverse().find((message) => message?.role === "user");
+  const ask = SLOW_ASK.exec(textOf(user));
+  return ask ? Math.min(Number(ask[1]), MAX_SLOW_SECONDS) * 1000 : 0;
 }
 
 /**
@@ -97,6 +109,8 @@ const server = createServer(async (request, response) => {
       return;
     }
     completions += 1;
+    const wait = delayMs(body);
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const answer = plan(body);
     const id = `chatcmpl-e2e-${completions}`;
     const created = Math.floor(Date.now() / 1000);

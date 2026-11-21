@@ -209,3 +209,33 @@ test("streams a tool call as chunks that end with finish_reason tool_calls", asy
   assert.equal(calls.map((call) => call.function.arguments).join(""), '{"name":"E2E"}');
   assert.equal(events.at(-1).choices[0].finish_reason, "tool_calls");
 });
+
+test("delayMs: [e2e-slow:n] in the newest user message holds the answer back, capped; anything else answers at once", async () => {
+  const { delayMs, MAX_SLOW_SECONDS } = await import("./model-stub.mjs");
+  const ask = (content) => ({ messages: [{ role: "user", content }] });
+  assert.equal(delayMs(ask("Hello [e2e-slow:7]")), 7000);
+  assert.equal(delayMs(ask("Hello [e2e-slow:999]")), MAX_SLOW_SECONDS * 1000);
+  assert.equal(delayMs(ask("Hello")), 0);
+  assert.equal(delayMs({ messages: [] }), 0);
+  // Only the newest user message counts: an older ask does not slow a later one.
+  assert.equal(
+    delayMs({
+      messages: [
+        { role: "user", content: "[e2e-slow:5]" },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: "again" },
+      ],
+    }),
+    0,
+  );
+});
+
+test("a slow ask is answered after its delay, a plain one at once", async () => {
+  const started = Date.now();
+  const slow = await post(JSON.stringify({ messages: [{ role: "user", content: "[e2e-slow:1]" }] }));
+  assert.equal(slow.status, 200);
+  assert.ok(Date.now() - started >= 950, "the slow answer came before its delay");
+  const quick = Date.now();
+  await post(JSON.stringify({ messages: [{ role: "user", content: "hi" }] }));
+  assert.ok(Date.now() - quick < 900);
+});
