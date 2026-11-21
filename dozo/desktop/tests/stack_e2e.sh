@@ -93,7 +93,7 @@ docker run --rm --name "$NAME" --network "container:$NAME-phone" --cpus 3 --memo
   -v "$OLD:/dist-old:ro" -e DOZO_STACK_E2E_MANIFEST=file:///dist/e2e-manifest.json -e DOZO_STACK_E2E_WORK=/tmp \
   -e DOZO_STACK_E2E_OLD_MANIFEST="$([ "$OLD" != "$DIST" ] && echo file:///dist/e2e-old-manifest.json)" \
   -e DOZO_STACK_E2E_BROKEN_MANIFEST=file:///dist/e2e-broken-manifest.json \
-  -e DOZO_STACK_E2E_SHARED=/shared -v "$SHARED:/shared" \
+  -e TZ=Europe/Istanbul -e DOZO_STACK_E2E_SHARED=/shared -v "$SHARED:/shared" \
   dozo-desktop-linux:22.04 bash -c 'PATH="$CARGO_HOME/bin:$PATH" exec bash tests/stack_e2e_native.sh /dist -'
 rc=$?
 docker logs "$NAME-phone" 2>&1 | tail -5

@@ -222,6 +222,10 @@ end to end (below); the code builds for macOS, where it has run by hand only.
   opens the web address and keeps it as the chosen server. One line shows where it is
   (Downloading 42%, Preparing, Starting); a failure shows one sentence and Try again. Details go to
   `logs/manager.log`.
+- Postgres runs in UTC (`-c timezone=UTC` at every start), whatever this computer's zone:
+  `initdb` wrote that zone into the data folder, and the server's SQL expects UTC.
+- In-app feedback goes to the address a build names (`DOZO_FEEDBACK_EMAIL`, passed to the API);
+  without one it is only kept on the server.
 - Everything listens on 127.0.0.1 only. The ports are picked free on the first start and kept;
   Postgres and the API move when another program took theirs. The web port is the pages' origin
   (their sign-in and site data), so it never moves: if it is taken, the start stops and says so.
@@ -251,7 +255,8 @@ end to end (below); the code builds for macOS, where it has run by hand only.
 - The server runs with its own folder as `HOME` and the app's `PATH`. The API and the worker are
   also told the person's own home folder and their login shell's `PATH` (`HOST_USER_HOME`,
   `HOST_USER_PATH`; the shell is asked once per start, for at most 5 s), which a command-line
-  model provider the person installed and signed in to will need. Nothing reads them yet.
+  model provider the person installed and signed in to needs: with them, the server offers that
+  tool as a model connection (`packages/adapters/src/cli-models/dozo-cli-*.ts`).
 - Linux needs `libssl3` (Prisma's migration engine); without it the start says to install it.
   Postgres's Linux build carries a `libstdc++` that needs glibc 2.36; where it does not run
   (Ubuntu 22.04), the system's own is used instead (`fit_postgres` in `src/stack_setup.rs`).
@@ -316,6 +321,14 @@ from a small window (`ui/backup.html`, `src/backup.rs`):
 - The page sees a file's name, never its path: the path stays in the app. The password goes to
   the command's standard input only, never an argument, a variable or a log line.
 - A bundle without the command (before 0.11.0-2) is told "Update the server first."
+- Reset Password… (the same window) sets a new password for the account on this computer with
+  the bundle's `account reset-password`, since a local server sends no email; the password is
+  asked twice and goes to the command's standard input. Its sessions end, so the main window
+  asks to sign in again. A computer that signs in with the hosted account has no password there
+  and says so.
+- Save Diagnostics… picks a file with the save dialog, writes the bundle's report there
+  (`diagnostics --out`: versions, settings by name, recent log lines cleaned of secrets and of
+  what people wrote) and shows it in the file manager; only a failure says anything.
 
 ### Connect Phone
 

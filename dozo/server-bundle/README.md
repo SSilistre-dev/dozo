@@ -181,7 +181,11 @@ gives it to the API and to the relay agent, which signs paired phones in with it
 
 The desktop app also gives the API and the worker `HOST_USER_HOME` and `HOST_USER_PATH`, the
 person's own home folder and login shell `PATH` (the processes run with `HOME` in the server's
-folder); nothing in the server reads them yet, and `run.sh` leaves them out.
+folder). With them, and only then, the server offers a provider's command-line tool the person
+installed and signed in to as a model connection, run with their home and `PATH`
+(`packages/adapters/src/cli-models/dozo-cli-*.ts`); `run.sh` leaves them out. More accounts of a
+tool each get a home folder of their own under `data/cli-accounts/<provider>/` (mode 0700), signed in
+with the tool's own sign-in; the person's own home folder of the tool is never written.
 
 `run.sh` uses ports 54329 (Postgres), 3100 (API) and 5173 (web); the app picks free ones.
 

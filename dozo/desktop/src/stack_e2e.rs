@@ -14,6 +14,27 @@ use super::*;
 async fn e2e_installs_starts_and_stops_the_real_server() {
     let (local, root, ports) = e2e_ready().await;
     assert!(answers_200(ports.api, "/health"));
+    // tests/stack_e2e.sh runs this with the computer's zone not UTC (TZ): initdb wrote that zone
+    // into the data folder, and the server still runs in UTC.
+    let secrets = stack_setup::secrets(&root.join("secrets")).unwrap();
+    let version = fs::read_to_string(root.join("current")).unwrap();
+    let psql = root
+        .join("versions")
+        .join(version.trim())
+        .join("postgres/bin")
+        .join(exe("psql"));
+    let shown = std::process::Command::new(psql)
+        .args(["-h", "127.0.0.1", "-p", &ports.postgres.to_string()])
+        .args(["-U", "rakazo", "-d", "rakazo", "-tAc", "SHOW timezone"])
+        .env("PGPASSWORD", secrets.get("PG_OWNER_PASSWORD"))
+        .output()
+        .unwrap();
+    let shown = String::from_utf8_lossy(&shown.stdout).trim().to_owned();
+    assert_eq!(shown, "UTC", "the zone here is {:?}", std::env::var("TZ"));
+    println!(
+        "E2E: Postgres runs in UTC while this computer is in {}",
+        std::env::var("TZ").unwrap_or_else(|_| "its own zone".into())
+    );
     e2e_this_computer_connects(&root, ports).await;
     assert!(local.stop().await, "a process had to be killed");
     let left = left_after_stop(&root);
@@ -443,6 +464,35 @@ async fn e2e_backs_up_and_restores() {
     local.start(Layout(root.clone()), options).await;
     assert!(matches!(settled_for(&local, 180).await, Status::Ready(_)));
     assert_eq!(sign_in().await, 200, "the account after the restore");
+    // Reset Password… and Save Diagnostics…, with the bundle's own commands.
+    let account = Tool::named(&root, "account").expect("the bundle has the account command");
+    account.reset_password("reset-Password-2").await.unwrap();
+    let ports = stack_setup::saved_ports(&root.join("ports")).unwrap();
+    let web = format!("http://127.0.0.1:{}", ports.web);
+    let signed_in = reqwest::Client::new()
+        .post(format!("{web}/api/auth/sign-in/email"))
+        .header("origin", &web)
+        .header("content-type", "application/json")
+        .body(r#"{"email":"owner@example.test","password":"reset-Password-2"}"#)
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(signed_in, 200, "the new password");
+    assert_ne!(sign_in().await, 200, "the old password no longer works");
+    let report = root.with_file_name("e2e-diagnostics.tar.gz");
+    let _ = fs::remove_file(&report);
+    Tool::named(&root, "diagnostics")
+        .expect("the bundle has the diagnostics command")
+        .diagnostics(&report)
+        .await
+        .unwrap();
+    let bytes = fs::read(&report).unwrap();
+    assert_eq!(bytes[..2], [0x1f, 0x8b], "a gzip file");
+    println!(
+        "E2E: reset the password (the new one signs in, the old one not) and saved a {} KB diagnostics report",
+        bytes.len() / 1024
+    );
     println!(
         "E2E: restored over the data in use ({} ms), the account signs in",
         started.elapsed().as_millis()

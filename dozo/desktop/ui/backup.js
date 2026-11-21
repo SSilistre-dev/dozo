@@ -2,8 +2,9 @@
 // (capabilities/backup.json); it never sees a file's path, only its name.
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const el = (id) => document.getElementById(id);
-const mode = location.search === "?restore" ? "restore" : "backup";
-const SCREENS = ["backup", "restore", "working", "done"];
+const mode = { "?restore": "restore", "?reset": "reset" }[location.search] ?? "backup";
+const SCREENS = ["backup", "restore", "reset", "working", "done"];
+const TITLES = { backup: "Back Up", restore: "Restore", reset: "Reset Password" };
 
 function show(screen) {
   for (const id of SCREENS) el(id).hidden = id !== screen;
@@ -54,6 +55,23 @@ el("restore").addEventListener("submit", async (event) => {
   }
 });
 
-document.title = mode === "restore" ? "Restore" : "Back Up";
+// A new password for the account here; the main window then asks to sign in with it.
+el("reset").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const password = el("new").value;
+  if (password.length < 8) return problem("reset", "Use at least 8 characters.");
+  if (password !== el("new-again").value) return problem("reset", "The passwords differ.");
+  el("step").textContent = "Resetting…";
+  show("working");
+  try {
+    await invoke("reset_password", { password });
+    el("result").textContent = "Password reset.";
+    show("done");
+  } catch (reason) {
+    problem("reset", String(reason));
+  }
+});
+
+document.title = TITLES[mode];
 show(mode);
-(mode === "restore" ? el("pick") : el("password")).focus();
+(({ restore: el("pick"), reset: el("new") })[mode] ?? el("password")).focus();
