@@ -214,14 +214,16 @@ person sees what the bot does and can type into it.
 
 - The app declares `browser` beside `shell` only when it finds one. The server drives the page
   with `pageBrowser` requests, each one DevTools command.
-- The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port: no
-  other program on this computer can connect to it, and nothing listens on TCP.
+- The connection is the browser's debugging pipe (`--remote-debugging-pipe`), never a port:
+  nothing listens on TCP, so nothing on the network and no program running as another user can
+  connect to it.
 - Only the commands in `ALLOWED` pass, with only the parameters listed there, and only to the
   bot's one page: reading the accessibility tree, the page's boxes, mouse, keys and text, going to
-  an http or https address, back and forward, and screenshots. Everything that reads cookies or
-  site storage, runs script (`Runtime.evaluate`), opens a debugging session, uploads a file or
-  pastes the clipboard is refused here, before it reaches the browser, so none of it reaches the
-  server. Downloads are refused.
+  an http or https address, back and forward, and screenshots of the visible page. Everything
+  that reads cookies or site storage, runs script (`Runtime.evaluate`), opens a debugging session,
+  uploads a file, pastes the clipboard (Ctrl or Cmd+V, Shift+Insert, a middle click) or brings
+  the window forward is refused here, before it reaches the browser, so none of it reaches the
+  server. Numbers must be whole where the browser reads whole numbers. Downloads are refused.
 - None of Playwright's defaults that mark the browser as automated or store its passwords
   unencrypted (`--enable-automation`, `--use-mock-keychain`, `--password-store=basic`), no `--app`
   or kiosk mode.
@@ -230,9 +232,13 @@ person sees what the bot does and can type into it.
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
   also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
   next start on that profile ends what is left first. A dropped connection keeps it open.
-- Honest limits: a bot that may run commands runs them as this user and can read its own profile
-  folder with a command; the pipe only keeps the browser's channel to the allowed commands. A Snap
-  Chromium is passed over (it cannot use a profile folder in the app's data). Windows: not yet.
+- Honest limits: anything running as this user, the bot's own commands included, can read the
+  profile folder, and on Linux can open the browser's pipe through `/proc` and send it any
+  command: the allowlist holds the server's channel, not the person's own programs. The page
+  browses from this computer's network, local addresses included. On macOS the pipe is made and
+  then marked close-on-exec, so a command started in that instant could inherit it. A stopped bot
+  starts no browser. A Snap Chromium is passed over (it cannot use a profile folder in the app's
+  data). Windows: not yet.
 - Proof: `tests/stack_e2e_native.sh` step 0, on Linux in a real window under Xvfb and on macOS,
   with the browser on the runner.
 

@@ -316,6 +316,9 @@ impl Runner {
                 return self.execute(&key, run, &home, command, reply).await;
             }
             "pageBrowser" => {
+                if !running(&home) {
+                    return reply.error("Local computer stopped").await;
+                }
                 let command = request.get("command").unwrap_or(&Value::Null);
                 match self.browsers.handle(&key, command).await {
                     Ok(value) => Ok(value),

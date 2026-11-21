@@ -1,8 +1,8 @@
 //! The bot's own browser on this computer: a Chromium-family browser already installed here
 //! (Chrome, Edge, Brave or Chromium), started with a profile folder of the bot's own, never the
 //! person's, in a normal window with its address bar. The server drives the page through the
-//! DevTools protocol (`pageBrowser` requests), and only over a pipe: no TCP port is opened, so no
-//! other program on this computer can connect to it. This side passes on only the commands in
+//! DevTools protocol (`pageBrowser` requests), and only over a pipe: no TCP port is opened, so
+//! nothing on the network and no program running as another user can connect to it. This side passes on only the commands in
 //! `ALLOWED`, with only the parameters listed there, to the bot's one page; it never passes on
 //! what reads cookies or site storage, or runs script (`Runtime.evaluate`), so neither reaches
 //! the server. Downloads are refused.
@@ -11,8 +11,9 @@
 //! (`stack_os::prepare`); everywhere the closed pipe ends it, and a profile's last browser is
 //! ended before the next one starts (`end_leftover`). Windows: not yet (`find` finds none).
 //!
-//! The honest limit: a bot that may run commands runs them as this user, so it can read the
-//! profile folder with a command. Keeping commands off keeps the profile to the browser.
+//! The honest limit: anything running as this user, a bot's own commands included, can read the
+//! profile folder, and on Linux can open the browser's pipe through `/proc` and send it any
+//! command. The allowlist holds the server's channel, not this user's own programs.
 
 // Windows starts no browser yet, so the pipe and the launch are not used there.
 #![cfg_attr(windows, allow(dead_code))]
@@ -84,14 +85,27 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("Page.stopLoading", &[]),
     ("Page.getNavigationHistory", &[]),
     ("Page.navigateToHistoryEntry", &["entryId"]),
-    (
-        "Page.captureScreenshot",
-        &["format", "quality", "clip", "captureBeyondViewport"],
-    ),
+    // The visible page only: a full-length capture can outgrow any answer. No bringToFront: it
+    // would take the keyboard from the app the person is typing in.
+    ("Page.captureScreenshot", &["format", "quality"]),
     ("Page.getLayoutMetrics", &[]),
     ("Page.getFrameTree", &[]),
-    ("Page.bringToFront", &[]),
     ("Page.handleJavaScriptDialog", &["accept", "promptText"]),
+];
+
+/// Parameters that must be whole numbers of zero or more when given: anything else (`2.0`, `-1`)
+/// could read differently here and in the browser.
+const WHOLE: &[&str] = &[
+    "depth",
+    "backendNodeId",
+    "buttons",
+    "clickCount",
+    "modifiers",
+    "windowsVirtualKeyCode",
+    "nativeVirtualKeyCode",
+    "location",
+    "entryId",
+    "quality",
 ];
 
 /// Page events the server gets back with its next answer, so it can tell a load finished or a
@@ -204,6 +218,13 @@ pub fn allowed(command: &Value) -> Result<(String, Value), String> {
             "Not allowed in the bot's browser: {method} {extra}"
         ));
     }
+    if let Some(bad) = WHOLE.iter().find(|key| {
+        given
+            .get(**key)
+            .is_some_and(|value| value.as_u64().is_none())
+    }) {
+        return Err(format!("pageBrowser {bad} must be a whole number"));
+    }
     if method == "Page.navigate" {
         let url = given.get("url").and_then(Value::as_str).unwrap_or_default();
         if !web_address(url) {
@@ -212,6 +233,12 @@ pub fn allowed(command: &Value) -> Result<(String, Value), String> {
     }
     if method == "Input.dispatchKeyEvent" && pastes(&given) {
         return Err("Not allowed in the bot's browser: paste".to_owned());
+    }
+    // A middle click pastes what the person last selected anywhere (Linux).
+    let middle = given.get("button").and_then(Value::as_str) == Some("middle")
+        || given.get("buttons").and_then(Value::as_u64).unwrap_or(0) & 4 != 0;
+    if method == "Input.dispatchMouseEvent" && middle {
+        return Err("Not allowed in the bot's browser: middle click".to_owned());
     }
     Ok((method.to_owned(), Value::Object(given)))
 }
@@ -379,12 +406,16 @@ async fn read(pipe: std::sync::Weak<Pipe>, mut from: impl tokio::io::AsyncRead +
             pipe.close();
             return;
         }
+        // Only the new bytes can end a message: what came before had no NUL.
+        let mut scanned = buffer.len();
         buffer.extend_from_slice(&chunk[..read]);
-        while let Some(end) = buffer.iter().position(|byte| *byte == 0) {
-            let message: Vec<u8> = buffer.drain(..=end).collect();
-            if let Ok(message) = serde_json::from_slice::<Value>(&message[..end]) {
+        while let Some(found) = buffer[scanned..].iter().position(|byte| *byte == 0) {
+            let end = scanned + found;
+            if let Ok(message) = serde_json::from_slice::<Value>(&buffer[..end]) {
                 pipe.receive(message);
             }
+            buffer.drain(..=end);
+            scanned = 0;
         }
         // A message larger than any answer the server could take is not a browser's.
         if buffer.len() > crate::device_run::MAX_MESSAGE_BYTES * 2 {
@@ -504,6 +535,21 @@ impl Browsers {
                 return Err(error);
             }
         };
+        if method == "Page.navigateToHistoryEntry" {
+            let history = running
+                .pipe
+                .call("Page.getNavigationHistory", json!({}), Some(&session))
+                .await?;
+            let entry = history["entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|entry| entry["id"] == params["entryId"]);
+            let url = entry.and_then(|entry| entry["url"].as_str()).unwrap_or("");
+            if !web_address(url) {
+                return Err("The bot's browser opens only http and https addresses".to_owned());
+            }
+        }
         let result = running.pipe.call(&method, params, Some(&session)).await;
         if !running.pipe.open.load(Ordering::SeqCst) {
             self.forget(key, &running);
@@ -551,7 +597,12 @@ impl Browsers {
 
     /// Ends the bot's browser. `forget_profile` also removes its profile (the bot is gone).
     pub fn close(&self, key: &str, forget_profile: bool) {
-        let running = self.open.lock().unwrap().remove(key);
+        let running = {
+            let mut open = self.open.lock().unwrap();
+            // A browser starting meanwhile is ended rather than kept.
+            self.generation.fetch_add(1, Ordering::SeqCst);
+            open.remove(key)
+        };
         if let Some(running) = running {
             running.end();
         }
@@ -579,7 +630,8 @@ impl Browsers {
         private_folder(&self.root).map_err(|_| "The bot's browser profile could not be made")?;
         private_folder(&profile).map_err(|_| "The bot's browser profile could not be made")?;
         let pid_file = self.root.join(format!("{key}.pid"));
-        end_leftover(&pid_file, &profile);
+        let (pid, marked) = (pid_file.clone(), profile.clone());
+        let _ = tokio::task::spawn_blocking(move || end_leftover(&pid, &marked)).await;
         let (child, pipe) = launch(program, &arguments(&profile, self.headless))
             .await
             .map_err(|_| "The bot's browser could not start".to_owned())?;
@@ -758,6 +810,14 @@ mod tests {
             json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "rawKeyDown", "code": "KeyV", "modifiers": 4 } }),
             json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "windowsVirtualKeyCode": 45, "modifiers": 8 } }),
             json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "key": "a", "commands": ["paste"] } }),
+            json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "rawKeyDown", "key": "v", "modifiers": 2.0 } }),
+            json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "rawKeyDown", "key": "v", "modifiers": -1 } }),
+            json!({ "method": "Input.dispatchKeyEvent", "params": { "type": "keyDown", "windowsVirtualKeyCode": 86.0, "modifiers": 4 } }),
+            json!({ "method": "Input.dispatchMouseEvent", "params": { "type": "mousePressed", "x": 1, "y": 1, "button": "middle" } }),
+            json!({ "method": "Input.dispatchMouseEvent", "params": { "type": "mouseMoved", "x": 1, "y": 1, "buttons": 4 } }),
+            json!({ "method": "Page.bringToFront" }),
+            json!({ "method": "Page.captureScreenshot", "params": { "captureBeyondViewport": true } }),
+            json!({ "method": "Page.captureScreenshot", "params": { "clip": { "x": 0, "y": 0, "width": 99999, "height": 99999, "scale": 9 } } }),
         ] {
             assert!(allowed(&refused).is_err(), "passed: {refused}");
         }
