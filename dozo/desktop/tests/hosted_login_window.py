@@ -37,6 +37,8 @@ def call(method, path, body=None):
             return json.loads(response.read() or b"{}").get("value")
     except urllib.error.HTTPError as error:
         return {"error": json.loads(error.read() or b"{}").get("value")}
+    except (urllib.error.URLError, ConnectionError):
+        return None  # not listening yet
 
 
 def until(what, check, seconds=60):

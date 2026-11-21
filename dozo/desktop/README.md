@@ -393,7 +393,13 @@ dozo/desktop/tests/stack_e2e.sh <dist> [<older dist>]   # last line DESKTOP STAC
    Allow button does, through the agent's `approve` (`phone::approve_phone`); the click itself is
    covered by the window tests under "Linux" (Xvfb), not here.
 4. A server of its own in hosted sign-in mode signs in through a stand-in hosted server
-   (`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule.
+   (`tests/fake_issuer.mjs`), each address on the way judged by the window's own rule. The real
+   window against a real hosted server is `tests/hosted_login_window.sh <dozo-desktop binary>`
+   (Linux, in Docker on Xvfb, driven through WebKit's WebDriver with tauri-driver; last line
+   `HOSTED LOGIN WINDOW: PASS|FAIL`): a binary built with
+   `DOZO_HOSTED_LOGIN_ISSUER=http://localhost:6173` opens a new computer's server, signs up on the
+   hosted page, agrees and is signed in, in one window and with nothing handed to the browser,
+   against the servers of `dozo/e2e/hosted-login` (`run.sh serve`). Run by hand, not in CI.
 5. With an older server (`DOZO_STACK_E2E_OLD_MANIFEST`; CI uses the published `server-v0.11.0-1`,
    locally an older dist): installs it with an account, updates it to this bundle at the next
    start and the account still signs in; then a newer version whose Node is broken is put back and

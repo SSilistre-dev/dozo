@@ -313,8 +313,14 @@ mod tests {
         let env = || Some("http://localhost:6173".to_owned());
         let built = issuer_from(Some("https://app.dozo.example"), env());
         assert_eq!(built.unwrap().as_str(), "https://app.dozo.example/");
-        assert_eq!(issuer_from(None, env()).unwrap().as_str(), "http://localhost:6173/");
-        assert_eq!(issuer_from(Some(""), env()).unwrap().as_str(), "http://localhost:6173/");
+        assert_eq!(
+            issuer_from(None, env()).unwrap().as_str(),
+            "http://localhost:6173/"
+        );
+        assert_eq!(
+            issuer_from(Some(""), env()).unwrap().as_str(),
+            "http://localhost:6173/"
+        );
         assert!(issuer_from(Some(""), Some(String::new())).is_none());
         assert!(issuer_from(None, None).is_none());
         assert!(issuer_from(None, Some("not a url".to_owned())).is_none());

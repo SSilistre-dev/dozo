@@ -17,6 +17,8 @@ BINARY="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 SHARED="$(mktemp -d "${TMPDIR:-/tmp}/dozo-window-XXXXXX")"
 SHOTS="${DOZO_WINDOW_SHOTS:-$SHARED/shots}"
 mkdir -p "$SHOTS"
+# The servers' container runs as its own user, which writes the ready mark here.
+chmod 0777 "$SHARED" "$SHOTS"
 SERVE="dozo-hosted-e2e-window-$$"
 WINDOW="dozo-hosted-window-$$"
 IMAGE=dozo-desktop-window:22.04
@@ -39,7 +41,7 @@ DOCKERFILE
 DRIVER="$DESKTOP/.toolchain/linux/tauri-driver/bin/tauri-driver"
 if [ ! -x "$DRIVER" ]; then
   say "building tauri-driver (once)"
-  docker run --rm --cpus 3 --memory 6g -u "$(id -u):$(id -g)" -v "$DESKTOP:/desktop" -e HOME=/tmp \
+  docker run --rm --cpus 3 --memory 6g -u "$(id -u):$(id -g)" -v "$DESKTOP:/desktop" -w /desktop -e HOME=/tmp \
     -e RUSTUP_HOME=/desktop/.toolchain/linux/rustup -e CARGO_HOME=/desktop/.toolchain/linux/cargo \
     dozo-desktop-linux:22.04 bash -c 'export PATH="$CARGO_HOME/bin:$PATH";
       cargo install tauri-driver --locked --root /desktop/.toolchain/linux/tauri-driver' \
@@ -53,10 +55,10 @@ for _ in $(seq 1 600); do [ -f "$SHARED/ready" ] && break; sleep 1; done
 [ -f "$SHARED/ready" ] || { tail -30 "$SHARED/serve.log"; say "servers not ready"; verdict FAIL; }
 say "servers: $(cat "$SHARED/ready")"
 
-docker run --rm --name "$WINDOW" --network "container:$SERVE" --cpus 2 --memory 3g \
+docker run --rm --init --name "$WINDOW" --network "container:$SERVE" --cpus 2 --memory 3g \
   -v "$BINARY:/app/dozo-desktop:ro" -v "$DRIVER:/app/tauri-driver:ro" \
   -v "$HERE/hosted_login_window.py:/app/test.py:ro" -v "$SHOTS:/shots" \
-  "$IMAGE" bash -c 'xvfb-run -a -s "-screen 0 1280x900x24" dbus-run-session -- python3 /app/test.py'
+  "$IMAGE" bash -c 'xvfb-run -a -s "-screen 0 1280x900x24" dbus-run-session -- python3 -u /app/test.py'
 rc=$?
 say "screenshots: $SHOTS"
 [ "$rc" = 0 ] && verdict PASS || { tail -20 "$SHARED/serve.log"; verdict FAIL; }
