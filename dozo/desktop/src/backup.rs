@@ -59,10 +59,10 @@ pub struct Picked(Mutex<Option<PathBuf>>);
 pub fn items(app: &AppHandle) -> tauri::Result<[MenuItem<Wry>; 4]> {
     let item = |id, label| MenuItem::with_id(app, id, label, false, None::<&str>);
     let items = [
-        item(BACK_UP_ID, "Back Up…")?,
-        item(RESTORE_ID, "Restore…")?,
-        item(RESET_ID, "Reset Password…")?,
-        item(DIAGNOSTICS_ID, "Save Diagnostics…")?,
+        item(BACK_UP_ID, crate::words::text("Back Up…"))?,
+        item(RESTORE_ID, crate::words::text("Restore…"))?,
+        item(RESET_ID, crate::words::text("Reset Password…"))?,
+        item(DIAGNOSTICS_ID, crate::words::text("Save Diagnostics…"))?,
     ];
     app.manage(Items(items.clone()));
     app.manage(Picked::default());
@@ -81,6 +81,7 @@ pub fn follow(app: AppHandle) {
                     let _ = item.set_enabled(on);
                 }
             }
+            crate::prefs::changed(&app);
             if status.changed().await.is_err() {
                 return;
             }

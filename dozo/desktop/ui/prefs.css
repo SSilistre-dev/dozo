@@ -1,0 +1,119 @@
+/* Settings: one list of what the Dozo menu offers, light or dark as the system is. */
+:root {
+  --bg: #fafafa;
+  --text: #141414;
+  --muted: #5c5c5c;
+  --line: rgba(0, 0, 0, 0.08);
+  --hover: rgba(0, 0, 0, 0.04);
+  --accent: #141414;
+  --track: rgba(0, 0, 0, 0.16);
+  --knob: #fff;
+  --sans: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141414;
+    --text: #ededed;
+    --muted: #a3a3a3;
+    --line: rgba(255, 255, 255, 0.08);
+    --hover: rgba(255, 255, 255, 0.05);
+    --accent: #ededed;
+    --track: rgba(255, 255, 255, 0.2);
+    --knob: #141414;
+  }
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 400 14.5px / 1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  cursor: default;
+}
+main {
+  padding: 20px 16px;
+}
+#rows {
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+#rows li + li {
+  border-top: 1px solid var(--line);
+}
+#rows button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+#rows button:hover {
+  background: var(--hover);
+}
+#rows button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+#rows button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* A switch's state, drawn as a switch. */
+.toggle {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--track);
+  transition: background 0.15s;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--knob);
+  transition: transform 0.15s;
+}
+@media (prefers-color-scheme: light) {
+  .toggle::after {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+}
+[aria-checked="true"] .toggle {
+  background: var(--accent);
+}
+[aria-checked="true"] .toggle::after {
+  transform: translateX(14px);
+}
+.chevron {
+  flex: none;
+  color: var(--muted);
+}
+#version {
+  margin-top: 14px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
