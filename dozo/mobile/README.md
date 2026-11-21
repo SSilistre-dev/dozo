@@ -203,17 +203,18 @@ What does not cross the relay, because the system loads it rather than JavaScrip
   Native `Request` whose body only its own fetch can read. The app's attachments travel inside JSON
   and are not affected.
 
-Not tried on a device, simulator or emulator:
+On the Android emulator (`dozo-mobile-android`, above), the release build pairs end to end: the
+`dozo://pair#…` link with its fragment reaches the pairing screen through expo-router, React
+Native's socket opens with the upgrade header, and the request held for approval, the session and
+the live stream work through the relay. A pairing that fails logs its cause to the device log
+behind the screen's generic message.
 
-- the deep link from the camera, including whether the fragment survives the camera and
-  expo-router on both platforms;
-- React Native's socket with the upgrade header, and the status text its errors carry;
-- `URL`, `ReadableStream` and `AbortSignal.reason` in React Native 0.88;
+Not tried yet:
+
+- the link from a real camera (the test opens it with `adb`), and anything on iOS beyond opening
+  the simulator;
+- a real phone, a real relay over https, and a refused upgrade's status text;
 - going to the background and back.
-
-The Android JavaScript bundle builds and compiles to Hermes bytecode with these modules
-(`expo export --platform android`). The flow itself is tested in Node against the reference relay
-and the computer's end.
 
 ## Phase 2
 
