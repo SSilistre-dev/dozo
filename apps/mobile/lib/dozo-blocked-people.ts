@@ -1,5 +1,4 @@
 import type { MessageAuthor } from "@rakazo/contracts";
-import * as SecureStore from "expo-secure-store";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { MobileMessage } from "./mobile-types";
 
@@ -9,6 +8,10 @@ import type { MobileMessage } from "./mobile-types";
  * it. Kept on the device only; the person is not told and stays in the Space.
  */
 const KEY = "dozo.blocked-people";
+
+// Loaded on first use, not with this module: the inbox rows import it, and the native storage
+// module must not load with them (it needs the app's runtime, which their tests do not start).
+const secureStore = () => import("expo-secure-store");
 
 type Blocked = { people: ReadonlySet<string>; chats: ReadonlySet<string> };
 
@@ -26,7 +29,7 @@ const strings = (value: unknown): string[] =>
 async function read(): Promise<void> {
   let stored: unknown;
   try {
-    const raw = await SecureStore.getItemAsync(KEY);
+    const raw = await (await secureStore()).getItemAsync(KEY);
     stored = raw ? JSON.parse(raw) : null;
   } catch {
     // Secure storage locked or the list unreadable: it counts as empty.
@@ -73,7 +76,8 @@ async function save(): Promise<void> {
   await load();
   const { people, chats } = blocked;
   try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify({ people: [...people], chats: [...chats] }));
+    const store = await secureStore();
+    await store.setItemAsync(KEY, JSON.stringify({ people: [...people], chats: [...chats] }));
   } catch {
     // Not saved: the person stays hidden until the app restarts.
   }
