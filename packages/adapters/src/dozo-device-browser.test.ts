@@ -26,6 +26,14 @@ function setup(pages: Record<string, DevicePage> = seededDevicePages) {
 }
 
 describe("the browser on the user's computer", () => {
+  it("says it drives a page by refs, with no hosted browser", () => {
+    expect(setup().provider.describe()).toMatchObject({
+      id: "device",
+      contractVersion: "1",
+      capabilities: { page: true, refs: true, keyless: true },
+    });
+  });
+
   it("navigates, waits for the load and reads the page", async () => {
     const { provider, device } = setup();
     const page = await provider.navigate(computer, { url: FORM }, context());
