@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   sheet: vi.fn(),
   push: vi.fn(),
   upstream: vi.fn(),
+  trust: [] as { id: string; text: string; onPress: () => void }[],
   pins: { threadId: undefined as string | undefined, pins: undefined as unknown[] | undefined },
 }));
 
@@ -30,6 +31,7 @@ vi.mock("./api", () => ({ rpc: api.rpc }));
 vi.mock("./appearance", () => ({ resolveMobileAppearance: () => "dark" }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
 vi.mock("./dozo-message-actions", () => ({ useDozoChatPins: () => api.pins }));
+vi.mock("./dozo-trust-bot", () => ({ useDozoTrustActions: () => api.trust }));
 vi.mock("./user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
@@ -81,6 +83,7 @@ beforeEach(() => {
   api.upstream.mockReturnValue([clear]);
   api.share.mockResolvedValue({ action: "sharedAction" });
   api.pins = { threadId: undefined, pins: undefined };
+  api.trust = [];
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -180,6 +183,23 @@ describe("the bot profile's menu", () => {
       pathname: "/dozo-pins",
       params: { threadId: "thread-1", botId: "bot-1", name: "Ada" },
     });
+  });
+});
+
+describe("the bot profile's menu for a marked bot", () => {
+  it("puts Trust this bot again after Export and before upstream's actions", async () => {
+    api.trust = [{ id: "trust", text: "Trust this bot again", onPress: vi.fn() }];
+    let actions: ReturnType<typeof useBotProfileActions> = [];
+    function Profile() {
+      actions = useBotProfileActions("bot-1", "Ada");
+      return null;
+    }
+    await render(<Profile />);
+    expect(actions.map((action) => action.text)).toEqual([
+      "Export",
+      "Trust this bot again",
+      "Clear conversation",
+    ]);
   });
 });
 
