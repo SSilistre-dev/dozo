@@ -2,7 +2,7 @@
 //! English, and Turkish when the system's language is Turkish. The other windows are English only.
 
 /// English, and its Turkish.
-const TURKISH: [(&str, &str); 32] = [
+const TURKISH: [(&str, &str); 34] = [
     ("Settings…", "Ayarlar…"),
     ("Settings", "Ayarlar"),
     ("Change Server…", "Sunucuyu Değiştir…"),
@@ -34,6 +34,8 @@ const TURKISH: [(&str, &str); 32] = [
     ("Paste", "Yapıştır"),
     ("Select All", "Tümünü Seç"),
     ("Minimize", "Küçült"),
+    ("Zoom", "Büyüt"),
+    ("Toggle Full Screen", "Tam Ekran"),
     ("Close Window", "Pencereyi Kapat"),
 ];
 

@@ -226,8 +226,13 @@ pub fn asked_by_page(app: &AppHandle) {
         return;
     }
     // Not from inside the web view's own question: the window opens once it has its answer.
+    // Asked from the main thread, `run_on_main_thread` would run it at once, so it is asked from
+    // a task.
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || open(&handle));
+    tauri::async_runtime::spawn(async move {
+        let app = handle.clone();
+        let _ = handle.run_on_main_thread(move || open(&app));
+    });
 }
 
 /// Whether the page shown is one of the chosen server's.

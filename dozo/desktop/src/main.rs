@@ -454,7 +454,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 &[
                     &item(app, "reload", "Reload", Some("Cmd+R"))?,
                     &separator()?,
-                    &PredefinedMenuItem::fullscreen(app, None)?,
+                    &PredefinedMenuItem::fullscreen(app, words::standard("Toggle Full Screen"))?,
                 ],
             )?,
             &Submenu::with_items(
@@ -463,7 +463,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
                 true,
                 &[
                     &PredefinedMenuItem::minimize(app, words::standard("Minimize"))?,
-                    &PredefinedMenuItem::maximize(app, None)?,
+                    &PredefinedMenuItem::maximize(app, words::standard("Zoom"))?,
                     &separator()?,
                     &PredefinedMenuItem::close_window(app, words::standard("Close Window"))?,
                 ],
