@@ -14,3 +14,14 @@ export const pageBrowserRequest = z.object({
     params: z.record(z.string(), z.unknown()).optional(),
   }),
 });
+
+/**
+ * The person signs in to a site in the bot's own browser: the desktop app opens the site's home
+ * page and passes nothing on until the person says they are done; it answers `{ signedIn }`.
+ */
+export const pageBrowserSignInRequest = z.object({
+  botId: z.string().min(1).max(256),
+  runId: z.string().min(1).max(256).optional(),
+  method: z.literal("pageBrowserSignIn"),
+  site: z.string().min(1).max(253),
+});

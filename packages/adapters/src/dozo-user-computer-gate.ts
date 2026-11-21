@@ -10,9 +10,8 @@ import {
 import { dozoCommandRuleExists } from "@rakazo/db";
 import { buildApprovalAskBlock as buildUpstreamAskBlock } from "./approval-ask.js";
 import { dozoSendLimitCard } from "./dozo-send-limit.js";
-import { userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
+import { isUserBrowserTool, userBrowserAsk, userBrowserGate } from "./dozo-user-browser-gate.js";
 import type { RunContext } from "./run-context.js";
-import { PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 import {
   USER_COMPUTER_SHELL_TOOL,
   userComputerGate as upstreamUserComputerGate,
@@ -35,7 +34,7 @@ export async function userComputerGate(
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
   // The page tools reach this gate only when they go to the user's own browser.
-  if (PAGE_BROWSER_TOOL_NAMES.has(name)) return userBrowserGate(ctx, blocked, name, args);
+  if (isUserBrowserTool(name)) return userBrowserGate(ctx, blocked, name, args);
   const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
   if (plan !== "allow" || name !== USER_COMPUTER_SHELL_TOOL) return plan;
   if (approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()) === "never")
@@ -92,8 +91,9 @@ export function buildApprovalAskBlock(
 }
 
 /**
- * The card for the bot's own browser on the user's computer: its first use there, or its first
- * action on a site, named by its registrable domain.
+ * The card for the bot's own browser on the user's computer: its first use in a thread, or the
+ * first time it opens, reads or acts on a site there, named by its registrable domain. The detail
+ * shows the address or the steps.
  */
 function userBrowserCard(
   effectId: string,
@@ -110,13 +110,16 @@ function userBrowserCard(
         ? JSON.stringify(args.actions)
         : "";
   const detail = redactSecrets(doing, secrets).slice(0, 2000);
+  // What the page tool would do on the site, as its card says it.
+  const verb =
+    toolName === "browser_snapshot" ? "read" : toolName === "browser_act" ? "act on" : "open";
   return {
     kind: "ask",
     approvalEffectId: effectId,
-    text:
-      ask.site === undefined
-        ? "Let this bot use its own browser on your computer?"
-        : `Let this bot act on ${ask.site || "this page"} in its browser?`,
+    // The first card names the site too, as every later one does.
+    text: ask.browser
+      ? `Let this bot use its own browser on your computer${ask.site ? ` and ${verb} ${ask.site}` : ""}?`
+      : `Let this bot ${verb} ${ask.site || "this page"} in its browser?`,
     ...(detail ? { detail, detailFormat: "code" as const } : {}),
     status: "pending",
     actions: [

@@ -16,7 +16,7 @@ export default defineConfig({
   forbidOnly: true,
   timeout: 120_000,
   expect: { timeout: 20_000 },
-  // The finally step: deletes the run's account if a scenario could not (canli/cleanup.ts).
+  // The finally step: forgets the run's session file; the trial account is never deleted (canli/cleanup.ts).
   globalTeardown: "./cleanup.ts",
   reporter: [["list"], ["json", { outputFile: `${out}/results.json` }], ["./report.ts"]],
   use: {

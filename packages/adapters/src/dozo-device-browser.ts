@@ -11,6 +11,7 @@ import type {
   ComputerRef,
 } from "@rakazo/adapter-kit";
 import { abortableDelay } from "@rakazo/core";
+import { hostSite } from "@rakazo/core/egress";
 
 /**
  * The bot's own browser on the user's computer, driven from here: the desktop app passes each
@@ -68,6 +69,8 @@ const MAX_NAME = 200;
 const LOAD_WAIT_MS = 10_000;
 const POLL_MS = 200;
 const SETTLE_MS = 300;
+export const MOVED_SITE =
+  "The page moved to another site, so the rest was not done. Check the page and ask again.";
 export const UNSUPPORTED_STEP =
   "This step is not available in the bot's browser on the user's computer yet.";
 
@@ -81,6 +84,11 @@ const text = (value: unknown) =>
 async function delay(ms: number, signal?: AbortSignal) {
   await abortableDelay(ms, signal);
   signal?.throwIfAborted();
+}
+
+/** A page's registrable domain, or "" when it has none. */
+function siteOf(url: string): string {
+  return URL.canParse(url) ? (hostSite(new URL(url).hostname) ?? "") : "";
 }
 
 /** The page node an element ref names, or undefined for one this browser never gave. */
@@ -284,12 +292,17 @@ export class DeviceBrowserProvider implements BrowserProvider {
   ): Promise<BrowserActResult> {
     let completed = 0;
     let touched = false;
+    // The batch acts on the site it was approved for: a step that would act on another (an earlier
+    // click went there) stops it, so the next call is asked about the new site.
+    const site = siteOf((await this.where()).url);
     const stop = async (error: string, uncertain: boolean): Promise<BrowserActResult> => {
       const page = await this.page().catch(() => ({ url: "", title: "" }));
       return { ok: false, completed, uncertain, ...page, error, ...this.pageNotice() };
     };
     for (const step of request.actions) {
       context.signal.throwIfAborted();
+      if (completed > 0 && siteOf((await this.where()).url) !== site)
+        return stop(MOVED_SITE, false);
       const node = refNode(step.ref);
       if (step.kind !== "click" && step.kind !== "fill" && step.kind !== "type")
         return stop(UNSUPPORTED_STEP, false);

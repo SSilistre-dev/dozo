@@ -10,6 +10,7 @@ import {
   VERIFICATION_MAILS_PER_HOUR,
   verificationCallbackUrl,
 } from "./dozo-email-link.js";
+import { banEntry } from "./dozo-operator.js";
 import { authRateLimitOptions, CLIENT_IP_HEADER, createAuth } from "./index.js";
 
 const SECRET = "offline-auth-secret-at-least-32-characters";
@@ -20,20 +21,24 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** The `rateLimit` statement of `takeVerificationMail`, played against a map. */
-function limiter() {
+/**
+ * The `rateLimit` statement of `takeVerificationMail`, played against a map, and the ban list
+ * lookup, which finds the keys in `banned`.
+ */
+function limiter(banned = new Set<string>()) {
   const rows = new Map<string, { count: number; lastRequest: bigint }>();
-  const $queryRaw = vi.fn(
-    async (_sql: TemplateStringsArray, _id: string, key: string, at: bigint, start: bigint) => {
-      const row = rows.get(key);
-      const next =
-        !row || row.lastRequest <= start
-          ? { count: 1, lastRequest: at }
-          : { count: row.count + 1, lastRequest: row.lastRequest };
-      rows.set(key, next);
-      return [{ count: next.count }];
-    },
-  );
+  const $queryRaw = vi.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
+    if (!sql.join("").includes("rateLimit"))
+      return (values[0] as string[]).filter((key) => banned.has(key)).map((value) => ({ value }));
+    const [, key, at, start] = values as [string, string, bigint, bigint];
+    const row = rows.get(key);
+    const next =
+      !row || row.lastRequest <= start
+        ? { count: 1, lastRequest: at }
+        : { count: row.count + 1, lastRequest: row.lastRequest };
+    rows.set(key, next);
+    return [{ count: next.count }];
+  });
   return { rows, $queryRaw: $queryRaw as never };
 }
 
@@ -146,6 +151,42 @@ describe("sendVerificationMail", () => {
       );
     expect(d.email.send).toHaveBeenCalledTimes(VERIFICATION_MAILS_PER_HOUR);
     expect(d.onError).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing to a banned address, and counts nothing for it", async () => {
+    const d = deps({ prisma: limiter(new Set([banEntry("eve@example.com") as string])) });
+    await sendVerificationMail(
+      d as never,
+      { id: "u", email: "Eve+tag@example.com" },
+      "https://api.example.com/v?token=t",
+    );
+    expect(d.email.send).not.toHaveBeenCalled();
+    expect(d.prisma.rows.size).toBe(0);
+    expect(d.onError).not.toHaveBeenCalled();
+    await sendVerificationMail(
+      d as never,
+      { id: "a", email: "adam@example.com" },
+      "https://api.example.com/v?token=t",
+    );
+    expect(d.email.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends nothing to a deactivated account, and counts nothing for it", async () => {
+    const d = deps();
+    await sendVerificationMail(
+      d as never,
+      { id: "u", email: "ada@example.com", deactivatedAt: new Date(NOW) },
+      "https://api.example.com/v?token=t",
+    );
+    expect(d.email.send).not.toHaveBeenCalled();
+    expect(d.prisma.rows.size).toBe(0);
+    expect(d.onError).not.toHaveBeenCalled();
+    await sendVerificationMail(
+      d as never,
+      { id: "u", email: "ada@example.com", deactivatedAt: null },
+      "https://api.example.com/v?token=t",
+    );
+    expect(d.email.send).toHaveBeenCalledTimes(1);
   });
 
   it("reports a failed delivery or count instead of rejecting", async () => {

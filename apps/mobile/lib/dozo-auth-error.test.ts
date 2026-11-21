@@ -65,6 +65,9 @@ it("gives anything else the caller's copy, and a validation error its field", ()
 it("is what the app's auth responses fall back on, in English and Turkish", () => {
   const body = { code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" };
   expect(authResponseErrorText(401, body)).toBe("Incorrect email or password");
+  expect(authResponseErrorText(403, { code: "EMAIL_NOT_VERIFIED", message: "Not verified" })).toBe(
+    "Email verification required",
+  );
   expect(authResponseErrorText(400, { code: "SOMETHING_NEW", message: "Raw words" })).toBe(
     "Could not continue",
   );
@@ -74,6 +77,9 @@ it("is what the app's auth responses fall back on, in English and Turkish", () =
   i18n.load("tr", tr);
   i18n.activate("tr");
   expect(authResponseErrorText(401, body)).toBe("E-posta ya da parola yanlış");
+  expect(authResponseErrorText(403, { code: "EMAIL_NOT_VERIFIED" })).toBe(
+    "E-posta doğrulaması gerekiyor",
+  );
   expect(authResponseErrorText(400, { code: "PASSWORD_TOO_SHORT" })).toBe(
     "Parola en az 8 karakter olmalı",
   );

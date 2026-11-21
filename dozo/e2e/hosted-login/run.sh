@@ -50,7 +50,7 @@ trap 'docker rm -f "$name" > /dev/null 2>&1 || true' EXIT INT TERM
 say "manifest $MANIFEST, image $IMAGE"
 docker run --rm --name "$name" --cpus 3 --memory 6g --init --ipc=host \
   -v "$REPO:/repo:ro" -v dozo-hosted-e2e-cache:/cache "${mounts[@]}" \
-  -e MANIFEST="$MANIFEST" -e PW_VERSION="$VERSION" -e MODE="${1:-run}" \
+  -e MANIFEST="$MANIFEST" -e PW_VERSION="$VERSION" -e MODE="${1:-run}" -e HOSTED_E2E_TRACE \
   "$IMAGE" bash /repo/dozo/e2e/hosted-login/run.sh --inside
 rc=$?
 [ "$rc" = 0 ] && verdict PASS || verdict FAIL

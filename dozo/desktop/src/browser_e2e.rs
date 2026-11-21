@@ -481,3 +481,282 @@ fn base64_decode(text: &str) -> Vec<u8> {
     }
     out
 }
+
+/// Serves `pages` by path on loopback, from a thread, and returns the port.
+fn serve_pages(pages: Vec<(&'static str, String)>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut request = [0u8; 4096];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let line = String::from_utf8_lossy(&request[..read]);
+            let path = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
+            let body = pages
+                .iter()
+                .find(|(at, _)| *at == path)
+                .map(|(_, body)| body.as_str())
+                .unwrap_or("");
+            let _ = match body.strip_prefix("REDIRECT ") {
+                Some(to) => write!(
+                    stream,
+                    "HTTP/1.1 302 Found\r\nlocation: {to}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                ),
+                None => write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                ),
+            };
+        }
+    });
+    port
+}
+
+/// The guard holds where a page would reach around it: through a window it opens, a frame it adds,
+/// a frame of another site (its own process), and the older full screen calls. Every attack runs
+/// on a bot's click, which counts as the person's gesture.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_guard_holds_in_windows_and_frames() {
+    const COPY: &str = "document.addEventListener('copy',e=>{e.clipboardData.setData('text/plain','x');e.preventDefault()},{once:true});";
+    let script = format!(
+        "<p id=probe>probe:</p><script>function r(t){{document.getElementById('probe').textContent+=' '+t}}\
+         addEventListener('message',e=>r(e.data));</script>\
+         <button onclick=\"{COPY}const w=window.open();r(w.Document.prototype.execCommand.call(document,'copy')?'window-wrote':'window-refused');w.close()\">Window</button>\
+         <button onclick=\"{COPY}const f=document.createElement('iframe');document.body.append(f);r(frames[frames.length-1].Document.prototype.execCommand.call(document,'copy')?'frame-wrote':'frame-refused')\">Frame</button>\
+         <button onclick=\"document.documentElement.webkitRequestFullScreen();setTimeout(()=>r(document.fullscreenElement?'webkit-taken':'webkit-refused'),300)\">Webkit</button>"
+    );
+    let inner = format!(
+        "<button style='width:100%;height:100%' onclick=\"{COPY}parent.postMessage(document.execCommand('copy')?'site-wrote':'site-refused','*')\">Inside</button>"
+    );
+    let port = serve_pages(vec![("/inner", inner), ("/", String::new())]);
+    // The outer page names the inner one on another site (localhost against 127.0.0.1), so the
+    // frame runs in a process of its own.
+    let outer = format!(
+        "<!doctype html><title>guard</title>{script}<iframe style='width:300px;height:80px' src='http://127.0.0.1.nip.io:{port}/inner'></iframe>"
+    );
+    let outer_port = serve_pages(vec![("/", outer)]);
+    let root = root();
+    let browsers = browsers(&root);
+    let page = format!("http://127.0.0.1:{outer_port}/");
+    call(&browsers, "Page.navigate", json!({ "url": page })).await;
+    let found = wait_for(&browsers, "Webkit").await;
+    for button in ["Window", "Frame", "Webkit"] {
+        click(&browsers, find_node(&found, "button", button)).await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    let frame = found
+        .iter()
+        .find(|(role, _, _)| role == "Iframe")
+        .unwrap_or_else(|| panic!("no frame in {found:?}"));
+    click(&browsers, frame.2).await;
+    let mut probe = String::new();
+    for _ in 0..50 {
+        probe = nodes(&browsers)
+            .await
+            .into_iter()
+            .find(|(_, name, _)| name.starts_with("probe:"))
+            .map(|(_, name, _)| name)
+            .unwrap_or_default();
+        if probe.split(' ').count() == 5 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let mut outcomes: Vec<&str> = probe.split(' ').skip(1).collect();
+    outcomes.sort_unstable();
+    assert_eq!(
+        outcomes,
+        [
+            "frame-refused",
+            "site-refused",
+            "webkit-refused",
+            "window-refused"
+        ],
+        "{probe}"
+    );
+    println!(
+        "E2E: the guard holds in a window the page opens, a frame it adds, a frame of another site, and the older full screen"
+    );
+    browsers.close_all();
+}
+
+/// Nothing the page does reaches this computer or its network: not a picture, a script's request,
+/// a form, a redirect, or a public name that resolves to loopback. A port that answers and one
+/// that does not look the same. The test's page is on a loopback port the proxy lets through; the
+/// target, another loopback port, counts every request it gets.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_reaches_nothing_on_this_computer_or_its_network() {
+    use std::sync::atomic::AtomicUsize;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let target = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = target.local_addr().unwrap().port();
+    let counted = hits.clone();
+    std::thread::spawn(move || {
+        for mut stream in target.incoming().flatten() {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok");
+        }
+    });
+    let closed = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let home = format!(
+        "<!doctype html><title>reach</title><p id=probe>probe:</p>\
+         <script>function r(t){{document.getElementById('probe').textContent+=' '+t}}</script>\
+         <img src='http://127.0.0.1:{port}/img'>\
+         <button onclick=\"fetch('http://127.0.0.1:{port}/f',{{mode:'no-cors'}}).then(()=>r('fetch-done'),()=>r('fetch-done'))\">Fetch</button>"
+    );
+    let form = format!(
+        "<!doctype html><title>form</title><form method=post action='http://127.0.0.1:{port}/form'><button>Post</button></form>"
+    );
+    let page = serve_pages(vec![
+        ("/", home),
+        ("/form", form),
+        ("/away", format!("REDIRECT http://127.0.0.1:{port}/r")),
+    ]);
+    let root = root();
+    let program = find().expect("a Chromium-family browser on this computer");
+    let window = std::env::var_os("DOZO_BROWSER_E2E_WINDOW").is_some();
+    let browsers = Browsers::with(root.join("browser-profiles"), Some(program), !window)
+        .with_local_ports(vec![page]);
+    let at = |path: &str| format!("http://127.0.0.1:{page}{path}");
+    call(&browsers, "Page.navigate", json!({ "url": at("/") })).await;
+    let found = wait_for(&browsers, "Fetch").await;
+    click(&browsers, find_node(&found, "button", "Fetch")).await;
+    // The request ends either way (the proxy answers it); only the target's count tells.
+    wait_for(&browsers, "fetch-").await;
+    call(&browsers, "Page.navigate", json!({ "url": at("/form") })).await;
+    let form = wait_for(&browsers, "Post").await;
+    click(&browsers, find_node(&form, "button", "Post")).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    call(&browsers, "Page.navigate", json!({ "url": at("/away") })).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let rebound = format!("http://127.0.0.1.nip.io:{port}/");
+    let to_target = call(&browsers, "Page.navigate", json!({ "url": rebound })).await;
+    let shut = format!("http://127.0.0.1.nip.io:{closed}/");
+    let to_closed = call(&browsers, "Page.navigate", json!({ "url": shut })).await;
+    assert_eq!(
+        to_target["errorText"], to_closed["errorText"],
+        "an open port looks like a closed one"
+    );
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        hits.load(Ordering::SeqCst),
+        0,
+        "a request reached the target"
+    );
+    println!(
+        "E2E: no picture, script request, form, redirect or rebound name reached this computer; open and closed ports look alike"
+    );
+    browsers.close_all();
+}
+
+/// The person's answer, held by the test: who was asked, and the answer to give.
+#[derive(Default)]
+struct HeldPrompt {
+    asked: Mutex<Option<String>>,
+    answer: Mutex<Option<oneshot::Sender<bool>>>,
+}
+
+impl SignInPrompt for HeldPrompt {
+    fn ask(&self, site: &str) -> oneshot::Receiver<bool> {
+        let (answer, answered) = oneshot::channel();
+        *self.asked.lock().unwrap() = Some(site.to_owned());
+        *self.answer.lock().unwrap() = Some(answer);
+        answered
+    }
+}
+
+/// While the person signs in, the bot's browser passes nothing on: no page, screenshot, input,
+/// navigation or history, and what the sign-in went through (a code in a return address) never
+/// reaches the server, during it or after. Only the person's Done ends it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
+    let port = serve_pages(vec![
+        (
+            "/",
+            "<!doctype html><title>Home</title><button>Account</button>".to_owned(),
+        ),
+        (
+            "/callback?code=SECRET",
+            "<!doctype html><title>Back</title>signed in".to_owned(),
+        ),
+    ]);
+    let site = format!("127.0.0.1:{port}");
+    let root = root();
+    let browsers = Arc::new(browsers(&root));
+    let prompt = Arc::new(HeldPrompt::default());
+    browsers.set_sign_in_prompt(prompt.clone());
+    call(
+        &browsers,
+        "Page.navigate",
+        json!({ "url": format!("http://{site}/") }),
+    )
+    .await;
+    let signing = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.asked.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(prompt.asked.lock().unwrap().as_deref(), Some(site.as_str()));
+    // The person goes through the sign-in, which comes back with a code in its address.
+    let (running, session) = person(&browsers);
+    let back = json!({ "url": format!("http://{site}/callback?code=SECRET") });
+    running
+        .pipe
+        .call("Page.navigate", back, Some(&session))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    for command in [
+        json!({ "method": "Accessibility.getFullAXTree" }),
+        json!({ "method": "Page.captureScreenshot", "params": { "format": "png" } }),
+        json!({ "method": "Page.getNavigationHistory" }),
+        json!({ "method": "Input.insertText", "params": { "text": "x" } }),
+        json!({ "method": "Page.navigate", "params": { "url": format!("http://{site}/") } }),
+    ] {
+        let error = browsers.handle("bot", &command).await.unwrap_err();
+        assert!(error.contains("signing in"), "{command}: {error}");
+    }
+    let again = browsers.sign_in("bot", &site).await.unwrap_err();
+    assert!(again.contains("signing in"), "{again}");
+    assert!(!signing.is_finished(), "only the person ends it");
+    println!("E2E: while the person signs in every command is refused");
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(true)
+        .unwrap();
+    assert!(
+        signing.await.unwrap().unwrap(),
+        "the person said they signed in"
+    );
+    let answer = browsers
+        .handle("bot", &json!({ "method": "Page.getNavigationHistory" }))
+        .await
+        .unwrap();
+    assert!(!answer.to_string().contains("SECRET"), "{answer}");
+    let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
+    assert!(
+        tree.to_string().contains("signed in"),
+        "the page is the bot's again"
+    );
+    println!(
+        "E2E: after Done the page is the bot's again, and no address of the sign-in reaches the server"
+    );
+    browsers.close_all();
+}
