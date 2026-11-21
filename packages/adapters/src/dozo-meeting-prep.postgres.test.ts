@@ -131,13 +131,50 @@ describePostgres("meeting prep with a fake calendar (PostgreSQL)", () => {
 
   it("schedules one note per real meeting, 15 minutes ahead, carrying no calendar text", async () => {
     const now = new Date();
-    const at = (hours: number) => new Date(Math.floor(now.getTime() / MINUTE) * MINUTE + hours * HOUR);
+    const at = (hours: number) =>
+      new Date(Math.floor(now.getTime() / MINUTE) * MINUTE + hours * HOUR);
     const calendar = fakeCalendar([
-      { id: "evt-review", title: "Design review", description: INJECTION, start: at(2), self: "accepted", others: 3 },
-      { id: "evt-sync", title: INJECTION, description: "", start: at(4), self: "accepted", others: 1 },
-      { id: "evt-focus", title: "Focus time", description: "", start: at(3), self: "accepted", others: 0 },
-      { id: "evt-declined", title: "Offsite", description: "", start: at(5), self: "declined", others: 5 },
-      { id: "evt-holiday", title: "Holiday", description: "", start: at(6), allDay: true, self: "accepted", others: 2 },
+      {
+        id: "evt-review",
+        title: "Design review",
+        description: INJECTION,
+        start: at(2),
+        self: "accepted",
+        others: 3,
+      },
+      {
+        id: "evt-sync",
+        title: INJECTION,
+        description: "",
+        start: at(4),
+        self: "accepted",
+        others: 1,
+      },
+      {
+        id: "evt-focus",
+        title: "Focus time",
+        description: "",
+        start: at(3),
+        self: "accepted",
+        others: 0,
+      },
+      {
+        id: "evt-declined",
+        title: "Offsite",
+        description: "",
+        start: at(5),
+        self: "declined",
+        others: 5,
+      },
+      {
+        id: "evt-holiday",
+        title: "Holiday",
+        description: "",
+        start: at(6),
+        allDay: true,
+        self: "accepted",
+        others: 2,
+      },
     ]);
 
     const created = await plan(calendar, now);

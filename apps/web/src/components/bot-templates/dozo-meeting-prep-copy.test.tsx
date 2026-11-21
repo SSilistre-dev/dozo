@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+
+import type { Messages } from "@lingui/core";
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
-import type { Messages } from "@lingui/core";
 import { findBotTemplate } from "@rakazo/core";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { act } from "react";
@@ -30,7 +31,13 @@ function copyIn(locale: string): BotTemplateCopy {
     return null;
   }
   const root = createRoot(document.createElement("div"));
-  act(() => root.render(<I18nProvider i18n={i18n}><Probe /></I18nProvider>));
+  act(() =>
+    root.render(
+      <I18nProvider i18n={i18n}>
+        <Probe />
+      </I18nProvider>,
+    ),
+  );
   act(() => root.unmount());
   return copy!;
 }
