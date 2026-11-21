@@ -6104,8 +6104,17 @@
     },
     {
       "file": "packages/contracts/src/rpc.ts",
-      "find": "./dozo-message-revision.js\";\nimport { dozoMessagesContract }",
-      "replace": "./dozo-message-revision.js\";\nexport * from \"./dozo-queue.js\";\nimport { dozoQueueContract } from \"./dozo-queue.js\";\nimport { dozoMessagesContract }",
+      "find": "export * from \"./dozo-message-revision.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
+      "replace": "export * from \"./dozo-message-revision.js\";\nexport * from \"./dozo-bot-chats.js\";\nimport { dozoMessagesContract } from \"./dozo-message-revision.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-bot-chats.ts"
+      ],
+      "reason": "bot chats: a bot's extra chats' types, limits and contract reach the server from the contracts package; the contract joins the app contract, with its routes, in the web step"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "./dozo-bot-chats.js\";\nimport { dozoMessagesContract }",
+      "replace": "./dozo-bot-chats.js\";\nexport * from \"./dozo-queue.js\";\nimport { dozoQueueContract } from \"./dozo-queue.js\";\nimport { dozoMessagesContract }",
       "requires": [
         "packages/contracts/src/dozo-queue.ts"
       ],
