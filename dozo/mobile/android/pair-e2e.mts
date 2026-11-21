@@ -46,24 +46,23 @@ async function shot(name: string) {
   say(`screenshot ${path.basename(file)}`);
 }
 
-/** One Maestro flow from ./flows; its own debug output (a screenshot on failure) goes to <out>. */
+/**
+ * One Maestro flow from ./flows; its own debug output (a screenshot on failure) goes to <out>.
+ * Run without blocking: the server and the relay answer the phone from this process meanwhile.
+ */
 function flow(name: string, env: Record<string, string> = {}) {
   const vars = Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
   say(`flow ${name}`);
-  execFileSync(
-    "maestro",
-    [
-      "test",
-      "--no-ansi",
-      "--flatten-debug-output",
-      "--debug-output",
-      path.join(out, "maestro", name),
-      ...vars,
-      path.join(flows, `${name}.yaml`),
-    ],
-    // A flow's own takeScreenshot lands in the directory it runs in.
-    { cwd: out, stdio: "inherit" },
-  );
+  const args = ["test", "--no-ansi", "--flatten-debug-output", "--debug-output"];
+  args.push(path.join(out, "maestro", name), ...vars, path.join(flows, `${name}.yaml`));
+  // A flow's own takeScreenshot lands in the directory it runs in.
+  const child = spawn("maestro", args, { cwd: out, stdio: "inherit" });
+  return new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`flow ${name} failed (exit ${code})`)),
+    );
+  });
 }
 
 /** The relay agent's command line from the workspace, as the desktop app runs the bundled one. */
@@ -194,7 +193,7 @@ async function main() {
     execFileSync("adb", ["reverse", `tcp:${RELAY_PORT}`, `tcp:${RELAY_PORT}`], {
       stdio: "inherit",
     });
-    flow("01-first-screen");
+    await flow("01-first-screen");
     await shot("first-screen");
 
     // What the phone's camera does with the QR code: a VIEW intent for the link.
@@ -203,13 +202,13 @@ async function main() {
       ["shell", `am start -a android.intent.action.VIEW -d '${offer.qr}' ${APP_ID}`],
       { stdio: "inherit" },
     );
-    flow("02-connect", { DOZO_RELAY_HOST: `127.0.0.1:${RELAY_PORT}` });
+    await flow("02-connect", { DOZO_RELAY_HOST: `127.0.0.1:${RELAY_PORT}` });
     await event("paired", offer.channel, 30);
     const asked = await event("approval", offer.channel, 60);
     if (asked.platform !== "android") throw new Error(`the phone said it is ${asked.platform}`);
     const code = String(asked.code);
     say(`the computer asks to approve an android phone with the code ${code}`);
-    flow("03-code", { DOZO_CODE: `${code.slice(0, 3)} ${code.slice(3)}` });
+    await flow("03-code", { DOZO_CODE: `${code.slice(0, 3)} ${code.slice(3)}` });
     await shot("same-code");
 
     await waitForLine(
@@ -219,7 +218,7 @@ async function main() {
       (line) => (line.event === "approved" ? true : undefined),
     );
     await event("approved", offer.channel, 30);
-    flow("04-chats", { DOZO_BOT: BOT });
+    await flow("04-chats", { DOZO_BOT: BOT });
     await shot("chats");
     say("paired, approved on the computer, signed in, the chat list shows the bot");
   } finally {
