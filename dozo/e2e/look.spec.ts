@@ -90,6 +90,45 @@ test("the sidebar shows Dozo characters in two-line rows under the wordmark and 
   expect(await styleOf(page, `${open} > .dozo-avatar`, "content", "::before")).toBe("none");
 });
 
+test("a bot's extra chats sit under its row, lined up with its name, in the rows' own tones", async ({
+  page,
+  theme,
+}) => {
+  const world = readWorld();
+  await openBot(page, world.chiefId, "Chief");
+  const { chat } = await rpc<{ chat: { id: string } }>(page, "dozoChats/create", {
+    botId: world.chiefId,
+    name: "Look",
+  });
+  try {
+    await gotoStable(page, `/app/${world.chiefId}?chat=${chat.id}`);
+    const extra = `[data-dozo-bot-chat="${chat.id}"]`;
+    await expect(page.locator(extra)).toHaveAttribute("aria-current", "page");
+    // The bot's row is not the open chat now; the extra chat's row is, in the open row's tone.
+    await expect(page.locator(`${ROW}[aria-current="page"]`)).toHaveCount(0);
+    const sidebar = await styleOf(page, INNER, "background-color");
+    const on = await styleOf(page, extra, "background-color");
+    expect(on).not.toBe(CLEAR);
+    expect(on).not.toBe(sidebar);
+    expect(await styleOf(page, extra, "border-radius")).toBe("10px");
+    // Its name starts where the bot's name starts.
+    const starts = await page.evaluate(
+      ([bot, row]) =>
+        [
+          document.querySelector(`[data-roster-bot-id="${bot}"] [data-roster-bot-name]`),
+          document.querySelector(`${row} [data-dozo-bot-chat-name]`),
+        ].map((element) => Math.round(element?.getBoundingClientRect().left ?? -1)),
+      [world.chiefId, extra],
+    );
+    expect(starts[1]).toBe(starts[0]);
+    await page
+      .getByTestId("bots-sidebar")
+      .screenshot({ path: outDirFile(`bot-chats-${theme}.png`) });
+  } finally {
+    await rpc(page, "dozoChats/archive", { chatId: chat.id, archived: true });
+  }
+});
+
 test("the collapsed sidebar stacks four equal buttons above the bots, without overlap", async ({
   page,
 }) => {
@@ -226,7 +265,9 @@ test("the colour picked for a new bot is the one its preview, its row and its ch
     for (const reload of [false, true]) {
       if (reload) await openBot(page, botId, name);
       await expect
-        .poll(() => tile(page.locator(`${ROW}[data-roster-bot-id="${botId}"] .dozo-avatar`).first()))
+        .poll(() =>
+          tile(page.locator(`${ROW}[data-roster-bot-id="${botId}"] .dozo-avatar`).first()),
+        )
         .toBe(wanted(picked));
       await expect
         .poll(() => tile(page.getByTestId("bot-settings-trigger").locator(".dozo-avatar")))
