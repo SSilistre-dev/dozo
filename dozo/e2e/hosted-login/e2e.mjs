@@ -178,7 +178,9 @@ async function startHostedSignIn(page, base) {
 async function landed(page, base, email) {
   await page.waitForURL(
     (url) =>
-      url.origin === base && !url.pathname.startsWith("/api/") && url.pathname !== "/sign-in",
+      url.origin === base &&
+      !url.pathname.startsWith("/api/") &&
+      !["/sign-in", "/sign-up"].includes(url.pathname),
     { timeout: 30_000 },
   );
   const got = await session(page, base);
@@ -331,9 +333,17 @@ async function cases(browser) {
       await tab.getByRole("button", { name: "Sign in", exact: true }).click();
       check((await landed(tab, LEGACY, local)) === ownerId, "password sign-in as before");
       // Settings > General > Security: link to the hosted account.
+      const capabilities = await tab.evaluate(async () =>
+        (await fetch("/api/auth/capabilities")).json(),
+      );
+      check(capabilities.hostedLink === true && !capabilities.hostedLogin, "legacy mode");
       await tab.goto(`${LEGACY}/app?settings=general`);
       const row = tab.getByText("Dozo account", { exact: true });
-      await row.waitFor({ timeout: 30_000 });
+      await row.waitFor({ timeout: 30_000 }).catch(async (error) => {
+        await tab.screenshot({ path: "/work/settings.png" }).catch(() => undefined);
+        say(`settings at ${tab.url()}: ${(await tab.textContent("body"))?.slice(0, 800)}`);
+        throw error;
+      });
       await tab.getByRole("button", { name: "Link", exact: true }).click();
       await tab.waitForURL((url) => url.origin === HOSTED);
       await hostedSignUp(tab, linked);

@@ -68,12 +68,6 @@ export const TOKEN_LIFETIME_SECONDS = 60;
 export const CLOCK_LEEWAY_SECONDS = 60;
 /** How long a started sign-in may take, on the local clock. */
 export const NONCE_LIFETIME_SECONDS = 5 * 60;
-/**
- * After keys were read, an unknown key id reads them again only this much later. Short, so a key
- * swapped in right after a read is picked up on the next try; a flood of made-up key ids still
- * costs the hosted server one request in this time per computer.
- */
-export const KEY_REFRESH_SECONDS = 10;
 /** After reading the keys failed, the next try waits this long. */
 export const KEY_RETRY_SECONDS = 5;
 /** The largest key list the local server reads. */
@@ -324,10 +318,12 @@ export async function verifyLoginToken(
 
 /**
  * The hosted server's public keys, fetched from it over its own origin and kept in memory. A key
- * id not seen yet reads them again, at most once a `KEY_REFRESH_SECONDS` after a read and once a
- * `KEY_RETRY_SECONDS` after a failure, with one request shared by everyone waiting, so a new key
- * is picked up on its first token and a flood of unknown ids costs one request that often. Only
- * Ed25519 keys whose id matches their key are kept.
+ * id not seen yet reads them again at once, so a key swapped in at any moment is picked up on its
+ * first token (a wait after each read once refused a sign-in that came right after one, in the
+ * end-to-end test of a key change); one request is shared by everyone waiting, and after a failure
+ * the next waits `KEY_RETRY_SECONDS`. What bounds the reads is what reaches this: a callback,
+ * which takes this browser's started sign-in and is rate limited. Only Ed25519 keys whose id
+ * matches their key are kept.
  */
 export function issuerKeys(issuer: string, fetcher?: typeof fetch) {
   let keys = new Map<string, KeyObject>();
@@ -355,7 +351,7 @@ export function issuerKeys(issuer: string, fetcher?: typeof fetch) {
       reading = read()
         .then(
           () => {
-            nextReadAt = now + KEY_REFRESH_SECONDS * 1000;
+            nextReadAt = now;
           },
           (error: unknown) => {
             nextReadAt = now + KEY_RETRY_SECONDS * 1000;

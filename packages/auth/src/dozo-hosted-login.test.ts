@@ -21,7 +21,6 @@ import {
   installLock,
   issuerKeys,
   issuerOrigin,
-  KEY_REFRESH_SECONDS,
   KEY_RETRY_SECONDS,
   LOCAL_SESSION_DAYS,
   legacyAccounts,
@@ -287,23 +286,19 @@ describe("the issuer's keys on the local server", () => {
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ redirect: "error" });
   });
 
-  it("asks again for an unknown key every few seconds at most, which picks up a rotated key", async () => {
+  it("reads again at once for an unknown key, which picks up a key swapped in right after a read", async () => {
     const next = ed25519();
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ keys: [jwk] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ keys: [publicJwk(next)] })));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ keys: [jwk, publicJwk(next)] })));
     const keyFor = issuerKeys(HOSTED, fetcher);
-    expect(await keyFor(publicJwk(next).kid, NOW)).toBeNull();
-    expect(await keyFor(publicJwk(next).kid, NOW + 1000)).toBeNull();
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    const later = NOW + KEY_REFRESH_SECONDS * 1000;
-    expect(await keyFor(publicJwk(next).kid, later)).not.toBeNull();
-    expect(await keyFor(jwk.kid, later + 1)).toBeNull();
+    expect(await keyFor(jwk.kid, NOW)).not.toBeNull();
+    // The swap a second later: the new key's first token is accepted.
+    expect(await keyFor(publicJwk(next).kid, NOW + 1000)).not.toBeNull();
+    // Known keys read nothing.
+    expect(await keyFor(jwk.kid, NOW + 2000)).not.toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(2);
-    // A key swapped in seconds after a read (found by the end-to-end test of a key change) does
-    // not wait for a minute-long window.
-    expect(KEY_REFRESH_SECONDS).toBeLessThanOrEqual(10);
   });
 
   it("shares one request among everyone waiting for it", async () => {
@@ -314,7 +309,7 @@ describe("the issuer's keys on the local server", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("after a failure tries again sooner than after a read", async () => {
+  it("after a failure waits a few seconds before reading again", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(new Response("", { status: 503 }))
