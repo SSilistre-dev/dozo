@@ -1175,24 +1175,26 @@
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "import { followStream } from \"../../lib/follow-stream\";\nimport { notificationIcon",
-      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { notificationIcon",
+      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoCliAccountsChanged } from \"../model-settings/dozo-cli-accounts\";\nimport { notificationIcon",
       "requires": [
         "apps/web/src/components/dozo-announcement.tsx",
         "apps/web/src/pages/shell/dozo-message-pins.tsx",
-        "apps/web/src/pages/model-settings/dozo-model-pool.tsx"
+        "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
       ],
-      "reason": "site settings, pins and the model pool: the imports of the rule below"
+      "reason": "site settings, pins, the model pool and CLI accounts: the imports of the rule below"
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "      (frame) => {\n        if (frame.type === \"roster\") rosterRef.current?.changed();",
-      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void dozoPinsChanged();\n          void dozoModelPoolChanged();\n        }",
+      "replace": "      (frame) => {\n        if (frame.type === \"site\") dozoSiteChanged();\n        else if (frame.type === \"roster\") {\n          rosterRef.current?.changed();\n          void dozoPinsChanged();\n          void dozoModelPoolChanged();\n          void dozoCliAccountsChanged();\n        }",
       "requires": [
         "apps/web/src/components/dozo-announcement.tsx",
         "apps/web/src/pages/shell/dozo-message-pins.tsx",
-        "apps/web/src/pages/model-settings/dozo-model-pool.tsx"
+        "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
       ],
-      "reason": "site settings, pins and the model pool: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once; a roster signal also re-reads the open chat's pins, since a pin change, a deleted message and a cleared chat all send one; it also re-reads the model pool, whose change sends one"
+      "reason": "site settings, pins and the model pool: the app's one live stream carries a content-free signal when the site settings change, so open apps re-read the announcement at once; a roster signal also re-reads the open chat's pins, since a pin change, a deleted message and a cleared chat all send one; it also re-reads the model pool, whose change sends one; and the CLI accounts, which a new connection signals"
     },
     {
       "file": "infra/sandboxes/computer/Dockerfile",
@@ -6034,42 +6036,46 @@
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "} from \"./model-connections.js\";\nimport { ModelHeadersSchema }",
-      "replace": "} from \"./model-connections.js\";\nexport * from \"./dozo-model-pool.js\";\nimport { dozoModelPoolContract } from \"./dozo-model-pool.js\";\nexport * from \"./dozo-local-models.js\";\nimport { dozoLocalModelsContract } from \"./dozo-local-models.js\";\nimport { ModelHeadersSchema }",
+      "replace": "} from \"./model-connections.js\";\nexport * from \"./dozo-model-pool.js\";\nimport { dozoModelPoolContract } from \"./dozo-model-pool.js\";\nexport * from \"./dozo-local-models.js\";\nimport { dozoLocalModelsContract } from \"./dozo-local-models.js\";\nexport * from \"./dozo-cli-accounts.js\";\nimport { dozoCliAccountsContract } from \"./dozo-cli-accounts.js\";\nimport { ModelHeadersSchema }",
       "requires": [
         "packages/contracts/src/dozo-model-pool.ts",
-        "packages/contracts/src/dozo-local-models.ts"
+        "packages/contracts/src/dozo-local-models.ts",
+        "packages/contracts/src/dozo-cli-accounts.ts"
       ],
-      "reason": "model pool and local model servers: the imports of the rule below"
+      "reason": "model pool, local model servers and CLI accounts: the imports of the rule below"
     },
     {
       "file": "packages/contracts/src/rpc.ts",
       "find": "  },\n  models: {\n    forRole: oc\n",
-      "replace": "  },\n  dozoModelPool: dozoModelPoolContract,\n  dozoLocalModels: dozoLocalModelsContract,\n  models: {\n    forRole: oc\n",
+      "replace": "  },\n  dozoModelPool: dozoModelPoolContract,\n  dozoLocalModels: dozoLocalModelsContract,\n  dozoCliAccounts: dozoCliAccountsContract,\n  models: {\n    forRole: oc\n",
       "requires": [
         "packages/contracts/src/dozo-model-pool.ts",
-        "packages/contracts/src/dozo-local-models.ts"
+        "packages/contracts/src/dozo-local-models.ts",
+        "packages/contracts/src/dozo-cli-accounts.ts"
       ],
-      "reason": "model pool and local model servers: reading and switching the pool, and the model servers running on the server's own computer, join the app contract, so the server and the web client share their types"
+      "reason": "model pool and local model servers: reading and switching the pool, the model servers running on the server's own computer, and the provider tools there a person can use as models, join the app contract, so the server and the web client share their types"
     },
     {
       "file": "apps/api/src/router.ts",
       "find": "import { modelsRoutes } from \"./routes/models.js\";\nimport { onboardingRoutes }",
-      "replace": "import { modelsRoutes } from \"./routes/models.js\";\nimport { dozoModelPoolRoutes } from \"./dozo-model-pool.js\";\nimport { dozoLocalModelsRoutes } from \"./dozo-local-models.js\";\nimport { onboardingRoutes }",
+      "replace": "import { modelsRoutes } from \"./routes/models.js\";\nimport { dozoModelPoolRoutes } from \"./dozo-model-pool.js\";\nimport { dozoLocalModelsRoutes } from \"./dozo-local-models.js\";\nimport { dozoCliAccountsRoutes } from \"./dozo-cli-accounts.js\";\nimport { onboardingRoutes }",
       "requires": [
         "apps/api/src/dozo-model-pool.ts",
-        "apps/api/src/dozo-local-models.ts"
+        "apps/api/src/dozo-local-models.ts",
+        "apps/api/src/dozo-cli-accounts.ts"
       ],
-      "reason": "model pool and local model servers: the imports of the rule below"
+      "reason": "model pool, local model servers and CLI accounts: the imports of the rule below"
     },
     {
       "file": "apps/api/src/router.ts",
       "find": "    ...modelsRoutes(ctx),\n    ...botsRoutes(ctx),\n",
-      "replace": "    ...modelsRoutes(ctx),\n    ...dozoModelPoolRoutes(ctx),\n    ...dozoLocalModelsRoutes(ctx),\n    ...botsRoutes(ctx),\n",
+      "replace": "    ...modelsRoutes(ctx),\n    ...dozoModelPoolRoutes(ctx),\n    ...dozoLocalModelsRoutes(ctx),\n    ...dozoCliAccountsRoutes(ctx),\n    ...botsRoutes(ctx),\n",
       "requires": [
         "apps/api/src/dozo-model-pool.ts",
-        "apps/api/src/dozo-local-models.ts"
+        "apps/api/src/dozo-local-models.ts",
+        "apps/api/src/dozo-cli-accounts.ts"
       ],
-      "reason": "model pool and local model servers: the router serves the signed-in person's pool, which the server checks and records, and the model servers it finds on its own computer where private addresses are allowed"
+      "reason": "model pool and local model servers: the router serves the signed-in person's pool, which the server checks and records, and the model servers it finds on its own computer where private addresses are allowed, and the provider tools on its own computer the person can connect with their own sign-in"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -6083,11 +6089,12 @@
     {
       "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
       "find": "import { ConnectionNameField, ProvidersSection } from \"./model-settings/providers-section\";\nimport type { ConnectableProvider }",
-      "replace": "import { ConnectionNameField, ProvidersSection } from \"./model-settings/providers-section\";\nimport { DozoConnectionDetail, DozoModelPoolSwitch } from \"./model-settings/dozo-model-pool\";\nimport type { ConnectableProvider }",
+      "replace": "import { ConnectionNameField, ProvidersSection } from \"./model-settings/providers-section\";\nimport { DozoConnectionDetail, DozoModelPoolSwitch } from \"./model-settings/dozo-model-pool\";\nimport { DozoCliAccounts, useDozoCliProviders } from \"./model-settings/dozo-cli-accounts\";\nimport type { ConnectableProvider }",
       "requires": [
-        "apps/web/src/pages/model-settings/dozo-model-pool.tsx"
+        "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
       ],
-      "reason": "model pool: the import of the two rules below"
+      "reason": "model pool and CLI accounts: the imports of the rules below"
     },
     {
       "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
@@ -6528,6 +6535,24 @@
       ]
     },
     {
+      "file": "scripts/build-server.mjs",
+      "find": "            if (args.pluginData?.inner) return undefined;\n",
+      "replace": "            if (args.pluginData?.inner || args.kind === \"entry-point\") return undefined;\n",
+      "reason": "the server bundle on Windows (dozo/server-bundle): an entry point's absolute path starts with a drive letter, which the filter for bare package names takes for one, and esbuild refuses an entry point marked external"
+    },
+    {
+      "file": "scripts/build-server-bundle.mjs",
+      "find": "function link(at) {\n  const target = fs.readlinkSync(at);\n  fs.mkdirSync(path.dirname(staged(at)), { recursive: true });\n",
+      "replace": "// Windows: pnpm's links are junctions, which hold absolute paths and which an archive cannot\n// carry; each is listed instead, relative, in dozo-links.json for the desktop app to make again.\nconst dozoLinks = new Map();\nfunction link(at) {\n  fs.mkdirSync(path.dirname(staged(at)), { recursive: true });\n  if (process.platform === \"win32\") {\n    const posix = (file) => file.split(path.sep).join(\"/\");\n    const target = path.relative(path.dirname(at), fs.realpathSync(at));\n    dozoLinks.set(posix(path.relative(stage, staged(at))), posix(target));\n    return;\n  }\n  const target = fs.readlinkSync(at);\n",
+      "reason": "the server bundle on Windows (dozo/server-bundle/README.md, Windows): pnpm's junctions would go into the archive as links to the build machine's own folders; they are listed relative instead"
+    },
+    {
+      "file": "scripts/build-server-bundle.mjs",
+      "find": "execFileSync(\"tar\", [\"-C\", work, \"-cJf\", archive, \"rakazo-server\"], { stdio: \"inherit\" });",
+      "replace": "if (dozoLinks.size > 0) {\n  const links = Object.fromEntries([...dozoLinks].sort());\n  fs.writeFileSync(path.join(stage, \"dozo-links.json\"), `${JSON.stringify(links, null, 1)}\\n`);\n}\nexecFileSync(\"tar\", [\"-cJf\", path.relative(work, archive), \"rakazo-server\"], {\n  cwd: work,\n  stdio: \"inherit\",\n});",
+      "reason": "the server bundle on Windows: writes the links the rule on link() listed into the bundle, and names the archive relative to the folder tar runs in, because GNU tar there reads the drive letter of an absolute name (D:) as a remote host"
+    },
+    {
       "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
       "find": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { SettingsGroup",
       "replace": "import { DozoActivityLogRow } from \"../components/dozo-activity-log\";\nimport { DozoHostedLinkRow } from \"../components/dozo-hosted-link-row\";\nimport { SettingsGroup",
@@ -6909,6 +6934,105 @@
         "packages/adapters/src/dozo-token-run.ts"
       ],
       "reason": "token gate: upstream test of the tool gate; the fork's gate asks the database whether a message sent with an access token is in the bot's chat, which this fake did not answer, so it answers none (dozo-token-run.test.ts covers the question)"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/cli.ts",
+      "find": "import { createInterface } from \"node:readline\";\n\n/**\n * Runs the official",
+      "replace": "import { createInterface } from \"node:readline\";\nimport { cliAccountEnv } from \"../dozo-cli-driver.js\";\n\n/**\n * Runs the official",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-driver.ts"
+      ],
+      "reason": "CLI accounts on the person's own computer: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/cli.ts",
+      "find": "  for (const [key, value] of Object.entries(source)) {\n",
+      "replace": "  for (const [key, value] of Object.entries(cliAccountEnv(source))) {\n",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-driver.ts"
+      ],
+      "reason": "CLI accounts on the person's own computer: inside a connection's turn the CLI starts from the person's home and PATH instead of the server's; the allowlist below still keeps every server secret out"
+    },
+    {
+      "file": "packages/adapters/src/pi-models.ts",
+      "find": "import { LOCAL_PROVIDER_ID, registerLocalProvider } from \"./pi-local-provider.js\";",
+      "replace": "import { LOCAL_PROVIDER_ID, registerLocalProvider } from \"./cli-models/dozo-cli-providers.js\";",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-providers.ts"
+      ],
+      "reason": "CLI accounts on the person's own computer: the catalog also lists the models of the provider tools installed there, only on a server the desktop app runs on that computer"
+    },
+    {
+      "file": "packages/adapters/src/run-runtime.ts",
+      "find": "import { cliModelRuntime } from \"./cli-models/runtime.js\";",
+      "replace": "import { cliModelRuntime } from \"./cli-models/dozo-cli-runtime.js\";",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-runtime.ts"
+      ],
+      "reason": "CLI accounts on the person's own computer: the runtime runs the person's own tool connections there, checked on every turn; elsewhere it is upstream's deployment CLI model"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./model-credit-reconciler.js\";\nexport * from \"./model-roles.js\";\n",
+      "replace": "export * from \"./model-credit-reconciler.js\";\nexport * from \"./cli-models/dozo-cli-accounts.js\";\nexport * from \"./model-roles.js\";\n",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-accounts.ts"
+      ],
+      "reason": "CLI accounts on the person's own computer: the API lists and connects the tools through the adapters package"
+    },
+    {
+      "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
+      "find": "  const model = useModelSettings(onClose, scope);\n  const {\n",
+      "replace": "  const model = useModelSettings(onClose, scope);\n  const cliProviders = useDozoCliProviders();\n  const {\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+      ],
+      "reason": "CLI accounts: the provider tools the server says connect only from their own rows, for the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
+      "find": "      ...groups.map((group) => ({ id: group.id, name: group.name })),\n",
+      "replace": "      ...groups\n        .filter((group) => !cliProviders.has(group.id))\n        .map((group) => ({ id: group.id, name: group.name })),\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+      ],
+      "reason": "CLI accounts: a tool on the person's own computer has no key to paste, so it is left out of the list that asks for one"
+    },
+    {
+      "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
+      "find": "              panel={connectionAt === \"providers:add\" ? panelFor(true) : null}\n            />\n          )}\n        </>\n",
+      "replace": "              panel={connectionAt === \"providers:add\" ? panelFor(true) : null}\n            />\n          )}\n          {scope === \"space\" ? null : <DozoCliAccounts />}\n        </>\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+      ],
+      "reason": "CLI accounts: under Providers, one row per provider tool installed on the server's own computer and not connected yet; nothing where there is none"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
+      "replace": "msgstr \"Bağlı değil\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Not signed in\"\nmsgstr \"Oturum açık değil\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Open sign-in page\"\nmsgstr \"Oturum açma sayfasını aç\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Add account\"\nmsgstr \"Hesap ekle\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Could not send the code\"\nmsgstr \"Kod gönderilemedi\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Could not cancel\"\nmsgstr \"İptal edilemedi\"\n\n#: apps/web/src/pages/model-settings/dozo-cli-accounts.tsx\nmsgid \"Could not add the account\"\nmsgstr \"Hesap eklenemedi\"\n\n#: apps/web/src/pages/shell/agent-import-plan.tsx\n",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+      ],
+      "reason": "CLI accounts: the Turkish copy of the settings row: a tool that is not signed in, adding another account through the tool's own sign-in, and what each action says when it fails"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/stream.ts",
+      "find": "import { modelStreamIdleTimeoutMs } from \"../../pi-runtime-limits.js\";\nimport type { ClaudeCodeProcess }",
+      "replace": "import { modelStreamIdleTimeoutMs } from \"../../pi-runtime-limits.js\";\nimport { noteCliEvent } from \"../dozo-cli-driver.js\";\nimport type { ClaudeCodeProcess }",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-driver.ts"
+      ],
+      "reason": "CLI accounts: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/cli-models/claude-code/stream.ts",
+      "find": "        if (!event) throw await exitError(child, \"before replying\");\n        if (event.type === \"system\") {",
+      "replace": "        if (!event) throw await exitError(child, \"before replying\");\n        noteCliEvent(event);\n        if (event.type === \"system\") {",
+      "requires": [
+        "packages/adapters/src/cli-models/dozo-cli-driver.ts"
+      ],
+      "reason": "CLI accounts: a usage limit the CLI reports during an account's turn is kept for the error the turn ends with, so the model pool rests that account until the reset the CLI gave; outside an account's turn it does nothing"
     },
     {
       "file": "apps/api/src/runs.ts",
