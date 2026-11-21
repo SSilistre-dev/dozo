@@ -1,26 +1,40 @@
+import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { DozoMessagePin } from "@rakazo/contracts";
+import type { DozoMessagePin, MessageAuthor } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { Alert } from "react-native";
+import { blockPerson } from "./dozo-blocked-people";
 import type { MobileMessage } from "./mobile-types";
 import { queryClient, rpcQuery, useSave } from "./query";
 import { useRosterSignals } from "./roster-signals";
 import { errorText } from "./user-error";
 
 /**
- * Edit, Regenerate and Pin in a message's menu. The server names the messages Edit and Regenerate
- * apply to; the iOS menu is built before it opens, so the chat keeps that answer current
- * (`useDozoThreadMenus`) and each message only reads it. An earlier message removes every later
- * one, so it is confirmed first.
+ * Edit, Regenerate, Pin, Report and Block in a message's menu. The server names the messages Edit
+ * and Regenerate apply to; the iOS menu is built before it opens, so the chat keeps that answer
+ * current (`useDozoThreadMenus`) and each message only reads it. An earlier message removes every
+ * later one, so it is confirmed first.
  */
 export type DozoMessageAction = {
-  name: "dozoEdit" | "dozoRegenerate" | "dozoPin";
+  name: "dozoEdit" | "dozoRegenerate" | "dozoPin" | "dozoReport" | "dozoBlock";
   text: string;
   /** SF Symbol for the iOS menu. */
-  symbol: "pencil" | "arrow.clockwise" | "pin" | "pin.slash";
+  symbol:
+    | "pencil"
+    | "arrow.clockwise"
+    | "pin"
+    | "pin.slash"
+    | "exclamationmark.bubble"
+    | "hand.raised";
   /** Ionicons name for the Android menu. */
-  icon: "create-outline" | "refresh-outline" | "pin-outline" | "pin";
+  icon:
+    | "create-outline"
+    | "refresh-outline"
+    | "pin-outline"
+    | "pin"
+    | "flag-outline"
+    | "hand-left-outline";
   onPress: () => void;
 };
 
@@ -72,6 +86,13 @@ export function setDozoEditOpener(open: (threadId: string, messageId: string) =>
   openEdit = open;
 }
 
+/** How Report opens the feedback form, set the same way as Edit's opener. */
+let openReport: ((threadId: string, messageId: string) => void) | null = null;
+
+export function setDozoReportOpener(open: (threadId: string, messageId: string) => void): void {
+  openReport = open;
+}
+
 /** The text the edit screen opens with, once. */
 export function takeEditDraft(messageId: string): string {
   const text = editDrafts.get(messageId) ?? "";
@@ -86,15 +107,22 @@ function messageText(message: MobileMessage): string {
     .join("\n\n");
 }
 
-/** What this message's menu adds: Edit, Regenerate, then Pin or Unpin, as the server allows. */
+/**
+ * What this message's menu adds: Edit, Regenerate, then Pin or Unpin, as the server allows, and
+ * Report on a message someone else wrote (a bot's reply, another member's message) while the
+ * server takes feedback, and Block on another member's message.
+ */
 export function useDozoMessageActions(
   message: MobileMessage,
   readOnly: boolean,
   inGroup: boolean,
+  /** Another person wrote it, in a shared chat. */
+  otherAuthor?: MessageAuthor,
 ): DozoMessageAction[] {
   const { t } = useLingui();
   const threadId = message.threadId ?? "";
   const messageId = message.id;
+  const reportable = message.role !== "user" || Boolean(otherAuthor);
   const sent = Boolean(threadId) && !messageId.startsWith("progress:");
   const revisable = useQuery(
     {
@@ -106,6 +134,10 @@ export function useDozoMessageActions(
   ).data;
   const pins = useQuery({ ...pinsRead(threadId), enabled: sent, staleTime: Infinity }, queryClient)
     .data?.pins;
+  const feedback = useQuery(
+    { ...rpcQuery("dozoFeedback/status"), enabled: sent && reportable, staleTime: Infinity },
+    queryClient,
+  ).data;
   const failed = (error: Error) => Alert.alert(errorText(error, t`Try again.`));
   const regenerate = useSave({
     save: (_, send) => send("dozoMessages/regenerate", { threadId, messageId }),
@@ -124,6 +156,7 @@ export function useDozoMessageActions(
   const canRegenerate = earlierRegenerate || (sent && revisable?.regenerateMessageId === messageId);
   const pinned = pins?.some((entry) => entry.messageId === messageId) ?? false;
   const showPin = sent && pins !== undefined;
+  const showReport = sent && reportable && Boolean(feedback?.mode);
   // The menu keeps its entries while only a save's state changes; a press runs the latest save.
   const saves = useRef({ regenerate, pin });
   saves.current = { regenerate, pin };
@@ -166,6 +199,35 @@ export function useDozoMessageActions(
         icon: pinned ? "pin" : "pin-outline",
         onPress: () => saves.current.pin.run(!pinned),
       });
+    if (showReport)
+      actions.push({
+        name: "dozoReport",
+        text: t`Report`,
+        symbol: "exclamationmark.bubble",
+        icon: "flag-outline",
+        onPress: () => openReport?.(threadId, messageId),
+      });
+    if (sent && otherAuthor)
+      actions.push({
+        name: "dozoBlock",
+        text: t`Block`,
+        symbol: "hand.raised",
+        icon: "hand-left-outline",
+        // Asked first; the alert says it holds on this phone only.
+        onPress: () =>
+          Alert.alert(
+            t`Block ${ph({ name: otherAuthor.name })}?`,
+            t`Their messages are hidden on this phone.`,
+            [
+              { text: t`Cancel`, style: "cancel" },
+              {
+                text: t`Block`,
+                style: "destructive",
+                onPress: () => blockPerson(otherAuthor.id, threadId),
+              },
+            ],
+          ),
+      });
     return actions;
   }, [
     canEdit,
@@ -174,6 +236,8 @@ export function useDozoMessageActions(
     earlierRegenerate,
     showPin,
     pinned,
+    showReport,
+    otherAuthor,
     text,
     threadId,
     messageId,
