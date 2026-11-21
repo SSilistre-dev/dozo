@@ -18,7 +18,7 @@ import { readBoundedBody } from "./http-body.js";
 import type { createRouter } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
 import { isStopMessage } from "./thread-stop.js";
-import { windowCounter } from "./window-counter.js";
+import { throttleKey, windowCounter } from "./window-counter.js";
 
 export const DOZO_BOT_API_PREFIX = "/api/v1/dozo";
 
@@ -26,6 +26,8 @@ export const DOZO_BOT_API_PREFIX = "/api/v1/dozo";
 export const DOZO_BOT_API_REQUESTS_PER_MINUTE = 60;
 /** Messages one account may send a minute with all its tokens together, across every instance. */
 export const DOZO_BOT_API_SENDS_PER_MINUTE = 20;
+/** Messages one token may send a minute, so one busy token leaves room for the account's others. */
+export const DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE = 10;
 /** Requests one address may make a minute before its token is even looked up, in each process. */
 export const DOZO_BOT_API_ADDRESS_PER_MINUTE = 120;
 /** Streams one token may hold open at once, in each API process. */
@@ -157,7 +159,9 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
 
   const caller = async (c: Context): Promise<Caller> => {
     // Guessing tokens costs a lookup each: an address is held back before any is made.
-    if (addresses(deps.clientIp(c) ?? "unknown") > DOZO_BOT_API_ADDRESS_PER_MINUTE)
+    // By its IPv6 /64 or IPv4 address, as other per-address limits count, so a flood of addresses
+    // from one network shares a coarser window instead of filling the table for everyone.
+    if (addresses(throttleKey(deps.clientIp(c))) > DOZO_BOT_API_ADDRESS_PER_MINUTE)
       throw new ApiError(429, "Too many requests");
     const authorization = c.req.header("authorization");
     const found = await deps.authenticate(authorization);
@@ -281,7 +285,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       if (!body.success) throw new ApiError(400, "Give the message as text");
       // In the app a stop word stops every run in the chat, the owner's too; a token may not.
       if (isStopMessage({ text: body.data.text })) throw new ApiError(400, "Stop a run in the app");
-      if (!(await deps.take(`sends:${found.actor.userId}`, DOZO_BOT_API_SENDS_PER_MINUTE)))
+      if (
+        !(await deps.take(`sends:token:${found.tokenId}`, DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE)) ||
+        !(await deps.take(`sends:${found.actor.userId}`, DOZO_BOT_API_SENDS_PER_MINUTE))
+      )
         throw new ApiError(429, "Too many messages");
       const key = c.req.header("idempotency-key")?.trim();
       if (key && key.length > 190) throw new ApiError(400, "Idempotency-Key is too long");

@@ -111,8 +111,9 @@ const resetSql = (id: string, hash: string) => {
 ), ended AS (
   DELETE FROM session WHERE "userId" = '${id}' RETURNING 1
 ), security AS (
-  INSERT INTO security_events (id, type, "userId", metadata)
-  VALUES (gen_random_uuid()::text, 'auth.password.changed', '${id}', '${metadata}') RETURNING 1
+  INSERT INTO security_events (id, type, "userId", metadata, "createdAt")
+  VALUES (gen_random_uuid()::text, 'auth.password.changed', '${id}', '${metadata}',
+    now() AT TIME ZONE 'UTC') RETURNING 1
 ), audit AS (
   INSERT INTO audit_events (id, "organizationId", "actorType", "actorLabel", action, "targetType", "targetId", "targetLabel", outcome, metadata)
   SELECT gen_random_uuid()::text, m."organizationId", 'system', '${VIA}', 'auth.password.changed', 'user', u.id, left(u.email, 200), 'success', '${metadata}'

@@ -10,14 +10,17 @@ type Member = { userId: string; spaceId: string };
 export const DOZO_ACCESS_TOKEN_PREFIX = "dozo_pat_";
 
 /**
- * A token works until it expires, and only if its account's password has not changed since it was
- * made: a password change or reset revokes every token, so a session taken over cannot leave one
- * behind that outlives the new password.
+ * A token works until it expires, and only if, since it was made, its account's password has not
+ * changed and its owner (or an operator) has not signed out everywhere: either revokes every token,
+ * so a session taken over cannot leave one behind, also on an account without a password.
  */
 const STILL_VALID = Prisma.sql`(t."expiresAt" IS NULL OR t."expiresAt" > now())
   AND NOT EXISTS (SELECT 1 FROM security_events s
-    WHERE s."userId" = t."userId" AND s.type = 'auth.password.changed'
-      AND s."createdAt" AT TIME ZONE 'UTC' >= t."createdAt")`;
+    WHERE s."userId" = t."userId" AND s."createdAt" AT TIME ZONE 'UTC' >= t."createdAt"
+      AND (s.type = 'auth.password.changed'
+        OR s.type = 'auth.session.revoked'
+          AND (s.metadata->>'via' IN ('/revoke-sessions', '/revoke-other-sessions')
+            OR s.metadata->>'by' = 'operator')))`;
 
 /**
  * A time as UTC text for a `timestamptz` column. A raw query sends a Date without its zone, which

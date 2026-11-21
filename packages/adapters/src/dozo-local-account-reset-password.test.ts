@@ -102,6 +102,8 @@ describe("account reset-password", () => {
     expect(await hashPassword(NEW_PASSWORD, salt)).toBe(hash);
     expect(sql).toContain(`DELETE FROM session WHERE "userId" = 'user_1'`);
     expect(sql).toContain("INSERT INTO security_events");
+    // In UTC whatever zone the database runs in, as access tokens compare it (dozo-access-tokens.ts).
+    expect(sql).toContain("now() AT TIME ZONE 'UTC'");
     expect(sql).toContain("INSERT INTO audit_events");
     expect(sql).not.toContain(NEW_PASSWORD);
     // Postgres was started for it and stopped after.
