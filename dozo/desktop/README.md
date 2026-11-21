@@ -8,10 +8,12 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 - The first launch asks for the server (default `https://app.dozo.bot`, or one click for the
   server on this computer, which the app downloads, sets up and runs itself: "The server on this
   computer" below). The choice is saved and can be changed from
-  the menu: Dozo, Change Server… (Cmd+,).
+  the menu (Dozo, Change Server…) or from Settings.
 - A server that cannot be reached gives a screen with Try again and Change server, not a blank page.
-- Standard macOS menus (About, Change Server…, Reload, Quit, and the Edit menu's shortcuts). The
-  window comes back at its last size and position.
+- Standard macOS menus (About, Settings…, Change Server…, Reload, Quit, and the Edit menu's
+  shortcuts). The window comes back at its last size and position.
+- Settings (Dozo, Settings…, Cmd+,; Ctrl+, on Windows and Linux): one window that lists what the
+  Dozo menu offers right now, switches first. See "Settings" below.
 - Let Bots Use This Computer (in the Dozo menu): the person's own bots can run commands on this
   computer instead of a hosted one. See "Bots on this computer" below.
 - Links to other sites open in the default browser. Downloads go to the Downloads folder. File
@@ -24,7 +26,8 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
   no update section, no in-chat search bar, no custom window buttons. Upstream's native features
   (its own server on this computer, Docker management) are not here; the server on this computer
   and updates are the app's own (below). Bots using this computer is the app's own too (below), with a menu item
-  rather than a switch in the web app's settings, which only that bridge would show.
+  and a row in Settings rather than a switch in the web app's settings, which only that bridge
+  would show.
 - Anything that leaves the server's origin opens in the browser. A sign-in that redirects to
   another site therefore finishes in the browser, not in the app; sign in with email and password.
   The one exception is the hosted account's sign-in on the server on this computer (below).
@@ -34,7 +37,27 @@ shell. Upstream's Electron app in `apps/desktop` is separate and is neither edit
 - Camera, microphone, location and similar requests from a page are denied. Notifications are
   allowed for the server's own origin only (below).
 - Links to the browser are limited to one a second, so a page cannot flood it.
-- Menus and the local screens are English only.
+- The menus and the Settings window are in Turkish when the system's language is Turkish, and in
+  English otherwise (`src/words.rs`). The other local screens are English only.
+
+## Settings
+
+- One window (`src/prefs.rs`, page `ui/prefs.html`) with every item of the Dozo menu that is on
+  right now, switches first, under the menu's words and in its state: Let Bots Use This Computer,
+  Open at Login, Keep Running in Background, Change Server…, and, while the server on this
+  computer runs, Connect Phone…, Back Up…, Restore…, Reset Password…, Save Diagnostics… and its
+  Licenses (the bundle's third-party notices, in the browser). Restart to Update is there while an
+  update waits. The app's version is at the bottom.
+- The list is read from the menu itself, so an item added to the Dozo menu shows here too, and
+  picking a row does exactly what picking the item does (`run` in `src/main.rs`). Reload, Quit and
+  Settings… stay in the menu only. The window reads the list again when something it shows
+  changes, never on a timer.
+- The menu items all stay where they were; Cmd+, (Ctrl+,) now opens Settings instead of Change
+  Server.
+- In the app, the web app's settings show a "Desktop app" row (General) and, while no computer of
+  the account is connected, "Connect this computer" (Computers). Both go to `dozo-app://settings`,
+  which the window answers by opening Settings and nothing else; see Security. In a browser they
+  are not shown: only the app's window sets `window.dozoDesktopShell` before a page loads.
 
 ## Open at Login and Keep Running in Background
 
@@ -116,9 +139,10 @@ Known limits:
 ## Security
 
 - A page loaded from a server can call nothing in the app. What reaches the app from it is the title
-  (read for the unread count only) and the notifications the web view itself shows. The five
-  commands are under Tauri's ACL (`build.rs`), and the only capability (`capabilities/local.json`)
-  grants them to the app's own screens. It has no `remote` entry and must never get one. The
+  (read for the unread count only), the notifications the web view itself shows, and a visit to
+  `dozo-app://settings`, which opens the Settings window (below). The app's commands are under
+  Tauri's ACL (`build.rs`), and its capabilities (`capabilities/*.json`) grant them to the app's own
+  screens, each to its own window. None has a `remote` entry and none must ever get one. The
   dialog plugin's commands are granted to no page: only the app's Rust code opens its dialogs.
 - Bots reach this computer only after the person allows it in the system dialog, which names the
   server and which no page can answer. The device token is kept in the system keyring, never in
@@ -137,6 +161,14 @@ Known limits:
   Without a click, nothing but a web address can be handed outside the app.
 - The local screens are plain HTML, CSS and JavaScript in `ui/`, with a CSP that allows only their
   own files and forbids framing them.
+- A page of the chosen server can open the Settings window, and nothing more: going to exactly
+  `dozo-app://settings` (no path, query or fragment; any other `dozo-app:` address is refused)
+  opens it when the window's page is on the chosen server's origin, at most once a second
+  (`asked_by_page` in `src/prefs.rs`). It carries no data and cannot change or pick anything;
+  only the person does, in that window. On Linux the web view does not say which frame asked
+  (see frames above), so there it is the window's page that is checked.
+- The Settings window's two commands (`capabilities/prefs.json`) are granted to that window only.
+  A pick is checked against the list it shows now.
 
 ## Bots on this computer
 
@@ -464,7 +496,7 @@ computer, which CI runs end to end without a window.
   is missing (some Windows 10 installs), the installer downloads Microsoft's bootstrapper and
   installs it, so that computer needs an internet connection during setup.
 - Differences from macOS (`tauri.windows.conf.json`, `#[cfg(windows)]` in `src/`): one short
-  menu in the window (Change Server… Ctrl+, / Reload Ctrl+R / Quit); the local screens are served
+  menu in the window (Settings… Ctrl+, / Change Server… / Reload Ctrl+R / Quit); the local screens are served
   from `http://tauri.localhost`; `src/frames.rs` is not needed, because the web view asks the
   navigation hook about the window's own page only; links open through the system's URL handler.
   The server address and window position are kept in `%APPDATA%\dev.ssilistre.dozo\`, the web
