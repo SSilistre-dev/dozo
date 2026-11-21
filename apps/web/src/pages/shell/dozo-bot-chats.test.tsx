@@ -54,7 +54,7 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
       strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
-    i18n: { date: (_date: Date, options?: object) => (options ? "Nov 21, 2026, 5:41 PM" : "x") },
+    i18n: { date: (_date: Date, options?: object) => (options ? "Nov 21, 5:41 PM" : "x") },
   }),
 }));
 vi.mock("@rakazo/ui-web", () => {
@@ -475,7 +475,7 @@ describe("New chat", () => {
     expect(onClose).toHaveBeenCalled();
     await vi.waitFor(() => expect(location()).toBe("/app/bot-1?chat=chat-9"));
     expect(api.create).toHaveBeenCalledTimes(1);
-    expect(api.create).toHaveBeenCalledWith({ botId: "bot-1", name: "Nov 21, 2026, 5:41 PM" });
+    expect(api.create).toHaveBeenCalledWith({ botId: "bot-1", name: "Nov 21, 5:41 PM" });
   });
 
   it("says so when the bot holds the most chats", async () => {

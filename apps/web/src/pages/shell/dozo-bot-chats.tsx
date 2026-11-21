@@ -168,7 +168,12 @@ function useNewChat(botId: string) {
     save: (_: undefined, client) =>
       client.dozoChats.create({
         botId,
-        name: i18n.date(new Date(), { dateStyle: "medium", timeStyle: "short" }),
+        name: i18n.date(new Date(), {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }),
       }),
     stale: [listKey],
     onSaved: ({ chat }) => navigate(dozoChatAddress(botId, chat.id)),
