@@ -15,7 +15,7 @@ export * from "./dozo-admin-plans.js";
  * and what keeps it until then: the subscription's period, a trial, a plan an admin granted, or on
  * Free a free period. Days left are counted where it is shown (`planEndDays`).
  */
-export const DozoAdminPlanEndSchema = z.object({
+export const DozoAdminPlanEndSchema = /* @__PURE__ */ z.object({
   source: z.enum(["subscription", "trial", "granted", "freeMonth"]),
   at: IsoDate,
   renews: z.boolean(),
@@ -25,7 +25,7 @@ export const DozoAdminPlanEndSchema = z.object({
 export type DozoAdminPlanEnd = z.infer<typeof DozoAdminPlanEndSchema>;
 
 /** The plan an account has in force, and until when an admin's grant of it lasts. */
-export const DozoAdminPlanSchema = z.object({
+export const DozoAdminPlanSchema = /* @__PURE__ */ z.object({
   tier: ByokTierSchema,
   /** The end of a plan an admin granted that has not ended; null without one. */
   grantedUntil: IsoDate.nullable(),
@@ -35,10 +35,10 @@ export const DozoAdminPlanSchema = z.object({
 export type DozoAdminPlan = z.infer<typeof DozoAdminPlanSchema>;
 
 /** The tiers an admin can grant; Free is what everyone has. */
-export const DozoGrantTierSchema = z.enum(["pro", "max"]);
+export const DozoGrantTierSchema = /* @__PURE__ */ z.enum(["pro", "max"]);
 
 /** One account as the hosted deployment's admin page lists it. Nothing an account holds is here. */
-export const DozoAdminUserSchema = z.object({
+export const DozoAdminUserSchema = /* @__PURE__ */ z.object({
   id: Id,
   email: z.string(),
   name: z.string(),
@@ -54,12 +54,12 @@ export const DozoAdminUserSchema = z.object({
 });
 export type DozoAdminUser = z.infer<typeof DozoAdminUserSchema>;
 
-export const DozoAdminUsersSortSchema = z.enum(["newest", "oldest", "email"]);
+export const DozoAdminUsersSortSchema = /* @__PURE__ */ z.enum(["newest", "oldest", "email"]);
 export type DozoAdminUsersSort = z.infer<typeof DozoAdminUsersSortSchema>;
-export const DozoAdminUserStatusSchema = z.enum(["active", "suspended"]);
+export const DozoAdminUserStatusSchema = /* @__PURE__ */ z.enum(["active", "suspended"]);
 
 /** One account in full, for its own admin page. Still nothing an account holds. */
-export const DozoAdminAccountSchema = DozoAdminUserSchema.omit({
+export const DozoAdminAccountSchema = /* @__PURE__ */ DozoAdminUserSchema.omit({
   lastSeenAt: true,
   bots: true,
   runningComputers: true,
@@ -104,7 +104,7 @@ export const DozoAdminAccountSchema = DozoAdminUserSchema.omit({
 });
 export type DozoAdminAccount = z.infer<typeof DozoAdminAccountSchema>;
 
-export const DozoAdminComputerSchema = z.object({
+export const DozoAdminComputerSchema = /* @__PURE__ */ z.object({
   id: Id,
   /** Null when the owning account is gone. */
   email: z.string().nullable(),
@@ -114,7 +114,10 @@ export const DozoAdminComputerSchema = z.object({
 export type DozoAdminComputer = z.infer<typeof DozoAdminComputerSchema>;
 
 /** A refused address (`ada@example.com`) or a refused domain with its subdomains (`example.com`). */
-export const DozoAdminBanSchema = z.object({ value: z.string(), createdAt: IsoDate });
+export const DozoAdminBanSchema = /* @__PURE__ */ z.object({
+  value: z.string(),
+  createdAt: IsoDate,
+});
 export type DozoAdminBan = z.infer<typeof DozoAdminBanSchema>;
 
 /** Every procedure is refused with FORBIDDEN unless the caller is a deployment admin. */

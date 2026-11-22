@@ -4,7 +4,7 @@ import { expect as expectFlow, test as flow } from "../flows/flow";
 import { watchLoad } from "../load-watch";
 import { outDir } from "../scan";
 import { deadLinks } from "./budgets";
-import { fenceVerdict, isNetworkFlap } from "./fence";
+import { fenceVerdict, guardFlaps } from "./fence";
 
 export { expect, SIGNED_OUT } from "../flows/flow";
 
@@ -26,23 +26,23 @@ export function note(text: string) {
  * billing-portal call that is not a known read, so a misclick can never ban, pay or administer
  * anything; an unknown procedure is refused too.
  */
-export const test = flow.extend<{ fence: undefined }>({
-  // A navigation that meets this machine's own network change is tried again, at most twice; a
-  // site error (4xx/5xx, a timeout, wrong content) is never retried.
-  page: async ({ page }, use) => {
-    const goto = page.goto.bind(page);
-    page.goto = async (url, options) => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          return await goto(url, options);
-        } catch (error) {
-          if (attempt >= 2 || !isNetworkFlap(String(error))) throw error;
-          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-        }
-      }
-    };
-    await use(page);
-  },
+export const test = flow.extend<{ flaps: undefined; fence: undefined }>({
+  // This machine's own network flap is tried again (canli/fence.ts, guardFlaps): the document at
+  // most twice per navigation, the page reloaded at most twice when one of its requests broke,
+  // each retry a note in the report. A site error (4xx/5xx, a timeout, wrong content) is never
+  // retried, and the watcher still counts it.
+  flaps: [
+    async ({ page, guard }, use, info) => {
+      const flaps = guardFlaps(page, {
+        allow: (line) => guard.allow(line, "retried: this machine's network flapped"),
+        note: (text) => info.annotations.push({ type: "note", description: text }),
+        wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      });
+      await use(undefined);
+      await flaps.settled();
+    },
+    { auto: true },
+  ],
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's first parameter as an object pattern
   storageState: async ({}, use) => {
     await use(existsSync(STATE_FILE()) ? STATE_FILE() : { cookies: [], origins: [] });

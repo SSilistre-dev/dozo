@@ -1,4 +1,5 @@
 import { getLogger } from "@rakazo/logging";
+import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const withheld = vi.hoisted(() => ({ value: false }));
@@ -637,11 +638,13 @@ describe("the sign-in", () => {
     run.cleared.value = true;
     run.cleared.failAfter = true;
     const order: string[] = [];
-    const execute = run.ctx.deps.prisma.$executeRaw as unknown as ReturnType<typeof vi.fn>;
+    const execute = run.ctx.deps.prisma.$executeRaw as unknown as Mock<
+      (...args: unknown[]) => Promise<number>
+    >;
     const forget = execute.getMockImplementation()!;
     execute.mockImplementation(async (...args: unknown[]) => {
       order.push("forget");
-      return forget(...(args as [TemplateStringsArray]));
+      return forget(...args);
     });
     const request = run.devices.request;
     run.devices.request = async function* (

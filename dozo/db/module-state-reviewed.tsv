@@ -56,6 +56,8 @@ packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let cwd: str
 packages/adapters/src/cli-models/dozo-cli-login.ts	fn startCliLogin	let output = "";	user	one person's sign-in session held in sessions by userId+provider; read only with their own userId
 packages/adapters/src/cli-models/dozo-cli-providers.ts	fn withAccountErrors	const outer = createAssistantMessageEventStream();	local	per-call local, dies with the call
 packages/adapters/src/cli-models/dozo-cli-runtime.ts	module	const OWN_TRIGGERS = new Set(["user", "resume", "follow_up"]);	global-safe	constant set of fixed words, never changed after load
+packages/adapters/src/dozo-bot-model-backups.ts	module	let missingTableReported = false;	global-safe	one-time flag that a missing table was logged; holds no person data
+packages/adapters/src/dozo-call-preflight.ts	module	let registryAddresses: Map<string, string | undefined> | undefined;	global-safe	provider id to the model registry's public base address, built once from the built-in catalog; same for everyone
 packages/adapters/src/dozo-command-gate.ts	module	const commandBlocks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-command-gate.ts	module	const commandAsks = new WeakSet<Record<string, unknown>>();	request	marks a tool-call object by identity; flag only
 packages/adapters/src/dozo-compaction-model.ts	fn compactWithRoleModel	let roleModelUsed = false;	local	per-call local, dies with the call
@@ -81,8 +83,10 @@ packages/adapters/src/dozo-local-backup-format.ts	class ByteReader	#pending = Bu
 packages/adapters/src/dozo-local-backup.ts	fn restore	let manifest: Manifest | undefined;	local	per-call local, dies with the call
 packages/adapters/src/dozo-model-pool.ts	fn withPoolMembers	const members = new Set(pool.members);	local	per-call local, dies with the call
 packages/adapters/src/dozo-model-pool.ts	module	const runPools = new WeakMap<AgentRunRequest, RunModelPool>();	run	model pool keyed by the run's own request object identity
+packages/adapters/src/dozo-model-pool.ts	module	const runOwners = new WeakMap<	run	owner of one run keyed by that run's own request object identity (run.userId); never read for another request
 packages/adapters/src/dozo-model-pool.ts	module	const movingOut = new WeakSet<object>();	run	marks the run's own state object while it switches model
 packages/adapters/src/dozo-model-pool.ts	module	const passedOver = new WeakMap<object, number>();	run	model index keyed by the run's own state object
+packages/adapters/src/dozo-model-rests.ts	module	const runRests = new WeakMap<object, Promise<ActiveRest[] | undefined>>();	run	model rests read once per run, keyed by the run object identity
 packages/adapters/src/dozo-no-computer.ts	module	export const CLOUD_COMPUTER_TOOL_NAMES: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
 packages/adapters/src/dozo-no-computer.ts	module	const withheldComputers = new WeakSet<object>();	run	marks run objects by identity; flag only
 packages/adapters/src/dozo-phone.ts	module	const phoneRuns = new WeakSet<object>();	run	marks run objects by identity; flag only
@@ -130,7 +134,7 @@ packages/contracts/src/dozo-relay.ts	module	const LOOPBACK_HOSTS = new Set(["loc
 packages/contracts/src/dozo-relay.ts	module	export const RelayKey = Base64Url(32);	global-safe	schema of a public id format
 packages/contracts/src/dozo-relay.ts	module	export const RelayChannelId = Base64Url(16);	global-safe	schema of a public id format
 packages/contracts/src/dozo-without-links.ts	module	const COMMON_TLDS = new Set([	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-command-rule-match.ts	module	const PREFIX_PROGRAMS: ReadonlySet<string> = new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-command-rule-match.ts	module	const PREFIX_PROGRAMS: ReadonlySet<string> = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
 packages/core/src/dozo-relay-channel.ts	module	const LABEL = utf8(`dozo-relay/${RELAY_PROTOCOL_VERSION}`);	global-safe	constant bytes of a protocol label
 packages/core/src/dozo-relay-channel.ts	fn openAppChannel	const session = new Session(options, "app");	device	one encrypted session per relay channel end, closed with it
 packages/core/src/dozo-relay-channel.ts	fn acceptHostChannel	const session = new Session(options, "host");	device	one encrypted session per relay channel end, closed with it
@@ -143,9 +147,9 @@ packages/core/src/dozo-relay-host.ts	fn runRelayHost	let syncing = Promise.resol
 packages/core/src/dozo-relay-host.ts	class ChannelLoop	private readonly approvalWaiters = new Set<() => void>();	device	waiters of one paired channel loop
 packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn connectOnce	let socket: RelayWebSocket;	local	per-call local, dies with the call
 packages/core/src/dozo-relay-host.ts	class ChannelLoop > fn firstRecord	let seen = false;	local	per-call local, dies with the call
-packages/core/src/dozo-relay-mux.ts	module	const NULL_BODY_STATUSES = new Set([204, 205, 304]);	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-relay-mux.ts	module	const HOP_HEADERS = new Set([	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-relay-mux.ts	module	const BODY_HEADERS = new Set(["content-encoding", "content-length"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-mux.ts	module	const NULL_BODY_STATUSES = /* @__PURE__ */ new Set([204, 205, 304]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-mux.ts	module	const HOP_HEADERS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-relay-mux.ts	module	const BODY_HEADERS = /* @__PURE__ */ new Set(["content-encoding", "content-length"]);	global-safe	constant set of fixed words, never changed after load
 packages/core/src/dozo-relay-mux.ts	class Inbox	this.body = new ReadableStream<Uint8Array>(	device	body of one relayed request on one channel
 packages/core/src/dozo-relay-mux.ts	class Mux	protected readonly streams = new Map<number, Stream>();	device	streams by id on one channel's connection
 packages/core/src/dozo-relay-mux.ts	class Mux	private queue: Uint8Array[] = [];	device	frames queued on one channel's connection
@@ -170,13 +174,13 @@ packages/core/src/dozo-sealed-file.ts	fn openStream	let header: Uint8Array<Array
 packages/core/src/dozo-sealed-file.ts	fn openStream	let key: CryptoKey | undefined;	local	per-call local, dies with the call
 packages/core/src/dozo-sealed-file.ts	fn openStream	let counter = 0n;	local	per-call local, dies with the call
 packages/core/src/dozo-sealed-file.ts	class LimitedReader	#queue = new ByteQueue();	local	per-call local, dies with the call
-packages/core/src/dozo-shell-command.ts	module	const NOT_FIRST = new Set(["=", "@", "%"]);	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-shell-command.ts	module	const DOUBLE_QUOTED_SPECIAL = new Set(["$", "`", "\\", "!"]);	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-shell-command.ts	module	const READ_ONLY_PROGRAMS = new Set([	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-shell-command.ts	module	const PRIVATE_COMPONENTS = new Set([	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-shell-command.ts	module	const GREP_LONG_OPTIONS = new Set([	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-teach-playbook.ts	module	const EDIT_KEYS = new Set(["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Home", "End"]);	global-safe	constant set of fixed words, never changed after load
-packages/core/src/dozo-teach-playbook.ts	module	const BLIND_KEYS = new Set(["ArrowUp", "ArrowDown"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const NOT_FIRST = /* @__PURE__ */ new Set(["=", "@", "%"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const DOUBLE_QUOTED_SPECIAL = /* @__PURE__ */ new Set(["$", "`", "\\", "!"]);	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const READ_ONLY_PROGRAMS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const PRIVATE_COMPONENTS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-shell-command.ts	module	const GREP_LONG_OPTIONS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-teach-playbook.ts	module	const EDIT_KEYS = /* @__PURE__ */ new Set([	global-safe	constant set of fixed words, never changed after load
+packages/core/src/dozo-teach-playbook.ts	module	const BLIND_KEYS = /* @__PURE__ */ new Set(["ArrowUp", "ArrowDown"]);	global-safe	constant set of fixed words, never changed after load
 packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const steps: string[] = [];	local	per-call local, dies with the call
 packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const values: TeachTypedValue[] = [];	local	per-call local, dies with the call
 packages/core/src/dozo-teach-playbook.ts	fn walkRecording	const runs: RunSpan[] = [];	local	per-call local, dies with the call

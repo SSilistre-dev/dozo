@@ -8,7 +8,7 @@ import { Id } from "./ids.js";
  * the ones this member turned off for their own bots, and whether the caller, its owner, may put
  * one of theirs in.
  */
-export const DozoOrganizationLibrarySchema = z.object({
+export const DozoOrganizationLibrarySchema = /* @__PURE__ */ z.object({
   skillIds: z.array(Id),
   canShare: z.boolean(),
   hidden: z.array(z.object({ id: Id, name: z.string(), description: z.string() })),
