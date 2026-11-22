@@ -7306,8 +7306,8 @@
     {
       "file": "apps/api/src/router.test.ts",
       "find": "const withRoleDeps = (deps: RouterDeps) => {\n  withModelRoles(deps.prisma);\n  return deps;",
-      "replace": "const withRoleDeps = (deps: RouterDeps) => {\n  withModelRoles(deps.prisma);\n  // Dozo: a running app always has a web origin, and its database the fork's catalog snapshot (here\n  // fresh and empty, so no refresh starts) and the group table the fork's delete check reads.\n  (deps as { env?: Record<string, unknown> }).env ??= {};\n  deps.env.webOrigin ??= \"http://127.0.0.1:5173\";\n  const db = deps.prisma as unknown as Record<string, unknown>;\n  db.dozoCatalogSnapshot ??= {\n    findUnique: async () => ({\n      key: \"plugin-marketplace\",\n      data: { entries: [], unavailableRegistries: [], skippedEntries: [] },\n      refreshedAt: new Date(),\n      failures: 0,\n      retryAt: null,\n    }),\n  };\n  db.dozoCatalogImage ??= { findMany: async () => [] };\n  db.chatGroup ??= { findFirst: async () => null };\n  return deps;",
-      "reason": "upstream test fixture: these router deps leave out env.webOrigin, the fork's plugin catalog tables and the group row the fork's group-delete check reads; each is given as an empty or fresh default only where the test has none"
+      "replace": "const withRoleDeps = (deps: RouterDeps) => {\n  withModelRoles(deps.prisma);\n  // Dozo: a running app always has a web origin, and its database the fork's catalog snapshot (here\n  // fresh and empty, so no refresh starts) and the group table the fork's delete check reads.\n  (deps as { env?: Record<string, unknown> }).env ??= {};\n  deps.env.webOrigin ??= \"http://127.0.0.1:5173\";\n  const db = deps.prisma as unknown as Record<string, unknown>;\n  db.dozoCatalogSnapshot ??= {\n    findUnique: async () => ({\n      key: \"plugin-marketplace\",\n      data: { entries: [], unavailableRegistries: [], skippedEntries: [] },\n      refreshedAt: new Date(),\n      failures: 0,\n      retryAt: null,\n    }),\n  };\n  db.dozoCatalogImage ??= { findMany: async () => [] };\n  db.chatGroup ??= { findFirst: async () => null };\n  // A routine save records who wrote it in its own transaction (dozo-routine-writers.ts).\n  db.$transaction ??= async (work: unknown) =>\n    typeof work === \"function\" ? work(db) : Promise.all(work as unknown[]);\n  db.$executeRaw ??= async () => 1;\n  return deps;",
+      "reason": "upstream test fixture: these router deps leave out env.webOrigin, the fork's plugin catalog tables and the group row the fork's group-delete check reads; each is given as an empty or fresh default only where the test has none; a transaction and a raw write for the routine save's writer record"
     },
     {
       "file": "packages/adapters/src/computer-lifecycle.test.ts",
@@ -11583,7 +11583,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { pagePaymentPrecheck, paysWithWallet } from \"./spending-gate.js\";\nimport { refusal } from \"./tool-refusal.js\";",
-      "replace": "import { pagePaymentPrecheck, paysWithWallet } from \"./spending-gate.js\";\nimport { lastingWriteCard, lastingWriteHeld } from \"./dozo-lasting-write-card.js\";\nimport { refusal } from \"./tool-refusal.js\";",
+      "replace": "import { pagePaymentPrecheck, paysWithWallet } from \"./spending-gate.js\";\nimport { lastingWriteCard, lastingWriteHeld, lastingWriteHistoryRefusal } from \"./dozo-lasting-write-card.js\";\nimport { refusal } from \"./tool-refusal.js\";",
       "requires": [
         "packages/adapters/src/dozo-lasting-write-card.ts"
       ],
@@ -11781,7 +11781,7 @@
     {
       "file": "apps/api/src/routes/routines.ts",
       "find": "import { assertEmailTrigger } from \"../bot-email-address.js\";\nimport { assertRoutineModel } from \"../model-pins.js\";",
-      "replace": "import { assertEmailTrigger } from \"../bot-email-address.js\";\nimport { noteRoutineSaved } from \"../dozo-routine-writers.js\";\nimport { assertRoutineModel } from \"../model-pins.js\";",
+      "replace": "import { assertEmailTrigger } from \"../bot-email-address.js\";\nimport { routineWriterFor, saveRoutineNoted } from \"../dozo-routine-writers.js\";\nimport { assertRoutineModel } from \"../model-pins.js\";",
       "requires": [
         "apps/api/src/dozo-routine-writers.ts"
       ],
@@ -11789,21 +11789,21 @@
     },
     {
       "file": "apps/api/src/routes/routines.ts",
-      "find": "        });\n        await announceRoutine(context.actor, bot, row);\n",
-      "replace": "        });\n        await noteRoutineSaved(deps.prisma, context.actor, bot, row);\n        await announceRoutine(context.actor, bot, row);\n",
+      "find": "        const row = await deps.prisma.routine.create({\n          data: routineRowData(context.actor, input, routineNextRunAt(input)),\n        });\n",
+      "replace": "        const row = await saveRoutineNoted(deps.prisma, routineWriterFor(context.actor, bot, input), (db) =>\n          db.routine.create({\n            data: routineRowData(context.actor, input, routineNextRunAt(input)),\n          }),\n        );\n",
       "requires": [
         "apps/api/src/dozo-routine-writers.ts"
       ],
-      "reason": "routine writers: a routine the bot's owner creates in the app or the API is the owner's words for its runs' skill and routine writes; one another member creates is not"
+      "reason": "routine writers: a routine the bot's owner creates in the app or the API is the owner's words for its runs' skill and routine writes, one another member creates is not; recorded in the create's own transaction"
     },
     {
       "file": "apps/api/src/routes/routines.ts",
-      "find": "          });\n        if (existing.userId !== context.actor.userId) {\n",
-      "replace": "          });\n        await noteRoutineSaved(deps.prisma, context.actor, bot, row);\n        if (existing.userId !== context.actor.userId) {\n",
+      "find": "        const row = await deps.prisma.routine\n          .update({\n",
+      "replace": "        const row = await saveRoutineNoted(deps.prisma, routineWriterFor(context.actor, bot, input), (db) =>\n          db.routine.update({\n",
       "requires": [
         "apps/api/src/dozo-routine-writers.ts"
       ],
-      "reason": "routine writers: a routine the bot's owner saves in the app or the API is the owner's words for its runs' skill and routine writes; one another member saves is not"
+      "reason": "routine writers: saving a routine's prompt in the app or the API makes it the sender's words (the bot's owner's or a member's), in the update's own transaction; a pause, a time or a target chat leaves the record as it was"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -11978,6 +11978,24 @@
       "find": "            <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>",
       "replace": "            <SettingsGroup\n              label={t`Model`}\n              footer={\n                modelMetaError ??\n                dozoRestNote(effectiveCredential?.id, effectiveModelId ?? \"\") ??\n                undefined\n              }\n            >",
       "reason": "model rests on mobile: the bot's model, its own or the main one, says under its group when it opens again while it rests"
+    },
+    {
+      "file": "apps/api/src/routes/routines.ts",
+      "find": "              ...(writesSchedule ? { nextRunAt } : {}),\n            },\n          })\n          .catch(async (error: unknown) => {\n",
+      "replace": "              ...(writesSchedule ? { nextRunAt } : {}),\n            },\n          }),\n        )\n          .catch(async (error: unknown) => {\n",
+      "requires": [
+        "apps/api/src/dozo-routine-writers.ts"
+      ],
+      "reason": "routine writers: closes the update's transaction the rule above opens, before upstream's not-found handling"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "          : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,\n",
+      "replace": "          : ((await lastingWriteHistoryRefusal(ctx, name)) ?? `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`),\n",
+      "requires": [
+        "packages/adapters/src/dozo-lasting-write-card.ts"
+      ],
+      "reason": "lasting writes: a write Never ask refuses only because the run read its history says so, not that someone else could have asked for it"
     }
   ],
   "assets": {

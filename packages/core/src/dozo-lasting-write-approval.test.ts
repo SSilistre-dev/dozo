@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { isOwnerStartedRun } from "./action-approval.js";
 import type { LastingWriteRun } from "./dozo-lasting-write-approval.js";
 import {
+  lastingWriteHoldReason,
   lastingWriteNeedsApproval,
   lastingWriteShowsWholeText,
   ROUTINE_WRITERS,
@@ -185,6 +186,41 @@ describe("lastingWriteNeedsApproval", () => {
       expect(routineFromOwner).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("lastingWriteHoldReason", () => {
+  it("says history only when the run's input is the owner's and it read nothing from outside", async () => {
+    const history = run("user", { readHistory: true });
+    await expect(lastingWriteHoldReason("skill_create", history, checks(false))).resolves.toBe(
+      "history",
+    );
+    const routine = run("routine", { readHistory: true });
+    await expect(lastingWriteHoldReason("skill_create", routine, checks(false))).resolves.toBe(
+      "history",
+    );
+  });
+
+  it("says outside when the run also read outside content or was started from outside", async () => {
+    const history = { readHistory: true };
+    for (const [held, facts] of [
+      [run("user", history), checks(true)],
+      [run("webhook", history), checks(false)],
+      [run("user", { ...history, botOwnerRun: false }), checks(false)],
+      // A routine someone other than the bot's owner last wrote.
+      [run("routine", history), checks(false, outsideRoutine)],
+    ] as const) {
+      await expect(lastingWriteHoldReason("skill_create", held, facts)).resolves.toBe("outside");
+    }
+  });
+
+  it("has no reason for a write the rule does not hold", async () => {
+    await expect(lastingWriteHoldReason("skill_create", run("user"), checks(false))).resolves.toBe(
+      undefined,
+    );
+    await expect(
+      lastingWriteHoldReason("remember", run("webhook", { readHistory: true }), checks(true)),
+    ).resolves.toBe(undefined);
+  });
 });
 
 describe("lastingWriteShowsWholeText", () => {

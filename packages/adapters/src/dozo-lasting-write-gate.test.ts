@@ -484,11 +484,30 @@ describe("gateToolCall: a lasting write once the run read its history", () => {
     },
   );
 
-  it("is refused in Never ask, in the owner's run and a routine's", async () => {
+  it("is refused in Never ask, in the owner's run and a routine's, saying it read history", async () => {
     for (const trigger of ["user", "routine"]) {
-      expect(await gate("skill_create", { history: true, trigger, mode: "never" })).toEqual(
-        refusedInNeverAsk,
-      );
+      expect(await gate("skill_create", { history: true, trigger, mode: "never" })).toEqual({
+        result: {
+          error:
+            "skill_create needs the owner's approval because this run read chat history, and this space never asks. Don't retry; tell the user.",
+        },
+      });
+    }
+  });
+
+  it("gives the outside reason when the run also read a page or someone else wrote to it", async () => {
+    const outside = { ...refusedInNeverAsk };
+    outside.result = {
+      error: expect.stringContaining("could have been asked for by someone else"),
+    };
+    for (const options of [
+      { read: true },
+      { starter: "member" as const },
+      { nonOwnerChat: true },
+    ]) {
+      const outcome = await gate("skill_create", { ...options, history: true, mode: "never" });
+      expect(outcome).toEqual(outside);
+      expect(JSON.stringify(outcome)).not.toContain("read chat history");
     }
   });
 

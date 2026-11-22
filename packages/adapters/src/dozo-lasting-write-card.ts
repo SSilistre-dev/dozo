@@ -1,8 +1,10 @@
+import type { LastingWriteChecks, LastingWriteRun } from "@rakazo/core";
 import {
   buildSkillMd,
   ClientError,
   humanizeToolName,
   instructionUpdateDiff,
+  lastingWriteHoldReason,
   lastingWriteNeedsApproval,
   lastingWriteShowsWholeText,
   parseSkillMd,
@@ -27,6 +29,23 @@ import { refusal } from "./tool-refusal.js";
  * outside content or its history. A subagent's call is the run's own, so it is judged by the run.
  */
 export function lastingWriteHeld(ctx: RunContext, name: string): Promise<boolean> {
+  return lastingWriteNeedsApproval(name, ...lastingWriteFacts(ctx));
+}
+
+/**
+ * Never ask's refusal of a lasting write held only because the run read its history, which nobody
+ * else asked for; undefined leaves the gate's own refusal, which says someone else may have.
+ */
+export async function lastingWriteHistoryRefusal(
+  ctx: RunContext,
+  name: string,
+): Promise<string | undefined> {
+  if ((await lastingWriteHoldReason(name, ...lastingWriteFacts(ctx))) !== "history")
+    return undefined;
+  return `${name} needs the owner's approval because this run read chat history, and this space never asks. Don't retry; tell the user.`;
+}
+
+function lastingWriteFacts(ctx: RunContext): [LastingWriteRun, LastingWriteChecks] {
   const { bot, deps, run, source, state, task } = ctx;
   const started = {
     trigger: run.trigger,
@@ -36,12 +55,13 @@ export function lastingWriteHeld(ctx: RunContext, name: string): Promise<boolean
     botOwnerRun: run.userId === bot.userId,
     readHistory: runReadHistory(state),
   };
-  return lastingWriteNeedsApproval(name, started, {
+  const checks = {
     routineFromOwner: async () =>
       Boolean(run.routineId) &&
       routineWriterIsOwner((await readRoutineWriter(deps.prisma, run.routineId!))?.writer),
     readOutside: async () => (await runCameByToken(ctx)) || (await runReadOutsideContent(ctx)),
-  });
+  };
+  return [started, checks];
 }
 
 /** The text keys whose whole value the card ends with, after the short ones. */
