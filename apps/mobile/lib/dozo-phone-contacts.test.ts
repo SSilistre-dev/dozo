@@ -75,6 +75,11 @@ describe("the contacts query", () => {
     expect(contacts.contactsQuery("Ａｄａ")).toBe("Ada");
     expect(contacts.contactsQuery("Şü")).toBe("Şü");
   });
+
+  it("matches the query as one line, as the server sends it", () => {
+    expect(contacts.contactsQuery("Ada\n\n\tLovelace\u202E\u200B")).toBe("Ada Lovelace");
+    expect(contacts.contactsQuery(`\n${"\n".repeat(200)}\u0007`)).toBeNull();
+  });
 });
 
 describe("the contacts' value", () => {
