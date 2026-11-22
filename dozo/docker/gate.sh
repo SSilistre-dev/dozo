@@ -242,6 +242,13 @@ olc() {
         printf '%s\n' "$out" | sed 's/^/[olc] /'
       else printf '%s\n' "$out"; fail "threads owner or thread bot guard (dozo/db/*-guard.mjs)"; fi
     else fail "dozo/db/threads-owner-guard.test.mjs missing: upstream changes to thread owners are not checked"; fi
+    # Module-level mutable state in the fork's server code must be read for its key scope before it
+    # merges: one person's data must never reach another (dozo/db/module-state-guard.mjs).
+    if [ -f dozo/db/module-state-guard.mjs ] && [ -f dozo/db/module-state-guard.test.mjs ] && [ -f dozo/db/module-state-reviewed.tsv ]; then
+      if out=$(drun module-state --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'node --test dozo/db/module-state-guard.test.mjs >/tmp/t.log 2>&1 || { cat /tmp/t.log; exit 1; }; node dozo/db/module-state-guard.mjs --root=/r' 2>&1); then
+        printf '%s\n' "$out" | sed 's/^/[olc] /'
+      else printf '%s\n' "$out"; fail "module state guard (dozo/db/module-state-guard.mjs)"; fi
+    else fail "dozo/db/module-state-guard.mjs, its test or module-state-reviewed.tsv missing: server module-level state is not checked"; fi
     # The server bundle's licence notices and runtime copies (dozo/server-bundle): which licences
     # pass, what the notices hold, and that no manifest points at a runtime it does not carry.
     # Offline: a local HTTP server stands in for the downloads.

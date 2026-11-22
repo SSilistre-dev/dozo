@@ -131,6 +131,7 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
   exist. `source-available.test.mjs` fails when the landing page or `.github/README.md` calls Dozo
   open source.
+- The module state guard (`dozo/db/module-state-guard.mjs`) and its tests: every top-level `let`, `Map`, `Set`, `WeakMap` or other `new X()`, and every `let` or `Map`/`Set`/`WeakMap`/`WeakSet` in the direct body of a function (a factory's closure state; scope `local` for a per-call local), in the fork's server code (`dozo-*` files) must be a row in `dozo/db/module-state-reviewed.tsv` with its key scope; a new or stale row fails.
 - The landing pages (`dozo/landing/**/*.html`) hold no `[[`: a legal page writes a value only the
   owner can supply as `[[NAME]]`, and a page that still has one must not merge.
 - The iOS app's config: `dozo/mobile/check-config.test.mjs` brands upstream's `apps/mobile/app.json`
