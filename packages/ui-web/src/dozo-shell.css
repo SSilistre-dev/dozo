@@ -6,10 +6,8 @@
    cards, the one-pill composer and the bot panel on the sidebar's tone. Upstream elements are
    reached through their data attributes; dozo/e2e checks that each hook still matches after an
    upstream merge. Menus, dialogs and the settings and Integrations windows are in
-   dozo-overlays.css, which reads the tone steps named here. */
-
-@import "./dozo-overlays.css";
-@import "./dozo-auth.css";
+   dozo-overlays.css, which reads the tone steps named here and loads right after the app starts
+   (apps/web/src/lib/dozo-boot.ts), not before its first paint. */
 
 :root {
   /* The one red of the brand, the seal dot. No semantic token carries it, so it is written here. */

@@ -8,11 +8,11 @@ import { Id } from "./ids.js";
  * FORBIDDEN unless the caller is a deployment admin, and NOT_FOUND while the deployment does not
  * bill, as upstream's grant procedures are.
  */
-export const dozoAdminAccessContract = {
+export const dozoAdminAccessContract = /* @__PURE__ */ (() => ({
   /** A pending grant only: CONFLICT once an account received it or it was revoked. */
   update: oc
     .input(z.object({ id: Id, grant: AccessGrantInputSchema }))
     .output(z.object({ ok: z.literal(true) })),
   /** A pending or revoked grant: CONFLICT once an account received it, which it keeps. */
   delete: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
-};
+}))();

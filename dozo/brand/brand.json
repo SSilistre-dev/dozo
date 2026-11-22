@@ -1190,12 +1190,13 @@
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "import { followStream } from \"../../lib/follow-stream\";\nimport { notificationIcon",
-      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoCliAccountsChanged } from \"../model-settings/dozo-cli-accounts\";\nimport { notificationIcon",
+      "replace": "import { followStream } from \"../../lib/follow-stream\";\nimport { dozoSiteChanged } from \"../../components/dozo-announcement\";\nimport { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoModelPoolChanged } from \"../model-settings/dozo-model-pool\";\nimport { dozoCliAccountsChanged } from \"../model-settings/dozo-cli-providers\";\nimport { notificationIcon",
       "requires": [
         "apps/web/src/components/dozo-announcement.tsx",
         "apps/web/src/pages/shell/dozo-message-pins.tsx",
         "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
-        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx",
+        "apps/web/src/pages/model-settings/dozo-cli-providers.ts"
       ],
       "reason": "site settings, pins, the model pool and CLI accounts: the imports of the rule below"
     },
@@ -4924,10 +4925,12 @@
     {
       "file": "apps/web/src/pages/shell/avatar-studio-popover.tsx",
       "find": "import { useRef, useState } from \"react\";\n\n/**\n * The shape grid",
-      "replace": "import { useRef, useState } from \"react\";\nimport { DozoAvatarGeneratePanel, DozoAvatarGenerateTab } from \"./dozo-avatar-generate\";\n\n/**\n * The shape grid",
+      "replace": "import { useRef, useState } from \"react\";\nimport { DozoAvatarGenerateTab } from \"./dozo-avatar-generate\";\nimport { DozoAvatarGeneratePanel } from \"../../lib/dozo-lazy-surfaces\";\n\n/**\n * The shape grid",
       "requires": [
         "apps/web/src/pages/shell/dozo-avatar-generate.tsx",
-        "apps/web/src/pages/shell/dozo-avatar-generate.test.tsx"
+        "apps/web/src/pages/shell/dozo-avatar-generate.test.tsx",
+        "apps/web/src/pages/shell/dozo-avatar-generate-panel.tsx",
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx"
       ],
       "reason": "avatar generation: the import of the rules below"
     },
@@ -5204,8 +5207,9 @@
     {
       "file": "apps/web/src/pages/shell/computer-overlay.tsx",
       "find": "import { ComputerReleaseActions } from \"./computer-release-actions\";\nimport { computerLabel",
-      "replace": "import { ComputerReleaseActions } from \"./computer-release-actions\";\nimport { SiteSessionsControl } from \"./dozo-site-sessions\";\nimport { computerLabel",
+      "replace": "import { ComputerReleaseActions } from \"./computer-release-actions\";\nimport { SiteSessionsControl } from \"../../lib/dozo-lazy-surfaces\";\nimport { computerLabel",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/pages/shell/dozo-site-sessions.tsx"
       ],
       "reason": "site sessions: the import of the rule below"
@@ -5267,8 +5271,9 @@
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
       "find": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { botProfilePatch }",
-      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"./dozo-bot-skills-section\";\nimport { botProfilePatch }",
+      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"../../lib/dozo-lazy-surfaces\";\nimport { botProfilePatch }",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/pages/shell/dozo-bot-skills-section.tsx"
       ],
       "reason": "teaching: the import of the rule below"
@@ -5345,8 +5350,9 @@
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
       "find": "import { AvatarStudioPopover } from \"./avatar-studio-popover\";\nimport {\n",
-      "replace": "import { AvatarStudioPopover } from \"./avatar-studio-popover\";\nimport { OwnComputerRow } from \"./dozo-own-computer-row\";\nimport {\n",
+      "replace": "import { AvatarStudioPopover } from \"./avatar-studio-popover\";\nimport { OwnComputerRow } from \"../../lib/dozo-lazy-surfaces\";\nimport {\n",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/pages/shell/dozo-own-computer-row.tsx"
       ],
       "reason": "own computer: the import of the rules below"
@@ -6712,10 +6718,12 @@
     {
       "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
       "find": "import { ConnectionNameField, ProvidersSection } from \"./model-settings/providers-section\";\nimport type { ConnectableProvider }",
-      "replace": "import { ConnectionNameField, ProvidersSection } from \"./model-settings/providers-section\";\nimport { DozoConnectionDetail, DozoModelPoolSwitch } from \"./model-settings/dozo-model-pool\";\nimport { DozoCliAccounts, useDozoCliProviders } from \"./model-settings/dozo-cli-accounts\";\nimport type { ConnectableProvider }",
+      "replace": "import { ConnectionNameField, ProvidersSection } from \"./model-settings/providers-section\";\nimport { DozoConnectionDetail, DozoModelPoolSwitch } from \"./model-settings/dozo-model-pool\";\nimport { useDozoCliProviders } from \"./model-settings/dozo-cli-providers\";\nimport { DozoCliAccounts } from \"../lib/dozo-lazy-surfaces\";\nimport type { ConnectableProvider }",
       "requires": [
         "apps/web/src/pages/model-settings/dozo-model-pool.tsx",
-        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx"
+        "apps/web/src/pages/model-settings/dozo-cli-accounts.tsx",
+        "apps/web/src/pages/model-settings/dozo-cli-providers.ts",
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx"
       ],
       "reason": "model pool and CLI accounts: the imports of the rules below"
     },
@@ -7198,6 +7206,28 @@
       "requires": [
         "packages/adapters/src/dozo-computer-image.test.ts"
       ]
+    },
+    {
+      "file": "packages/ui-web/package.json",
+      "find": "    \"./styles.css\": \"./src/styles.css\",\n    \"./lib/utils\"",
+      "replace": "    \"./styles.css\": \"./src/styles.css\",\n    \"./dozo-auth.css\": \"./src/dozo-auth.css\",\n    \"./dozo-overlays.css\": \"./src/dozo-overlays.css\",\n    \"./lib/utils\"",
+      "requires": [
+        "packages/ui-web/src/dozo-auth.css",
+        "packages/ui-web/src/dozo-overlays.css"
+      ],
+      "reason": "startup size: the sign-in pages' stylesheet and the menus' and windows' one are not in the shell's, so they load with the sign-in code and right after the app starts instead of before the first paint; the web app imports them by these names"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "export const appContract = {",
+      "replace": "export const appContract = /* @__PURE__ */ (() => ({",
+      "reason": "startup size: the browser never reads this object, but building it at load kept every contract schema in the web app's first download. Marked pure, the web build drops it, and the server, which does read it, keeps it as before (with the rule below)"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  },\n};\n\nexport type AppContract = typeof appContract;",
+      "replace": "  },\n}))();\n\nexport type AppContract = typeof appContract;",
+      "reason": "startup size: closes the call the rule above opens"
     },
     {
       "file": "scripts/checks/ratchets/no-json-column-cast.mjs",

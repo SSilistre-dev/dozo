@@ -1,6 +1,9 @@
 import { authClient } from "./auth";
 import { fetchAuthCapabilities } from "./auth-capabilities";
 import { initialBootstrapTarget } from "./bootstrap-target";
+import { preloadDozoSurfaces } from "./dozo-lazy-surfaces";
+import { reportClientError } from "./monitoring";
+import { importChunk } from "./preload-recovery";
 
 /** The shell `index.html` draws before any script runs; see `dozo-boot.js` in `public/`. */
 const BOOT_SHELL_ID = "dozo-boot";
@@ -92,6 +95,7 @@ export const loadCommonScreens = () =>
     import("../pages/SettingsOverlay"),
     import("../components/bot-templates/bot-templates-dialog"),
     import("../pages/BotContextMenu"),
+    preloadDozoSurfaces(),
   ]);
 
 /** Whether someone is signed in, by the session store's last answer. */
@@ -105,6 +109,14 @@ function signedIn(): boolean {
  */
 export function boot(view: BootWindow, doc: Document): void {
   view.dozoBootStarted?.();
+  // Menus, dialogs and the settings windows are not on screen at the first paint, so their
+  // stylesheet loads beside the app instead of in front of it. A failure is reported, not retried:
+  // the browser keeps a failed import for the page's lifetime and Vite keeps the failed link, so a
+  // second try could not succeed. A stale deploy's missing file reloads the page, as for any
+  // chunk (`importChunk`); on a bad network the menus stay plain until the next load.
+  void importChunk(() => import("@rakazo/ui-web/dozo-overlays.css")).catch((error: unknown) =>
+    reportClientError(error, "react.render", { stage: "dozo-overlay-styles" }),
+  );
   const chatRoute = startBootReads(view.location.pathname, Boolean(view.rakazoDesktop));
   releaseBootShell(doc, 10_000, () => {
     if (!chatRoute || view.navigator?.connection?.saveData || !signedIn()) return;

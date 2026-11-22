@@ -1,9 +1,10 @@
 /* Dozo sign-in and sign-up: the language of dozo/design/signin-v2.html on upstream's auth page
    (AuthFrame, data-rakazo-surface="auth") and on the fork's email-first sign-in
-   (dozo-code-sign-in.tsx). Imported by dozo-shell.css, whose :root names every tone used here,
-   and unlayered like it. A narrow column on the thread's tone over very faint waves, borderless
-   44px fields, the one ink button, quiet text buttons, six code boxes. Keyboard focus and an
-   invalid field stay visible. */
+   (dozo-code-sign-in.tsx). Imported by dozo-email-code-link.tsx, so it loads with the sign-in pages
+   and not before the first paint; the shell's :root names every tone used here. Unlayered like
+   it. A narrow column on the thread's tone over very faint waves, borderless 44px fields, the one
+   ink button, quiet text buttons, six code boxes. Keyboard focus and an invalid field stay
+   visible. */
 
 [data-rakazo-surface="auth"] {
   position: relative;

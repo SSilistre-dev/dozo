@@ -8,7 +8,7 @@ export const DozoLocalModelServerSchema = z.object({
 });
 export type DozoLocalModelServer = z.infer<typeof DozoLocalModelServerSchema>;
 
-export const dozoLocalModelsContract = {
+export const dozoLocalModelsContract = /* @__PURE__ */ (() => ({
   /**
    * The model servers running on the server's own computer and the models each lists. `available`
    * is false where the deployment may not reach private addresses: nothing is looked for there.
@@ -16,4 +16,4 @@ export const dozoLocalModelsContract = {
   servers: oc.output(
     z.object({ available: z.boolean(), servers: z.array(DozoLocalModelServerSchema) }),
   ),
-};
+}))();

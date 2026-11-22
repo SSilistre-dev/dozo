@@ -41,6 +41,20 @@ export class CliError extends Error {
   }
 }
 
+/**
+ * The `dozo follow` line that picks a run up again, naming the chat by its id (never the name typed
+ * after --chat), each word quoted where a POSIX shell would otherwise split or run it.
+ */
+export function followCommand(bot, runId, after, chatQuery) {
+  const chat = chatQuery ? ["--chat", decodeURIComponent(chatQuery.slice("chat=".length))] : [];
+  return ["dozo", "follow", bot, runId, "--after", after, ...chat]
+    .map((word) => {
+      const text = String(word);
+      return /^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`;
+    })
+    .join(" ");
+}
+
 /** Splits arguments into the command, its words and its options. */
 export function parseArgs(argv) {
   const words = [];
@@ -331,7 +345,7 @@ export async function main(argv, io) {
             if (data.status === "completed") return 0;
             if (data.status === "waiting_input" || data.status === "waiting_takeover") {
               stderr.write(
-                `The bot is waiting for you in the app. Then: dozo follow ${bot} ${runId} --after ${last}${chat ? ` --chat ${options.chat}` : ""}\n`,
+                `The bot is waiting for you in the app. Then: ${followCommand(bot, runId, last, chat)}\n`,
               );
               return 3;
             }

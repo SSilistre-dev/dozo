@@ -33,7 +33,7 @@ export const DozoSignInUrl = z
 
 const BotInput = z.object({ botId: Id });
 
-export const dozoSiteSessionsContract = {
+export const dozoSiteSessionsContract = /* @__PURE__ */ (() => ({
   /** Empty while the computer is not running or cannot tell. */
   list: oc.input(BotInput).output(DozoSiteSessionListSchema),
   /** Removes one site's cookies and storage from the bot's browser, or every site's without one. */
@@ -44,4 +44,4 @@ export const dozoSiteSessionsContract = {
   signIn: oc
     .input(BotInput.extend({ url: DozoSignInUrl }))
     .output(z.object({ leaseId: z.string(), expiresAt: z.string() })),
-};
+}))();

@@ -79,7 +79,7 @@ export type DozoBotChatRenameInput = z.infer<typeof DozoBotChatRenameInputSchema
 export const DozoBotChatArchiveInputSchema = z.object({ chatId: Id, archived: z.boolean() });
 export type DozoBotChatArchiveInput = z.infer<typeof DozoBotChatArchiveInputSchema>;
 
-export const dozoChatsContract = {
+export const dozoChatsContract = /* @__PURE__ */ (() => ({
   /** Extra chats, oldest first; archived ones only when asked for. */
   list: oc
     .input(DozoBotChatsListInputSchema)
@@ -88,4 +88,4 @@ export const dozoChatsContract = {
   rename: oc.input(DozoBotChatRenameInputSchema).output(ChatOutput),
   /** Archives or brings back an extra chat; doing what is already done succeeds. */
   archive: oc.input(DozoBotChatArchiveInputSchema).output(ChatOutput),
-};
+}))();

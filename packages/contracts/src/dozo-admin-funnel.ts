@@ -40,6 +40,6 @@ export const DozoAdminFunnelSchema = z.object({
 export type DozoAdminFunnel = z.infer<typeof DozoAdminFunnelSchema>;
 
 /** Refused with FORBIDDEN unless the caller is a deployment admin. */
-export const dozoAdminFunnelContract = {
+export const dozoAdminFunnelContract = /* @__PURE__ */ (() => ({
   read: oc.input(z.object({ days: DozoFunnelDaysSchema })).output(DozoAdminFunnelSchema),
-};
+}))();

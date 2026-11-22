@@ -295,9 +295,13 @@ describe("dozo-shell.css", () => {
 describe("dozo-overlays.css", () => {
   const overlays = readFileSync(join(import.meta.dirname, "dozo-overlays.css"), "utf8");
 
-  it("is imported by the shell stylesheet before any rule of its own", () => {
-    expect(css.indexOf('@import "./dozo-overlays.css";')).toBeGreaterThan(-1);
-    expect(css.indexOf('@import "./dozo-overlays.css";')).toBeLessThan(css.indexOf(":root"));
+  it("is not in the shell stylesheet: the app loads it right after it starts", () => {
+    expect(css).not.toContain('@import "./dozo-overlays.css";');
+    const boot = readFileSync(
+      join(import.meta.dirname, "../../../apps/web/src/lib/dozo-boot.ts"),
+      "utf8",
+    );
+    expect(boot).toContain('import("@rakazo/ui-web/dozo-overlays.css")');
   });
 
   it("takes every colour from a tone the shell names, and writes no motion or !important", () => {
@@ -315,9 +319,13 @@ describe("dozo-overlays.css", () => {
 describe("dozo-auth.css", () => {
   const auth = readFileSync(join(import.meta.dirname, "dozo-auth.css"), "utf8");
 
-  it("is imported by the shell stylesheet before any rule of its own", () => {
-    expect(css.indexOf('@import "./dozo-auth.css";')).toBeGreaterThan(-1);
-    expect(css.indexOf('@import "./dozo-auth.css";')).toBeLessThan(css.indexOf(":root"));
+  it("is not in the shell stylesheet: the sign-in pages import it, so it loads with them", () => {
+    expect(css).not.toContain("dozo-auth.css");
+    const link = readFileSync(
+      join(import.meta.dirname, "../../../apps/web/src/pages/dozo-email-code-link.tsx"),
+      "utf8",
+    );
+    expect(link).toContain('import "@rakazo/ui-web/dozo-auth.css";');
   });
 
   it("takes every colour from a tone the shell names and moves only without reduced motion", () => {

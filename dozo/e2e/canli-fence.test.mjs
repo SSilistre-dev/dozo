@@ -41,11 +41,13 @@ function procedures(lines, prefix) {
   return found;
 }
 
-/** The procedures of `export const <id> = {` in any contract file. */
+/** The procedures of `export const <id> = {` (or its pure-marked call form) in any contract file. */
 function named(id, prefix) {
   for (const text of files) {
     const lines = text.split("\n");
-    const start = lines.findIndex((line) => line.startsWith(`export const ${id} = {`));
+    const start = lines.findIndex((line) =>
+      new RegExp(`^export const ${id} = (?:/\\* @__PURE__ \\*/ \\(\\(\\) => \\()?\\{$`).test(line),
+    );
     if (start !== -1) return procedures(block(lines, start), prefix);
   }
   throw new Error(`${id} not found in packages/contracts/src`);
