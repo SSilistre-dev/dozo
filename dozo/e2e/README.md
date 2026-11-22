@@ -311,8 +311,12 @@ payment, no ban, no admin action. A billing scenario skips itself on a server th
 The run waits for the machine's local-stack lock when the file exists (`DOZO_STACK_LOCK`, default
 `/tmp/dozo-yigin.lock`, through `flock -w 7200`): another run starting or stopping containers changes
 the host's network under the browser. A caller that already holds the lock sets
-`DOZO_CANLI_LOCKED=1`. A navigation that still meets `net::ERR_NETWORK_CHANGED` or
-`ERR_INTERNET_DISCONNECTED` is tried again, at most twice; a site error is never retried.
+`DOZO_CANLI_LOCKED=1`. A navigation that still meets this machine's own network flap
+(`net::ERR_NETWORK_CHANGED`, `ERR_INTERNET_DISCONNECTED`, `ERR_QUIC_PROTOCOL_ERROR`) is tried again,
+at most twice; a script, style or call of the page that meets one reloads the page, at most twice per
+scenario (`guardFlaps` in `canli/fence.ts`, tested offline by `canli-flap.test.mjs`). Every retry is a
+line in the report's Notlar; a flap past that is left to the watcher and fails the scenario. A site
+error (4xx/5xx, a timeout, wrong content) is never retried.
 
 Output in `dozo/.stage/canli/`: `RAPOR.md`, `rapor.html`, `shots/`, `results.json`. The trial
 account's session file is removed when the run ends (its password is never written there). Budgets (`canli/budgets.ts`, tested
