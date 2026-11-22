@@ -148,7 +148,7 @@ describe("the app's phone device", () => {
     );
   });
 
-  it("unpairs and checks a pairing with the device token", async () => {
+  it("unpairs with the device token", async () => {
     const deps = device.appPhoneDeviceDeps();
     app.fetchMobileJson.mockResolvedValue(answer(204));
     await deps.unpair("https://app.example.test", "device-token");
@@ -161,21 +161,10 @@ describe("the app's phone device", () => {
       null,
       "https://app.example.test",
     );
-    expect(await deps.verify("https://app.example.test", "device-token")).toBe(true);
-    expect(app.fetchMobileJson).toHaveBeenLastCalledWith(
-      "https://app.example.test/api/devices/self/session",
-      expect.objectContaining({ method: "POST" }),
-      null,
-      "https://app.example.test",
-    );
     app.fetchMobileJson.mockResolvedValue(answer(401));
     await deps.unpair("https://old.example.test", "device-token");
     expect(app.fetchMobileJson.mock.calls.at(-1)?.[3]).toBe("https://old.example.test");
-    expect(await deps.verify("https://app.example.test", "device-token")).toBe(false);
-    app.fetchMobileJson.mockResolvedValue(answer(403));
-    expect(await deps.verify("https://app.example.test", "device-token")).toBe(true);
     app.fetchMobileJson.mockResolvedValue(answer(503));
-    expect(await deps.verify("https://app.example.test", "device-token")).toBeNull();
     await expect(deps.unpair("https://app.example.test", "device-token")).rejects.toThrow(
       "Request failed (503)",
     );

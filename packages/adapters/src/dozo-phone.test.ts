@@ -81,13 +81,20 @@ function setup(
       },
     ),
   };
+  type Clause = { runId?: string; status?: string | { in: string[] } };
+  const holds = (effect: (typeof effects)[number], clause: Clause) =>
+    (!clause.runId || effect.runId === clause.runId) &&
+    (clause.status === undefined ||
+      (typeof clause.status === "string"
+        ? effect.status === clause.status
+        : clause.status.in.includes(effect.status)));
   const findFirst = vi.fn(
-    async ({ where }: { where: { runId?: string; kind: string; status?: { in: string[] } } }) =>
+    async ({ where }: { where: Clause & { kind: string; OR?: Clause[] } }) =>
       effects.find(
         (effect) =>
           effect.kind === where.kind &&
-          (!where.runId || effect.runId === where.runId) &&
-          (!where.status || where.status.in.includes(effect.status)),
+          holds(effect, where) &&
+          (!where.OR || where.OR.some((clause) => holds(effect, clause))),
       ) ?? null,
   );
   const updateMany = vi.fn(async () => ({ count: 1 }));
@@ -435,6 +442,21 @@ describe("a read that fails", () => {
     const result = await phoneCalendarRead(run.ctx, call({ ...RANGE }).call);
     expect(result).toHaveProperty("error", expect.stringContaining("token"));
     expect(run.requests).toEqual([]);
+  });
+});
+
+describe("the owner's consent", () => {
+  it("is a completed read, or this run's own approved card; nothing a crash can leave behind", async () => {
+    const plan = async (status: string, runId: string) => {
+      const run = setup({ consent: false });
+      run.effects.push({ id: "e", runId, kind: PHONE_CALENDAR_READ_TOOL, status });
+      return phoneGate(run.ctx, false, { ...RANGE });
+    };
+    expect(await plan("completed", "run-0")).toBe("allow");
+    expect(await plan("approved", "run-1")).toBe("allow");
+    for (const status of ["executing", "uncertain", "intended", "denied"])
+      expect(await plan(status, "run-1"), status).toBe("ask");
+    expect(await plan("approved", "run-0")).toBe("ask");
   });
 });
 

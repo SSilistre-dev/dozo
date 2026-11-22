@@ -33,6 +33,17 @@ export interface ConnectedPhone {
 }
 
 /**
+ * The way to the user's phone of a gateway another wraps (the desktop server adds its own computer
+ * around it, host-computer-device.ts), so the wrapper keeps it; nothing when the gateway has none.
+ */
+export function phoneReach(
+  devices: object | undefined,
+): Partial<Pick<UserDevices, "connectedPhone">> {
+  if (!(devices instanceof UserDevices)) return {};
+  return { connectedPhone: (userId, capability) => devices.connectedPhone(userId, capability) };
+}
+
+/**
  * Upstream's hub, which also saves what a connecting computer declares
  * (dozo-device-capabilities.ts) before the connection is taken, so the first run after it sees it.
  */

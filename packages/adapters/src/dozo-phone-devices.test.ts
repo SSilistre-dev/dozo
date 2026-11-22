@@ -1,7 +1,10 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { deviceOffers, readDeviceCapabilities } from "./dozo-device-capabilities.js";
+import { phoneRoute } from "./dozo-phone.js";
 import { UserDevices, userDeviceForwardSecret } from "./dozo-user-device-gateway.js";
+import { withHostComputerScreen } from "./host-computer-device.js";
+import type { RunContext } from "./run-context.js";
 
 type Device = {
   id: string;
@@ -136,6 +139,26 @@ describe("a phone among the user's devices", () => {
     expect(await gateway.connectedPhone("user-2", "calendar")).toBeNull();
     devices[1]!.revokedAt = new Date();
     expect(await gateway.connectedPhone("user-1", "calendar")).toBeNull();
+  });
+});
+
+describe("on the desktop app's own server", () => {
+  it("still reaches the user's phone through the gateway that adds this computer", async () => {
+    const { pair, connect, gateway } = fakePrisma();
+    pair("phone", "ios");
+    connect("phone", ["calendar"]);
+    const wrapped = withHostComputerScreen(gateway, {
+      prisma: {} as PrismaClient,
+      sandboxKind: "docker",
+      url: "http://127.0.0.1:9",
+      token: "t",
+    });
+    expect(wrapped).not.toBe(gateway);
+    const ctx = {
+      source: { userComputerOwner: "user-1" },
+      deps: { userDevices: wrapped },
+    } as unknown as RunContext;
+    expect(await phoneRoute(ctx)).toMatchObject({ deviceId: "phone", owner: "user-1" });
   });
 });
 

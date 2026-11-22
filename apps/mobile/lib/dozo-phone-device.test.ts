@@ -98,7 +98,6 @@ function setup(stored?: Record<string, string>) {
     }),
     pair: vi.fn(async () => ({ deviceId: "device-1", userId: USER, token: "token-1" })),
     unpair: vi.fn(async () => {}),
-    verify: vi.fn(async (): Promise<boolean | null> => true),
     connect: vi.fn((url: string, headers: Record<string, string>) => {
       const socket = new FakeSocket(url, headers);
       sockets.push(socket);
@@ -388,24 +387,22 @@ describe("where it connects", () => {
     expect(phone.pending()).toHaveLength(0);
   });
 
-  it("forgets a pairing the server refuses before the connection opens", async () => {
+  it("keeps the pairing when connections fail before opening, and retries with growing waits", async () => {
     const phone = await switchedOn();
-    phone.deps.verify.mockResolvedValueOnce(false);
-    phone.last().onclose?.();
-    await phone.device.sync();
-    expect(phone.deps.verify).toHaveBeenCalledWith(ORIGIN, "token-1");
-    expect(phone.store.size).toBe(0);
-    expect(phone.device.settings().calendar).toBe(false);
-    expect(phone.pending()).toHaveLength(0);
-  });
-
-  it("retries a connection that did not open when the pairing is still good or unknown", async () => {
-    const phone = await switchedOn();
-    phone.deps.verify.mockRejectedValueOnce(new Error("offline"));
-    phone.last().onerror?.();
-    await vi.waitFor(() => expect(phone.pending()).toHaveLength(1));
+    const waits: number[] = [];
+    for (let failure = 0; failure < 4; failure++) {
+      phone.last().onerror?.();
+      await flush();
+      const timer = phone.pending().at(-1)!;
+      waits.push(timer.ms);
+      timer.run();
+      await phone.device.sync();
+    }
+    expect(waits).toEqual([750, 1500, 3000, 6000]);
+    expect(phone.sockets).toHaveLength(5);
+    expect(phone.last().headers.authorization).toBe("Bearer token-1");
     expect(phone.store.size).toBe(1);
-    expect(phone.sockets).toHaveLength(1);
+    expect(phone.device.settings().calendar).toBe(true);
   });
 
   it("ignores events from a connection it already replaced", async () => {
@@ -419,7 +416,6 @@ describe("where it connects", () => {
     await flush();
     expect(old.sent).toEqual([]);
     expect(phone.pending()).toHaveLength(0);
-    expect(phone.deps.verify).not.toHaveBeenCalled();
   });
 
   it("stops following the app and closes when stopped", async () => {

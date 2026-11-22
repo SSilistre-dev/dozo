@@ -29,7 +29,6 @@ import type { UserDeviceGateway } from "./user-device-protocol.js";
 /** How long the phone has to answer: the device default (ten minutes) is far too long here. */
 export const PHONE_ANSWER_MS = 20_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const CONSENTED = ["approved", "executing", "completed", "uncertain"];
 
 const OFFLINE =
   "The user's phone is not connected. Ask them to open the app on their phone, then try again.";
@@ -125,8 +124,9 @@ const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();
 /**
  * The approval of a phone read, in every approval mode (Never ask included). A block or a run a
  * token's message reached refuses it, as does a run that is not the person's own. A bot reads the
- * phone once its owner allowed it on this pairing: an effect of this tool past "intended", in a
- * run of this bot and person, made since the phone was paired. Otherwise it asks. A call that
+ * phone once its owner allowed it on this pairing: a completed effect of this tool in a run of this
+ * bot and person, made since the phone was paired, or this run's own card the owner allowed.
+ * Otherwise it asks. A call that
  * cannot read anything (no phone connected, a range it cannot read) goes on to its handler, which
  * says why without reading.
  */
@@ -142,9 +142,11 @@ export async function phoneGate(
     where: {
       spaceId: ctx.run.spaceId,
       kind: PHONE_CALENDAR_READ_TOOL,
-      status: { in: CONSENTED },
       createdAt: { gte: route.pairedAt },
       run: { userId: route.owner, botId: ctx.bot.id },
+      // A read that finished, or the card the owner just allowed for this call. An effect a
+      // crash left executing or uncertain is neither: it may come from a call that never asked.
+      OR: [{ status: "completed" }, { status: "approved", runId: ctx.runId }],
     },
     select: { id: true },
   });

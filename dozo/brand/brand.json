@@ -5645,6 +5645,42 @@
       "reason": "phone: the import of the handler above"
     },
     {
+      "file": "packages/adapters/src/host-computer-device.ts",
+      "find": "  return {\n    async connected(userId) {\n      return (await devices?.connected(userId)) ?? hostDevice();\n",
+      "replace": "  return {\n    // The user's phone stays reachable on the desktop app's own server (dozo-phone.ts).\n    ...phoneReach(devices),\n    async connected(userId) {\n      return (await devices?.connected(userId)) ?? hostDevice();\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-device-gateway.ts"
+      ],
+      "reason": "phone: the desktop app's own server wraps the device gateway to add its own computer; the wrapper keeps the way to the user's phone, or the phone tool is never offered there"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-device.ts",
+      "find": "import { HostComputerSandbox } from \"./host-computer-sandbox.js\";\nimport { UserDeviceOfflineError } from \"./user-device-gateway.js\";\n",
+      "replace": "import { HostComputerSandbox } from \"./host-computer-sandbox.js\";\nimport { phoneReach } from \"./dozo-user-device-gateway.js\";\nimport { UserDeviceOfflineError } from \"./user-device-gateway.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-device-gateway.ts"
+      ],
+      "reason": "phone: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-request.ts",
+      "find": "      return refusal(\"helper_user_computer\", \"Helpers cannot use the user's computer.\");\n  }\n  // Before the gate, so a routine",
+      "replace": "      return refusal(\"helper_user_computer\", \"Helpers cannot use the user's computer.\");\n  }\n  // Nor the user's phone: a helper's calls are the parent run's, and its approval is the owner's.\n  if (isPhoneTool(name) && isSubagentToolExecution(executionId))\n    return refusal(\"helper_user_phone\", \"Helpers cannot use the user's phone.\");\n  // Before the gate, so a routine",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: a helper (run_subagent) runs in its parent's run, which may reach the user's phone; like the user's computer, the phone is refused to it before any approval card"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-request.ts",
+      "find": "import { USER_COMPUTER_TOOLS } from \"./run-tools-user-computer.js\";\nimport { SCHEDULE_TOOL_NAMES }",
+      "replace": "import { USER_COMPUTER_TOOLS } from \"./run-tools-user-computer.js\";\nimport { isPhoneTool } from \"./dozo-phone.js\";\nimport { SCHEDULE_TOOL_NAMES }",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: the import of the rule above"
+    },
+    {
       "file": "packages/contracts/src/builtin-tools.ts",
       "find": "  \"user_computer_act\",\n  \"open_path\",\n",
       "replace": "  \"user_computer_act\",\n  \"phone_calendar_read\",\n  \"open_path\",\n",
@@ -5677,16 +5713,34 @@
     {
       "file": "apps/api/src/user-devices.ts",
       "find": "    if (!input.success) return c.json({ error: \"Invalid device\" }, 400);\n    const token = createUserDeviceToken();\n",
-      "replace": "    if (!input.success) return c.json({ error: \"Invalid device\" }, 400);\n    // One phone per account: a phone pairing ends the phone paired before it.\n    for (const phone of await pairedPhones(prisma, userId, input.data.platform))\n      await revokeDevice(deps, phone, userId, \"owner\");\n    const token = createUserDeviceToken();\n",
+      "replace": "    if (!input.success) return c.json({ error: \"Invalid device\" }, 400);\n    /** The phones this pairing ended, closed once it commits. */\n    let replaced: string[] = [];\n    const token = createUserDeviceToken();\n",
       "requires": [
         "apps/api/src/dozo-user-device-phones.ts"
       ],
-      "reason": "phone: an account has one phone; pairing another first disconnects and unpairs the previous one, computers untouched"
+      "reason": "phone: the phones a phone pairing ends, kept for the rules below"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "        const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });\n        if (active >= USER_DEVICE_LIMIT) return null;\n",
+      "replace": "        const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });\n        // A phone is not a computer: it takes no place under their limit, and an account has one.\n        const phones = await pairedPhones(tx, userId);\n        if (overComputerLimit(input.data.platform, active, phones, USER_DEVICE_LIMIT)) return null;\n        replaced = await replacePhones(tx, userId, input.data.platform, phones);\n",
+      "requires": [
+        "apps/api/src/dozo-user-device-phones.ts"
+      ],
+      "reason": "phone: an account has one phone, and phones take no place under the computers' limit; a phone pairing ends the phone paired before it under the pairing's lock, only once it will be inserted, so a refused pairing ends nothing"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "    if (!device) return c.json({ error: \"Remove a computer before adding another\" }, 409);\n    await recordSecurityEvent({\n",
+      "replace": "    if (!device) return c.json({ error: \"Remove a computer before adding another\" }, 409);\n    await disconnectPhones(deps.devices, userId, replaced);\n    await recordSecurityEvent({\n",
+      "requires": [
+        "apps/api/src/dozo-user-device-phones.ts"
+      ],
+      "reason": "phone: the phone a pairing ended is recorded and its socket closed after the pairing commits"
     },
     {
       "file": "apps/api/src/user-devices.ts",
       "find": "import { lockOwner } from \"./availability.js\";\nimport { readBoundedBody } from \"./http-body.js\";\n",
-      "replace": "import { lockOwner } from \"./availability.js\";\nimport { pairedPhones } from \"./dozo-user-device-phones.js\";\nimport { readBoundedBody } from \"./http-body.js\";\n",
+      "replace": "import { lockOwner } from \"./availability.js\";\nimport {\n  disconnectPhones,\n  overComputerLimit,\n  pairedPhones,\n  replacePhones,\n} from \"./dozo-user-device-phones.js\";\nimport { readBoundedBody } from \"./http-body.js\";\n",
       "requires": [
         "apps/api/src/dozo-user-device-phones.ts"
       ],
@@ -8761,6 +8815,15 @@
         "apps/mobile/app/(settings)/dozo-phone.tsx"
       ],
       "reason": "phone calendar: the Phone page is a settings page, so a link to it opens inside the settings sheet"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
+      "replace": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Calendar\"\nmsgstr \"Takvim\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Events a bot reads are sent to its AI model.\"\nmsgstr \"Botun okuduğu etkinlikler yapay zekâ modeline gönderilir.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow calendar access in Settings.\"\nmsgstr \"Ayarlar'dan takvim erişimine izin verin.\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
+      "requires": [
+        "apps/mobile/app/(settings)/dozo-phone.tsx"
+      ],
+      "reason": "phone calendar: the Turkish copy of the Phone page's switch, its footer and the alert when the system refuses (Phone, Cancel and Settings are upstream's)"
     },
     {
       "file": "apps/mobile/lib/account-screen.test.tsx",

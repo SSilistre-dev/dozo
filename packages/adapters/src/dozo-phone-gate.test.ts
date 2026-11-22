@@ -35,6 +35,7 @@ import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-ga
 import type { RunContext } from "./run-context.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
+import { prepareToolRequest } from "./run-tool-request.js";
 import { READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { userComputerOwner } from "./run-tools-user-computer.js";
 
@@ -152,9 +153,9 @@ describe("the phone's approval", () => {
       where: {
         spaceId: "space-1",
         kind: PHONE_CALENDAR_READ_TOOL,
-        status: { in: ["approved", "executing", "completed", "uncertain"] },
         createdAt: { gte: new Date(0) },
         run: { userId: "user-1", botId: "bot-1" },
+        OR: [{ status: "completed" }, { status: "approved", runId: "run-1" }],
       },
       select: { id: true },
     });
@@ -194,6 +195,23 @@ describe("the phone's approval", () => {
     expect(buildApprovalAskBlock("effect-1", PHONE_CALENDAR_READ_TOOL, {}, [])).not.toHaveProperty(
       "detail",
     );
+  });
+});
+
+describe("a helper", () => {
+  it("cannot read the phone: refused before any card", async () => {
+    const { ctx } = context({ consent: true });
+    const request = (agent: string) =>
+      ({
+        name: PHONE_CALENDAR_READ_TOOL,
+        args: { ...RANGE },
+        executionId: JSON.stringify(["pi-tool", agent, "call-1"]),
+        nextApprovedTool: undefined,
+      }) as unknown as ToolRequest;
+    expect(await prepareToolRequest(ctx, request("helper-1"))).toMatchObject({
+      error: "Helpers cannot use the user's phone.",
+    });
+    expect(await prepareToolRequest(ctx, request("main"))).toBeUndefined();
   });
 });
 

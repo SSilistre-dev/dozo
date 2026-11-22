@@ -75,8 +75,6 @@ export type PhoneDeviceDeps = {
     device: { name: string; platform: PhonePlatform },
   ): Promise<{ deviceId: string; userId: string; token: string }>;
   unpair(origin: string, token: string): Promise<void>;
-  /** False when the server refuses the token; null when it did not answer. */
-  verify(origin: string, token: string): Promise<boolean | null>;
   connect(url: string, headers: Record<string, string>): PhoneSocket;
   calendar: {
     available(): boolean;
@@ -225,16 +223,9 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
     cancelCalls();
     entry.socket.close();
     if (entry.openedAt !== null && deps.now() - entry.openedAt >= STABLE_MS) attempt = 0;
-    if (entry.openedAt !== null) {
-      retry();
-      return;
-    }
-    // Refused before opening: a removed pairing is refused for good, so ask once before retrying.
-    void serial(async () => {
-      const valid = await deps.verify(entry.origin, entry.token).catch(() => null);
-      if (valid === false) await forget(entry.key, entry.token);
-      else retry();
-    });
+    // A connection that never opened (a proxy, a deploy, the network) keeps its pairing and tries
+    // again later: only a `revoked` message or the switch turned off forgets the token.
+    retry();
   }
 
   type Call = { cancelled: boolean };
@@ -529,17 +520,6 @@ export function appPhoneDeviceDeps(): PhoneDeviceDeps {
     async unpair(origin, token) {
       const response = await deviceRequest(origin, token, `${USER_DEVICE_PATH}/self`, "DELETE");
       if (!response.ok && response.status !== 401) throw serverError(response.status, null);
-    },
-    async verify(origin, token) {
-      // Answers 401 for a token the server no longer knows, and changes nothing for a phone.
-      const response = await deviceRequest(
-        origin,
-        token,
-        `${USER_DEVICE_PATH}/self/session`,
-        "POST",
-      );
-      if (response.status === 401) return false;
-      return response.ok || response.status === 403 ? true : null;
     },
     connect(url, headers) {
       const Socket = WebSocket as unknown as RnWebSocket;
