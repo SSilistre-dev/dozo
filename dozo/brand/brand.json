@@ -6810,37 +6810,37 @@
     {
       "file": "apps/api/src/calls.test.ts",
       "find": "import { createRouter } from \"./router.js\";",
-      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { ...deps.env, webOrigin: deps.env?.webOrigin ?? \"http://127.0.0.1:5173\" },\n  } as RouterDeps);",
       "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
     },
     {
       "file": "apps/api/src/chat-alerts.test.ts",
       "find": "import { createRouter } from \"./router.js\";",
-      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { ...deps.env, webOrigin: deps.env?.webOrigin ?? \"http://127.0.0.1:5173\" },\n  } as RouterDeps);",
       "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
     },
     {
       "file": "apps/api/src/space-changes.test.ts",
       "find": "import { createRouter } from \"./router.js\";",
-      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { ...deps.env, webOrigin: deps.env?.webOrigin ?? \"http://127.0.0.1:5173\" },\n  } as RouterDeps);",
       "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
     },
     {
       "file": "apps/api/src/board.test.ts",
       "find": "import { createRouter } from \"./router.js\";",
-      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { ...deps.env, webOrigin: deps.env?.webOrigin ?? \"http://127.0.0.1:5173\" },\n  } as RouterDeps);",
       "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
     },
     {
       "file": "apps/api/src/roster-procedures.test.ts",
       "find": "import { createRouter } from \"./router.js\";",
-      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { ...deps.env, webOrigin: deps.env?.webOrigin ?? \"http://127.0.0.1:5173\" },\n  } as RouterDeps);",
       "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
     },
     {
       "file": "apps/api/src/trusted-link-sites.test.ts",
       "find": "import { createRouter } from \"./router.js\";",
-      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { webOrigin: \"http://127.0.0.1:5173\", ...deps.env },\n  } as RouterDeps);",
+      "replace": "import { createRouter as createAppRouter } from \"./router.js\";\n\n// Dozo: the app always has a web origin, which the fork's plugin catalog builds image links from.\nconst createRouter = (deps: RouterDeps) =>\n  createAppRouter({\n    ...deps,\n    env: { ...deps.env, webOrigin: deps.env?.webOrigin ?? \"http://127.0.0.1:5173\" },\n  } as RouterDeps);",
       "reason": "upstream test fixture: these router deps leave out env.webOrigin, which every running app has and the fork's plugin catalog route reads; the test's own env still wins"
     },
     {
