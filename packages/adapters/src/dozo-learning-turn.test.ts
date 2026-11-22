@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { markRunRecalledMemory } from "./dozo-learning-recall.js";
 import type { LearningReviewDeps } from "./dozo-learning-review.js";
 import {
   LEARNING_IDLE_MS,
@@ -6,7 +7,6 @@ import {
   LEARNING_REVIEW_MAX_ATTEMPTS,
   LEARNING_REVIEW_TIMEOUT_MS,
 } from "./dozo-learning-review.js";
-import { markRunRecalledMemory } from "./dozo-learning-recall.js";
 import { countsForLearning, dozoRecordLearningTurn } from "./dozo-learning-turn.js";
 import { markRunReadOutside } from "./dozo-read-outside.js";
 import type { RunContext, RunState } from "./run-context.js";
@@ -144,14 +144,7 @@ describe("dozoRecordLearningTurn", () => {
       await dozoRecordLearningTurn(few.ctx, few.start);
       const insert = few.executeRaw.mock.calls[0]!;
       expect(sqlOf(insert)).toContain("INSERT INTO dozo_learning_turns");
-      expect(insert.slice(2)).toEqual([
-        "bot-1",
-        "space-1",
-        "thread-1",
-        "run-1",
-        "message-1",
-        true,
-      ]);
+      expect(insert.slice(2)).toEqual(["bot-1", "space-1", "thread-1", "run-1", "message-1", true]);
       expect(few.enqueueIn).toHaveBeenCalledWith(expect.anything(), {
         name: "memory.learning-review",
         payload: { botId: "bot-1" },

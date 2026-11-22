@@ -129,9 +129,9 @@ describe("learning routes", () => {
   it("offer learning only in a Space of the owner's own; turning it off always works", async () => {
     state.alone = false;
     expect((await client("creator").get({ botId: "bot-1" })).available).toBe(false);
-    await expect(
-      client("creator").setMode({ botId: "bot-1", mode: "auto" }),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(client("creator").setMode({ botId: "bot-1", mode: "auto" })).rejects.toMatchObject(
+      { code: "CONFLICT" },
+    );
     expect(await client("creator").setMode({ botId: "bot-1", mode: "off" })).toEqual({
       mode: "off",
     });

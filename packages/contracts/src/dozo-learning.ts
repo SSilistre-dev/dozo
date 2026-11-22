@@ -27,7 +27,11 @@ export const DOZO_LEARNING_NOTE_MAX_CHARS = 200;
  * Control characters (C0, DEL, C1 with U+0085) and the Unicode line and paragraph separators:
  * any of them could start a new line where the notes are shown to a model.
  */
-const NOTE_BREAK = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const breaksLine = (text: string) =>
+  [...text].some((char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
+  });
 
 /**
  * One learned note: a single line that cannot close or open the block the notes are shown in
@@ -38,7 +42,7 @@ export const DozoLearningNoteText = z
   .trim()
   .min(1)
   .max(DOZO_LEARNING_NOTE_MAX_CHARS)
-  .refine((text) => !NOTE_BREAK.test(text), "One line, no control characters.")
+  .refine((text) => !breaksLine(text), "One line, no control characters.")
   .refine((text) => !/[<>]/.test(text), "No angle brackets.")
   .refine((text) => !text.startsWith("#"), "No heading.");
 
@@ -53,16 +57,14 @@ export const DOZO_LEARNING_CHANGED_CODE = "LEARNING_CHANGED_SINCE";
 
 export const dozoLearningContract = /* @__PURE__ */ (() => ({
   /** Only to the bot's owner: the learning mode and its latest changes, newest first. */
-  get: oc
-    .input(z.object({ botId: Id }))
-    .output(
-      z.object({
-        mode: DozoLearningMode,
-        /** False in a Space with another member or guest: no learning there, whatever the mode. */
-        available: z.boolean(),
-        changes: z.array(DozoLearningChangeSchema),
-      }),
-    ),
+  get: oc.input(z.object({ botId: Id })).output(
+    z.object({
+      mode: DozoLearningMode,
+      /** False in a Space with another member or guest: no learning there, whatever the mode. */
+      available: z.boolean(),
+      changes: z.array(DozoLearningChangeSchema),
+    }),
+  ),
   /** Only the bot's owner may change this: it is their own chat that becomes notes. */
   setMode: oc
     .input(z.object({ botId: Id, mode: DozoLearningMode }))

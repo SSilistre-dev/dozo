@@ -1,6 +1,6 @@
 import {
-  learningMode,
   learningAvailable,
+  learningMode,
   listLearningChanges,
   setLearningMode,
   settleLeftLearningWrites,

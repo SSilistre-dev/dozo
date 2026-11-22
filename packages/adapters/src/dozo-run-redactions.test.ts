@@ -59,7 +59,11 @@ describe("loadRunRedactions", () => {
     ]);
     // Each loader gets the scope it was given, unchanged, and each run its own id.
     for (const call of calls) expect(call[1]).toBe(scope);
-    expect(calls.filter((call) => call.length === 3).map((call) => call.slice(0, 1).concat(call[2] as string))).toEqual([
+    expect(
+      calls
+        .filter((call) => call.length === 3)
+        .map((call) => call.slice(0, 1).concat(call[2] as string)),
+    ).toEqual([
       ["run-login", "r1"],
       ["run-login", "r2"],
       ["run-code", "r1"],

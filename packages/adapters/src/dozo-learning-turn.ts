@@ -1,6 +1,6 @@
 import { bestEffort } from "@rakazo/logging";
-import type { LearningReviewDeps } from "./dozo-learning-review.js";
 import { runRecalledMemory } from "./dozo-learning-recall.js";
+import type { LearningReviewDeps } from "./dozo-learning-review.js";
 import {
   LEARNING_IDLE_MS,
   LEARNING_REVIEW_BACKUP_MS,

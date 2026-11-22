@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   consumeLearningTurns,
   findLearningChange,
+  LEARNING_REVIEWS_PER_DAY,
   LEARNING_TURNS_KEPT,
   learnedLines,
   learningMode,
-  LEARNING_REVIEWS_PER_DAY,
   listLearningChanges,
   markLearningLinesOwnerEdited,
   markLearningUndoPending,

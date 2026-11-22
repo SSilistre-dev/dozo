@@ -1239,7 +1239,9 @@ describe("undo", () => {
         replaceKey: `learning.settle:${BOT.id}`,
       }),
     );
-    const [[, settle]] = addedDeps.jobs.enqueueIn.mock.calls as unknown as [[unknown, { availableAt: Date }]];
+    const [[, settle]] = addedDeps.jobs.enqueueIn.mock.calls as unknown as [
+      [unknown, { availableAt: Date }],
+    ];
     expect(settle.availableAt.getTime() - Date.now()).toBeGreaterThan(LEARNING_WRITE_SETTLE_MS);
 
     seed({ kind: "update", before: "Uses metric", after: "Uses metric units" });

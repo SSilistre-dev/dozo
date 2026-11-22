@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AdapterContext,
-  BackgroundJob,
-  JobPublisher,
-  MemoryStore,
-} from "@rakazo/adapter-kit";
+import type { AdapterContext, BackgroundJob, JobPublisher, MemoryStore } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import type { DozoLearningChange } from "@rakazo/contracts";
 import {
@@ -53,7 +48,11 @@ const Answer = z
       .array(
         z.discriminatedUnion("op", [
           z
-            .object({ op: z.literal("add"), kind: DozoLearningNoteKind, text: DozoLearningNoteText })
+            .object({
+              op: z.literal("add"),
+              kind: DozoLearningNoteKind,
+              text: DozoLearningNoteText,
+            })
             .strict(),
           z
             .object({
@@ -275,7 +274,13 @@ export function saveLearnedNotes(
       if (!edit.applied.length) return [];
       const tag = newWriteTag();
       await saveLearningChanges(deps.prisma, bot, answer.source, edit.applied, tag);
-      await commitTagged(deps, bot, context, { content: edit.content, revision: notes.revision }, tag);
+      await commitTagged(
+        deps,
+        bot,
+        context,
+        { content: edit.content, revision: notes.revision },
+        tag,
+      );
       await settleLearningWrite(deps.prisma, tag, true);
       return edit.applied;
     },

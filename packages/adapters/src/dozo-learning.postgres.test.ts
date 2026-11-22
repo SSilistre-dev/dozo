@@ -291,7 +291,10 @@ describePostgres("bot learning (PostgreSQL)", () => {
           requests.push(request);
           asked.resolve();
           await answering.promise;
-          yield { type: "done", text: '{"changes":[{"op":"add","text":"Call the owner Ada."}]}' };
+          yield {
+            type: "done",
+            text: '{"changes":[{"op":"add","kind":"preference","text":"Call the owner Ada."}]}',
+          };
         },
       },
       memory: {
@@ -407,7 +410,9 @@ describePostgres("bot learning (PostgreSQL)", () => {
     expect(await as(owner, () => learnedLines(prisma, chat.id))).toEqual([
       { id: id("Still mine"), after: "Still mine" },
     ]);
-    const edited = await as(owner, () => findLearningChange(prisma, chat.spaceId, id("Edited later")));
+    const edited = await as(owner, () =>
+      findLearningChange(prisma, chat.spaceId, id("Edited later")),
+    );
     expect(edited!.ownerEdited).toBe(true);
   });
 
