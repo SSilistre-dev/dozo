@@ -1,7 +1,6 @@
-// Runs before first paint, after theme.js. The named theme and message colour of Settings >
-// Appearance (src/lib/dozo-ui-theme.ts). A theme applies only beside the tone theme.js resolved,
-// the one it was chosen with; an unknown or older name leaves plain Light or Dark. The names are
-// those of @rakazo/ui-tokens/dozo-themes, which the test of this file holds equal.
+// Runs before first paint, after theme.js: the named theme and message colour of Settings
+// (src/lib/dozo-ui-theme.ts). A theme applies only beside the tone it was chosen with; its test
+// holds the names equal to @rakazo/ui-tokens/dozo-themes.
 (() => {
   const TONES = {
     sumi: "dark",

@@ -4,6 +4,7 @@ import { DOZO_THEMES } from "@rakazo/ui-tokens/dozo-themes";
 import { afterEach, describe, expect, it } from "vitest";
 // public/dozo-boot.js runs as a plain script before first paint, after theme.js set data-theme.
 import script from "../../public/dozo-boot.js?raw";
+import { DOZO_BUBBLE_STORAGE_KEY, DOZO_THEME_STORAGE_KEY } from "./dozo-ui-theme";
 
 function boot(tone: "dark" | "light", saved: Record<string, string> = {}) {
   const root = document.documentElement;
@@ -34,11 +35,14 @@ describe("boot theme", () => {
       expect(boot(tone, { "dozo.uiTheme": id }).skin).toBe(id);
       localStorage.clear();
       delete document.documentElement.dataset.skin;
-      expect(
-        boot(tone === "dark" ? "light" : "dark", { "dozo.uiTheme": id }).skin,
-      ).toBeUndefined();
+      expect(boot(tone === "dark" ? "light" : "dark", { "dozo.uiTheme": id }).skin).toBeUndefined();
     },
   );
+
+  it("reads the keys the settings write", () => {
+    expect(script).toContain(`localStorage.getItem("${DOZO_THEME_STORAGE_KEY}")`);
+    expect(script).toContain(`localStorage.getItem("${DOZO_BUBBLE_STORAGE_KEY}")`);
+  });
 
   it("knows exactly the themes of the token package", () => {
     const tones = script.match(/const TONES = (\{[^}]*\})/)?.[1] ?? "";

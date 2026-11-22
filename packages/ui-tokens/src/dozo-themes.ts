@@ -124,11 +124,6 @@ export const DOZO_DEFAULT_SWATCHES: Record<
   light: { background: "#F5F5F3", foreground: "#1A1A1A" },
 };
 
-/** Per device, beside upstream's `rakazo.uiAppearance`, which keeps the theme's tone. */
-export const DOZO_THEME_STORAGE_KEY = "dozo.uiTheme";
-/** Your own bubble and the send button: the open bot's colour (no value) or "neutral". */
-export const DOZO_BUBBLE_STORAGE_KEY = "dozo.uiBubble";
-
 export function dozoTheme(id: unknown): DozoTheme | undefined {
   return DOZO_THEMES.find((theme) => theme.id === id);
 }

@@ -1,4 +1,3 @@
-import { DOZO_BUBBLE_STORAGE_KEY, DOZO_THEME_STORAGE_KEY } from "@rakazo/ui-tokens/dozo-themes";
 import { createStoredPreference } from "./stored-preference";
 import type { AppearancePreference, ResolvedAppearance } from "./ui-appearance";
 import { setUiAppearance as setUpstreamAppearance } from "./ui-appearance";
@@ -7,6 +6,14 @@ import { setUiAppearance as setUpstreamAppearance } from "./ui-appearance";
 // Light and Dark. public/dozo-boot.js applies both before first paint; this applies a change.
 
 export { getUiAppearancePreference } from "./ui-appearance";
+
+// Here, not beside the theme list in @rakazo/ui-tokens/dozo-themes: the startup code reads these,
+// and importing that module would bring the list into the startup bundle. public/dozo-boot.js
+// repeats both; its test holds them equal.
+/** Per device, beside upstream's `rakazo.uiAppearance`, which keeps the theme's tone. */
+export const DOZO_THEME_STORAGE_KEY = "dozo.uiTheme";
+/** Your own bubble and the send button: the open bot's colour (no value) or "neutral". */
+export const DOZO_BUBBLE_STORAGE_KEY = "dozo.uiBubble";
 
 function mark(name: "skin" | "bubble", value: string | null) {
   const root = document.documentElement;
