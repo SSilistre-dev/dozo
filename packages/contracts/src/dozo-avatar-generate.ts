@@ -5,11 +5,8 @@ import * as z from "zod";
 export const DOZO_AVATAR_PROMPT_MAX_CHARS = 300;
 
 /** Why generating an avatar is not on offer to this person right now. */
-export const DozoAvatarGenerateReasonSchema = /* @__PURE__ */ z.enum([
-  "unavailable",
-  "plan",
-  "limit",
-]);
+export const DozoAvatarGenerateReasonSchema = /* @__PURE__ */ (() =>
+  z.enum(["unavailable", "plan", "limit"]))();
 export type DozoAvatarGenerateReason = z.infer<typeof DozoAvatarGenerateReasonSchema>;
 
 /**
@@ -17,19 +14,22 @@ export type DozoAvatarGenerateReason = z.infer<typeof DozoAvatarGenerateReasonSc
  * service is connected. `plan`: the image service is paid for by the operator and the caller's
  * plan does not include it. `limit`: today's allowance is used up.
  */
-export const DozoAvatarGenerateStatusSchema = /* @__PURE__ */ z.object({
-  available: z.boolean(),
-  reason: DozoAvatarGenerateReasonSchema.nullable(),
-});
+export const DozoAvatarGenerateStatusSchema = /* @__PURE__ */ (() =>
+  z.object({
+    available: z.boolean(),
+    reason: DozoAvatarGenerateReasonSchema.nullable(),
+  }))();
 export type DozoAvatarGenerateStatus = z.infer<typeof DozoAvatarGenerateStatusSchema>;
 
-export const DozoAvatarGenerateInputSchema = /* @__PURE__ */ z.object({
-  prompt: z.string().trim().min(1).max(DOZO_AVATAR_PROMPT_MAX_CHARS),
-});
+export const DozoAvatarGenerateInputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    prompt: z.string().trim().min(1).max(DOZO_AVATAR_PROMPT_MAX_CHARS),
+  }))();
 export type DozoAvatarGenerateInput = z.infer<typeof DozoAvatarGenerateInputSchema>;
 
 /** The picture as the server's own 256 px `data:image/webp;base64,` value. Nothing is saved. */
-export const DozoAvatarGenerateResultSchema = /* @__PURE__ */ z.object({ image: z.string() });
+export const DozoAvatarGenerateResultSchema = /* @__PURE__ */ (() =>
+  z.object({ image: z.string() }))();
 export type DozoAvatarGenerateResult = z.infer<typeof DozoAvatarGenerateResultSchema>;
 
 /**

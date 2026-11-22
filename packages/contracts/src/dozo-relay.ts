@@ -57,21 +57,22 @@ export const RelayKey = Base64Url(32);
 export const RelayChannelId = Base64Url(16);
 
 /** What the host shows as a QR code or deep link so a phone can pair, once, before it expires. */
-export const RelayPairingOfferSchema = /* @__PURE__ */ z.object({
-  v: z.literal(RELAY_PROTOCOL_VERSION),
-  /** The relay's base address: https, or http on a loopback address for local runs. */
-  relay: z.url({ protocol: /^https?$/ }).refine((value) => {
-    const url = new URL(value);
-    return url.protocol === "https:" || LOOPBACK_HOSTS.has(url.hostname);
-  }, "The relay must use https"),
-  channel: RelayChannelId,
-  /** The host's long-term X25519 public key. */
-  hostKey: RelayKey,
-  /** 256 random bits; the phone derives the pairing key and the relay token from it. */
-  secret: RelayKey,
-  /** Milliseconds since the epoch. */
-  expiresAt: z.number().int().positive(),
-});
+export const RelayPairingOfferSchema = /* @__PURE__ */ (() =>
+  z.object({
+    v: z.literal(RELAY_PROTOCOL_VERSION),
+    /** The relay's base address: https, or http on a loopback address for local runs. */
+    relay: z.url({ protocol: /^https?$/ }).refine((value) => {
+      const url = new URL(value);
+      return url.protocol === "https:" || LOOPBACK_HOSTS.has(url.hostname);
+    }, "The relay must use https"),
+    channel: RelayChannelId,
+    /** The host's long-term X25519 public key. */
+    hostKey: RelayKey,
+    /** 256 random bits; the phone derives the pairing key and the relay token from it. */
+    secret: RelayKey,
+    /** Milliseconds since the epoch. */
+    expiresAt: z.number().int().positive(),
+  }))();
 export type RelayPairingOffer = z.infer<typeof RelayPairingOfferSchema>;
 
 /**
@@ -79,17 +80,18 @@ export type RelayPairingOffer = z.infer<typeof RelayPairingOfferSchema>;
  * pairing secret is never stored; `originId` is random and names the computer's address inside
  * the app, so nothing the app loads by that address carries the channel id.
  */
-export const RelayAppPairingSchema = /* @__PURE__ */ z.object({
-  relay: RelayPairingOfferSchema.shape.relay,
-  channel: RelayChannelId,
-  hostKey: RelayKey,
-  appPublicKey: RelayKey,
-  appPrivateKey: RelayKey,
-  /** The key of the pairing session, the `psk` of every later one. */
-  pairingKey: RelayKey,
-  originId: z.string().regex(/^[0-9a-f]{32}$/),
-  pairedAt: z.number().int().nonnegative(),
-});
+export const RelayAppPairingSchema = /* @__PURE__ */ (() =>
+  z.object({
+    relay: RelayPairingOfferSchema.shape.relay,
+    channel: RelayChannelId,
+    hostKey: RelayKey,
+    appPublicKey: RelayKey,
+    appPrivateKey: RelayKey,
+    /** The key of the pairing session, the `psk` of every later one. */
+    pairingKey: RelayKey,
+    originId: z.string().regex(/^[0-9a-f]{32}$/),
+    pairedAt: z.number().int().nonnegative(),
+  }))();
 export type RelayAppPairing = z.infer<typeof RelayAppPairingSchema>;
 
 const HeaderList = /* @__PURE__ */ z
@@ -97,43 +99,49 @@ const HeaderList = /* @__PURE__ */ z
   .max(256);
 
 /** The `request` frame: opens a stream from the app. */
-export const RelayRequestHeadSchema = /* @__PURE__ */ z.object({
-  method: z.string().regex(/^[A-Z]{1,16}$/),
-  /** Path and query only, always starting with one `/`; the host owns the origin. */
-  path: z
-    .string()
-    .max(8192)
-    .regex(/^\/(?!\/)/),
-  headers: HeaderList,
-  /** Whether `data` frames follow before `end`; false for a request without a body. */
-  body: z.boolean(),
-});
+export const RelayRequestHeadSchema = /* @__PURE__ */ (() =>
+  z.object({
+    method: z.string().regex(/^[A-Z]{1,16}$/),
+    /** Path and query only, always starting with one `/`; the host owns the origin. */
+    path: z
+      .string()
+      .max(8192)
+      .regex(/^\/(?!\/)/),
+    headers: HeaderList,
+    /** Whether `data` frames follow before `end`; false for a request without a body. */
+    body: z.boolean(),
+  }))();
 export type RelayRequestHead = z.infer<typeof RelayRequestHeadSchema>;
 
 /** The `response` frame: the host's status and headers; the body follows as `data` frames. */
-export const RelayResponseHeadSchema = /* @__PURE__ */ z.object({
-  status: z.number().int().min(200).max(599),
-  statusText: z.string().max(256),
-  headers: HeaderList,
-});
+export const RelayResponseHeadSchema = /* @__PURE__ */ (() =>
+  z.object({
+    status: z.number().int().min(200).max(599),
+    statusText: z.string().max(256),
+    headers: HeaderList,
+  }))();
 export type RelayResponseHead = z.infer<typeof RelayResponseHeadSchema>;
 
 /** `POST /v1/channels`: the host creates a channel; no account, only verifiers. */
-export const RelayRegisterRequestSchema = /* @__PURE__ */ z.object({
-  hostVerifier: RelayKey,
-  pairVerifier: RelayKey,
-  pairExpiresAt: z.number().int().positive(),
-});
-export const RelayRegisterResponseSchema = /* @__PURE__ */ z.object({ channel: RelayChannelId });
+export const RelayRegisterRequestSchema = /* @__PURE__ */ (() =>
+  z.object({
+    hostVerifier: RelayKey,
+    pairVerifier: RelayKey,
+    pairExpiresAt: z.number().int().positive(),
+  }))();
+export const RelayRegisterResponseSchema = /* @__PURE__ */ (() =>
+  z.object({ channel: RelayChannelId }))();
 
 /** `PUT /v1/channels/{channel}/app`: after pairing, the host sets the phone's verifier. */
-export const RelaySetAppRequestSchema = /* @__PURE__ */ z.object({ appVerifier: RelayKey });
+export const RelaySetAppRequestSchema = /* @__PURE__ */ (() =>
+  z.object({ appVerifier: RelayKey }))();
 
 /** A text message the relay sends on a socket: whether the other end is connected now. */
-export const RelayPeerMessageSchema = /* @__PURE__ */ z.object({
-  type: z.literal("peer"),
-  present: z.boolean(),
-});
+export const RelayPeerMessageSchema = /* @__PURE__ */ (() =>
+  z.object({
+    type: z.literal("peer"),
+    present: z.boolean(),
+  }))();
 export type RelayPeerMessage = z.infer<typeof RelayPeerMessageSchema>;
 
 /**
@@ -161,17 +169,20 @@ export function relayAgentProofMessage(request: {
 }
 
 /** What the phone says about itself when it asks: shown on the computer beside the code. */
-export const RelaySessionRequestSchema = /* @__PURE__ */ z.object({
-  platform: z.enum(["ios", "android", "web"]).optional(),
-});
+export const RelaySessionRequestSchema = /* @__PURE__ */ (() =>
+  z.object({
+    platform: z.enum(["ios", "android", "web"]).optional(),
+  }))();
 
 /** The session the computer gives: the bearer token the app signs in with. */
-export const RelaySessionSchema = /* @__PURE__ */ z.object({ token: z.string().min(1).max(2048) });
+export const RelaySessionSchema = /* @__PURE__ */ (() =>
+  z.object({ token: z.string().min(1).max(2048) }))();
 /**
  * Why the computer gave none: nobody signed in there, more than one account, given before, or the
  * phone was not approved on the computer in time.
  */
-export const RelaySessionRefusalSchema = /* @__PURE__ */ z.object({
-  reason: z.enum(["sign-in-on-computer", "one-account", "used", "not-approved"]),
-});
+export const RelaySessionRefusalSchema = /* @__PURE__ */ (() =>
+  z.object({
+    reason: z.enum(["sign-in-on-computer", "one-account", "used", "not-approved"]),
+  }))();
 export type RelaySessionRefusal = z.infer<typeof RelaySessionRefusalSchema>["reason"];
