@@ -109,6 +109,15 @@ jobs:
           ls -l "$RUNNER_TEMP/apk/dozo-android.apk"
           "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$RUNNER_TEMP/apk/dozo-android.apk" | head -n 3
 
+      # The built APK's manifest: no location service, no write or background permission.
+      - name: Check the APK's manifest
+        run: |
+          set -euo pipefail
+          node --test dozo/mobile/android/check-manifest.test.mjs || exit 2
+          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort -V | tail -n 1)
+          "$aapt2" dump xmltree --file AndroidManifest.xml "$RUNNER_TEMP/apk/dozo-android.apk" > "$RUNNER_TEMP/apk-manifest.txt" || exit 2
+          node dozo/mobile/android/check-manifest.mjs "$RUNNER_TEMP/apk-manifest.txt"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dozo-android-apk
@@ -289,6 +298,10 @@ jobs:
           if echo "$certs" | grep -qi 'Android Debug'; then echo "the APK is signed with a debug key" >&2; exit 2; fi
           jarsigner -verify "$RUNNER_TEMP"/release/*.aab | head -n 1
           ls -l "$RUNNER_TEMP/release"
+          # The shipped APK's manifest, as the android job checks its own.
+          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort -V | tail -n 1)
+          "$aapt2" dump xmltree --file AndroidManifest.xml "$apk" > "$RUNNER_TEMP/apk-manifest.txt" || exit 2
+          node dozo/mobile/android/check-manifest.mjs "$RUNNER_TEMP/apk-manifest.txt"
 
       - name: Remove the keystore
         if: always()
