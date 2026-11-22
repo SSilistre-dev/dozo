@@ -50,10 +50,19 @@ export function preloadDozoSurfaces() {
   ]);
 }
 
-function Held({ children, failed }: { children: ReactNode; failed?: ReactNode }) {
+function Held({
+  children,
+  failed,
+  placeholder = null,
+}: {
+  children: ReactNode;
+  failed?: ReactNode;
+  /** What stands where the screen will be, so the rows below it do not move when it arrives. */
+  placeholder?: ReactNode;
+}) {
   return (
     <ErrorBoundary fallback={failed === undefined ? <SectionLoadFailed /> : failed}>
-      <Suspense fallback={null}>{children}</Suspense>
+      <Suspense fallback={placeholder}>{children}</Suspense>
     </ErrorBoundary>
   );
 }
@@ -86,9 +95,12 @@ export function SiteSessionsControl(props: ComponentProps<typeof LoadedSiteSessi
   );
 }
 
+/** The room the skills section keeps beside the 24px gap above it, measured in the running app. */
+const SKILLS_SECTION_ROOM = <div aria-hidden="true" data-dozo-skills-room className="h-6" />;
+
 export function DozoBotSkillsSection(props: ComponentProps<typeof LoadedDozoBotSkillsSection>) {
   return (
-    <Held>
+    <Held placeholder={SKILLS_SECTION_ROOM}>
       <LazyDozoBotSkillsSection {...props} />
     </Held>
   );

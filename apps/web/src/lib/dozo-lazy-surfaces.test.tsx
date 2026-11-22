@@ -65,9 +65,14 @@ describe("the fork's screens that load when first shown", () => {
       const release = deferred();
       loading.gate = release.promise;
       await act(async () => root.render(createElement(Screen, { id: "a" } as never)));
-      expect(host.innerHTML).toBe("");
+      // Nothing, except the skills section, which keeps its room so what is below it stays put.
+      expect(host.querySelector("[data-stub]")).toBeNull();
+      expect(host.querySelector("[data-dozo-skills-room]") !== null).toBe(
+        name === "DozoBotSkillsSection",
+      );
       release.resolve();
       await vi.waitFor(() => expect(host.querySelector(`[data-stub="${name}"]`)).not.toBeNull());
+      expect(host.querySelector("[data-dozo-skills-room]")).toBeNull();
       expect(host.querySelector(`[data-stub="${name}"]`)?.textContent).toBe(
         name === "DozoCliAccounts" ? "{}" : '{"id":"a"}',
       );

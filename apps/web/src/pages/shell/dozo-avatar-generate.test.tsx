@@ -119,6 +119,22 @@ describe("drawing an avatar from a description", () => {
     expect(document.querySelector("textarea")).toBeNull();
   });
 
+  it("offers neither the tab nor the form on a page without a query client", async () => {
+    await act(async () =>
+      root.render(
+        <Tabs value="bot" onValueChange={() => undefined}>
+          <TabsList>
+            <DozoAvatarGenerateTab />
+          </TabsList>
+          <DozoAvatarGeneratePanel onUse={used} />
+        </Tabs>,
+      ),
+    );
+    await act(flush);
+    expect(document.querySelector('[role="tab"]')).toBeNull();
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
   it("starts with only the description and Generate, which waits for words", async () => {
     await open({ available: true, reason: null });
     expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
