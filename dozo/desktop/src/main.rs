@@ -7,6 +7,7 @@ mod alerts;
 mod background;
 mod backup;
 mod browser;
+mod browser_clear;
 mod browser_proxy;
 mod browser_signin;
 mod device;
@@ -381,6 +382,7 @@ fn run(app: &AppHandle, id: &str) {
         #[cfg(not(target_os = "macos"))]
         QUIT_ID => app.exit(0),
         update::MENU_ID => restart_for_update(app),
+        id if id.starts_with(browser_clear::PREFIX) => browser_clear::clicked(app, id),
         _ => {}
     }
     prefs::changed(app);
@@ -851,6 +853,7 @@ fn main() {
             backup::follow(app.clone());
             start_local_if_chosen(&app);
             app.manage(device::Access::new(&app)?);
+            browser_clear::sync(&app);
             device::select(&app, chosen(&app));
             #[cfg(not(target_os = "macos"))]
             add_tray(&app);

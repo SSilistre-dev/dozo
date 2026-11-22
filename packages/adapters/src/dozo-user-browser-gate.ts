@@ -93,6 +93,40 @@ async function consents(prisma: PrismaClient, botId: string, deviceId: string, t
   return new Set(rows.map((row) => row.site));
 }
 
+/**
+ * Forgets everything this bot was allowed with its browser on this computer, in every thread: the
+ * person cleared that browser, so each use and site is asked again.
+ */
+export async function forgetConsents(prisma: PrismaClient, botId: string, deviceId: string) {
+  await runAsSystem(
+    "forget a bot's browser consents",
+    () =>
+      prisma.$executeRaw`
+      DELETE FROM dozo_browser_consents WHERE "botId" = ${botId} AND "deviceId" = ${deviceId}`,
+  );
+}
+
+/**
+ * Whether the person cleared the bot's browser on that computer since it last started. Asked
+ * before anything that would start it (which ends the answer). A computer that cannot say counts
+ * as not cleared: its consents stay, as they would have without the question.
+ */
+async function clearedThere(ctx: RunContext, route: Route): Promise<boolean> {
+  const request = route.devices.request<{ cleared?: unknown }>(
+    route.owner,
+    { method: "pageBrowserCleared", botId: ctx.bot.id, runId: ctx.runId },
+    ctx.context.signal,
+    route.deviceId,
+  );
+  let cleared = false;
+  try {
+    for await (const value of request) cleared = value.cleared === true;
+  } catch {
+    return false;
+  }
+  return cleared;
+}
+
 export async function recordConsent(
   prisma: PrismaClient,
   key: { botId: string; deviceId: string; threadId: string },
@@ -136,6 +170,9 @@ export async function userBrowserGate(
   if (blocked || (await runCameByToken(ctx))) return "deny";
   const route = await userBrowserRoute(ctx);
   if (!route) return "ask";
+  // Asked first, in every thread: the next use starts the browser, which ends the answer.
+  if (await clearedThere(ctx, route))
+    await forgetConsents(ctx.deps.prisma, ctx.bot.id, route.deviceId);
   const allowed = await consents(ctx.deps.prisma, ctx.bot.id, route.deviceId, ctx.thread.id);
   const browser = !allowed.has("");
   const verb = browserVerb(name);
@@ -149,6 +186,8 @@ export async function userBrowserGate(
   let newSite = site ? !allowed.has(`${verb}:${site}`) : !(verb === "read" && blank);
   if (verb === "open" && !newSite && site !== pageSite(shown) && (await isRunTainted(ctx)))
     newSite = true;
+  // A sign-in holds every bot's commands on that computer while the person answers: each one asks.
+  if (verb === "signin") newSite = true;
   const ask: UserBrowserAsk = { deviceId: route.deviceId, browser, site, verb, newSite };
   asks.set(args, ask);
   args[APPROVED_SITE] = site;
@@ -162,6 +201,7 @@ async function currentUrl(ctx: RunContext, route: Route): Promise<string | undef
     {
       method: "pageBrowser",
       botId: ctx.bot.id,
+      botName: ctx.bot.name,
       runId: ctx.runId,
       command: { method: "Page.getNavigationHistory" },
     },

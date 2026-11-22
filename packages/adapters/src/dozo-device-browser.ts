@@ -227,9 +227,13 @@ export class DeviceBrowserProvider implements BrowserProvider {
   }
 
   private async page(query?: string) {
-    const where = await this.where();
-    if (this.dialog) return { ...where, tree: "", elements: [] };
+    const before = await this.where();
+    if (this.dialog) return { ...before, tree: "", elements: [] };
     const result = await this.send("Accessibility.getFullAXTree");
+    // The address is read again after the page: one that went to another site meanwhile (a
+    // redirect, a clicked link) gives where it went and nothing of what was read.
+    const where = await this.where();
+    if (siteOf(where.url) !== siteOf(before.url)) return { ...where, tree: "", elements: [] };
     const nodes = Array.isArray(result.nodes) ? (result.nodes as AXNode[]) : [];
     return { ...where, ...readAccessibilityTree(nodes, query) };
   }
@@ -365,9 +369,13 @@ export class DeviceBrowserProvider implements BrowserProvider {
     await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, windowsVirtualKeyCode: code });
   }
 
-  /** The visible page as a JPEG, base64, for a model that can see. */
-  async screenshot(): Promise<string | undefined> {
+  /**
+   * The visible page as a JPEG, base64, for a model that can see; none when the page is on
+   * another site than `site` once it was taken.
+   */
+  async screenshot(site?: string): Promise<string | undefined> {
     const shot = await this.send("Page.captureScreenshot", { format: "jpeg", quality: 60 });
+    if (site !== undefined && siteOf((await this.where()).url) !== site) return undefined;
     return typeof shot.data === "string" ? shot.data : undefined;
   }
 }
