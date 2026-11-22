@@ -49,6 +49,7 @@ export type PoolKey =
   | "runId"
   | "routineId"
   | "taughtSkillId"
+  | "draftSkillId"
   | "agentSkillId"
   | "documentId"
   | "pageId"
@@ -423,6 +424,14 @@ export async function seedTarget(
   });
   ids.agentSkillId = agentSkill.id;
   try {
+    // A stopped session leaves a draft, which only editing, saving and test runs take; a second
+    // one is still recording (and holds the computer), which the teaching calls take.
+    const draft = await call<{ id: string }>("skills/start", {
+      botId: bot.id,
+      goal: mark("draftskill"),
+    });
+    await call("skills/stop", { skillId: draft.id });
+    ids.draftSkillId = draft.id;
     const taught = await call<{ id: string }>("skills/start", {
       botId: bot.id,
       goal: mark("taught"),

@@ -3,7 +3,7 @@
 // that name P's or S's things; no answer may carry one of their canaries, and nothing P or S
 // holds may change. A new procedure is swept by itself: the list is read from the contract.
 import { appContract } from "@rakazo/contracts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { IsolationWorld, PoolKey, Target } from "./dozo-isolation.test-support.js";
 import {
   buildIsolationWorld,
@@ -14,6 +14,7 @@ import {
   snapshot,
   snapshotDiff,
 } from "./dozo-isolation.test-support.js";
+import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
 import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
@@ -91,6 +92,15 @@ const ID_BY_NAMESPACE: Record<string, PoolKey> = {
   bots: "botId",
   availability: "agentSkillId",
 };
+/** Procedures that act only on a taught skill whose recording has ended. */
+const DRAFT_SKILL_PATHS = new Set([
+  "skills/updateDraft",
+  "skills/save",
+  "skills/testRun",
+  "dozoTeach/save",
+  "dozoTeach/test",
+  "dozoTeach/decideSaved",
+]);
 const SECRET_NAME_PATHS = new Set([
   "vault/reveal",
   "vault/activity",
@@ -101,10 +111,11 @@ const SECRET_NAME_PATHS = new Set([
 function poolKeyFor(procedure: string, field: string): PoolKey | undefined {
   const namespace = procedure.split("/")[0]!;
   if (field === "id") return ID_BY_NAMESPACE[namespace];
-  if (field === "skillId")
-    return namespace === "agentSkills" || namespace === "dozoOrganizationLibrary"
-      ? "agentSkillId"
-      : "taughtSkillId";
+  if (field === "skillId") {
+    if (namespace === "agentSkills" || namespace === "dozoOrganizationLibrary")
+      return "agentSkillId";
+    return DRAFT_SKILL_PATHS.has(procedure) ? "draftSkillId" : "taughtSkillId";
+  }
   if (field === "name" && SECRET_NAME_PATHS.has(procedure)) return "secretName";
   return FIELD_KEYS[field];
 }
@@ -113,11 +124,12 @@ const FAIL = Symbol("cannot generate");
 const OMIT = Symbol("omit");
 type Filled = unknown | typeof FAIL | typeof OMIT;
 
+/** A week ahead: a time the product takes as a future one (a snooze, a reminder). */
+const FUTURE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 const STRINGS = [
-  "iso-probe",
   "x",
   "https://example.test/",
-  "2026-01-01T00:00:00.000Z",
+  FUTURE,
   "probe@example.test",
   "0 9 * * 1",
   "UTC",
@@ -127,6 +139,18 @@ const STRINGS = [
   "AGENTS.md",
 ];
 const NUMBERS = [1, 0, 60, 100, 1000, 100_000, -1];
+/** Realistic values for fields whose plain string the handler refuses before it looks anything up. */
+const FIELD_VALUES: Record<string, string | boolean> = {
+  /** Shared, so the organization library holds the skill its later calls name. */
+  shared: true,
+  mimeType: "text/plain",
+  contentBase64: Buffer.from("iso-probe\n").toString("base64"),
+  origin: "https://example.test",
+  crons: "0 9 * * 1",
+  optionId: "day",
+  value: "placeholder-not-a-secret",
+  content: "---\nname: iso-probe\ndescription: iso-probe\n---\niso-probe\n",
+};
 
 type Resolve = (key: PoolKey) => string | undefined;
 /** Inputs tried per procedure and target, before the mixed ones. */
@@ -140,6 +164,11 @@ class Generator {
     /** Fills optional fields too, for an input whose refinement wants one of them. */
     private readonly fillAll = false,
   ) {}
+
+  /** A name of this procedure's own, so one procedure's new thing never clashes with another's. */
+  private get probe() {
+    return `iso-${this.procedure.replace(/[^a-z]/gi, "").toLowerCase()}`.slice(0, 32);
+  }
 
   private id(field: string | undefined): string | undefined {
     if (!field) return undefined;
@@ -156,9 +185,10 @@ class Generator {
       case "optional":
       case "default":
       case "prefault":
-        // Left out unless it names something: an optional id is where a foreign id goes.
+        // Left out unless it names something (an optional id is where a foreign id goes) or has a
+        // realistic value (a site the input's own refinement asks for).
         if (field === undefined) return this.fill(inner("innerType"), field);
-        if (this.fillAll || poolKeyFor(this.procedure, field)) {
+        if (this.fillAll || poolKeyFor(this.procedure, field) || field in FIELD_VALUES) {
           const value = this.fill(inner("innerType"), field);
           return value === FAIL || !schema.safeParse(value).success ? OMIT : value;
         }
@@ -199,7 +229,13 @@ class Generator {
       }
       case "string": {
         const id = this.id(field);
-        for (const value of id ? [id, ...STRINGS] : STRINGS)
+        const hint = field === undefined ? undefined : FIELD_VALUES[field];
+        for (const value of [
+          id,
+          typeof hint === "string" ? hint : undefined,
+          this.probe,
+          ...STRINGS,
+        ].filter((item) => item !== undefined))
           if (schema.safeParse(value).success) return value;
         return FAIL;
       }
@@ -207,23 +243,26 @@ class Generator {
       case "int":
         return NUMBERS.find((value) => schema.safeParse(value).success) ?? FAIL;
       case "boolean":
-        return false;
+        return field !== undefined && typeof FIELD_VALUES[field] === "boolean"
+          ? FIELD_VALUES[field]
+          : false;
       case "literal":
         return (def.values as unknown[])[0];
       case "enum":
         return Object.values(def.entries as Record<string, unknown>)[0];
       case "array": {
         const id = this.id(field);
-        if (id && schema.safeParse([id]).success) return [id];
-        // A group names at least two bots: the target's second bot goes with the first.
+        // A list of bots names both of the target's: a group's members, a Space's whole roster.
         const second =
           id && field && poolKeyFor(this.procedure, field) === "botId"
             ? this.resolve("secondBotId")
             : undefined;
         if (id && second && schema.safeParse([id, second]).success) return [id, second];
-        const element = this.fill(inner("element"));
+        if (id && schema.safeParse([id]).success) return [id];
+        const element = this.fill(inner("element"), field);
         const one = element !== FAIL && schema.safeParse([element]).success;
-        if (one && this.fillAll) return [element];
+        if (one && (this.fillAll || (field !== undefined && field in FIELD_VALUES)))
+          return [element];
         if (schema.safeParse([]).success) return [];
         return one ? [element] : FAIL;
       }
@@ -290,7 +329,7 @@ function generateInputs(procedure: Procedure, resolve: Resolve): Variant[] | nul
   const add = (label: string, make: (generator: Generator) => Filled, fillAll = false) => {
     if (variants.length >= MAX_VARIANTS) return;
     const generator = new Generator(procedure.path, resolve, fillAll);
-    const input = make(generator);
+    const input = inChat(make(generator), generator, resolve);
     if (input === FAIL || input === OMIT || !schema.safeParse(input).success) return;
     const seen = JSON.stringify(input);
     if (variants.some((variant) => JSON.stringify(variant.input) === seen)) return;
@@ -326,6 +365,16 @@ function generateInputs(procedure: Procedure, resolve: Resolve): Variant[] | nul
   add("no ids", without([]));
   if (!variants.length) add("every optional field", (generator) => generator.fill(schema), true);
   return variants.length ? variants : null;
+}
+
+/** A message named with the extra chat is that chat's own message. */
+function inChat(input: Filled, generator: Generator, resolve: Resolve): Filled {
+  if (!input || typeof input !== "object") return input;
+  const fields = input as Record<string, unknown>;
+  const message = resolve("chatMessageId");
+  if (!fields.chatId || !message || fields.messageId !== resolve("messageId")) return input;
+  generator.used.add("chatMessageId");
+  return { ...fields, messageId: message };
 }
 
 /** `input` with every target id of a kind in `kinds` swapped for the caller's own id of that kind. */
@@ -371,6 +420,31 @@ const DESTRUCTIVE =
 const READ =
   /^(get|list|messages|head|subscribe|status|pins|query|export|markdown|csv|breakdown|summary|items|events|history|budget|snapshot|revisable|routineChat|getById|bot|comments|preview|files|readFile)/i;
 
+/** Whether some generated input for `procedure` names one of `target`'s things. */
+function namesTarget(procedure: Procedure, target: Target) {
+  return (generateInputs(procedure, (key) => target.ids[key]) ?? []).some(
+    (variant) => variant.keys.size > 0,
+  );
+}
+
+/**
+ * Writes the owner's control makes first, as its other writes change what they need: the Space's
+ * whole roster (its creates grow it) and the live recording (its computer calls end it).
+ */
+const OWNER_WRITES_FIRST = new Set(["bots/reorder", "skills/appendEvent"]);
+
+/**
+ * Removals the owner's control makes last, in this order: everything else hangs off what they
+ * remove, so a removal made earlier would answer the rest "not found" for the owner too.
+ */
+const OWNER_REMOVES_LAST = [
+  "dozoChats/archive",
+  "groups/archive",
+  "groups/remove",
+  "bots/archive",
+  "bots/remove",
+];
+
 function isDestructive(path: string) {
   return DESTRUCTIVE.test(path.split("/").pop() ?? "");
 }
@@ -389,13 +463,28 @@ type Caller = {
 
 /** `foreign`: the input names at least one of the target's things. */
 type Call = { caller: Caller; path: string; variant: string; input: unknown; foreign: boolean };
-type Outcome = Call & { status: number; matched: string[]; streamed: boolean };
+/** `detail`: the refusal's code and message, for a status of 400 or more. */
+type Outcome = Call & { status: number; matched: string[]; streamed: boolean; detail: string };
 
-async function pool<T, R>(items: T[], run: (item: T) => Promise<R>): Promise<R[]> {
+function refusalDetail(status: number, text: string): string {
+  if (status < 400) return "";
+  try {
+    const { json } = JSON.parse(text) as { json?: { code?: string; message?: string } };
+    return `${json?.code ?? "?"}: ${json?.message ?? ""}`.slice(0, 200);
+  } catch {
+    return text.slice(0, 200);
+  }
+}
+
+async function pool<T, R>(
+  items: T[],
+  run: (item: T) => Promise<R>,
+  concurrency = CONCURRENCY,
+): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   await Promise.all(
-    Array.from({ length: CONCURRENCY }, async () => {
+    Array.from({ length: concurrency }, async () => {
       while (next < items.length) {
         const index = next++;
         results[index] = await run(items[index]!);
@@ -429,11 +518,19 @@ function callsFor(caller: Caller, procedures: Procedure[], ownToo = false): Call
   return calls;
 }
 
+type SweepOptions = {
+  /** Also each input with every id the caller's own (see `callsFor`). */
+  ownToo?: boolean;
+  concurrency?: number;
+  /** Waits before each call until the world is settled enough for it. */
+  settle?: (call: Call) => Promise<void>;
+};
+
 async function sweep(
   world: IsolationWorld,
   callers: Caller[],
   procedures: Procedure[],
-  ownToo = false,
+  { ownToo = false, concurrency = CONCURRENCY, settle }: SweepOptions = {},
 ) {
   for (const caller of callers) if (caller.cookie) await confirmIdentity(world.app, caller.cookie);
   const reads = procedures.filter((procedure) => !isDestructive(procedure.path));
@@ -444,21 +541,27 @@ async function sweep(
   for (const phase of [reads, destructive]) {
     const calls = callers.flatMap((caller) => callsFor(caller, phase, ownToo));
     outcomes.push(
-      ...(await pool(calls, async (call) => {
-        const answer = await readAnswer(
-          world.app,
-          call.caller.cookie,
-          call.path,
-          call.input,
-          call.caller.spaceId,
-        );
-        return {
-          ...call,
-          status: answer.status,
-          streamed: answer.streamed,
-          matched: findCanaries(answer.text, call.caller.target.canaries),
-        };
-      })),
+      ...(await pool(
+        calls,
+        async (call) => {
+          await settle?.(call);
+          const answer = await readAnswer(
+            world.app,
+            call.caller.cookie,
+            call.path,
+            call.input,
+            call.caller.spaceId,
+          );
+          return {
+            ...call,
+            status: answer.status,
+            streamed: answer.streamed,
+            matched: findCanaries(answer.text, call.caller.target.canaries),
+            detail: refusalDetail(answer.status, answer.text),
+          };
+        },
+        concurrency,
+      )),
     );
   }
   return outcomes;
@@ -512,6 +615,46 @@ function summary(outcomes: Outcome[]) {
 }
 
 /**
+ * Whether the owner's own call got through to what it names: an answer, or a conflict, which is a
+ * refusal about the state of a thing the handler found. A 400 (a malformed or refused input), 403,
+ * 404 or server error from the owner means a foreign caller's refusal of the same input proves
+ * nothing about isolation.
+ */
+function reaches(outcome: Outcome) {
+  return outcome.status < 400 || outcome.status === 409;
+}
+
+const line = (outcome: Outcome) =>
+  `${outcome.path} [${outcome.variant}]: ${outcome.status} ${outcome.detail}`;
+
+/**
+ * The owner's calls naming P's things that did not get through and are not exempted, and the
+ * `unreached` exemptions that no longer hold: every input they cover gets through now, or none
+ * is made at all.
+ */
+function reachReport(outcomes: Outcome[]) {
+  const unreachedExemptions = ISOLATION_EXEMPTIONS.filter((item) => item.kind === "unreached");
+  const covers = (exemption: IsolationExemption, outcome: Outcome) =>
+    exemption.path === outcome.path &&
+    (exemption.variant === undefined || exemption.variant === outcome.variant);
+  const naming = outcomes.filter((outcome) => outcome.foreign);
+  const unreached = naming
+    .filter(
+      (outcome) =>
+        !reaches(outcome) && !unreachedExemptions.some((exemption) => covers(exemption, outcome)),
+    )
+    .map(line);
+  const stale: string[] = [];
+  for (const exemption of unreachedExemptions) {
+    const covered = naming.filter((outcome) => covers(exemption, outcome));
+    const label = `${exemption.path}${exemption.variant ? ` [${exemption.variant}]` : ""}`;
+    if (!covered.length) stale.push(`${label}: no owner call names P's things`);
+    else if (covered.every(reaches)) stale.push(`${label}: the owner gets through now`);
+  }
+  return { unreached, stale };
+}
+
+/**
  * The app's database login for one pass. The runtime login enforces row-level security; the
  * owner login bypasses it (RLS is enabled, not forced), as an install that connects the app as
  * the table owner does, so that pass proves the app's own filters without the database's.
@@ -522,7 +665,12 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
   (login) => {
     let world: IsolationWorld;
     const procedures = contractProcedures();
-    const exempt = new Map(ISOLATION_EXEMPTIONS.map((item) => [item.path, item]));
+    const exempt = new Map(
+      ISOLATION_EXEMPTIONS.filter((item) => item.kind !== "unreached").map((item) => [
+        item.path,
+        item,
+      ]),
+    );
     const swept = () => procedures.filter((procedure) => !exempt.has(procedure.path));
     const scopeOf = (...targets: Target[]) => ({
       spaceIds: targets.map((target) => target.spaceId),
@@ -597,8 +745,11 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         if (exemption?.kind === "side-effect" && inputs?.some((variant) => variant.keys.size > 0))
           stale.push(`${procedure.path}: names a target, so it must be swept`);
       }
-      for (const exemption of ISOLATION_EXEMPTIONS)
+      for (const exemption of ISOLATION_EXEMPTIONS) {
         if (!paths.has(exemption.path)) stale.push(`${exemption.path}: no such procedure`);
+        if (exemption.kind === "unreached" && exempt.has(exemption.path))
+          stale.push(`${exemption.path}: unreached, yet not swept`);
+      }
       expect(missing, "procedures with no generated input and no exemption").toEqual([]);
       expect(stale, "stale exemptions").toEqual([]);
       console.log(
@@ -659,7 +810,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         world,
         callers.slice(0, 2),
         swept().filter((procedure) => !isDestructive(procedure.path)),
-        true,
+        { ownToo: true },
       );
       const after = await snapshot(world.db, scopeOf(P, S));
       expect([...failures(outcomes), ...failures(again)]).toEqual([]);
@@ -716,6 +867,23 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         target: P,
         expect: "no-canary",
       };
+      // The owner's computer starts and stops in the background: a call to it waits until it is
+      // not halfway, so whether it gets through does not depend on timing.
+      const settle = async (call: Call) => {
+        if (!call.path.startsWith("computer/")) return;
+        await vi.waitFor(
+          async () => {
+            const bot = await world.db.bot.findUnique({
+              where: { id: P.ids.botId! },
+              select: { computer: { select: { state: true } } },
+            });
+            if (["booting", "suspending"].includes(bot?.computer?.state ?? ""))
+              throw new Error(`computer ${bot?.computer?.state}`);
+          },
+          { timeout: 15_000, interval: 50 },
+        );
+      };
+      const firstOf = (procedure: Procedure) => Number(OWNER_WRITES_FIRST.has(procedure.path));
       // Reads before the owner's own writes (an update renames, a new version replaces), so what is
       // planted is still there when it is read.
       const kept = swept().filter((procedure) => !isDestructive(procedure.path));
@@ -725,7 +893,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         ...(await sweep(
           world,
           [owner],
-          kept.filter((procedure) => !isRead(procedure)),
+          kept.filter((procedure) => !isRead(procedure)).sort((a, b) => firstOf(b) - firstOf(a)),
+          { concurrency: 1, settle },
         )),
       ];
       const found = [
@@ -741,8 +910,32 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       console.log(
         `[isolation] control: canaries no owner read shows: ${unseen.join(" ") || "none"}`,
       );
+      // Destructive procedures that name P's things after that, one at a time, the removals the
+      // rest hang off last.
+      const order = (procedure: Procedure) => OWNER_REMOVES_LAST.indexOf(procedure.path);
+      outcomes.push(
+        ...(await sweep(
+          world,
+          [owner],
+          swept()
+            .filter((procedure) => isDestructive(procedure.path) && namesTarget(procedure, P))
+            .sort((a, b) => order(a) - order(b)),
+          { concurrency: 1, settle },
+        )),
+      );
+      const { unreached, stale } = reachReport(outcomes);
+      console.log(
+        `[isolation] control: owner calls not reached, exempted\n${outcomes
+          .filter((outcome) => outcome.foreign && !reaches(outcome))
+          .map(line)
+          .join("\n")}`,
+      );
       expect(found).toEqual(expect.arrayContaining(CONTROL_PATHS));
       expect(unseen, "canaries no read of the owner shows, so no scan can find them").toEqual([]);
+      expect
+        .soft(unreached, "inputs naming P's things that the owner's own call does not get through")
+        .toEqual([]);
+      expect.soft(stale, "stale unreached exemptions").toEqual([]);
     }, 600_000);
   },
 );
