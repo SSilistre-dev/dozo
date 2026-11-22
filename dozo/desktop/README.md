@@ -300,9 +300,17 @@ account and connects to it; the web app's settings then list it under Computers 
 
 ## The bot's own browser
 
-Not offered yet: the app does not declare it (`browser::DECLARED` is off) until the sign-in pause
-comes, during which the person signs in and the app passes nothing on. Until then no server offers
-it, and only the tests below reach it.
+On macOS and Linux, when Chrome, Edge, Brave or Chromium is installed (`browser::DECLARED`); not on
+Windows, which declares commands alone.
+
+How it is used, in plain words:
+- A bot that needs the web on your computer asks first, in the chat: a card names the site, and you
+  allow it or not. Each new site, and each new kind of use there (open, read, act), asks again.
+- To sign in somewhere, the bot asks you to: the app opens the site in the bot's window and shows a
+  small system dialog. Sign in there yourself, then choose Done (or Cancel). The bot never sees
+  your password, and sees nothing at all until you choose.
+- To take it all back, choose "Clear Ada's Browser…" in the Dozo menu or Settings: the bot is
+  signed out everywhere and asks again before using its browser.
 
 A bot on this computer can use a browser of its own: the Chrome, Edge, Brave or Chromium installed
 here, started with a profile folder of that bot's own, never the person's (`src/browser.rs`). It

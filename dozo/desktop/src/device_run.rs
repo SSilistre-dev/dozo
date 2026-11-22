@@ -229,6 +229,12 @@ impl Runner {
         self.browsers.clear(key).await
     }
 
+    /// Whether the bot's browser is marked cleared, for the relay test.
+    #[cfg(test)]
+    pub fn browser_cleared(&self, key: &str) -> bool {
+        self.browsers.cleared(key)
+    }
+
     /// Whom to tell when `browser_names` changes.
     pub fn set_on_browser_names(&self, tell: Box<dyn Fn() + Send + Sync>) {
         self.browsers.set_on_list(tell);
@@ -805,7 +811,7 @@ fn incomplete_tail(bytes: &[u8]) -> usize {
     0
 }
 
-fn bot_key(bot: &str) -> String {
+pub(crate) fn bot_key(bot: &str) -> String {
     Sha256::digest(bot.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -1102,8 +1108,9 @@ mod tests {
         );
     }
 
-    /// Until the app declares its browser, a server's `pageBrowser` is refused before any browser
-    /// is looked for or started, even for a provisioned, running bot.
+    /// Where the app has no browser (Windows), a server's `pageBrowser` is refused before any
+    /// browser is looked for or started, even for a provisioned, running bot.
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     #[tokio::test]
     async fn the_bot_s_browser_is_refused_while_it_is_not_declared() {
         let (runner, dir) = runner();
