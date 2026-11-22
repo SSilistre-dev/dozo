@@ -7,10 +7,12 @@ import {
   lastingWriteShowsWholeText,
   parseSkillMd,
   redactSecrets,
+  routineWriterIsOwner,
 } from "@rakazo/core";
+import { readRoutineWriter } from "@rakazo/db";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength } from "./approval-ask.js";
-import { runReadOutsideContent } from "./dozo-read-outside.js";
+import { runReadHistory, runReadOutsideContent } from "./dozo-read-outside.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import { routineTaskInstructions } from "./routine-watch.js";
 import type { RunContext } from "./run-context.js";
@@ -20,22 +22,26 @@ import { refusal } from "./tool-refusal.js";
 
 /**
  * Whether the gate holds this call as a lasting write (lastingWriteNeedsApproval): the run's input
- * came from outside the owner, a token's text reached its bot, or it read outside content. A
- * subagent's call is the run's own, so it is judged by the run.
+ * came from outside the bot's owner (another member's or a guest's message included), a routine's
+ * prompt someone other than its owner last wrote, a token's text reached its bot, or the run read
+ * outside content or its history. A subagent's call is the run's own, so it is judged by the run.
  */
 export function lastingWriteHeld(ctx: RunContext, name: string): Promise<boolean> {
-  const { run, source, task } = ctx;
+  const { bot, deps, run, source, state, task } = ctx;
   const started = {
     trigger: run.trigger,
     ownerStartedRun: source.ownerStartedRun,
     nonOwnerChatRun: source.messagingChannelRun,
     watchFired: run.trigger === "routine" && routineTaskInstructions(task.prompt) !== task.prompt,
+    botOwnerRun: run.userId === bot.userId,
+    readHistory: runReadHistory(state),
   };
-  return lastingWriteNeedsApproval(
-    name,
-    started,
-    async () => (await runCameByToken(ctx)) || (await runReadOutsideContent(ctx)),
-  );
+  return lastingWriteNeedsApproval(name, started, {
+    routineFromOwner: async () =>
+      Boolean(run.routineId) &&
+      routineWriterIsOwner((await readRoutineWriter(deps.prisma, run.routineId!))?.writer),
+    readOutside: async () => (await runCameByToken(ctx)) || (await runReadOutsideContent(ctx)),
+  });
 }
 
 /** The text keys whose whole value the card ends with, after the short ones. */

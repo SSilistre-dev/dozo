@@ -1,18 +1,21 @@
 import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { markRunReadHistory } from "./dozo-read-outside.js";
 import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
 import { markReadOutsideContent } from "./run-context.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
 
 // The branded gate, wired to lastingWriteHeld and lastingWriteCard (dozo/brand/brand.json), with the
-// branded markReadOutsideContent. Runs on the staged tree.
+// branded markReadOutsideContent, and the marker run-tools.ts calls for a history tool
+// (runToolNoted). Runs on the staged tree.
 
 const seen = vi.hoisted(() => ({
   plans: [] as string[],
   blocks: [] as unknown[],
   skill: undefined as Record<string, unknown> | undefined,
+  writerReads: [] as string[],
 }));
 vi.mock("@rakazo/core", async (importOriginal) => {
   const core = await importOriginal<typeof Core>();
@@ -83,10 +86,18 @@ async function gate(
     /** The agent that made the call: "main", or a subagent of the run. */
     agent?: string;
     args?: Record<string, unknown>;
+    /** Who the run acts for: the bot's owner, another member of the Space, or a guest in it. */
+    starter?: "owner" | "member" | "guest";
+    /** For a routine's run, who last wrote the routine (dozo_routine_writers); null: no record. */
+    routineWriter?: string | null;
+    /** The run called read_history earlier. */
+    history?: boolean;
   } = {},
 ) {
   const mode = options.mode ?? "ask";
   const trigger = options.trigger ?? "user";
+  const userId = { owner: "user-1", member: "user-2", guest: "user-3" }[options.starter ?? "owner"];
+  const routineWriter = options.routineWriter === undefined ? "owner" : options.routineWriter;
   const ownerStartedRun = trigger === "user" && !options.token;
   const args = options.args ?? ARGS[name] ?? { name: "Invoices" };
   const executionId = JSON.stringify(["pi-tool", options.agent ?? "main", "call-1"]);
@@ -112,7 +123,12 @@ async function gate(
       prisma: {
         attempt: { count: async () => 1 },
         externalEffect: { findMany: async () => [], updateMany: async () => ({ count: 1 }) },
-        $queryRaw: async () => [{ sourced: Boolean(options.token) }],
+        $queryRaw: async (sql: TemplateStringsArray, ...values: unknown[]) => {
+          if (!sql.join("?").includes("dozo_routine_writers"))
+            return [{ sourced: Boolean(options.token) }];
+          seen.writerReads.push(values[0] as string);
+          return routineWriter ? [{ writer: routineWriter, writtenAt: new Date(0) }] : [];
+        },
       },
       events: {
         // The card is what the test reads; a refused pause ends the call there.
@@ -124,7 +140,8 @@ async function gate(
     },
     run: {
       id: "run-1",
-      userId: "user-1",
+      userId,
+      routineId: trigger === "routine" ? "routine-1" : null,
       spaceId: "space-1",
       threadId: "thread-1",
       botId: "bot-1",
@@ -132,7 +149,7 @@ async function gate(
     },
     runId: "run-1",
     attempt: { id: "attempt-1" },
-    bot: { id: "bot-1", name: "Helper" },
+    bot: { id: "bot-1", name: "Helper", userId: "user-1" },
     thread: { id: "thread-1" },
     task: { prompt: options.prompt ?? "Check the invoices" },
     secrets: [],
@@ -163,6 +180,7 @@ async function gate(
     },
   };
   if (options.read) await markReadOutsideContent(ctx as never);
+  if (options.history) markRunReadHistory(ctx.state as never, "read_history");
   return gateToolCall(ctx as never, request, undefined).then(
     (outcome) => outcome,
     (error: Error) => error.message,
@@ -176,6 +194,7 @@ beforeEach(() => {
   seen.plans.length = 0;
   seen.blocks.length = 0;
   seen.skill = undefined;
+  seen.writerReads.length = 0;
 });
 
 const LASTING_WRITES = [
@@ -373,6 +392,130 @@ describe("gateToolCall: create_child_routine", () => {
     await gate("create_child_routine", { read: true, mode: "auto" });
     expect(seen.plans).toEqual(["ask", "ask"]);
     expect(await gate("create_child_routine", { read: true, mode: "never" })).toEqual(
+      refusedInNeverAsk,
+    );
+  });
+});
+
+describe("gateToolCall: a message from someone other than the bot's owner", () => {
+  it.each(["member", "guest"] as const)(
+    "asks a person when a %s of the Space messaged the bot, and refuses in Never ask",
+    async (starter) => {
+      for (const name of ["skill_create", "skill_update", "schedule_create", "schedule_update"]) {
+        seen.plans.length = 0;
+        await gate(name, { starter });
+        await gate(name, { starter, mode: "auto", alwaysAllow: true });
+        expect(seen.plans).toEqual(["ask", "ask"]);
+        expect(await gate(name, { starter, mode: "never" })).toEqual(refusedInNeverAsk);
+      }
+    },
+  );
+
+  it.each(MODES)("lets the bot's owner's own message write in %s", async (mode) => {
+    for (const name of ["skill_create", "schedule_create"]) {
+      seen.plans.length = 0;
+      const outcome = await gate(name, { starter: "owner", mode });
+      expect(seen.plans).toEqual(["allow"]);
+      expect(outcome).toEqual({ call: expect.objectContaining({ name }) });
+    }
+  });
+
+  it("leaves a member's reads and memory as they were", async () => {
+    await gate("skill_read", { starter: "member" });
+    await gate("schedule_list", { starter: "member" });
+    expect(seen.plans).toEqual(["allow", "allow"]);
+  });
+});
+
+describe("gateToolCall: a lasting write from a routine's run, by who last wrote the routine", () => {
+  const reschedule = { routineId: "routine-1", runAt: "2099-01-02T09:00:00Z" };
+
+  it.each(["owner", "owner_run"])(
+    "runs freely when the routine was last written by %s, in every mode",
+    async (routineWriter) => {
+      for (const mode of MODES) {
+        for (const name of ["schedule_update", "skill_create"]) {
+          seen.plans.length = 0;
+          const args = name === "schedule_update" ? reschedule : undefined;
+          const outcome = await gate(name, { trigger: "routine", routineWriter, mode, args });
+          expect(seen.plans).toEqual(["allow"]);
+          expect(outcome).toEqual({ call: expect.objectContaining({ name }) });
+        }
+      }
+      expect(seen.writerReads.every((id) => id === "routine-1")).toBe(true);
+    },
+  );
+
+  it.each([
+    ["an outside run, a card's approval included", "outside_run"],
+    ["another member", "member"],
+    ["nobody on record (a routine from before this)", null],
+  ])(
+    "asks a person when it was last written by %s, and refuses in Never ask",
+    async (_, routineWriter) => {
+      for (const name of ["schedule_update", "skill_create"]) {
+        seen.plans.length = 0;
+        const args = name === "schedule_update" ? reschedule : undefined;
+        const options = { trigger: "routine", routineWriter, args };
+        await gate(name, options);
+        await gate(name, { ...options, mode: "auto", alwaysAllow: true });
+        expect(seen.plans).toEqual(["ask", "ask"]);
+        expect(await gate(name, { ...options, mode: "never" })).toEqual(refusedInNeverAsk);
+      }
+    },
+  );
+
+  it("reads the routine's writer only for a routine's run", async () => {
+    await gate("skill_create");
+    await gate("skill_create", { trigger: "webhook" });
+    expect(seen.writerReads).toEqual([]);
+  });
+});
+
+describe("gateToolCall: a lasting write once the run read its history", () => {
+  it.each(MODES.filter((mode) => mode !== "never"))(
+    "asks a person in %s, even over an Always allow rule",
+    async (mode) => {
+      for (const name of ["skill_create", "skill_update", "schedule_create", "schedule_update"]) {
+        seen.plans.length = 0;
+        await gate(name, { history: true, mode, alwaysAllow: true });
+        expect(seen.plans).toEqual(["ask"]);
+      }
+    },
+  );
+
+  it("is refused in Never ask, in the owner's run and a routine's", async () => {
+    for (const trigger of ["user", "routine"]) {
+      expect(await gate("skill_create", { history: true, trigger, mode: "never" })).toEqual(
+        refusedInNeverAsk,
+      );
+    }
+  });
+
+  it("leaves remembering as it was: the memory rule does not count history", async () => {
+    const outcome = await gate("remember", { history: true, args: { content: "Likes tea" } });
+    expect(seen.plans).toEqual(["allow"]);
+    expect(outcome).toEqual({ call: expect.objectContaining({ name: "remember" }) });
+  });
+});
+
+describe("gateToolCall: helpers", () => {
+  it("refuses a lasting write in a background helper's run, which cannot ask", async () => {
+    for (const mode of ["ask", "auto"] as const) {
+      expect(await gate("skill_create", { trigger: "helper", mode })).toEqual({
+        result: { error: expect.stringContaining("a background helper cannot ask") },
+      });
+    }
+    expect(await gate("skill_create", { trigger: "helper", mode: "never" })).toEqual(
+      refusedInNeverAsk,
+    );
+    expect(seen.blocks).toEqual([]);
+  });
+
+  it("asks a person for a lasting write in the run that takes a helper's result", async () => {
+    await gate("skill_create", { trigger: "helper_result" });
+    expect(seen.plans).toEqual(["ask"]);
+    expect(await gate("skill_create", { trigger: "helper_result", mode: "never" })).toEqual(
       refusedInNeverAsk,
     );
   });

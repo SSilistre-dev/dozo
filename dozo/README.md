@@ -751,14 +751,24 @@ may hold one (`packages/adapters/src/dozo-read-outside.ts`).
 - Lasting writes (`packages/core/src/dozo-lasting-write-approval.ts`,
   `packages/adapters/src/dozo-lasting-write-card.ts`): creating, changing or deleting a skill, and
   creating or changing a routine (also one on another bot), need a person in every mode, over any
-  Always allow rule, and Never ask refuses them, when the run read outside content or what started
-  it did not come from the owner: a webhook or an email, another bot, someone else's message in a
-  connected chat, a message sent with an access token, a routine started because something it
-  watches changed, or any other trigger. The owner's own message, follow-up or call, their own
-  connected chat app, a routine's scheduled run or retry, and a subagent inside such a run write
-  freely until the run reads outside content (a background helper cannot write either at all). The
-  card shows the whole text that will be saved (a skill change as a diff of the current skill); a
-  text too long to show whole is refused instead.
+  Always allow rule, and Never ask refuses them, when the run read outside content, called
+  `read_history` or `search_history` (a page read earlier, or in another chat, comes back through
+  them unmarked), or what started it did not come from the bot's owner: another member or a guest
+  of the Space (every member can message every bot of it, on the web, mobile, a bot's extra chats
+  and the API), a webhook or an email, another bot, someone else's message in a connected chat, a
+  message sent with an access token, a routine started because something it watches changed, a
+  routine someone other than the owner last wrote, or any other trigger. The owner's own message,
+  follow-up or call, their own connected chat app, the scheduled run or retry of a routine the owner
+  last wrote, and a subagent inside such a run write freely until the run reads outside content. A
+  background helper cannot write at all; the run that takes its result back counts as started from
+  outside. The card shows the whole text that will be saved (a skill change as a diff of the
+  current skill); a text too long to show whole is refused instead.
+- Who last wrote a routine (`dozo_routine_writers`, `packages/adapters/src/dozo-lasting-write-run.ts`):
+  the owner saving it in the app or the API, or the owner's run that would write it freely, makes
+  its prompt the owner's words; another member's save, or any run whose write needed a person (also
+  one a person approved), does not. A routine with no record, every one saved before this, counts as
+  not the owner's: its runs ask before rescheduling themselves until the owner saves it once in the
+  app. Pausing or moving a routine from the owner's run keeps the record as it was.
 - Memory: a turn that read outside content is not saved to a connected memory service, whoever
   started it; other turns are saved as upstream describes (`docs/memory.md`), including the owner's
   connected chat app and messages between bots. This narrows upstream's learning from

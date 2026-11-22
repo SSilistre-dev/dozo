@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createRepos, runAsTenant } from "@rakazo/db";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
 import { recordConsent, userBrowserGate } from "./dozo-user-browser-gate.js";
 import { UserDeviceHub, UserDevices } from "./dozo-user-device-gateway.js";
@@ -19,13 +19,15 @@ import { createUserDeviceToken, hashUserDeviceToken } from "./user-device-gatewa
 const RELAY = process.env.DOZO_RELAY_DIR;
 const describeRelay = RELAY && process.env.DATABASE_URL ? describe : describe.skip;
 
-async function until<T>(what: string, check: () => Promise<T | undefined>, seconds = 120) {
-  for (let i = 0; i < seconds * 4; i++) {
-    const value = await check();
-    if (value !== undefined) return value;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`timed out waiting for ${what}`);
+function until<T>(what: string, check: () => Promise<T | undefined>, seconds = 120) {
+  return vi.waitFor(
+    async () => {
+      const value = await check();
+      if (value === undefined) throw new Error(`timed out waiting for ${what}`);
+      return value;
+    },
+    { timeout: seconds * 1000, interval: 250 },
+  );
 }
 
 describeRelay("the bot's browser over the real relay", () => {
