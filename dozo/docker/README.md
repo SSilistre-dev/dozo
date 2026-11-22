@@ -109,9 +109,9 @@ project; `down` does not remove them.
 
 ## Gates (gate.sh)
 
-`dozo/docker/gate.sh olc|qa|unit|checks`, and `gate.sh upstream-edits <base> [tree]`, which prints the
+`dozo/docker/gate.sh olc|qa|unit|checks|budget`, and `gate.sh upstream-edits <base> [tree]`, which prints the
 upstream files that differ from commit `<base>` in `[tree]` (default the working tree) and is not a
-gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT|CHECKS: PASS in
+gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT|CHECKS|BUDGET: PASS in
 <s>s`, `... FAIL (<failed steps, comma separated>) in <s>s`, and for a run that is not the full gate
 `QA: PASS (partial: <what was left out>) in <s>s` (a `DOZO_QA_STEPS` subset, `DOZO_SKIP_BRAND=1`, or
 any of `DOZO_STAGE_REF`, `DOZO_UNIT_SRC`, `DOZO_COVERAGE_MIN`, `DOZO_BRAND_COVERAGE_MIN` set).
@@ -202,15 +202,28 @@ Upstream's `pnpm checks` (`scripts/checks/*.test.mjs`) on the branded staged tre
 git installed in the container. That install needs the network, so it runs in `qa` and in the CI job
 `dozo-gate` after `brand`, not in `olc`, which stays offline.
 
+### budget
+
+The web startup budget: upstream's `scripts/checks/bundle-size.mjs` and its limit in
+`scripts/checks/bundle-size.budgets.json` (never raised by the fork), on the branded web build. It
+runs `node` in an image built from the staged tree, `dozo-web` by default (what `build` just made;
+`DOZO_BUDGET_IMAGE` names another), which carries that tree's check, budgets file and
+`apps/web/dist`. Only `dozo/docker/web-budget.mjs` is mounted: it keeps the web bundle (the fork
+builds no desktop main bundle) and always prints one line, `web-startup: 893.7 kB of 900.0 kB`, or
+`web-startup: 924.1 kB of 900.0 kB, over by 24.1 kB` followed by the largest files. Over the limit,
+or a missing image or dist, fails (exit 2); about a second. Standalone, it measures whatever
+`dozo-web` holds: build first. CI (`dozo-gate`) builds the Dockerfile's `build` stage alone from the
+staged tree (`docker build --target build`) and runs the step on that image.
+
 ### qa
 
-`make qa` runs `olc`, `stage`, `brand`, `checks`, `unit`, `build`, `up`, `smoke`, then `down`. The terminal
+`make qa` runs `olc`, `stage`, `brand`, `checks`, `unit`, `build`, `budget`, `up`, `smoke`, then `down`. The terminal
 gets `[qa] >> <step> (timeout <s>s, log <path>)` and `[qa] << <step> ok|FAIL|TIMEOUT <s>s` per step,
 the last 40 log lines of a failed step, and the verdict. The first failing step stops the run. Each
 step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is not part of it.
 
 - Timeout per step: `DOZO_TIMEOUT_<STEP>` seconds (`<STEP>` upper case: `OLC`, `STAGE`, `BRAND`,
-  `CHECKS`, `UNIT`, `BUILD`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
+  `CHECKS`, `UNIT`, `BUILD`, `BUDGET`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
   its limit is killed and fails (exit 124, or 137 once past the limit when the step ignored TERM and was
   killed; both shown as TIMEOUT). `up` itself waits
   `DOZO_UP_TIMEOUT` (default 240).
