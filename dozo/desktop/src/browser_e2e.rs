@@ -1090,9 +1090,13 @@ async fn e2e_browser_sign_in_ends_on_a_home_page_that_redirects() {
     browsers.close_all();
 }
 
-/// Serves `pages` by path, the home page `/` only after `slow`, each request on its own thread;
-/// returns the port.
-fn serve_slow_home(pages: Vec<(&'static str, String)>, slow: Duration) -> u16 {
+/// Serves `pages` by path, those in `slow_paths` only after `slow`, each request on its own
+/// thread; returns the port.
+fn serve_slow_home(
+    pages: Vec<(&'static str, String)>,
+    slow_paths: &'static [&'static str],
+    slow: Duration,
+) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let pages = Arc::new(pages);
@@ -1104,7 +1108,7 @@ fn serve_slow_home(pages: Vec<(&'static str, String)>, slow: Duration) -> u16 {
                 let read = stream.read(&mut request).unwrap_or(0);
                 let line = String::from_utf8_lossy(&request[..read]).to_string();
                 let path = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
-                if path == "/" {
+                if slow_paths.contains(&path.split('?').next().unwrap_or("")) {
                     std::thread::sleep(slow);
                 }
                 let body = pages
@@ -1112,9 +1116,14 @@ fn serve_slow_home(pages: Vec<(&'static str, String)>, slow: Duration) -> u16 {
                     .find(|(at, _)| path == *at || path.split('?').next() == Some(at))
                     .map(|(_, body)| body.clone())
                     .unwrap_or_default();
+                let kind = if path.ends_with(".js") {
+                    "text/javascript"
+                } else {
+                    "text/html"
+                };
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 200 OK\r\ncontent-type: {kind}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
                     body.len()
                 );
             });
@@ -1154,13 +1163,13 @@ async fn e2e_browser_sign_in_ends_on_home_whatever_the_page_starts() {
             "<!doctype html><title>Back</title>SECRET<form action=/code><input name=c value=SECRET2></form><script>setTimeout(()=>document.forms[0].submit(),800)</script>".to_owned(),
         ),
     ];
-    let port = serve_slow_home(pages, Duration::from_millis(1500));
+    let port = serve_slow_home(pages, &["/"], Duration::from_millis(1500));
     let site = format!("127.0.0.1:{port}");
     // The identity provider: another site, whose page sends the tab back with a code.
     let back = format!(
         "<!doctype html><title>Redirecting</title>Redirecting<script>setTimeout(()=>location.href='http://{site}/code?c=SECRET2',800)</script>"
     );
-    let provider = serve_slow_home(vec![("/redirecting", back)], Duration::ZERO);
+    let provider = serve_slow_home(vec![("/redirecting", back)], &[], Duration::ZERO);
     let root = root().join("starts");
     let browsers = Arc::new(browsers(&root));
     let prompt = Arc::new(HeldPrompt::default());
@@ -1245,6 +1254,229 @@ async fn e2e_browser_sign_in_ends_on_home_whatever_the_page_starts() {
         failed.is_empty(),
         "the page the sign-in left won: {failed:#?}"
     );
+}
+
+/// What the sign-in opened goes with it: a window another site opened during it cannot send the
+/// bot's tab to a return address with a code, by its opener (once, repeatedly, or seconds later)
+/// or by the tab's name; and a return page still loading when the person says Done does not end
+/// the browser. Each time the bot ends with its one tab, on the site's home page.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_sign_in_closes_what_it_opened() {
+    // The identity provider's window: it reaches back for the tab that opened it.
+    let popup = "<!doctype html><title>Provider</title>Provider<script>\
+        const q=new URLSearchParams(location.search),back='http://'+q.get('site')+'/code?c=SECRET',m=q.get('mode');\
+        const go=()=>{try{opener.location.href=back}catch(e){}},named=()=>{try{open(back,'botwin')}catch(e){}};\
+        if(m==='once')setTimeout(go,3100);if(m==='every')setInterval(go,200);\
+        if(m==='named')setInterval(named,200);if(m==='late')setTimeout(go,7000);</script>";
+    let provider = serve_slow_home(vec![("/popup", popup.to_owned())], &[], Duration::ZERO);
+    let opens = format!(
+        "<!doctype html><title>Sign in</title><button style=\"position:fixed;inset:0;width:100%;height:100%\" \
+         onclick=\"window.name='botwin';window.open('http://127.0.0.1:{provider}/popup?mode='+new URLSearchParams(location.search).get('mode')+'&site='+location.host)\">Continue</button>"
+    );
+    let pages = vec![
+        (
+            "/",
+            "<!doctype html><title>Home</title><button>Account</button>".to_owned(),
+        ),
+        (
+            "/code",
+            "<!doctype html><title>Code</title>SECRET2".to_owned(),
+        ),
+        ("/opens", opens),
+        (
+            "/slowback",
+            "<!doctype html><title>Back</title>SECRET".to_owned(),
+        ),
+    ];
+    let port = serve_slow_home(pages, &["/slowback"], Duration::from_secs(3));
+    let site = format!("127.0.0.1:{port}");
+    let root = root().join("opened");
+    let browsers = Arc::new(browsers(&root));
+    let prompt = Arc::new(HeldPrompt::default());
+    browsers.set_sign_in_prompt(prompt.clone());
+    call(
+        &browsers,
+        "Page.navigate",
+        json!({ "url": format!("http://{site}/code") }),
+    )
+    .await;
+    // (where the person goes, whether they click there, how long after Done to look)
+    let cases = [
+        ("opens?mode=once", true, 4),
+        ("opens?mode=every", true, 4),
+        ("opens?mode=named", true, 4),
+        ("opens?mode=late", true, 8),
+        ("slowback?code=SECRET", false, 4),
+    ];
+    let mut failed = Vec::new();
+    for (path, click, look) in cases {
+        *prompt.answer.lock().unwrap() = None;
+        let signing = {
+            let (browsers, site) = (browsers.clone(), site.clone());
+            tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+        };
+        for _ in 0..100 {
+            if prompt.answer.lock().unwrap().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let (running, session) = person(&browsers);
+        let start = json!({ "url": format!("http://{site}/{path}") });
+        if click {
+            running
+                .pipe
+                .call("Page.navigate", start, Some(&session))
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            for kind in ["mousePressed", "mouseReleased"] {
+                let event =
+                    json!({ "type": kind, "x": 50, "y": 50, "button": "left", "clickCount": 1 });
+                let _ = running
+                    .pipe
+                    .call("Input.dispatchMouseEvent", event, Some(&session))
+                    .await;
+            }
+            tokio::time::sleep(Duration::from_millis(700)).await;
+        } else {
+            // Done while the return page is still loading.
+            let pipe = running.pipe.clone();
+            let session = session.clone();
+            tokio::spawn(async move { pipe.call("Page.navigate", start, Some(&session)).await });
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+        prompt
+            .answer
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(true)
+            .unwrap();
+        let signed = signing.await.unwrap();
+        tokio::time::sleep(Duration::from_secs(look)).await;
+        if signed != Ok(true) || browsers.current("bot").is_none() {
+            failed.push(format!("{path}: the browser ended ({signed:?})"));
+            call(
+                &browsers,
+                "Page.navigate",
+                json!({ "url": format!("http://{site}/code") }),
+            )
+            .await;
+            continue;
+        }
+        let (running, _) = person(&browsers);
+        let targets = running
+            .pipe
+            .call("Target.getTargets", json!({}), None)
+            .await
+            .unwrap();
+        let pages = targets["targetInfos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|info| info["type"] == "page")
+            .count();
+        let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+        let mut seen = history.to_string();
+        for method in [
+            "Accessibility.getFullAXTree",
+            "Page.getFrameTree",
+            "DOM.getDocument",
+        ] {
+            seen += &call(&browsers, method, json!({})).await.to_string();
+        }
+        let url = history["entries"][history["currentIndex"].as_u64().unwrap_or(0) as usize]["url"]
+            .clone();
+        if pages != 1 || seen.contains("SECRET") || url != format!("http://{site}/") {
+            failed.push(format!(
+                "{path}: {pages} pages, at {url}, secret seen: {}",
+                seen.contains("SECRET")
+            ));
+            continue;
+        }
+        // The new tab has the guard too: full screen is refused even after a gesture.
+        let (running, session) = person(&browsers);
+        let probe = json!({ "expression": "document.documentElement.requestFullscreen().then(()=>'taken',()=>'refused')",
+            "awaitPromise": true, "userGesture": true, "returnByValue": true });
+        let guarded = running
+            .pipe
+            .call("Runtime.evaluate", probe, Some(&session))
+            .await
+            .unwrap();
+        if guarded["result"]["value"] != "refused" {
+            failed.push(format!("{path}: the new tab has no guard ({guarded})"));
+            continue;
+        }
+        println!(
+            "E2E: after {path} and Done the bot has its one tab, guarded, on the site's home page"
+        );
+    }
+    browsers.close_all();
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// Measures, without judging: whether a service worker the site registered during the sign-in
+/// can send the bot's new tab elsewhere once it shows that site's home page (the site's own choice,
+/// like any page of it). Prints what happened.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; a measurement, run by hand"]
+async fn e2e_browser_measure_a_service_worker_after_sign_in() {
+    let worker = "setInterval(async()=>{for(const c of await clients.matchAll({includeUncontrolled:true})){\
+        if(!c.url.includes('/code'))try{await c.navigate('/code?c=SECRET')}catch(e){}}},300);\
+        self.addEventListener('activate',e=>e.waitUntil(clients.claim()));";
+    let pages = vec![
+        ("/", "<!doctype html><title>Home</title><button>Account</button>".to_owned()),
+        ("/code", "<!doctype html><title>Code</title>SECRET2".to_owned()),
+        ("/back", "<!doctype html><title>Back</title><script>navigator.serviceWorker.register('/sw.js')</script>".to_owned()),
+        ("/sw.js", worker.to_owned()),
+    ];
+    let port = serve_slow_home(pages, &[], Duration::ZERO);
+    let site = format!("127.0.0.1:{port}");
+    let root = root().join("worker");
+    let browsers = Arc::new(browsers(&root));
+    let prompt = Arc::new(HeldPrompt::default());
+    browsers.set_sign_in_prompt(prompt.clone());
+    call(
+        &browsers,
+        "Page.navigate",
+        json!({ "url": format!("http://{site}/code") }),
+    )
+    .await;
+    let signing = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.answer.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (running, session) = person(&browsers);
+    let back = json!({ "url": format!("http://{site}/back") });
+    running
+        .pipe
+        .call("Page.navigate", back, Some(&session))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(true)
+        .unwrap();
+    assert!(signing.await.unwrap().unwrap());
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    let at = &history["entries"][history["currentIndex"].as_u64().unwrap_or(0) as usize]["url"];
+    println!("E2E: measured: after Done with a service worker of the site, the tab is at {at}");
+    browsers.close_all();
 }
 
 /// A plain HTTP server that keeps each connection open for more requests and records the host
