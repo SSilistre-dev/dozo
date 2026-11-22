@@ -9459,6 +9459,12 @@
       "reason": "bot chats on mobile: the chat route holds one chat, an extra chat of the bot or its main chat, from its own parameters; the screen under it starts over when a notification points the route at another chat"
     },
     {
+      "file": "apps/mobile/lib/thread-route.test.tsx",
+      "find": "vi.mock(\"./native\", () => ({ useMobileTokens: () => ({}) }));\nvi.mock(\"./session\", () => ({",
+      "replace": "vi.mock(\"./native\", () => ({ useMobileTokens: () => ({}) }));\nvi.mock(\"./saved-chats\", () => ({ readSavedThread: () => null, savedChatsScope: async () => null }));\nvi.mock(\"./session\", () => ({",
+      "reason": "bot chats on mobile: the chat route reads the bot's saved main thread (saved-chats, which loads the native file system) to tell a notification's chat; this test stubs the screen, not that store, and a route without a notification never reads it; the route's use of it is tested in dozo-chat-route.test.tsx"
+    },
+    {
       "file": "apps/mobile/components/thread/thread-screen.tsx",
       "find": "import { useContentBottomInset } from \"../../lib/content-bottom-inset\";\nimport { cronLabels } from \"../../lib/cron\";",
       "replace": "import { useContentBottomInset } from \"../../lib/content-bottom-inset\";\nimport { dozoEchoedSeqs, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport { cronLabels } from \"../../lib/cron\";",
