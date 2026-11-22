@@ -40,7 +40,7 @@ vi.mock("./screen-query", async () => {
   };
 });
 
-import { queueLine, queueSheet, useDozoQueue } from "./dozo-queue";
+import { queueLine, queueSheet, stopText, useDozoQueue } from "./dozo-queue";
 import { queryClient } from "./query";
 
 const item = (over: Partial<DozoQueueItem>): DozoQueueItem => ({
@@ -101,6 +101,11 @@ it("counts a place only among work waiting for the same bot, in a group chat", (
       item({ id: "mine", position: 2 }),
     ]),
   ).toBe("Waiting in line… · #2");
+});
+
+it("names a stop button after the work it stops, when the work has a name", () => {
+  expect(stopText(item({ label: "Weekly sums" }))).toBe("Stop: Weekly sums");
+  expect(stopText(item({ label: null }))).toBe("Stop");
 });
 
 it("shows no line when none of the waiting work is yours", () => {

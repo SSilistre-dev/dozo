@@ -1,3 +1,4 @@
+import { getLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const withheld = vi.hoisted(() => ({ value: false }));
@@ -425,13 +426,21 @@ describe("its handler", () => {
       owner: string,
       req: { method: string; command?: { method: string } },
     ) {
-      if (req.command?.method === "Page.captureScreenshot") throw "no picture";
+      if (req.command?.method === "Page.captureScreenshot")
+        throw new Error("could not capture https://example.test/form?token=page-secret");
       yield* request(owner, req as never);
     } as never;
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
     const failed = (await approved(run, "browser_snapshot", {})).result as {
       content: Array<{ type: string }>;
     };
     expect(failed.content.map((part) => part.type)).toEqual(["text"]);
+    // The failure is logged by its kind: the message could carry the page's address or words.
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = (warn.mock.calls[0]?.[1] as { error: Error }).error;
+    expect(logged.message).toBe("the user's browser could not answer (Error)");
+    expect(logged.message).not.toContain("page-secret");
+    warn.mockRestore();
   });
 
   it("hides the run's secrets in what the page shows", async () => {
