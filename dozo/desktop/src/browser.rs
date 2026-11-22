@@ -771,7 +771,8 @@ fn shown(c: char) -> bool {
             '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{115F}' | '\u{1160}' | '\u{17B4}' | '\u{17B5}'
             | '\u{180B}'..='\u{180F}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}'
             | '\u{2060}'..='\u{206F}' | '\u{2800}' | '\u{3164}' | '\u{FE00}'..='\u{FE0F}'
-            | '\u{FEFF}' | '\u{FFA0}' | '\u{FFF9}'..='\u{FFFB}' | '\u{E0000}'..='\u{E01EF}')
+            | '\u{FEFF}' | '\u{FFA0}' | '\u{FFF9}'..='\u{FFFB}' | '\u{13430}'..='\u{1343F}'
+            | '\u{1BCA0}'..='\u{1BCA3}' | '\u{1D173}'..='\u{1D17A}' | '\u{E0000}'..='\u{E01EF}')
 }
 
 fn signing_message(site: &str) -> String {
@@ -815,6 +816,9 @@ pub struct Browsers {
     on_pause: std::sync::OnceLock<Box<dyn Fn(bool) + Send + Sync>>,
     /// Told when the bots whose browser can be cleared change (`named`): the app's menu lists them.
     on_list: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// Bots whose browser is being cleared now: none starts, and the server's `forgotten` does not
+    /// take the mark, until the clear is over.
+    clearing: Mutex<std::collections::HashSet<String>>,
     /// One telling at a time, each of what holds then, so a late one never undoes a newer one.
     telling: Mutex<()>,
     /// How long a sign-in waits for the person (`SIGN_IN_TIME`; tests shorten it).
@@ -845,6 +849,7 @@ impl Browsers {
             signing: Mutex::default(),
             on_pause: std::sync::OnceLock::new(),
             on_list: std::sync::OnceLock::new(),
+            clearing: Mutex::default(),
             telling: Mutex::default(),
             sign_in_time: SIGN_IN_TIME,
             starting: tokio::sync::Mutex::default(),
@@ -1000,11 +1005,17 @@ impl Browsers {
         // only that long, not for the browser to end.
         {
             let _starting = self.starting.lock().await;
+            self.clearing.lock().unwrap().insert(key.to_owned());
             if std::fs::write(self.root.join(format!("{key}.cleared")), b"").is_err() {
+                self.clearing.lock().unwrap().remove(key);
                 return false;
             }
         }
-        self.close(key, true).await
+        // Until the browser has ended and its profile is gone, nothing of that bot starts, even
+        // if the server has forgotten meanwhile.
+        let cleared = self.close(key, true).await;
+        self.clearing.lock().unwrap().remove(key);
+        cleared
     }
 
     /// Whether the person cleared the bot's browser and the server has not asked since.
@@ -1012,8 +1023,12 @@ impl Browsers {
         self.root.join(format!("{key}.cleared")).exists()
     }
 
-    /// The server was told the browser was cleared: it may start again.
+    /// The server has forgotten what the bot was allowed: its browser may start again, once a
+    /// clear under way is over (until then the mark stays, and the server asks again).
     pub fn take_cleared(&self, key: &str) {
+        if self.clearing.lock().unwrap().contains(key) {
+            return;
+        }
         let _ = std::fs::remove_file(self.root.join(format!("{key}.cleared")));
     }
 
@@ -1076,6 +1091,24 @@ impl Browsers {
             }
             Err(_) => false,
         };
+        // Before the bot has the page again, it leaves where the sign-in left it: first a blank
+        // page, whose new document ends the sign-in's page and whatever it was starting (a timer,
+        // a form, a refresh, a "Redirecting…" page sending back a code), then the site's home page
+        // once the person is done (a typed address or a half-done second step stays theirs when
+        // they cancelled). The tab keeps no way back into the sign-in: a page that goes back
+        // (`history.go`), or a Back link the bot clicks, finds nothing behind it. A tab that would
+        // not show the blank page after three tries is ended; a home page that did not come leaves
+        // the blank one.
+        let blank = |url: &str| url == "about:blank";
+        // A page may take the tab elsewhere once more as it is left (from `beforeunload`): the
+        // blank page is asked for again, a few times.
+        let mut blanked = false;
+        for _ in 0..3 {
+            if leave_only(&running, &session, "about:blank", blank).await {
+                blanked = true;
+                break;
+            }
+        }
         // The addresses the sign-in went through (a code in a return address) stay out of what the
         // server reads: its events are dropped, and the history it made keeps no address.
         if let Ok(history) = running
@@ -1092,30 +1125,13 @@ impl Browsers {
                 .unwrap_or(0);
             running.hidden_through.fetch_max(last, Ordering::SeqCst);
         }
-        // Before the bot has the page again, it leaves where the sign-in left it: the site's home
-        // page once the person is done, a blank page when they cancelled (a typed address or a
-        // half-done second step stays theirs).
-        let after = if answer {
-            format!("{scheme}://{site}/")
-        } else {
-            "about:blank".to_owned()
-        };
-        // The tab keeps no way back into the sign-in: a page that goes back (`history.go`), or a
-        // Back link the bot clicks, finds nothing behind it. The tab must then hold that one page
-        // alone; a home page that did not come leaves a blank page instead, and a tab that still
-        // holds anything else is ended.
         // A home page may redirect within its site (x.com to /home, google.com to www): where it
-        // led counts, as long as it is a page of that site.
-        let blank = |url: &str| url == "about:blank";
-        let home = |url: &str| {
-            if answer {
-                on_site(url, scheme, &site)
-            } else {
-                blank(url)
-            }
-        };
-        let left = leave_only(&running, &session, &after, home).await
-            || leave_only(&running, &session, "about:blank", blank).await;
+        // led counts, as long as it is a new page of that site that came after the blank one.
+        let home = |url: &str| on_site(url, scheme, &site);
+        let left = blanked
+            && (!answer
+                || leave_only(&running, &session, &format!("{scheme}://{site}/"), home).await
+                || leave_only(&running, &session, "about:blank", blank).await);
         running.pipe.take_events();
         if !left {
             self.forget(key, &running);
@@ -1221,7 +1237,7 @@ impl Browsers {
         }
         // A cleared browser starts again only once the server has seen it was cleared (and so
         // forgot what the bot was allowed): a call that was on its way meanwhile gets nothing.
-        if self.cleared(key) {
+        if self.cleared(key) || self.clearing.lock().unwrap().contains(key) {
             return Err(CLEARED.to_owned());
         }
         let program = self.program.as_deref().ok_or(NO_BROWSER)?;
@@ -2226,6 +2242,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// While a clear is still ending the browser and removing its profile, the server's
+    /// `forgotten` takes no mark and nothing of that bot starts.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn nothing_starts_while_a_clear_is_still_under_way() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-under-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), Some(PathBuf::from("/nonexistent")), true);
+        let key = "e".repeat(64);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{key}.cleared")), b"").unwrap();
+        browsers.clearing.lock().unwrap().insert(key.clone());
+        browsers.take_cleared(&key);
+        assert!(
+            browsers.cleared(&key),
+            "the mark stays while the clear is under way"
+        );
+        let page =
+            json!({ "method": "Page.navigate", "params": { "url": "https://example.com/" } });
+        assert_eq!(browsers.handle(&key, &page).await.unwrap_err(), CLEARED);
+        std::fs::remove_file(dir.join(format!("{key}.cleared"))).unwrap();
+        assert_eq!(
+            browsers.handle(&key, &page).await.unwrap_err(),
+            CLEARED,
+            "nor without the mark"
+        );
+        browsers.clearing.lock().unwrap().remove(&key);
+        assert_ne!(browsers.handle(&key, &page).await.unwrap_err(), CLEARED);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A clear waits for a browser that is starting, and the start then finds it cleared.
     #[cfg(unix)]
     #[tokio::test]
@@ -2256,7 +2302,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("dozo-browser-names-{}", std::process::id()));
         let browsers = Browsers::with(dir.clone(), None, true);
         let key = "a".repeat(64);
-        browsers.remember_name(&key, "A\u{202E}d\u{2066}a\u{200B}\u{2028}\u{FEFF}");
+        browsers.remember_name(
+            &key,
+            "A\u{202E}d\u{2066}a\u{200B}\u{2028}\u{FEFF}\u{1BCA0}\u{1D173}\u{13430}",
+        );
         browsers.remember_name("..", "Parent");
         browsers.remember_name("k", "Short");
         std::fs::write(dir.join("...name"), "Dots").unwrap();

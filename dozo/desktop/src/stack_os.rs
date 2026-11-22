@@ -146,7 +146,9 @@ pub fn program_of(pid: u32) -> Option<String> {
 #[cfg(all(unix, not(target_os = "linux")))]
 pub fn program_of(pid: u32) -> Option<String> {
     let out = std::process::Command::new("/bin/ps")
-        .args(["-o", "command=", "-p", &pid.to_string()])
+        // `-ww`: the whole command line, also with no terminal to size it to (opened from Finder),
+        // where it is otherwise cut at about 80 columns.
+        .args(["-ww", "-o", "command=", "-p", &pid.to_string()])
         .output()
         .ok()?;
     let line = String::from_utf8_lossy(&out.stdout).trim().to_owned();
