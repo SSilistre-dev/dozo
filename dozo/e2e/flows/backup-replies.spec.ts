@@ -31,10 +31,11 @@ async function shot(page: Page, target: Locator, name: string) {
 
 /**
  * The main model on a connection whose quota ran out, a backup on another: the reply comes from
- * the backup and its menu says so, and Models settings says when the main model opens again. Both
- * themes. Its own account: the main model changes.
+ * the backup, and Models settings says when the main model opens again. Both themes. Its own
+ * account: the main model changes. The reply's menu line needs a backup of another model, which
+ * the model stub (one model) cannot serve; dozo-message-revision.test.tsx covers it.
  */
-test("backup replies: a reply a backup wrote says so, and a resting model when it opens", async ({
+test("backup replies: a resting main model says when it opens again", async ({
   browser,
   guard,
 }) => {
@@ -89,18 +90,10 @@ test("backup replies: a reply a backup wrote says so, and a resting model when i
         theme,
       ]);
       await openBot(page, botId, "Chief");
-      const reply = page.getByText(REPLY).last();
-      await reply.hover();
-      await page.getByRole("button", { name: "More" }).last().click();
-      const line = page.getByTestId("dozo-backup-reply");
-      await expect(line).toHaveText(`Answered by ${MODEL}`);
-      await shot(page, line, `1-menu-${theme}`);
-      await page.keyboard.press("Escape");
-
       const settings = await openUserSettings(page, "models");
       const main = settings.getByTestId("model-role-main").getByTestId("model-role-row-1");
       await expect(main).toContainText(/Opens at /);
-      await shot(page, main, `2-settings-${theme}`);
+      await shot(page, main, `settings-${theme}`);
     }
   } finally {
     await context.close();
