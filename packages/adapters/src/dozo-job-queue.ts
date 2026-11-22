@@ -1,7 +1,7 @@
 import { databaseOutage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Runner, RunnerOptions } from "graphile-worker";
-import { run } from "graphile-worker";
+import { parseCrontab, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { jobQueueLogger } from "./wakeup.js";
 
@@ -37,6 +37,15 @@ export class DozoJobQueue {
       start?: (options: RunnerOptions) => Promise<Runner>;
     } = {},
   ) {
+    // Read with Graphile's own parser before starting, so a line it cannot read fails where it is
+    // written, in its tests, instead of only in the started runner's log.
+    if (options.crontab) {
+      const unknown = parseCrontab(options.crontab).filter((item) => !(item.task in tasks));
+      if (unknown.length)
+        throw new Error(
+          `The crontab names a task this queue does not run: ${unknown.map((item) => item.task).join(", ")}`,
+        );
+    }
     const start = options.start ?? run;
     this.runner = start({
       pgPool: pool,

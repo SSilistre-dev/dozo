@@ -1,5 +1,6 @@
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
+import { DozoJobQueue } from "@rakazo/adapters";
 import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BillingLifecycleDeps, PlanEndingJob } from "./dozo-billing-lifecycle.js";
@@ -52,6 +53,7 @@ type Mail = {
   details: MailDetails;
   status: string;
   claimedAt: number | null;
+  createdAt: number;
 };
 
 /**
@@ -113,7 +115,9 @@ function memoryStore() {
       );
       if (taken) return null;
       const id = `mail-${++ids}`;
-      tx.writes.push(() => db.mails.set(id, { ...mail, status: "pending", claimedAt: null }));
+      tx.writes.push(() =>
+        db.mails.set(id, { ...mail, status: "pending", claimedAt: null, createdAt: db.clock }),
+      );
       return id;
     },
     async addJob(task, key, runAt, payload) {
@@ -134,14 +138,15 @@ function memoryStore() {
         for (const unlock of tx.unlock) unlock();
       }
     },
-    async claim(id, staleMs) {
+    async claim(id, staleMs, expiresMs) {
       const mail = db.mails.get(id);
       if (mail?.status !== "pending") return null;
       if (mail.claimedAt !== null && mail.claimedAt >= db.clock - staleMs) return "busy";
       mail.claimedAt = db.clock;
       const reader = db.readers.get(mail.userId);
       if (!reader) return null;
-      return { kind: mail.kind, details: mail.details, ...reader };
+      const expired = mail.createdAt < db.clock - expiresMs;
+      return { kind: mail.kind, details: mail.details, expired, ...reader };
     },
     async finish(id, status) {
       const mail = db.mails.get(id);
@@ -385,6 +390,20 @@ describe("sending", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("never sends a mail its backup job reaches days late, as when the queue was down", async () => {
+    const billing = lifecycle();
+    send.mockRejectedValueOnce(new Error("provider down"));
+    db.account = subscription({ status: "past_due" });
+    await billing.afterSync("cus_1");
+    await settled(billing);
+    // Within the backup's own retries (a few hours) it still goes; a day after it was recorded, never.
+    db.clock += DAY + 1;
+    await tasks[BILLING_MAIL_TASK]?.(db.jobs.get(`${BILLING_MAIL_TASK}:mail-1`)?.payload);
+    expect(sent).toEqual([]);
+    expect(statuses()).toEqual(["skipped"]);
+    expect(db.removed).toEqual([`${BILLING_MAIL_TASK}:mail-1`]);
+  });
+
   it("skips an owner turned off since the mail was recorded", async () => {
     const billing = lifecycle();
     const hold = deferred<void>();
@@ -530,6 +549,16 @@ describe("the reminder before a plan ends", () => {
     expect(sent[0]?.text).toContain("22 Kasım 2026 tarihinde hesabınız Premium planına geçecek.");
   });
 
+  it("mails nothing when its job runs after the end, as when the queue was down", async () => {
+    const billing = lifecycle();
+    db.account = subscription({ cancelAtPeriodEnd: true, currentPeriodEndsAt: inDays(1) });
+    const job = { organizationId: "org", endsAt: inDays(1).toISOString() };
+    db.clock = inDays(2).getTime();
+    await billing.remindPlanEnding(job);
+    await settled(billing);
+    expect(sent).toEqual([]);
+  });
+
   it("mails nothing when the end moved, renewed, was removed, or names no plan", async () => {
     const billing = lifecycle();
     const job = { organizationId: "org", endsAt: inDays(3).toISOString() };
@@ -587,6 +616,22 @@ describe("failures and the queue", () => {
     await settled(billing);
     expect(sent).toEqual([]);
     expect(db.notices.size).toBe(0);
+  });
+
+  it("schedule only lines and tasks the real queue accepts", async () => {
+    const running = { stop: async () => undefined, promise: new Promise<void>(() => undefined) };
+    type Start = NonNullable<NonNullable<ConstructorParameters<typeof DozoJobQueue>[2]>["start"]>;
+    const start = vi.fn<Start>(async () => running as never);
+    const billing = createBillingLifecycle({
+      store: memoryStore().store,
+      email: { send, describe: () => ({ id: "test" }) } as never,
+      billingUrl: "https://app.example.com/app?settings=billing",
+      onError: () => undefined,
+      queue: (given, crontab) => new DozoJobQueue({} as never, given, { crontab, start }),
+    });
+    await billing.stop();
+    expect(start).toHaveBeenCalledOnce();
+    expect(start.mock.calls[0]?.[0].crontab).toBe(`17 * * * * ${BILLING_SWEEP_TASK}`);
   });
 
   it("stop the runner on stop, and run without one", async () => {
@@ -675,6 +720,7 @@ describe("the hourly sweep", () => {
       details: { plan: "Premium" },
       status: "pending",
       claimedAt: null,
+      createdAt: db.clock,
     });
     await billing.sweep();
     expect(db.jobs.get(`${PLAN_ENDING_TASK}:org`)?.runAt).toEqual(inDays(7));

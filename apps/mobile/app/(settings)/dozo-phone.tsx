@@ -3,7 +3,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert, Linking, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SettingsGroup, SettingsSwitch } from "../../components/settings-group";
+import { contactsAvailable } from "../../lib/dozo-phone-contacts";
+import type { PhoneKind } from "../../lib/dozo-phone-device";
 import { phoneDevice } from "../../lib/dozo-phone-device";
+import { locationAvailable } from "../../lib/dozo-phone-location";
 import { native, useThemedStyles } from "../../lib/native";
 import { useScreenHeader } from "../../lib/screen-header";
 import { useSideInsets } from "../../lib/side-insets";
@@ -20,23 +23,46 @@ export default function DozoPhone() {
   const styles = useThemedStyles(createStyles);
   const device = phoneDevice();
   const settings = useSyncExternalStore(device.subscribe, device.settings, device.settings);
-  // The tapped value while it is being switched, so the switch does not jump back meanwhile.
-  const [switching, setSwitching] = useState<boolean | null>(null);
+  // The tapped switch and value while it is being switched, so it does not jump back meanwhile.
+  const [switching, setSwitching] = useState<{ kind: PhoneKind; on: boolean } | null>(null);
   useScreenHeader({ title: t`Phone` });
+  // Calendar's module is there whenever this page is (the Phone row checks it); a build without
+  // the contacts or location module hides that switch.
+  const kinds: Array<{ kind: PhoneKind; label: string; denied: string }> = [
+    { kind: "calendar", label: t`Calendar`, denied: t`Allow calendar access in Settings.` },
+    ...(contactsAvailable()
+      ? [
+          {
+            kind: "contacts" as const,
+            label: t`Contacts`,
+            denied: t`Allow contacts access in Settings.`,
+          },
+        ]
+      : []),
+    ...(locationAvailable()
+      ? [
+          {
+            kind: "location" as const,
+            label: t`Location`,
+            denied: t`Allow location access in Settings.`,
+          },
+        ]
+      : []),
+  ];
 
   useEffect(() => {
     void device.sync();
   }, [device]);
 
-  // The switch is disabled while one runs; a second tap before that lands queues behind the first.
-  function switchCalendar(on: boolean) {
-    setSwitching(on);
+  // Every switch is disabled while one runs; a second tap before that lands queues behind it.
+  function switchKind(kind: PhoneKind, denied: string, on: boolean) {
+    setSwitching({ kind, on });
     device
-      .setCalendar(on)
+      .setSwitch(kind, on)
       .then(
         (result) => {
           if (result !== "denied") return;
-          Alert.alert(t`Allow calendar access in Settings.`, undefined, [
+          Alert.alert(denied, undefined, [
             { text: t`Cancel`, style: "cancel" },
             { text: t`Settings`, onPress: () => void Linking.openSettings() },
           ]);
@@ -53,13 +79,16 @@ export default function DozoPhone() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <SettingsGroup footer={t`Events a bot reads are sent to its AI model.`}>
-          <SettingsSwitch
-            label={t`Calendar`}
-            disabled={!settings.ready || switching !== null}
-            value={switching ?? settings.calendar}
-            onChange={switchCalendar}
-          />
+        <SettingsGroup footer={t`What a bot reads is sent to its AI model.`}>
+          {kinds.map(({ kind, label, denied }) => (
+            <SettingsSwitch
+              key={kind}
+              label={label}
+              disabled={!settings.ready || switching !== null}
+              value={switching?.kind === kind ? switching.on : settings[kind]}
+              onChange={(on) => switchKind(kind, denied, on)}
+            />
+          ))}
         </SettingsGroup>
       </ScrollView>
     </SafeAreaView>

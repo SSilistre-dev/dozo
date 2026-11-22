@@ -1,9 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, runAsTenant } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { recordDeviceCapabilities } from "./dozo-device-capabilities.js";
 import { phoneGate } from "./dozo-phone.js";
-import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
+import {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+} from "./dozo-phone.tool-definition.js";
+import {
+  createUserDeviceToken,
+  hashUserDeviceToken,
+  UserDevices,
+  userDeviceForwardSecret,
+} from "./dozo-user-device-gateway.js";
 import type { RunContext } from "./run-context.js";
 
 // Runs on the branded tree only, against a migrated database (dozo/docker/postgres-tests.sh), as
@@ -89,12 +100,20 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
   type Owner = Awaited<ReturnType<typeof ownRun>>;
 
   /** An effect of the tool as run-tool-gate records it: its request is the call's arguments. */
-  const effect = (owner: Owner, runId: string, status: string, request: object) =>
+  const effect = (
+    owner: Owner,
+    runId: string,
+    status: string,
+    request: object,
+    kind = PHONE_CALENDAR_READ_TOOL,
+    createdAt?: Date,
+  ) =>
     system.externalEffect.create({
       data: {
         spaceId: owner.spaceId,
         runId,
-        kind: PHONE_CALENDAR_READ_TOOL,
+        kind,
+        ...(createdAt ? { createdAt } : {}),
         idempotencyKey: randomUUID(),
         status,
         request: request as never,
@@ -102,15 +121,18 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
     });
 
   /** The real gate on a run of the owner's, with their phone connected. */
-  const gate = (owner: Owner, runId: string, args: Record<string, unknown>) => {
+  const gate = (
+    owner: Owner,
+    runId: string,
+    args: Record<string, unknown>,
+    tool = PHONE_CALENDAR_READ_TOOL,
+    userDevices: unknown = {
+      connectedPhone: async () => ({ deviceId: "phone-1", pairedAt: PAIRED, onSince: PAIRED }),
+    },
+  ) => {
     const ctx = {
       source: { userComputerOwner: owner.userId },
-      deps: {
-        prisma,
-        userDevices: {
-          connectedPhone: async () => ({ deviceId: "phone-1", pairedAt: PAIRED }),
-        },
-      },
+      deps: { prisma, userDevices },
       bot: { id: owner.bot.id },
       run: { id: runId, botId: owner.bot.id, threadId: owner.thread.id, spaceId: owner.spaceId },
       runId,
@@ -118,7 +140,7 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
       state: {},
       trust: { receivedOutsideMessage: async () => false },
     } as unknown as RunContext;
-    return runAsTenant(owner, () => phoneGate(ctx, false, args));
+    return runAsTenant(owner, () => phoneGate(ctx, false, tool, args));
   };
 
   it("lets the call whose own card was allowed run, whatever the order of its keys", async () => {
@@ -155,5 +177,92 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
     await effect(owner, earlier.id, "completed", { ...RANGE });
     const other = { from: "2026-12-01T00:00:00+03:00", to: "2026-12-02T00:00:00+03:00" };
     expect(await gate(owner, run.id, other)).toBe("allow");
+  });
+
+  it("holds each tool's consent apart: a calendar read lets no contacts search through", async () => {
+    const owner = await ownRun();
+    const earlier = await owner.newRun();
+    const run = await owner.newRun();
+    const search = { query: "Ada", field: "phone" };
+    await effect(owner, earlier.id, "completed", { ...RANGE });
+    expect(await gate(owner, run.id, search, PHONE_CONTACTS_SEARCH_TOOL)).toBe("ask");
+    await effect(
+      owner,
+      run.id,
+      "approved",
+      { field: "phone", query: "Ada" },
+      PHONE_CONTACTS_SEARCH_TOOL,
+    );
+    expect(await gate(owner, run.id, search, PHONE_CONTACTS_SEARCH_TOOL)).toBe("allow");
+    expect(await gate(owner, run.id, { ...search, query: "Bob" }, PHONE_CONTACTS_SEARCH_TOOL)).toBe(
+      "ask",
+    );
+    await effect(owner, earlier.id, "completed", search, PHONE_CONTACTS_SEARCH_TOOL);
+    const later = await owner.newRun();
+    expect(
+      await gate(owner, later.id, { ...search, query: "Bob" }, PHONE_CONTACTS_SEARCH_TOOL),
+    ).toBe("allow");
+  });
+
+  it("asks for every location read, approximate too: only the call's own card lets it run", async () => {
+    const owner = await ownRun();
+    const earlier = await owner.newRun();
+    const run = await owner.newRun();
+    for (const precision of ["approximate", "precise"]) {
+      const args = { precision };
+      await effect(owner, earlier.id, "completed", args, PHONE_LOCATION_TOOL);
+      expect(await gate(owner, run.id, args, PHONE_LOCATION_TOOL)).toBe("ask");
+      await effect(owner, run.id, "approved", args, PHONE_LOCATION_TOOL);
+      expect(await gate(owner, run.id, { precision }, PHONE_LOCATION_TOOL)).toBe("allow");
+      const later = await owner.newRun();
+      expect(await gate(owner, later.id, args, PHONE_LOCATION_TOOL)).toBe("ask");
+    }
+  });
+
+  it("asks again once a kind's switch was turned off and on, and keeps the other kinds' consent", async () => {
+    const owner = await ownRun();
+    const phone = await system.userDevice.create({
+      data: {
+        userId: owner.userId,
+        name: "Phone",
+        platform: "ios",
+        tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+        createdAt: PAIRED,
+      },
+    });
+    await system.userDeviceConnection.create({
+      data: { deviceId: phone.id, connectionId: randomUUID(), address: "http://api-1" },
+    });
+    const devices = new UserDevices({ prisma, forwardSecret: userDeviceForwardSecret("test") });
+    await recordDeviceCapabilities(prisma, phone.id, ["calendar", "contacts"]);
+    const turnedOn = (await devices.connectedPhone(owner.userId, "contacts"))!.onSince;
+    expect(turnedOn.getTime()).toBeGreaterThan(PAIRED.getTime());
+    // A read of each kind since they were turned on: the owner's consent.
+    const read = new Date(turnedOn.getTime() + 1);
+    const search = { query: "Ada", field: "phone" };
+    const earlier = await owner.newRun();
+    await effect(owner, earlier.id, "completed", search, PHONE_CONTACTS_SEARCH_TOOL, read);
+    await effect(owner, earlier.id, "completed", { ...RANGE }, PHONE_CALENDAR_READ_TOOL, read);
+    const allowed = async () => {
+      const run = await owner.newRun();
+      return [
+        await gate(owner, run.id, { ...search }, PHONE_CONTACTS_SEARCH_TOOL, devices),
+        await gate(owner, run.id, { ...RANGE }, PHONE_CALENDAR_READ_TOOL, devices),
+      ];
+    };
+    expect(await allowed()).toEqual(["allow", "allow"]);
+    // The same declaration again (a reconnect) keeps the moment.
+    await recordDeviceCapabilities(prisma, phone.id, ["calendar", "contacts"]);
+    expect((await devices.connectedPhone(owner.userId, "contacts"))!.onSince).toEqual(turnedOn);
+    await vi.waitUntil(() => Date.now() > read.getTime() + 5);
+    // Contacts off, then on again: its consent is gone; the calendar's stays.
+    await recordDeviceCapabilities(prisma, phone.id, ["calendar"]);
+    await recordDeviceCapabilities(prisma, phone.id, ["calendar", "contacts"]);
+    expect(await allowed()).toEqual(["ask", "allow"]);
+    // A device that stops declaring (null) forgets every kind.
+    await recordDeviceCapabilities(prisma, phone.id, null);
+    const left = await system.$queryRaw<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM dozo_device_capability_since WHERE "deviceId" = ${phone.id}`;
+    expect(left[0]?.count).toBe(0);
   });
 });
