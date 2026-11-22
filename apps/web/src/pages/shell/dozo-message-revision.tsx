@@ -88,16 +88,13 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
   };
 
   // A reply a backup wrote names it, quietly, where the message's own actions are.
-  const backup = latest?.backupReplies?.[messageId]?.model;
+  const model = latest?.backupReplies?.[messageId];
 
   const items = (
     <>
-      {backup ? (
-        <div
-          className="px-2 py-1.5 text-body-sm text-muted-foreground"
-          data-testid="dozo-backup-reply"
-        >
-          <Trans>Answered by {backup}</Trans>
+      {model ? (
+        <div className="px-2 py-1.5 text-body-sm text-muted-foreground">
+          <Trans>Answered by {model}</Trans>
         </div>
       ) : null}
       {canEdit ? (

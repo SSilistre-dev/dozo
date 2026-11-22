@@ -30,15 +30,21 @@ export async function recordBackupReply(
       "updatedAt" = CURRENT_TIMESTAMP`;
 }
 
-/** The chat's latest replies a backup wrote, by message, with that backup. */
+/**
+ * The chat's latest replies a backup wrote for runs of `userId`'s own, by message, with that
+ * backup. Another member of a shared chat is told nothing: which backup ran, and its name, is
+ * that person's own setting.
+ */
 export async function readBackupReplies(
   db: Db,
   threadId: string,
+  userId: string,
   limit = 200,
 ): Promise<Array<{ messageId: string; provider: string; modelId: string }>> {
   return db.$queryRaw`
     SELECT m."id" AS "messageId", b."provider", b."modelId"
     FROM "dozo_backup_replies" b
+    JOIN "runs" r ON r."id" = b."runId" AND r."userId" = ${userId}
     JOIN "messages" m ON m."runId" = b."runId" AND m."threadId" = b."threadId"
     WHERE b."threadId" = ${threadId} AND m."role" = 'bot'
     ORDER BY m."seq" DESC

@@ -72,7 +72,7 @@ describe("useDozoRestNote", () => {
     }));
     await act(async () => root.render(<Probe />));
     await vi.waitFor(() => expect(note("a", "m")).toMatch(/^Opens at .+/));
-    expect(api.rpc).toHaveBeenCalledWith("dozoModelPool/rests", undefined, expect.anything());
+    expect(api.rpc).toHaveBeenCalledWith("dozoModelPool/get", undefined, expect.anything());
     // The whole connection rests, so every model on it; days away names the day.
     expect(note("b", "any")).toMatch(/^Opens at .+/);
     expect(note("b", "any")).not.toBe(note("a", "m"));

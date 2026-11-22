@@ -18,7 +18,6 @@ import { useSpaceRpc } from "../../lib/space-rpc";
 import { useDozoRestNote } from "../model-settings/dozo-model-rests";
 import type { RoleModelOption } from "../model-settings/role-model-picker";
 import { RoleModelPicker } from "../model-settings/role-model-picker";
-import { DOZO_BOT_BACKUPS_KEY } from "./dozo-bot-backups-signal";
 
 const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
   provider: option.provider,
@@ -50,7 +49,9 @@ export function DozoBotBackups({
   const rpc = useSpaceRpc();
   const queries = useSpaceQueries();
   const userId = useQueryUserId();
-  const key = [DOZO_BOT_BACKUPS_KEY, userId, spaceId, botId];
+  // Under the model pool's key: the roster signal that re-reads the pool, which a change to a bot's
+  // backups sends, reads these again too, with no code of their own in the app's first paint.
+  const key = ["dozoModelPool", "botBackups", userId, spaceId, botId];
   const saved = useQuery({
     queryKey: key,
     queryFn: () => rpc.dozoBotModelBackups.get({ botId }),

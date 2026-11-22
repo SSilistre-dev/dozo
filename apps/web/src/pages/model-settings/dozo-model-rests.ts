@@ -8,12 +8,17 @@ import { rpc } from "../../lib/rpc";
  * Which of the person's models rest now, after their quota ran out or their key was refused
  * (packages/adapters/src/dozo-model-rests.ts), as a model row's secondary line: when it opens
  * again. Read under the model pool's key, so the roster signal a new rest sends reads it again.
+ *
+ * The phone has its own copy of these few lines (apps/mobile/lib/dozo-model-rests.ts and
+ * apps/web/src/pages/model-settings/dozo-model-rests.ts): a shared one in @rakazo/contracts would
+ * ride the package's one entry into the web's first paint, which has no room for it.
  */
 export function useDozoRestNote() {
   const { t, i18n } = useLingui();
   const rests = useQuery({
-    queryKey: ["dozoModelPool", "rests", useQueryUserId()],
-    queryFn: () => rpc.dozoModelPool.rests(),
+    // The pool's own read, which carries them: one cache entry for both.
+    queryKey: ["dozoModelPool", useQueryUserId()],
+    queryFn: () => rpc.dozoModelPool.get(),
     refetchOnWindowFocus: "always",
   }).data?.rests;
   const now = useNow(rests?.length ? 60_000 : null);

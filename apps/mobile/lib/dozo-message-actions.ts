@@ -259,13 +259,13 @@ export function useDozoMessageActions(
   const text = canEdit ? messageText(message) : "";
   const confirmed = confirmedFor(revisable, messageId);
   // A reply a backup wrote names it, quietly, first in the message's menu.
-  const backup = sent ? revisable?.backupReplies?.[messageId]?.model : undefined;
+  const backup = sent ? revisable?.backupReplies?.[messageId] : undefined;
   return useMemo(() => {
     const actions: DozoMessageAction[] = [];
     if (backup)
       actions.push({
         name: "dozoBackup",
-        text: t`Answered by ${backup}`,
+        text: t`Answered by ${ph({ model: backup })}`,
         symbol: "info.circle",
         icon: "information-circle-outline",
         disabled: true,

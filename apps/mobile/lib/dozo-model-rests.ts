@@ -9,11 +9,16 @@ import { useRosterSignals } from "./roster-signals";
  * Which of the person's models rest now, after their quota ran out or their key was refused, as a
  * model row's detail: when it opens again, in the pool's own words. Read again on the roster
  * signal a new rest sends.
+ *
+ * The phone has its own copy of these few lines (apps/mobile/lib/dozo-model-rests.ts and
+ * apps/web/src/pages/model-settings/dozo-model-rests.ts): a shared one in @rakazo/contracts would
+ * ride the package's one entry into the web's first paint, which has no room for it.
  */
 export function useDozoRestNote() {
   const { t } = useLingui();
   const locale = dateLocaleForUi(useUiLocale());
-  const read = accountRpcQuery("dozoModelPool/rests");
+  // The pool's own read, which carries them: one cache entry for both.
+  const read = accountRpcQuery("dozoModelPool/get");
   const rests = useQuery(read, queryClient).data?.rests;
   useRosterSignals(() => queryClient.invalidateQueries({ queryKey: read.queryKey }), true);
   const now = useNow(rests?.length ? 60_000 : null);

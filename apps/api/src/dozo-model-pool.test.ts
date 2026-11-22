@@ -63,7 +63,8 @@ describe("model pool routes", () => {
   });
 
   it("reads the caller's own pool", async () => {
-    expect(await client("ada").get()).toEqual({ connections: [] });
+    fake.rests.mockResolvedValue([]);
+    expect(await client("ada").get()).toEqual({ connections: [], rests: [] });
     expect(fake.read).toHaveBeenCalledWith({ prisma, secretStore: secrets }, "ada");
   });
 
@@ -102,7 +103,9 @@ describe("model pool routes", () => {
       },
       { credentialId: "b", modelId: "", resetsAt: new Date("2026-11-22T10:05:00.000Z") },
     ]);
-    expect(await client("ada").rests()).toEqual({
+    fake.read.mockResolvedValue(POOL);
+    expect(await client("ada").get()).toEqual({
+      ...POOL,
       rests: [
         { credentialId: "a", modelId: "m", opensAt: "2026-11-22T12:00:00.000Z" },
         { credentialId: "b", modelId: "", opensAt: "2026-11-22T10:05:00.000Z" },

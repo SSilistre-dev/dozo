@@ -29,10 +29,12 @@ describe("recordBackupReply", () => {
 });
 
 describe("readBackupReplies", () => {
-  it("reads the chat's latest replies a backup wrote", async () => {
+  it("reads the chat's latest replies a backup wrote for the caller's own runs", async () => {
     const rows = [{ messageId: "message-1", provider: "p", modelId: "m" }];
     const db = fakeDb(rows);
-    expect(await readBackupReplies(db as never, "thread-1")).toEqual(rows);
-    expect(db.$queryRaw.mock.calls[0]?.slice(1)).toEqual(["thread-1", 200]);
+    expect(await readBackupReplies(db as never, "thread-1", "user-1")).toEqual(rows);
+    const [strings, ...values] = db.$queryRaw.mock.calls[0]!;
+    expect(strings.join("?")).toContain('r."userId" =');
+    expect(values).toEqual(["user-1", "thread-1", 200]);
   });
 });

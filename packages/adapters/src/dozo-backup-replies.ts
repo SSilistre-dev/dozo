@@ -24,13 +24,15 @@ export function runStartedOn(
   running: { provider: string; id: string },
 ) {
   if (!selected.provider || !selected.id) return Promise.resolve(undefined);
+  if (same(selected, running)) {
+    // An earlier attempt of the run may have run on a backup: its mark goes, without holding up
+    // the start (most runs start on their model and have none).
+    void bestEffort("backup reply record", recordBackupReply(prisma, run, null));
+    return Promise.resolve(undefined);
+  }
   return bestEffort(
     "backup reply record",
-    recordBackupReply(
-      prisma,
-      run,
-      same(selected, running) ? null : { provider: running.provider, modelId: running.id },
-    ),
+    recordBackupReply(prisma, run, { provider: running.provider, modelId: running.id }),
   );
 }
 

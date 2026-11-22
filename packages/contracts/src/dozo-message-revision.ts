@@ -29,7 +29,7 @@ export const DozoRevisableSchema = z.object({
    * The chat's latest replies a backup model wrote instead of the chosen one, by message: that
    * model's name, for the message's menu. Absent when there are none.
    */
-  backupReplies: z.record(Id, z.object({ model: z.string() })).optional(),
+  backupReplies: z.record(Id, z.string()).optional(),
 });
 export type DozoRevisable = z.infer<typeof DozoRevisableSchema>;
 

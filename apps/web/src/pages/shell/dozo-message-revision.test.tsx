@@ -205,17 +205,13 @@ it("says which backup wrote a reply, first in its menu, and nothing on other rep
   api.revisable.mockResolvedValue({
     editMessageId: null,
     regenerateMessageId: null,
-    backupReplies: { "m-reply": { model: "Model B" } },
+    backupReplies: { "m-reply": "Model B" },
   });
   await render(reply);
-  await vi.waitFor(() =>
-    expect(container.querySelector("[data-testid=dozo-backup-reply]")?.textContent).toBe(
-      "Answered by Model B",
-    ),
-  );
+  await vi.waitFor(() => expect(container.textContent).toContain("Answered by Model B"));
   await render(ask);
   await vi.waitFor(() => expect(api.revisable).toHaveBeenCalled());
-  expect(container.querySelector("[data-testid=dozo-backup-reply]")).toBeNull();
+  expect(container.textContent).not.toContain("Answered by");
 });
 
 it("never asks for a message still streaming", async () => {

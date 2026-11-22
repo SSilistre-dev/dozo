@@ -11431,21 +11431,6 @@
       "reason": "bot backups: the bot's own ordered backup models sit under its model, one Add fallback line until there is one"
     },
     {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
-      "replace": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoBotBackupsChanged } from \"./dozo-bot-backups-signal\";\nimport { dozoCliAccountsChanged }",
-      "requires": [
-        "apps/web/src/pages/shell/dozo-bot-backups-signal.ts"
-      ],
-      "reason": "bot backups: the import of the rule below"
-    },
-    {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
-      "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
-      "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
-    },
-    {
       "file": "packages/adapters/src/run-model-start.ts",
       "find": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { isRetiredModelCredentialError }",
       "replace": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { backupsPastRests, startPastRest } from \"./dozo-model-rests.js\";\nimport { isRetiredModelCredentialError }",
@@ -11598,7 +11583,7 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Yedek ekle\"\n\n#: apps/mobile/components/login-fields-editor.tsx\n",
-      "replace": "msgstr \"Yedek ekle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Answered by {backup}\"\nmsgstr \"{backup} yanıtladı\"\n\n#: apps/mobile/components/login-fields-editor.tsx\n",
+      "replace": "msgstr \"Yedek ekle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Answered by {model}\"\nmsgstr \"{model} yanıtladı\"\n\n#: apps/mobile/components/login-fields-editor.tsx\n",
       "reason": "backup replies: the Turkish copy of the one new line, in a message's menu when a backup model wrote the reply"
     },
     {

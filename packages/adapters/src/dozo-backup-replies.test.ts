@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({ record: vi.fn() }));
@@ -21,6 +22,14 @@ describe("runStartedOn", () => {
     expect(db.record).toHaveBeenLastCalledWith(prisma, run, { provider: "q", modelId: "backup" });
     await runStartedOn(prisma, run, { provider: "p", id: "main" }, { provider: "p", id: "main" });
     expect(db.record).toHaveBeenLastCalledWith(prisma, run, null);
+  });
+
+  it("does not hold up a run that starts on its chosen model while it clears the mark", async () => {
+    const clearing = deferred<undefined>();
+    db.record.mockReturnValue(clearing.promise);
+    await runStartedOn(prisma, run, { provider: "p", id: "main" }, { provider: "p", id: "main" });
+    expect(db.record).toHaveBeenCalledWith(prisma, run, null);
+    clearing.resolve(undefined);
   });
 
   it("records nothing for a run that chose no model", async () => {

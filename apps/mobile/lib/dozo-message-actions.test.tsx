@@ -20,6 +20,11 @@ vi.mock("@lingui/react/macro", () => ({
       strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
   }),
 }));
+// A named placeholder shows its value, as the compiled message does.
+vi.mock("@lingui/core/macro", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@lingui/core/macro")>()),
+  ph: (named: Record<string, unknown>) => Object.values(named)[0],
+}));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -144,7 +149,7 @@ describe("a message's menu on mobile", () => {
     answers["dozoMessages/revisable"] = {
       editMessageId: null,
       regenerateMessageId: null,
-      backupReplies: { "m-bot": { model: "Model B" } },
+      backupReplies: { "m-bot": "Model B" },
     };
     await render(<Row m={message("m-bot", { role: "bot" })} />);
     await shows(["Answered by Model B", "Pin"]);
@@ -426,6 +431,22 @@ describe("the menus' own entries", () => {
         attributes: { disabled: true },
       },
     ]);
+  });
+
+  it("show that line on Android as a row with its icon, which a tap only closes", () => {
+    const note: DozoMessageAction = {
+      name: "dozoBackup",
+      text: "Answered by Model B",
+      symbol: "info.circle",
+      icon: "information-circle-outline",
+      disabled: true,
+      onPress: () => undefined,
+    };
+    // The Android menu has no greyed row: it draws the line like the others, closes on a tap and
+    // runs the line's action, which does nothing (message-action-menu.tsx).
+    const [[row]] = dozoSheetGroups([note]) as [[DozoMessageAction]];
+    expect(row).toMatchObject({ text: "Answered by Model B", icon: "information-circle-outline" });
+    expect(row.onPress()).toBeUndefined();
   });
 });
 

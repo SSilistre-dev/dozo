@@ -1049,7 +1049,7 @@ describe("withBackupReplies", () => {
       ]),
     ).toEqual({
       ...revisable,
-      backupReplies: { m1: { model: "Model A" }, m2: { model: "model-b" } },
+      backupReplies: { m1: "Model A", m2: "model-b" },
     });
   });
 

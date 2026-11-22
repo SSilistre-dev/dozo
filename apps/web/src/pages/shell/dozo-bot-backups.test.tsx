@@ -18,7 +18,7 @@ vi.mock("../../lib/rpc", () => {
   const rpc = {
     dozoBotModelBackups: { get: api.get, set: api.set },
     models: { credentials: api.credentials, forRole: api.forRole },
-    dozoModelPool: { rests: api.rests },
+    dozoModelPool: { get: api.rests },
   };
   return {
     rpc,
@@ -95,7 +95,6 @@ vi.mock("../model-settings/role-model-picker", () => ({
 
 import { QueryUserProvider } from "../../lib/query";
 import { DozoBotBackups } from "./dozo-bot-backups";
-import { dozoBotBackupsChanged } from "./dozo-bot-backups-signal";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -152,7 +151,7 @@ beforeEach(() => {
   api.set.mockReset().mockImplementation(async ({ backups }) => ({ backups }));
   api.credentials.mockReset().mockResolvedValue(CREDENTIALS);
   api.forRole.mockReset().mockResolvedValue(CATALOG);
-  api.rests.mockReset().mockResolvedValue({ rests: [] });
+  api.rests.mockReset().mockResolvedValue({ connections: [], rests: [] });
   api.toastError.mockReset();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement("div");
@@ -224,7 +223,8 @@ describe("DozoBotBackups", () => {
     await vi.waitFor(() => expect(texts()[0]).toContain("Model A"));
     api.get.mockResolvedValue({ backups: [{ provider: "provider-x", modelId: "gone" }] });
     await act(async () => {
-      await dozoBotBackupsChanged(client);
+      // What the roster signal does: dozoModelPoolChanged in dozo-model-pool.tsx.
+      await client.invalidateQueries({ queryKey: ["dozoModelPool"] });
     });
     await vi.waitFor(() => expect(texts()[0]).toContain("gone"));
   });

@@ -151,10 +151,6 @@ export function planRevision(history: RevisionHistory | null, userId: string): R
 }
 
 /**
- * The newest turn's messages in the two fields every client reads, older ones only when any, and
- * for every message named what changing it removes, which the client sends back as confirmed.
- */
-/**
  * The revisable answer with the chat's replies a backup wrote, each named by the model's name in
  * the catalog, else its id.
  */
@@ -169,11 +165,15 @@ export function withBackupReplies(
   return {
     ...revisable,
     backupReplies: Object.fromEntries(
-      replies.map((reply) => [reply.messageId, { model: name(reply.provider, reply.modelId) }]),
+      replies.map((reply) => [reply.messageId, name(reply.provider, reply.modelId)]),
     ),
   };
 }
 
+/**
+ * The newest turn's messages in the two fields every client reads, older ones only when any, and
+ * for every message named what changing it removes, which the client sends back as confirmed.
+ */
 export function revisableOf(
   targets: readonly RevisionTarget[],
   lastMessageId: string | null,
@@ -423,7 +423,7 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
         );
         return withBackupReplies(
           revisableOf(planRevision(history, userId), history.lastMessageId),
-          await readBackupReplies(deps.prisma, thread.id),
+          await readBackupReplies(deps.prisma, thread.id, userId),
         );
       }),
       edit: authed.dozoMessages.edit.handler(({ context, input }) =>

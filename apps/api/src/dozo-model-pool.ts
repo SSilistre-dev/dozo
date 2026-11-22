@@ -13,7 +13,8 @@ export function dozoModelPoolRoutes(ctx: RouterContext) {
   const poolDeps = { prisma: deps.prisma, secretStore: deps.secrets };
   return {
     dozoModelPool: {
-      rests: authed.dozoModelPool.rests.handler(async ({ context }) => ({
+      get: authed.dozoModelPool.get.handler(async ({ context }) => ({
+        ...(await readDozoModelPool(poolDeps, context.actor.userId)),
         rests: (await readActiveModelRests(deps.prisma, context.actor.userId, new Date())).map(
           (rest) => ({
             credentialId: rest.credentialId,
@@ -22,9 +23,6 @@ export function dozoModelPoolRoutes(ctx: RouterContext) {
           }),
         ),
       })),
-      get: authed.dozoModelPool.get.handler(({ context }) =>
-        readDozoModelPool(poolDeps, context.actor.userId),
-      ),
       set: authed.dozoModelPool.set.handler(async ({ context, input }) => {
         const { pool, provider } = await setDozoModelPool(poolDeps, context.actor.userId, input);
         await recordAuditEvent({
