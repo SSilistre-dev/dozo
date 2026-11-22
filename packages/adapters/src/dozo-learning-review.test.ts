@@ -396,6 +396,7 @@ function setup(options: {
     paymentWallet: {} as never,
     resolveModel,
     resolveConnectedModel,
+    events: { publishRosterChange: vi.fn(async () => undefined) },
   } satisfies LearningReviewDeps;
   return { deps, notes, model, db, resolveModel, resolveConnectedModel };
 }
@@ -450,6 +451,10 @@ describe("reviewLearning", () => {
     expect(request!.prompt).toContain("Bot: Noted, Ada.");
     expect(request!.prompt).toContain("<owner_notes>\nLikes tea\n</owner_notes>");
     expect(request!.prompt).toContain("<rejected_notes>\n(none)\n</rejected_notes>");
+    // The owner's open memory panel and learned list read again; the signal carries nothing.
+    expect(run.deps.events.publishRosterChange).toHaveBeenCalledExactlyOnceWith({
+      userIds: [OWNER],
+    });
   });
 
   it("asks for short notes about the owner, never instructions to the bot", () => {
@@ -644,6 +649,8 @@ describe("reviewLearning", () => {
       expect(run.notes.commit).not.toHaveBeenCalled();
       expect(store.changes).toEqual([]);
       expect(store.turns).toEqual([]);
+      // Nothing changed: nothing to read again.
+      expect(run.deps.events.publishRosterChange).not.toHaveBeenCalled();
     }
   });
 
@@ -1227,6 +1234,7 @@ describe("undo", () => {
     prisma: prisma([], notes) as never,
     memory: notes,
     jobs: { enqueueIn: vi.fn(async () => undefined) },
+    events: { publishRosterChange: vi.fn(async () => undefined) },
   });
   const seed = (change: LearningChangeInput & Partial<Change>) => {
     store.changes = [{ id: "c1", botId: BOT.id, undoneAt: null, ...change }];
@@ -1238,6 +1246,9 @@ describe("undo", () => {
     const addedDeps = deps(added);
     const undone = await undoLearningChange(addedDeps, actor, "c1", check);
     expect(added.doc.content).toBe("Likes tea\n");
+    expect(addedDeps.events.publishRosterChange).toHaveBeenCalledExactlyOnceWith({
+      userIds: [OWNER],
+    });
     expect(undone.undoneAt).toEqual(expect.any(String));
     expect(undone).not.toHaveProperty("botId");
     expect(check).toHaveBeenCalledWith(BOT.id);

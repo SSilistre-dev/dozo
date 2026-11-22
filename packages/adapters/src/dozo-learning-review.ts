@@ -21,8 +21,9 @@ import {
 } from "@rakazo/db";
 import type { CompactionModelSources } from "./dozo-compaction-model.js";
 import { compactWithRoleModel } from "./dozo-compaction-model.js";
-import type { DozoLearningMemory } from "./dozo-learning-apply.js";
+import type { DozoLearningMemory, LearningEvents } from "./dozo-learning-apply.js";
 import {
+  learningChanged,
   linesOf,
   parseLearningAnswer,
   saveLearnedNotes,
@@ -88,7 +89,10 @@ export type LearningReviewDeps = RunRedactionDeps & {
   /** The bot's own model, which a review falls back to as compaction does. */
   resolveModel: (scope: { userId: string; spaceId: string; botId?: string }) => Promise<Model>;
   resolveConnectedModel: CompactionModelSources["resolveConnectedModel"];
+  /** Tells the owner's apps that the notes changed (learningChanged). */
+  events?: LearningEvents;
 };
+
 
 /**
  * Whether the bot may learn: nobody but its owner is a member or guest of its Space, the rule the
@@ -336,12 +340,13 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
   }
   const ops = parseLearningAnswer(answer, new Set(own.keys()));
   if (ops?.length) {
-    await saveLearnedNotes(deps, bot, context, {
+    const applied = await saveLearnedNotes(deps, bot, context, {
       ops,
       labels: own,
       rejected: new Set(rejected),
       source: { threadId: newest.threadId, messageId: newest.messageId },
     });
+    if (applied.length) await learningChanged(deps.events, bot.userId);
   }
   // An answer that broke the contract is not asked again for the same turns.
   await consumeLearningTurns(deps.prisma, bot.id, turns);
@@ -380,6 +385,7 @@ export function dozoLearningReviewJob(
   deps: RunRedactionDeps & {
     runtime: AgentRuntime;
     jobs: JobPublisher;
+    events?: LearningEvents;
     memory: DozoLearningMemory;
     executor: Pick<LearningReviewDeps, "resolveModel" | "resolveConnectedModel">;
   },
@@ -401,6 +407,7 @@ export function dozoLearningReviewJob(
           paymentWallet: deps.paymentWallet,
           resolveModel: deps.executor.resolveModel,
           resolveConnectedModel: deps.executor.resolveConnectedModel,
+          events: deps.events,
         },
         botId,
       );

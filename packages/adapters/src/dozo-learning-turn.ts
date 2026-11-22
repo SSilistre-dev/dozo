@@ -77,6 +77,7 @@ const reviewDeps = (ctx: RunContext): LearningReviewDeps => ({
   paymentWallet: ctx.deps.paymentWallet,
   resolveModel: (scope) => resolveRunModel(ctx.deps, scope),
   resolveConnectedModel: (...args) => resolveConnectedRunModel(ctx.deps, ...args),
+  events: ctx.deps.events,
 });
 
 async function recordTurn(ctx: RunContext, start: typeof startNow) {

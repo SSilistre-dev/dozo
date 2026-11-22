@@ -10,7 +10,7 @@ import {
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { ClientError, retry } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import * as z from "zod";
 import { LEARNING_MAX_CHANGES } from "./dozo-learning-review.prompt.js";
@@ -33,6 +33,17 @@ import { byteLength } from "./utf8.js";
 export type DozoLearningMemory = Pick<MemoryStore, "read" | "commit">;
 type Bot = { id: string; spaceId: string };
 type Db = PrismaClient;
+
+export type LearningEvents = Pick<ThreadEvents, "publishRosterChange">;
+
+/**
+ * After the bot's notes and its list of learned changes changed: a signal without content on the
+ * owner's own topic (only they see the list), on which their open memory panel and learned list
+ * read again.
+ */
+export async function learningChanged(events: LearningEvents | undefined, ownerId: string) {
+  await events?.publishRosterChange?.({ userIds: [ownerId] });
+}
 
 const MEMORY_SAVE_ATTEMPTS = 3;
 /**
@@ -324,7 +335,12 @@ export function learningSettleJob(botId: string, availableAt: Date): BackgroundJ
  * more; a change whose write is under way is answered as it is.
  */
 export async function undoLearningChange(
-  deps: { prisma: Db; memory: DozoLearningMemory; jobs: Pick<JobPublisher, "enqueueIn"> },
+  deps: {
+    prisma: Db;
+    memory: DozoLearningMemory;
+    jobs: Pick<JobPublisher, "enqueueIn">;
+    events?: LearningEvents;
+  },
   actor: { spaceId: string; userId: string },
   changeId: string,
   checkBot: (botId: string) => Promise<unknown>,
@@ -385,6 +401,8 @@ export async function undoLearningChange(
     throw error;
   }
   await settleLearningWrite(deps.prisma, tag, true);
+  // Only the bot's owner undoes (checkBot): theirs is the topic.
+  await learningChanged(deps.events, actor.userId);
   return { ...shown, undoneAt: new Date().toISOString() };
 }
 

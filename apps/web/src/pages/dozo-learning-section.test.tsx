@@ -63,6 +63,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 
 import { QueryUserProvider } from "../lib/query";
+import { dozoLearningChanged } from "./dozo-learning-changed";
 import { DozoLearningSection } from "./dozo-learning-section";
 
 let container: HTMLDivElement;
@@ -307,4 +308,38 @@ it("shows nothing in a Space with someone else while nothing was learned", async
   await show();
   await act(async () => undefined);
   expect(container.textContent).toBe("");
+});
+
+it("reads the learned list and the bot's memory again on a roster signal, and nothing else", async () => {
+  api.get.mockResolvedValue({
+    mode: "auto",
+    available: true,
+    changes: [change("c1", { after: "Prefers tea" })],
+  });
+  await render();
+  expect(api.get).toHaveBeenCalledTimes(1);
+  const memoryKeys = [
+    [
+      ["user:user-1", "space:", "memory", "list"],
+      { input: { botId: "bot-1", scope: "bot" }, type: "query" },
+    ],
+    [["user:user-1", "space:", "memory", "budget"], { input: { botId: "bot-1" }, type: "query" }],
+  ];
+  const otherKeys = [
+    [["user:user-1", "space:", "memory", "list"], { input: { scope: "user" }, type: "query" }],
+    [["user:user-1", "space:", "spaces", "list"], { type: "query" }],
+  ];
+  for (const queryKey of [...memoryKeys, ...otherKeys]) client.setQueryData(queryKey, []);
+  api.get.mockResolvedValue({
+    mode: "auto",
+    available: true,
+    changes: [change("c2", { after: "Works nights" }), change("c1", { after: "Prefers tea" })],
+  });
+  await act(() => dozoLearningChanged(client));
+  await vi.waitFor(() => expect(undoButton("Works nights")).toBeDefined());
+  expect(api.get).toHaveBeenCalledTimes(2);
+  for (const queryKey of memoryKeys)
+    expect(client.getQueryState(queryKey)?.isInvalidated).toBe(true);
+  for (const queryKey of otherKeys)
+    expect(client.getQueryState(queryKey)?.isInvalidated).toBe(false);
 });

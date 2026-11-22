@@ -12232,6 +12232,21 @@
       "find": "            <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>",
       "replace": "            <SettingsGroup\n              label={t`Model`}\n              footer={\n                modelMetaError ??\n                dozoRestNote(effectiveCredential?.id, effectiveModelId ?? \"\") ??\n                undefined\n              }\n            >",
       "reason": "model rests on mobile: the bot's model, its own or the main one, says under its group when it opens again while it rests"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
+      "replace": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoLearningChanged } from \"../dozo-learning-changed\";\nimport { dozoCliAccountsChanged }",
+      "requires": [
+        "apps/web/src/pages/dozo-learning-changed.ts"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
+      "replace": "          void dozoOrganizationMarkChanged();\n          void dozoLearningChanged();\n          void dozoCliAccountsChanged();\n",
+      "reason": "bot learning: a review's or an undo's change to a bot's notes comes on its owner's roster signal, so an open memory panel and learned list read them again"
     }
   ],
   "assets": {
