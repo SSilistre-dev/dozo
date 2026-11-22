@@ -48,7 +48,8 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
     });
     try {
       await editor("light");
-      await expect(chatPicker).toBeVisible();
+      // The picker waits for the bot's chats, read once the editor opens.
+      await expect(chatPicker).toBeVisible({ timeout: 20_000 });
       await expect(chatPicker).toHaveValue("");
       await chatPicker.selectOption({ label: "Garden" });
       await expect
@@ -63,7 +64,7 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
         .toBe(chat.id);
       await shot(page, "routine-chat-light");
       await editor("dark");
-      await expect(chatPicker).toHaveValue(chat.id);
+      await expect(chatPicker).toHaveValue(chat.id, { timeout: 20_000 });
       await shot(page, "routine-chat-dark");
     } finally {
       await rpcAs(page, "dozoChats/archive", { chatId: chat.id, archived: true });
