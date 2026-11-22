@@ -32,7 +32,7 @@ function lookups(...answers: Array<{ member: boolean; seq: number | null }>) {
 
 async function* source(events: ProductEvent[], closed: { done: boolean }) {
   try {
-    yield* events;
+    for (const next of events) yield next;
   } finally {
     closed.done = true;
   }
@@ -93,5 +93,45 @@ describe("dozoWhileMember", () => {
     void stream.next();
     await stream.return(undefined);
     expect(waiting.return).toHaveBeenCalled();
+  });
+
+  it("forwards a thrown error to its source", async () => {
+    const closed = { done: false };
+    const stream = dozoWhileMember(
+      lookups({ member: true, seq: 1 }),
+      actor,
+      "thread-1",
+      source([event(1)], closed),
+    );
+    await stream.next();
+    const failure = new Error("client gave up");
+    await expect(stream.throw(failure)).rejects.toBe(failure);
+    expect(closed.done).toBe(true);
+    expect(await stream.next()).toEqual({ done: true, value: undefined });
+  });
+
+  it("is its own iterator, so a for-await loop reads it", async () => {
+    const stream = dozoWhileMember(
+      lookups({ member: true, seq: 2 }),
+      actor,
+      "thread-1",
+      source([event(1), event(2)], { done: false }),
+    );
+    expect(stream[Symbol.asyncIterator]()).toBe(stream);
+    expect(await collect(stream)).toEqual([1, 2]);
+  });
+
+  it("closes its source when disposed", async () => {
+    const closed = { done: false };
+    const stream = dozoWhileMember(
+      lookups({ member: true, seq: 1 }),
+      actor,
+      "thread-1",
+      source([event(1)], closed),
+    );
+    await stream.next();
+    await stream[Symbol.asyncDispose]();
+    expect(closed.done).toBe(true);
+    expect(await stream.next()).toEqual({ done: true, value: undefined });
   });
 });
