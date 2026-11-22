@@ -97,8 +97,9 @@ export function DozoBotBackups({ botId, spaceId }: { botId: string; spaceId: str
                   type="button"
                   className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  <span className="truncate text-body text-foreground">{name}</span>
-                  <span className="truncate text-body-sm text-muted-foreground">
+                  <span className="min-w-0 truncate text-body text-foreground">{name}</span>
+                  {/* The connection's name gives way first, so the model's stays readable. */}
+                  <span className="min-w-0 shrink-[4] truncate text-body-sm text-muted-foreground">
                     {optionFor(choice)?.providerName}
                   </span>
                 </button>
