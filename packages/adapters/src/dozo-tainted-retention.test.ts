@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 import { createReplyState } from "./run-progress.js";
 import { completeRun } from "./run-turn.js";
 
-// The branded run turn, where a tainted run's turn is not retained (dozo/brand/brand.json). Runs
-// on the staged tree.
+// The branded run turn, where the turn of a run that read outside content is not retained
+// (dozo/brand/brand.json). Runs on the staged tree.
 
 vi.mock("./dozo-token-run.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -16,7 +17,11 @@ vi.mock("./dozo-phone.js", async (importOriginal) => ({
 }));
 
 async function finishedTurn(options: {
-  tainted?: boolean;
+  trigger?: string;
+  /** Someone other than the owner wrote in this connected chat. */
+  nonOwnerChat?: boolean;
+  /** A tool result brought outside content in, as a fetched page does. */
+  read?: boolean;
   attempts?: number;
   outsideMessage?: boolean;
 }) {
@@ -43,7 +48,7 @@ async function finishedTurn(options: {
     userId: "user-1",
     threadId: "thread-1",
     taskId: "task-1",
-    trigger: "user",
+    trigger: options.trigger ?? "user",
     sourceMessageId: "message-1",
     clientNonce: null,
   };
@@ -59,7 +64,9 @@ async function finishedTurn(options: {
     attempt: { id: "attempt-1" },
     state: {
       reply,
-      tainted: Boolean(options.tainted),
+      // A run someone else started begins tainted, before it reads anything.
+      tainted: (options.trigger ?? "user") !== "user",
+      earlierAttempt: undefined,
       approval: { pausePending: false },
       lease: { valid: true, lastCheckAt: Date.now() },
       computerUse: {},
@@ -67,7 +74,7 @@ async function finishedTurn(options: {
     abortController: new AbortController(),
     computer: { lazy: { throwIfFailed: () => {} }, checkpoint: { flush: vi.fn() } },
     tools: { approvedReplays: { assertDrained: () => {} } },
-    source: {},
+    source: { messagingChannelRun: Boolean(options.nonOwnerChat) },
     trust: { receivedOutsideMessage: async () => options.outsideMessage ?? false },
     memory: { semantic: { retainConversation: async () => undefined }, scope: "isolated" },
     secrets: [],
@@ -75,22 +82,43 @@ async function finishedTurn(options: {
     settleRunningHelpers: async () => {},
     stopHeartbeatAfterCompletion: () => {},
   } as unknown as RunContext;
+  if (options.read) await markReadOutsideContent(ctx);
   await completeRun(ctx);
   return enqueue.mock.calls.map(([job]) => job.name);
 }
 
+const RETAINED = "memory.retain-turn";
+
 describe("conversation memory after outside content", () => {
   it("retains the turn of the owner's clean run", async () => {
-    expect(await finishedTurn({})).toContain("memory.retain-turn");
+    expect(await finishedTurn({})).toContain(RETAINED);
   });
 
-  it("retains no turn of a run that read outside content or that someone else started", async () => {
-    // A run someone else started starts tainted, as one that read outside content becomes.
-    expect(await finishedTurn({ tainted: true })).not.toContain("memory.retain-turn");
+  it("retains no turn of the owner's run that read a page", async () => {
+    expect(await finishedTurn({ read: true })).not.toContain(RETAINED);
+  });
+
+  it("retains a turn from the owner's own connected chat app that read nothing", async () => {
+    expect(await finishedTurn({ trigger: "messaging" })).toContain(RETAINED);
+  });
+
+  it("retains no turn from that chat app once it read a page", async () => {
+    expect(await finishedTurn({ trigger: "messaging", read: true })).not.toContain(RETAINED);
+  });
+
+  it("retains another bot's turn that read nothing, so bots keep learning from each other", async () => {
+    expect(await finishedTurn({ trigger: "bot_message" })).toContain(RETAINED);
+    expect(await finishedTurn({ trigger: "bot_message", read: true })).not.toContain(RETAINED);
+  });
+
+  it("still retains nothing of someone else's chat, as upstream", async () => {
+    expect(await finishedTurn({ trigger: "messaging", nonOwnerChat: true })).not.toContain(
+      RETAINED,
+    );
   });
 
   it("retains no turn of a run an outside message reached or that ran before", async () => {
-    expect(await finishedTurn({ outsideMessage: true })).not.toContain("memory.retain-turn");
-    expect(await finishedTurn({ attempts: 2 })).not.toContain("memory.retain-turn");
+    expect(await finishedTurn({ outsideMessage: true })).not.toContain(RETAINED);
+    expect(await finishedTurn({ attempts: 2 })).not.toContain(RETAINED);
   });
 });

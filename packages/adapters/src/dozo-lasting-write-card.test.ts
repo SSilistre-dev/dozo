@@ -46,12 +46,20 @@ describe("lastingWriteCard", () => {
     expect(await card("schedule_create", { prompt: "x" }, true, true)).toEqual({});
   });
 
-  it("asks once only, under the generic title", async () => {
+  it("asks once only, under the generic title with the tool's name in words", async () => {
     expect((await card("schedule_create", { prompt: "x" })).summary).toEqual({
-      title: "Review before schedule_create",
+      title: "Review before schedule create",
       lines: ["prompt: x"],
       onceOnly: true,
     });
+    const titles: (string | undefined)[] = [];
+    for (const name of ["skill_create", "skill_update", "schedule_update"])
+      titles.push((await card(name, { name: "A" })).summary?.title);
+    expect(titles).toEqual([
+      "Review before skill create",
+      "Review before skill update",
+      "Review before schedule update",
+    ]);
   });
 
   it("redacts secrets inside text, lists and objects, short values first", async () => {

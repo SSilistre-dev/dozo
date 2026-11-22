@@ -1,25 +1,49 @@
 import {
   buildSkillMd,
   ClientError,
+  humanizeToolName,
   instructionUpdateDiff,
+  lastingWriteNeedsApproval,
   lastingWriteShowsWholeText,
   parseSkillMd,
   redactSecrets,
 } from "@rakazo/core";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength } from "./approval-ask.js";
+import { runReadOutsideContent } from "./dozo-read-outside.js";
+import { runCameByToken } from "./dozo-token-run.js";
+import { routineTaskInstructions } from "./routine-watch.js";
 import type { RunContext } from "./run-context.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { skillReadFromTool } from "./skill-tools.js";
 import { refusal } from "./tool-refusal.js";
 
+/**
+ * Whether the gate holds this call as a lasting write (lastingWriteNeedsApproval): the run's input
+ * came from outside the owner, a token's text reached its bot, or it read outside content. A
+ * subagent's call is the run's own, so it is judged by the run.
+ */
+export function lastingWriteHeld(ctx: RunContext, name: string): Promise<boolean> {
+  const { run, source, task } = ctx;
+  const started = {
+    trigger: run.trigger,
+    ownerStartedRun: source.ownerStartedRun,
+    nonOwnerChatRun: source.messagingChannelRun,
+    watchFired: run.trigger === "routine" && routineTaskInstructions(task.prompt) !== task.prompt,
+  };
+  return lastingWriteNeedsApproval(
+    name,
+    started,
+    async () => (await runCameByToken(ctx)) || (await runReadOutsideContent(ctx)),
+  );
+}
+
 /** The text keys whose whole value the card ends with, after the short ones. */
 const LONG_TEXT_KEYS = ["description", "body", "content", "prompt"];
 
 /**
- * The card for a lasting write held because outside content entered the run: it shows the whole
- * text that will be saved, after redaction, and a skill update as a diff of the current skill when
- * that fits. One that cannot be shown whole is refused instead, so a person never approves text
+ * The card for a lasting write lastingWriteHeld held: it shows the whole text that will be saved,
+ * after redaction, and a skill update as a diff of the current skill when that fits. One that cannot be shown whole is refused instead, so a person never approves text
  * the card cut off. Nothing is built for a write the lasting-write rule did not hold, or for the
  * approved replay, which shows no card.
  */
@@ -43,7 +67,9 @@ export async function lastingWriteCard(
       ),
     };
   }
-  return { summary: { title: `Review before ${name}`, lines, onceOnly: true } };
+  // The generic card's title, with the tool's name in words.
+  const title = `Review before ${humanizeToolName(name).toLowerCase()}`;
+  return { summary: { title, lines, onceOnly: true } };
 }
 
 /** Every argument in full as `key: value`, short values first and long text last. */

@@ -11370,61 +11370,55 @@
       "requires": [
         "packages/core/src/dozo-lasting-write-approval.ts"
       ],
-      "reason": "lasting writes after outside content: the one rule for when a skill or routine write needs a person, beside memoryWriteNeedsApproval"
-    },
-    {
-      "file": "packages/adapters/src/run-tool-gate.ts",
-      "find": "  SITE_SENDING_TOOLS,\n  toolRequiresApproval,",
-      "replace": "  SITE_SENDING_TOOLS,\n  lastingWriteNeedsApproval,\n  toolRequiresApproval,",
-      "requires": [
-        "packages/core/src/dozo-lasting-write-approval.ts"
-      ],
-      "reason": "lasting writes after outside content: the gate reads the rule from core"
+      "reason": "lasting writes from outside the owner: the one rule for when a skill or routine write needs a person, beside memoryWriteNeedsApproval"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const { purchase, cardUse, loginUse } = request;",
-      "replace": "  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const lastingWriteGated = await lastingWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const taintedNeedsPerson = scheduleNamesNewSite || lastingWriteGated;\n  const { purchase, cardUse, loginUse } = request;",
-      "reason": "lasting writes after outside content: a skill enters every bot's catalog in the space and a routine's prompt is its later runs' instruction, so injected text could plant (or remove) a lasting prompt; it needs a person like a routine naming a new site"
+      "replace": "  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const lastingWriteGated = await lastingWriteHeld(ctx, name);\n  const taintedNeedsPerson = scheduleNamesNewSite || lastingWriteGated;\n  const { purchase, cardUse, loginUse } = request;",
+      "requires": [
+        "packages/adapters/src/dozo-lasting-write-card.ts"
+      ],
+      "reason": "lasting writes: a skill enters every bot's catalog in the space and a routine's prompt is its later runs' instruction, so text from outside the owner could plant (or remove) a lasting prompt; it needs a person, like a routine naming a new site, when the run's input came from outside the owner or the run read outside content"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "    paying || unattendedWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);",
       "replace": "    paying || unattendedWatch || taintedNeedsPerson || toolRequiresExplicitApproval(name);",
-      "reason": "lasting writes after outside content: mandatory in every mode: no allow rule or approval model passes it"
+      "reason": "lasting writes from outside the owner: mandatory in every mode: no allow rule or approval model passes it"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "    (unattendedWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);",
       "replace": "    (unattendedWatch || taintedNeedsPerson) && !toolRequiresApproval(name, viaConnector);",
-      "reason": "lasting writes after outside content: its card offers no Always allow, which would save a rule that never takes effect"
+      "reason": "lasting writes from outside the owner: its card offers no Always allow, which would save a rule that never takes effect"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "  const guardedInNeverAsk = name === \"respond_agent_connection\";",
       "replace": "  const guardedInNeverAsk = name === \"respond_agent_connection\" || lastingWriteGated;",
-      "reason": "lasting writes after outside content: Never ask refuses it with the existing never_asks message instead of running it"
+      "reason": "lasting writes from outside the owner: Never ask refuses it with the existing never_asks message instead of running it"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { pagePaymentPrecheck, paysWithWallet } from \"./spending-gate.js\";\nimport { refusal } from \"./tool-refusal.js\";",
-      "replace": "import { pagePaymentPrecheck, paysWithWallet } from \"./spending-gate.js\";\nimport { lastingWriteCard } from \"./dozo-lasting-write-card.js\";\nimport { refusal } from \"./tool-refusal.js\";",
+      "replace": "import { pagePaymentPrecheck, paysWithWallet } from \"./spending-gate.js\";\nimport { lastingWriteCard, lastingWriteHeld } from \"./dozo-lasting-write-card.js\";\nimport { refusal } from \"./tool-refusal.js\";",
       "requires": [
         "packages/adapters/src/dozo-lasting-write-card.ts"
       ],
-      "reason": "lasting writes after outside content: the gate builds the held write's card from the fork file"
+      "reason": "lasting writes: the gate reads whether a write is held, and builds its card, from the fork file"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "    };\n  }\n  // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,",
       "replace": "    };\n  }\n  const lastingCard = await lastingWriteCard(ctx, request, lastingWriteGated);\n  if (lastingCard.error) return { result: lastingCard.error };\n  // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,",
-      "reason": "lasting writes after outside content: the card shows the whole text that will be saved; one too long to show whole is refused before any effect is recorded, never asked with a cut card"
+      "reason": "lasting writes from outside the owner: the card shows the whole text that will be saved; one too long to show whole is refused before any effect is recorded, never asked with a cut card"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "    summary: request.fleetSummary,",
       "replace": "    summary: request.fleetSummary ?? lastingCard.summary,",
-      "reason": "lasting writes after outside content: the held write's card is built from what will be saved, like a fleet card"
+      "reason": "lasting writes from outside the owner: the held write's card is built from what will be saved, like a fleet card"
     },
     {
       "file": "packages/adapters/src/approval-ask.ts",
@@ -11433,31 +11427,73 @@
       "requires": [
         "packages/core/src/dozo-lasting-write-approval.ts"
       ],
-      "reason": "lasting writes after outside content: the card reads which writes show their whole text from core"
+      "reason": "lasting writes from outside the owner: the card reads which writes show their whole text from core"
     },
     {
       "file": "packages/adapters/src/approval-ask.ts",
       "find": "  return toolName === \"set_child_instructions\"\n    ? BOT_INSTRUCTIONS_MAX_LENGTH",
       "replace": "  return toolName === \"set_child_instructions\" || lastingWriteShowsWholeText(toolName)\n    ? BOT_INSTRUCTIONS_MAX_LENGTH",
-      "reason": "lasting writes after outside content: a skill or routine card holds its whole text up to the child instruction card's bound (the web and mobile cards scroll, with no lower cap), instead of cutting it at 4000 characters"
+      "reason": "lasting writes from outside the owner: a skill or routine card holds its whole text up to the child instruction card's bound (the web and mobile cards scroll, with no lower cap), instead of cutting it at 4000 characters"
     },
     {
       "file": "packages/adapters/src/approval-ask.ts",
       "find": "      detailFormat: toolName === \"set_child_instructions\" ? \"code\" : \"text\",",
       "replace": "      detailFormat:\n        toolName === \"set_child_instructions\" || lastingWriteShowsWholeText(toolName)\n          ? \"code\"\n          : \"text\",",
-      "reason": "lasting writes after outside content: the saved text shows as written, like the child instruction card"
+      "reason": "lasting writes from outside the owner: the saved text shows as written, like the child instruction card"
     },
     {
       "file": "packages/adapters/src/run-turn.ts",
-      "find": "import { persistTurnCheckpoint } from \"./run-context.js\";",
-      "replace": "import { isRunTainted, persistTurnCheckpoint } from \"./run-context.js\";",
-      "reason": "memory retention after outside content: the turn reads the run's one taint check"
+      "find": "import { persistTurnCheckpoint } from \"./run-context.js\";\nimport {\n  computerRetryDelay,",
+      "replace": "import { persistTurnCheckpoint } from \"./run-context.js\";\nimport { runReadOutsideContent } from \"./dozo-read-outside.js\";\nimport {\n  computerRetryDelay,",
+      "requires": [
+        "packages/adapters/src/dozo-read-outside.ts"
+      ],
+      "reason": "memory retention after outside content: the turn reads whether the run read outside content"
     },
     {
       "file": "packages/adapters/src/run-turn.ts",
       "find": "    return undefined;\n  return answeredSteeringMessageIds(ctx.deps, ctx.runId);",
-      "replace": "    return undefined;\n  // Nor one that read outside content or that someone else started: it would come back as data\n  // the owner's later runs recall.\n  if (await isRunTainted(ctx)) return undefined;\n  return answeredSteeringMessageIds(ctx.deps, ctx.runId);",
-      "reason": "memory retention after outside content: a tainted run's turn is never retained to the memory provider, so injected or someone else's text cannot come back through automatic recall; recall itself does not taint the owner's run"
+      "replace": "    return undefined;\n  // Nor one that read outside content: it would come back as data the owner's later runs recall.\n  // Who started the run is upstream's check above: someone else's chat is never retained.\n  if (await runReadOutsideContent(ctx)) return undefined;\n  return answeredSteeringMessageIds(ctx.deps, ctx.runId);",
+      "requires": [
+        "packages/adapters/src/dozo-read-outside.ts"
+      ],
+      "reason": "memory retention after outside content: the turn of a run that read outside content is never retained to the memory provider, so injected text cannot come back through automatic recall; a turn that read nothing is retained as upstream, whoever started it (the owner's own chat app, another bot); recall itself does not taint the owner's run"
+    },
+    {
+      "file": "packages/adapters/src/run-context.ts",
+      "find": "import { recordVaultItemUse } from \"./vault-activity.js\";\n\nexport type RunningHelper",
+      "replace": "import { recordVaultItemUse } from \"./vault-activity.js\";\nimport { markRunReadOutside } from \"./dozo-read-outside.js\";\n\nexport type RunningHelper",
+      "requires": [
+        "packages/adapters/src/dozo-read-outside.ts"
+      ],
+      "reason": "read outside content: the run's one marker of outside input reaches the fork's record of it"
+    },
+    {
+      "file": "packages/adapters/src/run-context.ts",
+      "find": "export async function markReadOutsideContent(ctx: RunContext) {\n  ctx.state.tainted = true;\n}",
+      "replace": "export async function markReadOutsideContent(ctx: RunContext) {\n  ctx.state.tainted = true;\n  markRunReadOutside(ctx.state);\n}",
+      "requires": [
+        "packages/adapters/src/dozo-read-outside.ts"
+      ],
+      "reason": "read outside content: every caller marks a read, so runReadOutsideContent knows it apart from the \"someone else started it\" part of the taint"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "import { mayBeChannelMessage } from \"@rakazo/db\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "replace": "import { mayBeChannelMessage } from \"@rakazo/db\";\nimport { markHistoryReadOutside } from \"./dozo-read-outside.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-read-outside.ts"
+      ],
+      "reason": "read outside content: assembly marks a history that replays outside results"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "    terminalCheckpointComplete: false,\n  };\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "replace": "    terminalCheckpointComplete: false,\n  };\n  markHistoryReadOutside(state, parts.turnContext.history);\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "requires": [
+        "packages/adapters/src/dozo-read-outside.ts"
+      ],
+      "reason": "read outside content: history replaying a kept tool result shows the model outside content again, as initiallyTainted counts it"
     }
   ],
   "assets": {

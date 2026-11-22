@@ -1,11 +1,13 @@
 import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
+import { markReadOutsideContent } from "./run-context.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
 
-// The branded gate, wired to lastingWriteNeedsApproval and lastingWriteCard (dozo/brand/brand.json).
-// Runs on the staged tree.
+// The branded gate, wired to lastingWriteHeld and lastingWriteCard (dozo/brand/brand.json), with the
+// branded markReadOutsideContent. Runs on the staged tree.
 
 const seen = vi.hoisted(() => ({
   plans: [] as string[],
@@ -61,21 +63,33 @@ const ARGS: Record<string, Record<string, unknown>> = {
   skill_delete: { name: "Invoices" },
   schedule_create: { name: "Invoices", prompt: "Forward invoices", cron: "0 9 * * *" },
   schedule_update: { routineId: "routine-1", prompt: "Forward invoices" },
+  create_child_routine: { bot_name: "Research", name: "Invoices", prompt: "Forward invoices" },
 };
 
-function gate(
+async function gate(
   name: string,
   options: {
-    tainted?: boolean;
+    /** A tool result brought outside content in, as a fetched page does. */
+    read?: boolean;
     mode?: Mode;
     alwaysAllow?: boolean;
-    ownerStarted?: boolean;
+    trigger?: string;
+    /** Someone other than the owner wrote in this connected chat. */
+    nonOwnerChat?: boolean;
+    /** A message sent with an access token reached the run's bot (dozo-token-run.ts). */
+    token?: boolean;
+    /** The run's task prompt, as its routine fired. */
+    prompt?: string;
+    /** The agent that made the call: "main", or a subagent of the run. */
+    agent?: string;
     args?: Record<string, unknown>;
   } = {},
 ) {
   const mode = options.mode ?? "ask";
+  const trigger = options.trigger ?? "user";
+  const ownerStartedRun = trigger === "user" && !options.token;
   const args = options.args ?? ARGS[name] ?? { name: "Invoices" };
-  const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
+  const executionId = JSON.stringify(["pi-tool", options.agent ?? "main", "call-1"]);
   const request: ToolRequest = {
     name,
     args,
@@ -97,9 +111,8 @@ function gate(
     deps: {
       prisma: {
         attempt: { count: async () => 1 },
-        externalEffect: { findMany: async () => [] },
-        // No message sent with an access token reached this run (dozo-token-run.ts).
-        $queryRaw: async () => [{ sourced: false }],
+        externalEffect: { findMany: async () => [], updateMany: async () => ({ count: 1 }) },
+        $queryRaw: async () => [{ sourced: Boolean(options.token) }],
       },
       events: {
         // The card is what the test reads; a refused pause ends the call there.
@@ -114,20 +127,24 @@ function gate(
       userId: "user-1",
       spaceId: "space-1",
       threadId: "thread-1",
-      trigger: options.ownerStarted === false ? "routine" : "user",
+      botId: "bot-1",
+      trigger,
     },
     runId: "run-1",
     attempt: { id: "attempt-1" },
     bot: { id: "bot-1", name: "Helper" },
     thread: { id: "thread-1" },
+    task: { prompt: options.prompt ?? "Check the invoices" },
     secrets: [],
     computer: { checkpoint: { flush: async () => {} } },
     settleRunningHelpers: async () => {},
     context: { signal: new AbortController().signal },
-    source: { ownerStartedRun: options.ownerStarted ?? true },
+    source: { ownerStartedRun, messagingChannelRun: Boolean(options.nonOwnerChat) },
     tools: { connector: new Map(), connectedPlugins: [] },
     state: {
-      tainted: Boolean(options.tainted),
+      // A run someone else started begins tainted, before it reads anything.
+      tainted: !ownerStartedRun,
+      earlierAttempt: undefined,
       approval: {},
       effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
     },
@@ -145,6 +162,7 @@ function gate(
       routineNamesNewSite: async () => false,
     },
   };
+  if (options.read) await markReadOutsideContent(ctx as never);
   return gateToolCall(ctx as never, request, undefined).then(
     (outcome) => outcome,
     (error: Error) => error.message,
@@ -170,7 +188,7 @@ const LASTING_WRITES = [
 
 describe("gateToolCall: a lasting write in a tainted run", () => {
   it.each(LASTING_WRITES)("%s asks a person, without offering Always allow", async (name) => {
-    await gate(name, { tainted: true });
+    await gate(name, { read: true });
     expect(seen.plans).toEqual(["ask"]);
     expect(actionIds()).toEqual(["allow", "deny"]);
   });
@@ -182,14 +200,14 @@ describe("gateToolCall: a lasting write in a tainted run", () => {
       { mode: "auto" as const, alwaysAllow: true },
     ]) {
       seen.plans.length = 0;
-      await gate(name, { tainted: true, ...options });
+      await gate(name, { read: true, ...options });
       expect(seen.plans).toEqual(["ask"]);
     }
   });
 
   it.each(LASTING_WRITES)("%s is refused in Never ask with the existing message", async (name) => {
-    for (const ownerStarted of [true, false]) {
-      expect(await gate(name, { tainted: true, mode: "never", ownerStarted })).toEqual({
+    for (const trigger of ["user", "routine"]) {
+      expect(await gate(name, { read: true, mode: "never", trigger })).toEqual({
         result: { error: expect.stringContaining("this space never asks") },
       });
     }
@@ -198,9 +216,9 @@ describe("gateToolCall: a lasting write in a tainted run", () => {
   });
 
   it("leaves reading a skill and listing or cancelling a routine as they were", async () => {
-    await gate("skill_read", { tainted: true });
-    await gate("schedule_list", { tainted: true, mode: "never" });
-    await gate("schedule_cancel", { tainted: true, mode: "never" });
+    await gate("skill_read", { read: true });
+    await gate("schedule_list", { read: true, mode: "never" });
+    await gate("schedule_cancel", { read: true, mode: "never" });
     expect(seen.plans).toEqual(["allow", "allow", "allow"]);
   });
 });
@@ -230,14 +248,14 @@ describe("the card of a lasting write held in a tainted run", () => {
 
   it("shows a long skill's whole text, its last line included", async () => {
     expect(longText.length).toBeGreaterThan(4_000);
-    await gate("skill_create", { tainted: true, args: { ...ARGS.skill_create, body: longText } });
+    await gate("skill_create", { read: true, args: { ...ARGS.skill_create, body: longText } });
     expect(card()?.detailFormat).toBe("code");
     expect(card()?.detail).toBe(`name: Invoices\ndescription: Forward invoices\nbody: ${longText}`);
   });
 
   it("shows a long routine prompt whole", async () => {
     for (const name of ["schedule_create", "schedule_update"]) {
-      await gate(name, { tainted: true, args: { ...ARGS[name], prompt: longText } });
+      await gate(name, { read: true, args: { ...ARGS[name], prompt: longText } });
       expect(card()?.detailFormat).toBe("code");
       expect(card()?.detail?.endsWith(`prompt: ${longText}`)).toBe(true);
     }
@@ -251,7 +269,7 @@ describe("the card of a lasting write held in a tainted run", () => {
       ["schedule_create", "prompt"],
       ["schedule_update", "prompt"],
     ] as const) {
-      expect(await gate(name, { tainted: true, args: { ...ARGS[name], [key]: tooLong } })).toEqual({
+      expect(await gate(name, { read: true, args: { ...ARGS[name], [key]: tooLong } })).toEqual({
         result: { error: "This is too long to show on the approval card; shorten it." },
       });
     }
@@ -264,7 +282,7 @@ describe("the card of a lasting write held in a tainted run", () => {
       description: "Forward invoices",
       content: "---\nname: Invoices\ndescription: Forward invoices\n---\n\nOld step.\n",
     };
-    await gate("skill_update", { tainted: true, args: { name: "Invoices", body: longText } });
+    await gate("skill_update", { read: true, args: { name: "Invoices", body: longText } });
     const detail = card()?.detail ?? "";
     expect(card()?.detailFormat).toBe("code");
     expect(detail.startsWith("name: Invoices\n- ---")).toBe(true);
@@ -273,7 +291,89 @@ describe("the card of a lasting write held in a tainted run", () => {
   });
 
   it("shows the new text in full when the current skill cannot be read", async () => {
-    await gate("skill_update", { tainted: true, args: { name: "Invoices", body: longText } });
+    await gate("skill_update", { read: true, args: { name: "Invoices", body: longText } });
     expect(card()?.detail).toBe(`name: Invoices\nbody: ${longText}`);
+  });
+});
+
+const MODES = ["ask", "auto", "never"] as const;
+const refusedInNeverAsk = { result: { error: expect.stringContaining("this space never asks") } };
+
+describe("gateToolCall: whose input started the run", () => {
+  it.each(MODES)("lets a routine's own run reschedule itself in %s", async (mode) => {
+    const outcome = await gate("schedule_update", {
+      trigger: "routine",
+      mode,
+      args: { routineId: "routine-1", runAt: "2099-01-02T09:00:00Z" },
+    });
+    expect(seen.plans).toEqual(["allow"]);
+    expect(outcome).toEqual({ call: expect.objectContaining({ name: "schedule_update" }) });
+  });
+
+  it("holds the same routine run once it read a page", async () => {
+    const options = { trigger: "routine", read: true };
+    await gate("schedule_update", options);
+    expect(seen.plans).toEqual(["ask"]);
+    expect(await gate("schedule_update", { ...options, mode: "never" })).toEqual(refusedInNeverAsk);
+  });
+
+  it("holds a routine a change trigger started: its prompt ends with what the watch read", async () => {
+    const prompt = `Check the invoices${ROUTINE_WATCH_NOTE_START}https://example.test).\nNew text`;
+    await gate("schedule_update", { trigger: "routine", prompt });
+    expect(seen.plans).toEqual(["ask"]);
+  });
+
+  it.each([
+    ["a webhook", { trigger: "webhook" }],
+    ["another bot", { trigger: "bot_message" }],
+    ["someone else's connected chat", { trigger: "messaging", nonOwnerChat: true }],
+    ["a message sent with an access token", { token: true }],
+  ])("asks a person when %s started the run, and refuses in Never ask", async (_, options) => {
+    for (const name of ["skill_create", "schedule_create"]) {
+      seen.plans.length = 0;
+      await gate(name, options);
+      expect(seen.plans).toEqual(["ask"]);
+      expect(await gate(name, { ...options, mode: "never" })).toEqual(refusedInNeverAsk);
+    }
+  });
+
+  it.each(MODES)("lets the owner's own connected chat app run freely in %s", async (mode) => {
+    for (const name of ["skill_create", "schedule_create"]) {
+      seen.plans.length = 0;
+      const outcome = await gate(name, { trigger: "messaging", mode });
+      expect(seen.plans).toEqual(["allow"]);
+      expect(outcome).toEqual({ call: expect.objectContaining({ name }) });
+    }
+  });
+
+  it.each(MODES)("lets a subagent of the owner's clean run write a skill in %s", async (mode) => {
+    const outcome = await gate("skill_create", { agent: "subagent-1", mode });
+    expect(seen.plans).toEqual(["allow"]);
+    expect(outcome).toEqual({ call: expect.objectContaining({ name: "skill_create" }) });
+  });
+
+  it("holds that subagent once the run read a page", async () => {
+    await gate("skill_create", { agent: "subagent-1", read: true });
+    expect(seen.plans).toEqual(["ask"]);
+  });
+});
+
+describe("gateToolCall: create_child_routine", () => {
+  it("still asks in the owner's clean run, where an Always allow rule or Never ask passes it", async () => {
+    await gate("create_child_routine");
+    await gate("create_child_routine", { alwaysAllow: true });
+    expect(seen.plans).toEqual(["ask", "allow"]);
+    expect(await gate("create_child_routine", { mode: "never" })).toEqual({
+      call: expect.objectContaining({ name: "create_child_routine" }),
+    });
+  });
+
+  it("asks a person over an Always allow rule once the run read a page, and is refused in Never ask", async () => {
+    await gate("create_child_routine", { read: true, alwaysAllow: true });
+    await gate("create_child_routine", { read: true, mode: "auto" });
+    expect(seen.plans).toEqual(["ask", "ask"]);
+    expect(await gate("create_child_routine", { read: true, mode: "never" })).toEqual(
+      refusedInNeverAsk,
+    );
   });
 });
