@@ -69,6 +69,11 @@ describe("message color", () => {
       new StorageEvent("storage", { key: "dozo.uiBubble", storageArea: localStorage }),
     );
     expect(dozoBubblePreference.get()).toBe("bot");
+    localStorage.setItem("dozo.uiBubble", "neutral");
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "dozo.uiBubble", storageArea: localStorage }),
+    );
+    expect(dozoBubblePreference.get()).toBe("neutral");
   });
 
   it("re-renders the chat when it changes", async () => {

@@ -111,10 +111,10 @@ export function DozoAppearancePicker({
         className="w-40 max-w-full"
       >
         <SelectValue>
-          {(selected: string) => {
-            const choice = choices.find((entry) => entry.value === selected);
-            return choice ? <ChoiceLabel choice={choice} /> : null;
-          }}
+          {(selected: string) => (
+            // Always one of the choices: the value is `current`, which is one by construction.
+            <ChoiceLabel choice={choices.find((entry) => entry.value === selected) as Choice} />
+          )}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>

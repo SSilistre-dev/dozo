@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   upstream: vi.fn((preference: string) => (preference === "light" ? "light" : "dark")),
   select: undefined as undefined | ((value: string) => void),
+  toggle: undefined as undefined | ((value: string[]) => void),
 }));
 
 vi.mock("../lib/ui-appearance", () => ({
@@ -61,15 +62,18 @@ vi.mock("@rakazo/ui-web", async () => {
       children,
       spacing: _spacing,
       ...props
-    }: Props & { value: string[]; onValueChange: (value: string[]) => void }) => (
-      <div {...props}>
-        <Picked.Provider
-          value={{ value: value[0] ?? "", onValueChange: (next) => onValueChange([next]) }}
-        >
-          {children}
-        </Picked.Provider>
-      </div>
-    ),
+    }: Props & { value: string[]; onValueChange: (value: string[]) => void }) => {
+      api.toggle = onValueChange;
+      return (
+        <div {...props}>
+          <Picked.Provider
+            value={{ value: value[0] ?? "", onValueChange: (next) => onValueChange([next]) }}
+          >
+            {children}
+          </Picked.Provider>
+        </div>
+      );
+    },
     ToggleGroupItem: ({ value, children, ...props }: Props) => {
       const picked = useContext(Picked);
       return (
@@ -204,4 +208,7 @@ it("sets the message colour from its segmented control", async () => {
   expect(document.documentElement.dataset.bubble).toBe("neutral");
   expect(byTestId("dozo-message-color-neutral")?.getAttribute("aria-pressed")).toBe("true");
   expect(byTestId("dozo-message-color")?.getAttribute("aria-label")).toBe("Message color");
+  // Pressing the chosen segment again unpresses it: the choice stays as it was.
+  await act(async () => api.toggle?.([]));
+  expect(localStorage.getItem("dozo.uiBubble")).toBe("neutral");
 });
