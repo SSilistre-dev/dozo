@@ -216,7 +216,7 @@ impl Runner {
     /// the browser stays unstarted.
     async fn answer_cleared(&self, key: &str, forgotten: bool, reply: &Reply) {
         if forgotten {
-            self.browsers.take_cleared(key);
+            self.browsers.take_cleared(key).await;
         }
         let cleared = self.browsers.cleared(key);
         if reply.send(json!({ "value": { "cleared": cleared } })).await {

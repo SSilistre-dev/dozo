@@ -417,22 +417,21 @@ impl Pipe {
         bytes.push(0);
         let (answer, answered) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, answer);
+        // However the call ends, its waiting place goes, also when the caller stops waiting
+        // (drops this call, as a timeout around it does).
+        let _waiting = Waiting(&self.pending, id);
         let written = {
             let mut out = self.to_browser.lock().await;
             out.write_all(&bytes).await.and(out.flush().await)
         };
         if written.is_err() {
-            self.pending.lock().unwrap().remove(&id);
             self.close();
             return Err(CLOSED.to_owned());
         }
         let reply = match tokio::time::timeout(ANSWER, answered).await {
             Ok(Ok(reply)) => reply,
             Ok(Err(_)) => return Err(CLOSED.to_owned()),
-            Err(_) => {
-                self.pending.lock().unwrap().remove(&id);
-                return Err(format!("The bot's browser did not answer {method} in time"));
-            }
+            Err(_) => return Err(format!("The bot's browser did not answer {method} in time")),
         };
         match reply.get("error") {
             Some(error) => Err(format!(
@@ -522,6 +521,15 @@ async fn read(pipe: std::sync::Weak<Pipe>, mut from: impl tokio::io::AsyncRead +
             pipe.close();
             return;
         }
+    }
+}
+
+/// A call's place among those waiting for an answer, given up when the call ends.
+struct Waiting<'a>(&'a Mutex<HashMap<u64, oneshot::Sender<Value>>>, u64);
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.lock().unwrap().remove(&self.1);
     }
 }
 
@@ -979,21 +987,28 @@ impl Browsers {
 
     /// The server has forgotten what the bot was allowed: its browser may start again, once a
     /// clear under way is over (until then the mark stays, and the server asks again).
-    pub fn take_cleared(&self, key: &str) {
-        if self.is_clearing(key) {
+    pub async fn take_cleared(&self, key: &str) {
+        // Only a browser still marked cleared: a `forgotten` that comes again (another run of the
+        // bot asked too) finds no mark, and touches neither the browser started since nor its
+        // profile.
+        if !self.cleared(key) || self.is_clearing(key) || self.current(key).is_some() {
             return;
         }
         // A clear the app did not finish (it quit or crashed before the profile went) is
         // finished first: the browser never starts again on the old profile and its sign-ins.
-        let profile = self.root.join(key);
-        if profile.exists() {
-            #[cfg(unix)]
-            end_leftover(&self.root.join(format!("{key}.pid")), &profile);
-            if std::fs::remove_dir_all(&profile).is_err() {
-                return;
+        let (root, key) = (self.root.clone(), key.to_owned());
+        let _ = tokio::task::spawn_blocking(move || {
+            let profile = root.join(&key);
+            if profile.exists() {
+                #[cfg(unix)]
+                end_leftover(&root.join(format!("{key}.pid")), &profile);
+                if std::fs::remove_dir_all(&profile).is_err() {
+                    return;
+                }
             }
-        }
-        let _ = std::fs::remove_file(self.root.join(format!("{key}.cleared")));
+            let _ = std::fs::remove_file(root.join(format!("{key}.cleared")));
+        })
+        .await;
     }
 
     fn begin_clearing(&self, key: &str) {
@@ -2059,6 +2074,21 @@ mod tests {
         );
     }
 
+    /// A call the caller stopped waiting for (a timeout around it) leaves no place behind.
+    #[tokio::test]
+    async fn a_call_given_up_leaves_nothing_waiting() {
+        let (ours, _theirs) = duplex(1 << 16);
+        let (ours_read, ours_write) = tokio::io::split(ours);
+        let pipe = Pipe::start(Box::new(ours_write), ours_read);
+        let going = pipe.call("Page.navigate", json!({ "url": "about:blank" }), None);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), going)
+                .await
+                .is_err()
+        );
+        assert!(pipe.pending.lock().unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn deleting_a_bot_ends_its_sign_in_and_stopping_it_does_not() {
         let dir = std::env::temp_dir().join(format!("dozo-browser-delete-{}", std::process::id()));
@@ -2172,7 +2202,7 @@ mod tests {
         // Nor does it bring the row back.
         browsers.remember_name(&k1, "Ada");
         assert_eq!(browsers.named(), vec![(k2.clone(), "bo".to_owned())]);
-        browsers.take_cleared(&k1);
+        browsers.take_cleared(&k1).await;
         assert_eq!(browsers.handle(&k1, &page).await.unwrap_err(), NO_BROWSER);
         // Deleting a bot takes its row too.
         browsers.close(&k2, true).await;
@@ -2213,7 +2243,7 @@ mod tests {
         // A second clear of the same bot that ends first leaves the first one in force.
         browsers.begin_clearing(&key);
         browsers.end_clearing(&key);
-        browsers.take_cleared(&key);
+        browsers.take_cleared(&key).await;
         assert!(
             browsers.cleared(&key),
             "the mark stays while the clear is under way"
@@ -2235,8 +2265,8 @@ mod tests {
     /// A clear the app did not finish (it quit before the profile went) is finished before the
     /// mark goes: the browser never starts again on the old profile.
     #[cfg(unix)]
-    #[test]
-    fn an_unfinished_clear_is_finished_before_the_mark_goes() {
+    #[tokio::test]
+    async fn an_unfinished_clear_is_finished_before_the_mark_goes() {
         let dir =
             std::env::temp_dir().join(format!("dozo-browser-unfinished-{}", std::process::id()));
         let browsers = Browsers::with(dir.clone(), None, true);
@@ -2244,9 +2274,27 @@ mod tests {
         std::fs::create_dir_all(dir.join(&key).join("Default")).unwrap();
         std::fs::write(dir.join(&key).join("Default/Cookies"), b"signed in").unwrap();
         std::fs::write(dir.join(format!("{key}.cleared")), b"").unwrap();
-        browsers.take_cleared(&key);
+        browsers.take_cleared(&key).await;
         assert!(!dir.join(&key).exists(), "the old profile went first");
         assert!(!browsers.cleared(&key));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A `forgotten` that comes again, once the mark is gone (another run of the bot asked too),
+    /// leaves the profile the browser has used since alone.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_forgotten_without_a_mark_touches_no_profile() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-nomark-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), None, true);
+        let key = "9".repeat(64);
+        std::fs::create_dir_all(dir.join(&key).join("Default")).unwrap();
+        std::fs::write(dir.join(&key).join("Default/Cookies"), b"signed in again").unwrap();
+        browsers.take_cleared(&key).await;
+        assert!(
+            dir.join(&key).join("Default/Cookies").exists(),
+            "the profile stayed"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
