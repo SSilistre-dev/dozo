@@ -1,12 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import {
-  dozoLocalDay,
-  MIN_PASSWORD_LENGTH,
-  SEALED_ACCOUNT_FILE_MAX_BYTES,
-  SEALED_ACCOUNT_MAX_BYTES,
-  SealedFileError,
-} from "@rakazo/core";
+import { dozoLocalDay, MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -37,7 +31,6 @@ export function DozoSealedBackupRow({ onImported }: { onImported?: () => Promise
   const fileInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState<{ restore: File | null } | null>(null);
   const [done, setDone] = useState(false);
-  const [tooLarge, setTooLarge] = useState(false);
   // The last download's URL stays readable until the next one or until settings close: WebKit
   // reads it after the click returns.
   const lastUrl = useRef<string | null>(null);
@@ -52,7 +45,6 @@ export function DozoSealedBackupRow({ onImported }: { onImported?: () => Promise
   };
   const start = (restore: File | null) => {
     setDone(false);
-    setTooLarge(false);
     setOpen({ restore });
   };
   return (
@@ -89,23 +81,12 @@ export function DozoSealedBackupRow({ onImported }: { onImported?: () => Promise
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
-                if (!file) return;
-                // Refused before a byte is read: the import takes no more than this anyway.
-                if (file.size > SEALED_ACCOUNT_FILE_MAX_BYTES) {
-                  setDone(false);
-                  setTooLarge(true);
-                } else start(file);
+                if (file) start(file);
               }}
             />
           </>
         }
-      >
-        {tooLarge ? (
-          <p role="alert" className="mt-2 text-body-sm text-destructive">
-            {t`The file is too large`}
-          </p>
-        ) : null}
-      </SettingsRow>
+      />
       {open ? (
         // Its own provider, so the row also works where settings are shown without one.
         <QueryClientProvider client={queryClient}>
@@ -139,8 +120,10 @@ function forget(url: { current: string | null }) {
 class Refused extends Error {}
 /** The server could not be reached at all. */
 class Unreachable extends Error {}
-/** An export no restore would take back. */
+/** A file or export larger than a restore takes back. */
 class TooLarge extends Error {}
+/** A wrong password, or a file that is not an intact backup: one answer for both. */
+class Unopenable extends Error {}
 
 /** The server's own sentence for a refusal (`{ "error": "..." }`), or "" when it sent none. */
 function sentence(body: string): string {
@@ -191,10 +174,17 @@ function SealDialog({
   const [mismatch, setMismatch] = useState(false);
   const save = useSave<void>({
     save: async (_input, rpc) => {
-      // Loaded only now: the sealing code and scrypt stay out of the first paint.
+      // Loaded only now: the sealing code, its limits and scrypt stay out of the first paint.
       const codec = await import("./dozo-sealed-backup-codec");
       if (restore) {
-        const zip = await codec.openAccountBackup(restore, password);
+        // Refused before a byte is read: the import takes no more than this anyway.
+        if (restore.size > codec.ACCOUNT_BACKUP_MAX_BYTES) throw new TooLarge();
+        let zip: Blob;
+        try {
+          zip = await codec.openAccountBackup(restore, password);
+        } catch (error) {
+          throw codec.isSealedFileError(error) ? new Unopenable() : error;
+        }
         await request("/api/account/import", {
           method: "POST",
           headers: { "content-type": "application/zip" },
@@ -206,11 +196,11 @@ function SealDialog({
       const exported = await request(`/api/account/export?token=${encodeURIComponent(token)}`, {});
       // A restore takes no more than this: refused from the declared length when there is one,
       // otherwise the moment the body passes it, without reading the rest.
-      if (Number(exported.headers.get("content-length")) > SEALED_ACCOUNT_MAX_BYTES) {
+      if (Number(exported.headers.get("content-length")) > codec.ACCOUNT_EXPORT_MAX_BYTES) {
         await exported.body?.cancel();
         throw new TooLarge();
       }
-      const zip = await codec.readUpTo(exported.body, SEALED_ACCOUNT_MAX_BYTES);
+      const zip = await codec.readUpTo(exported.body, codec.ACCOUNT_EXPORT_MAX_BYTES);
       if (!zip) throw new TooLarge();
       const sealed = await codec.sealAccountExport(zip, password);
       download(sealed, `Dozo ${dozoLocalDay(new Date())}.dozobackup`);
@@ -224,7 +214,7 @@ function SealDialog({
   });
   const failureText = (failure: Error | null) => {
     if (!failure || isIdentityConfirmationRequired(failure)) return null;
-    if (failure instanceof SealedFileError) return t`Wrong password, or the file is damaged`;
+    if (failure instanceof Unopenable) return t`Wrong password, or the file is damaged`;
     if (failure instanceof Unreachable) return t`Could not reach the server`;
     if (failure instanceof TooLarge) return t`The file is too large`;
     if (failure instanceof Refused) return failure.message || t`Could not continue`;

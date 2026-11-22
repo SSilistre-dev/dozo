@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { Blob as NodeBlob, File as NodeFile } from "node:buffer";
-import type { SealedKdf } from "@rakazo/core";
-import { SEALED_ACCOUNT_FILE_MAX_BYTES, SEALED_ACCOUNT_MAX_BYTES } from "@rakazo/core";
+import type { SealedKdf } from "@rakazo/core/dozo-sealed-file";
+import {
+  SEALED_ACCOUNT_FILE_MAX_BYTES,
+  SEALED_ACCOUNT_MAX_BYTES,
+} from "@rakazo/core/dozo-sealed-file";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -428,9 +431,14 @@ describe("restoring the account from a sealed file", () => {
 
   it("refuses a file over the import's limit before reading it", async () => {
     await render();
-    await pick({ name: "big.dozobackup", size: SEALED_ACCOUNT_FILE_MAX_BYTES + 1 });
-    expect(dialog()).toBeNull();
-    expect(alertText()).toBe("The file is too large");
+    const read = vi.fn();
+    const big = { name: "big.dozobackup", size: SEALED_ACCOUNT_FILE_MAX_BYTES + 1, stream: read };
+    await pick(big);
+    await type("Password", PASSWORD);
+    await click(submit());
+    await vi.waitFor(() => expect(alertText()).toBe("The file is too large"));
+    expect(read).not.toHaveBeenCalled();
+    expect(api.fetch).not.toHaveBeenCalled();
   });
 
   it("shows the import's own refusal, and a server it cannot reach", async () => {

@@ -6,7 +6,7 @@ import type { TransformCallback } from "node:stream";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
-import type { SealedFailure, SealedKdf } from "@rakazo/core";
+import type { SealedFailure, SealedKdf } from "@rakazo/core/dozo-sealed-file";
 import {
   encodeSealedEntryHead,
   parseSealedEntryHead,
@@ -21,13 +21,13 @@ import {
   sealedEntryPath,
   sealedNonce,
   writeSealedHeader,
-} from "@rakazo/core";
+} from "@rakazo/core/dozo-sealed-file";
 
 /**
  * The local backup file, written and read with Node's streams and crypto. The format itself
- * (header, limits, nonce, archive entry heads, failures) is defined once in `@rakazo/core`
- * (`dozo-sealed-file.ts`), which the account backup made in the browser shares; layout and why
- * each piece was chosen: `dozo/server-bundle/README.md`, "Backup file".
+ * (header, limits, nonce, archive entry heads, failures) is defined once in
+ * `@rakazo/core/dozo-sealed-file`, which the account backup made in the browser shares; layout
+ * and why each piece was chosen: `dozo/server-bundle/README.md`, "Backup file".
  */
 
 const HEADER_BYTES = SEALED_HEADER_BYTES;

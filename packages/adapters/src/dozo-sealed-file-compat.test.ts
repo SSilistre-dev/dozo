@@ -6,7 +6,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, gzipSync } from "node:zlib";
-import type { SealedDeriveKey } from "@rakazo/core";
+import type { SealedDeriveKey } from "@rakazo/core/dozo-sealed-file";
 import {
   openOneFile,
   openStream,
@@ -14,7 +14,7 @@ import {
   SealedFileError,
   sealOneFile,
   sealStream,
-} from "@rakazo/core";
+} from "@rakazo/core/dozo-sealed-file";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { localBackupMain } from "./dozo-local-backup.js";
 import type { BackupEntry } from "./dozo-local-backup-format.js";

@@ -8355,13 +8355,13 @@
       "reason": "quiet hours: the default range and the named day sets, shared by the web and mobile settings rows"
     },
     {
-      "file": "packages/core/src/index.ts",
-      "find": "export * from \"./screen-reconnect.js\";\nexport * from \"./search.js\";",
-      "replace": "export * from \"./screen-reconnect.js\";\nexport * from \"./dozo-sealed-file.js\";\nexport * from \"./search.js\";",
+      "file": "packages/core/package.json",
+      "find": "      \"default\": \"./src/user-error.ts\"\n    },\n    \"./message-quote\": {",
+      "replace": "      \"default\": \"./src/user-error.ts\"\n    },\n    \"./dozo-sealed-file\": {\n      \"types\": \"./src/dozo-sealed-file.ts\",\n      \"development\": \"./src/dozo-sealed-file.ts\",\n      \"default\": \"./src/dozo-sealed-file.ts\"\n    },\n    \"./message-quote\": {",
       "requires": [
         "packages/core/src/dozo-sealed-file.ts"
       ],
-      "reason": "sealed backup: the one definition of the password-sealed backup file and its web codec, shared by the local server's backup and the account backup sealed in the browser"
+      "reason": "sealed backup: the one definition of the password-sealed backup file and its web codec, as a subpath of its own so that only the code that seals or opens a file loads it (the package index is in the web app's startup bundle); the local server's backup and the account backup sealed in the browser import it from here"
     },
     {
       "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",

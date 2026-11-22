@@ -1,18 +1,30 @@
 import { scryptAsync } from "@noble/hashes/scrypt.js";
-import type { SealedDeriveKey, SealedKdf } from "@rakazo/core";
+import type { SealedDeriveKey, SealedKdf } from "@rakazo/core/dozo-sealed-file";
 import {
   openOneFile,
   SEALED_ACCOUNT_ENTRY,
+  SEALED_ACCOUNT_FILE_MAX_BYTES,
   SEALED_ACCOUNT_MAX_BYTES,
   SEALED_DEFAULT_KDF,
+  SealedFileError,
   sealOneFile,
-} from "@rakazo/core";
+} from "@rakazo/core/dozo-sealed-file";
 
 /**
  * The account backup sealed in the page: the account export's zip as the one entry of the same
- * file the local server's backup writes (`@rakazo/core`, `dozo-sealed-file.ts`). Loaded only when
+ * file the local server's backup writes (`@rakazo/core/dozo-sealed-file`). Loaded only when
  * a backup or restore starts, so neither this nor scrypt weighs on the first paint.
  */
+
+/** The largest account export a restore takes back, and the largest sealed file it opens. */
+export const ACCOUNT_EXPORT_MAX_BYTES = SEALED_ACCOUNT_MAX_BYTES;
+export const ACCOUNT_BACKUP_MAX_BYTES = SEALED_ACCOUNT_FILE_MAX_BYTES;
+
+/**
+ * Whether an open failed because of the file or its password. Asked here so that only this lazy
+ * module, never the settings row, references the sealed-file code.
+ */
+export const isSealedFileError = (error: unknown) => error instanceof SealedFileError;
 
 /**
  * scrypt in the page, yielding every few milliseconds so the page keeps painting. Its default

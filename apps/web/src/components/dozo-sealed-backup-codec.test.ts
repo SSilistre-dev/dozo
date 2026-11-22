@@ -1,6 +1,6 @@
 import { randomBytes, scryptSync } from "node:crypto";
-import type { SealedKdf } from "@rakazo/core";
-import { SealedFileError } from "@rakazo/core";
+import type { SealedKdf } from "@rakazo/core/dozo-sealed-file";
+import { SealedFileError } from "@rakazo/core/dozo-sealed-file";
 import { describe, expect, it, vi } from "vitest";
 import {
   collectBlob,
