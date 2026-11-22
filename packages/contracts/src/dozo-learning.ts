@@ -24,14 +24,23 @@ export type DozoLearningChange = z.infer<typeof DozoLearningChangeSchema>;
 export const DOZO_LEARNING_NOTE_MAX_CHARS = 200;
 
 /**
- * Control characters (C0, DEL, C1 with U+0085) and the Unicode line and paragraph separators:
- * any of them could start a new line where the notes are shown to a model.
+ * Characters a note may not hold: control characters (C0, DEL, C1 with U+0085) and the Unicode
+ * line and paragraph separators, any of which could start a new line where the notes are shown to
+ * a model; bidi overrides and isolates (U+202A-U+202E, U+2066-U+2069), which reorder what the
+ * owner sees; and tag characters (U+E0000-U+E007F), which a reader does not see at all.
  */
-const breaksLine = (text: string) =>
+const unsafeChar = (text: string) =>
   [...text].some((char) => {
-    // Every one of them is a single UTF-16 unit; a longer character starts with a surrogate.
-    const code = char.charCodeAt(0);
-    return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
+    const code = char.codePointAt(0) ?? 0;
+    return (
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029 ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069) ||
+      (code >= 0xe0000 && code <= 0xe007f)
+    );
   });
 
 /**
@@ -44,7 +53,7 @@ export const DozoLearningNoteText = /* @__PURE__ */ (() =>
     .trim()
     .min(1)
     .max(DOZO_LEARNING_NOTE_MAX_CHARS)
-    .refine((text) => !breaksLine(text), "One line, no control characters.")
+    .refine((text) => !unsafeChar(text), "One line, no control or hidden characters.")
     .refine((text) => !/[<>]/.test(text), "No angle brackets.")
     .refine((text) => !text.startsWith("#"), "No heading."))();
 

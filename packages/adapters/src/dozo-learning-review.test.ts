@@ -663,6 +663,13 @@ describe("reviewLearning", () => {
       "Likes\u009btea",
       "Likes\ttea",
       "2 > 1",
+      // Bidi overrides and isolates reorder what is shown; tag characters hide text.
+      ...[0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069].map(
+        (code) => `Likes ${String.fromCodePoint(code)}tea`,
+      ),
+      ...[0xe0000, 0xe0001, 0xe0041, 0xe007f].map(
+        (code) => `Likes tea${String.fromCodePoint(code)}`,
+      ),
     ]) {
       const reply = answer([{ op: "add", text: note }]);
       expect(parseLearningAnswer(reply, new Set())).toBeNull();
@@ -670,6 +677,9 @@ describe("reviewLearning", () => {
     expect(
       parseLearningAnswer(answer([{ op: "add", text: "Likes tea, not coffee" }]), new Set()),
     ).toEqual([{ op: "add", kind: "preference", text: "Likes tea, not coffee" }]);
+    // Right-to-left text and emoji stay notes.
+    for (const text of ["Çay sever \u05e9\u05dc\u05d5\u05dd", "Likes tea \u{1f375}"])
+      expect(parseLearningAnswer(answer([{ op: "add", text }]), new Set())).toHaveLength(1);
   });
 
   it("keeps the turns when the model call fails, so the job tries again", async () => {
