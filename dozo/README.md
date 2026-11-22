@@ -315,8 +315,17 @@ A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`
 every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
 100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
 archived bot does. The bot's memory and computer are one across its chats. Mobile, the bot API,
-CLI and MCP, chat apps and routines use the main chat only; a routine started from an extra chat
-posts in the main chat. The phone's badge counts main chats only, as the phone shows nothing else.
+CLI and MCP and chat apps use the main chat only. The phone's badge counts main chats only, as the
+phone shows nothing else.
+
+A routine or one-time wait posts in the chat it was made in, or the one picked in its editor (web,
+shown only once the bot has an extra chat): upstream's `routines.threadId`, read by
+`packages/adapters/src/dozo-routine-chat.ts` for schedules, waits, change triggers, retries and Run
+now, so quiet hours, the 12-hour catch-up, the daily send limit and queued ticks meet the same chat.
+No chat (every routine made in the app before) is the main chat. While its chat is archived a
+routine runs in the main chat and says so there once per run; brought back, it posts there again.
+Webhook, GitHub, email and chat-app triggers still deliver in the main chat, as upstream delivers
+them, and the phone's editor neither shows nor changes the chat (an edit there keeps it).
 
 Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
 (or with) the web app: an API from before extra chats answers such a request with 400 (its own

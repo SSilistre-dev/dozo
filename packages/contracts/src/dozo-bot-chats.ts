@@ -79,6 +79,22 @@ export type DozoBotChatRenameInput = z.infer<typeof DozoBotChatRenameInputSchema
 export const DozoBotChatArchiveInputSchema = z.object({ chatId: Id, archived: z.boolean() });
 export type DozoBotChatArchiveInput = z.infer<typeof DozoBotChatArchiveInputSchema>;
 
+export const DozoRoutineChatInputSchema = z.object({ routineId: Id });
+export const DozoRoutineChatSetInputSchema = z.object({
+  routineId: Id,
+  /** One of the routine's bot's open extra chats, or null for the bot's main chat. */
+  chatId: Id.nullable(),
+});
+export type DozoRoutineChatSetInput = z.infer<typeof DozoRoutineChatSetInputSchema>;
+/** Where a bot's routine posts. */
+export const DozoRoutineChatSchema = z.object({
+  /** The open extra chat its runs post in; null for the bot's main chat. */
+  chatId: Id.nullable(),
+  /** False for a routine that posts in a group: a bot's chats are not where it posts. */
+  editable: z.boolean(),
+});
+export type DozoRoutineChat = z.infer<typeof DozoRoutineChatSchema>;
+
 export const dozoChatsContract = {
   /** Extra chats, oldest first; archived ones only when asked for. */
   list: oc
@@ -88,4 +104,8 @@ export const dozoChatsContract = {
   rename: oc.input(DozoBotChatRenameInputSchema).output(ChatOutput),
   /** Archives or brings back an extra chat; doing what is already done succeeds. */
   archive: oc.input(DozoBotChatArchiveInputSchema).output(ChatOutput),
+  /** Where a routine posts. A chat since archived reads as the main chat, where it then runs. */
+  routineChat: oc.input(DozoRoutineChatInputSchema).output(DozoRoutineChatSchema),
+  /** Points a routine at one of its bot's open extra chats, or back at the main chat. */
+  setRoutineChat: oc.input(DozoRoutineChatSetInputSchema).output(DozoRoutineChatSchema),
 };

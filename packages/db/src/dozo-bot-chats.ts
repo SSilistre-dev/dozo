@@ -115,3 +115,18 @@ export function dozoExportChat(chats: Map<string, DozoExportedChat>, threadId: s
  * `COALESCE(t."botId", <this>)`, so an extra chat is its bot's own chat there too.
  */
 export const DOZO_CHAT_BOT = Prisma.sql`(SELECT dc."botId" FROM dozo_bot_chats dc WHERE dc."threadId" = t.id)`;
+
+/**
+ * The bot's extra chat on this thread in the Space, open or archived, or null when the thread is
+ * not one of that bot's extra chats there (its main chat, a group's, another bot's, or gone).
+ */
+export async function dozoBotChatOf(
+  db: Db,
+  input: { threadId: string; botId: string; spaceId: string },
+): Promise<{ name: string; archived: boolean } | null> {
+  const [row] = await db.$queryRaw<{ name: string; archived: boolean }[]>`
+    SELECT name, ("archivedAt" IS NOT NULL) AS archived FROM dozo_bot_chats
+    WHERE "threadId" = ${input.threadId} AND "botId" = ${input.botId}
+      AND "spaceId" = ${input.spaceId}`;
+  return row ?? null;
+}
