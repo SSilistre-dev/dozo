@@ -1,3 +1,4 @@
+import { withoutLinks } from "@rakazo/contracts";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 import { readPermission } from "./dozo-phone-read-permission";
@@ -105,10 +106,13 @@ export async function requestCalendarPermission(): Promise<CalendarPermission> {
   }
 }
 
-/** A scheme, `www.` or a domain with a path: a meeting link, often with its passcode. */
-const LINK = /:\/\/|\bwww\.|(?:^|[^\w@.-])[a-z\d-]+(?:\.[a-z\d-]+)*\.[a-z]{2,}\/\S/i;
-
-const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) : text);
+/**
+ * A text field without its links (a meeting's address often carries its passcode), cut to its
+ * limit: the one filter the server applies again (@rakazo/contracts). Cut first too, so a long
+ * field costs no more to filter.
+ */
+const text = (field: string | null | undefined, max: number): string | undefined =>
+  field ? withoutLinks(field.slice(0, 10 * max))?.slice(0, max) : undefined;
 
 function iso(value: string | Date | null | undefined): string | null {
   if (value == null) return null;
@@ -129,28 +133,31 @@ export function calendarValue(
   calendarNames: ReadonlyMap<string, string>,
   request: PhoneCalendarRequest,
 ): PhoneCalendarValue {
-  const query = request.query ? cut(request.query, MAX_QUERY).toLowerCase() : "";
+  const query = request.query ? request.query.slice(0, MAX_QUERY).toLowerCase() : "";
   const limit = Math.max(1, Math.min(MAX_EVENTS, Math.floor(request.limit) || MAX_EVENTS));
   const matching: Array<PhoneCalendarEvent & { at: number }> = [];
   for (const event of native) {
     const start = iso(event.startDate);
     const end = iso(event.endDate);
     if (!start || !end) continue;
-    const title = event.title ?? "";
-    // A link in the location never leaves the phone, nor answers a search; the rest of the event does.
-    const location = event.location && !LINK.test(event.location) ? event.location : "";
+    // A link never leaves the phone, nor answers a search; the rest of the text does.
+    const title = text(event.title, MAX_TEXT) ?? "";
+    const location = text(event.location, MAX_TEXT) ?? "";
     if (query && !title.toLowerCase().includes(query) && !location.toLowerCase().includes(query)) {
       continue;
     }
-    const calendar = event.calendarId ? calendarNames.get(event.calendarId) : undefined;
+    const calendar = text(
+      event.calendarId ? calendarNames.get(event.calendarId) : undefined,
+      MAX_CALENDAR_NAME,
+    );
     matching.push({
       at: Date.parse(start),
-      title: cut(title, MAX_TEXT),
+      title,
       start,
       end,
       allDay: event.allDay === true,
-      ...(location ? { location: cut(location, MAX_TEXT) } : {}),
-      ...(calendar ? { calendar: cut(calendar, MAX_CALENDAR_NAME) } : {}),
+      ...(location ? { location } : {}),
+      ...(calendar ? { calendar } : {}),
     });
   }
   matching.sort((a, b) => a.at - b.at);

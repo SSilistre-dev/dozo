@@ -627,6 +627,30 @@ the screen tools only when it declares screen control on connecting
 (`packages/adapters/src/dozo-device-capabilities.ts`; the desktop app declares commands only), tells the bot it can only run commands there, and answers a
 refused screen request with that fact (`packages/adapters/src/dozo-device-screen.ts`).
 
+## Your phone's calendar
+
+A bot may read the calendar on the member's own phone (`phone_calendar_read`,
+`packages/adapters/src/dozo-phone.ts`; the app's side is `apps/mobile/lib/dozo-phone-device.ts`).
+The phone pairs as one of the member's devices and declares `calendar` only while Calendar is on in
+its Phone settings and the system allows it. Phones are not computers: they never get commands,
+screen or browser, stay out of Computers and its limit, and an account has one phone.
+
+- Only the member who started the run reaches their own phone, from a chat no one else can read: not
+  a group, a channel or a helper's thread, and only in a Space where they are the only member.
+- Each bot's first read asks, Never ask included; turning Calendar off unpairs the phone, so every
+  bot asks again. Once outside content entered the run every read asks, and the phone's own answer
+  counts as outside content, so a second read in a run asks too (a range over 31 days takes two
+  approvals, by choice).
+- At most 31 days and 50 events, with title, times, location and calendar name. Links are removed
+  from those texts on the phone and again on the server by one shared rule; the rest of the text
+  goes to the bot's model as written.
+- The approval record keeps a count, not the events, and a turn that read the phone is not learned
+  into memory. What the bot replied stays in the chat like any message: export and backups carry
+  it, and a member added to the Space later can read it with the rest of its history.
+- Known limits: only while the app is open in front (a phone that does not answer fails after 20
+  seconds); not over the relay (a phone paired to a computer by code), which carries no device
+  connection; a store build without the native module hides the setting.
+
 ## Daily sends
 
 Each bot may make a number of sends a day for a member without asking them

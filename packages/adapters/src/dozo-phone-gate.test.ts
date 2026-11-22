@@ -176,7 +176,10 @@ describe("the phone's approval", () => {
         kind: PHONE_CALENDAR_READ_TOOL,
         createdAt: { gte: new Date(0) },
         run: { userId: "user-1", botId: "bot-1" },
-        OR: [{ status: "completed" }, { status: "approved", runId: "run-1" }],
+        OR: [
+          { status: "completed" },
+          { status: "approved", runId: "run-1", request: { equals: RANGE } },
+        ],
       },
       select: { id: true },
     });

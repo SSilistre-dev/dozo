@@ -30,6 +30,38 @@ import type { RunContext } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./user-device-gateway.js";
 
+/**
+ * The same raw events and what is left of them, word for word in the phone's test
+ * (apps/mobile/lib/dozo-phone-calendar.test.ts) and the server's (dozo-phone.test.ts): both run
+ * them through their own path, so the phone and the server give the same output.
+ */
+const LINK_SAMPLES = [
+  {
+    raw: {
+      title: "Standup https://x.example/j/1?pwd=abc",
+      location: "zoom.us / j / 123",
+      calendar: "Team meet.google.com",
+    },
+    kept: { title: "Standup", calendar: "Team" },
+  },
+  {
+    raw: { title: "Call tel:+1 555 0100,,123456#", location: "Room 4.2", calendar: "Work" },
+    kept: { title: "Call", location: "Room 4.2", calendar: "Work" },
+  },
+  {
+    raw: { title: "Passcode: abc123", location: "zoom\uFF0Eus\uFF0Fj\uFF0F123", calendar: "Home" },
+    kept: { title: "Passcode: abc123", calendar: "Home" },
+  },
+  {
+    raw: {
+      title: "https://only.example",
+      location: "Main St. 12/3, Berlin",
+      calendar: "Dr. Smith",
+    },
+    kept: { title: "", location: "Main St. 12/3, Berlin", calendar: "Dr. Smith" },
+  },
+];
+
 const PAIRED = new Date("2026-11-01T00:00:00Z");
 const SECRET_TITLE = "Dentist with Dr. Example";
 const RANGE = { from: "2026-11-22T00:00:00+03:00", to: "2026-11-29T00:00:00+03:00" };
@@ -61,7 +93,13 @@ function setup(
     otherMember?: boolean;
   } = {},
 ) {
-  const effects: Array<{ id: string; runId: string; kind: string; status: string }> = [];
+  const effects: Array<{
+    id: string;
+    runId: string;
+    kind: string;
+    status: string;
+    request?: unknown;
+  }> = [];
   if (options.consent !== false)
     effects.push({
       id: "old",
@@ -84,9 +122,14 @@ function setup(
       },
     ),
   };
-  type Clause = { runId?: string; status?: string | { in: string[] } };
+  type Clause = {
+    runId?: string;
+    status?: string | { in: string[] };
+    request?: { equals: unknown };
+  };
   const holds = (effect: (typeof effects)[number], clause: Clause) =>
     (!clause.runId || effect.runId === clause.runId) &&
+    (!clause.request || JSON.stringify(effect.request) === JSON.stringify(clause.request.equals)) &&
     (clause.status === undefined ||
       (typeof clause.status === "string"
         ? effect.status === clause.status
@@ -307,22 +350,17 @@ describe("a read", () => {
     });
     expect(bare?.events[0]).not.toHaveProperty("location");
     expect(phoneCalendarValue("nope")).toBeNull();
-    // A link or passcode in the place is not passed on; the place itself is.
-    for (const location of [
-      "https://meet.example.test/abc",
-      "zoom://join?id=1",
-      "Call www.example.test",
-      "example.test/j/123?pwd=x",
-    ])
-      expect(
-        phoneCalendarValue({ events: [{ ...EVENT, location }], truncated: false })?.events[0],
-        location,
-      ).not.toHaveProperty("location");
-    for (const location of ["Clinic, 5th floor", "Room 4.2 / B", "St. James's Park"])
-      expect(
-        phoneCalendarValue({ events: [{ ...EVENT, location }], truncated: false })?.events[0],
-      ).toHaveProperty("location", location);
     expect(phoneCalendarValue({ events: "all" })).toBeNull();
+  });
+
+  it("takes links out of the title, the place and the calendar's name, as the phone does", () => {
+    const value = phoneCalendarValue({
+      events: LINK_SAMPLES.map(({ raw }) => ({ ...EVENT, ...raw })),
+      truncated: false,
+    });
+    expect(
+      value?.events.map(({ title, location, calendar }) => ({ title, location, calendar })),
+    ).toEqual(LINK_SAMPLES.map(({ kept }) => ({ location: undefined, ...kept })));
   });
 
   it("tells the model an unreadable answer, logging only that it was", async () => {
@@ -474,7 +512,7 @@ describe("the owner's consent", () => {
   it("is a completed read, or this run's own approved card; nothing a crash can leave behind", async () => {
     const plan = async (status: string, runId: string) => {
       const run = setup({ consent: false });
-      run.effects.push({ id: "e", runId, kind: PHONE_CALENDAR_READ_TOOL, status });
+      run.effects.push({ id: "e", runId, kind: PHONE_CALENDAR_READ_TOOL, status, request: RANGE });
       return phoneGate(run.ctx, false, { ...RANGE });
     };
     expect(await plan("completed", "run-0")).toBe("allow");
@@ -482,6 +520,24 @@ describe("the owner's consent", () => {
     for (const status of ["executing", "uncertain", "intended", "denied"])
       expect(await plan(status, "run-1"), status).toBe("ask");
     expect(await plan("approved", "run-0")).toBe("ask");
+  });
+});
+
+describe("calls in the same run", () => {
+  it("runs only the call whose own card was approved, not another one beside it", async () => {
+    const run = setup({ consent: false });
+    const first = { ...RANGE };
+    const second = { from: "2026-12-01T00:00:00+03:00", to: "2026-12-02T00:00:00+03:00" };
+    // A's card was allowed; A has not run yet.
+    run.effects.push({
+      id: "a",
+      runId: "run-1",
+      kind: PHONE_CALENDAR_READ_TOOL,
+      status: "approved",
+      request: first,
+    });
+    expect(await phoneGate(run.ctx, false, second)).toBe("ask");
+    expect(await phoneGate(run.ctx, false, { ...first })).toBe("allow");
   });
 });
 
@@ -496,6 +552,7 @@ describe("a run that took in outside content", () => {
       runId: "run-1",
       kind: PHONE_CALENDAR_READ_TOOL,
       status: "approved",
+      request: RANGE,
     });
     expect(await phoneGate(answered.ctx, false, { ...RANGE })).toBe("allow");
   });

@@ -1,3 +1,4 @@
+import { withoutLinks } from "@rakazo/contracts";
 import { z } from "zod";
 
 /** The platforms a phone pairs as. Anything else that pairs is a computer. */
@@ -63,13 +64,19 @@ const event = z.object({
   calendar: z.string().optional(),
 });
 const value = z.object({ events: z.array(z.unknown()), truncated: z.boolean() });
-/** A link in a place (a meeting's address, often with its passcode): a scheme, www., or a domain with a path. */
-const LINK = /:\/\/|\bwww\.|\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\/\S/i;
+
+/**
+ * A text field without its links (the one filter the phone uses too, @rakazo/contracts), cut to
+ * its limit; what the phone sent is cut first, so a long field costs no more to filter.
+ */
+function text(field: string | undefined, max: number): string | undefined {
+  return field ? withoutLinks(field.slice(0, 10 * max))?.slice(0, max) : undefined;
+}
 
 /**
  * The phone's answer as the server passes it on: never trusted as sent. Only the known fields of
- * each well-formed event are kept (no notes, attendees, links or ids, whatever the phone sends),
- * each cut to its limit, and at most PHONE_CALENDAR_MAX_EVENTS of them. Null when it is not an
+ * each well-formed event are kept (no notes, attendees or ids, whatever the phone sends), links
+ * taken out of their text and each cut to its limit, and at most PHONE_CALENDAR_MAX_EVENTS of them. Null when it is not an
  * answer at all.
  */
 export function phoneCalendarValue(answer: unknown): PhoneCalendarValue | null {
@@ -78,15 +85,17 @@ export function phoneCalendarValue(answer: unknown): PhoneCalendarValue | null {
   const events = parsed.data.events.flatMap((entry) => {
     const read = event.safeParse(entry);
     if (!read.success) return [];
-    const { title, start, end, allDay, location, calendar } = read.data;
+    const { start, end, allDay } = read.data;
+    const location = text(read.data.location, FIELD_MAX);
+    const calendar = text(read.data.calendar, CALENDAR_NAME_MAX);
     return [
       {
-        title: title.slice(0, FIELD_MAX),
+        title: text(read.data.title, FIELD_MAX) ?? "",
         start,
         end,
         allDay,
-        ...(location && !LINK.test(location) ? { location: location.slice(0, FIELD_MAX) } : {}),
-        ...(calendar ? { calendar: calendar.slice(0, CALENDAR_NAME_MAX) } : {}),
+        ...(location ? { location } : {}),
+        ...(calendar ? { calendar } : {}),
       },
     ];
   });

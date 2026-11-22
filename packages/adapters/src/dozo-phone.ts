@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { deadlineSignal, redactSecrets } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
@@ -184,12 +184,17 @@ export async function phoneGate(
       kind: PHONE_CALENDAR_READ_TOOL,
       createdAt: { gte: route.pairedAt },
       run: { userId: route.owner, botId: ctx.bot.id },
-      // A read that finished, or the card the owner just allowed for this call. An effect a
-      // crash left executing or uncertain is neither: it may come from a call that never asked.
-      // Once outside content entered the run (the phone's own answer included), only the card.
+      // A read that finished, or the card the owner just allowed for this very call (its own
+      // range: a call beside it rides on no other's card). An effect a crash left executing or
+      // uncertain is neither: it may come from a call that never asked. Once outside content
+      // entered the run (the phone's own answer included), only the card.
       OR: [
         ...((await isRunTainted(ctx)) ? [] : [{ status: "completed" }]),
-        { status: "approved", runId: ctx.runId },
+        {
+          status: "approved",
+          runId: ctx.runId,
+          request: { equals: args as Prisma.InputJsonValue },
+        },
       ],
     },
     select: { id: true },

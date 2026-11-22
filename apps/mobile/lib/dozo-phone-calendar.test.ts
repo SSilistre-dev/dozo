@@ -42,6 +42,38 @@ async function withoutNativeModule() {
 type CalendarFile = typeof import("./dozo-phone-calendar");
 let calendar: CalendarFile;
 
+/**
+ * The same raw events and what is left of them, word for word in the phone's test
+ * (apps/mobile/lib/dozo-phone-calendar.test.ts) and the server's (dozo-phone.test.ts): both run
+ * them through their own path, so the phone and the server give the same output.
+ */
+const LINK_SAMPLES = [
+  {
+    raw: {
+      title: "Standup https://x.example/j/1?pwd=abc",
+      location: "zoom.us / j / 123",
+      calendar: "Team meet.google.com",
+    },
+    kept: { title: "Standup", calendar: "Team" },
+  },
+  {
+    raw: { title: "Call tel:+1 555 0100,,123456#", location: "Room 4.2", calendar: "Work" },
+    kept: { title: "Call", location: "Room 4.2", calendar: "Work" },
+  },
+  {
+    raw: { title: "Passcode: abc123", location: "zoom\uFF0Eus\uFF0Fj\uFF0F123", calendar: "Home" },
+    kept: { title: "Passcode: abc123", calendar: "Home" },
+  },
+  {
+    raw: {
+      title: "https://only.example",
+      location: "Main St. 12/3, Berlin",
+      calendar: "Dr. Smith",
+    },
+    kept: { title: "", location: "Main St. 12/3, Berlin", calendar: "Dr. Smith" },
+  },
+];
+
 const request = { from: "2026-11-23T00:00:00.000Z", to: "2026-11-24T00:00:00.000Z", limit: 50 };
 const event = (extra: Record<string, unknown>) => ({
   title: "Event",
@@ -133,29 +165,28 @@ describe("the calendar's value", () => {
     expect(value.events[0]!.calendar).toHaveLength(100);
   });
 
-  it("leaves out a location that holds a link, so a meeting link or passcode stays on the phone", () => {
-    const linked = [
-      "https://zoom.us/j/123?pwd=secret",
-      "Join at www.example.test/meet",
-      "meet.example.test/abc-defg-hij",
-      "Teams: zoom.us/j/987 passcode 4242",
-      "zoommtg://zoom.us/join?confno=1",
-    ];
-    const kept = ["Room 4.2", "Main St. 12/3, Berlin", "Cafe", "e.g. the lobby"];
+  it("takes links out of the title, the place and the calendar's name, as the server does", () => {
+    const names = new Map(LINK_SAMPLES.map(({ raw }, index) => [`c${index}`, raw.calendar]));
     const value = calendar.calendarValue(
-      [...linked, ...kept].map((location, index) => event({ title: `E${index}`, location })),
-      new Map(),
+      LINK_SAMPLES.map(({ raw }, index) =>
+        event({ title: raw.title, location: raw.location, calendarId: `c${index}` }),
+      ),
+      names,
       request,
     );
-    expect(value.events.map((entry) => entry.location)).toEqual([
-      ...linked.map(() => undefined),
-      ...kept,
-    ]);
-    // Nor can a search find out what the link says.
-    const probe = { ...request, query: "pwd=secret" };
     expect(
-      calendar.calendarValue([event({ location: linked[0] })], new Map(), probe).events,
+      value.events.map(({ title, location, calendar }) => ({ title, location, calendar })),
+    ).toEqual(LINK_SAMPLES.map(({ kept }) => ({ location: undefined, ...kept })));
+    // Nor can a search find out what a link said.
+    const probe = { ...request, query: "pwd=abc" };
+    expect(
+      calendar.calendarValue([event({ title: LINK_SAMPLES[0]!.raw.title })], new Map(), probe)
+        .events,
     ).toEqual([]);
+    const passcode = { ...request, query: "Passcode" };
+    expect(
+      calendar.calendarValue([event({ title: "Passcode: abc123" })], new Map(), passcode).events,
+    ).toHaveLength(1);
   });
 
   it("leaves out an empty location and an unknown calendar, and reads all-day as given", () => {

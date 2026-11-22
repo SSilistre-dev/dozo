@@ -5642,6 +5642,15 @@
       "reason": "phone: the import of the handler above"
     },
     {
+      "file": "packages/contracts/src/index.ts",
+      "find": "export * from \"./terminal.js\";\nexport * from \"./user-devices.js\";\n",
+      "replace": "export * from \"./terminal.js\";\nexport * from \"./dozo-without-links.js\";\nexport * from \"./user-devices.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-without-links.ts"
+      ],
+      "reason": "phone: the one filter that takes links out of calendar text, on the phone and again on the server"
+    },
+    {
       "file": "packages/adapters/src/host-computer-device.ts",
       "find": "  return {\n    async connected(userId) {\n      return (await devices?.connected(userId)) ?? hostDevice();\n",
       "replace": "  return {\n    // The user's phone stays reachable on the desktop app's own server (dozo-phone.ts).\n    ...phoneReach(devices),\n    async connected(userId) {\n      return (await devices?.connected(userId)) ?? hostDevice();\n",
