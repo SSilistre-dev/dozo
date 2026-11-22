@@ -9571,6 +9571,60 @@
       "reason": "bot chats: the import of the rule below"
     },
     {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "import { getActiveTeachingSession, settleCallRequest, wakeRun } from \"@rakazo/adapters\";\nimport type { Actor } from \"@rakazo/contracts\";\n",
+      "replace": "import { getActiveTeachingSession, settleCallRequest, wakeRun } from \"@rakazo/adapters\";\nimport { dozoNotCallRecipient, dozoSettleOwnCall } from \"../dozo-call-recipient.js\";\nimport type { Actor } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: the import of the three rules below"
+    },
+    {
+      "file": "packages/db/src/repos.ts",
+      "find": "                threadId: { in: threadIds },\n",
+      "replace": "                // Dozo: a bot's call rings only the person whose chat it is, not every member.\n                threadId: {\n                  in: bots.flatMap((bot) =>\n                    bot.thread?.userId === actor.userId ? [bot.thread.id] : [],\n                  ),\n                },\n",
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so the bot list shows it ringing to that person only; other members of a shared Space saw the ring and an Answer that cannot work"
+    },
+    {
+      "file": "packages/db/src/repos.test.ts",
+      "find": "  thread: { id: \"thread-1\", reads: [{ unread: false }], messages: [], runs: [] },\n",
+      "replace": "  thread: {\n    id: \"thread-1\",\n    userId: \"user-1\",\n    reads: [{ unread: false }],\n    messages: [],\n    runs: [],\n  },\n",
+      "reason": "upstream test fixture: the fixture bot's chat is the test actor's own, as a bot's chat is its owner's, and the fork rings only that person (call recipient rule in repos.ts)"
+    },
+    {
+      "file": "apps/api/src/router.test.ts",
+      "find": "          thread: { spaceId: \"space-1\" },\n",
+      "replace": "          thread: { spaceId: \"space-1\", userId: \"user-1\" },\n",
+      "reason": "upstream test fixture: the bot's call card in these tests sits in the caller's own chat, as every bot call does, and the fork reads whose chat that is before it settles the call (dozo-call-recipient.ts)"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const answered = await settleCallRequest(deps, {\n",
+      "replace": "        const answered = await dozoSettleOwnCall(deps, context.actor, {\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person answers it; anyone else in the Space gets the answer an unknown call gets and the call keeps ringing"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const declined = await settleCallRequest(deps, {\n",
+      "replace": "        const declined = await dozoSettleOwnCall(deps, context.actor, {\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person declines it; anyone else in the Space gets the answer an unknown call gets and the call keeps ringing"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const { botId, threadId } = target;\n        // The bot's own call: its card keeps how long the user stayed on.\n",
+      "replace": "        const { botId, threadId } = target;\n        // Dozo: only the person a bot's call rang ends it; anyone else gets an unknown call's answer.\n        if (await dozoNotCallRecipient(deps.prisma, context.actor, threadId, input.callId))\n          return { ok: true as const };\n        // The bot's own call: its card keeps how long the user stayed on.\n",
+      "requires": [
+        "apps/api/src/dozo-call-recipient.ts"
+      ],
+      "reason": "call recipient: a bot's call rings only the person whose chat it is, so only that person ends it; for anyone else the card, the hang-up note and the follow-up turn stay untouched and the answer is the one an unknown call gets"
+    },
+    {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "import { ArchivedChats } from \"./shell/archived-chats\";\nimport type { ChatMenuState, ChatMenuTarget } from \"./shell/chat-context-menu\";\n",
       "replace": "import { ArchivedChats } from \"./shell/archived-chats\";\nimport { dozoChatPath, dozoChatRpc } from \"./shell/dozo-bot-chats\";\nimport type { ChatMenuState, ChatMenuTarget } from \"./shell/chat-context-menu\";\n",
