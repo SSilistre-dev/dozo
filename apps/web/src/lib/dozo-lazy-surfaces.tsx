@@ -1,6 +1,11 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../components/ErrorBoundary";
+import type {
+  DozoHiddenLibrarySkills as LoadedDozoHiddenLibrarySkills,
+  DozoLibraryBadge as LoadedDozoLibraryBadge,
+  DozoOrganizationLibrarySwitch as LoadedDozoOrganizationLibrarySwitch,
+} from "../pages/dozo-organization-library-switch";
 import type { DozoAvatarGeneratePanel as LoadedDozoAvatarGeneratePanel } from "../pages/shell/dozo-avatar-generate-panel";
 import type { DozoBotSkillsSection as LoadedDozoBotSkillsSection } from "../pages/shell/dozo-bot-skills-section";
 import type { OwnComputerRow as LoadedOwnComputerRow } from "../pages/shell/dozo-own-computer-row";
@@ -22,6 +27,7 @@ const loadCliAccounts = () => import("../pages/model-settings/dozo-cli-accounts"
 const loadSiteSessions = () => import("../pages/shell/dozo-site-sessions");
 const loadSkillsSection = () => import("../pages/shell/dozo-bot-skills-section");
 const loadOwnComputerRow = () => import("../pages/shell/dozo-own-computer-row");
+const loadOrganizationLibrary = () => import("../pages/dozo-organization-library-switch");
 
 const LazyDozoAvatarGeneratePanel = lazyComponent(() =>
   loadAvatarPanel().then((module) => module.DozoAvatarGeneratePanel),
@@ -39,6 +45,16 @@ const LazyOwnComputerRow = lazyComponent(() =>
   loadOwnComputerRow().then((module) => module.OwnComputerRow),
 );
 
+const LazyOrganizationLibrarySwitch = lazyComponent(() =>
+  loadOrganizationLibrary().then((module) => module.DozoOrganizationLibrarySwitch),
+);
+const LazyLibraryBadge = lazyComponent(() =>
+  loadOrganizationLibrary().then((module) => module.DozoLibraryBadge),
+);
+const LazyHiddenLibrarySkills = lazyComponent(() =>
+  loadOrganizationLibrary().then((module) => module.DozoHiddenLibrarySkills),
+);
+
 /** Fetches the code of every screen here; a failure shows when the screen is opened. */
 export function preloadDozoSurfaces() {
   return Promise.all([
@@ -47,6 +63,7 @@ export function preloadDozoSurfaces() {
     loadSiteSessions(),
     loadSkillsSection(),
     loadOwnComputerRow(),
+    loadOrganizationLibrary(),
   ]);
 }
 
@@ -110,6 +127,37 @@ export function OwnComputerRow(props: ComponentProps<typeof LoadedOwnComputerRow
   return (
     <Held>
       <LazyOwnComputerRow {...props} />
+    </Held>
+  );
+}
+
+/** The Organization switch in a skill's editor, which the person has opened. */
+export function DozoOrganizationLibrarySwitch(
+  props: ComponentProps<typeof LoadedDozoOrganizationLibrarySwitch>,
+) {
+  return (
+    <Held>
+      <LazyOrganizationLibrarySwitch {...props} />
+    </Held>
+  );
+}
+
+/** The label on a skill that comes from the organization's library; nothing if its code fails. */
+export function DozoLibraryBadge(props: ComponentProps<typeof LoadedDozoLibraryBadge>) {
+  return (
+    <Held failed={null}>
+      <LazyLibraryBadge {...props} />
+    </Held>
+  );
+}
+
+/** The library skills this member turned off, under their skills; nothing if its code fails. */
+export function DozoHiddenLibrarySkills(
+  props: ComponentProps<typeof LoadedDozoHiddenLibrarySkills>,
+) {
+  return (
+    <Held failed={null}>
+      <LazyHiddenLibrarySkills {...props} />
     </Held>
   );
 }

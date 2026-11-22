@@ -5,14 +5,18 @@ import * as z from "zod";
  * What a command rule does: `allow` runs exactly its words, `allow_prefix` its words followed by
  * other words that are not options, `block` refuses any command containing them, in every mode.
  */
-export const DozoCommandRuleEffectSchema = z.enum(["allow", "allow_prefix", "block"]);
+export const DozoCommandRuleEffectSchema = /* @__PURE__ */ z.enum([
+  "allow",
+  "allow_prefix",
+  "block",
+]);
 
 /**
  * A command rule of the signed-in member for one bot, in the current Space: its words in order, the
  * folder it runs in ('' for the home folder), what it does, and the computer it was saved on
  * (`user`: the member's own, `hosted`: the bot's).
  */
-export const DozoCommandRuleSchema = z.object({
+export const DozoCommandRuleSchema = /* @__PURE__ */ z.object({
   id: z.string(),
   botId: z.string(),
   botName: z.string(),
@@ -27,7 +31,7 @@ export type DozoCommandRule = z.infer<typeof DozoCommandRuleSchema>;
  * Whether commands that change something on the bot's computer ask the member first. Null when the
  * Space has no computer of the bot's, so there is nothing to ask about.
  */
-const HostedAsks = z.object({ hostedAsks: z.boolean().nullable() });
+const HostedAsks = /* @__PURE__ */ z.object({ hostedAsks: z.boolean().nullable() });
 
 export const dozoCommandRulesContract = /* @__PURE__ */ (() => ({
   list: oc.output(z.array(DozoCommandRuleSchema)),

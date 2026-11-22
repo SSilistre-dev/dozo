@@ -25,7 +25,7 @@ export const DozoBotChatName = z
  * One of a bot's extra chats. The bot's main chat is not one of them: it stays the chat clients
  * open by the bot, as before. `id` is the chat's thread.
  */
-export const DozoBotChatSchema = z.object({
+export const DozoBotChatSchema = /* @__PURE__ */ z.object({
   id: Id,
   botId: Id,
   name: z.string(),
@@ -37,7 +37,7 @@ export const DozoBotChatSchema = z.object({
 });
 export type DozoBotChat = z.infer<typeof DozoBotChatSchema>;
 
-const ChatOutput = z.object({ chat: DozoBotChatSchema });
+const ChatOutput = /* @__PURE__ */ z.object({ chat: DozoBotChatSchema });
 
 /**
  * A chat request names exactly one chat: a bot's main chat (`botId`), a group's (`groupId`), or a
@@ -66,28 +66,37 @@ export function dozoThreadTargetCheck(
   }
 }
 
-export const DozoBotChatsListInputSchema = z.object({
+export const DozoBotChatsListInputSchema = /* @__PURE__ */ z.object({
   /** One bot's chats; without it, every chat of the Space's bots that are not archived. */
   botId: Id.optional(),
   includeArchived: z.boolean().optional(),
 });
 export type DozoBotChatsListInput = z.infer<typeof DozoBotChatsListInputSchema>;
-export const DozoBotChatCreateInputSchema = z.object({ botId: Id, name: DozoBotChatName });
+export const DozoBotChatCreateInputSchema = /* @__PURE__ */ z.object({
+  botId: Id,
+  name: DozoBotChatName,
+});
 export type DozoBotChatCreateInput = z.infer<typeof DozoBotChatCreateInputSchema>;
-export const DozoBotChatRenameInputSchema = z.object({ chatId: Id, name: DozoBotChatName });
+export const DozoBotChatRenameInputSchema = /* @__PURE__ */ z.object({
+  chatId: Id,
+  name: DozoBotChatName,
+});
 export type DozoBotChatRenameInput = z.infer<typeof DozoBotChatRenameInputSchema>;
-export const DozoBotChatArchiveInputSchema = z.object({ chatId: Id, archived: z.boolean() });
+export const DozoBotChatArchiveInputSchema = /* @__PURE__ */ z.object({
+  chatId: Id,
+  archived: z.boolean(),
+});
 export type DozoBotChatArchiveInput = z.infer<typeof DozoBotChatArchiveInputSchema>;
 
-export const DozoRoutineChatInputSchema = z.object({ routineId: Id });
-export const DozoRoutineChatSetInputSchema = z.object({
+export const DozoRoutineChatInputSchema = /* @__PURE__ */ z.object({ routineId: Id });
+export const DozoRoutineChatSetInputSchema = /* @__PURE__ */ z.object({
   routineId: Id,
   /** One of the routine's bot's open extra chats, or null for the bot's main chat. */
   chatId: Id.nullable(),
 });
 export type DozoRoutineChatSetInput = z.infer<typeof DozoRoutineChatSetInputSchema>;
 /** Where a bot's routine posts. */
-export const DozoRoutineChatSchema = z.object({
+export const DozoRoutineChatSchema = /* @__PURE__ */ z.object({
   /** The open extra chat its runs post in; null for the bot's main chat. */
   chatId: Id.nullable(),
   /** False for a routine that posts in a group: a bot's chats are not where it posts. */

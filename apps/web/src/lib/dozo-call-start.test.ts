@@ -53,17 +53,8 @@ const calls = () => ({
   end,
   check: mocks.check,
   report: mocks.report,
+  refuse: mocks.toastError,
 });
-
-/** Node's own timeout signal ignores the fake clock: tie it to it. */
-function fakeDeadlines() {
-  vi.useFakeTimers();
-  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), ms);
-    return controller.signal;
-  });
-}
 
 describe("starting a call", () => {
   it("starts it ringing at once, and tells it what the check finds", async () => {
@@ -77,7 +68,7 @@ describe("starting a call", () => {
     pending.resolve(answer({ serverDictation: true }));
     await starting;
     expect(await started.check).toEqual({ serverDictation: true });
-    expect(mocks.check).toHaveBeenCalledWith("bot-1", expect.any(AbortSignal));
+    expect(mocks.check).toHaveBeenCalledWith("bot-1", CALL_CHECK_WAIT_MS);
     expect(end).not.toHaveBeenCalled();
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
@@ -126,25 +117,14 @@ describe("starting a call", () => {
     expect(mocks.startCall).toHaveBeenCalledTimes(2);
   });
 
-  it("does not wait for a check that never comes back, and takes the next tap after it", async () => {
-    fakeDeadlines();
-    // The request never settles and ignores its signal.
-    mocks.check.mockReturnValue(deferred<DozoCallCheck>().promise);
-    const starting = dozoStartCall(call, calls());
-    await vi.advanceTimersByTimeAsync(CALL_CHECK_WAIT_MS - 1);
-    let settled = false;
-    void starting.then(() => {
-      settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await starting;
+  it("takes the next tap after a check that gave up, and leaves the call alone", async () => {
+    // The page's request gives up after CALL_CHECK_WAIT_MS (tested with the gate that makes it).
+    mocks.check.mockRejectedValueOnce(new DOMException("timed out", "TimeoutError"));
+    await dozoStartCall(call, calls());
     const started = mocks.startCall.mock.calls[0]?.[0];
     expect(await started.check).toEqual({ serverDictation: undefined });
     expect(end).not.toHaveBeenCalled();
     expect(CALL_CHECK_WAIT_MS).toBe(4_000);
-    // The tap after it is not shut out by the one that hung.
     mocks.check.mockResolvedValue(answer({}));
     await dozoStartCall(call, calls());
     expect(mocks.startCall).toHaveBeenCalledTimes(2);

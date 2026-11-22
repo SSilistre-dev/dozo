@@ -1,7 +1,7 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 
-export const DozoCallCheckSchema = z.object({
+export const DozoCallCheckSchema = /* @__PURE__ */ z.object({
   /** False where nothing is asked (a hosted deployment): the call starts as it always did. */
   checked: z.boolean(),
   /** What did not answer: the speech server, or the bot's model. Null when the call may start. */

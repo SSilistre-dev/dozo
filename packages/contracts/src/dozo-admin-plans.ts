@@ -11,7 +11,7 @@ export const DOZO_PLAN_COMPUTER_HOURS_MAX = 10_000;
  * A quota as it holds: the admin's value where one is set, else the plan's terms in code. The
  * terms are what the landing page shows, so a value that differs from them is told apart.
  */
-const QuotaSchema = z.object({
+const QuotaSchema = /* @__PURE__ */ z.object({
   value: z.number().int().nullable(),
   /** The plan's terms in code; null where the plan carries none. */
   terms: z.number().int().nullable(),
@@ -20,7 +20,7 @@ const QuotaSchema = z.object({
 });
 
 /** One plan as the admin plans page shows it. Prices are read only: they live in code. */
-export const DozoAdminPlanRowSchema = z.object({
+export const DozoAdminPlanRowSchema = /* @__PURE__ */ z.object({
   tier: ByokTierSchema,
   name: z.string(),
   /** In cents of `currency`; null where the plan is free or not sold that way. */
@@ -42,7 +42,7 @@ export const DozoAdminPlanRowSchema = z.object({
 export type DozoAdminPlanRow = z.infer<typeof DozoAdminPlanRowSchema>;
 
 /** A field left out stays as it is; null returns a quota to the plan's terms. */
-export const DozoAdminPlanQuotaChangeSchema = z.object({
+export const DozoAdminPlanQuotaChangeSchema = /* @__PURE__ */ z.object({
   tier: ByokTierSchema,
   sharedSpaceMb: z.number().int().min(0).max(DOZO_PLAN_SHARED_SPACE_MB_MAX).nullable().optional(),
   /** At least one: a paid plan's hours are what its others are compared with. */
@@ -50,7 +50,7 @@ export const DozoAdminPlanQuotaChangeSchema = z.object({
 });
 export type DozoAdminPlanQuotaChange = z.infer<typeof DozoAdminPlanQuotaChangeSchema>;
 
-const PlansSchema = z.object({ plans: z.array(DozoAdminPlanRowSchema) });
+const PlansSchema = /* @__PURE__ */ z.object({ plans: z.array(DozoAdminPlanRowSchema) });
 
 /** Every procedure is refused with FORBIDDEN unless the caller is a deployment admin. */
 export const dozoAdminPlansContract = /* @__PURE__ */ (() => ({

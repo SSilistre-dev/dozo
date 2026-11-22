@@ -11289,11 +11289,11 @@
     {
       "file": "apps/web/src/pages/KnowledgeSection.tsx",
       "find": "import { useSave, useSpaceQueries } from \"../lib/query\";\nimport { useSpaceRpc } from \"../lib/space-rpc\";",
-      "replace": "import { useSave, useSpaceQueries } from \"../lib/query\";\nimport {\n  DozoHiddenLibrarySkills,\n  DozoLibraryBadge,\n  DozoOrganizationLibrarySwitch,\n} from \"./dozo-organization-library-switch\";\nimport { useSpaceRpc } from \"../lib/space-rpc\";",
+      "replace": "import { useSave, useSpaceQueries } from \"../lib/query\";\nimport {\n  DozoHiddenLibrarySkills,\n  DozoLibraryBadge,\n  DozoOrganizationLibrarySwitch,\n} from \"../lib/dozo-lazy-surfaces\";\nimport { useSpaceRpc } from \"../lib/space-rpc\";",
       "requires": [
-        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx"
       ],
-      "reason": "organization skill library: the import of the rules below"
+      "reason": "organization skill library (its screens load when first shown, outside the code the page starts with): the import of the rules below"
     },
     {
       "file": "apps/web/src/pages/KnowledgeSection.tsx",
@@ -11325,9 +11325,9 @@
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
       "find": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoBotChatsChanged,",
-      "replace": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoOrganizationLibraryChanged } from \"../dozo-organization-library-switch\";\nimport { dozoBotChatsChanged,",
+      "replace": "import { dozoPinsChanged } from \"./dozo-message-pins\";\nimport { dozoOrganizationLibraryChanged } from \"../dozo-organization-library-changed\";\nimport { dozoBotChatsChanged,",
       "requires": [
-        "apps/web/src/pages/dozo-organization-library-switch.tsx"
+        "apps/web/src/pages/dozo-organization-library-changed.ts"
       ],
       "reason": "organization skill library: the import of the rule below"
     },

@@ -1,4 +1,6 @@
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { startCall } from "./call-session";
+import { toastError } from "./dozo-error-text";
 import { reportClientError } from "./monitoring";
 import { rpc } from "./rpc";
 
@@ -12,8 +14,12 @@ const loadCallStart = () => import("./dozo-call-start");
 
 /** The page's own request and error reporting, handed to the check when it is loaded. */
 const wiring = {
-  check: (botId: string, signal: AbortSignal) => rpc.dozoCallPreflight.check({ botId }, { signal }),
+  check: (botId: string, waitMs: number) => {
+    const until = deadlineSignal(waitMs);
+    return withAbort(rpc.dozoCallPreflight.check({ botId }, { signal: until }), until);
+  },
   report: (error: unknown) => reportClientError(error, "voice.turn"),
+  refuse: (copy: string) => toastError(copy),
 };
 
 /** Places a call through the check, or straight when the check cannot be loaded. */

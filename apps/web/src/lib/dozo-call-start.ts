@@ -1,8 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { DozoCallCheck } from "@rakazo/contracts";
-import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { startCall } from "./call-session";
-import { toastError } from "./dozo-error-text";
 
 type Call = Parameters<typeof startCall>[0];
 
@@ -32,8 +30,11 @@ export function dozoCallRefusal(check: DozoCallCheck | null): string | null {
  * chunk of its own out of it.
  */
 export type CallCheckWiring = {
-  check: (botId: string, signal: AbortSignal) => Promise<DozoCallCheck>;
+  /** The check, given up on after `waitMs` whether or not the request answers. */
+  check: (botId: string, waitMs: number) => Promise<DozoCallCheck>;
   report: (error: unknown) => void;
+  /** Tells the person why the call cannot be placed. */
+  refuse: (copy: string) => void;
 };
 
 /**
@@ -53,8 +54,7 @@ export async function dozoCheckCall(
 ): Promise<{ refusal: string | null; serverDictation: boolean | undefined }> {
   let check: DozoCallCheck | null = null;
   try {
-    const until = deadlineSignal(CALL_CHECK_WAIT_MS);
-    check = await withAbort(wiring.check(botId, until), until);
+    check = await wiring.check(botId, CALL_CHECK_WAIT_MS);
   } catch (error) {
     wiring.report(error);
   }
@@ -82,7 +82,7 @@ export async function dozoStartCall(
     const { refusal } = await checked;
     if (refusal) {
       calls.end();
-      toastError(refusal);
+      calls.refuse(refusal);
     }
   } finally {
     checking = false;

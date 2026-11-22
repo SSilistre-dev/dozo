@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ report: vi.fn(), check: vi.fn() }));
+const mocks = vi.hoisted(() => ({ report: vi.fn(), check: vi.fn(), toast: vi.fn() }));
 vi.mock("./monitoring", () => ({ reportClientError: mocks.report }));
+vi.mock("./dozo-error-text", () => ({ toastError: mocks.toast }));
 vi.mock("./rpc", () => ({ rpc: { dozoCallPreflight: { check: mocks.check } } }));
 
 import { checkBeforeAnswer, placeCall } from "./dozo-call-gate";
@@ -50,19 +51,55 @@ describe("checking before an incoming call is answered", () => {
 });
 
 describe("what the gate hands the check", () => {
-  it("is the page's own request, bounded by the signal, and its error report", async () => {
-    mocks.check.mockResolvedValue({ checked: true, refusal: null, serverDictation: false });
+  async function handed() {
     let wiring: Parameters<typeof import("./dozo-call-start").dozoCheckCall>[1] | undefined;
-    const dozoCheckCall = vi.fn(async (_botId: string, handed: typeof wiring) => {
-      wiring = handed;
+    const dozoCheckCall = vi.fn(async (_botId: string, given: typeof wiring) => {
+      wiring = given;
       return { refusal: null, serverDictation: undefined };
     });
     await checkBeforeAnswer("bot-1", (async () => ({ dozoCheckCall })) as never);
-    const signal = new AbortController().signal;
-    await wiring?.check("bot-1", signal);
-    expect(mocks.check).toHaveBeenCalledWith({ botId: "bot-1" }, { signal });
+    return wiring!;
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it("is the page's own request, and its error report and refusal", async () => {
+    const wiring = await handed();
+    mocks.check.mockResolvedValue({ checked: true, refusal: null, serverDictation: false });
+    await wiring.check("bot-1", 3_000);
+    expect(mocks.check).toHaveBeenCalledWith(
+      { botId: "bot-1" },
+      { signal: expect.any(AbortSignal) },
+    );
     const error = new Error("x");
-    wiring?.report(error);
+    wiring.report(error);
     expect(mocks.report).toHaveBeenCalledWith(error, "voice.turn");
+    wiring.refuse("Can't call");
+    expect(mocks.toast).toHaveBeenCalledWith("Can't call");
+  });
+
+  it("gives up on a request that never comes back, though it ignores its signal", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    const wiring = await handed();
+    mocks.check.mockReturnValue(new Promise(() => undefined));
+    const waiting = wiring.check("bot-1", 4_000);
+    const outcome = waiting.then(
+      () => "answered",
+      (error: Error) => error.name,
+    );
+    await vi.advanceTimersByTimeAsync(3_999);
+    let settled = false;
+    void outcome.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await outcome).toBe("TimeoutError");
   });
 });

@@ -20,6 +20,9 @@ vi.mock("../pages/shell/dozo-bot-skills-section", () => {
 vi.mock("../pages/shell/dozo-own-computer-row", () => {
   throw new Error("chunk gone");
 });
+vi.mock("../pages/dozo-organization-library-switch", () => {
+  throw new Error("chunk gone");
+});
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
@@ -28,6 +31,9 @@ import {
   DozoAvatarGeneratePanel,
   DozoBotSkillsSection,
   DozoCliAccounts,
+  DozoHiddenLibrarySkills,
+  DozoLibraryBadge,
+  DozoOrganizationLibrarySwitch,
   OwnComputerRow,
   SiteSessionsControl,
 } from "./dozo-lazy-surfaces";
@@ -52,6 +58,7 @@ const screens: Array<[string, ComponentType<never>]> = [
   ["SiteSessionsControl", SiteSessionsControl],
   ["DozoBotSkillsSection", DozoBotSkillsSection],
   ["OwnComputerRow", OwnComputerRow],
+  ["DozoOrganizationLibrarySwitch", DozoOrganizationLibrarySwitch],
 ];
 
 for (const [name, Screen] of screens) {
@@ -85,3 +92,24 @@ it("DozoCliAccounts, which is nothing on most servers, stays nothing and leaves 
   expect(host.textContent).toBe("the chat");
   quiet.mockRestore();
 });
+
+it.each([
+  ["DozoLibraryBadge", DozoLibraryBadge],
+  ["DozoHiddenLibrarySkills", DozoHiddenLibrarySkills],
+] as Array<[string, ComponentType<never>]>)(
+  "%s, a label beside the skills, stays nothing and leaves the page standing",
+  async (_name, Screen) => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await act(async () =>
+      root.render(
+        createElement("main", null, [
+          createElement("p", { key: "chat", "data-shell": true }, "the chat"),
+          createElement(Screen, { key: "screen" } as never),
+        ]),
+      ),
+    );
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalled());
+    expect(host.textContent).toBe("the chat");
+    quiet.mockRestore();
+  },
+);
