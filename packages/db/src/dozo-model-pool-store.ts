@@ -12,14 +12,27 @@ type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw">;
 
 /**
  * The end of a rest being recorded over the one before it. A key refused again on the same
- * secret, within a day of its last rest ending, rests twice as long as last time, up to seven
- * days: one refusal that was a provider's mistake costs minutes, a key that stays refused soon
+ * secret after its last rest ended, within a day of that, rests twice as long as last time, up to
+ * seven days: one refusal that was a provider's mistake costs minutes, a key that stays refused soon
  * costs nothing. Any other rest ends when its caller says.
  */
+/**
+ * A refusal while the same key's rest still lasts changes nothing: not its end, not when it was
+ * seen. A run that keeps its model (a routine's) or has no backup to start on, or two runs that end
+ * together, are refused while it rests, and only a refusal after it ended makes the next one longer.
+ */
+const NOT_WHILE_REFUSED = Prisma.sql`NOT (
+    EXCLUDED."reason" = 'rejected'
+    AND "dozo_model_connection_cooldowns"."reason" = 'rejected'
+    AND "dozo_model_connection_cooldowns"."secretId" = EXCLUDED."secretId"
+    AND "dozo_model_connection_cooldowns"."resetsAt" > EXCLUDED."observedAt"
+  )`;
+
 const REFUSED_AGAIN = Prisma.sql`CASE
   WHEN EXCLUDED."reason" = 'rejected'
     AND "dozo_model_connection_cooldowns"."reason" = 'rejected'
     AND "dozo_model_connection_cooldowns"."secretId" = EXCLUDED."secretId"
+    AND "dozo_model_connection_cooldowns"."resetsAt" <= EXCLUDED."observedAt"
     AND "dozo_model_connection_cooldowns"."resetsAt" > EXCLUDED."observedAt" - interval '24 hours'
   THEN GREATEST(
     EXCLUDED."resetsAt",
@@ -138,7 +151,8 @@ export async function recordModelConnectionCooldown(
       "reason" = EXCLUDED."reason",
       "resetsAt" = ${REFUSED_AGAIN},
       "observedAt" = EXCLUDED."observedAt"
-    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"`;
+    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"
+      AND ${NOT_WHILE_REFUSED}`;
   return written > 0;
 }
 
@@ -201,7 +215,8 @@ export async function recordModelRest(
       "reason" = EXCLUDED."reason",
       "resetsAt" = ${REFUSED_AGAIN},
       "observedAt" = EXCLUDED."observedAt"
-    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"`;
+    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"
+      AND ${NOT_WHILE_REFUSED}`;
   return written > 0;
 }
 

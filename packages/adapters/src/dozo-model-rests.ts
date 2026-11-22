@@ -14,13 +14,13 @@ import { findConnectedModelCredential } from "./model-selection.js";
  * pool's default time, and a connection whose key was refused rests a few minutes, longer each
  * time it is refused again. A later run of theirs does not start on it: it starts on its next
  * backup, and comes back to it once the rest has passed, read against the clock when the run
- * starts. Picking the model again ends the rest at once. A short rate limit, an overload or a
+ * starts. Picking the model again in settings or for a bot, or a new key, ends the rest at once. A short rate limit, an overload or a
  * dropped connection never rests a model (`connectionOutReason`). A run on the deployment's
  * model has no connection of the person's, and nothing rests.
  */
 
 export type RestDeps = { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> };
-type RestRun = { userId: string; spaceId: string; modelPinned?: boolean; trigger?: string };
+type RestRun = { userId: string; spaceId: string; modelPinned?: boolean };
 
 /** A model as a run chooses it: on a named connection, or on the one the run would resolve. */
 type Choice = { provider: string; modelId: string; credentialId?: string };
@@ -97,15 +97,11 @@ export async function backupsPastRests<Role extends { backups: ModelRoleChoice[]
   };
 }
 
-/** A run the person asked for this model on, for this message: their own pick. */
-const pickedForMessage = (run: RestRun) => Boolean(run.modelPinned) && run.trigger === "user";
-
 /**
  * The backup a run starts on because the model it chose rests, else nothing: the run then starts
- * on its chosen model as before. A run the person asked that model for, for their message, ends
- * the rest instead, as picking the model again does; other runs that keep their model (a
- * routine's, a retry, a helper's) start on it and leave the rest as it is. One on the deployment's
- * model, or on a computer's saved models, never skips.
+ * on its chosen model as before. A run that keeps its model (a routine's, a retry, a helper's)
+ * starts on it and leaves the rest as it is. One on the deployment's model, or on a computer's
+ * saved models, never skips.
  */
 export async function startPastRest<Start>(
   deps: RestDeps,
@@ -123,11 +119,8 @@ export async function startPastRest<Start>(
   };
   const [rests] = await resting(deps, run, [choice], now);
   if (!rests) return undefined;
-  if (run.modelPinned) {
-    // A pinned run keeps its model; only the person's own pick for a message ends the rest.
-    if (pickedForMessage(run)) await modelPicked(deps.prisma, run.userId, choice);
-    return undefined;
-  }
+  // A pinned run keeps its model.
+  if (run.modelPinned) return undefined;
   const start = await startOnBackup();
   if (start)
     getLogger().info("model.rest.skipped", {

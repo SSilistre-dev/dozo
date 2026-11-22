@@ -19,41 +19,42 @@ export function dozoBotModelBackupsRoutes(ctx: RouterContext) {
       }),
       set: authed.dozoBotModelBackups.set.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        // A row another member pinned to their own connection stays as they saved it while it
-        // is unchanged, so anyone may add, move or remove the others. Only rows of this bot's
-        // saved list count: a new or changed row is checked as the saver's own.
-        const saved = await readBotModelBackups(deps.prisma, bot.id);
-        const pinned = input.backups.flatMap((choice) =>
-          choice.credentialId ? [choice.credentialId] : [],
-        );
-        const own = new Set(
-          pinned.length
-            ? (
-                await deps.prisma.userModelCredential.findMany({
-                  where: { userId: context.actor.userId, id: { in: pinned } },
-                  select: { id: true },
-                })
-              ).map((connection) => connection.id)
-            : [],
-        );
-        const kept = (choice: ModelRoleChoice) =>
-          choice.credentialId && !own.has(choice.credentialId)
-            ? saved.find((row) => modelRoleChoiceKey(row) === modelRoleChoiceKey(choice))
-            : undefined;
-        await validateRoleChoices(
-          context.actor,
-          "main",
-          input.backups.filter((choice) => !kept(choice)),
-        );
-        const backups = input.backups.map((choice) => {
-          const row = kept(choice) ?? choice;
-          return { ...row, provider: canonicalPiProviderId(row.provider) };
+        // One save at a time per bot: the saved list it keeps rows from is the one it replaces.
+        const backups = await deps.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT 1 FROM "bots" WHERE "id" = ${bot.id} FOR UPDATE`;
+          // A row another member pinned to their own connection stays as they saved it while it
+          // is unchanged, so anyone may add, move or remove the others. Only rows of this bot's
+          // saved list count: a new or changed row is checked as the saver's own.
+          const saved = await readBotModelBackups(tx, bot.id);
+          const pinned = input.backups.flatMap((choice) =>
+            choice.credentialId ? [choice.credentialId] : [],
+          );
+          const own = new Set(
+            pinned.length
+              ? (
+                  await tx.userModelCredential.findMany({
+                    where: { userId: context.actor.userId, id: { in: pinned } },
+                    select: { id: true },
+                  })
+                ).map((connection) => connection.id)
+              : [],
+          );
+          const kept = (choice: ModelRoleChoice) =>
+            choice.credentialId && !own.has(choice.credentialId)
+              ? saved.find((row) => modelRoleChoiceKey(row) === modelRoleChoiceKey(choice))
+              : undefined;
+          await validateRoleChoices(
+            context.actor,
+            "main",
+            input.backups.filter((choice) => !kept(choice)),
+          );
+          const next = input.backups.map((choice) => {
+            const row = kept(choice) ?? choice;
+            return { ...row, provider: canonicalPiProviderId(row.provider) };
+          });
+          await writeBotModelBackups(tx, { botId: bot.id, spaceId: context.actor.spaceId }, next);
+          return next;
         });
-        await writeBotModelBackups(
-          deps.prisma,
-          { botId: bot.id, spaceId: context.actor.spaceId },
-          backups,
-        );
         void deps.events?.publishRosterChange?.({ spaceIds: [context.actor.spaceId] });
         return { backups };
       }),

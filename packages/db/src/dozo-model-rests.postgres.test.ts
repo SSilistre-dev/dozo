@@ -191,6 +191,35 @@ describePostgres("model rests outside a pool (PostgreSQL)", () => {
     expect(last.resetsAt.getTime()).toBeGreaterThan(now);
   });
 
+  it("leaves a refused key's rest as it is while it lasts, however often it is refused meanwhile", async () => {
+    const id = await connection();
+    const now = Date.now();
+    const FIVE = 5 * 60_000;
+    const refuse = (at: number) => rest(one.prisma, id, null, new Date(at + FIVE), new Date(at));
+    const ends = async () => (await read(one.prisma, id, ""))[0]?.resetsAt.getTime();
+    await refuse(now);
+    // A pinned routine, a run with no backup to start on, two runs ending together: all refused
+    // while the rest lasts, none of them making it longer.
+    for (let i = 1; i <= 6; i++) await refuse(now + i * 30_000);
+    expect(await ends()).toBe(now + FIVE);
+    // Refused again once it ended: twice as long, once.
+    await refuse(now + FIVE + 1000);
+    expect(await ends()).toBe(now + FIVE + 1000 + 2 * FIVE);
+  });
+
+  it("makes a refused key's rest twice as long once when two processes record it together", async () => {
+    const id = await connection();
+    const now = Date.now();
+    const FIVE = 5 * 60_000;
+    await rest(one.prisma, id, null, new Date(now + FIVE), new Date(now));
+    const after = now + FIVE + 1000;
+    await Promise.all([
+      rest(one.prisma, id, null, new Date(after + FIVE), new Date(after)),
+      rest(two.prisma, id, null, new Date(after + FIVE), new Date(after)),
+    ]);
+    expect((await read(one.prisma, id, ""))[0]?.resetsAt.getTime()).toBe(after + 2 * FIVE);
+  });
+
   it("starts a refused key over at a few minutes on a new key, or a day after its rest ended", async () => {
     const id = await connection();
     const now = Date.now();
