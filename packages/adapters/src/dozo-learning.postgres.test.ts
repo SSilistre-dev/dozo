@@ -307,7 +307,7 @@ describePostgres("bot learning (PostgreSQL)", () => {
         }),
       },
       // The owner saved nothing, so there is nothing to open.
-      secretStore: { load: vi.fn() },
+      secretStore: { load: vi.fn() } as never,
       resolveModel: async () => ({ provider: "test", id: "own" }) as never,
       resolveConnectedModel: async () => ({ provider: "test", id: "role" }) as never,
     };

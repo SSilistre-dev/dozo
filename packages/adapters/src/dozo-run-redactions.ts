@@ -10,7 +10,7 @@ import { loadPurchaseRedactions } from "./purchase-service.js";
 
 export type RunRedactionDeps = {
   prisma: PrismaClient;
-  secretStore: Pick<SecretStore, "load">;
+  secretStore: SecretStore;
   paymentWallet?: PaymentWalletProvider | null;
 };
 
