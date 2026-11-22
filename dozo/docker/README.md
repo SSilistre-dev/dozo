@@ -97,6 +97,8 @@ with `down`.
    `DOZO_SMOKE_TIMEOUT` seconds each (`starting` keeps waiting). A stopped, missing or unhealthy
    one fails at once with its last 20 log lines. Because that status can be 30 s old, smoke then
    asks again, now: the api's `/health` must answer and the worker's `dist/health-check.js` must pass.
+   The api's log must not say `fork job queue did not start` or `fork job queue stopped` (the
+   fork's billing jobs; they run only where billing and email are configured).
 6. `down`: `compose down`. Containers go; the named volumes (`postgres`, `pgdata`, `webassets`,
    prefixed `dozo_`) stay unless `--volumes`. Compose runs from the staged copy, so it needs the
    staged compose file and `dozo.env`; a whole tree is not required, so a stage cut short that still
