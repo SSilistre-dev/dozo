@@ -466,6 +466,11 @@ unit_tests() {
       # which the generator refuses, so it starts from nothing each time (about 3 seconds).
       rm -rf packages/db/src/generated
       pnpm --filter @rakazo/db generate > /tmp/generate.log 2>&1 || { cat /tmp/generate.log; exit 1; }
+      # The branded tree is never type-checked otherwise: the images are bundled, not checked, and
+      # upstream'"'"'s own check runs on the unbranded tree only. The api is the one it covers (about
+      # 30 seconds); a type error there fails the step before the tests run.
+      (cd apps/api && pnpm exec tsc --noEmit -p tsconfig.json) || { echo "[unit] type errors in apps/api"; exit 1; }
+      echo "[unit] types of apps/api ok"
       m=${DOZO_COVERAGE_MIN:-90}
       pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
@@ -476,7 +481,7 @@ unit_tests() {
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
-  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: fork tests or coverage (vitest)"; return 1; fi
+  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types of apps/api, fork tests or coverage"; return 1; fi
 }
 
 # --- qa: logged, timed steps ---
