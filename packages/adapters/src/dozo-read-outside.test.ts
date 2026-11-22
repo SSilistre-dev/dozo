@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  markHistoryReadOutside,
+  markAssemblyReadOutside,
+  markRunReadHistory,
   markRunReadOutside,
+  runReadHistory,
   runReadOutsideContent,
 } from "./dozo-read-outside.js";
 import type { RunContext } from "./run-context.js";
@@ -45,12 +47,27 @@ describe("runReadOutsideContent", () => {
       },
     ];
     const clean = run();
-    markHistoryReadOutside(clean.ctx.state, step({}) as never);
-    markHistoryReadOutside(clean.ctx.state, [{ role: "user", content: "Hi" }]);
+    markAssemblyReadOutside(clean.ctx.state, step({}) as never, {});
+    markAssemblyReadOutside(clean.ctx.state, [{ role: "user", content: "Hi" }], {});
     expect(await runReadOutsideContent(clean.ctx)).toBe(false);
     const replayed = run();
-    markHistoryReadOutside(replayed.ctx.state, step({ result: "<page text>" }) as never);
+    markAssemblyReadOutside(replayed.ctx.state, step({ result: "<page text>" }) as never, {});
     expect(await runReadOutsideContent(replayed.ctx)).toBe(true);
+  });
+
+  // The content sources initiallyTainted counts (run-assembly-capabilities.ts), all of them.
+  it("is true for a run that restores a saved turn, which may carry untrusted results", async () => {
+    const restored = run();
+    markAssemblyReadOutside(restored.ctx.state, [], { turnCheckpoint: "<saved turn>" });
+    expect(await runReadOutsideContent(restored.ctx)).toBe(true);
+  });
+
+  it("is true for a run whose saved turn could not be read", async () => {
+    const unreadable = run();
+    markAssemblyReadOutside(unreadable.ctx.state, [], {
+      checkpointLoadError: new Error("Unsupported turn checkpoint"),
+    });
+    expect(await runReadOutsideContent(unreadable.ctx)).toBe(true);
   });
 
   it("is true for a later attempt, which may have restored untrusted results", async () => {
@@ -70,5 +87,26 @@ describe("runReadOutsideContent", () => {
     const second = run();
     markRunReadOutside(first.ctx.state);
     expect(await runReadOutsideContent(second.ctx)).toBe(false);
+  });
+});
+
+describe("runReadHistory", () => {
+  it("is true once the run called a history tool, and kept per attempt", () => {
+    const first = run();
+    const second = run();
+    expect(runReadHistory(first.ctx.state)).toBe(false);
+    markRunReadHistory(first.ctx.state, "skill_read");
+    expect(runReadHistory(first.ctx.state)).toBe(false);
+    markRunReadHistory(first.ctx.state, "search_history");
+    expect(runReadHistory(first.ctx.state)).toBe(true);
+    markRunReadHistory(second.ctx.state, "read_history");
+    expect(runReadHistory(second.ctx.state)).toBe(true);
+    expect(runReadHistory(run().ctx.state)).toBe(false);
+  });
+
+  it("is not reading outside content: the memory rule and retention do not see it", async () => {
+    const { ctx } = run();
+    markRunReadHistory(ctx.state, "read_history");
+    expect(await runReadOutsideContent(ctx)).toBe(false);
   });
 });

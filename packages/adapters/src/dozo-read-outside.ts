@@ -10,9 +10,38 @@ export function markRunReadOutside(state: RunState): void {
   readStates.add(state);
 }
 
-/** At assembly: history that replays a kept tool result shows the model outside content again. */
-export function markHistoryReadOutside(state: RunState, history: AgentRunRequest["history"]) {
-  if (historyReplaysOutsideContent(history)) readStates.add(state);
+/**
+ * At assembly, the content sources initiallyTainted counts: history that replays a kept tool result
+ * shows the model outside content again, and a saved turn it restores (or could not read) may carry
+ * untrusted results.
+ */
+export function markAssemblyReadOutside(
+  state: RunState,
+  history: AgentRunRequest["history"],
+  saved: { turnCheckpoint?: string; checkpointLoadError?: Error },
+) {
+  if (saved.turnCheckpoint || saved.checkpointLoadError || historyReplaysOutsideContent(history))
+    readStates.add(state);
+}
+
+/** The tools that bring back the chat's earlier pages, or another chat's. */
+const HISTORY_TOOLS = new Set(["read_history", "search_history"]);
+
+/** Attempts, by their run state, that called a history tool. */
+const historyStates = new WeakSet<RunState>();
+
+/** Notes a call of a history tool, before it runs: a call that failed partway still counts. */
+export function markRunReadHistory(state: RunState, toolName: string): void {
+  if (HISTORY_TOOLS.has(toolName)) historyStates.add(state);
+}
+
+/**
+ * Whether this attempt called read_history or search_history. Their results carry no mark (the
+ * product's own saved state), yet a page an earlier run read comes back with them, so only the
+ * lasting-write rule reads this; memory and retention do not.
+ */
+export function runReadHistory(state: RunState): boolean {
+  return historyStates.has(state);
 }
 
 /**

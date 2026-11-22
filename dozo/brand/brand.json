@@ -11481,20 +11481,20 @@
     {
       "file": "packages/adapters/src/run-assembly-context.ts",
       "find": "import { mayBeChannelMessage } from \"@rakazo/db\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
-      "replace": "import { mayBeChannelMessage } from \"@rakazo/db\";\nimport { markHistoryReadOutside } from \"./dozo-read-outside.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "replace": "import { mayBeChannelMessage } from \"@rakazo/db\";\nimport { markAssemblyReadOutside } from \"./dozo-read-outside.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
       "requires": [
         "packages/adapters/src/dozo-read-outside.ts"
       ],
-      "reason": "read outside content: assembly marks a history that replays outside results"
+      "reason": "read outside content: assembly marks a history that replays outside results, and a saved turn it restores"
     },
     {
       "file": "packages/adapters/src/run-assembly-context.ts",
       "find": "    terminalCheckpointComplete: false,\n  };\n  /** Fleet tools take every scope from the run, never from arguments. */",
-      "replace": "    terminalCheckpointComplete: false,\n  };\n  markHistoryReadOutside(state, parts.turnContext.history);\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "replace": "    terminalCheckpointComplete: false,\n  };\n  markAssemblyReadOutside(state, parts.turnContext.history, parts.saved);\n  /** Fleet tools take every scope from the run, never from arguments. */",
       "requires": [
         "packages/adapters/src/dozo-read-outside.ts"
       ],
-      "reason": "read outside content: history replaying a kept tool result shows the model outside content again, as initiallyTainted counts it"
+      "reason": "read outside content: history replaying a kept tool result shows the model outside content again, and a restored (or unreadable) saved turn may carry untrusted results, as initiallyTainted counts them"
     },
     {
       "file": "packages/contracts/src/rpc.ts",
@@ -11576,6 +11576,66 @@
       "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
       "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
       "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./row-security.js\";\nexport * from \"./run-secrets.js\";",
+      "replace": "export * from \"./row-security.js\";\nexport * from \"./dozo-routine-writers.js\";\nexport * from \"./run-secrets.js\";",
+      "requires": [
+        "packages/db/src/dozo-routine-writers.ts"
+      ],
+      "reason": "routine writers: the package exports who last wrote a routine, which the routine routes and a run's lasting writes record and the lasting-write rule reads"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "      return await toolHandler(gate.call.name)(ctx, gate.call);",
+      "replace": "      return await runToolNoted(ctx, gate.call, toolHandler(gate.call.name));",
+      "requires": [
+        "packages/adapters/src/dozo-lasting-write-run.ts"
+      ],
+      "reason": "lasting writes: the one place a tool call runs notes a history tool the run called and records who wrote a routine (the owner's clean run, or a run the lasting-write rule holds), which the rule reads for a routine's later runs"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "import { strategicInitiativeToolAllowed } from \"./strategic-initiative.js\";\nimport { logToolRefusal } from \"./tool-completion-audit.js\";",
+      "replace": "import { strategicInitiativeToolAllowed } from \"./strategic-initiative.js\";\nimport { runToolNoted } from \"./dozo-lasting-write-run.js\";\nimport { logToolRefusal } from \"./tool-completion-audit.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-lasting-write-run.ts"
+      ],
+      "reason": "lasting writes: the import of the rule that runs a tool call through runToolNoted"
+    },
+    {
+      "file": "apps/api/src/routes/routines.ts",
+      "find": "import { assertEmailTrigger } from \"../bot-email-address.js\";\nimport { assertRoutineModel } from \"../model-pins.js\";",
+      "replace": "import { assertEmailTrigger } from \"../bot-email-address.js\";\nimport { noteRoutineSaved } from \"../dozo-routine-writers.js\";\nimport { assertRoutineModel } from \"../model-pins.js\";",
+      "requires": [
+        "apps/api/src/dozo-routine-writers.ts"
+      ],
+      "reason": "routine writers: the routes record who saved a routine"
+    },
+    {
+      "file": "apps/api/src/routes/routines.ts",
+      "find": "        });\n        await announceRoutine(context.actor, bot, row);\n",
+      "replace": "        });\n        await noteRoutineSaved(deps.prisma, context.actor, bot, row);\n        await announceRoutine(context.actor, bot, row);\n",
+      "requires": [
+        "apps/api/src/dozo-routine-writers.ts"
+      ],
+      "reason": "routine writers: a routine the bot's owner creates in the app or the API is the owner's words for its runs' skill and routine writes; one another member creates is not"
+    },
+    {
+      "file": "apps/api/src/routes/routines.ts",
+      "find": "          });\n        if (existing.userId !== context.actor.userId) {\n",
+      "replace": "          });\n        await noteRoutineSaved(deps.prisma, context.actor, bot, row);\n        if (existing.userId !== context.actor.userId) {\n",
+      "requires": [
+        "apps/api/src/dozo-routine-writers.ts"
+      ],
+      "reason": "routine writers: a routine the bot's owner saves in the app or the API is the owner's words for its runs' skill and routine writes; one another member saves is not"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "            guardedInNeverAsk && mode === \"never\"\n              ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))\n",
+      "replace": "            guardedInNeverAsk && mode === \"never\"\n              ? lastingWriteGated || !ctx.source.ownerStartedRun || (await isRunTainted(ctx))\n",
+      "reason": "lasting writes: Never ask refuses every write the lasting-write rule holds, also one in a run that upstream counts as clean: another member's or a guest's message, a routine someone else last wrote, a run that read its history"
     }
   ],
   "assets": {

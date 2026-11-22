@@ -5,6 +5,8 @@ import type { LastingWriteRun } from "./dozo-lasting-write-approval.js";
 import {
   lastingWriteNeedsApproval,
   lastingWriteShowsWholeText,
+  ROUTINE_WRITERS,
+  routineWriterIsOwner,
   runStartedFromOutside,
 } from "./dozo-lasting-write-approval.js";
 
@@ -13,8 +15,14 @@ const run = (trigger: string, facts: Partial<LastingWriteRun> = {}): LastingWrit
   ownerStartedRun: isOwnerStartedRun(trigger, false),
   nonOwnerChatRun: false,
   watchFired: false,
+  botOwnerRun: true,
+  readHistory: false,
   ...facts,
 });
+
+/** The routine's last writer, for a routine's run: the owner unless a test says otherwise. */
+const ownerRoutine = async () => true;
+const outsideRoutine = async () => false;
 
 /** Every trigger a run can have, and whether its input is the owner's own words. */
 const OWNER_INPUT: Record<(typeof RUN_TRIGGERS)[number], boolean> = {
@@ -41,37 +49,72 @@ const OWNER_INPUT: Record<(typeof RUN_TRIGGERS)[number], boolean> = {
 };
 
 describe("runStartedFromOutside", () => {
-  it("pins every run trigger", () => {
+  it("pins every run trigger", async () => {
     expect(Object.keys(OWNER_INPUT).sort()).toEqual([...RUN_TRIGGERS].sort());
     for (const trigger of RUN_TRIGGERS) {
-      expect([trigger, runStartedFromOutside(run(trigger))]).toEqual([
+      expect([trigger, await runStartedFromOutside(run(trigger), ownerRoutine)]).toEqual([
         trigger,
         !OWNER_INPUT[trigger],
       ]);
     }
   });
 
-  it("counts a follow-up the owner wrote as theirs, and one another bot sent as outside", () => {
-    expect(runStartedFromOutside(run("follow_up", { ownerStartedRun: true }))).toBe(false);
-    expect(runStartedFromOutside(run("follow_up"))).toBe(true);
+  it("counts a follow-up the owner wrote as theirs, and one another bot sent as outside", async () => {
+    const owners = run("follow_up", { ownerStartedRun: true });
+    expect(await runStartedFromOutside(owners, ownerRoutine)).toBe(false);
+    expect(await runStartedFromOutside(run("follow_up"), ownerRoutine)).toBe(true);
   });
 
-  it("counts a message sent with an access token as outside, whatever its trigger", () => {
+  it("counts a message sent with an access token as outside, whatever its trigger", async () => {
     // The run's assembly gives such a message ownerStartedRun false.
-    expect(runStartedFromOutside(run("user", { ownerStartedRun: false }))).toBe(true);
+    const token = run("user", { ownerStartedRun: false });
+    expect(await runStartedFromOutside(token, ownerRoutine)).toBe(true);
   });
 
-  it("counts someone else's connected chat as outside", () => {
-    expect(runStartedFromOutside(run("messaging", { nonOwnerChatRun: true }))).toBe(true);
-    expect(runStartedFromOutside(run("user", { nonOwnerChatRun: true }))).toBe(true);
+  it("counts someone else's connected chat as outside", async () => {
+    for (const trigger of ["messaging", "user"]) {
+      const chat = run(trigger, { nonOwnerChatRun: true });
+      expect(await runStartedFromOutside(chat, ownerRoutine)).toBe(true);
+    }
   });
 
-  it("counts a routine a change trigger started as outside: its prompt ends with what it read", () => {
-    expect(runStartedFromOutside(run("routine", { watchFired: true }))).toBe(true);
+  it("counts a run another member or a guest started as outside, whatever its trigger", async () => {
+    for (const trigger of ["user", "follow_up", "call_end", "messaging", "routine"]) {
+      const member = run(trigger, { ownerStartedRun: true, botOwnerRun: false });
+      expect([trigger, await runStartedFromOutside(member, ownerRoutine)]).toEqual([trigger, true]);
+    }
   });
 
-  it("treats a trigger it does not know as outside", () => {
-    expect(runStartedFromOutside(run("something_new"))).toBe(true);
+  it("counts a routine a change trigger started as outside: its prompt ends with what it read", async () => {
+    const fired = run("routine", { watchFired: true });
+    expect(await runStartedFromOutside(fired, ownerRoutine)).toBe(true);
+  });
+
+  it("counts a routine as the owner's words only when the owner last wrote it", async () => {
+    const routineFromOwner = vi.fn(outsideRoutine);
+    expect(await runStartedFromOutside(run("routine"), routineFromOwner)).toBe(true);
+    expect(routineFromOwner).toHaveBeenCalledOnce();
+    // Other triggers never read the routine's writer.
+    routineFromOwner.mockClear();
+    await runStartedFromOutside(run("user"), routineFromOwner);
+    await runStartedFromOutside(run("webhook"), routineFromOwner);
+    expect(routineFromOwner).not.toHaveBeenCalled();
+  });
+
+  it("treats a trigger it does not know as outside", async () => {
+    expect(await runStartedFromOutside(run("something_new"), ownerRoutine)).toBe(true);
+  });
+});
+
+describe("routineWriterIsOwner", () => {
+  it("counts the owner's own save and the owner's clean run, nothing else", () => {
+    expect(ROUTINE_WRITERS).toEqual(["owner", "owner_run", "member", "outside_run"]);
+    expect(ROUTINE_WRITERS.filter(routineWriterIsOwner)).toEqual(["owner", "owner_run"]);
+  });
+
+  it("counts a routine with no record, or one it does not know, as outside", () => {
+    expect(routineWriterIsOwner(undefined)).toBe(false);
+    expect(routineWriterIsOwner("something_new")).toBe(false);
   });
 });
 
@@ -84,37 +127,62 @@ const LASTING = [
   "create_child_routine",
 ];
 
+const checks = (readOutside: boolean, routineFromOwner = ownerRoutine) => ({
+  readOutside: async () => readOutside,
+  routineFromOwner,
+});
+
 describe("lastingWriteNeedsApproval", () => {
   it.each(LASTING)("holds %s in the owner's run once it read outside content", async (name) => {
-    await expect(lastingWriteNeedsApproval(name, run("user"), async () => true)).resolves.toBe(
-      true,
-    );
-    await expect(lastingWriteNeedsApproval(name, run("user"), async () => false)).resolves.toBe(
-      false,
-    );
+    await expect(lastingWriteNeedsApproval(name, run("user"), checks(true))).resolves.toBe(true);
+    await expect(lastingWriteNeedsApproval(name, run("user"), checks(false))).resolves.toBe(false);
   });
 
   it.each(LASTING)("holds %s in a run started from outside without asking more", async (name) => {
-    const read = vi.fn(async () => false);
-    await expect(lastingWriteNeedsApproval(name, run("webhook"), read)).resolves.toBe(true);
-    expect(read).not.toHaveBeenCalled();
+    const readOutside = vi.fn(async () => false);
+    await expect(
+      lastingWriteNeedsApproval(name, run("webhook"), {
+        readOutside,
+        routineFromOwner: ownerRoutine,
+      }),
+    ).resolves.toBe(true);
+    expect(readOutside).not.toHaveBeenCalled();
   });
+
+  it.each(LASTING)(
+    "holds %s once the run read its history, whatever else it read",
+    async (name) => {
+      const history = run("user", { readHistory: true });
+      await expect(lastingWriteNeedsApproval(name, history, checks(false))).resolves.toBe(true);
+    },
+  );
 
   it("leaves a routine's own run free until it reads outside content", async () => {
     await expect(
-      lastingWriteNeedsApproval("schedule_update", run("routine"), async () => false),
+      lastingWriteNeedsApproval("schedule_update", run("routine"), checks(false)),
     ).resolves.toBe(false);
     await expect(
-      lastingWriteNeedsApproval("schedule_update", run("routine"), async () => true),
+      lastingWriteNeedsApproval("schedule_update", run("routine"), checks(true)),
+    ).resolves.toBe(true);
+  });
+
+  it("holds a routine's own run when someone other than the owner last wrote the routine", async () => {
+    await expect(
+      lastingWriteNeedsApproval("schedule_update", run("routine"), checks(false, outsideRoutine)),
     ).resolves.toBe(true);
   });
 
   it.each(["skill_read", "schedule_list", "schedule_cancel", "remember", "web_fetch"])(
     "leaves %s alone without checking the run",
     async (name) => {
-      const read = vi.fn(async () => true);
-      await expect(lastingWriteNeedsApproval(name, run("webhook"), read)).resolves.toBe(false);
-      expect(read).not.toHaveBeenCalled();
+      const readOutside = vi.fn(async () => true);
+      const routineFromOwner = vi.fn(outsideRoutine);
+      const history = run("routine", { readHistory: true, botOwnerRun: false });
+      await expect(
+        lastingWriteNeedsApproval(name, history, { readOutside, routineFromOwner }),
+      ).resolves.toBe(false);
+      expect(readOutside).not.toHaveBeenCalled();
+      expect(routineFromOwner).not.toHaveBeenCalled();
     },
   );
 });

@@ -23,7 +23,7 @@ const LASTING_TEXT_TOOLS = new Set([
   "schedule_update",
 ]);
 
-/** What says where a run's input came from. */
+/** What says where a run's input came from, and what it read that no result marks. */
 export type LastingWriteRun = {
   trigger: string;
   /** isOwnerStartedRun for the run; false for a message sent with an access token. */
@@ -32,36 +32,71 @@ export type LastingWriteRun = {
   nonOwnerChatRun: boolean;
   /** A routine a change trigger started: its prompt ends with what the watch read. */
   watchFired: boolean;
+  /**
+   * The run acts for the bot's owner (its user is the bot's). Every member and guest of a Space
+   * can message any of its bots, on the web, mobile, a bot's extra chats and the Bot API alike.
+   */
+  botOwnerRun: boolean;
+  /** The run called read_history or search_history. */
+  readHistory: boolean;
+};
+
+/** What the rule reads only when it needs it. */
+export type LastingWriteChecks = {
+  /** For a routine's run: whether the routine's last writer counts as its owner (routineWriterIsOwner). */
+  routineFromOwner: () => Promise<boolean>;
+  /** Whether the run read outside content. */
+  readOutside: () => Promise<boolean>;
 };
 
 /**
- * Whether the input that started a run came from someone other than the owner. The owner's words
- * are isOwnerStartedRun's (their message, a follow-up they wrote, the close of their call), their
- * own connected chat app, and a routine's prompt, which counts as the owner's words when it runs
- * (as the gate's routine site check reads it) unless a change trigger appended what its watch read.
+ * Who last created or changed a routine: the bot's owner through the app or the API ("owner"),
+ * the owner's own run that read nothing from outside and took no input from outside ("owner_run"),
+ * another member through the app or the API ("member"), and any other run ("outside_run"),
+ * including one whose write a person approved on its card.
+ */
+export const ROUTINE_WRITERS = ["owner", "owner_run", "member", "outside_run"] as const;
+
+/** Whether a routine's prompt counts as its owner's words. No record, or an unknown one, does not. */
+export function routineWriterIsOwner(writer: string | undefined): boolean {
+  return writer === "owner" || writer === "owner_run";
+}
+
+/**
+ * Whether the input that started a run came from someone other than the bot's owner. The owner's
+ * words are isOwnerStartedRun's (their message, a follow-up they wrote, the close of their call) and
+ * their own connected chat app, in a run that acts for the bot's owner; and a routine's prompt when
+ * the owner last wrote it (routineWriterIsOwner) and no change trigger appended what its watch read.
  * Every other trigger (another bot, a webhook or email, a spawned bot, a ticket, a helper's result,
  * a provider's callback), a new one included, is outside.
  */
-export function runStartedFromOutside(run: LastingWriteRun): boolean {
-  if (run.nonOwnerChatRun) return true;
+export async function runStartedFromOutside(
+  run: LastingWriteRun,
+  routineFromOwner: LastingWriteChecks["routineFromOwner"],
+): Promise<boolean> {
+  if (run.nonOwnerChatRun || !run.botOwnerRun) return true;
   if (run.ownerStartedRun || run.trigger === "messaging") return false;
-  if (run.trigger === "routine") return run.watchFired;
+  if (run.trigger === "routine") return run.watchFired || !(await routineFromOwner());
   return true;
 }
 
 /**
- * A lasting write in a run started from outside, or once the run read outside content, could plant
+ * A lasting write in a run started from outside, once the run read outside content, or once it
+ * read its history (a page read earlier, or in another chat, comes back without a mark) could plant
  * (or remove) a lasting prompt. It needs a person in every mode: no allow rule or approval model
- * passes it, and Never ask refuses it. `readOutside` is only checked for a lasting write in a run
- * the owner's words started.
+ * passes it, and Never ask refuses it. The checks run only for a lasting write, in order.
  */
 export async function lastingWriteNeedsApproval(
   toolName: string,
   run: LastingWriteRun,
-  readOutside: () => Promise<boolean>,
+  checks: LastingWriteChecks,
 ): Promise<boolean> {
   if (!LASTING_WRITE_TOOLS.has(toolName)) return false;
-  return runStartedFromOutside(run) || (await readOutside());
+  return (
+    run.readHistory ||
+    (await runStartedFromOutside(run, checks.routineFromOwner)) ||
+    (await checks.readOutside())
+  );
 }
 
 /** Whether a lasting write's card shows its whole text, as the child instruction card does. */
