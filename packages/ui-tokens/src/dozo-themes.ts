@@ -168,30 +168,35 @@ export function renderDozoThemesCss(): string {
     }
     lines.push("}");
   }
-  for (const tone of ["dark", "light"] as const) {
+  const selector = (tone: ResolvedAppearance) => {
     const skins = DOZO_THEMES.filter((theme) => theme.tone === tone)
       .map((theme) => `[data-skin="${theme.id}"]`)
       .join(", ");
-    lines.push(`html[data-theme="${tone}"]:is(${skins}) {`);
-    for (const [key, tokens] of Object.entries(TOKENS)) {
-      for (const token of tokens) {
-        lines.push(`  ${cssVariableName(token)}: var(${themeVar(key as keyof DozoThemePalette)});`);
-      }
+    return `html[data-theme="${tone}"]:is(${skins})`;
+  };
+  const ink = themeVar("foreground");
+  lines.push(`${selector("dark")},`, `${selector("light")} {`);
+  for (const [key, tokens] of Object.entries(TOKENS)) {
+    for (const token of tokens) {
+      lines.push(`  ${cssVariableName(token)}: var(${themeVar(key as keyof DozoThemePalette)});`);
     }
-    // The dialog is the card in dark and the popover in light, as in the theme file.
-    const dialog = tone === "dark" ? "card" : "popover";
-    const ink = themeVar("foreground");
-    lines.push(
-      `  ${cssVariableName("dialog")}: var(${themeVar(dialog)});`,
-      `  ${cssVariableName("primaryHover")}: color-mix(`,
-      "    in srgb,",
-      `    var(${ink}) 88%,`,
-      `    var(${themeVar("background")})`,
-      "  );",
-      `  ${cssVariableName("primaryDisabled")}: color-mix(in srgb, var(${ink}) 32%, transparent);`,
-      "}",
-    );
   }
+  lines.push(
+    `  ${cssVariableName("primaryHover")}: color-mix(`,
+    "    in srgb,",
+    `    var(${ink}) 88%,`,
+    `    var(${themeVar("background")})`,
+    "  );",
+    `  ${cssVariableName("primaryDisabled")}: color-mix(in srgb, var(${ink}) 32%, transparent);`,
+    "}",
+    // The dialog is the card in dark and the popover in light, as in the theme file.
+    `${selector("dark")} {`,
+    `  ${cssVariableName("dialog")}: var(${themeVar("card")});`,
+    "}",
+    `${selector("light")} {`,
+    `  ${cssVariableName("dialog")}: var(${themeVar("popover")});`,
+    "}",
+  );
   // Neutral in light: an ink bubble (settings-v2.html); in dark the theme's own bubble already is.
   lines.push(
     `html[data-theme="light"][data-bubble="neutral"] {`,
