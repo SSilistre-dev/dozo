@@ -9461,7 +9461,7 @@
     {
       "file": "apps/mobile/components/thread/thread-screen.tsx",
       "find": "import { useContentBottomInset } from \"../../lib/content-bottom-inset\";\nimport { cronLabels } from \"../../lib/cron\";",
-      "replace": "import { useContentBottomInset } from \"../../lib/content-bottom-inset\";\nimport { useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport { cronLabels } from \"../../lib/cron\";",
+      "replace": "import { useContentBottomInset } from \"../../lib/content-bottom-inset\";\nimport { dozoEchoedSeqs, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport { cronLabels } from \"../../lib/cron\";",
       "requires": [
         "apps/mobile/lib/dozo-chat-target.ts"
       ],
@@ -9541,6 +9541,15 @@
     },
     {
       "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "      snap && (snap.groupId ?? snap.botId) === threadKey\n        ? new Set(\n            snap.messages.flatMap((message) =>\n              message.role === \"user\" && message.seq !== undefined ? [message.seq] : [],\n            ),\n          )\n        : undefined,\n    [snap, threadKey],",
+      "replace": "      snap ? dozoEchoedSeqs(snap, { botId, groupId, chatId }) : undefined,\n    [snap, botId, groupId, chatId],",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: a send the server accepted is taken down when the chat shows its message; the chat is told by its own thread (an extra chat's id), not by its bot's id"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
       "find": "  const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;",
       "replace": "  const notificationThreadId =\n    snap?.threadId ?? chatId ?? requestedThreadId ?? currentBot?.threadId;",
       "requires": [
@@ -9556,6 +9565,15 @@
         "apps/mobile/lib/dozo-chat-target.ts"
       ],
       "reason": "bot chats on mobile: clearing the bot's main chat does not empty an extra chat on screen"
+    },
+    {
+      "file": "apps/mobile/components/thread/thread-screen.tsx",
+      "find": "      : (titleBot?.threadStatus ?? snap?.run?.status);",
+      "replace": "      : chatId\n        ? undefined\n        : titleBot?.threadStatus ?? snap?.run?.status;",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the bot's thread status is its main chat's, so an extra chat shows no status of its own until its snapshot has one"
     },
     {
       "file": "apps/mobile/components/thread/thread-screen.tsx",
@@ -9730,6 +9748,51 @@
       "reason": "bot chats on mobile: reading an open extra chat marks that chat read, not the bot's main chat"
     },
     {
+      "file": "apps/mobile/lib/thread-read.ts",
+      "find": "  }, [botId, groupId, navigation, readInOrder, readOnly]);",
+      "replace": "  }, [botId, groupId, chatId, navigation, readInOrder, readOnly]);",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the read callback is remade when the chat changes, so it never marks the chat before it"
+    },
+    {
+      "file": "apps/mobile/components/thread/mcp-app-card.tsx",
+      "find": "import { offerComposerText } from \"../../lib/composer-offer\";\nimport { useUiLocale } from \"../../lib/i18n\";",
+      "replace": "import { offerComposerText } from \"../../lib/composer-offer\";\nimport { dozoOfferKey, useDozoChatId } from \"../../lib/dozo-chat-target\";\nimport { useUiLocale } from \"../../lib/i18n\";",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the import of the rule below (app card)"
+    },
+    {
+      "file": "apps/mobile/components/thread/mcp-app-card.tsx",
+      "find": "  const threadKey = \"botId\" in target ? target.botId : target.groupId;",
+      "replace": "  const chatId = useDozoChatId();\n  const threadKey = dozoOfferKey(target, chatId);",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: an app card's message goes to the composer of the chat that holds the card, by its key, never to its bot's main chat stacked under it"
+    },
+    {
+      "file": "apps/mobile/app/page.tsx",
+      "find": "import { currentApiBase } from \"../lib/api\";\nimport { useMobileTokens, useResolvedAppearance } from \"../lib/native\";",
+      "replace": "import { currentApiBase } from \"../lib/api\";\nimport { dozoPageReplyKey } from \"../lib/dozo-chat-target\";\nimport { useMobileTokens, useResolvedAppearance } from \"../lib/native\";",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: the import of the rule below (page reply)"
+    },
+    {
+      "file": "apps/mobile/app/page.tsx",
+      "find": "        offerPageReply(chat.threadKey, { text: reply, page: { id: page.id, title: page.title } });\n        const state = navigation.getState();\n        const below = state?.routes[state.index - 1];\n        const params = below?.params as Record<string, unknown> | undefined;\n        if (`/${below?.name}` === chat.pathname && params?.[chat.key] === chat.threadKey) {",
+      "replace": "        const state = navigation.getState();\n        const below = state?.routes[state.index - 1];\n        const params = below?.params as Record<string, unknown> | undefined;\n        const back = `/${below?.name}` === chat.pathname && params?.[chat.key] === chat.threadKey;\n        // Back to an extra chat right under the page: its reply waits under that chat's key.\n        offerPageReply(dozoPageReplyKey(chat.threadKey, back, params), {\n          text: reply,\n          page: { id: page.id, title: page.title },\n        });\n        if (back) {",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: a page's reply goes back to the extra chat the page was opened from, not to its bot's main chat"
+    },
+    {
       "file": "apps/mobile/lib/thread-live.ts",
       "find": "import { subscribeThread } from \"./api-live\";\nimport { getHapticsEnabled, hapticSuccess } from \"./haptics\";",
       "replace": "import { subscribeThread } from \"./api-live\";\nimport { dozoChatTarget } from \"./dozo-chat-target\";\nimport { getHapticsEnabled, hapticSuccess } from \"./haptics\";",
@@ -9786,7 +9849,7 @@
     {
       "file": "apps/mobile/lib/thread-sync.ts",
       "find": "import { onConversationCleared } from \"./conversation-cleared\";\nimport { isIntegrationsScopeCurrent } from \"./integrations-cache\";",
-      "replace": "import { onConversationCleared } from \"./conversation-cleared\";\nimport { dozoChatTarget, dozoSavedChatTarget, dozoSnapshotIs } from \"./dozo-chat-target\";\nimport { isIntegrationsScopeCurrent } from \"./integrations-cache\";",
+      "replace": "import { onConversationCleared } from \"./conversation-cleared\";\nimport {\n  dozoChatKey,\n  dozoChatTarget,\n  dozoSavedChatTarget,\n  dozoSnapshotIs,\n} from \"./dozo-chat-target\";\nimport { isIntegrationsScopeCurrent } from \"./integrations-cache\";",
       "requires": [
         "apps/mobile/lib/dozo-chat-target.ts"
       ],
@@ -9845,6 +9908,15 @@
         "apps/mobile/lib/dozo-chat-target.ts"
       ],
       "reason": "bot chats on mobile: a refresh reads the open chat"
+    },
+    {
+      "file": "apps/mobile/lib/thread-sync.ts",
+      "find": "      onRefreshed(targetGroupId ?? targetBotId);",
+      "replace": "      onRefreshed(dozoChatKey({ botId: targetBotId, groupId: targetGroupId, chatId }));",
+      "requires": [
+        "apps/mobile/lib/dozo-chat-target.ts"
+      ],
+      "reason": "bot chats on mobile: a refresh is announced by the chat's key (an extra chat's own id), the key its failure line is kept under"
     },
     {
       "file": "apps/mobile/lib/thread-sync.ts",

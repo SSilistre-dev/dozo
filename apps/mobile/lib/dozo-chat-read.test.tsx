@@ -6,9 +6,14 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MobileMessage } from "./mobile-types";
 
-const state = vi.hoisted(() => ({ rpc: vi.fn(), dismiss: vi.fn(async () => {}) }));
+const state = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  dismiss: vi.fn(async () => {}),
+  // One object for every render, as the router gives one: a new one would remake the callback.
+  navigation: { isFocused: () => true },
+}));
 
-vi.mock("expo-router", () => ({ useNavigation: () => ({ isFocused: () => true }) }));
+vi.mock("expo-router", () => ({ useNavigation: () => state.navigation }));
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
   AppState: { currentState: "active" },
@@ -95,4 +100,16 @@ it("starts a new visit when the same bot's other chat is opened", async () => {
   expect(reads.one!.readVisit.current.visit).toBe(visit + 1);
   // What the main chat had read is not what this chat has.
   expect(reads.one!.readVisibleTarget.current).toBeNull();
+});
+
+// The read callback is the chat's own: one kept across a change of chat would mark the old one.
+it("marks the chat the hook is on now when the chat changes under it", async () => {
+  render("swap", { botId: "bot-1" });
+  render("swap", { botId: "bot-1", chatId: "chat-1" });
+  act(() => reads.swap!.markReadIfVisible());
+  await flush();
+  expect(state.rpc).toHaveBeenCalledExactlyOnceWith("threads/markRead", {
+    chatBotId: "bot-1",
+    chatId: "chat-1",
+  });
 });

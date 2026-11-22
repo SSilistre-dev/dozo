@@ -14,6 +14,8 @@ import {
   dozoDraftKey,
   dozoHelperTarget,
   dozoIsChatBody,
+  dozoOfferKey,
+  dozoPageReplyKey,
   dozoSavedChatTarget,
   dozoSnapshotIs,
   useDozoChatId,
@@ -105,6 +107,24 @@ it("names the chat a helper's Stop is for", () => {
     chatId: "chat-1",
     messageId: "message-1",
   });
+});
+
+// Text offered to a composer (an app card's message, a page's reply) waits under the key the
+// chat's composer listens on, which is its chat key: an extra chat's own, never its bot's.
+it("offers text to the chat that holds the card, by that chat's key", () => {
+  expect(dozoOfferKey({ botId: "bot-1" }, undefined)).toBe("bot-1");
+  expect(dozoOfferKey({ botId: "bot-1" }, "chat-1")).toBe("chat-1");
+  expect(dozoOfferKey({ groupId: "group-1" }, undefined)).toBe("group-1");
+});
+
+it("waits a page's reply under the extra chat the page sits on, else under the page's chat", () => {
+  // Going back to a route right under the page: that route's own chat.
+  expect(dozoPageReplyKey("bot-1", true, { botId: "bot-1", chatId: "chat-1" })).toBe("chat-1");
+  expect(dozoPageReplyKey("bot-1", true, { botId: "bot-1" })).toBe("bot-1");
+  expect(dozoPageReplyKey("group-1", true, { groupId: "group-1" })).toBe("group-1");
+  // Opening the page's chat anew is its main chat.
+  expect(dozoPageReplyKey("bot-1", false, { botId: "bot-1", chatId: "chat-1" })).toBe("bot-1");
+  expect(dozoPageReplyKey("bot-1", false, undefined)).toBe("bot-1");
 });
 
 it("gives each route its own chat, none by default", async () => {

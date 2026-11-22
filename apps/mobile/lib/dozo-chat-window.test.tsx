@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   subscribe: vi.fn(),
   writeSaved: vi.fn(),
   readSaved: vi.fn(() => null as unknown),
+  refreshed: vi.fn(),
 }));
 
 vi.mock("expo-router", () => ({ useFocusEffect: () => undefined }));
@@ -83,7 +84,7 @@ function Probe({ chat, foreground }: { chat: Chat; foreground: boolean }) {
     readVisibleTarget: ref(null),
     setExpandedPeerMarkers: vi.fn(),
     setError: vi.fn(),
-    onRefreshed: vi.fn(),
+    onRefreshed: state.refreshed,
     refreshMentionBots: async () => undefined,
     markReadIfVisible: vi.fn(),
   });
@@ -107,7 +108,13 @@ const mount = (chat: Chat, foreground = false) =>
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  for (const mock of [state.rpc, state.subscribe, state.writeSaved, state.readSaved])
+  for (const mock of [
+    state.rpc,
+    state.subscribe,
+    state.writeSaved,
+    state.readSaved,
+    state.refreshed,
+  ])
     mock.mockReset();
   state.rpc.mockImplementation(async (proc: string) =>
     proc === "threads/messages"
@@ -137,6 +144,28 @@ it("refreshes an extra chat as chatBotId and chatId and keeps its own saved copy
   expect(target("threads/get")).toEqual([{ chatBotId: "bot-1", chatId: "chat-1" }]);
   expect(state.writeSaved).toHaveBeenCalledWith(scope, "chat:chat-1", expect.anything());
   expect(probe.history.snap?.threadId).toBe("chat-1");
+});
+
+// The screen clears its failure line when the refresh it asked for is for the chat it holds, by
+// the key its feedback is kept under: an extra chat's own id, else the group's or the bot's.
+it("tells the screen a refresh of an extra chat is for that chat, by its own key", async () => {
+  await mount({ botId: "bot-1", chatId: "chat-1" });
+  await act(async () => void (await probe.sync.refresh()));
+  expect(state.refreshed).toHaveBeenCalledExactlyOnceWith("chat-1");
+});
+
+it("tells the screen a refresh of a bot's main chat and of a group is for them, as before", async () => {
+  await mount({ botId: "bot-1" });
+  await act(async () => void (await probe.sync.refresh()));
+  expect(state.refreshed).toHaveBeenLastCalledWith("bot-1");
+  await act(async () =>
+    root.render(createElement(Probe, { chat: { groupId: "group-1" }, foreground: false })),
+  );
+  state.rpc.mockResolvedValue(
+    snapshot({ threadId: "thread-group", botId: undefined, groupId: "group-1" }),
+  );
+  await act(async () => void (await probe.sync.refresh()));
+  expect(state.refreshed).toHaveBeenLastCalledWith("group-1");
 });
 
 it("keeps a bot's main chat and a group as before", async () => {

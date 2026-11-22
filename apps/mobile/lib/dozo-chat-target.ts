@@ -118,3 +118,52 @@ export function dozoHelperTarget(
   const { botId, messageId } = helper;
   return { chatBotId: botId, chatId, messageId };
 }
+
+/**
+ * The seqs of the user messages the chat's snapshot shows: the echoes of its accepted sends. None
+ * while the snapshot is another chat's, so one chat's messages never take down another's bubble.
+ */
+export function dozoEchoedSeqs(
+  snapshot: {
+    botId?: string;
+    groupId?: string;
+    threadId?: string;
+    messages: { role: string; seq?: number }[];
+  },
+  chat: DozoChatRef,
+): Set<number> | undefined {
+  if (!dozoSnapshotIs(snapshot, dozoSavedChatTarget(chat))) return undefined;
+  return new Set(
+    snapshot.messages.flatMap((message) =>
+      message.role === "user" && message.seq !== undefined ? [message.seq] : [],
+    ),
+  );
+}
+
+/**
+ * The key text offered to a chat's composer waits under: the chat's own key, as its composer
+ * listens on it (an app card's message, from a card in an extra chat, is that chat's).
+ */
+export function dozoOfferKey(
+  target: { botId: string } | { groupId: string },
+  chatId: string | undefined,
+): string {
+  return dozoChatKey({
+    botId: "botId" in target ? target.botId : undefined,
+    groupId: "groupId" in target ? target.groupId : undefined,
+    chatId,
+  })!;
+}
+
+/**
+ * The key a page's reply waits under. Going back to the route right under the page, that route's
+ * own chat (an extra chat's, when it is one); opening the page's chat anew is its main chat.
+ */
+export function dozoPageReplyKey(
+  threadKey: string,
+  back: boolean,
+  belowParams: Record<string, unknown> | undefined,
+): string {
+  const chatId = back ? dozoChatParam(belowParams?.chatId as string | undefined) : undefined;
+  return chatId ?? threadKey;
+}

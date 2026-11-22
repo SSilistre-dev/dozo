@@ -323,8 +323,10 @@ On the phone a bot's extra chats are on its profile (reached from the chat's tit
 only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
 as read or unread, snooze, pinned, export, archive). New chat is in the profile's "..." menu, and
 names the chat by when it began, as on web. A chat route holds one chat (`DozoChatScope`, from its
-`chatId`, or from the `threadId` of a notification, which the bot's chat list says is an extra chat
-or not); its main chat and an extra chat of the same bot can be stacked and share nothing: draft,
+`chatId`, or from the `threadId` of a notification: the main chat opens at once, with no request,
+when that is the bot's main thread as the inbox or the saved copy knows it; any other thread waits
+for the bot's chat list, and one it cannot place (an unreadable list, or an archived chat while the
+main thread is known) shows the bot's profile, never the main chat); its main chat and an extra chat of the same bot can be stacked and share nothing: draft,
 unsent sends, read visit, saved copy, pages, live stream and notifications are each the chat's own,
 and every request about the chat on screen is built by `dozoChatTarget` in
 `apps/mobile/lib/dozo-chat-target.ts`. In an extra chat there are no calls, no attachments and no

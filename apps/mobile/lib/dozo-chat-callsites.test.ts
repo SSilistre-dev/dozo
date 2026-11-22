@@ -105,3 +105,20 @@ it("holds an extra chat's notifications by its own thread, not its bot's main th
   expect(screen).toContain("titleName: dozoTitleName(titleName, chatName)");
   expect(screen).toContain("useDozoChatName(botId, chatId)");
 });
+
+// What the screen and the files under it key by the chat. Their behavior is run in
+// dozo-chat-echo, -window, -read, -sender and -target; these only say the screen uses them.
+it("keeps every key and announcement of the chat on screen to the chat's own", () => {
+  expect(screen).toContain("dozoEchoedSeqs(snap, { botId, groupId, chatId })");
+  expect(screen).not.toContain("(snap.groupId ?? snap.botId) === threadKey");
+  expect(screen).toMatch(/: chatId\s*\? undefined\s*: titleBot\?\.threadStatus/);
+  const sync = readFileSync(join(mobile, "lib/thread-sync.ts"), "utf8");
+  expect(sync).toContain("onRefreshed(dozoChatKey({ botId: targetBotId");
+  expect(sync).not.toContain("onRefreshed(targetGroupId ?? targetBotId)");
+  const read = readFileSync(join(mobile, "lib/thread-read.ts"), "utf8");
+  expect(read).toContain("[botId, groupId, chatId, navigation, readInOrder, readOnly]");
+  const card = readFileSync(join(mobile, "components/thread/mcp-app-card.tsx"), "utf8");
+  expect(card).toContain("dozoOfferKey(target, chatId)");
+  const page = readFileSync(join(mobile, "app/page.tsx"), "utf8");
+  expect(page).toContain("dozoPageReplyKey(chat.threadKey, back, params)");
+});
