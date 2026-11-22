@@ -11180,6 +11180,39 @@
         "apps/api/src/dozo-learning.ts"
       ],
       "reason": "bot learning: the routes of the learning contract"
+    },
+    {
+      "file": "apps/web/src/pages/KnowledgeSection.tsx",
+      "find": "} from \"../components/integrations/space-availability\";\nimport { downloadArtifactBytes } from \"../lib/artifact-open\";",
+      "replace": "} from \"../components/integrations/space-availability\";\nimport { DozoLearningSection } from \"./dozo-learning-section\";\nimport { downloadArtifactBytes } from \"../lib/artifact-open\";",
+      "requires": [
+        "apps/web/src/pages/dozo-learning-section.tsx"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/KnowledgeSection.tsx",
+      "find": "export function KnowledgeSection({ botId }: { botId: string }) {\n  return (\n    <MemoryDocumentList\n      key={botId}\n      input={{ botId, scope: \"bot\" }}\n      testId=\"bot-knowledge-memory\"\n      compact\n    />\n  );\n}",
+      "replace": "export function KnowledgeSection({ botId }: { botId: string }) {\n  return (\n    <>\n      <MemoryDocumentList\n        key={botId}\n        input={{ botId, scope: \"bot\" }}\n        testId=\"bot-knowledge-memory\"\n        compact\n      />\n      <DozoLearningSection key={`learning-${botId}`} botId={botId} />\n    </>\n  );\n}",
+      "requires": [
+        "apps/web/src/pages/dozo-learning-section.tsx"
+      ],
+      "reason": "bot learning: under the bot's memory, the switch that lets it learn from its owner's chat and the lines it learned, each to undo; in the lazily loaded section, so nothing reaches first paint"
+    },
+    {
+      "file": "apps/web/src/pages/KnowledgeSection.test.tsx",
+      "find": "vi.mock(\"../lib/artifact-open\", () => ({ downloadArtifactBytes: vi.fn() }));\nvi.mock(\"@lingui/react/macro\", () => {",
+      "replace": "vi.mock(\"../lib/artifact-open\", () => ({ downloadArtifactBytes: vi.fn() }));\n// The fork's learning section reads the server, which this test does not provide.\nvi.mock(\"./dozo-learning-section\", () => ({ DozoLearningSection: () => null }));\nvi.mock(\"@lingui/react/macro\", () => {",
+      "requires": [
+        "apps/web/src/pages/dozo-learning-section.tsx"
+      ],
+      "reason": "upstream test fixture: the learning section under the bot's memory reads the server, which this test's stand-in client does not answer, so it is left out (dozo-learning-section.test.tsx covers it)"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
+      "replace": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learn from chats\"\nmsgstr \"Sohbetlerden öğren\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learned\"\nmsgstr \"Öğrenilenler\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Changed since\"\nmsgstr \"Sonradan değişti\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
+      "reason": "bot learning: the Turkish copy of the learning switch, the heading of the learned lines and a line changed since (Undo is upstream's)"
     }
   ],
   "assets": {
