@@ -222,7 +222,7 @@ type ReadBy = {
  * a group, a messaging-channel or a helper's thread, in a Space with no other member. A Space's
  * members read every chat of its bots (extra chats included), so a thread is private only there.
  */
-async function onlyOwnerReads(
+export async function onlyOwnerReads(
   prisma: Pick<PrismaClient, "spaceMember">,
   thread: ReadBy,
   owner: string,

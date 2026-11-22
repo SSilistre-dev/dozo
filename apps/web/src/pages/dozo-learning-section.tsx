@@ -14,9 +14,9 @@ function changedSince(error: Error | null): boolean {
 }
 
 /**
- * Under the bot's memory: whether it learns from its owner's chat, a switch only the owner
- * (`ownerId`, unknown on an older server) gets, and the lines it learned, each for any member to
- * undo. Nothing when the setting cannot be read (a server without it).
+ * Under the bot's memory, for its owner only (`ownerId`, unknown on an older server): whether it
+ * learns from their chat, a switch offered only while nobody else is in the Space, and the lines
+ * it learned, each to undo. Nothing when the setting cannot be read (a server without it).
  */
 export function DozoLearningSection({
   botId,
@@ -31,7 +31,7 @@ export function DozoLearningSection({
   const queries = useSpaceQueries();
   const learning = queries.dozoLearning.get.queryOptions({ input: { botId } });
   // Reviews write as the bot runs, so every open reads again, as the memory list does.
-  const read = useQuery({ ...learning, refetchOnMount: "always" });
+  const read = useQuery({ ...learning, enabled: owner, refetchOnMount: "always" });
   const mode = useSave({
     save: (next: DozoLearningMode, rpc) => rpc.dozoLearning.setMode({ botId, mode: next }),
     stale: [learning.queryKey],
@@ -49,14 +49,15 @@ export function DozoLearningSection({
       if (!changedSince(error)) toastError(errorText(error));
     },
   });
-  if (!read.data) return null;
+  if (!owner || !read.data) return null;
   const on = mode.pending ? mode.input === "auto" : read.data.mode === "auto";
   const changes = read.data.changes.filter((change) => !change.undoneAt);
   const conflictId = !undo.pending && changedSince(undo.error) ? undo.input : undefined;
-  if (!owner && !changes.length) return null;
+  const { available } = read.data;
+  if (!available && !changes.length) return null;
   return (
     <section data-testid="bot-learning">
-      {owner ? (
+      {available ? (
         <SettingsCard>
           <SwitchRow
             id={`${ids}-learn`}
@@ -69,7 +70,7 @@ export function DozoLearningSection({
       ) : null}
       {changes.length ? (
         <>
-          <SectionHeading variant="label" className={owner ? "mt-6 mb-2" : "mb-2"}>
+          <SectionHeading variant="label" className={available ? "mt-6 mb-2" : "mb-2"}>
             <Trans>Learned</Trans>
           </SectionHeading>
           <ul className="rounded-xl bg-muted/50 px-4 py-1">

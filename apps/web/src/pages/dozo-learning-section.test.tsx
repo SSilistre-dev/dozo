@@ -127,25 +127,25 @@ afterEach(async () => {
 });
 
 it("turns learning on and off through setMode, the switch labelled by its text", async () => {
-  api.get.mockResolvedValue({ mode: "off", changes: [] });
+  api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
   await render();
   expect(api.get).toHaveBeenCalledWith({ botId: "bot-1" }, expect.anything());
   expect(toggle()?.getAttribute("aria-checked")).toBe("false");
   expect(toggle()?.closest("label")?.textContent).toBe("Learn from chats");
   api.setMode.mockResolvedValue({ mode: "auto" });
-  api.get.mockResolvedValue({ mode: "auto", changes: [] });
+  api.get.mockResolvedValue({ mode: "auto", available: true, changes: [] });
   await act(async () => toggle()!.click());
   expect(api.setMode).toHaveBeenCalledWith({ botId: "bot-1", mode: "auto" });
   await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("true"));
   api.setMode.mockResolvedValue({ mode: "off" });
-  api.get.mockResolvedValue({ mode: "off", changes: [] });
+  api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
   await act(async () => toggle()!.click());
   expect(api.setMode).toHaveBeenLastCalledWith({ botId: "bot-1", mode: "off" });
   await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("false"));
 });
 
 it("says why the server refused the switch and shows the mode as it is", async () => {
-  api.get.mockResolvedValue({ mode: "off", changes: [] });
+  api.get.mockResolvedValue({ mode: "off", available: true, changes: [] });
   api.setMode.mockRejectedValue(new Error("Only the owner can change this"));
   await render();
   await act(async () => toggle()!.click());
@@ -158,6 +158,7 @@ it("says why the server refused the switch and shows the mode as it is", async (
 it("lists nothing while there are no changes, nor once all are undone", async () => {
   api.get.mockResolvedValue({
     mode: "auto",
+    available: true,
     changes: [change("c1", { undoneAt: "2026-11-22T11:00:00.000Z" })],
   });
   await render();
@@ -168,6 +169,7 @@ it("lists nothing while there are no changes, nor once all are undone", async ()
 it("lists additions by their new line and removals struck through by their old one", async () => {
   api.get.mockResolvedValue({
     mode: "auto",
+    available: true,
     changes: [
       change("c1", { after: "Prefers tea" }),
       change("c2", { kind: "update", before: "Lives in Izmir", after: "Lives in Ankara" }),
@@ -187,12 +189,14 @@ it("lists additions by their new line and removals struck through by their old o
 it("undoes one change, then reads the list and the bot's memory again without that row", async () => {
   api.get.mockResolvedValue({
     mode: "auto",
+    available: true,
     changes: [change("c1", { after: "Prefers tea" }), change("c2", { after: "Works nights" })],
   });
   await render();
   api.undo.mockResolvedValue(change("c1", { undoneAt: "2026-11-22T11:00:00.000Z" }));
   api.get.mockResolvedValue({
     mode: "auto",
+    available: true,
     changes: [
       change("c1", { after: "Prefers tea", undoneAt: "2026-11-22T11:00:00.000Z" }),
       change("c2", { after: "Works nights" }),
@@ -220,6 +224,7 @@ it("undoes one change, then reads the list and the bot's memory again without th
 it("says a line changed since on its own row instead of undoing it", async () => {
   api.get.mockResolvedValue({
     mode: "auto",
+    available: true,
     changes: [change("c1", { after: "Prefers tea" }), change("c2", { after: "Works nights" })],
   });
   api.undo.mockRejectedValue(
@@ -239,7 +244,11 @@ it("says a line changed since on its own row instead of undoing it", async () =>
 });
 
 it("says why another undo failed", async () => {
-  api.get.mockResolvedValue({ mode: "auto", changes: [change("c1", { after: "Prefers tea" })] });
+  api.get.mockResolvedValue({
+    mode: "auto",
+    available: true,
+    changes: [change("c1", { after: "Prefers tea" })],
+  });
   api.undo.mockRejectedValue(new Error("Could not save"));
   await render();
   await act(async () => undoButton("Prefers tea")!.click());
@@ -254,25 +263,48 @@ it("shows nothing when the learning cannot be read", async () => {
   expect(container.textContent).toBe("");
 });
 
-it("shows the switch only to the bot's owner; anyone else still sees and undoes what it learned", async () => {
-  const learned = { mode: "auto", changes: [change("c1", { after: "Prefers tea" })] };
+it("shows nothing to anyone but the bot's owner, and reads nothing for them", async () => {
+  api.get.mockResolvedValue({
+    mode: "auto",
+    available: true,
+    changes: [change("c1", { after: "Prefers tea" })],
+  });
   for (const [me, ownerId] of [
     ["user-2", "user-1"],
     ["user-1", null],
     [null, "user-1"],
   ] as const) {
-    api.get.mockClear().mockResolvedValue(learned);
-    await show({ me, ownerId });
-    await vi.waitFor(() => expect(undoButton("Prefers tea")).toBeDefined());
-    expect(toggle()).toBeNull();
-    expect(container.textContent).not.toContain("Learn from chats");
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <QueryUserProvider value={me}>
+            <DozoLearningSection botId="bot-1" ownerId={ownerId} />
+          </QueryUserProvider>
+        </QueryClientProvider>,
+      );
+    });
+    expect(container.textContent).toBe("");
     client.clear();
   }
-  api.get.mockResolvedValue(learned);
-  api.undo.mockResolvedValue(change("c1", { undoneAt: "2026-11-22T11:00:00.000Z" }));
-  await show({ me: "user-2" });
+  expect(api.get).not.toHaveBeenCalled();
+});
+
+it("offers no switch in a Space with someone else, and still lists what was learned", async () => {
+  api.get.mockResolvedValue({
+    mode: "auto",
+    available: false,
+    changes: [change("c1", { after: "Prefers tea" })],
+  });
+  await show();
   await vi.waitFor(() => expect(undoButton("Prefers tea")).toBeDefined());
-  await act(async () => undoButton("Prefers tea")!.click());
-  expect(api.undo).toHaveBeenCalledWith({ changeId: "c1" });
-  expect(api.setMode).not.toHaveBeenCalled();
+  expect(toggle()).toBeNull();
+  expect(container.textContent).not.toContain("Learn from chats");
+  expect(container.querySelector("h3")?.className).toBe("mb-2");
+});
+
+it("shows nothing in a Space with someone else while nothing was learned", async () => {
+  api.get.mockResolvedValue({ mode: "off", available: false, changes: [] });
+  await show();
+  await act(async () => undefined);
+  expect(container.textContent).toBe("");
 });

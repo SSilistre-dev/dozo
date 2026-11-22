@@ -9,8 +9,10 @@ import { createRouterContext } from "./routes/context.js";
 
 const state = vi.hoisted(() => ({
   mode: "off" as string,
+  alone: true,
   set: [] as Array<{ botId: string; mode: string }>,
   undone: [] as string[],
+  settled: [] as string[],
 }));
 const CHANGE = {
   id: "c1",
@@ -26,6 +28,10 @@ vi.mock("@rakazo/adapters", async (importOriginal) => {
   return {
     ...actual,
     learningMode: async () => state.mode,
+    learningAvailable: async () => state.alone,
+    settleLeftLearningWrites: async (_db: unknown, bot: { id: string }) => {
+      state.settled.push(bot.id);
+    },
     listLearningChanges: async () => [CHANGE],
     setLearningMode: async (_db: unknown, bot: { id: string }, mode: string) => {
       state.set.push({ botId: bot.id, mode });
@@ -78,21 +84,35 @@ function client(userId: string) {
 
 beforeEach(() => {
   state.mode = "off";
+  state.alone = true;
   state.set = [];
   state.undone = [];
+  state.settled = [];
 });
 
 describe("learning routes", () => {
-  it("show a member the mode and the latest changes; a later phase's mode reads as off", async () => {
-    expect(await client("member").get({ botId: "bot-1" })).toEqual({
+  it("show the bot's owner the mode, whether it is offered and the latest changes", async () => {
+    expect(await client("creator").get({ botId: "bot-1" })).toEqual({
       mode: "off",
+      available: true,
       changes: [CHANGE],
     });
+    // A write a crash cut short is settled before the list is read.
+    expect(state.settled).toEqual(["bot-1"]);
     state.mode = "auto";
-    expect((await client("member").get({ botId: "bot-1" })).mode).toBe("auto");
+    expect((await client("creator").get({ botId: "bot-1" })).mode).toBe("auto");
     state.mode = "ask";
-    expect((await client("member").get({ botId: "bot-1" })).mode).toBe("off");
-    await expect(client("member").get({ botId: "elsewhere" })).rejects.toThrow();
+    expect((await client("creator").get({ botId: "bot-1" })).mode).toBe("off");
+    await expect(client("creator").get({ botId: "elsewhere" })).rejects.toThrow();
+  });
+
+  it("show no one else what the bot learned from its owner's chat", async () => {
+    for (const userId of ["member", "owner"]) {
+      await expect(client(userId).get({ botId: "bot-1" })).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+    }
+    expect(state.settled).toEqual([]);
   });
 
   it("let only the bot's own owner switch it: their chat becomes notes every member reads", async () => {
@@ -106,6 +126,18 @@ describe("learning routes", () => {
     expect(state.set).toEqual([{ botId: "bot-1", mode: "auto" }]);
   });
 
+  it("offer learning only in a Space of the owner's own; turning it off always works", async () => {
+    state.alone = false;
+    expect((await client("creator").get({ botId: "bot-1" })).available).toBe(false);
+    await expect(
+      client("creator").setMode({ botId: "bot-1", mode: "auto" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await client("creator").setMode({ botId: "bot-1", mode: "off" })).toEqual({
+      mode: "off",
+    });
+    expect(state.set).toEqual([{ botId: "bot-1", mode: "off" }]);
+  });
+
   it("refuse a mode this phase does not offer", async () => {
     await expect(
       client("creator").setMode({ botId: "bot-1", mode: "ask" as never }),
@@ -113,10 +145,14 @@ describe("learning routes", () => {
     expect(state.set).toEqual([]);
   });
 
-  it("let a member who sees the bot undo a change", async () => {
-    expect(await client("member").undo({ changeId: "c1" })).toMatchObject({
+  it("let only the bot's owner undo a change", async () => {
+    expect(await client("creator").undo({ changeId: "c1" })).toMatchObject({
       id: "c1",
       undoneAt: "2027-01-16T13:00:00.000Z",
+    });
+    expect(state.undone).toEqual(["c1"]);
+    await expect(client("member").undo({ changeId: "c1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
     });
     expect(state.undone).toEqual(["c1"]);
   });

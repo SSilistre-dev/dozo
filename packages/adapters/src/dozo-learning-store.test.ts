@@ -5,12 +5,18 @@ import {
   LEARNING_TURNS_KEPT,
   learnedLines,
   learningMode,
+  LEARNING_REVIEWS_PER_DAY,
   listLearningChanges,
-  markLearningChangeUndone,
+  markLearningLinesOwnerEdited,
+  markLearningUndoPending,
   pendingLearningTurns,
+  pendingLearningWrites,
   recordLearningTurn,
+  rejectedLearningLines,
   saveLearningChanges,
   setLearningMode,
+  settleLearningWrite,
+  takeLearningReview,
 } from "./dozo-learning-store.js";
 
 // What each call sends and how it reads the answer. The SQL's results in every database time zone
@@ -29,7 +35,7 @@ function db(rows: unknown[] = [], changed = 1) {
   return { client, queryRaw, executeRaw, sql };
 }
 
-const turn = { id: "t1", threadId: "th", runId: "r1", messageId: "m1", tainted: false };
+const turn = { id: "t1", threadId: "th", runId: "r1", messageId: "m1", botReplyReadable: true };
 const at = new Date("2027-01-16T12:00:00.000Z");
 const row = {
   id: "c1",
@@ -66,6 +72,7 @@ describe("learning store", () => {
     });
     expect(pending).toBe(3);
     expect(store.sql()[1]).toContain('ON CONFLICT ("runId") DO NOTHING');
+    expect(store.executeRaw.mock.calls[0]!.at(-1)).toBe(true);
     expect(await recordLearningTurn(db().client, { botId: "b", spaceId: "s", ...turn })).toBe(0);
   });
 
@@ -101,13 +108,23 @@ describe("learning store", () => {
     expect(await learnedLines(lines.client, "bot-1")).toEqual([{ id: "c1", after: "x" }]);
     expect(lines.sql()[0]).toContain('"supersededBy" IS NULL');
     const store = db();
-    await saveLearningChanges(store.client, { id: "bot-1", spaceId: "s" }, "th", [
-      { kind: "add", before: null, after: "a" },
-      { kind: "remove", before: "b", after: null },
-    ]);
+    await saveLearningChanges(
+      store.client,
+      { id: "bot-1", spaceId: "s" },
+      { threadId: "th", messageId: "m1" },
+      [
+        { kind: "add", before: null, after: "a" },
+        { kind: "remove", before: "b", after: null },
+      ],
+      "tag-1",
+    );
     const [first, , second] = store.executeRaw.mock.calls;
-    const time = (call: unknown[]) => Date.parse(call.at(-1) as string);
+    const time = (call: unknown[]) => Date.parse(call.at(-2) as string);
     expect(time(second!) - time(first!)).toBe(1);
+    // Pending under the write's tag until the write is settled.
+    expect(first!.at(-1)).toBe("tag-1");
+    expect(sqlOf(first!)).toContain("'apply'");
+    expect(first!.slice(4, 6)).toEqual(["th", "m1"]);
     // Each change takes over the line it replaced or wrote from any older change.
     expect(store.sql()[1]).toContain('SET "supersededBy"');
     expect(store.executeRaw.mock.calls[1]!.slice(-3)).toEqual([null, "a", "bot-1"]);
@@ -124,15 +141,84 @@ describe("learning store", () => {
         "s",
         "c1",
       ),
-    ).toEqual({ ...shown, undoneAt: at.toISOString(), supersededBy: "c2" });
+    ).toEqual({
+      ...shown,
+      undoneAt: at.toISOString(),
+      supersededBy: "c2",
+      ownerEdited: false,
+      pending: null,
+    });
+    expect(
+      await findLearningChange(
+        db([{ ...row, ownerEditedAt: at, pending: "undo" }]).client,
+        "s",
+        "c1",
+      ),
+    ).toMatchObject({ supersededBy: null, ownerEdited: true, pending: "undo" });
     expect(await findLearningChange(db().client, "s", "c1")).toBeUndefined();
   });
 
-  it("marks a change undone once", async () => {
-    const undone = db([], 1);
-    expect(await markLearningChangeUndone(undone.client, "c1")).toBe(true);
-    // The change it took a line over from owns that line again.
-    expect(undone.sql()[1]).toContain('SET "supersededBy" = NULL');
-    expect(await markLearningChangeUndone(db([], 0).client, "c1")).toBe(false);
+  it("marks an undo pending once, only on a change neither undone nor pending", async () => {
+    const undo = db([], 1);
+    expect(await markLearningUndoPending(undo.client, "c1", "tag-1")).toBe(true);
+    expect(undo.sql()[0]).toContain('"undoneAt" IS NULL AND pending IS NULL');
+    expect(undo.executeRaw.mock.calls[0]!.slice(1)).toEqual(["tag-1", "c1"]);
+    expect(await markLearningUndoPending(db([], 0).client, "c1", "tag-1")).toBe(false);
+  });
+
+  it("settles a write that landed: an undo is marked, its lines handed back", async () => {
+    const landed = db([{ id: "c1" }]);
+    await settleLearningWrite(landed.client, "tag-1", true);
+    const sql = landed.sql();
+    expect(sql[0]).toContain('SET "undoneAt" = CURRENT_TIMESTAMP');
+    expect(sql[1]).toContain('SET "supersededBy" = NULL WHERE "supersededBy" = ?');
+    expect(sql[2]).toContain('SET pending = NULL, "pendingTag" = NULL');
+  });
+
+  it("settles a write that did not land: a review's changes go, an undo stays undone-less", async () => {
+    const lost = db([{ id: "c1" }, { id: "c2" }]);
+    await settleLearningWrite(lost.client, "tag-1", false);
+    const sql = lost.sql();
+    expect(sql[0]).toContain("DELETE FROM dozo_learning_changes");
+    expect(sql[0]).toContain("pending = 'apply'");
+    expect(lost.executeRaw.mock.calls[0]!.slice(1)).toEqual([["c1", "c2"]]);
+    expect(sql[2]).toContain('SET pending = NULL, "pendingTag" = NULL');
+    const none = db([]);
+    await settleLearningWrite(none.client, "tag-1", false);
+    expect(none.executeRaw).toHaveBeenCalledOnce();
+  });
+
+  it("finds writes left pending: every review's when asked, any once old enough", async () => {
+    const left = db([{ tag: "tag-1" }]);
+    expect(
+      await pendingLearningWrites(left.client, "bot-1", { reviews: true, olderThanMs: 300_000 }),
+    ).toEqual(["tag-1"]);
+    expect(left.queryRaw.mock.calls[0]!.slice(1)).toEqual(["bot-1", true, 300]);
+  });
+
+  it("gives a bot a bounded number of reviews a day", async () => {
+    expect(LEARNING_REVIEWS_PER_DAY).toBe(6);
+    const free = db([{ used: LEARNING_REVIEWS_PER_DAY - 1 }]);
+    expect(await takeLearningReview(free.client, { id: "bot-1", spaceId: "s" })).toBe(true);
+    const [prune, insert] = free.executeRaw.mock.calls.map(sqlOf);
+    expect(prune).toContain("DELETE FROM dozo_learning_reviews");
+    expect(prune).toContain("interval '1 day'");
+    expect(insert).toContain("INSERT INTO dozo_learning_reviews");
+    const used = db([{ used: LEARNING_REVIEWS_PER_DAY }]);
+    expect(await takeLearningReview(used.client, { id: "bot-1", spaceId: "s" })).toBe(false);
+    expect(used.executeRaw).toHaveBeenCalledOnce();
+    expect(await takeLearningReview(db([]).client, { id: "bot-1", spaceId: "s" })).toBe(true);
+  });
+
+  it("reads the lines the owner turned down, and marks lines the owner edited", async () => {
+    const rejected = db([{ after: "x" }]);
+    expect(await rejectedLearningLines(rejected.client, "bot-1")).toEqual(["x"]);
+    expect(rejected.sql()[0]).toContain('"ownerEditedAt" IS NOT NULL');
+    const edited = db();
+    await markLearningLinesOwnerEdited(edited.client, ["c1"]);
+    expect(edited.executeRaw.mock.calls[0]!.slice(1)).toEqual([["c1"]]);
+    const none = db();
+    await markLearningLinesOwnerEdited(none.client, []);
+    expect(none.executeRaw).not.toHaveBeenCalled();
   });
 });

@@ -11384,13 +11384,13 @@
     {
       "file": "packages/adapter-kit/src/types.ts",
       "find": "  \"push.receipt\": { userId: string; ticketId: string; tokenDigest: string };\n}\n",
-      "replace": "  \"push.receipt\": { userId: string; ticketId: string; tokenDigest: string };\n  /** Review a bot's waiting turns of its owner's chat into its notes (dozo-learning-review.ts). */\n  \"memory.learning-review\": { botId: string };\n}\n",
+      "replace": "  \"push.receipt\": { userId: string; ticketId: string; tokenDigest: string };\n  /** Review a bot's waiting turns of its owner's chat into its notes (dozo-learning-review.ts). */\n  \"memory.learning-review\": { botId: string; settleOnly?: boolean };\n}\n",
       "reason": "bot learning: the job kind of a bot's learning review, the durable backup of a review started at once and the review after a pause"
     },
     {
       "file": "packages/adapter-kit/src/background-jobs.ts",
       "find": "    tokenDigest: z.string().min(1),\n  }),\n} satisfies",
-      "replace": "    tokenDigest: z.string().min(1),\n  }),\n  \"memory.learning-review\": z.object({ botId: z.string().min(1) }),\n} satisfies",
+      "replace": "    tokenDigest: z.string().min(1),\n  }),\n  \"memory.learning-review\": z.object({\n    botId: z.string().min(1),\n    settleOnly: z.boolean().optional(),\n  }),\n} satisfies",
       "reason": "bot learning: the payload of the learning review job"
     },
     {
@@ -11432,8 +11432,9 @@
     {
       "file": "packages/adapters/src/index.ts",
       "find": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./web-limits.js\";",
-      "replace": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./dozo-learning-review.js\";\nexport * from \"./dozo-learning-store.js\";\nexport * from \"./web-limits.js\";",
+      "replace": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./dozo-learning-apply.js\";\nexport * from \"./dozo-learning-review.js\";\nexport * from \"./dozo-learning-store.js\";\nexport * from \"./web-limits.js\";",
       "requires": [
+        "packages/adapters/src/dozo-learning-apply.ts",
         "packages/adapters/src/dozo-learning-review.ts",
         "packages/adapters/src/dozo-learning-store.ts"
       ],
@@ -11648,6 +11649,105 @@
         "packages/adapters/src/dozo-read-outside.ts"
       ],
       "reason": "read outside content: history replaying a kept tool result shows the model outside content again, as initiallyTainted counts it"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "import {\n  loadCommandVariables,\n  loadLoginPasswordRedactions,\n  loadRunCodeRedactions,\n  loadRunLoginRedactions,\n} from \"./bot-secrets.js\";\n",
+      "replace": "import { loadRunRedactions } from \"./dozo-run-redactions.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-run-redactions.ts"
+      ],
+      "reason": "bot learning: the run loads what it hides through the one function a learning review uses too (the rules below)"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "import { loadPurchaseRedactions } from \"./purchase-service.js\";\nimport type { RunExecutorServices, RunHold } from \"./run-attempt.js\";",
+      "replace": "import type { RunExecutorServices, RunHold } from \"./run-attempt.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-run-redactions.ts"
+      ],
+      "reason": "bot learning: the purchases' cards are loaded by loadRunRedactions (rules below)"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "    { env: initialBotCommandEnvironment, redactions: commandRedactions },\n    savedLoginPasswordRedactions,\n    purchaseRedactions,\n    runLoginRedactions,\n    runCodeRedactions,\n  ] = await Promise.all([",
+      "replace": "    {\n      commands: { env: initialBotCommandEnvironment, redactions: commandRedactions },\n      saved: savedRunRedactions,\n    },\n  ] = await Promise.all([",
+      "requires": [
+        "packages/adapters/src/dozo-run-redactions.ts"
+      ],
+      "reason": "bot learning: the same command variables and saved values, read from loadRunRedactions"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "    loadCommandVariables(deps.prisma, deps.secretStore, run),\n    loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),\n    deps.paymentWallet ? loadPurchaseRedactions(deps, run) : [],\n    loadRunLoginRedactions(deps.prisma, deps.secretStore, run, run.id),\n    loadRunCodeRedactions(deps.prisma, deps.secretStore, run, run.id),\n  ]);",
+      "replace": "    loadRunRedactions(deps, run, [run.id]),\n  ]);",
+      "requires": [
+        "packages/adapters/src/dozo-run-redactions.ts"
+      ],
+      "reason": "bot learning: the five loaders a run hides values with, now one function (the same calls with the same arguments) that a learning review calls for the runs it reads, so it hides exactly what a run hides"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-records.ts",
+      "find": "  runSecrets.push(\n    ...savedLoginPasswordRedactions,\n    ...purchaseRedactions,\n    ...runLoginRedactions,\n    ...runCodeRedactions,\n  );",
+      "replace": "  runSecrets.push(...savedRunRedactions);",
+      "requires": [
+        "packages/adapters/src/dozo-run-redactions.ts"
+      ],
+      "reason": "bot learning: the same values in the same order (saved logins, purchases, the run's logins and codes)"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "import { markHistoryReadOutside } from \"./dozo-read-outside.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "replace": "import { markHistoryReadOutside } from \"./dozo-read-outside.js\";\nimport { markRunRecalledMemory } from \"./dozo-learning-recall.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-learning-recall.ts"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-context.ts",
+      "find": "  markHistoryReadOutside(state, parts.turnContext.history);\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "replace": "  markHistoryReadOutside(state, parts.turnContext.history);\n  markRunRecalledMemory(state, parts.turnContext.recalledMemory);\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "requires": [
+        "packages/adapters/src/dozo-learning-recall.ts"
+      ],
+      "reason": "bot learning: a reply written after recalled memory was shown may repeat it, so a learning review reads only the owner's words of that turn"
+    },
+    {
+      "file": "packages/adapters/src/memory-context.prompt.ts",
+      "find": "import { byteLength, truncateUtf8 } from \"./utf8.js\";\n\n/** How much durable memory a prompt carries before the rest is left out. */",
+      "replace": "import { byteLength, truncateUtf8 } from \"./utf8.js\";\nimport { dozoMemoryAsData } from \"./dozo-memory-as-data.js\";\n\n/** How much durable memory a prompt carries before the rest is left out. */",
+      "requires": [
+        "packages/adapters/src/dozo-memory-as-data.ts"
+      ],
+      "reason": "memory as data: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/memory-context.prompt.ts",
+      "find": "  const documents = [...input].sort(",
+      "replace": "  const documents = input.map(dozoMemoryAsData).sort(",
+      "requires": [
+        "packages/adapters/src/dozo-memory-as-data.ts"
+      ],
+      "reason": "memory as data: a note (written by hand, by remember or learned) cannot close the durable memory block or pass for one of its document headings"
+    },
+    {
+      "file": "apps/api/src/routes/memory.ts",
+      "find": "import { findSpaceMemoryConfig, IsolationError } from \"@rakazo/db\";\nimport {\n  disconnectMemoryProvider,",
+      "replace": "import { findSpaceMemoryConfig, IsolationError } from \"@rakazo/db\";\nimport { dozoOwnerEditedNotes } from \"@rakazo/adapters\";\nimport {\n  disconnectMemoryProvider,",
+      "requires": [
+        "packages/adapters/src/dozo-learning-apply.ts"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/memory.ts",
+      "find": "            throw error;\n          });\n        return {\n          id: updated.id,",
+      "replace": "            throw error;\n          });\n        await dozoOwnerEditedNotes(deps.prisma, doc, updated.content);\n        return {\n          id: updated.id,",
+      "requires": [
+        "packages/adapters/src/dozo-learning-apply.ts"
+      ],
+      "reason": "bot learning: a learned line the owner changed or removed in the memory panel becomes theirs, so no review edits it again or writes it back (never fails the save)"
     }
   ],
   "assets": {

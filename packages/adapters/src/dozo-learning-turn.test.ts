@@ -3,10 +3,13 @@ import type { LearningReviewDeps } from "./dozo-learning-review.js";
 import {
   LEARNING_IDLE_MS,
   LEARNING_REVIEW_BACKUP_MS,
+  LEARNING_REVIEW_MAX_ATTEMPTS,
   LEARNING_REVIEW_TIMEOUT_MS,
 } from "./dozo-learning-review.js";
+import { markRunRecalledMemory } from "./dozo-learning-recall.js";
 import { countsForLearning, dozoRecordLearningTurn } from "./dozo-learning-turn.js";
-import type { RunContext } from "./run-context.js";
+import { markRunReadOutside } from "./dozo-read-outside.js";
+import type { RunContext, RunState } from "./run-context.js";
 
 // When a finished run becomes a learning turn, and what it starts. The SQL itself is covered by
 // dozo-learning-store.test.ts and, against a real database, dozo-learning.postgres.test.ts.
@@ -23,8 +26,11 @@ const { resolveRunModel, resolveConnectedRunModel } = vi.hoisted(() => ({
 }));
 vi.mock("./run-model.js", () => ({ resolveRunModel, resolveConnectedRunModel }));
 
-const { runReadPhone } = vi.hoisted(() => ({ runReadPhone: vi.fn(async () => false) }));
-vi.mock("./dozo-phone.js", () => ({ runReadPhone }));
+const { runReadPhone, onlyOwnerReads } = vi.hoisted(() => ({
+  runReadPhone: vi.fn(async () => false),
+  onlyOwnerReads: vi.fn(async () => true),
+}));
+vi.mock("./dozo-phone.js", () => ({ runReadPhone, onlyOwnerReads }));
 
 const sqlOf = (call: unknown[]) => (call[0] as string[]).join("?");
 const NOW = new Date("2027-01-16T12:00:00.000Z");
@@ -33,14 +39,20 @@ type Options = {
   mode?: "off" | "auto" | null;
   pending?: number;
   token?: boolean;
-  tainted?: boolean;
+  /** Outside content reached the run's model. */
+  readOutside?: boolean;
+  /** Memory recalled for the turn was shown to the model. */
+  recalled?: boolean;
+  /** Tools the run called, by name. */
+  tools?: string[];
+  attempts?: number;
   run?: Record<string, unknown>;
   thread?: Record<string, unknown>;
   source?: Record<string, unknown>;
 };
 
 function harness(options: Options = {}) {
-  const { mode = "auto", pending = 1, token = false, tainted = false } = options;
+  const { mode = "auto", pending = 3, token = false } = options;
   const queryRaw = vi.fn(async (...call: unknown[]) => {
     const sql = sqlOf(call);
     if (sql.includes("FROM dozo_bot_learning")) return mode ? [{ mode }] : [];
@@ -72,12 +84,20 @@ function harness(options: Options = {}) {
     },
     bot: { id: "bot-1", userId: "owner", spaceId: "space-1" },
     source: { ownerStartedRun: true, messagingChannelRun: false, ...options.source },
-    state: { tainted },
+    state: {
+      reply: {
+        toolCalls: (options.tools ?? []).map((tool, index) => ({
+          label: tool,
+          executionId: `call-${index}`,
+          tool,
+        })),
+      },
+    } as unknown as RunState,
     trust: { receivedOutsideMessage: async () => false },
     deps: {
       prisma: {
         ...tx,
-        attempt: { count: async () => 1 },
+        attempt: { count: async () => options.attempts ?? 1 },
         $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
       },
       jobs: { enqueueIn },
@@ -85,6 +105,8 @@ function harness(options: Options = {}) {
       memory: {},
     },
   } as unknown as RunContext;
+  if (options.readOutside) markRunReadOutside(ctx.state);
+  markRunRecalledMemory(ctx.state, options.recalled ? "<recalled_memory>…" : "");
   const started: Array<() => Promise<unknown>> = [];
   const start = vi.fn((work: () => Promise<unknown>) => {
     started.push(work);
@@ -98,6 +120,8 @@ beforeEach(() => {
   reviewLearning.mockClear();
   runReadPhone.mockReset();
   runReadPhone.mockResolvedValue(false);
+  onlyOwnerReads.mockReset();
+  onlyOwnerReads.mockResolvedValue(true);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -114,25 +138,73 @@ describe("dozoRecordLearningTurn", () => {
     }
   });
 
-  it("records the owner's turn and waits for a pause while fewer than ten wait", async () => {
-    const few = harness({ pending: 9, tainted: true });
-    await dozoRecordLearningTurn(few.ctx, few.start);
-    const insert = few.executeRaw.mock.calls[0]!;
-    expect(sqlOf(insert)).toContain("INSERT INTO dozo_learning_turns");
-    expect(insert.slice(2)).toEqual(["bot-1", "space-1", "thread-1", "run-1", "message-1", true]);
-    expect(few.enqueueIn).toHaveBeenCalledWith(expect.anything(), {
-      name: "memory.learning-review",
-      payload: { botId: "bot-1" },
-      availableAt: new Date(NOW.getTime() + LEARNING_IDLE_MS),
-      replaceKey: "learning.review:bot-1",
-    });
-    expect(few.start).not.toHaveBeenCalled();
+  it("records the owner's turn and waits for a pause while three to nine wait", async () => {
+    for (const pending of [3, 9]) {
+      const few = harness({ pending });
+      await dozoRecordLearningTurn(few.ctx, few.start);
+      const insert = few.executeRaw.mock.calls[0]!;
+      expect(sqlOf(insert)).toContain("INSERT INTO dozo_learning_turns");
+      expect(insert.slice(2)).toEqual([
+        "bot-1",
+        "space-1",
+        "thread-1",
+        "run-1",
+        "message-1",
+        true,
+      ]);
+      expect(few.enqueueIn).toHaveBeenCalledWith(expect.anything(), {
+        name: "memory.learning-review",
+        payload: { botId: "bot-1" },
+        availableAt: new Date(NOW.getTime() + LEARNING_IDLE_MS),
+        replaceKey: "learning.review:bot-1",
+        maxAttempts: LEARNING_REVIEW_MAX_ATTEMPTS,
+      });
+      expect(few.start).not.toHaveBeenCalled();
+    }
+  });
+
+  it("records the turn but queues no review while fewer than three wait", async () => {
+    for (const pending of [1, 2]) {
+      const few = harness({ pending });
+      await dozoRecordLearningTurn(few.ctx, few.start);
+      expect(sqlOf(few.executeRaw.mock.calls[0]!)).toContain("INSERT INTO dozo_learning_turns");
+      expect(few.enqueueIn).not.toHaveBeenCalled();
+      expect(few.start).not.toHaveBeenCalled();
+    }
+  });
+
+  it("lets the review read the reply only of a turn that saw nothing beyond itself", async () => {
+    const cases: Array<[Options, boolean]> = [
+      [{}, true],
+      [{ tools: ["web_search", "remember"] }, true],
+      [{ readOutside: true }, false],
+      [{ attempts: 2 }, false],
+      [{ recalled: true }, false],
+      ...["recall_memory", "reflect_memory", "search_history", "read_history", "skill_read"].map(
+        (tool): [Options, boolean] => [{ tools: ["remember", tool] }, false],
+      ),
+    ];
+    for (const [options, readable] of cases) {
+      const turn = harness(options);
+      await dozoRecordLearningTurn(turn.ctx, turn.start);
+      expect(turn.executeRaw.mock.calls[0]!.at(-1)).toBe(readable);
+    }
+  });
+
+  it("records nothing in a Space with another member or a guest", async () => {
+    onlyOwnerReads.mockResolvedValue(false);
+    const shared = harness({ pending: 12 });
+    await dozoRecordLearningTurn(shared.ctx, shared.start);
+    expect(onlyOwnerReads).toHaveBeenCalledWith(shared.ctx.deps.prisma, shared.ctx.thread, "owner");
+    expect(shared.executeRaw).not.toHaveBeenCalled();
+    expect(shared.enqueueIn).not.toHaveBeenCalled();
+    expect(shared.start).not.toHaveBeenCalled();
   });
 
   it("at ten waiting turns adds the backup job and starts the review at once", async () => {
     const batch = harness({ pending: 10 });
     await dozoRecordLearningTurn(batch.ctx, batch.start);
-    expect(batch.executeRaw.mock.calls[0]!.at(-1)).toBe(false);
+    expect(batch.executeRaw.mock.calls[0]!.at(-1)).toBe(true);
     expect(batch.enqueueIn).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
