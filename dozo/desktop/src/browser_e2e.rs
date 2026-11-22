@@ -869,7 +869,8 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
 }
 
 /// A sign-in whose home page does not come after Done still leaves one page and no way back: a
-/// blank one. And the bot's profile keeps offering to save no password once Chrome has run on it.
+/// blank one, even when the sign-in's own page gave itself a new address of the site meanwhile.
+/// And the bot's profile keeps offering to save no password once Chrome has run on it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
 async fn e2e_browser_sign_in_leaves_one_page_when_home_does_not_come() {
@@ -894,7 +895,9 @@ async fn e2e_browser_sign_in_leaves_one_page_when_home_does_not_come() {
             let body = if home {
                 "<title>Home</title>home"
             } else {
-                "<title>Back</title>SECRET"
+                // While the home page is on its way, the sign-in's page gives itself a new
+                // address of the site (a single-page app trading its code), keeping its document.
+                "<title>Back</title>SECRET<script>setTimeout(()=>history.pushState({},'','/pushed'),1500)</script>"
             };
             let _ = write!(
                 stream,

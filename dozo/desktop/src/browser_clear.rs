@@ -23,14 +23,14 @@ fn label(name: &str, turkish: bool) -> String {
 }
 
 /// Each kept browser's bot as the person sees it: its name, and where two bots share one, the
-/// start of its key after it, so their rows differ.
+/// first eight characters of its key after it, so their rows differ.
 fn shown_names(names: &[(String, String)]) -> Vec<(String, String)> {
     names
         .iter()
         .map(|(key, name)| {
             let shared = names.iter().filter(|(_, other)| other == name).count() > 1;
             let shown = if shared {
-                format!("{name} ({})", &key[..key.len().min(4)])
+                format!("{name} ({})", &key[..key.len().min(8)])
             } else {
                 name.clone()
             };
@@ -57,7 +57,7 @@ fn dialog_words(name: &str, turkish: bool) -> [String; 4] {
             ),
             "Temizle".to_owned(),
             "Vazgeç".to_owned(),
-            format!("{name} tarayıcısı kapanmadığı için temizlenmedi. Yeniden deneyin."),
+            format!("{name} tarayıcısı temizlenemedi. Yeniden deneyin."),
         ]
     } else {
         [
@@ -66,7 +66,7 @@ fn dialog_words(name: &str, turkish: bool) -> [String; 4] {
             ),
             "Clear".to_owned(),
             "Cancel".to_owned(),
-            format!("{name}'s browser did not close, so it was not cleared. Try again."),
+            format!("{name}'s browser could not be cleared. Try again."),
         ]
     }
 }
@@ -183,16 +183,16 @@ mod tests {
     #[test]
     fn two_bots_of_one_name_get_rows_that_differ() {
         let names = vec![
-            ("ab12cd".to_owned(), "Ada".to_owned()),
-            ("ef34gh".to_owned(), "Ada".to_owned()),
+            ("ab12cd34ff".to_owned(), "Ada".to_owned()),
+            ("ab12cd35ff".to_owned(), "Ada".to_owned()),
             ("0000".to_owned(), "Bo".to_owned()),
         ];
         let rows: Vec<String> = wanted(&names, false).into_iter().map(|(_, w)| w).collect();
         assert_eq!(
             rows,
             [
-                "Clear Ada (ab12)'s Browser…",
-                "Clear Ada (ef34)'s Browser…",
+                "Clear Ada (ab12cd34)'s Browser…",
+                "Clear Ada (ab12cd35)'s Browser…",
                 "Clear Bo's Browser…"
             ]
         );
@@ -203,6 +203,6 @@ mod tests {
         assert_eq!(dialog_words("Ada", false)[1], "Clear");
         assert_eq!(dialog_words("Ada", true)[1], "Temizle");
         assert!(dialog_words("Ada", true)[0].starts_with("Ada tarayıcısı temizlensin mi?"));
-        assert!(dialog_words("Ada", false)[3].contains("not cleared"));
+        assert!(dialog_words("Ada", false)[3].contains("could not be cleared"));
     }
 }

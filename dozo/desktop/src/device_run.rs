@@ -210,16 +210,17 @@ impl Runner {
         self.browsers.named()
     }
 
-    /// Whether the person cleared the bot's browser. The mark goes only once the server has the
-    /// answer: one that did not arrive is asked again next time, and the browser stays unstarted
-    /// meanwhile.
-    async fn answer_cleared(&self, key: &str, reply: &Reply) {
-        let cleared = self.browsers.cleared(key);
-        if reply.send(json!({ "value": { "cleared": cleared } })).await
-            && reply.send(json!({ "done": true })).await
-            && cleared
-        {
+    /// Whether the person cleared the bot's browser. Answering never takes the mark (a frame
+    /// queued here may never reach the server): it goes only when the server says it has forgotten
+    /// what the bot was allowed (`forgotten`), so until then every question finds it cleared and
+    /// the browser stays unstarted.
+    async fn answer_cleared(&self, key: &str, forgotten: bool, reply: &Reply) {
+        if forgotten {
             self.browsers.take_cleared(key);
+        }
+        let cleared = self.browsers.cleared(key);
+        if reply.send(json!({ "value": { "cleared": cleared } })).await {
+            reply.send(json!({ "done": true })).await;
         }
     }
 
@@ -391,7 +392,10 @@ impl Runner {
             {
                 return reply.error(NOT_HERE).await;
             }
-            "pageBrowserCleared" => return self.answer_cleared(&key, reply).await,
+            "pageBrowserCleared" => {
+                let forgotten = request.get("forgotten") == Some(&Value::Bool(true));
+                return self.answer_cleared(&key, forgotten, reply).await;
+            }
             "pageBrowserSignIn" => {
                 self.remember_name(&key, request);
                 if !running(&home) {
@@ -1224,28 +1228,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The cleared mark goes once the server has the answer, not before, and not when the answer
-    /// did not get there.
+    /// The cleared mark goes only when the server says it has forgotten what the bot was allowed:
+    /// not when the answer was queued here and the connection dropped before it left, nor when it
+    /// was sent.
     #[cfg(unix)]
     #[tokio::test]
-    async fn the_cleared_mark_goes_only_once_the_server_has_the_answer() {
+    async fn the_cleared_mark_goes_only_once_the_server_has_forgotten() {
         let (runner, dir) = runner();
         let key = bot_key("b");
         let root = dir.join("data/browser-profiles");
         std::fs::create_dir_all(&root).unwrap();
         assert!(runner.clear_browser(&key).await);
-        let (lost, call) = reply("r1");
+        // Queued for the socket, which then drops: the answer never left.
+        let (queued, call) = reply("r1");
+        runner.answer_cleared(&key, false, &queued).await;
         drop(call);
-        runner.answer_cleared(&key, &lost).await;
-        assert!(
-            runner.browsers.cleared(&key),
-            "an answer that did not arrive keeps it"
-        );
-        let (reply, mut call) = reply("r2");
-        runner.answer_cleared(&key, &reply).await;
-        drop(reply);
+        assert!(runner.browsers.cleared(&key), "a queued answer keeps it");
+        // Answered and received, still kept until the server has forgotten.
+        let (sent, mut call) = reply("r2");
+        runner.answer_cleared(&key, false, &sent).await;
+        drop(sent);
         let frame: Value = serde_json::from_str(&call.frames.recv().await.unwrap()).unwrap();
         assert_eq!(frame["frame"], json!({ "value": { "cleared": true } }));
+        assert!(runner.browsers.cleared(&key), "an answer alone keeps it");
+        let (done, _call) = reply("r3");
+        runner.answer_cleared(&key, true, &done).await;
         assert!(!runner.browsers.cleared(&key));
         let _ = std::fs::remove_dir_all(&dir);
     }
