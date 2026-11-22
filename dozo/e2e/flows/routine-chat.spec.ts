@@ -12,8 +12,8 @@ async function shot(page: Page, name: string) {
 }
 
 /**
- * A saved routine of a bot with an extra chat picks the chat it posts in, in both themes. Without
- * an open extra chat the editor shows no chat at all.
+ * A saved routine of a bot with an extra chat picks the chat it posts in, in both themes. (Without
+ * one the editor shows no chat at all: dozo-routine-chat.test.tsx.)
  */
 test("routine chat: a routine of a bot with an extra chat picks where it posts", async ({
   page,
@@ -38,14 +38,12 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
   };
   const chatPicker = page.getByLabel("Chat", { exact: true });
 
+  // Made before the app opens: the editor reads the bot's chats from its first load.
+  const { chat } = await rpcAs<{ chat: { id: string } }>(page, "dozoChats/create", {
+    botId: world.chiefId,
+    name: "Garden",
+  });
   try {
-    await editor("light");
-    await expect(chatPicker).toHaveCount(0);
-
-    const { chat } = await rpcAs<{ chat: { id: string } }>(page, "dozoChats/create", {
-      botId: world.chiefId,
-      name: "Garden",
-    });
     try {
       await editor("light");
       // The picker waits for the bot's chats, read once the editor opens.
@@ -67,9 +65,9 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
       await expect(chatPicker).toHaveValue(chat.id, { timeout: 20_000 });
       await shot(page, "routine-chat-dark");
     } finally {
-      await rpcAs(page, "dozoChats/archive", { chatId: chat.id, archived: true });
+      await rpcAs(page, "routines/remove", { routineId: routine.id });
     }
   } finally {
-    await rpcAs(page, "routines/remove", { routineId: routine.id });
+    await rpcAs(page, "dozoChats/archive", { chatId: chat.id, archived: true });
   }
 });
