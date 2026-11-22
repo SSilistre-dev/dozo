@@ -6053,6 +6053,87 @@
       "reason": "one-time waits: the run a wait starts ends the wait, so the routine is not checked again"
     },
     {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "from \"./desktop-command-guard.js\";\nimport { dozoTickWait, dozoWatchNextRunAt }",
+      "replace": "from \"./desktop-command-guard.js\";\nimport {\n  dozoNoteRoutineChat,\n  dozoOpenRoutineChat,\n  dozoRoutineThread,\n} from \"./dozo-routine-chat.js\";\nimport { dozoTickWait, dozoWatchNextRunAt }",
+      "requires": [
+        "packages/adapters/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "  const thread = targetThread ?? bot.thread;\n  if (await dozoSendDailyDigest(",
+      "replace": "  const thread = await dozoRoutineThread(\n    deps,\n    routine,\n    { id: bot.id, thread: bot.thread },\n    targetThread,\n  );\n  await dozoNoteRoutineChat(deps, routine, bot.id, thread);\n  if (await dozoSendDailyDigest(",
+      "requires": [
+        "packages/adapters/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: a routine made in, or pointed at, one of its bot's open extra chats runs there (the lookup above finds a thread by threads.botId, which an extra chat leaves empty, and fell back to the main chat); while that chat is archived it runs in the main chat and says so there once per archiving, the daily digest included"
+    },
+    {
+      "file": "packages/adapters/src/run-routines.ts",
+      "find": "      if (!targetThread) return null;\n      const retryTask = await tx.task.create({",
+      "replace": "      if (\n        !targetThread &&\n        !(await dozoOpenRoutineChat(tx, {\n          threadId: failed.threadId,\n          botId: failed.botId,\n          spaceId: failed.spaceId,\n        }))\n      )\n        return null;\n      const retryTask = await tx.task.create({",
+      "requires": [
+        "packages/adapters/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: a failed run in an open extra chat is retried there, as one in the main chat is; one whose chat was archived is not retried"
+    },
+    {
+      "file": "apps/api/src/routines.ts",
+      "find": "import { IsolationError } from \"@rakazo/db\";\nimport type { RouterDeps }",
+      "replace": "import { dozoBotChatOf, IsolationError } from \"@rakazo/db\";\nimport type { RouterDeps }",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "routine chat: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routines.ts",
+      "find": "  return { routine, botId: bot.id, threadId: bot.thread.id };\n}",
+      "replace": "  const dozoChat = routine.threadId\n    ? await dozoBotChatOf(prisma, {\n        threadId: routine.threadId,\n        botId: bot.id,\n        spaceId: actor.spaceId,\n      })\n    : null;\n  const threadId = dozoChat && !dozoChat.archived ? routine.threadId : null;\n  return {\n    routine,\n    botId: bot.id,\n    threadId: threadId ?? bot.thread.id,\n    dozoMainThreadId: bot.thread.id,\n  };\n}",
+      "requires": [
+        "packages/db/src/dozo-bot-chats.ts"
+      ],
+      "reason": "routine chat: Run now posts where the routine's runs post: its open extra chat, else the main chat as before; a routine named in a message reads the main chat from here (dozoMainThreadId)"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "from \"../routines.js\";\nimport { assertTeachingSendAllowed }",
+      "replace": "from \"../routines.js\";\nimport { dozoMentionedRoutine } from \"../dozo-routine-chat.js\";\nimport { assertTeachingSendAllowed }",
+      "requires": [
+        "apps/api/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "          [...new Set(input.routineIds)].map((routineId) =>\n            routineTestTarget(deps.prisma, repos, actor, routineId),\n          ),",
+      "replace": "          [...new Set(input.routineIds)].map(async (routineId) =>\n            dozoMentionedRoutine(\n              deps.prisma,\n              actor,\n              input,\n              await routineTestTarget(deps.prisma, repos, actor, routineId),\n            ),\n          ),",
+      "requires": [
+        "apps/api/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: a routine named in a message runs in the chat the message was written in (an extra chat, or the main chat as before), not in the chat the routine posts in on its own"
+    },
+    {
+      "file": "apps/web/src/pages/RoutineEditor.tsx",
+      "find": "import { AddTriggerMenu } from \"./routine-editor/add-trigger-menu\";\nimport { RoutineModelSettings }",
+      "replace": "import { AddTriggerMenu } from \"./routine-editor/add-trigger-menu\";\nimport { DozoRoutineChat } from \"./routine-editor/dozo-routine-chat\";\nimport { RoutineModelSettings }",
+      "requires": [
+        "apps/web/src/pages/routine-editor/dozo-routine-chat.tsx"
+      ],
+      "reason": "routine chat: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/RoutineEditor.tsx",
+      "find": "          rows={4}\n          className=\"mt-2\"\n        />\n      </label>\n\n      <div className=\"mt-5 text-body text-muted-foreground\">",
+      "replace": "          rows={4}\n          className=\"mt-2\"\n        />\n      </label>\n\n      {editing ? (\n        <DozoRoutineChat bot={bot} routineId={editing.id} fieldId={fieldId} />\n      ) : null}\n\n      <div className=\"mt-5 text-body text-muted-foreground\">",
+      "requires": [
+        "apps/web/src/pages/routine-editor/dozo-routine-chat.tsx"
+      ],
+      "reason": "routine chat: a saved routine of a bot with extra chats picks the chat it posts in; a bot without extra chats shows nothing new"
+    },
+    {
       "file": "packages/adapters/src/run-tools-tasks.ts",
       "find": "} from \"./desktop-command-guard.js\";\nimport type { RunContext } from \"./run-context.js\";",
       "replace": "} from \"./desktop-command-guard.js\";\nimport { dozoCreateSchedule, dozoWaitRefusal } from \"./dozo-wait.js\";\nimport type { RunContext } from \"./run-context.js\";",

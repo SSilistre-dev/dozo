@@ -5,6 +5,8 @@ import type {
   DozoBotChatCreateInput,
   DozoBotChatRenameInput,
   DozoBotChatsListInput,
+  DozoRoutineChat,
+  DozoRoutineChatSetInput,
 } from "@rakazo/contracts";
 import {
   DOZO_BOT_CHATS_LIMIT_CODE,
@@ -14,7 +16,7 @@ import {
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { IsolationError } from "@rakazo/db";
+import { dozoBotChatOf, IsolationError } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
@@ -176,6 +178,30 @@ export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events" | "sandb
     const row = await chatRow(prisma, actor, chatId);
     await resolveThreadTarget(prisma, actor, { botId: row.botId });
   };
+  /**
+   * A routine of a bot the caller may chat with, as routines.update finds one (an archived bot's
+   * routines stay as they are), and where it posts now.
+   */
+  const routineOf = async (actor: Actor, routineId: string) => {
+    const routine = await prisma.routine.findFirst({
+      where: { id: routineId, spaceId: actor.spaceId, bot: { archivedAt: null } },
+      select: { id: true, botId: true, threadId: true },
+    });
+    if (!routine) throw new IsolationError();
+    const target = await resolveThreadTarget(prisma, actor, { botId: routine.botId });
+    const state = async (): Promise<DozoRoutineChat> => {
+      if (!routine.threadId || routine.threadId === target.threadId)
+        return { chatId: null, editable: true };
+      const chat = await dozoBotChatOf(prisma, {
+        threadId: routine.threadId,
+        botId: routine.botId,
+        spaceId: actor.spaceId,
+      });
+      if (!chat) return { chatId: null, editable: false };
+      return { chatId: chat.archived ? null : routine.threadId, editable: true };
+    };
+    return { routine, state: await state() };
+  };
   return {
     async list(actor: Actor, input: DozoBotChatsListInput) {
       if (input.botId)
@@ -193,6 +219,32 @@ export function dozoBotChats(deps: Pick<RouterDeps, "prisma" | "events" | "sandb
       const chat = await prisma.$transaction((tx) => renameChat(tx, actor, input));
       await changed(actor);
       return { chat };
+    },
+    async routineChat(actor: Actor, input: { routineId: string }) {
+      return (await routineOf(actor, input.routineId)).state;
+    },
+    async setRoutineChat(actor: Actor, input: DozoRoutineChatSetInput) {
+      const { routine, state } = await routineOf(actor, input.routineId);
+      // A group's routine is not moved into a bot's chat, nor taken out of its group.
+      if (!state.editable) throw new IsolationError();
+      if (input.chatId) {
+        const chat = await dozoBotChatOf(prisma, {
+          threadId: input.chatId,
+          botId: routine.botId,
+          spaceId: actor.spaceId,
+        });
+        // Never the main chat in its place: a chat that cannot take it is not found.
+        if (!chat || chat.archived) throw new IsolationError();
+      }
+      await prisma.routine.update({
+        where: { id: routine.id },
+        data: { threadId: input.chatId },
+      });
+      await bestEffort(
+        "routine chat signal",
+        deps.events?.publishSpaceChange?.(actor.spaceId, "routines"),
+      );
+      return { chatId: input.chatId, editable: true };
     },
     async archive(actor: Actor, input: DozoBotChatArchiveInput) {
       await ofBot(actor, input.chatId);
@@ -275,6 +327,12 @@ export function dozoBotChatRoutes(ctx: RouterContext) {
       ),
       archive: authed.dozoChats.archive.handler(({ context, input }) =>
         chats.archive(context.actor, input),
+      ),
+      routineChat: authed.dozoChats.routineChat.handler(({ context, input }) =>
+        chats.routineChat(context.actor, input),
+      ),
+      setRoutineChat: authed.dozoChats.setRoutineChat.handler(({ context, input }) =>
+        chats.setRoutineChat(context.actor, input),
       ),
     },
   };

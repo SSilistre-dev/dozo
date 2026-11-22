@@ -204,6 +204,7 @@ if [ -z "$RELAY" ]; then
   browser_test e2e_browser_sign_in_leaves_one_page_when_home_does_not_come
   browser_test e2e_browser_sign_in_ends_on_a_home_page_that_redirects
   browser_test e2e_browser_sign_in_ends_on_home_whatever_the_page_starts
+  browser_test e2e_browser_sign_in_closes_what_it_opened
   browser_test e2e_browser_clear_holds_while_commands_keep_coming
   export DOZO_BROWSER_E2E_ROOT="$BASE/browser"
   "$BIN" --ignored --exact browser::e2e::e2e_browser_hold_until_killed --nocapture \

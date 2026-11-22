@@ -314,10 +314,9 @@ A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`
 `dozo_bot_chats`; web, desktop and mobile). They are the Space's, like the bot's main chat:
 every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
 100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
-archived bot does. The bot's memory and computer are one across its chats. Chat apps and routines
-use the main chat only; a routine started from an extra chat posts in the main chat. The phone's
-badge and the inbox rows count main chats only, as web's Dock badge and bot rows do; an extra chat
-has its own unread dot.
+archived bot does. The bot's memory and computer are one across its chats. Chat apps use the main
+chat only. The phone's badge and the inbox rows count main chats only, as web's Dock badge and bot
+rows do; an extra chat has its own unread dot.
 
 On the phone a bot's extra chats are on its profile (reached from the chat's title), under Chats,
 only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
@@ -340,6 +339,17 @@ one 404, never the main chat. A token cannot make, rename or archive chats: its 
 my bots", which says nothing about changing them. A chat app's conversation lands in the bot's main
 chat (`dozo-bot-api-chats.postgres.test.ts` pins it); mapping a conversation to an extra chat is a
 product decision not made yet.
+
+A routine or one-time wait posts in the chat it was made in, or the one picked in its editor (web,
+shown only once the bot has an extra chat): upstream's `routines.threadId`, read by
+`packages/adapters/src/dozo-routine-chat.ts` for schedules, waits, change triggers, retries and Run
+now, so quiet hours, the 12-hour catch-up, the daily send limit and queued ticks meet the same chat.
+No chat (every routine made in the app before) is the main chat. While its chat is archived a
+routine (the daily digest too) runs in the main chat and says so there once per archiving, in its
+owner's language; brought back, it posts there again. A routine named in a message runs in the chat
+the message was written in, and keeps its own chat.
+Webhook, GitHub, email and chat-app triggers still deliver in the main chat, as upstream delivers
+them, and the phone's editor neither shows nor changes the chat (an edit there keeps it).
 
 Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
 (or with) the web app: an API from before extra chats answers such a request with 400 (its own
