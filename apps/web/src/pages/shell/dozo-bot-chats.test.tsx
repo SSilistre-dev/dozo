@@ -44,8 +44,14 @@ vi.mock("../../lib/dozo-error-text", () => ({
   toastError: api.toastError,
 }));
 vi.mock("./dozo-chat-export-menu", () => ({
-  DozoChatExportMenu: ({ target }: { target: { chatId?: string } }) => (
-    <button type="button" role="menuitem" data-export={target.chatId}>
+  DozoChatExportMenu: ({
+    target,
+    onClose,
+  }: {
+    target: { chatId?: string };
+    onClose: () => void;
+  }) => (
+    <button type="button" role="menuitem" data-export={target.chatId} onClick={onClose}>
       Export
     </button>
   ),
@@ -364,6 +370,8 @@ describe("the roster's extra chat rows", () => {
     }
     expect(items().slice(-2)).toEqual(["Export", "Archive"]);
     expect(container.querySelector("[data-export]")?.getAttribute("data-export")).toBe("chat-1");
+    // The export submenu closes by itself with the menu, so the close it is given does nothing.
+    await click(container.querySelector("[data-export]"));
     await click(item("Mark as Read"));
     await vi.waitFor(() =>
       expect(api.markRead).toHaveBeenCalledWith({ chatBotId: "bot-1", chatId: "chat-1" }),
