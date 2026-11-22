@@ -350,16 +350,18 @@ into it.
   starting in that instant is ended), and the commands already running here, any bot's, are held
   (their process groups stopped, and on Linux also what they started outside them) and let go
   after, since a command could read the screen. Stopping the bot leaves its browser open
-  meanwhile; deleting it ends the sign-in. When they answer, the tab first goes to a blank page, whose new
-  document ends the sign-in's page and whatever it was starting (a timer, a form, a refresh, a
-  reload, a "Redirecting…" page sending back a code); a tab that will not show it after three
-  tries is ended. Only then does it go to the site's home page (Done), and the tab's history is
-  cleared, before the bot has it again. The home page must come from that navigation: one that
-  leads elsewhere on its site, as x.com to /home or google.com to www, counts where it led, as a
-  new document after the blank one; one that does not come within ten seconds leaves the blank
-  page; a page the sign-in itself left never counts, even under a new address it gave itself:
-  neither a return address with a code, nor a half-done step, nor a way back to them reaches the
-  server, and the sign-in's events are dropped. The bot learns whether they signed in, and then
+  meanwhile; deleting it ends the sign-in. When they answer, the bot gets a new blank tab
+  and every other page of its browser closes: the sign-in's tab with its history and whatever it
+  was starting (a timer, a form, a refresh, a "Redirecting…" page sending back a code), and every
+  window or tab the sign-in or the person opened meanwhile (which could otherwise send a tab
+  somewhere by its opener or its name). The app checks that the new tab is then the only page, and
+  ends the browser otherwise. Nothing holds the new tab: no opener, no window name, no history.
+  Done then opens the site's home page there (one that does not come within ten seconds is
+  stopped, leaving the blank tab); Cancel leaves it blank. Neither a return address with a code,
+  nor a half-done step, nor a way back to them reaches the server, and the sign-in's events are
+  dropped. Once the tab shows the site, the site's own pages and its own service worker can send
+  it on as on any visit (measured: a service worker the site registered during the sign-in can
+  send the new tab to an address of that site); that is the site's choice, as everywhere else. The bot learns whether they signed in, and then
   sees the site's home page (or where it led) as anyone signed in would. Only the person ends it; after 15 minutes
   without an answer, if the browser closes, or if the bot is deleted, it counts as cancelled and a
   second dialog says so: "The sign-in to x.com ended without your answer: the bot has its browser
@@ -415,8 +417,8 @@ into it.
   set before any script of every document, and every new tab, window and frame of its own process
   holds until it has it (`Target.setAutoAttach`); it also guards a window a page opens and a frame
   it reaches, so a page cannot call the browser's own functions through them. A page can still open
-  a window or tab with such a click (sign-ins need it); the bot cannot reach it, and while it is in
-  front the bot's page is behind it. A link to another program (`mailto:`, a meeting app) asks the
+  a window or tab with such a click (sign-ins need it); the bot cannot reach it, while it is in
+  front the bot's page is behind it, and the end of a sign-in closes it. A link to another program (`mailto:`, a meeting app) asks the
   person first.
 - None of Playwright's defaults that mark the browser as automated or store its passwords
   unencrypted (`--enable-automation`, `--use-mock-keychain`, `--password-store=basic`), no `--app`
@@ -441,7 +443,9 @@ into it.
   the mark, so an answer lost on the way, or a server that failed before forgetting, asks and
   forgets again next time. Deleting a thread
   forgets the answers given in it; deleting the bot or removing this computer forgets them all,
-  and deleting the bot takes its row. The app keeps the bot's name beside its profile only to
+  and deleting the bot takes its row. A clear the app did not finish (it quit before the profile
+  went) is finished before the browser may start again, and a second click on the row while a
+  clear runs keeps the first in force. The app keeps the bot's name beside its profile only to
   show it there, without invisible, filler or direction-changing characters; two bots of one name
   are told apart by the first eight characters of their key.
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it

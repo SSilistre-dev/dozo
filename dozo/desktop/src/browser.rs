@@ -532,9 +532,6 @@ struct Running {
     attach: tokio::sync::Mutex<()>,
     /// The bot's page, once attached.
     target: Mutex<Option<String>>,
-    /// History entries up to this id were made while the person signed in (with what came
-    /// before): the server gets them without address or title.
-    hidden_through: AtomicU64,
     #[cfg(unix)]
     child: Mutex<Option<tokio::process::Child>>,
 }
@@ -579,6 +576,73 @@ impl Running {
                 .ok_or(CLOSED)?
                 .to_owned(),
         };
+        self.attach_to(target).await
+    }
+
+    /// After a sign-in: a new blank tab for the bot, and every other page closed, the sign-in's
+    /// tab and any window it or the person opened among them. Nothing holds the new tab (no
+    /// opener, no window name, no history), so nothing the sign-in left can send it anywhere.
+    /// Fails, and the browser should end, unless the new tab is then the only page.
+    async fn fresh_tab(&self) -> Result<String, String> {
+        let _attaching = self.attach.lock().await;
+        let pages = || async {
+            let targets = self.pipe.call("Target.getTargets", json!({}), None).await?;
+            Ok::<Vec<String>, String>(
+                targets["targetInfos"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|info| info["type"] == "page")
+                    .filter_map(|info| info["targetId"].as_str().map(str::to_owned))
+                    .collect(),
+            )
+        };
+        let created = self
+            .pipe
+            .call("Target.createTarget", json!({ "url": "about:blank" }), None)
+            .await?["targetId"]
+            .as_str()
+            .ok_or(CLOSED)?
+            .to_owned();
+        let mut others = Vec::new();
+        for _ in 0..50 {
+            others = pages().await?;
+            others.retain(|page| *page != created);
+            if others.is_empty() {
+                break;
+            }
+            for page in &others {
+                let close = json!({ "targetId": page });
+                let _ = self.pipe.call("Target.closeTarget", close, None).await;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if !others.is_empty() {
+            return Err(CLOSED.to_owned());
+        }
+        *self.pipe.session.lock().unwrap() = None;
+        let session = self.attach_to(created.clone()).await?;
+        // A new tab holds until it has the guard (`guard_target`): it is used once it answers.
+        let mut ready = false;
+        for _ in 0..50 {
+            let asked = self
+                .pipe
+                .call("Page.getNavigationHistory", json!({}), Some(&session))
+                .await;
+            if asked.is_ok() {
+                ready = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if !ready || pages().await? != [created] {
+            return Err(CLOSED.to_owned());
+        }
+        Ok(session)
+    }
+
+    /// Takes `target` as the bot's page: attaches to it and gives it the guard.
+    async fn attach_to(&self, target: String) -> Result<String, String> {
         let attached = self
             .pipe
             .call(
@@ -644,117 +708,6 @@ impl Running {
     }
 }
 
-/// Goes to `page`, waits up to ten seconds for a page `arrived` accepts to have come (where `page`
-/// led: a home page that redirects), clears the tab's history and answers whether the tab then
-/// holds one such page and nothing else.
-async fn leave_only(
-    running: &Running,
-    session: &str,
-    page: &str,
-    arrived: impl Fn(&str) -> bool,
-) -> bool {
-    let arrived = &arrived;
-    let history = || async move {
-        let asked = running
-            .pipe
-            .call("Page.getNavigationHistory", json!({}), Some(session));
-        // A tab busy loading may not answer at once, which counts as not yet.
-        match tokio::time::timeout(Duration::from_millis(500), asked).await {
-            Ok(Ok(history)) => Some(history),
-            _ => None,
-        }
-    };
-    // The document the tab shows: a page that came is a new one (a page that only changes its
-    // address, `history.pushState`, keeps its document and is still the sign-in's).
-    let document = || async move {
-        let asked = running
-            .pipe
-            .call("Page.getFrameTree", json!({}), Some(session));
-        match tokio::time::timeout(Duration::from_millis(500), asked).await {
-            Ok(Ok(tree)) => tree["frameTree"]["frame"]["loaderId"]
-                .as_str()
-                .map(str::to_owned),
-            _ => None,
-        }
-    };
-    let newest = |history: &Value| {
-        history["entries"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry["id"].as_u64())
-            .max()
-            .unwrap_or(0)
-    };
-    // Only a page that came after this navigation, in a document of its own, counts: never one
-    // the sign-in left (of the same site, a return address with a code), even under a new
-    // address it gave itself.
-    let (Some(before), Some(old_document)) = (history().await, document().await) else {
-        return false;
-    };
-    let since = newest(&before);
-    let old_document = &old_document;
-    // The tab holds such a page as its current entry, and with `only`, nothing else.
-    let holds = |only: bool| async move {
-        let Some(history) = history().await else {
-            return false;
-        };
-        let entries = history["entries"].as_array().map_or(&[][..], Vec::as_slice);
-        let current = history["currentIndex"].as_u64().unwrap_or(u64::MAX);
-        let at = usize::try_from(current).ok().and_then(|at| entries.get(at));
-        (!only || entries.len() == 1)
-            && at.is_some_and(|entry| {
-                entry["id"].as_u64().is_some_and(|id| id > since)
-                    && entry["url"].as_str().is_some_and(arrived)
-            })
-            && document().await.is_some_and(|now| now != *old_document)
-    };
-    // The browser answers a navigation once the page answers: one that does not is waited for
-    // ten seconds at most.
-    let going = running
-        .pipe
-        .call("Page.navigate", json!({ "url": page }), Some(session));
-    let _ = tokio::time::timeout(Duration::from_secs(10), going).await;
-    for _ in 0..20 {
-        if holds(false).await {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    // What is still loading stops: the tab keeps what came.
-    let _ = running
-        .pipe
-        .call("Page.stopLoading", json!({}), Some(session))
-        .await;
-    for _ in 0..10 {
-        let _ = running
-            .pipe
-            .call("Page.resetNavigationHistory", json!({}), Some(session))
-            .await;
-        if holds(true).await {
-            return true;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    false
-}
-
-/// Whether `url` is a page of `site`, over `scheme`: the site itself or a host under it.
-fn on_site(url: &str, scheme: &str, site: &str) -> bool {
-    let Some(rest) = url
-        .strip_prefix(scheme)
-        .and_then(|rest| rest.strip_prefix("://"))
-    else {
-        return false;
-    };
-    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
-    host == site
-        || host
-            .strip_suffix(site)
-            .is_some_and(|under| under.ends_with('.'))
-}
-
 /// A bot's key: its id's SHA-256, in hex (`device_run::bot_key`). Anything else read from the
 /// profiles folder is not a bot's.
 fn valid_key(key: &str) -> bool {
@@ -818,7 +771,8 @@ pub struct Browsers {
     on_list: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// Bots whose browser is being cleared now: none starts, and the server's `forgotten` does not
     /// take the mark, until the clear is over.
-    clearing: Mutex<std::collections::HashSet<String>>,
+    /// How many clears of each bot are under way (a second click starts a second one).
+    clearing: Mutex<HashMap<String, usize>>,
     /// One telling at a time, each of what holds then, so a late one never undoes a newer one.
     telling: Mutex<()>,
     /// How long a sign-in waits for the person (`SIGN_IN_TIME`; tests shorten it).
@@ -1005,16 +959,16 @@ impl Browsers {
         // only that long, not for the browser to end.
         {
             let _starting = self.starting.lock().await;
-            self.clearing.lock().unwrap().insert(key.to_owned());
+            self.begin_clearing(key);
             if std::fs::write(self.root.join(format!("{key}.cleared")), b"").is_err() {
-                self.clearing.lock().unwrap().remove(key);
+                self.end_clearing(key);
                 return false;
             }
         }
         // Until the browser has ended and its profile is gone, nothing of that bot starts, even
         // if the server has forgotten meanwhile.
         let cleared = self.close(key, true).await;
-        self.clearing.lock().unwrap().remove(key);
+        self.end_clearing(key);
         cleared
     }
 
@@ -1026,10 +980,43 @@ impl Browsers {
     /// The server has forgotten what the bot was allowed: its browser may start again, once a
     /// clear under way is over (until then the mark stays, and the server asks again).
     pub fn take_cleared(&self, key: &str) {
-        if self.clearing.lock().unwrap().contains(key) {
+        if self.is_clearing(key) {
             return;
         }
+        // A clear the app did not finish (it quit or crashed before the profile went) is
+        // finished first: the browser never starts again on the old profile and its sign-ins.
+        let profile = self.root.join(key);
+        if profile.exists() {
+            #[cfg(unix)]
+            end_leftover(&self.root.join(format!("{key}.pid")), &profile);
+            if std::fs::remove_dir_all(&profile).is_err() {
+                return;
+            }
+        }
         let _ = std::fs::remove_file(self.root.join(format!("{key}.cleared")));
+    }
+
+    fn begin_clearing(&self, key: &str) {
+        *self
+            .clearing
+            .lock()
+            .unwrap()
+            .entry(key.to_owned())
+            .or_default() += 1;
+    }
+
+    fn end_clearing(&self, key: &str) {
+        let mut clearing = self.clearing.lock().unwrap();
+        if let Some(count) = clearing.get_mut(key) {
+            *count -= 1;
+            if *count == 0 {
+                clearing.remove(key);
+            }
+        }
+    }
+
+    fn is_clearing(&self, key: &str) -> bool {
+        self.clearing.lock().unwrap().contains_key(key)
     }
 
     pub fn available(&self) -> bool {
@@ -1091,47 +1078,50 @@ impl Browsers {
             }
             Err(_) => false,
         };
-        // Before the bot has the page again, it leaves where the sign-in left it: first a blank
-        // page, whose new document ends the sign-in's page and whatever it was starting (a timer,
-        // a form, a refresh, a "Redirecting…" page sending back a code), then the site's home page
-        // once the person is done (a typed address or a half-done second step stays theirs when
-        // they cancelled). The tab keeps no way back into the sign-in: a page that goes back
-        // (`history.go`), or a Back link the bot clicks, finds nothing behind it. A tab that would
-        // not show the blank page after three tries is ended; a home page that did not come leaves
-        // the blank one.
-        let blank = |url: &str| url == "about:blank";
-        // A page may take the tab elsewhere once more as it is left (from `beforeunload`): the
-        // blank page is asked for again, a few times.
-        let mut blanked = false;
-        for _ in 0..3 {
-            if leave_only(&running, &session, "about:blank", blank).await {
-                blanked = true;
-                break;
+        // Before the bot has a page again, it gets a new blank tab and every other page closes:
+        // the sign-in's tab with its history and whatever it was starting, and any window it or
+        // the person opened (which could still send a tab somewhere by its opener or its name).
+        // Done then opens the site's home page there. A browser where that fails is ended.
+        let left = match running.fresh_tab().await {
+            Ok(fresh) => {
+                if answer {
+                    let home = json!({ "url": format!("{scheme}://{site}/") });
+                    let going = running.pipe.call("Page.navigate", home, Some(&fresh));
+                    // A home page that does not come in ten seconds is stopped: the blank tab
+                    // stays. Then the tab is handed over once it answers (a page of another
+                    // process takes a moment).
+                    if tokio::time::timeout(Duration::from_secs(10), going)
+                        .await
+                        .is_err()
+                    {
+                        let _ = running
+                            .pipe
+                            .call("Page.stopLoading", json!({}), Some(&fresh))
+                            .await;
+                    }
+                    for _ in 0..50 {
+                        let asked =
+                            running
+                                .pipe
+                                .call("Page.getNavigationHistory", json!({}), Some(&fresh));
+                        if matches!(
+                            tokio::time::timeout(Duration::from_secs(1), asked).await,
+                            Ok(Ok(_))
+                        ) {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                    // The new tab's own blank page is no way back either.
+                    let _ = running
+                        .pipe
+                        .call("Page.resetNavigationHistory", json!({}), Some(&fresh))
+                        .await;
+                }
+                true
             }
-        }
-        // The addresses the sign-in went through (a code in a return address) stay out of what the
-        // server reads: its events are dropped, and the history it made keeps no address.
-        if let Ok(history) = running
-            .pipe
-            .call("Page.getNavigationHistory", json!({}), Some(&session))
-            .await
-        {
-            let last = history["entries"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|entry| entry["id"].as_u64())
-                .max()
-                .unwrap_or(0);
-            running.hidden_through.fetch_max(last, Ordering::SeqCst);
-        }
-        // A home page may redirect within its site (x.com to /home, google.com to www): where it
-        // led counts, as long as it is a new page of that site that came after the blank one.
-        let home = |url: &str| on_site(url, scheme, &site);
-        let left = blanked
-            && (!answer
-                || leave_only(&running, &session, &format!("{scheme}://{site}/"), home).await
-                || leave_only(&running, &session, "about:blank", blank).await);
+            Err(_) => false,
+        };
         running.pipe.take_events();
         if !left {
             self.forget(key, &running);
@@ -1173,11 +1163,7 @@ impl Browsers {
                 .flatten()
                 .find(|entry| entry["id"] == params["entryId"]);
             let url = entry.and_then(|entry| entry["url"].as_str()).unwrap_or("");
-            let hidden = running.hidden_through.load(Ordering::SeqCst);
-            let made_signing_in = entry
-                .and_then(|entry| entry["id"].as_u64())
-                .is_some_and(|id| id <= hidden);
-            if !web_address(url, self.local) || made_signing_in {
+            if !web_address(url, self.local) {
                 return Err(NOT_WEB.to_owned());
             }
         }
@@ -1202,8 +1188,7 @@ impl Browsers {
             return Err(OFF_THE_WEB.to_owned());
         }
         if method == "Page.getNavigationHistory" {
-            let hidden = running.hidden_through.load(Ordering::SeqCst);
-            hide_off_web_entries(&mut result, self.local, hidden);
+            hide_off_web_entries(&mut result, self.local);
         }
         let events: Vec<Value> = running
             .pipe
@@ -1237,7 +1222,7 @@ impl Browsers {
         }
         // A cleared browser starts again only once the server has seen it was cleared (and so
         // forgot what the bot was allowed): a call that was on its way meanwhile gets nothing.
-        if self.cleared(key) || self.clearing.lock().unwrap().contains(key) {
+        if self.cleared(key) || self.is_clearing(key) {
             return Err(CLEARED.to_owned());
         }
         let program = self.program.as_deref().ok_or(NO_BROWSER)?;
@@ -1356,7 +1341,6 @@ impl Browsers {
             pipe,
             attach: tokio::sync::Mutex::default(),
             target: Mutex::default(),
-            hidden_through: AtomicU64::new(0),
             child: Mutex::new(Some(child)),
         };
         if let Err(error) = harden(&running.pipe).await {
@@ -1462,7 +1446,7 @@ async fn guard_target(pipe: std::sync::Weak<Pipe>, params: Value) {
 /// A page cannot undo it: everything it relies on is taken before any page script runs, so a page
 /// that later replaces `Function.prototype.call`, `Array.prototype.includes` or the like changes
 /// nothing, and the browser's own functions stay out of its reach. A page that opens a window still
-/// can (sign-ins need it): it opens as a tab the bot cannot reach.
+/// can (sign-ins need it): it opens as a tab the bot cannot reach, closed when a sign-in ends.
 const GUARD: &str = r#"(() => {
   const apply = Reflect.apply;
   const lower = String.prototype.toLowerCase;
@@ -1546,13 +1530,12 @@ const GUARD: &str = r#"(() => {
 })();"#;
 
 /// History as the server gets it: each entry's id, address and title only (the browser also names
-/// what was typed), and an entry that is no website, or was made while the person signed in, keeps
-/// its place without address or title.
-fn hide_off_web_entries(history: &mut Value, local: bool, hidden_through: u64) {
+/// what was typed), and an entry that is no website keeps its place without address or title.
+/// (What the person signed in through is in no history: that tab is closed after it.)
+fn hide_off_web_entries(history: &mut Value, local: bool) {
     for entry in history["entries"].as_array_mut().into_iter().flatten() {
         let url = entry["url"].as_str().unwrap_or("").to_owned();
-        let signing = entry["id"].as_u64().is_some_and(|id| id <= hidden_through);
-        *entry = if web_address(&url, local) && !signing {
+        *entry = if web_address(&url, local) {
             json!({ "id": entry["id"], "url": url, "title": entry["title"] })
         } else {
             json!({ "id": entry["id"], "url": "", "title": "" })
@@ -1939,20 +1922,6 @@ mod tests {
     }
 
     #[test]
-    fn history_made_while_signing_in_keeps_no_address() {
-        let mut history = json!({ "currentIndex": 1, "entries": [
-            { "id": 4, "url": "https://x.test/callback?code=SECRET", "title": "Signed in" },
-            { "id": 7, "url": "https://x.test/home", "title": "Home" },
-        ] });
-        hide_off_web_entries(&mut history, false, 4);
-        assert_eq!(
-            history["entries"][0],
-            json!({ "id": 4, "url": "", "title": "" })
-        );
-        assert_eq!(history["entries"][1]["url"], "https://x.test/home");
-    }
-
-    #[test]
     fn a_sign_in_opens_only_a_site_s_home() {
         assert_eq!(sign_in_site(" X.com/ ", false).as_deref(), Some("x.com"));
         for site in [
@@ -1981,7 +1950,7 @@ mod tests {
             { "id": 2, "url": "https://example.test/", "title": "Example", "userTypedURL": "file:///x" },
             { "id": 3, "url": "chrome://password-manager/passwords", "title": "Passwords" },
         ] });
-        hide_off_web_entries(&mut history, false, 0);
+        hide_off_web_entries(&mut history, false);
         assert_eq!(
             history["entries"][0],
             json!({ "id": 1, "url": "", "title": "" })
@@ -2103,18 +2072,6 @@ mod tests {
         assert!(browsers.signing_site("k").is_none());
         assert!(!dir.join("k").exists(), "the deleted bot's profile stayed");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_home_page_that_leads_within_its_site_counts() {
-        assert!(on_site("https://x.com/home", "https", "x.com"));
-        assert!(on_site("https://www.google.com/", "https", "google.com"));
-        assert!(on_site("https://x.com", "https", "x.com"));
-        assert!(!on_site("https://evilx.com/", "https", "x.com"));
-        assert!(!on_site("https://x.com.evil.test/", "https", "x.com"));
-        assert!(!on_site("http://x.com/", "https", "x.com"));
-        assert!(!on_site("https://user@evil.test/", "https", "x.com"));
-        assert!(!on_site("about:blank", "https", "x.com"));
     }
 
     #[test]
@@ -2252,7 +2209,10 @@ mod tests {
         let key = "e".repeat(64);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("{key}.cleared")), b"").unwrap();
-        browsers.clearing.lock().unwrap().insert(key.clone());
+        browsers.begin_clearing(&key);
+        // A second clear of the same bot that ends first leaves the first one in force.
+        browsers.begin_clearing(&key);
+        browsers.end_clearing(&key);
         browsers.take_cleared(&key);
         assert!(
             browsers.cleared(&key),
@@ -2267,8 +2227,26 @@ mod tests {
             CLEARED,
             "nor without the mark"
         );
-        browsers.clearing.lock().unwrap().remove(&key);
+        browsers.end_clearing(&key);
         assert_ne!(browsers.handle(&key, &page).await.unwrap_err(), CLEARED);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A clear the app did not finish (it quit before the profile went) is finished before the
+    /// mark goes: the browser never starts again on the old profile.
+    #[cfg(unix)]
+    #[test]
+    fn an_unfinished_clear_is_finished_before_the_mark_goes() {
+        let dir =
+            std::env::temp_dir().join(format!("dozo-browser-unfinished-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), None, true);
+        let key = "f".repeat(64);
+        std::fs::create_dir_all(dir.join(&key).join("Default")).unwrap();
+        std::fs::write(dir.join(&key).join("Default/Cookies"), b"signed in").unwrap();
+        std::fs::write(dir.join(format!("{key}.cleared")), b"").unwrap();
+        browsers.take_cleared(&key);
+        assert!(!dir.join(&key).exists(), "the old profile went first");
+        assert!(!browsers.cleared(&key));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
