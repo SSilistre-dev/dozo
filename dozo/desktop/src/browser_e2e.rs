@@ -1007,7 +1007,7 @@ async fn e2e_browser_clear_holds_while_commands_keep_coming() {
     println!(
         "E2E: a clear while commands keep coming leaves no profile, and the mark stays until asked"
     );
-    browsers.take_cleared(&key);
+    browsers.take_cleared(&key).await;
     browsers.handle(&key, &go).await.unwrap();
     println!("E2E: once asked, the bot's browser starts again on a new profile");
     browsers.close_all();
@@ -1288,6 +1288,12 @@ async fn e2e_browser_sign_in_closes_what_it_opened() {
             "/slowback",
             "<!doctype html><title>Back</title>SECRET".to_owned(),
         ),
+        // A sign-in page that asks before it is left, once the person has clicked on it.
+        (
+            "/asks",
+            "<!doctype html><title>Sign in</title><button style=\"position:fixed;inset:0;width:100%;height:100%\">Continue</button>\
+             <script>addEventListener('beforeunload',e=>{e.preventDefault();e.returnValue=''})</script>SECRET".to_owned(),
+        ),
     ];
     let port = serve_slow_home(pages, &["/slowback"], Duration::from_secs(3));
     let site = format!("127.0.0.1:{port}");
@@ -1308,6 +1314,7 @@ async fn e2e_browser_sign_in_closes_what_it_opened() {
         ("opens?mode=named", true, 4),
         ("opens?mode=late", true, 8),
         ("slowback?code=SECRET", false, 4),
+        ("asks?code=SECRET", true, 2),
     ];
     let mut failed = Vec::new();
     for (path, click, look) in cases {

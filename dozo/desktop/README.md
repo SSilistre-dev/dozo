@@ -360,8 +360,10 @@ into it.
   stopped, leaving the blank tab); Cancel leaves it blank. Neither a return address with a code,
   nor a half-done step, nor a way back to them reaches the server, and the sign-in's events are
   dropped. Once the tab shows the site, the site's own pages and its own service worker can send
-  it on as on any visit (measured: a service worker the site registered during the sign-in can
-  send the new tab to an address of that site); that is the site's choice, as everywhere else. The bot learns whether they signed in, and then
+  it on as on any visit: a service worker of the site, which sees the sign-in's own return
+  request, can send the tab to an address of that site (measured); that is the site's choice, as
+  everywhere else. A sign-in page that asks before it is left does not hold this up (measured in a
+  real window: its tab closes with the question open). The bot learns whether they signed in, and then
   sees the site's home page (or where it led) as anyone signed in would. Only the person ends it; after 15 minutes
   without an answer, if the browser closes, or if the bot is deleted, it counts as cancelled and a
   second dialog says so: "The sign-in to x.com ended without your answer: the bot has its browser
