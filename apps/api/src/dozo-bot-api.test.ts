@@ -598,8 +598,12 @@ describe("a bot's other chats", () => {
     await call(hono, "/bots/bot-1/messages");
     await call(hono, "/bots/bot-1/export");
     await (await call(hono, "/bots/bot-1/runs/run-1/events")).text();
-    expect(client.threads.send).toHaveBeenCalledWith(expect.objectContaining({ botId: "bot-1" }));
-    expect(client.threads.send.mock.calls[0]![0]).not.toHaveProperty("chatId");
+    // Exactly the main chat's send, with no chat field beside it.
+    expect(client.threads.send).toHaveBeenCalledWith({
+      botId: "bot-1",
+      text: "hi",
+      clientNonce: expect.stringMatching(/^api:/),
+    });
     expect(client.threads.messages).toHaveBeenCalledWith({ botId: "bot-1", before: undefined });
     expect(client.dozoChatExport.markdown).toHaveBeenCalledWith({ botId: "bot-1" });
     expect(client.threads.head).toHaveBeenCalledWith({ botId: "bot-1" });
