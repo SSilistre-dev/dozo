@@ -403,15 +403,17 @@ describe("relay agent end to end", () => {
   it("answers the sign-in request no when the agent stops before the user approved", async () => {
     const agent = runAgent({ DOZO_RELAY_AGENT_KEY: SESSION_KEY });
     const { first } = await pairPhone(agent);
-    const asked = first.client.fetch(RELAY_SESSION_PATH, { method: "POST", body: "{}" });
+    // Owned from the start: the channel can close under this request at any point while the agent
+    // stops, and a rejection nobody holds yet is an unhandled one.
+    const asked = first.client
+      .fetch(RELAY_SESSION_PATH, { method: "POST", body: "{}" })
+      .then(async (response) => ({ status: response.status, body: await response.json() }))
+      .catch(() => null);
     await eventually(() =>
       expect(agent.lines.some((line) => line.event === "approval")).toBe(true),
     );
     await agent.stop();
-    const answer = await asked.then(
-      async (response) => ({ status: response.status, body: await response.json() }),
-      () => null,
-    );
+    const answer = await asked;
     // Either the refusal reached the phone or the channel closed under it; never a sign-in.
     if (answer) expect(answer).toEqual({ status: 403, body: { reason: "not-approved" } });
   });
