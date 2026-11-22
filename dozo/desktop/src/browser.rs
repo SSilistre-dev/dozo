@@ -643,6 +643,34 @@ impl Running {
     }
 }
 
+/// Goes to `page`, waits up to ten seconds for it, clears the tab's history and answers whether
+/// the tab then holds that one page and nothing else.
+async fn leave_only(running: &Running, session: &str, page: &str) -> bool {
+    let _ = running
+        .pipe
+        .call("Page.navigate", json!({ "url": page }), Some(session))
+        .await;
+    for _ in 0..100 {
+        if running.address().await.is_ok_and(|now| now == page) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let _ = running
+        .pipe
+        .call("Page.resetNavigationHistory", json!({}), Some(session))
+        .await;
+    let Ok(history) = running
+        .pipe
+        .call("Page.getNavigationHistory", json!({}), Some(session))
+        .await
+    else {
+        return false;
+    };
+    let entries = history["entries"].as_array().map_or(&[][..], Vec::as_slice);
+    entries.len() == 1 && entries[0]["url"] == page
+}
+
 fn signing_message(site: &str) -> String {
     format!(
         "The person is signing in to {site} in the bot's browser; nothing reaches it until they are done."
@@ -682,6 +710,10 @@ pub struct Browsers {
     /// Told when the first sign-in starts (true) and the last one ends (false): the app holds
     /// every bot's commands on this computer meanwhile.
     on_pause: std::sync::OnceLock<Box<dyn Fn(bool) + Send + Sync>>,
+    /// Told when the bots whose browser can be cleared change (`named`): the app's menu lists them.
+    on_list: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// One telling at a time, each of what holds then, so a late one never undoes a newer one.
+    telling: Mutex<()>,
     /// How long a sign-in waits for the person (`SIGN_IN_TIME`; tests shorten it).
     sign_in_time: Duration,
     /// One start at a time.
@@ -709,6 +741,8 @@ impl Browsers {
             prompt: std::sync::OnceLock::new(),
             signing: Mutex::default(),
             on_pause: std::sync::OnceLock::new(),
+            on_list: std::sync::OnceLock::new(),
+            telling: Mutex::default(),
             sign_in_time: SIGN_IN_TIME,
             starting: tokio::sync::Mutex::default(),
             generation: AtomicU64::new(0),
@@ -727,7 +761,9 @@ impl Browsers {
     #[cfg(test)]
     pub fn mark_signing(&self, key: &str, site: Option<&str>) {
         match site {
-            Some(site) => self.start_signing(key, site),
+            Some(site) => {
+                let _ = self.start_signing(key, site);
+            }
             None => self.stop_signing(key),
         }
     }
@@ -749,26 +785,35 @@ impl Browsers {
         self.signing.lock().unwrap().values().next().cloned()
     }
 
-    fn start_signing(&self, key: &str, site: &str) {
-        let first = {
+    /// Marks the bot as signing in, unless it already is: one look and one change, so two
+    /// sign-ins for one bot never both start.
+    fn start_signing(&self, key: &str, site: &str) -> Result<(), String> {
+        {
             let mut signing = self.signing.lock().unwrap();
-            let first = signing.is_empty();
+            if let Some(already) = signing.get(key) {
+                return Err(signing_message(already));
+            }
             signing.insert(key.to_owned(), site.to_owned());
-            first
-        };
-        if let (true, Some(tell)) = (first, self.on_pause.get()) {
-            tell(true);
         }
+        self.tell_pause();
+        Ok(())
     }
 
     fn stop_signing(&self, key: &str) {
-        let last = {
-            let mut signing = self.signing.lock().unwrap();
-            signing.remove(key).is_some() && signing.is_empty()
-        };
-        if let (true, Some(tell)) = (last, self.on_pause.get()) {
-            tell(false);
+        let removed = self.signing.lock().unwrap().remove(key).is_some();
+        if removed {
+            self.tell_pause();
         }
+    }
+
+    /// Tells `on_pause` whether anyone signs in now, read under `telling`: of two changes close
+    /// together, the one told last is what holds.
+    fn tell_pause(&self) {
+        let Some(tell) = self.on_pause.get() else {
+            return;
+        };
+        let _one = self.telling.lock().unwrap();
+        tell(self.anyone_signing().is_some());
     }
 
     /// Lets tests open only the loopback ports they name, as pages and through the proxy.
@@ -777,6 +822,76 @@ impl Browsers {
         self.local = true;
         self.local_hosts = crate::browser_proxy::Local::Ports(ports);
         self
+    }
+
+    /// Whom to tell when the bots `named` lists change.
+    pub fn set_on_list(&self, tell: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.on_list.set(tell);
+    }
+
+    fn tell_list(&self) {
+        if let Some(tell) = self.on_list.get() {
+            tell();
+        }
+    }
+
+    /// Keeps the bot's name beside its browser, as the server sends it, so the person can tell
+    /// which browser to clear. Control characters are dropped and it is kept short.
+    pub fn remember_name(&self, key: &str, name: &str) {
+        let name: String = name.chars().filter(|c| !c.is_control()).take(64).collect();
+        let name = name.trim();
+        if name.is_empty() || private_folder(&self.root).is_err() {
+            return;
+        }
+        let file = self.root.join(format!("{key}.name"));
+        if std::fs::read_to_string(&file).is_ok_and(|known| known == name) {
+            return;
+        }
+        if std::fs::write(&file, name).is_ok() {
+            self.tell_list();
+        }
+    }
+
+    /// The bots whose browser this computer keeps, by key, with their names, in name order.
+    pub fn named(&self) -> Vec<(String, String)> {
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return Vec::new();
+        };
+        let mut named: Vec<(String, String)> = entries
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                let key = path
+                    .file_name()?
+                    .to_str()?
+                    .strip_suffix(".name")?
+                    .to_owned();
+                let name = std::fs::read_to_string(&path).ok()?;
+                Some((key, name))
+            })
+            .collect();
+        named.sort_by(|a, b| {
+            a.1.to_lowercase()
+                .cmp(&b.1.to_lowercase())
+                .then(a.0.cmp(&b.0))
+        });
+        named
+    }
+
+    /// The person clears the bot's browser: a sign-in in it ends, the browser ends and its profile
+    /// goes (every site it was signed in to, its history and cookies), and the server is told on
+    /// its next use (`cleared`), so it forgets what the bot was allowed there.
+    pub async fn clear(&self, key: &str) {
+        if private_folder(&self.root).is_ok() {
+            let _ = std::fs::write(self.root.join(format!("{key}.cleared")), b"");
+        }
+        self.close(key, true).await;
+        let _ = std::fs::remove_file(self.root.join(format!("{key}.name")));
+        self.tell_list();
+    }
+
+    /// Whether the person cleared the bot's browser since it last started.
+    pub fn cleared(&self, key: &str) -> bool {
+        self.root.join(format!("{key}.cleared")).exists()
     }
 
     pub fn available(&self) -> bool {
@@ -807,10 +922,7 @@ impl Browsers {
             .ok_or("Signing in is not available here.")?;
         let running = self.running(key).await?;
         let session = running.page(self.local).await?;
-        if let Some(already) = self.signing_site(key) {
-            return Err(signing_message(&already));
-        }
-        self.start_signing(key, &site);
+        self.start_signing(key, &site)?;
         let scheme = if self.local { "http" } else { "https" };
         let home = json!({ "url": format!("{scheme}://{site}/") });
         let opened = running
@@ -865,23 +977,21 @@ impl Browsers {
         } else {
             "about:blank".to_owned()
         };
-        let _ = running
-            .pipe
-            .call("Page.navigate", json!({ "url": &after }), Some(&session))
-            .await;
-        for _ in 0..100 {
-            if running.address().await.is_ok_and(|now| now == after) {
+        // The tab keeps no way back into the sign-in: a page that goes back (`history.go`), or a
+        // Back link the bot clicks, finds nothing behind it. The tab must then hold that one page
+        // alone; a home page that did not come leaves a blank page instead, and a tab that still
+        // holds anything else is ended.
+        let mut left = false;
+        for page in [after.as_str(), "about:blank"] {
+            if leave_only(&running, &session, page).await {
+                left = true;
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        // The tab keeps no way back into the sign-in: a page that goes back (`history.go`), or a
-        // Back link the bot clicks, finds nothing behind it.
-        let _ = running
-            .pipe
-            .call("Page.resetNavigationHistory", json!({}), Some(&session))
-            .await;
         running.pipe.take_events();
+        if !left {
+            self.forget(key, &running);
+        }
         self.stop_signing(key);
         Ok(answer)
     }
@@ -1054,7 +1164,10 @@ impl Browsers {
         let profile = self.root.join(key);
         private_folder(&self.root).map_err(|_| "The bot's browser profile could not be made")?;
         private_folder(&profile).map_err(|_| "The bot's browser profile could not be made")?;
+        no_saved_logins(&profile).map_err(|_| "The bot's browser profile could not be made")?;
         let pid_file = self.root.join(format!("{key}.pid"));
+        // The server has asked by now (it asks before anything that starts the browser).
+        let _ = std::fs::remove_file(self.root.join(format!("{key}.cleared")));
         let (pid, marked) = (pid_file.clone(), profile.clone());
         let _ = tokio::task::spawn_blocking(move || end_leftover(&pid, &marked)).await;
         let proxy = {
@@ -1280,6 +1393,38 @@ fn hide_off_web_entries(history: &mut Value, local: bool, hidden_through: u64) {
 }
 
 /// A folder only this user can open.
+/// The bot's browser offers to save no password and fills in no saved address or card: its
+/// profile's preferences say so before every start (Chrome keeps what else is there). What the
+/// person types while signing in stays in the site's cookies only.
+fn no_saved_logins(profile: &Path) -> std::io::Result<()> {
+    let folder = profile.join("Default");
+    std::fs::create_dir_all(&folder)?;
+    let file = folder.join("Preferences");
+    let mut preferences: Value = std::fs::read(&file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    for (section, name) in [
+        ("", "credentials_enable_service"),
+        ("profile", "password_manager_enabled"),
+        ("autofill", "profile_enabled"),
+        ("autofill", "credit_card_enabled"),
+    ] {
+        let place = if section.is_empty() {
+            &mut preferences
+        } else {
+            let entry = &mut preferences[section];
+            if !entry.is_object() {
+                *entry = json!({});
+            }
+            entry
+        };
+        place[name] = json!(false);
+    }
+    std::fs::write(&file, preferences.to_string())
+}
+
 #[cfg(unix)]
 fn private_folder(path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -1288,6 +1433,12 @@ fn private_folder(path: &Path) -> std::io::Result<()> {
         .mode(0o700)
         .create(path)?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+}
+
+/// Windows has no bot's browser: nothing is kept there.
+#[cfg(windows)]
+fn private_folder(_path: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 /// Ends the browser an earlier app left on this profile (a crash on macOS), so the new one is not
@@ -1783,6 +1934,97 @@ mod tests {
         browsers.close("k", true).await;
         assert!(browsers.signing_site("k").is_none());
         assert!(!dir.join("k").exists(), "the deleted bot's profile stayed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bot_signs_in_once_at_a_time() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-once-{}", std::process::id()));
+        let browsers = Browsers::with(dir, None, true);
+        assert!(browsers.start_signing("k", "x.com").is_ok());
+        assert_eq!(
+            browsers.start_signing("k", "y.com").unwrap_err(),
+            signing_message("x.com")
+        );
+        assert_eq!(browsers.signing_site("k").as_deref(), Some("x.com"));
+        assert!(browsers.start_signing("other", "y.com").is_ok());
+    }
+
+    /// Of a start and an end told close together, what holds at the last telling is told last.
+    #[test]
+    fn the_last_telling_says_what_holds_now() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-tell-{}", std::process::id()));
+        let browsers = Browsers::with(dir, None, true);
+        let told = Arc::new(Mutex::new(Vec::new()));
+        let seen = told.clone();
+        browsers.set_on_pause(Box::new(move |hold| seen.lock().unwrap().push(hold)));
+        browsers.mark_signing("a", Some("x.com"));
+        browsers.mark_signing("b", Some("y.com"));
+        browsers.mark_signing("a", None);
+        assert_eq!(told.lock().unwrap().last(), Some(&true), "b still signs in");
+        browsers.mark_signing("b", None);
+        assert_eq!(told.lock().unwrap().last(), Some(&false));
+    }
+
+    #[test]
+    fn the_profile_offers_to_save_no_password_and_fills_nothing_in() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-logins-{}", std::process::id()));
+        let file = dir.join("Default/Preferences");
+        std::fs::create_dir_all(dir.join("Default")).unwrap();
+        let earlier = json!({ "profile": { "password_manager_enabled": true, "name": "kept" },
+            "credentials_enable_service": true, "autofill": "odd" });
+        std::fs::write(&file, earlier.to_string()).unwrap();
+        no_saved_logins(&dir).unwrap();
+        let now: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(now["credentials_enable_service"], false);
+        assert_eq!(now["profile"]["password_manager_enabled"], false);
+        assert_eq!(now["profile"]["name"], "kept");
+        assert_eq!(now["autofill"]["profile_enabled"], false);
+        assert_eq!(now["autofill"]["credit_card_enabled"], false);
+        std::fs::write(&file, b"not json").unwrap();
+        no_saved_logins(&dir).unwrap();
+        let now: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(now["credentials_enable_service"], false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The person clears a bot's browser: its sign-in ends, its profile and name go, the list is
+    /// told, and the server's next question finds it cleared.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn clearing_a_bot_s_browser_forgets_it_here_and_tells_the_server() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-clear-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), None, true);
+        let told = Arc::new(AtomicU64::new(0));
+        let seen = told.clone();
+        browsers.set_on_list(Box::new(move || {
+            seen.fetch_add(1, Ordering::SeqCst);
+        }));
+        browsers.remember_name("k2", "bo\u{7}");
+        browsers.remember_name("k1", "Ada");
+        browsers.remember_name("k1", "Ada");
+        assert_eq!(
+            told.load(Ordering::SeqCst),
+            2,
+            "an unchanged name tells no one"
+        );
+        assert_eq!(
+            browsers.named(),
+            vec![
+                ("k1".to_owned(), "Ada".to_owned()),
+                ("k2".to_owned(), "bo".to_owned())
+            ]
+        );
+        std::fs::create_dir_all(dir.join("k1/Default")).unwrap();
+        browsers.mark_signing("k1", Some("x.com"));
+        assert!(!browsers.cleared("k1"));
+        browsers.clear("k1").await;
+        assert!(browsers.signing_site("k1").is_none());
+        assert!(!dir.join("k1").exists(), "the profile stayed");
+        assert_eq!(browsers.named(), vec![("k2".to_owned(), "bo".to_owned())]);
+        assert!(browsers.cleared("k1"));
+        assert!(!browsers.cleared("k2"));
+        assert_eq!(told.load(Ordering::SeqCst), 3);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

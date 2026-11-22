@@ -201,6 +201,7 @@ if [ -z "$RELAY" ]; then
   browser_test e2e_browser_reaches_nothing_on_this_computer_or_its_network
   browser_test e2e_browser_plain_requests_reach_only_their_own_site
   browser_test e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done
+  browser_test e2e_browser_sign_in_leaves_one_page_when_home_does_not_come
   export DOZO_BROWSER_E2E_ROOT="$BASE/browser"
   "$BIN" --ignored --exact browser::e2e::e2e_browser_hold_until_killed --nocapture \
     > "$LOGS/e2e_browser_hold_until_killed.log" 2>&1 &

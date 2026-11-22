@@ -59,7 +59,13 @@ function providerFor(ctx: RunContext, route: Route): DeviceBrowserProvider {
     lastValue(
       route.devices.request<{ result?: unknown; events?: DeviceBrowserEvent[] }>(
         route.owner,
-        { method: "pageBrowser", botId: ctx.bot.id, runId: ctx.runId, command },
+        {
+          method: "pageBrowser",
+          botId: ctx.bot.id,
+          botName: ctx.bot.name,
+          runId: ctx.runId,
+          command,
+        },
         ctx.context.signal,
         route.deviceId,
       ),
@@ -171,7 +177,7 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
   const formatted = browserResultForModel(page);
   if (name !== "browser_snapshot" || page.error || !ctx.computer.acceptsImages)
     return call.finish(formatted);
-  const image = await provider.screenshot().catch(() => undefined);
+  const image = await provider.screenshot(asked.site).catch(() => undefined);
   return call.finish(image ? withScreenshot(formatted, image) : formatted);
 }
 
@@ -233,7 +239,13 @@ export async function userBrowserSignIn(ctx: RunContext, call: ToolCall) {
     const answer = await lastValue(
       route.devices.request<{ signedIn?: unknown }>(
         route.owner,
-        { method: "pageBrowserSignIn", botId: ctx.bot.id, runId: ctx.runId, site: asked.site },
+        {
+          method: "pageBrowserSignIn",
+          botId: ctx.bot.id,
+          botName: ctx.bot.name,
+          runId: ctx.runId,
+          site: asked.site,
+        },
         signal,
         route.deviceId,
       ),
