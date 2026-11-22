@@ -32,7 +32,7 @@ function fakeDb(
   chats: Record<string, { botId: string; spaceId: string; name: string; archived: boolean }>,
 ) {
   const $queryRaw = vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
-    const [threadId, botId, spaceId] = values as string[];
+    const [threadId, botId, spaceId] = values as [string, string, string];
     const chat = chats[threadId];
     return chat && chat.botId === botId && chat.spaceId === spaceId
       ? [{ name: chat.name, archived: chat.archived }]

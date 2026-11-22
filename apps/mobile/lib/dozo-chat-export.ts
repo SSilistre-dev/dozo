@@ -4,10 +4,11 @@ import { chatExportSince } from "@rakazo/contracts";
 import { Alert, Share } from "react-native";
 import { rpc } from "./api";
 import { resolveMobileAppearance } from "./appearance";
+import type { DozoChatTarget } from "./dozo-chat-target";
 import { presentMessageActionSheet } from "./message-action-sheet";
 import { errorText } from "./user-error";
 
-export type ChatExportTarget = { botId: string } | { groupId: string };
+export type ChatExportTarget = DozoChatTarget;
 
 /**
  * The chat as Markdown, rendered by the server as the caller may read it, handed to the system

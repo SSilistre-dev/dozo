@@ -352,7 +352,7 @@ describe("where a routine posts", () => {
         update,
       },
       $queryRaw: vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
-        const [thread, botId, spaceId] = values as string[];
+        const [thread, botId, spaceId] = values as [string, string, string];
         const chat = chats[thread];
         return chat && chat.botId === botId && chat.spaceId === spaceId
           ? [{ name: chat.name, archived: chat.archived }]

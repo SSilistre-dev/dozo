@@ -17,11 +17,13 @@ export default function DozoPins() {
     threadId,
     botId,
     groupId,
+    chatId,
     name = "",
   } = useLocalSearchParams<{
     threadId?: string;
     botId?: string;
     groupId?: string;
+    chatId?: string;
     name?: string;
   }>();
   const { t } = useLingui();
@@ -34,7 +36,11 @@ export default function DozoPins() {
     router.dismissTo(
       groupId
         ? { pathname: "/group-thread", params: { groupId, name, messageId } }
-        : { pathname: "/thread", params: { botId: botId ?? "", name, messageId } },
+        : {
+            pathname: "/thread",
+            // A pin in an extra chat opens that chat, never the bot's main chat.
+            params: { botId: botId ?? "", ...(chatId ? { chatId } : {}), name, messageId },
+          },
     );
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
