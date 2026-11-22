@@ -159,7 +159,10 @@ describe("one backup format in the browser and on a local server", () => {
       entry("backup.json", Buffer.from('{"format":1,"migrations":[]}')),
       entry("secrets", Buffer.from("KEY=value")),
     ]);
-    await expect(openInBrowser(file)).rejects.toMatchObject({ reason: "damaged" });
+    await expect(openInBrowser(file)).rejects.toMatchObject({
+      reason: "wrong-password",
+      message: "Wrong password, or the file was changed.",
+    });
     await expect(openInBrowser(file)).rejects.toBeInstanceOf(SealedFileError);
   });
 

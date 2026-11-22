@@ -55,6 +55,22 @@ export class SealedFileError extends Error {
 export const sealedDamaged = () =>
   new SealedFileError("damaged", "The backup file is damaged or incomplete.");
 const notABackup = () => new SealedFileError("not-a-backup", "This is not a Dozo backup file.");
+/**
+ * The web open's one answer to every failure: a wrong password, a changed, cut or foreign file, a
+ * cost out of bounds and an archive it never writes all read the same, so a guess learns nothing
+ * from how it failed. The local server's Node reader keeps its separate reasons.
+ */
+const refused = () =>
+  new SealedFileError("wrong-password", "Wrong password, or the file was changed.");
+
+/** Runs one step of an open; whatever it fails with becomes the one refusal. */
+async function refusing<T>(step: () => Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch {
+    throw refused();
+  }
+}
 
 export function writeSealedHeader(kdf: SealedKdf, salt: Uint8Array): Uint8Array<ArrayBuffer> {
   const header = new Uint8Array(SEALED_HEADER_BYTES);
@@ -217,7 +233,10 @@ export function sealStream(
   });
 }
 
-/** The sealed file in, plaintext out; fails on a wrong password or any change to the file. */
+/**
+ * The sealed file in, plaintext out; a wrong password or any change to the file fails it with the
+ * one refusal.
+ */
 export function openStream(
   password: string,
   deriveKey: SealedDeriveKey,
@@ -227,37 +246,30 @@ export function openStream(
   let key: CryptoKey | undefined;
   let counter = 0n;
   const open = async (sealed: Uint8Array<ArrayBuffer>, last: boolean) => {
-    if (!key || !header || sealed.length < SEALED_TAG_BYTES) throw sealedDamaged();
-    const params = { name: "AES-GCM", iv: sealedNonce(counter, last), additionalData: header };
-    let plain: ArrayBuffer;
-    try {
-      plain = await crypto.subtle.decrypt(params, key, sealed);
-    } catch {
-      // The first chunk cannot tell a wrong password from a changed file; a later one can.
-      throw counter === 0n
-        ? new SealedFileError("wrong-password", "Wrong password, or the file was changed.")
-        : sealedDamaged();
-    }
-    counter++;
-    return new Uint8Array(plain);
+    if (!key || !header || sealed.length < SEALED_TAG_BYTES) throw refused();
+    const params = { name: "AES-GCM", iv: sealedNonce(counter++, last), additionalData: header };
+    return new Uint8Array(await crypto.subtle.decrypt(params, key, sealed));
   };
   return new TransformStream({
-    async transform(chunk, controller) {
-      pending.push(chunk);
-      if (!header) {
-        if (pending.length < SEALED_HEADER_BYTES) return;
-        header = pending.take(SEALED_HEADER_BYTES);
-        const { kdf, salt } = readSealedHeader(header);
-        key = await aesKey(await deriveKey(password.normalize("NFC"), salt, kdf), "decrypt");
-      }
-      while (pending.length > SEALED_CHUNK_BYTES + SEALED_TAG_BYTES) {
-        controller.enqueue(await open(pending.take(SEALED_CHUNK_BYTES + SEALED_TAG_BYTES), false));
-      }
-    },
-    async flush(controller) {
-      if (!header) throw notABackup();
-      controller.enqueue(await open(pending.take(pending.length), true));
-    },
+    transform: (chunk, controller) =>
+      refusing(async () => {
+        pending.push(chunk);
+        if (!header) {
+          if (pending.length < SEALED_HEADER_BYTES) return;
+          header = pending.take(SEALED_HEADER_BYTES);
+          const { kdf, salt } = readSealedHeader(header);
+          key = await aesKey(await deriveKey(password.normalize("NFC"), salt, kdf), "decrypt");
+        }
+        while (pending.length > SEALED_CHUNK_BYTES + SEALED_TAG_BYTES) {
+          const sealed = pending.take(SEALED_CHUNK_BYTES + SEALED_TAG_BYTES);
+          controller.enqueue(await open(sealed, false));
+        }
+      }),
+    flush: (controller) =>
+      refusing(async () => {
+        if (!header) throw refused();
+        controller.enqueue(await open(pending.take(pending.length), true));
+      }),
   });
 }
 
@@ -400,7 +412,7 @@ export async function* openOneFile(
     .pipeThrough(gzip(new DecompressionStream("gzip")));
   try {
     yield* oneFileOf(plain, expected);
-  } catch (error) {
-    throw error instanceof SealedFileError ? error : sealedDamaged();
+  } catch {
+    throw refused();
   }
 }

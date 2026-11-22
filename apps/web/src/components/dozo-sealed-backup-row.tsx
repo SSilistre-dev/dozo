@@ -204,8 +204,14 @@ function SealDialog({
       }
       const { token } = await withIdentityConfirmation(() => rpc.export.accountToken());
       const exported = await request(`/api/account/export?token=${encodeURIComponent(token)}`, {});
-      const zip = await exported.blob();
-      if (zip.size > SEALED_ACCOUNT_MAX_BYTES) throw new TooLarge();
+      // A restore takes no more than this: refused from the declared length when there is one,
+      // otherwise the moment the body passes it, without reading the rest.
+      if (Number(exported.headers.get("content-length")) > SEALED_ACCOUNT_MAX_BYTES) {
+        await exported.body?.cancel();
+        throw new TooLarge();
+      }
+      const zip = await codec.readUpTo(exported.body, SEALED_ACCOUNT_MAX_BYTES);
+      if (!zip) throw new TooLarge();
       const sealed = await codec.sealAccountExport(zip, password);
       download(sealed, `Dozo ${dozoLocalDay(new Date())}.dozobackup`);
     },

@@ -244,9 +244,18 @@ describe("backing up the account into one sealed file", () => {
     expect(downloads.map((each) => each.revoked)).toEqual([true, true]);
   });
 
-  it("refuses an export larger than a restore would take, before sealing it", async () => {
-    const huge = { size: SEALED_ACCOUNT_MAX_BYTES + 1 };
-    api.fetch.mockResolvedValue({ ok: true, status: 200, blob: async () => huge });
+  // The export's answer as the page sees it; its body stands in for a stream too large to make.
+  const exportAnswer = (
+    body: ReadableStream<Uint8Array>,
+    headers: Record<string, string> = {},
+  ) => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(headers),
+    body,
+  });
+
+  async function backUpExpectingTooLarge() {
     await render();
     await click(byTestId("dozo-backup-create"));
     await type("Password", PASSWORD);
@@ -254,6 +263,47 @@ describe("backing up the account into one sealed file", () => {
     await click(submit());
     await vi.waitFor(() => expect(alertText()).toBe("The file is too large"));
     expect(downloads).toHaveLength(0);
+  }
+
+  it("refuses an export whose declared length is over the limit without reading it", async () => {
+    const source = { pulled: 0, cancelled: false };
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          source.pulled++;
+          controller.enqueue(new Uint8Array(10));
+        },
+        cancel() {
+          source.cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const length = String(SEALED_ACCOUNT_MAX_BYTES + 1);
+    api.fetch.mockResolvedValue(exportAnswer(body, { "content-length": length }));
+    await backUpExpectingTooLarge();
+    expect(source).toEqual({ pulled: 0, cancelled: true });
+  });
+
+  it("stops reading an export without a length as soon as it passes the limit", async () => {
+    const source = { pulled: 0, cancelled: false };
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          source.pulled++;
+          // A part as large as the limit allows, twice: the second passes it.
+          controller.enqueue({ length: SEALED_ACCOUNT_MAX_BYTES / 2 + 1 } as Uint8Array);
+        },
+        cancel() {
+          source.cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    api.fetch.mockResolvedValue(exportAnswer(body));
+    await backUpExpectingTooLarge();
+    expect(source.cancelled).toBe(true);
+    expect(source.pulled).toBeLessThanOrEqual(3);
   });
 
   it("asks for matching passwords of at least 8 characters before anything is fetched", async () => {

@@ -79,6 +79,7 @@ const entry = (json: string) => {
   return bytes;
 };
 const END = new Uint8Array(4);
+const REFUSED = { reason: "wrong-password", message: "Wrong password, or the file was changed." };
 
 async function failure(work: Promise<unknown>): Promise<SealedFileError> {
   const error = await work.then(
@@ -88,6 +89,8 @@ async function failure(work: Promise<unknown>): Promise<SealedFileError> {
     (caught: unknown) => caught,
   );
   expect(error).toBeInstanceOf(SealedFileError);
+  // One answer for every way an open fails: nothing tells a wrong guess from a changed file.
+  expect(error).toMatchObject(REFUSED);
   expect(String((error as Error).message)).not.toContain(PASSWORD);
   expect(JSON.stringify(error)).not.toContain(PASSWORD);
   return error as SealedFileError;
@@ -135,6 +138,7 @@ describe("sealed stream", () => {
   it("checks the header before deriving any key", async () => {
     const sealed = await seal(randomBytes(10));
     const derive = vi.fn(nodeScrypt);
+    // The reasons the local server's reader names; the web open says only `REFUSED`.
     const cases: [number, number, string][] = [
       [0, 0x41, "not-a-backup"],
       [8, 2, "not-a-backup"],
@@ -146,17 +150,19 @@ describe("sealed stream", () => {
     for (const [at, value, reason] of cases) {
       const changed = Buffer.from(sealed);
       changed[at] = value;
-      const error = await failure(open(changed, PASSWORD, derive));
-      expect(error.reason, `${at}=${value}`).toBe(reason);
+      expect(() => readSealedHeader(changed), `${at}=${value}`).toThrow(
+        expect.objectContaining({ reason }),
+      );
+      await failure(open(changed, PASSWORD, derive));
     }
     expect(derive).not.toHaveBeenCalled();
-    expect((await failure(open(sealed.subarray(0, 0)))).reason).toBe("not-a-backup");
-    expect((await failure(open(sealed.subarray(0, 20)))).reason).toBe("not-a-backup");
+    await failure(open(sealed.subarray(0, 0)));
+    await failure(open(sealed.subarray(0, 20)));
     expect(derive).not.toHaveBeenCalled();
     expect(() => readSealedHeader(new Uint8Array(4))).toThrow(SealedFileError);
   });
 
-  it("says the password is wrong, and a later change is damage", async () => {
+  it("answers a wrong password and a change anywhere alike", async () => {
     const sealed = await seal(randomBytes(300 * 1024));
     expect((await failure(open(sealed, "another password"))).reason).toBe("wrong-password");
     for (const at of [12, 20, SEALED_HEADER_BYTES + 3]) {
@@ -167,7 +173,7 @@ describe("sealed stream", () => {
     const later = Buffer.from(sealed);
     const at = SEALED_HEADER_BYTES + 2 * CHUNK + 9;
     later[at] = (later[at] as number) ^ 1;
-    expect((await failure(open(later))).reason).toBe("damaged");
+    await failure(open(later));
   });
 
   it("refuses a file cut off, with a chunk dropped or reordered, or with bytes added", async () => {
@@ -185,8 +191,9 @@ describe("sealed stream", () => {
       Buffer.concat([header, chunk(0), chunk(2), chunk(1), body.subarray(3 * CHUNK)]),
     ];
     for (const [index, bytes] of changed.entries()) {
-      const error = await failure(open(bytes));
-      expect(["damaged", "wrong-password"], String(index)).toContain(error.reason);
+      await failure(open(bytes)).catch((error) => {
+        throw new Error(`case ${index}: ${error}`);
+      });
     }
   });
 });
@@ -226,16 +233,16 @@ describe("one sealed file", () => {
       [file(2), Buffer.from("ab"), END, Buffer.from("after the end")],
     ];
     for (const [index, parts] of bad.entries()) {
-      expect((await failure(openFile(await sealArchive(...parts)))).reason, String(index)).toBe(
-        "damaged",
-      );
+      await failure(openFile(await sealArchive(...parts))).catch((error) => {
+        throw new Error(`case ${index}: ${error}`);
+      });
     }
-    expect((await failure(openFile(await seal(randomBytes(100))))).reason).toBe("damaged");
+    await failure(openFile(await seal(randomBytes(100))));
   });
 
   it("says a wrong password through the whole open", async () => {
     const sealed = await sealFile(Buffer.from("zip"));
-    expect((await failure(openFile(sealed, "another password"))).reason).toBe("wrong-password");
+    await failure(openFile(sealed, "another password"));
   });
 
   it("stops reading an inflated body past the size its entry claims", async () => {
@@ -266,8 +273,53 @@ describe("one sealed file", () => {
         controller.enqueue(part);
       },
     });
-    expect((await failure(openFile(sealed, PASSWORD, source))).reason).toBe("damaged");
+    await failure(openFile(sealed, PASSWORD, source));
     expect(pulled).toBeLessThan(sealed.length / 2);
+  });
+});
+
+describe("one answer for every failed open", () => {
+  it("gives every failure the same reason and the same message", async () => {
+    const sealed = await sealFile(randomBytes(200 * 1024));
+    const flip = (at: number) => {
+      const changed = Buffer.from(sealed);
+      changed[at] = (changed[at] as number) ^ 1;
+      return changed;
+    };
+    const set = (at: number, value: number) => {
+      const changed = Buffer.from(sealed);
+      changed[at] = value;
+      return changed;
+    };
+    const file = (size: number, path = SEALED_ACCOUNT_ENTRY) =>
+      entry(JSON.stringify({ path, kind: "file", size, mode: 384 }));
+    const bomb = Buffer.concat([file(2), Buffer.from("ab"), END, Buffer.alloc(8 * 1024 ** 2)]);
+    const notGzip = await seal(randomBytes(100));
+    const extra = await sealArchive(file(1), Buffer.from("a"), file(1, "b"), Buffer.from("b"), END);
+    const inflated = await sealArchive(bomb);
+    const cases: [string, () => Promise<unknown>][] = [
+      ["wrong password", () => openFile(sealed, "another password")],
+      ["first chunk changed", () => openFile(flip(SEALED_HEADER_BYTES + 5))],
+      ["later chunk changed", () => openFile(flip(SEALED_HEADER_BYTES + CHUNK + 5))],
+      ["cut short", () => openFile(sealed.subarray(0, sealed.length - 100))],
+      ["last chunk dropped", () => openFile(sealed.subarray(0, SEALED_HEADER_BYTES + CHUNK))],
+      ["bad magic", () => openFile(set(0, 0x41))],
+      ["unknown version", () => openFile(set(8, 2))],
+      ["cost out of bounds", () => openFile(set(9, 19))],
+      ["not gzip", () => openFile(notGzip)],
+      ["extra entry", () => openFile(extra)],
+      ["inflated past its entry", () => openFile(inflated)],
+    ];
+    const seen = new Set<string>();
+    for (const [name, work] of cases) {
+      const error = await failure(work()).catch((cause) => {
+        throw new Error(`${name}: ${cause}`);
+      });
+      seen.add(JSON.stringify([error.reason, error.message, error.constructor.name]));
+    }
+    expect([...seen]).toEqual([
+      JSON.stringify([REFUSED.reason, REFUSED.message, "SealedFileError"]),
+    ]);
   });
 });
 

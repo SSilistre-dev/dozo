@@ -42,12 +42,35 @@ export async function openAccountBackup(file: Blob, password: string): Promise<B
   return collectBlob(openOneFile(file.stream(), password, deriveKey, limit), "application/zip");
 }
 
+/** A body as a `Blob`, or null as soon as it passes `maxBytes`; the rest is never read. */
+export async function readUpTo(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+): Promise<Blob | null> {
+  if (!body) return new Blob([]);
+  try {
+    return await collectBlob(readAll(body), "", undefined, maxBytes);
+  } catch (error) {
+    if (error instanceof OverLimit) return null;
+    throw error;
+  }
+}
+
+class OverLimit extends Error {}
+
 async function* readAll(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
   const reader = stream.getReader();
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    yield value;
+  let done = false;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      done = next.done;
+      if (next.done) return;
+      yield next.value;
+    }
+  } finally {
+    // A reader that stopped early (a limit, a failure) cancels the rest of the stream.
+    if (!done) await reader.cancel();
   }
 }
 
@@ -59,11 +82,15 @@ export async function collectBlob(
   parts: AsyncIterable<Uint8Array>,
   type = "",
   foldBytes = 64 * 1024 ** 2,
+  maxBytes = Number.POSITIVE_INFINITY,
 ): Promise<Blob> {
   let blob = new Blob([], { type });
   let batch: BlobPart[] = [];
   let held = 0;
+  let total = 0;
   for await (const part of parts) {
+    total += part.length;
+    if (total > maxBytes) throw new OverLimit();
     batch.push(part as Uint8Array<ArrayBuffer>);
     held += part.length;
     if (held < foldBytes) continue;

@@ -6,6 +6,7 @@ import {
   collectBlob,
   deriveKey,
   openAccountBackup,
+  readUpTo,
   sealAccountExport,
 } from "./dozo-sealed-backup-codec";
 
@@ -67,5 +68,33 @@ describe("account backup sealed in the page", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("reads a body up to a limit, and stops reading the moment it passes it", async () => {
+    const source = (parts: Uint8Array[]) => {
+      const seen = { pulled: 0, cancelled: false };
+      const stream = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            const part = parts[seen.pulled++];
+            if (part) controller.enqueue(part);
+            else controller.close();
+          },
+          cancel() {
+            seen.cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      return { stream, seen };
+    };
+    const parts = [randomBytes(400), randomBytes(400), randomBytes(400), randomBytes(400)];
+    const whole = source(parts);
+    const blob = await readUpTo(whole.stream, 1600);
+    expect(Buffer.from(await (blob as Blob).arrayBuffer())).toEqual(Buffer.concat(parts));
+    const over = source(parts);
+    expect(await readUpTo(over.stream, 1000)).toBeNull();
+    expect(over.seen).toEqual({ pulled: 3, cancelled: true });
+    expect((await readUpTo(null, 10))?.size).toBe(0);
   });
 });
