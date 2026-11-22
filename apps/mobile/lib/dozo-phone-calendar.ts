@@ -105,6 +105,9 @@ export async function requestCalendarPermission(): Promise<CalendarPermission> {
   }
 }
 
+/** A scheme, `www.` or a domain with a path: a meeting link, often with its passcode. */
+const LINK = /:\/\/|\bwww\.|(?:^|[^\w@.-])[a-z\d-]+(?:\.[a-z\d-]+)*\.[a-z]{2,}\/\S/i;
+
 const cut = (text: string, max: number) => (text.length > max ? text.slice(0, max) : text);
 
 function iso(value: string | Date | null | undefined): string | null {
@@ -134,7 +137,8 @@ export function calendarValue(
     const end = iso(event.endDate);
     if (!start || !end) continue;
     const title = event.title ?? "";
-    const location = event.location ?? "";
+    // A link in the location never leaves the phone, nor answers a search; the rest of the event does.
+    const location = event.location && !LINK.test(event.location) ? event.location : "";
     if (query && !title.toLowerCase().includes(query) && !location.toLowerCase().includes(query)) {
       continue;
     }

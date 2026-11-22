@@ -56,6 +56,9 @@ function setup(
     token?: boolean;
     consent?: boolean;
     answer?: Answer;
+    tainted?: boolean;
+    thread?: Record<string, unknown>;
+    otherMember?: boolean;
   } = {},
 ) {
   const effects: Array<{ id: string; runId: string; kind: string; status: string }> = [];
@@ -101,6 +104,10 @@ function setup(
   const prisma = {
     $queryRaw: async () => [{ sourced: Boolean(options.token) }],
     externalEffect: { findFirst, updateMany },
+    attempt: { count: async () => 1 },
+    spaceMember: {
+      findFirst: vi.fn(async () => (options.otherMember ? { id: "member-2" } : null)),
+    },
   };
   const ctx = {
     source: { userComputerOwner: "owner" in options ? options.owner : "user-1" },
@@ -108,10 +115,13 @@ function setup(
     bot: { id: "bot-1", name: "Ada" },
     run: { id: "run-1", botId: "bot-1", userId: "user-1", spaceId: "space-1", threadId: "t" },
     runId: "run-1",
+    thread: { id: "t", spaceId: "space-1", groupId: null, ...options.thread },
     context: { signal: new AbortController().signal },
     secrets: [],
+    state: { tainted: Boolean(options.tainted) },
+    trust: { receivedOutsideMessage: async () => false },
   } as unknown as RunContext;
-  return { ctx, devices, requests, effects, findFirst, updateMany };
+  return { ctx, devices, requests, effects, findFirst, updateMany, prisma };
 }
 
 function call(args: Record<string, unknown>, claimed = false) {
@@ -166,7 +176,7 @@ describe("the phone a run reaches", () => {
     const RUN = { botId: "bot-1", threadId: "t" };
     const offered = async (run: ReturnType<typeof setup>, botDisabled: string[] | null = null) => {
       const off = withoutCloudComputerTools(new Set(), false);
-      await offerPhoneTools(run.ctx.deps as never, RUN, "user-1", off, botDisabled);
+      await offerPhoneTools(run.ctx.deps as never, RUN, run.ctx.thread, "user-1", off, botDisabled);
       return !off.has(PHONE_CALENDAR_READ_TOOL);
     };
     expect(withoutCloudComputerTools(new Set(), false).has(PHONE_CALENDAR_READ_TOOL)).toBe(true);
@@ -297,6 +307,21 @@ describe("a read", () => {
     });
     expect(bare?.events[0]).not.toHaveProperty("location");
     expect(phoneCalendarValue("nope")).toBeNull();
+    // A link or passcode in the place is not passed on; the place itself is.
+    for (const location of [
+      "https://meet.example.test/abc",
+      "zoom://join?id=1",
+      "Call www.example.test",
+      "example.test/j/123?pwd=x",
+    ])
+      expect(
+        phoneCalendarValue({ events: [{ ...EVENT, location }], truncated: false })?.events[0],
+        location,
+      ).not.toHaveProperty("location");
+    for (const location of ["Clinic, 5th floor", "Room 4.2 / B", "St. James's Park"])
+      expect(
+        phoneCalendarValue({ events: [{ ...EVENT, location }], truncated: false })?.events[0],
+      ).toHaveProperty("location", location);
     expect(phoneCalendarValue({ events: "all" })).toBeNull();
   });
 
@@ -457,6 +482,53 @@ describe("the owner's consent", () => {
     for (const status of ["executing", "uncertain", "intended", "denied"])
       expect(await plan(status, "run-1"), status).toBe("ask");
     expect(await plan("approved", "run-0")).toBe("ask");
+  });
+});
+
+describe("a run that took in outside content", () => {
+  it("asks before every read, even with the owner's consent", async () => {
+    expect(await phoneGate(setup().ctx, false, { ...RANGE })).toBe("allow");
+    expect(await phoneGate(setup({ tainted: true }).ctx, false, { ...RANGE })).toBe("ask");
+    // The card the owner just allowed for this call lets it run.
+    const answered = setup({ tainted: true });
+    answered.effects.push({
+      id: "e",
+      runId: "run-1",
+      kind: PHONE_CALENDAR_READ_TOOL,
+      status: "approved",
+    });
+    expect(await phoneGate(answered.ctx, false, { ...RANGE })).toBe("allow");
+  });
+});
+
+describe("a thread someone else can read", () => {
+  it("never reaches the phone: a group, a channel, a helper's thread, or a Space shared with others", async () => {
+    for (const run of [
+      setup({ thread: { groupId: "group-1" } }),
+      setup({ thread: { externalConversationId: "conversation-1" } }),
+      setup({ thread: { helperBotId: "bot-2" } }),
+      setup({ otherMember: true }),
+    ]) {
+      expect(await phoneRoute(run.ctx)).toBeUndefined();
+      expect(await phoneGate(run.ctx, false, { ...RANGE })).toBe("deny");
+      const off = withoutCloudComputerTools(new Set(), false);
+      await offerPhoneTools(
+        run.ctx.deps as never,
+        run.ctx.run,
+        run.ctx.thread,
+        "user-1",
+        off,
+        null,
+      );
+      expect(off.has(PHONE_CALENDAR_READ_TOOL)).toBe(true);
+      expect(run.requests).toEqual([]);
+    }
+    const solo = setup();
+    expect(await phoneRoute(solo.ctx)).toMatchObject({ deviceId: "phone-1" });
+    expect(solo.prisma.spaceMember.findFirst).toHaveBeenCalledWith({
+      where: { spaceId: "space-1", userId: { not: "user-1" } },
+      select: { id: true },
+    });
   });
 });
 

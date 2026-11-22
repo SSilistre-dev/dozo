@@ -1,5 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { deadlineSignal, redactSecrets } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
 import type { DeviceCapability } from "./dozo-device-capabilities.js";
@@ -14,6 +16,7 @@ import type { DozoMarkDb } from "./dozo-token-marks.js";
 import { dozoBotTokenTainted, runCameByToken } from "./dozo-token-run.js";
 import type { ConnectedPhone } from "./dozo-user-device-gateway.js";
 import type { RunContext } from "./run-context.js";
+import { isRunTainted } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./user-device-gateway.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -55,11 +58,39 @@ export function isPhoneTool(name: string): boolean {
   return name === PHONE_CALENDAR_READ_TOOL;
 }
 
+type ReadBy = {
+  spaceId: string;
+  groupId?: string | null;
+  externalConversationId?: string | null;
+  helperBotId?: string | null;
+};
+
+/**
+ * Whether nobody but the owner can read this thread, where the phone's calendar would stay: not a
+ * group, a messaging-channel or a helper's thread, in a Space with no other member. A Space's
+ * members read every chat of its bots (extra chats included), so a thread is private only there.
+ */
+async function onlyOwnerReads(
+  prisma: Pick<PrismaClient, "spaceMember">,
+  thread: ReadBy,
+  owner: string,
+): Promise<boolean> {
+  if (thread.groupId || thread.externalConversationId || thread.helperBotId) return false;
+  const other = await runAsSystem("find another member of a Space", () =>
+    prisma.spaceMember.findFirst({
+      where: { spaceId: thread.spaceId, userId: { not: owner } },
+      select: { id: true },
+    }),
+  );
+  return !other;
+}
+
 /** The owner's connected phone with its calendar on, for this run; undefined when there is none. */
 export async function phoneRoute(ctx: RunContext): Promise<PhoneRoute | undefined> {
   const owner = ctx.source.userComputerOwner;
   const devices = phoneDevices(ctx.deps.userDevices);
   if (!owner || !devices) return undefined;
+  if (!(await onlyOwnerReads(ctx.deps.prisma, ctx.thread, owner))) return undefined;
   const phone = await bestEffort(
     "find the user's phone",
     devices.connectedPhone(owner, "calendar"),
@@ -70,17 +101,20 @@ export async function phoneRoute(ctx: RunContext): Promise<PhoneRoute | undefine
 /**
  * At run assembly: the phone tool leaves the run's turned-off tools (where every run puts it,
  * dozo-no-computer.ts) only when the owner's phone is connected with its calendar on, the bot
- * itself did not turn it off, and no token's message reached the run.
+ * itself did not turn it off, no token's message reached the run, and only the owner reads its
+ * thread.
  */
 export async function offerPhoneTools(
-  deps: { prisma: DozoMarkDb; userDevices?: UserDeviceGateway },
+  deps: { prisma: DozoMarkDb & Pick<PrismaClient, "spaceMember">; userDevices?: UserDeviceGateway },
   run: { botId: string; threadId: string },
+  thread: ReadBy,
   owner: string,
   disabled: Set<string>,
   botDisabled: readonly string[] | null | undefined,
 ): Promise<void> {
   const gateway = phoneDevices(deps.userDevices);
   if (!gateway || botDisabled?.includes(PHONE_CALENDAR_READ_TOOL)) return;
+  if (!(await onlyOwnerReads(deps.prisma, thread, owner))) return;
   const phone = await bestEffort(
     "find the user's phone",
     gateway.connectedPhone(owner, "calendar"),
@@ -135,7 +169,9 @@ export async function phoneGate(
   blocked: boolean,
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
-  if (blocked || !ctx.source.userComputerOwner || (await runCameByToken(ctx))) return "deny";
+  const owner = ctx.source.userComputerOwner;
+  if (blocked || !owner || (await runCameByToken(ctx))) return "deny";
+  if (!(await onlyOwnerReads(ctx.deps.prisma, ctx.thread, owner))) return "deny";
   const route = await phoneRoute(ctx);
   if (!route || "error" in phoneInput(args)) return "allow";
   const consent = await ctx.deps.prisma.externalEffect.findFirst({
@@ -146,7 +182,11 @@ export async function phoneGate(
       run: { userId: route.owner, botId: ctx.bot.id },
       // A read that finished, or the card the owner just allowed for this call. An effect a
       // crash left executing or uncertain is neither: it may come from a call that never asked.
-      OR: [{ status: "completed" }, { status: "approved", runId: ctx.runId }],
+      // Once outside content entered the run (the phone's own answer included), only the card.
+      OR: [
+        ...((await isRunTainted(ctx)) ? [] : [{ status: "completed" }]),
+        { status: "approved", runId: ctx.runId },
+      ],
     },
     select: { id: true },
   });

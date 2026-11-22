@@ -52,6 +52,8 @@ function context(
     consent?: boolean;
     token?: boolean;
     mode?: keyof typeof MODES;
+    tainted?: boolean;
+    groupId?: string;
   } = {},
 ) {
   const requests: unknown[] = [];
@@ -64,7 +66,12 @@ function context(
       yield { events: [], truncated: false };
     },
   };
-  const findFirst = vi.fn(async () => (options.consent ? { id: "approved-before" } : null));
+  // An earlier completed read, when given; a tainted run's gate does not ask for one.
+  const findFirst = vi.fn(async ({ where }: { where: { OR: Array<{ status: string }> } }) =>
+    options.consent && where.OR.some((clause) => clause.status === "completed")
+      ? { id: "read-before" }
+      : null,
+  );
   const ctx = {
     deps: {
       userDevices,
@@ -72,12 +79,12 @@ function context(
         attempt: { count: async () => 1 },
         $queryRaw: async () => [{ sourced: options.token === true }],
         externalEffect: { findFirst, updateMany: async () => ({ count: 1 }) },
+        spaceMember: { findFirst: async () => null },
       },
     },
     run: { id: "run-1", userId: "user-1", botId: "bot-1", spaceId: "space-1", trigger: "user" },
     runId: "run-1",
     bot: { id: "bot-1", name: "Helper" },
-    thread: { id: "thread-1" },
     context: { signal: new AbortController().signal },
     source: {
       ownerStartedRun: true,
@@ -85,9 +92,10 @@ function context(
     },
     secrets: [],
     computer: { graphical: false },
+    thread: { id: "thread-1", spaceId: "space-1", groupId: options.groupId ?? null },
     tools: { connector: new Map(), connectedPlugins: [], disabled: new Set<string>() },
     state: {
-      tainted: false,
+      tainted: Boolean(options.tainted),
       effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
     },
     trust: {
@@ -141,6 +149,19 @@ describe("the phone's approval", () => {
       expect(plans).toEqual(["ask", "allow"]);
     },
   );
+
+  it("asks every read once outside content entered the run, in Never ask too", async () => {
+    expect(await gate(context({ consent: true, tainted: true }).ctx)).toBe("recorded");
+    expect(plans).toEqual(["ask"]);
+  });
+
+  it("refuses the owner's own run in a group chat, allowed or not, in every mode", async () => {
+    for (const mode of Object.keys(MODES) as Array<keyof typeof MODES>)
+      expect(await gate(context({ mode, consent: true, groupId: "group-1" }).ctx)).not.toBe(
+        "recorded",
+      );
+    expect(plans).toEqual(["deny", "deny", "deny"]);
+  });
 
   it("is not a read the gate lets through without an effect", () => {
     expect(READ_ONLY_AGENT_TOOLS.has(PHONE_CALENDAR_READ_TOOL)).toBe(false);
@@ -261,7 +282,8 @@ describe("who a run reaches the phone for", () => {
     const run = context({ owner: reached, consent: true });
     // Assembly offers it only to a run that reaches its owner (run-assembly-capabilities.ts).
     const off = withoutCloudComputerTools(new Set(), false);
-    if (reached) await offerPhoneTools(run.ctx.deps, run.ctx.run, reached, off, null);
+    if (reached)
+      await offerPhoneTools(run.ctx.deps, run.ctx.run, run.ctx.thread, reached, off, null);
     expect(off.has(PHONE_CALENDAR_READ_TOOL)).toBe(!allowed);
     const args = { ...RANGE };
     expect(await phoneGate(run.ctx, false, args)).toBe(allowed ? "allow" : "deny");

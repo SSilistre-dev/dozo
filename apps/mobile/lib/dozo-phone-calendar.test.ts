@@ -133,6 +133,31 @@ describe("the calendar's value", () => {
     expect(value.events[0]!.calendar).toHaveLength(100);
   });
 
+  it("leaves out a location that holds a link, so a meeting link or passcode stays on the phone", () => {
+    const linked = [
+      "https://zoom.us/j/123?pwd=secret",
+      "Join at www.example.test/meet",
+      "meet.example.test/abc-defg-hij",
+      "Teams: zoom.us/j/987 passcode 4242",
+      "zoommtg://zoom.us/join?confno=1",
+    ];
+    const kept = ["Room 4.2", "Main St. 12/3, Berlin", "Cafe", "e.g. the lobby"];
+    const value = calendar.calendarValue(
+      [...linked, ...kept].map((location, index) => event({ title: `E${index}`, location })),
+      new Map(),
+      request,
+    );
+    expect(value.events.map((entry) => entry.location)).toEqual([
+      ...linked.map(() => undefined),
+      ...kept,
+    ]);
+    // Nor can a search find out what the link says.
+    const probe = { ...request, query: "pwd=secret" };
+    expect(
+      calendar.calendarValue([event({ location: linked[0] })], new Map(), probe).events,
+    ).toEqual([]);
+  });
+
   it("leaves out an empty location and an unknown calendar, and reads all-day as given", () => {
     const value = calendar.calendarValue(
       [event({ title: null, allDay: true, calendarId: "gone" }), event({ calendarId: null })],

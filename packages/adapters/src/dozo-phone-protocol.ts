@@ -63,6 +63,8 @@ const event = z.object({
   calendar: z.string().optional(),
 });
 const value = z.object({ events: z.array(z.unknown()), truncated: z.boolean() });
+/** A link in a place (a meeting's address, often with its passcode): a scheme, www., or a domain with a path. */
+const LINK = /:\/\/|\bwww\.|\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\/\S/i;
 
 /**
  * The phone's answer as the server passes it on: never trusted as sent. Only the known fields of
@@ -83,7 +85,7 @@ export function phoneCalendarValue(answer: unknown): PhoneCalendarValue | null {
         start,
         end,
         allDay,
-        ...(location ? { location: location.slice(0, FIELD_MAX) } : {}),
+        ...(location && !LINK.test(location) ? { location: location.slice(0, FIELD_MAX) } : {}),
         ...(calendar ? { calendar: calendar.slice(0, CALENDAR_NAME_MAX) } : {}),
       },
     ];

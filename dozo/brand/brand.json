@@ -5686,11 +5686,11 @@
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "    } else userComputer = \"offline\";\n  }\n  const cloudAgent = await cloudAgentPromise;\n",
-      "replace": "    } else userComputer = \"offline\";\n  }\n  if (userComputerOwnerId)\n    await offerPhoneTools(\n      deps,\n      run,\n      userComputerOwnerId,\n      disabledBuiltinTools,\n      bot.disabledBuiltinTools,\n    );\n  const cloudAgent = await cloudAgentPromise;\n",
+      "replace": "    } else userComputer = \"offline\";\n  }\n  if (userComputerOwnerId)\n    await offerPhoneTools(\n      deps,\n      run,\n      thread,\n      userComputerOwnerId,\n      disabledBuiltinTools,\n      bot.disabledBuiltinTools,\n    );\n  const cloudAgent = await cloudAgentPromise;\n",
       "requires": [
         "packages/adapters/src/dozo-phone.ts"
       ],
-      "reason": "phone: a run the person started themselves is offered the read of their phone's calendar while the phone is connected with Calendar on, unless the bot turned it off or a token's message reached the run"
+      "reason": "phone: a run the person started themselves is offered the read of their phone's calendar while the phone is connected with Calendar on, unless the bot turned it off, a token's message reached the run, or someone else can read its thread (a group, a channel, a Space with other members)"
     },
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",

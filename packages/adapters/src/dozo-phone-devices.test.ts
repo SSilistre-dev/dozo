@@ -156,7 +156,8 @@ describe("on the desktop app's own server", () => {
     expect(wrapped).not.toBe(gateway);
     const ctx = {
       source: { userComputerOwner: "user-1" },
-      deps: { userDevices: wrapped },
+      deps: { userDevices: wrapped, prisma: { spaceMember: { findFirst: async () => null } } },
+      thread: { id: "t", spaceId: "space-1", groupId: null },
     } as unknown as RunContext;
     expect(await phoneRoute(ctx)).toMatchObject({ deviceId: "phone", owner: "user-1" });
   });

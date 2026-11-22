@@ -44,8 +44,11 @@ export function phoneReach(
 }
 
 /**
- * Upstream's hub, which also saves what a connecting computer declares
+ * Upstream's hub, which also saves what a connecting device declares
  * (dozo-device-capabilities.ts) before the connection is taken, so the first run after it sees it.
+ * A computer whose declaration cannot be saved still connects, on what it declared before. A phone
+ * does not: it offers only what it declared on this connection, so an older "calendar" never
+ * outlives a switch turned off while the database was away.
  */
 export class UserDeviceHub extends UpstreamUserDeviceHub {
   private readonly prisma: PrismaClient;
@@ -59,24 +62,39 @@ export class UserDeviceHub extends UpstreamUserDeviceHub {
       const onError = (error: Error) =>
         getLogger().warn("user device upgrade socket error", { error });
       socket.on("error", onError);
-      // A database that cannot save it cannot record the connection either: upstream refuses it.
-      void bestEffort("save a user device's capabilities", this.declare(request)).then(() => {
+      void this.declare(request).then((declared) => {
         socket.off("error", onError);
-        upstream(request, socket, head);
+        if (declared) upstream(request, socket, head);
+        else
+          socket.end(
+            "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+          );
       });
     };
   }
 
-  /** A token that does not authenticate saves nothing; upstream's handler refuses it. */
-  private async declare(request: IncomingMessage) {
-    if (new URL(request.url ?? "/", "http://device").pathname !== USER_DEVICE_CONNECT_PATH) return;
-    const device = await this.authenticate(request.headers.authorization);
-    if (!device) return;
-    await recordDeviceCapabilities(
-      this.prisma,
-      device.id,
-      parseDeviceCapabilities(request.headers[DEVICE_CAPABILITIES_HEADER]),
+  /**
+   * Saves what the device declared; false only for a phone whose declaration was not saved. A
+   * token that does not authenticate saves nothing, and upstream's handler refuses it.
+   */
+  private async declare(request: IncomingMessage): Promise<boolean> {
+    if (new URL(request.url ?? "/", "http://device").pathname !== USER_DEVICE_CONNECT_PATH)
+      return true;
+    // A database that cannot read the token cannot record the connection either: upstream refuses it.
+    const device = await bestEffort(
+      "find a connecting user device",
+      this.authenticate(request.headers.authorization),
     );
+    if (!device) return true;
+    const saved = await bestEffort(
+      "save a user device's capabilities",
+      recordDeviceCapabilities(
+        this.prisma,
+        device.id,
+        parseDeviceCapabilities(request.headers[DEVICE_CAPABILITIES_HEADER]),
+      ).then(() => true),
+    );
+    return saved === true || !isPhonePlatform(device.platform);
   }
 }
 
