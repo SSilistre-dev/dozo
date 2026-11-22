@@ -5,7 +5,7 @@ import { Button, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { useSave, useSpaceQueries } from "../lib/query";
+import { useQueryUserId, useSave, useSpaceQueries } from "../lib/query";
 import { errorCode } from "../lib/user-error";
 import { SettingsCard, SwitchRow } from "./shell/bot-settings-sections";
 
@@ -14,11 +14,20 @@ function changedSince(error: Error | null): boolean {
 }
 
 /**
- * Under the bot's memory: whether it learns from its owner's chat, and the lines it learned, each
- * to undo. Nothing when the setting cannot be read (a server without it).
+ * Under the bot's memory: whether it learns from its owner's chat, a switch only the owner
+ * (`ownerId`, unknown on an older server) gets, and the lines it learned, each for any member to
+ * undo. Nothing when the setting cannot be read (a server without it).
  */
-export function DozoLearningSection({ botId }: { botId: string }) {
+export function DozoLearningSection({
+  botId,
+  ownerId,
+}: {
+  botId: string;
+  ownerId?: string | null;
+}) {
   const ids = useId();
+  const me = useQueryUserId();
+  const owner = Boolean(ownerId) && ownerId === me;
   const queries = useSpaceQueries();
   const learning = queries.dozoLearning.get.queryOptions({ input: { botId } });
   // Reviews write as the bot runs, so every open reads again, as the memory list does.
@@ -44,20 +53,23 @@ export function DozoLearningSection({ botId }: { botId: string }) {
   const on = mode.pending ? mode.input === "auto" : read.data.mode === "auto";
   const changes = read.data.changes.filter((change) => !change.undoneAt);
   const conflictId = !undo.pending && changedSince(undo.error) ? undo.input : undefined;
+  if (!owner && !changes.length) return null;
   return (
     <section data-testid="bot-learning">
-      <SettingsCard>
-        <SwitchRow
-          id={`${ids}-learn`}
-          label={<Trans>Learn from chats</Trans>}
-          checked={on}
-          disabled={mode.pending}
-          onChange={(checked) => mode.run(checked ? "auto" : "off")}
-        />
-      </SettingsCard>
+      {owner ? (
+        <SettingsCard>
+          <SwitchRow
+            id={`${ids}-learn`}
+            label={<Trans>Learn from chats</Trans>}
+            checked={on}
+            disabled={mode.pending}
+            onChange={(checked) => mode.run(checked ? "auto" : "off")}
+          />
+        </SettingsCard>
+      ) : null}
       {changes.length ? (
         <>
-          <SectionHeading variant="label" className="mt-6 mb-2">
+          <SectionHeading variant="label" className={owner ? "mt-6 mb-2" : "mb-2"}>
             <Trans>Learned</Trans>
           </SectionHeading>
           <ul className="rounded-xl bg-muted/50 px-4 py-1">

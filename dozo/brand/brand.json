@@ -11193,7 +11193,7 @@
     {
       "file": "apps/web/src/pages/KnowledgeSection.tsx",
       "find": "export function KnowledgeSection({ botId }: { botId: string }) {\n  return (\n    <MemoryDocumentList\n      key={botId}\n      input={{ botId, scope: \"bot\" }}\n      testId=\"bot-knowledge-memory\"\n      compact\n    />\n  );\n}",
-      "replace": "export function KnowledgeSection({ botId }: { botId: string }) {\n  return (\n    <>\n      <MemoryDocumentList\n        key={botId}\n        input={{ botId, scope: \"bot\" }}\n        testId=\"bot-knowledge-memory\"\n        compact\n      />\n      <DozoLearningSection key={`learning-${botId}`} botId={botId} />\n    </>\n  );\n}",
+      "replace": "export function KnowledgeSection({\n  botId,\n  dozoOwnerId,\n}: {\n  botId: string;\n  dozoOwnerId?: string | null;\n}) {\n  return (\n    <>\n      <MemoryDocumentList\n        key={botId}\n        input={{ botId, scope: \"bot\" }}\n        testId=\"bot-knowledge-memory\"\n        compact\n      />\n      <DozoLearningSection key={`learning-${botId}`} botId={botId} ownerId={dozoOwnerId} />\n    </>\n  );\n}",
       "requires": [
         "apps/web/src/pages/dozo-learning-section.tsx"
       ],
@@ -11213,6 +11213,15 @@
       "find": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
       "replace": "msgid \"Undo\"\nmsgstr \"Geri al\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learn from chats\"\nmsgstr \"Sohbetlerden öğren\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Learned\"\nmsgstr \"Öğrenilenler\"\n\n#: apps/web/src/pages/dozo-learning-section.tsx\nmsgid \"Changed since\"\nmsgstr \"Sonradan değişti\"\n\n#: apps/mobile/components/integration-detail.tsx\n",
       "reason": "bot learning: the Turkish copy of the learning switch, the heading of the learned lines and a line changed since (Undo is upstream's)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-panel.tsx",
+      "find": "              <Suspense fallback={null}>\n                <KnowledgeSection botId={bot.id} />\n              </Suspense>",
+      "replace": "              <Suspense fallback={null}>\n                <KnowledgeSection botId={bot.id} dozoOwnerId={bot.userId ?? null} />\n              </Suspense>",
+      "requires": [
+        "apps/web/src/pages/dozo-learning-section.tsx"
+      ],
+      "reason": "bot learning: the Memory section gets the bot's owner, the only one shown the learning switch (the server refuses anyone else)"
     }
   ],
   "assets": {

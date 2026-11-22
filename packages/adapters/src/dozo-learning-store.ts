@@ -47,8 +47,15 @@ export async function setLearningMode(
 }
 
 /**
- * Records one turn (a run's completion can repeat: its run records it once) and answers how many
- * of the bot's turns now wait for a review.
+ * The newest turns kept per bot while no review reads them (no usable model, a review that keeps
+ * failing); a review reads at most as many.
+ */
+export const LEARNING_TURNS_KEPT = 100;
+
+/**
+ * Records one turn (a run's completion can repeat: its run records it once), drops the bot's
+ * turns past the newest kept, and answers how many now wait for a review. The caller runs it in
+ * one transaction.
  */
 export async function recordLearningTurn(
   db: Db,
@@ -60,6 +67,10 @@ export async function recordLearningTurn(
     VALUES (${randomUUID()}, ${turn.botId}, ${turn.spaceId}, ${turn.threadId}, ${turn.runId},
       ${turn.messageId}, ${turn.tainted})
     ON CONFLICT ("runId") DO NOTHING`;
+  await db.$executeRaw`
+    DELETE FROM dozo_learning_turns WHERE "botId" = ${turn.botId} AND id NOT IN (
+      SELECT id FROM dozo_learning_turns WHERE "botId" = ${turn.botId}
+      ORDER BY "createdAt" DESC, id DESC LIMIT ${LEARNING_TURNS_KEPT})`;
   const [row] = await db.$queryRaw<Array<{ pending: number }>>`
     SELECT count(*)::int AS pending FROM dozo_learning_turns WHERE "botId" = ${turn.botId}`;
   return row?.pending ?? 0;

@@ -62,6 +62,7 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 
+import { QueryUserProvider } from "../lib/query";
 import { DozoLearningSection } from "./dozo-learning-section";
 
 let container: HTMLDivElement;
@@ -80,14 +81,23 @@ function change(id: string, overrides: Partial<DozoLearningChange> = {}): DozoLe
   };
 }
 
-async function render() {
+/** Signed in as the bot's owner unless another user or owner is given. */
+async function show(options: { me?: string | null; ownerId?: string | null } = {}) {
+  const { me = "user-1", ownerId = "user-1" } = options;
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <DozoLearningSection botId="bot-1" />
+        <QueryUserProvider value={me}>
+          <DozoLearningSection botId="bot-1" ownerId={ownerId} />
+        </QueryUserProvider>
       </QueryClientProvider>,
     );
   });
+  await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
+}
+
+async function render() {
+  await show();
   await vi.waitFor(() => expect(toggle()).not.toBeNull());
 }
 
@@ -191,10 +201,10 @@ it("undoes one change, then reads the list and the bot's memory again without th
   // The memory list and budget as the Memory section caches them: undo rewrites MEMORY.md.
   const memoryKeys = [
     [
-      ["user:", "space:", "memory", "list"],
+      ["user:user-1", "space:", "memory", "list"],
       { input: { botId: "bot-1", scope: "bot" }, type: "query" },
     ],
-    [["user:", "space:", "memory", "budget"], { input: { botId: "bot-1" }, type: "query" }],
+    [["user:user-1", "space:", "memory", "budget"], { input: { botId: "bot-1" }, type: "query" }],
   ];
   for (const queryKey of memoryKeys) client.setQueryData(queryKey, []);
   await act(async () => undoButton("Prefers tea")!.click());
@@ -240,13 +250,29 @@ it("says why another undo failed", async () => {
 
 it("shows nothing when the learning cannot be read", async () => {
   api.get.mockRejectedValue(new Error("Not found"));
-  await act(async () => {
-    root.render(
-      <QueryClientProvider client={client}>
-        <DozoLearningSection botId="bot-1" />
-      </QueryClientProvider>,
-    );
-  });
-  await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
+  await show();
   expect(container.textContent).toBe("");
+});
+
+it("shows the switch only to the bot's owner; anyone else still sees and undoes what it learned", async () => {
+  const learned = { mode: "auto", changes: [change("c1", { after: "Prefers tea" })] };
+  for (const [me, ownerId] of [
+    ["user-2", "user-1"],
+    ["user-1", null],
+    [null, "user-1"],
+  ] as const) {
+    api.get.mockClear().mockResolvedValue(learned);
+    await show({ me, ownerId });
+    await vi.waitFor(() => expect(undoButton("Prefers tea")).toBeDefined());
+    expect(toggle()).toBeNull();
+    expect(container.textContent).not.toContain("Learn from chats");
+    client.clear();
+  }
+  api.get.mockResolvedValue(learned);
+  api.undo.mockResolvedValue(change("c1", { undoneAt: "2026-11-22T11:00:00.000Z" }));
+  await show({ me: "user-2" });
+  await vi.waitFor(() => expect(undoButton("Prefers tea")).toBeDefined());
+  await act(async () => undoButton("Prefers tea")!.click());
+  expect(api.undo).toHaveBeenCalledWith({ changeId: "c1" });
+  expect(api.setMode).not.toHaveBeenCalled();
 });

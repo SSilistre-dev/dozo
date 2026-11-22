@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   consumeLearningTurns,
   findLearningChange,
+  LEARNING_TURNS_KEPT,
   learnedLines,
   learningMode,
   listLearningChanges,
@@ -62,6 +63,22 @@ describe("learning store", () => {
     expect(pending).toBe(3);
     expect(store.sql()[1]).toContain('ON CONFLICT ("runId") DO NOTHING');
     expect(await recordLearningTurn(db().client, { botId: "b", spaceId: "s", ...turn })).toBe(0);
+  });
+
+  it("keeps only the newest waiting turns of the bot, so turns no review reads stay bounded", async () => {
+    const store = db([{ pending: LEARNING_TURNS_KEPT }]);
+    await recordLearningTurn(store.client, { botId: "bot-1", spaceId: "s", ...turn });
+    const [insert, prune] = store.executeRaw.mock.calls.map(sqlOf);
+    expect(LEARNING_TURNS_KEPT).toBe(100);
+    expect(insert).toContain("INSERT INTO dozo_learning_turns");
+    expect(prune).toContain("DELETE FROM dozo_learning_turns");
+    expect(prune).toContain('ORDER BY "createdAt" DESC, id DESC LIMIT');
+    expect(store.executeRaw.mock.calls[1]!.slice(1)).toEqual(["bot-1", "bot-1", 100]);
+    // The count comes after the prune, so it never answers more than are kept.
+    expect(sqlOf(store.queryRaw.mock.calls[0]!)).toContain("count(*)");
+    expect(store.queryRaw.mock.invocationCallOrder[0]).toBeGreaterThan(
+      store.executeRaw.mock.invocationCallOrder[1]!,
+    );
   });
 
   it("reads the newest waiting turns oldest first, and consumes them with every older one", async () => {

@@ -9,6 +9,7 @@ import { reviewLearning } from "./dozo-learning-review.js";
 import {
   consumeLearningTurns,
   findLearningChange,
+  LEARNING_TURNS_KEPT,
   learnedLines,
   learningMode,
   listLearningChanges,
@@ -147,6 +148,27 @@ describePostgres("bot learning (PostgreSQL)", () => {
     expect(newest[0]).toMatchObject({ threadId: chat.threadId, tainted: false });
     await as(owner, () => consumeLearningTurns(prisma, chat.id, newest));
     expect(await as(owner, () => pendingLearningTurns(prisma, chat.id, 10))).toEqual([]);
+  });
+
+  it("keeps only the bot's newest waiting turns while no review reads them", async () => {
+    const owner = await member();
+    const chat = await bot(owner);
+    const other = await bot(owner);
+    await record(owner, other, await turn(owner, other, "elsewhere"));
+    const oldest = await turn(owner, chat, "first");
+    await record(owner, chat, oldest);
+    // Older for certain, whatever the clock's resolution: compared as timestamptz in every zone.
+    await system.$executeRaw`
+      UPDATE dozo_learning_turns SET "createdAt" = CURRENT_TIMESTAMP - interval '1 hour'
+      WHERE "runId" = ${oldest.runId}`;
+    let pending = 0;
+    for (let index = 1; index <= LEARNING_TURNS_KEPT; index += 1)
+      pending = await record(owner, chat, await turn(owner, chat, `turn ${index}`));
+    expect(pending).toBe(LEARNING_TURNS_KEPT);
+    const kept = await as(owner, () => pendingLearningTurns(prisma, chat.id, 1000));
+    expect(kept).toHaveLength(LEARNING_TURNS_KEPT);
+    expect(kept.map((read) => read.runId)).not.toContain(oldest.runId);
+    expect(await as(owner, () => pendingLearningTurns(prisma, other.id, 10))).toHaveLength(1);
   });
 
   it("lists changes newest first with true times, in every zone, and undoes once", async () => {
