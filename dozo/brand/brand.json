@@ -11752,12 +11752,6 @@
       "reason": "model rests: the import of the rules below"
     },
     {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
-      "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
-      "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
-    },
-    {
       "file": "packages/db/src/index.ts",
       "find": "export * from \"./row-security.js\";\nexport * from \"./run-secrets.js\";",
       "replace": "export * from \"./row-security.js\";\nexport * from \"./dozo-routine-writers.js\";\nexport * from \"./run-secrets.js\";",
