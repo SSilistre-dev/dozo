@@ -140,3 +140,87 @@ export async function readModelPoolMembers(
     WHERE m."userId" = ${scope.userId}
     GROUP BY m."credentialId"`;
 }
+
+/**
+ * Rests outside a pool: a model, or a whole connection, that ran out on any of the person's own
+ * connections, so later runs start on their next backup until it opens again. The same table as
+ * the pool's: one rest per connection and model, the newest observation winning. Unlike
+ * `recordModelConnectionCooldown`, the connection need not be pooled.
+ */
+export async function recordModelRest(
+  db: Db,
+  rest: {
+    userId: string;
+    credentialId: string;
+    /** Null when the whole connection rests (a refused key). */
+    modelId: string | null;
+    reason: PoolCooldownReason;
+    resetsAt: Date;
+    observedAt: Date;
+  },
+): Promise<boolean> {
+  const written = await db.$executeRaw`
+    INSERT INTO "dozo_model_connection_cooldowns"
+      ("credentialId", "userId", "modelId", "secretId", "holder", "reason", "resetsAt", "observedAt")
+    SELECT c."id", c."userId", ${rest.modelId ?? ""}, c."secretId", NULL, ${rest.reason},
+      ${rest.resetsAt.toISOString()}::timestamptz, ${rest.observedAt.toISOString()}::timestamptz
+    FROM "user_model_credentials" c
+    WHERE c."id" = ${rest.credentialId} AND c."userId" = ${rest.userId}
+    ON CONFLICT ("credentialId", "modelId") DO UPDATE SET
+      "secretId" = EXCLUDED."secretId",
+      "holder" = EXCLUDED."holder",
+      "reason" = EXCLUDED."reason",
+      "resetsAt" = EXCLUDED."resetsAt",
+      "observedAt" = EXCLUDED."observedAt"
+    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"`;
+  return written > 0;
+}
+
+/**
+ * The end of the latest rest of each model on its connection, for the person's own connections:
+ * a rest of that model or of the whole connection, recorded while the connection had the secret
+ * it has now. Absent for one that never rested; an end in the past means it rests no more.
+ */
+export async function readModelRests(
+  db: Db,
+  scope: { userId: string; models: readonly { credentialId: string; modelId: string }[] },
+): Promise<Array<{ credentialId: string; modelId: string; resetsAt: Date }>> {
+  if (!scope.models.length) return [];
+  const ids = scope.models.map((model) => model.credentialId);
+  const modelIds = scope.models.map((model) => model.modelId);
+  return db.$queryRaw`
+    SELECT a."credentialId", a."modelId", max(cd."resetsAt") AT TIME ZONE 'UTC' AS "resetsAt"
+    FROM unnest(${ids}::text[], ${modelIds}::text[]) AS a("credentialId", "modelId")
+    JOIN "user_model_credentials" c ON c."id" = a."credentialId" AND c."userId" = ${scope.userId}
+    JOIN "dozo_model_connection_cooldowns" cd
+      ON cd."credentialId" = c."id" AND cd."userId" = c."userId"
+      AND cd."modelId" IN ('', a."modelId") AND cd."secretId" = c."secretId"
+    GROUP BY a."credentialId", a."modelId"`;
+}
+
+/**
+ * Ends every rest of a model on the person's connections of its provider, and of those whole
+ * connections: they picked it again, so it is tried at once. `providers` names the stored ids
+ * the provider's connections may carry.
+ */
+export async function endModelRests(
+  db: Db,
+  scope: { userId: string; providers: readonly string[]; modelId: string },
+): Promise<number> {
+  return db.$executeRaw`
+    DELETE FROM "dozo_model_connection_cooldowns" cd
+    USING "user_model_credentials" c
+    WHERE cd."credentialId" = c."id" AND cd."userId" = c."userId"
+      AND c."userId" = ${scope.userId} AND c."provider" = ANY(${[...scope.providers]}::text[])
+      AND cd."modelId" IN ('', ${scope.modelId})`;
+}
+
+/** Whether any of the person's connections or models rests at `now`, before asking which. */
+export async function hasModelRests(db: Db, userId: string, now: Date): Promise<boolean> {
+  const [row] = await db.$queryRaw<Array<{ found: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM "dozo_model_connection_cooldowns"
+      WHERE "userId" = ${userId} AND "resetsAt" > ${now.toISOString()}::timestamptz
+    ) AS found`;
+  return row?.found === true;
+}

@@ -18,6 +18,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { POOLABLE_CONNECTION_KINDS } from "./dozo-model-pool-capabilities.js";
+import { recordRest } from "./dozo-model-rests.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { parseModelSecret } from "./model-secret.js";
 import type { ModelCredential } from "./model-selection.js";
@@ -235,6 +236,8 @@ export function withPoolMembers(
 }
 
 const runPools = new WeakMap<AgentRunRequest, RunModelPool>();
+/** The run's owner, whose connections rest when one runs out outside a pool (dozo-model-rests.ts). */
+const runOwners = new WeakMap<AgentRunRequest, { prisma: PoolDeps["prisma"]; userId: string }>();
 /** Fallback streams whose current move to a backup follows a connection that ran out. */
 const movingOut = new WeakSet<object>();
 /** Per fallback stream, the first place in its backup chain where a pool connection was passed over. */
@@ -243,12 +246,14 @@ const passedOver = new WeakMap<object, number>();
 /** The part of the runtime's fallback stream state the pool reads and moves. */
 type FallbackState = { request: AgentRunRequest; nextIndex: number };
 
-/** Hands the run's pool to the model runtime with its request. */
+/** Hands the run's pool, and whose connections rest, to the model runtime with its request. */
 export function withRunModelPool(
   request: AgentRunRequest,
   pool: RunModelPool | undefined,
+  owner?: { deps: { prisma: PoolDeps["prisma"] }; run: { userId: string } },
 ): AgentRunRequest {
   if (pool) runPools.set(request, pool);
+  if (owner) runOwners.set(request, { prisma: owner.deps.prisma, userId: owner.run.userId });
   return request;
 }
 
@@ -298,7 +303,21 @@ export async function switchAfterFailure(
   switchToNext: () => Promise<boolean>,
 ): Promise<boolean> {
   const pool = runPools.get(state.request);
-  const reason = pool && connectionOutReason(error);
+  const reason = connectionOutReason(error);
+  const owner = runOwners.get(state.request);
+  const pooled =
+    pool &&
+    failed.connectionId &&
+    (failed.connectionId === pool.credential.id || pool.members.includes(failed.connectionId));
+  // A connection outside the run's pool rests on its own, so later runs start past it.
+  if (reason && owner && failed.connectionId && !pooled)
+    await recordRest(
+      owner.prisma,
+      owner.userId,
+      { connectionId: failed.connectionId, modelId: failed.id },
+      reason,
+      poolResetAt(error.errorMessage ?? ""),
+    );
   if (!pool || !reason) return switchToNext();
   if (failed.connectionId)
     await bestEffort(

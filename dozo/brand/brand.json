@@ -4526,7 +4526,7 @@
     {
       "file": "apps/api/src/routes/bots.ts",
       "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
-      "replace": "import type { RouterContext } from \"./context.js\"; import { dozoAvatarForSave, dozoBotOrGroupOnly, requireBotRunEditor, requireGroupRemover, switchBotComputerWithFiles } from \"./dozo-bot-routes.js\";\nimport { computerContext",
+      "replace": "import type { RouterContext } from \"./context.js\"; import { botModelPicked, dozoAvatarForSave, dozoBotOrGroupOnly, requireBotRunEditor, requireGroupRemover, switchBotComputerWithFiles } from \"./dozo-bot-routes.js\";\nimport { computerContext",
       "requires": [
         "apps/api/src/routes/dozo-bot-routes.ts"
       ],
@@ -4535,11 +4535,11 @@
     {
       "file": "apps/api/src/routes/bots.ts",
       "find": "const existing = await repos.getBot(context.actor, input.botId);\n        if (input.sectionId) {",
-      "replace": "const existing = await requireBotRunEditor(deps.prisma, context.actor, await repos.getBot(context.actor, input.botId), input);\n        if (input.sectionId) {",
+      "replace": "const existing = await botModelPicked(deps.prisma, context.actor, input, await requireBotRunEditor(deps.prisma, context.actor, await repos.getBot(context.actor, input.botId), input));\n        if (input.sectionId) {",
       "requires": [
         "apps/api/src/routes/dozo-bot-routes.ts"
       ],
-      "reason": "shared bots: a bot's triggered runs act as its creator, so only the creator or the space owner changes the settings that decide what those runs do"
+      "reason": "shared bots: a bot's triggered runs act as its creator, so only the creator or the space owner changes the settings that decide what those runs do; and model rests: a model picked for the bot in place of another ends its rests for the person who picked it"
     },
     {
       "file": "apps/api/src/routes/bots.ts",
@@ -5848,9 +5848,9 @@
     {
       "file": "packages/adapters/src/run-model-turn.ts",
       "find": "    const runtimeEvents = deps.runtime.run(modelTurnRequest(services, hold, turn), {\n",
-      "replace": "    const runtimeEvents = deps.runtime.run(\n      withRunModelPool(modelTurnRequest(services, hold, turn), turn.model.pool),\n      {\n",
+      "replace": "    const runtimeEvents = deps.runtime.run(\n      withRunModelPool(modelTurnRequest(services, hold, turn), turn.model.pool, hold),\n      {\n",
       "requires": ["packages/adapters/src/dozo-model-pool.ts"],
-      "reason": "model pool: the runtime gets the run's pool with its request, to rest a connection that ran out"
+      "reason": "model pool and model rests: the runtime gets the run's pool and its owner with its request, to rest a connection or model that ran out"
     },
     {
       "file": "packages/adapters/src/pi-runtime-fallback.ts",
@@ -11150,6 +11150,45 @@
       "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
       "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
       "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { isRetiredModelCredentialError }",
+      "replace": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { startPastRest } from \"./dozo-model-rests.js\";\nimport { isRetiredModelCredentialError }",
+      "requires": [
+        "packages/adapters/src/dozo-model-rests.ts"
+      ],
+      "reason": "model rests: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "    try {\n      start = {\n        provider: selected.provider,",
+      "replace": "    start = await startPastRest(\n      deps.prisma,\n      run,\n      { provider: selected.provider, id: selected.id, credential: selected.credential },\n      pinned,\n      backups.startOnBackup,\n    );\n    if (!start) try {\n      start = {\n        provider: selected.provider,",
+      "reason": "model rests: a run whose chosen model rests after its quota ran out or its key was refused starts on its next backup that starts, and on its chosen model as before when none does; a run asked for that model for its message ends the rest instead"
+    },
+    {
+      "file": "apps/api/src/routes/models.ts",
+      "find": "import { assertCompatibleDefaultChange } from \"../model-pins.js\";\nimport type { RouterContext } from \"./context.js\";",
+      "replace": "import { assertCompatibleDefaultChange } from \"../model-pins.js\";\nimport { mainModelPicked } from \"../dozo-model-picked.js\";\nimport type { RouterContext } from \"./context.js\";",
+      "requires": [
+        "apps/api/src/dozo-model-picked.ts"
+      ],
+      "reason": "model rests: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/models.ts",
+      "find": "          ...(backups ?? []),\n        ]);\n        return withImageInput(",
+      "replace": "          ...(backups ?? []),\n        ]);\n        await mainModelPicked(deps.prisma, context.actor, role, primary, scope);\n        return withImageInput(",
+      "reason": "model rests: a main model saved in place of another ends its rests, so the next run tries it at once"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./model-roles.js\";\nexport * from \"./model-secret.js\";",
+      "replace": "export * from \"./model-roles.js\";\nexport { modelPicked } from \"./dozo-model-rests.js\";\nexport * from \"./model-secret.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-model-rests.ts"
+      ],
+      "reason": "model rests: the package exports how a picked model's rests end, for the routes that save a model"
     }
   ],
   "assets": {
