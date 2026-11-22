@@ -13,7 +13,7 @@ import {
   DOZO_LEARNING_CHANGED_CODE,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
-import { ClientError, deadlineSignal } from "@rakazo/core";
+import { ClientError, deadlineSignal, retry } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   isPartialReplyClientNonce,
@@ -333,43 +333,53 @@ const memoryContext = (bot: Bot, signal: AbortSignal) => ({
   signal,
 });
 
-/** Applies the answer to the notes as they are now, retrying a save another write overtook. */
-async function saveNotes(
+const overtaken = (error: unknown) =>
+  error instanceof Error && error.message === MEMORY_REVISION_CONFLICT_ERROR;
+
+/**
+ * Reads the bot's notes, edits them and saves them at the revision read, reading again when
+ * another write got in first. An edit that changes nothing saves nothing.
+ */
+function editNotes<T>(
+  memory: DozoLearningMemory,
+  botId: string,
+  context: Parameters<DozoLearningMemory["read"]>[1],
+  edit: (content: string) => { content: string; result: T },
+): Promise<T> {
+  const path = MEMORY_INDEX_PATH;
+  return retry(
+    async () => {
+      const [existing] = (await memory.read({ scope: "bot", botId, path }, context)).documents;
+      const content = existing?.content ?? "";
+      const next = edit(content);
+      if (next.content !== content) {
+        const expectedRevision = existing?.revision ?? 0;
+        await memory.commit(
+          { scope: "bot", botId, path, content: next.content, expectedRevision },
+          context,
+        );
+      }
+      return next.result;
+    },
+    { attempts: MEMORY_SAVE_ATTEMPTS, retryable: overtaken, delayMs: 0 },
+  );
+}
+
+/** Applies the answer to the notes as they are now. */
+function saveNotes(
   deps: LearningReviewDeps,
   bot: Bot,
   ops: LearningOp[],
   labels: ReadonlyMap<string, string>,
   signal: AbortSignal,
 ): Promise<LearningChangeInput[]> {
-  const context = memoryContext(bot, signal);
-  const path = MEMORY_INDEX_PATH;
-  for (let attempt = 1; ; attempt += 1) {
-    const [existing] = (await deps.memory.read({ scope: "bot", botId: bot.id, path }, context))
-      .documents;
-    const content = existing?.content ?? "";
+  return editNotes(deps.memory, bot.id, memoryContext(bot, signal), (content) => {
     // A label still names its change; the line counts only while it is still there.
     const present = new Set(linesOf(content));
     const own = new Map([...labels].filter(([, line]) => present.has(line)));
     const edit = applyLearningOps(content, ops, own);
-    if (!edit.applied.length) return [];
-    try {
-      await deps.memory.commit(
-        {
-          scope: "bot",
-          botId: bot.id,
-          path,
-          content: edit.content,
-          expectedRevision: existing?.revision ?? 0,
-        },
-        context,
-      );
-      return edit.applied;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (message !== MEMORY_REVISION_CONFLICT_ERROR || attempt >= MEMORY_SAVE_ATTEMPTS)
-        throw error;
-    }
-  }
+    return { content: edit.content, result: edit.applied };
+  });
 }
 
 async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): Promise<void> {
@@ -496,33 +506,11 @@ export async function undoLearningChange(
     botId: change.botId,
     signal: new AbortController().signal,
   };
-  const path = MEMORY_INDEX_PATH;
-  for (let attempt = 1; ; attempt += 1) {
-    const [existing] = (
-      await deps.memory.read({ scope: "bot", botId: change.botId, path }, context)
-    ).documents;
-    const content = existing?.content ?? "";
+  await editNotes(deps.memory, change.botId, context, (content) => {
     const next = undoLearningEdit(content, change);
     if (next === null) throw new DozoLearningChangedError();
-    if (next === content) break;
-    try {
-      await deps.memory.commit(
-        {
-          scope: "bot",
-          botId: change.botId,
-          path,
-          content: next,
-          expectedRevision: existing?.revision ?? 0,
-        },
-        context,
-      );
-      break;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (message !== MEMORY_REVISION_CONFLICT_ERROR || attempt >= MEMORY_SAVE_ATTEMPTS)
-        throw error;
-    }
-  }
+    return { content: next, result: undefined };
+  });
   await markLearningChangeUndone(deps.prisma, changeId);
   return { ...shown, undoneAt: new Date().toISOString() };
 }
