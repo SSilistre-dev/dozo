@@ -459,7 +459,8 @@ answers or ends a question the bot is waiting on.
 
 In a run of a marked bot every call that is not a plain read asks the person, even in Never ask or
 Auto review: sends, connector writes, the cloud computer, the browser, files, memory, settings,
-routines, other bots and the user's own computer. The gate only asks: marks are written where the
+routines, other bots and the user's own computer; in Never ask, a skill or routine write is refused
+instead (After outside content). The gate only asks: marks are written where the
 approved call delivers or changes something, so a call the person denies leaves none, and a call
 naming another bot by anything but a string is refused. Its cards say why (and, for work that
 outlives the run, that the mark does too) and have no Always allow; the run starts as having read
