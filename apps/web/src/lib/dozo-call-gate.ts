@@ -1,5 +1,6 @@
 import type { startCall } from "./call-session";
 import { reportClientError } from "./monitoring";
+import { rpc } from "./rpc";
 
 /**
  * The two ways into the call check, which load it when a call is placed or answered. They stay in
@@ -8,6 +9,12 @@ import { reportClientError } from "./monitoring";
  * before there was a check, and the failure is reported.
  */
 const loadCallStart = () => import("./dozo-call-start");
+
+/** The page's own request and error reporting, handed to the check when it is loaded. */
+const wiring = {
+  check: (botId: string, signal: AbortSignal) => rpc.dozoCallPreflight.check({ botId }, { signal }),
+  report: (error: unknown) => reportClientError(error, "voice.turn"),
+};
 
 /** Places a call through the check, or straight when the check cannot be loaded. */
 export async function placeCall(
@@ -23,7 +30,7 @@ export async function placeCall(
     calls.start(call);
     return;
   }
-  await module.dozoStartCall(call, calls);
+  await module.dozoStartCall(call, { ...calls, ...wiring });
 }
 
 /** What the check says before an incoming call is answered; nothing refused when it cannot load. */
@@ -32,7 +39,7 @@ export async function checkBeforeAnswer(
   load: typeof loadCallStart = loadCallStart,
 ): Promise<{ refusal: string | null; serverDictation: boolean | undefined }> {
   try {
-    return await (await load()).dozoCheckCall(botId);
+    return await (await load()).dozoCheckCall(botId, wiring);
   } catch (error) {
     reportClientError(error, "voice.turn");
     return { refusal: null, serverDictation: undefined };

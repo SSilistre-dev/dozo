@@ -3,8 +3,6 @@ import type { DozoCallCheck } from "@rakazo/contracts";
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { startCall } from "./call-session";
 import { toastError } from "./dozo-error-text";
-import { reportClientError } from "./monitoring";
-import { rpc } from "./rpc";
 
 type Call = Parameters<typeof startCall>[0];
 
@@ -29,6 +27,16 @@ export function dozoCallRefusal(check: DozoCallCheck | null): string | null {
 }
 
 /**
+ * What the check needs from the page's own modules, handed over by `dozo-call-gate.ts` so this
+ * file, loaded when a call is placed, shares no module with the first page that would pull a
+ * chunk of its own out of it.
+ */
+export type CallCheckWiring = {
+  check: (botId: string, signal: AbortSignal) => Promise<DozoCallCheck>;
+  report: (error: unknown) => void;
+};
+
+/**
  * Longest the page waits for the check, a little over the server's own limit
  * (`CALL_CHECK_TOTAL_MS`): a check that does not come back never holds a call.
  */
@@ -41,13 +49,14 @@ export const CALL_CHECK_WAIT_MS = 4_000;
  */
 export async function dozoCheckCall(
   botId: string,
+  wiring: CallCheckWiring,
 ): Promise<{ refusal: string | null; serverDictation: boolean | undefined }> {
   let check: DozoCallCheck | null = null;
   try {
     const until = deadlineSignal(CALL_CHECK_WAIT_MS);
-    check = await withAbort(rpc.dozoCallPreflight.check({ botId }, { signal: until }), until);
+    check = await withAbort(wiring.check(botId, until), until);
   } catch (error) {
-    reportClientError(error, "voice.turn");
+    wiring.report(error);
   }
   return { refusal: dozoCallRefusal(check), serverDictation: check?.serverDictation };
 }
@@ -60,12 +69,12 @@ export async function dozoCheckCall(
  */
 export async function dozoStartCall(
   call: Call,
-  calls: { start: typeof startCall; end: () => void },
+  calls: { start: typeof startCall; end: () => void } & CallCheckWiring,
 ): Promise<void> {
   if (checking) return;
   checking = true;
   try {
-    const checked = dozoCheckCall(call.botId);
+    const checked = dozoCheckCall(call.botId, calls);
     calls.start({
       ...call,
       check: checked.then(({ serverDictation }) => ({ serverDictation })),

@@ -21,6 +21,7 @@ vi.mock("../pages/model-settings/dozo-cli-accounts", loading.module("DozoCliAcco
 vi.mock("../pages/shell/dozo-site-sessions", loading.module("SiteSessionsControl"));
 vi.mock("../pages/shell/dozo-bot-skills-section", loading.module("DozoBotSkillsSection"));
 vi.mock("../pages/shell/dozo-own-computer-row", loading.module("OwnComputerRow"));
+vi.mock("../components/teach/dozo-skill-draft-card", loading.module("SkillDraftCard"));
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -33,6 +34,7 @@ import {
   OwnComputerRow,
   preloadDozoSurfaces,
   SiteSessionsControl,
+  SkillDraftCard,
 } from "./dozo-lazy-surfaces";
 
 let host: HTMLDivElement;
@@ -58,6 +60,7 @@ describe("the fork's screens that load when first shown", () => {
     ["SiteSessionsControl", SiteSessionsControl],
     ["DozoBotSkillsSection", DozoBotSkillsSection],
     ["OwnComputerRow", OwnComputerRow],
+    ["SkillDraftCard", SkillDraftCard],
   ];
 
   for (const [name, Screen] of screens) {
@@ -81,5 +84,5 @@ describe("the fork's screens that load when first shown", () => {
 });
 
 it("is fetched ahead, all of them, for the idle moment after the page has drawn", async () => {
-  await expect(preloadDozoSurfaces()).resolves.toHaveLength(5);
+  await expect(preloadDozoSurfaces()).resolves.toHaveLength(6);
 });

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ report: vi.fn() }));
+const mocks = vi.hoisted(() => ({ report: vi.fn(), check: vi.fn() }));
 vi.mock("./monitoring", () => ({ reportClientError: mocks.report }));
+vi.mock("./rpc", () => ({ rpc: { dozoCallPreflight: { check: mocks.check } } }));
 
 import { checkBeforeAnswer, placeCall } from "./dozo-call-gate";
 
@@ -16,7 +17,7 @@ describe("placing a call", () => {
     const dozoStartCall = vi.fn(async () => undefined);
     const calls = { start: vi.fn(), end: vi.fn() };
     await placeCall(call, calls, (async () => ({ dozoStartCall })) as never);
-    expect(dozoStartCall).toHaveBeenCalledWith(call, calls);
+    expect(dozoStartCall).toHaveBeenCalledWith(call, expect.objectContaining(calls));
     expect(calls.start).not.toHaveBeenCalled();
   });
 
@@ -36,7 +37,7 @@ describe("checking before an incoming call is answered", () => {
       refusal: "no",
       serverDictation: true,
     });
-    expect(dozoCheckCall).toHaveBeenCalledWith("bot-1");
+    expect(dozoCheckCall).toHaveBeenCalledWith("bot-1", expect.anything());
   });
 
   it("refuses nothing when the check cannot be loaded, and reports it", async () => {
@@ -45,5 +46,23 @@ describe("checking before an incoming call is answered", () => {
       serverDictation: undefined,
     });
     expect(mocks.report).toHaveBeenCalledWith(expect.any(TypeError), "voice.turn");
+  });
+});
+
+describe("what the gate hands the check", () => {
+  it("is the page's own request, bounded by the signal, and its error report", async () => {
+    mocks.check.mockResolvedValue({ checked: true, refusal: null, serverDictation: false });
+    let wiring: Parameters<typeof import("./dozo-call-start").dozoCheckCall>[1] | undefined;
+    const dozoCheckCall = vi.fn(async (_botId: string, handed: typeof wiring) => {
+      wiring = handed;
+      return { refusal: null, serverDictation: undefined };
+    });
+    await checkBeforeAnswer("bot-1", (async () => ({ dozoCheckCall })) as never);
+    const signal = new AbortController().signal;
+    await wiring?.check("bot-1", signal);
+    expect(mocks.check).toHaveBeenCalledWith({ botId: "bot-1" }, { signal });
+    const error = new Error("x");
+    wiring?.report(error);
+    expect(mocks.report).toHaveBeenCalledWith(error, "voice.turn");
   });
 });

@@ -20,6 +20,9 @@ vi.mock("../pages/shell/dozo-bot-skills-section", () => {
 vi.mock("../pages/shell/dozo-own-computer-row", () => {
   throw new Error("chunk gone");
 });
+vi.mock("../components/teach/dozo-skill-draft-card", () => {
+  throw new Error("chunk gone");
+});
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
@@ -30,6 +33,7 @@ import {
   DozoCliAccounts,
   OwnComputerRow,
   SiteSessionsControl,
+  SkillDraftCard,
 } from "./dozo-lazy-surfaces";
 
 let host: HTMLDivElement;
@@ -52,6 +56,7 @@ const screens: Array<[string, ComponentType<never>]> = [
   ["SiteSessionsControl", SiteSessionsControl],
   ["DozoBotSkillsSection", DozoBotSkillsSection],
   ["OwnComputerRow", OwnComputerRow],
+  ["SkillDraftCard", SkillDraftCard],
 ];
 
 for (const [name, Screen] of screens) {

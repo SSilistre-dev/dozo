@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../components/ErrorBoundary";
+import type { SkillDraftCard as LoadedSkillDraftCard } from "../components/teach/dozo-skill-draft-card";
 import type { DozoAvatarGeneratePanel as LoadedDozoAvatarGeneratePanel } from "../pages/shell/dozo-avatar-generate-panel";
 import type { DozoBotSkillsSection as LoadedDozoBotSkillsSection } from "../pages/shell/dozo-bot-skills-section";
 import type { OwnComputerRow as LoadedOwnComputerRow } from "../pages/shell/dozo-own-computer-row";
@@ -22,6 +23,7 @@ const loadCliAccounts = () => import("../pages/model-settings/dozo-cli-accounts"
 const loadSiteSessions = () => import("../pages/shell/dozo-site-sessions");
 const loadSkillsSection = () => import("../pages/shell/dozo-bot-skills-section");
 const loadOwnComputerRow = () => import("../pages/shell/dozo-own-computer-row");
+const loadSkillDraftCard = () => import("../components/teach/dozo-skill-draft-card");
 
 const LazyDozoAvatarGeneratePanel = lazyComponent(() =>
   loadAvatarPanel().then((module) => module.DozoAvatarGeneratePanel),
@@ -39,6 +41,10 @@ const LazyOwnComputerRow = lazyComponent(() =>
   loadOwnComputerRow().then((module) => module.OwnComputerRow),
 );
 
+const LazySkillDraftCard = lazyComponent(() =>
+  loadSkillDraftCard().then((module) => module.SkillDraftCard),
+);
+
 /** Fetches the code of every screen here; a failure shows when the screen is opened. */
 export function preloadDozoSurfaces() {
   return Promise.all([
@@ -47,6 +53,7 @@ export function preloadDozoSurfaces() {
     loadSiteSessions(),
     loadSkillsSection(),
     loadOwnComputerRow(),
+    loadSkillDraftCard(),
   ]);
 }
 
@@ -110,6 +117,15 @@ export function OwnComputerRow(props: ComponentProps<typeof LoadedOwnComputerRow
   return (
     <Held>
       <LazyOwnComputerRow {...props} />
+    </Held>
+  );
+}
+
+/** The teaching draft in a message: drawn when a message carries one, so its code loads then. */
+export function SkillDraftCard(props: ComponentProps<typeof LoadedSkillDraftCard>) {
+  return (
+    <Held>
+      <LazySkillDraftCard {...props} />
     </Held>
   );
 }

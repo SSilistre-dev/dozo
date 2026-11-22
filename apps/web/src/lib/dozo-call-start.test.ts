@@ -15,8 +15,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./dozo-error-text", () => ({ toastError: mocks.toastError }));
-vi.mock("./monitoring", () => ({ reportClientError: mocks.report }));
-vi.mock("./rpc", () => ({ rpc: { dozoCallPreflight: { check: mocks.check } } }));
 
 import {
   CALL_CHECK_WAIT_MS,
@@ -50,7 +48,12 @@ afterEach(() => {
 });
 
 const end = vi.fn();
-const calls = () => ({ start: mocks.startCall, end });
+const calls = () => ({
+  start: mocks.startCall,
+  end,
+  check: mocks.check,
+  report: mocks.report,
+});
 
 /** Node's own timeout signal ignores the fake clock: tie it to it. */
 function fakeDeadlines() {
@@ -74,10 +77,7 @@ describe("starting a call", () => {
     pending.resolve(answer({ serverDictation: true }));
     await starting;
     expect(await started.check).toEqual({ serverDictation: true });
-    expect(mocks.check).toHaveBeenCalledWith(
-      { botId: "bot-1" },
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(mocks.check).toHaveBeenCalledWith("bot-1", expect.any(AbortSignal));
     expect(end).not.toHaveBeenCalled();
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
@@ -110,7 +110,7 @@ describe("starting a call", () => {
     const started = mocks.startCall.mock.calls[0]?.[0];
     expect(await started.check).toEqual({ serverDictation: undefined });
     expect(end).not.toHaveBeenCalled();
-    expect(mocks.report).toHaveBeenCalledWith(expect.any(Error), "voice.turn");
+    expect(mocks.report).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("ignores a second tap while the first is being checked", async () => {
@@ -184,7 +184,7 @@ describe("why a call cannot start", () => {
 describe("checking a call before answering it", () => {
   it("gives the refusal and says whether the speech server hears the caller", async () => {
     mocks.check.mockResolvedValue(answer({ refusal: "model", serverDictation: true }));
-    expect(await dozoCheckCall("bot-1")).toEqual({
+    expect(await dozoCheckCall("bot-1", calls())).toEqual({
       refusal: "Can't call: the model isn't answering.",
       serverDictation: true,
     });
@@ -193,6 +193,9 @@ describe("checking a call before answering it", () => {
 
   it("refuses nothing when the check cannot be made", async () => {
     mocks.check.mockRejectedValue(new Error("boom"));
-    expect(await dozoCheckCall("bot-1")).toEqual({ refusal: null, serverDictation: undefined });
+    expect(await dozoCheckCall("bot-1", calls())).toEqual({
+      refusal: null,
+      serverDictation: undefined,
+    });
   });
 });

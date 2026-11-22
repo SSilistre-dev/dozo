@@ -88,7 +88,7 @@ it("leaves a call that cannot be heard ringing: nothing is answered, declined or
     serverDictation: undefined,
   });
   const onAnswered = await answer();
-  expect(dozoCheckCall).toHaveBeenCalledWith("bot-1");
+  expect(dozoCheckCall).toHaveBeenCalledWith("bot-1", expect.anything());
   expect(rpc.threads.answerCall).not.toHaveBeenCalled();
   expect(rpc.notifications.declineIncomingCall).not.toHaveBeenCalled();
   expect(startCall).not.toHaveBeenCalled();
