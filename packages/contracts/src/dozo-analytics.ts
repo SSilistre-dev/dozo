@@ -17,10 +17,10 @@ export const DOZO_PLAN_LIMIT_KINDS = [
   PLAN_LIMIT_CODES.computerLimit,
   PLAN_LIMIT_CODES.spaceLimit,
 ] as const;
-export const DozoPlanLimitKindSchema = z.enum(DOZO_PLAN_LIMIT_KINDS);
+export const DozoPlanLimitKindSchema = /* @__PURE__ */ z.enum(DOZO_PLAN_LIMIT_KINDS);
 
 /** Where the paid plans were shown from: required to go on, opened in the app, or a landing pick. */
-export const DozoUpgradeSourceSchema = z.enum(["paywall", "app", "landing"]);
+export const DozoUpgradeSourceSchema = /* @__PURE__ */ z.enum(["paywall", "app", "landing"]);
 
 const planLimitHit = z
   .object({ name: z.literal("plan_limit_hit"), kind: DozoPlanLimitKindSchema })
@@ -34,7 +34,7 @@ const planIntent = z
   .strict();
 
 /** What the apps report themselves; the server adds who, and checks when. */
-export const DozoClientEventSchema = z.discriminatedUnion("name", [
+export const DozoClientEventSchema = /* @__PURE__ */ z.discriminatedUnion("name", [
   // When this tab opened the sign-up form, before the account it made.
   z.object({ name: z.literal("signup_started"), startedAt: IsoDate }).strict(),
   planLimitHit,

@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelRoleChoice } from "@rakazo/contracts";
 import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
-import { catalogEntryFor } from "@rakazo/core";
+import { catalogEntryFor, connectionForModelChoice } from "@rakazo/core";
 import {
   Button,
   DropdownMenu,
@@ -15,9 +15,9 @@ import { MoreHorizontal, Plus } from "lucide-react";
 import { toastError } from "../../lib/dozo-error-text";
 import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
+import { useDozoRestNote } from "../model-settings/dozo-model-rests";
 import type { RoleModelOption } from "../model-settings/role-model-picker";
 import { RoleModelPicker } from "../model-settings/role-model-picker";
-import { DOZO_BOT_BACKUPS_KEY } from "./dozo-bot-backups-signal";
 
 const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
   provider: option.provider,
@@ -34,12 +34,24 @@ const same = (left: ModelRoleChoice, right: ModelRoleChoice) =>
  * runs take the runner's own backups. Picked from the models of the viewer's own connections, as
  * in Models settings. Read again on the roster signal a change sends.
  */
-export function DozoBotBackups({ botId, spaceId }: { botId: string; spaceId: string }) {
+export function DozoBotBackups({
+  botId,
+  spaceId,
+  model,
+}: {
+  botId: string;
+  spaceId: string;
+  /** The model the bot runs on, its own or the main one: said when it rests. */
+  model?: { provider: string; modelId: string } | null;
+}) {
   const { t } = useLingui();
+  const restNote = useDozoRestNote();
   const rpc = useSpaceRpc();
   const queries = useSpaceQueries();
   const userId = useQueryUserId();
-  const key = [DOZO_BOT_BACKUPS_KEY, userId, spaceId, botId];
+  // Under the model pool's key: the roster signal that re-reads the pool, which a change to a bot's
+  // backups sends, reads these again too, with no code of their own in the app's first paint.
+  const key = ["dozoModelPool", "botBackups", userId, spaceId, botId];
   const saved = useQuery({
     queryKey: key,
     queryFn: () => rpc.dozoBotModelBackups.get({ botId }),
@@ -77,6 +89,9 @@ export function DozoBotBackups({ botId, spaceId }: { botId: string; spaceId: str
     optionFor(choice)?.label ??
     catalogEntryFor(catalog, choice.provider, choice.modelId)?.label ??
     choice.modelId;
+  const restOf = (choice: ModelRoleChoice) =>
+    restNote(connectionForModelChoice(credentials, choice)?.id, choice.modelId);
+  const modelRests = model ? restOf(model) : undefined;
   const commit = (next: ModelRoleChoice[]) => save.run(next);
   const move = (index: number, target: number) => {
     const next = [...rows];
@@ -87,6 +102,11 @@ export function DozoBotBackups({ botId, spaceId }: { botId: string; spaceId: str
   const unused = options.filter((option) => rows.every((row) => !same(row, choiceOf(option))));
   return (
     <ol className="-mt-1" data-testid="dozo-bot-backups">
+      {modelRests ? (
+        <li className="pb-1 text-body-sm text-muted-foreground" data-testid="dozo-model-rests">
+          {modelRests}
+        </li>
+      ) : null}
       {rows.map((choice, index) => {
         const name = label(choice);
         return (
@@ -102,7 +122,7 @@ export function DozoBotBackups({ botId, spaceId }: { botId: string; spaceId: str
                     {name}
                   </span>
                   <span className="min-w-0 truncate text-body-sm text-muted-foreground">
-                    {optionFor(choice)?.providerName}
+                    {restOf(choice) ?? optionFor(choice)?.providerName}
                   </span>
                 </button>
               }

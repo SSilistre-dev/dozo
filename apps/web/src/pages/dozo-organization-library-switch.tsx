@@ -3,7 +3,7 @@ import { Label, Switch } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { errorText, toastError } from "../lib/dozo-error-text";
-import { queryClient, useSave, useSpaceQueries } from "../lib/query";
+import { useSave, useSpaceQueries } from "../lib/query";
 
 type Change = { skillId: string; on: boolean; mode: "share" | "use" };
 
@@ -119,11 +119,4 @@ export function DozoHiddenLibrarySkills() {
   );
 }
 
-/** A library change comes on the roster signal: read the skills and the library again. */
-export function dozoOrganizationLibraryChanged(client = queryClient): Promise<void> {
-  return client.invalidateQueries({
-    predicate: ({ queryKey: [path] }) =>
-      Array.isArray(path) &&
-      (path.at(-2) === "dozoOrganizationLibrary" || path.at(-2) === "agentSkills"),
-  });
-}
+export { dozoOrganizationLibraryChanged } from "./dozo-organization-library-changed";

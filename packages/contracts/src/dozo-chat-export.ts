@@ -18,7 +18,7 @@ export const DozoChatExportInputSchema = z
   .superRefine(dozoThreadTargetCheck);
 export type DozoChatExportInput = z.infer<typeof DozoChatExportInputSchema>;
 
-export const DozoChatExportSchema = z.object({
+export const DozoChatExportSchema = /* @__PURE__ */ z.object({
   markdown: z.string(),
   /** The size limit was reached: the newest messages are in, earlier ones are left out. */
   truncated: z.boolean(),

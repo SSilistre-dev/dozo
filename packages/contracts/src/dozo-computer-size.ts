@@ -3,7 +3,7 @@ import type { ComputerSize } from "./computer.js";
 import { COMPUTER_SIZE_SPECS } from "./computer.js";
 
 /** The vCPUs and memory a computer really gets, as the server that starts it reports them. */
-export const ComputerSizeSpecSchema = z.object({
+export const ComputerSizeSpecSchema = /* @__PURE__ */ z.object({
   vcpus: z.number().positive(),
   memoryGb: z.number().positive(),
 });

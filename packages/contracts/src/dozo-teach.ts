@@ -4,13 +4,13 @@ import { SkillPlaybookSchema, TaughtSkillSchema } from "./domain.js";
 import { Id } from "./ids.js";
 
 /** A value typed while teaching, as its placeholder in the steps names it (`{{value N}}`). */
-const Placeholder = z.string().regex(/^\{\{value \d+\}\}$/);
+const Placeholder = /* @__PURE__ */ z.string().regex(/^\{\{value \d+\}\}$/);
 
 /**
  * What becomes of one typed value: an input asked for on each run, an input typed from a saved
  * login (hidden), kept as typed in the steps, or dropped.
  */
-export const DozoTeachValueDecisionSchema = z.discriminatedUnion("action", [
+export const DozoTeachValueDecisionSchema = /* @__PURE__ */ z.discriminatedUnion("action", [
   z.object({ action: z.literal("variable"), name: z.string().min(1).max(80) }),
   z.object({ action: z.literal("hidden"), name: z.string().min(1).max(80) }),
   z.object({ action: z.literal("fixed") }),
@@ -18,7 +18,7 @@ export const DozoTeachValueDecisionSchema = z.discriminatedUnion("action", [
 ]);
 export type DozoTeachValueDecision = z.infer<typeof DozoTeachValueDecisionSchema>;
 
-export const DozoTeachValueSchema = z.object({
+export const DozoTeachValueSchema = /* @__PURE__ */ z.object({
   placeholder: Placeholder,
   /** Null for protected input, whose text is never stored, and for text that cannot be rebuilt. */
   text: z.string().nullable(),
@@ -34,7 +34,7 @@ export type DozoTeachValue = z.infer<typeof DozoTeachValueSchema>;
  * and, until the recording is drafted, a small WebP of the screen around it (base64).
  * `eventIndex` is the click's event.
  */
-export const DozoTeachStoredTargetSchema = z.object({
+export const DozoTeachStoredTargetSchema = /* @__PURE__ */ z.object({
   eventIndex: z.number().int().nonnegative(),
   window: z.string().optional(),
   image: z.string().optional(),
@@ -42,7 +42,7 @@ export const DozoTeachStoredTargetSchema = z.object({
 export type DozoTeachStoredTarget = z.infer<typeof DozoTeachStoredTargetSchema>;
 
 /** A recorded click as the teacher reviews it: the step it became, and what it hit. */
-export const DozoTeachTargetSchema = z.object({
+export const DozoTeachTargetSchema = /* @__PURE__ */ z.object({
   id: z.string(),
   /** Index of its click step in the draft's steps. */
   step: z.number().int().nonnegative(),
@@ -53,7 +53,7 @@ export const DozoTeachTargetSchema = z.object({
 export type DozoTeachTarget = z.infer<typeof DozoTeachTargetSchema>;
 
 /** A recorded click's id, as the review gives it. */
-const TargetId = z.string().max(20);
+const TargetId = /* @__PURE__ */ z.string().max(20);
 
 /**
  * What a click hit, as the teacher kept it from the model's suggestion: plain text on one line,
@@ -66,7 +66,7 @@ export const DozoTeachLabelSchema = z
   .max(60)
   .regex(/^[^{}"\p{Cc}]+$/u);
 
-const DraftInput = z.object({
+const DraftInput = /* @__PURE__ */ z.object({
   skillId: Id,
   name: z.string().max(200).optional(),
   playbook: SkillPlaybookSchema,

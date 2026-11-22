@@ -18,6 +18,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { POOLABLE_CONNECTION_KINDS } from "./dozo-model-pool-capabilities.js";
+import { recordRest } from "./dozo-model-rests.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { parseModelSecret } from "./model-secret.js";
 import type { ModelCredential } from "./model-selection.js";
@@ -140,7 +141,7 @@ async function readRunModelPool(
         modelId: reason === "rejected" ? null : failedModelId,
         reason,
         ...(holder ? { holder } : {}),
-        resetsAt: new Date(poolCooldownUntil(observedAt, providerResetAt)),
+        resetsAt: new Date(poolCooldownUntil(observedAt, providerResetAt, reason)),
         observedAt: new Date(observedAt),
       });
     },
@@ -235,6 +236,11 @@ export function withPoolMembers(
 }
 
 const runPools = new WeakMap<AgentRunRequest, RunModelPool>();
+/** The run's owner, whose connections rest when one runs out outside a pool (dozo-model-rests.ts). */
+const runOwners = new WeakMap<
+  AgentRunRequest,
+  { prisma: PoolDeps["prisma"]; userId: string; events?: ExecutorDeps["events"] }
+>();
 /** Fallback streams whose current move to a backup follows a connection that ran out. */
 const movingOut = new WeakSet<object>();
 /** Per fallback stream, the first place in its backup chain where a pool connection was passed over. */
@@ -243,12 +249,22 @@ const passedOver = new WeakMap<object, number>();
 /** The part of the runtime's fallback stream state the pool reads and moves. */
 type FallbackState = { request: AgentRunRequest; nextIndex: number };
 
-/** Hands the run's pool to the model runtime with its request. */
+/** Hands the run's pool, and whose connections rest, to the model runtime with its request. */
 export function withRunModelPool(
   request: AgentRunRequest,
   pool: RunModelPool | undefined,
+  owner?: {
+    deps: { prisma: PoolDeps["prisma"]; events?: ExecutorDeps["events"] };
+    run: { userId: string };
+  },
 ): AgentRunRequest {
   if (pool) runPools.set(request, pool);
+  if (owner)
+    runOwners.set(request, {
+      prisma: owner.deps.prisma,
+      userId: owner.run.userId,
+      events: owner.deps.events,
+    });
   return request;
 }
 
@@ -298,7 +314,22 @@ export async function switchAfterFailure(
   switchToNext: () => Promise<boolean>,
 ): Promise<boolean> {
   const pool = runPools.get(state.request);
-  const reason = pool && connectionOutReason(error);
+  const reason = connectionOutReason(error);
+  const owner = runOwners.get(state.request);
+  const pooled =
+    pool &&
+    failed.connectionId &&
+    (failed.connectionId === pool.credential.id || pool.members.includes(failed.connectionId));
+  // A connection outside the run's pool rests on its own, so later runs start past it. The
+  // switch does not wait for the record (it never fails); the person's apps hear of it after.
+  if (reason && owner && failed.connectionId && !pooled)
+    void recordRest(
+      owner.prisma,
+      owner.userId,
+      { connectionId: failed.connectionId, modelId: failed.id },
+      reason,
+      poolResetAt(error.errorMessage ?? ""),
+    ).then(() => owner.events?.publishRosterChange?.({ userIds: [owner.userId] }));
   if (!pool || !reason) return switchToNext();
   if (failed.connectionId)
     await bestEffort(
