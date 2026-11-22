@@ -9826,6 +9826,24 @@
         "packages/db/src/dozo-organization-skills.ts"
       ],
       "reason": "organization skill library: upstream's skill tool test, whose stand-in database matches only the owner's own scope; it now reads the owner's scope inside the readable condition and finds no library skill, as in these fixtures there is none"
+    },
+    {
+      "file": "packages/adapters/src/executor.test.ts",
+      "find": "    // Routines run as their owner: only the owner's skills, and the claim names the owner.\n    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(\n      expect.objectContaining({ where: expect.objectContaining({ userId: \"user-1\" }) }),\n    );",
+      "replace": "    // Routines run as their owner: only the owner's skills (and their organization library's,\n    // a fork rule), and the claim names the owner.\n    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: {\n          OR: [\n            expect.objectContaining({ userId: \"user-1\" }),\n            expect.objectContaining({ dozoLibrary: expect.anything() }),\n          ],\n        },\n      }),\n    );",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's assertion that a run reads only its own person's skills, for the readable condition, which keeps that person's own scope as its first branch beside the organization library"
+    },
+    {
+      "file": "packages/adapters/src/executor-shared-space-authors.test.ts",
+      "find": "    expect(agentSkillQuery).toHaveBeenCalledWith(\n      expect.objectContaining({ where: expect.objectContaining({ userId: \"user-b\" }) }),\n    );",
+      "replace": "    expect(agentSkillQuery).toHaveBeenCalledWith(\n      expect.objectContaining({\n        where: {\n          OR: [\n            expect.objectContaining({ userId: \"user-b\" }),\n            expect.objectContaining({ dozoLibrary: expect.anything() }),\n          ],\n        },\n      }),\n    );",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's assertion that a run reads only its own person's skills, for the readable condition, which keeps that person's own scope as its first branch beside the organization library"
     }
   ],
   "assets": {
