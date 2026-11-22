@@ -18,11 +18,15 @@ import {
 
 const sqlOf = (call: unknown[]) => (call[0] as string[]).join("?").replace(/\s+/g, " ");
 
+// The store's own database parameter; the fake only has the two calls the store makes.
+type StoreDb = Parameters<typeof learningMode>[0];
+
 function db(rows: unknown[] = [], changed = 1) {
   const queryRaw = vi.fn(async (..._call: unknown[]) => rows);
   const executeRaw = vi.fn(async (..._call: unknown[]) => changed);
   const sql = () => [...queryRaw.mock.calls, ...executeRaw.mock.calls].map(sqlOf);
-  return { client: { $queryRaw: queryRaw, $executeRaw: executeRaw }, queryRaw, executeRaw, sql };
+  const client = { $queryRaw: queryRaw, $executeRaw: executeRaw } as unknown as StoreDb;
+  return { client, queryRaw, executeRaw, sql };
 }
 
 const turn = { id: "t1", threadId: "th", runId: "r1", messageId: "m1", tainted: false };
