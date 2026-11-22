@@ -102,9 +102,25 @@ test("organization library: the owner shares a skill, a member of its Space read
     await expect(opened.getByRole("textbox", { name: "SKILL.md" })).toHaveAttribute("readonly", "");
     await expect(opened.getByRole("button", { name: "Save" })).toHaveCount(0);
     await expect(opened.getByRole("button", { name: "Delete" })).toHaveCount(0);
-    await expect(opened.getByTestId("organization-library-switch")).toHaveCount(0);
+    // The switch says where the skill comes from; on, the member's bots use it.
+    await expect(opened.getByTestId("organization-library-switch")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     await shot(member.page, `3-member-${theme}`);
   }
+  expect((await memberSkills()).some((entry) => entry.name === name)).toBe(true);
+
+  // Turned off by the member: their skills leave it out, the library lists it as off for them.
+  await rpcIn(member.page, spaceId, "dozoOrganizationLibrary/hide", {
+    skillId: skill.id,
+    hidden: true,
+  });
+  expect((await memberSkills()).some((entry) => entry.name === name)).toBe(false);
+  await rpcIn(member.page, spaceId, "dozoOrganizationLibrary/hide", {
+    skillId: skill.id,
+    hidden: false,
+  });
   expect((await memberSkills()).some((entry) => entry.name === name)).toBe(true);
 
   await rpcIn(page, spaceId, "dozoOrganizationLibrary/share", { skillId: skill.id, shared: false });

@@ -344,19 +344,27 @@ logo: the app stays monochrome. Mobile shows the logo only; it is uploaded on th
 
 An organization's owner puts a skill they wrote in its library with the Organization switch in the
 skill's editor (web and desktop; shown once the organization has someone to share with). Every
-member of the organization's Spaces then finds it in their skills, read only, and their bots use it:
-the catalog, `/` and `skill_read` reach it (`packages/db/src/dozo-organization-skills.ts`, table
-`dozo_organization_skills`, `apps/api/src/dozo-organization-library.ts`). It is the one skill system
-widened: the skill stays its owner's `agent_skills` row, only the owner changes or deletes it, and
-writes keep the owner-only lookup. A member's own skill of the same name wins over it.
+member of the organization's Spaces then finds it in their skills, marked Organization and read
+only, and their bots use it: the catalog, `/` and `skill_read` reach it
+(`packages/db/src/dozo-organization-skills.ts`, tables `dozo_organization_skills` and
+`dozo_organization_skill_hides`, `apps/api/src/dozo-organization-library.ts`). It is the one
+skill system widened: the skill stays its owner's `agent_skills` row, only the owner changes or
+deletes it, and writes keep the owner-only lookup.
 
-Only the skill's text and files are shared: a run keeps its own person's secrets, connections,
-memory and approval rules, so a skill that leads to a command asks exactly as one of their own would.
-A plugin's skill never goes in (it comes with the owner's install). Membership is read on every
-statement, down to a row-level policy, so someone who leaves the Space stops reading the library at
-once. A run started from a chat app by someone who is not the bot's owner gets built-in skills only,
-as before. Mobile lists library skills read only and reads its skills again when the screen opens;
-it has no switch.
+One read decides what a member gets, on every read and in a row-level policy, never by clean-up:
+they are a member of the open Space; the person who shared the skill still owns the organization
+(`dozo_is_owner_role`, the SQL twin of `isOwnerRole`, tested against it) and still owns the skill.
+A sharer demoted, removed or deleted takes the skill out of every member's reach at once. A member's
+own skill and a built-in skill of the same name win over a library skill; a skill named like a
+built-in cannot be shared. A member turns a library skill off for their own bots with the same
+switch (listed under their skills while off, to turn back on). A change to the library, or the
+owner changing or deleting a skill in it, signals every Space of the organization.
+
+Trust: a library skill is the owner's text inside a member's bot, which runs with the member's
+own secrets, connections, memory and approval rules; the owner can change the text later. Only the
+text and its files are shared; nothing is written to or run on a computer by sharing. A run started
+from a chat app by someone who is not the bot's owner gets built-in skills only, as before. Mobile
+marks library skills in the list and opens them read only; turning one off is on the web or desktop.
 
 ## Feedback
 
