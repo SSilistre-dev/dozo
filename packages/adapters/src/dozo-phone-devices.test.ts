@@ -1,6 +1,10 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
-import { deviceOffers, readDeviceCapabilities } from "./dozo-device-capabilities.js";
+import {
+  deviceOffers,
+  parseDeviceCapabilities,
+  readDeviceCapabilities,
+} from "./dozo-device-capabilities.js";
 import { phoneRoute } from "./dozo-phone.js";
 import { UserDevices, userDeviceForwardSecret } from "./dozo-user-device-gateway.js";
 import { withHostComputerScreen } from "./host-computer-device.js";
@@ -159,7 +163,7 @@ describe("on the desktop app's own server", () => {
       deps: { userDevices: wrapped, prisma: { spaceMember: { findFirst: async () => null } } },
       thread: { id: "t", spaceId: "space-1", groupId: null },
     } as unknown as RunContext;
-    expect(await phoneRoute(ctx)).toMatchObject({ deviceId: "phone", owner: "user-1" });
+    expect(await phoneRoute(ctx, "calendar")).toMatchObject({ deviceId: "phone", owner: "user-1" });
   });
 });
 
@@ -177,6 +181,18 @@ describe("what a phone declares", () => {
       "screen",
       "browser",
     ]);
+    connect("phone", ["location", "contacts", "calendar"]);
+    expect(await readDeviceCapabilities(prisma, "phone", "ios")).toEqual([
+      "calendar",
+      "contacts",
+      "location",
+    ]);
+    expect(parseDeviceCapabilities("calendar, Contacts,location,nfc")).toEqual([
+      "calendar",
+      "contacts",
+      "location",
+    ]);
+    expect(parseDeviceCapabilities("")).toEqual([]);
   });
 
   it("offers none of the computer's tools, whatever it declares", () => {

@@ -18,16 +18,22 @@ import {
   offerPhoneTools,
   PHONE_ANSWER_MS,
   PHONE_READ_NOTE,
-  phoneCalendarRead,
   phoneGate,
   phoneInput,
+  phoneRead,
   phoneRoute,
   runReadPhone,
 } from "./dozo-phone.js";
+import type { Answer } from "./dozo-phone.test-support.js";
+import {
+  answers,
+  failing,
+  PAIRED,
+  call as phoneCall,
+  setup as phoneSetup,
+} from "./dozo-phone.test-support.js";
 import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
 import { phoneCalendarValue } from "./dozo-phone-protocol.js";
-import type { RunContext } from "./run-context.js";
-import type { ToolCall } from "./run-tool-gate.js";
 import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./user-device-gateway.js";
 
 /**
@@ -62,7 +68,6 @@ const LINK_SAMPLES = [
   },
 ];
 
-const PAIRED = new Date("2026-11-01T00:00:00Z");
 const SECRET_TITLE = "Dentist with Dr. Example";
 const RANGE = { from: "2026-11-22T00:00:00+03:00", to: "2026-11-29T00:00:00+03:00" };
 const EVENT = {
@@ -74,125 +79,18 @@ const EVENT = {
   calendar: "Home",
 };
 
-type Answer = (signal: AbortSignal) => AsyncIterable<unknown>;
-const answers = (value: unknown): Answer =>
-  async function* () {
-    yield value;
-  };
-
-/** A run of the phone's owner, a fake phone answering its requests, and effects in memory. */
-function setup(
-  options: {
-    owner?: string | undefined;
-    phone?: boolean;
-    token?: boolean;
-    consent?: boolean;
-    answer?: Answer;
-    tainted?: boolean;
-    thread?: Record<string, unknown>;
-    otherMember?: boolean;
-  } = {},
-) {
-  const effects: Array<{
-    id: string;
-    runId: string;
-    kind: string;
-    status: string;
-    request?: unknown;
-  }> = [];
-  if (options.consent !== false)
-    effects.push({
-      id: "old",
-      runId: "run-0",
-      kind: PHONE_CALENDAR_READ_TOOL,
-      status: "completed",
-    });
-  const requests: Array<{ owner: string; request: Record<string, unknown>; deviceId?: string }> =
-    [];
-  const devices = {
-    connected: vi.fn(async () => null),
-    pairedSince: vi.fn(async () => null),
-    connectedPhone: vi.fn(async () =>
-      options.phone === false ? null : { deviceId: "phone-1", pairedAt: PAIRED },
-    ),
-    request: vi.fn(
-      (owner: string, request: Record<string, unknown>, signal: AbortSignal, deviceId?: string) => {
-        requests.push({ owner, request, deviceId });
-        return (options.answer ?? answers({ events: [EVENT], truncated: false }))(signal);
-      },
-    ),
-  };
-  type Clause = {
-    runId?: string;
-    status?: string | { in: string[] };
-    request?: { equals: unknown };
-  };
-  const holds = (effect: (typeof effects)[number], clause: Clause) =>
-    (!clause.runId || effect.runId === clause.runId) &&
-    (!clause.request || JSON.stringify(effect.request) === JSON.stringify(clause.request.equals)) &&
-    (clause.status === undefined ||
-      (typeof clause.status === "string"
-        ? effect.status === clause.status
-        : clause.status.in.includes(effect.status)));
-  const findFirst = vi.fn(
-    async ({ where }: { where: Clause & { kind: string; OR?: Clause[] } }) =>
-      effects.find(
-        (effect) =>
-          effect.kind === where.kind &&
-          holds(effect, where) &&
-          (!where.OR || where.OR.some((clause) => holds(effect, clause))),
-      ) ?? null,
-  );
-  const updateMany = vi.fn(async () => ({ count: 1 }));
-  const prisma = {
-    $queryRaw: async () => [{ sourced: Boolean(options.token) }],
-    externalEffect: { findFirst, updateMany },
-    attempt: { count: async () => 1 },
-    spaceMember: {
-      findFirst: vi.fn(async () => (options.otherMember ? { id: "member-2" } : null)),
-    },
-  };
-  const ctx = {
-    source: { userComputerOwner: "owner" in options ? options.owner : "user-1" },
-    deps: { userDevices: devices, prisma },
-    bot: { id: "bot-1", name: "Ada" },
-    run: { id: "run-1", botId: "bot-1", userId: "user-1", spaceId: "space-1", threadId: "t" },
-    runId: "run-1",
-    thread: { id: "t", spaceId: "space-1", groupId: null, ...options.thread },
-    context: { signal: new AbortController().signal },
-    secrets: [],
-    state: { tainted: Boolean(options.tainted) },
-    trust: { receivedOutsideMessage: async () => false },
-  } as unknown as RunContext;
-  return { ctx, devices, requests, effects, findFirst, updateMany, prisma };
-}
-
-function call(args: Record<string, unknown>, claimed = false) {
-  const persisted: unknown[] = [];
-  const finished: unknown[] = [];
-  const toolCall = {
-    name: PHONE_CALENDAR_READ_TOOL,
-    args,
-    applied: { effect: { id: "effect-1" } },
-    claimedEffect: claimed,
-    persistEffectResult: vi.fn(async (result: unknown) => {
-      persisted.push(result);
-      return true;
-    }),
-    finish: vi.fn(async (result: unknown) => {
-      persisted.push(result);
-      finished.push(result);
-      return result;
-    }),
-  } as unknown as ToolCall;
-  return { call: toolCall, persisted, finished };
-}
+/** A run whose phone answers with EVENT unless told otherwise. */
+const setup = (
+  options: Omit<Parameters<typeof phoneSetup>[0], "answer"> & { answer?: Answer } = {},
+) => phoneSetup({ answer: answers({ events: [EVENT], truncated: false }), ...options });
+const call = (args: Record<string, unknown>, claimed = false) =>
+  phoneCall(PHONE_CALENDAR_READ_TOOL, args, claimed);
 
 /** The gate, then the handler, as the executor runs a call that passed its approval. */
 async function read(run: ReturnType<typeof setup>, args: Record<string, unknown> = { ...RANGE }) {
-  const plan = await phoneGate(run.ctx, false, args);
+  const plan = await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args);
   const made = call(args);
-  return { plan, ...made, result: await phoneCalendarRead(run.ctx, made.call) };
+  return { plan, ...made, result: await phoneRead(run.ctx, made.call) };
 }
 
 afterEach(() => {
@@ -203,14 +101,17 @@ afterEach(() => {
 describe("the phone a run reaches", () => {
   it("is the owner's connected phone with Calendar on, in their own run only", async () => {
     const run = setup();
-    expect(await phoneRoute(run.ctx)).toMatchObject({ owner: "user-1", deviceId: "phone-1" });
+    expect(await phoneRoute(run.ctx, "calendar")).toMatchObject({
+      owner: "user-1",
+      deviceId: "phone-1",
+    });
     expect(run.devices.connectedPhone).toHaveBeenCalledWith("user-1", "calendar");
-    expect(await phoneRoute(setup({ owner: undefined }).ctx)).toBeUndefined();
-    expect(await phoneRoute(setup({ phone: false }).ctx)).toBeUndefined();
+    expect(await phoneRoute(setup({ owner: undefined }).ctx, "calendar")).toBeUndefined();
+    expect(await phoneRoute(setup({ phone: false }).ctx, "calendar")).toBeUndefined();
     // A gateway that cannot reach phones (the desktop server's own) has none.
     const plain = setup();
     (plain.ctx.deps as { userDevices: unknown }).userDevices = { connected: async () => null };
-    expect(await phoneRoute(plain.ctx)).toBeUndefined();
+    expect(await phoneRoute(plain.ctx, "calendar")).toBeUndefined();
     expect(isPhoneTool(PHONE_CALENDAR_READ_TOOL)).toBe(true);
     expect(isPhoneTool("user_computer_shell")).toBe(false);
   });
@@ -374,22 +275,16 @@ describe("a read", () => {
   it("is uncertain when its count cannot be kept", async () => {
     const run = setup();
     const args = { ...RANGE };
-    await phoneGate(run.ctx, false, args);
+    await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args);
     const made = call(args);
     vi.mocked(made.call.persistEffectResult).mockResolvedValueOnce(false);
-    const result = await phoneCalendarRead(run.ctx, made.call);
+    const result = await phoneRead(run.ctx, made.call);
     expect(result).toHaveProperty("uncertain", true);
     expect(JSON.stringify(result)).not.toContain(SECRET_TITLE);
   });
 });
 
 describe("a read that fails", () => {
-  const failing = (error: Error): Answer =>
-    async function* () {
-      yield* [];
-      throw error;
-    };
-
   it.each([
     ["calendar-off", "turn on Calendar"],
     ["calendar-permission", "turn on Calendar"],
@@ -426,8 +321,8 @@ describe("a read that fails", () => {
       },
     });
     const args = { ...RANGE };
-    await phoneGate(run.ctx, false, args);
-    const pending = phoneCalendarRead(run.ctx, call(args).call);
+    await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args);
+    const pending = phoneRead(run.ctx, call(args).call);
     await asked.promise;
     expect(timeout).toHaveBeenCalledWith(PHONE_ANSWER_MS);
     expect(PHONE_ANSWER_MS).toBe(20_000);
@@ -451,8 +346,8 @@ describe("a read that fails", () => {
     });
     (run.ctx as { context: { signal: AbortSignal } }).context = { signal: stop.signal };
     const args = { ...RANGE };
-    await phoneGate(run.ctx, false, args);
-    const pending = phoneCalendarRead(run.ctx, call(args).call);
+    await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args);
+    const pending = phoneRead(run.ctx, call(args).call);
     await asked.promise;
     stop.abort(new Error("stopped"));
     await expect(pending).rejects.toThrow("stopped");
@@ -461,9 +356,9 @@ describe("a read that fails", () => {
   it("refuses at execution when the phone left after the run was offered it", async () => {
     const run = setup();
     const args = { ...RANGE };
-    expect(await phoneGate(run.ctx, false, args)).toBe("allow");
+    expect(await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args)).toBe("allow");
     run.devices.connectedPhone.mockResolvedValue(null);
-    const result = await phoneCalendarRead(run.ctx, call(args).call);
+    const result = await phoneRead(run.ctx, call(args).call);
     expect(result).toEqual({
       error:
         "The user's phone is not connected. Ask them to open the app on their phone, then try again.",
@@ -475,9 +370,9 @@ describe("a read that fails", () => {
     const run = setup({ consent: false });
     const args = { ...RANGE };
     // Asked, and run anyway (an approval for an earlier pairing): it reads nothing.
-    expect(await phoneGate(run.ctx, false, args)).toBe("ask");
+    expect(await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args)).toBe("ask");
     const asked = call(args, true);
-    expect(await phoneCalendarRead(run.ctx, asked.call)).toHaveProperty(
+    expect(await phoneRead(run.ctx, asked.call)).toHaveProperty(
       "error",
       expect.stringContaining("changed"),
     );
@@ -488,10 +383,10 @@ describe("a read that fails", () => {
     // Allowed on one phone, then another one connected.
     const moved = setup();
     const kept = { ...RANGE };
-    await phoneGate(moved.ctx, false, kept);
+    await phoneGate(moved.ctx, false, PHONE_CALENDAR_READ_TOOL, kept);
     moved.devices.connectedPhone.mockResolvedValue({ deviceId: "phone-2", pairedAt: PAIRED });
     const made = call(kept);
-    expect(await phoneCalendarRead(moved.ctx, made.call)).toHaveProperty(
+    expect(await phoneRead(moved.ctx, made.call)).toHaveProperty(
       "error",
       expect.stringContaining("changed"),
     );
@@ -502,7 +397,7 @@ describe("a read that fails", () => {
 
   it("refuses a run a token's message reached, without a phone request", async () => {
     const run = setup({ token: true });
-    const result = await phoneCalendarRead(run.ctx, call({ ...RANGE }).call);
+    const result = await phoneRead(run.ctx, call({ ...RANGE }).call);
     expect(result).toHaveProperty("error", expect.stringContaining("token"));
     expect(run.requests).toEqual([]);
   });
@@ -513,7 +408,7 @@ describe("the owner's consent", () => {
     const plan = async (status: string, runId: string) => {
       const run = setup({ consent: false });
       run.effects.push({ id: "e", runId, kind: PHONE_CALENDAR_READ_TOOL, status, request: RANGE });
-      return phoneGate(run.ctx, false, { ...RANGE });
+      return phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE });
     };
     expect(await plan("completed", "run-0")).toBe("allow");
     expect(await plan("approved", "run-1")).toBe("allow");
@@ -536,15 +431,19 @@ describe("calls in the same run", () => {
       status: "approved",
       request: first,
     });
-    expect(await phoneGate(run.ctx, false, second)).toBe("ask");
-    expect(await phoneGate(run.ctx, false, { ...first })).toBe("allow");
+    expect(await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, second)).toBe("ask");
+    expect(await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, { ...first })).toBe("allow");
   });
 });
 
 describe("a run that took in outside content", () => {
   it("asks before every read, even with the owner's consent", async () => {
-    expect(await phoneGate(setup().ctx, false, { ...RANGE })).toBe("allow");
-    expect(await phoneGate(setup({ tainted: true }).ctx, false, { ...RANGE })).toBe("ask");
+    expect(await phoneGate(setup().ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE })).toBe(
+      "allow",
+    );
+    expect(
+      await phoneGate(setup({ tainted: true }).ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE }),
+    ).toBe("ask");
     // The card the owner just allowed for this call lets it run.
     const answered = setup({ tainted: true });
     answered.effects.push({
@@ -554,7 +453,9 @@ describe("a run that took in outside content", () => {
       status: "approved",
       request: RANGE,
     });
-    expect(await phoneGate(answered.ctx, false, { ...RANGE })).toBe("allow");
+    expect(await phoneGate(answered.ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE })).toBe(
+      "allow",
+    );
   });
 });
 
@@ -566,8 +467,8 @@ describe("a thread someone else can read", () => {
       setup({ thread: { helperBotId: "bot-2" } }),
       setup({ otherMember: true }),
     ]) {
-      expect(await phoneRoute(run.ctx)).toBeUndefined();
-      expect(await phoneGate(run.ctx, false, { ...RANGE })).toBe("deny");
+      expect(await phoneRoute(run.ctx, "calendar")).toBeUndefined();
+      expect(await phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE })).toBe("deny");
       const off = withoutCloudComputerTools(new Set(), false);
       await offerPhoneTools(
         run.ctx.deps as never,
@@ -581,7 +482,7 @@ describe("a thread someone else can read", () => {
       expect(run.requests).toEqual([]);
     }
     const solo = setup();
-    expect(await phoneRoute(solo.ctx)).toMatchObject({ deviceId: "phone-1" });
+    expect(await phoneRoute(solo.ctx, "calendar")).toMatchObject({ deviceId: "phone-1" });
     expect(solo.prisma.spaceMember.findFirst).toHaveBeenCalledWith({
       where: { spaceId: "space-1", userId: { not: "user-1" } },
       select: { id: true },
@@ -607,7 +508,7 @@ describe("conversation memory", () => {
     (plain.ctx.deps as { userDevices?: unknown }).userDevices = undefined;
     expect(await runReadPhone(plain.ctx)).toBe(false);
     const asked = setup({ consent: false });
-    await phoneGate(asked.ctx, false, { ...RANGE });
+    await phoneGate(asked.ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE });
     asked.findFirst.mockClear();
     expect(await runReadPhone(asked.ctx)).toBe(true);
     expect(other.findFirst).not.toHaveBeenCalled();

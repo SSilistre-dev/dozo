@@ -3,7 +3,11 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { phoneGate } from "./dozo-phone.js";
-import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
+import {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+} from "./dozo-phone.tool-definition.js";
 import type { RunContext } from "./run-context.js";
 
 // Runs on the branded tree only, against a migrated database (dozo/docker/postgres-tests.sh), as
@@ -89,12 +93,18 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
   type Owner = Awaited<ReturnType<typeof ownRun>>;
 
   /** An effect of the tool as run-tool-gate records it: its request is the call's arguments. */
-  const effect = (owner: Owner, runId: string, status: string, request: object) =>
+  const effect = (
+    owner: Owner,
+    runId: string,
+    status: string,
+    request: object,
+    kind = PHONE_CALENDAR_READ_TOOL,
+  ) =>
     system.externalEffect.create({
       data: {
         spaceId: owner.spaceId,
         runId,
-        kind: PHONE_CALENDAR_READ_TOOL,
+        kind,
         idempotencyKey: randomUUID(),
         status,
         request: request as never,
@@ -102,7 +112,12 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
     });
 
   /** The real gate on a run of the owner's, with their phone connected. */
-  const gate = (owner: Owner, runId: string, args: Record<string, unknown>) => {
+  const gate = (
+    owner: Owner,
+    runId: string,
+    args: Record<string, unknown>,
+    tool = PHONE_CALENDAR_READ_TOOL,
+  ) => {
     const ctx = {
       source: { userComputerOwner: owner.userId },
       deps: {
@@ -118,7 +133,7 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
       state: {},
       trust: { receivedOutsideMessage: async () => false },
     } as unknown as RunContext;
-    return runAsTenant(owner, () => phoneGate(ctx, false, args));
+    return runAsTenant(owner, () => phoneGate(ctx, false, tool, args));
   };
 
   it("lets the call whose own card was allowed run, whatever the order of its keys", async () => {
@@ -155,5 +170,45 @@ describePostgres("the phone's consent (PostgreSQL)", () => {
     await effect(owner, earlier.id, "completed", { ...RANGE });
     const other = { from: "2026-12-01T00:00:00+03:00", to: "2026-12-02T00:00:00+03:00" };
     expect(await gate(owner, run.id, other)).toBe("allow");
+  });
+
+  it("holds each tool's consent apart: a calendar read lets no contacts search through", async () => {
+    const owner = await ownRun();
+    const earlier = await owner.newRun();
+    const run = await owner.newRun();
+    const search = { query: "Ada", field: "phone" };
+    await effect(owner, earlier.id, "completed", { ...RANGE });
+    expect(await gate(owner, run.id, search, PHONE_CONTACTS_SEARCH_TOOL)).toBe("ask");
+    await effect(
+      owner,
+      run.id,
+      "approved",
+      { field: "phone", query: "Ada" },
+      PHONE_CONTACTS_SEARCH_TOOL,
+    );
+    expect(await gate(owner, run.id, search, PHONE_CONTACTS_SEARCH_TOOL)).toBe("allow");
+    expect(await gate(owner, run.id, { ...search, query: "Bob" }, PHONE_CONTACTS_SEARCH_TOOL)).toBe(
+      "ask",
+    );
+    await effect(owner, earlier.id, "completed", search, PHONE_CONTACTS_SEARCH_TOOL);
+    const later = await owner.newRun();
+    expect(
+      await gate(owner, later.id, { ...search, query: "Bob" }, PHONE_CONTACTS_SEARCH_TOOL),
+    ).toBe("allow");
+  });
+
+  it("asks for every precise location, and lets approximate follow an earlier read", async () => {
+    const owner = await ownRun();
+    const earlier = await owner.newRun();
+    const run = await owner.newRun();
+    const precise = { precision: "precise" };
+    expect(await gate(owner, run.id, {}, PHONE_LOCATION_TOOL)).toBe("ask");
+    await effect(owner, earlier.id, "completed", precise, PHONE_LOCATION_TOOL);
+    expect(await gate(owner, run.id, {}, PHONE_LOCATION_TOOL)).toBe("allow");
+    expect(await gate(owner, run.id, precise, PHONE_LOCATION_TOOL)).toBe("ask");
+    await effect(owner, run.id, "approved", precise, PHONE_LOCATION_TOOL);
+    expect(await gate(owner, run.id, { precision: "precise" }, PHONE_LOCATION_TOOL)).toBe("allow");
+    const later = await owner.newRun();
+    expect(await gate(owner, later.id, precise, PHONE_LOCATION_TOOL)).toBe("ask");
   });
 });

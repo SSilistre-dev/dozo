@@ -11,10 +11,17 @@ import type { UserDevice } from "./user-device-protocol.js";
 export const DEVICE_CAPABILITIES_HEADER = "x-dozo-device-capabilities";
 
 /** What a paired computer or phone can declare. Anything else it sends is ignored. */
-export const DEVICE_CAPABILITIES = ["shell", "screen", "browser", "calendar"] as const;
+export const DEVICE_CAPABILITIES = [
+  "shell",
+  "screen",
+  "browser",
+  "calendar",
+  "contacts",
+  "location",
+] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
 /** What a phone may offer: nothing a computer does, whatever it declares. */
-const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar"];
+const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar", "contacts", "location"];
 const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = ["shell", "screen", "browser"];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
