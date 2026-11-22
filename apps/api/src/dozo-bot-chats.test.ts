@@ -291,6 +291,10 @@ describe("dozoBotChatRoutes", () => {
     const prisma = {
       ...db,
       $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)),
+      routine: {
+        findFirst: vi.fn(async () => ({ id: "routine-1", botId: "bot-1", threadId: null })),
+        update: vi.fn(async () => ({})),
+      },
     };
     const routes = dozoBotChatRoutes({
       deps: { prisma, events: {} },
@@ -300,6 +304,8 @@ describe("dozoBotChatRoutes", () => {
           create: procedure(),
           rename: procedure(),
           archive: procedure(),
+          routineChat: procedure(),
+          setRoutineChat: procedure(),
         },
       },
     } as unknown as RouterContext).dozoChats as unknown as Record<
@@ -319,6 +325,118 @@ describe("dozoBotChatRoutes", () => {
     expect(
       await routes.archive!.call({ context, input: { chatId: "thread-new", archived: true } }),
     ).toMatchObject({ chat: { id: "thread-new" } });
+    expect(await routes.routineChat!.call({ context, input: { routineId: "routine-1" } })).toEqual({
+      chatId: null,
+      editable: true,
+    });
+    expect(
+      await routes.setRoutineChat!.call({
+        context,
+        input: { routineId: "routine-1", chatId: null },
+      }),
+    ).toEqual({ chatId: null, editable: true });
+  });
+});
+
+describe("where a routine posts", () => {
+  type Chat = { botId: string; spaceId: string; name: string; archived: boolean };
+  /** A routine of bot-1 posting in `threadId`, and the Space's extra chats by thread. */
+  function service(threadId: string | null, chats: Record<string, Chat> = {}, found = true) {
+    const update = vi.fn(async () => ({}));
+    const publishSpaceChange = vi.fn(async () => undefined);
+    const prisma = {
+      routine: {
+        findFirst: vi.fn(async () =>
+          found ? { id: "routine-1", botId: "bot-1", threadId } : null,
+        ),
+        update,
+      },
+      $queryRaw: vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+        const [thread, botId, spaceId] = values as [string, string, string];
+        const chat = chats[thread];
+        return chat && chat.botId === botId && chat.spaceId === spaceId
+          ? [{ name: chat.name, archived: chat.archived }]
+          : [];
+      }),
+    };
+    const chatsService = dozoBotChats({
+      prisma,
+      events: { publishSpaceChange },
+    } as unknown as Parameters<typeof dozoBotChats>[0]);
+    return { chats: chatsService, prisma, update, publishSpaceChange };
+  }
+  const garden: Chat = { botId: "bot-1", spaceId: "space-1", name: "Garden", archived: false };
+  const old: Chat = { ...garden, name: "Old", archived: true };
+  const trails: Chat = { ...garden, botId: "bot-2", name: "Trails" };
+  const space = { garden, old, trails, elsewhere: { ...garden, spaceId: "space-2" } };
+
+  it("reads a routine of a bot the caller may chat with, in the caller's Space", async () => {
+    const { chats, prisma } = service(null);
+    expect(await chats.routineChat(actor, { routineId: "routine-1" })).toEqual({
+      chatId: null,
+      editable: true,
+    });
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith({
+      where: { id: "routine-1", spaceId: "space-1", bot: { archivedAt: null } },
+      select: { id: true, botId: true, threadId: true },
+    });
+    expect(mocks.resolveThreadTarget).toHaveBeenCalledWith(expect.anything(), actor, {
+      botId: "bot-1",
+    });
+    await expect(
+      service(null, {}, false).chats.routineChat(actor, { routineId: "routine-9" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+  });
+
+  it("names the open extra chat it posts in, and the main chat for any other", async () => {
+    const read = (threadId: string | null) =>
+      service(threadId, space).chats.routineChat(actor, { routineId: "routine-1" });
+    expect(await read("garden")).toEqual({ chatId: "garden", editable: true });
+    expect(await read("thread-main")).toEqual({ chatId: null, editable: true });
+    // Archived: it runs in the main chat, so that is what it shows.
+    expect(await read("old")).toEqual({ chatId: null, editable: true });
+    // A group's routine, or any thread that is not this bot's chat, is not the bot's to move.
+    expect(await read("group-thread")).toEqual({ chatId: null, editable: false });
+    expect(await read("trails")).toEqual({ chatId: null, editable: false });
+  });
+
+  it("points a routine at an open extra chat of its bot or back at the main chat, and signals", async () => {
+    const one = service(null, space);
+    expect(
+      await one.chats.setRoutineChat(actor, { routineId: "routine-1", chatId: "garden" }),
+    ).toEqual({ chatId: "garden", editable: true });
+    expect(one.update).toHaveBeenCalledWith({
+      where: { id: "routine-1" },
+      data: { threadId: "garden" },
+    });
+    expect(one.publishSpaceChange).toHaveBeenCalledWith("space-1", "routines");
+    const back = service("garden", space);
+    await back.chats.setRoutineChat(actor, { routineId: "routine-1", chatId: null });
+    expect(back.update).toHaveBeenCalledWith({
+      where: { id: "routine-1" },
+      data: { threadId: null },
+    });
+  });
+
+  it("refuses any chat that cannot take it as not found, changing nothing", async () => {
+    for (const chatId of ["old", "trails", "elsewhere", "missing", "thread-main"]) {
+      const { chats, update } = service(null, space);
+      await expect(
+        chats.setRoutineChat(actor, { routineId: "routine-1", chatId }),
+      ).rejects.toBeInstanceOf(IsolationError);
+      expect(update).not.toHaveBeenCalled();
+    }
+    const group = service("group-thread", space);
+    await expect(
+      group.chats.setRoutineChat(actor, { routineId: "routine-1", chatId: null }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    expect(group.update).not.toHaveBeenCalled();
+    mocks.resolveThreadTarget.mockRejectedValueOnce(new IsolationError());
+    const notMine = service(null, space);
+    await expect(
+      notMine.chats.setRoutineChat(actor, { routineId: "routine-1", chatId: "garden" }),
+    ).rejects.toBeInstanceOf(IsolationError);
+    expect(notMine.update).not.toHaveBeenCalled();
   });
 });
 

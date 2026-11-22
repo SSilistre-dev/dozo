@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  dozoBotChatOf,
   dozoBotChatThreads,
   dozoChatBotId,
   dozoChatNoticeBot,
@@ -97,5 +98,19 @@ describe("an account archive's extra chats", () => {
     const none = fakeDb();
     expect((await dozoExportChats(none.db as never, "space-1", [])).size).toBe(0);
     expect(none.db.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe("a bot's extra chat on a thread", () => {
+  it("is read by its thread, bot and Space, open or archived, or none", async () => {
+    const found = fakeDb([{ name: "Garden", archived: true }]);
+    const input = { threadId: "chat-1", botId: "bot-1", spaceId: "space-1" };
+    expect(await dozoBotChatOf(found.db as never, input)).toEqual({
+      name: "Garden",
+      archived: true,
+    });
+    expect(found.asked[0]?.values).toEqual(["chat-1", "bot-1", "space-1"]);
+    expect(found.asked[0]?.text).toContain("FROM dozo_bot_chats");
+    expect(await dozoBotChatOf(fakeDb().db as never, input)).toBeNull();
   });
 });
