@@ -184,7 +184,8 @@ is `docker pull node:24.22-slim`). Nothing is skipped silently.
 
 Runs every `dozo-*.test.ts(x)` under `apps/`, `packages/` and `infra/` of the branded staged tree
 (`DOZO_UNIT_SRC` names another tree and skips the `stage.complete` check) with Vitest in
-`node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, with a per-file floor
+`node:24.22-slim`. V8 coverage covers only the fork's own `dozo-*.ts(x)` files, tests and
+`*.test-support.*` fixtures left out (a fixture only a Postgres test loads never runs here), with a per-file floor
 `DOZO_COVERAGE_MIN` (default 90 percent) for lines, branches and functions. Fewer
 test files than the committed tree has (counted with `git ls-tree` on `DOZO_STAGE_REF` or `HEAD`,
 never a fixed number) fails, so a deleted test is noticed; commit the deletion when it is meant. A
