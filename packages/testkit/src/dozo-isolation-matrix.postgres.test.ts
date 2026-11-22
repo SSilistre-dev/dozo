@@ -2,20 +2,35 @@
 // every caller that must not reach P (A's personal Space) or S (A's shared Space), with inputs
 // that name P's or S's things; no answer may carry one of their canaries, and nothing P or S
 // holds may change. A new procedure is swept by itself: the list is read from the contract.
+import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { appContract } from "@rakazo/contracts";
+import { callRequestClientNonce } from "@rakazo/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { IsolationWorld, PoolKey, Target } from "./dozo-isolation.test-support.js";
+import type {
+  IsolationApp,
+  IsolationWorld,
+  PoolKey,
+  Target,
+} from "./dozo-isolation.test-support.js";
 import {
   buildIsolationWorld,
   confirmIdentity,
   findCanaries,
   ISOLATION_LOGINS,
   readAnswer,
+  seedWaitingRun,
   snapshot,
   snapshotDiff,
 } from "./dozo-isolation.test-support.js";
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
-import { ISOLATION_EXEMPTIONS } from "./dozo-isolation-exemptions.js";
+import {
+  DESIGNED_SHARING,
+  ISOLATION_EXEMPTIONS,
+  NEVER_SHARED_KINDS,
+} from "./dozo-isolation-exemptions.js";
 
 const hasDb = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const describeWithDatabase = hasDb ? describe : describe.skip;
@@ -68,6 +83,7 @@ const FIELD_KEYS: Record<string, PoolKey> = {
   runIds: "runId",
   routineId: "routineId",
   routineIds: "routineId",
+  serverIds: "mcpServerId",
   documentId: "documentId",
   pageId: "pageId",
   artifactId: "artifactId",
@@ -84,13 +100,53 @@ const FIELD_KEYS: Record<string, PoolKey> = {
   userId: "memberUserId",
   expectedUserId: "ownerUserId",
   actorId: "ownerUserId",
+  callId: "callId",
+  credentialId: "credentialId",
+  loginId: "loginId",
+  versionId: "versionId",
+  computerId: "computerId",
+  leaseId: "leaseId",
+  serverId: "mcpServerId",
+  sessionId: "mcpSessionId",
+  identityId: "identityId",
+  membershipId: "membershipId",
+  externalConversationId: "externalConversationId",
 };
+/** Fields that name another kind of thing in one procedure than everywhere else. */
+const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
+  "threads/declineCall": { callId: "declineCallId" },
+  "notifications/declineIncomingCall": { callId: "incomingCallId" },
+  "memory/remove": { documentId: "removableDocumentId" },
+  "organizations/rename": { organizationId: "soloOrganizationId" },
+  "organizations/remove": { organizationId: "soloOrganizationId" },
+  "dozoQueue/cancelWaiting": { runId: "waitingRunId", messageId: "waitingMessageId" },
+  "computer/readFile": { path: "filePath" },
+  "computer/downloadFile": { path: "filePath" },
+  "connections/complete": { connectionId: "connectionId" },
+  "connections/rename": { connectionId: "connectionId" },
+  "connections/revoke": { connectionId: "connectionId" },
+  "messaging/connections/respond": { connectionId: "messagingConnectionId" },
+  "messaging/connections/revoke": { connectionId: "messagingConnectionId" },
+  "messaging/installations/remove": { id: "messagingInstallationId" },
+  "computer/dismissUpdate": { id: "computerUpdateId" },
+  "dozoAdmin/stopComputer": { computerId: "computerId" },
+  // A mention chip names a bot (the first kind of chip).
+  "threads/send": { id: "botId" },
+  "threads/sendWithRoutines": { id: "botId" },
+};
+/** A field whose name says it names something; each one must be filled from the target's things. */
+const ID_FIELD = /Id$|Ids$|^id$/;
 const ID_BY_NAMESPACE: Record<string, PoolKey> = {
   dozoAccessTokens: "tokenId",
   agentSecrets: "agentSecretId",
   tickets: "ticketId",
   bots: "botId",
   availability: "agentSkillId",
+  routines: "routineId",
+  capabilities: "capabilityId",
+  approvalRules: "approvalRuleId",
+  dozoCommandRules: "commandRuleId",
+  mcp: "mcpServerId",
 };
 /** Procedures that act only on a taught skill whose recording has ended. */
 const DRAFT_SKILL_PATHS = new Set([
@@ -110,6 +166,8 @@ const SECRET_NAME_PATHS = new Set([
 
 function poolKeyFor(procedure: string, field: string): PoolKey | undefined {
   const namespace = procedure.split("/")[0]!;
+  const special = PATH_FIELD_KEYS[procedure]?.[field];
+  if (special) return special;
   if (field === "id") return ID_BY_NAMESPACE[namespace];
   if (field === "skillId") {
     if (namespace === "agentSkills" || namespace === "dozoOrganizationLibrary")
@@ -156,8 +214,98 @@ type Resolve = (key: PoolKey) => string | undefined;
 /** Inputs tried per procedure and target, before the mixed ones. */
 const MAX_VARIANTS = 4;
 
+/** Whether `schema` holds a field that names something, at any depth. */
+function holdsIdField(schema: ZodLike, seen = new Set<unknown>()): boolean {
+  if (seen.has(schema)) return false;
+  seen.add(schema);
+  const def = schema._zod.def;
+  const inner = (name: string) => holdsIdField(def[name] as ZodLike, seen);
+  switch (def.type) {
+    case "object":
+      return Object.entries(def.shape as Record<string, ZodLike>).some(
+        ([key, child]) => ID_FIELD.test(key) || holdsIdField(child, seen),
+      );
+    case "optional":
+    case "default":
+    case "prefault":
+    case "nullable":
+    case "nonoptional":
+    case "readonly":
+    case "catch":
+      return inner("innerType");
+    case "pipe":
+      return inner("in");
+    case "lazy":
+      return holdsIdField((def.getter as () => ZodLike)(), seen);
+    case "intersection":
+      return inner("left") || inner("right");
+    case "union":
+      return (def.options as ZodLike[]).some((option) => holdsIdField(option, seen));
+    case "array":
+      return inner("element");
+    case "record":
+      return inner("valueType");
+    case "tuple":
+      return (def.items as ZodLike[]).some((item) => holdsIdField(item, seen));
+    default:
+      return false;
+  }
+}
+
+/** Every field name in `schema` that says it names something, at any depth. */
+function idFields(schema: ZodLike | undefined, out = new Set<string>(), seen = new Set<unknown>()) {
+  if (!schema || seen.has(schema)) return out;
+  seen.add(schema);
+  const def = schema._zod.def;
+  const inner = (name: string) => idFields(def[name] as ZodLike, out, seen);
+  switch (def.type) {
+    case "object":
+      for (const [key, child] of Object.entries(def.shape as Record<string, ZodLike>)) {
+        if (ID_FIELD.test(key)) out.add(key);
+        idFields(child, out, seen);
+      }
+      break;
+    case "optional":
+    case "default":
+    case "prefault":
+    case "nullable":
+    case "nonoptional":
+    case "readonly":
+    case "catch":
+      inner("innerType");
+      break;
+    case "pipe":
+      inner("in");
+      break;
+    case "lazy":
+      idFields((def.getter as () => ZodLike)(), out, seen);
+      break;
+    case "intersection":
+      inner("left");
+      inner("right");
+      break;
+    case "union":
+      for (const option of def.options as ZodLike[]) idFields(option, out, seen);
+      break;
+    case "array":
+      inner("element");
+      break;
+    case "record":
+      inner("valueType");
+      break;
+    case "tuple":
+      for (const item of def.items as ZodLike[]) idFields(item, out, seen);
+      break;
+  }
+  return out;
+}
+
 class Generator {
   used = new Set<PoolKey>();
+  /** The fields that got one of the target's things. */
+  filled = new Set<string>();
+  /** How many values came from the target's things so far. */
+  hits = 0;
   constructor(
     private readonly procedure: string,
     private readonly resolve: Resolve,
@@ -174,7 +322,11 @@ class Generator {
     if (!field) return undefined;
     const key = poolKeyFor(this.procedure, field);
     const value = key ? this.resolve(key) : undefined;
-    if (key && value) this.used.add(key);
+    if (key && value) {
+      this.used.add(key);
+      this.filled.add(field);
+      this.hits++;
+    }
     return value;
   }
 
@@ -188,7 +340,12 @@ class Generator {
         // Left out unless it names something (an optional id is where a foreign id goes) or has a
         // realistic value (a site the input's own refinement asks for).
         if (field === undefined) return this.fill(inner("innerType"), field);
-        if (this.fillAll || poolKeyFor(this.procedure, field) || field in FIELD_VALUES) {
+        if (
+          this.fillAll ||
+          poolKeyFor(this.procedure, field) ||
+          field in FIELD_VALUES ||
+          holdsIdField(inner("innerType"))
+        ) {
           const value = this.fill(inner("innerType"), field);
           return value === FAIL || !schema.safeParse(value).success ? OMIT : value;
         }
@@ -252,16 +409,25 @@ class Generator {
         return Object.values(def.entries as Record<string, unknown>)[0];
       case "array": {
         const id = this.id(field);
-        // A list of bots names both of the target's: a group's members, a Space's whole roster.
-        const second =
+        // A list of bots names every bot of the target's: a group's members, a Space's roster.
+        const others =
           id && field && poolKeyFor(this.procedure, field) === "botId"
-            ? this.resolve("secondBotId")
-            : undefined;
-        if (id && second && schema.safeParse([id, second]).success) return [id, second];
+            ? (this.procedure === "bots/reorder"
+                ? (["secondBotId", "waitBotId"] as const)
+                : (["secondBotId"] as const)
+              )
+                .map((key) => this.resolve(key))
+                .filter((value): value is string => Boolean(value))
+            : [];
+        if (id && others.length && schema.safeParse([id, ...others]).success)
+          return [id, ...others];
         if (id && schema.safeParse([id]).success) return [id];
+        const before = this.hits;
         const element = this.fill(inner("element"), field);
         const one = element !== FAIL && schema.safeParse([element]).success;
-        if (one && (this.fillAll || (field !== undefined && field in FIELD_VALUES)))
+        // An element that names one of the target's things goes in, so its id travels.
+        const named = this.hits > before;
+        if (one && (this.fillAll || named || (field !== undefined && field in FIELD_VALUES)))
           return [element];
         if (schema.safeParse([]).success) return [];
         return one ? [element] : FAIL;
@@ -289,7 +455,7 @@ class Generator {
         ? Object.keys(option._zod.def.shape as object).some((key) =>
             poolKeyFor(this.procedure, key),
           )
-        : false;
+        : holdsIdField(option);
     return [...options.filter(names), ...options.filter((option) => !names(option))];
   }
 }
@@ -315,7 +481,8 @@ function optionalIdFields(procedure: string, schema: ZodLike): string[] {
   return fields;
 }
 
-type Variant = { label: string; input: unknown; keys: Set<PoolKey> };
+/** `filled`: the id fields that got one of the target's things. */
+type Variant = { label: string; input: unknown; keys: Set<PoolKey>; filled?: Set<string> };
 
 /**
  * Valid inputs for `procedure` naming `target`'s things: one per top-level union option, and for
@@ -337,7 +504,7 @@ function generateInputs(procedure: Procedure, resolve: Resolve): Variant[] | nul
     const keys = new Set(
       [...generator.used].filter((key) => seen.includes(JSON.stringify(resolve(key)))),
     );
-    variants.push({ label, input, keys });
+    variants.push({ label, input, keys, filled: generator.filled });
   };
 
   let top = schema._zod.def;
@@ -427,6 +594,13 @@ function namesTarget(procedure: Procedure, target: Target) {
   );
 }
 
+/** Whether some generated input for `procedure` names `target`'s thing of kind `key`. */
+function namesKey(procedure: Procedure, target: Target, key: PoolKey) {
+  return (generateInputs(procedure, (wanted) => target.ids[wanted]) ?? []).some((variant) =>
+    variant.keys.has(key),
+  );
+}
+
 /**
  * Writes the owner's control makes first, as its other writes change what they need: the Space's
  * whole roster (its creates grow it) and the live recording (its computer calls end it).
@@ -438,6 +612,8 @@ const OWNER_WRITES_FIRST = new Set(["bots/reorder", "skills/appendEvent"]);
  * remove, so a removal made earlier would answer the rest "not found" for the owner too.
  */
 const OWNER_REMOVES_LAST = [
+  "messaging/identities/unlink",
+  "threads/clear",
   "dozoChats/archive",
   "groups/archive",
   "groups/remove",
@@ -457,14 +633,40 @@ type Caller = {
   spaceId?: string;
   target: Target;
   own?: Target;
-  /** `refused`: every protected call must answer 401 at membership. */
-  expect: "refused" | "no-canary";
+  /**
+   * `refused`: every protected call must answer 401 at membership. `no-canary`: none of the
+   * target's canaries or ids may come back. `shared`: a member of the target Space, who may see
+   * a canary only through a procedure the designed-sharing table lists for its kind, and never
+   * one of a kind no member may see.
+   */
+  expect: "refused" | "no-canary" | "shared";
+  /** Shares a Space with the owner, so knows the owner's name, address and id by design. */
+  knowsOwner?: boolean;
+  /** Also compares each procedure's first answer naming the target with one for made-up ids. */
+  compare?: boolean;
 };
 
 /** `foreign`: the input names at least one of the target's things. */
-type Call = { caller: Caller; path: string; variant: string; input: unknown; foreign: boolean };
+type Call = {
+  caller: Caller;
+  path: string;
+  variant: string;
+  input: unknown;
+  foreign: boolean;
+  /** Compare this answer with the one for the same input with made-up ids. */
+  compare?: boolean;
+};
 /** `detail`: the refusal's code and message, for a status of 400 or more. */
-type Outcome = Call & { status: number; matched: string[]; streamed: boolean; detail: string };
+type Outcome = Call & {
+  status: number;
+  matched: string[];
+  streamed: boolean;
+  detail: string;
+  /** The target's ids the answer carries that the caller did not send. */
+  ids: string[];
+  /** The answer for made-up ids of the same shape, when it differs from this one. */
+  twin?: { existing: string; missing: string };
+};
 
 function refusalDetail(status: number, text: string): string {
   if (status < 400) return "";
@@ -500,9 +702,13 @@ function callsFor(caller: Caller, procedures: Procedure[], ownToo = false): Call
   for (const procedure of procedures) {
     const resolve: Resolve = (key) => caller.target.ids[key];
     const variants = generateInputs(procedure, resolve) ?? [];
+    let compared = false;
     for (const variant of variants) {
       const base = { caller, path: procedure.path, variant: variant.label, input: variant.input };
-      calls.push({ ...base, foreign: variant.keys.size > 0 });
+      const foreign = variant.keys.size > 0;
+      const compare = Boolean(caller.compare && foreign && !compared);
+      if (compare) compared = true;
+      calls.push({ ...base, foreign, compare });
       if (caller.own)
         for (const mixed of mixedVariants(variant, caller.target, caller.own))
           calls.push({ ...base, variant: mixed.label, input: mixed.input, foreign: true });
@@ -518,24 +724,90 @@ function callsFor(caller: Caller, procedures: Procedure[], ownToo = false): Call
   return calls;
 }
 
+/** Ids of the target that are not the caller's to know. */
+function foreignIds(caller: Caller): string[] {
+  const own = new Set<string>();
+  if (caller.own && caller.own !== caller.target)
+    // A's other organization is in S's pool for the organization calls, not S's to show.
+    for (const [key, value] of Object.entries(caller.own.ids))
+      if (value && !(caller.own.label === "S" && key === "soloOrganizationId")) own.add(value);
+  return [
+    ...new Set(
+      Object.values(caller.target.ids).filter(
+        (value): value is string => Boolean(value) && value!.length >= 8 && !own.has(value!),
+      ),
+    ),
+  ];
+}
+
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/**
+ * A made-up value of the same shape: a UUID for a UUID, else the same first character and then
+ * the same letters, digits and marks (a cuid keeps its leading `c`).
+ */
+function lookalike(value: string): string {
+  if (new RegExp(`^${UUID.source}$`, "i").test(value)) return randomUUID();
+  const bytes = randomBytes(value.length);
+  return [...value]
+    .map((char, index) => {
+      if (index === 0) return char;
+      const byte = bytes[index]!;
+      if (/[a-z]/.test(char)) return String.fromCharCode(97 + (byte % 26));
+      if (/[A-Z]/.test(char)) return String.fromCharCode(65 + (byte % 26));
+      if (/[0-9]/.test(char)) return String(byte % 10);
+      return char;
+    })
+    .join("");
+}
+
+function swapValues(input: unknown, swap: Map<string, string>): unknown {
+  const walk = (value: unknown): unknown => {
+    if (typeof value === "string") return swap.get(value) ?? value;
+    if (Array.isArray(value)) return value.map(walk);
+    if (value && typeof value === "object")
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, walk(item)]));
+    return value;
+  };
+  return walk(input);
+}
+
+/** An answer with the ids it names, times and generated values made alike. */
+function normalised(status: number, text: string, values: string[]) {
+  let out = text;
+  for (const value of values) out = out.split(value).join("<id>");
+  out = out
+    .replace(UUID, "<uuid>")
+    .replace(/\b[a-z0-9]{24,32}\b/g, "<id>")
+    .replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>")
+    .replace(/\d{10,}/g, "<n>");
+  return `${status} ${out.slice(0, 400)}`;
+}
+
 type SweepOptions = {
   /** Also each input with every id the caller's own (see `callsFor`). */
   ownToo?: boolean;
   concurrency?: number;
   /** Waits before each call until the world is settled enough for it. */
   settle?: (call: Call) => Promise<void>;
+  /**
+   * Leaves the id scan out: in the read-back pass every target id was sent by the caller in an
+   * earlier request, and the caller's own audit log names what it tried, by design.
+   */
+  noIdScan?: boolean;
 };
 
 async function sweep(
-  world: IsolationWorld,
+  app: IsolationApp,
   callers: Caller[],
   procedures: Procedure[],
-  { ownToo = false, concurrency = CONCURRENCY, settle }: SweepOptions = {},
+  { ownToo = false, concurrency = CONCURRENCY, settle, noIdScan = false }: SweepOptions = {},
 ) {
-  for (const caller of callers) if (caller.cookie) await confirmIdentity(world.app, caller.cookie);
+  for (const caller of callers) if (caller.cookie) await confirmIdentity(app, caller.cookie);
   const reads = procedures.filter((procedure) => !isDestructive(procedure.path));
   const destructive = procedures.filter((procedure) => isDestructive(procedure.path));
   const outcomes: Outcome[] = [];
+  const foreignByCaller = new Map(callers.map((caller) => [caller, foreignIds(caller)]));
   // Reads and writes first, destructive procedures after, so a foreign delete that worked still
   // shows in the snapshot instead of hiding the rows the reads would have leaked.
   for (const phase of [reads, destructive]) {
@@ -543,22 +815,61 @@ async function sweep(
     outcomes.push(
       ...(await pool(
         calls,
-        async (call) => {
+        async (call): Promise<Outcome> => {
           await settle?.(call);
+          const { caller } = call;
           const answer = await readAnswer(
-            world.app,
-            call.caller.cookie,
+            app,
+            caller.cookie,
             call.path,
             call.input,
-            call.caller.spaceId,
+            caller.spaceId,
           );
-          return {
+          const whole = `${answer.text}\n${answer.headers}`;
+          const scan = [
+            ...caller.target.canaries,
+            ...(caller.knowsOwner ? [] : (caller.target.identityCanaries ?? [])),
+          ];
+          const sent = JSON.stringify(call.input ?? null);
+          const ids =
+            caller.expect === "shared" || noIdScan
+              ? []
+              : foreignByCaller
+                  .get(caller)!
+                  .filter(
+                    (value) =>
+                      whole.includes(value) && !sent.includes(value) && value !== caller.spaceId,
+                  );
+          const outcome: Outcome = {
             ...call,
             status: answer.status,
             streamed: answer.streamed,
-            matched: findCanaries(answer.text, call.caller.target.canaries),
+            matched: findCanaries(whole, scan),
             detail: refusalDetail(answer.status, answer.text),
+            ids,
           };
+          if (call.compare) {
+            const named = Object.values(caller.target.ids).filter(
+              (value): value is string => Boolean(value) && sent.includes(JSON.stringify(value)),
+            );
+            const swap = new Map(named.map((value) => [value, lookalike(value)]));
+            const twin = await readAnswer(
+              app,
+              caller.cookie,
+              call.path,
+              swapValues(call.input, swap),
+              caller.spaceId,
+            );
+            const values = [...swap.keys(), ...swap.values()];
+            const existing = answer.streamed
+              ? String(answer.status)
+              : normalised(answer.status, answer.text, values);
+            const missing = twin.streamed
+              ? String(twin.status)
+              : normalised(twin.status, twin.text, values);
+            if (existing !== missing) outcome.twin = { existing, missing };
+          }
+          return outcome;
         },
         concurrency,
       )),
@@ -567,19 +878,59 @@ async function sweep(
   return outcomes;
 }
 
+const kindOf = (target: Target, value: string) =>
+  target.kinds?.[value] ??
+  (target.identityCanaries?.includes(value)
+    ? value.includes("@")
+      ? "owneremail"
+      : "ownername"
+    : "unknown");
+
 function failures(outcomes: Outcome[]): string[] {
   const out: string[] = [];
   for (const outcome of outcomes) {
-    const where = `${outcome.path} [${outcome.variant}] as ${outcome.caller.name}: ${outcome.status}`;
-    if (outcome.matched.length) out.push(`${where} leaked ${outcome.matched.join(", ")}`);
-    else if (
-      outcome.caller.expect === "refused" &&
-      !PUBLIC_PATHS.has(outcome.path) &&
-      outcome.status !== 401
-    )
+    const { caller } = outcome;
+    const where = `${outcome.path} [${outcome.variant}] as ${caller.name}: ${outcome.status}`;
+    if (caller.expect === "shared") {
+      for (const value of outcome.matched) {
+        const kind = kindOf(caller.target, value);
+        if (NEVER_SHARED_KINDS.includes(kind))
+          out.push(`${where} showed ${kind}, which no member may see (${value})`);
+        else if (!DESIGNED_SHARING[outcome.path]?.includes(kind))
+          out.push(`${where} showed ${kind}, not in the designed sharing table (${value})`);
+      }
+    } else if (outcome.matched.length) out.push(`${where} leaked ${outcome.matched.join(", ")}`);
+    if (outcome.ids.length) out.push(`${where} returned ids it was not sent: ${outcome.ids}`);
+    if (caller.expect === "refused" && !PUBLIC_PATHS.has(outcome.path) && outcome.status !== 401)
       out.push(`${where} was not refused at membership`);
   }
   return out;
+}
+
+/**
+ * Procedures whose refusal of a foreigner's existing-but-foreign id differs from the one for a
+ * never-existing id of the same shape, against the known ones; and known ones that no longer do.
+ */
+function refusalReport(outcomes: Outcome[], exemptions = ISOLATION_EXEMPTIONS) {
+  const known = new Set(
+    exemptions.filter((item) => item.kind === "distinguishable").map((item) => item.path),
+  );
+  const differing = new Map<string, string>();
+  const compared = new Set<string>();
+  for (const outcome of outcomes) {
+    if (!outcome.compare) continue;
+    compared.add(outcome.path);
+    if (outcome.twin)
+      differing.set(
+        outcome.path,
+        `${outcome.path} as ${outcome.caller.name}: existing ${outcome.twin.existing} | never-existing ${outcome.twin.missing}`,
+      );
+  }
+  return {
+    all: [...differing.values()],
+    fresh: [...differing].filter(([key]) => !known.has(key)).map(([, line]) => line),
+    stale: [...known].filter((key) => compared.has(key) && !differing.has(key)),
+  };
 }
 
 /** Not failures, but worth a reader's eye: server errors, and foreign ids a call accepted. */
@@ -615,13 +966,13 @@ function summary(outcomes: Outcome[]) {
 }
 
 /**
- * Whether the owner's own call got through to what it names: an answer, or a conflict, which is a
- * refusal about the state of a thing the handler found. A 400 (a malformed or refused input), 403,
- * 404 or server error from the owner means a foreign caller's refusal of the same input proves
- * nothing about isolation.
+ * Whether the owner's own call got through to what it names: an answer. A conflict (409) is not
+ * proof: it is listed per procedure (`reached-409`) with why the handler found the thing first.
+ * A 400, 403, 404 or server error from the owner means a foreign caller's refusal of the same
+ * input proves nothing about isolation.
  */
 function reaches(outcome: Outcome) {
-  return outcome.status < 400 || outcome.status === 409;
+  return outcome.status < 400;
 }
 
 const line = (outcome: Outcome) =>
@@ -629,36 +980,128 @@ const line = (outcome: Outcome) =>
 
 /**
  * The owner's calls naming P's things that did not get through and are not exempted, and the
- * `unreached` exemptions that no longer hold: every input they cover gets through now, or none
- * is made at all.
+ * `unreached` or `reached-409` exemptions that no longer hold.
  */
 function reachReport(outcomes: Outcome[]) {
-  const unreachedExemptions = ISOLATION_EXEMPTIONS.filter((item) => item.kind === "unreached");
   const covers = (exemption: IsolationExemption, outcome: Outcome) =>
     exemption.path === outcome.path &&
     (exemption.variant === undefined || exemption.variant === outcome.variant);
+  const unreachedExemptions = ISOLATION_EXEMPTIONS.filter((item) => item.kind === "unreached");
+  const conflicts = ISOLATION_EXEMPTIONS.filter((item) => item.kind === "reached-409");
   const naming = outcomes.filter((outcome) => outcome.foreign);
   const unreached = naming
     .filter(
       (outcome) =>
-        !reaches(outcome) && !unreachedExemptions.some((exemption) => covers(exemption, outcome)),
+        !reaches(outcome) &&
+        !unreachedExemptions.some((exemption) => covers(exemption, outcome)) &&
+        !(outcome.status === 409 && conflicts.some((exemption) => covers(exemption, outcome))),
     )
     .map(line);
   const stale: string[] = [];
-  for (const exemption of unreachedExemptions) {
+  for (const exemption of [...unreachedExemptions, ...conflicts]) {
     const covered = naming.filter((outcome) => covers(exemption, outcome));
-    const label = `${exemption.path}${exemption.variant ? ` [${exemption.variant}]` : ""}`;
+    const label = `${exemption.path}${exemption.variant ? ` [${exemption.variant}]` : ""} (${exemption.kind})`;
     if (!covered.length) stale.push(`${label}: no owner call names P's things`);
-    else if (covered.every(reaches)) stale.push(`${label}: the owner gets through now`);
+    else if (exemption.kind === "unreached" && covered.every(reaches))
+      stale.push(`${label}: the owner gets through now`);
+    else if (
+      exemption.kind === "reached-409" &&
+      !exemption.stateDependent &&
+      !covered.some((item) => item.status === 409)
+    )
+      stale.push(`${label}: the owner gets no conflict now`);
   }
-  return { unreached, stale };
+  const reached = new Set(naming.filter(reaches).map((outcome) => outcome.path));
+  return { unreached, stale, reached };
 }
 
 /**
- * The app's database login for one pass. The runtime login enforces row-level security; the
- * owner login bypasses it (RLS is enabled, not forced), as an install that connects the app as
- * the table owner does, so that pass proves the app's own filters without the database's.
+ * Jobs, push notifications and mail sent since `from` that name the owner or one of `needles`:
+ * a foreign caller's calls must not make the app act for A, P or S.
  */
+function outgoingReport(
+  records: NonNullable<IsolationWorld["records"]>,
+  from: { jobs: number; notifications: number; mail: number },
+  owner: { userId: string; email: string },
+  needles: string[],
+) {
+  const names = (text: string) => needles.some((value) => text.includes(value));
+  return [
+    ...records.jobs
+      .slice(from.jobs)
+      .filter(names)
+      .map((text) => `job: ${text.slice(0, 300)}`),
+    ...records.notifications
+      .slice(from.notifications)
+      .filter((item) => item.userId === owner.userId || names(item.text))
+      .map((item) => `notification to ${item.userId}: ${item.text.slice(0, 300)}`),
+    ...records.mail
+      .slice(from.mail)
+      .filter((item) => item.to.includes(owner.email) || names(item.text))
+      .map((item) => `mail to ${item.to}: ${item.text.slice(0, 300)}`),
+  ];
+}
+
+const mark = (records: NonNullable<IsolationWorld["records"]>) => ({
+  jobs: records.jobs.length,
+  notifications: records.notifications.length,
+  mail: records.mail.length,
+});
+
+/**
+ * A fresh waiting run of the target's, which the app's reconciler would start within half a
+ * minute: each foreign cookie tries to cancel it at once and it must still be waiting; then its
+ * owner cancels it through the same procedure, so it does not run in the middle of a sweep.
+ */
+async function waitingRunKept(
+  world: IsolationWorld,
+  cookies: string[],
+  target: Target,
+  spaceId: string,
+) {
+  const runId = await seedWaitingRun(world.db, world.A, target);
+  const problems: string[] = [];
+  for (const cookie of cookies) {
+    const answer = await readAnswer(
+      world.app,
+      cookie,
+      "dozoQueue/cancelWaiting",
+      { runId },
+      spaceId,
+    );
+    if (answer.status < 400) problems.push(`a foreigner cancelled ${target.label}'s waiting run`);
+  }
+  const run = await world.db.run.findUniqueOrThrow({ where: { id: runId } });
+  if (run.status !== "queued") problems.push(`${target.label}'s waiting run is ${run.status}`);
+  const own = await readAnswer(
+    world.app,
+    world.A.cookie,
+    "dozoQueue/cancelWaiting",
+    { runId },
+    target.spaceId,
+  );
+  if (own.status !== 200) problems.push(`the owner could not cancel it: ${own.status}`);
+  return problems;
+}
+
+/** The repository root, where `verifiedByCode` paths start. */
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+/** `file:line "fragment" — filter`: the file exists and that line holds the fragment. */
+function codeReferenceProblem(reference: string | undefined): string | undefined {
+  const parsed = reference ? /^(\S+):(\d+) "(.+?)" — .+/.exec(reference) : null;
+  if (!parsed) return `not of the form file:line "fragment" — filter`;
+  const [, file, at, fragment] = parsed;
+  const full = path.join(ROOT, file!);
+  if (!existsSync(full)) return `${file} does not exist`;
+  const text = readFileSync(full, "utf8").split("\n")[Number(at) - 1] ?? "";
+  if (!text.includes(fragment!)) return `${file}:${at} does not hold "${fragment}"`;
+  return undefined;
+}
+
+/** Tables a member's or guest's calls in S must leave as they were: who is in S, and A's keys. */
+const ADMIN_TABLES =
+  /^(space|spaceMember|member|organization|secret|agentSecret|vaultCredential|userModelCredential|billingAccount|sql:dozo_access_tokens)$/;
 
 describeWithDatabase.each(ISOLATION_LOGINS)(
   "cross-tenant isolation over every RPC procedure ($name)",
@@ -666,7 +1109,12 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
     let world: IsolationWorld;
     const procedures = contractProcedures();
     const exempt = new Map(
-      ISOLATION_EXEMPTIONS.filter((item) => item.kind !== "unreached").map((item) => [
+      ISOLATION_EXEMPTIONS.filter(
+        (item) => item.kind === "input" || item.kind === "side-effect",
+      ).map((item) => [item.path, item]),
+    );
+    const noTarget = new Map(
+      ISOLATION_EXEMPTIONS.filter((item) => item.kind === "no-target").map((item) => [
         item.path,
         item,
       ]),
@@ -674,13 +1122,21 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
     const swept = () => procedures.filter((procedure) => !exempt.has(procedure.path));
     const scopeOf = (...targets: Target[]) => ({
       spaceIds: targets.map((target) => target.spaceId),
-      organizationIds: [...new Set(targets.map((target) => target.organizationId))],
+      organizationIds: [
+        ...new Set(
+          targets.flatMap((target) => [
+            target.organizationId,
+            ...(target.ids.soloOrganizationId ? [target.ids.soloOrganizationId] : []),
+          ]),
+        ),
+      ],
       userIds: [world.A.userId],
     });
+    const prefix = `[isolation ${login.name}]`;
 
     beforeAll(async () => {
-      world = await buildIsolationWorld(login.url());
-    }, 180_000);
+      world = await buildIsolationWorld(login.url(), { extended: true });
+    }, 240_000);
 
     afterAll(async () => {
       await world?.stop();
@@ -714,6 +1170,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           `${procedure}: ${answer.text.slice(0, 300)}`,
         ).toBeGreaterThan(0);
       }
+      const me = await readAnswer(world.app, A.cookie, "me", undefined, P.spaceId);
+      expect(findCanaries(me.text, P.identityCanaries ?? []).length).toBe(2);
       for (const member of [C, D]) {
         const shared = await readAnswer(
           world.app,
@@ -727,15 +1185,21 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       }
       expect((await readAnswer(world.app, E.cookie, "me", undefined, S.spaceId)).status).toBe(401);
       expect((await readAnswer(world.app, C.cookie, "me", undefined, P.spaceId)).status).toBe(401);
-      console.log(`[isolation] seed notes:\n${[...P.notes, ...S.notes].join("\n")}`);
+      console.log(`${prefix} seed notes:\n${[...P.notes, ...S.notes].join("\n")}`);
+      const unseeded = [...P.notes, ...S.notes, ...world.Bown.notes].filter((note) =>
+        note.includes("could not be seeded"),
+      );
+      expect(unseeded, "seeds that failed").toEqual([]);
     });
 
-    it("reads every procedure from the contract and can call each one not exempted", () => {
+    it("reads every procedure from the contract and fills every id it names from the target", () => {
       const paths = new Set(procedures.map((procedure) => procedure.path));
       expect(procedures.length).toBeGreaterThan(300);
       const ids = world.P.ids;
       const missing: string[] = [];
       const stale: string[] = [];
+      const unfilled: string[] = [];
+      let foreign = 0;
       for (const procedure of procedures) {
         const inputs = generateInputs(procedure, (key) => ids[key]);
         const exemption = exempt.get(procedure.path);
@@ -744,21 +1208,128 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           stale.push(`${procedure.path}: input can be generated now`);
         if (exemption?.kind === "side-effect" && inputs?.some((variant) => variant.keys.size > 0))
           stale.push(`${procedure.path}: names a target, so it must be swept`);
+        if (exemption) continue;
+        if (inputs?.some((variant) => variant.keys.size > 0)) foreign++;
+        // Every field that names something gets one of P's things, or says why it cannot.
+        const fields = idFields(procedure.input);
+        const filled = new Set((inputs ?? []).flatMap((variant) => [...(variant.filled ?? [])]));
+        const allowed = noTarget.get(procedure.path)?.fields ?? [];
+        for (const field of fields)
+          if (!filled.has(field) && !allowed.includes(field))
+            unfilled.push(`${procedure.path}: ${field}`);
+        for (const field of allowed) {
+          if (!fields.has(field)) stale.push(`${procedure.path}: no field ${field} (no-target)`);
+          else if (filled.has(field))
+            stale.push(`${procedure.path}: ${field} is filled from the target now (no-target)`);
+        }
       }
+      const problems: string[] = [];
       for (const exemption of ISOLATION_EXEMPTIONS) {
         if (!paths.has(exemption.path)) stale.push(`${exemption.path}: no such procedure`);
-        if (exemption.kind === "unreached" && exempt.has(exemption.path))
-          stale.push(`${exemption.path}: unreached, yet not swept`);
+        if (
+          ["unreached", "no-target", "reached-409", "distinguishable"].includes(exemption.kind) &&
+          exempt.has(exemption.path)
+        )
+          stale.push(`${exemption.path}: ${exemption.kind}, yet not swept`);
+        if (exemption.kind === "no-target" && !exemption.fields?.length)
+          problems.push(`${exemption.path}: no-target names no field`);
+        if (exemption.kind === "unreached") {
+          const problem = codeReferenceProblem(exemption.verifiedByCode);
+          if (problem) problems.push(`${exemption.path}: verifiedByCode ${problem}`);
+        }
       }
-      expect(missing, "procedures with no generated input and no exemption").toEqual([]);
-      expect(stale, "stale exemptions").toEqual([]);
+      const count = (kind: IsolationExemption["kind"]) =>
+        ISOLATION_EXEMPTIONS.filter((item) => item.kind === kind).length;
       console.log(
-        `[isolation] ${procedures.length} procedures, ${swept().length} swept, ${ISOLATION_EXEMPTIONS.length} exempted`,
+        `${prefix} procedures enumerated ${procedures.length}, swept ${swept().length}, naming a target ${foreign}, exemptions: input ${count("input")}, side-effect ${count("side-effect")}, unreached ${count("unreached")}, no-target ${count("no-target")}, reached-409 ${count("reached-409")}, distinguishable ${count("distinguishable")}`,
       );
+      expect(missing, "procedures with no generated input and no exemption").toEqual([]);
+      expect(unfilled, "id fields no target thing fills and no no-target entry explains").toEqual(
+        [],
+      );
+      expect(problems, "exemptions without their proof").toEqual([]);
+      expect(stale, "stale exemptions").toEqual([]);
+    });
+
+    it("turns red on each kind of leak it is meant to catch (self-test)", async () => {
+      const { B, P, Bown } = world;
+      const shape = procedures.find((procedure) => procedure.path === "bots/get")!.input;
+      const kinds = ["read-leak", "write-mixing", "header-leak", "foreign-id", "distinguishable"];
+      const fakes: Procedure[] = kinds.map((kind) => ({
+        path: `isoSelfTest/${kind}`,
+        input: shape,
+      }));
+      const original = await world.db.bot.findUniqueOrThrow({
+        where: { id: P.ids.botId! },
+        select: { description: true },
+      });
+      const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json", ...headers },
+        });
+      // Each fake handler leaks one way; everything else goes to the real app.
+      const app: IsolationApp = {
+        request: async (input, init) => {
+          const kind = /\/rpc\/isoSelfTest\/(.+)$/.exec(input)?.[1];
+          if (!kind) return world.app.request(input, init);
+          const body = JSON.parse(String(init?.body ?? "{}")) as { json?: { botId?: string } };
+          const existing = body.json?.botId === P.ids.botId;
+          switch (kind) {
+            case "read-leak":
+              return json({ json: { name: P.canaries[0] } });
+            case "write-mixing":
+              if (existing)
+                await world.db.bot.update({
+                  where: { id: P.ids.botId! },
+                  data: { description: "iso-self-test-mixed" },
+                });
+              return json({ json: { ok: true } });
+            case "header-leak":
+              return json({ json: { code: "NOT_FOUND" } }, 404, {
+                "content-disposition": `attachment; filename="${P.canaries[1]}"`,
+              });
+            case "foreign-id":
+              return json({ json: { code: "NOT_FOUND", message: `see ${P.ids.threadId}` } }, 404);
+            default:
+              return existing
+                ? json({ json: { code: "NOT_FOUND" } }, 404)
+                : json({ json: { code: "BAD_REQUEST" } }, 400);
+          }
+        },
+      };
+      const caller: Caller = {
+        name: "B (self-test)",
+        cookie: B.cookie,
+        spaceId: B.spaceId,
+        target: P,
+        own: Bown,
+        expect: "no-canary",
+        compare: true,
+      };
+      const before = await snapshot(world.db, scopeOf(P));
+      const outcomes = await sweep(app, [caller], fakes);
+      const diff = snapshotDiff(before, await snapshot(world.db, scopeOf(P)));
+      await world.db.bot.update({
+        where: { id: P.ids.botId! },
+        data: { description: original.description },
+      });
+      const red = [...failures(outcomes), ...refusalReport(outcomes, []).fresh];
+      const caught = (kind: string) => red.some((item) => item.startsWith(`isoSelfTest/${kind}`));
+      expect(caught("read-leak"), red.join("\n")).toBe(true);
+      expect(caught("header-leak"), red.join("\n")).toBe(true);
+      expect(caught("foreign-id"), red.join("\n")).toBe(true);
+      expect(caught("distinguishable"), red.join("\n")).toBe(true);
+      expect(
+        diff.some((item) => item.startsWith("bot:")),
+        diff.join("\n"),
+      ).toBe(true);
+      // A clean fake stays green, so the four above are red for their leak only.
+      expect(red.filter((item) => item.startsWith("isoSelfTest/write-mixing"))).toEqual([]);
     });
 
     it("keeps P and S from B, a removed member, anonymous callers and foreign Space headers", async () => {
-      const { A, B, C, E, P, S, Bown } = world;
+      const { A, B, C, D, E, P, S, Bown } = world;
       const callers: Caller[] = [
         {
           name: "B on own Space, P ids",
@@ -767,6 +1338,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           target: P,
           own: Bown,
           expect: "no-canary",
+          compare: true,
         },
         {
           name: "B on own Space, S ids",
@@ -775,6 +1347,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           target: S,
           own: Bown,
           expect: "no-canary",
+          compare: true,
         },
         {
           name: "E (removed) on S",
@@ -792,30 +1365,61 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           expect: "refused",
         },
         {
+          name: "B with S's header",
+          cookie: B.cookie,
+          spaceId: S.spaceId,
+          target: S,
+          expect: "refused",
+        },
+        {
           name: "C with P's header",
           cookie: C.cookie,
           spaceId: P.spaceId,
           target: P,
           expect: "refused",
+          knowsOwner: true,
+        },
+        {
+          name: "D with P's header",
+          cookie: D.cookie,
+          spaceId: P.spaceId,
+          target: P,
+          expect: "refused",
+          knowsOwner: true,
         },
       ];
+      const records = world.records!;
+      expect(await waitingRunKept(world, [B.cookie], P, B.spaceId)).toEqual([]);
+      expect(await waitingRunKept(world, [B.cookie], S, B.spaceId)).toEqual([]);
+      const from = mark(records);
       const before = await snapshot(world.db, scopeOf(P, S));
-      const outcomes = await sweep(world, callers, swept());
+      const outcomes = await sweep(world.app, callers, swept());
       console.log(
-        `[isolation] statuses per caller\n${summary(outcomes)}\n[isolation] notable\n${notable(outcomes)}`,
+        `${prefix} statuses per caller\n${summary(outcomes)}\n${prefix} notable\n${notable(outcomes)}`,
       );
       // The read pass again, after every write: what B's mixed writes left in B's own world must not
       // bring P's or S's canaries back with it.
       const again = await sweep(
-        world,
+        world.app,
         callers.slice(0, 2),
         swept().filter((procedure) => !isDestructive(procedure.path)),
-        { ownToo: true },
+        { ownToo: true, noIdScan: true },
       );
       const after = await snapshot(world.db, scopeOf(P, S));
+      const refusals = refusalReport(outcomes);
+      console.log(
+        `${prefix} answers that tell an existing foreign id from a missing one\n${refusals.all.join("\n")}`,
+      );
+      const needles = [A.userId, A.email, ...foreignIds(callers[0]!), ...foreignIds(callers[1]!)];
       expect([...failures(outcomes), ...failures(again)]).toEqual([]);
+      expect(refusals.fresh, "distinguishable refusals not listed as known").toEqual([]);
+      expect(refusals.stale, "known distinguishable refusals that no longer differ").toEqual([]);
       expect(snapshotDiff(before, after), `rows of P or S changed (A is ${A.userId})`).toEqual([]);
-    }, 600_000);
+      expect(
+        outgoingReport(records, from, A, needles),
+        "jobs, notifications or mail for A, P or S",
+      ).toEqual([]);
+    }, 900_000);
 
     it("keeps P from S's guest and S's organization member", async () => {
       const { C, D, P, S } = world;
@@ -827,6 +1431,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           target: P,
           own: S,
           expect: "no-canary",
+          knowsOwner: true,
         },
         {
           name: "C (org member) on S, P ids",
@@ -835,15 +1440,19 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           target: P,
           own: S,
           expect: "no-canary",
+          knowsOwner: true,
         },
       ];
       // P's rows only: C is a member of A's organization by design, so a Space C makes from S
       // lands in that organization and is C's own, not P's.
-      const scope = { ...scopeOf(P), organizationIds: [] };
+      const scope = { ...scopeOf(P), organizationIds: [P.ids.soloOrganizationId!] };
+      const records = world.records!;
+      expect(await waitingRunKept(world, [C.cookie, D.cookie], P, S.spaceId)).toEqual([]);
+      const from = mark(records);
       const before = await snapshot(world.db, scope);
-      const outcomes = await sweep(world, callers, swept());
+      const outcomes = await sweep(world.app, callers, swept());
       console.log(
-        `[isolation] statuses per caller\n${summary(outcomes)}\n[isolation] notable\n${notable(outcomes)}`,
+        `${prefix} statuses per caller\n${summary(outcomes)}\n${prefix} notable\n${notable(outcomes)}`,
       );
       const after = await snapshot(world.db, scope);
       expect(failures(outcomes)).toEqual([]);
@@ -854,7 +1463,116 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           where: { organizationId: P.organizationId, createdByUserId: D.userId },
         }),
       ).toBe(0);
-    }, 600_000);
+      // What C and D do in S may name S by design; nothing may name what only P holds.
+      const shared = new Set(Object.values(S.ids));
+      const onlyP = foreignIds(callers[0]!).filter((value) => !shared.has(value));
+      expect(
+        outgoingReport(records, from, { userId: "-", email: "-" }, onlyP),
+        "jobs, notifications or mail naming P",
+      ).toEqual([]);
+    }, 900_000);
+
+    it("shows S's member and guest only what S shares by design", async () => {
+      const { A, C, D, S } = world;
+      const callers: Caller[] = [C, D].map((person) => ({
+        name: `${person.label} on S, S ids`,
+        cookie: person.cookie,
+        spaceId: S.spaceId,
+        target: S,
+        expect: "shared",
+        knowsOwner: true,
+      }));
+      const scope = {
+        spaceIds: [S.spaceId],
+        organizationIds: [S.organizationId],
+        userIds: [A.userId],
+      };
+      const before = await snapshot(world.db, scope);
+      // The caller's own leave is theirs by design, and would end the rest of its sweep.
+      const calls: string[] = [];
+      // Read before the removals: a member may clear S's chat by design, and the cards with it.
+      const callsChecked = async (): Promise<Outcome[]> => {
+        // A call rings the owner's own phone: the card shows in the shared chat by design, but a
+        // member or guest must not answer, decline or end it for A.
+        for (const key of ["callId", "declineCallId", "incomingCallId"] as const) {
+          const message = await world.db.message.findUnique({
+            where: {
+              threadId_clientNonce: {
+                threadId: S.ids.threadId!,
+                clientNonce: callRequestClientNonce(S.ids[key]!),
+              },
+            },
+            select: { blocks: true },
+          });
+          const status = /"status":"(\w+)"/.exec(JSON.stringify(message?.blocks ?? null))?.[1];
+          if (status !== "ringing") calls.push(`${key}: ${status ?? "gone"}`);
+        }
+        return [];
+      };
+      // Removals the rest hang off (a bot, a chat, a group) go last, one at a time, so a member's
+      // removal of S's bot does not answer the other destructive calls "not found".
+      const procedures = swept().filter((procedure) => procedure.path !== "spaces/members/leave");
+      const last = (procedure: Procedure) => OWNER_REMOVES_LAST.includes(procedure.path);
+      const outcomes = [
+        ...(await sweep(
+          world.app,
+          callers,
+          procedures.filter((procedure) => !last(procedure)),
+        )),
+        ...(await callsChecked()),
+        ...(await sweep(
+          world.app,
+          callers,
+          procedures
+            .filter(last)
+            .sort(
+              (a, b) => OWNER_REMOVES_LAST.indexOf(a.path) - OWNER_REMOVES_LAST.indexOf(b.path),
+            ),
+          { concurrency: 1 },
+        )),
+      ];
+      const after = await snapshot(world.db, scope);
+      const seen = new Map<string, Set<string>>();
+      for (const outcome of outcomes)
+        for (const value of outcome.matched) {
+          const kinds = seen.get(outcome.path) ?? new Set<string>();
+          kinds.add(kindOf(S, value));
+          seen.set(outcome.path, kinds);
+        }
+      console.log(
+        `${prefix} S canaries a member or guest sees, by procedure\n${[...seen]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([procedure, kinds]) => `${procedure}: ${[...kinds].sort().join(" ")}`)
+          .join("\n")}`,
+      );
+      // What C or D added as their own (a Space C makes in the organization it is a member of, a
+      // token of C's own) is theirs by design; any other change to these tables is not.
+      const admin: string[] = [];
+      for (const [table, rows] of after) {
+        if (!ADMIN_TABLES.test(table)) continue;
+        const old = before.get(table) ?? new Map<string, string>();
+        for (const [key, text] of rows) {
+          if (!old.has(key)) {
+            if (![C.userId, D.userId].some((id) => text.includes(id)))
+              admin.push(`${table}: added ${text.slice(0, 300)}`);
+          } else if (old.get(key) !== text) admin.push(`${table}: changed ${text.slice(0, 300)}`);
+        }
+        for (const key of old.keys())
+          if (!rows.has(key)) admin.push(`${table}: removed ${old.get(key)!.slice(0, 300)}`);
+      }
+      console.log(
+        `${prefix} call procedures as a member or guest of S\n${outcomes
+          .filter((outcome) => /Call$/.test(outcome.path))
+          .map((outcome) => `${outcome.caller.name}: ${line(outcome)}`)
+          .join("\n")}`,
+      );
+      expect(failures(outcomes)).toEqual([]);
+      expect(admin, "a member or guest changed who is in S, or A's keys").toEqual([]);
+      expect(calls, "the owner's ringing calls in S, settled by a member or guest").toEqual([]);
+      expect(
+        await world.db.spaceMember.count({ where: { spaceId: S.spaceId, userId: A.userId } }),
+      ).toBe(1);
+    }, 900_000);
 
     // Last, because the owner's own calls change P: the same sweep run by A finds P's canaries, so
     // the callers above found none because none reached them, not because the scan cannot see.
@@ -866,34 +1584,96 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         spaceId: P.spaceId,
         target: P,
         expect: "no-canary",
+        knowsOwner: true,
       };
       // The owner's computer starts and stops in the background: a call to it waits until it is
       // not halfway, so whether it gets through does not depend on timing.
+      const computerState = async () =>
+        (
+          await world.db.bot.findUnique({
+            where: { id: P.ids.botId! },
+            select: { computer: { select: { state: true } } },
+          })
+        )?.computer?.state ?? "";
+      // Typing, uploading and a terminal need the person to hold the computer, as in the app.
+      const needsControl = [
+        "computer/input",
+        "computer/uploadFile",
+        "computer/terminalUrl",
+        "dozoTeach/keys",
+      ];
       const settle = async (call: Call) => {
-        if (!call.path.startsWith("computer/")) return;
-        await vi.waitFor(
-          async () => {
-            const bot = await world.db.bot.findUnique({
-              where: { id: P.ids.botId! },
-              select: { computer: { select: { state: true } } },
-            });
-            if (["booting", "suspending"].includes(bot?.computer?.state ?? ""))
-              throw new Error(`computer ${bot?.computer?.state}`);
-          },
-          { timeout: 15_000, interval: 50 },
-        );
+        if (!call.path.startsWith("computer/") && !needsControl.includes(call.path)) return;
+        const steady = async () => {
+          const state = await computerState();
+          if (["booting", "suspending"].includes(state)) throw new Error(`computer ${state}`);
+          return state;
+        };
+        const state = await vi.waitFor(steady, { timeout: 15_000, interval: 50 });
+        // A computer call that is not a stop works on a running computer, as a person's does:
+        // one the owner's sweep let fall asleep is started first (not part of the sweep).
+        if (isDestructive(call.path)) return;
+        if (state !== "running") {
+          await readAnswer(world.app, A.cookie, "computer/boot", { botId: P.ids.botId }, P.spaceId);
+          await vi.waitFor(
+            async () => {
+              if ((await steady()) !== "running") throw new Error("computer not running");
+            },
+            { timeout: 15_000, interval: 50 },
+          );
+        }
+        if (needsControl.includes(call.path))
+          await readAnswer(
+            world.app,
+            A.cookie,
+            "computer/takeover",
+            { botId: P.ids.botId },
+            P.spaceId,
+          );
       };
       const firstOf = (procedure: Procedure) => Number(OWNER_WRITES_FIRST.has(procedure.path));
       // Reads before the owner's own writes (an update renames, a new version replaces), so what is
       // planted is still there when it is read.
       const kept = swept().filter((procedure) => !isDestructive(procedure.path));
       const isRead = (procedure: Procedure) => READ.test(procedure.path.split("/").pop() ?? "");
+      // The live recording holds the bot: the calls that act on it go first, then the owner stops
+      // it, as the app does, and the rest of the bot's calls stop answering "stop teaching first".
+      const teaching = (procedure: Procedure) =>
+        OWNER_WRITES_FIRST.has(procedure.path) ||
+        procedure.path === "skills/start" ||
+        namesKey(procedure, P, "taughtSkillId") ||
+        namesKey(procedure, P, "leaseId");
+      const writes = kept.filter((procedure) => !isRead(procedure));
+      // Taking control comes before the computer calls that need it (typing, a terminal).
+      const computerFirst = (procedure: Procedure) =>
+        procedure.path === "computer/takeover" ? 0 : procedure.path.startsWith("computer/") ? 1 : 2;
+      // The owner's own `skills/start` began another recording: end it too, as a person does
+      // before the chat takes messages again. Not part of the sweep, so it returns no outcomes.
+      const stopRecordings = async (): Promise<Outcome[]> => {
+        for (const skill of await world.db.taughtSkill.findMany({
+          where: { botId: P.ids.botId!, status: "recording" },
+          select: { id: true },
+        }))
+          await readAnswer(world.app, A.cookie, "skills/stop", { skillId: skill.id }, P.spaceId);
+        return [];
+      };
+      const stop = swept().filter((procedure) => procedure.path === "skills/stop");
       const outcomes = [
-        ...(await sweep(world, [owner], kept.filter(isRead))),
+        ...(await sweep(world.app, [owner], kept.filter(isRead))),
         ...(await sweep(
-          world,
+          world.app,
           [owner],
-          kept.filter((procedure) => !isRead(procedure)).sort((a, b) => firstOf(b) - firstOf(a)),
+          writes.filter(teaching).sort((a, b) => firstOf(b) - firstOf(a)),
+          { concurrency: 1, settle },
+        )),
+        ...(await sweep(world.app, [owner], stop, { concurrency: 1, settle })),
+        ...(await stopRecordings()),
+        ...(await sweep(
+          world.app,
+          [owner],
+          writes
+            .filter((procedure) => !teaching(procedure))
+            .sort((a, b) => computerFirst(a) - computerFirst(b)),
           { concurrency: 1, settle },
         )),
       ];
@@ -903,39 +1683,49 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         ),
       ].sort();
       console.log(
-        `[isolation] control: canaries found through ${found.length} procedures\n${found.join(" ")}`,
+        `${prefix} control: canaries found through ${found.length} procedures\n${found.join(" ")}`,
       );
       const seen = new Set(outcomes.flatMap((outcome) => outcome.matched));
       const unseen = P.canaries.filter((value) => !seen.has(value));
-      console.log(
-        `[isolation] control: canaries no owner read shows: ${unseen.join(" ") || "none"}`,
-      );
+      console.log(`${prefix} control: canaries no owner read shows: ${unseen.join(" ") || "none"}`);
       // Destructive procedures that name P's things after that, one at a time, the removals the
-      // rest hang off last.
+      // rest hang off last; the waiting work made fresh first, as the app may have started it.
+      await seedWaitingRun(world.db, A, P);
       const order = (procedure: Procedure) => OWNER_REMOVES_LAST.indexOf(procedure.path);
       outcomes.push(
         ...(await sweep(
-          world,
+          world.app,
           [owner],
           swept()
-            .filter((procedure) => isDestructive(procedure.path) && namesTarget(procedure, P))
+            .filter(
+              (procedure) =>
+                isDestructive(procedure.path) &&
+                procedure.path !== "skills/stop" &&
+                namesTarget(procedure, P),
+            )
             .sort((a, b) => order(a) - order(b)),
           { concurrency: 1, settle },
         )),
       );
-      const { unreached, stale } = reachReport(outcomes);
+      const { unreached, stale, reached } = reachReport(outcomes);
       console.log(
-        `[isolation] control: owner calls not reached, exempted\n${outcomes
+        `${prefix} control: owner calls not reached, exempted\n${outcomes
           .filter((outcome) => outcome.foreign && !reaches(outcome))
           .map(line)
           .join("\n")}`,
+      );
+      const naming = new Set(
+        outcomes.filter((outcome) => outcome.foreign).map((outcome) => outcome.path),
+      );
+      console.log(
+        `${prefix} control: procedures naming P ${naming.size}, owner-reached ${reached.size}, not reached ${naming.size - reached.size}`,
       );
       expect(found).toEqual(expect.arrayContaining(CONTROL_PATHS));
       expect(unseen, "canaries no read of the owner shows, so no scan can find them").toEqual([]);
       expect
         .soft(unreached, "inputs naming P's things that the owner's own call does not get through")
         .toEqual([]);
-      expect.soft(stale, "stale unreached exemptions").toEqual([]);
-    }, 600_000);
+      expect.soft(stale, "stale unreached or reached-409 exemptions").toEqual([]);
+    }, 900_000);
   },
 );
