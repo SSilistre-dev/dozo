@@ -107,22 +107,29 @@ export async function forgetConsents(prisma: PrismaClient, botId: string, device
 }
 
 /**
- * Whether the person cleared the bot's browser on that computer since it last started. Asked
- * before anything that would start it (which ends the answer). A computer that cannot say counts
- * as not cleared: its consents stay, as they would have without the question.
+ * Whether the person cleared the bot's browser on that computer, as far as it said: a "yes" holds
+ * even when the stream fails after it. With `forgotten`, it tells the computer that the bot's
+ * consents there are gone, which alone lets its browser start again. A computer that cannot say
+ * counts as not cleared: its consents stay, as they would have without the question, and its
+ * browser stays unstarted until it is asked again.
  */
-async function clearedThere(ctx: RunContext, route: Route): Promise<boolean> {
+async function clearedThere(ctx: RunContext, route: Route, forgotten = false): Promise<boolean> {
   const request = route.devices.request<{ cleared?: unknown }>(
     route.owner,
-    { method: "pageBrowserCleared", botId: ctx.bot.id, runId: ctx.runId },
+    {
+      method: "pageBrowserCleared",
+      botId: ctx.bot.id,
+      runId: ctx.runId,
+      ...(forgotten ? { forgotten: true } : {}),
+    },
     ctx.context.signal,
     route.deviceId,
   );
   let cleared = false;
   try {
-    for await (const value of request) cleared = value.cleared === true;
+    for await (const value of request) cleared ||= value.cleared === true;
   } catch {
-    return false;
+    // What it said before failing stands.
   }
   return cleared;
 }
@@ -170,9 +177,12 @@ export async function userBrowserGate(
   if (blocked || (await runCameByToken(ctx))) return "deny";
   const route = await userBrowserRoute(ctx);
   if (!route) return "ask";
-  // Asked first, in every thread: the next use starts the browser, which ends the answer.
-  if (await clearedThere(ctx, route))
+  // Asked first, in every thread. The consents go first, then the computer is told, so a step
+  // that fails leaves it cleared and the next question forgets them again.
+  if (await clearedThere(ctx, route)) {
     await forgetConsents(ctx.deps.prisma, ctx.bot.id, route.deviceId);
+    await clearedThere(ctx, route, true);
+  }
   const allowed = await consents(ctx.deps.prisma, ctx.bot.id, route.deviceId, ctx.thread.id);
   const browser = !allowed.has("");
   const verb = browserVerb(name);

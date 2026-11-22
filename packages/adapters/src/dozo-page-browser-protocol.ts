@@ -30,12 +30,13 @@ export const pageBrowserSignInRequest = z.object({
 });
 
 /**
- * Whether the person cleared the bot's browser on that computer since it last started (its
- * profile and sign-ins are gone): the server then forgets what the bot was allowed there. Answers
- * `{ cleared }`.
+ * Whether the person cleared the bot's browser on that computer (its profile and sign-ins are
+ * gone): the server then forgets what the bot was allowed there, and asks again with `forgotten`
+ * once it has, which alone lets the app start that browser again. Answers `{ cleared }`.
  */
 export const pageBrowserClearedRequest = z.object({
   botId: z.string().min(1).max(256),
   runId: z.string().min(1).max(256).optional(),
   method: z.literal("pageBrowserCleared"),
+  forgotten: z.literal(true).optional(),
 });

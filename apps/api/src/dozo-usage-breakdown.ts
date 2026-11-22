@@ -1,6 +1,10 @@
 import type { DozoUsageGroup, DozoUsageGrouping } from "@rakazo/contracts";
 import { isValidTimeZone } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+
+/** The one thing these reads ask of the database client: a raw query they can await. */
+export type RawReader = {
+  $queryRaw<T>(query: TemplateStringsArray, ...values: unknown[]): PromiseLike<T>;
+};
 
 /**
  * The caller's usage records summed per model, bot and routine at once, so one read serves every
@@ -40,7 +44,7 @@ export type UsageCell = {
  * a run that is gone, cannot say whether a routine spent it: that is unknown, not "no routine".
  */
 export async function readUsageCells(
-  prisma: Pick<PrismaClient, "$queryRaw">,
+  prisma: RawReader,
   member: { spaceId: string; userId: string },
 ): Promise<UsageCell[]> {
   return prisma.$queryRaw<UsageCell[]>`
@@ -118,7 +122,7 @@ const NO_CELL: UsageCell = {
  * A zone both JavaScript and the database know, else UTC: a name only one of them accepts would
  * fail the whole query, and the person would see no usage at all.
  */
-async function knownZone(prisma: Pick<PrismaClient, "$queryRaw">, name: string): Promise<string> {
+async function knownZone(prisma: RawReader, name: string): Promise<string> {
   if (!isValidTimeZone(name)) return "UTC";
   const known = await prisma.$queryRaw<Array<{ name: string }>>`
     SELECT name FROM pg_timezone_names WHERE name = ${name}::text`;
@@ -131,7 +135,7 @@ async function knownZone(prisma: Pick<PrismaClient, "$queryRaw">, name: string):
  * and reads the same whatever zone the database session runs in.
  */
 export async function readDayCells(
-  prisma: Pick<PrismaClient, "$queryRaw">,
+  prisma: RawReader,
   member: { spaceId: string; userId: string },
   accountZone: string,
   now = new Date(),
@@ -164,10 +168,7 @@ export async function readDayCells(
  * Every member's records in the Space, per person. The caller must already be the Space's owner:
  * this reads other people's spend.
  */
-export async function readPersonCells(
-  prisma: Pick<PrismaClient, "$queryRaw">,
-  spaceId: string,
-): Promise<UsageCell[]> {
+export async function readPersonCells(prisma: RawReader, spaceId: string): Promise<UsageCell[]> {
   const rows = await prisma.$queryRaw<Array<Partial<UsageCell>>>`
     SELECT u."userId", usr.name AS "userName", usr.email AS "userEmail",
       count(*)::int AS calls,
