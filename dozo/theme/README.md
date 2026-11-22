@@ -74,3 +74,21 @@ it: start it again (`make up`) from another checkout before removing the first.
 Dark is the default: two anchored rules make a missing appearance choice resolve to dark (the
 pre-paint script and the app's own resolution). System and Light still work once chosen in
 settings. To run the stack elsewhere, mount the folder and set the variable the same way.
+
+## Named themes and Message color
+
+Settings > General > Appearance offers, after System, Light and Dark, the six named themes of
+`dozo/design/themes-v2.css` (Sumi, Yoru and Hoji dark; Washi, Matcha and Kasumi light). Their
+palettes are in `packages/ui-tokens/src/dozo-themes.ts`, which renders
+`packages/ui-web/src/dozo-themes.css` (imported by `dozo-shell.css`, so it applies before the first
+paint; a test holds the file equal to the source). A theme only tints the surfaces and the ink of its
+tone: the main button stays ink, status and bot colours stay. The mockup's per-theme accent is not
+used. Every theme holds text and secondary text at 4.5:1 on each surface and faint text at 3:1
+(`packages/core/src/dozo-themes-contrast.test.ts`).
+
+The choice is per device, like Light and Dark: upstream's `rakazo.uiAppearance` keeps the theme's
+tone and `dozo.uiTheme` its name; `apps/web/public/dozo-boot.js` sets `data-skin` before first paint
+only when the two agree, so an unknown or older name falls back to plain Light or Dark. Message
+color (`dozo.uiBubble`) gives your own bubble and the send button the open bot's colour (the
+default) or the theme's neutral bubble, an ink bubble in light. Mobile does not read these yet and
+stays on Light and Dark.

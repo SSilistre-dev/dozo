@@ -7,7 +7,10 @@
    reached through their data attributes; dozo/e2e checks that each hook still matches after an
    upstream merge. Menus, dialogs and the settings and Integrations windows are in
    dozo-overlays.css, which reads the tone steps named here and loads right after the app starts
-   (apps/web/src/lib/dozo-boot.ts), not before its first paint. */
+   (apps/web/src/lib/dozo-boot.ts), not before its first paint. The named themes of Settings >
+   Appearance are in dozo-themes.css, here because they must apply before the first paint. */
+
+@import "./dozo-themes.css";
 
 :root {
   /* The one red of the brand, the seal dot. No semantic token carries it, so it is written here. */
@@ -306,11 +309,7 @@
 [data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child {
   gap: 8px;
 }
-[data-collapsible="icon"]
-  [data-slot="sidebar-inner"]
-  > .app-drag:first-child
-  > :last-child
-  button {
+[data-collapsible="icon"] [data-slot="sidebar-inner"] > .app-drag:first-child > :last-child button {
   width: 40px;
   min-width: 40px;
   height: 40px;
@@ -340,7 +339,9 @@
   background: var(--warning);
   box-shadow: 0 0 0 2px var(--dozo-surface-0);
 }
-[data-collapsible="icon"] [data-roster-bot-id] > span:has(> .dozo-avatar[data-state="waiting"])::after {
+[data-collapsible="icon"]
+  [data-roster-bot-id]
+  > span:has(> .dozo-avatar[data-state="waiting"])::after {
   content: "";
 }
 [data-collapsible="icon"] .group\/row:hover [data-roster-bot-id] > span > [aria-hidden] {

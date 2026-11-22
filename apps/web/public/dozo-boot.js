@@ -1,4 +1,27 @@
-// Runs before first paint, after theme.js. On a chat route the boot shell in index.html draws the
+// Runs before first paint, after theme.js. The named theme and message colour of Settings >
+// Appearance (src/lib/dozo-ui-theme.ts). A theme applies only beside the tone theme.js resolved,
+// the one it was chosen with; an unknown or older name leaves plain Light or Dark. The names are
+// those of @rakazo/ui-tokens/dozo-themes, which the test of this file holds equal.
+(() => {
+  const TONES = {
+    sumi: "dark",
+    yoru: "dark",
+    hoji: "dark",
+    washi: "light",
+    matcha: "light",
+    kasumi: "light",
+  };
+  const root = document.documentElement;
+  try {
+    const theme = localStorage.getItem("dozo.uiTheme");
+    if (theme && Object.hasOwn(TONES, theme) && TONES[theme] === root.dataset.theme) {
+      root.dataset.skin = theme;
+    }
+    if (localStorage.getItem("dozo.uiBubble") === "neutral") root.dataset.bubble = "neutral";
+  } catch {}
+})();
+
+// On a chat route the boot shell in index.html draws the
 // sidebar at the width the app will give it; src/lib/dozo-boot.ts removes the shell. The numbers
 // are those of src/lib/bots-sidebar-pref.ts (default, min, max, mini, chat column), which the
 // test of this file holds equal.
