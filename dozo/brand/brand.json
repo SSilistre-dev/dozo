@@ -11878,8 +11878,8 @@
     },
     {
       "file": "packages/adapters/src/run-assembly-context.ts",
-      "find": "import { markHistoryReadOutside } from \"./dozo-read-outside.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
-      "replace": "import { markHistoryReadOutside } from \"./dozo-read-outside.js\";\nimport { markRunRecalledMemory } from \"./dozo-learning-recall.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "find": "import { markAssemblyReadOutside } from \"./dozo-read-outside.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
+      "replace": "import { markAssemblyReadOutside } from \"./dozo-read-outside.js\";\nimport { markRunRecalledMemory } from \"./dozo-learning-recall.js\";\nimport { partitionTools } from \"./builtin-tool-bridge.js\";",
       "requires": [
         "packages/adapters/src/dozo-learning-recall.ts"
       ],
@@ -11887,8 +11887,8 @@
     },
     {
       "file": "packages/adapters/src/run-assembly-context.ts",
-      "find": "  markHistoryReadOutside(state, parts.turnContext.history);\n  /** Fleet tools take every scope from the run, never from arguments. */",
-      "replace": "  markHistoryReadOutside(state, parts.turnContext.history);\n  markRunRecalledMemory(state, parts.turnContext.recalledMemory);\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "find": "  markAssemblyReadOutside(state, parts.turnContext.history, parts.saved);\n  /** Fleet tools take every scope from the run, never from arguments. */",
+      "replace": "  markAssemblyReadOutside(state, parts.turnContext.history, parts.saved);\n  markRunRecalledMemory(state, parts.turnContext.recalledMemory);\n  /** Fleet tools take every scope from the run, never from arguments. */",
       "requires": [
         "packages/adapters/src/dozo-learning-recall.ts"
       ],
