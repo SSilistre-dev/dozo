@@ -165,8 +165,8 @@ describe("an extra chat's title", () => {
     return null;
   }
 
-  it("says the bot's name, then the chat's", () => {
-    expect(dozoTitleName("Ada", "Launch plan")).toBe("Ada · Launch plan");
+  it("names an extra chat by its own name, the main chat by the bot's", () => {
+    expect(dozoTitleName("Ada", "Launch plan")).toBe("Launch plan");
     expect(dozoTitleName("Ada", undefined)).toBe("Ada");
     expect(dozoTitleName(undefined, "Launch plan")).toBeUndefined();
   });
