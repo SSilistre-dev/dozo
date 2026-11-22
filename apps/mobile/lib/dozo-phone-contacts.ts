@@ -1,4 +1,4 @@
-import { withoutLinks } from "@rakazo/contracts";
+import { oneLineText, withoutLinks } from "@rakazo/contracts";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 import type { PhonePermission } from "./dozo-phone-calendar";
@@ -78,11 +78,12 @@ export async function requestContactsPermission(): Promise<PhonePermission> {
 }
 
 /**
- * The query as it is matched: trimmed and in one form (NFKC), or null unless it has two letters or
- * digits, so a wildcard or punctuation alone (`*`, `%`, `..`) never lists the address book.
+ * The query as it is matched: one line in one form (`oneLineText`, as the server sends it), or
+ * null unless it has two letters or digits, so a wildcard or punctuation alone (`*`, `%`, `..`)
+ * never lists the address book.
  */
 export function contactsQuery(query: string): string | null {
-  const kept = query.normalize("NFKC").trim();
+  const kept = oneLineText(query);
   return (kept.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 2 ? kept : null;
 }
 

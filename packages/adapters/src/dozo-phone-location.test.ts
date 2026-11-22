@@ -30,7 +30,7 @@ import { PHONE_LOCATION_TOOL } from "./dozo-phone.tool-definition.js";
 import { phoneLocationValue } from "./dozo-phone-protocol.js";
 
 const TOOL = PHONE_LOCATION_TOOL;
-/** A reading just taken: one older than two minutes is refused. */
+/** The phone's clock when it took the reading; the server does not judge freshness by it. */
 const AT = new Date().toISOString();
 /** Where the phone is, more exactly than the bot may see it unasked. */
 const FIX = {
@@ -108,19 +108,31 @@ describe("an approximate location", () => {
     expect(await phoneGate(setup({ tainted: true }).ctx, false, TOOL, {})).toBe("ask");
   });
 
-  it("is refused when the reading is old or from the future", async () => {
-    const minutes = (count: number) => new Date(Date.now() + count * 60_000).toISOString();
-    for (const at of [minutes(-3), minutes(2)]) {
-      const run = setup({ answer: answers({ ...FIX, at }) });
+  it("is taken whatever the phone's clock says: its time is information only", async () => {
+    const hours = (count: number) => new Date(Date.now() + count * 3_600_000).toISOString();
+    // A phone whose clock runs an hour behind or ahead still answers this request, just now.
+    for (const at of [hours(-1), hours(1)]) {
+      const { result } = await locate(setup({ answer: answers({ ...FIX, at }) }));
+      expect(result).toEqual({ ...APPROXIMATE, at });
+    }
+  });
+
+  it("is refused when it came later than the phone has to answer, by the server's clock", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const run = setup({
+        answer: async function* () {
+          vi.setSystemTime(Date.now() + PHONE_ANSWER_MS + 1);
+          yield FIX;
+        },
+      });
       expect((await locate(run)).result).toEqual({
         error: "The user's phone gave an old reading. Try again.",
       });
+      expect(logged).toEqual([["warn", "phone location read failed", { kind: "stale" }]]);
+    } finally {
+      vi.useRealTimers();
     }
-    // A reading a minute old, or a few seconds ahead of the server's clock, is fine.
-    for (const at of [minutes(-1), new Date(Date.now() + 5_000).toISOString()])
-      expect((await locate(setup({ answer: answers({ ...FIX, at }) }))).result).toHaveProperty(
-        "latitude",
-      );
   });
 });
 
