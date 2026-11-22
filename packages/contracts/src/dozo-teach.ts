@@ -80,7 +80,7 @@ const DraftInput = z.object({
   labels: z.record(TargetId, DozoTeachLabelSchema).default({}),
 });
 
-export const dozoTeachContract = {
+export const dozoTeachContract = /* @__PURE__ */ (() => ({
   /** The values typed and the clicks made while teaching; only the teacher gets them. */
   review: oc.input(z.object({ skillId: Id })).output(
     z.object({
@@ -148,4 +148,4 @@ export const dozoTeachContract = {
     .output(z.object({ ok: z.literal(true) })),
   /** Runs the draft safely with the decisions applied; nothing is saved or forgotten. */
   test: oc.input(DraftInput).output(z.object({ runId: Id })),
-};
+}))();

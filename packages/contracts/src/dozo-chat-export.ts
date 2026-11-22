@@ -25,10 +25,10 @@ export const DozoChatExportSchema = z.object({
 });
 export type DozoChatExport = z.infer<typeof DozoChatExportSchema>;
 
-export const dozoChatExportContract = {
+export const dozoChatExportContract = /* @__PURE__ */ (() => ({
   /** One chat as Markdown, as its transcript shows it to the caller. */
   markdown: oc.input(DozoChatExportInputSchema).output(DozoChatExportSchema),
-};
+}))();
 
 /** How far back an export reaches: the whole chat, today, or the last 7 or 30 days. */
 export type ChatExportRange = "all" | "today" | "week" | "month";

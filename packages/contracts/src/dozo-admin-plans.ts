@@ -53,8 +53,8 @@ export type DozoAdminPlanQuotaChange = z.infer<typeof DozoAdminPlanQuotaChangeSc
 const PlansSchema = z.object({ plans: z.array(DozoAdminPlanRowSchema) });
 
 /** Every procedure is refused with FORBIDDEN unless the caller is a deployment admin. */
-export const dozoAdminPlansContract = {
+export const dozoAdminPlansContract = /* @__PURE__ */ (() => ({
   list: oc.output(PlansSchema),
   /** Each quota that changed is audited. BAD_REQUEST for computer hours on Free. */
   setQuota: oc.input(DozoAdminPlanQuotaChangeSchema).output(PlansSchema),
-};
+}))();

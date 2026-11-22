@@ -29,7 +29,7 @@ export type DozoCommandRule = z.infer<typeof DozoCommandRuleSchema>;
  */
 const HostedAsks = z.object({ hostedAsks: z.boolean().nullable() });
 
-export const dozoCommandRulesContract = {
+export const dozoCommandRulesContract = /* @__PURE__ */ (() => ({
   list: oc.output(z.array(DozoCommandRuleSchema)),
   update: oc
     .input(z.object({ id: z.string().min(1), effect: DozoCommandRuleEffectSchema }))
@@ -37,4 +37,4 @@ export const dozoCommandRulesContract = {
   remove: oc.input(z.object({ id: z.string().min(1) })).output(z.object({ ok: z.literal(true) })),
   getHostedAsks: oc.output(HostedAsks),
   setHostedAsks: oc.input(z.object({ hostedAsks: z.boolean() })).output(HostedAsks),
-};
+}))();

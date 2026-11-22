@@ -15,7 +15,7 @@ export const DozoDailySendsSchema = z.number().int().min(1).max(1000);
 
 const SendLimitState = z.object({ dailySends: DozoDailySendsSchema });
 
-export const dozoSendLimitContract = {
+export const dozoSendLimitContract = /* @__PURE__ */ (() => ({
   get: oc.output(SendLimitState),
   set: oc.input(SendLimitState).output(SendLimitState),
-};
+}))();

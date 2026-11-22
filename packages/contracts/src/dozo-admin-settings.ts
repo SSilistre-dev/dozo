@@ -57,14 +57,14 @@ export const DozoAnnouncementSchema = z.object({
 });
 export type DozoAnnouncement = z.infer<typeof DozoAnnouncementSchema>;
 
-export const dozoSiteSettingsContract = {
+export const dozoSiteSettingsContract = /* @__PURE__ */ (() => ({
   /** FORBIDDEN unless the caller is a deployment admin. Never carries a secret. */
   get: oc.output(DozoSiteSettingsSchema),
   /** FORBIDDEN unless the caller is a deployment admin. Each change is audited. */
   update: oc.input(DozoSiteSettingsChangeSchema).output(DozoSiteSettingsSchema),
   /** The announcement every signed-in person sees; null for a language without one. */
   announcement: oc.output(DozoAnnouncementSchema),
-};
+}))();
 
 /** The announcement in the app's language, else the one there is; null when there is none. */
 export function announcementText(announcement: DozoAnnouncement | undefined, locale: string) {

@@ -68,10 +68,10 @@ export const DozoAdminRevenueSchema = z.object({
 export type DozoAdminRevenue = z.infer<typeof DozoAdminRevenueSchema>;
 
 /** Every procedure is refused with FORBIDDEN unless the caller is a deployment admin. */
-export const dozoAdminBillingContract = {
+export const dozoAdminBillingContract = /* @__PURE__ */ (() => ({
   summary: oc.output(DozoAdminBillingSummarySchema),
   /** Null when no payment provider is configured. */
   revenue: oc
     .input(z.object({ period: DozoAdminRevenuePeriodSchema }))
     .output(DozoAdminRevenueSchema.nullable()),
-};
+}))();

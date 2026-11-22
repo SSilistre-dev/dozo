@@ -118,7 +118,7 @@ export const DozoAdminBanSchema = z.object({ value: z.string(), createdAt: IsoDa
 export type DozoAdminBan = z.infer<typeof DozoAdminBanSchema>;
 
 /** Every procedure is refused with FORBIDDEN unless the caller is a deployment admin. */
-export const dozoAdminContract = {
+export const dozoAdminContract = /* @__PURE__ */ (() => ({
   users: oc
     .input(
       z.object({
@@ -197,4 +197,4 @@ export const dozoAdminContract = {
   plans: dozoAdminPlansContract,
   /** Free-access grants an account has not received yet, beside upstream's list, create, revoke. */
   accessGrants: dozoAdminAccessContract,
-};
+}))();

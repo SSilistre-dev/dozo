@@ -45,7 +45,7 @@ export const DOZO_AVATAR_GENERATE_ERRORS = {
   failed: "avatar_generate_failed",
 } as const;
 
-export const dozoAvatarGenerateContract = {
+export const dozoAvatarGenerateContract = /* @__PURE__ */ (() => ({
   status: oc.output(DozoAvatarGenerateStatusSchema),
   generate: oc.input(DozoAvatarGenerateInputSchema).output(DozoAvatarGenerateResultSchema),
-};
+}))();
