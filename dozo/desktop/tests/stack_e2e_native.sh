@@ -196,6 +196,8 @@ if [ -z "$RELAY" ]; then
     export DISPLAY=:87 DOZO_BROWSER_E2E_WINDOW=1
     sleep 1
   fi
+  # On macOS headless: a real window on the hosted runners never showed its page (measured on
+  # darwin-arm64), so the window itself is checked by hand on a Mac.
   browser_test e2e_browser_page_tools_work_through_the_pipe_only
   browser_test e2e_browser_guard_holds_in_windows_and_frames
   browser_test e2e_browser_reaches_nothing_on_this_computer_or_its_network
