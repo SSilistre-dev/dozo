@@ -15,7 +15,7 @@ export const DozoOrganizationLibrarySchema = z.object({
 });
 export type DozoOrganizationLibrary = z.infer<typeof DozoOrganizationLibrarySchema>;
 
-export const dozoOrganizationLibraryContract = {
+export const dozoOrganizationLibraryContract = /* @__PURE__ */ (() => ({
   get: oc.output(DozoOrganizationLibrarySchema),
   /** The organization's owner only, for a skill they wrote themselves. */
   share: oc
@@ -25,4 +25,4 @@ export const dozoOrganizationLibraryContract = {
   hide: oc
     .input(z.object({ skillId: Id, hidden: z.boolean() }))
     .output(DozoOrganizationLibrarySchema),
-};
+}))();

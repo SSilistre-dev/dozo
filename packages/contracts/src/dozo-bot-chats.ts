@@ -95,7 +95,7 @@ export const DozoRoutineChatSchema = z.object({
 });
 export type DozoRoutineChat = z.infer<typeof DozoRoutineChatSchema>;
 
-export const dozoChatsContract = {
+export const dozoChatsContract = /* @__PURE__ */ (() => ({
   /** Extra chats, oldest first; archived ones only when asked for. */
   list: oc
     .input(DozoBotChatsListInputSchema)
@@ -108,4 +108,4 @@ export const dozoChatsContract = {
   routineChat: oc.input(DozoRoutineChatInputSchema).output(DozoRoutineChatSchema),
   /** Points a routine at one of its bot's open extra chats, or back at the main chat. */
   setRoutineChat: oc.input(DozoRoutineChatSetInputSchema).output(DozoRoutineChatSchema),
-};
+}))();

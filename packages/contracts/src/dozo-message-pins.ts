@@ -18,7 +18,7 @@ export type DozoMessagePin = z.infer<typeof DozoMessagePinSchema>;
 
 const ThreadInput = z.object({ threadId: Id });
 
-export const dozoMessagePinsContract = {
+export const dozoMessagePinsContract = /* @__PURE__ */ (() => ({
   pins: oc
     .input(ThreadInput)
     .output(z.object({ pins: z.array(DozoMessagePinSchema).max(DOZO_MESSAGE_PINS_MAX) })),
@@ -26,4 +26,4 @@ export const dozoMessagePinsContract = {
   pin: oc
     .input(ThreadInput.extend({ messageId: Id, pinned: z.boolean() }))
     .output(z.object({ pinned: z.boolean() })),
-};
+}))();

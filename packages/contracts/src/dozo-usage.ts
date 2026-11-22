@@ -46,7 +46,7 @@ export type DozoUsageGroup = z.infer<typeof DozoUsageGroupSchema>;
 
 const GroupingInput = z.object({ by: DozoUsageGroupingSchema });
 
-export const dozoUsageContract = {
+export const dozoUsageContract = /* @__PURE__ */ (() => ({
   /** The caller's own usage in the current Space; null when it has no input this period. */
   cacheSavings: oc.output(DozoCacheSavingsSchema.nullable()),
   /** The caller's own usage in the current Space, as the Usage summary counts it, grouped. */
@@ -55,4 +55,4 @@ export const dozoUsageContract = {
   scope: oc.output(z.object({ person: z.boolean() })),
   /** The same groups as a CSV file, rendered on the server. */
   csv: oc.input(GroupingInput).output(z.object({ csv: z.string() })),
-};
+}))();

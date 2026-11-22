@@ -1,7 +1,9 @@
 /* Dozo overlays: what floats over the chat, in the language of the approved mockups
    (dozo/design): chat-v2.html's one menu surface and its dialogs, the settings window of
-   settings-v2.html and the Integrations window of apps-v2.html. Imported by dozo-shell.css, whose
-   :root names every tone used here, and unlayered like it, so it outranks Tailwind's utilities.
+   settings-v2.html and the Integrations window of apps-v2.html. Loaded by apps/web/src/lib/dozo-boot.ts
+   right after the app starts, not before its first paint (nothing here is on screen then). The
+   shell's :root names every tone used here, and this is unlayered like it, so it outranks
+   Tailwind's utilities.
    Upstream elements are reached through their data-slot and data-testid hooks; dozo/e2e's look
    spec checks the computed result. What a surface holds, its order and its behaviour stay
    upstream's. */

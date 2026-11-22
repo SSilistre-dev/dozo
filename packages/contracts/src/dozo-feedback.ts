@@ -90,7 +90,7 @@ export function dozoFeedbackText(
   return `${message.trim()}\n\n${dozoFeedbackFooter(from, diagnostics)}\n`;
 }
 
-export const dozoFeedbackContract = {
+export const dozoFeedbackContract = /* @__PURE__ */ (() => ({
   status: oc.output(DozoFeedbackStatusSchema),
   send: oc.input(DozoFeedbackSendSchema).output(z.object({ sent: z.literal(true) })),
-};
+}))();

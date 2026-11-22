@@ -24,7 +24,7 @@ export const DozoQueueItemSchema = z.object({
 });
 export type DozoQueueItem = z.infer<typeof DozoQueueItemSchema>;
 
-export const dozoQueueContract = {
+export const dozoQueueContract = /* @__PURE__ */ (() => ({
   /** What waits for the bot (or the group's bots), in the order it will start. */
   list: oc
     .input(
@@ -40,4 +40,4 @@ export const dozoQueueContract = {
   cancelWaiting: oc
     .input(z.union([z.object({ runId: Id }), z.object({ messageId: Id })]))
     .output(z.object({ cancelled: z.literal(true) })),
-};
+}))();

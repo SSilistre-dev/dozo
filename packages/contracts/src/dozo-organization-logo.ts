@@ -23,7 +23,7 @@ export const DozoOrganizationLogoSchema = z.object({
 });
 export type DozoOrganizationLogo = z.infer<typeof DozoOrganizationLogoSchema>;
 
-export const dozoOrganizationLogoContract = {
+export const dozoOrganizationLogoContract = /* @__PURE__ */ (() => ({
   /** The logo of the organization the current Space belongs to, for any member of that Space. */
   mark: oc.output(DozoOrganizationMarkSchema),
   /** A member of the organization (not a guest of one of its Spaces). */
@@ -41,4 +41,4 @@ export const dozoOrganizationLogoContract = {
       }),
     )
     .output(DozoOrganizationLogoSchema),
-};
+}))();

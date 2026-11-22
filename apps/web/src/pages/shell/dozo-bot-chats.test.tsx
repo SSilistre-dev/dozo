@@ -44,8 +44,14 @@ vi.mock("../../lib/dozo-error-text", () => ({
   toastError: api.toastError,
 }));
 vi.mock("./dozo-chat-export-menu", () => ({
-  DozoChatExportMenu: ({ target }: { target: { chatId?: string } }) => (
-    <button type="button" role="menuitem" data-export={target.chatId}>
+  DozoChatExportMenu: ({
+    target,
+    onClose,
+  }: {
+    target: { chatId?: string };
+    onClose: () => void;
+  }) => (
+    <button type="button" role="menuitem" data-export={target.chatId} onClick={onClose}>
       Export
     </button>
   ),
@@ -364,6 +370,8 @@ describe("the roster's extra chat rows", () => {
     }
     expect(items().slice(-2)).toEqual(["Export", "Archive"]);
     expect(container.querySelector("[data-export]")?.getAttribute("data-export")).toBe("chat-1");
+    // The export submenu closes by itself with the menu, so the close it is given does nothing.
+    await click(container.querySelector("[data-export]"));
     await click(item("Mark as Read"));
     await vi.waitFor(() =>
       expect(api.markRead).toHaveBeenCalledWith({ chatBotId: "bot-1", chatId: "chat-1" }),
@@ -418,6 +426,8 @@ describe("the roster's extra chat rows", () => {
     await render(<DozoBotChatRows botId="bot-1" compact={false} mini={false} open={vi.fn()} />);
     await vi.waitFor(() => expect(item("Rename")).toBeDefined());
     await click(item("Rename"));
+    // The dialog's code loads the first time it is asked for.
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"] input')).not.toBeNull());
     const input = container.querySelector<HTMLInputElement>('[role="dialog"] input');
     expect(input?.value).toBe("Garden");
     const save = () =>
@@ -451,12 +461,14 @@ describe("the roster's extra chat rows", () => {
     await render(<DozoBotChatRows botId="bot-1" compact={false} mini={false} open={vi.fn()} />);
     await vi.waitFor(() => expect(item("Rename")).toBeDefined());
     await click(item("Rename"));
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).not.toBeNull());
     const cancel = [...container.querySelectorAll('[role="dialog"] button')].find(
       (node) => node.textContent === "Cancel",
     );
     await click(cancel);
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     await click(item("Rename"));
+    await vi.waitFor(() => expect(container.querySelector("[data-dismiss]")).not.toBeNull());
     await click(container.querySelector("[data-dismiss]"));
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     // A submit with nothing changed saves nothing.

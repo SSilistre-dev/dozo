@@ -6,7 +6,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { CliError, keychain, main, parseArgs, serverOrigin, sseEvents } from "./dozo.mjs";
+import {
+  CliError,
+  followCommand,
+  keychain,
+  main,
+  parseArgs,
+  serverOrigin,
+  sseEvents,
+} from "./dozo.mjs";
 
 const TOKEN = `dozo_pat_${"t".repeat(43)}`;
 
@@ -359,7 +367,8 @@ describe("a bot's other chats", () => {
     assert.equal(sent.code, 3);
     assert.equal(requests[2].url, "/api/v1/dozo/bots/bot-1/messages?chat=chat-1");
     assert.deepEqual(JSON.parse(requests[2].body), { text: "Sow?" });
-    assert.match(sent.stderr, /dozo follow bot-1 run-1 --after 5 --chat garden/);
+    // The chat's id, which the server gave, not the name typed after --chat.
+    assert.match(sent.stderr, /dozo follow bot-1 run-1 --after 5 --chat chat-1\n/);
 
     requests = [];
     handlers.push(bots(), chats(), events([frame("status", { status: "completed" }, 9)]));
@@ -373,6 +382,30 @@ describe("a bot's other chats", () => {
     assert.equal(url.pathname, "/api/v1/dozo/bots/bot-1/export");
     assert.equal(url.searchParams.get("chat"), "chat-1");
     assert.ok(url.searchParams.get("timeZone"));
+  });
+
+  it("names the chat by its id in the line to go on, whatever was typed after --chat", async () => {
+    const odd = "Garden; rm -rf ~ $(touch x)";
+    handlers.push(
+      bots(),
+      chats([{ id: "chat-1", name: odd, createdAt: "2026-11-20T09:00:00.000Z" }]),
+      events([
+        frame("run", { runId: "run-1", seq: 4 }, 4),
+        frame("status", { status: "waiting_input" }, 5),
+      ]),
+    );
+    const sent = await run(["send", "Chef", "--chat", odd, "Sow?"]);
+    assert.equal(sent.code, 3);
+    assert.match(sent.stderr, /Then: dozo follow bot-1 run-1 --after 5 --chat chat-1\n$/);
+    assert.ok(!sent.stderr.includes("rm -rf"));
+  });
+
+  it("quotes any word of the line to go on that a shell would split or run", () => {
+    assert.equal(
+      followCommand("bot 1", "run;2", "7", `chat=${encodeURIComponent("it's $(x)")}`),
+      "dozo follow 'bot 1' 'run;2' --after 7 --chat 'it'\\''s $(x)'",
+    );
+    assert.equal(followCommand("bot-1", "run-1", 5, ""), "dozo follow bot-1 run-1 --after 5");
   });
 
   it("follows a dropped stream again in the same chat", async () => {

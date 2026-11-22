@@ -32,7 +32,8 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 import type * as Query from "../../lib/query";
-import { DozoAvatarGeneratePanel, DozoAvatarGenerateTab } from "./dozo-avatar-generate";
+import { DozoAvatarGenerateTab } from "./dozo-avatar-generate";
+import { DozoAvatarGeneratePanel } from "./dozo-avatar-generate-panel";
 
 const IMAGE = "data:image/webp;base64,AAAA";
 const used = vi.fn<(image: string) => void>();
@@ -115,6 +116,22 @@ describe("drawing an avatar from a description", () => {
   ])("offers nothing with %s", async (_name, status) => {
     await open(status);
     expect(document.body.textContent).not.toContain("Generate");
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("offers neither the tab nor the form on a page without a query client", async () => {
+    await act(async () =>
+      root.render(
+        <Tabs value="bot" onValueChange={() => undefined}>
+          <TabsList>
+            <DozoAvatarGenerateTab />
+          </TabsList>
+          <DozoAvatarGeneratePanel onUse={used} />
+        </Tabs>,
+      ),
+    );
+    await act(flush);
+    expect(document.querySelector('[role="tab"]')).toBeNull();
     expect(document.querySelector("textarea")).toBeNull();
   });
 

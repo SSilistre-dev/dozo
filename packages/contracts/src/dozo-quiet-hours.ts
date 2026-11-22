@@ -55,7 +55,7 @@ export function dozoQuietHoursOf(ranges: readonly DozoQuietRange[]): DozoQuietHo
 
 const QuietHoursState = z.object({ hours: DozoQuietHoursSchema.nullable(), ranges: Ranges });
 
-export const dozoQuietHoursContract = {
+export const dozoQuietHoursContract = /* @__PURE__ */ (() => ({
   get: oc.output(QuietHoursState),
   /**
    * `ranges` wins when given; otherwise `hours` sets the first range's times, keeping its days
@@ -73,4 +73,4 @@ export const dozoQuietHoursContract = {
     .output(QuietHoursState),
   /** Ranges fitted to when the caller writes, or null when there is too little or no clear pattern. */
   suggest: oc.output(z.object({ ranges: Ranges.nullable() })),
-};
+}))();

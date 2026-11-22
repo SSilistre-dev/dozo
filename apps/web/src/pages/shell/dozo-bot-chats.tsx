@@ -1,46 +1,34 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoBotChat } from "@rakazo/contracts";
-import type { SnoozePreset } from "@rakazo/core";
-import { chatSnoozed, SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
+import { chatSnoozed } from "@rakazo/core";
 import {
   Button,
   ContextMenu,
-  ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Input,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, Bell, BellDot, Check, ChevronDown, Clock, Pencil, Plus } from "lucide-react";
+import { Check, ChevronDown, Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { useId, useState } from "react";
+import { Suspense, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { PageLoading } from "../../components/PageLoading";
-import { errorText, toastError } from "../../lib/dozo-error-text";
+import { toastError } from "../../lib/dozo-error-text";
 import {
   dozoChatOf,
   dozoExtraChatOpen,
   dozoOpenChat,
   setDozoOpenChat,
 } from "../../lib/dozo-open-chat";
+import { lazyComponent } from "../../lib/preload-recovery";
 import { queryClient, useSave, useSpaceQueries } from "../../lib/query";
-import { rpc as selectedSpaceRpc } from "../../lib/rpc";
 import { useEventListener } from "../../lib/use-event-listener";
-import { DozoChatExportMenu } from "./dozo-chat-export-menu";
 
 /**
  * A bot's extra chats. The bot's main chat stays `/app/<bot>`; an extra chat is
@@ -200,7 +188,7 @@ export function dozoBotChatsChanged(client = queryClient): Promise<void> {
   });
 }
 
-function useListKey() {
+export function useListKey() {
   const queries = useSpaceQueries();
   return queries.dozoChats.list.key();
 }
@@ -347,6 +335,15 @@ export function DozoBotChatRows({
   );
 }
 
+// The menu a right click opens loads the first time one is asked for, with the export submenu.
+const DozoBotChatMenu = lazyComponent(() =>
+  import("./dozo-bot-chat-menu").then((module) => module.DozoBotChatMenu),
+);
+// The rename dialog loads the first time someone renames a chat, not with the sidebar.
+const RenameChatDialog = lazyComponent(() =>
+  import("./dozo-rename-chat-dialog").then((module) => module.RenameChatDialog),
+);
+
 function DozoBotChatRow({
   chat,
   selected,
@@ -382,149 +379,18 @@ function DozoBotChatRow({
           </>
         ) : null}
       </ContextMenuTrigger>
-      <DozoBotChatMenu chat={chat} selected={selected} onRename={() => setRenaming(true)} />
-      {renaming ? <RenameChatDialog chat={chat} onClose={() => setRenaming(false)} /> : null}
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <DozoBotChatMenu chat={chat} selected={selected} onRename={() => setRenaming(true)} />
+        </Suspense>
+      </ErrorBoundary>
+      {renaming ? (
+        <ErrorBoundary fallback={null}>
+          <Suspense fallback={null}>
+            <RenameChatDialog chat={chat} onClose={() => setRenaming(false)} />
+          </Suspense>
+        </ErrorBoundary>
+      ) : null}
     </ContextMenu>
-  );
-}
-
-type ChatAction =
-  | { kind: "read" }
-  | { kind: "unread" }
-  | { kind: "snooze"; until: string }
-  | { kind: "archive" };
-
-function DozoBotChatMenu({
-  chat,
-  selected,
-  onRename,
-}: {
-  chat: DozoBotChat;
-  selected: boolean;
-  onRename: () => void;
-}) {
-  const { t, i18n } = useLingui();
-  const navigate = useNavigate();
-  const listKey = useListKey();
-  const target = { chatBotId: chat.botId, chatId: chat.id };
-  const presetLabels: Record<SnoozePreset, string> = {
-    hour: t`1 hour`,
-    threeHours: t`3 hours`,
-    tomorrow: t`Tomorrow`,
-    nextWeek: t`Next week`,
-  };
-  const change = useSave<ChatAction, unknown>({
-    save: async (action, client) => {
-      if (action.kind === "read") return client.threads.markRead(target);
-      if (action.kind === "unread") return client.threads.markUnread(target);
-      if (action.kind === "snooze")
-        return client.threads.snooze({ ...target, until: action.until });
-      return client.dozoChats.archive({ chatId: chat.id, archived: true });
-    },
-    stale: [listKey],
-    onSaved: (_, action) => {
-      if (action.kind === "archive" && selected) navigate(`/app/${chat.botId}`);
-    },
-    onFailed: (error) => toastError(t`Something went wrong. Try again.`, error),
-  });
-  const now = new Date();
-  return (
-    <ContextMenuContent aria-label={t`Actions for ${chat.name}`} className="w-[240px]">
-      <ContextMenuItem onClick={onRename}>
-        <Pencil />
-        {t`Rename`}
-      </ContextMenuItem>
-      <ContextMenuItem onClick={() => change.run({ kind: chat.unread ? "read" : "unread" })}>
-        {chat.unread ? <BellDot /> : <Bell />}
-        {chat.unread ? t`Mark as Read` : t`Mark as Unread`}
-      </ContextMenuItem>
-      <ContextMenuSub>
-        <ContextMenuSubTrigger>
-          <Clock />
-          {t`Snooze`}
-        </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="min-w-[200px]">
-          {SNOOZE_PRESETS.map((preset) => {
-            const wake = snoozePresetTime(preset, now);
-            return (
-              <ContextMenuItem
-                key={preset}
-                onClick={() => change.run({ kind: "snooze", until: wake.toISOString() })}
-              >
-                {presetLabels[preset]}
-                <span className="ms-auto text-label text-muted-foreground">
-                  {i18n.date(wake, { weekday: "short", hour: "numeric", minute: "2-digit" })}
-                </span>
-              </ContextMenuItem>
-            );
-          })}
-        </ContextMenuSubContent>
-      </ContextMenuSub>
-      <DozoChatExportMenu
-        rpc={selectedSpaceRpc}
-        target={target}
-        name={chat.name}
-        onClose={() => {}}
-      />
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={() => change.run({ kind: "archive" })}>
-        <Archive />
-        {t`Archive`}
-      </ContextMenuItem>
-    </ContextMenuContent>
-  );
-}
-
-function RenameChatDialog({ chat, onClose }: { chat: DozoBotChat; onClose: () => void }) {
-  const { t } = useLingui();
-  const nameId = useId();
-  const listKey = useListKey();
-  const [name, setName] = useState(chat.name);
-  const trimmed = name.trim();
-  const rename = useSave({
-    save: (value: string, client) => client.dozoChats.rename({ chatId: chat.id, name: value }),
-    stale: [listKey],
-    onSaved: onClose,
-  });
-  return (
-    <Dialog open onOpenChange={(next) => (next || rename.pending ? undefined : onClose())}>
-      <DialogContent showCloseButton={false} aria-describedby={undefined}>
-        <form
-          className="contents"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (trimmed && trimmed !== chat.name) rename.run(trimmed);
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{t`Rename`}</DialogTitle>
-          </DialogHeader>
-          <label htmlFor={nameId} className="block text-body text-foreground/75">
-            {t`Name`}
-            <Input
-              id={nameId}
-              maxLength={80}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="mt-2"
-              autoFocus
-            />
-          </label>
-          {rename.error ? (
-            <p className="text-body text-destructive">
-              {errorText(rename.error, t`Something went wrong. Try again.`)}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={rename.pending} onClick={onClose}>
-              {t`Cancel`}
-            </Button>
-            <Button type="submit" disabled={rename.pending || !trimmed || trimmed === chat.name}>
-              {rename.pending ? t`Saving…` : t`Save`}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

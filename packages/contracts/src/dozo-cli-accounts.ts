@@ -31,7 +31,7 @@ export type DozoCliTool = z.infer<typeof DozoCliToolSchema>;
 const DozoCliToolsSchema = z.object({ tools: z.array(DozoCliToolSchema) });
 const Provider = z.object({ provider: z.string().min(1).max(100) });
 
-export const dozoCliAccountsContract = {
+export const dozoCliAccountsContract = /* @__PURE__ */ (() => ({
   /** Empty unless the server runs on the person's own computer and serves only them. */
   list: oc.output(DozoCliToolsSchema),
   /**
@@ -51,4 +51,4 @@ export const dozoCliAccountsContract = {
     .output(DozoCliToolsSchema),
   /** Ends a sign-in in progress, or clears one that did not finish. */
   cancelLogin: oc.input(Provider).output(DozoCliToolsSchema),
-};
+}))();

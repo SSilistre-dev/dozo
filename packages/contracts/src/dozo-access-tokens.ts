@@ -32,7 +32,7 @@ export const DozoAccessTokenCreateInputSchema = z.object({
 export type DozoAccessTokenCreateInput = z.infer<typeof DozoAccessTokenCreateInputSchema>;
 
 /** The signed-in member's tokens in the current Space. A token can never call these. */
-export const dozoAccessTokensContract = {
+export const dozoAccessTokensContract = /* @__PURE__ */ (() => ({
   list: oc.output(z.array(DozoAccessTokenSchema)),
   /** The token is in this answer only; it cannot be read again. */
   create: oc
@@ -46,4 +46,4 @@ export const dozoAccessTokensContract = {
    * marks no longer make it ask. Never reachable with a token.
    */
   trustBot: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
-};
+}))();
