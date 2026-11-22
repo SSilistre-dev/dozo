@@ -36,7 +36,7 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
     await page.getByText(name, { exact: true }).click();
     await expect(page.getByPlaceholder("Name this routine")).toHaveValue(name);
   };
-  const chatPicker = page.getByLabel("Chat", { exact: true });
+  const chatPicker = page.getByRole("combobox", { name: "Chat", exact: true });
 
   // Made before the app opens: the editor reads the bot's chats from its first load.
   const { chat } = await rpcAs<{ chat: { id: string } }>(page, "dozoChats/create", {
@@ -46,8 +46,7 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
   try {
     try {
       await editor("light");
-      // The picker waits for the bot's chats, read once the editor opens.
-      await expect(chatPicker).toBeVisible({ timeout: 20_000 });
+      await expect(chatPicker).toBeVisible();
       await expect(chatPicker).toHaveValue("");
       await chatPicker.selectOption({ label: "Garden" });
       await expect
@@ -62,7 +61,7 @@ test("routine chat: a routine of a bot with an extra chat picks where it posts",
         .toBe(chat.id);
       await shot(page, "routine-chat-light");
       await editor("dark");
-      await expect(chatPicker).toHaveValue(chat.id, { timeout: 20_000 });
+      await expect(chatPicker).toHaveValue(chat.id);
       await shot(page, "routine-chat-dark");
     } finally {
       await rpcAs(page, "routines/remove", { routineId: routine.id });
