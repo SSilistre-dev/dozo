@@ -5324,12 +5324,13 @@
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
       "find": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { botProfilePatch }",
-      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"../../lib/dozo-lazy-surfaces\";\nimport { botProfilePatch }",
+      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotBackups, DozoBotSkillsSection } from \"../../lib/dozo-lazy-surfaces\";\nimport { botProfilePatch }",
       "requires": [
         "apps/web/src/lib/dozo-lazy-surfaces.tsx",
-        "apps/web/src/pages/shell/dozo-bot-skills-section.tsx"
+        "apps/web/src/pages/shell/dozo-bot-skills-section.tsx",
+        "apps/web/src/pages/shell/dozo-bot-backups.tsx"
       ],
-      "reason": "teaching: the import of the rule below"
+      "reason": "teaching and bot backups: the imports of the rule below and of the bot's own backup models under its model"
     },
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
@@ -11362,6 +11363,87 @@
         "packages/core/src/dozo-skill-name.ts"
       ],
       "reason": "organization skill library: the resolver compares names by the same key as the library's built-in rule, so no padding of a name gets around it; the comparison itself is unchanged"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { MemoryProviderDescriptorSchema } from \"./provider-settings.js\";\nimport { MessageReactionSchema } from \"./reactions.js\";",
+      "replace": "import { MemoryProviderDescriptorSchema } from \"./provider-settings.js\";\nexport * from \"./dozo-bot-model-backups.js\";\nimport { dozoBotModelBackupsContract } from \"./dozo-bot-model-backups.js\";\nimport { MessageReactionSchema } from \"./reactions.js\";",
+      "requires": [
+        "packages/contracts/src/dozo-bot-model-backups.ts"
+      ],
+      "reason": "bot backups: the imports of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "      .output(z.object({ ok: z.literal(true) })),\n  },\n  bots: {\n    list: oc.output(z.array(BotSchema)),",
+      "replace": "      .output(z.object({ ok: z.literal(true) })),\n  },\n  dozoBotModelBackups: dozoBotModelBackupsContract,\n  bots: {\n    list: oc.output(z.array(BotSchema)),",
+      "reason": "bot backups: reading and saving a bot's own ordered backup models join the app contract, so the server and the web client share their types"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./bot-instructions.js\";\nexport * from \"./bot-update.js\";",
+      "replace": "export * from \"./bot-instructions.js\";\nexport * from \"./dozo-bot-model-backups.js\";\nexport * from \"./bot-update.js\";",
+      "requires": [
+        "packages/db/src/dozo-bot-model-backups.ts"
+      ],
+      "reason": "bot backups: the package exports the store of a bot's own backup models"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { availabilityRoutes } from \"./routes/availability.js\";\nimport { boardsRoutes } from \"./routes/boards.js\";",
+      "replace": "import { availabilityRoutes } from \"./routes/availability.js\";\nimport { dozoBotModelBackupsRoutes } from \"./dozo-bot-model-backups.js\";\nimport { boardsRoutes } from \"./routes/boards.js\";",
+      "requires": [
+        "apps/api/src/dozo-bot-model-backups.ts"
+      ],
+      "reason": "bot backups: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...capabilitiesRoutes(ctx),\n    ...mcpRoutes(ctx),",
+      "replace": "    ...capabilitiesRoutes(ctx),\n    ...dozoBotModelBackupsRoutes(ctx),\n    ...mcpRoutes(ctx),",
+      "reason": "bot backups: the router serves a bot's own backup models, read by any member who sees the bot and saved by whoever may change its model, each row checked as a member's own backup is"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "import { effectiveModelRole } from \"./model-roles.js\";\n",
+      "replace": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-bot-model-backups.ts"
+      ],
+      "reason": "bot backups: the import of the rules below, in place of the one it replaces"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "  run: { id: string; userId: string; spaceId: string; modelPinned: boolean },\n  defaults: DeploymentModelDefaults,",
+      "replace": "  run: {\n    id: string;\n    userId: string;\n    spaceId: string;\n    modelPinned: boolean;\n    botId?: string | null;\n  },\n  defaults: DeploymentModelDefaults,",
+      "reason": "bot backups: the run's bot, whose own backups the run reads"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "      : effectiveModelRole(deps.prisma, run, \"main\", defaults).then(",
+      "replace": "      : runBackupModels(deps.prisma, run, defaults).then(",
+      "reason": "bot backups: a run of a bot with its own backup models moves to those, in their order, on the runner's own connections; a bot without any keeps the runner's backups exactly as before"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-panel.tsx",
+      "find": "                onThinkingLevelChange={setThinkingLevel}\n              />\n              <SwitchRow\n                id={`${ids}-notify-finish`}",
+      "replace": "                onThinkingLevelChange={setThinkingLevel}\n              />\n              <DozoBotBackups botId={bot.id} spaceId={bot.spaceId} />\n              <SwitchRow\n                id={`${ids}-notify-finish`}",
+      "reason": "bot backups: the bot's own ordered backup models sit under its model, one Add fallback line until there is one"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
+      "replace": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoBotBackupsChanged } from \"./dozo-bot-backups-signal\";\nimport { dozoCliAccountsChanged }",
+      "requires": [
+        "apps/web/src/pages/shell/dozo-bot-backups-signal.ts"
+      ],
+      "reason": "bot backups: the import of the rule below"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
+      "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
+      "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
+      "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
     }
   ],
   "assets": {
