@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   set: vi.fn(),
   credentials: vi.fn(),
   forRole: vi.fn(),
+  rests: vi.fn(),
   toastError: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock("../../lib/rpc", () => {
   const rpc = {
     dozoBotModelBackups: { get: api.get, set: api.set },
     models: { credentials: api.credentials, forRole: api.forRole },
+    dozoModelPool: { get: api.rests },
   };
   return {
     rpc,
@@ -30,6 +32,7 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
       strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
+    i18n: { locale: "en-GB" },
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
@@ -92,7 +95,6 @@ vi.mock("../model-settings/role-model-picker", () => ({
 
 import { QueryUserProvider } from "../../lib/query";
 import { DozoBotBackups } from "./dozo-bot-backups";
-import { dozoBotBackupsChanged } from "./dozo-bot-backups-signal";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -118,12 +120,15 @@ const CREDENTIALS = [{ id: "connection-a", provider: "provider-a", label: "Work"
 const A = { provider: "provider-a", modelId: "model-a", credentialId: "connection-a" };
 const B = { provider: "provider-a", modelId: "model-b", credentialId: "connection-a" };
 
-async function render(user: string | null = "user-1") {
+async function render(
+  user: string | null = "user-1",
+  model: { provider: string; modelId: string } | null = null,
+) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
         <QueryUserProvider value={user}>
-          <DozoBotBackups botId="bot-1" spaceId="space-1" />
+          <DozoBotBackups botId="bot-1" spaceId="space-1" model={model} />
         </QueryUserProvider>
       </QueryClientProvider>,
     );
@@ -146,6 +151,7 @@ beforeEach(() => {
   api.set.mockReset().mockImplementation(async ({ backups }) => ({ backups }));
   api.credentials.mockReset().mockResolvedValue(CREDENTIALS);
   api.forRole.mockReset().mockResolvedValue(CATALOG);
+  api.rests.mockReset().mockResolvedValue({ connections: [], rests: [] });
   api.toastError.mockReset();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   container = document.createElement("div");
@@ -217,7 +223,8 @@ describe("DozoBotBackups", () => {
     await vi.waitFor(() => expect(texts()[0]).toContain("Model A"));
     api.get.mockResolvedValue({ backups: [{ provider: "provider-x", modelId: "gone" }] });
     await act(async () => {
-      await dozoBotBackupsChanged(client);
+      // What the roster signal does: dozoModelPoolChanged in dozo-model-pool.tsx.
+      await client.invalidateQueries({ queryKey: ["dozoModelPool"] });
     });
     await vi.waitFor(() => expect(texts()[0]).toContain("gone"));
   });
@@ -306,6 +313,33 @@ describe("DozoBotBackups", () => {
     await vi.waitFor(() => expect(api.get).toHaveBeenCalled());
     expect(api.forRole).not.toHaveBeenCalled();
     expect(container.querySelector("[data-picker]")).toBeNull();
+  });
+
+  it("says when a resting model opens again, for the bot's model and each backup", async () => {
+    const soon = new Date(Date.now() + 60 * 60_000);
+    const later = new Date(Date.now() + 3 * 24 * 60 * 60_000);
+    api.get.mockResolvedValue({ backups: [A, B] });
+    api.rests.mockResolvedValue({
+      rests: [
+        // Model A on the "Work" connection; the whole connection only days later.
+        { credentialId: "connection-a", modelId: "model-a", opensAt: soon.toISOString() },
+        { credentialId: "connection-z", modelId: "", opensAt: later.toISOString() },
+        // One that has ended says nothing.
+        { credentialId: "connection-a", modelId: "model-b", opensAt: "2020-01-01T00:00:00.000Z" },
+      ],
+    });
+    api.credentials.mockResolvedValue([
+      ...CREDENTIALS,
+      { id: "connection-z", provider: "provider-z", label: "Other" },
+    ]);
+    await render("user-1", { provider: "provider-z", modelId: "any" });
+    await vi.waitFor(() => expect(texts()[1]).toContain("Opens at"));
+    expect(container.querySelector("[data-testid=dozo-model-rests]")?.textContent).toMatch(
+      /^Opens at .+/,
+    );
+    expect(texts()[1]).not.toContain("Work");
+    expect(texts()[2]).toContain("Work");
+    expect(api.rests).toHaveBeenCalled();
   });
 
   it("draws nothing until the list is read", async () => {

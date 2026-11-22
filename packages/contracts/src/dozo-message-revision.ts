@@ -10,7 +10,7 @@ export * from "./dozo-message-pins.js";
  * Editing a message and regenerating a reply in a person's own chat with a bot. The server decides
  * which messages each applies to; clients only offer what it names.
  */
-export const DozoRevisableSchema = z.object({
+export const DozoRevisableSchema = /* @__PURE__ */ z.object({
   /** The caller's last message, when it can be edited and sent again. */
   editMessageId: Id.nullable(),
   /** The bot's last reply, when it can be written again. */
@@ -25,21 +25,26 @@ export const DozoRevisableSchema = z.object({
   removedCounts: z.record(Id, z.number().int().nonnegative()).optional(),
   /** The chat's newest message, the last any change removes; sent back with the count. */
   lastMessageId: Id.nullable().optional(),
+  /**
+   * The chat's latest replies a backup model wrote instead of the chosen one, by message: that
+   * model's name, for the message's menu. Absent when there are none.
+   */
+  backupReplies: z.record(Id, z.string()).optional(),
 });
 export type DozoRevisable = z.infer<typeof DozoRevisableSchema>;
 
-const ThreadInput = z.object({ threadId: Id });
+const ThreadInput = /* @__PURE__ */ z.object({ threadId: Id });
 
 /**
  * What the person confirmed a change removes, as `revisable` named it. The server refuses a change
  * that would remove anything else; without it, only a change to the newest turn goes ahead.
  */
-export const DozoRevisionConfirmedSchema = z.object({
+export const DozoRevisionConfirmedSchema = /* @__PURE__ */ z.object({
   removes: z.number().int().nonnegative(),
   lastMessageId: Id.nullable(),
 });
 export type DozoRevisionConfirmed = z.infer<typeof DozoRevisionConfirmedSchema>;
-const RevisedOutput = z.object({ runId: Id });
+const RevisedOutput = /* @__PURE__ */ z.object({ runId: Id });
 
 export const dozoMessagesContract = /* @__PURE__ */ (() => ({
   revisable: oc.input(ThreadInput).output(DozoRevisableSchema),

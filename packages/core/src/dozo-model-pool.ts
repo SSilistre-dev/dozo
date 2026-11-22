@@ -49,9 +49,22 @@ export function poolOrder(input: {
   return { order: byReset.map((member) => member.id), opensAt: byReset[0]?.resetsAt };
 }
 
-/** When a connection that just ran out opens again: the provider's reset, else the default rest. */
-export function poolCooldownUntil(now: number, providerResetAt?: number): number {
+/**
+ * How long a refused key rests the first time: one refusal may be the provider's mistake. One
+ * refused again soon after rests twice as long each time, up to the maximum (the store's rule).
+ */
+export const POOL_REFUSED_COOLDOWN_MS = 5 * 60_000;
+
+/**
+ * When a connection that just ran out opens again: the provider's reset, else the default rest,
+ * or for a refused key the short first rest.
+ */
+export function poolCooldownUntil(
+  now: number,
+  providerResetAt?: number,
+  reason: PoolCooldownReason = "exhausted",
+): number {
   if (providerResetAt === undefined || providerResetAt <= now)
-    return now + POOL_COOLDOWN_DEFAULT_MS;
+    return now + (reason === "rejected" ? POOL_REFUSED_COOLDOWN_MS : POOL_COOLDOWN_DEFAULT_MS);
   return Math.min(providerResetAt, now + POOL_COOLDOWN_MAX_MS);
 }

@@ -2,7 +2,7 @@ import { oc } from "@orpc/contract";
 import * as z from "zod";
 
 /** A provider's command-line tool on the server's own computer, as settings show it. */
-export const DozoCliToolSchema = z.object({
+export const DozoCliToolSchema = /* @__PURE__ */ z.object({
   provider: z.string(),
   name: z.string(),
   /** A model the bot talks through, or an agent that runs the bot's whole turn as the person. */
@@ -28,8 +28,8 @@ export const DozoCliToolSchema = z.object({
 });
 export type DozoCliTool = z.infer<typeof DozoCliToolSchema>;
 
-const DozoCliToolsSchema = z.object({ tools: z.array(DozoCliToolSchema) });
-const Provider = z.object({ provider: z.string().min(1).max(100) });
+const DozoCliToolsSchema = /* @__PURE__ */ z.object({ tools: z.array(DozoCliToolSchema) });
+const Provider = /* @__PURE__ */ z.object({ provider: z.string().min(1).max(100) });
 
 export const dozoCliAccountsContract = /* @__PURE__ */ (() => ({
   /** Empty unless the server runs on the person's own computer and serves only them. */

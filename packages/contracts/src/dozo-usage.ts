@@ -7,7 +7,7 @@ import { IsoDate } from "./ids.js";
  * Input counts every input token: uncached, read from the cache and written to it. Records
  * without a measured input or cache read count are left out.
  */
-export const DozoCacheSavingsSchema = z.object({
+export const DozoCacheSavingsSchema = /* @__PURE__ */ z.object({
   /** The start of the period: the current month of the live billing period, else the UTC month. */
   since: IsoDate,
   inputTokens: z.number().int().positive(),
@@ -21,7 +21,13 @@ export type DozoCacheSavings = z.infer<typeof DozoCacheSavingsSchema>;
  * What the Usage table groups spend by. `day` is the caller's last 30 days, one row per day in
  * the account's time zone; `person` is every member of the Space and only the owner may ask.
  */
-export const DozoUsageGroupingSchema = z.enum(["model", "bot", "routine", "day", "person"]);
+export const DozoUsageGroupingSchema = /* @__PURE__ */ z.enum([
+  "model",
+  "bot",
+  "routine",
+  "day",
+  "person",
+]);
 export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
 
 /**
@@ -30,7 +36,7 @@ export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
  * more (a routine since deleted, a run that is gone). Totals are null when a record in the group
  * lacks the count, so they never understate spend.
  */
-export const DozoUsageGroupSchema = z.object({
+export const DozoUsageGroupSchema = /* @__PURE__ */ z.object({
   key: z.string(),
   name: z.string().nullable(),
   /** The provider of a model, the bot of a routine, the email of a person; null otherwise. */
@@ -44,7 +50,7 @@ export const DozoUsageGroupSchema = z.object({
 });
 export type DozoUsageGroup = z.infer<typeof DozoUsageGroupSchema>;
 
-const GroupingInput = z.object({ by: DozoUsageGroupingSchema });
+const GroupingInput = /* @__PURE__ */ z.object({ by: DozoUsageGroupingSchema });
 
 export const dozoUsageContract = /* @__PURE__ */ (() => ({
   /** The caller's own usage in the current Space; null when it has no input this period. */

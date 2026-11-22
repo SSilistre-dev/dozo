@@ -1,7 +1,7 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 
-export const DozoLocalModelServerSchema = z.object({
+export const DozoLocalModelServerSchema = /* @__PURE__ */ z.object({
   name: z.string(),
   baseUrl: z.string(),
   models: z.array(z.string()),

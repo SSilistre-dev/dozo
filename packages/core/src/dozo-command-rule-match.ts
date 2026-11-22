@@ -32,7 +32,7 @@ export type DozoCommandRuleView = {
  * bot can edit can make `git status` or `git diff` run a program through its configuration or
  * hooks). They are also PowerShell's aliases of cmdlets that only read (`ls`, `cat`, `echo`).
  */
-const PREFIX_PROGRAMS: ReadonlySet<string> = new Set([
+const PREFIX_PROGRAMS: ReadonlySet<string> = /* @__PURE__ */ new Set([
   "basename",
   "cat",
   "cmp",
@@ -147,7 +147,9 @@ const WORD_BREAKS = /[\s$={},<>]+/u;
 const EXPANSION = "\uE000";
 /** Glob marks written inside quotes, which no POSIX shell expands, kept apart from real globs. */
 const QUOTED: Readonly<Record<string, string>> = { "*": "\uE001", "?": "\uE002", "[": "\uE003" };
-const UNQUOTED = Object.fromEntries(Object.entries(QUOTED).map(([mark, kept]) => [kept, mark]));
+const UNQUOTED = /* @__PURE__ */ Object.fromEntries(
+  Object.entries(QUOTED).map(([mark, kept]) => [kept, mark]),
+);
 
 type LooseWord = {
   /** The word as a program name and as a path, with its backslashes dropped and kept. */

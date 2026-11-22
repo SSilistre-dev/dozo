@@ -87,8 +87,16 @@ export function useDozoMessageRevision(message: ThreadMessage, menuOpen: boolean
     else edit.run({ text: draft.trim(), confirmed });
   };
 
+  // A reply a backup wrote names it, quietly, where the message's own actions are.
+  const model = latest?.backupReplies?.[messageId];
+
   const items = (
     <>
+      {model ? (
+        <div className="px-2 py-1.5 text-body-sm text-muted-foreground">
+          <Trans>Answered by {model}</Trans>
+        </div>
+      ) : null}
       {canEdit ? (
         <DropdownMenuItem onClick={startEdit}>
           <Pencil size={14} strokeWidth={1.7} />

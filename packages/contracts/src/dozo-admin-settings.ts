@@ -19,7 +19,7 @@ const AnnouncementInput = z
   .refine((value) => !NOT_PLAIN_TEXT.test(value), "An announcement is one line of plain text");
 
 /** The site settings an admin changes at run time, as the admin page shows them. */
-export const DozoSiteSettingsSchema = z.object({
+export const DozoSiteSettingsSchema = /* @__PURE__ */ z.object({
   /** What an admin set; null follows the environment. */
   signupsOpen: z.boolean().nullable(),
   /** 0 is no cap; null follows the environment. */
@@ -51,7 +51,7 @@ export const DozoSiteSettingsChangeSchema = z
   .partial();
 export type DozoSiteSettingsChange = z.infer<typeof DozoSiteSettingsChangeSchema>;
 
-export const DozoAnnouncementSchema = z.object({
+export const DozoAnnouncementSchema = /* @__PURE__ */ z.object({
   en: z.string().nullable(),
   tr: z.string().nullable(),
 });

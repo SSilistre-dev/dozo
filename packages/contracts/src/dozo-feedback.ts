@@ -22,7 +22,7 @@ export const DozoClientDiagnosticsSchema = z
 export type DozoClientDiagnostics = z.infer<typeof DozoClientDiagnosticsSchema>;
 
 /** The server's part of a report: its build and the ids of the caller's latest failed runs. */
-export const DozoServerDiagnosticsSchema = z.object({
+export const DozoServerDiagnosticsSchema = /* @__PURE__ */ z.object({
   revision: z.string().nullable(),
   failedRuns: z.array(z.object({ id: Id, at: IsoDate })).max(DOZO_FEEDBACK_MAX_RUNS),
 });
@@ -33,7 +33,7 @@ export type DozoServerDiagnostics = z.infer<typeof DozoServerDiagnosticsSchema>;
  * mails it. `save`: no mail provider, so the person saves the report and writes to `address`
  * themselves; the address is only shared then.
  */
-export const DozoFeedbackStatusSchema = z.object({
+export const DozoFeedbackStatusSchema = /* @__PURE__ */ z.object({
   mode: z.enum(["send", "save"]).nullable(),
   address: z.string().nullable(),
   /** The reply address the report carries: the caller's own, or none for a chat-app account. */
@@ -42,7 +42,7 @@ export const DozoFeedbackStatusSchema = z.object({
 });
 export type DozoFeedbackStatus = z.infer<typeof DozoFeedbackStatusSchema>;
 
-export const DozoFeedbackSendSchema = z.object({
+export const DozoFeedbackSendSchema = /* @__PURE__ */ z.object({
   message: z.string().trim().min(1).max(DOZO_FEEDBACK_MAX_CHARS),
   /** Only when the person chose to include diagnostics, as the preview showed them. */
   diagnostics: z

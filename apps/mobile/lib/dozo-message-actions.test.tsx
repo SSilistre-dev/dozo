@@ -20,6 +20,11 @@ vi.mock("@lingui/react/macro", () => ({
       strings.reduce((text, part, index) => `${text}${values[index - 1] ?? ""}${part}`),
   }),
 }));
+// A named placeholder shows its value, as the compiled message does.
+vi.mock("@lingui/core/macro", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@lingui/core/macro")>()),
+  ph: (named: Record<string, unknown>) => Object.values(named)[0],
+}));
 vi.mock("react-native", () => ({ Alert: { alert: api.alert } }));
 vi.mock("./api-server", () => ({}));
 vi.mock("./api-auth", () => ({}));
@@ -136,6 +141,25 @@ describe("a message's menu on mobile", () => {
   it("offers Regenerate on the bot's reply it names, and nothing else changes elsewhere", async () => {
     await render(<Row m={message("m-bot", { role: "bot" })} />);
     await shows(["Regenerate", "Pin"]);
+    await render(<Row m={message("m-other")} />);
+    await shows(["Pin"]);
+  });
+
+  it("says first, greyed out, which backup wrote a reply, and only on that reply", async () => {
+    answers["dozoMessages/revisable"] = {
+      editMessageId: null,
+      regenerateMessageId: null,
+      backupReplies: { "m-bot": "Model B" },
+    };
+    await render(<Row m={message("m-bot", { role: "bot" })} />);
+    await shows(["Answered by Model B", "Pin"]);
+    expect(actions[0]).toMatchObject({
+      name: "dozoBackup",
+      symbol: "info.circle",
+      icon: "information-circle-outline",
+      disabled: true,
+    });
+    expect(actions[0]!.onPress()).toBeUndefined();
     await render(<Row m={message("m-other")} />);
     await shows(["Pin"]);
   });
@@ -388,6 +412,41 @@ describe("the menus' own entries", () => {
       },
     ]);
     expect(dozoSheetGroups([action])).toEqual([[action]]);
+  });
+
+  it("show a line that only says something greyed out in the iOS menu", () => {
+    const note: DozoMessageAction = {
+      name: "dozoBackup",
+      text: "Answered by Model B",
+      symbol: "info.circle",
+      icon: "information-circle-outline",
+      disabled: true,
+      onPress: () => undefined,
+    };
+    expect(dozoMenuEntries([note])[0]?.subactions).toEqual([
+      {
+        id: "dozoBackup",
+        title: "Answered by Model B",
+        image: "info.circle",
+        attributes: { disabled: true },
+      },
+    ]);
+  });
+
+  it("show that line on Android as a row with its icon, which a tap only closes", () => {
+    const note: DozoMessageAction = {
+      name: "dozoBackup",
+      text: "Answered by Model B",
+      symbol: "info.circle",
+      icon: "information-circle-outline",
+      disabled: true,
+      onPress: () => undefined,
+    };
+    // The Android menu has no greyed row: it draws the line like the others, closes on a tap and
+    // runs the line's action, which does nothing (message-action-menu.tsx).
+    const [[row]] = dozoSheetGroups([note]) as [[DozoMessageAction]];
+    expect(row).toMatchObject({ text: "Answered by Model B", icon: "information-circle-outline" });
+    expect(row.onPress()).toBeUndefined();
   });
 });
 
