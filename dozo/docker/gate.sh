@@ -219,8 +219,8 @@ olc() {
     # The iOS app's config: upstream's app.json after the brand rules must carry the Dozo ids and
     # nothing of upstream's Expo account, EAS project, update channel or domain. No build, no stage.
     if [ -f dozo/mobile/check-config.test.mjs ]; then
-      if out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs 2>&1); then
-        echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel)"
+      if out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs dozo/mobile/android/check-manifest.test.mjs 2>&1); then
+        echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel; the Android manifest check)"
       else printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; fi
     else fail "dozo/mobile/check-config.test.mjs missing: the iOS app's config is not checked"; fi
     # The fork's dependency step (dozo/deps): which lockfiles it accepts, offline with a fake pnpm.
