@@ -71,9 +71,16 @@ const PLACEHOLDER_LABEL = /^value \d+(?: \(secret\))?$/;
 const INPUT_IN_STEP = /\{\{([^{}]+)\}\}/g;
 const NAME_MAX = 40;
 /** Keys that edit the text being typed; outside a value they are steps of their own. */
-const EDIT_KEYS = new Set(["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Home", "End"]);
+const EDIT_KEYS = /* @__PURE__ */ new Set([
+  "Backspace",
+  "Delete",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+]);
 /** Keys that move to another line or entry: inside a value its text can no longer be known. */
-const BLIND_KEYS = new Set(["ArrowUp", "ArrowDown"]);
+const BLIND_KEYS = /* @__PURE__ */ new Set(["ArrowUp", "ArrowDown"]);
 
 function placeholderOf(index: number): string {
   return `{{value ${index}}}`;

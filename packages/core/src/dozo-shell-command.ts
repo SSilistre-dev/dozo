@@ -10,9 +10,9 @@
 /** Characters a word may hold outside quotes: letters, digits and a few marks no shell reads. */
 const PLAIN = /^[\p{L}\p{N}_\-./:@+=%]$/u;
 /** Marks with a meaning at the start of a word: zsh `=cmd`, PowerShell `@splat`, job `%1`. */
-const NOT_FIRST = new Set(["=", "@", "%"]);
+const NOT_FIRST = /* @__PURE__ */ new Set(["=", "@", "%"]);
 /** Inside double quotes, the characters some shell expands or escapes. */
-const DOUBLE_QUOTED_SPECIAL = new Set(["$", "`", "\\", "!"]);
+const DOUBLE_QUOTED_SPECIAL = /* @__PURE__ */ new Set(["$", "`", "\\", "!"]);
 /** Invisible marks that can make a card show text other than what runs (U+202E, for one). */
 const FORMAT = /[\p{Cf}\u2028\u2029]/u;
 
@@ -76,7 +76,7 @@ export function literalCommandWords(command: string): string[] | undefined {
 }
 
 /** Programs that only read and print, in every shell their name reaches. */
-const READ_ONLY_PROGRAMS = new Set([
+const READ_ONLY_PROGRAMS = /* @__PURE__ */ new Set([
   "basename",
   "cat",
   "df",
@@ -108,7 +108,7 @@ const OPEN_ROOTS = ["/applications", "/system/applications", "/usr", "/bin", "/s
  * after `componentName` (macOS and Windows ignore case). The last five are the legacy Windows
  * junctions that lead into AppData or hold user data.
  */
-const PRIVATE_COMPONENTS = new Set([
+const PRIVATE_COMPONENTS = /* @__PURE__ */ new Set([
   "library",
   "appdata",
   "keychains",
@@ -185,7 +185,7 @@ export function readOnlyCwd(cwd: unknown): boolean {
 }
 
 /** grep's long options that only change what it prints; any other (`--pre`, `--filter`) asks. */
-const GREP_LONG_OPTIONS = new Set([
+const GREP_LONG_OPTIONS = /* @__PURE__ */ new Set([
   "after-context",
   "before-context",
   "color",
