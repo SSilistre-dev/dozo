@@ -1,7 +1,9 @@
 import { deferred, flush } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CalendarPermission, PhoneCalendarValue } from "./dozo-phone-calendar";
+import type { PhoneCalendarValue, PhonePermission } from "./dozo-phone-calendar";
+import type { PhoneContactsValue } from "./dozo-phone-contacts";
 import type { PhoneAccount, PhoneDeviceDeps, PhoneSocket } from "./dozo-phone-device";
+import type { PhoneLocationValue } from "./dozo-phone-location";
 
 vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: vi.fn() },
@@ -18,7 +20,7 @@ vi.mock("./monitoring", () => ({}));
 const { createPhoneDevice, MAX_MESSAGE_BYTES, phoneStorageKey } = await import(
   "./dozo-phone-device"
 );
-const { PhoneCalendarError } = await import("./dozo-phone-calendar");
+const { PhoneReadError } = await import("./dozo-phone-calendar");
 
 class FakeSocket implements PhoneSocket {
   onopen: (() => void) | null = null;
@@ -58,6 +60,35 @@ const value: PhoneCalendarValue = {
   ],
   truncated: false,
 };
+const people: PhoneContactsValue = {
+  contacts: [{ name: "Ada Lovelace", values: ["+1 555 0100"] }],
+  truncated: false,
+};
+const place: PhoneLocationValue = {
+  latitude: 41.01,
+  longitude: 28.98,
+  accuracyMeters: 1000,
+  precise: false,
+  at: "2026-11-23T09:00:00.000Z",
+};
+const contactsRequest = (id: string, extra: Record<string, unknown> = {}) => ({
+  type: "request",
+  id,
+  request: {
+    method: "phoneContactsSearch",
+    botId: "bot-1",
+    runId: "run-1",
+    query: "ada",
+    field: "phone",
+    limit: 10,
+    ...extra,
+  },
+});
+const locationRequest = (id: string, extra: Record<string, unknown> = {}) => ({
+  type: "request",
+  id,
+  request: { method: "phoneLocation", botId: "bot-1", runId: "run-1", ...extra },
+});
 const readRequest = (id: string, extra: Record<string, unknown> = {}) => ({
   type: "request",
   id,
@@ -80,8 +111,10 @@ function setup(stored?: Record<string, string>) {
   const state = {
     foreground: true,
     account: { origin: ORIGIN, userId: USER } as PhoneAccount | null | Error,
-    permission: "granted" as CalendarPermission,
+    permission: "granted" as PhonePermission,
     available: true,
+    contacts: { permission: "granted" as PhonePermission, available: true },
+    location: { permission: "granted" as PhonePermission, available: true },
     now: 0,
   };
   const deps = {
@@ -108,6 +141,18 @@ function setup(stored?: Record<string, string>) {
       permission: vi.fn(async () => state.permission),
       request: vi.fn(async () => state.permission),
       read: vi.fn(async () => value),
+    },
+    contacts: {
+      available: () => state.contacts.available,
+      permission: vi.fn(async () => state.contacts.permission),
+      request: vi.fn(async () => state.contacts.permission),
+      read: vi.fn(async () => people),
+    },
+    location: {
+      available: () => state.location.available,
+      permission: vi.fn(async () => state.location.permission),
+      request: vi.fn(async () => state.location.permission),
+      read: vi.fn(async () => place),
     },
     foreground: () => state.foreground,
     watch: (listener: () => void) => {
@@ -155,7 +200,7 @@ const pairedStore = () => ({
 async function switchedOn() {
   const phone = setup();
   phone.device.start();
-  expect(await phone.device.setCalendar(true)).toBe("done");
+  expect(await phone.device.setSwitch("calendar", true)).toBe("done");
   return phone;
 }
 
@@ -168,7 +213,12 @@ describe("pairing and the switch", () => {
     const phone = setup();
     phone.device.start();
     await phone.device.sync();
-    expect(phone.device.settings()).toEqual({ ready: true, calendar: false });
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: false,
+      contacts: false,
+      location: false,
+    });
     expect(phone.deps.connect).not.toHaveBeenCalled();
     expect(phone.deps.pair).not.toHaveBeenCalled();
     expect(phone.deps.calendar.permission).not.toHaveBeenCalled();
@@ -178,9 +228,16 @@ describe("pairing and the switch", () => {
     const phone = await switchedOn();
     expect(phone.deps.pair).toHaveBeenCalledTimes(1);
     expect(phone.deps.pair).toHaveBeenCalledWith(ORIGIN, { name: "Test phone", platform: "ios" });
-    expect(phone.device.settings()).toEqual({ ready: true, calendar: true });
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: true,
+      contacts: false,
+      location: false,
+    });
     expect(JSON.parse(phone.store.get(key)!)).toEqual({
       calendar: true,
+      contacts: false,
+      location: false,
       device: { deviceId: "device-1", token: "token-1" },
     });
     expect(phone.sockets).toHaveLength(1);
@@ -190,7 +247,7 @@ describe("pairing and the switch", () => {
       "x-dozo-device-capabilities": "calendar",
     });
 
-    expect(await phone.device.setCalendar(true)).toBe("done");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("done");
     await phone.change();
     expect(phone.deps.pair).toHaveBeenCalledTimes(1);
     expect(phone.sockets).toHaveLength(1);
@@ -223,14 +280,14 @@ describe("pairing and the switch", () => {
     phone.device.start();
     await phone.device.sync();
     expect(phone.last().headers["x-dozo-device-capabilities"]).toBe("");
-    expect(await phone.device.setCalendar(true)).toBe("unavailable");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("unavailable");
   });
 
   it("stays off and unpaired when the system refuses", async () => {
     const phone = setup();
     phone.state.permission = "denied";
     phone.device.start();
-    expect(await phone.device.setCalendar(true)).toBe("denied");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("denied");
     expect(phone.deps.pair).not.toHaveBeenCalled();
     expect(phone.device.settings().calendar).toBe(false);
     expect(phone.deps.connect).not.toHaveBeenCalled();
@@ -239,12 +296,12 @@ describe("pairing and the switch", () => {
 
   it("switching off unpairs and forgets the token, so the next switch on pairs again", async () => {
     const phone = await switchedOn();
-    expect(await phone.device.setCalendar(false)).toBe("done");
+    expect(await phone.device.setSwitch("calendar", false)).toBe("done");
     expect(phone.deps.unpair).toHaveBeenCalledWith(ORIGIN, "token-1");
     expect(phone.store.size).toBe(0);
     expect(phone.sockets[0]!.closed).toBe(true);
     expect(phone.device.settings().calendar).toBe(false);
-    expect(await phone.device.setCalendar(true)).toBe("done");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("done");
     expect(phone.deps.pair).toHaveBeenCalledTimes(2);
   });
 
@@ -252,7 +309,7 @@ describe("pairing and the switch", () => {
     const phone = await switchedOn();
     const failure = new Error("offline");
     phone.deps.unpair.mockRejectedValueOnce(failure);
-    expect(await phone.device.setCalendar(false)).toBe("done");
+    expect(await phone.device.setSwitch("calendar", false)).toBe("done");
     expect(phone.deps.report).toHaveBeenCalledWith(failure);
     expect(phone.store.size).toBe(0);
   });
@@ -260,7 +317,7 @@ describe("pairing and the switch", () => {
   it("switching off before anything was paired only stores nothing", async () => {
     const phone = setup();
     phone.device.start();
-    expect(await phone.device.setCalendar(false)).toBe("done");
+    expect(await phone.device.setSwitch("calendar", false)).toBe("done");
     expect(phone.deps.unpair).not.toHaveBeenCalled();
     expect(phone.store.size).toBe(0);
   });
@@ -269,7 +326,7 @@ describe("pairing and the switch", () => {
     const phone = setup();
     phone.deps.pair.mockResolvedValueOnce({ deviceId: "d", userId: "someone-else", token: "t" });
     phone.device.start();
-    await expect(phone.device.setCalendar(true)).rejects.toThrow("another account");
+    await expect(phone.device.setSwitch("calendar", true)).rejects.toThrow("another account");
     expect(phone.deps.unpair).toHaveBeenCalledWith(ORIGIN, "t");
     expect(phone.store.size).toBe(0);
   });
@@ -278,7 +335,7 @@ describe("pairing and the switch", () => {
     const phone = setup();
     phone.deps.pair.mockRejectedValueOnce(new Error("Remove a computer before adding another"));
     phone.device.start();
-    await expect(phone.device.setCalendar(true)).rejects.toThrow("Remove a computer");
+    await expect(phone.device.setSwitch("calendar", true)).rejects.toThrow("Remove a computer");
     expect(phone.device.settings().calendar).toBe(false);
   });
 
@@ -286,7 +343,7 @@ describe("pairing and the switch", () => {
     const phone = setup();
     phone.deps.device.mockReturnValueOnce(null as never);
     phone.device.start();
-    expect(await phone.device.setCalendar(true)).toBe("unavailable");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("unavailable");
   });
 
   it("keeps each account's pairing under its own server and user", () => {
@@ -322,7 +379,7 @@ describe("where it connects", () => {
     await phone.device.sync();
     expect(phone.deps.connect).not.toHaveBeenCalled();
     expect(phone.device.settings().ready).toBe(false);
-    expect(await phone.device.setCalendar(true)).toBe("unavailable");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("unavailable");
     expect(phone.deps.pair).not.toHaveBeenCalled();
   });
 
@@ -343,7 +400,12 @@ describe("where it connects", () => {
     phone.state.account = null;
     await phone.change();
     expect(phone.sockets[0]!.closed).toBe(true);
-    expect(phone.device.settings()).toEqual({ ready: false, calendar: false });
+    expect(phone.device.settings()).toEqual({
+      ready: false,
+      calendar: false,
+      contacts: false,
+      location: false,
+    });
   });
 
   it("tries again later when it cannot tell who is signed in", async () => {
@@ -435,11 +497,11 @@ describe("where it connects", () => {
     const seen = vi.fn();
     const unsubscribe = phone.device.subscribe(seen);
     phone.device.start();
-    await phone.device.setCalendar(true);
+    await phone.device.setSwitch("calendar", true);
     expect(seen).toHaveBeenCalled();
     unsubscribe();
     seen.mockClear();
-    await phone.device.setCalendar(false);
+    await phone.device.setSwitch("calendar", false);
     expect(seen).not.toHaveBeenCalled();
   });
 });
@@ -470,8 +532,8 @@ describe("requests", () => {
   });
 
   it.each([
-    ["calendar-permission", new PhoneCalendarError("calendar-permission")],
-    ["calendar-unavailable", new PhoneCalendarError("calendar-unavailable")],
+    ["calendar-permission", new PhoneReadError("calendar-permission")],
+    ["calendar-unavailable", new PhoneReadError("calendar-unavailable")],
     ["calendar-unavailable", new Error("native read failed")],
   ])("answers %s when the read fails that way", async (code, failure) => {
     const phone = await switchedOn();
@@ -498,7 +560,7 @@ describe("requests", () => {
     const phone = await switchedOn();
     const unpairing = deferred();
     phone.deps.unpair.mockReturnValueOnce(unpairing.promise);
-    const off = phone.device.setCalendar(false);
+    const off = phone.device.setSwitch("calendar", false);
     await vi.waitFor(() => expect(phone.deps.unpair).toHaveBeenCalled());
     phone.sockets[0]!.receive(readRequest("r1"));
     await vi.waitFor(() => expect(phone.sockets[0]!.sent).toHaveLength(1));
@@ -577,8 +639,8 @@ describe("requests", () => {
     const unpairing = deferred();
     phone.deps.unpair.mockReturnValueOnce(unpairing.promise);
     phone.deps.pair.mockResolvedValueOnce({ deviceId: "device-2", userId: USER, token: "token-2" });
-    const off = phone.device.setCalendar(false);
-    const on = phone.device.setCalendar(true);
+    const off = phone.device.setSwitch("calendar", false);
+    const on = phone.device.setSwitch("calendar", true);
     await vi.waitFor(() => expect(phone.deps.unpair).toHaveBeenCalled());
     socket.receive({ type: "revoked" });
     unpairing.resolve();
@@ -617,5 +679,254 @@ describe("requests", () => {
     await flush();
     expect(socket.sent).toEqual([]);
     expect(phone.deps.calendar.read).not.toHaveBeenCalled();
+  });
+});
+
+describe("contacts and location", () => {
+  const capabilities = (phone: ReturnType<typeof setup>) =>
+    phone.last().headers["x-dozo-device-capabilities"];
+
+  it("declares each kind only while its switch is on and the system allows it", async () => {
+    const phone = await switchedOn();
+    expect(capabilities(phone)).toBe("calendar");
+    expect(await phone.device.setSwitch("contacts", true)).toBe("done");
+    expect(capabilities(phone)).toBe("calendar,contacts");
+    expect(await phone.device.setSwitch("location", true)).toBe("done");
+    expect(capabilities(phone)).toBe("calendar,contacts,location");
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: true,
+      contacts: true,
+      location: true,
+    });
+    phone.state.contacts.permission = "denied";
+    await phone.change();
+    expect(capabilities(phone)).toBe("calendar,location");
+    phone.state.location.available = false;
+    phone.state.permission = "unavailable";
+    await phone.change();
+    expect(capabilities(phone)).toBe("");
+    expect(phone.deps.pair).toHaveBeenCalledTimes(1);
+  });
+
+  it("pairs once for whichever kind is switched on first", async () => {
+    const phone = setup();
+    phone.device.start();
+    expect(await phone.device.setSwitch("location", true)).toBe("done");
+    expect(phone.deps.location.request).toHaveBeenCalledTimes(1);
+    expect(phone.deps.calendar.request).not.toHaveBeenCalled();
+    expect(capabilities(phone)).toBe("location");
+    expect(await phone.device.setSwitch("contacts", true)).toBe("done");
+    expect(phone.deps.pair).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(phone.store.get(key)!)).toEqual({
+      calendar: false,
+      contacts: true,
+      location: true,
+      device: { deviceId: "device-1", token: "token-1" },
+    });
+  });
+
+  it("turning one off stops declaring it and keeps the pairing", async () => {
+    const phone = await switchedOn();
+    await phone.device.setSwitch("contacts", true);
+    expect(await phone.device.setSwitch("calendar", false)).toBe("done");
+    expect(phone.deps.unpair).not.toHaveBeenCalled();
+    expect(capabilities(phone)).toBe("contacts");
+    expect(phone.last().closed).toBe(false);
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: false,
+      contacts: true,
+      location: false,
+    });
+    expect(JSON.parse(phone.store.get(key)!).device.token).toBe("token-1");
+  });
+
+  it("turning off the last one unpairs, so every bot asks again", async () => {
+    const phone = setup();
+    phone.device.start();
+    await phone.device.setSwitch("contacts", true);
+    await phone.device.setSwitch("location", true);
+    await phone.device.setSwitch("contacts", false);
+    expect(phone.deps.unpair).not.toHaveBeenCalled();
+    expect(await phone.device.setSwitch("location", false)).toBe("done");
+    expect(phone.deps.unpair).toHaveBeenCalledWith(ORIGIN, "token-1");
+    expect(phone.store.size).toBe(0);
+    expect(phone.last().closed).toBe(true);
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: false,
+      contacts: false,
+      location: false,
+    });
+  });
+
+  it("leaves a switch off when the system refuses or the build lacks its module", async () => {
+    const phone = await switchedOn();
+    phone.state.contacts.permission = "denied";
+    expect(await phone.device.setSwitch("contacts", true)).toBe("denied");
+    phone.state.location.available = false;
+    expect(await phone.device.setSwitch("location", true)).toBe("unavailable");
+    expect(phone.deps.location.request).not.toHaveBeenCalled();
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: true,
+      contacts: false,
+      location: false,
+    });
+    expect(capabilities(phone)).toBe("calendar");
+  });
+
+  it("keeps each switch across restarts", async () => {
+    const phone = setup({
+      [key]: JSON.stringify({
+        contacts: true,
+        location: true,
+        device: { deviceId: "device-1", token: "token-1" },
+      }),
+    });
+    phone.device.start();
+    await phone.device.sync();
+    expect(capabilities(phone)).toBe("contacts,location");
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: false,
+      contacts: true,
+      location: true,
+    });
+  });
+
+  it("forgets every switch when the server revokes the pairing", async () => {
+    const phone = await switchedOn();
+    await phone.device.setSwitch("location", true);
+    phone.last().receive({ type: "revoked" });
+    await phone.device.sync();
+    expect(phone.device.settings()).toEqual({
+      ready: true,
+      calendar: false,
+      contacts: false,
+      location: false,
+    });
+    expect(phone.store.size).toBe(0);
+  });
+});
+
+describe("contacts and location requests", () => {
+  async function allOn() {
+    const phone = await switchedOn();
+    await phone.device.setSwitch("contacts", true);
+    await phone.device.setSwitch("location", true);
+    return phone;
+  }
+  const answered = async (phone: ReturnType<typeof setup>, count: number) => {
+    await vi.waitFor(() => expect(phone.last().sent).toHaveLength(count));
+    return phone.last().frames();
+  };
+
+  it("answers a contacts search with its value, then done", async () => {
+    const phone = await allOn();
+    phone.last().receive(contactsRequest("c1"));
+    expect(await answered(phone, 2)).toEqual([
+      { type: "frame", id: "c1", frame: { value: people } },
+      { type: "frame", id: "c1", frame: { done: true } },
+    ]);
+    expect(phone.deps.contacts.read).toHaveBeenCalledWith({
+      query: "ada",
+      field: "phone",
+      limit: 10,
+    });
+  });
+
+  it("passes the asked field, and searches for at most 10 when no limit is named", async () => {
+    const phone = await allOn();
+    phone.last().receive(contactsRequest("c1", { field: "email", limit: undefined }));
+    await answered(phone, 2);
+    expect(phone.deps.contacts.read).toHaveBeenCalledWith({
+      query: "ada",
+      field: "email",
+      limit: 10,
+    });
+  });
+
+  it.each([
+    ["an unknown field", { field: "address" }],
+    ["no query", { query: undefined }],
+  ])("answers contacts-query for %s without searching", async (_name, extra) => {
+    const phone = await allOn();
+    phone.last().receive(contactsRequest("c1", extra));
+    expect(await answered(phone, 1)).toEqual([
+      { type: "frame", id: "c1", frame: { error: "contacts-query" } },
+    ]);
+    expect(phone.deps.contacts.read).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["contacts-query", new PhoneReadError("contacts-query")],
+    ["contacts-permission", new PhoneReadError("contacts-permission")],
+    ["contacts-unavailable", new Error("native read failed")],
+  ])("answers %s when the search fails that way", async (code, failure) => {
+    const phone = await allOn();
+    phone.deps.contacts.read.mockRejectedValueOnce(failure);
+    phone.last().receive(contactsRequest("c1"));
+    expect(await answered(phone, 1)).toEqual([{ type: "frame", id: "c1", frame: { error: code } }]);
+  });
+
+  it("answers a location read, approximate unless precise is asked", async () => {
+    const phone = await allOn();
+    phone.last().receive(locationRequest("l1"));
+    expect(await answered(phone, 2)).toEqual([
+      { type: "frame", id: "l1", frame: { value: place } },
+      { type: "frame", id: "l1", frame: { done: true } },
+    ]);
+    expect(phone.deps.location.read).toHaveBeenLastCalledWith({ precision: "approximate" });
+    phone.last().receive(locationRequest("l2", { precision: "precise" }));
+    await answered(phone, 4);
+    expect(phone.deps.location.read).toHaveBeenLastCalledWith({ precision: "precise" });
+    phone.last().receive(locationRequest("l3", { precision: "exact" }));
+    await answered(phone, 6);
+    expect(phone.deps.location.read).toHaveBeenLastCalledWith({ precision: "approximate" });
+  });
+
+  it.each([
+    ["location-permission", new PhoneReadError("location-permission")],
+    ["location-unavailable", new PhoneReadError("location-unavailable")],
+    ["location-unavailable", new Error("no fix")],
+  ])("answers %s when the reading fails that way", async (code, failure) => {
+    const phone = await allOn();
+    phone.deps.location.read.mockRejectedValueOnce(failure);
+    phone.last().receive(locationRequest("l1"));
+    expect(await answered(phone, 1)).toEqual([{ type: "frame", id: "l1", frame: { error: code } }]);
+  });
+
+  it("answers off for a kind that is switched off, without reading", async () => {
+    const phone = await switchedOn();
+    phone.last().receive(contactsRequest("c1"));
+    phone.last().receive(locationRequest("l1"));
+    await answered(phone, 2);
+    expect(phone.last().frames()).toEqual(
+      expect.arrayContaining([
+        { type: "frame", id: "c1", frame: { error: "contacts-off" } },
+        { type: "frame", id: "l1", frame: { error: "location-off" } },
+      ]),
+    );
+    expect(phone.deps.contacts.read).not.toHaveBeenCalled();
+    expect(phone.deps.location.read).not.toHaveBeenCalled();
+  });
+
+  it("answers unavailable where the module is missing, without reading", async () => {
+    const phone = await allOn();
+    phone.state.contacts.available = false;
+    phone.state.location.available = false;
+    phone.last().receive(contactsRequest("c1"));
+    phone.last().receive(locationRequest("l1"));
+    await answered(phone, 2);
+    expect(phone.last().frames()).toEqual(
+      expect.arrayContaining([
+        { type: "frame", id: "c1", frame: { error: "contacts-unavailable" } },
+        { type: "frame", id: "l1", frame: { error: "location-unavailable" } },
+      ]),
+    );
+    expect(phone.deps.contacts.read).not.toHaveBeenCalled();
+    expect(phone.deps.location.read).not.toHaveBeenCalled();
   });
 });

@@ -29,9 +29,17 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
 }));
 
 import { withoutCloudComputerTools } from "./dozo-no-computer.js";
-import { offerPhoneTools, phoneCalendarRead, phoneGate } from "./dozo-phone.js";
-import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
+import { offerPhoneTools, phoneGate, phoneRead } from "./dozo-phone.js";
+import {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+  phoneCalendarReadTool,
+  phoneContactsSearchTool,
+  phoneLocationTool,
+} from "./dozo-phone.tool-definition.js";
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
+import { toAgentTool } from "./pi-runtime-tools.js";
 import type { RunContext } from "./run-context.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -40,6 +48,16 @@ import { READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { userComputerOwner } from "./run-tools-user-computer.js";
 
 const RANGE = { from: "2026-11-22T00:00:00+03:00", to: "2026-11-29T00:00:00+03:00" };
+/** Each phone tool, a call it can make and its handler. */
+const TOOLS = {
+  [PHONE_CALENDAR_READ_TOOL]: { args: RANGE, handler: phoneRead },
+  [PHONE_CONTACTS_SEARCH_TOOL]: {
+    args: { query: "Ada", field: "phone" },
+    handler: phoneRead,
+  },
+  [PHONE_LOCATION_TOOL]: { args: { precision: "approximate" }, handler: phoneRead },
+};
+const TOOL_NAMES = Object.keys(TOOLS) as Array<keyof typeof TOOLS>;
 const MODES = {
   "Never ask": { enabled: false, skipApprovals: true },
   "Auto review": { enabled: true, skipApprovals: false },
@@ -50,6 +68,8 @@ function context(
   options: {
     owner?: string | undefined;
     consent?: boolean;
+    /** The owner allowed this very call on its card. */
+    card?: boolean;
     token?: boolean;
     mode?: keyof typeof MODES;
     tainted?: boolean;
@@ -60,17 +80,25 @@ function context(
   const userDevices = {
     connected: async () => null,
     pairedSince: async () => null,
-    connectedPhone: async () => ({ deviceId: "phone-1", pairedAt: new Date(0) }),
+    // Paired at 0; this kind's switch was last turned on at 5.
+    connectedPhone: async () => ({
+      deviceId: "phone-1",
+      pairedAt: new Date(0),
+      onSince: new Date(5),
+    }),
     async *request(...input: unknown[]) {
       requests.push(input);
       yield { events: [], truncated: false };
     },
   };
-  // An earlier completed read, when given; a tainted run's gate does not ask for one.
+  // An earlier completed read, or this call's approved card, when given; a tainted run's gate
+  // does not ask for the first, nor does a location read.
   const findFirst = vi.fn(async ({ where }: { where: { OR: Array<{ status: string }> } }) =>
-    options.consent && where.OR.some((clause) => clause.status === "completed")
-      ? { id: "read-before" }
-      : null,
+    options.card
+      ? { id: "card", status: "approved" }
+      : options.consent && where.OR.some((clause) => clause.status === "completed")
+        ? { id: "read-before", status: "completed" }
+        : null,
   );
   const ctx = {
     deps: {
@@ -78,7 +106,11 @@ function context(
       prisma: {
         attempt: { count: async () => 1 },
         $queryRaw: async () => [{ sourced: options.token === true }],
-        externalEffect: { findFirst, updateMany: async () => ({ count: 1 }) },
+        externalEffect: {
+          findFirst,
+          updateMany: async () => ({ count: 1 }),
+          count: async () => 0,
+        },
         spaceMember: { findFirst: async () => null },
       },
     },
@@ -110,9 +142,12 @@ function context(
   return { ctx: ctx as unknown as RunContext, findFirst, requests };
 }
 
-function gate(ctx: RunContext, args: Record<string, unknown> = { ...RANGE }) {
+function gate(
+  ctx: RunContext,
+  args: Record<string, unknown> = { ...RANGE },
+  name: string = PHONE_CALENDAR_READ_TOOL,
+) {
   const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
-  const name = PHONE_CALENDAR_READ_TOOL;
   const request: ToolRequest = {
     name,
     args,
@@ -167,21 +202,21 @@ describe("the phone's approval", () => {
     expect(READ_ONLY_AGENT_TOOLS.has(PHONE_CALENDAR_READ_TOOL)).toBe(false);
   });
 
-  it("holds consent to this bot and person, since the phone was paired", async () => {
+  it("holds consent to this bot and person, since this kind was last turned on", async () => {
     const { ctx, findFirst } = context();
-    await phoneGate(ctx, false, { ...RANGE });
+    await phoneGate(ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE });
     expect(findFirst).toHaveBeenCalledWith({
       where: {
         spaceId: "space-1",
         kind: PHONE_CALENDAR_READ_TOOL,
-        createdAt: { gte: new Date(0) },
+        createdAt: { gte: new Date(5) },
         run: { userId: "user-1", botId: "bot-1" },
         OR: [
           { status: "completed" },
           { status: "approved", runId: "run-1", request: { equals: RANGE } },
         ],
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
   });
 
@@ -192,9 +227,10 @@ describe("the phone's approval", () => {
     const token = context({ consent: true, token: true });
     expect(await gate(token.ctx)).not.toBe("recorded");
     expect(plans).toEqual(["deny"]);
-    expect(await phoneGate(context({ consent: true, owner: undefined }).ctx, false, {})).toBe(
-      "deny",
-    );
+    for (const name of TOOL_NAMES)
+      expect(
+        await phoneGate(context({ consent: true, owner: undefined }).ctx, false, name, {}),
+      ).toBe("deny");
   });
 
   it("shows what it reads and the range on its card, with Allow and Deny", () => {
@@ -222,13 +258,85 @@ describe("the phone's approval", () => {
   });
 });
 
+describe("contacts and location through the gate", () => {
+  const NEW_TOOLS = [PHONE_CONTACTS_SEARCH_TOOL, PHONE_LOCATION_TOOL] as const;
+
+  it.each(Object.keys(MODES) as Array<keyof typeof MODES>)(
+    "asks every location read, approximate too, in %s",
+    async (mode) => {
+      const args = TOOLS[PHONE_LOCATION_TOOL].args;
+      expect(
+        await gate(context({ mode, consent: true }).ctx, { ...args }, PHONE_LOCATION_TOOL),
+      ).toBe("recorded");
+      expect(plans).toEqual(["ask"]);
+    },
+  );
+
+  it.each(
+    (Object.keys(MODES) as Array<keyof typeof MODES>).map(
+      (mode) => [PHONE_CONTACTS_SEARCH_TOOL, mode] as const,
+    ),
+  )("%s asks a bot's first read and allows it once allowed, in %s", async (name, mode) => {
+    const args = TOOLS[name].args;
+    expect(await gate(context({ mode }).ctx, { ...args }, name)).toBe("recorded");
+    expect(await gate(context({ mode, consent: true }).ctx, { ...args }, name)).toBe("recorded");
+    expect(await gate(context({ consent: true, tainted: true }).ctx, { ...args }, name)).toBe(
+      "recorded",
+    );
+    expect(plans).toEqual(["ask", "allow", "ask"]);
+  });
+
+  it.each(NEW_TOOLS)("%s is refused in a group, a token's run and on a block", async (name) => {
+    const args = TOOLS[name].args;
+    expect(
+      await gate(context({ consent: true, groupId: "group-1" }).ctx, { ...args }, name),
+    ).not.toBe("recorded");
+    expect(await gate(context({ consent: true, token: true }).ctx, { ...args }, name)).not.toBe(
+      "recorded",
+    );
+    expect(plans).toEqual(["deny", "deny"]);
+    expect(await userComputerGate(context({ consent: true }).ctx, true, name, { ...args })).toBe(
+      "deny",
+    );
+  });
+
+  it("asks for a precise location every time, in Never ask too", async () => {
+    expect(
+      await gate(context({ consent: true }).ctx, { precision: "precise" }, PHONE_LOCATION_TOOL),
+    ).toBe("recorded");
+    expect(plans).toEqual(["ask"]);
+  });
+
+  it("shows each tool's question on its card", () => {
+    expect(
+      buildApprovalAskBlock("e", PHONE_CONTACTS_SEARCH_TOOL, { query: "Ada", field: "phone" }, []),
+    ).toMatchObject({
+      text: "Let this bot look up someone in your phone's contacts?",
+      detail: "Ada\nPhone numbers",
+      detailFormat: "code",
+    });
+    expect(buildApprovalAskBlock("e", PHONE_LOCATION_TOOL, {}, [])).toMatchObject({
+      text: "Let this bot see your phone's approximate location?",
+    });
+  });
+});
+
+describe("a model turn with several phone calls", () => {
+  it.each(TOOL_NAMES)("runs %s one call at a time", (name) => {
+    const tool = [phoneCalendarReadTool, phoneContactsSearchTool, phoneLocationTool].find(
+      (definition) => definition.name === name,
+    )!;
+    expect(toAgentTool(tool, {} as never, name).executionMode).toBe("sequential");
+  });
+});
+
 describe("a helper", () => {
-  it("cannot read the phone: refused before any card", async () => {
+  it.each(TOOL_NAMES)("cannot use %s: refused before any card", async (name) => {
     const { ctx } = context({ consent: true });
     const request = (agent: string) =>
       ({
-        name: PHONE_CALENDAR_READ_TOOL,
-        args: { ...RANGE },
+        name,
+        args: { ...TOOLS[name].args },
         executionId: JSON.stringify(["pi-tool", agent, "call-1"]),
         nextApprovedTool: undefined,
       }) as unknown as ToolRequest;
@@ -272,7 +380,11 @@ describe("who a run reaches the phone for", () => {
     },
   };
 
-  it.each(Object.entries(cases))("%s", async (label, input) => {
+  it.each(
+    Object.entries(cases).flatMap(([label, input]) =>
+      TOOL_NAMES.map((name) => [label, name, input] as const),
+    ),
+  )("%s, %s", async (label, name, input) => {
     const reached = userComputerOwner({
       trigger: input.trigger,
       sourceRole: input.role,
@@ -282,16 +394,17 @@ describe("who a run reaches the phone for", () => {
     });
     const allowed = label.startsWith("the owner") || label.startsWith("a follow-up");
     expect(reached).toBe(allowed ? owner : undefined);
-    const run = context({ owner: reached, consent: true });
+    // Location reads each ask: the owner allowed this one on its card.
+    const run = context({ owner: reached, consent: true, card: name === PHONE_LOCATION_TOOL });
     // Assembly offers it only to a run that reaches its owner (run-assembly-capabilities.ts).
     const off = withoutCloudComputerTools(new Set(), false);
     if (reached)
       await offerPhoneTools(run.ctx.deps, run.ctx.run, run.ctx.thread, reached, off, null);
-    expect(off.has(PHONE_CALENDAR_READ_TOOL)).toBe(!allowed);
-    const args = { ...RANGE };
-    expect(await phoneGate(run.ctx, false, args)).toBe(allowed ? "allow" : "deny");
-    const result = await phoneCalendarRead(run.ctx, {
-      name: PHONE_CALENDAR_READ_TOOL,
+    expect(off.has(name)).toBe(!allowed);
+    const args = { ...TOOLS[name].args };
+    expect(await phoneGate(run.ctx, false, name, args)).toBe(allowed ? "allow" : "deny");
+    const result = await TOOLS[name].handler(run.ctx, {
+      name,
       args,
       applied: undefined,
       claimedEffect: false,

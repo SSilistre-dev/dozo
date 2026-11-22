@@ -6,7 +6,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CalendarSwitchResult, PhoneSettings } from "./dozo-phone-device";
+import type { PhoneKind, PhoneSettings, PhoneSwitchResult } from "./dozo-phone-device";
 
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 
@@ -16,11 +16,17 @@ const ui = vi.hoisted(() => ({
   header: undefined as { title?: string } | undefined,
   apiBase: "https://app.example.test",
   available: true,
+  contacts: true,
+  location: true,
 }));
+
+const OFF = { ready: true, calendar: false, contacts: false, location: false };
 
 const phone = vi.hoisted(() => {
   const listeners = new Set<() => void>();
-  const state = { settings: { ready: true, calendar: false } as PhoneSettings };
+  const state = {
+    settings: { ready: true, calendar: false, contacts: false, location: false } as PhoneSettings,
+  };
   return {
     state,
     set(settings: PhoneSettings) {
@@ -34,7 +40,9 @@ const phone = vi.hoisted(() => {
         return () => listeners.delete(listener);
       },
       sync: vi.fn(async () => undefined),
-      setCalendar: vi.fn(async (_on: boolean): Promise<CalendarSwitchResult> => "done"),
+      setSwitch: vi.fn(
+        async (_kind: PhoneKind, _on: boolean): Promise<PhoneSwitchResult> => "done",
+      ),
     },
   };
 });
@@ -64,6 +72,8 @@ vi.mock("./user-error", () => ({
 }));
 vi.mock("./dozo-phone-device", () => ({ phoneDevice: () => phone.device }));
 vi.mock("./dozo-phone-calendar", () => ({ calendarAvailable: () => ui.available }));
+vi.mock("./dozo-phone-contacts", () => ({ contactsAvailable: () => ui.contacts }));
+vi.mock("./dozo-phone-location", () => ({ locationAvailable: () => ui.location }));
 vi.mock("./api", () => ({
   currentApiBase: () => ui.apiBase,
   subscribeApiBase: () => () => undefined,
@@ -120,8 +130,10 @@ async function render(node: ReactNode) {
   await act(async () => root.render(node));
   await act(() => flush());
 }
-const toggle = () => container.querySelector<HTMLInputElement>("input[type=checkbox]")!;
-const tap = () => act(async () => toggle().click());
+const toggles = () => [...container.querySelectorAll<HTMLInputElement>("input[type=checkbox]")];
+const toggle = (index = 0) => toggles()[index]!;
+const tap = (index = 0) => act(async () => toggle(index).click());
+const labels = () => [...container.querySelectorAll("label")].map((label) => label.textContent);
 const alertButtons = () => (ui.alert.mock.calls.at(-1)?.[2] ?? []) as AlertButton[];
 
 beforeEach(() => {
@@ -132,9 +144,11 @@ beforeEach(() => {
   ui.openSettings.mockClear();
   ui.apiBase = "https://app.example.test";
   ui.available = true;
-  phone.state.settings = { ready: true, calendar: false };
+  ui.contacts = true;
+  ui.location = true;
+  phone.state.settings = OFF;
   phone.device.sync.mockClear();
-  phone.device.setCalendar.mockReset().mockResolvedValue("done");
+  phone.device.setSwitch.mockReset().mockResolvedValue("done");
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -144,37 +158,80 @@ afterEach(() => {
 });
 
 describe("the Phone screen", () => {
-  it("is titled Phone, starts with Calendar off, and says where read events go", async () => {
+  it("is titled Phone, starts with every switch off, and says where what bots read goes", async () => {
     await render(<DozoPhone />);
     expect(ui.header?.title).toBe("Phone");
-    expect(container.querySelector("label")?.textContent).toBe("Calendar");
-    expect(toggle().checked).toBe(false);
+    expect(labels()).toEqual(["Calendar", "Contacts", "Location"]);
+    expect(toggles().map((input) => input.checked)).toEqual([false, false, false]);
     expect(container.querySelector("[data-footer]")?.textContent).toBe(
-      "Events a bot reads are sent to its AI model.",
+      "What a bot reads is sent to its AI model.",
     );
-    expect(container.textContent).toBe("CalendarEvents a bot reads are sent to its AI model.");
+    expect(container.textContent).toBe(
+      "CalendarContactsLocationWhat a bot reads is sent to its AI model.",
+    );
     expect(phone.device.sync).toHaveBeenCalled();
   });
 
+  it("hides a switch in a build without its module", async () => {
+    ui.contacts = false;
+    await render(<DozoPhone />);
+    expect(labels()).toEqual(["Calendar", "Location"]);
+    ui.contacts = true;
+    ui.location = false;
+    await render(<DozoPhone />);
+    expect(labels()).toEqual(["Calendar", "Contacts"]);
+  });
+
+  it("switches each kind on its own, holding all while one switches", async () => {
+    const switching = deferred<PhoneSwitchResult>();
+    phone.device.setSwitch.mockReturnValueOnce(switching.promise);
+    await render(<DozoPhone />);
+    await tap(2);
+    expect(phone.device.setSwitch).toHaveBeenCalledWith("location", true);
+    expect(toggles().map((input) => input.checked)).toEqual([false, false, true]);
+    expect(toggles().every((input) => input.disabled)).toBe(true);
+    await act(async () => {
+      phone.set({ ...OFF, location: true });
+      switching.resolve("done");
+    });
+    expect(toggles().some((input) => input.disabled)).toBe(false);
+    await tap(1);
+    expect(phone.device.setSwitch).toHaveBeenLastCalledWith("contacts", true);
+  });
+
+  it.each([
+    [1, "Allow contacts access in Settings."],
+    [2, "Allow location access in Settings."],
+  ])("offers the system settings when switch %i is refused", async (index, line) => {
+    phone.device.setSwitch.mockResolvedValueOnce("denied");
+    await render(<DozoPhone />);
+    await tap(index);
+    await act(() => flush());
+    expect(toggle(index).checked).toBe(false);
+    expect(ui.alert).toHaveBeenCalledWith(line, undefined, expect.any(Array));
+    alertButtons()[1]!.onPress?.();
+    expect(ui.openSettings).toHaveBeenCalled();
+  });
+
   it("holds the switch until the phone's state is known", async () => {
-    phone.state.settings = { ready: false, calendar: false };
+    phone.state.settings = { ...OFF, ready: false };
     await render(<DozoPhone />);
     expect(toggle().disabled).toBe(true);
-    await act(async () => phone.set({ ready: true, calendar: true }));
+    await act(async () => phone.set({ ...OFF, calendar: true }));
     expect(toggle().disabled).toBe(false);
     expect(toggle().checked).toBe(true);
   });
 
   it("shows the tapped value while switching, then what the phone reports", async () => {
-    const switching = deferred<CalendarSwitchResult>();
-    phone.device.setCalendar.mockReturnValueOnce(switching.promise);
+    const switching = deferred<PhoneSwitchResult>();
+    phone.device.setSwitch.mockReturnValueOnce(switching.promise);
     await render(<DozoPhone />);
     await tap();
-    expect(phone.device.setCalendar).toHaveBeenCalledWith(true);
+    expect(phone.device.setSwitch).toHaveBeenCalledWith("calendar", true);
     expect(toggle().checked).toBe(true);
     expect(toggle().disabled).toBe(true);
     await act(async () => {
-      phone.set({ ready: true, calendar: true });
+      phone.set({ ...OFF, calendar: true });
       switching.resolve("done");
     });
     expect(toggle().checked).toBe(true);
@@ -183,7 +240,7 @@ describe("the Phone screen", () => {
   });
 
   it("stays off when the system refuses, and offers the system settings", async () => {
-    phone.device.setCalendar.mockResolvedValueOnce("denied");
+    phone.device.setSwitch.mockResolvedValueOnce("denied");
     await render(<DozoPhone />);
     await tap();
     await act(() => flush());
@@ -199,7 +256,7 @@ describe("the Phone screen", () => {
   });
 
   it("says so when pairing fails, and stays off", async () => {
-    phone.device.setCalendar.mockRejectedValueOnce(new Error("Remove a computer first"));
+    phone.device.setSwitch.mockRejectedValueOnce(new Error("Remove a computer first"));
     await render(<DozoPhone />);
     await tap();
     await act(() => flush());
@@ -208,10 +265,10 @@ describe("the Phone screen", () => {
   });
 
   it("turns Calendar off", async () => {
-    phone.state.settings = { ready: true, calendar: true };
+    phone.state.settings = { ...OFF, calendar: true };
     await render(<DozoPhone />);
     await tap();
-    expect(phone.device.setCalendar).toHaveBeenCalledWith(false);
+    expect(phone.device.setSwitch).toHaveBeenCalledWith("calendar", false);
   });
 });
 

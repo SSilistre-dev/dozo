@@ -9,6 +9,7 @@ import type { DeclaredUserDevice, DeviceCapability } from "./dozo-device-capabil
 import {
   DEVICE_CAPABILITIES_HEADER,
   parseDeviceCapabilities,
+  readCapabilitySince,
   readDeviceCapabilities,
   recordDeviceCapabilities,
 } from "./dozo-device-capabilities.js";
@@ -30,6 +31,8 @@ const phones = [...PHONE_PLATFORMS];
 export interface ConnectedPhone {
   deviceId: string;
   pairedAt: Date;
+  /** Since when that capability has been on, on this pairing: no consent from before it counts. */
+  onSince: Date;
 }
 
 /**
@@ -186,7 +189,10 @@ export class UserDevices extends UpstreamUserDevices {
     );
     for (const { deviceId, device } of connections) {
       const declared = await readDeviceCapabilities(this.prisma, deviceId, device.platform);
-      if (declared.includes(capability)) return { deviceId, pairedAt: device.createdAt };
+      if (!declared.includes(capability)) continue;
+      const since = await readCapabilitySince(this.prisma, deviceId, capability);
+      const pairedAt = device.createdAt;
+      return { deviceId, pairedAt, onSince: since && since > pairedAt ? since : pairedAt };
     }
     return null;
   }

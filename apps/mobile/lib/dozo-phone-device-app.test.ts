@@ -251,12 +251,31 @@ describe("the app's phone device", () => {
     expect(app.report).toHaveBeenCalledWith(error, "rpc.transport", { source: "phone-device" });
   });
 
+  it("reads contacts and location through their own modules, unavailable in a build without them", async () => {
+    const deps = device.appPhoneDeviceDeps();
+    expect(deps.contacts.available()).toBe(false);
+    expect(deps.location.available()).toBe(false);
+    expect(await deps.contacts.permission()).toBe("unavailable");
+    expect(await deps.location.request()).toBe("unavailable");
+    await expect(
+      deps.contacts.read({ query: "ada", field: "phone", limit: 10 }),
+    ).rejects.toMatchObject({ code: "contacts-unavailable" });
+    await expect(deps.location.read({ precision: "approximate" })).rejects.toMatchObject({
+      code: "location-unavailable",
+    });
+  });
+
   it("is one device for the whole app, started by the layout", async () => {
     expect(device.phoneDevice()).toBe(device.phoneDevice());
     app.token = "";
     const stop = device.startPhoneDevice();
     await device.phoneDevice().sync();
-    expect(device.phoneDevice().settings()).toEqual({ ready: false, calendar: false });
+    expect(device.phoneDevice().settings()).toEqual({
+      ready: false,
+      calendar: false,
+      contacts: false,
+      location: false,
+    });
     stop();
   });
 });

@@ -459,7 +459,8 @@ answers or ends a question the bot is waiting on.
 
 In a run of a marked bot every call that is not a plain read asks the person, even in Never ask or
 Auto review: sends, connector writes, the cloud computer, the browser, files, memory, settings,
-routines, other bots and the user's own computer. The gate only asks: marks are written where the
+routines, other bots and the user's own computer; in Never ask, a skill or routine write is refused
+instead (After outside content). The gate only asks: marks are written where the
 approved call delivers or changes something, so a call the person denies leaves none, and a call
 naming another bot by anything but a string is refused. Its cards say why (and, for work that
 outlives the run, that the mark does too) and have no Always allow; the run starts as having read
@@ -637,29 +638,46 @@ the screen tools only when it declares screen control on connecting
 (`packages/adapters/src/dozo-device-capabilities.ts`; the desktop app declares commands only), tells the bot it can only run commands there, and answers a
 refused screen request with that fact (`packages/adapters/src/dozo-device-screen.ts`).
 
-## Your phone's calendar
+## Your phone: calendar, contacts and location
 
-A bot may read the calendar on the member's own phone (`phone_calendar_read`,
-`packages/adapters/src/dozo-phone.ts`; the app's side is `apps/mobile/lib/dozo-phone-device.ts`).
-The phone pairs as one of the member's devices and declares `calendar` only while Calendar is on in
-its Phone settings and the system allows it. Phones are not computers: they never get commands,
+A bot may read the member's own phone: its calendar (`phone_calendar_read`), one person in its
+contacts (`phone_contacts_search`) and where it is, once (`phone_location`)
+(`packages/adapters/src/dozo-phone.ts`; the app's side is `apps/mobile/lib/dozo-phone-device.ts`).
+The phone pairs as one of the member's devices and declares each kind only while its switch is on in
+the Phone settings and the system allows it. Phones are not computers: they never get commands,
 screen or browser, stay out of Computers and its limit, and an account has one phone.
 
 - Only the member who started the run reaches their own phone, from a chat no one else can read: not
   a group, a channel or a helper's thread, and only in a Space where they are the only member.
-- Each bot's first read asks, Never ask included; turning Calendar off unpairs the phone, so every
-  bot asks again. Once outside content entered the run every read asks, and the phone's own answer
-  counts as outside content, so a second read in a run asks too (a range over 31 days takes two
-  approvals, by choice).
-- At most 31 days and 50 events, with title, times, location and calendar name. Links are removed
-  from those texts on the phone and again on the server by one shared rule; the rest of the text
-  goes to the bot's model as written.
-- The approval record keeps a count, not the events, and a turn that read the phone is not learned
-  into memory. What the bot replied stays in the chat like any message: export and backups carry
-  it, and a member added to the Space later can read it with the rest of its history.
+- Each bot's first read of calendar or contacts asks, Never ask included, and so does its first
+  read after that kind's switch was turned on again; turning every switch off unpairs the phone.
+  Every location read asks, and its card says approximate or precise. Phone reads run one at a
+  time, and once one is allowed the run counts as having read outside content, so every later
+  phone read in that run asks too (a calendar range over 31 days takes two approvals, by choice).
+  A card approves only its own call, and a run may search contacts at most three times.
+- Calendar: at most 31 days and 50 events, with title, times, location and calendar name.
+- Contacts: a name to look up (two letters or digits at least; no wildcards, no paging), at most 10
+  people, each with their name and up to three values of the one kind asked for (phone numbers or
+  email addresses), nothing else of the card.
+- Location: one reading while the app is open, never in the background and never watched, refused
+  when older than two minutes. Approximate is rounded to about a kilometre at any latitude unless
+  the bot asks for precise; a phone allowed only approximate location answers approximate.
+- Links are removed from names, titles, locations and calendar names on the phone and again on the
+  server by one shared rule; the rest of the text goes to the bot's model as written.
+- What is kept: the approval record holds a count (or that the location was read), not the content,
+  and a turn that read the phone is not learned into memory. The card and the effect's request keep
+  what was asked (the name looked up, the date range). A phone tool's output is not kept in the
+  chat's steps: later runs see only that the phone was read (messages saved before this change
+  still hold it). The bot's reply stays in the chat like any message, with whatever it repeated:
+  export and backups carry it, and a member added to the Space later can read it with the rest of
+  its history.
+- What the model may do with it: a number, an address or coordinates it learned can go into tools
+  that do not ask, such as a web search or a page fetch (for a location, that is the point). A send
+  to an address learned this way goes through the usual send approvals; in Never ask that means only
+  the daily send limit, as for any other outside content.
 - Known limits: only while the app is open in front (a phone that does not answer fails after 20
   seconds); not over the relay (a phone paired to a computer by code), which carries no device
-  connection; a store build without the native module hides the setting.
+  connection; a store build without a kind's native module hides its switch.
 
 ## Daily sends
 
@@ -715,6 +733,40 @@ the owner's own word.
 On the server on your own computer, point a local client at
 `http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
 the app window opens.
+
+## After outside content
+
+A run reads outside content when a tool brings in text someone else may have written (a page, a
+search, a file, a connector, the screen, another bot's answer), when its history replays such a
+result, when someone else's message reaches it mid-turn, or on a later attempt, whose restored turn
+may hold one (`packages/adapters/src/dozo-read-outside.ts`).
+
+- Lasting writes (`packages/core/src/dozo-lasting-write-approval.ts`,
+  `packages/adapters/src/dozo-lasting-write-card.ts`): creating, changing or deleting a skill, and
+  creating or changing a routine (also one on another bot), need a person in every mode, over any
+  Always allow rule, and Never ask refuses them, when the run read outside content or what started
+  it did not come from the owner: a webhook or an email, another bot, someone else's message in a
+  connected chat, a message sent with an access token, a routine started because something it
+  watches changed, or any other trigger. The owner's own message, follow-up or call, their own
+  connected chat app, a routine's scheduled run or retry, and a subagent inside such a run write
+  freely until the run reads outside content (a background helper cannot write either at all). The
+  card shows the whole text that will be saved (a skill change as a diff of the current skill); a
+  text too long to show whole is refused instead.
+- Memory: a turn that read outside content is not saved to a connected memory service, whoever
+  started it; other turns are saved as upstream describes (`docs/memory.md`), including the owner's
+  connected chat app and messages between bots. This narrows upstream's learning from
+  outside-derived replies. Turns saved before this change may come from such runs. Recalled memory
+  still reaches the model as data, not instructions, and does not by itself count as outside
+  content.
+
+Known gaps this does not change:
+
+- In Never ask, a run that read outside content, or that someone else started, still rewrites its
+  own bot's instructions with `update_bot` without asking (`unguarded` in
+  `packages/adapters/src/run-tool-request.ts`).
+- A compacted summary can carry what a turn that read outside content saw into a later run that
+  counts as clean: only replayed tool results in history are checked, not the summary.
+- `scratchpad_add` and `scratchpad_update` are not held.
 
 ## Status and known limits
 
