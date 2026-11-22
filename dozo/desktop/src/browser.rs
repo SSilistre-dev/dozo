@@ -121,11 +121,10 @@ const EVENTS: &[&str] = &[
 const MAX_EVENTS: usize = 64;
 const ANSWER: Duration = Duration::from_secs(30);
 
-/// Whether this app has a browser for bots. Off until the sign-in pause comes (the person signs in
-/// while the app passes on nothing). While off, the app does not declare it to servers
-/// (`device_socket.rs`) and refuses a `pageBrowser` a server sends anyway, before any browser is
-/// looked for or started (`device_run.rs`), so only this module's own tests reach it.
-pub const DECLARED: bool = false;
+/// Whether this app has a browser for bots: on macOS and Linux. On Windows (no browser here yet)
+/// the app does not declare it to servers (`device_socket.rs`) and refuses a `pageBrowser` a server
+/// sends anyway, before any browser is looked for or started (`device_run.rs`).
+pub const DECLARED: bool = cfg!(any(target_os = "macos", target_os = "linux"));
 
 /// Asks the person to sign in to a site in the bot's browser window; answers true once they say
 /// they are done, false when they cancel. Only the person can answer: nothing the server or the
@@ -991,13 +990,21 @@ impl Browsers {
         // Only a browser still marked cleared: a `forgotten` that comes again (another run of the
         // bot asked too) finds no mark, and touches neither the browser started since nor its
         // profile.
-        if !self.cleared(key) || self.is_clearing(key) || self.current(key).is_some() {
-            return;
+        // Looked at and claimed in one step, under the start lock: no browser starts meanwhile,
+        // and a `forgotten` that comes at the same time finds it being cleared and leaves it (the
+        // server asks again next time).
+        {
+            let _starting = self.starting.lock().await;
+            if !self.cleared(key) || self.is_clearing(key) || self.current(key).is_some() {
+                return;
+            }
+            self.begin_clearing(key);
         }
         // A clear the app did not finish (it quit or crashed before the profile went) is
         // finished first: the browser never starts again on the old profile and its sign-ins.
-        let (root, key) = (self.root.clone(), key.to_owned());
+        let (root, owned) = (self.root.clone(), key.to_owned());
         let _ = tokio::task::spawn_blocking(move || {
+            let key = owned;
             let profile = root.join(&key);
             if profile.exists() {
                 #[cfg(unix)]
@@ -1009,6 +1016,7 @@ impl Browsers {
             let _ = std::fs::remove_file(root.join(format!("{key}.cleared")));
         })
         .await;
+        self.end_clearing(key);
     }
 
     fn begin_clearing(&self, key: &str) {
@@ -2277,6 +2285,38 @@ mod tests {
         browsers.take_cleared(&key).await;
         assert!(!dir.join(&key).exists(), "the old profile went first");
         assert!(!browsers.cleared(&key));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two `forgotten` at once: the one that finds the other under way leaves the mark, and no
+    /// browser starts until the first is done.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_forgotten_that_finds_another_under_way_leaves_it() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-twice-{}", std::process::id()));
+        let browsers = Arc::new(Browsers::with(dir.clone(), None, true));
+        let key = "8".repeat(64);
+        std::fs::create_dir_all(dir.join(&key)).unwrap();
+        std::fs::write(dir.join(format!("{key}.cleared")), b"").unwrap();
+        // The first holds the start lock a moment, as it would while it looks.
+        let starting = browsers.starting.lock().await;
+        let first = {
+            let (browsers, key) = (browsers.clone(), key.clone());
+            tokio::spawn(async move { browsers.take_cleared(&key).await })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!first.is_finished());
+        browsers.begin_clearing(&key);
+        drop(starting);
+        first.await.unwrap();
+        assert!(
+            browsers.cleared(&key),
+            "a forgotten that finds a clear under way leaves the mark"
+        );
+        assert!(dir.join(&key).exists());
+        browsers.end_clearing(&key);
+        browsers.take_cleared(&key).await;
+        assert!(!browsers.cleared(&key) && !dir.join(&key).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

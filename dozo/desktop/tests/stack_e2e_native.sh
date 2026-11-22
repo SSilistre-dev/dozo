@@ -180,7 +180,7 @@ kill_app() {
 if [ -z "$RELAY" ]; then
   # The bot's own browser (src/browser.rs, src/browser_e2e.rs): the installed Chrome with a profile
   # of its own, driven through the pipe only (no TCP port), what is not allowed refused, and the
-  # browser ends with a killed app. On Linux in a real window under Xvfb, with a screenshot of the
+  # browser ends with a killed app. In a real window (on Linux under Xvfb), with a screenshot of the
   # page and, when ImageMagick is there, of the whole screen (the window and its address bar).
   say "0. the bot's own browser"
   browser_test() {
@@ -196,6 +196,8 @@ if [ -z "$RELAY" ]; then
     export DISPLAY=:87 DOZO_BROWSER_E2E_WINDOW=1
     sleep 1
   fi
+  # On macOS a real window too, as the person sees it (the runner has a desktop session).
+  case "$OS" in macos-*) export DOZO_BROWSER_E2E_WINDOW=1 ;; esac
   browser_test e2e_browser_page_tools_work_through_the_pipe_only
   browser_test e2e_browser_guard_holds_in_windows_and_frames
   browser_test e2e_browser_reaches_nothing_on_this_computer_or_its_network

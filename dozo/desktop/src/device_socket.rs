@@ -27,7 +27,7 @@ const REVOKED_HEADER: &str = "x-rakazo-device-revoked";
 const PING: Duration = Duration::from_secs(30);
 /// What this computer can do, sent on connecting so the server offers only these tools
 /// (`packages/adapters/src/dozo-device-capabilities.ts`): commands, and the bot's own browser
-/// when one is installed and `browser::DECLARED` (off until the sign-in pause). No screen control.
+/// when one is installed and `browser::DECLARED` (macOS and Linux). No screen control.
 const CAPABILITIES_HEADER: &str = "x-dozo-device-capabilities";
 
 /// Why the server ended this computer's pairing. `Some("session-ended")`: the sign-in that
@@ -120,14 +120,10 @@ async fn session(
         return Ended::Stopped;
     };
     request.headers_mut().insert("authorization", bearer);
-    let capabilities = if crate::browser::DECLARED && options.runner.browser_available() {
-        "shell,browser"
-    } else {
-        "shell"
-    };
+    let declared = capabilities(crate::browser::DECLARED, options.runner.browser_available());
     request
         .headers_mut()
-        .insert(CAPABILITIES_HEADER, HeaderValue::from_static(capabilities));
+        .insert(CAPABILITIES_HEADER, HeaderValue::from_static(declared));
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE_BYTES))
         .max_frame_size(Some(MAX_MESSAGE_BYTES));
@@ -195,6 +191,16 @@ async fn session(
     ended
 }
 
+/// What this computer offers: commands, and the bot's own browser where the app has one
+/// (`browser::DECLARED`) and a browser is installed.
+fn capabilities(declared: bool, available: bool) -> &'static str {
+    if declared && available {
+        "shell,browser"
+    } else {
+        "shell"
+    }
+}
+
 /// Acts on one server message; `Some` when it revokes this computer.
 fn receive(
     text: &str,
@@ -257,6 +263,86 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 
+    /// The real relay (tests/relay_e2e.sh): this app's runner connects to the server's own device
+    /// hub, the person has cleared a bot's browser here, and the server's `forgotten` reaches this
+    /// computer and takes the mark; then again, with two runs of the bot asking at once.
+    #[tokio::test]
+    #[ignore = "needs the relay harness: tests/relay_e2e.sh"]
+    async fn e2e_relay_forgotten_reaches_this_computer() {
+        let shared = std::path::PathBuf::from(std::env::var("DOZO_RELAY_DIR").unwrap());
+        let server = Url::parse(&std::env::var("DOZO_RELAY_SERVER").unwrap()).unwrap();
+        let wait_for = |file: &str| {
+            let path = shared.join(file);
+            async move {
+                for _ in 0..1200 {
+                    if path.exists() {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                panic!("no {}", path.display());
+            }
+        };
+        wait_for("session.json").await;
+        let session: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(shared.join("session.json")).unwrap()).unwrap();
+        let key = crate::device_run::bot_key(session["botId"].as_str().unwrap());
+        let dir = std::env::temp_dir().join(format!("dozo-relay-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("home")).unwrap();
+        let runner = Runner::new(dir.join("data"), dir.join("home"));
+        assert!(runner.browser_available(), "a browser is installed here");
+        assert!(runner.clear_browser(&key).await);
+        let (stop, stopped) = watch::channel(false);
+        let options = Options {
+            server,
+            token: session["token"].as_str().unwrap().to_owned(),
+            runner: runner.clone(),
+            retry: (Duration::from_millis(200), Duration::from_secs(2)),
+            grace: GRACE,
+        };
+        let connection = tokio::spawn(run(options, stopped));
+        let gone = async || {
+            for _ in 0..1200 {
+                if !runner.browser_cleared(&key) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            panic!("the mark stayed");
+        };
+        gone().await;
+        println!("E2E: relay: the server's forgotten reached this computer and took the mark");
+        wait_for("clear-again").await;
+        assert!(runner.clear_browser(&key).await);
+        gone().await;
+        println!("E2E: relay: with two runs of the bot asking, the mark went again");
+        wait_for("done").await;
+        std::fs::write(shared.join("computer-done"), b"").unwrap();
+        let _ = stop.send(true);
+        let _ = connection.await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The bot's browser is declared only where the app has one (macOS, Linux) and a browser is
+    /// installed; Windows declares commands alone and has no browser.
+    #[test]
+    fn the_browser_is_declared_only_where_the_app_has_one() {
+        assert_eq!(capabilities(true, true), "shell,browser");
+        assert_eq!(capabilities(true, false), "shell");
+        assert_eq!(capabilities(false, true), "shell");
+        #[cfg(windows)]
+        {
+            const { assert!(!crate::browser::DECLARED) };
+            assert!(crate::browser::find().is_none());
+            let dir = std::env::temp_dir().join(format!("dozo-socket-win-{}", std::process::id()));
+            assert!(!Runner::new(dir.join("data"), dir.join("home")).browser_available());
+        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        const {
+            assert!(crate::browser::DECLARED)
+        };
+    }
+
     type Socket = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
 
     /// A fake gateway on loopback: accepts only `Bearer good`, refuses `Bearer ended` as a
@@ -275,8 +361,10 @@ mod tests {
                         assert_eq!(request.uri().path(), CONNECT_PATH);
                         if auth.is_some_and(|auth| auth == "Bearer good") {
                             let declared = request.headers().get(CAPABILITIES_HEADER);
-                            // No browser until the sign-in pause (`browser::DECLARED`).
-                            assert_eq!(declared.unwrap(), "shell");
+                            // The browser only where the app has one and one is installed.
+                            let available = crate::browser::find().is_some();
+                            let expected = capabilities(crate::browser::DECLARED, available);
+                            assert_eq!(declared.unwrap(), expected);
                             return Ok(response);
                         }
                         let mut refused = ErrorResponse::new(None);
