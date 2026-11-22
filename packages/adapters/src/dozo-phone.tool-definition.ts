@@ -1,6 +1,16 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+} from "@rakazo/contracts";
 
-export const PHONE_CALENDAR_READ_TOOL = "phone_calendar_read";
+export {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+  PHONE_TOOL_NAMES,
+} from "@rakazo/contracts";
 
 /** Reads the calendar on the user's phone (dozo-phone.ts). */
 export const phoneCalendarReadTool: ConnectorTool = {
@@ -19,5 +29,41 @@ export const phoneCalendarReadTool: ConnectorTool = {
       },
     },
     required: ["from", "to"],
+  },
+};
+
+/** Looks one person up in the contacts on the user's phone (dozo-phone.ts). */
+export const phoneContactsSearchTool: ConnectorTool = {
+  name: PHONE_CONTACTS_SEARCH_TOOL,
+  description:
+    "Look up one person by name in the user's phone contacts for their phone numbers or email addresses; not for listing contacts.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Part of the person's name, at least two letters or digits.",
+        maxLength: 100,
+      },
+      field: { type: "string", enum: ["phone", "email"], description: "What to return." },
+    },
+    required: ["query", "field"],
+  },
+};
+
+/** Reads where the user's phone is, once (dozo-phone.ts). */
+export const phoneLocationTool: ConnectorTool = {
+  name: PHONE_LOCATION_TOOL,
+  description:
+    "Read where the user's phone is right now, once. Ask for precise only when about a kilometre is not enough; the user approves every reading.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      precision: {
+        type: "string",
+        enum: ["approximate", "precise"],
+        description: "approximate (about 1 km, the default) or precise.",
+      },
+    },
   },
 };

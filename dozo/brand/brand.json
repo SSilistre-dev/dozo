@@ -397,6 +397,24 @@
       "reason": "exported for the fork's checkpoint restore of a deferred built-in (dozo-checkpoint-tools.ts)"
     },
     {
+      "file": "packages/adapters/src/pi-runtime-tools.ts",
+      "find": "    tool.name === \"remember\" ||\n    tool.name === \"request_secret\"\n      ? { executionMode: \"sequential\" as const }\n",
+      "replace": "    tool.name === \"remember\" ||\n    tool.name === \"request_secret\" ||\n    isPhoneToolName(tool.name)\n      ? { executionMode: \"sequential\" as const }\n",
+      "requires": [
+        "packages/contracts/src/dozo-phone-tools.ts"
+      ],
+      "reason": "phone: a turn's reads of the user's phone run one at a time, so each one's approval sees the reads before it (once one is allowed, every later one in the run asks)"
+    },
+    {
+      "file": "packages/adapters/src/pi-runtime-tools.ts",
+      "find": "import { FLEET_TOOL_NAMES } from \"@rakazo/contracts\";\n",
+      "replace": "import { FLEET_TOOL_NAMES, isPhoneToolName } from \"@rakazo/contracts\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-phone-tools.ts"
+      ],
+      "reason": "phone: the import of the rule above"
+    },
+    {
       "file": "packages/adapters/src/pi-runtime.ts",
       "find": "} from \"./pi-runtime-tools.js\";\nimport type { PiSessionHandle",
       "replace": "} from \"./pi-runtime-tools.js\";\nimport { restoredDeferredTool } from \"./dozo-checkpoint-tools.js\";\nimport type { PiSessionHandle",
@@ -5594,7 +5612,7 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport { phoneCalendarReadRequest } from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport {\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n} from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts",
         "packages/adapters/src/dozo-phone-protocol.ts"
@@ -5604,12 +5622,12 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
-      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n  phoneContactsSearchRequest,\n  phoneLocationRequest,\n]);\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts",
         "packages/adapters/src/dozo-phone-protocol.ts"
       ],
-      "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), and a read of the calendar on the user's phone (phoneCalendarRead)"
+      "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), and the reads of the user's phone: its calendar (phoneCalendarRead), one person in its contacts (phoneContactsSearch) and its location once (phoneLocation)"
     },
     {
       "file": "packages/adapters/src/browser-conformance.test.ts",
@@ -5640,17 +5658,17 @@
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n];\n",
-      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n  phoneCalendarReadTool,\n];\n",
+      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n  phoneCalendarReadTool,\n  phoneContactsSearchTool,\n  phoneLocationTool,\n];\n",
       "requires": [
         "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts",
         "packages/adapters/src/dozo-phone.tool-definition.ts"
       ],
-      "reason": "user's browser and phone: browser_sign_in and phone_calendar_read among the built-ins, last, so they take no listed place from the others; only a run offered the bot's browser on the user's computer gets the first, and only a run that reaches the user's phone the second"
+      "reason": "user's browser and phone: browser_sign_in and the phone tools (phone_calendar_read, phone_contacts_search, phone_location) among the built-ins, last, so they take no listed place from the others; only a run offered the bot's browser on the user's computer gets the first, and only a run that reaches the user's phone with that capability on gets each phone tool"
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "import { z } from \"zod\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport { phoneCalendarReadTool } from \"./dozo-phone.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport {\n  phoneCalendarReadTool,\n  phoneContactsSearchTool,\n  phoneLocationTool,\n} from \"./dozo-phone.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts",
         "packages/adapters/src/dozo-phone.tool-definition.ts"
@@ -5660,30 +5678,51 @@
     {
       "file": "packages/adapters/src/run-tools.ts",
       "find": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n]);\n",
-      "replace": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n  [\"browser_sign_in\", userBrowserSignIn],\n  [\"phone_calendar_read\", phoneCalendarRead],\n]);\n",
+      "replace": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n  [\"browser_sign_in\", userBrowserSignIn],\n  ...PHONE_TOOL_NAMES.map((name) => [name, phoneRead] as const),\n]);\n",
       "requires": [
         "packages/adapters/src/dozo-user-browser.ts",
         "packages/adapters/src/dozo-phone.ts"
       ],
-      "reason": "user's browser and phone: browser_sign_in runs on the user's computer, which opens the site's home page and passes nothing on until the person is done; phone_calendar_read reads the calendar on the user's phone"
+      "reason": "user's browser and phone: browser_sign_in runs on the user's computer, which opens the site's home page and passes nothing on until the person is done; phone_calendar_read reads the calendar on the user's phone, phone_contacts_search looks one person up in its contacts and phone_location reads where it is, once"
     },
     {
       "file": "packages/adapters/src/run-tools.ts",
       "find": "import { emailTools } from \"./run-tools-email.js\";\nimport { feedbackTools } from \"./run-tools-feedback.js\";\n",
-      "replace": "import { emailTools } from \"./run-tools-email.js\";\nimport { phoneCalendarRead } from \"./dozo-phone.js\";\nimport { feedbackTools } from \"./run-tools-feedback.js\";\n",
+      "replace": "import { emailTools } from \"./run-tools-email.js\";\nimport { phoneRead } from \"./dozo-phone.js\";\nimport { PHONE_TOOL_NAMES } from \"./dozo-phone.tool-definition.js\";\nimport { feedbackTools } from \"./run-tools-feedback.js\";\n",
       "requires": [
-        "packages/adapters/src/dozo-phone.ts"
+        "packages/adapters/src/dozo-phone.ts",
+        "packages/adapters/src/dozo-phone.tool-definition.ts"
       ],
-      "reason": "phone: the import of the handler above"
+      "reason": "phone: the imports of the handler above"
     },
     {
       "file": "packages/contracts/src/index.ts",
       "find": "export * from \"./terminal.js\";\nexport * from \"./user-devices.js\";\n",
-      "replace": "export * from \"./terminal.js\";\nexport * from \"./dozo-without-links.js\";\nexport * from \"./user-devices.js\";\n",
+      "replace": "export * from \"./terminal.js\";\nexport * from \"./dozo-without-links.js\";\nexport * from \"./dozo-approximate-location.js\";\nexport * from \"./dozo-phone-tools.js\";\nexport * from \"./user-devices.js\";\n",
       "requires": [
-        "packages/contracts/src/dozo-without-links.ts"
+        "packages/contracts/src/dozo-without-links.ts",
+        "packages/contracts/src/dozo-approximate-location.ts",
+        "packages/contracts/src/dozo-phone-tools.ts"
       ],
-      "reason": "phone: the one filter that takes links out of calendar text, on the phone and again on the server"
+      "reason": "phone: what the phone and the server share: the one filter that takes links out of its text, the rounding of an approximate place, and the names of the phone tools (which a reply's kept tool calls also read)"
+    },
+    {
+      "file": "packages/core/src/events.ts",
+      "find": "        steps.push(tool && calls?.length ? { tool, calls } : null);\n",
+      "replace": "        steps.push(tool && calls?.length ? { tool, calls: keptToolCalls(tool, calls) } : null);\n",
+      "requires": [
+        "packages/core/src/dozo-tool-history.ts"
+      ],
+      "reason": "phone: a reply keeps its tool calls for later runs to replay; a read of the user's phone keeps its arguments and no output, so what it read is not sent to the model again in later turns (every message write goes through this split)"
+    },
+    {
+      "file": "packages/core/src/events.ts",
+      "find": "import { cloudAgentBlockFromPayload } from \"./cloud-agent.js\";\nimport { preserveIdentitySource } from \"./identity-source.js\";\n",
+      "replace": "import { cloudAgentBlockFromPayload } from \"./cloud-agent.js\";\nimport { keptToolCalls } from \"./dozo-tool-history.js\";\nimport { preserveIdentitySource } from \"./identity-source.js\";\n",
+      "requires": [
+        "packages/core/src/dozo-tool-history.ts"
+      ],
+      "reason": "phone: the import of the rule above"
     },
     {
       "file": "packages/adapters/src/host-computer-device.ts",
@@ -5724,8 +5763,8 @@
     {
       "file": "packages/contracts/src/builtin-tools.ts",
       "find": "  \"user_computer_act\",\n  \"open_path\",\n",
-      "replace": "  \"user_computer_act\",\n  \"phone_calendar_read\",\n  \"open_path\",\n",
-      "reason": "phone: the bot reads the calendar on the user's phone (phone_calendar_read), a built-in a bot may turn off like the user's computer tools"
+      "replace": "  \"user_computer_act\",\n  \"phone_calendar_read\",\n  \"phone_contacts_search\",\n  \"phone_location\",\n  \"open_path\",\n",
+      "reason": "phone: the bot reads the calendar on the user's phone (phone_calendar_read), looks one person up in its contacts (phone_contacts_search) and reads its location once (phone_location), built-ins a bot may turn off like the user's computer tools"
     },
     {
       "file": "packages/contracts/src/user-devices.ts",
@@ -5740,7 +5779,7 @@
       "requires": [
         "packages/adapters/src/dozo-phone.ts"
       ],
-      "reason": "phone: a run the person started themselves is offered the read of their phone's calendar while the phone is connected with Calendar on, unless the bot turned it off, a token's message reached the run, or someone else can read its thread (a group, a channel, a Space with other members)"
+      "reason": "phone: a run the person started themselves is offered each read of their phone (calendar, contacts, location) while the phone is connected with that switch on, unless the bot turned it off, a token's message reached the run, or someone else can read its thread (a group, a channel, a Space with other members)"
     },
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
@@ -8923,14 +8962,14 @@
     {
       "file": "apps/mobile/app.json",
       "find": "\"expo-localization\",\n      \"@react-native-vector-icons/ionicons\",",
-      "replace": "\"expo-localization\",\n      [\n        \"expo-calendar\",\n        {\n          \"calendarPermission\": \"Bots you allow can read your calendar when you ask them.\",\n          \"remindersPermission\": false\n        }\n      ],\n      \"@react-native-vector-icons/ionicons\",",
-      "reason": "phone calendar: the calendar module's plugin writes the iOS calendar purpose strings (full access and the older key) with the app's own text, and no reminders string, since the app never asks for reminders"
+      "replace": "\"expo-localization\",\n      [\n        \"expo-calendar\",\n        {\n          \"calendarPermission\": \"Bots you allow can read your calendar when you ask them.\",\n          \"remindersPermission\": false\n        }\n      ],\n      [\n        \"expo-contacts\",\n        {\n          \"contactsPermission\": \"Bots you allow can look up a contact when you ask them.\"\n        }\n      ],\n      [\n        \"expo-location\",\n        {\n          \"locationWhenInUsePermission\": \"Bots you allow can see where you are when you ask them.\",\n          \"locationAlwaysAndWhenInUsePermission\": false,\n          \"locationAlwaysPermission\": false,\n          \"locationFullAccuracyPermission\": false,\n          \"motionUsagePermission\": false,\n          \"isIosBackgroundLocationEnabled\": false,\n          \"isAndroidBackgroundLocationEnabled\": false,\n          \"isAndroidForegroundServiceEnabled\": false\n        }\n      ],\n      \"./plugins/dozo-without-location-services\",\n      \"@react-native-vector-icons/ionicons\",",
+      "reason": "phone calendar, contacts and location: each module's plugin writes its iOS purpose string with the app's own text, and nothing the app never asks for: no reminders, no location in the background or always (no background mode), no temporary full accuracy and no motion; the location module's two background location services are removed from the Android manifest"
     },
     {
       "file": "apps/mobile/app.json",
       "find": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"icon\": \"./assets/icon.png\",",
-      "replace": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"blockedPermissions\": [\"android.permission.WRITE_CALENDAR\"],\n      \"icon\": \"./assets/icon.png\",",
-      "reason": "phone calendar: the calendar module's plugin asks for writing as well; bots only read, so Android gets READ_CALENDAR alone"
+      "replace": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"blockedPermissions\": [\n        \"android.permission.WRITE_CALENDAR\",\n        \"android.permission.WRITE_CONTACTS\",\n        \"android.permission.ACCESS_BACKGROUND_LOCATION\",\n        \"android.permission.FOREGROUND_SERVICE_LOCATION\"\n      ],\n      \"icon\": \"./assets/icon.png\",",
+      "reason": "phone calendar, contacts and location: the calendar and contacts plugins ask for writing as well, and nothing may add location in the background; bots only read, so Android gets READ_CALENDAR, READ_CONTACTS and the location while the app is in use"
     },
     {
       "file": "apps/mobile/app/(settings)/account.tsx",
@@ -8957,7 +8996,9 @@
       "replace": "import { startUnsentSends } from \"../lib/unsent-sends\";\nimport { startPhoneDevice } from \"../lib/dozo-phone-device\";\nimport { startWorkActivities } from \"../lib/work-activity\";",
       "requires": [
         "apps/mobile/lib/dozo-phone-device.ts",
-        "apps/mobile/lib/dozo-phone-calendar.ts"
+        "apps/mobile/lib/dozo-phone-calendar.ts",
+        "apps/mobile/lib/dozo-phone-contacts.ts",
+        "apps/mobile/lib/dozo-phone-location.ts"
       ],
       "reason": "phone calendar: the import of the rule below"
     },
@@ -8982,11 +9023,11 @@
     {
       "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
-      "replace": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Calendar\"\nmsgstr \"Takvim\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Events a bot reads are sent to its AI model.\"\nmsgstr \"Botun okuduğu etkinlikler yapay zekâ modeline gönderilir.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow calendar access in Settings.\"\nmsgstr \"Ayarlar'dan takvim erişimine izin verin.\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
+      "replace": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Calendar\"\nmsgstr \"Takvim\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Location\"\nmsgstr \"Konum\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"What a bot reads is sent to its AI model.\"\nmsgstr \"Botun okuduğu her şey yapay zekâ modeline gönderilir.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow calendar access in Settings.\"\nmsgstr \"Ayarlar'dan takvim erişimine izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow contacts access in Settings.\"\nmsgstr \"Ayarlar'dan kişilere erişime izin verin.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow location access in Settings.\"\nmsgstr \"Ayarlar'dan konuma erişime izin verin.\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
       "requires": [
         "apps/mobile/app/(settings)/dozo-phone.tsx"
       ],
-      "reason": "phone calendar: the Turkish copy of the Phone page's switch, its footer and the alert when the system refuses (Phone, Cancel and Settings are upstream's)"
+      "reason": "phone calendar, contacts and location: the Turkish copy of the Phone page's switches, its footer and the alert when the system refuses each (Phone, Contacts, Cancel and Settings are upstream's)"
     },
     {
       "file": "apps/mobile/lib/account-screen.test.tsx",

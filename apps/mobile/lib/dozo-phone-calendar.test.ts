@@ -266,7 +266,7 @@ describe("reading the phone's calendar", () => {
     { ...request, from: "nope" },
     { ...request, to: request.from },
   ])("is unavailable for a window it cannot read", async (window) => {
-    await expect(calendar.readCalendar(window)).rejects.toBeInstanceOf(calendar.PhoneCalendarError);
+    await expect(calendar.readCalendar(window)).rejects.toBeInstanceOf(calendar.PhoneReadError);
     expect(native.calendar.listEvents).not.toHaveBeenCalled();
   });
 
