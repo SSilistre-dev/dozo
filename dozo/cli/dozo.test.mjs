@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { EventEmitter } from "node:events";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { CliError, keychain, main, parseArgs, serverOrigin, sseEvents } from "./dozo.mjs";
 
@@ -330,6 +330,85 @@ describe("export", () => {
   it("names an unknown command", async () => {
     handlers.push();
     assert.match((await run(["delete"])).error.message, /Unknown command delete/);
+  });
+});
+
+describe("a bot's other chats", () => {
+  const chats = (
+    list = [{ id: "chat-1", name: "Garden", createdAt: "2026-11-20T09:00:00.000Z" }],
+  ) => json(200, { chats: list });
+
+  it("lists the bot's chats by id and name", async () => {
+    handlers.push(bots(), chats());
+    const { code, stdout } = await run(["chats", "Chef"]);
+    assert.equal(code, 0);
+    assert.equal(stdout, "chat-1\tGarden\n");
+    assert.equal(requests[1].url, "/api/v1/dozo/bots/bot-1/chats");
+  });
+
+  it("sends, follows and exports in a chat named by id or name, and says so when it must wait", async () => {
+    handlers.push(
+      bots(),
+      chats(),
+      events([
+        frame("run", { runId: "run-1", seq: 4 }, 4),
+        frame("status", { status: "waiting_input" }, 5),
+      ]),
+    );
+    const sent = await run(["send", "Chef", "--chat", "garden", "Sow?"]);
+    assert.equal(sent.code, 3);
+    assert.equal(requests[2].url, "/api/v1/dozo/bots/bot-1/messages?chat=chat-1");
+    assert.deepEqual(JSON.parse(requests[2].body), { text: "Sow?" });
+    assert.match(sent.stderr, /dozo follow bot-1 run-1 --after 5 --chat garden/);
+
+    requests = [];
+    handlers.push(bots(), chats(), events([frame("status", { status: "completed" }, 9)]));
+    assert.equal((await run(["follow", "Chef", "run-1", "--chat", "chat-1"])).code, 0);
+    assert.equal(requests[2].url, "/api/v1/dozo/bots/bot-1/runs/run-1/events?chat=chat-1");
+
+    requests = [];
+    handlers.push(bots(), chats(), json(200, { markdown: "# Garden\n", truncated: false }));
+    assert.equal((await run(["export", "Chef", "--chat", "Garden"])).stdout, "# Garden\n");
+    const url = new URL(requests[2].url, origin);
+    assert.equal(url.pathname, "/api/v1/dozo/bots/bot-1/export");
+    assert.equal(url.searchParams.get("chat"), "chat-1");
+    assert.ok(url.searchParams.get("timeZone"));
+  });
+
+  it("follows a dropped stream again in the same chat", async () => {
+    handlers.push(
+      bots(),
+      chats(),
+      events([frame("run", { runId: "run-1", seq: 4 }, 4)], { drop: true }),
+      events([frame("status", { status: "completed" }, 5)]),
+    );
+    assert.equal((await run(["send", "Chef", "--chat", "chat-1", "hi"])).code, 0);
+    assert.equal(requests[3].url, "/api/v1/dozo/bots/bot-1/runs/run-1/events?chat=chat-1");
+  });
+
+  it("never falls back to the main chat for a chat the server does not list", async () => {
+    handlers.push(bots(), chats());
+    assert.match(
+      (await run(["send", "Chef", "--chat", "Kitchen", "hi"])).error.message,
+      /No chat Kitchen/,
+    );
+    handlers.push(
+      bots(),
+      chats([
+        { id: "chat-1", name: "Garden", createdAt: "2026-11-20T09:00:00.000Z" },
+        { id: "chat-2", name: "garden", createdAt: "2026-11-21T09:00:00.000Z" },
+      ]),
+    );
+    assert.match((await run(["export", "Chef", "--chat", "GARDEN"])).error.message, /use its id/);
+    assert.equal(requests.filter((request) => request.method === "POST").length, 0);
+    assert.ok(requests.every((request) => !request.url.includes("/export")));
+  });
+
+  it("asks for no chats without --chat, so a call stays on the main chat as before", async () => {
+    handlers.push(bots(), json(200, { markdown: "# Chef\n", truncated: false }));
+    await run(["export", "Chef"]);
+    assert.ok(requests.every((request) => !request.url.endsWith("/chats")));
+    assert.equal(new URL(requests[1].url, origin).searchParams.get("chat"), null);
   });
 });
 

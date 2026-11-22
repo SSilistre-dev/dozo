@@ -91,6 +91,7 @@ describe("a route that reads its bot or group itself", () => {
         expect.objectContaining({ kind: "BAD_REQUEST", code: "dozo_extra_chat_not_a_target" }),
       );
     }
-    expect(() => dozoBotOrGroupOnly({})).not.toThrow();
+    const input = {};
+    expect(dozoBotOrGroupOnly(input)).toBe(input);
   });
 });

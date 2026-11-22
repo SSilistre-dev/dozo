@@ -29,27 +29,35 @@ function changesRunSettings(bot: RunSettings, input: RunSettings): boolean {
   );
 }
 
-/** Pass `input` for an update; leave it out for a change that always touches run settings. */
-export async function requireBotRunEditor(
+/**
+ * Pass `input` for an update; leave it out for a change that always touches run settings. Answers
+ * the bot, so a route reads and checks it in one expression.
+ */
+export async function requireBotRunEditor<Bot extends RunSettings & { userId: string }>(
   prisma: Db,
   actor: Actor,
-  bot: RunSettings & { userId: string },
+  bot: Bot,
   input?: UpdateBotInput,
-): Promise<void> {
-  if (bot.userId === actor.userId) return;
-  if (input && !changesRunSettings(bot, input)) return;
-  await requireSpaceOwner(prisma, actor);
+): Promise<Bot> {
+  if (bot.userId !== actor.userId && (!input || changesRunSettings(bot, input))) {
+    await requireSpaceOwner(prisma, actor);
+  }
+  return bot;
 }
 
-/** Any member can archive a group; only its creator or the space owner deletes it for good. */
+/**
+ * Any member can archive a group; only its creator or the space owner deletes it for good.
+ * Answers the group's id, so a route checks and removes in one expression.
+ */
 export async function requireGroupRemover(
   prisma: Db,
   actor: Actor,
   groupId: string,
-): Promise<void> {
+): Promise<string> {
   const group = await prisma.chatGroup.findFirst({
     where: { id: groupId, spaceId: actor.spaceId },
     select: { userId: true },
   });
   if (group && group.userId !== actor.userId) await requireSpaceOwner(prisma, actor);
+  return groupId;
 }

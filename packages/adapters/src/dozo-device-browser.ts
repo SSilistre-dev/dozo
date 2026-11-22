@@ -10,8 +10,9 @@ import type {
   BrowserSnapshotResult,
   ComputerRef,
 } from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+import { abortableDelay, pollUntil } from "@rakazo/core";
 import { hostSite } from "@rakazo/core/egress";
+import { bestEffort } from "@rakazo/logging";
 
 /**
  * The bot's own browser on the user's computer, driven from here: the desktop app passes each
@@ -79,6 +80,11 @@ const text = (value: unknown) =>
     .replaceAll(/\s+/g, " ")
     .trim()
     .slice(0, MAX_NAME);
+
+/** A command's answer is an object of fields; anything else is read as an empty one. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 /** Waits, and throws once the call was aborted. */
 async function delay(ms: number, signal?: AbortSignal) {
@@ -186,7 +192,7 @@ export class DeviceBrowserProvider implements BrowserProvider {
   private async send(method: string, params?: Record<string, unknown>) {
     const answer = await this.sendCommand({ method, ...(params ? { params } : {}) });
     for (const event of answer.events ?? []) await this.observe(event);
-    return (answer.result ?? {}) as Record<string, unknown>;
+    return isRecord(answer.result) ? answer.result : {};
   }
 
   private async observe(event: DeviceBrowserEvent) {
@@ -218,11 +224,15 @@ export class DeviceBrowserProvider implements BrowserProvider {
 
   /** Waits for a page load after `since` loads, asking cheaply; false when it did not come. */
   private async loaded(since: number, signal?: AbortSignal): Promise<boolean> {
-    const deadline = Date.now() + LOAD_WAIT_MS;
-    while (this.loads <= since && !this.dialog && Date.now() < deadline) {
-      await delay(POLL_MS, signal);
-      await this.send("Page.getNavigationHistory");
-    }
+    let looks = 0;
+    await pollUntil(
+      async () => {
+        // Every look after the first asks the page again, which is what carries its load event.
+        if (looks++ > 0) await this.send("Page.getNavigationHistory");
+        return this.loads > since || Boolean(this.dialog) || undefined;
+      },
+      { intervalMs: POLL_MS, timeoutMs: LOAD_WAIT_MS, signal, onTimeout: () => undefined },
+    );
     return this.loads > since;
   }
 
@@ -269,7 +279,10 @@ export class DeviceBrowserProvider implements BrowserProvider {
 
   /** The middle of an element on the screen, scrolled into view first. */
   private async center(node: number): Promise<{ x: number; y: number }> {
-    await this.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: node }).catch(() => undefined);
+    await bestEffort(
+      "scroll an element of the user's browser into view",
+      this.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: node }),
+    );
     const box = await this.send("DOM.getBoxModel", { backendNodeId: node });
     const quad = (box.model as { border?: number[] } | undefined)?.border ?? [];
     if (quad.length < 8) throw new Error("The element is not on the page.");
