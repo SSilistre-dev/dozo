@@ -14,7 +14,17 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 
 const publishRosterChange = vi.fn(async () => undefined);
 /** The caller's own connections: those whose id starts with the caller's name. */
+/** One transaction's client, which locks with a raw query. */
+const tx = {
+  $queryRaw: vi.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => [{}]),
+  userModelCredential: {
+    findMany: vi.fn(async ({ where }: { where: { userId: string; id: { in: string[] } } }) =>
+      where.id.in.filter((id) => id.startsWith(where.userId)).map((id) => ({ id })),
+    ),
+  },
+};
 const prisma = {
+  $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
   space: { findUnique: async () => null },
   userModelCredential: {
     findMany: vi.fn(async ({ where }: { where: { userId: string; id: { in: string[] } } }) =>
@@ -80,11 +90,7 @@ describe("bot backup model routes", () => {
       "main",
       BACKUPS,
     );
-    expect(fake.write).toHaveBeenCalledWith(
-      prisma,
-      { botId: "bot-1", spaceId: "space-1" },
-      BACKUPS,
-    );
+    expect(fake.write).toHaveBeenCalledWith(tx, { botId: "bot-1", spaceId: "space-1" }, BACKUPS);
     expect(publishRosterChange).toHaveBeenCalledWith({ spaceIds: ["space-1"] });
   });
 
@@ -117,7 +123,7 @@ describe("bot backup model routes", () => {
 
   it("clears the list with an empty one", async () => {
     expect(await client("ada").set({ botId: "bot-1", backups: [] })).toEqual({ backups: [] });
-    expect(fake.write).toHaveBeenCalledWith(prisma, { botId: "bot-1", spaceId: "space-1" }, []);
+    expect(fake.write).toHaveBeenCalledWith(tx, { botId: "bot-1", spaceId: "space-1" }, []);
   });
 
   it("refuses more backups than a member may have, or the same one twice", async () => {
@@ -138,6 +144,25 @@ describe("bot backup model routes", () => {
     await expect(client(null).get({ botId: "bot-1" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
+  });
+});
+
+describe("saving in one transaction", () => {
+  beforeEach(() => {
+    fake.read.mockReset().mockResolvedValue([]);
+    fake.write.mockReset().mockResolvedValue(true);
+    getBot.mockReset().mockResolvedValue({ id: "bot-1", userId: "maker" });
+    validateRoleChoices.mockReset().mockResolvedValue(undefined);
+    tx.$queryRaw.mockClear();
+  });
+
+  it("holds the bot's row while it reads the saved list and writes the new one", async () => {
+    await client("ada").set({ botId: "bot-1", backups: BACKUPS });
+    const [lock, ...values] = tx.$queryRaw.mock.calls[0]!;
+    expect(lock.join("?")).toContain("FOR UPDATE");
+    expect(values).toEqual(["bot-1"]);
+    expect(fake.read).toHaveBeenCalledWith(tx, "bot-1");
+    expect(fake.write).toHaveBeenCalledWith(tx, { botId: "bot-1", spaceId: "space-1" }, BACKUPS);
   });
 });
 
@@ -165,7 +190,7 @@ describe("a list with another member's pinned rows", () => {
     for (const backups of [[...ADAS, BENS], [ADAS[1]!, BENS, ADAS[0]!], [ADAS[1]!]]) {
       expect(await client("ben").set({ botId: "bot-1", backups })).toEqual({ backups });
       expect(fake.write).toHaveBeenLastCalledWith(
-        prisma,
+        tx,
         { botId: "bot-1", spaceId: "space-1" },
         backups,
       );
@@ -199,7 +224,7 @@ describe("a list with another member's pinned rows", () => {
     await expect(client("ben").set({ botId: "bot-1", backups: ADAS })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
-    expect(fake.read).toHaveBeenCalledWith(prisma, "bot-1");
+    expect(fake.read).toHaveBeenCalledWith(tx, "bot-1");
     expect(fake.write).not.toHaveBeenCalled();
   });
 });

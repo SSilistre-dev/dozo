@@ -143,23 +143,10 @@ describe("startPastRest", () => {
     ).toBeUndefined();
   });
 
-  it("ends the rest for the person's own pick for a message, and starts on that model", async () => {
+  it("keeps the rest for a run that keeps its model, whoever started it", async () => {
     rest("c1", "main", NOW + HOUR);
     const onBackup = vi.fn(async () => backup);
-    const run = newRun({ modelPinned: true, trigger: "user" });
-    expect(await startPastRest(deps, run, selected, undefined, onBackup, NOW)).toBeUndefined();
-    expect(onBackup).not.toHaveBeenCalled();
-    expect(db.end).toHaveBeenCalledWith(prisma, {
-      userId: "user-1",
-      providers: ["p"],
-      modelId: "main",
-    });
-  });
-
-  it("keeps the rest for other runs that keep their model: a routine's, a helper's", async () => {
-    rest("c1", "main", NOW + HOUR);
-    const onBackup = vi.fn(async () => backup);
-    for (const trigger of ["routine", "spawn", "webhook", "resume"]) {
+    for (const trigger of ["user", "routine", "spawn", "webhook", "resume"]) {
       const run = newRun({ modelPinned: true, trigger });
       expect(await startPastRest(deps, run, selected, undefined, onBackup, NOW)).toBeUndefined();
     }

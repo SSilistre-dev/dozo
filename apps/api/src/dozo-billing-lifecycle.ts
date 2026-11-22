@@ -25,7 +25,8 @@ const DAY_MS = 24 * 60 * MINUTE_MS;
 const PLAN_ENDING_NOTICE_DAYS = 3;
 export const PLAN_ENDING_TASK = "dozo.plan-ending";
 export const BILLING_MAIL_TASK = "dozo.billing-mail";
-export const BILLING_SWEEP_TASK = "dozo.billing-sweep";
+/** Graphile's crontab reads a task name of letters, digits, `_`, `:`, `/` and `-` only. */
+export const BILLING_SWEEP_TASK = "dozo:billing-sweep";
 /** The safety net: once an hour, Graphile runs it once across every API process. */
 const BILLING_SWEEP_CRONTAB = `17 * * * * ${BILLING_SWEEP_TASK}`;
 /** A send that has not finished by then is given up on; well inside a claim. */
@@ -34,7 +35,11 @@ const MAIL_SEND_DEADLINE_MS = MINUTE_MS;
 export const MAIL_CLAIM_MS = 5 * MINUTE_MS;
 /** The backup job fires once a claim the sending process left behind can be taken over. */
 const MAIL_BACKUP_MS = MAIL_CLAIM_MS + MINUTE_MS;
-/** A pending mail with no backup job left after this long is given up on. */
+/**
+ * A pending mail is given up on after this long: one with no backup job left by the sweep, and one
+ * a late backup job reaches (the queue was down) by that job, unsent. The backup's own retries are
+ * over within a few hours, so this cuts none short.
+ */
 const MAIL_ABANDONED_MS = DAY_MS;
 /** One sweep looks at most this many organizations for a missing reminder; the next, the rest. */
 const GAPS_PER_SWEEP = 500;
@@ -217,7 +222,7 @@ export function createBillingLifecycle(deps: BillingLifecycleDeps) {
 
   /** Sends one recorded mail if no live claim holds it; "busy" while one does. */
   async function deliver(id: string): Promise<"done" | "busy"> {
-    const mail = await store.claim(id, MAIL_CLAIM_MS);
+    const mail = await store.claim(id, MAIL_CLAIM_MS, MAIL_ABANDONED_MS);
     if (mail === "busy") return "busy";
     if (!mail) return "done";
     // A mark that keeps failing leaves the claim to expire, and the backup job sends again.
@@ -229,8 +234,13 @@ export function createBillingLifecycle(deps: BillingLifecycleDeps) {
         },
         { attempts: 3, delayMs: 200, retryable: () => true },
       );
-    // Turned off, unverified or turned into a messaging contact since it was recorded.
-    if (!mail.emailVerified || mail.deactivatedAt || mail.email.endsWith(MESSAGING_EMAIL_SUFFIX)) {
+    // News no longer, or turned off, unverified or a messaging contact since it was recorded.
+    if (
+      mail.expired ||
+      !mail.emailVerified ||
+      mail.deactivatedAt ||
+      mail.email.endsWith(MESSAGING_EMAIL_SUFFIX)
+    ) {
       await settle("skipped");
       return "done";
     }
