@@ -6719,7 +6719,7 @@
     {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "import { setCallMinimized, startCall, useCallSession } from \"../lib/call-session\";",
-      "replace": "import { prepareCallAudio, setCallMinimized, useCallSession } from \"../lib/call-session\";",
+      "replace": "import { prepareCallAudio, setCallMinimized, startCall, useCallSession } from \"../lib/call-session\";",
       "requires": [
         "apps/web/src/lib/dozo-call-start.ts"
       ],
@@ -6728,7 +6728,7 @@
     {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "    startCall({\n      botId: bot.id,\n      botName: bot.name,\n      botColor: bot.color,\n      botAvatarSet: bot.avatarSet,\n      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,\n    });\n",
-      "replace": "    // The tap unlocks the speaker now: the check that follows outlives the tap.\n    prepareCallAudio();\n    void import(\"../lib/dozo-call-start\").then(({ dozoStartCall }) =>\n      dozoStartCall({\n        botId: bot.id,\n        botName: bot.name,\n        botColor: bot.color,\n        botAvatarSet: bot.avatarSet,\n        transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,\n      }),\n    );\n",
+      "replace": "    // The tap unlocks the speaker now: the check that follows outlives the tap.\n    prepareCallAudio();\n    void import(\"../lib/dozo-call-start\").then(({ dozoStartCall }) =>\n      dozoStartCall(\n        {\n          botId: bot.id,\n          botName: bot.name,\n          botColor: bot.color,\n          botAvatarSet: bot.avatarSet,\n          transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,\n        },\n        startCall,\n      ),\n    );\n",
       "requires": [
         "apps/web/src/lib/dozo-call-start.ts"
       ],
@@ -6793,6 +6793,27 @@
       "find": "    if (usesServerDictation(opts.transcribe)) {",
       "replace": "    if (\n      serverHearsCaller(opts.transcribe, opts.serverDictation) ||\n      usesServerDictation(opts.transcribe)\n    ) {",
       "reason": "call check: and uses it"
+    },
+    {
+      "file": "apps/web/src/components/call/IncomingCall.tsx",
+      "find": "    try {\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
+      "replace": "    try {\n      // Before the server marks the call answered: a call that cannot be heard stays ringing.\n      const checked = await import(\"../../lib/dozo-call-start\").then((module) =>\n        module.dozoCheckCall(bot.id),\n      );\n      if (checked.refusal) {\n        setError(checked.refusal);\n        return;\n      }\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
+      "requires": [
+        "apps/web/src/lib/dozo-call-start.ts"
+      ],
+      "reason": "call check: a bot's call is answered only once the speech server and the bot's model answer; otherwise the reason shows on the ringing call and nothing is answered or declined for the person"
+    },
+    {
+      "file": "apps/web/src/components/call/IncomingCall.tsx",
+      "find": "        transcribe,\n        answered: { callId: call.callId, opening: answered.opening },",
+      "replace": "        transcribe,\n        serverDictation: checked.serverDictation,\n        answered: { callId: call.callId, opening: answered.opening },",
+      "reason": "call check: the answered call is told whether the speech server hears the caller"
+    },
+    {
+      "file": "apps/web/src/components/call/IncomingCall.test.tsx",
+      "find": "  useCallSession: () => null,\n}));\nvi.mock(\"../../lib/rpc\", () => ({",
+      "replace": "  useCallSession: () => null,\n}));\nvi.mock(\"../../lib/dozo-call-start\", () => ({\n  dozoCheckCall: async () => ({ refusal: null, serverDictation: undefined }),\n}));\nvi.mock(\"../../lib/rpc\", () => ({",
+      "reason": "upstream test fixture: answering now asks the fork's call check first, which needs the server this test's client does not provide, so it answers that nothing is wrong"
     },
     {
       "file": "packages/adapters/src/index.ts",

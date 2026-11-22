@@ -1,8 +1,10 @@
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { flush } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CALL_CHECK_MS,
   dozoBotModelEndpoint,
+  dozoProviderAddress,
   dozoUnansweredEndpoints,
   dozoVoiceServerEndpoints,
 } from "./dozo-call-preflight.js";
@@ -137,6 +139,52 @@ describe("the address a bot's model runs at", () => {
   });
 });
 
+const providers = builtinModels().getProviders();
+const withAddress = providers.find((entry) => dozoProviderAddress(entry.id));
+const withoutAddress = providers.find((entry) => !dozoProviderAddress(entry.id));
+
+describe("the address the model registry gives a provider", () => {
+  it("is one https address without placeholders or credentials, for the providers that have one", () => {
+    const addresses = providers.flatMap((entry) => dozoProviderAddress(entry.id) ?? []);
+    expect(addresses.length).toBeGreaterThan(0);
+    for (const address of addresses) {
+      const url = new URL(address);
+      expect(url.protocol).toBe("https:");
+      expect(address).not.toMatch(/[{}]|\/$/);
+      expect(url.username).toBe("");
+    }
+  });
+
+  it("is none for a provider that has no single address, and for an unknown one", () => {
+    expect(withoutAddress).toBeDefined();
+    expect(dozoProviderAddress("no-such-provider")).toBeUndefined();
+  });
+});
+
+describe("the address of a hosted provider's model", () => {
+  const hosted = JSON.stringify({ kind: "api_key", key: "sk-test-1" });
+
+  it("is the registry's, without the key being read or sent", async () => {
+    const provider = withAddress?.id ?? "";
+    const address = await botModel({
+      main: { provider, modelId: "m", credential: { ...credential, provider } },
+      plaintext: hosted,
+    });
+    expect(address).toBe(dozoProviderAddress(provider));
+    expect(address).toMatch(/^https:/);
+  });
+
+  it("is none when the registry gives the provider no address", async () => {
+    const provider = withoutAddress?.id ?? "";
+    expect(
+      await botModel({
+        main: { provider, modelId: "m", credential: { ...credential, provider } },
+        plaintext: hosted,
+      }),
+    ).toBeUndefined();
+  });
+});
+
 /** A fake network: each address answers with its status, or refuses the connection. */
 function network(answers: Record<string, number | "refused" | "silent">) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -213,5 +261,26 @@ describe("asking the addresses a call needs", () => {
     await flush();
     caller.abort(new Error("gone"));
     await expect(asking).rejects.toThrow("gone");
+  });
+
+  it("finds a hosted address silent when there is no network, after CALL_CHECK_MS", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    const fetch = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    const asking = dozoUnansweredEndpoints({ model: "https://models.example.test/v1" }, fetch);
+    await vi.advanceTimersByTimeAsync(CALL_CHECK_MS);
+    expect(await asking).toEqual(["model"]);
+    expect(String(fetch.mock.calls[0]?.[0])).toBe("https://models.example.test/v1/models");
   });
 });

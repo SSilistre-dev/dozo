@@ -12,18 +12,13 @@ const mocks = vi.hoisted(() => ({
   check: vi.fn(),
   toastError: vi.fn(),
   report: vi.fn(),
-  speech: undefined as unknown,
 }));
 
-vi.mock("./call-session", () => ({ startCall: mocks.startCall }));
-vi.mock("./desktop", () => ({
-  desktopBridge: () => (mocks.speech ? { speech: mocks.speech } : undefined),
-}));
 vi.mock("./dozo-error-text", () => ({ toastError: mocks.toastError }));
 vi.mock("./monitoring", () => ({ reportClientError: mocks.report }));
 vi.mock("./rpc", () => ({ rpc: { dozoCallPreflight: { check: mocks.check } } }));
 
-import { dozoCallRefusal, dozoStartCall } from "./dozo-call-start";
+import { dozoCallRefusal, dozoCheckCall, dozoStartCall } from "./dozo-call-start";
 
 const call = { botId: "bot-1", botName: "Ada", transcribe: true };
 const answer = (patch: Partial<DozoCallCheck>): DozoCallCheck => ({
@@ -38,7 +33,7 @@ function offline(value: boolean) {
 }
 
 beforeEach(() => {
-  mocks.speech = undefined;
+  vi.stubGlobal("window", { rakazoDesktop: undefined });
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -51,7 +46,7 @@ afterEach(() => {
 describe("starting a call", () => {
   it("starts it, with whether the speech server hears the caller, once everything answers", async () => {
     mocks.check.mockResolvedValue(answer({ serverDictation: true }));
-    await dozoStartCall(call);
+    await dozoStartCall(call, mocks.startCall);
     expect(mocks.check).toHaveBeenCalledWith({ botId: "bot-1" });
     expect(mocks.startCall).toHaveBeenCalledWith({ ...call, serverDictation: true });
     expect(mocks.toastError).not.toHaveBeenCalled();
@@ -64,7 +59,7 @@ describe("starting a call", () => {
     "does not start it when the %s does not answer, and says why",
     async (refusal, copy) => {
       mocks.check.mockResolvedValue(answer({ refusal }));
-      await dozoStartCall(call);
+      await dozoStartCall(call, mocks.startCall);
       expect(mocks.startCall).not.toHaveBeenCalled();
       expect(mocks.toastError).toHaveBeenCalledWith(copy);
     },
@@ -75,14 +70,14 @@ describe("starting a call", () => {
       answer({ checked: false, refusal: "model", serverDictation: false }),
     );
     offline(true);
-    await dozoStartCall(call);
+    await dozoStartCall(call, mocks.startCall);
     expect(mocks.startCall).toHaveBeenCalledWith({ ...call, serverDictation: false });
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
   it("starts it as it always did when the check itself fails, and reports that", async () => {
     mocks.check.mockRejectedValue(new Error("boom"));
-    await dozoStartCall(call);
+    await dozoStartCall(call, mocks.startCall);
     expect(mocks.startCall).toHaveBeenCalledWith({ ...call, serverDictation: undefined });
     expect(mocks.report).toHaveBeenCalledWith(expect.any(Error), "voice.turn");
   });
@@ -90,14 +85,14 @@ describe("starting a call", () => {
   it("ignores a second tap while the first is being checked", async () => {
     const pending = deferred<DozoCallCheck>();
     mocks.check.mockReturnValue(pending.promise);
-    const first = dozoStartCall(call);
-    await dozoStartCall(call);
+    const first = dozoStartCall(call, mocks.startCall);
+    await dozoStartCall(call, mocks.startCall);
     expect(mocks.check).toHaveBeenCalledTimes(1);
     pending.resolve(answer({}));
     await first;
     expect(mocks.startCall).toHaveBeenCalledTimes(1);
     mocks.check.mockResolvedValue(answer({}));
-    await dozoStartCall(call);
+    await dozoStartCall(call, mocks.startCall);
     expect(mocks.startCall).toHaveBeenCalledTimes(2);
   });
 });
@@ -122,12 +117,28 @@ describe("why a call cannot start", () => {
 
   it("is nothing offline when the desktop app has its own recognizer", () => {
     offline(true);
-    mocks.speech = {};
+    vi.stubGlobal("window", { rakazoDesktop: { speech: {} } });
     expect(dozoCallRefusal(answer({}))).toBeNull();
   });
 
   it("is nothing without a check", () => {
     offline(true);
     expect(dozoCallRefusal(null)).toBeNull();
+  });
+});
+
+describe("checking a call before answering it", () => {
+  it("gives the refusal and says whether the speech server hears the caller", async () => {
+    mocks.check.mockResolvedValue(answer({ refusal: "model", serverDictation: true }));
+    expect(await dozoCheckCall("bot-1")).toEqual({
+      refusal: "Can't call: the model isn't answering.",
+      serverDictation: true,
+    });
+    expect(mocks.startCall).not.toHaveBeenCalled();
+  });
+
+  it("refuses nothing when the check cannot be made", async () => {
+    mocks.check.mockRejectedValue(new Error("boom"));
+    expect(await dozoCheckCall("bot-1")).toEqual({ refusal: null, serverDictation: undefined });
   });
 });

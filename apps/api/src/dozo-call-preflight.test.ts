@@ -175,4 +175,33 @@ describe("the check before a call", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await asking).toEqual({ checked: true, refusal: "speech", serverDictation: true });
   });
+
+  it("refuses within two seconds for a hosted model when there is no network", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    mocks.voice.mockResolvedValue(null);
+    // A hosted model's address is on the default https port, which the fake keys by "".
+    mocks.model.mockResolvedValue("https://models.example.test/v1");
+    const asking = check(network({ "": "silent" }));
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await asking).toEqual({ checked: true, refusal: "model", serverDictation: false });
+  });
+
+  it("lets a hosted model's call start when its address answers", async () => {
+    mocks.voice.mockResolvedValue(null);
+    mocks.model.mockResolvedValue("https://models.example.test/v1");
+    const fetch = network({ "": 401 });
+    expect((await check(fetch)).refusal).toBeNull();
+  });
+
+  it("asks a hosted model's address nowhere on a hosted deployment", async () => {
+    mocks.model.mockResolvedValue("https://models.example.test/v1");
+    const fetch = network({ "": 200 });
+    await check(fetch, false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

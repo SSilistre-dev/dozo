@@ -1,4 +1,6 @@
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
@@ -38,9 +40,46 @@ export function dozoVoiceServerEndpoints(
   }
 }
 
+let registryAddresses: Map<string, string | undefined> | undefined;
+
 /**
- * The address the bot's model runs at, resolved as a run resolves it. Undefined when the model
- * has no address of its own to ask: a hosted provider, or no model connected.
+ * The one address the model registry gives a provider's models, or undefined when it gives none
+ * the check can ask: no address (the SDK builds it, as for a cloud region), an address with a
+ * placeholder in it (an account-scoped one), several addresses, or one that is not https.
+ */
+export function dozoProviderAddress(provider: string): string | undefined {
+  if (!registryAddresses) {
+    registryAddresses = new Map();
+    for (const entry of builtinModels().getProviders()) {
+      const urls = new Set(
+        entry
+          .getModels()
+          .flatMap((model) => (model.baseUrl ? [model.baseUrl.trim().replace(/\/+$/, "")] : [])),
+      );
+      const [only] = urls;
+      registryAddresses.set(
+        entry.id,
+        urls.size === 1 && only && httpsAddress(only) ? only : undefined,
+      );
+    }
+  }
+  return registryAddresses.get(canonicalPiProviderId(provider));
+}
+
+function httpsAddress(address: string): boolean {
+  if (address.includes("{") || address.includes("}")) return false;
+  try {
+    const url = new URL(address);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The address the bot's model runs at, resolved as a run resolves it: the connection's own address
+ * for a server the person added, the registry's for any other provider. Undefined when there is
+ * none to ask (no model connected, a deployment-managed model, or see `dozoProviderAddress`).
  */
 export async function dozoBotModelEndpoint(
   deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> },
@@ -81,7 +120,7 @@ export async function dozoBotModelEndpoint(
     const secret = parseModelSecret(loaded.plaintext);
     return secret.kind === "openai_compatible"
       ? normalizeOpenAiCompatibleBaseUrl(secret.baseUrl)
-      : undefined;
+      : dozoProviderAddress(credential.provider);
   } catch {
     // A secret that does not parse is the run's to report; there is no address to ask here.
     return undefined;
@@ -102,7 +141,10 @@ export async function dozoUnansweredEndpoints(
   signal?: AbortSignal,
 ): Promise<CallEndpointKind[]> {
   const until = deadlineSignal(CALL_CHECK_MS, signal);
-  const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, { allowPrivate: true });
+  const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
+    allowPrivate: true,
+    allowPublic: true,
+  });
   const asked = (Object.entries(endpoints) as [CallEndpointKind, string][]).filter(
     ([, address]) => address,
   );
