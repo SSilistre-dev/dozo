@@ -29,7 +29,8 @@ export const DOZO_LEARNING_NOTE_MAX_CHARS = 200;
  */
 const breaksLine = (text: string) =>
   [...text].some((char) => {
-    const code = char.codePointAt(0) ?? 0;
+    // Every one of them is a single UTF-16 unit; a longer character starts with a surrogate.
+    const code = char.charCodeAt(0);
     return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
   });
 
