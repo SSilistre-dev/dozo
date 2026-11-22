@@ -7,6 +7,7 @@ import type {
   DozoOrganizationLibrarySwitch as LoadedDozoOrganizationLibrarySwitch,
 } from "../pages/dozo-organization-library-switch";
 import type { DozoAvatarGeneratePanel as LoadedDozoAvatarGeneratePanel } from "../pages/shell/dozo-avatar-generate-panel";
+import type { DozoBotBackups as LoadedDozoBotBackups } from "../pages/shell/dozo-bot-backups";
 import type { DozoBotSkillsSection as LoadedDozoBotSkillsSection } from "../pages/shell/dozo-bot-skills-section";
 import type { OwnComputerRow as LoadedOwnComputerRow } from "../pages/shell/dozo-own-computer-row";
 import type { SiteSessionsControl as LoadedSiteSessionsControl } from "../pages/shell/dozo-site-sessions";
@@ -28,6 +29,7 @@ const loadSiteSessions = () => import("../pages/shell/dozo-site-sessions");
 const loadSkillsSection = () => import("../pages/shell/dozo-bot-skills-section");
 const loadOwnComputerRow = () => import("../pages/shell/dozo-own-computer-row");
 const loadOrganizationLibrary = () => import("../pages/dozo-organization-library-switch");
+const loadBotBackups = () => import("../pages/shell/dozo-bot-backups");
 
 const LazyDozoAvatarGeneratePanel = lazyComponent(() =>
   loadAvatarPanel().then((module) => module.DozoAvatarGeneratePanel),
@@ -43,6 +45,9 @@ const LazyDozoBotSkillsSection = lazyComponent(() =>
 );
 const LazyOwnComputerRow = lazyComponent(() =>
   loadOwnComputerRow().then((module) => module.OwnComputerRow),
+);
+const LazyDozoBotBackups = lazyComponent(() =>
+  loadBotBackups().then((module) => module.DozoBotBackups),
 );
 
 const LazyOrganizationLibrarySwitch = lazyComponent(() =>
@@ -64,6 +69,7 @@ export function preloadDozoSurfaces() {
     loadSkillsSection(),
     loadOwnComputerRow(),
     loadOrganizationLibrary(),
+    loadBotBackups(),
   ]);
 }
 
@@ -158,6 +164,11 @@ export function DozoHiddenLibrarySkills(
   return (
     <Held failed={null}>
       <LazyHiddenLibrarySkills {...props} />
+/** Nothing while it loads, and nothing if it cannot: the bot keeps the runner's backups. */
+export function DozoBotBackups(props: ComponentProps<typeof LoadedDozoBotBackups>) {
+  return (
+    <Held failed={null}>
+      <LazyDozoBotBackups {...props} />
     </Held>
   );
 }

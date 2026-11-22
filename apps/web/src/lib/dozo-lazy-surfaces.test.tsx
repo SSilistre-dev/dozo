@@ -30,6 +30,7 @@ vi.mock(
   "../pages/dozo-organization-library-switch",
   loading.module("DozoOrganizationLibrarySwitch", "DozoLibraryBadge", "DozoHiddenLibrarySkills"),
 );
+vi.mock("../pages/shell/dozo-bot-backups", loading.module("DozoBotBackups"));
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -37,6 +38,7 @@ vi.mock("@lingui/react/macro", () => ({
 
 import {
   DozoAvatarGeneratePanel,
+  DozoBotBackups,
   DozoBotSkillsSection,
   DozoCliAccounts,
   DozoHiddenLibrarySkills,
@@ -73,6 +75,7 @@ describe("the fork's screens that load when first shown", () => {
     ["DozoOrganizationLibrarySwitch", DozoOrganizationLibrarySwitch],
     ["DozoLibraryBadge", DozoLibraryBadge],
     ["DozoHiddenLibrarySkills", DozoHiddenLibrarySkills],
+    ["DozoBotBackups", DozoBotBackups],
   ];
 
   // The badge and the hidden list come from the same file as the switch, loaded by the time they run.
