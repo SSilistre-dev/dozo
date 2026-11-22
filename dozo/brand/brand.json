@@ -11068,6 +11068,54 @@
         "packages/core/src/dozo-skill-name.ts"
       ],
       "reason": "organization skill library: the resolver compares names by the same key as the library's built-in rule, so no padding of a name gets around it; the comparison itself is unchanged"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./agent-import/index.js\";\nexport * from \"./agent-skill.js\";",
+      "replace": "export * from \"./agent-import/index.js\";\nexport * from \"./dozo-skill-write-approval.js\";\nexport * from \"./agent-skill.js\";",
+      "requires": [
+        "packages/core/src/dozo-skill-write-approval.ts"
+      ],
+      "reason": "skill writes after outside content: the one rule for when a skill create or update needs a person, beside memoryWriteNeedsApproval"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  SITE_SENDING_TOOLS,\n  toolRequiresApproval,",
+      "replace": "  SITE_SENDING_TOOLS,\n  skillWriteNeedsApproval,\n  toolRequiresApproval,",
+      "requires": [
+        "packages/core/src/dozo-skill-write-approval.ts"
+      ],
+      "reason": "skill writes after outside content: the gate reads the rule from core"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const { purchase, cardUse, loginUse } = request;",
+      "replace": "  const memoryWriteGated = await memoryWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const skillWriteGated = await skillWriteNeedsApproval(name, () => isRunTainted(ctx));\n  const taintedNeedsPerson = scheduleNamesNewSite || skillWriteGated;\n  const { purchase, cardUse, loginUse } = request;",
+      "reason": "skill writes after outside content: a skill enters every bot's catalog in the space, so injected text could plant a lasting prompt; it needs a person like a routine naming a new site"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "    paying || unattendedWatch || scheduleNamesNewSite || toolRequiresExplicitApproval(name);",
+      "replace": "    paying || unattendedWatch || taintedNeedsPerson || toolRequiresExplicitApproval(name);",
+      "reason": "skill writes after outside content: mandatory in every mode: no allow rule or approval model passes it"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "    (unattendedWatch || scheduleNamesNewSite) && !toolRequiresApproval(name, viaConnector);",
+      "replace": "    (unattendedWatch || taintedNeedsPerson) && !toolRequiresApproval(name, viaConnector);",
+      "reason": "skill writes after outside content: its card offers no Always allow, which would save a rule that never takes effect"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const guardedInNeverAsk = name === \"respond_agent_connection\";",
+      "replace": "  const guardedInNeverAsk = name === \"respond_agent_connection\" || skillWriteGated;",
+      "reason": "skill writes after outside content: Never ask refuses it with the existing never_asks message instead of running it"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "    Boolean(checkpointLoadError) ||\n    historyReplaysOutsideContent(history);",
+      "replace": "    Boolean(checkpointLoadError) ||\n    Boolean(parts.turnContext.recalledMemory) ||\n    historyReplaysOutsideContent(history);",
+      "reason": "automatic recall: recalled memory is derived data that can hold retained group, bot-to-bot or outside text, so a run it entered starts tainted, as explicit recall_memory taints it"
     }
   ],
   "assets": {
