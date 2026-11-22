@@ -38,17 +38,19 @@ const breaksLine = (text: string) =>
  * One learned note: a single line that cannot close or open the block the notes are shown in
  * (no angle brackets) nor read as a heading of it (no leading "#").
  */
-export const DozoLearningNoteText = z
-  .string()
-  .trim()
-  .min(1)
-  .max(DOZO_LEARNING_NOTE_MAX_CHARS)
-  .refine((text) => !breaksLine(text), "One line, no control characters.")
-  .refine((text) => !/[<>]/.test(text), "No angle brackets.")
-  .refine((text) => !text.startsWith("#"), "No heading.");
+export const DozoLearningNoteText = /* @__PURE__ */ (() =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(DOZO_LEARNING_NOTE_MAX_CHARS)
+    .refine((text) => !breaksLine(text), "One line, no control characters.")
+    .refine((text) => !/[<>]/.test(text), "No angle brackets.")
+    .refine((text) => !text.startsWith("#"), "No heading."))();
 
 /** What a learned note says about the owner. */
-export const DozoLearningNoteKind = z.enum(["fact", "preference", "correction"]);
+export const DozoLearningNoteKind = /* @__PURE__ */ (() =>
+  z.enum(["fact", "preference", "correction"]))();
 
 /** How many of the latest changes `get` answers. */
 export const DOZO_LEARNING_CHANGES_SHOWN = 20;
