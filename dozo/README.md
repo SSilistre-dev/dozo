@@ -324,6 +324,24 @@ Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Depl
 writing to the main chat. Clearing works in the main chat only; it clears the helper threads the
 main chat started, not those of an extra chat.
 
+## Organization skill library
+
+An organization's owner puts a skill they wrote in its library with the Organization switch in the
+skill's editor (web and desktop; shown once the organization has someone to share with). Every
+member of the organization's Spaces then finds it in their skills, read only, and their bots use it:
+the catalog, `/` and `skill_read` reach it (`packages/db/src/dozo-organization-skills.ts`, table
+`dozo_organization_skills`, `apps/api/src/dozo-organization-library.ts`). It is the one skill system
+widened: the skill stays its owner's `agent_skills` row, only the owner changes or deletes it, and
+writes keep the owner-only lookup. A member's own skill of the same name wins over it.
+
+Only the skill's text and files are shared: a run keeps its own person's secrets, connections,
+memory and approval rules, so a skill that leads to a command asks exactly as one of their own would.
+A plugin's skill never goes in (it comes with the owner's install). Membership is read on every
+statement, down to a row-level policy, so someone who leaves the Space stops reading the library at
+once. A run started from a chat app by someone who is not the bot's owner gets built-in skills only,
+as before. Mobile lists library skills read only and reads its skills again when the screen opens;
+it has no switch.
+
 ## Feedback
 
 The account menu's Send feedback opens a short note with an optional Include diagnostics switch
