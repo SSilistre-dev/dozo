@@ -9,6 +9,7 @@ import {
   buildIsolationWorld,
   confirmIdentity,
   findCanaries,
+  ISOLATION_LOGINS,
   readAnswer,
   snapshot,
   snapshotDiff,
@@ -515,20 +516,8 @@ function summary(outcomes: Outcome[]) {
  * owner login bypasses it (RLS is enabled, not forced), as an install that connects the app as
  * the table owner does, so that pass proves the app's own filters without the database's.
  */
-const LOGINS = [
-  { name: "runtime login, row-level security on", url: () => process.env.DATABASE_URL! },
-  {
-    name: "table owner login, no row-level security",
-    url: () => {
-      const owner = process.env.DATABASE_MIGRATION_URL;
-      if (!owner || owner === process.env.DATABASE_URL)
-        throw new Error("DATABASE_MIGRATION_URL must name the table owner login");
-      return owner;
-    },
-  },
-];
 
-describeWithDatabase.each(LOGINS)(
+describeWithDatabase.each(ISOLATION_LOGINS)(
   "cross-tenant isolation over every RPC procedure ($name)",
   (login) => {
     let world: IsolationWorld;

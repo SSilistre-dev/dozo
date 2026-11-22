@@ -21,7 +21,8 @@ export type IsolationApp = {
 };
 export type IsolationHandles = Awaited<ReturnType<typeof createApp>>;
 
-const ORIGIN = "http://127.0.0.1:5173";
+/** The web app's origin, which the API trusts. */
+export const ORIGIN = "http://127.0.0.1:5173";
 const PASSWORD = "password12";
 /** How long a streamed answer is read before the caller hangs up. */
 export const STREAM_READ_MS = 1_200;
@@ -128,7 +129,11 @@ export function findCanaries(text: string, canaries: readonly string[]): string[
  * The app on `databaseUrl`: the runtime login (row-level security on) by default, or the table
  * owner's, which bypasses it, so only the app's own filters keep tenants apart.
  */
-export async function startIsolationApp(databaseUrl = process.env.DATABASE_URL!): Promise<{
+export async function startIsolationApp(
+  databaseUrl = process.env.DATABASE_URL!,
+  /** More of `createApp`'s overrides, such as a mail provider. */
+  overrides: Omit<NonNullable<Parameters<typeof createApp>[0]>, "databaseUrl"> = {},
+): Promise<{
   handles: IsolationHandles;
   cleanup(): Promise<void>;
 }> {
@@ -145,6 +150,7 @@ export async function startIsolationApp(databaseUrl = process.env.DATABASE_URL!)
     agentRuntime: "scripted",
     wakeupDriver: "memory",
     signupsEnabled: "true",
+    ...overrides,
   });
   return {
     handles,
@@ -277,7 +283,7 @@ const pageSource = (heading: string) =>
   `const App = () => (\n  <Page title="${heading}">\n    <Metrics metrics={[{ value: "42", label: "Users" }]} />\n  </Page>\n);\nexport default App;\n`;
 
 /** Sends as `cookie` and waits until the bot's run for it has ended. */
-async function sendAndWait(
+export async function sendAndWait(
   world: { app: IsolationApp; handles: IsolationHandles },
   cookie: string,
   target: Record<string, string>,
@@ -549,7 +555,7 @@ export async function seedTarget(
   return { label, spaceId, organizationId: space.organizationId, ids, canaries, notes };
 }
 
-async function joinWithInvite(
+export async function joinWithInvite(
   world: { app: IsolationApp; handles: IsolationHandles },
   owner: Person,
   guest: Person,
@@ -712,3 +718,21 @@ export function snapshotDiff(before: Snapshot, after: Snapshot): string[] {
   }
   return changes;
 }
+
+/**
+ * The app's database login for one pass. The runtime login enforces row-level security; the
+ * owner login bypasses it (RLS is enabled, not forced), as an install that connects the app as
+ * the table owner does, so that pass proves the app's own filters without the database's.
+ */
+export const ISOLATION_LOGINS = [
+  { name: "runtime login, row-level security on", url: () => process.env.DATABASE_URL! },
+  {
+    name: "table owner login, no row-level security",
+    url: () => {
+      const owner = process.env.DATABASE_MIGRATION_URL;
+      if (!owner || owner === process.env.DATABASE_URL)
+        throw new Error("DATABASE_MIGRATION_URL must name the table owner login");
+      return owner;
+    },
+  },
+];
