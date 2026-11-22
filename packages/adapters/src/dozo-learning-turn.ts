@@ -37,8 +37,9 @@ export function countsForLearning(ctx: Pick<RunContext, "run" | "thread" | "bot"
 }
 
 /**
- * Tools that show the model more than this turn: another chat, saved memory or a skill's text. A
- * reply written after one may repeat what they returned, which is not the owner's.
+ * Tools that show the model more than this turn: another chat, saved memory, a skill's text, the
+ * scratchpad or the routines (whose prompts anyone who wrote them chose). A reply written after one
+ * may repeat what they returned, which is not the owner's.
  */
 const READS_BEYOND_THE_TURN = new Set([
   "recall_memory",
@@ -46,6 +47,8 @@ const READS_BEYOND_THE_TURN = new Set([
   "search_history",
   "read_history",
   "skill_read",
+  "scratchpad_list",
+  "schedule_list",
 ]);
 
 /**

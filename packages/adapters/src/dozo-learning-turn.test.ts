@@ -1,3 +1,4 @@
+import { toolResultTaintsRun } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markRunRecalledMemory } from "./dozo-learning-recall.js";
 import type { LearningReviewDeps } from "./dozo-learning-review.js";
@@ -10,6 +11,7 @@ import {
 import { countsForLearning, dozoRecordLearningTurn } from "./dozo-learning-turn.js";
 import { markRunReadOutside } from "./dozo-read-outside.js";
 import type { RunContext, RunState } from "./run-context.js";
+import { markReadOutsideContent } from "./run-context.js";
 
 // When a finished run becomes a learning turn, and what it starts. The SQL itself is covered by
 // dozo-learning-store.test.ts and, against a real database, dozo-learning.postgres.test.ts.
@@ -43,7 +45,7 @@ type Options = {
   readOutside?: boolean;
   /** Memory recalled for the turn was shown to the model. */
   recalled?: boolean;
-  /** Tools the run called, by name. */
+  /** Tools the run called, by name; each result marks the run as a run's tool call does. */
   tools?: string[];
   attempts?: number;
   run?: Record<string, unknown>;
@@ -114,6 +116,11 @@ function harness(options: Options = {}) {
   return { ctx, queryRaw, executeRaw, enqueueIn, start, started };
 }
 
+/** Marks each tool's result as run-tools.ts does once the call ran. */
+async function called(ctx: RunContext, tools: string[] = []) {
+  for (const tool of tools) if (toolResultTaintsRun(tool)) await markReadOutsideContent(ctx);
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
@@ -169,18 +176,28 @@ describe("dozoRecordLearningTurn", () => {
   it("lets the review read the reply only of a turn that saw nothing beyond itself", async () => {
     const cases: Array<[Options, boolean]> = [
       [{}, true],
-      [{ tools: ["web_search", "remember"] }, true],
+      // The bot's own writes bring nothing from outside.
+      [{ tools: ["remember", "schedule_create", "scratchpad_add"] }, true],
+      // A search result is outside content: its run is marked as every run marks it.
+      [{ tools: ["web_search", "remember"] }, false],
       [{ readOutside: true }, false],
       [{ attempts: 2 }, false],
       [{ recalled: true }, false],
-      ...["recall_memory", "reflect_memory", "search_history", "read_history", "skill_read"].map(
-        (tool): [Options, boolean] => [{ tools: ["remember", tool] }, false],
-      ),
+      ...[
+        "recall_memory",
+        "reflect_memory",
+        "search_history",
+        "read_history",
+        "skill_read",
+        "scratchpad_list",
+        "schedule_list",
+      ].map((tool): [Options, boolean] => [{ tools: ["remember", tool] }, false]),
     ];
     for (const [options, readable] of cases) {
       const turn = harness(options);
+      await called(turn.ctx, options.tools);
       await dozoRecordLearningTurn(turn.ctx, turn.start);
-      expect(turn.executeRaw.mock.calls[0]!.at(-1)).toBe(readable);
+      expect(turn.executeRaw.mock.calls[0]!.at(-1), JSON.stringify(options)).toBe(readable);
     }
   });
 
