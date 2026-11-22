@@ -117,3 +117,32 @@ CREATE POLICY dozo_learning_rejections_tenant ON "dozo_learning_rejections"
   USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
 CREATE POLICY dozo_learning_rejections_system ON "dozo_learning_rejections"
   USING ((SELECT app_rls_bypass()));
+
+-- Learning is for a Space of the owner's own: once anyone else joins (an invite, the organization's
+-- default Space, any other way a member row is added), each of its bots that learns is turned off
+-- for good, and the turns it waits on are dropped. The owner turns it on again once alone. Runs as
+-- the table owner: row security must not hide another member's bot from the person joining. It
+-- runs at commit, on a row still there: an invite into one Space removes, in its own transaction,
+-- the row the organization's trigger added to its default Space.
+CREATE FUNCTION dozo_learning_off_on_join() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+  AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.space_members m WHERE m.id = NEW.id) THEN
+    RETURN NULL;
+  END IF;
+  WITH turned_off AS (
+    UPDATE public.dozo_bot_learning l SET mode = 'off', "updatedAt" = CURRENT_TIMESTAMP
+    FROM public.bots b
+    WHERE l."spaceId" = NEW."spaceId" AND l.mode <> 'off' AND b.id = l."botId"
+      AND b."userId" IS DISTINCT FROM NEW."userId"
+    RETURNING l."botId"
+  )
+  DELETE FROM public.dozo_learning_turns t USING turned_off o WHERE t."botId" = o."botId";
+  RETURN NULL;
+END
+$$;
+REVOKE EXECUTE ON FUNCTION dozo_learning_off_on_join() FROM PUBLIC;
+CREATE CONSTRAINT TRIGGER dozo_learning_off_on_join AFTER INSERT ON "space_members"
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION dozo_learning_off_on_join();

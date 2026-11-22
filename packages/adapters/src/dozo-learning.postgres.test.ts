@@ -543,6 +543,22 @@ describePostgres("bot learning (PostgreSQL)", () => {
         createdAt: new Date(),
       },
     });
+    // A row added and removed again in one transaction (the organization's default-Space row an
+    // invite into another Space removes) leaves the Space as it was.
+    await system.$transaction(async (tx) => {
+      const added = await tx.spaceMember.create({
+        data: {
+          id: randomUUID(),
+          spaceId: owner.spaceId,
+          organizationId,
+          userId: guest.userId,
+          role: "guest",
+          createdAt: new Date(),
+        },
+      });
+      await tx.spaceMember.delete({ where: { id: added.id } });
+    });
+    expect(await as(owner, () => learningMode(prisma, chat.id))).toBe("auto");
     const joined = randomUUID();
     await runAsTenant(guest, () =>
       prisma.spaceMember.create({
