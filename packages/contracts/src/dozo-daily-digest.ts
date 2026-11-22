@@ -13,10 +13,10 @@ const DigestState = z.object({
   digest: z.object({ botId: Id, botName: z.string(), minute: Minute.nullable() }).nullable(),
 });
 
-export const dozoDailyDigestContract = {
+export const dozoDailyDigestContract = /* @__PURE__ */ (() => ({
   get: oc.output(DigestState),
   /** Null turns the digest off. */
   set: oc
     .input(z.object({ digest: z.object({ botId: Id, minute: Minute }).nullable() }))
     .output(DigestState),
-};
+}))();

@@ -41,7 +41,7 @@ export const DozoRevisionConfirmedSchema = z.object({
 export type DozoRevisionConfirmed = z.infer<typeof DozoRevisionConfirmedSchema>;
 const RevisedOutput = z.object({ runId: Id });
 
-export const dozoMessagesContract = {
+export const dozoMessagesContract = /* @__PURE__ */ (() => ({
   revisable: oc.input(ThreadInput).output(DozoRevisableSchema),
   /** Replaces the text of a message the server named, removes what followed it, and runs the bot. */
   edit: oc
@@ -58,4 +58,4 @@ export const dozoMessagesContract = {
     .input(ThreadInput.extend({ messageId: Id, confirmed: DozoRevisionConfirmedSchema.optional() }))
     .output(RevisedOutput),
   ...dozoMessagePinsContract,
-};
+}))();

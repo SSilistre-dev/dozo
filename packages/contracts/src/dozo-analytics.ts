@@ -58,6 +58,6 @@ export const DOZO_ANALYTICS_EVENTS = [
 ] as const;
 
 /** Any signed-in member may report; nothing is sent unless analytics is configured. */
-export const dozoEventsContract = {
+export const dozoEventsContract = /* @__PURE__ */ (() => ({
   track: oc.input(DozoClientEventSchema).output(z.object({ ok: z.literal(true) })),
-};
+}))();

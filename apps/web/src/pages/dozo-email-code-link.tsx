@@ -1,4 +1,5 @@
 import { Trans } from "@lingui/react/macro";
+import "@rakazo/ui-web/dozo-auth.css";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 
