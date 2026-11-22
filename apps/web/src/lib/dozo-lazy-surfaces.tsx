@@ -164,6 +164,10 @@ export function DozoHiddenLibrarySkills(
   return (
     <Held failed={null}>
       <LazyHiddenLibrarySkills {...props} />
+    </Held>
+  );
+}
+
 /** Nothing while it loads, and nothing if it cannot: the bot keeps the runner's backups. */
 export function DozoBotBackups(props: ComponentProps<typeof LoadedDozoBotBackups>) {
   return (
