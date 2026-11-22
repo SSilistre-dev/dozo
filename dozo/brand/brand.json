@@ -11586,7 +11586,7 @@
     {
       "file": "packages/adapters/src/background-job-handlers.ts",
       "find": "  deploymentModelConfigured?: boolean;\n  messagingDelivery?: MessagingDelivery;",
-      "replace": "  deploymentModelConfigured?: boolean;\n  memory: Parameters<typeof dozoLearningReviewJob>[0][\"memory\"];\n  messagingDelivery?: MessagingDelivery;",
+      "replace": "  deploymentModelConfigured?: boolean;\n  memory?: Parameters<typeof dozoLearningReviewJob>[0][\"memory\"];\n  messagingDelivery?: MessagingDelivery;",
       "requires": [
         "packages/adapters/src/dozo-learning-review.ts"
       ],
@@ -12247,6 +12247,24 @@
       "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
       "replace": "          void dozoOrganizationMarkChanged();\n          void dozoLearningChanged();\n          void dozoCliAccountsChanged();\n",
       "reason": "bot learning: a review's or an undo's change to a bot's notes comes on its owner's roster signal, so an open memory panel and learned list read them again"
+    },
+    {
+      "file": "packages/adapters/src/wakeup-graphile-host.test-support.ts",
+      "find": "    \"push.receipt\": vi.fn(async () => undefined),\n  };",
+      "replace": "    \"push.receipt\": vi.fn(async () => undefined),\n    \"memory.learning-review\": vi.fn(async () => undefined),\n  };",
+      "reason": "bot learning: the handler map these tests build lists the fork's learning review job, as every handler map must"
+    },
+    {
+      "file": "packages/adapters/src/wakeup.test.ts",
+      "find": "    \"push.receipt\": vi.fn(async () => undefined),\n  };",
+      "replace": "    \"push.receipt\": vi.fn(async () => undefined),\n    \"memory.learning-review\": vi.fn(async () => undefined),\n  };",
+      "reason": "bot learning: the handler map these tests build lists the fork's learning review job, as every handler map must"
+    },
+    {
+      "file": "packages/adapters/src/wakeup.postgres.test.ts",
+      "find": "    \"push.receipt\": vi.fn(async () => undefined),\n    ...overrides,",
+      "replace": "    \"push.receipt\": vi.fn(async () => undefined),\n    \"memory.learning-review\": vi.fn(async () => undefined),\n    ...overrides,",
+      "reason": "bot learning: the handler map these tests build lists the fork's learning review job, as every handler map must"
     }
   ],
   "assets": {

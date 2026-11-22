@@ -386,11 +386,14 @@ export function dozoLearningReviewJob(
     runtime: AgentRuntime;
     jobs: JobPublisher;
     events?: LearningEvents;
-    memory: DozoLearningMemory;
+    /** The bot notes' store; a worker built without one cannot review (the job fails). */
+    memory?: DozoLearningMemory;
     executor: Pick<LearningReviewDeps, "resolveModel" | "resolveConnectedModel">;
   },
 ) {
   return async ({ botId, settleOnly }: { botId: string; settleOnly?: boolean }) => {
+    const { memory } = deps;
+    if (!memory) throw new Error("A learning review needs the memory store.");
     const owner = await runAsSystem("find the bot a learning review is for", () =>
       deps.prisma.bot.findUnique({ where: { id: botId }, select: { spaceId: true, userId: true } }),
     );
@@ -402,7 +405,7 @@ export function dozoLearningReviewJob(
         {
           prisma: deps.prisma,
           runtime: deps.runtime,
-          memory: deps.memory,
+          memory,
           secretStore: deps.secretStore,
           paymentWallet: deps.paymentWallet,
           resolveModel: deps.executor.resolveModel,

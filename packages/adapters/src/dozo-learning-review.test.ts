@@ -1121,6 +1121,21 @@ describe("dozoLearningReviewJob", () => {
     expect(run.model.requests).toHaveLength(1);
   });
 
+  it("fails, touching nothing, in a worker given no memory store", async () => {
+    const run = setup({ answers: [answer([{ op: "add", text: "The owner is called Ada." }])] });
+    const noMemory = dozoLearningReviewJob({
+      prisma: run.deps.prisma,
+      runtime: run.deps.runtime,
+      jobs: {} as never,
+      secretStore: run.deps.secretStore,
+      paymentWallet: null,
+      executor: run.deps,
+    });
+    await expect(noMemory({ botId: BOT.id })).rejects.toThrow("memory store");
+    expect(run.model.requests).toEqual([]);
+    expect(store.turns).toHaveLength(3);
+  });
+
   it("asks the queue to try again later while another process reviews the bot", async () => {
     store.held.add("dozo-learning:bot-1");
     const run = setup({});
