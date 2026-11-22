@@ -50,6 +50,17 @@ function runEvent(type: ProductEvent["type"], seq: number, payload = {}): Produc
   };
 }
 
+/** One of bot-1's extra chats, as the app lists it to its member. */
+const GARDEN = {
+  id: "chat-1",
+  botId: "bot-1",
+  name: "Garden",
+  createdAt: "2026-11-20T09:00:00.000Z",
+  archivedAt: null as string | null,
+  unread: true,
+  snoozedUntil: null,
+};
+
 function fakeClient() {
   return {
     bots: {
@@ -108,6 +119,12 @@ function fakeClient() {
     },
     dozoChatExport: {
       markdown: vi.fn(async () => ({ markdown: "# Chef\n", truncated: false })),
+    },
+    dozoChats: {
+      // As the app lists one bot's chats for its member: open ones, oldest first.
+      list: vi.fn(async (_input: { botId?: string }) => ({
+        chats: [GARDEN],
+      })),
     },
   };
 }
@@ -548,6 +565,139 @@ describe("reading the chat", () => {
       timeZone: "Europe/Istanbul",
     });
     expect((await call(app(), "/bots/bot-1/export?since=yesterday")).status).toBe(400);
+  });
+});
+
+describe("a bot's other chats", () => {
+  const inChat = { chatBotId: "bot-1", chatId: "chat-1" };
+
+  it("lists the bot's open chats with no more than their id, name and start", async () => {
+    const listed = await call(app(), "/bots/bot-1/chats");
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({
+      chats: [{ id: "chat-1", name: "Garden", createdAt: "2026-11-20T09:00:00.000Z" }],
+    });
+    expect(client.dozoChats.list).toHaveBeenCalledWith({ botId: "bot-1" });
+  });
+
+  it("leaves a chat out of the list if the app hands back an archived one or another bot's", async () => {
+    client.dozoChats.list.mockResolvedValue({
+      chats: [
+        { ...GARDEN, archivedAt: "2026-11-21T00:00:00.000Z" },
+        { ...GARDEN, id: "chat-9", botId: "bot-2" },
+      ],
+    });
+    expect(await (await call(app(), "/bots/bot-1/chats")).json()).toEqual({ chats: [] });
+    for (const chat of ["chat-1", "chat-9"])
+      expect((await call(app(), `/bots/bot-1/messages?chat=${chat}`)).status).toBe(404);
+  });
+
+  it("keeps every call without a chat on the main chat, as before, without reading chats", async () => {
+    const hono = app();
+    await send(hono, { text: "hi" });
+    await call(hono, "/bots/bot-1/messages");
+    await call(hono, "/bots/bot-1/export");
+    await (await call(hono, "/bots/bot-1/runs/run-1/events")).text();
+    expect(client.threads.send).toHaveBeenCalledWith(expect.objectContaining({ botId: "bot-1" }));
+    expect(client.threads.send.mock.calls[0]![0]).not.toHaveProperty("chatId");
+    expect(client.threads.messages).toHaveBeenCalledWith({ botId: "bot-1", before: undefined });
+    expect(client.dozoChatExport.markdown).toHaveBeenCalledWith({ botId: "bot-1" });
+    expect(client.threads.head).toHaveBeenCalledWith({ botId: "bot-1" });
+    expect(client.dozoChats.list).not.toHaveBeenCalled();
+  });
+
+  it("sends, streams, reads, follows and exports in the chat named in the query", async () => {
+    const hono = app();
+    const sent = await call(hono, "/bots/bot-1/messages?chat=chat-1", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "text/event-stream" },
+      body: JSON.stringify({ text: "Sow tomatoes?" }),
+    });
+    expect(sent.status).toBe(200);
+    expect(await sent.text()).toContain('"status":"completed"');
+    expect(client.threads.send).toHaveBeenCalledWith({
+      ...inChat,
+      text: "Sow tomatoes?",
+      clientNonce: expect.stringMatching(/^api:/),
+    });
+    expect(client.threads.subscribe).toHaveBeenCalledWith(
+      { ...inChat, cursor: 41 },
+      { signal: expect.any(AbortSignal) },
+    );
+    await call(hono, "/bots/bot-1/messages?chat=chat-1&before=9");
+    expect(client.threads.messages).toHaveBeenCalledWith({ ...inChat, before: 9 });
+    await call(hono, "/bots/bot-1/export?chat=chat-1&timeZone=UTC");
+    expect(client.dozoChatExport.markdown).toHaveBeenCalledWith({ ...inChat, timeZone: "UTC" });
+    client.threads.head.mockResolvedValue({ threadId: "chat-1", cursor: 40 });
+    await (await call(hono, "/bots/bot-1/runs/run-1/events?chat=chat-1")).text();
+    expect(client.threads.head).toHaveBeenCalledWith(inChat);
+    expect(runStatus).toHaveBeenCalledWith(actor, "chat-1", "run-1");
+    expect(client.threads.subscribe).toHaveBeenLastCalledWith(
+      { ...inChat, cursor: 40 },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("answers any chat it cannot reach as the same 404, never acting on the main chat", async () => {
+    const hono = app();
+    // Another bot's chat, an archived one and one that does not exist are all left out of the
+    // bot's open chats, so each is the same answer; so are an empty and an overlong id.
+    for (const chat of ["chat-9", "chat-archived", "", "x".repeat(201)]) {
+      const query = `?chat=${encodeURIComponent(chat)}`;
+      const answers = [
+        await call(hono, `/bots/bot-1/messages${query}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: "hi" }),
+        }),
+        await call(hono, `/bots/bot-1/messages${query}`),
+        await call(hono, `/bots/bot-1/export${query}`),
+        await call(hono, `/bots/bot-1/runs/run-1/events${query}`),
+      ];
+      for (const answer of answers) {
+        expect(answer.status).toBe(404);
+        expect(await answer.json()).toEqual({ error: "Chat not found" });
+        expect(answer.headers.get("cache-control")).toBe("no-store");
+      }
+    }
+    expect(client.threads.send).not.toHaveBeenCalled();
+    expect(client.threads.messages).not.toHaveBeenCalled();
+    expect(client.threads.head).not.toHaveBeenCalled();
+    expect(client.dozoChatExport.markdown).not.toHaveBeenCalled();
+  });
+
+  it("spends no message from the budget on a chat it cannot reach", async () => {
+    const hono = app();
+    for (let index = 0; index <= DOZO_BOT_API_TOKEN_SENDS_PER_MINUTE; index++)
+      await call(hono, "/bots/bot-1/messages?chat=chat-9", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "hi" }),
+      });
+    expect((await send(hono, { text: "hi" })).status).toBe(202);
+  });
+
+  it("refuses a chat named in the body, which the message would otherwise leave for the main chat", async () => {
+    for (const field of ["chat", "chatId", "chat_id"]) {
+      const refused = await send(app(), { text: "hi", [field]: "chat-1" });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "Name the chat in the query: ?chat=" });
+    }
+    expect(client.threads.send).not.toHaveBeenCalled();
+  });
+
+  it("answers another bot's chats as a missing bot for a token limited to one bot", async () => {
+    authenticate.mockResolvedValue({ ...everyBot, botId: "bot-1" });
+    const hono = app();
+    expect((await call(hono, "/bots/bot-2/chats")).status).toBe(404);
+    expect((await call(hono, "/bots/bot-2/messages?chat=chat-1")).status).toBe(404);
+    expect(client.dozoChats.list).not.toHaveBeenCalled();
+  });
+
+  it("answers the app's own refusal to list a bot's chats as it is", async () => {
+    client.dozoChats.list.mockRejectedValue(new ORPCError("NOT_FOUND", { message: "Not found" }));
+    const refused = await call(app(), "/bots/bot-7/chats");
+    expect(refused.status).toBe(404);
   });
 });
 

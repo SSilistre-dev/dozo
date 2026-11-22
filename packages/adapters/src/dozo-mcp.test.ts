@@ -23,6 +23,9 @@ function operations(overrides: Partial<DozoMcpOperations> = {}): DozoMcpOperatio
       truncated: false,
     })),
     readChat: vi.fn(async () => ({ markdown: "# Ada\n\n**Ada** · 10:00\n\nHello\n" })),
+    listChats: vi.fn(async () => [
+      { id: "chat 1", name: "Garden", createdAt: "2026-11-20T09:00:00.000Z" },
+    ]),
     ...overrides,
   };
 }
@@ -64,7 +67,7 @@ describe("the MCP endpoint, through a real protocol client", () => {
     for (const response of seen) expect(response.headers.get("mcp-session-id")).toBeNull();
 
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual(["list_bots", "send_message"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["list_bots", "list_chats", "send_message"]);
     const send = tools.find((tool) => tool.name === "send_message");
     expect(send?.inputSchema.required).toEqual(["bot_id", "text"]);
     expect(send?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
@@ -158,6 +161,10 @@ describe("the MCP endpoint, through a real protocol client", () => {
     const { resourceTemplates } = await client.listResourceTemplates();
     expect(resourceTemplates).toEqual([
       expect.objectContaining({ uriTemplate: "dozo-chat://{bot_id}", mimeType: "text/markdown" }),
+      expect.objectContaining({
+        uriTemplate: "dozo-chat://{bot_id}/{chat_id}",
+        mimeType: "text/markdown",
+      }),
     ]);
     const { resources } = await client.listResources();
     expect(resources.map((resource) => resource.uri)).toEqual([
@@ -173,6 +180,63 @@ describe("the MCP endpoint, through a real protocol client", () => {
         text: "# Ada\n\n**Ada** · 10:00\n\nHello\n",
       },
     ]);
+  });
+
+  it("lists a bot's other chats with each one's address, and sends to and reads one", async () => {
+    const ops = operations();
+    const { client } = await connect(ops);
+    const listed = await client.callTool({ name: "list_chats", arguments: { bot_id: "bot two" } });
+    expect(ops.listChats).toHaveBeenCalledWith("bot two");
+    expect(json(listed)).toEqual({
+      chats: [
+        {
+          id: "chat 1",
+          name: "Garden",
+          createdAt: "2026-11-20T09:00:00.000Z",
+          chat: "dozo-chat://bot%20two/chat%201",
+        },
+      ],
+    });
+    const sent = await client.callTool({
+      name: "send_message",
+      arguments: { bot_id: "bot two", text: "hi", chat_id: "chat 1" },
+    });
+    expect(ops.sendMessage).toHaveBeenCalledWith(
+      "bot two",
+      "hi",
+      expect.any(AbortSignal),
+      "chat 1",
+    );
+    expect(json(sent)).toMatchObject({ chat: "dozo-chat://bot%20two/chat%201" });
+    const read = await client.readResource({ uri: "dozo-chat://bot%20two/chat%201" });
+    expect(ops.readChat).toHaveBeenCalledWith("bot two", "chat 1");
+    expect(read.contents).toEqual([
+      expect.objectContaining({ uri: "dozo-chat://bot%20two/chat%201", mimeType: "text/markdown" }),
+    ]);
+    // The extra chats are not listed among resources: list_chats names them.
+    const { resources } = await client.listResources();
+    expect(resources.map((resource) => resource.uri)).toEqual([
+      "dozo-chat://bot-1",
+      "dozo-chat://bot%20two",
+    ]);
+  });
+
+  it("refuses an empty chat id before anything is sent, and says a refused chat as it is", async () => {
+    const ops = operations({
+      readChat: vi.fn(async () => {
+        throw new ClientError("NOT_FOUND", "Chat not found");
+      }),
+    });
+    const { client } = await connect(ops);
+    const empty = await client.callTool({
+      name: "send_message",
+      arguments: { bot_id: "bot-1", text: "hi", chat_id: "" },
+    });
+    expect(empty.isError).toBe(true);
+    expect(ops.sendMessage).not.toHaveBeenCalled();
+    await expect(client.readResource({ uri: "dozo-chat://bot-1/chat-9" })).rejects.toThrow(
+      "Chat not found",
+    );
   });
 
   it("answers a refused or failed chat read as a protocol error without the server's message", async () => {

@@ -3,14 +3,17 @@ import type { RouterClient } from "@orpc/server";
 import { createRouterClient, ORPCError, onError } from "@orpc/server";
 import type { Actor, ThreadMessage } from "@rakazo/contracts";
 import { IsoDate, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
-import { dozoTokenNonce } from "@rakazo/core";
+import { ClientError, dozoTokenNonce } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant, takeDozoApiMinute, touchDozoAccessToken } from "@rakazo/db";
 import { bestEffort, enrichLogContext } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import * as z from "zod";
+import { clientErrorStatus } from "./client-error-status.js";
 import type { DozoTokenCaller } from "./dozo-access-tokens.js";
 import { dozoTokenAuthenticator } from "./dozo-access-tokens.js";
+import type { DozoApiChatTarget } from "./dozo-api-chats.js";
+import { dozoApiChats, dozoApiChatTarget } from "./dozo-api-chats.js";
 import type { DozoSettledRun, DozoStreamFrame } from "./dozo-bot-api-stream.js";
 import { DOZO_SETTLED_RUN_STATUSES, dozoRunStream, sseFrame } from "./dozo-bot-api-stream.js";
 import { messageBody } from "./dozo-chat-markdown.js";
@@ -49,6 +52,7 @@ export type DozoBotApiClient = {
   bots: Pick<AppClient["bots"], "list">;
   threads: Pick<AppClient["threads"], "head" | "send" | "messages" | "subscribe">;
   dozoChatExport: Pick<AppClient["dozoChatExport"], "markdown">;
+  dozoChats: Pick<AppClient["dozoChats"], "list">;
 };
 
 export type DozoBotApiContext = {
@@ -110,6 +114,8 @@ export function dozoBotApiDeps(
 const IdParam = z.string().min(1).max(200);
 const Cursor = z.coerce.number().int().min(-1);
 const SendBody = z.object({ text: z.string().trim().min(1).max(THREAD_MESSAGE_TEXT_MAX_LENGTH) });
+/** Fields a client might take for the chat: it is named in the query, never in the body. */
+const BODY_CHAT_FIELDS = ["chat", "chatId", "chat_id"];
 const ExportQuery = z.object({
   since: IsoDate.optional(),
   timeZone: z.string().max(64).optional(),
@@ -144,7 +150,8 @@ function apiMessage(message: ThreadMessage) {
  * The bot API under /api/v1/dozo: list the bots, send one a message and follow the reply as
  * server-sent events, read the chat, and export it. Every call carries a personal access token as
  * a bearer and runs the app's own procedures as its member, in its Space, so access, approvals
- * and limits are the app's. A token limited to one bot sees only that bot. OpenAPI:
+ * and limits are the app's. A token limited to one bot sees only that bot. A call reaches the
+ * bot's main chat, or with `?chat=` one of its open extra chats (dozo-api-chats.ts). OpenAPI:
  * dozo/api/openapi.yaml.
  */
 export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
@@ -189,6 +196,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
     return botId.data;
   };
 
+  /** The chat the call names with `?chat=`; without it the bot's main chat, as before. */
+  const chatFor = (found: Caller, c: Context, botId: string) =>
+    dozoApiChatTarget(found.client, botId, c.req.query("chat"));
+
   /** Holds one of the token's stream places until the stream closes. */
   const holdStream = (tokenId: string) => {
     const open = openStreams.get(tokenId) ?? 0;
@@ -205,7 +216,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
     c: Context,
     found: Caller,
     input: {
-      botId: string;
+      target: DozoApiChatTarget;
       runId: string;
       cursor: number;
       first?: DozoStreamFrame[];
@@ -227,7 +238,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
         async *[Symbol.asyncIterator]() {
           yield* await deps
             .connect({ ...found.context, signal })
-            .threads.subscribe({ botId: input.botId, cursor: input.cursor }, { signal });
+            .threads.subscribe({ ...input.target, cursor: input.cursor }, { signal });
         },
       }),
     });
@@ -244,6 +255,12 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
           if (error.status === 401) headers["www-authenticate"] = "Bearer";
           if (error.status === 429) headers["retry-after"] = "60";
           return c.json({ error: error.message }, error.status, headers);
+        }
+        // A refusal of the bot API's own, as the app would answer it (a chat it cannot reach).
+        if (error instanceof ClientError) {
+          return c.json({ error: error.message }, clientErrorStatus(error.kind) as 404, {
+            "cache-control": "no-store",
+          });
         }
         // The app's own answer: its message for the caller's mistakes, a plain one for outages.
         if (error instanceof ORPCError && error.status !== 500) {
@@ -269,6 +286,14 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
     }),
   );
 
+  app.get(
+    `${DOZO_BOT_API_PREFIX}/bots/:botId/chats`,
+    route(async (c, found) => {
+      const botId = botFor(found, c);
+      return json(c, { chats: await dozoApiChats(found.client, botId) });
+    }),
+  );
+
   app.post(
     `${DOZO_BOT_API_PREFIX}/bots/:botId/messages`,
     route(async (c, found) => {
@@ -286,6 +311,10 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       }
       const body = SendBody.safeParse(parsedJson);
       if (!body.success) throw new ApiError(400, "Give the message as text");
+      // A chat named in the body would be dropped and the message sent to the main chat.
+      if (BODY_CHAT_FIELDS.some((field) => Object.hasOwn(parsedJson as object, field)))
+        throw new ApiError(400, "Name the chat in the query: ?chat=");
+      const target = await chatFor(found, c, botId);
       // In the app a stop word stops every run in the chat, the owner's too; a token may not.
       if (isStopMessage({ text: body.data.text })) throw new ApiError(400, "Stop a run in the app");
       if (
@@ -301,7 +330,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       let sent: Awaited<ReturnType<DozoBotApiClient["threads"]["send"]>>;
       try {
         sent = await found.client.threads.send({
-          botId,
+          ...target,
           text: body.data.text,
           // Always marked as sent with a token (the run gate reads it); a retried request with
           // the same key is the same message, not a second one.
@@ -314,7 +343,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       const started = { runId: sent.runId, seq: sent.seq };
       if (!release) return json(c, started, 202);
       return stream(c, found, {
-        botId,
+        target,
         runId: sent.runId,
         cursor: sent.seq,
         first: [{ id: sent.seq, event: "run", data: started }],
@@ -332,7 +361,8 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       const cursor = after === undefined ? undefined : Cursor.safeParse(after);
       if (!runId.success || cursor?.success === false)
         throw new ApiError(400, "Give a run id and a whole number for after");
-      const head = await found.client.threads.head({ botId });
+      const target = await chatFor(found, c, botId);
+      const head = await found.client.threads.head(target);
       const status = await deps.runStatus(found.actor, head.threadId, runId.data);
       if (!status) throw new ApiError(404, "Run not found");
       const settled = DOZO_SETTLED_RUN_STATUSES.has(status);
@@ -343,7 +373,7 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
           headers: EVENT_STREAM_HEADERS,
         });
       return stream(c, found, {
-        botId,
+        target,
         runId: runId.data,
         cursor: cursor?.data ?? head.cursor,
         // The events up to now are replayed, then the stream ends with the run's status.
@@ -360,7 +390,8 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       const cursor = before === undefined ? undefined : Cursor.safeParse(before);
       if (cursor?.success === false || (cursor?.data ?? 0) < 0)
         throw new ApiError(400, "before must be a whole number");
-      const page = await found.client.threads.messages({ botId, before: cursor?.data });
+      const target = await chatFor(found, c, botId);
+      const page = await found.client.threads.messages({ ...target, before: cursor?.data });
       return json(c, {
         messages: page.messages.flatMap((message) => apiMessage(message) ?? []),
         before: page.olderCursor ?? null,
@@ -374,7 +405,8 @@ export function mountDozoBotApi(app: Hono, deps: DozoBotApiDeps) {
       const botId = botFor(found, c);
       const query = ExportQuery.safeParse(c.req.query());
       if (!query.success) throw new ApiError(400, "since must be an ISO date");
-      return json(c, await found.client.dozoChatExport.markdown({ botId, ...query.data }));
+      const target = await chatFor(found, c, botId);
+      return json(c, await found.client.dozoChatExport.markdown({ ...target, ...query.data }));
     }),
   );
 }
