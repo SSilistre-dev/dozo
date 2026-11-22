@@ -177,6 +177,33 @@ describePostgres("bot learning (PostgreSQL)", () => {
     ]);
   });
 
+  it("counts only the newest live change on a line as the review's own", async () => {
+    const owner = await member();
+    const chat = await bot(owner);
+    const save = (change: Parameters<typeof saveLearningChanges>[3][number]) =>
+      as(owner, () => saveLearningChanges(prisma, chat, chat.threadId, [change]));
+    const lines = () => as(owner, () => learnedLines(prisma, chat.id));
+    await save({ kind: "add", before: null, after: "Uses metric" });
+    const [added] = await lines();
+    await save({ kind: "update", before: "Uses metric", after: "Uses metric units" });
+    const [updated] = await lines();
+    // The owner may type "Uses metric" back by hand: it is no longer the review's line.
+    expect(await lines()).toEqual([{ id: updated!.id, after: "Uses metric units" }]);
+    const replaced = await as(owner, () => findLearningChange(prisma, chat.spaceId, added!.id));
+    expect(replaced!.supersededBy).toBe(updated!.id);
+    await save({ kind: "remove", before: "Uses metric units", after: null });
+    expect(await lines()).toEqual([]);
+    // A line written again belongs to the newest change that wrote it.
+    await save({ kind: "add", before: null, after: "Likes tea" });
+    await save({ kind: "add", before: null, after: "Likes tea" });
+    const tea = await lines();
+    expect(tea).toHaveLength(1);
+    // Undoing the update hands its line back to the change it replaced.
+    await as(owner, () => markLearningChangeUndone(prisma, updated!.id));
+    const back = await as(owner, () => findLearningChange(prisma, chat.spaceId, added!.id));
+    expect(back!.supersededBy).toBeNull();
+  });
+
   it("keeps each Space's learning to itself and goes with the bot", async () => {
     const owner = await member();
     const stranger = await member();
@@ -209,7 +236,7 @@ describePostgres("bot learning (PostgreSQL)", () => {
     const deps: LearningReviewDeps = {
       prisma,
       runtime: {
-        describe: () => ({}) as never,
+        describe: () => ({ capabilities: { compaction: true } }) as never,
         abort: async () => undefined,
         async *run(request: AgentRunRequest): AsyncIterable<AgentRuntimeEvent> {
           requests.push(request);
@@ -230,6 +257,8 @@ describePostgres("bot learning (PostgreSQL)", () => {
           return { id: "d", path: "MEMORY.md", revision: notes.revision, content: notes.content };
         }),
       },
+      // The owner saved nothing, so there is nothing to open.
+      secretStore: { load: vi.fn() },
       resolveModel: async () => ({ provider: "test", id: "own" }) as never,
       resolveConnectedModel: async () => ({ provider: "test", id: "role" }) as never,
     };

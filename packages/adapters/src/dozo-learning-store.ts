@@ -96,11 +96,15 @@ export async function consumeLearningTurns(
       OR "createdAt" < (SELECT "createdAt" FROM dozo_learning_turns WHERE id = ${oldest.id}))`;
 }
 
-/** The review's own lines: changes that set a line and were not undone, newest first. */
+/**
+ * The review's own lines: changes that set a line, not undone and not taken over by a later
+ * change, newest first.
+ */
 export async function learnedLines(db: Db, botId: string): Promise<LearnedLine[]> {
   return db.$queryRaw<LearnedLine[]>`
     SELECT id, "after" FROM dozo_learning_changes
-    WHERE "botId" = ${botId} AND "undoneAt" IS NULL AND kind IN ('add', 'update')
+    WHERE "botId" = ${botId} AND "undoneAt" IS NULL AND "supersededBy" IS NULL
+      AND kind IN ('add', 'update')
     ORDER BY "createdAt" DESC, id DESC LIMIT ${CHANGES_KEPT}`;
 }
 
@@ -110,7 +114,10 @@ export type LearningChangeInput = {
   after: string | null;
 };
 
-/** Records what one review changed, in order, and forgets changes past the newest kept. */
+/**
+ * Records what one review changed, in order, and forgets changes past the newest kept. A change
+ * takes over from every live older change whose line it replaced or wrote again.
+ */
 export async function saveLearningChanges(
   db: Db,
   bot: { id: string; spaceId: string },
@@ -121,11 +128,16 @@ export async function saveLearningChanges(
   for (const [index, change] of changes.entries()) {
     // One review's changes are listed in the order they were made.
     const createdAt = new Date(at + index).toISOString();
+    const id = randomUUID();
     await db.$executeRaw`
       INSERT INTO dozo_learning_changes
         (id, "botId", "spaceId", "threadId", kind, "before", "after", "createdAt")
-      VALUES (${randomUUID()}, ${bot.id}, ${bot.spaceId}, ${threadId}, ${change.kind},
+      VALUES (${id}, ${bot.id}, ${bot.spaceId}, ${threadId}, ${change.kind},
         ${change.before}, ${change.after}, ${createdAt}::timestamptz)`;
+    await db.$executeRaw`
+      UPDATE dozo_learning_changes SET "supersededBy" = ${id}
+      WHERE id <> ${id} AND "undoneAt" IS NULL AND "supersededBy" IS NULL AND kind <> 'remove'
+        AND ("after" = ${change.before} OR "after" = ${change.after}) AND "botId" = ${bot.id}`;
   }
   await db.$executeRaw`
     DELETE FROM dozo_learning_changes WHERE "botId" = ${bot.id} AND id NOT IN (
@@ -141,9 +153,14 @@ type ChangeRow = {
   after: string | null;
   createdAt: Date;
   undoneAt: Date | null;
+  supersededBy?: string | null;
 };
 
-const toChange = ({ botId: _botId, ...row }: ChangeRow): DozoLearningChange => ({
+const toChange = ({
+  botId: _botId,
+  supersededBy: _supersededBy,
+  ...row
+}: ChangeRow): DozoLearningChange => ({
   ...row,
   createdAt: row.createdAt.toISOString(),
   undoneAt: row.undoneAt?.toISOString() ?? null,
@@ -163,23 +180,29 @@ export async function listLearningChanges(
   return rows.map(toChange);
 }
 
-/** One change of the Space, with its bot. */
+/** One change of the Space, with its bot and the change that took its line over, if any. */
 export async function findLearningChange(
   db: Db,
   spaceId: string,
   changeId: string,
-): Promise<(DozoLearningChange & { botId: string }) | undefined> {
+): Promise<(DozoLearningChange & { botId: string; supersededBy: string | null }) | undefined> {
   const [row] = await db.$queryRaw<ChangeRow[]>`
-    SELECT id, "botId", kind, "before", "after",
+    SELECT id, "botId", kind, "before", "after", "supersededBy",
       "createdAt" AT TIME ZONE 'UTC' AS "createdAt", "undoneAt" AT TIME ZONE 'UTC' AS "undoneAt"
     FROM dozo_learning_changes WHERE id = ${changeId} AND "spaceId" = ${spaceId}`;
-  return row && { ...toChange(row), botId: row.botId };
+  return row && { ...toChange(row), botId: row.botId, supersededBy: row.supersededBy ?? null };
 }
 
-/** Marks a change undone once; false when it already was. */
+/**
+ * Marks a change undone once; false when it already was. The changes it took lines over from
+ * own those lines again, as the undo put them back.
+ */
 export async function markLearningChangeUndone(db: Db, changeId: string): Promise<boolean> {
   const marked = await db.$executeRaw`
     UPDATE dozo_learning_changes SET "undoneAt" = CURRENT_TIMESTAMP
     WHERE id = ${changeId} AND "undoneAt" IS NULL`;
-  return marked === 1;
+  if (marked !== 1) return false;
+  await db.$executeRaw`
+    UPDATE dozo_learning_changes SET "supersededBy" = NULL WHERE "supersededBy" = ${changeId}`;
+  return true;
 }

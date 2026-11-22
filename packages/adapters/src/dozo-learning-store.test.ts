@@ -76,33 +76,42 @@ describe("learning store", () => {
   });
 
   it("lists the review's own lines and keeps its changes in the order they were made", async () => {
-    expect(await learnedLines(db([{ id: "c1", after: "x" }]).client, "bot-1")).toEqual([
-      { id: "c1", after: "x" },
-    ]);
+    const lines = db([{ id: "c1", after: "x" }]);
+    expect(await learnedLines(lines.client, "bot-1")).toEqual([{ id: "c1", after: "x" }]);
+    expect(lines.sql()[0]).toContain('"supersededBy" IS NULL');
     const store = db();
     await saveLearningChanges(store.client, { id: "bot-1", spaceId: "s" }, "th", [
       { kind: "add", before: null, after: "a" },
       { kind: "remove", before: "b", after: null },
     ]);
-    const [first, second] = store.executeRaw.mock.calls;
+    const [first, , second] = store.executeRaw.mock.calls;
     const time = (call: unknown[]) => Date.parse(call.at(-1) as string);
     expect(time(second!) - time(first!)).toBe(1);
-    expect(store.sql()[2]).toContain("DELETE FROM dozo_learning_changes");
+    // Each change takes over the line it replaced or wrote from any older change.
+    expect(store.sql()[1]).toContain('SET "supersededBy"');
+    expect(store.executeRaw.mock.calls[1]!.slice(-3)).toEqual([null, "a", "bot-1"]);
+    expect(store.sql()[4]).toContain("DELETE FROM dozo_learning_changes");
   });
 
   it("answers changes with their times as ISO strings", async () => {
     const shown = { ...row, createdAt: at.toISOString() };
     const { botId: _botId, ...listed } = shown;
     expect(await listLearningChanges(db([row]).client, "bot-1", 20)).toEqual([listed]);
-    expect(await findLearningChange(db([{ ...row, undoneAt: at }]).client, "s", "c1")).toEqual({
-      ...shown,
-      undoneAt: at.toISOString(),
-    });
+    expect(
+      await findLearningChange(
+        db([{ ...row, undoneAt: at, supersededBy: "c2" }]).client,
+        "s",
+        "c1",
+      ),
+    ).toEqual({ ...shown, undoneAt: at.toISOString(), supersededBy: "c2" });
     expect(await findLearningChange(db().client, "s", "c1")).toBeUndefined();
   });
 
   it("marks a change undone once", async () => {
-    expect(await markLearningChangeUndone(db([], 1).client, "c1")).toBe(true);
+    const undone = db([], 1);
+    expect(await markLearningChangeUndone(undone.client, "c1")).toBe(true);
+    // The change it took a line over from owns that line again.
+    expect(undone.sql()[1]).toContain('SET "supersededBy" = NULL');
     expect(await markLearningChangeUndone(db([], 0).client, "c1")).toBe(false);
   });
 });

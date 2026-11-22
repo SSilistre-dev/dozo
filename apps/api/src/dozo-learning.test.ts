@@ -95,18 +95,15 @@ describe("learning routes", () => {
     await expect(client("member").get({ botId: "elsewhere" })).rejects.toThrow();
   });
 
-  it("let only the bot's creator or the space owner switch it", async () => {
+  it("let only the bot's own owner switch it: their chat becomes notes every member reads", async () => {
     expect(await client("creator").setMode({ botId: "bot-1", mode: "auto" })).toEqual({
       mode: "auto",
     });
-    expect(await client("owner").setMode({ botId: "bot-1", mode: "off" })).toEqual({
-      mode: "off",
+    await expect(client("owner").setMode({ botId: "bot-1", mode: "off" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
     });
     await expect(client("member").setMode({ botId: "bot-1", mode: "auto" })).rejects.toThrow();
-    expect(state.set).toEqual([
-      { botId: "bot-1", mode: "auto" },
-      { botId: "bot-1", mode: "off" },
-    ]);
+    expect(state.set).toEqual([{ botId: "bot-1", mode: "auto" }]);
   });
 
   it("refuse a mode this phase does not offer", async () => {

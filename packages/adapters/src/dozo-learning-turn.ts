@@ -33,7 +33,7 @@ export function countsForLearning(ctx: Pick<RunContext, "run" | "thread" | "bot"
   );
 }
 
-const startNow = (work: () => Promise<void>) => {
+const startNow = (work: () => Promise<unknown>) => {
   void bestEffort("learning review", work());
 };
 
@@ -41,6 +41,7 @@ const reviewDeps = (ctx: RunContext): LearningReviewDeps => ({
   prisma: ctx.deps.prisma,
   runtime: ctx.deps.runtime,
   memory: ctx.deps.memory,
+  secretStore: ctx.deps.secretStore,
   resolveModel: (scope) => resolveRunModel(ctx.deps, scope),
   resolveConnectedModel: (...args) => resolveConnectedRunModel(ctx.deps, ...args),
 });

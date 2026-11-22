@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LearningReviewDeps } from "./dozo-learning-review.js";
-import { LEARNING_IDLE_MS, LEARNING_REVIEW_BACKUP_MS } from "./dozo-learning-review.js";
+import {
+  LEARNING_IDLE_MS,
+  LEARNING_REVIEW_BACKUP_MS,
+  LEARNING_REVIEW_TIMEOUT_MS,
+} from "./dozo-learning-review.js";
 import { countsForLearning, dozoRecordLearningTurn } from "./dozo-learning-turn.js";
 import type { RunContext } from "./run-context.js";
 
@@ -78,8 +82,8 @@ function harness(options: Options = {}) {
       memory: {},
     },
   } as unknown as RunContext;
-  const started: Array<() => Promise<void>> = [];
-  const start = vi.fn((work: () => Promise<void>) => {
+  const started: Array<() => Promise<unknown>> = [];
+  const start = vi.fn((work: () => Promise<unknown>) => {
     started.push(work);
   });
   return { ctx, queryRaw, executeRaw, enqueueIn, start, started };
@@ -130,6 +134,10 @@ describe("dozoRecordLearningTurn", () => {
         availableAt: new Date(NOW.getTime() + LEARNING_REVIEW_BACKUP_MS),
         replaceKey: "learning.review:bot-1",
       }),
+    );
+    // The backup waits out the whole direct attempt: the role model, the fallback and the save.
+    expect(LEARNING_REVIEW_BACKUP_MS).toBeGreaterThanOrEqual(
+      2 * LEARNING_REVIEW_TIMEOUT_MS + 60_000,
     );
     expect(batch.start).toHaveBeenCalledOnce();
     await batch.started[0]!();

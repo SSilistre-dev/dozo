@@ -31,7 +31,7 @@ export const dozoLearningContract = /* @__PURE__ */ (() => ({
   get: oc
     .input(z.object({ botId: Id }))
     .output(z.object({ mode: DozoLearningMode, changes: z.array(DozoLearningChangeSchema) })),
-  /** Only who may change the bot's run settings may change this. */
+  /** Only the bot's owner may change this: it is their own chat that becomes notes. */
   setMode: oc
     .input(z.object({ botId: Id, mode: DozoLearningMode }))
     .output(z.object({ mode: DozoLearningMode })),

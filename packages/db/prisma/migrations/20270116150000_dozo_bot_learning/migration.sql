@@ -27,7 +27,9 @@ CREATE TABLE "dozo_learning_turns" (
 CREATE INDEX "dozo_learning_turns_botId_createdAt_idx" ON "dozo_learning_turns"("botId", "createdAt");
 CREATE INDEX "dozo_learning_turns_spaceId_idx" ON "dozo_learning_turns"("spaceId");
 
--- One line a review added, changed or removed in the bot's notes, which the owner can undo.
+-- One line a review added, changed or removed in the bot's notes, which the owner can undo. A
+-- line is the review's own only through its newest live change: a later change that replaced or
+-- rewrote it names itself in "supersededBy", so a line the owner types back stays theirs.
 CREATE TABLE "dozo_learning_changes" (
   "id" TEXT PRIMARY KEY,
   "botId" TEXT NOT NULL REFERENCES "bots"("id") ON DELETE CASCADE,
@@ -38,6 +40,7 @@ CREATE TABLE "dozo_learning_changes" (
   "after" TEXT,
   "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "undoneAt" TIMESTAMPTZ(3),
+  "supersededBy" TEXT,
   CHECK (("kind" = 'add') = ("before" IS NULL)),
   CHECK (("kind" = 'remove') = ("after" IS NULL))
 );

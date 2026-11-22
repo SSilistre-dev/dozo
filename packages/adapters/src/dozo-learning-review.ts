@@ -5,8 +5,9 @@ import type {
   BackgroundJob,
   JobPublisher,
   MemoryStore,
+  SecretStore,
 } from "@rakazo/adapter-kit";
-import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import { MEMORY_REVISION_CONFLICT_ERROR, RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { DozoLearningChange, MessageBlock } from "@rakazo/contracts";
 import {
   BOT_MEMORY_MAX_BYTES,
@@ -18,13 +19,14 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   isPartialReplyClientNonce,
   LeaseHeldError,
+  readMessageBlocks,
   recordUsage,
   runAsSystem,
   runAsTenant,
-  storedMessageBlocks,
   withLease,
 } from "@rakazo/db";
 import * as z from "zod";
+import { loadCommandVariables, loadLoginPasswordRedactions } from "./bot-secrets.js";
 import type { CompactionModelSources } from "./dozo-compaction-model.js";
 import { compactWithRoleModel } from "./dozo-compaction-model.js";
 import type { LearningTranscriptLine } from "./dozo-learning-review.prompt.js";
@@ -44,6 +46,8 @@ import {
   pendingLearningTurns,
   saveLearningChanges,
 } from "./dozo-learning-store.js";
+import { editMemory } from "./memory-tools.js";
+import { redactBlocks } from "./run-messages.js";
 import { messageBlocksText } from "./run-replies.prompt.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 import { byteLength } from "./utf8.js";
@@ -53,9 +57,14 @@ export const LEARNING_REVIEW_BATCH = 10;
 /** Fewer wait for a pause this long after the owner's last turn. */
 export const LEARNING_IDLE_MS = 15 * 60_000;
 /** One review's model call may take this long. */
-const REVIEW_TIMEOUT_MS = 90_000;
-/** A review started at once has a backup job due once its attempt is surely over. */
-export const LEARNING_REVIEW_BACKUP_MS = REVIEW_TIMEOUT_MS + 2 * 60_000;
+export const LEARNING_REVIEW_TIMEOUT_MS = 90_000;
+/**
+ * A review started at once has a backup job due once its attempt is surely over: the role
+ * model's call, the bot's own model after it fails, then reading and saving.
+ */
+export const LEARNING_REVIEW_BACKUP_MS = 2 * LEARNING_REVIEW_TIMEOUT_MS + 3 * 60_000;
+/** A job that finds another process reviewing the bot looks again this much later. */
+const HELD_RETRY_MS = 2 * 60_000;
 /** What one review reads of the conversation, newest kept. */
 const TRANSCRIPT_MAX_CHARS = 16_000;
 /** The most waiting turns one review reads; older ones are dropped with them. */
@@ -64,12 +73,15 @@ const LEASE_TTL_MS = 60_000;
 const MEMORY_SAVE_ATTEMPTS = 3;
 
 export type DozoLearningMemory = Pick<MemoryStore, "read" | "commit">;
+type Bot = { id: string; spaceId: string; userId: string };
 type Model = AgentRunRequest["model"];
 
 export type LearningReviewDeps = {
   prisma: PrismaClient;
   runtime: AgentRuntime;
   memory: DozoLearningMemory;
+  /** Opens the owner's saved values, which a review hides as a run does. */
+  secretStore: Pick<SecretStore, "load">;
   /** The bot's own model, which a review falls back to as compaction does. */
   resolveModel: (scope: { userId: string; spaceId: string; botId?: string }) => Promise<Model>;
   resolveConnectedModel: CompactionModelSources["resolveConnectedModel"];
@@ -177,29 +189,42 @@ export function applyLearningOps(
     lines = next;
     applied.push({ kind: "update", before: line, after: op.text });
   }
+  // An add is the remember tool's: appended once, refused past the cap.
   for (const op of adds) {
-    if (present(op.text)) continue;
-    const next = [...withoutTrailingBlank(lines), op.text];
-    if (!fits(next)) continue;
-    lines = next;
+    const current = joinLines(lines);
+    const edit = editMemory(current, op.text, "", maxBytes);
+    if ("error" in edit || edit.content === current) continue;
+    lines = linesOf(edit.content);
     applied.push({ kind: "add", before: null, after: op.text });
   }
   return { content: applied.length ? joinLines(lines) : content, applied };
 }
 
-/** A message that asked for or carried a secret is left out whole. */
-function carriesSecret(blocks: MessageBlock[]): boolean {
-  return blocks.some(
-    (block) =>
-      (block.kind === "ask" && (block.input === "secret" || Boolean(block.oneTimeCode))) ||
-      ["credentials", "api_key", "env"].includes(block.kind),
+/** A card that asked for a secret or a code is left out with its message. */
+const asksSecret = (blocks: MessageBlock[]) =>
+  blocks.some(
+    (block) => block.kind === "ask" && (block.input === "secret" || Boolean(block.oneTimeCode)),
   );
+
+/**
+ * A message's text with every saved value hidden as a run hides it. A message whose blocks cannot
+ * all be read is left out: a missing block could have been the one that made it private.
+ */
+function textOf(message: { id: string; blocks: unknown }, secrets: string[]): string {
+  const { blocks, intact } = readMessageBlocks(message);
+  if (!intact || asksSecret(blocks)) return "";
+  return messageBlocksText(redactBlocks(blocks, secrets)).trim();
 }
 
-const textOf = (message: { id: string; blocks: unknown }) => {
-  const blocks = storedMessageBlocks(message);
-  return carriesSecret(blocks) ? "" : messageBlocksText(blocks).trim();
-};
+/** The values a run of the bot hides: saved logins, cards, keys and command variables. */
+async function savedValues(deps: Pick<LearningReviewDeps, "prisma" | "secretStore">, bot: Bot) {
+  const scope = { userId: bot.userId, spaceId: bot.spaceId, botId: bot.id };
+  const [logins, variables] = await Promise.all([
+    loadLoginPasswordRedactions(deps.prisma, deps.secretStore, scope),
+    loadCommandVariables(deps.prisma, deps.secretStore, scope),
+  ]);
+  return [...logins, ...variables.redactions];
+}
 
 /**
  * Each turn as the review reads it: the owner's own words, and for a turn no outside content
@@ -209,6 +234,7 @@ export async function learningTranscript(
   prisma: Pick<PrismaClient, "message">,
   owner: string,
   turns: LearningTurn[],
+  secrets: string[],
 ): Promise<LearningTranscriptLine[][]> {
   const [sources, replies] = await Promise.all([
     prisma.message.findMany({
@@ -228,12 +254,12 @@ export async function learningTranscript(
       select: { id: true, runId: true, blocks: true, clientNonce: true },
     }),
   ]);
-  const said = new Map(sources.map((message) => [message.id, textOf(message)]));
+  const said = new Map(sources.map((message) => [message.id, textOf(message, secrets)]));
   const finalReply = new Map<string, string>();
   for (const reply of replies) {
     if (isPartialReplyClientNonce(reply.clientNonce)) continue;
     if (isUserProgressClientNonce(reply.clientNonce)) continue;
-    const text = textOf(reply);
+    const text = textOf(reply, secrets);
     if (reply.runId && text) finalReply.set(reply.runId, text);
   }
   const kept: LearningTranscriptLine[][] = [];
@@ -257,7 +283,6 @@ export async function learningTranscript(
   return kept.reverse();
 }
 
-type Bot = { id: string; spaceId: string; userId: string };
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>;
 
 /** The runtime's own failure text, as compaction reads it: a transient error, tried again. */
@@ -265,7 +290,9 @@ const RUNTIME_FAILURE = /^(?:I hit a problem:|Unknown model )/i;
 
 /**
  * One tool-less call on the member's compaction role model, falling back to the bot's own model
- * as compaction does. Usage is recorded as setup under the bot. A failed call throws.
+ * as compaction does. Usage is recorded as setup under the bot. A failed call, the runtime's own
+ * failure text and an empty answer throw, so the turns wait for another try. Null without a model
+ * that can answer (none connected), as compaction skips.
  */
 async function askReviewModel(
   deps: LearningReviewDeps,
@@ -273,15 +300,18 @@ async function askReviewModel(
   operationId: string,
   prompt: string,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<string | null> {
   const scope = { userId: bot.userId, spaceId: bot.spaceId, botId: bot.id };
   const record = async (event: UsageEvent) => {
     await recordUsage(deps.prisma, event, { ...scope, operationId, operationKind: "setup" });
   };
-  let answer = "";
+  let answer: string | null = null;
   await compactWithRoleModel(deps.prisma, deps, async (resolveModel) => {
     const model = await (resolveModel ?? deps.resolveModel)(scope);
-    answer = "";
+    answer = null;
+    if (!deps.runtime.describe().capabilities.compaction || model.provider === "scripted") return;
+    let text = "";
+    let failed = false;
     for await (const event of deps.runtime.run(
       {
         botId: bot.id,
@@ -300,13 +330,16 @@ async function askReviewModel(
         operationId,
         traceId: operationId,
         ...scope,
-        signal: deadlineSignal(REVIEW_TIMEOUT_MS, signal),
+        signal: deadlineSignal(LEARNING_REVIEW_TIMEOUT_MS, signal),
       },
     )) {
       if (event.type === "usage" && !event.accounted) await record(event);
-      if (event.type === "done" && event.text) answer = event.text;
+      if (event.type === "text" && RUNTIME_FAILURE.test(event.text.trim())) failed = true;
+      if (event.type === "done" && event.text) text = event.text.trim();
     }
-    if (RUNTIME_FAILURE.test(answer.trim())) throw new Error("learning review model call failed");
+    if (failed || RUNTIME_FAILURE.test(text)) throw new Error("learning review model call failed");
+    if (!text) throw new Error("learning review model answered nothing");
+    answer = text;
   });
   return answer;
 }
@@ -386,7 +419,12 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
   const turns = await pendingLearningTurns(deps.prisma, bot.id, TURNS_READ);
   const first = turns[0];
   if (!first) return;
-  const transcript = await learningTranscript(deps.prisma, bot.userId, turns);
+  const transcript = await learningTranscript(
+    deps.prisma,
+    bot.userId,
+    turns,
+    await savedValues(deps, bot),
+  );
   if (!transcript.length) return consumeLearningTurns(deps.prisma, bot.id, turns);
   const [notes] = (
     await deps.memory.read(
@@ -404,6 +442,12 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
   });
   // A failed call keeps the turns: the job tries again.
   const answer = await askReviewModel(deps, bot, `learning:${bot.id}:${first.id}`, prompt, signal);
+  // No model that can answer: the turns wait for one.
+  if (answer === null) return;
+  // Turned off while the model answered: nothing is learned from these turns.
+  if ((await learningMode(deps.prisma, bot.id)) !== "auto") {
+    return consumeLearningTurns(deps.prisma, bot.id, turns);
+  }
   const ops = parseLearningAnswer(answer, new Set(own.keys()));
   const applied = ops?.length ? await saveNotes(deps, bot, ops, own, signal) : [];
   if (applied.length) {
@@ -416,9 +460,12 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
 /**
  * Reviews the bot's waiting turns once, when its owner has learning on. One review per bot runs
  * at a time across processes: while another holds the bot, this one leaves the turns to it and
- * to the bot's job. Runs in the bot owner's tenant context.
+ * answers "held". Runs in the bot owner's tenant context.
  */
-export async function reviewLearning(deps: LearningReviewDeps, botId: string): Promise<void> {
+export async function reviewLearning(
+  deps: LearningReviewDeps,
+  botId: string,
+): Promise<"held" | undefined> {
   const bot = await deps.prisma.bot.findFirst({
     where: { id: botId },
     select: { id: true, spaceId: true, userId: true },
@@ -430,7 +477,9 @@ export async function reviewLearning(deps: LearningReviewDeps, botId: string): P
     );
   } catch (error) {
     if (!(error instanceof LeaseHeldError)) throw error;
+    return "held";
   }
+  return undefined;
 }
 
 /** The job that runs a review: the backup of one under way, or the one after a pause. */
@@ -439,6 +488,7 @@ export function dozoLearningReviewJob(deps: {
   runtime: AgentRuntime;
   jobs: JobPublisher;
   memory: DozoLearningMemory;
+  secretStore: Pick<SecretStore, "load">;
   executor: Pick<LearningReviewDeps, "resolveModel" | "resolveConnectedModel">;
 }) {
   return async ({ botId }: { botId: string }) => {
@@ -446,18 +496,21 @@ export function dozoLearningReviewJob(deps: {
       deps.prisma.bot.findUnique({ where: { id: botId }, select: { spaceId: true, userId: true } }),
     );
     if (!owner) return;
-    await runAsTenant(owner, () =>
+    const outcome = await runAsTenant(owner, () =>
       reviewLearning(
         {
           prisma: deps.prisma,
           runtime: deps.runtime,
           memory: deps.memory,
+          secretStore: deps.secretStore,
           resolveModel: deps.executor.resolveModel,
           resolveConnectedModel: deps.executor.resolveConnectedModel,
         },
         botId,
       ),
     );
+    // The review under way may still fail and leave the turns: look again once it is over.
+    if (outcome === "held") throw new RetryJobLaterError(HELD_RETRY_MS);
   };
 }
 
@@ -497,8 +550,10 @@ export async function undoLearningChange(
   const change = await findLearningChange(deps.prisma, actor.spaceId, changeId);
   if (!change) throw new ClientError("NOT_FOUND", "This change no longer exists.");
   await checkBot(change.botId);
-  const { botId: _botId, ...shown } = change;
+  const { botId: _botId, supersededBy, ...shown } = change;
   if (change.undoneAt) return shown;
+  // A later change took its line over: the line is that change's, or the owner's.
+  if (supersededBy) throw new DozoLearningChangedError();
   const context = {
     operationId: `learning-undo:${changeId}`,
     traceId: `learning-undo:${changeId}`,

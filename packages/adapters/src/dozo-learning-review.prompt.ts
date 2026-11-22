@@ -6,8 +6,8 @@ export const LEARNING_NOTE_MAX_CHARS = 200;
 /** One message of the conversation the review reads. */
 export type LearningTranscriptLine = { speaker: "owner" | "bot"; text: string };
 
-/** Data never closes the tag that holds it. */
-const asData = (text: string) => text.replaceAll("</", "<\\/");
+/** Data opens and closes no tag: every "<" in it is written as "&lt;". */
+const asData = (text: string) => text.replaceAll("<", "&lt;");
 
 export function learningReviewInstructions(): string {
   return [
