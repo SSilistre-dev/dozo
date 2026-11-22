@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   alert: vi.fn(),
   sheet: vi.fn(),
   push: vi.fn(),
+  newChat: vi.fn(),
   upstream: vi.fn(),
   trust: [] as { id: string; text: string; onPress: () => void }[],
   pins: { threadId: undefined as string | undefined, pins: undefined as unknown[] | undefined },
@@ -32,6 +33,7 @@ vi.mock("./appearance", () => ({ resolveMobileAppearance: () => "dark" }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: api.sheet }));
 vi.mock("./dozo-message-actions", () => ({ useDozoChatPins: () => api.pins }));
 vi.mock("./dozo-trust-bot", () => ({ useDozoTrustActions: () => api.trust }));
+vi.mock("./dozo-bot-chats", () => ({ useDozoNewChat: () => ({ run: api.newChat }) }));
 vi.mock("./user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
@@ -78,7 +80,15 @@ function Exporter() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useRealTimers();
-  for (const mock of [api.rpc, api.share, api.alert, api.sheet, api.push, api.upstream])
+  for (const mock of [
+    api.rpc,
+    api.share,
+    api.alert,
+    api.sheet,
+    api.push,
+    api.newChat,
+    api.upstream,
+  ])
     mock.mockReset();
   api.upstream.mockReturnValue([clear]);
   api.share.mockResolvedValue({ action: "sharedAction" });
@@ -124,6 +134,19 @@ describe("export on mobile", () => {
     expect(api.alert).not.toHaveBeenCalled();
   });
 
+  it("exports an extra chat as chatBotId and chatId, never as its bot's main chat", async () => {
+    await render(<Exporter />);
+    api.rpc.mockResolvedValueOnce({ markdown: "# Launch\n", truncated: false });
+    exportChat({ chatBotId: "bot-1", chatId: "chat-1" }, "Launch");
+    chooseRange("Whole chat");
+    await vi.waitFor(() =>
+      expect(api.share).toHaveBeenCalledWith({ message: "# Launch\n", title: "Launch" }),
+    );
+    const body = api.rpc.mock.lastCall![1] as Record<string, unknown>;
+    expect(body).toMatchObject({ chatBotId: "bot-1", chatId: "chat-1" });
+    expect(body).not.toHaveProperty("botId");
+  });
+
   it("exports a group from the reader's midnight and says when early messages were left out", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 20, 15, 30));
@@ -158,27 +181,39 @@ describe("the bot profile's menu", () => {
     return null;
   }
 
-  it("puts Export before upstream's actions and keeps the header menu as it is", async () => {
+  it("puts New chat and Export before upstream's actions and keeps the header menu as it is", async () => {
     await render(<Profile />);
     expect(api.upstream).toHaveBeenCalledWith("bot-1", "Ada");
-    expect(actions.map((action) => action.text)).toEqual(["Export", "Clear conversation"]);
-    actions[0]!.onPress();
+    expect(actions.map((action) => action.text)).toEqual([
+      "New chat",
+      "Export",
+      "Clear conversation",
+    ]);
+    actions[1]!.onPress();
     expect(api.sheet).toHaveBeenCalledOnce();
+    expect(api.newChat).not.toHaveBeenCalled();
     expect(botProfileMenuOptions).toBeTypeOf("function");
+  });
+
+  it("makes a chat of the bot from New chat", async () => {
+    await render(<Profile />);
+    actions[0]!.onPress();
+    expect(api.newChat).toHaveBeenCalledOnce();
   });
 
   it("offers Pinned only while the chat has pins, and opens the list", async () => {
     api.pins = { threadId: "thread-1", pins: [] };
     await render(<Profile />);
-    expect(actions.map((action) => action.id)).toEqual(["export", "clear"]);
+    expect(actions.map((action) => action.id)).toEqual(["newChat", "export", "clear"]);
     api.pins = { threadId: "thread-1", pins: [{ messageId: "m-1" }] };
     await render(<Profile />);
     expect(actions.map((action) => action.text)).toEqual([
+      "New chat",
       "Export",
       "Pinned",
       "Clear conversation",
     ]);
-    actions[1]!.onPress();
+    actions[2]!.onPress();
     expect(api.push).toHaveBeenCalledWith({
       pathname: "/dozo-pins",
       params: { threadId: "thread-1", botId: "bot-1", name: "Ada" },
@@ -196,6 +231,7 @@ describe("the bot profile's menu for a marked bot", () => {
     }
     await render(<Profile />);
     expect(actions.map((action) => action.text)).toEqual([
+      "New chat",
       "Export",
       "Trust this bot again",
       "Clear conversation",

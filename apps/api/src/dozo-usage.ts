@@ -1,4 +1,4 @@
-import type { DozoCacheSavings, DozoUsageGrouping } from "@rakazo/contracts";
+import type { Actor, DozoCacheSavings, DozoUsageGrouping } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
@@ -85,7 +85,7 @@ async function canGroupByPerson(prisma: PrismaClient, caller: Caller): Promise<b
  * The groups of one grouping. Every grouping reads the caller's own records except `person`,
  * which reads the whole Space and is refused to anyone but its owner, here on the server.
  */
-async function usageGroups(prisma: PrismaClient, caller: Caller, by: DozoUsageGrouping) {
+async function usageGroups(prisma: PrismaClient, caller: Actor, by: DozoUsageGrouping) {
   const member = { spaceId: caller.spaceId, userId: caller.userId };
   if (by === "person") {
     await requireSpaceOwner(prisma, member);
