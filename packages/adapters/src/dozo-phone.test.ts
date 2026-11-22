@@ -543,5 +543,17 @@ describe("conversation memory", () => {
       status: "intended",
     });
     expect(await runReadPhone(run.ctx)).toBe(true);
+    // A run that cannot reach a phone looks nothing up; one whose gate saw a call needs no lookup.
+    const other = setup({ owner: undefined });
+    expect(await runReadPhone(other.ctx)).toBe(false);
+    const plain = setup();
+    (plain.ctx.deps as { userDevices?: unknown }).userDevices = undefined;
+    expect(await runReadPhone(plain.ctx)).toBe(false);
+    const asked = setup({ consent: false });
+    await phoneGate(asked.ctx, false, { ...RANGE });
+    asked.findFirst.mockClear();
+    expect(await runReadPhone(asked.ctx)).toBe(true);
+    expect(other.findFirst).not.toHaveBeenCalled();
+    expect(asked.findFirst).not.toHaveBeenCalled();
   });
 });

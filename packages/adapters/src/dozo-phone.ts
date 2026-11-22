@@ -152,6 +152,9 @@ export function phoneInput(args: Record<string, unknown>): PhoneInput | { error:
   return { from, to, ...(query ? { query } : {}) };
 }
 
+/** Runs whose gate saw a phone call in this process. */
+const phoneRuns = new WeakSet<object>();
+
 /** A call's approval as its handler checks it: the phone it saw, consented to. */
 const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();
 
@@ -169,6 +172,7 @@ export async function phoneGate(
   blocked: boolean,
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
+  phoneRuns.add(ctx);
   const owner = ctx.source.userComputerOwner;
   if (blocked || !owner || (await runCameByToken(ctx))) return "deny";
   if (!(await onlyOwnerReads(ctx.deps.prisma, ctx.thread, owner))) return "deny";
@@ -291,8 +295,16 @@ export async function phoneCalendarRead(ctx: RunContext, call: ToolCall) {
   return read;
 }
 
-/** Whether this run read the phone: its turn is then not kept in conversation memory. */
-export async function runReadPhone(ctx: Pick<RunContext, "deps" | "runId">): Promise<boolean> {
+/**
+ * Whether this run read the phone (or asked to): its turn is then not kept in conversation memory.
+ * Known in this process once the run's gate saw a phone call; an earlier attempt's call is looked
+ * up only for a run that could reach a phone at all, so no other run does any work for it.
+ */
+export async function runReadPhone(
+  ctx: Pick<RunContext, "deps" | "runId" | "source">,
+): Promise<boolean> {
+  if (phoneRuns.has(ctx)) return true;
+  if (!ctx.source.userComputerOwner || !phoneDevices(ctx.deps.userDevices)) return false;
   const effect = await ctx.deps.prisma.externalEffect.findFirst({
     where: { runId: ctx.runId, kind: PHONE_CALENDAR_READ_TOOL },
     select: { id: true },
