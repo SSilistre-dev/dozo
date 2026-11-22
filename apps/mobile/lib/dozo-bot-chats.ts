@@ -42,9 +42,13 @@ export function useDozoChatName(botId: string | undefined, chatId: string | unde
   return chatId ? chats?.find((chat) => chat.id === chatId)?.name : undefined;
 }
 
-/** The bot's name with its extra chat's after it, as the chat's title shows it. */
+/**
+ * What the chat's title names: an extra chat by its own name, beside the bot's avatar, which says
+ * whose it is; the main chat by the bot's. Until the bot is known, nothing (the title's
+ * placeholder).
+ */
 export function dozoTitleName(botName: string | undefined, chatName: string | undefined) {
-  return botName && chatName ? `${botName} · ${chatName}` : botName;
+  return botName && chatName ? chatName : botName;
 }
 
 /** Where a bot's chat opens: its own route, never the route of the bot's main chat. */
