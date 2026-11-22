@@ -230,7 +230,10 @@ describe("reading what waits", () => {
 });
 
 describe("dozoQueueRoutes", () => {
-  type Handler = (args: { context: { actor: Actor }; input: Record<string, unknown> }) => unknown;
+  type Handler = (args: {
+    context: { actor: Actor };
+    input: Record<string, unknown>;
+  }) => Promise<unknown>;
 
   function setup(
     patch: {
