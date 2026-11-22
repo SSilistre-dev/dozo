@@ -1515,10 +1515,10 @@
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
-      "find": "(active ? chatUserBubbleColors(active.color, active.id) : undefined)",
-      "replace": "(active ? dozoChatUserColors(active.color, active.id) : undefined)",
-      "requires": ["packages/core/src/dozo-chat-colors.ts"],
-      "reason": "Dozo look: your own bubble and the send button wear the open bot's Dozo identity colour (the colour its avatar's accessory shows), darkened until white text holds 4.5:1; upstream's colour is one no Dozo avatar shows"
+      "find": "  const userBubble = useMemo(\n    () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),\n    [active?.color, active?.id],\n  );",
+      "replace": "  const neutralBubble = useDozoNeutralBubble();\n  const userBubble = useMemo(\n    () => (active && !neutralBubble ? dozoChatUserColors(active.color, active.id) : undefined),\n    [active?.color, active?.id, neutralBubble],\n  );",
+      "requires": ["packages/core/src/dozo-chat-colors.ts", "apps/web/src/lib/dozo-ui-theme.ts"],
+      "reason": "Dozo look: your own bubble and the send button wear the open bot's Dozo identity colour (the colour its avatar's accessory shows), darkened until white text holds 4.5:1; upstream's colour is one no Dozo avatar shows. With Message color set to Neutral they keep the theme's neutral bubble"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
@@ -1526,6 +1526,41 @@
       "replace": "  chatWoke,\n  dismissableAskMessageIds,\n  dozoChatUserColors,\n",
       "requires": ["packages/core/src/dozo-chat-colors.ts"],
       "reason": "Dozo look: the import of the rule above, in place of upstream's bubble colours"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { desktopBridge } from \"../lib/desktop\";\nimport { hasOpenDialog } from \"../lib/has-open-dialog\";",
+      "replace": "import { desktopBridge } from \"../lib/desktop\";\nimport { useDozoNeutralBubble } from \"../lib/dozo-ui-theme\";\nimport { hasOpenDialog } from \"../lib/has-open-dialog\";",
+      "requires": ["apps/web/src/lib/dozo-ui-theme.ts"],
+      "reason": "Message color: the import of the neutral-bubble choice the bubble rule above reads"
+    },
+    {
+      "file": "packages/ui-tokens/package.json",
+      "find": "    \"./css\": \"./src/tokens.css\"\n  },",
+      "replace": "    \"./css\": \"./src/tokens.css\",\n    \"./dozo-themes\": \"./src/dozo-themes.ts\"\n  },",
+      "requires": ["packages/ui-tokens/src/dozo-themes.ts"],
+      "reason": "themes: the named themes of Settings > Appearance as a subpath of their own, so the app's startup code takes only the storage keys and the picker, loaded with the settings window, takes the list"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { getUiAppearancePreference, setUiAppearance } from \"../lib/ui-appearance\";\nimport type { UiLocale } from \"../lib/ui-locale\";",
+      "replace": "import { getUiAppearancePreference, setUiAppearance } from \"../lib/ui-appearance\";\nimport { DozoAppearancePicker, DozoMessageColorPicker } from \"../components/dozo-appearance\";\nimport type { UiLocale } from \"../lib/ui-locale\";",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "themes: the import of the two rows the next rule shows"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "            <AppearancePicker\n              value={appearance}\n              onChange={(next) => {\n                setAppearance(next);\n                setUiAppearance(next);\n              }}\n            />\n          }\n        />",
+      "replace": "            <DozoAppearancePicker\n              value={appearance}\n              onChange={(next) => {\n                setAppearance(next);\n                setUiAppearance(next);\n              }}\n            />\n          }\n        />\n        <SettingsRow label={<Trans>Message color</Trans>} control={<DozoMessageColorPicker />} />",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "themes: Appearance offers the named themes of dozo/design/themes-v2.css after System, Light and Dark, and Message color sets your own bubble to the bot's colour or a neutral tone (settings-v2.html)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-palette-actions.ts",
+      "find": "import { getUiAppearancePreference, setUiAppearance } from \"../../lib/ui-appearance\";",
+      "replace": "import { getUiAppearancePreference, setUiAppearance } from \"../../lib/dozo-ui-theme\";",
+      "requires": ["apps/web/src/lib/dozo-ui-theme.ts"],
+      "reason": "themes: System, Light or Dark from the command menu also lets go of a named theme, as the settings row does"
     },
     {
       "file": "apps/web/src/lib/bots-sidebar-pref.ts",
@@ -7794,6 +7829,13 @@
     },
     {
       "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"{name} sonrası\"\n\n#.",
+      "replace": "msgstr \"{name} sonrası\"\n\n#: apps/web/src/pages/AccountSettingsOverlay.tsx\n#: apps/web/src/components/dozo-appearance.tsx\nmsgid \"Message color\"\nmsgstr \"Mesaj rengi\"\n\n#: apps/web/src/components/dozo-appearance.tsx\nmsgid \"Bot color\"\nmsgstr \"Bot rengi\"\n\n#: apps/web/src/components/dozo-appearance.tsx\nmsgid \"Neutral\"\nmsgstr \"Nötr\"\n\n#.",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "themes: the Turkish copy of the Message color row"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Sohbeti temizle\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
       "replace": "msgstr \"Sohbeti temizle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"{count, plural, one {Remove # message?} other {Remove # messages?}}\"\nmsgstr \"{count, plural, one {# mesaj kaldırılsın mı?} other {# mesaj kaldırılsın mı?}}\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
       "requires": [
@@ -7830,6 +7872,13 @@
         "apps/web/src/components/dozo-daily-digest-row.tsx"
       ],
       "reason": "upstream test of the general settings: the fork's Access tokens row opens a dialog this test's component mock does not provide, so it is replaced as the quiet-hours row is (dozo-access-tokens.test.tsx covers the row); the daily digest row likewise (dozo-daily-digest-row.test.tsx)"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
+      "find": "vi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "replace": "vi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\nvi.mock(\"../components/dozo-appearance\", () => ({\n  DozoAppearancePicker: () => null,\n  DozoMessageColorPicker: () => null,\n}));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "upstream test of the general settings: the fork's Appearance menu and Message color row use menu parts this test's component mock does not provide, so they are replaced as the quiet-hours row is (dozo-appearance.test.tsx covers both)"
     },
     {
       "file": "packages/core/src/index.ts",
