@@ -9,7 +9,10 @@ import { expect, test } from "./flow";
 
 async function shot(page: Page, name: string) {
   mkdirSync(`${outDir()}/shots`, { recursive: true });
-  await page.screenshot({ path: `${outDir()}/shots/organization-library--${name}.png` });
+  await page.screenshot({
+    path: `${outDir()}/shots/organization-library--${name}.png`,
+    animations: "disabled",
+  });
 }
 
 type Skill = { id: string; name: string; readOnly: boolean };
