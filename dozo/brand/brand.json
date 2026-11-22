@@ -1477,11 +1477,11 @@
       "reason": "Dozo avatars: the art, palette and character choice shared by web and server, and a notification portrait of the same name that draws the Dozo character instead of upstream's body"
     },
     {
-      "file": "packages/ui-web/src/styles.css",
-      "find": "@import \"@rakazo/ui-tokens/css\";\n\n@source",
-      "replace": "@import \"@rakazo/ui-tokens/css\";\n@import \"./dozo-shell.css\";\n\n@source",
+      "file": "apps/web/src/styles.css",
+      "find": "@import \"@rakazo/ui-web/styles.css\";\n\n@source",
+      "replace": "@import \"@rakazo/ui-web/styles.css\";\n@import \"@rakazo/ui-web/dozo-shell.css\";\n\n@source",
       "requires": ["packages/ui-web/src/dozo-shell.css"],
-      "reason": "Dozo look: what the theme file cannot express (pill controls and rows, the sidebar pattern, the wordmark with its seal dot, the tinted active row)"
+      "reason": "Dozo look: what the theme file cannot express (pill controls and rows, the sidebar pattern, the wordmark with its seal dot, the tinted active row). Imported here, not in the package stylesheet, because a component also loads that one from script, which put a second copy of this file in the startup styles"
     },
     {
       "file": "apps/web/public/theme.js",
@@ -7555,12 +7555,13 @@
     {
       "file": "packages/ui-web/package.json",
       "find": "    \"./styles.css\": \"./src/styles.css\",\n    \"./lib/utils\"",
-      "replace": "    \"./styles.css\": \"./src/styles.css\",\n    \"./dozo-auth.css\": \"./src/dozo-auth.css\",\n    \"./dozo-overlays.css\": \"./src/dozo-overlays.css\",\n    \"./lib/utils\"",
+      "replace": "    \"./styles.css\": \"./src/styles.css\",\n    \"./dozo-shell.css\": \"./src/dozo-shell.css\",\n    \"./dozo-auth.css\": \"./src/dozo-auth.css\",\n    \"./dozo-overlays.css\": \"./src/dozo-overlays.css\",\n    \"./lib/utils\"",
       "requires": [
+        "packages/ui-web/src/dozo-shell.css",
         "packages/ui-web/src/dozo-auth.css",
         "packages/ui-web/src/dozo-overlays.css"
       ],
-      "reason": "startup size: the sign-in pages' stylesheet and the menus' and windows' one are not in the shell's, so they load with the sign-in code and right after the app starts instead of before the first paint; the web app imports them by these names"
+      "reason": "startup size: the sign-in pages' stylesheet and the menus' and windows' one are not in the shell's, so they load with the sign-in code and right after the app starts instead of before the first paint; the web app imports them by these names, and the shell's by its own so the app stylesheet holds its one copy"
     },
     {
       "file": "packages/contracts/src/rpc.ts",

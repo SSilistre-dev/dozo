@@ -3,7 +3,8 @@ import * as z from "zod";
 import { Id } from "./ids.js";
 
 /** Why a piece of work waits. `behind_run` is a message held until the run ahead of it ends. */
-export const DozoQueueReason = /* @__PURE__ */ z.enum(["bot_busy", "computer_busy", "behind_run"]);
+export const DozoQueueReason = /* @__PURE__ */ (() =>
+  z.enum(["bot_busy", "computer_busy", "behind_run"]))();
 export type DozoQueueReason = z.infer<typeof DozoQueueReason>;
 
 /**
@@ -12,16 +13,17 @@ export type DozoQueueReason = z.infer<typeof DozoQueueReason>;
  * own (a message's start, a routine's name); anyone else's work carries null and `mine: false`.
  * A run's `id` is the run; a message's `id` is the message.
  */
-export const DozoQueueItemSchema = /* @__PURE__ */ z.object({
-  id: Id,
-  kind: z.enum(["run", "message"]),
-  botId: Id,
-  position: z.number().int().min(1),
-  mine: z.boolean(),
-  reason: DozoQueueReason,
-  waitingFor: z.string().nullable().optional(),
-  label: z.string().nullable().optional(),
-});
+export const DozoQueueItemSchema = /* @__PURE__ */ (() =>
+  z.object({
+    id: Id,
+    kind: z.enum(["run", "message"]),
+    botId: Id,
+    position: z.number().int().min(1),
+    mine: z.boolean(),
+    reason: DozoQueueReason,
+    waitingFor: z.string().nullable().optional(),
+    label: z.string().nullable().optional(),
+  }))();
 export type DozoQueueItem = z.infer<typeof DozoQueueItemSchema>;
 
 export const dozoQueueContract = /* @__PURE__ */ (() => ({

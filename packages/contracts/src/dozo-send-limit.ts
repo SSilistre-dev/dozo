@@ -11,9 +11,9 @@ export const DOZO_DAILY_SEND_CHOICES = [10, 25, 50, 100, 250] as const;
  * something) each of the account's bots may make in a day of the account's timezone without
  * asking. Past it, each send asks.
  */
-export const DozoDailySendsSchema = /* @__PURE__ */ z.number().int().min(1).max(1000);
+export const DozoDailySendsSchema = /* @__PURE__ */ (() => z.number().int().min(1).max(1000))();
 
-const SendLimitState = /* @__PURE__ */ z.object({ dailySends: DozoDailySendsSchema });
+const SendLimitState = /* @__PURE__ */ (() => z.object({ dailySends: DozoDailySendsSchema }))();
 
 export const dozoSendLimitContract = /* @__PURE__ */ (() => ({
   get: oc.output(SendLimitState),
