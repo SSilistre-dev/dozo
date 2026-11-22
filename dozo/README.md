@@ -326,7 +326,7 @@ main chat started, not those of an extra chat.
 
 ## Organization logo
 
-An organization's owner or admin uploads its logo under Settings, Organization
+An organization's owner uploads its logo under Settings, Organization
 (`apps/api/src/dozo-organization-logo.ts`, the auth library's own `organization.logo` column, so no
 migration). The role is checked on the server before the picture is decoded. The bytes must be the
 PNG, JPEG, WebP or GIF the upload names; an SVG is never taken, since it can carry a script. What is

@@ -20,7 +20,7 @@ export class OrganizationLogoError extends ClientError {
 }
 
 /**
- * How an organization looks in its members' sidebars: its logo. Only an owner or admin changes it,
+ * How an organization looks in its members' sidebars: its logo. Only its owner changes it,
  * the role is checked before the picture is decoded, and every member of its Spaces is signalled
  * to read it again.
  */

@@ -1,17 +1,10 @@
 import type { DozoOrganizationLogo, DozoOrganizationMark } from "@rakazo/contracts";
-import { GUEST_ROLE, LIVE_ORGANIZATION } from "./billing.js";
+import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "./billing.js";
 import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
 
-type Db = Pick<PrismaClient, "member" | "organization" | "space" | "spaceMember">;
-
-/** The roles that may change how the organization looks; the auth library stores a comma list. */
-const MANAGER_ROLES = ["owner", "admin"];
-const MANAGER = { OR: MANAGER_ROLES.map((role) => ({ role: { contains: role } })) };
-
-export function managesOrganizationLook(role: string): boolean {
-  return role.split(",").some((value) => MANAGER_ROLES.includes(value.trim()));
-}
+type Db = Pick<PrismaClient, "member" | "spaceMember">;
 
 /** A 128 px WebP the server drew is a few kilobytes; nothing larger is one of them. */
 const STORED_LOGO_MAX_LENGTH = 100_000;
@@ -62,31 +55,37 @@ export async function readOrganizationLogo(
   if (!member) throw new IsolationError();
   return {
     logo: storedLogo(member.organization.logo),
-    canManage: managesOrganizationLook(member.role),
+    // Only the owner: no other organization role is ever given in this product.
+    canManage: isOwnerRole(member.role),
   };
 }
 
 /**
- * Changes the logo for an owner or admin, in one statement that checks the role, so a role taken
- * away meanwhile changes nothing. Returns the organization's Spaces, whose members' sidebars show
- * it. The logo must already be one the server drew (`encodeOrganizationLogo`), or null.
+ * Changes the logo for the organization's owner. The owner role is read with `isOwnerRole`, the
+ * one rule for it, from the caller's member row held for the change, so a role taken away
+ * meanwhile either waits for this write or stops it. Returns the organization's Spaces, whose
+ * members' sidebars show it. The logo must already be one the server drew
+ * (`encodeOrganizationLogo`), or null.
  */
 export async function setOrganizationLogo(
-  db: Db,
+  db: Pick<PrismaClient, "$transaction">,
   input: { userId: string; organizationId: string; logo: string | null },
 ): Promise<{ spaceIds: string[] }> {
-  const { count } = await db.organization.updateMany({
-    where: {
-      id: input.organizationId,
-      members: { some: { userId: input.userId, ...MANAGER } },
-      ...LIVE_ORGANIZATION,
-    },
-    data: { logo: input.logo },
+  return db.$transaction(async (tx) => {
+    const [member] = await tx.$queryRaw<Array<{ role: string }>>(Prisma.sql`
+      SELECT "role" FROM "member"
+      WHERE "organizationId" = ${input.organizationId} AND "userId" = ${input.userId}
+      FOR SHARE`);
+    if (!member || !isOwnerRole(member.role)) throw new IsolationError();
+    const { count } = await tx.organization.updateMany({
+      where: { id: input.organizationId, ...LIVE_ORGANIZATION },
+      data: { logo: input.logo },
+    });
+    if (count === 0) throw new IsolationError();
+    const spaces = await tx.space.findMany({
+      where: { organizationId: input.organizationId, deletingAt: null },
+      select: { id: true },
+    });
+    return { spaceIds: spaces.map((space) => space.id) };
   });
-  if (count === 0) throw new IsolationError();
-  const spaces = await db.space.findMany({
-    where: { organizationId: input.organizationId, deletingAt: null },
-    select: { id: true },
-  });
-  return { spaceIds: spaces.map((space) => space.id) };
 }

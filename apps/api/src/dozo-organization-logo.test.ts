@@ -21,7 +21,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 type Where = Record<string, unknown>;
 
 /**
- * Two organizations as the tables hold them. Acme: its owner and an admin in its home Space, a
+ * Two organizations as the tables hold them. Acme: its owner and a look-alike "superadmin" in its home Space, a
  * guest invited to its shared Space. Other: a stranger who owns it.
  */
 function world() {
@@ -31,7 +31,7 @@ function world() {
   };
   const members = new Map([
     ["acme:owner", "owner"],
-    ["acme:admin", "admin"],
+    ["acme:admin", "superadmin"],
     ["acme:guest", "guest"],
     ["acme:member", "member"],
     ["other:stranger", "owner"],
@@ -64,11 +64,15 @@ function world() {
         };
       },
     },
+    // The locking read of the caller's member row, as Postgres answers it.
+    $queryRaw: async (sql: { values: string[] }) => {
+      const [organizationId, userId] = sql.values;
+      const role = members.get(`${organizationId}:${userId}`);
+      return role ? [{ role }] : [];
+    },
+    $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
     organization: {
       updateMany: async ({ where, data }: { where: Where; data: { logo: string | null } }) => {
-        const { userId } = (where.members as { some: { userId: string } }).some;
-        const role = members.get(`${where.id}:${userId}`);
-        if (role !== "owner" && role !== "admin") return { count: 0 };
         organizations[where.id as string]!.logo = data.logo;
         return { count: 1 };
       },
@@ -148,10 +152,15 @@ describe("organization logo routes", () => {
     expect(await as("guest", "acme-shared").mark()).toEqual({ name: "Acme", logo: saved.logo });
   });
 
-  it("let an admin change and remove it", async () => {
-    await as("admin", "acme-home").set({ organizationId: "acme", logo: await upload() });
+  it("let the owner remove it, and refuse a role that only looks like the owner's", async () => {
+    await as("owner", "acme-home").set({ organizationId: "acme", logo: await upload() });
+    fake.encode.mockClear();
+    expect(
+      await refusal(as("admin", "acme-home").set({ organizationId: "acme", logo: null })),
+    ).toBe("NOT_FOUND");
+    expect(fake.encode).not.toHaveBeenCalled();
     expect(w.organizations.acme!.logo).toMatch(/^data:image\/webp;base64,/);
-    expect(await as("admin", "acme-home").set({ organizationId: "acme", logo: null })).toEqual({
+    expect(await as("owner", "acme-home").set({ organizationId: "acme", logo: null })).toEqual({
       logo: null,
       canManage: true,
     });

@@ -9456,7 +9456,7 @@
       "requires": [
         "packages/contracts/src/dozo-organization-logo.ts"
       ],
-      "reason": "organization logo: reading the logo of the open Space's organization, and its owner or an admin changing it, join the app contract"
+      "reason": "organization logo: reading the logo of the open Space's organization, and its owner changing it, join the app contract"
     },
     {
       "file": "apps/api/src/router.ts",
@@ -9476,7 +9476,7 @@
         "apps/api/src/dozo-organization-logo.ts",
         "apps/api/src/dozo-organization-logo.test.ts"
       ],
-      "reason": "organization logo: the router serves the logo to the organization's members and lets only its owner or an admin change it, checked on the server"
+      "reason": "organization logo: the router serves the logo to the organization's members and lets only its owner change it, checked on the server"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -9530,7 +9530,7 @@
       "requires": [
         "apps/web/src/pages/dozo-organization-logo-row.tsx"
       ],
-      "reason": "organization logo: the organization's settings show its logo under its name; its owner or an admin uploads or removes it there"
+      "reason": "organization logo: the organization's settings show its logo under its name; its owner uploads or removes it there"
     },
     {
       "file": "apps/web/src/pages/shell/use-browser-notifications.ts",

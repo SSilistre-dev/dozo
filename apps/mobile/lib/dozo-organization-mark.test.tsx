@@ -8,7 +8,15 @@ const state = vi.hoisted(() => ({
   read: vi.fn(),
   signal: undefined as (() => unknown) | undefined,
   enabled: [] as boolean[],
+  focus: undefined as (() => void) | undefined,
 }));
+
+vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => void) => {
+    state.focus = effect;
+  },
+}));
+vi.mock("./app-foreground", () => ({ useAppForeground: () => true }));
 
 vi.mock("react-native", () => ({
   StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
@@ -66,6 +74,7 @@ beforeEach(() => {
   state.read.mockReset();
   state.signal = undefined;
   state.enabled = [];
+  state.focus = undefined;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -101,6 +110,15 @@ it("reads it again on the roster signal a change sends", async () => {
   await act(async () => {
     await state.signal?.();
   });
+  await vi.waitFor(() => expect(logo()?.getAttribute("src")).toBe(LOGO));
+});
+
+it("reads it again when the home screen comes back into focus", async () => {
+  state.read.mockResolvedValue({ name: "Acme", logo: null });
+  await render(<Home />);
+  await vi.waitFor(() => expect(state.read).toHaveBeenCalledTimes(1));
+  state.read.mockResolvedValue({ name: "Acme", logo: LOGO });
+  await act(async () => state.focus?.());
   await vi.waitFor(() => expect(logo()?.getAttribute("src")).toBe(LOGO));
 });
 

@@ -86,7 +86,8 @@ describePostgres("organization logo (PostgreSQL)", () => {
     }
     await db.space.create({ data: { id: acme.shared, organizationId: acme.id, name: "Shared" } });
     await member(acme.id, owner, "owner");
-    await member(acme.id, admin, "admin");
+    // The auth library stores a comma list; this one holds the owner role among others.
+    await member(acme.id, admin, "member,owner");
     // A guest belongs through the Spaces they were invited to; here the shared one.
     await member(acme.id, guest, "guest");
     await member(acme.id, departed, "guest");
@@ -117,13 +118,34 @@ describePostgres("organization logo (PostgreSQL)", () => {
     });
   });
 
-  it("is changed by an admin too", async () => {
+  it("is changed by an owner whose role is one of several", async () => {
     await setOrganizationLogo(db, { userId: admin, organizationId: acme.id, logo: OTHER_LOGO });
     expect(await readOrganizationLogo(db, { userId: admin, organizationId: acme.id })).toEqual({
       logo: OTHER_LOGO,
       canManage: true,
     });
     await setOrganizationLogo(db, { userId: owner, organizationId: acme.id, logo: LOGO });
+  });
+
+  it("is never changed by a role that only looks like the owner's", async () => {
+    for (const role of ["admin", "coowner", "superadmin"]) {
+      await db.member.updateMany({
+        where: { organizationId: acme.id, userId: admin },
+        data: { role },
+      });
+      await expect(
+        setOrganizationLogo(db, { userId: admin, organizationId: acme.id, logo: OTHER_LOGO }),
+        role,
+      ).rejects.toBeInstanceOf(IsolationError);
+      expect(await readOrganizationLogo(db, { userId: admin, organizationId: acme.id })).toEqual({
+        logo: LOGO,
+        canManage: false,
+      });
+    }
+    await db.member.updateMany({
+      where: { organizationId: acme.id, userId: admin },
+      data: { role: "member,owner" },
+    });
   });
 
   it("is never changed by a guest, and a guest cannot read the settings copy", async () => {

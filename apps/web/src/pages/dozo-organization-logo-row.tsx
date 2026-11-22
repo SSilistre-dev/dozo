@@ -26,7 +26,7 @@ export function readLogoFile(file: File): Promise<string | null> {
 }
 
 /**
- * The organization's logo in its settings: its owner or an admin uploads or removes it, anyone
+ * The organization's logo in its settings: its owner uploads or removes it, anyone
  * else in the organization only sees it. Without a logo and the right to add one there is no row.
  */
 export function DozoOrganizationLogoRow({ organizationId }: { organizationId: string }) {

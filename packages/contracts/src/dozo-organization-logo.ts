@@ -28,7 +28,7 @@ export const dozoOrganizationLogoContract = {
   mark: oc.output(DozoOrganizationMarkSchema),
   /** A member of the organization (not a guest of one of its Spaces). */
   get: oc.input(z.object({ organizationId: Id })).output(DozoOrganizationLogoSchema),
-  /** Owner or admin only. A picture is checked and re-encoded by the server; null removes it. */
+  /** The owner only. A picture is checked and re-encoded by the server; null removes it. */
   set: oc
     .input(
       z.object({

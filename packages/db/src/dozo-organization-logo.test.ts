@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  managesOrganizationLook,
   readOrganizationLogo,
   readOrganizationMark,
   setOrganizationLogo,
@@ -13,27 +12,27 @@ function fakeDb(
   rows: {
     membership?: unknown;
     member?: unknown;
+    /** The caller's member row as the locking read finds it. */
+    role?: string;
     updated?: number;
     spaces?: Array<{ id: string }>;
   } = {},
 ) {
-  return {
+  const db = {
     spaceMember: { findUnique: vi.fn(async () => rows.membership ?? null) },
     member: { findFirst: vi.fn(async () => rows.member ?? null) },
+    $queryRaw: vi.fn(async (..._sql: unknown[]) =>
+      rows.role === undefined ? [] : [{ role: rows.role }],
+    ),
     organization: { updateMany: vi.fn(async () => ({ count: rows.updated ?? 0 })) },
     space: { findMany: vi.fn(async () => rows.spaces ?? []) },
+    $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)),
   };
+  return db;
 }
 
-describe("who manages how an organization looks", () => {
-  it("is its owner or an admin, never a member or a guest", () => {
-    expect(managesOrganizationLook("owner")).toBe(true);
-    expect(managesOrganizationLook("member, admin")).toBe(true);
-    expect(managesOrganizationLook("member")).toBe(false);
-    expect(managesOrganizationLook("guest")).toBe(false);
-    expect(managesOrganizationLook("superadmin")).toBe(false);
-  });
-});
+const sqlOf = (db: ReturnType<typeof fakeDb>) =>
+  (db.$queryRaw.mock.calls[0]?.[0] as { strings: string[] } | undefined)?.strings.join("?") ?? "";
 
 describe("the sidebar's organization mark", () => {
   it("is the logo of the organization that holds the Space", async () => {
@@ -87,15 +86,21 @@ describe("the sidebar's organization mark", () => {
 });
 
 describe("an organization's logo in its settings", () => {
-  it("says whether the member may change it", async () => {
-    const owner = fakeDb({ member: { role: "owner", organization: { logo: LOGO } } });
-    await expect(
-      readOrganizationLogo(owner as never, { userId: "u", organizationId: "o" }),
-    ).resolves.toEqual({ logo: LOGO, canManage: true });
-    const member = fakeDb({ member: { role: "member", organization: { logo: null } } });
-    await expect(
-      readOrganizationLogo(member as never, { userId: "u", organizationId: "o" }),
-    ).resolves.toEqual({ logo: null, canManage: false });
+  it("may be changed by its owner only: one rule, the role list read whole", async () => {
+    const canManage = async (role: string) =>
+      (
+        await readOrganizationLogo(
+          fakeDb({ member: { role, organization: { logo: LOGO } } }) as never,
+          {
+            userId: "u",
+            organizationId: "o",
+          },
+        )
+      ).canManage;
+    expect(await canManage("owner")).toBe(true);
+    expect(await canManage("member, owner")).toBe(true);
+    for (const role of ["admin", "member", "coowner", "superadmin", "owners"])
+      expect(await canManage(role), role).toBe(false);
   });
 
   it("is read only for the organization's own members, never its guests", async () => {
@@ -112,27 +117,36 @@ describe("an organization's logo in its settings", () => {
 });
 
 describe("changing an organization's logo", () => {
-  it("checks the role in the same statement and names the Spaces to signal", async () => {
-    const db = fakeDb({ updated: 1, spaces: [{ id: "s1" }, { id: "s2" }] });
+  it("lets the owner change it while their member row is held, and names the Spaces to signal", async () => {
+    const db = fakeDb({ role: "owner", updated: 1, spaces: [{ id: "s1" }, { id: "s2" }] });
     await expect(
       setOrganizationLogo(db as never, { userId: "u", organizationId: "o", logo: LOGO }),
     ).resolves.toEqual({ spaceIds: ["s1", "s2"] });
+    expect(sqlOf(db)).toMatch(/FROM "member".*FOR SHARE/s);
+    const [locked] = db.$queryRaw.mock.calls[0] as [{ values: unknown[] }];
+    expect(locked.values).toEqual(["o", "u"]);
     expect(db.organization.updateMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        id: "o",
-        members: {
-          some: {
-            userId: "u",
-            OR: [{ role: { contains: "owner" } }, { role: { contains: "admin" } }],
-          },
-        },
-      }),
+      where: expect.objectContaining({ id: "o" }),
       data: { logo: LOGO },
     });
+    const listed = fakeDb({ role: "member,owner", updated: 1 });
+    await setOrganizationLogo(listed as never, { userId: "u", organizationId: "o", logo: null });
+    expect(listed.organization.updateMany).toHaveBeenCalled();
   });
 
-  it("changes nothing for anyone else", async () => {
-    const db = fakeDb({ updated: 0 });
+  it("changes nothing for a role that only looks like the owner's, nor for anyone without one", async () => {
+    for (const role of ["coowner", "superadmin", "admin", "guest", "owners", undefined]) {
+      const db = fakeDb({ role, updated: 1 });
+      await expect(
+        setOrganizationLogo(db as never, { userId: "u", organizationId: "o", logo: null }),
+        String(role),
+      ).rejects.toBeInstanceOf(IsolationError);
+      expect(db.organization.updateMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it("changes nothing in an organization being deleted", async () => {
+    const db = fakeDb({ role: "owner", updated: 0 });
     await expect(
       setOrganizationLogo(db as never, { userId: "u", organizationId: "o", logo: null }),
     ).rejects.toBeInstanceOf(IsolationError);

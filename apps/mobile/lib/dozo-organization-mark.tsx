@@ -1,21 +1,21 @@
 import type { DozoOrganizationMark } from "@rakazo/contracts";
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { native, useThemedStyles } from "./native";
 import { queryClient, rpcQuery } from "./query";
 import { useRosterSignals } from "./roster-signals";
+import { useScreenQuery } from "./screen-query";
 
 export const organizationMarkRead = () => rpcQuery("dozoOrganizationLogo/mark");
 
 /**
- * The logo of the organization the selected Space belongs to, when it has one. Read again on the
- * roster signal a logo change sends and on each return to the app. Mobile only shows it: the logo
+ * The logo of the organization the selected Space belongs to, when it has one: the home screen's
+ * read, again on focus and on each return to the app, and on the roster signal a change sends. Mobile only shows it: the logo
  * is uploaded on the web or desktop app.
  */
 export function useDozoOrganizationMark(enabled: boolean): DozoOrganizationMark | undefined {
   const read = organizationMarkRead();
-  const mark = useQuery({ ...read, enabled, staleTime: Infinity }, queryClient).data;
+  const mark = useScreenQuery(read, { enabled }).data;
   useRosterSignals(() => queryClient.invalidateQueries({ queryKey: read.queryKey }), enabled);
   return mark?.logo ? mark : undefined;
 }
