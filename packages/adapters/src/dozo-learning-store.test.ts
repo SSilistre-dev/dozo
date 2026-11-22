@@ -167,12 +167,20 @@ describe("learning store", () => {
   });
 
   it("settles a write that landed: an undo is marked, its lines handed back", async () => {
-    const landed = db([{ id: "c1" }]);
+    const landed = db([
+      { id: "c1", botId: "bot-1", spaceId: "space-1", after: "Likes tea" },
+      { id: "c2", botId: "bot-1", spaceId: "space-1", after: null },
+    ]);
     await settleLearningWrite(landed.client, "tag-1", true);
     const sql = landed.sql();
     expect(sql[0]).toContain('SET "undoneAt" = CURRENT_TIMESTAMP');
-    expect(sql[1]).toContain('SET "supersededBy" = NULL WHERE "supersededBy" = ?');
-    expect(sql[2]).toContain('SET pending = NULL, "pendingTag" = NULL');
+    // The undone add's line is turned down; the undone remove's put a line back.
+    expect(sql[1]).toContain("INSERT INTO dozo_learning_rejections");
+    expect(landed.executeRaw.mock.calls[0]!.slice(2)).toEqual(["bot-1", "space-1", "Likes tea"]);
+    expect(sql[2]).toContain("DELETE FROM dozo_learning_rejections");
+    expect(sql[3]).toContain('SET "supersededBy" = NULL WHERE "supersededBy" = ?');
+    expect(sql[4]).toContain('SET "supersededBy" = NULL WHERE "supersededBy" = ?');
+    expect(sql[5]).toContain('SET pending = NULL, "pendingTag" = NULL');
   });
 
   it("settles a write that did not land: a review's changes go, an undo stays undone-less", async () => {
@@ -211,14 +219,17 @@ describe("learning store", () => {
   });
 
   it("reads the lines the owner turned down, and marks lines the owner edited", async () => {
-    const rejected = db([{ after: "x" }]);
+    const rejected = db([{ text: "x" }]);
     expect(await rejectedLearningLines(rejected.client, "bot-1")).toEqual(["x"]);
-    expect(rejected.sql()[0]).toContain('"ownerEditedAt" IS NOT NULL');
-    const edited = db();
+    expect(rejected.sql()[0]).toContain("FROM dozo_learning_rejections");
+    const edited = db([{ botId: "bot-1", spaceId: "space-1", after: "Likes tea" }]);
     await markLearningLinesOwnerEdited(edited.client, ["c1"]);
-    expect(edited.executeRaw.mock.calls[0]!.slice(1)).toEqual([["c1"]]);
+    expect(edited.queryRaw.mock.calls[0]!.slice(1)).toEqual([["c1"]]);
+    expect(edited.sql()[0]).toContain('SET "ownerEditedAt" = CURRENT_TIMESTAMP');
+    expect(edited.executeRaw.mock.calls[0]!.slice(2)).toEqual(["bot-1", "space-1", "Likes tea"]);
     const none = db();
     await markLearningLinesOwnerEdited(none.client, []);
+    expect(none.queryRaw).not.toHaveBeenCalled();
     expect(none.executeRaw).not.toHaveBeenCalled();
   });
 });

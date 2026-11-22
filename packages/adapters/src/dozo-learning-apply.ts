@@ -90,6 +90,15 @@ export function parseLearningAnswer(text: string, ids: ReadonlySet<string>): Lea
   return changes.every((change) => change.op === "add" || ids.has(change.id)) ? changes : null;
 }
 
+/**
+ * The one key a note is compared by against the lines the owner turned down: every run of
+ * whitespace (what `\s` matches, no-break spaces included) is one space, the ends trimmed, and
+ * case ignored, so a line written again with other spacing or case is the same line.
+ */
+export function learningNoteKey(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 export const linesOf = (content: string) => content.replace(/\r\n/g, "\n").split("\n");
 
 /** How many lines read exactly `line`: a change reaches a line only when it is the one. */
@@ -108,7 +117,8 @@ function joinLines(lines: string[]): string {
 /**
  * The notes with a review's changes applied, and what was applied. An update or a remove reaches
  * only the review's own line (`own`: id to line), and only while exactly one line reads as it
- * wrote it; an add is appended. A line the owner turned down (`rejected`) is never written again.
+ * wrote it; an add is appended. A line the owner turned down (`rejected`) is never written again,
+ * in any spacing or case (learningNoteKey).
  * Edits to own lines come first, so they can make room: a change that would grow the notes past
  * `maxBytes` is dropped. The owner's lines are never touched.
  */
@@ -126,6 +136,8 @@ export function applyLearningOps(
     return bytes <= maxBytes || bytes <= byteLength(joinLines(lines));
   };
   const present = (text: string) => lines.some((line) => line.trim() === text);
+  const refused = new Set([...rejected].map(learningNoteKey));
+  const turnedDown = (text: string) => refused.has(learningNoteKey(text));
   const edits = ops.filter((op) => op.op !== "add");
   const adds = ops.filter((op) => op.op === "add");
   for (const op of edits) {
@@ -137,7 +149,7 @@ export function applyLearningOps(
       applied.push({ kind: "remove", before: line, after: null });
       continue;
     }
-    if (op.text === line || present(op.text) || rejected.has(op.text)) continue;
+    if (op.text === line || present(op.text) || turnedDown(op.text)) continue;
     const next = lines.map((value, index) => (index === at ? op.text : value));
     if (!fits(next)) continue;
     lines = next;
@@ -145,7 +157,7 @@ export function applyLearningOps(
   }
   // An add is the remember tool's: appended once, refused past the cap.
   for (const op of adds) {
-    if (rejected.has(op.text)) continue;
+    if (turnedDown(op.text)) continue;
     const current = joinLines(lines);
     const edit = editMemory(current, op.text, "", maxBytes);
     if ("error" in edit || edit.content === current) continue;

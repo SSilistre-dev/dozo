@@ -63,6 +63,20 @@ CREATE INDEX "dozo_learning_changes_messageId_idx" ON "dozo_learning_changes"("m
 CREATE INDEX "dozo_learning_changes_pendingTag_idx" ON "dozo_learning_changes"("pendingTag")
   WHERE "pendingTag" IS NOT NULL;
 
+-- A learned line the owner turned down (undid, or changed or removed in the memory panel), which
+-- no review writes again. Only that line is kept, with no link to the chat it came from, so
+-- deleting the chat does not let it be learned again; it goes with the bot.
+CREATE TABLE "dozo_learning_rejections" (
+  "id" TEXT PRIMARY KEY,
+  "botId" TEXT NOT NULL REFERENCES "bots"("id") ON DELETE CASCADE,
+  "spaceId" TEXT NOT NULL REFERENCES "spaces"("id") ON DELETE CASCADE,
+  "text" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "dozo_learning_rejections_botId_createdAt_idx"
+  ON "dozo_learning_rejections"("botId", "createdAt");
+CREATE INDEX "dozo_learning_rejections_spaceId_idx" ON "dozo_learning_rejections"("spaceId");
+
 -- When each of a bot's reviews asked a model, kept for a day: a bot makes a bounded number a day.
 CREATE TABLE "dozo_learning_reviews" (
   "id" TEXT PRIMARY KEY,
@@ -96,4 +110,10 @@ ALTER TABLE "dozo_learning_reviews" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dozo_learning_reviews_tenant ON "dozo_learning_reviews"
   USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
 CREATE POLICY dozo_learning_reviews_system ON "dozo_learning_reviews"
+  USING ((SELECT app_rls_bypass()));
+
+ALTER TABLE "dozo_learning_rejections" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dozo_learning_rejections_tenant ON "dozo_learning_rejections"
+  USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
+CREATE POLICY dozo_learning_rejections_system ON "dozo_learning_rejections"
   USING ((SELECT app_rls_bypass()));

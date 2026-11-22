@@ -899,8 +899,10 @@ describe("reviewLearning", () => {
       answers: [
         answer([
           { op: "add", text: "Prefers long answers" },
-          { op: "add", text: "Turned down 0" },
-          { op: "update", id: "n1", text: "Turned down 21" },
+          // The same line in other case or spacing is the same line.
+          { op: "add", text: "prefers  LONG answers" },
+          { op: "add", text: "turned\u00a0down   0" },
+          { op: "update", id: "n1", text: "TURNED DOWN 21" },
           { op: "add", text: "Lives in Izmir" },
         ]),
       ],

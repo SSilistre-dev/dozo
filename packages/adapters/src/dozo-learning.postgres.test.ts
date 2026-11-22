@@ -432,6 +432,43 @@ describePostgres("bot learning (PostgreSQL)", () => {
     expect(await as(owner, () => listLearningChanges(prisma, chat.id, 20))).toEqual([]);
   });
 
+  it("keeps a line the owner turned down after the chat it came from is deleted, and only that", async () => {
+    const owner = await member();
+    const chat = await bot(owner);
+    const said = await turn(owner, chat, "Call me Ada");
+    await applied(
+      owner,
+      chat,
+      [
+        { kind: "add", before: null, after: "Call the owner Ada." },
+        { kind: "add", before: null, after: "Likes tea" },
+        { kind: "add", before: null, after: "Kept as learned" },
+      ],
+      { threadId: chat.threadId, messageId: said.messageId },
+    );
+    const lines = await as(owner, () => learnedLines(prisma, chat.id));
+    const id = (after: string) => lines.find((line) => line.after === after)!.id;
+    await undo(owner, id("Call the owner Ada."));
+    await as(owner, () => markLearningLinesOwnerEdited(prisma, [id("Likes tea")]));
+    await system.thread.delete({ where: { id: chat.threadId } });
+    expect(await as(owner, () => listLearningChanges(prisma, chat.id, 20))).toEqual([]);
+    expect(await as(owner, () => rejectedLearningLines(prisma, chat.id))).toEqual([
+      "Likes tea",
+      "Call the owner Ada.",
+    ]);
+    // Nothing else of the chat stays: no thread, message or other line beside the turned-down text.
+    const kept = await system.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT * FROM dozo_learning_rejections WHERE "botId" = ${chat.id}`;
+    expect(Object.keys(kept[0]!).sort()).toEqual(["botId", "createdAt", "id", "spaceId", "text"]);
+    // A second member's Space never sees them, and they go with the bot.
+    const stranger = await member();
+    expect(await as(stranger, () => rejectedLearningLines(prisma, chat.id))).toEqual([]);
+    await system.bot.delete({ where: { id: chat.id } });
+    const gone = await system.$queryRaw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n FROM dozo_learning_rejections WHERE "botId" = ${chat.id}`;
+    expect(gone[0]!.n).toBe(0);
+  });
+
   it("tells whether a tagged write reached the bot's notes", async () => {
     const owner = await member();
     const chat = await bot(owner);
@@ -483,5 +520,49 @@ describePostgres("bot learning (PostgreSQL)", () => {
       },
     });
     expect(await as(owner, () => learningAvailable(prisma, chat))).toBe(false);
+  });
+
+  it("turns learning off for good in a Space someone else joins, however they join", async () => {
+    const owner = await member();
+    const chat = await bot(owner);
+    const elsewhere = await bot(await member());
+    for (const learning of [chat, elsewhere])
+      await system.$executeRaw`
+        INSERT INTO dozo_bot_learning ("botId", "spaceId", mode)
+        VALUES (${learning.id}, ${learning.spaceId}, 'auto')`;
+    await record(owner, chat, await turn(owner, chat, "Call me Ada"));
+    const guest = await member();
+    const organizationId = owner.userId;
+    // Joining through the app's own path (an invite), in the runtime login's own transaction.
+    await system.member.create({
+      data: {
+        id: `m3-${guest.userId}`,
+        organizationId,
+        userId: guest.userId,
+        role: "guest",
+        createdAt: new Date(),
+      },
+    });
+    const joined = randomUUID();
+    await runAsTenant(guest, () =>
+      prisma.spaceMember.create({
+        data: {
+          id: joined,
+          spaceId: owner.spaceId,
+          organizationId,
+          userId: guest.userId,
+          role: "member",
+          createdAt: new Date(),
+        },
+      }),
+    );
+    expect(await as(owner, () => learningMode(prisma, chat.id))).toBe("off");
+    expect(await as(owner, () => pendingLearningTurns(prisma, chat.id, 10))).toEqual([]);
+    // Another Space's bot keeps learning.
+    expect(await system.$queryRaw`SELECT mode FROM dozo_bot_learning WHERE "botId" = ${elsewhere.id}`)
+      .toEqual([{ mode: "auto" }]);
+    // The owner turns it on again only once they are alone again.
+    await system.spaceMember.delete({ where: { id: joined } });
+    expect(await as(owner, () => learningMode(prisma, chat.id))).toBe("off");
   });
 });

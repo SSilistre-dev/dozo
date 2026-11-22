@@ -154,15 +154,32 @@ export async function learnedLines(db: Db, botId: string): Promise<LearnedLine[]
 
 /**
  * Lines the owner turned down, newest first: a learned line they undid, or changed or removed
- * in the memory panel. A review is not to write them again.
+ * in the memory panel. A review is not to write them again. They are kept apart from the changes
+ * (dozo_learning_rejections, with no link to a chat), so deleting the chat a line came from does
+ * not let it be learned again.
  */
 export async function rejectedLearningLines(db: Db, botId: string): Promise<string[]> {
-  const rows = await db.$queryRaw<Array<{ after: string }>>`
-    SELECT "after" FROM dozo_learning_changes
-    WHERE "botId" = ${botId} AND kind IN ('add', 'update')
-      AND ("undoneAt" IS NOT NULL OR "ownerEditedAt" IS NOT NULL)
-    ORDER BY COALESCE("undoneAt", "ownerEditedAt") DESC, id DESC LIMIT ${CHANGES_KEPT}`;
-  return rows.map((row) => row.after);
+  const rows = await db.$queryRaw<Array<{ text: string }>>`
+    SELECT text FROM dozo_learning_rejections WHERE "botId" = ${botId}
+    ORDER BY "createdAt" DESC, id DESC LIMIT ${CHANGES_KEPT}`;
+  return rows.map((row) => row.text);
+}
+
+/** Keeps the lines of these changes as turned down, and forgets the bot's past the newest kept. */
+async function rejectLines(
+  db: Db,
+  rows: ReadonlyArray<{ botId: string; spaceId: string; after: string | null }>,
+): Promise<void> {
+  for (const row of rows) {
+    if (row.after === null) continue;
+    await db.$executeRaw`
+      INSERT INTO dozo_learning_rejections (id, "botId", "spaceId", text, "createdAt")
+      VALUES (${randomUUID()}, ${row.botId}, ${row.spaceId}, ${row.after}, CURRENT_TIMESTAMP)`;
+    await db.$executeRaw`
+      DELETE FROM dozo_learning_rejections WHERE "botId" = ${row.botId} AND id NOT IN (
+        SELECT id FROM dozo_learning_rejections WHERE "botId" = ${row.botId}
+        ORDER BY "createdAt" DESC, id DESC LIMIT ${CHANGES_KEPT})`;
+  }
 }
 
 /**
@@ -171,9 +188,11 @@ export async function rejectedLearningLines(db: Db, botId: string): Promise<stri
  */
 export async function markLearningLinesOwnerEdited(db: Db, ids: string[]): Promise<void> {
   if (!ids.length) return;
-  await db.$executeRaw`
+  const edited = await db.$queryRaw<Array<{ botId: string; spaceId: string; after: string | null }>>`
     UPDATE dozo_learning_changes SET "ownerEditedAt" = CURRENT_TIMESTAMP
-    WHERE id = ANY(${ids}::text[]) AND "ownerEditedAt" IS NULL`;
+    WHERE id = ANY(${ids}::text[]) AND "ownerEditedAt" IS NULL
+    RETURNING "botId", "spaceId", "after"`;
+  await rejectLines(db, edited);
 }
 
 export type LearningChangeInput = {
@@ -238,9 +257,14 @@ export async function markLearningUndoPending(
  */
 export async function settleLearningWrite(db: Db, tag: string, landed: boolean): Promise<void> {
   if (landed) {
-    const undone = await db.$queryRaw<Array<{ id: string }>>`
+    const undone = await db.$queryRaw<
+      Array<{ id: string; botId: string; spaceId: string; after: string | null }>
+    >`
       UPDATE dozo_learning_changes SET "undoneAt" = CURRENT_TIMESTAMP
-      WHERE "pendingTag" = ${tag} AND pending = 'undo' AND "undoneAt" IS NULL RETURNING id`;
+      WHERE "pendingTag" = ${tag} AND pending = 'undo' AND "undoneAt" IS NULL
+      RETURNING id, "botId", "spaceId", "after"`;
+    // An undone add or update is a line the owner turned down; an undone remove puts one back.
+    await rejectLines(db, undone);
     for (const { id } of undone)
       await db.$executeRaw`
         UPDATE dozo_learning_changes SET "supersededBy" = NULL WHERE "supersededBy" = ${id}`;
