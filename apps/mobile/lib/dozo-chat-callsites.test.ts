@@ -47,6 +47,8 @@ const MAIN_ONLY: Record<string, string> = {
     "the avatar reads the answer of a read the screen named; consent reads the target's bot",
   "lib/dozo-bot-chats.ts": "names the chat it changes itself, as chatBotId with chatId",
   "lib/dozo-chat-export.ts": "takes the target the caller built, an extra chat's included",
+  "lib/dozo-chat-route.ts":
+    "asks which thread is the bot's main chat, to tell a notification's chat; it names no chat of its own",
   "lib/dozo-queue.ts":
     "bot or group only: the contract has no chat target, so an extra chat shows no waiting line",
   "lib/call-session.ts": "a call is the bot's main chat's; an extra chat starts none",
