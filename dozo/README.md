@@ -373,6 +373,34 @@ logo there and their own in their own Spaces; someone who leaves the Space stops
 A change sends the roster signal of every Space of the organization. No colour is taken from the
 logo: the app stays monochrome. Mobile shows the logo only; it is uploaded on the web or desktop app.
 
+## Organization skill library
+
+An organization's owner puts a skill they wrote in its library with the Organization switch in the
+skill's editor (web and desktop; shown once the organization has someone to share with). Every
+member of the organization's Spaces then finds it in their skills, marked Organization and read
+only, and their bots use it: the catalog, `/` and `skill_read` reach it
+(`packages/db/src/dozo-organization-skills.ts`, tables `dozo_organization_skills` and
+`dozo_organization_skill_hides`, `apps/api/src/dozo-organization-library.ts`). It is the one
+skill system widened: the skill stays its owner's `agent_skills` row, only the owner changes or
+deletes it, and writes keep the owner-only lookup.
+
+One read decides what a member gets, on every read and in a row-level policy, never by clean-up:
+they are a member of the open Space; the person who shared the skill still owns the organization
+(`dozo_is_owner_role`, the SQL twin of `isOwnerRole`, tested against it) and still owns the skill.
+A sharer demoted, removed or deleted takes the skill out of every member's reach at once. A member's
+own skill and a built-in skill of the same name win over a library skill; a skill named like a
+built-in cannot be shared. Names compare by `skillNameKey` (`packages/core/src/dozo-skill-name.ts`),
+the key the resolver `findSkillByName` uses too, so padding a name gets around neither. The account
+import keeps names as given (upstream's behaviour), which is why that matters. A member turns a library skill off for their own bots with the same
+switch (listed under their skills while off, to turn back on). A change to the library, or the
+owner changing or deleting a skill in it, signals every Space of the organization.
+
+Trust: a library skill is the owner's text inside a member's bot, which runs with the member's
+own secrets, connections, memory and approval rules; the owner can change the text later. Only the
+text and its files are shared; nothing is written to or run on a computer by sharing. A run started
+from a chat app by someone who is not the bot's owner gets built-in skills only, as before. Mobile
+marks library skills in the list and opens them read only; turning one off is on the web or desktop.
+
 ## Feedback
 
 The account menu's Send feedback opens a short note with an optional Include diagnostics switch

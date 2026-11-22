@@ -13,6 +13,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 
 import {
   commandAsked,
+  dozoBlockedRefusal,
   dozoCommandBlockRefusal,
   dozoHostedCommandGate,
 } from "./dozo-command-gate.js";
@@ -93,6 +94,20 @@ describe("dozoHostedCommandGate", () => {
     const { plan: decided, args } = await gate("sudo git push --force", { mode, plan });
     expect(decided).toBe("deny");
     expect(dozoCommandBlockRefusal(args)).toContain("blocked for this bot");
+  });
+
+  it("answers a blocked call after recording it, and any other call or plan with nothing", async () => {
+    db.rules.mockResolvedValue([rule(["git", "push"], "block", "user")]);
+    const { args } = await gate("git push", { mode: "ask", plan: "allow" });
+    const audit = vi.fn(async () => undefined);
+    expect(await dozoBlockedRefusal("deny", args, audit)).toEqual({
+      result: { error: expect.stringContaining("blocked for this bot") },
+    });
+    expect(audit).toHaveBeenCalledTimes(1);
+    // A plan that is not a refusal, or a call no block rule refused, is left alone.
+    expect(await dozoBlockedRefusal("allow", args, audit)).toBeUndefined();
+    expect(await dozoBlockedRefusal("deny", { command: "ls" }, audit)).toBeUndefined();
+    expect(audit).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a routine whose command watch runs a blocked command", async () => {

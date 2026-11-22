@@ -33,7 +33,7 @@ export function queueSheet(items: readonly DozoQueueItem[]): {
 
 /** What the sheet's stop buttons are called: the row's name beside the action. */
 export function stopText(item: DozoQueueItem): string {
-  return item.label ? `${t`Stop`} · ${item.label}` : t`Stop`;
+  return item.label ? `${t`Stop`}: ${item.label}` : t`Stop`;
 }
 
 /**
