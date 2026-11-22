@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DozoLearningChange } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 
-// The fork's learning tables (migration 20270116150000_dozo_bot_learning), read and written with
+// The fork's learning tables (migration 20270123130000_dozo_bot_learning), read and written with
 // SQL: they have no model in schema.prisma. Times are timestamptz, read as UTC.
 
 type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw">;
