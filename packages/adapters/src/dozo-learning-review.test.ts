@@ -44,6 +44,9 @@ type Change = LearningChangeInput & {
 const store = vi.hoisted(() => ({
   mode: "auto" as string,
   alone: true,
+  /** Read after the model answered: another member or a guest may join meanwhile. */
+  aloneAfterAnswer: undefined as boolean | undefined,
+  aloneReads: 0,
   reviewsLeft: Number.POSITIVE_INFINITY,
   turns: [] as LearningTurn[],
   changes: [] as Change[],
@@ -81,7 +84,12 @@ vi.mock("./purchase-service.js", async (importOriginal) => ({
 }));
 vi.mock("./dozo-phone.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./dozo-phone.js")>()),
-  onlyOwnerReads: async () => store.alone,
+  onlyOwnerReads: async () => {
+    store.aloneReads += 1;
+    return store.aloneReads > 1 && store.aloneAfterAnswer !== undefined
+      ? store.aloneAfterAnswer
+      : store.alone;
+  },
   runReadPhone: async () => false,
 }));
 vi.mock("./dozo-token-run.js", async (importOriginal) => ({
@@ -414,6 +422,8 @@ const live = () => store.changes.filter((change) => !change.pending);
 beforeEach(() => {
   store.mode = "auto";
   store.alone = true;
+  store.aloneAfterAnswer = undefined;
+  store.aloneReads = 0;
   store.reviewsLeft = Number.POSITIVE_INFINITY;
   store.turns = [];
   store.changes = [];
@@ -1054,6 +1064,19 @@ describe("reviewLearning", () => {
     expect(run.notes.commit).not.toHaveBeenCalled();
     expect(store.changes).toEqual([]);
     expect(store.turns).toEqual([]);
+  });
+
+  it("applies nothing when someone else joined the bot's Space during the review, and drops the turns", async () => {
+    store.aloneAfterAnswer = false;
+    const run = setup({ answers: [answer([{ op: "add", text: "The owner is called Ada." }])] });
+    const waiting = [...store.turns];
+    await reviewLearning(run.deps, BOT.id);
+    expect(run.model.requests).toHaveLength(1);
+    expect(run.notes.commit).not.toHaveBeenCalled();
+    expect(store.changes).toEqual([]);
+    expect(waiting.length).toBeGreaterThan(0);
+    expect(store.turns).toEqual([]);
+    expect(run.deps.events.publishRosterChange).not.toHaveBeenCalled();
   });
 
   it("treats a line the owner typed back after the review replaced it as the owner's", async () => {

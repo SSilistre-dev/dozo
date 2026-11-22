@@ -93,7 +93,6 @@ export type LearningReviewDeps = RunRedactionDeps & {
   events?: LearningEvents;
 };
 
-
 /**
  * Whether the bot may learn: nobody but its owner is a member or guest of its Space, the rule the
  * phone tools follow. A Space's members read its bots' notes and chats.
@@ -338,6 +337,8 @@ async function review(deps: LearningReviewDeps, bot: Bot, signal: AbortSignal): 
   if ((await learningMode(deps.prisma, bot.id)) !== "auto") {
     return consumeLearningTurns(deps.prisma, bot.id, turns);
   }
+  // Another member or a guest joined while it answered: as above, the turns are dropped.
+  if (!(await learningAvailable(deps.prisma, bot))) return dropLearningTurns(deps.prisma, bot.id);
   const ops = parseLearningAnswer(answer, new Set(own.keys()));
   if (ops?.length) {
     const applied = await saveLearnedNotes(deps, bot, context, {
