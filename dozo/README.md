@@ -311,12 +311,35 @@ chat's pins again on every roster signal.
 ## A bot's extra chats
 
 A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`, table
-`dozo_bot_chats`; web and desktop only for now). They are the Space's, like the bot's main chat:
+`dozo_bot_chats`; web, desktop and mobile). They are the Space's, like the bot's main chat:
 every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
 100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
-archived bot does. The bot's memory and computer are one across its chats. Mobile, the bot API,
-CLI and MCP, chat apps and routines use the main chat only; a routine started from an extra chat
-posts in the main chat. The phone's badge counts main chats only, as the phone shows nothing else.
+archived bot does. The bot's memory and computer are one across its chats. Chat apps and routines
+use the main chat only; a routine started from an extra chat posts in the main chat. The phone's
+badge and the inbox rows count main chats only, as web's Dock badge and bot rows do; an extra chat
+has its own unread dot.
+
+On the phone a bot's extra chats are on its profile (reached from the chat's title), under Chats,
+only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
+as read or unread, snooze, pinned, export, archive). New chat is in the profile's "..." menu, and
+names the chat by when it began, as on web. A chat route holds one chat (`DozoChatScope`, from its
+`chatId`, or from the `threadId` of a notification: the main chat opens at once, with no request,
+when that is the bot's main thread as the inbox or the saved copy knows it; any other thread waits
+for the bot's chat list, and one it cannot place (an unreadable list, or an archived chat while the
+main thread is known) shows the bot's profile, never the main chat); its main chat and an extra chat of the same bot can be stacked and share nothing: draft,
+unsent sends, read visit, saved copy, pages, live stream and notifications are each the chat's own,
+and every request about the chat on screen is built by `dozoChatTarget` in
+`apps/mobile/lib/dozo-chat-target.ts`. In an extra chat there are no calls, no attachments and no
+waiting line (the contract names a bot or a group only); `dozo-chat-callsites.test.ts` counts every
+place the app asks about a chat.
+
+The bot API, CLI and MCP reach an open extra chat by its id (`?chat=`, `--chat`, `chat_id`), through
+one rule in `apps/api/src/dozo-api-chats.ts`; without one, every call is the main chat as before. A
+chat the token cannot reach (another bot's or Space's, archived, missing, the main chat's own id) is
+one 404, never the main chat. A token cannot make, rename or archive chats: its scope is "talk to
+my bots", which says nothing about changing them. A chat app's conversation lands in the bot's main
+chat (`dozo-bot-api-chats.postgres.test.ts` pins it); mapping a conversation to an extra chat is a
+product decision not made yet.
 
 Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
 (or with) the web app: an API from before extra chats answers such a request with 400 (its own
@@ -339,6 +362,34 @@ on mobile, for the organization the open Space belongs to. A guest of a shared S
 logo there and their own in their own Spaces; someone who leaves the Space stops getting it at once.
 A change sends the roster signal of every Space of the organization. No colour is taken from the
 logo: the app stays monochrome. Mobile shows the logo only; it is uploaded on the web or desktop app.
+
+## Organization skill library
+
+An organization's owner puts a skill they wrote in its library with the Organization switch in the
+skill's editor (web and desktop; shown once the organization has someone to share with). Every
+member of the organization's Spaces then finds it in their skills, marked Organization and read
+only, and their bots use it: the catalog, `/` and `skill_read` reach it
+(`packages/db/src/dozo-organization-skills.ts`, tables `dozo_organization_skills` and
+`dozo_organization_skill_hides`, `apps/api/src/dozo-organization-library.ts`). It is the one
+skill system widened: the skill stays its owner's `agent_skills` row, only the owner changes or
+deletes it, and writes keep the owner-only lookup.
+
+One read decides what a member gets, on every read and in a row-level policy, never by clean-up:
+they are a member of the open Space; the person who shared the skill still owns the organization
+(`dozo_is_owner_role`, the SQL twin of `isOwnerRole`, tested against it) and still owns the skill.
+A sharer demoted, removed or deleted takes the skill out of every member's reach at once. A member's
+own skill and a built-in skill of the same name win over a library skill; a skill named like a
+built-in cannot be shared. Names compare by `skillNameKey` (`packages/core/src/dozo-skill-name.ts`),
+the key the resolver `findSkillByName` uses too, so padding a name gets around neither. The account
+import keeps names as given (upstream's behaviour), which is why that matters. A member turns a library skill off for their own bots with the same
+switch (listed under their skills while off, to turn back on). A change to the library, or the
+owner changing or deleting a skill in it, signals every Space of the organization.
+
+Trust: a library skill is the owner's text inside a member's bot, which runs with the member's
+own secrets, connections, memory and approval rules; the owner can change the text later. Only the
+text and its files are shared; nothing is written to or run on a computer by sharing. A run started
+from a chat app by someone who is not the bot's owner gets built-in skills only, as before. Mobile
+marks library skills in the list and opens them read only; turning one off is on the web or desktop.
 
 ## Feedback
 

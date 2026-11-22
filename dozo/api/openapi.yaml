@@ -6,8 +6,13 @@ info:
   description: |
     Every call carries a personal access token as a bearer. Make one in the app under
     Settings > General > Security > Access tokens; it is shown once. A token belongs to you, works
-    in the Space it was made in, and can be limited to one bot. It can list bots, send a message and
-    follow the reply, read the chat and export it; nothing else. Cookies are never read here.
+    in the Space it was made in, and can be limited to one bot. It can list bots and their chats,
+    send a message and follow the reply, read a chat and export it; nothing else. Cookies are never
+    read here.
+
+    A bot has its main chat and may have more. A call reaches the main chat unless it names
+    another with `chat`; a chat it cannot reach (another bot's, archived, or none) is 404, never
+    the main chat. Chats are made, renamed and archived in the app.
 
     The answer to a message streams as server-sent events. When the bot stops to ask you something
     (an approval, a question, the computer), the stream ends with that status; answer in the app,
@@ -54,16 +59,46 @@ paths:
                         name: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/dozo/bots/{botId}/chats:
+    parameters:
+      - $ref: "#/components/parameters/BotId"
+    get:
+      operationId: listChats
+      summary: The bot's other chats
+      description: Open chats besides the main one, oldest first. Archived chats are not listed.
+      responses:
+        "200":
+          description: The chats; empty when the bot has only its main chat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chats]
+                properties:
+                  chats:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, createdAt]
+                      properties:
+                        id: { type: string, description: Pass as `chat`. }
+                        name: { type: string }
+                        createdAt: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/v1/dozo/bots/{botId}/messages:
     parameters:
       - $ref: "#/components/parameters/BotId"
+      - $ref: "#/components/parameters/Chat"
     post:
       operationId: sendMessage
       summary: Send the bot a message
       description: |
         Without `Accept: text/event-stream` the answer says where the run starts. With it, the
         reply streams on the same request: a `run` event first, then `delta`, `activity` and
-        `message` events, and a last `status` event.
+        `message` events, and a last `status` event. The chat is named in the query, never in the
+        body: a body with `chat` or `chatId` is refused.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -123,6 +158,7 @@ paths:
   /api/v1/dozo/bots/{botId}/runs/{runId}/events:
     parameters:
       - $ref: "#/components/parameters/BotId"
+      - $ref: "#/components/parameters/Chat"
       - name: runId
         in: path
         required: true
@@ -132,7 +168,7 @@ paths:
       summary: Follow a run again
       description: |
         Resumes after `Last-Event-ID` (or `after`). Without either, a settled run answers its
-        status at once and a running one is followed from now.
+        status at once and a running one is followed from now. Name the chat the run was sent to.
       parameters:
         - name: Last-Event-ID
           in: header
@@ -153,6 +189,7 @@ paths:
   /api/v1/dozo/bots/{botId}/export:
     parameters:
       - $ref: "#/components/parameters/BotId"
+      - $ref: "#/components/parameters/Chat"
     get:
       operationId: exportChat
       summary: The chat as Markdown
@@ -191,6 +228,11 @@ components:
       in: path
       required: true
       schema: { type: string }
+    Chat:
+      name: chat
+      in: query
+      description: One of the bot's chats, from listChats. Without it, the bot's main chat.
+      schema: { type: string, minLength: 1, maxLength: 200 }
   responses:
     Error:
       description: The request was refused; `error` says why.

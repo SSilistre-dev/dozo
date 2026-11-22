@@ -113,7 +113,7 @@ it("opens a native sheet that lists what waits and stops your own", () => {
   const [options, pick] = ui.sheet.mock.calls[0] ?? [];
   expect(options).toEqual({
     message: "1  Queued\n2  Report",
-    options: ["Stop · Report", "Cancel"],
+    options: ["Stop: Report", "Cancel"],
     cancelButtonIndex: 1,
   });
   act(() => pick(1));

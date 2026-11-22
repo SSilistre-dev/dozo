@@ -350,13 +350,14 @@ into it.
   starting in that instant is ended), and the commands already running here, any bot's, are held
   (their process groups stopped, and on Linux also what they started outside them) and let go
   after, since a command could read the screen. Stopping the bot leaves its browser open
-  meanwhile; deleting it ends the sign-in. When they answer, the page goes to the site's home page
-  (Done) or a blank page (Cancel) and the tab's history is cleared, before the bot has it again (a
-  home page that leads elsewhere on its site, as x.com to /home or google.com to www, counts
-  where it led, as long as it is a new document that came after the navigation; one that does
-  not come within ten seconds leaves a blank page instead, and a tab that still holds anything
-  else is ended; a page the sign-in itself left never counts, even under a new address it gave
-  itself with `history.pushState`):
+  meanwhile; deleting it ends the sign-in. When they answer, the tab first goes to a blank page, whose new
+  document ends the sign-in's page and whatever it was starting (a timer, a form, a refresh, a
+  reload, a "Redirecting…" page sending back a code); a tab that will not show it after three
+  tries is ended. Only then does it go to the site's home page (Done), and the tab's history is
+  cleared, before the bot has it again. The home page must come from that navigation: one that
+  leads elsewhere on its site, as x.com to /home or google.com to www, counts where it led, as a
+  new document after the blank one; one that does not come within ten seconds leaves the blank
+  page; a page the sign-in itself left never counts, even under a new address it gave itself:
   neither a return address with a code, nor a half-done step, nor a way back to them reaches the
   server, and the sign-in's events are dropped. The bot learns whether they signed in, and then
   sees the site's home page (or where it led) as anyone signed in would. Only the person ends it; after 15 minutes
@@ -429,7 +430,8 @@ into it.
   "Clear Ada's browser? It is signed out of every site, and asks again before using the browser."
   with Clear and Cancel (in Turkish too, as the menu). Clearing ends the bot's browser and any
   sign-in in it and deletes its profile (every sign-in, cookie and page it kept); no browser of
-  that bot starts meanwhile, and a call already on its way gets nothing. A browser that would not
+  that bot starts until the browser has ended and the profile is gone, even if the server has
+  forgotten meanwhile, and a call already on its way gets nothing. A browser that would not
   close, or whose profile could not be removed, keeps its profile and its row, and a dialog says
   so: "Ada's browser could not be cleared. Try again." A browser an earlier app left running on
   that profile (a crash) is ended first. The bot's browser then stays unstarted until the server
