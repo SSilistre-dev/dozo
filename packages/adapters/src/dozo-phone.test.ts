@@ -384,7 +384,11 @@ describe("a read that fails", () => {
     const moved = setup();
     const kept = { ...RANGE };
     await phoneGate(moved.ctx, false, PHONE_CALENDAR_READ_TOOL, kept);
-    moved.devices.connectedPhone.mockResolvedValue({ deviceId: "phone-2", pairedAt: PAIRED });
+    moved.devices.connectedPhone.mockResolvedValue({
+      deviceId: "phone-2",
+      pairedAt: PAIRED,
+      onSince: PAIRED,
+    });
     const made = call(kept);
     expect(await phoneRead(moved.ctx, made.call)).toHaveProperty(
       "error",
