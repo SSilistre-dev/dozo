@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { dozoChatParam, dozoSavedChatTarget } from "./dozo-chat-target";
@@ -20,7 +21,8 @@ function useSavedMainThread(botId: string | undefined, enabled: boolean) {
   useEffect(() => {
     if (!enabled || !botId) return;
     let live = true;
-    void savedChatsScope().then((scope) => {
+    // A saved copy that cannot be read is no saved copy: the route goes on without it.
+    void bestEffort("read the saved chat scope", savedChatsScope()).then((scope) => {
       if (!live) return;
       const copy = scope ? readSavedThread(scope, dozoSavedChatTarget({ botId })) : null;
       setSaved({ botId, threadId: copy?.threadId ?? null });
@@ -46,6 +48,11 @@ function useSavedMainThread(botId: string | undefined, enabled: boolean) {
  * thread is known and is another one, it is an archived or gone chat, and the list cannot be
  * read at all: the main chat is then the wrong chat, so the route shows the bot's profile, where
  * its chats are listed and read again.
+ *
+ * The list is read again for every such notification and nothing is decided from a copy cached
+ * before the route opened (the app may have waited in the background while a chat was made
+ * elsewhere). When nothing says which thread is the main one, the server is asked for it: only
+ * that thread opens the main chat, any other is the profile.
  */
 export function useDozoRouteChat(params: {
   botId?: string | string[];
@@ -62,21 +69,36 @@ export function useDozoRouteChat(params: {
   const knownMain = inboxMain ?? saved ?? undefined;
   const savedRead = Boolean(inboxMain) || saved !== undefined;
   const lookup = notification && savedRead && knownMain !== threadId;
+  const [openedAt] = useState(Date.now);
   const list = useQuery(
-    { ...rpcQuery("dozoChats/list", { botId: botId ?? "" }), enabled: lookup },
+    {
+      ...rpcQuery("dozoChats/list", { botId: botId ?? "" }),
+      enabled: lookup,
+      staleTime: 0,
+      refetchOnMount: "always",
+    },
+    queryClient,
+  );
+  const found = list.data?.chats.find(
+    (chat) => chat.id === threadId && chat.botId === botId && !chat.archivedAt,
+  );
+  const askMain = lookup && !knownMain && list.isSuccess && !found;
+  const head = useQuery(
+    { ...rpcQuery("threads/head", { botId: botId ?? "" }), enabled: askMain },
     queryClient,
   );
   if (named) return { chatId: named, pending: false, profile: false };
   if (!notification) return { chatId: undefined, pending: false, profile: false };
   if (!savedRead) return { chatId: undefined, pending: true, profile: false };
   if (!lookup) return { chatId: undefined, pending: false, profile: false };
-  if (list.isPending) return { chatId: undefined, pending: true, profile: false };
+  // A copy cached before the route opened is not an answer: wait for this visit's read.
+  if (list.isPending || (list.isFetching && list.dataUpdatedAt < openedAt))
+    return { chatId: undefined, pending: true, profile: false };
   if (list.isError) return { chatId: undefined, pending: false, profile: true };
-  const found = list.data.chats.find(
-    (chat) => chat.id === threadId && chat.botId === botId && !chat.archivedAt,
-  );
   if (found) return { chatId: found.id, pending: false, profile: false };
-  return knownMain
-    ? { chatId: undefined, pending: false, profile: true }
-    : { chatId: undefined, pending: false, profile: false };
+  if (knownMain) return { chatId: undefined, pending: false, profile: true };
+  if (head.isPending) return { chatId: undefined, pending: true, profile: false };
+  if (head.isError || head.data.threadId !== threadId)
+    return { chatId: undefined, pending: false, profile: true };
+  return { chatId: undefined, pending: false, profile: false };
 }

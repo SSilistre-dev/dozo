@@ -13,6 +13,9 @@ const state = vi.hoisted(() => ({
   // The bot's main chat saved on the phone, by its saved-copy target (`bot:<id>`).
   saved: {} as Record<string, { threadId: string }>,
   rpc: vi.fn(),
+  // The bot's main thread as the server names it (threads/head).
+  head: vi.fn(),
+  scope: vi.fn(),
   replace: vi.fn(),
   mounts: [] as (string | undefined)[],
 }));
@@ -44,7 +47,7 @@ vi.mock("./api", () => ({
   selectedSpaceId: () => "space-1",
 }));
 vi.mock("./saved-chats", () => ({
-  savedChatsScope: async () => ({ namespace: "ns" }),
+  savedChatsScope: () => state.scope(),
   readSavedThread: (_scope: unknown, target: string) => state.saved[target] ?? null,
 }));
 vi.mock("./organizations", () => ({ selectSpaceAcrossOrganizations: vi.fn() }));
@@ -70,7 +73,7 @@ vi.mock("./query", async () => {
     queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     rpcQuery: (proc: string, input: unknown) => ({
       queryKey: [proc, input],
-      queryFn: () => state.rpc(proc, input),
+      queryFn: () => (proc === "threads/head" ? state.head(input) : state.rpc(proc, input)),
     }),
   };
 });
@@ -112,6 +115,10 @@ beforeEach(() => {
   state.mounts = [];
   state.replace.mockReset();
   state.rpc.mockReset();
+  state.head.mockReset();
+  state.head.mockResolvedValue({ threadId: "thread-main", cursor: 0 });
+  state.scope.mockReset();
+  state.scope.mockResolvedValue({ namespace: "ns" });
   state.rpc.mockResolvedValue(chats());
   queryClient.clear();
   container = document.createElement("div");
@@ -160,11 +167,13 @@ it("opens the extra chat a notification names, once the bot's chat list says it 
   expect(state.rpc).toHaveBeenCalledExactlyOnceWith("dozoChats/list", { botId: "bot-1" });
 });
 
-it("opens the main chat for a notification about a chat that is archived or not the bot's", async () => {
+it("shows the profile, not the main chat, for a notification about an archived chat when the main thread is unknown", async () => {
   state.params = { botId: "bot-1", threadId: "chat-old" };
   state.rpc.mockResolvedValue(chats({ id: "chat-old", archived: true }, { id: "chat-2" }));
   await render();
-  await vi.waitFor(() => expect(container.textContent).toBe("thread:user-1:main"));
+  await vi.waitFor(() => expect(state.replace).toHaveBeenCalledExactlyOnceWith(profileOf("bot-1")));
+  expect(state.head).toHaveBeenCalledExactlyOnceWith({ botId: "bot-1" });
+  expect(container.textContent).not.toContain("thread:");
 });
 
 // A notification names its thread only. The main chat opens at once when the phone knows which
@@ -197,7 +206,7 @@ it("waits for the list, not the main chat, when the saved copy is another thread
   await vi.waitFor(() => expect(container.textContent).toBe("thread:user-1:chat-1"));
 });
 
-it("opens the main chat when nothing is known and the list names no such chat", async () => {
+it("opens the main chat when nothing is known, the list names no such chat and the server says it is the main thread", async () => {
   state.params = { botId: "bot-1", threadId: "thread-main" };
   const list = deferred<ReturnType<typeof chats>>();
   state.rpc.mockReturnValue(list.promise);
@@ -257,4 +266,53 @@ it("treats a group's route as no extra chat", async () => {
   await render();
   expect(container.textContent).toBe("thread:user-1:main");
   expect(state.rpc).not.toHaveBeenCalled();
+});
+
+it("shows the profile when the server cannot say which thread is the main one", async () => {
+  state.params = { botId: "bot-1", threadId: "chat-old" };
+  state.head.mockRejectedValue(new Error("offline"));
+  await render();
+  await vi.waitFor(() => expect(state.replace).toHaveBeenCalledExactlyOnceWith(profileOf("bot-1")));
+  expect(container.textContent).not.toContain("thread:");
+});
+
+it("waits for a fresh chat list when a stale one is cached, and opens the chat it names", async () => {
+  state.params = { botId: "bot-1", threadId: "chat-new" };
+  state.inboxThread = "thread-main";
+  // Cached before the app went to the background: it does not name the new chat yet.
+  queryClient.setQueryData(["dozoChats/list", { botId: "bot-1" }], chats({ id: "chat-1" }), {
+    updatedAt: Date.now() - 60_000,
+  });
+  const list = deferred<ReturnType<typeof chats>>();
+  state.rpc.mockReturnValue(list.promise);
+  await render();
+  expect(container.querySelector("progress")).not.toBeNull();
+  expect(state.replace).not.toHaveBeenCalled();
+  await act(async () => list.resolve(chats({ id: "chat-1" }, { id: "chat-new" })));
+  await vi.waitFor(() => expect(container.textContent).toBe("thread:user-1:chat-new"));
+  expect(state.replace).not.toHaveBeenCalled();
+});
+
+it("keeps the chat open when the list is read again after it opened", async () => {
+  state.params = { botId: "bot-1", threadId: "chat-1" };
+  state.inboxThread = "thread-main";
+  state.rpc.mockResolvedValue(chats({ id: "chat-1" }));
+  await render();
+  await vi.waitFor(() => expect(container.textContent).toBe("thread:user-1:chat-1"));
+  const again = deferred<ReturnType<typeof chats>>();
+  state.rpc.mockReturnValue(again.promise);
+  await act(async () => {
+    void queryClient.invalidateQueries();
+  });
+  expect(container.textContent).toBe("thread:user-1:chat-1");
+  expect(state.mounts).toEqual(["chat-1"]);
+});
+
+it("does not wait forever when the saved copy cannot be read", async () => {
+  state.params = { botId: "bot-1", threadId: "thread-main" };
+  state.scope.mockRejectedValue(new Error("storage"));
+  await render();
+  // No saved copy: the list and the server's main thread settle it.
+  await vi.waitFor(() => expect(container.textContent).toBe("thread:user-1:main"));
+  expect(container.querySelector("progress")).toBeNull();
 });
