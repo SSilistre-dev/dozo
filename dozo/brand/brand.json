@@ -7569,6 +7569,13 @@
       "reason": "upstream test of the general settings: the fork's Access tokens row opens a dialog this test's component mock does not provide, so it is replaced as the quiet-hours row is (dozo-access-tokens.test.tsx covers the row); the daily digest row likewise (dozo-daily-digest-row.test.tsx)"
     },
     {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
+      "find": "vi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "replace": "vi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\nvi.mock(\"../components/dozo-appearance\", () => ({\n  DozoAppearancePicker: () => null,\n  DozoMessageColorPicker: () => null,\n}));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "upstream test of the general settings: the fork's Appearance menu and Message color row use menu parts this test's component mock does not provide, so they are replaced as the quiet-hours row is (dozo-appearance.test.tsx covers both)"
+    },
+    {
       "file": "packages/core/src/index.ts",
       "find": "export * from \"./answerable-ask.js\";\nexport * from \"./app-connect.js\";\n",
       "replace": "export * from \"./answerable-ask.js\";\nexport * from \"./dozo-token-source.js\";\nexport * from \"./app-connect.js\";\n",
