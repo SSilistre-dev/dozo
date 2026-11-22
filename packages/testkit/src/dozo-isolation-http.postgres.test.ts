@@ -1,8 +1,8 @@
 // Cross-tenant isolation beyond the RPC procedures: every raw HTTP route the app registers, the bot
-// API and its MCP endpoint, the account export link, paired computers, live streams, and what the
+// API and its MCP endpoint, the account export link, paired computers, live streams and what the
 // sign-in endpoints tell about an address. The world, canaries and snapshot are the RPC matrix's
-// (dozo-isolation.test-support.ts); a canary in a foreign caller's answer, or a changed row of P or
-// S, is a leak, and a leak stays red.
+// (dozo-isolation.test-support.ts); a canary in a foreign caller's answer or its headers, a P or
+// S id in its headers, or a changed row of P or S, is a leak, and a leak stays red.
 import { EmailEmulator } from "@rakazo/adapters";
 import { unzipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -15,19 +15,44 @@ import {
   ISOLATION_LOGINS,
   joinWithInvite,
   ORIGIN,
-  rawRpc,
   readAnswer,
   rpc,
-  STREAM_READ_MS,
   sendAndWait,
   signup,
   snapshot,
   snapshotDiff,
   startIsolationApp,
 } from "./dozo-isolation.test-support.js";
+import type {
+  Answer,
+  HttpCaller,
+  HttpRequest,
+  OpenStream,
+  TargetIds,
+} from "./dozo-isolation-http.test-support.js";
 import {
+  AUTH_ENDPOINTS,
+  authRequests,
+  eventType,
+  foreignLeaks,
+  headerText,
+  json,
+  openStream,
+  peer,
+  pool,
+  rawRoutes,
+  requestsFor,
+  send,
+  sendRequest,
+  shape,
+  streamEvents,
+  targetIds,
+} from "./dozo-isolation-http.test-support.js";
+import {
+  AUTH_ENDPOINT_DATA,
   AUTH_ENDPOINT_EXEMPTIONS,
   HTTP_ROUTE_EXEMPTIONS,
+  ROUTE_DATA,
 } from "./dozo-isolation-http-exemptions.js";
 import { asSystem } from "./system-db.js";
 
@@ -38,268 +63,26 @@ const describeWithDatabase = hasDb ? describe : describe.skip;
 const SESSION_RECHECK_MS = 10_000;
 /** apps/api/src/routes/shared.ts: an idle stream sends a heartbeat (and re-checks) after this. */
 const HEARTBEAT_MS = 20_000;
-const CONCURRENCY = 8;
+/** How long B's notification stream is watched after A's last action ends. */
+const QUIET_WINDOW_MS = 5_000;
 const MCP_ACCEPT = "application/json, text/event-stream";
-
-// --- HTTP ----------------------------------------------------------------------------------------
-
-type Answer = { status: number; text: string };
-
-/** A socket peer for the in-process request, so routes that limit per address can tell one. */
-const peer = (n: number) => ({
-  incoming: {
-    socket: { remoteAddress: `198.51.100.${n}`, remotePort: 40_000, remoteFamily: "IPv4" },
-  },
-});
-
-/** The answer as text, read for at most `ms`: a stream is cut there, as a client hanging up. */
-async function readBody(response: Response, ms: number): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-  const hangUp = AbortSignal.timeout(ms);
-  const cancel = () => void reader.cancel();
-  hangUp.addEventListener("abort", cancel, { once: true });
-  try {
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      text += decoder.decode(next.value, { stream: true });
-    }
-  } finally {
-    hangUp.removeEventListener("abort", cancel);
-  }
-  return text;
-}
-
-async function send(
-  world: IsolationWorld,
-  path: string,
-  init: RequestInit = {},
-  from = 1,
-  ms = STREAM_READ_MS,
-): Promise<Answer> {
-  const controller = new AbortController();
-  const response = await world.handles.app.request(
-    path,
-    { ...init, signal: controller.signal },
-    peer(from),
-  );
-  const text = await readBody(response, ms);
-  controller.abort();
-  return { status: response.status, text };
-}
-
-const json = (body: unknown) => ({
-  "content-type": "application/json",
-  body: JSON.stringify(body),
-});
-
-async function pool<T, R>(items: T[], run: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: CONCURRENCY }, async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await run(items[index]!);
-      }
-    }),
-  );
-  return results;
-}
-
-/** A stream read in the background until it ends or is stopped. */
-function follow(response: Response) {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  const state = { text: "", endedAt: 0, frames: [] as { at: number; text: string }[] };
-  const done = (async () => {
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      const text = decoder.decode(next.value, { stream: true });
-      state.text += text;
-      state.frames.push({ at: Date.now(), text });
-    }
-    state.endedAt = Date.now();
-  })();
-  return {
-    state,
-    done,
-    async stop() {
-      await reader.cancel();
-      await done;
-    },
-  };
-}
-
-async function openStream(
-  world: IsolationWorld,
-  cookie: string,
-  procedure: string,
-  input: unknown,
-  spaceId: string,
-) {
-  const controller = new AbortController();
-  const response = await rawRpc(world.app, cookie, procedure, input, spaceId, controller.signal);
-  expect(response.status, `${procedure} opened`).toBe(200);
-  const stream = follow(response);
-  return {
-    state: stream.state,
-    done: stream.done,
-    async stop() {
-      controller.abort();
-      await stream.stop();
-    },
-  };
-}
-
-// --- Routes --------------------------------------------------------------------------------------
-
-type RouteEntry = { method: string; path: string; handler: { length: number } };
-
-/**
- * The routes the app answers itself, as `METHOD /path`: middleware (a handler that takes `next`)
- * is left out, as Hono's own route inspector does, and so is `/rpc/*`, which the RPC matrix covers.
- */
-function rawRoutes(world: IsolationWorld): string[] {
-  const routes = (world.handles.app as unknown as { routes: RouteEntry[] }).routes;
-  return [
-    ...new Set(
-      routes
-        .filter((route) => route.handler.length < 2 && !route.path.startsWith("/rpc/"))
-        .map((route) => `${route.method} ${route.path}`),
-    ),
-  ].sort();
-}
-
-/**
- * Auth endpoints called one by one: the session, account and Space readers, and the ones that take
- * an id a foreign caller could swap in. `{org}`, `{account}` and `{session}` become the target's.
- */
-const AUTH_ENDPOINTS: { method: "GET" | "POST"; path: string; body?: Record<string, string> }[] = [
-  { method: "GET", path: "/api/auth/get-session" },
-  { method: "GET", path: "/api/auth/list-sessions" },
-  { method: "GET", path: "/api/auth/list-accounts" },
-  { method: "GET", path: "/api/auth/account-info?accountId={account}" },
-  { method: "GET", path: "/api/auth/account-security" },
-  { method: "GET", path: "/api/auth/passkey/list-user-passkeys" },
-  { method: "GET", path: "/api/auth/organization/list" },
-  { method: "GET", path: "/api/auth/organization/get-full-organization?organizationId={org}" },
-  { method: "GET", path: "/api/auth/organization/list-members?organizationId={org}" },
-  { method: "GET", path: "/api/auth/organization/get-active-member" },
-  { method: "GET", path: "/api/auth/dozo/email-link?v={account}" },
-  { method: "GET", path: "/api/auth/dozo/hosted-login/keys" },
-  { method: "POST", path: "/api/auth/organization/set-active", body: { organizationId: "{org}" } },
-  {
-    method: "POST",
-    path: "/api/auth/organization/remove-member",
-    body: { memberIdOrEmail: "{owner}", organizationId: "{org}" },
-  },
-  {
-    method: "POST",
-    path: "/api/auth/unlink-account",
-    body: { providerId: "credential", accountId: "{account}" },
-  },
-  { method: "POST", path: "/api/auth/revoke-session", body: { token: "{session}" } },
-  { method: "POST", path: "/api/auth/passkey/delete-passkey", body: { id: "{account}" } },
-  { method: "POST", path: "/api/auth/request-identity-code" },
-];
-
-type HttpCaller = { name: string; headers: Record<string, string>; from: number };
-type HttpCall = { caller: HttpCaller; route: string; method: string; url: string; body?: string };
-type TargetIds = Target["ids"] & { deviceId?: string; accountId?: string; session?: string };
-
-/** One request per method a route answers, every id in it the target's. */
-function requestsFor(
-  route: string,
-  ids: TargetIds,
-): { method: string; url: string; body?: string }[] {
-  const [method = "", path = ""] = route.split(" ");
-  const param: Record<string, string | undefined> = {
-    botId: ids.botId,
-    runId: ids.runId,
-    deviceId: ids.deviceId,
-    token: ids.pageId,
-    file: ids.artifactId,
-    surface: "web",
-    provider: "fake",
-  };
-  const url = path
-    .replace(/:(\w+)/g, (_match, name: string) => param[name] ?? ids.botId ?? "x")
-    .replace(/\*/g, ids.botId ?? "x");
-  const query = new URLSearchParams({
-    botId: ids.botId ?? "",
-    chat: ids.chatId ?? "",
-    chatId: ids.chatId ?? "",
-    spaceId: ids.spaceId ?? "",
-    organizationId: ids.organizationId ?? "",
-    token: ids.pageId ?? "",
-    after: "-1",
-  });
-  const body = JSON.stringify({
-    botId: ids.botId,
-    chatId: ids.chatId,
-    threadId: ids.threadId,
-    runId: ids.runId,
-    spaceId: ids.spaceId,
-    organizationId: ids.organizationId,
-    userId: ids.ownerUserId,
-    deviceId: ids.deviceId,
-    artifactId: ids.artifactId,
-    text: "iso-probe",
-  });
-  const methods = method === "ALL" ? ["GET", "POST"] : [method];
-  return methods.map((each) => ({
-    method: each,
-    url: `${url}?${query}`,
-    ...(each === "GET" || each === "HEAD" ? {} : { body }),
-  }));
-}
-
-function authRequests(ids: TargetIds) {
-  const fill = (text: string) =>
-    text
-      .replace("{org}", ids.organizationId ?? "")
-      .replace("{account}", ids.accountId ?? "")
-      .replace("{owner}", ids.ownerUserId ?? "")
-      .replace("{session}", ids.session ?? "");
-  return AUTH_ENDPOINTS.map((endpoint) => ({
-    route: `${endpoint.method} ${endpoint.path.split("?")[0]}`,
-    method: endpoint.method,
-    url: fill(endpoint.path),
-    ...(endpoint.method === "POST" ? { body: fill(JSON.stringify(endpoint.body ?? {})) } : {}),
-  }));
-}
 
 /** Path words a route serving a file, picture or attachment would carry. */
 const FILE_ROUTE = /artifact|attachment|avatar|logo|upload|download|file|media|image|picture/i;
 /** File routes reviewed: the plugin catalog's own pictures, the same for every caller. */
 const REVIEWED_FILE_ROUTES = ["GET /api/dozo/catalog-images/:file"];
 
-// --- Sign-in answers -------------------------------------------------------------------------------
-
-/** What an answer looks like without its values: status and the JSON's keys and value types. */
-function shape(answer: Answer): string {
-  const outline = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(outline);
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(value)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, item]) => [key, outline(item)]),
-      );
-    return typeof value;
-  };
-  let body: unknown = answer.text;
-  try {
-    body = outline(JSON.parse(answer.text));
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-  }
-  return JSON.stringify({ status: answer.status, body });
+/** Waits until no stream of `streams` has had a frame for `ms`, so a connect burst is over. */
+async function settle(streams: OpenStream[], ms = 1_500) {
+  await vi.waitFor(
+    () => {
+      for (const stream of streams) {
+        const last = stream.state.frames.at(-1)?.at ?? 0;
+        if (!last || Date.now() - last < ms) throw new Error("the stream is still talking");
+      }
+    },
+    { timeout: 15_000, interval: 100 },
+  );
 }
 
 describeWithDatabase.each(ISOLATION_LOGINS)(
@@ -318,6 +101,54 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       bToken: string;
     };
     const extra = {} as { accountId: string; session: string };
+    /** Per target, a run of its extra chat: the generated requests name that chat too. */
+    const chatRuns = {} as Record<"P" | "S", string>;
+    const idsOf = (target: Target): TargetIds => ({
+      ...target.ids,
+      runId: chatRuns[target.label as "P" | "S"] ?? target.ids.runId,
+      deviceId: devices.aId,
+      ...extra,
+    });
+
+    /** A new person who joins S through an invite and makes a token there. */
+    const joinS = async (label: string) => {
+      const { A, S } = world;
+      const email = `iso-${label.toLowerCase()}-${Date.now()}@rakazo.test`;
+      const cookie = await signup(world.app, email, `Iso ${label}`);
+      await confirmIdentity(world.app, cookie);
+      const user = await world.db.user.findUniqueOrThrow({ where: { email } });
+      const home = await world.db.space.findFirstOrThrow({
+        where: { createdByUserId: user.id, isDefault: true },
+      });
+      const who: Person = {
+        label,
+        email,
+        cookie,
+        userId: user.id,
+        spaceId: home.id,
+        organizationId: home.organizationId,
+      };
+      await joinWithInvite(world, A, who, S.spaceId);
+      return { who, token: await createToken(who, S.spaceId) };
+    };
+
+    /** Each chat from its head, as the app follows one after reading it. */
+    const followChat = async (who: Person, botId: string, spaceId: string) => {
+      const head = await rpc<{ cursor: number }>(
+        world,
+        who.cookie,
+        "threads/head",
+        { botId },
+        spaceId,
+      );
+      return openStream(
+        world,
+        who.cookie,
+        "threads/subscribe",
+        { botId, cursor: head.cursor },
+        spaceId,
+      );
+    };
 
     const scopeOf = (...targets: Target[]) => ({
       spaceIds: targets.map((target) => target.spaceId),
@@ -373,6 +204,10 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       const account = await world.db.account.findFirstOrThrow({ where: { userId: A.userId } });
       const session = await world.db.session.findFirstOrThrow({ where: { userId: A.userId } });
       Object.assign(extra, { accountId: account.accountId, session: session.token });
+      for (const target of [P, S]) {
+        const run = await world.db.run.findFirstOrThrow({ where: { threadId: target.ids.chatId } });
+        chatRuns[target.label as "P" | "S"] = run.id;
+      }
     }, 240_000);
 
     afterAll(async () => {
@@ -402,12 +237,22 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         name: string,
         answer: Promise<Answer>,
         scan: readonly string[],
+        ids: readonly string[] = [],
       ) => {
-        const { status, text } = await answer;
-        const leaked = findCanaries(text, scan);
-        if (status !== 404 || leaked.length)
-          problems.push(`${name}: ${status} ${leaked.join(",")} ${text.slice(0, 120)}`);
+        const got = await answer;
+        const leaked = foreignLeaks(got, scan, ids);
+        if (got.status !== 404 || leaked.length)
+          problems.push(`${name}: ${got.status} ${leaked.join(",")} ${got.text.slice(0, 120)}`);
       };
+      /** The same request the owner's token makes, done after the snapshot: it reaches. */
+      const ownerChecks: {
+        name: string;
+        token: string;
+        path: string;
+        write: boolean;
+        scan: readonly string[];
+      }[] = [];
+      const owners = { P: tokens.aInP, S: tokens.aInS };
       for (const [label, token] of [
         ["bound to B's bot", tokens.apiBound],
         ["every bot of B", tokens.apiAll],
@@ -415,46 +260,63 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         for (const target of [P, S]) {
           const { botId, chatId, runId } = target.ids;
           const scan = target.canaries;
+          const ids = targetIds(target);
           const name = (what: string) => `${label}, ${target.label}: ${what}`;
-          await expectMissing(name("messages"), api(token, `/bots/${botId}/messages`), scan);
-          await expectMissing(
-            name("messages ?chat"),
-            api(token, `/bots/${botId}/messages?chat=${chatId}`),
-            scan,
-          );
-          await expectMissing(name("chats"), api(token, `/bots/${botId}/chats`), scan);
-          await expectMissing(name("export"), api(token, `/bots/${botId}/export`), scan);
-          await expectMissing(
-            name("run events"),
-            api(token, `/bots/${botId}/runs/${runId}/events`),
-            scan,
-          );
-          await expectMissing(name("send"), post(token, `/bots/${botId}/messages`), scan);
+          const same = [
+            ["messages", `/bots/${botId}/messages`, false],
+            ["messages ?chat", `/bots/${botId}/messages?chat=${chatId}`, false],
+            ["chats", `/bots/${botId}/chats`, false],
+            ["export", `/bots/${botId}/export`, false],
+            ["export ?chat", `/bots/${botId}/export?chat=${chatId}`, false],
+            ["run events", `/bots/${botId}/runs/${runId}/events`, false],
+            ["send", `/bots/${botId}/messages`, true],
+            ["send ?chat", `/bots/${botId}/messages?chat=${chatId}`, true],
+          ] as const;
+          for (const [what, path, write] of same) {
+            await expectMissing(
+              name(what),
+              write ? post(token, path) : api(token, path),
+              scan,
+              ids,
+            );
+            if (label === "every bot of B")
+              ownerChecks.push({
+                name: `${target.label}: ${what}`,
+                token: owners[target.label as "P" | "S"],
+                path,
+                write,
+                scan: what === "run events" || write ? [] : scan,
+              });
+          }
           await expectMissing(
             name("own bot, its chat"),
             api(token, `/bots/${own}/messages?chat=${chatId}`),
             scan,
+            ids,
           );
           await expectMissing(
             name("own bot, its chat export"),
             api(token, `/bots/${own}/export?chat=${chatId}`),
             scan,
+            ids,
           );
           await expectMissing(
             name("own bot, its run"),
             api(token, `/bots/${own}/runs/${runId}/events`),
             scan,
+            ids,
           );
           await expectMissing(
             name("own bot, send to its chat"),
             post(token, `/bots/${own}/messages?chat=${chatId}`),
             scan,
+            ids,
           );
           const list = await api(token, "/bots");
           expect(list.status).toBe(200);
           for (const id of [target.ids.botId, target.ids.secondBotId])
             if (list.text.includes(id!)) problems.push(name(`bot list names ${id}`));
-          if (findCanaries(list.text, scan).length) problems.push(name("bot list leaked"));
+          if (foreignLeaks(list, scan, ids).length) problems.push(name("bot list leaked"));
         }
 
       // A token bound to one bot of S reaches that bot only, not S's other bot.
@@ -509,7 +371,8 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         const answer = await api(tokens.apiAll, path, { headers });
         if (
           answer.status !== 200 ||
-          findCanaries(answer.text, [...P.canaries, ...S.canaries]).length
+          foreignLeaks(answer, [...P.canaries, ...S.canaries], [...targetIds(P), ...targetIds(S)])
+            .length
         )
           problems.push(`cursor ${what}: ${answer.status} ${answer.text.slice(0, 120)}`);
         if (answer.text.includes(aHead.id)) problems.push(`cursor ${what}: names A's message`);
@@ -517,6 +380,25 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       const after = await snapshot(world.db, scopeOf(P, S));
       expect(problems).toEqual([]);
       expect(snapshotDiff(before, after), `rows of P or S changed (A is ${A.userId})`).toEqual([]);
+
+      // Owner controls: the owner's token with the very request B was refused reaches the code
+      // behind it, so B's 404 is a refusal and not a request that would reach nothing.
+      const unreached: string[] = [];
+      for (const check of ownerChecks) {
+        const answer = check.write
+          ? await post(check.token, check.path)
+          : await api(check.token, check.path);
+        // A send is reached when it is accepted, or refused as a conflict: the API says the bot is
+        // being taught only after it found the bot and chat as the caller's (B got 404 there).
+        const reached = check.write ? [202, 409].includes(answer.status) : answer.status === 200;
+        if (!reached || (check.scan.length && !findCanaries(answer.text, check.scan).length))
+          unreached.push(`${check.name}: ${answer.status} ${answer.text.slice(0, 120)}`);
+      }
+      console.log(
+        `[isolation-http] bot API owner controls: ${ownerChecks.length - unreached.length}/${ownerChecks.length} of B's refused requests reach for the owner`,
+      );
+      if (unreached.length) console.log(`[isolation-http] not reached:\n${unreached.join("\n")}`);
+      expect(unreached, "B's refused requests the owner's token does not reach").toEqual([]);
     }, 120_000);
 
     it("the MCP endpoint refuses B's token on A's bots and chats", async () => {
@@ -535,12 +417,23 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           5_000,
         );
         const parsed = JSON.parse(answer.text) as {
-          error?: unknown;
-          result?: { isError?: boolean };
+          error?: { message?: string };
+          result?: { isError?: boolean; content?: { text?: string }[] };
         };
-        return { ...answer, refused: Boolean(parsed.error) || parsed.result?.isError === true };
+        const refused = Boolean(parsed.error) || parsed.result?.isError === true;
+        const message = parsed.error?.message ?? parsed.result?.content?.[0]?.text ?? "";
+        return { ...answer, refused, message: refused ? message : "" };
       };
       const problems: string[] = [];
+      const ownerChecks: {
+        name: string;
+        target: Target;
+        method: string;
+        params: unknown;
+        write: boolean;
+        /** What B was answered with for the same call. */
+        refusal: string;
+      }[] = [];
       const own = Bown.ids.botId!;
       const tools = await mcp(tokens.mcpAll, "tools/list");
       expect(tools.status, tools.text).toBe(200);
@@ -556,17 +449,18 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           const answer = await mcp(tokens.mcpAll, method, params);
           if (
             answer.status !== 200 ||
-            findCanaries(answer.text, scan).length ||
+            foreignLeaks(answer, scan, targetIds(target)).length ||
             ids.some((each) => answer.text.includes(each))
           )
             problems.push(`${target.label} ${what}: ${answer.status} ${answer.text.slice(0, 160)}`);
         }
-        for (const [what, method, params] of [
-          ["list_chats", "tools/call", { name: "list_chats", arguments: { bot_id: botId } }],
+        const targeted = [
+          ["list_chats", "tools/call", { name: "list_chats", arguments: { bot_id: botId } }, false],
           [
             "send_message",
             "tools/call",
             { name: "send_message", arguments: { bot_id: botId, text: "iso-probe" } },
+            true,
           ],
           [
             "send_message to its chat",
@@ -575,7 +469,17 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
               name: "send_message",
               arguments: { bot_id: botId, text: "iso-probe", chat_id: chatId },
             },
+            true,
           ],
+          ["read chat", "resources/read", { uri: `dozo-chat://${botId}` }, false],
+          [
+            "read its extra chat",
+            "resources/read",
+            { uri: `dozo-chat://${botId}/${chatId}` },
+            false,
+          ],
+        ] as const;
+        const ownBot = [
           [
             "send_message, own bot, its chat",
             "tools/call",
@@ -584,22 +488,44 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
               arguments: { bot_id: own, text: "iso-probe", chat_id: chatId },
             },
           ],
-          ["read chat", "resources/read", { uri: `dozo-chat://${botId}` }],
-          ["read its extra chat", "resources/read", { uri: `dozo-chat://${botId}/${chatId}` }],
           ["read own bot, its chat", "resources/read", { uri: `dozo-chat://${own}/${chatId}` }],
-        ] as const) {
+        ] as const;
+        const refusals = new Map<string, string>();
+        for (const [what, method, params] of [...targeted, ...ownBot]) {
           const answer = await mcp(tokens.mcpAll, method, params);
-          if (!answer.refused || findCanaries(answer.text, scan).length)
+          refusals.set(what, answer.message);
+          if (!answer.refused || foreignLeaks(answer, scan, targetIds(target)).length)
             problems.push(`${target.label} ${what}: ${answer.status} ${answer.text.slice(0, 160)}`);
         }
+        for (const [what, method, params, write] of targeted)
+          ownerChecks.push({
+            name: `${target.label} ${what}`,
+            target,
+            method,
+            params,
+            write,
+            refusal: refusals.get(what) ?? "",
+          });
       }
-      // The owner's token reads the same chat, so the refusals above are not a broken endpoint.
-      const control = await mcp(tokens.aInP, "resources/read", {
-        uri: `dozo-chat://${P.ids.botId}`,
-      });
-      expect(control.refused, control.text.slice(0, 200)).toBe(false);
-      expect(findCanaries(control.text, P.canaries).length).toBeGreaterThan(0);
       expect(problems).toEqual([]);
+      // Owner controls: the owner's token with the same tool and the same arguments reaches it
+      // (a read shows the chat's canary), so B's refusals are not a wrong argument's error.
+      const unreached: string[] = [];
+      for (const check of ownerChecks) {
+        const token = check.target.label === "P" ? tokens.aInP : tokens.aInS;
+        const answer = await mcp(token, check.method, check.params);
+        const shown = check.write || findCanaries(answer.text, check.target.canaries).length > 0;
+        // A send refused for a reason B never got (the bot is being taught) passed the check
+        // that stopped B: B's answer for the very same call was another one.
+        const passed = !answer.refused || (check.write && answer.message !== check.refusal);
+        if (!passed || !shown)
+          unreached.push(`${check.name}: ${answer.status} ${answer.text.slice(0, 160)}`);
+      }
+      console.log(
+        `[isolation-http] MCP owner controls: ${ownerChecks.length - unreached.length}/${ownerChecks.length} of B's refused calls reach for the owner`,
+      );
+      if (unreached.length) console.log(`[isolation-http] not reached:\n${unreached.join("\n")}`);
+      expect(unreached, "B's refused calls the owner's token does not reach").toEqual([]);
     }, 120_000);
 
     it("an account export link works once and holds only its own account", async () => {
@@ -622,7 +548,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           response.status === 200
             ? Object.values(unzipSync(bytes)).map((file) => Buffer.from(file).toString("utf8"))
             : [Buffer.from(bytes).toString("utf8")];
-        return { status: response.status, text: files.join("\n") };
+        return { status: response.status, text: files.join("\n"), headers: headerText(response) };
       };
       const first = await issue(B);
       const anonymous = await download(first);
@@ -633,8 +559,13 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         `[isolation-http] export link: anonymous ${anonymous.status}, second use ${again.status}, B's link with A's session ${asA.status} (a bearer link by design)`,
       );
       expect(again.status, "a used link").toBe(410);
-      expect(findCanaries(anonymous.text, scan), "B's archive").toEqual([]);
-      expect(findCanaries(asA.text, scan), "B's archive fetched with A's session").toEqual([]);
+      const ids = [...targetIds(P), ...targetIds(S)];
+      expect(foreignLeaks(anonymous, scan, ids), "B's archive").toEqual([]);
+      expect(foreignLeaks(again, scan, ids), "B's used link").toEqual([]);
+      expect(foreignLeaks(asA, scan, ids), "B's archive fetched with A's session").toEqual([]);
+      console.log(
+        `[isolation-http] export headers of B's archive: ${anonymous.headers.replace(/\n/g, " | ")}`,
+      );
       // A's own archive carries P's canaries, so the scan of B's can see them.
       expect(own.status).toBe(200);
       expect(findCanaries(own.text, P.canaries).length).toBeGreaterThan(0);
@@ -648,6 +579,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(listB.status).toBe(200);
       expect(listB.text).toContain(devices.bId);
       expect(scan.filter((value) => listB.text.includes(value))).toEqual([]);
+      expect(foreignLeaks(listB, scan, scan), "B's computer list").toEqual([]);
       const listA = await send(world, "/api/devices", as({ cookie: A.cookie }));
       expect(
         scan.every((value) => listA.text.includes(value)),
@@ -675,6 +607,12 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         }),
       };
       expect(
+        Object.entries(answers).flatMap(([name, answer]) =>
+          foreignLeaks(answer, scan, [...scan, A.userId]).map((leak) => `${name}: ${leak}`),
+        ),
+        "A's computer in B's answers",
+      ).toEqual([]);
+      expect(
         Object.fromEntries(Object.entries(answers).map(([name, answer]) => [name, answer.status])),
       ).toEqual({
         "B's session removes A's computer": 404,
@@ -700,23 +638,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       const { A, B, C, P, S, Bown } = world;
       // F joins S through an invite, makes a token there, then is removed through the real path.
       const stamp = `${Date.now()}`;
-      const email = `iso-f-${stamp}@rakazo.test`;
-      const cookie = await signup(world.app, email, "Iso F");
-      await confirmIdentity(world.app, cookie);
-      const user = await world.db.user.findUniqueOrThrow({ where: { email } });
-      const home = await world.db.space.findFirstOrThrow({
-        where: { createdByUserId: user.id, isDefault: true },
-      });
-      const F: Person = {
-        label: "F",
-        email,
-        cookie,
-        userId: user.id,
-        spaceId: home.id,
-        organizationId: home.organizationId,
-      };
-      await joinWithInvite(world, A, F, S.spaceId);
-      const fToken = await createToken(F, S.spaceId);
+      const { who: F, token: fToken } = await joinS("F");
       const fBots = await send(
         world,
         "/api/v1/dozo/bots",
@@ -741,23 +663,6 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         undefined,
         B.spaceId,
       );
-      // Each chat from its head, as the app follows one after reading it.
-      const followChat = async (who: Person, botId: string, spaceId: string) => {
-        const head = await rpc<{ cursor: number }>(
-          world,
-          who.cookie,
-          "threads/head",
-          { botId },
-          spaceId,
-        );
-        return openStream(
-          world,
-          who.cookie,
-          "threads/subscribe",
-          { botId, cursor: head.cursor },
-          spaceId,
-        );
-      };
       // The second bots: the first ones are being taught a skill, which holds new messages.
       const bThread = await followChat(B, Bown.ids.secondBotId!, B.spaceId);
       const aThread = await followChat(A, P.ids.secondBotId!, P.spaceId);
@@ -849,10 +754,139 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       ] as const) {
         expect(findCanaries(stream.state.text, scan), name).toEqual([]);
         expect(
+          foreignLeaks({ status: 200, text: "", headers: stream.headers }, scan, ids),
+          name,
+        ).toEqual([]);
+        expect(
           ids.filter((value) => stream.state.text.includes(value)),
           name,
         ).toEqual([]);
       }
+    }, 120_000);
+
+    it("the notification stream signals A's actions to A and S's members, and nothing to B", async () => {
+      const { A, B, C, P, S } = world;
+      // Finished replies alert: the seeded bots have it off, so it is turned on for the second
+      // bots while this runs. A completion alerts every member of the bot's Space.
+      const notify = (target: Target, on: boolean) =>
+        rpc(
+          world,
+          A.cookie,
+          "bots/update",
+          { botId: target.ids.secondBotId, notifyOnFinish: on },
+          target.spaceId,
+        );
+      await notify(P, true);
+      await notify(S, true);
+      try {
+        const streams = {
+          aP: await openStream(world, A.cookie, "notifications/subscribe", undefined, P.spaceId),
+          cS: await openStream(world, C.cookie, "notifications/subscribe", undefined, S.spaceId),
+          bB: await openStream(world, B.cookie, "notifications/subscribe", undefined, B.spaceId),
+        };
+        // Each stream signals once when it opens; the window starts when that burst is over.
+        await settle(Object.values(streams));
+        const windowStart = Date.now();
+        const inP = canary("A", "alert");
+        const inS = canary("S", "alert");
+        await sendAndWait(world, A.cookie, { botId: P.ids.secondBotId! }, `${inP} now`, P.spaceId);
+        await sendAndWait(world, A.cookie, { botId: S.ids.secondBotId! }, `${inS} now`, S.spaceId);
+        const alerted = (stream: OpenStream, botId: string) =>
+          streamEvents(stream.state).some(
+            (event) =>
+              event.at >= windowStart &&
+              eventType(event.value) === "alert" &&
+              JSON.stringify(event.value).includes(botId),
+          );
+        await vi.waitFor(
+          () => {
+            if (!alerted(streams.aP, P.ids.secondBotId!)) throw new Error("no alert for A in P");
+            if (!alerted(streams.cS, S.ids.secondBotId!)) throw new Error("no alert for C in S");
+          },
+          { timeout: 15_000, interval: 100 },
+        );
+        const actionsEnded = Date.now();
+        await vi.waitFor(
+          () => {
+            if (Date.now() - actionsEnded < QUIET_WINDOW_MS) throw new Error("still watching");
+          },
+          { timeout: QUIET_WINDOW_MS + 2_000, interval: 100 },
+        );
+        const windowEnd = Date.now();
+        for (const stream of Object.values(streams)) await stream.stop();
+        const during = (stream: OpenStream) =>
+          streamEvents(stream.state).filter(
+            (event) => event.at >= windowStart && event.at <= windowEnd,
+          );
+        const kinds = (stream: OpenStream) => during(stream).map((event) => eventType(event.value));
+        console.log(
+          `[isolation-http] notification window ${windowEnd - windowStart} ms (A's two sends, then ${QUIET_WINDOW_MS} ms): A on P got ${kinds(streams.aP).join(",")}; C on S got ${kinds(streams.cS).join(",")}; B got ${kinds(streams.bB).join(",") || "nothing"}`,
+        );
+        // B: no event at all in the window, not even a content-free signal. A heartbeat is the
+        // stream's own keep-alive after HEARTBEAT_MS of silence, not news of anything; it would
+        // be named here if one fell inside the window.
+        expect(
+          during(streams.bB).filter((event) => eventType(event.value) !== "heartbeat"),
+          "events on B's stream while A acted in P and S",
+        ).toEqual([]);
+        const scan = [...P.canaries, ...S.canaries, inP, inS];
+        const ids = [...targetIds(P), ...targetIds(S), P.ids.secondBotId!, S.ids.secondBotId!];
+        expect(findCanaries(streams.bB.state.text, scan), "B's stream").toEqual([]);
+        expect(
+          ids.filter((value) => streams.bB.state.text.includes(value)),
+          "P or S ids on B's stream",
+        ).toEqual([]);
+        expect(
+          foreignLeaks({ status: 200, text: "", headers: streams.bB.headers }, scan, ids),
+          "B's stream headers",
+        ).toEqual([]);
+      } finally {
+        await notify(P, false);
+        await notify(S, false);
+      }
+    }, 120_000);
+
+    it("a removed member's open chat stream gets nothing written after the removal", async () => {
+      const { A, S } = world;
+      const { who: G } = await joinS("G");
+      const bot = { botId: S.ids.secondBotId! };
+      // Opened just before the removal, so the removal falls inside the stream's session re-check
+      // interval: the worst case a removal can meet, and the one a member reading the chat meets.
+      const gChat = await followChat(G, bot.botId, S.spaceId);
+      const openedAt = Date.now();
+      const beforeRemoval = canary("S", "beforeremoval");
+      await sendAndWait(world, A.cookie, bot, `${beforeRemoval} now`, S.spaceId);
+      await vi.waitFor(
+        () => {
+          if (!gChat.state.text.includes(beforeRemoval)) throw new Error("not delivered yet");
+        },
+        { timeout: 10_000, interval: 50 },
+      );
+      await rpc(world, A.cookie, "spaces/members/remove", { spaceId: S.spaceId, userId: G.userId });
+      const removedAt = Date.now();
+      const afterRemoval = canary("S", "afterremoval");
+      await sendAndWait(world, A.cookie, bot, `${afterRemoval} now`, S.spaceId);
+      const sentAt = Date.now();
+      await vi.waitFor(
+        () => {
+          if (!gChat.state.endedAt) throw new Error("G's chat stream is still open");
+        },
+        { timeout: HEARTBEAT_MS + SESSION_RECHECK_MS + 5_000, interval: 100 },
+      );
+      const late = gChat.state.frames.filter((frame) => frame.at > removedAt);
+      const leaked = late.filter((frame) => findCanaries(frame.text, [afterRemoval]).length);
+      console.log(
+        `[isolation-http] removed member's chat stream: removal ${removedAt - openedAt} ms after it opened, A's message sent ${sentAt - removedAt} ms after the removal, stream ended ${gChat.state.endedAt - removedAt} ms after it; ${late.length} chunks after the removal, ${leaked.length} with the new message (first at +${(leaked[0]?.at ?? removedAt) - removedAt} ms): ${leaked
+          .map((frame) => frame.text.replace(/\s+/g, " ").slice(0, 200))
+          .join(" || ")}`,
+      );
+      // Control: while G was a member, the stream carried A's message.
+      expect(gChat.state.text).toContain(beforeRemoval);
+      expect(gChat.state.text, "G's chat stream ends refused").toContain("UNAUTHORIZED");
+      expect(
+        leaked.map((frame) => `+${frame.at - removedAt}ms`),
+        "A's message written after G's removal, on G's open chat stream",
+      ).toEqual([]);
     }, 120_000);
 
     it("serves artifacts, avatars and logos through RPC only, never a raw file route", async () => {
@@ -951,13 +985,35 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         },
         { name: "anonymous", headers: { origin: ORIGIN }, from: 35 },
       ];
-      const calls: (HttpCall & { target: Target })[] = [];
+      // Every route and called auth endpoint is classified once (what it returns), and only those.
+      const classified = new Map(ROUTE_DATA.map((item) => [item.route, item]));
+      const authClassified = new Map(AUTH_ENDPOINT_DATA.map((item) => [item.route, item]));
+      const authRoutes = [
+        ...new Set(AUTH_ENDPOINTS.map((item) => `${item.method} ${item.path.split("?")[0]}`)),
+      ];
+      expect(
+        routes.filter((route) => !exempt.has(route) && !classified.has(route)),
+        "raw routes with no entry in ROUTE_DATA",
+      ).toEqual([]);
+      expect(
+        [...classified.keys()].filter((route) => !routes.includes(route)),
+        "ROUTE_DATA entries for routes the app no longer registers",
+      ).toEqual([]);
+      expect(
+        [
+          ...authRoutes.filter((route) => !authClassified.has(route)),
+          ...[...authClassified.keys()].filter((route) => !authRoutes.includes(route)),
+        ],
+        "AUTH_ENDPOINTS and AUTH_ENDPOINT_DATA differ",
+      ).toEqual([]);
+
+      const calls: (HttpRequest & { caller: HttpCaller; target: Target })[] = [];
       for (const target of [P, S]) {
-        const ids: TargetIds = { ...target.ids, deviceId: devices.aId, ...extra };
+        const ids = idsOf(target);
         const requests = [
           ...routes
             .filter((route) => !exempt.has(route))
-            .flatMap((route) => requestsFor(route, ids).map((request) => ({ route, ...request }))),
+            .flatMap((route) => requestsFor(route, ids)),
           ...authRequests(ids),
         ];
         for (const caller of callers)
@@ -965,22 +1021,13 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       }
       const before = await snapshot(world.db, scopeOf(P, S));
       const outcomes = await pool(calls, async (call) => {
-        const answer = await send(
-          world,
-          call.url,
-          {
-            method: call.method,
-            headers: {
-              ...call.caller.headers,
-              ...(call.body ? json({}) : {}),
-              "last-event-id": "-1",
-            },
-            ...(call.body ? { body: call.body } : {}),
-          },
-          call.caller.from,
-        );
-        const scan = [...call.target.canaries, devices.aName];
-        return { ...call, status: answer.status, matched: findCanaries(answer.text, scan) };
+        const answer = await sendRequest(world, call.caller, call);
+        const scan = [...call.target.canaries, devices.aName, devices.aId, A.email];
+        return {
+          ...call,
+          status: answer.status,
+          leaks: foreignLeaks(answer, scan, targetIds(call.target)),
+        };
       });
       const after = await snapshot(world.db, scopeOf(P, S));
       const called = new Set(outcomes.map((outcome) => outcome.route));
@@ -990,7 +1037,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         statuses.set(key, (statuses.get(key) ?? new Set()).add(outcome.status));
       }
       console.log(
-        `[isolation-http] ${routes.length} raw routes: ${routes.length - exempt.size} called by generated requests, ${exempt.size} exempted (auth wildcards, called as ${AUTH_ENDPOINTS.length} endpoints; ${AUTH_ENDPOINT_EXEMPTIONS.length} self-only auth endpoints called anonymously); ${outcomes.length} requests`,
+        `[isolation-http] ${routes.length} raw routes: ${routes.length - exempt.size} called by generated requests, ${exempt.size} exempted (auth wildcards, called as ${AUTH_ENDPOINTS.length} endpoints; ${AUTH_ENDPOINT_EXEMPTIONS.length} self-only auth endpoints called anonymously); ${outcomes.length} requests, bodies and headers scanned`,
       );
       console.log(
         `[isolation-http] statuses\n${[...statuses]
@@ -1002,10 +1049,10 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
         "routes never called",
       ).toEqual([]);
       const leaks = outcomes
-        .filter((outcome) => outcome.matched.length)
+        .filter((outcome) => outcome.leaks.length)
         .map(
           (outcome) =>
-            `${outcome.method} ${outcome.url} as ${outcome.caller.name} (${outcome.target.label}): ${outcome.status} leaked ${outcome.matched.join(", ")}`,
+            `${outcome.method} ${outcome.url} as ${outcome.caller.name} (${outcome.target.label}): ${outcome.status} leaked ${outcome.leaks.join(", ")}`,
         );
       expect(leaks).toEqual([]);
       expect(snapshotDiff(before, after), `rows of P or S changed (A is ${A.userId})`).toEqual([]);
@@ -1015,42 +1062,64 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       });
       expect(session.text).toContain(A.userId);
 
-      // Control: the same generated reads made by P's owner find P's canaries, so the requests
-      // above reach the code behind each route and the scan sees what it returns.
-      const owners: HttpCaller[] = [
-        {
+      // Owner control: every route that returns its owner's data, called by P's owner with the
+      // very requests generated above, shows P's data; a route that is not served refuses the
+      // owner too. So the refusals above are refusals, and the scan sees what the route returns.
+      const owners: Record<"session" | "token", HttpCaller> = {
+        session: {
           name: "A session on P",
           headers: { cookie: A.cookie, "x-rakazo-space-id": P.spaceId, origin: ORIGIN },
           from: 36,
         },
-        { name: "A token in P", headers: { authorization: `Bearer ${tokens.aInP}` }, from: 37 },
-      ];
-      const ids: TargetIds = { ...P.ids, deviceId: devices.aId, ...extra };
-      const reads = routes
-        .filter((route) => !exempt.has(route))
-        .flatMap((route) => requestsFor(route, ids).map((request) => ({ route, ...request })))
-        .filter((request) => request.method === "GET");
-      const found = new Set<string>();
-      for (const caller of owners)
-        for (const request of reads) {
-          const answer = await send(
-            world,
-            request.url,
-            { headers: { ...caller.headers, "last-event-id": "-1" } },
-            caller.from,
-          );
-          if (findCanaries(answer.text, P.canaries).length) found.add(request.route);
+        token: {
+          name: "A token in P",
+          headers: { authorization: `Bearer ${tokens.aInP}` },
+          from: 37,
+        },
+      };
+      const ids = idsOf(P);
+      const ownerScan = [...P.canaries, devices.aName];
+      const ownMarks = [A.userId, A.email, P.organizationId, extra.accountId];
+      const missed: string[] = [];
+      const reached: string[] = [];
+      const check = async (item: (typeof ROUTE_DATA)[number], requests: HttpRequest[]) => {
+        for (const request of requests) {
+          if (item.kind === "not-served") {
+            const answer = await sendRequest(world, owners.session, request);
+            if (answer.status < 400)
+              missed.push(
+                `${request.method} ${request.url}: not served, owner got ${answer.status}`,
+              );
+            continue;
+          }
+          if (item.kind !== "owner-data" && item.kind !== "own-account") continue;
+          const answer = await sendRequest(world, owners[item.owner ?? "session"], request);
+          const marks =
+            item.kind === "owner-data"
+              ? findCanaries(answer.text, ownerScan)
+              : ownMarks.filter((mark) => answer.text.includes(mark));
+          if (marks.length) reached.push(item.route);
+          else
+            missed.push(
+              `${item.route} (${item.kind}, ${item.owner}): ${answer.status} ${answer.text.slice(0, 160)}`,
+            );
         }
+      };
+      for (const item of ROUTE_DATA) await check(item, requestsFor(item.route, ids));
+      const authReads = authRequests(ids);
+      for (const item of AUTH_ENDPOINT_DATA)
+        await check(
+          item,
+          authReads.filter((request) => request.route === item.route),
+        );
+      const kinds = new Map<string, number>();
+      for (const item of [...ROUTE_DATA, ...AUTH_ENDPOINT_DATA])
+        kinds.set(item.kind, (kinds.get(item.kind) ?? 0) + 1);
       console.log(
-        `[isolation-http] control: P's owner finds canaries through ${[...found].sort().join(" ")}`,
+        `[isolation-http] route classes: ${[...kinds].map(([kind, n]) => `${kind} ${n}`).join(", ")}; the owner's own data shows through ${[...new Set(reached)].sort().join(" ")}`,
       );
-      expect([...found]).toEqual(
-        expect.arrayContaining([
-          "GET /api/audit-events/export",
-          "GET /api/v1/dozo/bots/:botId/messages",
-          "GET /api/v1/dozo/bots/:botId/export",
-        ]),
-      );
+      if (missed.length) console.log(`[isolation-http] not reached:\n${missed.join("\n")}`);
+      expect(missed, "routes that return the owner's data but did not for the owner").toEqual([]);
     }, 300_000);
   },
 );
@@ -1075,7 +1144,11 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           headers: { origin: ORIGIN, ...json({}) },
           body: JSON.stringify(body),
         });
-        return { status: response.status, text: await response.text() };
+        return {
+          status: response.status,
+          text: await response.text(),
+          headers: headerText(response),
+        };
       };
       // With mail on, a sign-up leaves an unverified account and no session. A second account is
       // marked verified through the system client, as its emailed link would.
