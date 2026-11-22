@@ -3,7 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createRepos, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { recordConsent } from "./dozo-user-browser-gate.js";
+import { forgetConsents, recordConsent } from "./dozo-user-browser-gate.js";
 import { createUserDeviceToken, hashUserDeviceToken } from "./user-device-gateway.js";
 
 // Runs against a migrated database only (dozo/docker/postgres-tests.sh). The fork's unit gate has no
@@ -94,5 +94,18 @@ describePostgres("browser consents (PostgreSQL)", () => {
     expect(await sites(botId, deviceId, second)).toEqual([]);
     await system.thread.delete({ where: { id: first } });
     expect(await sites(botId, deviceId, first)).toEqual([]);
+  });
+
+  it("forgets every thread's consents for that bot on that computer, and only those", async () => {
+    const { botId, deviceId, first, second } = await owner();
+    const other = await owner();
+    await recordConsent(db.prisma, { botId, deviceId, threadId: first }, "");
+    await recordConsent(db.prisma, { botId, deviceId, threadId: second }, "read:example.test");
+    const kept = { botId: other.botId, deviceId: other.deviceId, threadId: other.first };
+    await recordConsent(db.prisma, kept, "");
+    await forgetConsents(db.prisma, botId, deviceId);
+    expect(await sites(botId, deviceId, first)).toEqual([]);
+    expect(await sites(botId, deviceId, second)).toEqual([]);
+    expect(await sites(other.botId, other.deviceId, other.first)).toEqual([""]);
   });
 });

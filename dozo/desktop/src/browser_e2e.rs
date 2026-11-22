@@ -868,6 +868,107 @@ async fn e2e_browser_sign_in_passes_nothing_on_until_the_person_is_done() {
     browsers.close_all();
 }
 
+/// A sign-in whose home page does not come after Done still leaves one page and no way back: a
+/// blank one. And the bot's profile keeps offering to save no password once Chrome has run on it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_sign_in_leaves_one_page_when_home_does_not_come() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stall = Arc::new(AtomicBool::new(false));
+    let stalling = stall.clone();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut request = [0u8; 4096];
+            let read = stream.read(&mut request).unwrap_or(0);
+            let line = String::from_utf8_lossy(&request[..read]).to_string();
+            let home = line.split_whitespace().nth(1) == Some("/");
+            if home && stalling.load(Ordering::SeqCst) {
+                // The home page never comes: the connection is kept, unanswered.
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(60));
+                    drop(stream);
+                });
+                continue;
+            }
+            let body = if home {
+                "<title>Home</title>home"
+            } else {
+                "<title>Back</title>SECRET"
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    let site = format!("127.0.0.1:{port}");
+    let root = root().join("stalled");
+    let browsers = Arc::new(browsers(&root));
+    let prompt = Arc::new(HeldPrompt::default());
+    browsers.set_sign_in_prompt(prompt.clone());
+    call(
+        &browsers,
+        "Page.navigate",
+        json!({ "url": format!("http://{site}/") }),
+    )
+    .await;
+    let signing = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.answer.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (running, session) = person(&browsers);
+    let back = json!({ "url": format!("http://{site}/callback?code=SECRET") });
+    running
+        .pipe
+        .call("Page.navigate", back, Some(&session))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    stall.store(true, Ordering::SeqCst);
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(true)
+        .unwrap();
+    assert!(signing.await.unwrap().unwrap());
+    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    let entries = history["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{history}");
+    assert_eq!(entries[0]["url"], "about:blank", "{history}");
+    for method in [
+        "Page.getFrameTree",
+        "DOM.getDocument",
+        "Accessibility.getFullAXTree",
+    ] {
+        let answer = call(&browsers, method, json!({})).await;
+        assert!(!answer.to_string().contains("SECRET"), "{method}: {answer}");
+    }
+    println!("E2E: a home page that did not come after Done leaves a blank page alone");
+    browsers.close("bot", false).await;
+    let preferences: Value = serde_json::from_slice(
+        &std::fs::read(root.join("browser-profiles/bot/Default/Preferences")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(preferences["credentials_enable_service"], false);
+    assert_eq!(preferences["profile"]["password_manager_enabled"], false);
+    assert_eq!(preferences["autofill"]["profile_enabled"], false);
+    assert_eq!(preferences["autofill"]["credit_card_enabled"], false);
+    println!(
+        "E2E: after the browser ran, its profile still offers to save no password and fills nothing in"
+    );
+}
+
 /// A plain HTTP server that keeps each connection open for more requests and records the host
 /// every request named; returns its port and the record.
 fn keep_alive_server(body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {

@@ -8,6 +8,8 @@ import { z } from "zod";
 export const pageBrowserRequest = z.object({
   botId: z.string().min(1).max(256),
   runId: z.string().min(1).max(256).optional(),
+  /** The bot's name, which the app shows beside its browser so the person can clear it. */
+  botName: z.string().max(256).optional(),
   method: z.literal("pageBrowser"),
   command: z.object({
     method: z.string().min(1).max(128),
@@ -22,6 +24,18 @@ export const pageBrowserRequest = z.object({
 export const pageBrowserSignInRequest = z.object({
   botId: z.string().min(1).max(256),
   runId: z.string().min(1).max(256).optional(),
+  botName: z.string().max(256).optional(),
   method: z.literal("pageBrowserSignIn"),
   site: z.string().min(1).max(253),
+});
+
+/**
+ * Whether the person cleared the bot's browser on that computer since it last started (its
+ * profile and sign-ins are gone): the server then forgets what the bot was allowed there. Answers
+ * `{ cleared }`.
+ */
+export const pageBrowserClearedRequest = z.object({
+  botId: z.string().min(1).max(256),
+  runId: z.string().min(1).max(256).optional(),
+  method: z.literal("pageBrowserCleared"),
 });

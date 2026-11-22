@@ -132,6 +132,30 @@ describe("the browser on the user's computer", () => {
     expect(asked).toMatchObject({ dialog: "Leave?", tree: "" });
   });
 
+  it("gives nothing of a page that went to another site while it was read", async () => {
+    const pages = {
+      ...seededDevicePages,
+      "https://other.test/": { title: "Other", nodes: [{ role: "button", name: "Secret" }] },
+    };
+    const device = fakeDeviceBrowser(pages);
+    const away = { method: "Page.navigate", params: { url: "https://other.test/" } };
+    let moveOn = "";
+    const provider = new DeviceBrowserProvider(async (command) => {
+      if (command.method === moveOn) await device(away);
+      return device(command);
+    });
+    await provider.navigate(computer, { url: FORM }, context());
+    moveOn = "Accessibility.getFullAXTree";
+    const read = await provider.snapshot(computer, {}, context());
+    expect(read).toMatchObject({ url: "https://other.test/", tree: "", elements: [] });
+    await provider.navigate(computer, { url: FORM }, context());
+    moveOn = "Page.captureScreenshot";
+    expect(await provider.screenshot("example.test")).toBeUndefined();
+    await provider.navigate(computer, { url: FORM }, context());
+    moveOn = "";
+    expect(await provider.screenshot("example.test")).toBe("c2NyZWVu");
+  });
+
   it("takes a screenshot of the visible page", async () => {
     const { provider, device } = setup();
     expect(await provider.screenshot()).toBe("c2NyZWVu");

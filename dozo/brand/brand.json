@@ -5562,7 +5562,7 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport { pageBrowserRequest, pageBrowserSignInRequest } from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts"
       ],
@@ -5571,7 +5571,7 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
-      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n]);\n",
       "requires": [
         "packages/adapters/src/dozo-page-browser-protocol.ts"
       ],
