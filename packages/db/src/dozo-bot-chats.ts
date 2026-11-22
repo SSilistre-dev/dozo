@@ -123,9 +123,11 @@ export const DOZO_CHAT_BOT = Prisma.sql`(SELECT dc."botId" FROM dozo_bot_chats d
 export async function dozoBotChatOf(
   db: Db,
   input: { threadId: string; botId: string; spaceId: string },
-): Promise<{ name: string; archived: boolean } | null> {
-  const [row] = await db.$queryRaw<{ name: string; archived: boolean }[]>`
-    SELECT name, ("archivedAt" IS NOT NULL) AS archived FROM dozo_bot_chats
+): Promise<{ name: string; archived: boolean; archivedAt: Date | null } | null> {
+  const [row] = await db.$queryRaw<{ name: string; archived: boolean; archivedAt: Date | null }[]>`
+    SELECT name, ("archivedAt" IS NOT NULL) AS archived,
+      "archivedAt" AT TIME ZONE 'UTC' AS "archivedAt"
+    FROM dozo_bot_chats
     WHERE "threadId" = ${input.threadId} AND "botId" = ${input.botId}
       AND "spaceId" = ${input.spaceId}`;
   return row ?? null;

@@ -345,7 +345,9 @@ shown only once the bot has an extra chat): upstream's `routines.threadId`, read
 `packages/adapters/src/dozo-routine-chat.ts` for schedules, waits, change triggers, retries and Run
 now, so quiet hours, the 12-hour catch-up, the daily send limit and queued ticks meet the same chat.
 No chat (every routine made in the app before) is the main chat. While its chat is archived a
-routine runs in the main chat and says so there once per run; brought back, it posts there again.
+routine (the daily digest too) runs in the main chat and says so there once per archiving, in its
+owner's language; brought back, it posts there again. A routine named in a message runs in the chat
+the message was written in, and keeps its own chat.
 Webhook, GitHub, email and chat-app triggers still deliver in the main chat, as upstream delivers
 them, and the phone's editor neither shows nor changes the chat (an edit there keeps it).
 

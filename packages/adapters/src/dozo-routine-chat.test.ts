@@ -25,6 +25,7 @@ import {
 } from "./dozo-routine-chat.js";
 
 const MAIN = { id: "main-1" };
+const ARCHIVED_AT = new Date("2026-11-21T08:00:00.000Z");
 const bot = { id: "bot-1", thread: MAIN };
 
 /** A database whose dozo_bot_chats holds `chats`, by thread. */
@@ -35,7 +36,13 @@ function fakeDb(
     const [threadId, botId, spaceId] = values as [string, string, string];
     const chat = chats[threadId];
     return chat && chat.botId === botId && chat.spaceId === spaceId
-      ? [{ name: chat.name, archived: chat.archived }]
+      ? [
+          {
+            name: chat.name,
+            archived: chat.archived,
+            archivedAt: chat.archived ? ARCHIVED_AT : null,
+          },
+        ]
       : [];
   });
   return { $queryRaw } as unknown as Pick<PrismaClient, "$queryRaw"> & {
@@ -76,7 +83,7 @@ describe("where a routine's run posts", () => {
     const routine = { threadId: "chat-old", spaceId: "space-1" };
     expect(await dozoRoutineThread({ prisma }, routine, bot, null)).toEqual({
       id: "main-1",
-      dozoArchivedChat: "Old",
+      dozoArchivedChat: { chatId: "chat-old", name: "Old", archivedAt: ARCHIVED_AT },
     });
   });
 
@@ -102,33 +109,52 @@ describe("where a routine's run posts", () => {
   });
 });
 
-describe("the note for a run standing in for an archived chat", () => {
+describe("the note for a routine whose chat is archived", () => {
   const events = { notify: vi.fn(async () => undefined) };
-  const routine = { name: "Digest", spaceId: "space-1" };
-  const prisma = {
-    $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work("tx")),
-  } as unknown as PrismaClient;
+  const routine = { id: "routine-1", name: "Digest", spaceId: "space-1", userId: "user-1" };
+  const archived = { chatId: "chat-old", name: "Garden", archivedAt: ARCHIVED_AT };
+  const thread = { id: "main-1", dozoArchivedChat: archived };
+  const nonce = `dozo-routine-chat:routine-1:chat-old:${ARCHIVED_AT.getTime()}`;
+  /** A transaction that finds the note already written when `written`, and the owner's locale. */
+  function prismaWith(written: boolean, locale: string | null = "en") {
+    const tx = {
+      message: { findUnique: vi.fn(async () => (written ? { id: "m-0" } : null)) },
+      user: { findUnique: vi.fn(async () => ({ locale })) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: unknown) => unknown) => work(tx)),
+    } as unknown as PrismaClient;
+    return { prisma, tx };
+  }
 
   it("says nothing for a run in the chat it was meant for", async () => {
-    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", { id: "chat-1" }, { id: "r" });
-    expect(db.createThreadMessageInTransaction).not.toHaveBeenCalled();
+    const { prisma } = prismaWith(false);
+    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", { id: "chat-1" });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("writes one system line in the main chat, keyed by the run, and signals it", async () => {
+  it("writes one system line in the main chat, keyed by the routine and the archiving, and signals it", async () => {
     db.createThreadMessageInTransaction.mockResolvedValue({ id: "m-1" });
     db.appendEventInTransaction.mockResolvedValue({ seq: 7 });
-    const thread = { id: "main-1", dozoArchivedChat: "Garden" };
-    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread, { id: "run-1" });
-    const blocks = [{ kind: "meta", text: "Digest ran here: its chat Garden is archived." }];
-    expect(dozoRoutineChatNote("Digest", "Garden")).toBe(blocks[0]!.text);
-    expect(db.createThreadMessageInTransaction).toHaveBeenCalledWith("tx", {
+    const { prisma, tx } = prismaWith(false);
+    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread);
+    const blocks = [{ kind: "meta", text: "Digest posts here while its chat Garden is archived." }];
+    expect(tx.message.findUnique).toHaveBeenCalledWith({
+      where: { threadId_clientNonce: { threadId: "main-1", clientNonce: nonce } },
+      select: { id: true },
+    });
+    expect(tx.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      select: { locale: true },
+    });
+    expect(db.createThreadMessageInTransaction).toHaveBeenCalledWith(tx, {
       threadId: "main-1",
       botId: "bot-1",
       role: "system",
       blocks,
-      clientNonce: "dozo-routine-chat:run-1",
+      clientNonce: nonce,
     });
-    expect(db.appendEventInTransaction).toHaveBeenCalledWith("tx", {
+    expect(db.appendEventInTransaction).toHaveBeenCalledWith(tx, {
       spaceId: "space-1",
       threadId: "main-1",
       botId: "bot-1",
@@ -138,15 +164,45 @@ describe("the note for a run standing in for an archived chat", () => {
     expect(events.notify).toHaveBeenCalledWith("main-1", 7);
   });
 
-  it("leaves a note already written alone, and logs any other failure without failing the wake", async () => {
-    const thread = { id: "main-1", dozoArchivedChat: "Garden" };
+  it("writes nothing again for the same archiving, however often the routine wakes", async () => {
+    const { prisma } = prismaWith(true);
+    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread);
+    expect(db.createThreadMessageInTransaction).not.toHaveBeenCalled();
+    expect(events.notify).not.toHaveBeenCalled();
+  });
+
+  it("says it in the owner's language", async () => {
+    expect(dozoRoutineChatNote("Özet", "Bahçe", "tr-TR")).toBe(
+      "Özet, sohbeti Bahçe arşivliyken buraya yazar.",
+    );
+    expect(dozoRoutineChatNote("Digest", "Garden", null)).toBe(
+      "Digest posts here while its chat Garden is archived.",
+    );
+    db.createThreadMessageInTransaction.mockResolvedValue({ id: "m-1" });
+    db.appendEventInTransaction.mockResolvedValue({ seq: 7 });
+    const { prisma } = prismaWith(false, "tr");
+    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", {
+      id: "main-1",
+      dozoArchivedChat: { ...archived, archivedAt: null },
+    });
+    expect(db.createThreadMessageInTransaction).toHaveBeenCalledWith(expect.anything(), {
+      threadId: "main-1",
+      botId: "bot-1",
+      role: "system",
+      blocks: [{ kind: "meta", text: "Digest, sohbeti Garden arşivliyken buraya yazar." }],
+      clientNonce: "dozo-routine-chat:routine-1:chat-old:0",
+    });
+  });
+
+  it("leaves a note a racing wake wrote alone, and logs any other failure without failing the wake", async () => {
+    const { prisma } = prismaWith(false);
     db.createThreadMessageInTransaction.mockRejectedValueOnce(
       Object.assign(new Error("duplicate"), { code: "P2002" }),
     );
-    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread, { id: "run-1" });
+    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread);
     expect(logged).not.toHaveBeenCalled();
     db.createThreadMessageInTransaction.mockRejectedValueOnce(new Error("database down"));
-    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread, { id: "run-1" });
+    await dozoNoteRoutineChat({ prisma, events }, routine, "bot-1", thread);
     expect(logged).toHaveBeenCalledWith("dozo.routine_chat_note_failed", expect.any(Error));
     expect(events.notify).not.toHaveBeenCalled();
   });

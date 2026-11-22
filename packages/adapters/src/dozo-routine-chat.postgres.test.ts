@@ -10,6 +10,7 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { saveDozoDailyDigest } from "./dozo-daily-digest.js";
 import { DOZO_ROUTINE_CATCH_UP_MS, saveDozoQuietHours } from "./dozo-quiet-hours.js";
 import { dozoRoutineChatNote } from "./dozo-routine-chat.js";
 import { dozoSendLimitGate } from "./dozo-send-limit.js";
@@ -202,28 +203,84 @@ describePostgres("the chat a routine posts in (PostgreSQL)", () => {
     ]);
   });
 
-  it("runs in the main chat while its chat is archived, saying so once per run, and goes back after", async () => {
+  it("runs in the main chat while its chat is archived, saying so once per archiving, and goes back after", async () => {
     const who = await owner();
-    const { id, dueAt } = await routine(who, who.chatId, 5 * MINUTE);
+    const { id, dueAt } = await routine(who, who.chatId, 10 * MINUTE);
+    await system.user.update({ where: { id: who.userId }, data: { locale: "tr" } });
+    let at = dueAt;
+    /** The next occurrence of the every-minute routine, already due, its earlier run done. */
+    const wakeNext = async () => {
+      await system.run.updateMany({ where: { routineId: id }, data: { status: "completed" } });
+      at = new Date(at.getTime() + MINUTE);
+      await system.routine.update({ where: { id }, data: { nextRunAt: at } });
+      await wake(id, at);
+    };
     await archive(who.chatId!, true);
-    await wake(id, dueAt);
-    const [run] = await runsOf(id);
-    expect(run).toMatchObject({ threadId: who.mainId });
-    const note = [{ kind: "meta", text: dozoRoutineChatNote("Digest", "Garden") }];
-    expect(await notesIn(who.mainId)).toEqual([
-      { blocks: note, clientNonce: `dozo-routine-chat:${run!.id}` },
+    await wake(id, at);
+    await wakeNext();
+    // Two runs in the main chat, one line about it, in the owner's language.
+    expect((await runsOf(id)).map((each) => each.threadId)).toEqual([who.mainId, who.mainId]);
+    const notes = await notesIn(who.mainId);
+    expect(notes).toEqual([
+      {
+        blocks: [{ kind: "meta", text: dozoRoutineChatNote("Digest", "Garden", "tr") }],
+        clientNonce: expect.stringMatching(`^dozo-routine-chat:${id}:${who.chatId}:\\d+$`),
+      },
     ]);
     expect(await system.message.count({ where: { threadId: who.chatId! } })).toBe(0);
-    // The routine keeps its chat: brought back, the next occurrence posts there, with no note.
+    // The routine keeps its chat: brought back, the next occurrence posts there, with no line.
     expect((await system.routine.findUniqueOrThrow({ where: { id } })).threadId).toBe(who.chatId);
     await archive(who.chatId!, false);
-    // The next occurrence, already due.
-    const next = new Date(dueAt.getTime() + MINUTE);
-    await system.routine.update({ where: { id }, data: { nextRunAt: next } });
-    await system.run.updateMany({ where: { routineId: id }, data: { status: "completed" } });
-    await wake(id, next);
-    expect((await runsOf(id)).map((each) => each.threadId)).toEqual([who.mainId, who.chatId]);
+    await wakeNext();
+    expect((await runsOf(id)).at(-1)).toMatchObject({ threadId: who.chatId });
     expect(await notesIn(who.mainId)).toHaveLength(1);
+    // Archived again: one new line, and only one.
+    await archive(who.chatId!, true);
+    await wakeNext();
+    await wakeNext();
+    expect((await runsOf(id)).map((each) => each.threadId).slice(-2)).toEqual([
+      who.mainId,
+      who.mainId,
+    ]);
+    expect(await notesIn(who.mainId)).toHaveLength(2);
+  });
+
+  it("writes the daily digest in the main chat while its chat is archived, saying so as other routines do", async () => {
+    const who = await owner();
+    await saveDozoDailyDigest(deps as never, who.userId, {
+      botId: who.botId,
+      minute: 8 * 60,
+      spaceId: who.spaceId,
+    });
+    const digest = await system.routine.findFirstOrThrow({ where: { botId: who.botId } });
+    const dueAt = new Date(Math.floor((Date.now() - 5 * MINUTE) / MINUTE) * MINUTE);
+    await system.routine.update({
+      where: { id: digest.id },
+      data: { threadId: who.chatId, nextRunAt: dueAt },
+    });
+    await archive(who.chatId!, true);
+    await wake(digest.id, dueAt);
+    // The digest is written from saved data, with no run, and the line says where it went.
+    expect(await runsOf(digest.id)).toEqual([]);
+    expect(await notesIn(who.mainId)).toHaveLength(1);
+    expect(await system.message.count({ where: { threadId: who.chatId! } })).toBe(0);
+  });
+
+  it("keeps a group's routine in the group, for a bot that also has an extra chat", async () => {
+    const who = await owner();
+    const group = await system.chatGroup.create({
+      data: { spaceId: who.spaceId, userId: who.userId, name: "Team" },
+    });
+    await system.chatGroupMember.create({ data: { groupId: group.id, botId: who.botId } });
+    const groupThread = await system.thread.create({
+      data: { spaceId: who.spaceId, userId: who.userId, groupId: group.id },
+    });
+    const { id, dueAt } = await routine(who, groupThread.id);
+    await wake(id, dueAt);
+    expect(await runsOf(id)).toEqual([expect.objectContaining({ threadId: groupThread.id })]);
+    expect(
+      await system.task.count({ where: { threadId: { in: [who.mainId, who.chatId!] } } }),
+    ).toBe(0);
   });
 
   it("never runs in another bot's chat that a routine names, nor writes a note for it", async () => {

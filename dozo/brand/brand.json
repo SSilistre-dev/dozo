@@ -5937,25 +5937,16 @@
       "requires": [
         "packages/adapters/src/dozo-routine-chat.ts"
       ],
-      "reason": "routine chat: the import of the three rules below"
+      "reason": "routine chat: the import of the two rules below"
     },
     {
       "file": "packages/adapters/src/run-routines.ts",
       "find": "  const thread = targetThread ?? bot.thread;\n  if (await dozoSendDailyDigest(",
-      "replace": "  const thread = await dozoRoutineThread(\n    deps,\n    routine,\n    { id: bot.id, thread: bot.thread },\n    targetThread,\n  );\n  if (await dozoSendDailyDigest(",
+      "replace": "  const thread = await dozoRoutineThread(\n    deps,\n    routine,\n    { id: bot.id, thread: bot.thread },\n    targetThread,\n  );\n  await dozoNoteRoutineChat(deps, routine, bot.id, thread);\n  if (await dozoSendDailyDigest(",
       "requires": [
         "packages/adapters/src/dozo-routine-chat.ts"
       ],
-      "reason": "routine chat: a routine made in, or pointed at, one of its bot's open extra chats runs there (the lookup above finds a thread by threads.botId, which an extra chat leaves empty, and fell back to the main chat); an archived one runs in the main chat and says so"
-    },
-    {
-      "file": "packages/adapters/src/run-routines.ts",
-      "find": "    // Best effort: the run is already queued.\n  }\n  if (isOneShotRoutineCrons(routine.crons)) {",
-      "replace": "    // Best effort: the run is already queued.\n  }\n  await dozoNoteRoutineChat(deps, routine, bot.id, thread, claimed);\n  if (isOneShotRoutineCrons(routine.crons)) {",
-      "requires": [
-        "packages/adapters/src/dozo-routine-chat.ts"
-      ],
-      "reason": "routine chat: a run that stands in for an archived chat says so in the main chat, once per run, only when a run was made"
+      "reason": "routine chat: a routine made in, or pointed at, one of its bot's open extra chats runs there (the lookup above finds a thread by threads.botId, which an extra chat leaves empty, and fell back to the main chat); while that chat is archived it runs in the main chat and says so there once per archiving, the daily digest included"
     },
     {
       "file": "packages/adapters/src/run-routines.ts",
@@ -5978,11 +5969,29 @@
     {
       "file": "apps/api/src/routines.ts",
       "find": "  return { routine, botId: bot.id, threadId: bot.thread.id };\n}",
-      "replace": "  const dozoChat = routine.threadId\n    ? await dozoBotChatOf(prisma, {\n        threadId: routine.threadId,\n        botId: bot.id,\n        spaceId: actor.spaceId,\n      })\n    : null;\n  const threadId = dozoChat && !dozoChat.archived ? routine.threadId : null;\n  return { routine, botId: bot.id, threadId: threadId ?? bot.thread.id };\n}",
+      "replace": "  const dozoChat = routine.threadId\n    ? await dozoBotChatOf(prisma, {\n        threadId: routine.threadId,\n        botId: bot.id,\n        spaceId: actor.spaceId,\n      })\n    : null;\n  const threadId = dozoChat && !dozoChat.archived ? routine.threadId : null;\n  return {\n    routine,\n    botId: bot.id,\n    threadId: threadId ?? bot.thread.id,\n    dozoMainThreadId: bot.thread.id,\n  };\n}",
       "requires": [
         "packages/db/src/dozo-bot-chats.ts"
       ],
-      "reason": "routine chat: Run now posts where the routine's runs post: its open extra chat, else the main chat as before"
+      "reason": "routine chat: Run now posts where the routine's runs post: its open extra chat, else the main chat as before; a routine named in a message reads the main chat from here (dozoMainThreadId)"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "from \"../routines.js\";\nimport { assertTeachingSendAllowed }",
+      "replace": "from \"../routines.js\";\nimport { dozoMentionedRoutine } from \"../dozo-routine-chat.js\";\nimport { assertTeachingSendAllowed }",
+      "requires": [
+        "apps/api/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "          [...new Set(input.routineIds)].map((routineId) =>\n            routineTestTarget(deps.prisma, repos, actor, routineId),\n          ),",
+      "replace": "          [...new Set(input.routineIds)].map(async (routineId) =>\n            dozoMentionedRoutine(\n              deps.prisma,\n              actor,\n              input,\n              await routineTestTarget(deps.prisma, repos, actor, routineId),\n            ),\n          ),",
+      "requires": [
+        "apps/api/src/dozo-routine-chat.ts"
+      ],
+      "reason": "routine chat: a routine named in a message runs in the chat the message was written in (an extra chat, or the main chat as before), not in the chat the routine posts in on its own"
     },
     {
       "file": "apps/web/src/pages/RoutineEditor.tsx",

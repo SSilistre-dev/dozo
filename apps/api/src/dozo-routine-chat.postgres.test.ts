@@ -168,9 +168,16 @@ describePostgres("the chat a routine posts in, through the app (PostgreSQL)", ()
     const run = await system.run.findUniqueOrThrow({ where: { id: tested.json.runId as string } });
     expect(run.threadId).toBe(garden);
     expect(await system.task.count({ where: { threadId: chef.mainId } })).toBe(0);
-    // Editing the routine elsewhere (as the phone does) keeps its chat.
-    expect((await call(actor, "routines/update", { routineId, name: "Morning" })).status).toBe(200);
-    expect(await threadOf(routineId)).toBe(garden);
+    // The phone sends only what it changed: its switch, or its editor's fields. Neither moves it.
+    const phone = [
+      { routineId, active: true },
+      { routineId, name: "Morning", prompt: "Summarize the beds", crons: ["0 7 * * *"] },
+      { routineId, active: false },
+    ];
+    for (const update of phone) {
+      expect((await call(actor, "routines/update", update)).status).toBe(200);
+      expect(await threadOf(routineId)).toBe(garden);
+    }
     await call(actor, "dozoChats/setRoutineChat", { routineId, chatId: null });
     expect(await threadOf(routineId)).toBeNull();
   });
@@ -187,6 +194,43 @@ describePostgres("the chat a routine posts in, through the app (PostgreSQL)", ()
     const run = await system.run.findUniqueOrThrow({ where: { id: tested.json.runId as string } });
     expect(run.threadId).toBe(chef.mainId);
     expect(await threadOf(routineId)).toBe(garden);
+  });
+
+  it("runs a routine named in a message in the chat the message was written in, leaving its own chat", async () => {
+    const { actor, chef, garden, routineId } = await setup();
+    await call(actor, "dozoChats/setRoutineChat", { routineId, chatId: garden });
+    const created = await call(actor, "dozoChats/create", { botId: chef.botId, name: "Notes" });
+    const notes = (created.json.chat as { id: string }).id;
+    const mention = async (target: object, text?: string) => {
+      const sent = await call(actor, "threads/sendWithRoutines", {
+        ...target,
+        clientNonce: randomUUID(),
+        routineIds: [routineId],
+        ...(text ? { text } : {}),
+      });
+      expect(sent.status).toBe(200);
+      const [runId] = sent.json.routineRunIds as string[];
+      return (await system.run.findUniqueOrThrow({ where: { id: runId! } })).threadId;
+    };
+    expect(await mention({ chatBotId: chef.botId, chatId: notes }, "Run it here")).toBe(notes);
+    expect(await mention({ chatBotId: chef.botId, chatId: notes })).toBe(notes);
+    expect(await mention({ botId: chef.botId }, "And here")).toBe(chef.mainId);
+    expect(await mention({ chatBotId: chef.botId, chatId: garden })).toBe(garden);
+    expect(await threadOf(routineId)).toBe(garden);
+  });
+
+  it("refuses a routine named in a chat that cannot take the message, writing nothing", async () => {
+    const { actor, chef, old, trails, routineId } = await setup();
+    for (const chatId of [old, trails, randomUUID()]) {
+      const sent = await call(actor, "threads/sendWithRoutines", {
+        chatBotId: chef.botId,
+        chatId,
+        clientNonce: randomUUID(),
+        routineIds: [routineId],
+      });
+      expect(sent.status).toBe(404);
+    }
+    expect(await system.run.count({ where: { routineId } })).toBe(0);
   });
 
   it("refuses every chat that cannot take the routine as not found, changing nothing", async () => {
