@@ -5279,12 +5279,11 @@
     {
       "file": "apps/web/src/pages/shell/message-view.tsx",
       "find": "import { SkillDraftCard } from \"../../components/teach/SkillDraftCard\";",
-      "replace": "import { SkillDraftCard } from \"../../lib/dozo-lazy-surfaces\";",
+      "replace": "import { SkillDraftCard } from \"../../components/teach/dozo-skill-draft-card\";",
       "requires": [
-        "apps/web/src/components/teach/dozo-skill-draft-card.tsx",
-        "apps/web/src/lib/dozo-lazy-surfaces.tsx"
+        "apps/web/src/components/teach/dozo-skill-draft-card.tsx"
       ],
-      "reason": "teaching (loaded when a message carries a draft, outside the code the page starts with): the draft card shows the teacher each value typed while teaching, to keep as an input, keep as typed or drop, and saves or tests with those decisions"
+      "reason": "teaching: the draft card shows the teacher each value typed while teaching, to keep as an input, keep as typed or drop, and saves or tests with those decisions"
     },
     {
       "file": "apps/web/src/pages/shell/computer-overlay.tsx",
