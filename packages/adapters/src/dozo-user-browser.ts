@@ -1,6 +1,7 @@
 import type { AgentToolExecutionResult, ComputerRef } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { JsonColumnMismatchError, readJsonColumn } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import {
   browserActFromTool,
@@ -177,7 +178,10 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
   const formatted = browserResultForModel(page);
   if (name !== "browser_snapshot" || page.error || !ctx.computer.acceptsImages)
     return call.finish(formatted);
-  const image = await provider.screenshot(asked.site).catch(() => undefined);
+  const image = await bestEffort(
+    "take a picture of the page in the user's browser",
+    provider.screenshot(asked.site),
+  );
   return call.finish(image ? withScreenshot(formatted, image) : formatted);
 }
 

@@ -3,11 +3,12 @@ import { useNow } from "@rakazo/chat-ui/hooks";
 import type { SignInProvider } from "@rakazo/contracts";
 import { credentialIssue } from "@rakazo/core";
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { usePasskeySignIn } from "../components/PasskeySignIn";
 import { SocialSignInButtons } from "../components/SocialSignInButtons";
 import { authClient } from "../lib/auth";
+import { useSave } from "../lib/query";
 import { clearSpaceSelection } from "../lib/rpc";
 import { newAccountDestination, signInNext } from "../lib/sign-in-next";
 import { runSsoFlow } from "../lib/sso-flow";
@@ -44,6 +45,9 @@ export function dozoCodeDigits(text: string): string {
 /** How long "Resend code" waits after a code was sent; the server keeps its own limit. */
 export const RESEND_AFTER_MS = 30_000;
 
+/** The server answered and refused, and its reason is the message; any other failure is ours. */
+class Refused extends Error {}
+
 /**
  * Email-first sign-in (dozo/design/signin-v2.html): an address, then the six-digit code the
  * server mails. It calls the same client functions as upstream's blank-password path
@@ -68,71 +72,78 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
   const [code, setCode] = useState("");
   const [sentAt, setSentAt] = useState(0);
   const [misses, setMisses] = useState(0);
-  const [pending, setPending] = useState(false);
-  const entering = useRef(false);
-  // A code is checked once: a second submit while the first is on its way would spend another of
-  // the code's three attempts. A ref, because two calls can come before a re-render.
-  const verifying = useRef(false);
+  // Signed in: the routes move the user on once the session refetch lands, so nothing is offered
+  // again meanwhile.
+  const [entered, setEntered] = useState(false);
   const [returned, setReturned] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     const failed = searchParams.get("error");
     return failed ? authErrorText({ code: failed }, t`Could not continue`) : null;
   });
   const emailIssue = error === credentialIssueText("email");
-  const passkey = usePasskeySignIn({ onSignedIn: enterApp, onError: setError, autoFill: true });
+  const passkey = usePasskeySignIn({
+    onSignedIn: () => {
+      clearSpaceSelection();
+      setEntered(true);
+    },
+    onError: setError,
+    autoFill: true,
+  });
   const waiting = sentAt > 0 && step === "code";
   const now = useNow(waiting ? 1000 : null);
   const left = waiting ? Math.max(0, Math.ceil((sentAt + RESEND_AFTER_MS - now) / 1000)) : 0;
 
-  function enterApp() {
-    clearSpaceSelection();
-    // The routes move a signed-in user on once the session refetch lands.
-    entering.current = true;
-    setPending(true);
-  }
-
-  async function send(): Promise<boolean> {
-    setPending(true);
-    setError(null);
+  // What a call to the server answers, as the person is told it.
+  async function answered<T extends { error?: unknown }>(call: Promise<T>): Promise<void> {
+    let result: T;
     try {
-      const request = await authClient.emailOtp.sendVerificationOtp({
-        email: email.trim(),
-        type: "sign-in",
-      });
-      if (request.error) {
-        setError(authErrorText(request.error, t`Could not continue`));
-        return false;
-      }
-      setSentAt(Date.now());
-      return true;
+      result = await call;
     } catch {
-      setError(t`Could not reach the server`);
-      return false;
-    } finally {
-      if (!entering.current) setPending(false);
+      throw new Error(t`Could not reach the server`);
     }
+    if (result.error) throw new Refused(authErrorText(result.error, t`Could not continue`));
   }
 
-  async function verify(otp: string) {
-    if (verifying.current) return;
-    verifying.current = true;
-    setPending(true);
-    setError(null);
-    try {
-      const result = await authClient.signIn.emailOtp({ email: email.trim(), otp });
-      if (result.error) {
-        setError(authErrorText(result.error, t`Could not continue`));
+  const sendCode = useSave<"email" | "resend">({
+    save: () =>
+      answered(authClient.emailOtp.sendVerificationOtp({ email: email.trim(), type: "sign-in" })),
+    onSaved: (_saved, from) => {
+      setSentAt(Date.now());
+      if (from === "email") {
+        setCode("");
+        setMisses(0);
+        setStep("code");
+      }
+    },
+    onFailed: (failure) => setError(failure.message),
+  });
+
+  // A code is checked once: a second submit while the first is on its way would spend another of
+  // the code's three attempts, and `run` ignores it.
+  const checkCode = useSave<string>({
+    save: (otp) => answered(authClient.signIn.emailOtp({ email: email.trim(), otp })),
+    onSaved: () => {
+      clearSpaceSelection();
+    },
+    onFailed: (failure) => {
+      setError(failure.message);
+      if (failure instanceof Refused) {
         setCode("");
         setMisses((count) => count + 1);
-        return;
       }
-      enterApp();
-    } catch {
-      setError(t`Could not reach the server`);
-    } finally {
-      verifying.current = false;
-      if (!entering.current) setPending(false);
-    }
+    },
+    closesScreen: true,
+  });
+  const pending = sendCode.pending || checkCode.pending || entered;
+
+  function send(from: "email" | "resend") {
+    setError(null);
+    sendCode.run(from);
+  }
+
+  function verify(otp: string) {
+    setError(null);
+    checkCode.run(otp);
   }
 
   async function signInWithProvider(provider: string) {
@@ -163,7 +174,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
         onSubmit={(event) => {
           event.preventDefault();
           // An unfinished code would spend one of the code's three attempts.
-          if (code.length === CODE_LENGTH) void verify(code);
+          if (code.length === CODE_LENGTH) verify(code);
         }}
       >
         <p data-dozo-auth-address className="w-full text-center text-muted-foreground">
@@ -187,7 +198,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
               }
               setCode(digits);
               if (digits) setError(null);
-              if (digits.length === CODE_LENGTH) void verify(digits);
+              if (digits.length === CODE_LENGTH) verify(digits);
             }}
           >
             <InputOTPGroup>
@@ -206,7 +217,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
           <button
             type="button"
             data-dozo-quiet
-            disabled={pending && !entering.current}
+            disabled={sendCode.pending || checkCode.pending}
             onClick={() => {
               setStep("email");
               setReturned(true);
@@ -223,7 +234,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
             disabled={pending || left > 0}
             onClick={() => {
               setCode("");
-              void send();
+              send("resend");
             }}
           >
             <Trans>Resend code</Trans>
@@ -249,12 +260,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
           setError(credentialIssueText(issue));
           return;
         }
-        void send().then((sent) => {
-          if (!sent) return;
-          setCode("");
-          setMisses(0);
-          setStep("code");
-        });
+        send("email");
       }}
     >
       <div className="w-full">

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { FormEvent, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -66,7 +68,10 @@ vi.mock("../lib/auth", () => ({
   },
 }));
 vi.mock("../lib/sso-flow", () => ({ runSsoFlow: mocks.sso }));
-vi.mock("../lib/rpc", () => ({ clearSpaceSelection: mocks.clear }));
+vi.mock("../lib/rpc", async (original) => ({
+  ...(await original<typeof import("../lib/rpc")>()),
+  clearSpaceSelection: mocks.clear,
+}));
 vi.mock("../components/PasskeySignIn", () => ({
   usePasskeySignIn: () => ({
     supported: mocks.passkeySupported,
@@ -115,6 +120,7 @@ import { DozoEmailCodeLink, dozoCodeSignInAvailable } from "./dozo-email-code-li
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let clock = 1_000_000;
+let client: QueryClient;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -124,6 +130,7 @@ beforeEach(() => {
   mocks.passkeyStart.mockClear();
   mocks.passkeySupported = false;
   clock = 1_000_000;
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   mocks.now = clock;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
   mocks.send.mockResolvedValue({ data: { success: true }, error: null });
@@ -154,21 +161,23 @@ async function open(
 ) {
   await act(async () =>
     root.render(
-      <MemoryRouter
-        initialEntries={[
-          {
-            pathname: path.split("?")[0] ?? path,
-            search: path.includes("?") ? `?${path.split("?")[1]}` : "",
-            state,
-          },
-        ]}
-      >
-        <Where />
-        <Routes>
-          <Route path="/sign-in" element={<DozoCodeSignIn providers={providers} />} />
-          <Route path="/sign-in/email" element={<p>password form</p>} />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={client}>
+        <MemoryRouter
+          initialEntries={[
+            {
+              pathname: path.split("?")[0] ?? path,
+              search: path.includes("?") ? `?${path.split("?")[1]}` : "",
+              state,
+            },
+          ]}
+        >
+          <Where />
+          <Routes>
+            <Route path="/sign-in" element={<DozoCodeSignIn providers={providers} />} />
+            <Route path="/sign-in/email" element={<p>password form</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     ),
   );
 }
@@ -400,13 +409,8 @@ it("offers a way back from the password form only where the server signs in with
 });
 
 it("checks a code once, however often it is submitted while the first check is on its way", async () => {
-  let answer: (value: unknown) => void = () => undefined;
-  mocks.verify.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        answer = resolve;
-      }),
-  );
+  const answer = deferred<unknown>();
+  mocks.verify.mockImplementationOnce(() => answer.promise);
   await open();
   await toCode();
   const code = () =>
@@ -415,7 +419,7 @@ it("checks a code once, however often it is submitted while the first check is o
   await submit();
   await submit();
   expect(mocks.verify).toHaveBeenCalledTimes(1);
-  await act(async () => answer({ error: { code: "INVALID_OTP", message: "Invalid OTP" } }));
+  await act(async () => answer.resolve({ error: { code: "INVALID_OTP", message: "Invalid OTP" } }));
   expect(alerts()).toEqual(["Invalid code"]);
   // The lock goes with the answer: the next code is checked.
   mocks.verify.mockResolvedValueOnce({ error: { code: "INVALID_OTP", message: "Invalid OTP" } });
