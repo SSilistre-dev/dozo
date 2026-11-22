@@ -19,6 +19,7 @@ import type {
   PhoneLocationRequest,
 } from "./dozo-phone-protocol.js";
 import {
+  freshLocation,
   PHONE_CALENDAR_MAX_DAYS,
   PHONE_CALENDAR_MAX_EVENTS,
   PHONE_CALENDAR_QUERY_MAX,
@@ -34,7 +35,7 @@ import type { DozoMarkDb } from "./dozo-token-marks.js";
 import { dozoBotTokenTainted, runCameByToken } from "./dozo-token-run.js";
 import type { ConnectedPhone } from "./dozo-user-device-gateway.js";
 import type { RunContext } from "./run-context.js";
-import { isRunTainted } from "./run-context.js";
+import { isRunTainted, markReadOutsideContent } from "./run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { USER_DEVICE_OFFLINE_MESSAGE, UserDeviceOfflineError } from "./user-device-gateway.js";
 import type { UserDeviceGateway } from "./user-device-protocol.js";
@@ -44,9 +45,10 @@ import type { UserDeviceGateway } from "./user-device-protocol.js";
  * (phone_contacts_search) and where it is, once (phone_location). The phone pairs and connects as
  * a user device (dozo-user-device-gateway.ts) and declares each capability only while its switch
  * is on and the system allows it. Only the person's own chat runs reach it (`userComputerOwner`),
- * never a run a token's message reached. A bot's first read of each kind on that pairing asks, in
- * every approval mode, and a precise location asks every time; the effect keeps no content, and
- * the turn is kept out of memory.
+ * never a run a token's message reached. A bot's first read of each kind since its switch was
+ * turned on asks, in every approval mode, and every location read asks; reads run one at a time.
+ * The effect keeps no content, the turn is kept out of memory, and later turns replay no output
+ * (`keptToolCalls` in @rakazo/core).
  */
 
 /** How long the phone has to answer: the device default (ten minutes) is far too long here. */
@@ -68,6 +70,9 @@ export const PHONE_READ_NOTE =
 export const PHONE_CONTACTS_NOTE =
   "Contacts are not kept; call phone_contacts_search again to see them.";
 export const PHONE_LOCATION_NOTE = "The location is not kept; call phone_location again to see it.";
+/** How many contacts searches one run may make. */
+export const PHONE_CONTACTS_SEARCHES_PER_RUN = 3;
+const STALE = "The user's phone gave an old reading. Try again.";
 
 type WithoutRun<T> = T extends unknown ? Omit<T, "botId" | "runId"> : never;
 
@@ -80,8 +85,13 @@ interface PhoneReadPlan {
   card: { text: string; detail?: string; detailFormat?: "code" };
   /** No earlier read stands for the owner's consent: only this call's own card. */
   everyCallAsks?: boolean;
-  /** The answer as the model gets it and what the effect keeps instead; null when it is none. */
-  read(answer: unknown): { value: unknown; kept: Record<string, unknown> } | null;
+  /**
+   * The answer as the model gets it and what the effect keeps instead; why it cannot be used when
+   * the phone answered something it should not have; null when it is no answer at all.
+   */
+  read(
+    answer: unknown,
+  ): { value: unknown; kept: Record<string, unknown> } | { error: string } | null;
 }
 
 interface PhoneTool {
@@ -97,6 +107,8 @@ interface PhoneTool {
   plan(args: Record<string, unknown>): PhoneReadPlan | { error: string };
   /** The phone's error codes besides off, permission and unavailable, as the model is told. */
   errors?: Record<string, string>;
+  /** How many reads one run may make, and what the model is told past it. */
+  perRun?: { reads: number; refusal: string };
 }
 
 const PHONE_TOOLS: Record<string, PhoneTool> = {
@@ -132,6 +144,10 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
     setting: "Contacts",
     failed: "phone contacts search failed",
     ask: CONTACTS_ASK,
+    perRun: {
+      reads: PHONE_CONTACTS_SEARCHES_PER_RUN,
+      refusal: `A run may search the user's contacts at most ${PHONE_CONTACTS_SEARCHES_PER_RUN} times. Ask the user instead.`,
+    },
     errors: { "contacts-query": CONTACTS_QUERY },
     plan(args) {
       const query = phoneContactsQuery(args.query);
@@ -168,10 +184,13 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
       return {
         request: { method: "phoneLocation", precision },
         card: { text: `Let this bot see your phone's ${precision} location?` },
-        everyCallAsks: precision === "precise",
+        // Where the person is, approximate or precise: the owner allows each reading.
+        everyCallAsks: true,
         read(answer) {
           const value = phoneLocationValue(answer, precision);
-          return value && { value, kept: { read: true, note: PHONE_LOCATION_NOTE } };
+          if (!value) return null;
+          if (!freshLocation(value.at)) return { error: STALE };
+          return { value, kept: { read: true, note: PHONE_LOCATION_NOTE } };
         },
       };
     },
@@ -300,14 +319,57 @@ const phoneRuns = new WeakSet<object>();
 /** A call's approval as its handler checks it: the phone it saw, consented to. */
 const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();
 
+/** Whether this run made as many reads of this tool as one run may. */
+async function readsInRun(ctx: RunContext, name: string, tool: PhoneTool): Promise<boolean> {
+  if (!tool.perRun) return false;
+  const reads = await ctx.deps.prisma.externalEffect.count({
+    where: { runId: ctx.runId, kind: name, status: "completed" },
+  });
+  return reads >= tool.perRun.reads;
+}
+
+/**
+ * The owner's consent to this call: a completed effect of this tool in a run of this bot and
+ * person, made since this kind was last turned on on this pairing, or the card the owner just
+ * allowed for this very call (its own arguments: a call beside it rides on no other's card). An
+ * effect a crash left executing or uncertain is neither: it may come from a call that never asked.
+ * With `cardOnly`, only the card.
+ */
+function consentTo(
+  ctx: RunContext,
+  name: string,
+  route: PhoneRoute,
+  args: Record<string, unknown>,
+  cardOnly: boolean,
+) {
+  return ctx.deps.prisma.externalEffect.findFirst({
+    where: {
+      spaceId: ctx.run.spaceId,
+      kind: name,
+      createdAt: { gte: route.onSince },
+      run: { userId: route.owner, botId: ctx.bot.id },
+      OR: [
+        ...(cardOnly ? [] : [{ status: "completed" }]),
+        {
+          status: "approved",
+          runId: ctx.runId,
+          request: { equals: args as Prisma.InputJsonValue },
+        },
+      ],
+    },
+    select: { id: true, status: true },
+  });
+}
+
 /**
  * The approval of a phone read, in every approval mode (Never ask included). A block or a run a
  * token's message reached refuses it, as does a run that is not the person's own. A bot reads the
- * phone once its owner allowed this kind of read on this pairing: a completed effect of this tool
- * in a run of this bot and person, made since the phone was paired, or this run's own card the
- * owner allowed. A precise location counts only its own card. Otherwise it asks. A call that
- * cannot read anything (no phone with that capability, arguments it cannot read) goes on to its
- * handler, which says why without reading.
+ * phone once its owner allowed this kind of read (`consentTo`); a location read, and any read once
+ * outside content entered the run, needs its own card. Otherwise it asks. An allowed read is
+ * outside content from that moment, before its answer: calls of one turn decided at the same time
+ * get one read on an earlier consent between them, and the others ask. A call that cannot read
+ * anything (no phone with that capability, arguments it cannot read, a run past the tool's limit)
+ * goes on to its handler, which says why without reading.
  */
 export async function phoneGate(
   ctx: RunContext,
@@ -322,29 +384,19 @@ export async function phoneGate(
   if (!(await onlyOwnerReads(ctx.deps.prisma, ctx.thread, owner))) return "deny";
   const route = await phoneRoute(ctx, tool.capability);
   const plan = tool.plan(args);
-  if (!route || "error" in plan) return "allow";
-  const consent = await ctx.deps.prisma.externalEffect.findFirst({
-    where: {
-      spaceId: ctx.run.spaceId,
-      kind: name,
-      createdAt: { gte: route.pairedAt },
-      run: { userId: route.owner, botId: ctx.bot.id },
-      // A read that finished, or the card the owner just allowed for this very call (its own
-      // arguments: a call beside it rides on no other's card). An effect a crash left executing
-      // or uncertain is neither: it may come from a call that never asked. Once outside content
-      // entered the run (the phone's own answer included), only the card.
-      OR: [
-        ...(plan.everyCallAsks || (await isRunTainted(ctx)) ? [] : [{ status: "completed" }]),
-        {
-          status: "approved",
-          runId: ctx.runId,
-          request: { equals: args as Prisma.InputJsonValue },
-        },
-      ],
-    },
-    select: { id: true },
-  });
+  if (!route || "error" in plan || (await readsInRun(ctx, name, tool))) return "allow";
+  let consent = await consentTo(
+    ctx,
+    name,
+    route,
+    args,
+    Boolean(plan.everyCallAsks) || (await isRunTainted(ctx)),
+  );
+  // Another call of this turn was allowed while this one was looking: only its own card now.
+  if (consent?.status === "completed" && ctx.state.tainted)
+    consent = await consentTo(ctx, name, route, args, true);
   if (!consent) return "ask";
+  await markReadOutsideContent(ctx);
   consents.set(args, { deviceId: route.deviceId });
   return "allow";
 }
@@ -423,6 +475,8 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
   if (await runCameByToken(ctx)) return refuse(ctx, call, TOKEN_RUN, "token");
   const plan = tool.plan(call.args);
   if ("error" in plan) return refuse(ctx, call, plan.error, "input");
+  if (tool.perRun && (await readsInRun(ctx, call.name, tool)))
+    return refuse(ctx, call, tool.perRun.refusal, "limit");
   const route = await phoneRoute(ctx, tool.capability);
   if (!route) return refuse(ctx, call, OFFLINE, "offline");
   if (consents.get(call.args)?.deviceId !== route.deviceId)
@@ -448,6 +502,10 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
   if (!read) {
     getLogger().warn(tool.failed, { kind: "invalid" });
     return call.finish({ error: `The user's phone could not read its ${tool.reads}.` });
+  }
+  if ("error" in read) {
+    getLogger().warn(tool.failed, { kind: "stale" });
+    return call.finish({ error: read.error });
   }
   if (!(await call.persistEffectResult(read.kept)))
     return uncertainEffectResult(call.name, call.args);

@@ -1,3 +1,4 @@
+import { approximateLocation } from "@rakazo/contracts";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 import type { PhonePermission } from "./dozo-phone-calendar";
@@ -7,7 +8,7 @@ import { PhoneReadError } from "./dozo-phone-calendar";
  * The phone's location, read once for a bot through the paired-device connection
  * (`dozo-phone-device.ts`). Only while the app is in use: it never asks for background access,
  * never watches, and keeps nothing; each request is one current reading. Approximate is rounded to
- * about a kilometre; precise is full accuracy only where the system granted precise location.
+ * about a kilometre at any latitude, as the server rounds it again (`approximateLocation`); precise is full accuracy only where the system granted precise location.
  */
 
 export type PhoneLocationRequest = { precision: "approximate" | "precise" };
@@ -22,7 +23,6 @@ export type PhoneLocationValue = {
 export type Later = (run: () => void, ms: number) => () => void;
 
 const FIX_TIMEOUT_MS = 10_000;
-const APPROXIMATE_METERS = 1_000;
 
 type Grant = {
   granted: boolean;
@@ -94,8 +94,6 @@ export async function requestLocationPermission(): Promise<PhonePermission> {
 const grantedPrecise = (answer: Grant) =>
   answer.ios?.accuracy === "full" || answer.android?.accuracy === "fine";
 
-const rounded = (degrees: number) => Math.round(degrees * 100) / 100;
-
 /** One current reading, or null when none came within the timeout. */
 function currentReading(
   location: LocationModule,
@@ -154,9 +152,7 @@ export async function readLocation(
     return { latitude, longitude, accuracyMeters: meters, precise: true, at: at.toISOString() };
   }
   return {
-    latitude: rounded(latitude),
-    longitude: rounded(longitude),
-    accuracyMeters: Math.max(APPROXIMATE_METERS, meters ?? APPROXIMATE_METERS),
+    ...approximateLocation(latitude, longitude, meters),
     precise: false,
     at: at.toISOString(),
   };

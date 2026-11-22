@@ -436,6 +436,23 @@ describe("calls in the same run", () => {
   });
 });
 
+describe("calls in one model turn", () => {
+  it("lets only the first through without a card, however many run at once", async () => {
+    const run = setup();
+    const days = Array.from({ length: 5 }, (_, day) => ({
+      from: `2026-12-0${day + 1}T00:00:00+03:00`,
+      to: `2026-12-0${day + 2}T00:00:00+03:00`,
+    }));
+    const plans = await Promise.all(
+      days.map((args) => phoneGate(run.ctx, false, PHONE_CALENDAR_READ_TOOL, args)),
+    );
+    expect(plans.filter((plan) => plan === "allow")).toHaveLength(1);
+    expect(plans.filter((plan) => plan === "ask")).toHaveLength(4);
+    // Allowed is read: the run counts as having taken in outside content.
+    expect((run.ctx.state as { tainted: boolean }).tainted).toBe(true);
+  });
+});
+
 describe("a run that took in outside content", () => {
   it("asks before every read, even with the owner's consent", async () => {
     expect(await phoneGate(setup().ctx, false, PHONE_CALENDAR_READ_TOOL, { ...RANGE })).toBe(

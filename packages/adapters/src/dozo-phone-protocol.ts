@@ -1,4 +1,4 @@
-import { withoutLinks } from "@rakazo/contracts";
+import { approximateLocation, withoutLinks } from "@rakazo/contracts";
 import { z } from "zod";
 
 /** The platforms a phone pairs as. Anything else that pairs is a computer. */
@@ -196,8 +196,6 @@ export function phoneContactsValue(
 
 export const PHONE_LOCATION_PRECISIONS = ["approximate", "precise"] as const;
 export type PhoneLocationPrecision = (typeof PHONE_LOCATION_PRECISIONS)[number];
-/** An approximate place: about a kilometre. */
-const APPROXIMATE_METERS = 1000;
 
 /** One reading of where the phone is (PhoneLocationValue), or one of PHONE_LOCATION_ERRORS. */
 export const phoneLocationRequest = z.object({
@@ -229,12 +227,21 @@ const location = z.object({
   at: instant,
 });
 
-const twoDecimals = (value: number) => Math.round(value * 100) / 100 || 0;
+/** How old a reading may be, and how far ahead of the server's clock a phone's may run. */
+const LOCATION_MAX_AGE_MS = 2 * 60_000;
+const CLOCK_SKEW_MS = 30_000;
+
+/** Whether a reading taken at `at` is where the phone is now, not where it was. */
+export function freshLocation(at: string): boolean {
+  const age = Date.now() - Date.parse(at);
+  return age <= LOCATION_MAX_AGE_MS && age >= -CLOCK_SKEW_MS;
+}
 
 /**
  * The phone's location answer as the server passes it on. Full accuracy only when precise was
- * asked for and the phone says it gave it; anything else is rounded here again to two decimals and
- * at least a kilometre, whatever the phone sent. Null when it is not an answer at all.
+ * asked for and the phone says it gave it; anything else is rounded here again to about a
+ * kilometre (`approximateLocation`, as the phone rounds it), whatever the phone sent. Null when it
+ * is not an answer at all.
  */
 export function phoneLocationValue(
   answer: unknown,
@@ -246,9 +253,7 @@ export function phoneLocationValue(
   if (precision === "precise" && precise)
     return { latitude, longitude, accuracyMeters, precise, at };
   return {
-    latitude: twoDecimals(latitude),
-    longitude: twoDecimals(longitude),
-    accuracyMeters: Math.max(APPROXIMATE_METERS, accuracyMeters),
+    ...approximateLocation(latitude, longitude, accuracyMeters),
     precise: false,
     at,
   };

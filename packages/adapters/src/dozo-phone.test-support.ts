@@ -59,7 +59,7 @@ export function setup(options: {
     connectedPhone: vi.fn(async (_owner: string, capability: string) =>
       options.phone === false || !declared.includes(capability)
         ? null
-        : { deviceId: "phone-1", pairedAt: PAIRED },
+        : { deviceId: "phone-1", pairedAt: PAIRED, onSince: PAIRED },
     ),
     request: vi.fn(
       (owner: string, request: Record<string, unknown>, signal: AbortSignal, deviceId?: string) => {
@@ -92,9 +92,13 @@ export function setup(options: {
       ) ?? null,
   );
   const updateMany = vi.fn(async () => ({ count: 1 }));
+  const count = vi.fn(
+    async ({ where }: { where: Clause & { kind: string } }) =>
+      effects.filter((effect) => effect.kind === where.kind && holds(effect, where)).length,
+  );
   const prisma = {
     $queryRaw: async () => [{ sourced: Boolean(options.token) }],
-    externalEffect: { findFirst, updateMany },
+    externalEffect: { findFirst, updateMany, count },
     attempt: { count: async () => 1 },
     spaceMember: {
       findFirst: vi.fn(async () => (options.otherMember ? { id: "member-2" } : null)),

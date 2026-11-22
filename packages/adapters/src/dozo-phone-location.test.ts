@@ -12,6 +12,7 @@ vi.mock("@rakazo/logging", async (importOriginal) => {
   return { ...real, getLogger: () => ({ ...real.getLogger(), ...logger }) };
 });
 
+import { approximateLocation } from "@rakazo/contracts";
 import { withoutCloudComputerTools } from "./dozo-no-computer.js";
 import {
   isPhoneTool,
@@ -29,7 +30,8 @@ import { PHONE_LOCATION_TOOL } from "./dozo-phone.tool-definition.js";
 import { phoneLocationValue } from "./dozo-phone-protocol.js";
 
 const TOOL = PHONE_LOCATION_TOOL;
-const AT = "2026-11-22T10:00:00.000Z";
+/** A reading just taken: one older than two minutes is refused. */
+const AT = new Date().toISOString();
 /** Where the phone is, more exactly than the bot may see it unasked. */
 const FIX = {
   latitude: 41.008237,
@@ -38,10 +40,9 @@ const FIX = {
   precise: true,
   at: AT,
 };
+/** About a kilometre at this latitude, by the rounding the phone uses too (@rakazo/contracts). */
 const APPROXIMATE = {
-  latitude: 41.01,
-  longitude: 28.98,
-  accuracyMeters: 1000,
+  ...approximateLocation(FIX.latitude, FIX.longitude),
   precise: false,
   at: AT,
 };
@@ -50,7 +51,9 @@ const setup = (
   options: Omit<Parameters<typeof phoneSetup>[0], "answer" | "tool"> & { answer?: Answer } = {},
 ) => phoneSetup({ tool: TOOL, answer: answers(FIX), ...options });
 
+/** A call the owner allowed on its own card, then run: every location read asks. */
 async function locate(run: ReturnType<typeof setup>, args: Record<string, unknown> = {}) {
+  run.effects.push({ id: "card", runId: "run-1", kind: TOOL, status: "approved", request: args });
   const plan = await phoneGate(run.ctx, false, TOOL, args);
   const made = call(TOOL, args);
   return { plan, ...made, result: await phoneRead(run.ctx, made.call) };
@@ -80,6 +83,8 @@ describe("an approximate location", () => {
     ]);
     expect(run.devices.connectedPhone).toHaveBeenCalledWith("user-1", "location");
     expect(result).toEqual(APPROXIMATE);
+    // Wider than two decimals east-west at 41°: the same cell is about a kilometre at any latitude.
+    expect(APPROXIMATE.longitude).not.toBe(28.98);
     expect(persisted).toEqual([{ read: true, note: PHONE_LOCATION_NOTE }]);
     for (const secret of ["41.0", "28.9", "41", "28"]) {
       expect(JSON.stringify(persisted)).not.toContain(secret);
@@ -87,7 +92,7 @@ describe("an approximate location", () => {
     }
   });
 
-  it("rounds to two decimals and at least a kilometre", () => {
+  it("is rounded to about a kilometre and at least a kilometre of accuracy", () => {
     expect(phoneLocationValue({ ...FIX, accuracyMeters: 5000 }, "approximate")).toEqual({
       ...APPROXIMATE,
       accuracyMeters: 5000,
@@ -97,10 +102,25 @@ describe("an approximate location", () => {
     ).toMatchObject({ latitude: 0, longitude: -180 });
   });
 
-  it("follows the owner's consent: the first read asks, later ones do not", async () => {
+  it("asks every time too, whatever the bot read before", async () => {
     expect(await phoneGate(setup({ consent: false }).ctx, false, TOOL, {})).toBe("ask");
-    expect(await phoneGate(setup().ctx, false, TOOL, { precision: "approximate" })).toBe("allow");
+    expect(await phoneGate(setup().ctx, false, TOOL, { precision: "approximate" })).toBe("ask");
     expect(await phoneGate(setup({ tainted: true }).ctx, false, TOOL, {})).toBe("ask");
+  });
+
+  it("is refused when the reading is old or from the future", async () => {
+    const minutes = (count: number) => new Date(Date.now() + count * 60_000).toISOString();
+    for (const at of [minutes(-3), minutes(2)]) {
+      const run = setup({ answer: answers({ ...FIX, at }) });
+      expect((await locate(run)).result).toEqual({
+        error: "The user's phone gave an old reading. Try again.",
+      });
+    }
+    // A reading a minute old, or a few seconds ahead of the server's clock, is fine.
+    for (const at of [minutes(-1), new Date(Date.now() + 5_000).toISOString()])
+      expect((await locate(setup({ answer: answers({ ...FIX, at }) }))).result).toHaveProperty(
+        "latitude",
+      );
   });
 });
 
@@ -227,7 +247,8 @@ describe("a location read", () => {
       },
     });
     const args = {};
-    await phoneGate(run.ctx, false, TOOL, args);
+    run.effects.push({ id: "card", runId: "run-1", kind: TOOL, status: "approved", request: args });
+    expect(await phoneGate(run.ctx, false, TOOL, args)).toBe("allow");
     const pending = phoneRead(run.ctx, call(TOOL, args).call);
     await asked.promise;
     expect(timeout).toHaveBeenCalledWith(PHONE_ANSWER_MS);
@@ -240,7 +261,8 @@ describe("a location read", () => {
   it("is uncertain when its record cannot be kept, without the place", async () => {
     const run = setup();
     const args = {};
-    await phoneGate(run.ctx, false, TOOL, args);
+    run.effects.push({ id: "card", runId: "run-1", kind: TOOL, status: "approved", request: args });
+    expect(await phoneGate(run.ctx, false, TOOL, args)).toBe("allow");
     const made = call(TOOL, args);
     vi.mocked(made.call.persistEffectResult).mockResolvedValueOnce(false);
     const result = await phoneRead(run.ctx, made.call);

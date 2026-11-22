@@ -1,6 +1,16 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+} from "@rakazo/contracts";
 
-export const PHONE_CALENDAR_READ_TOOL = "phone_calendar_read";
+export {
+  PHONE_CALENDAR_READ_TOOL,
+  PHONE_CONTACTS_SEARCH_TOOL,
+  PHONE_LOCATION_TOOL,
+  PHONE_TOOL_NAMES,
+} from "@rakazo/contracts";
 
 /** Reads the calendar on the user's phone (dozo-phone.ts). */
 export const phoneCalendarReadTool: ConnectorTool = {
@@ -22,8 +32,6 @@ export const phoneCalendarReadTool: ConnectorTool = {
   },
 };
 
-export const PHONE_CONTACTS_SEARCH_TOOL = "phone_contacts_search";
-
 /** Looks one person up in the contacts on the user's phone (dozo-phone.ts). */
 export const phoneContactsSearchTool: ConnectorTool = {
   name: PHONE_CONTACTS_SEARCH_TOOL,
@@ -43,13 +51,11 @@ export const phoneContactsSearchTool: ConnectorTool = {
   },
 };
 
-export const PHONE_LOCATION_TOOL = "phone_location";
-
 /** Reads where the user's phone is, once (dozo-phone.ts). */
 export const phoneLocationTool: ConnectorTool = {
   name: PHONE_LOCATION_TOOL,
   description:
-    "Read where the user's phone is right now, once. Ask for precise only when about a kilometre is not enough; the user approves every precise reading.",
+    "Read where the user's phone is right now, once. Ask for precise only when about a kilometre is not enough; the user approves every reading.",
   inputSchema: {
     type: "object",
     properties: {
@@ -61,10 +67,3 @@ export const phoneLocationTool: ConnectorTool = {
     },
   },
 };
-
-/** Every tool that reads the user's phone. */
-export const PHONE_TOOL_NAMES = [
-  PHONE_CALENDAR_READ_TOOL,
-  PHONE_CONTACTS_SEARCH_TOOL,
-  PHONE_LOCATION_TOOL,
-] as const;

@@ -1,3 +1,4 @@
+import { approximateLocation } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,8 @@ type Reading = {
 };
 
 const AT = Date.parse("2026-11-23T09:00:00.000Z");
+/** The phone's place rounded as the server rounds it again (@rakazo/contracts). */
+const NEAR = approximateLocation(41.008_712, 28.978_359);
 const reading = (extra: Partial<Reading["coords"]> = {}, timestamp = AT): Reading => ({
   coords: { latitude: 41.008_712, longitude: 28.978_359, accuracy: 12.4, ...extra },
   timestamp,
@@ -94,7 +97,7 @@ describe("reading the phone's location", () => {
     expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 2 });
     expect(value).toEqual({
       latitude: 41.01,
-      longitude: 28.98,
+      longitude: NEAR.longitude,
       accuracyMeters: 1000,
       precise: false,
       at: "2026-11-23T09:00:00.000Z",
@@ -108,8 +111,19 @@ describe("reading the phone's location", () => {
     );
     expect(await location.readLocation({ precision: "approximate" }, later)).toMatchObject({
       latitude: -33.87,
-      longitude: -151.21,
+      longitude: approximateLocation(-33.868_82, -151.209_29).longitude,
       accuracyMeters: 3211,
+    });
+  });
+
+  it("is about a kilometre east to west far from the equator too", async () => {
+    native.location.getCurrentPositionAsync.mockResolvedValueOnce(
+      reading({ latitude: 60.003, longitude: 10.013 }),
+    );
+    // A degree of longitude at 60° is half as wide: two decimals would be half a kilometre.
+    expect(await location.readLocation({ precision: "approximate" }, later)).toMatchObject({
+      latitude: 60,
+      longitude: 10.02,
     });
   });
 
@@ -141,7 +155,7 @@ describe("reading the phone's location", () => {
     expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 2 });
     expect(value).toMatchObject({
       latitude: 41.01,
-      longitude: 28.98,
+      longitude: NEAR.longitude,
       accuracyMeters: 1000,
       precise: false,
     });

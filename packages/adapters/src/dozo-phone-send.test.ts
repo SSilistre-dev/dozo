@@ -84,7 +84,11 @@ function context(mode: Mode) {
       userDevices: {
         connected: async () => null,
         pairedSince: async () => null,
-        connectedPhone: async () => ({ deviceId: "phone-1", pairedAt: new Date(0) }),
+        connectedPhone: async () => ({
+          deviceId: "phone-1",
+          pairedAt: new Date(0),
+          onSince: new Date(0),
+        }),
         async *request() {
           yield { contacts: [{ name: "Ada Example", values: [EMAIL] }], truncated: false };
         },
@@ -93,7 +97,10 @@ function context(mode: Mode) {
         attempt: { count: async () => 1 },
         $queryRaw: async () => [{ sourced: false }],
         // The bot searched contacts before: the search itself does not ask.
-        externalEffect: { findFirst: async () => ({ id: "read-before" }) },
+        externalEffect: {
+          findFirst: async () => ({ id: "read-before", status: "completed" }),
+          count: async () => 0,
+        },
         spaceMember: { findFirst: async () => null },
       },
     },

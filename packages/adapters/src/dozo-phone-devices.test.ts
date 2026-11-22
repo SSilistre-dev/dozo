@@ -29,6 +29,8 @@ function fakePrisma() {
   const devices: Device[] = [];
   const connections = new Map<string, { connectedAt: Date; heartbeatAt: Date }>();
   const capabilities = new Map<string, string[]>();
+  /** When each kind was last turned on, by device and kind. */
+  const since = new Map<string, Date>();
   const matches = (device: Device, where: Where = {}) =>
     (where.userId === undefined || device.userId === where.userId) &&
     (where.revokedAt !== null || device.revokedAt === null) &&
@@ -63,7 +65,11 @@ function fakePrisma() {
       findFirst: async ({ where }: { where: Parameters<typeof live>[0] }) => live(where)[0] ?? null,
       findMany: async ({ where }: { where: Parameters<typeof live>[0] }) => live(where),
     },
-    $queryRaw: async (_strings: TemplateStringsArray, deviceId: string) => {
+    $queryRaw: async (strings: TemplateStringsArray, deviceId: string, capability?: string) => {
+      if (strings.join("?").includes("dozo_device_capability_since")) {
+        const on = since.get(`${deviceId}:${capability}`);
+        return on ? [{ since: on }] : [];
+      }
       const declared = capabilities.get(deviceId);
       return declared ? [{ capabilities: declared }] : [];
     },
@@ -82,7 +88,7 @@ function fakePrisma() {
     prisma: prisma as unknown as PrismaClient,
     forwardSecret: userDeviceForwardSecret("k"),
   });
-  return { prisma: prisma as unknown as PrismaClient, devices, pair, connect, gateway };
+  return { since, prisma: prisma as unknown as PrismaClient, devices, pair, connect, gateway };
 }
 
 describe("a phone among the user's devices", () => {
@@ -126,7 +132,7 @@ describe("a phone among the user's devices", () => {
   });
 
   it("is the phone a run reads, only while connected and declaring what it is asked for", async () => {
-    const { pair, connect, devices, gateway } = fakePrisma();
+    const { pair, connect, devices, gateway, since } = fakePrisma();
     pair("mac", "darwin");
     connect("mac", ["shell", "calendar"]);
     // A computer that declares a calendar is still no phone.
@@ -136,9 +142,25 @@ describe("a phone among the user's devices", () => {
     connect("phone", []);
     expect(await gateway.connectedPhone("user-1", "calendar")).toBeNull();
     connect("phone", ["calendar"]);
+    const pairedAt = devices[1]!.createdAt;
+    // Turned on before this server recorded when: since the pairing.
     expect(await gateway.connectedPhone("user-1", "calendar")).toEqual({
       deviceId: "phone",
-      pairedAt: devices[1]!.createdAt,
+      pairedAt,
+      onSince: pairedAt,
+    });
+    // Turned on again after the pairing: since then, for that kind only.
+    const later = new Date(pairedAt.getTime() + 60_000);
+    since.set("phone:calendar", later);
+    connect("phone", ["calendar", "contacts"]);
+    expect(await gateway.connectedPhone("user-1", "calendar")).toMatchObject({ onSince: later });
+    expect(await gateway.connectedPhone("user-1", "contacts")).toMatchObject({
+      onSince: pairedAt,
+    });
+    // A record older than the pairing (another pairing's) never moves it back.
+    since.set("phone:contacts", new Date(pairedAt.getTime() - 60_000));
+    expect(await gateway.connectedPhone("user-1", "contacts")).toMatchObject({
+      onSince: pairedAt,
     });
     expect(await gateway.connectedPhone("user-2", "calendar")).toBeNull();
     devices[1]!.revokedAt = new Date();

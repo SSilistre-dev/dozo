@@ -301,6 +301,40 @@ describe("the owner's consent to contacts", () => {
   });
 });
 
+describe("many contacts searches in one run", () => {
+  it("run at once: only the first goes without a card", async () => {
+    const run = setup();
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    const plans = await Promise.all(
+      [...letters].map((letter) =>
+        phoneGate(run.ctx, false, TOOL, { query: `a${letter}`, field: "phone" }),
+      ),
+    );
+    expect(plans.filter((plan) => plan === "allow")).toHaveLength(1);
+    expect(plans.filter((plan) => plan === "ask")).toHaveLength(25);
+  });
+
+  it("stop at three: the fourth is refused before the phone and without a card", async () => {
+    const run = setup();
+    for (const id of ["s1", "s2", "s3"])
+      run.effects.push({ id, runId: "run-1", kind: TOOL, status: "completed" });
+    const { plan, result } = await search(run);
+    expect(plan).toBe("allow");
+    expect(result).toEqual({
+      error: "A run may search the user's contacts at most 3 times. Ask the user instead.",
+    });
+    expect(run.requests).toEqual([]);
+    expect(run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "denied", result: { refused: "limit" } } }),
+    );
+    // Two earlier searches leave room for a third.
+    const room = setup();
+    for (const id of ["s1", "s2"])
+      room.effects.push({ id, runId: "run-1", kind: TOOL, status: "completed" });
+    expect((await search(room)).result).toEqual({ contacts: [CONTACT], truncated: false });
+  });
+});
+
 describe("the contacts card", () => {
   const ASK = "Let this bot look up someone in your phone's contacts?";
 
