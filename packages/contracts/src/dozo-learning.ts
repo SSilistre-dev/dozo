@@ -6,18 +6,19 @@ import { Id } from "./ids.js";
  * Whether a bot learns notes from its owner's own direct chat: `off` (the default, also for a bot
  * never set) or `auto`, where each change is made and listed to undo.
  */
-export const DozoLearningMode = z.enum(["off", "auto"]);
+export const DozoLearningMode = /* @__PURE__ */ (() => z.enum(["off", "auto"]))();
 export type DozoLearningMode = z.infer<typeof DozoLearningMode>;
 
 /** One line a review added, changed or removed in the bot's notes; `undoneAt` once undone. */
-export const DozoLearningChangeSchema = z.object({
-  id: Id,
-  kind: z.enum(["add", "update", "remove"]),
-  before: z.string().nullable(),
-  after: z.string().nullable(),
-  createdAt: z.string(),
-  undoneAt: z.string().nullable(),
-});
+export const DozoLearningChangeSchema = /* @__PURE__ */ (() =>
+  z.object({
+    id: Id,
+    kind: z.enum(["add", "update", "remove"]),
+    before: z.string().nullable(),
+    after: z.string().nullable(),
+    createdAt: z.string(),
+    undoneAt: z.string().nullable(),
+  }))();
 export type DozoLearningChange = z.infer<typeof DozoLearningChangeSchema>;
 
 /** One note is one line of at most this many characters. */
