@@ -2,7 +2,6 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import { DozoJobQueue } from "@rakazo/adapters";
 import { deferred } from "@rakazo/core/test-async";
-import type { Pool } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BillingLifecycleDeps, PlanEndingJob } from "./dozo-billing-lifecycle.js";
 import {
@@ -628,7 +627,7 @@ describe("failures and the queue", () => {
       email: { send, describe: () => ({ id: "test" }) } as never,
       billingUrl: "https://app.example.com/app?settings=billing",
       onError: () => undefined,
-      queue: (given, crontab) => new DozoJobQueue({} as Pool, given, { crontab, start }),
+      queue: (given, crontab) => new DozoJobQueue({} as never, given, { crontab, start }),
     });
     await billing.stop();
     expect(start).toHaveBeenCalledOnce();
@@ -721,6 +720,7 @@ describe("the hourly sweep", () => {
       details: { plan: "Premium" },
       status: "pending",
       claimedAt: null,
+      createdAt: db.clock,
     });
     await billing.sweep();
     expect(db.jobs.get(`${PLAN_ENDING_TASK}:org`)?.runAt).toEqual(inDays(7));

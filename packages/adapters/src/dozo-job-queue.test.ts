@@ -60,10 +60,16 @@ describe("DozoJobQueue", () => {
     const task = vi.fn(async () => undefined);
     // Graphile's crontab task names allow letters, digits, _ : / and - only: no dot.
     expect(
-      () => new DozoJobQueue({} as Pool, { "dozo.sweep": task }, { crontab: "17 * * * * dozo.sweep", start }),
+      () =>
+        new DozoJobQueue(
+          {} as Pool,
+          { "dozo.sweep": task },
+          { crontab: "17 * * * * dozo.sweep", start },
+        ),
     ).toThrow("Invalid command specification in line 1 of crontab.");
     expect(
-      () => new DozoJobQueue({} as Pool, { "dozo:a": task }, { crontab: "17 * * * * dozo:b", start }),
+      () =>
+        new DozoJobQueue({} as Pool, { "dozo:a": task }, { crontab: "17 * * * * dozo:b", start }),
     ).toThrow("The crontab names a task this queue does not run: dozo:b");
     expect(start).not.toHaveBeenCalled();
   });

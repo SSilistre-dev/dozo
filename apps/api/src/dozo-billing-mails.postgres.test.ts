@@ -6,7 +6,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createPool } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "./billing.js";
-import { createBillingLifecycle } from "./dozo-billing-lifecycle.js";
+import { BILLING_SWEEP_TASK, createBillingLifecycle } from "./dozo-billing-lifecycle.js";
 import { sqlMailStore } from "./dozo-billing-mails.js";
 
 // Runs on the branded tree only, against a migrated database (DATABASE_URL, with the job queue's
@@ -22,6 +22,8 @@ const SEED = readFileSync(
   ),
   "utf8",
 ).match(/INSERT INTO "dozo_billing_notices"[\s\S]*?;/)?.[0];
+
+const DAY = 24 * 60 * 60 * 1000;
 
 describePostgres("billing mails (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
@@ -164,15 +166,20 @@ describePostgres("billing mails (PostgreSQL)", () => {
     const queued = await prisma.$queryRaw<Array<{ task_identifier: string }>>`
       SELECT task_identifier FROM graphile_worker.jobs WHERE key = ${`dozo.billing-mail:${id}`}`;
     expect(queued).toEqual([{ task_identifier: "dozo.billing-mail" }]);
-    expect(await store.claim(id, 300_000)).toMatchObject({
+    expect(await store.claim(id, 300_000, DAY)).toMatchObject({
       kind: "payment-failed",
       emailVerified: true,
+      expired: false,
     });
-    expect(await store.claim(id, 300_000)).toBe("busy");
-    // A claim older than the timeout belongs to a process that died.
-    expect(await store.claim(id, 0)).toMatchObject({ kind: "payment-failed" });
+    expect(await store.claim(id, 300_000, DAY)).toBe("busy");
+    // A claim older than the timeout belongs to a process that died; a mail recorded more than
+    // the given time ago is expired.
+    await prisma.$executeRaw`
+      UPDATE "dozo_billing_mails" SET "createdAt" = CURRENT_TIMESTAMP - interval '2 days'
+      WHERE "id" = ${id}`;
+    expect(await store.claim(id, 0, DAY)).toMatchObject({ kind: "payment-failed", expired: true });
     await store.finish(id, "failed");
-    expect(await store.claim(id, 0)).toBeNull();
+    expect(await store.claim(id, 0, DAY)).toBeNull();
     await store.removeJob(`dozo.billing-mail:${id}`);
   });
 
@@ -192,6 +199,34 @@ describePostgres("billing mails (PostgreSQL)", () => {
       });
     } finally {
       await queue.stop();
+      await pool.end();
+    }
+  });
+
+  it("starts the real runner with billing's tasks and crontab", async () => {
+    const pool = createPool(databaseUrl!, { poolMax: 2, applicationName: "dozo-jobs-test" });
+    const billing = createBillingLifecycle({
+      store: sqlMailStore(prisma, { jobs: true }),
+      email: { send: vi.fn(), describe: () => ({ id: "test" }) } as never,
+      billingUrl: "https://app.example.test/app?settings=billing",
+      onError: (error) => {
+        throw error;
+      },
+      queue: (tasks, crontab) => new DozoJobQueue(pool, tasks, { crontab }),
+    });
+    try {
+      // A started runner records each crontab line it will run.
+      await vi.waitFor(
+        async () =>
+          expect(
+            await prisma.$queryRaw<Array<{ identifier: string }>>`
+              SELECT identifier FROM graphile_worker._private_known_crontabs
+              WHERE identifier = ${BILLING_SWEEP_TASK}`,
+          ).toEqual([{ identifier: BILLING_SWEEP_TASK }]),
+        { timeout: 10_000 },
+      );
+    } finally {
+      await billing.stop();
       await pool.end();
     }
   });

@@ -16,6 +16,8 @@ export type MailDetails = { plan: string; endsAt?: string; next?: string };
 export type ClaimedMail = {
   kind: MailKind;
   details: MailDetails;
+  /** Recorded too long ago to be news: settled without sending. */
+  expired: boolean;
   email: string;
   name: string;
   locale: string | null;
@@ -57,8 +59,11 @@ export interface BillingTx {
 
 export interface BillingMailStore {
   transaction<T>(work: (tx: BillingTx) => Promise<T>): Promise<T>;
-  /** Claims a pending mail no live claim holds; "busy" while one does, null once it is settled. */
-  claim(id: string, staleMs: number): Promise<ClaimedMail | "busy" | null>;
+  /**
+   * Claims a pending mail no live claim older than `staleMs` holds; "busy" while one does, null
+   * once it is settled. It is `expired` when it was recorded more than `expiresMs` ago.
+   */
+  claim(id: string, staleMs: number, expiresMs: number): Promise<ClaimedMail | "busy" | null>;
   finish(id: string, status: "sent" | "failed" | "skipped"): Promise<void>;
   /** Gives the claim back after a send that may be tried again. */
   release(id: string): Promise<void>;
@@ -167,7 +172,7 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
 
   return {
     transaction: (work) => prisma.$transaction((tx) => work(within(tx))),
-    async claim(id, staleMs) {
+    async claim(id, staleMs, expiresMs) {
       const claimed = await prisma.$queryRaw<ClaimedMail[]>`
         UPDATE "dozo_billing_mails" AS mail SET "claimedAt" = CURRENT_TIMESTAMP
         FROM "user" AS reader
@@ -175,7 +180,9 @@ export function sqlMailStore(prisma: PrismaClient, { jobs }: { jobs: boolean }):
           AND (mail."claimedAt" IS NULL
             OR mail."claimedAt" < CURRENT_TIMESTAMP - make_interval(secs => ${staleMs / 1000}))
         RETURNING mail."kind", mail."details", reader."email", reader."name", reader."locale",
-          reader."emailVerified", reader."deactivatedAt"`;
+          reader."emailVerified", reader."deactivatedAt",
+          mail."createdAt" < CURRENT_TIMESTAMP - make_interval(secs => ${expiresMs / 1000})
+            AS "expired"`;
       if (claimed[0]) return claimed[0];
       const rows = await prisma.$queryRaw<{ status: string }[]>`
         SELECT "status" FROM "dozo_billing_mails" WHERE "id" = ${id}`;
