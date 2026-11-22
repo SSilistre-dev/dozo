@@ -4,6 +4,11 @@ import { effectiveModelRole } from "./model-roles.js";
 import { runModelBackups } from "./run-model-start.js";
 
 const fake = vi.hoisted(() => ({ read: vi.fn() }));
+const logger = vi.hoisted(() => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }));
+vi.mock("@rakazo/logging", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rakazo/logging")>()),
+  getLogger: () => logger,
+}));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   readBotModelBackups: fake.read,
@@ -138,11 +143,27 @@ describe("runBackupModels", () => {
     });
   });
 
+  it("says a missing table once, not on every run, and keeps the runner's backups", async () => {
+    logger.warn.mockClear();
+    fake.read.mockRejectedValue(
+      new Error(
+        'Raw query failed. Code: `42P01`. Message: `relation "dozo_bot_model_backups" does not exist`',
+      ),
+    );
+    for (let i = 0; i < 3; i++)
+      expect((await runBackupModels(prisma() as never, run, defaults)).backups).toEqual([
+        { provider: "p", modelId: "member-backup" },
+      ]);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the runner's backups when the bot's list cannot be read", async () => {
+    logger.warn.mockClear();
     fake.read.mockRejectedValue(new Error("database down"));
     expect((await runBackupModels(prisma() as never, run, defaults)).backups).toEqual([
       { provider: "p", modelId: "member-backup" },
     ]);
+    expect(logger.warn).toHaveBeenCalledWith("bot backup models read failed", expect.anything());
   });
 });
 

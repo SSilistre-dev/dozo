@@ -13,7 +13,15 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
 }));
 
 const publishRosterChange = vi.fn(async () => undefined);
-const prisma = { space: { findUnique: async () => null } };
+/** The caller's own connections: those whose id starts with the caller's name. */
+const prisma = {
+  space: { findUnique: async () => null },
+  userModelCredential: {
+    findMany: vi.fn(async ({ where }: { where: { userId: string; id: { in: string[] } } }) =>
+      where.id.in.filter((id) => id.startsWith(where.userId)).map((id) => ({ id })),
+    ),
+  },
+};
 const getBot = vi.fn();
 const validateRoleChoices = vi.fn();
 const BACKUPS = [
@@ -61,7 +69,9 @@ describe("bot backup model routes", () => {
   });
 
   it("saves a list checked as the caller's own backups and signals the Space", async () => {
-    // A member other than the bot's maker may change its backups, as they may its model.
+    // A member other than the bot's maker may change its backups, as they may its model. The
+    // bot has none yet, so every row is checked as the caller's own.
+    fake.read.mockResolvedValue([]);
     expect(await client("ada").set({ botId: "bot-1", backups: BACKUPS })).toEqual({
       backups: BACKUPS,
     });
@@ -128,5 +138,68 @@ describe("bot backup model routes", () => {
     await expect(client(null).get({ botId: "bot-1" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
+  });
+});
+
+describe("a list with another member's pinned rows", () => {
+  // Ada pinned two rows to her own connections; Ben edits the bot's list.
+  const ADAS = [
+    { provider: "provider-a", modelId: "model-a", credentialId: "ada-connection-1" },
+    { provider: "provider-b", modelId: "model-b", credentialId: "ada-connection-2" },
+  ];
+  const BENS = { provider: "provider-c", modelId: "model-c" };
+
+  beforeEach(() => {
+    fake.read.mockReset().mockResolvedValue(ADAS);
+    fake.write.mockReset().mockResolvedValue(true);
+    getBot.mockReset().mockResolvedValue({ id: "bot-1", userId: "ada" });
+    // As the real check: a pinned connection must be the saver's own.
+    validateRoleChoices.mockReset().mockImplementation(async (actor, _role, choices) => {
+      for (const choice of choices as Array<{ credentialId?: string }>)
+        if (choice.credentialId && !choice.credentialId.startsWith(actor.userId))
+          throw new ClientError("BAD_REQUEST", "Connect that model provider first");
+    });
+  });
+
+  it("keeps her rows as they are when Ben adds, moves or removes one", async () => {
+    for (const backups of [[...ADAS, BENS], [ADAS[1]!, BENS, ADAS[0]!], [ADAS[1]!]]) {
+      expect(await client("ben").set({ botId: "bot-1", backups })).toEqual({ backups });
+      expect(fake.write).toHaveBeenLastCalledWith(
+        prisma,
+        { botId: "bot-1", spaceId: "space-1" },
+        backups,
+      );
+    }
+    // Only Ben's own new row was checked as his.
+    expect(validateRoleChoices).toHaveBeenCalledWith(expect.anything(), "main", [BENS]);
+  });
+
+  it("refuses her connection on a row Ben adds or changes", async () => {
+    for (const backups of [
+      [...ADAS, { provider: "provider-c", modelId: "model-c", credentialId: "ada-connection-1" }],
+      [{ ...ADAS[0]!, modelId: "model-z" }, ADAS[1]!],
+    ]) {
+      await expect(client("ben").set({ botId: "bot-1", backups })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    }
+    expect(fake.write).not.toHaveBeenCalled();
+  });
+
+  it("checks a row on Ada's own connection as hers, even when it is already saved", async () => {
+    expect(await client("ada").set({ botId: "bot-1", backups: [ADAS[0]!, BENS] })).toEqual({
+      backups: [ADAS[0]!, BENS],
+    });
+    expect(validateRoleChoices).toHaveBeenCalledWith(expect.anything(), "main", [ADAS[0], BENS]);
+  });
+
+  it("takes only this bot's own saved list as the rows to keep", async () => {
+    // The rows are saved on another bot, not this one.
+    fake.read.mockImplementation(async (_db, botId: string) => (botId === "bot-1" ? [] : ADAS));
+    await expect(client("ben").set({ botId: "bot-1", backups: ADAS })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(fake.read).toHaveBeenCalledWith(prisma, "bot-1");
+    expect(fake.write).not.toHaveBeenCalled();
   });
 });
