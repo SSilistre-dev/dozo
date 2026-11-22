@@ -1,0 +1,93 @@
+/* Generated from packages/ui-tokens/src/dozo-themes.ts; its test holds this file equal. */
+html[data-skin="sumi"] {
+  --dozo-theme-sidebar: #070708;
+  --dozo-theme-background: #0e0e10;
+  --dozo-theme-card: #18181b;
+  --dozo-theme-popover: #202024;
+  --dozo-theme-foreground: #e8e8ea;
+  --dozo-theme-muted-foreground: #a7a7a9;
+  --dozo-theme-faint-foreground: #88888a;
+}
+html[data-skin="yoru"] {
+  --dozo-theme-sidebar: #0b0e15;
+  --dozo-theme-background: #111621;
+  --dozo-theme-card: #1a2030;
+  --dozo-theme-popover: #1e2636;
+  --dozo-theme-foreground: #e6e9f0;
+  --dozo-theme-muted-foreground: #aaaeb6;
+  --dozo-theme-faint-foreground: #91959d;
+}
+html[data-skin="hoji"] {
+  --dozo-theme-sidebar: #110d0a;
+  --dozo-theme-background: #18130f;
+  --dozo-theme-card: #231c17;
+  --dozo-theme-popover: #2b231d;
+  --dozo-theme-foreground: #efe7de;
+  --dozo-theme-muted-foreground: #aea7a0;
+  --dozo-theme-faint-foreground: #979089;
+}
+html[data-skin="washi"] {
+  --dozo-theme-sidebar: #f1ece0;
+  --dozo-theme-background: #f5f0e6;
+  --dozo-theme-card: #fbf8f2;
+  --dozo-theme-popover: #fffdf8;
+  --dozo-theme-foreground: #2a2420;
+  --dozo-theme-muted-foreground: #534d48;
+  --dozo-theme-faint-foreground: #655f59;
+}
+html[data-skin="matcha"] {
+  --dozo-theme-sidebar: #eaeee4;
+  --dozo-theme-background: #eff2ea;
+  --dozo-theme-card: #f8faf5;
+  --dozo-theme-popover: #fdfefb;
+  --dozo-theme-foreground: #1e2a20;
+  --dozo-theme-muted-foreground: #485248;
+  --dozo-theme-faint-foreground: #5b645b;
+}
+html[data-skin="kasumi"] {
+  --dozo-theme-sidebar: #e9edf0;
+  --dozo-theme-background: #eff2f5;
+  --dozo-theme-card: #f9fafc;
+  --dozo-theme-popover: #fdfeff;
+  --dozo-theme-foreground: #1d2530;
+  --dozo-theme-muted-foreground: #474e57;
+  --dozo-theme-faint-foreground: #5a6069;
+}
+html[data-theme="dark"]:is([data-skin="sumi"], [data-skin="yoru"], [data-skin="hoji"]),
+html[data-theme="light"]:is([data-skin="washi"], [data-skin="matcha"], [data-skin="kasumi"]) {
+  --sidebar: var(--dozo-theme-sidebar);
+  --background: var(--dozo-theme-background);
+  --primary-foreground: var(--dozo-theme-background);
+  --card: var(--dozo-theme-card);
+  --muted: var(--dozo-theme-card);
+  --popover: var(--dozo-theme-popover);
+  --secondary: var(--dozo-theme-popover);
+  --chat-user: var(--dozo-theme-popover);
+  --foreground: var(--dozo-theme-foreground);
+  --sidebar-foreground: var(--dozo-theme-foreground);
+  --sidebar-accent-foreground: var(--dozo-theme-foreground);
+  --card-foreground: var(--dozo-theme-foreground);
+  --popover-foreground: var(--dozo-theme-foreground);
+  --secondary-foreground: var(--dozo-theme-foreground);
+  --chat-user-foreground: var(--dozo-theme-foreground);
+  --primary: var(--dozo-theme-foreground);
+  --ring: var(--dozo-theme-foreground);
+  --muted-foreground: var(--dozo-theme-muted-foreground);
+  --faint-foreground: var(--dozo-theme-faint-foreground);
+  --primary-hover: color-mix(
+    in srgb,
+    var(--dozo-theme-foreground) 88%,
+    var(--dozo-theme-background)
+  );
+  --primary-disabled: color-mix(in srgb, var(--dozo-theme-foreground) 32%, transparent);
+}
+html[data-theme="dark"]:is([data-skin="sumi"], [data-skin="yoru"], [data-skin="hoji"]) {
+  --dialog: var(--dozo-theme-card);
+}
+html[data-theme="light"]:is([data-skin="washi"], [data-skin="matcha"], [data-skin="kasumi"]) {
+  --dialog: var(--dozo-theme-popover);
+}
+html[data-theme="light"][data-bubble="neutral"] {
+  --chat-user: var(--foreground);
+  --chat-user-foreground: var(--background);
+}
