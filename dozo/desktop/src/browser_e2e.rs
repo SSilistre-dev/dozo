@@ -1288,7 +1288,8 @@ async fn e2e_browser_sign_in_closes_what_it_opened() {
             "/slowback",
             "<!doctype html><title>Back</title>SECRET".to_owned(),
         ),
-        // A sign-in page that asks before it is left, once the person has clicked on it.
+        // A sign-in page that asks before it is left, once the person has clicked on it: Done comes
+        // with its question open.
         (
             "/asks",
             "<!doctype html><title>Sign in</title><button style=\"position:fixed;inset:0;width:100%;height:100%\">Continue</button>\
@@ -1347,6 +1348,28 @@ async fn e2e_browser_sign_in_closes_what_it_opened() {
                     .await;
             }
             tokio::time::sleep(Duration::from_millis(700)).await;
+            if path.starts_with("asks") {
+                // The page really asks: leaving it opens its question, which stays open for Done.
+                let (pipe, session) = (running.pipe.clone(), session.clone());
+                let blank = json!({ "url": "about:blank" });
+                tokio::spawn(
+                    async move { pipe.call("Page.navigate", blank, Some(&session)).await },
+                );
+                let mut asked = false;
+                for _ in 0..30 {
+                    asked |= running.pipe.take_events().iter().any(|event| {
+                        event["method"] == "Page.javascriptDialogOpening"
+                            && event["params"]["type"] == "beforeunload"
+                    });
+                    if asked {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                if !asked {
+                    failed.push(format!("{path}: the page did not ask before it was left"));
+                }
+            }
         } else {
             // Done while the return page is still loading.
             let pipe = running.pipe.clone();

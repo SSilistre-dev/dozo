@@ -22,12 +22,13 @@ import {
 const TOKEN = "a".repeat(64);
 
 /** One paired device, its connection rows and the fork table, as the hub and gateway use them. */
-function fakePrisma() {
+function fakePrisma(platform = "darwin") {
   const device = {
     id: "device-1",
     userId: "user-1",
     name: "Laptop",
-    platform: "darwin",
+    platform,
+    createdAt: new Date(0),
     tokenHash: hashUserDeviceToken(TOKEN),
     revokedAt: null,
     revokedBy: null,
@@ -168,8 +169,8 @@ describe("a declared browser", () => {
 });
 
 describe("a connecting computer's declaration", () => {
-  function setup() {
-    const db = fakePrisma();
+  function setup(platform?: string) {
+    const db = fakePrisma(platform);
     const hub = new UserDeviceHub({ prisma: db.prisma, address: "http://api-1" });
     const devices = new UserDevices({
       prisma: db.prisma,
@@ -249,6 +250,32 @@ describe("a connecting computer's declaration", () => {
       await vi.waitFor(async () => expect(await devices.connected("user-1")).not.toBeNull());
       expect((await devices.connected("user-1"))?.capabilities).toEqual(["shell"]);
       ws.close();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps a phone whose declaration could not be saved from connecting on its older one", async () => {
+    const { hub, prisma, capabilities, connections } = setup("ios");
+    capabilities.set("device-1", ["calendar"]);
+    vi.mocked(prisma.$executeRaw).mockRejectedValueOnce(new Error("database restarting"));
+    const server = await serve(hub);
+    try {
+      const { opened } = await server.connect({
+        authorization: `Bearer ${TOKEN}`,
+        [DEVICE_CAPABILITIES_HEADER]: "",
+      });
+      expect(opened).toBe(false);
+      expect(connections.size).toBe(0);
+      // Saved, it connects and offers what it declared on this connection.
+      const again = await server.connect({
+        authorization: `Bearer ${TOKEN}`,
+        [DEVICE_CAPABILITIES_HEADER]: "",
+      });
+      expect(again.opened).toBe(true);
+      await vi.waitFor(() => expect(connections.size).toBe(1));
+      expect(capabilities.get("device-1")).toEqual([]);
+      again.ws.close();
     } finally {
       await server.close();
     }
