@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const upstream = vi.hoisted(() => ({
   set: vi.fn((preference: string) => (preference === "light" ? "light" : "dark")),
+  apply: vi.fn(() => "dark"),
 }));
 vi.mock("./ui-appearance", () => ({
   getUiAppearancePreference: () => "dark",
   setUiAppearance: upstream.set,
+  applyUiAppearance: upstream.apply,
 }));
 
 import {
@@ -28,7 +30,15 @@ const root = document.documentElement;
 
 beforeEach(() => {
   upstream.set.mockClear();
+  upstream.apply.mockClear();
 });
+
+/** What another tab's choice looks like here: the storage write, then its event. */
+function fromAnotherTab(key: string, value: string | null) {
+  if (value === null) localStorage.removeItem(key);
+  else localStorage.setItem(key, value);
+  window.dispatchEvent(new StorageEvent("storage", { key, storageArea: localStorage }));
+}
 
 afterEach(() => {
   setUiAppearance("dark");
@@ -52,6 +62,24 @@ describe("named theme", () => {
     expect(root.dataset.skin).toBeUndefined();
     expect(upstream.set).toHaveBeenLastCalledWith("system");
     expect(getUiAppearancePreference()).toBe("dark");
+  });
+});
+
+describe("another tab", () => {
+  it("brings its theme here: the page's mark and upstream's stored tone", () => {
+    fromAnotherTab("dozo.uiTheme", "sumi");
+    expect(root.dataset.skin).toBe("sumi");
+    expect(upstream.apply).toHaveBeenCalled();
+    fromAnotherTab("dozo.uiTheme", null);
+    expect(root.dataset.skin).toBeUndefined();
+  });
+
+  it("brings its message color here: the bubble and the page's mark agree", () => {
+    fromAnotherTab("dozo.uiBubble", "neutral");
+    expect(dozoBubblePreference.get()).toBe("neutral");
+    expect(root.dataset.bubble).toBe("neutral");
+    fromAnotherTab("dozo.uiBubble", null);
+    expect(root.dataset.bubble).toBeUndefined();
   });
 });
 

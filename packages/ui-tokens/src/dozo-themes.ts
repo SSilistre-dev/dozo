@@ -5,7 +5,9 @@ import { cssVariableName } from "./index.js";
  * The named themes of Settings > Appearance (dozo/design/themes-v2.css). Each is a tint of the
  * neutral surfaces and ink of Light or Dark, nothing more: the main button stays ink, status
  * colours and bot identity colours never change. The mockup's per-theme accent is left out, as
- * the product is monochrome. `mutedForeground` and `faintForeground` are the ink mixed over the
+ * the product is monochrome. Where the mockup's surface would read upstream's destructive or link
+ * text worse than the default of its tone does, that surface is moved just far enough toward the
+ * default (the light sidebars, Yoru's popover). `mutedForeground` and `faintForeground` are the ink mixed over the
  * background at the mockup's second and third ink steps; the test holds every step's contrast.
  */
 export type DozoThemePalette = {
@@ -49,7 +51,7 @@ export const DOZO_THEMES = [
       sidebar: "#0b0e15",
       background: "#111621",
       card: "#1a2030",
-      popover: "#222a3c",
+      popover: "#1e2636",
       foreground: "#e6e9f0",
       mutedForeground: "#aaaeb6",
       faintForeground: "#91959d",
@@ -74,7 +76,7 @@ export const DOZO_THEMES = [
     label: "Washi",
     tone: "light",
     palette: {
-      sidebar: "#ece5d6",
+      sidebar: "#f1ece0",
       background: "#f5f0e6",
       card: "#fbf8f2",
       popover: "#fffdf8",
@@ -88,7 +90,7 @@ export const DOZO_THEMES = [
     label: "Matcha",
     tone: "light",
     palette: {
-      sidebar: "#e3e8dc",
+      sidebar: "#eaeee4",
       background: "#eff2ea",
       card: "#f8faf5",
       popover: "#fdfefb",
@@ -102,7 +104,7 @@ export const DOZO_THEMES = [
     label: "Kasumi",
     tone: "light",
     palette: {
-      sidebar: "#e3e7ec",
+      sidebar: "#e9edf0",
       background: "#eff2f5",
       card: "#f9fafc",
       popover: "#fdfeff",
@@ -115,13 +117,35 @@ export const DOZO_THEMES = [
 
 export type DozoThemeId = (typeof DOZO_THEMES)[number]["id"];
 
-/** Light and Dark as the fork's theme file (dozo/theme/theme.json) paints them, for the swatches. */
-export const DOZO_DEFAULT_SWATCHES: Record<
+/**
+ * Light and Dark as the fork's theme file paints them (dozo/theme/theme.json; olc's
+ * dozo/e2e/theme-defaults.test.mjs holds the two equal): the swatches and the contrast test read
+ * them, and every named theme is measured against the default of its tone.
+ */
+export const DOZO_DEFAULT_PALETTES: Record<
   ResolvedAppearance,
-  Pick<DozoThemePalette, "background" | "foreground">
+  DozoThemePalette & { chatUser: string }
 > = {
-  dark: { background: "#141414", foreground: "#EDEDED" },
-  light: { background: "#F5F5F3", foreground: "#1A1A1A" },
+  dark: {
+    sidebar: "#0a0a0a",
+    background: "#141414",
+    card: "#1f1f1f",
+    popover: "#262626",
+    foreground: "#ededed",
+    mutedForeground: "#a3a3a3",
+    faintForeground: "#8a8a8a",
+    chatUser: "#262626",
+  },
+  light: {
+    sidebar: "#ececea",
+    background: "#f5f5f3",
+    card: "#fdfdfc",
+    popover: "#ffffff",
+    foreground: "#1a1a1a",
+    mutedForeground: "#5c5c5c",
+    faintForeground: "#777777",
+    chatUser: "#ffffff",
+  },
 };
 
 export function dozoTheme(id: unknown): DozoTheme | undefined {

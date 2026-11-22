@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { DozoThemePalette } from "@rakazo/ui-tokens/dozo-themes";
-import { DOZO_DEFAULT_SWATCHES, DOZO_THEMES, dozoTheme } from "@rakazo/ui-tokens/dozo-themes";
+import { DOZO_DEFAULT_PALETTES, DOZO_THEMES, dozoTheme } from "@rakazo/ui-tokens/dozo-themes";
 import {
   Select,
   SelectContent,
@@ -32,7 +32,7 @@ function ThemeSwatch({ swatch }: { swatch: Choice["swatch"] }) {
   // The theme's own colours: a preview of what picking it paints, so they cannot be tokens.
   const background =
     swatch === "system"
-      ? `linear-gradient(135deg, ${DOZO_DEFAULT_SWATCHES.dark.background} 50%, ${DOZO_DEFAULT_SWATCHES.light.background} 50%)`
+      ? `linear-gradient(135deg, ${DOZO_DEFAULT_PALETTES.dark.background} 50%, ${DOZO_DEFAULT_PALETTES.light.background} 50%)`
       : `linear-gradient(135deg, ${swatch.background} 50%, ${swatch.foreground} 50%)`;
   return (
     <span
@@ -68,8 +68,8 @@ export function DozoAppearancePicker({
   const current = stored && stored.tone === value ? stored.id : value;
   const basics: Choice[] = [
     { value: "system", label: t`System`, swatch: "system" },
-    { value: "light", label: t`Light`, swatch: DOZO_DEFAULT_SWATCHES.light },
-    { value: "dark", label: t`Dark`, swatch: DOZO_DEFAULT_SWATCHES.dark },
+    { value: "light", label: t`Light`, swatch: DOZO_DEFAULT_PALETTES.light },
+    { value: "dark", label: t`Dark`, swatch: DOZO_DEFAULT_PALETTES.dark },
   ];
   const named: Choice[] = DOZO_THEMES.map((theme) => ({
     value: theme.id,

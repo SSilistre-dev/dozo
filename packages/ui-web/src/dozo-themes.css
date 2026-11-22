@@ -12,7 +12,7 @@ html[data-skin="yoru"] {
   --dozo-theme-sidebar: #0b0e15;
   --dozo-theme-background: #111621;
   --dozo-theme-card: #1a2030;
-  --dozo-theme-popover: #222a3c;
+  --dozo-theme-popover: #1e2636;
   --dozo-theme-foreground: #e6e9f0;
   --dozo-theme-muted-foreground: #aaaeb6;
   --dozo-theme-faint-foreground: #91959d;
@@ -27,7 +27,7 @@ html[data-skin="hoji"] {
   --dozo-theme-faint-foreground: #979089;
 }
 html[data-skin="washi"] {
-  --dozo-theme-sidebar: #ece5d6;
+  --dozo-theme-sidebar: #f1ece0;
   --dozo-theme-background: #f5f0e6;
   --dozo-theme-card: #fbf8f2;
   --dozo-theme-popover: #fffdf8;
@@ -36,7 +36,7 @@ html[data-skin="washi"] {
   --dozo-theme-faint-foreground: #655f59;
 }
 html[data-skin="matcha"] {
-  --dozo-theme-sidebar: #e3e8dc;
+  --dozo-theme-sidebar: #eaeee4;
   --dozo-theme-background: #eff2ea;
   --dozo-theme-card: #f8faf5;
   --dozo-theme-popover: #fdfefb;
@@ -45,7 +45,7 @@ html[data-skin="matcha"] {
   --dozo-theme-faint-foreground: #5b645b;
 }
 html[data-skin="kasumi"] {
-  --dozo-theme-sidebar: #e3e7ec;
+  --dozo-theme-sidebar: #e9edf0;
   --dozo-theme-background: #eff2f5;
   --dozo-theme-card: #f9fafc;
   --dozo-theme-popover: #fdfeff;

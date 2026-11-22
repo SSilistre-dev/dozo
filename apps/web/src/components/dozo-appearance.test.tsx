@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
 vi.mock("../lib/ui-appearance", () => ({
   getUiAppearancePreference: () => "dark",
   setUiAppearance: api.upstream,
+  applyUiAppearance: () => "dark",
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({

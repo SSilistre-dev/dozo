@@ -83,8 +83,12 @@ palettes are in `packages/ui-tokens/src/dozo-themes.ts`, which renders
 `packages/ui-web/src/dozo-themes.css` (imported by `dozo-shell.css`, so it applies before the first
 paint; a test holds the file equal to the source). A theme only tints the surfaces and the ink of its
 tone: the main button stays ink, status and bot colours stay. The mockup's per-theme accent is not
-used. Every theme holds text and secondary text at 4.5:1 on each surface and faint text at 3:1
-(`packages/core/src/dozo-themes-contrast.test.ts`).
+used. Every theme holds text and secondary text at 4.5:1 on each surface and faint text at 3:1,
+and reads upstream's destructive and link text on its surfaces at least as well as the default of
+its tone (destructive at 4.5:1); the light sidebars and Yoru's popover are a little lighter or
+darker than the mockup for that (`packages/core/src/dozo-themes-contrast.test.ts`). The default
+palettes the themes are measured against are copied in `dozo-themes.ts`; olc's
+`dozo/e2e/theme-defaults.test.mjs` holds that copy equal to `theme.json`.
 
 The choice is per device, like Light and Dark: upstream's `rakazo.uiAppearance` keeps the theme's
 tone and `dozo.uiTheme` its name; `apps/web/public/dozo-boot.js` sets `data-skin` before first paint

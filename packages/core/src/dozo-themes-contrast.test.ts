@@ -1,42 +1,26 @@
 import { BOT_COLOR_LIST } from "@rakazo/contracts";
+import type { ResolvedAppearance } from "@rakazo/ui-tokens";
+import { webDarkTokens, webLightTokens } from "@rakazo/ui-tokens";
 import type { DozoThemePalette } from "@rakazo/ui-tokens/dozo-themes";
-import { DOZO_THEMES } from "@rakazo/ui-tokens/dozo-themes";
+import { DOZO_DEFAULT_PALETTES, DOZO_THEMES } from "@rakazo/ui-tokens/dozo-themes";
 import { describe, expect, it } from "vitest";
 import { dozoBotFill, dozoContrast } from "./dozo-chat-colors.js";
 
 // WCAG contrast of every named theme and of Light and Dark, measured on the surfaces they paint
 // (dozo-shell.css derives the rest from these), and of both Message color choices in each.
+//
+// What else reads these surfaces, and where it is covered:
+// - placeholders, icons and keyboard focus use the second ink (`--dozo-ink-3`, `--dozo-focus`):
+//   the muted text below, which also clears the 3:1 a focus ring needs;
+// - the selected sidebar row's text: `rowOn` below; a code block sits on `secondary`, the popover;
+// - a link in your own bubble wears the bubble's text colour (underlined): the bubble below;
+// - disabled controls are exempt from WCAG contrast and are not measured.
 
-type Palette = DozoThemePalette & { tone: "dark" | "light"; chatUser: string };
-
-/** Light and Dark as dozo/theme/theme.json paints them. */
-const DEFAULTS: Record<string, Palette> = {
-  dark: {
-    tone: "dark",
-    sidebar: "#0a0a0a",
-    background: "#141414",
-    card: "#1f1f1f",
-    popover: "#262626",
-    foreground: "#ededed",
-    mutedForeground: "#a3a3a3",
-    faintForeground: "#8a8a8a",
-    chatUser: "#262626",
-  },
-  light: {
-    tone: "light",
-    sidebar: "#ececea",
-    background: "#f5f5f3",
-    card: "#fdfdfc",
-    popover: "#ffffff",
-    foreground: "#1a1a1a",
-    mutedForeground: "#5c5c5c",
-    faintForeground: "#777777",
-    chatUser: "#ffffff",
-  },
-};
+type Palette = DozoThemePalette & { tone: ResolvedAppearance; chatUser: string };
 
 const PALETTES: Record<string, Palette> = {
-  ...DEFAULTS,
+  dark: { tone: "dark", ...DOZO_DEFAULT_PALETTES.dark },
+  light: { tone: "light", ...DOZO_DEFAULT_PALETTES.light },
   ...Object.fromEntries(
     DOZO_THEMES.map((theme) => [
       theme.id,
@@ -44,6 +28,9 @@ const PALETTES: Record<string, Palette> = {
     ]),
   ),
 };
+
+/** Status and link colours are upstream's and no theme changes them. */
+const STATUS = { dark: webDarkTokens, light: webLightTokens } as const;
 
 /** `color-mix(in srgb, ink share, base)`, as the stylesheet mixes its tone steps. */
 function mix(ink: string, share: number, base: string): string {
@@ -57,21 +44,30 @@ function mix(ink: string, share: number, base: string): string {
     .join("")}`;
 }
 
-/** Every surface text sits on: dozo-shell.css's tone steps, rows and the chosen segment. */
-function surfaces(p: Palette): Record<string, string> {
-  return {
-    background: p.background,
-    sidebar: p.sidebar,
-    card: p.card,
-    popover: p.popover,
-    botBubble: mix(p.foreground, 0.04, p.background),
-    rowOn: mix(p.foreground, 0.09, p.sidebar),
-    lift: p.tone === "dark" ? mix(p.foreground, 0.14, p.background) : p.popover,
-  };
-}
+/** The four painted surfaces, where status and link text appear. */
+const painted = (p: Palette) => ({
+  background: p.background,
+  sidebar: p.sidebar,
+  card: p.card,
+  popover: p.popover,
+});
+
+/** Every surface text sits on: the painted ones, dozo-shell.css's tone steps and rows. */
+const surfaces = (p: Palette) => ({
+  ...painted(p),
+  botBubble: mix(p.foreground, 0.04, p.background),
+  rowOn: mix(p.foreground, 0.09, p.sidebar),
+  lift: p.tone === "dark" ? mix(p.foreground, 0.14, p.background) : p.popover,
+});
 
 const worst = (ink: string, on: Record<string, string>) =>
   Math.min(...Object.values(on).map((surface) => dozoContrast(ink, surface)));
+
+/** Destructive and link text on the painted surfaces, at their worst. */
+const status = (p: Palette) => ({
+  destructive: worst(STATUS[p.tone].destructive, painted(p)),
+  link: worst(STATUS[p.tone].link, painted(p)),
+});
 
 /** Your own bubble: its fill and its text, for each Message color choice. */
 function bubbles(p: Palette): Record<"bot" | "neutral", number> {
@@ -105,3 +101,20 @@ describe.each(Object.entries(PALETTES))("%s", (_name, palette) => {
     expect(measured.neutral).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+describe.each(DOZO_THEMES.map((theme) => [theme.id, PALETTES[theme.id] as Palette] as const))(
+  "%s, against the default of its tone",
+  (_id, palette) => {
+    const own = status(palette);
+    const base = status(PALETTES[palette.tone] as Palette);
+
+    it("holds destructive text at 4.5:1 on every painted surface", () => {
+      expect(own.destructive).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it("reads destructive and link text at least as well as the default does", () => {
+      expect(own.destructive).toBeGreaterThanOrEqual(base.destructive);
+      expect(own.link).toBeGreaterThanOrEqual(base.link);
+    });
+  },
+);
