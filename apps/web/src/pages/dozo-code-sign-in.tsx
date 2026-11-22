@@ -124,6 +124,9 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
     save: (otp) => answered(authClient.signIn.emailOtp({ email: email.trim(), otp })),
     onSaved: () => {
       clearSpaceSelection();
+      // Forgetting the Space changes what `useSave` holds a save under, so it would let go of this
+      // one: the sign-in is held here, as the passkey's is.
+      setEntered(true);
     },
     onFailed: (failure) => {
       setError(failure.message);
@@ -137,11 +140,14 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
   const pending = sendCode.pending || checkCode.pending || entered;
 
   function send(from: "email" | "resend") {
+    if (entered) return;
     setError(null);
     sendCode.run(from);
   }
 
   function verify(otp: string) {
+    // Signed in: the code was spent, and the controls are held until the routes move the user on.
+    if (entered) return;
     setError(null);
     checkCode.run(otp);
   }
@@ -217,7 +223,7 @@ export function DozoCodeSignIn({ providers }: { providers: SignInProvider[] }) {
           <button
             type="button"
             data-dozo-quiet
-            disabled={sendCode.pending || checkCode.pending}
+            disabled={(sendCode.pending || checkCode.pending) && !entered}
             onClick={() => {
               setStep("email");
               setReturned(true);

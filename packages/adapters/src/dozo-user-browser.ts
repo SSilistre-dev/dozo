@@ -180,9 +180,21 @@ async function userBrowserTool(ctx: RunContext, call: ToolCall, route: Route) {
     return call.finish(formatted);
   const image = await bestEffort(
     "take a picture of the page in the user's browser",
-    provider.screenshot(asked.site),
+    provider.screenshot(asked.site).catch((error: unknown) => {
+      throw errorKindOnly(error);
+    }),
   );
   return call.finish(image ? withScreenshot(formatted, image) : formatted);
+}
+
+/**
+ * The failure of a call about the user's page, with its message dropped: it can carry the page's
+ * address or words, which the log must not. A cancellation stays one.
+ */
+function errorKindOnly(error: unknown): Error {
+  const kind = error instanceof Error ? error.name : "Error";
+  if (kind === "AbortError") return Object.assign(new Error(kind), { name: kind });
+  return new Error(`the user's browser could not answer (${kind})`);
 }
 
 /** A snapshot with what the page looks like, for a model that can see; as it was if too long. */

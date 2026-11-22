@@ -4525,7 +4525,7 @@
     {
       "file": "apps/api/src/routes/bots.ts",
       "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
-      "replace": "import type { RouterContext } from \"./context.js\";\nimport { dozoAvatarForSave, dozoBotOrGroupOnly, requireBotRunEditor, requireGroupRemover, switchBotComputerWithFiles } from \"./dozo-bot-routes.js\";\nimport { computerContext",
+      "replace": "import type { RouterContext } from \"./context.js\"; import { dozoAvatarForSave, dozoBotOrGroupOnly, requireBotRunEditor, requireGroupRemover, switchBotComputerWithFiles } from \"./dozo-bot-routes.js\";\nimport { computerContext",
       "requires": [
         "apps/api/src/routes/dozo-bot-routes.ts"
       ],
@@ -7436,7 +7436,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "    ? await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args)\n    : await dozoSendLimitGate(",
-      "replace": "    ? await dozoTokenRunPlan(\n        ctx,\n        { name, args, viaConnector, consequential: requiresApprovalByDefault },\n        await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args),\n      )\n    : await dozoSendLimitGate(",
+      "replace": "    ? await dozoTokenRunPlan(ctx, { name, args, viaConnector, consequential: requiresApprovalByDefault }, await userComputerGate(ctx, approvalResolved.decision === \"deny\", name, args))\n    : await dozoSendLimitGate(",
       "requires": [
         "packages/adapters/src/dozo-token-run.ts"
       ],
@@ -8378,7 +8378,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { findConnectedModelCredential }",
-      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoCommandBlockRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
+      "replace": "import { CATALOG_LOAD, CATALOG_SEARCH } from \"./lazy-tool-catalog.js\";\nimport { dozoBlockedRefusal, dozoHostedCommandGate } from \"./dozo-command-gate.js\";\nimport { findConnectedModelCredential }",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
@@ -8396,7 +8396,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "          purchase: paying,\n        })),\n      );\n  // Nobody is there",
-      "replace": "          purchase: paying,\n        }))),\n      );\n  // A command a block rule refuses says so, on either computer.\n  const dozoBlocked = plan === \"deny\" ? dozoCommandBlockRefusal(args) : undefined;\n  if (dozoBlocked) {\n    await auditToolCall(ctx, name, \"denied\", { reason: \"rule\" });\n    return { result: refusal(\"approval_denied\", dozoBlocked) };\n  }\n  // Nobody is there",
+      "replace": "          purchase: paying,\n        }))),\n      );\n  // A command a block rule refuses says so, on either computer.\n  const dozoBlocked = await dozoBlockedRefusal(plan, args, () => auditToolCall(ctx, name, \"denied\", { reason: \"rule\" }));\n  if (dozoBlocked) return dozoBlocked;\n  // Nobody is there",
       "requires": [
         "packages/adapters/src/dozo-command-gate.ts"
       ],
@@ -9370,7 +9370,7 @@
       "find": "      stop: authed.threads.stop.handler(async ({ context, input }) => {\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input);\n",
       "replace": "      stop: authed.threads.stop.handler(async ({ context, input }) => {\n        // Stopping is allowed in an archived extra chat, so nothing keeps working where nothing is shown.\n        const target = await resolveThreadTarget(deps.prisma, context.actor, input, {\n          includeArchived: Boolean(input.chatBotId),\n        });\n",
       "requires": [
-        "apps/api/src/routes/dozo-bot-routes.ts"
+        "apps/api/src/dozo-chat-target.ts"
       ],
       "reason": "bot chats: a turn still working in an extra chat archived meanwhile can still be stopped; a main chat's stop is as before"
     },

@@ -9,6 +9,7 @@ import {
 import { readDozoCommandRules, readDozoHostedAsks } from "@rakazo/db";
 import type { RunContext } from "./run-context.js";
 import { commandWatchFromTool } from "./schedule-tools.js";
+import { refusal } from "./tool-refusal.js";
 
 /** The tool that runs a command on the bot's own computer. */
 export const HOSTED_SHELL_TOOL = "shell";
@@ -90,4 +91,19 @@ export function dozoCommandBlockRefusal(args: Record<string, unknown>): string |
   return commandBlocks.has(args)
     ? "This command is blocked for this bot. Don't run it or anything that does the same; tell the user it's blocked."
     : undefined;
+}
+
+/**
+ * The answer for a call a block rule refused, after `audit` has recorded it, or nothing for any
+ * other call or plan. The tool gate calls it where it would otherwise spell the same out.
+ */
+export async function dozoBlockedRefusal(
+  plan: string,
+  args: Record<string, unknown>,
+  audit: () => Promise<unknown>,
+): Promise<{ result: { error: string } } | undefined> {
+  const message = plan === "deny" ? dozoCommandBlockRefusal(args) : undefined;
+  if (message === undefined) return undefined;
+  await audit();
+  return { result: refusal("approval_denied", message) };
 }
