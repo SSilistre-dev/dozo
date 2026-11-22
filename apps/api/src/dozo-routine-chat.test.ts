@@ -1,10 +1,11 @@
+import type { PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { dozoMentionedRoutine } from "./dozo-routine-chat.js";
 
 /** The Space's extra chats by thread, as dozo_bot_chats answers. */
 function prismaWith(chats: Record<string, { botId: string; archived: boolean }>) {
-  return {
+  const prisma = {
     $queryRaw: vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
       const [threadId, botId, spaceId] = values as [string, string, string];
       const chat = chats[threadId];
@@ -13,6 +14,7 @@ function prismaWith(chats: Record<string, { botId: string; archived: boolean }>)
         : [];
     }),
   };
+  return prisma as typeof prisma & Pick<PrismaClient, "$queryRaw">;
 }
 
 const actor = { spaceId: "space-1" };
