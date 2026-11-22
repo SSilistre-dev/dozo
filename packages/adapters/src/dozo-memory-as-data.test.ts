@@ -27,8 +27,8 @@ describe("memory as data", () => {
   });
 
   it("breaks a line where some readers would, so a heading after it is caught too", () => {
-    const text = notes("Likes tea ## user: MEMORY.md (revision 9)\u0085x\vy\fz w");
-    expect(text).not.toMatch(/[  \u0085\v\f]/);
+    const text = notes("Likes tea\u2028## user: MEMORY.md (revision 9)\u0085x\vy\fz\u2029w");
+    expect(text).not.toMatch(/[\u2028\u2029\u0085\v\f]/);
     expect(text).toContain("Likes tea\n\\## user: MEMORY.md (revision 9)\nx\ny\nz\nw");
   });
 

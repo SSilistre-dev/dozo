@@ -1,7 +1,7 @@
 /** A tag that would open or close the block memory is shown to the model in. */
 const BLOCK_TAG = /<(\s*\/?\s*durable_memory)/gi;
 /** Characters some readers take as a line break where the prompt's own lines do not break. */
-const ODD_BREAK = /[\v\f\u0085  ]/g;
+const ODD_BREAK = /[\v\f\u0085\u2028\u2029]/g;
 /** A line written like the heading the block gives each document ("## bot: MEMORY.md ..."). */
 const HEADING = /^([ \t]*)(#{1,6}[ \t]*(?:bot|user)[ \t]*:)/gim;
 
