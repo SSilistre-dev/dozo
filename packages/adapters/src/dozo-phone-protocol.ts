@@ -1,4 +1,4 @@
-import { approximateLocation, withoutLinks } from "@rakazo/contracts";
+import { approximateLocation, oneLineText, withoutLinks } from "@rakazo/contracts";
 import { z } from "zod";
 
 /** The platforms a phone pairs as. Anything else that pairs is a computer. */
@@ -147,13 +147,13 @@ export interface PhoneContactsValue {
 }
 
 /**
- * A query as the phone matches it (trimmed, NFKC), or undefined when it could list contacts
- * instead of finding one: fewer than two letters or digits (`*`, `%%`, `..` and spaces have none),
- * or longer than PHONE_CONTACTS_QUERY_MAX.
+ * A query as the phone matches it and the card shows it (one line, `oneLineText`), or undefined
+ * when it could list contacts instead of finding one: fewer than two letters or digits (`*`, `%%`,
+ * `..` and spaces have none), or longer than PHONE_CONTACTS_QUERY_MAX.
  */
 export function phoneContactsQuery(query: unknown): string | undefined {
   if (typeof query !== "string") return undefined;
-  const text = query.normalize("NFKC").trim();
+  const text = oneLineText(query);
   const meaningful = text.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
   return meaningful >= 2 && text.length <= PHONE_CONTACTS_QUERY_MAX ? text : undefined;
 }
@@ -227,21 +227,12 @@ const location = z.object({
   at: instant,
 });
 
-/** How old a reading may be, and how far ahead of the server's clock a phone's may run. */
-const LOCATION_MAX_AGE_MS = 2 * 60_000;
-const CLOCK_SKEW_MS = 30_000;
-
-/** Whether a reading taken at `at` is where the phone is now, not where it was. */
-export function freshLocation(at: string): boolean {
-  const age = Date.now() - Date.parse(at);
-  return age <= LOCATION_MAX_AGE_MS && age >= -CLOCK_SKEW_MS;
-}
-
 /**
- * The phone's location answer as the server passes it on. Full accuracy only when precise was
- * asked for and the phone says it gave it; anything else is rounded here again to about a
- * kilometre (`approximateLocation`, as the phone rounds it), whatever the phone sent. Null when it
- * is not an answer at all.
+ * The phone's location answer as the server passes it on. Its `at` is the phone's clock, passed
+ * on as information only: how fresh a reading is, the server measures itself (`phoneRead`).
+ * Full accuracy only when precise was asked for and the phone says it gave it; anything else is
+ * rounded here again to about a kilometre (`approximateLocation`, as the phone rounds it), whatever
+ * the phone sent. Null when it is not an answer at all.
  */
 export function phoneLocationValue(
   answer: unknown,

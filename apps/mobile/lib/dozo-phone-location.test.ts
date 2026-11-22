@@ -94,7 +94,10 @@ describe("reading the phone's location", () => {
   it("answers approximate with a low-accuracy reading, rounded to about a kilometre", async () => {
     const value = await location.readLocation({ precision: "approximate" }, later);
     expect(native.location.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
-    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 2 });
+    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({
+      accuracy: 2,
+      timeInterval: 0,
+    });
     expect(value).toEqual({
       latitude: 41.01,
       longitude: NEAR.longitude,
@@ -103,6 +106,17 @@ describe("reading the phone's location", () => {
       at: "2026-11-23T09:00:00.000Z",
     });
     neverInBackground();
+  });
+
+  it("takes a new fix for every request, never a cached or last known position", async () => {
+    await location.readLocation({ precision: "approximate" }, later);
+    await location.readLocation({ precision: "precise" }, later);
+    // A zero interval is a zero maximum age for the system's single reading (Android takes the
+    // interval as the oldest cached fix it may return).
+    for (const [options] of native.location.getCurrentPositionAsync.mock.calls)
+      expect(options).toHaveProperty("timeInterval", 0);
+    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
+    expect(native.location.getLastKnownPositionAsync).not.toHaveBeenCalled();
   });
 
   it("keeps a coarser accuracy than a kilometre, and rounds negative coordinates", async () => {
@@ -129,7 +143,10 @@ describe("reading the phone's location", () => {
 
   it("answers precise with a high-accuracy reading when the system granted precise", async () => {
     const value = await location.readLocation({ precision: "precise" }, later);
-    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 4 });
+    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({
+      accuracy: 4,
+      timeInterval: 0,
+    });
     expect(value).toEqual({
       latitude: 41.008_712,
       longitude: 28.978_359,
@@ -152,7 +169,10 @@ describe("reading the phone's location", () => {
   ])("answers precise as approximate under %s", async (_name, grant) => {
     native.location.getForegroundPermissionsAsync.mockResolvedValueOnce(grant);
     const value = await location.readLocation({ precision: "precise" }, later);
-    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 2 });
+    expect(native.location.getCurrentPositionAsync).toHaveBeenCalledWith({
+      accuracy: 2,
+      timeInterval: 0,
+    });
     expect(value).toMatchObject({
       latitude: 41.01,
       longitude: NEAR.longitude,
