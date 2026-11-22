@@ -1515,10 +1515,10 @@
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
-      "find": "(active ? chatUserBubbleColors(active.color, active.id) : undefined)",
-      "replace": "(active ? dozoChatUserColors(active.color, active.id) : undefined)",
-      "requires": ["packages/core/src/dozo-chat-colors.ts"],
-      "reason": "Dozo look: your own bubble and the send button wear the open bot's Dozo identity colour (the colour its avatar's accessory shows), darkened until white text holds 4.5:1; upstream's colour is one no Dozo avatar shows"
+      "find": "  const userBubble = useMemo(\n    () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),\n    [active?.color, active?.id],\n  );",
+      "replace": "  const neutralBubble = useDozoNeutralBubble();\n  const userBubble = useMemo(\n    () => (active && !neutralBubble ? dozoChatUserColors(active.color, active.id) : undefined),\n    [active?.color, active?.id, neutralBubble],\n  );",
+      "requires": ["packages/core/src/dozo-chat-colors.ts", "apps/web/src/lib/dozo-ui-theme.ts"],
+      "reason": "Dozo look: your own bubble and the send button wear the open bot's Dozo identity colour (the colour its avatar's accessory shows), darkened until white text holds 4.5:1; upstream's colour is one no Dozo avatar shows. With Message color set to Neutral they keep the theme's neutral bubble"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
@@ -1526,6 +1526,41 @@
       "replace": "  chatWoke,\n  dismissableAskMessageIds,\n  dozoChatUserColors,\n",
       "requires": ["packages/core/src/dozo-chat-colors.ts"],
       "reason": "Dozo look: the import of the rule above, in place of upstream's bubble colours"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { desktopBridge } from \"../lib/desktop\";\nimport { hasOpenDialog } from \"../lib/has-open-dialog\";",
+      "replace": "import { desktopBridge } from \"../lib/desktop\";\nimport { useDozoNeutralBubble } from \"../lib/dozo-ui-theme\";\nimport { hasOpenDialog } from \"../lib/has-open-dialog\";",
+      "requires": ["apps/web/src/lib/dozo-ui-theme.ts"],
+      "reason": "Message color: the import of the neutral-bubble choice the bubble rule above reads"
+    },
+    {
+      "file": "packages/ui-tokens/package.json",
+      "find": "    \"./css\": \"./src/tokens.css\"\n  },",
+      "replace": "    \"./css\": \"./src/tokens.css\",\n    \"./dozo-themes\": \"./src/dozo-themes.ts\"\n  },",
+      "requires": ["packages/ui-tokens/src/dozo-themes.ts"],
+      "reason": "themes: the named themes of Settings > Appearance as a subpath of their own, so the app's startup code takes only the storage keys and the picker, loaded with the settings window, takes the list"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "import { getUiAppearancePreference, setUiAppearance } from \"../lib/ui-appearance\";\nimport type { UiLocale } from \"../lib/ui-locale\";",
+      "replace": "import { getUiAppearancePreference, setUiAppearance } from \"../lib/ui-appearance\";\nimport { DozoAppearancePicker, DozoMessageColorPicker } from \"../components/dozo-appearance\";\nimport type { UiLocale } from \"../lib/ui-locale\";",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "themes: the import of the two rows the next rule shows"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.tsx",
+      "find": "            <AppearancePicker\n              value={appearance}\n              onChange={(next) => {\n                setAppearance(next);\n                setUiAppearance(next);\n              }}\n            />\n          }\n        />",
+      "replace": "            <DozoAppearancePicker\n              value={appearance}\n              onChange={(next) => {\n                setAppearance(next);\n                setUiAppearance(next);\n              }}\n            />\n          }\n        />\n        <SettingsRow label={<Trans>Message color</Trans>} control={<DozoMessageColorPicker />} />",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "themes: Appearance offers the named themes of dozo/design/themes-v2.css after System, Light and Dark, and Message color sets your own bubble to the bot's colour or a neutral tone (settings-v2.html)"
+    },
+    {
+      "file": "apps/web/src/pages/shell/use-palette-actions.ts",
+      "find": "import { getUiAppearancePreference, setUiAppearance } from \"../../lib/ui-appearance\";",
+      "replace": "import { getUiAppearancePreference, setUiAppearance } from \"../../lib/dozo-ui-theme\";",
+      "requires": ["apps/web/src/lib/dozo-ui-theme.ts"],
+      "reason": "themes: System, Light or Dark from the command menu also lets go of a named theme, as the settings row does"
     },
     {
       "file": "apps/web/src/lib/bots-sidebar-pref.ts",
@@ -5541,11 +5576,11 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "  const plan = USER_COMPUTER_TOOLS.has(name)\n",
-      "replace": "  const plan =\n    USER_COMPUTER_TOOLS.has(name) || (await routesToUserBrowser(ctx, name))\n",
+      "replace": "  const plan =\n    USER_COMPUTER_TOOLS.has(name) || isPhoneTool(name) || (await routesToUserBrowser(ctx, name))\n",
       "requires": [
         "packages/adapters/src/dozo-user-computer-gate.ts"
       ],
-      "reason": "user's browser: a page tool that goes to the user's own browser is approved like the user's computer: never in a token's run, its first use by a bot there asks, and so does its first action on each site"
+      "reason": "user's browser and phone: a page tool that goes to the user's own browser, and a read of the user's phone, are approved like the user's computer: never in a token's run, a bot's first use there asks (in every approval mode), and so does the browser's first action on each site"
     },
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
@@ -5559,20 +5594,22 @@
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "import { z } from \"zod\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport {\n  pageBrowserClearedRequest,\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n} from \"./dozo-page-browser-protocol.js\";\nimport { phoneCalendarReadRequest } from \"./dozo-phone-protocol.js\";\nimport { hostScreenMethods } from \"./host-screen.js\";\n",
       "requires": [
-        "packages/adapters/src/dozo-page-browser-protocol.ts"
+        "packages/adapters/src/dozo-page-browser-protocol.ts",
+        "packages/adapters/src/dozo-phone-protocol.ts"
       ],
-      "reason": "user's browser: the import of the request below"
+      "reason": "user's browser and phone: the imports of the requests below"
     },
     {
       "file": "packages/adapters/src/host-computer-protocol.ts",
       "find": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n]);\n",
-      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n]);\n",
+      "replace": "  z.object({ ...base, method: z.literal(\"screenAct\"), ...hostScreenMethods.screenAct }),\n  pageBrowserRequest,\n  pageBrowserSignInRequest,\n  pageBrowserClearedRequest,\n  phoneCalendarReadRequest,\n]);\n",
       "requires": [
-        "packages/adapters/src/dozo-page-browser-protocol.ts"
+        "packages/adapters/src/dozo-page-browser-protocol.ts",
+        "packages/adapters/src/dozo-phone-protocol.ts"
       ],
-      "reason": "user's browser: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser)"
+      "reason": "user's browser and phone: the device protocol carries one DevTools command for the bot's own browser on the user's computer (pageBrowser), and a read of the calendar on the user's phone (phoneCalendarRead)"
     },
     {
       "file": "packages/adapters/src/browser-conformance.test.ts",
@@ -5603,29 +5640,152 @@
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n];\n",
-      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n];\n",
+      "replace": "      required: [\"kind\", \"description\"],\n      additionalProperties: false,\n    },\n  },\n  browserSignInTool,\n  phoneCalendarReadTool,\n];\n",
       "requires": [
-        "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts"
+        "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts",
+        "packages/adapters/src/dozo-phone.tool-definition.ts"
       ],
-      "reason": "user's browser: browser_sign_in among the built-ins, last, so it takes no listed place from the others; only a run offered the bot's browser on the user's computer gets it"
+      "reason": "user's browser and phone: browser_sign_in and phone_calendar_read among the built-ins, last, so they take no listed place from the others; only a run offered the bot's browser on the user's computer gets the first, and only a run that reaches the user's phone the second"
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",
       "find": "import { z } from \"zod\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
-      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
+      "replace": "import { z } from \"zod\";\nimport { browserSignInTool } from \"./dozo-browser-sign-in.tool-definition.js\";\nimport { phoneCalendarReadTool } from \"./dozo-phone.tool-definition.js\";\nimport { allowPrivateHttpSecretOrigins } from \"./bot-secrets.js\";\n",
       "requires": [
-        "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts"
+        "packages/adapters/src/dozo-browser-sign-in.tool-definition.ts",
+        "packages/adapters/src/dozo-phone.tool-definition.ts"
       ],
-      "reason": "user's browser: the import of the rule above"
+      "reason": "user's browser and phone: the imports of the rule above"
     },
     {
       "file": "packages/adapters/src/run-tools.ts",
       "find": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n]);\n",
-      "replace": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n  [\"browser_sign_in\", userBrowserSignIn],\n]);\n",
+      "replace": "  ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),\n  [\"browser_sign_in\", userBrowserSignIn],\n  [\"phone_calendar_read\", phoneCalendarRead],\n]);\n",
       "requires": [
-        "packages/adapters/src/dozo-user-browser.ts"
+        "packages/adapters/src/dozo-user-browser.ts",
+        "packages/adapters/src/dozo-phone.ts"
       ],
-      "reason": "user's browser: browser_sign_in runs on the user's computer, which opens the site's home page and passes nothing on until the person is done"
+      "reason": "user's browser and phone: browser_sign_in runs on the user's computer, which opens the site's home page and passes nothing on until the person is done; phone_calendar_read reads the calendar on the user's phone"
+    },
+    {
+      "file": "packages/adapters/src/run-tools.ts",
+      "find": "import { emailTools } from \"./run-tools-email.js\";\nimport { feedbackTools } from \"./run-tools-feedback.js\";\n",
+      "replace": "import { emailTools } from \"./run-tools-email.js\";\nimport { phoneCalendarRead } from \"./dozo-phone.js\";\nimport { feedbackTools } from \"./run-tools-feedback.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: the import of the handler above"
+    },
+    {
+      "file": "packages/contracts/src/index.ts",
+      "find": "export * from \"./terminal.js\";\nexport * from \"./user-devices.js\";\n",
+      "replace": "export * from \"./terminal.js\";\nexport * from \"./dozo-without-links.js\";\nexport * from \"./user-devices.js\";\n",
+      "requires": [
+        "packages/contracts/src/dozo-without-links.ts"
+      ],
+      "reason": "phone: the one filter that takes links out of calendar text, on the phone and again on the server"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-device.ts",
+      "find": "  return {\n    async connected(userId) {\n      return (await devices?.connected(userId)) ?? hostDevice();\n",
+      "replace": "  return {\n    // The user's phone stays reachable on the desktop app's own server (dozo-phone.ts).\n    ...phoneReach(devices),\n    async connected(userId) {\n      return (await devices?.connected(userId)) ?? hostDevice();\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-device-gateway.ts"
+      ],
+      "reason": "phone: the desktop app's own server wraps the device gateway to add its own computer; the wrapper keeps the way to the user's phone, or the phone tool is never offered there"
+    },
+    {
+      "file": "packages/adapters/src/host-computer-device.ts",
+      "find": "import { HostComputerSandbox } from \"./host-computer-sandbox.js\";\nimport { UserDeviceOfflineError } from \"./user-device-gateway.js\";\n",
+      "replace": "import { HostComputerSandbox } from \"./host-computer-sandbox.js\";\nimport { phoneReach } from \"./dozo-user-device-gateway.js\";\nimport { UserDeviceOfflineError } from \"./user-device-gateway.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-user-device-gateway.ts"
+      ],
+      "reason": "phone: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-request.ts",
+      "find": "      return refusal(\"helper_user_computer\", \"Helpers cannot use the user's computer.\");\n  }\n  // Before the gate, so a routine",
+      "replace": "      return refusal(\"helper_user_computer\", \"Helpers cannot use the user's computer.\");\n  }\n  // Nor the user's phone: a helper's calls are the parent run's, and its approval is the owner's.\n  if (isPhoneTool(name) && isSubagentToolExecution(executionId))\n    return refusal(\"helper_user_phone\", \"Helpers cannot use the user's phone.\");\n  // Before the gate, so a routine",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: a helper (run_subagent) runs in its parent's run, which may reach the user's phone; like the user's computer, the phone is refused to it before any approval card"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-request.ts",
+      "find": "import { USER_COMPUTER_TOOLS } from \"./run-tools-user-computer.js\";\nimport { SCHEDULE_TOOL_NAMES }",
+      "replace": "import { USER_COMPUTER_TOOLS } from \"./run-tools-user-computer.js\";\nimport { isPhoneTool } from \"./dozo-phone.js\";\nimport { SCHEDULE_TOOL_NAMES }",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: the import of the rule above"
+    },
+    {
+      "file": "packages/contracts/src/builtin-tools.ts",
+      "find": "  \"user_computer_act\",\n  \"open_path\",\n",
+      "replace": "  \"user_computer_act\",\n  \"phone_calendar_read\",\n  \"open_path\",\n",
+      "reason": "phone: the bot reads the calendar on the user's phone (phone_calendar_read), a built-in a bot may turn off like the user's computer tools"
+    },
+    {
+      "file": "packages/contracts/src/user-devices.ts",
+      "find": "  platform: z.enum([\"darwin\", \"win32\", \"linux\"]),\n",
+      "replace": "  platform: z.enum([\"darwin\", \"win32\", \"linux\", \"ios\", \"android\"]),\n",
+      "reason": "phone: the phone app pairs as a user device of its own platform; the server keeps it apart from the computers (dozo-user-device-gateway.ts)"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "    } else userComputer = \"offline\";\n  }\n  const cloudAgent = await cloudAgentPromise;\n",
+      "replace": "    } else userComputer = \"offline\";\n  }\n  if (userComputerOwnerId)\n    await offerPhoneTools(\n      deps,\n      run,\n      thread,\n      userComputerOwnerId,\n      disabledBuiltinTools,\n      bot.disabledBuiltinTools,\n    );\n  const cloudAgent = await cloudAgentPromise;\n",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: a run the person started themselves is offered the read of their phone's calendar while the phone is connected with Calendar on, unless the bot turned it off, a token's message reached the run, or someone else can read its thread (a group, a channel, a Space with other members)"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "import { paymentWalletConnected } from \"./payment-wallets.js\";\nimport { backOffRoutineAfterAccountError } from \"./routine-backoff.js\";\n",
+      "replace": "import { paymentWalletConnected } from \"./payment-wallets.js\";\nimport { offerPhoneTools } from \"./dozo-phone.js\";\nimport { backOffRoutineAfterAccountError } from \"./routine-backoff.js\";\n",
+      "requires": [
+        "packages/adapters/src/dozo-phone.ts"
+      ],
+      "reason": "phone: the import of the rule above"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "    if (!input.success) return c.json({ error: \"Invalid device\" }, 400);\n    const token = createUserDeviceToken();\n",
+      "replace": "    if (!input.success) return c.json({ error: \"Invalid device\" }, 400);\n    /** The phones this pairing ended, closed once it commits. */\n    let replaced: string[] = [];\n    const token = createUserDeviceToken();\n",
+      "requires": [
+        "apps/api/src/dozo-user-device-phones.ts"
+      ],
+      "reason": "phone: the phones a phone pairing ends, kept for the rules below"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "        const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });\n        if (active >= USER_DEVICE_LIMIT) return null;\n",
+      "replace": "        const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });\n        // A phone is not a computer: it takes no place under their limit, and an account has one.\n        const phones = await pairedPhones(tx, userId);\n        if (overComputerLimit(input.data.platform, active, phones, USER_DEVICE_LIMIT)) return null;\n        replaced = await replacePhones(tx, userId, input.data.platform, phones);\n",
+      "requires": [
+        "apps/api/src/dozo-user-device-phones.ts"
+      ],
+      "reason": "phone: an account has one phone, and phones take no place under the computers' limit; a phone pairing ends the phone paired before it under the pairing's lock, only once it will be inserted, so a refused pairing ends nothing"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "    if (!device) return c.json({ error: \"Remove a computer before adding another\" }, 409);\n    await recordSecurityEvent({\n",
+      "replace": "    if (!device) return c.json({ error: \"Remove a computer before adding another\" }, 409);\n    await disconnectPhones(deps.devices, userId, replaced);\n    await recordSecurityEvent({\n",
+      "requires": [
+        "apps/api/src/dozo-user-device-phones.ts"
+      ],
+      "reason": "phone: the phone a pairing ended is recorded and its socket closed after the pairing commits"
+    },
+    {
+      "file": "apps/api/src/user-devices.ts",
+      "find": "import { lockOwner } from \"./availability.js\";\nimport { readBoundedBody } from \"./http-body.js\";\n",
+      "replace": "import { lockOwner } from \"./availability.js\";\nimport {\n  disconnectPhones,\n  overComputerLimit,\n  pairedPhones,\n  replacePhones,\n} from \"./dozo-user-device-phones.js\";\nimport { readBoundedBody } from \"./http-body.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-user-device-phones.ts"
+      ],
+      "reason": "phone: the import of the rule above"
     },
     {
       "file": "packages/adapters/src/index.ts",
@@ -6402,7 +6562,7 @@
     {
       "file": "packages/adapters/src/run-tool-gate.ts",
       "find": "import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\n",
-      "replace": "import { MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\nimport { buildApprovalAskBlock, routesToUserBrowser, userComputerGate } from \"./dozo-user-computer-gate.js\";\n",
+      "replace": "import { MAX_FETCH_URL_LENGTH } from \"./approval-ask.js\";\nimport { buildApprovalAskBlock, isPhoneTool, routesToUserBrowser, userComputerGate } from \"./dozo-user-computer-gate.js\";\n",
       "requires": [
         "packages/adapters/src/dozo-user-computer-gate.ts"
       ],
@@ -7489,6 +7649,13 @@
     },
     {
       "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"{name} sonrası\"\n\n#.",
+      "replace": "msgstr \"{name} sonrası\"\n\n#: apps/web/src/pages/AccountSettingsOverlay.tsx\n#: apps/web/src/components/dozo-appearance.tsx\nmsgid \"Message color\"\nmsgstr \"Mesaj rengi\"\n\n#: apps/web/src/components/dozo-appearance.tsx\nmsgid \"Bot color\"\nmsgstr \"Bot rengi\"\n\n#: apps/web/src/components/dozo-appearance.tsx\nmsgid \"Neutral\"\nmsgstr \"Nötr\"\n\n#.",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "themes: the Turkish copy of the Message color row"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
       "find": "msgstr \"Sohbeti temizle\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
       "replace": "msgstr \"Sohbeti temizle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"{count, plural, one {Remove # message?} other {Remove # messages?}}\"\nmsgstr \"{count, plural, one {# mesaj kaldırılsın mı?} other {# mesaj kaldırılsın mı?}}\"\n\n#: apps/mobile/lib/bot-lifecycle.ts\nmsgid \"Clear conversation?\"",
       "requires": [
@@ -7525,6 +7692,13 @@
         "apps/web/src/components/dozo-daily-digest-row.tsx"
       ],
       "reason": "upstream test of the general settings: the fork's Access tokens row opens a dialog this test's component mock does not provide, so it is replaced as the quiet-hours row is (dozo-access-tokens.test.tsx covers the row); the daily digest row likewise (dozo-daily-digest-row.test.tsx)"
+    },
+    {
+      "file": "apps/web/src/pages/AccountSettingsOverlay.test.tsx",
+      "find": "vi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "replace": "vi.mock(\"../components/dozo-daily-digest-row\", () => ({ DozoDailyDigestRow: () => null }));\nvi.mock(\"../components/dozo-appearance\", () => ({\n  DozoAppearancePicker: () => null,\n  DozoMessageColorPicker: () => null,\n}));\n\nvi.mock(\"../lib/auth-capabilities\"",
+      "requires": ["apps/web/src/components/dozo-appearance.tsx"],
+      "reason": "upstream test of the general settings: the fork's Appearance menu and Message color row use menu parts this test's component mock does not provide, so they are replaced as the quiet-hours row is (dozo-appearance.test.tsx covers both)"
     },
     {
       "file": "packages/core/src/index.ts",
@@ -7916,20 +8090,22 @@
     {
       "file": "packages/adapters/src/run-turn.ts",
       "find": "import { wakeRun } from \"./wake-run.js\";\n\ntype RuntimeEvent",
-      "replace": "import { wakeRun } from \"./wake-run.js\";\nimport { runCameByToken } from \"./dozo-token-run.js\";\n\ntype RuntimeEvent",
+      "replace": "import { wakeRun } from \"./wake-run.js\";\nimport { runCameByToken } from \"./dozo-token-run.js\";\nimport { runReadPhone } from \"./dozo-phone.js\";\n\ntype RuntimeEvent",
       "requires": [
-        "packages/adapters/src/dozo-token-run.ts"
+        "packages/adapters/src/dozo-token-run.ts",
+        "packages/adapters/src/dozo-phone.ts"
       ],
-      "reason": "token gate: the import of the rule below"
+      "reason": "token gate and phone: the imports of the rule below"
     },
     {
       "file": "packages/adapters/src/run-turn.ts",
       "find": "async function conversationRetentionMessages(ctx: RunContext): Promise<string[] | undefined> {\n  const { run, thread } = ctx;\n",
-      "replace": "async function conversationRetentionMessages(ctx: RunContext): Promise<string[] | undefined> {\n  // Memory keeps no turn of a run reached by a token's text: it would come back as the owner's.\n  if (await runCameByToken(ctx)) return undefined;\n  const { run, thread } = ctx;\n",
+      "replace": "async function conversationRetentionMessages(ctx: RunContext): Promise<string[] | undefined> {\n  // Memory keeps no turn of a run reached by a token's text: it would come back as the owner's.\n  if (await runCameByToken(ctx)) return undefined;\n  // Nor one that read the user's phone: what it read stays in this chat only.\n  if (await runReadPhone(ctx)) return undefined;\n  const { run, thread } = ctx;\n",
       "requires": [
-        "packages/adapters/src/dozo-token-run.ts"
+        "packages/adapters/src/dozo-token-run.ts",
+        "packages/adapters/src/dozo-phone.ts"
       ],
-      "reason": "token gate: conversation memory does not keep a turn of a run reached by text sent with an access token, so a later run or a bot sharing the memory never recalls it as the owner's word"
+      "reason": "token gate and phone: conversation memory does not keep a turn of a run reached by text sent with an access token, so a later run or a bot sharing the memory never recalls it as the owner's word, nor a turn of a run that read the user's phone, whose calendar stays in that chat"
     },
     {
       "file": "apps/api/src/thread-target.ts",
@@ -8743,6 +8919,83 @@
         "apps/mobile/components/dozo-store-gate.tsx"
       ],
       "reason": "store build: a link to Wallet lands on the chats"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"expo-localization\",\n      \"@react-native-vector-icons/ionicons\",",
+      "replace": "\"expo-localization\",\n      [\n        \"expo-calendar\",\n        {\n          \"calendarPermission\": \"Bots you allow can read your calendar when you ask them.\",\n          \"remindersPermission\": false\n        }\n      ],\n      \"@react-native-vector-icons/ionicons\",",
+      "reason": "phone calendar: the calendar module's plugin writes the iOS calendar purpose strings (full access and the older key) with the app's own text, and no reminders string, since the app never asks for reminders"
+    },
+    {
+      "file": "apps/mobile/app.json",
+      "find": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"icon\": \"./assets/icon.png\",",
+      "replace": "\"softwareKeyboardLayoutMode\": \"resize\",\n      \"blockedPermissions\": [\"android.permission.WRITE_CALENDAR\"],\n      \"icon\": \"./assets/icon.png\",",
+      "reason": "phone calendar: the calendar module's plugin asks for writing as well; bots only read, so Android gets READ_CALENDAR alone"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "import { createSettingsPageStyles } from \"../../lib/settings-page-styles\";\nimport { isSettingsLink, openFromSettingsSheet } from \"../../lib/settings-sheet\";",
+      "replace": "import { createSettingsPageStyles } from \"../../lib/settings-page-styles\";\nimport { DozoPhoneRow } from \"../../lib/dozo-phone-row\";\nimport { isSettingsLink, openFromSettingsSheet } from \"../../lib/settings-sheet\";",
+      "requires": [
+        "apps/mobile/lib/dozo-phone-row.tsx"
+      ],
+      "reason": "phone calendar: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/(settings)/account.tsx",
+      "find": "            icon: { ios: \"desktopcomputer\", android: \"desktop-outline\" },\n          })}\n          {me?.paymentWalletProvider",
+      "replace": "            icon: { ios: \"desktopcomputer\", android: \"desktop-outline\" },\n          })}\n          <DozoPhoneRow\n            key=\"dozo-phone\"\n            disabled={signingOut}\n            leading={icon({ ios: \"iphone\", android: \"phone-portrait-outline\" })}\n            onPress={() => router.push(\"/dozo-phone\")}\n          />\n          {me?.paymentWalletProvider",
+      "requires": [
+        "apps/mobile/lib/dozo-phone-row.tsx",
+        "apps/mobile/app/(settings)/dozo-phone.tsx"
+      ],
+      "reason": "phone calendar: a Phone row under Computers opens what bots may read from this phone; shown only on a direct server and in a build with the calendar module"
+    },
+    {
+      "file": "apps/mobile/app/_layout.tsx",
+      "find": "import { startUnsentSends } from \"../lib/unsent-sends\";\nimport { startWorkActivities } from \"../lib/work-activity\";",
+      "replace": "import { startUnsentSends } from \"../lib/unsent-sends\";\nimport { startPhoneDevice } from \"../lib/dozo-phone-device\";\nimport { startWorkActivities } from \"../lib/work-activity\";",
+      "requires": [
+        "apps/mobile/lib/dozo-phone-device.ts",
+        "apps/mobile/lib/dozo-phone-calendar.ts"
+      ],
+      "reason": "phone calendar: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/app/_layout.tsx",
+      "find": "    return startWorkActivities();\n  }, [ready]);\n\n  useEffect(() => watchForegroundUpdates(), []);",
+      "replace": "    return startWorkActivities();\n  }, [ready]);\n\n  // The phone's connection for bots, once the saved server is restored; idle until a kind is on.\n  useEffect(() => {\n    if (!ready) return;\n    return startPhoneDevice();\n  }, [ready]);\n\n  useEffect(() => watchForegroundUpdates(), []);",
+      "requires": [
+        "apps/mobile/lib/dozo-phone-device.ts"
+      ],
+      "reason": "phone calendar: the app keeps the phone's device connection while it is in the foreground, signed in to a direct server, with a kind switched on"
+    },
+    {
+      "file": "apps/mobile/lib/settings-sheet.ts",
+      "find": "  \"dozo-feedback\",\n  \"dozo-usage\",\n",
+      "replace": "  \"dozo-feedback\",\n  \"dozo-phone\",\n  \"dozo-usage\",\n",
+      "requires": [
+        "apps/mobile/app/(settings)/dozo-phone.tsx"
+      ],
+      "reason": "phone calendar: the Phone page is a settings page, so a link to it opens inside the settings sheet"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
+      "replace": "msgid \"Phone\"\nmsgstr \"Telefon\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Calendar\"\nmsgstr \"Takvim\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Events a bot reads are sent to its AI model.\"\nmsgstr \"Botun okuduğu etkinlikler yapay zekâ modeline gönderilir.\"\n\n#: apps/mobile/app/(settings)/dozo-phone.tsx\nmsgid \"Allow calendar access in Settings.\"\nmsgstr \"Ayarlar'dan takvim erişimine izin verin.\"\n\n#: apps/web/src/components/call/VoiceChatCard.tsx\nmsgid \"Phone call\"",
+      "requires": [
+        "apps/mobile/app/(settings)/dozo-phone.tsx"
+      ],
+      "reason": "phone calendar: the Turkish copy of the Phone page's switch, its footer and the alert when the system refuses (Phone, Cancel and Settings are upstream's)"
+    },
+    {
+      "file": "apps/mobile/lib/account-screen.test.tsx",
+      "find": "vi.mock(\"./network-cache\", () => ({ clearNetworkCache: vi.fn() }));\nvi.mock(\"react-native\", () => ({",
+      "replace": "vi.mock(\"./network-cache\", () => ({ clearNetworkCache: vi.fn() }));\nvi.mock(\"./dozo-phone-row\", () => ({ DozoPhoneRow: () => null }));\nvi.mock(\"react-native\", () => ({",
+      "requires": [
+        "apps/mobile/lib/dozo-phone-row.tsx"
+      ],
+      "reason": "upstream test of the settings hub: the fork's Phone row asks the native module loader whether the calendar module is there, which this test replaces for upstream's own native module only, so the row is replaced as it does for that one (dozo-phone-screen.test.tsx covers it)"
     },
     {
       "file": "apps/mobile/components/run-error-sheet.tsx",
