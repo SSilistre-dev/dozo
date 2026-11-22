@@ -242,13 +242,6 @@ olc() {
         printf '%s\n' "$out" | sed 's/^/[olc] /'
       else printf '%s\n' "$out"; fail "threads owner or thread bot guard (dozo/db/*-guard.mjs)"; fi
     else fail "dozo/db/threads-owner-guard.test.mjs missing: upstream changes to thread owners are not checked"; fi
-    # Module-level mutable state in the fork's server code must be read for its key scope before it
-    # merges: one person's data must never reach another (dozo/db/module-state-guard.mjs).
-    if [ -f dozo/db/module-state-guard.mjs ] && [ -f dozo/db/module-state-guard.test.mjs ] && [ -f dozo/db/module-state-reviewed.tsv ]; then
-      if out=$(drun module-state --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" sh -c 'node --test dozo/db/module-state-guard.test.mjs >/tmp/t.log 2>&1 || { cat /tmp/t.log; exit 1; }; node dozo/db/module-state-guard.mjs --root=/r' 2>&1); then
-        printf '%s\n' "$out" | sed 's/^/[olc] /'
-      else printf '%s\n' "$out"; fail "module state guard (dozo/db/module-state-guard.mjs)"; fi
-    else fail "dozo/db/module-state-guard.mjs, its test or module-state-reviewed.tsv missing: server module-level state is not checked"; fi
     # The server bundle's licence notices and runtime copies (dozo/server-bundle): which licences
     # pass, what the notices hold, and that no manifest points at a runtime it does not carry.
     # Offline: a local HTTP server stands in for the downloads.
@@ -444,7 +437,7 @@ unit_tests() {
   # pipeline would hold the trap until the run ends) and removes the named container.
   # The quoted script is expanded by the container's shell, not this one (SC2016).
   # shellcheck disable=SC2086,SC2016
-  ( drun unit -v "$src:/src:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
+  ( drun unit -v "$src:/src:ro" -v "$ROOT:/guard:ro" -v "$vol:/cache" -e CI=1 -e COREPACK_HOME=/cache/corepack \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e DOZO_COVERAGE_MIN="$COV_MIN" "$NODE_IMAGE" sh -c 'set -e
       mkdir -p /cache/w /cache/store; cd /cache/w
       want=$(sha256sum /src/pnpm-lock.yaml | cut -d" " -f1)
@@ -478,6 +471,21 @@ unit_tests() {
       # 30 seconds); a type error there fails the step before the tests run.
       (cd apps/api && pnpm exec tsc --noEmit -p tsconfig.json) || { echo "[unit] type errors in apps/api"; exit 1; }
       echo "[unit] types of apps/api ok"
+      # Long-lived mutable state in the fork server code, the relay worker and what the brand rules
+      # add to upstream files must be read for its key scope before it merges (one person data must
+      # never reach another). It reads the unbranded working tree mounted at /guard: its reviewed
+      # rows and the anchored rules are in upstream words. It parses with the TypeScript 6 this
+      # lockfile installs for apps/www (the root TypeScript 7 has no JS parser). A missing guard,
+      # test, list or parser is a failure, never a skip; nothing is fetched.
+      g=/guard/dozo/db; ts=/cache/w/apps/www/node_modules/typescript
+      for f in module-state-guard.mjs module-state-guard.test.mjs module-state-reviewed.tsv; do
+        [ -f "$g/$f" ] || { echo "[unit] module state guard FAILED: dozo/db/$f is missing, so server state is not checked"; exit 2; }
+      done
+      [ -f "$ts/lib/typescript.js" ] || { echo "[unit] module state guard FAILED: no typescript in the installed tree (apps/www)"; exit 2; }
+      export DOZO_TYPESCRIPT=$ts
+      node --test "$g/module-state-guard.test.mjs" > /tmp/guard.log 2>&1 || { cat /tmp/guard.log; echo "[unit] module state guard FAILED: its tests"; exit 2; }
+      node "$g/module-state-guard.mjs" --root=/guard > /tmp/guard.log 2>&1 || { cat /tmp/guard.log; exit 2; }
+      sed "s/^/[unit] /" /tmp/guard.log
       m=${DOZO_COVERAGE_MIN:-90}
       pnpm exec vitest run "$@" --coverage --coverage.reporter=text \
         --coverage.include="apps/**/dozo-*.ts" --coverage.include="apps/**/dozo-*.tsx" \
@@ -488,7 +496,7 @@ unit_tests() {
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
-  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types of apps/api, fork tests or coverage"; return 1; fi
+  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types of apps/api, module state guard, fork tests or coverage"; return 1; fi
 }
 
 # --- qa: logged, timed steps ---

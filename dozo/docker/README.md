@@ -131,7 +131,6 @@ Under 30 seconds once the Node image is local. It never installs anything and ru
   stub, the route matching and the coverage verdict in `logic.ts`). `model-stub.test.mjs` must
   exist. `source-available.test.mjs` fails when the landing page or `.github/README.md` calls Dozo
   open source.
-- The module state guard (`dozo/db/module-state-guard.mjs`) and its tests: every top-level `let`, `Map`, `Set`, `WeakMap` or other `new X()`, and every `let` or `Map`/`Set`/`WeakMap`/`WeakSet` in the direct body of a function (a factory's closure state; scope `local` for a per-call local), in the fork's server code (`dozo-*` files) must be a row in `dozo/db/module-state-reviewed.tsv` with its key scope; a new or stale row fails.
 - The landing pages (`dozo/landing/**/*.html`) hold no `[[`: a legal page writes a value only the
   owner can supply as `[[NAME]]`, and a page that still has one must not merge.
 - The iOS app's config: `dozo/mobile/check-config.test.mjs` brands upstream's `apps/mobile/app.json`
@@ -194,7 +193,7 @@ container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm stor
 `node_modules`, reinstalled in place when the lockfile changes); a cold run installs everything, an
 unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the
 host. The database client (`packages/db/src/generated`) is generated in the volume before every
-run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api` on the branded tree (about 30 seconds; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. A failing run prints each file under the floor with its number.
+run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api` on the branded tree (about 30 seconds; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. Then the module state guard (`dozo/db/module-state-guard.mjs`) and its tests run on the unbranded working tree (mounted read-only), parsing with the TypeScript 6 the lockfile installs for `apps/www`: every long-lived mutable state in the fork's server code (`dozo-*` files), the relay worker (`dozo/relay/worker/src`) and what the anchored brand rules add to upstream files there (module-level `let`/`var`, containers, `new X()`, calls and mutated literals, class fields, factory state a closure reaches, `globalThis` writes) must be a row in `dozo/db/module-state-reviewed.tsv` with where it lives (`module`, `class X`, `fn make`) and its key scope. A new row, a hit that moved to another level, a stale row, or a missing guard, test, list or parser fails the step (exit 2); nothing is fetched. A failing run prints each file under the floor with its number.
 
 ### qa
 
