@@ -11324,8 +11324,8 @@
     },
     {
       "file": "packages/adapters/src/run-turn.ts",
-      "find": "import { runCameByToken } from \"./dozo-token-run.js\";\n\ntype RuntimeEvent",
-      "replace": "import { runCameByToken } from \"./dozo-token-run.js\";\nimport { dozoRecordLearningTurn } from \"./dozo-learning-turn.js\";\n\ntype RuntimeEvent",
+      "find": "import { runReadPhone } from \"./dozo-phone.js\";\n\ntype RuntimeEvent",
+      "replace": "import { runReadPhone } from \"./dozo-phone.js\";\nimport { dozoRecordLearningTurn } from \"./dozo-learning-turn.js\";\n\ntype RuntimeEvent",
       "requires": [
         "packages/adapters/src/dozo-learning-turn.ts"
       ],

@@ -8,6 +8,7 @@ import {
   reviewLearning,
 } from "./dozo-learning-review.js";
 import { learningMode, recordLearningTurn } from "./dozo-learning-store.js";
+import { runReadPhone } from "./dozo-phone.js";
 import { runCameByToken } from "./dozo-token-run.js";
 import type { RunContext } from "./run-context.js";
 import { isRunTainted } from "./run-context.js";
@@ -51,7 +52,7 @@ async function recordTurn(ctx: RunContext, start: typeof startNow) {
   const { deps, run, bot } = ctx;
   // The one read a bot with learning off pays.
   if ((await learningMode(deps.prisma, bot.id)) !== "auto") return;
-  if (await runCameByToken(ctx)) return;
+  if ((await runCameByToken(ctx)) || (await runReadPhone(ctx))) return;
   const tainted = await isRunTainted(ctx);
   const now = Date.now();
   const due = await deps.prisma.$transaction(async (tx) => {

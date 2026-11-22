@@ -23,6 +23,9 @@ const { resolveRunModel, resolveConnectedRunModel } = vi.hoisted(() => ({
 }));
 vi.mock("./run-model.js", () => ({ resolveRunModel, resolveConnectedRunModel }));
 
+const { runReadPhone } = vi.hoisted(() => ({ runReadPhone: vi.fn(async () => false) }));
+vi.mock("./dozo-phone.js", () => ({ runReadPhone }));
+
 const sqlOf = (call: unknown[]) => (call[0] as string[]).join("?");
 const NOW = new Date("2027-01-16T12:00:00.000Z");
 
@@ -93,6 +96,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   reviewLearning.mockClear();
+  runReadPhone.mockReset();
+  runReadPhone.mockResolvedValue(false);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -194,6 +199,16 @@ describe("dozoRecordLearningTurn", () => {
     await dozoRecordLearningTurn(token.ctx, token.start);
     expect(token.executeRaw).not.toHaveBeenCalled();
     expect(token.enqueueIn).not.toHaveBeenCalled();
+  });
+
+  it("records nothing for a run that read the user's phone", async () => {
+    runReadPhone.mockResolvedValue(true);
+    const phone = harness();
+    await dozoRecordLearningTurn(phone.ctx, phone.start);
+    expect(runReadPhone).toHaveBeenCalledWith(phone.ctx);
+    expect(phone.executeRaw).not.toHaveBeenCalled();
+    expect(phone.enqueueIn).not.toHaveBeenCalled();
+    expect(phone.start).not.toHaveBeenCalled();
   });
 
   it("never fails the run", async () => {
