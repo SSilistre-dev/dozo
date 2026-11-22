@@ -140,6 +140,25 @@ describe("a message's menu on mobile", () => {
     await shows(["Pin"]);
   });
 
+  it("says first, greyed out, which backup wrote a reply, and only on that reply", async () => {
+    answers["dozoMessages/revisable"] = {
+      editMessageId: null,
+      regenerateMessageId: null,
+      backupReplies: { "m-bot": { model: "Model B" } },
+    };
+    await render(<Row m={message("m-bot", { role: "bot" })} />);
+    await shows(["Answered by Model B", "Pin"]);
+    expect(actions[0]).toMatchObject({
+      name: "dozoBackup",
+      symbol: "info.circle",
+      icon: "information-circle-outline",
+      disabled: true,
+    });
+    expect(actions[0]!.onPress()).toBeUndefined();
+    await render(<Row m={message("m-other")} />);
+    await shows(["Pin"]);
+  });
+
   it("offers Unpin on a pinned message and unpins it", async () => {
     answers["dozoMessages/pins"] = { pins: [{ messageId: "m-other", preview: { text: "Hi" } }] };
     await render(<Row m={message("m-other")} />);
@@ -388,6 +407,25 @@ describe("the menus' own entries", () => {
       },
     ]);
     expect(dozoSheetGroups([action])).toEqual([[action]]);
+  });
+
+  it("show a line that only says something greyed out in the iOS menu", () => {
+    const note: DozoMessageAction = {
+      name: "dozoBackup",
+      text: "Answered by Model B",
+      symbol: "info.circle",
+      icon: "information-circle-outline",
+      disabled: true,
+      onPress: () => undefined,
+    };
+    expect(dozoMenuEntries([note])[0]?.subactions).toEqual([
+      {
+        id: "dozoBackup",
+        title: "Answered by Model B",
+        image: "info.circle",
+        attributes: { disabled: true },
+      },
+    ]);
   });
 });
 

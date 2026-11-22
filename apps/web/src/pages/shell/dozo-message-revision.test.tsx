@@ -201,6 +201,23 @@ it("offers nothing on a message the server does not name", async () => {
   expect(container.querySelector("[role=menuitem]")).toBeNull();
 });
 
+it("says which backup wrote a reply, first in its menu, and nothing on other replies", async () => {
+  api.revisable.mockResolvedValue({
+    editMessageId: null,
+    regenerateMessageId: null,
+    backupReplies: { "m-reply": { model: "Model B" } },
+  });
+  await render(reply);
+  await vi.waitFor(() =>
+    expect(container.querySelector("[data-testid=dozo-backup-reply]")?.textContent).toBe(
+      "Answered by Model B",
+    ),
+  );
+  await render(ask);
+  await vi.waitFor(() => expect(api.revisable).toHaveBeenCalled());
+  expect(container.querySelector("[data-testid=dozo-backup-reply]")).toBeNull();
+});
+
 it("never asks for a message still streaming", async () => {
   await render({ ...reply, id: "progress:r-1" });
   expect(api.revisable).not.toHaveBeenCalled();

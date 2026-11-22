@@ -1,17 +1,27 @@
 import { readDozoModelPool, setDozoModelPool } from "@rakazo/adapters";
-import { recordAuditEvent } from "@rakazo/db";
+import { readActiveModelRests, recordAuditEvent } from "@rakazo/db";
 import type { RouterContext } from "./routes/context.js";
 
 /**
  * The signed-in person's model pool (dozo-model-pool-settings.ts in adapters): which of their own
- * connections hand a run over to each other when one runs out. A change is recorded in the
- * activity log and signals only their own apps, on the roster stream.
+ * connections hand a run over to each other when one runs out, and which of their models rest
+ * now. A change is recorded in the activity log and signals only their own apps, on the roster
+ * stream.
  */
 export function dozoModelPoolRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
   const poolDeps = { prisma: deps.prisma, secretStore: deps.secrets };
   return {
     dozoModelPool: {
+      rests: authed.dozoModelPool.rests.handler(async ({ context }) => ({
+        rests: (await readActiveModelRests(deps.prisma, context.actor.userId, new Date())).map(
+          (rest) => ({
+            credentialId: rest.credentialId,
+            modelId: rest.modelId,
+            opensAt: new Date(rest.resetsAt).toISOString(),
+          }),
+        ),
+      })),
       get: authed.dozoModelPool.get.handler(({ context }) =>
         readDozoModelPool(poolDeps, context.actor.userId),
       ),

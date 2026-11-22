@@ -1,4 +1,4 @@
-import { wakeRun } from "@rakazo/adapters";
+import { listPiCatalog, wakeRun } from "@rakazo/adapters";
 import type { Actor, DozoRevisable, DozoRevisionConfirmed, MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -12,6 +12,7 @@ import {
   appendEventInTransaction,
   IsolationError,
   loadMessageAuthor,
+  readBackupReplies,
   readMessageBlocks,
   runAsSystemInTransaction,
   spaceTakesWork,
@@ -153,6 +154,26 @@ export function planRevision(history: RevisionHistory | null, userId: string): R
  * The newest turn's messages in the two fields every client reads, older ones only when any, and
  * for every message named what changing it removes, which the client sends back as confirmed.
  */
+/**
+ * The revisable answer with the chat's replies a backup wrote, each named by the model's name in
+ * the catalog, else its id.
+ */
+export function withBackupReplies(
+  revisable: DozoRevisable,
+  replies: ReadonlyArray<{ messageId: string; provider: string; modelId: string }>,
+): DozoRevisable {
+  if (!replies.length) return revisable;
+  const catalog = listPiCatalog();
+  const name = (provider: string, modelId: string) =>
+    catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label ?? modelId;
+  return {
+    ...revisable,
+    backupReplies: Object.fromEntries(
+      replies.map((reply) => [reply.messageId, { model: name(reply.provider, reply.modelId) }]),
+    ),
+  };
+}
+
 export function revisableOf(
   targets: readonly RevisionTarget[],
   lastMessageId: string | null,
@@ -400,7 +421,10 @@ export function dozoMessagesRoutes(ctx: RouterContext) {
         const history = await deps.prisma.$transaction((tx) =>
           loadRevisionHistory(tx, thread, caller),
         );
-        return revisableOf(planRevision(history, userId), history.lastMessageId);
+        return withBackupReplies(
+          revisableOf(planRevision(history, userId), history.lastMessageId),
+          await readBackupReplies(deps.prisma, thread.id),
+        );
       }),
       edit: authed.dozoMessages.edit.handler(({ context, input }) =>
         revise(

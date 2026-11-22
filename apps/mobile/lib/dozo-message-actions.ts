@@ -22,10 +22,11 @@ import { errorText } from "./user-error";
  * later one, so it is confirmed first.
  */
 export type DozoMessageAction = {
-  name: "dozoEdit" | "dozoRegenerate" | "dozoPin" | "dozoReport" | "dozoBlock";
+  name: "dozoBackup" | "dozoEdit" | "dozoRegenerate" | "dozoPin" | "dozoReport" | "dozoBlock";
   text: string;
   /** SF Symbol for the iOS menu. */
   symbol:
+    | "info.circle"
     | "pencil"
     | "arrow.clockwise"
     | "pin"
@@ -34,6 +35,7 @@ export type DozoMessageAction = {
     | "hand.raised";
   /** Ionicons name for the Android menu. */
   icon:
+    | "information-circle-outline"
     | "create-outline"
     | "refresh-outline"
     | "pin-outline"
@@ -41,6 +43,8 @@ export type DozoMessageAction = {
     | "flag-outline"
     | "hand-left-outline";
   onPress: () => void;
+  /** A line that only says something: shown greyed out, and left out of the accessibility actions. */
+  disabled?: true;
 };
 
 export const revisableRead = (threadId: string) => rpcQuery("dozoMessages/revisable", { threadId });
@@ -254,8 +258,19 @@ export function useDozoMessageActions(
   saves.current = { regenerate, pin };
   const text = canEdit ? messageText(message) : "";
   const confirmed = confirmedFor(revisable, messageId);
+  // A reply a backup wrote names it, quietly, first in the message's menu.
+  const backup = sent ? revisable?.backupReplies?.[messageId]?.model : undefined;
   return useMemo(() => {
     const actions: DozoMessageAction[] = [];
+    if (backup)
+      actions.push({
+        name: "dozoBackup",
+        text: t`Answered by ${backup}`,
+        symbol: "info.circle",
+        icon: "information-circle-outline",
+        disabled: true,
+        onPress: () => undefined,
+      });
     if (canEdit)
       actions.push({
         name: "dozoEdit",
@@ -318,6 +333,7 @@ export function useDozoMessageActions(
       });
     return actions;
   }, [
+    backup,
     canEdit,
     canRegenerate,
     editRemoves,
@@ -346,6 +362,7 @@ export function dozoMenuEntries(actions: readonly DozoMessageAction[]) {
         id: action.name,
         title: action.text,
         image: action.symbol,
+        ...(action.disabled ? { attributes: { disabled: true } } : {}),
       })),
     },
   ];

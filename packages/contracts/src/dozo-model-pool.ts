@@ -23,7 +23,17 @@ export const DozoModelPoolSchema = z.object({
 });
 export type DozoModelPool = z.infer<typeof DozoModelPoolSchema>;
 
+/**
+ * The person's models, or with modelId "" whole connections, that rest now after their quota ran
+ * out or their key was refused, and when each opens again. Runs start past them until then.
+ */
+export const DozoModelRestsSchema = z.object({
+  rests: z.array(z.object({ credentialId: Id, modelId: z.string(), opensAt: IsoDate })),
+});
+export type DozoModelRests = z.infer<typeof DozoModelRestsSchema>;
+
 export const dozoModelPoolContract = /* @__PURE__ */ (() => ({
+  rests: oc.output(DozoModelRestsSchema),
   get: oc.output(DozoModelPoolSchema),
   /** Pools every offered connection of this connection's provider, or none of them. */
   set: oc.input(z.object({ credentialId: Id, pooled: z.boolean() })).output(DozoModelPoolSchema),
