@@ -142,6 +142,7 @@ const SIGN_IN_TIME: Duration = Duration::from_secs(15 * 60);
 
 pub const NO_BROWSER: &str = "No supported browser is installed on this computer.";
 const CLOSED: &str = "The bot's browser closed.";
+pub const CLEARED: &str = "The person cleared this bot's browser; ask again before using it.";
 
 /// The browser this computer would start, if any: the first of Chrome, Edge, Brave and Chromium,
 /// looked for only where the system installs them, never in a folder on `PATH` or in the home
@@ -643,32 +644,116 @@ impl Running {
     }
 }
 
-/// Goes to `page`, waits up to ten seconds for it, clears the tab's history and answers whether
-/// the tab then holds that one page and nothing else.
-async fn leave_only(running: &Running, session: &str, page: &str) -> bool {
-    let _ = running
+/// Goes to `page`, waits up to ten seconds for a page `arrived` accepts to have come (where `page`
+/// led: a home page that redirects), clears the tab's history and answers whether the tab then
+/// holds one such page and nothing else.
+async fn leave_only(
+    running: &Running,
+    session: &str,
+    page: &str,
+    arrived: impl Fn(&str) -> bool,
+) -> bool {
+    let arrived = &arrived;
+    let history = || async move {
+        let asked = running
+            .pipe
+            .call("Page.getNavigationHistory", json!({}), Some(session));
+        // A tab busy loading may not answer at once, which counts as not yet.
+        match tokio::time::timeout(Duration::from_millis(500), asked).await {
+            Ok(Ok(history)) => Some(history),
+            _ => None,
+        }
+    };
+    let newest = |history: &Value| {
+        history["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry["id"].as_u64())
+            .max()
+            .unwrap_or(0)
+    };
+    // Only a page that came after this navigation counts, never one the sign-in left (of the
+    // same site, a return address with a code).
+    let Some(before) = history().await else {
+        return false;
+    };
+    let since = newest(&before);
+    // The tab holds such a page as its current entry, and with `only`, nothing else.
+    let holds = |only: bool| async move {
+        let Some(history) = history().await else {
+            return false;
+        };
+        let entries = history["entries"].as_array().map_or(&[][..], Vec::as_slice);
+        let current = history["currentIndex"].as_u64().unwrap_or(u64::MAX);
+        let at = usize::try_from(current).ok().and_then(|at| entries.get(at));
+        (!only || entries.len() == 1)
+            && at.is_some_and(|entry| {
+                entry["id"].as_u64().is_some_and(|id| id > since)
+                    && entry["url"].as_str().is_some_and(arrived)
+            })
+    };
+    // The browser answers a navigation once the page answers: one that does not is waited for
+    // ten seconds at most.
+    let going = running
         .pipe
-        .call("Page.navigate", json!({ "url": page }), Some(session))
-        .await;
-    for _ in 0..100 {
-        if running.address().await.is_ok_and(|now| now == page) {
+        .call("Page.navigate", json!({ "url": page }), Some(session));
+    let _ = tokio::time::timeout(Duration::from_secs(10), going).await;
+    for _ in 0..20 {
+        if holds(false).await {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    // What is still loading stops: the tab keeps what came.
     let _ = running
         .pipe
-        .call("Page.resetNavigationHistory", json!({}), Some(session))
+        .call("Page.stopLoading", json!({}), Some(session))
         .await;
-    let Ok(history) = running
-        .pipe
-        .call("Page.getNavigationHistory", json!({}), Some(session))
-        .await
+    for _ in 0..10 {
+        let _ = running
+            .pipe
+            .call("Page.resetNavigationHistory", json!({}), Some(session))
+            .await;
+        if holds(true).await {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// Whether `url` is a page of `site`, over `scheme`: the site itself or a host under it.
+fn on_site(url: &str, scheme: &str, site: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix(scheme)
+        .and_then(|rest| rest.strip_prefix("://"))
     else {
         return false;
     };
-    let entries = history["entries"].as_array().map_or(&[][..], Vec::as_slice);
-    entries.len() == 1 && entries[0]["url"] == page
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
+    host == site
+        || host
+            .strip_suffix(site)
+            .is_some_and(|under| under.ends_with('.'))
+}
+
+/// A bot's key: its id's SHA-256, in hex (`device_run::bot_key`). Anything else read from the
+/// profiles folder is not a bot's.
+fn valid_key(key: &str) -> bool {
+    key.len() == 64 && key.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// Whether a character of a bot's name is shown as it is: no control, line or paragraph
+/// separator, and no invisible format character (direction overrides and isolates, zero-width
+/// characters), which could make one name look like another in a menu or dialog.
+fn shown(c: char) -> bool {
+    !c.is_control()
+        && !matches!(c,
+            '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E007F}')
 }
 
 fn signing_message(site: &str) -> String {
@@ -838,9 +923,9 @@ impl Browsers {
     /// Keeps the bot's name beside its browser, as the server sends it, so the person can tell
     /// which browser to clear. Control characters are dropped and it is kept short.
     pub fn remember_name(&self, key: &str, name: &str) {
-        let name: String = name.chars().filter(|c| !c.is_control()).take(64).collect();
+        let name: String = name.chars().filter(|c| shown(*c)).take(64).collect();
         let name = name.trim();
-        if name.is_empty() || private_folder(&self.root).is_err() {
+        if !valid_key(key) || name.is_empty() || private_folder(&self.root).is_err() {
             return;
         }
         let file = self.root.join(format!("{key}.name"));
@@ -863,7 +948,8 @@ impl Browsers {
                 let key = path
                     .file_name()?
                     .to_str()?
-                    .strip_suffix(".name")?
+                    .strip_suffix(".name")
+                    .filter(|key| valid_key(key))?
                     .to_owned();
                 let name = std::fs::read_to_string(&path).ok()?;
                 Some((key, name))
@@ -878,20 +964,30 @@ impl Browsers {
     }
 
     /// The person clears the bot's browser: a sign-in in it ends, the browser ends and its profile
-    /// goes (every site it was signed in to, its history and cookies), and the server is told on
-    /// its next use (`cleared`), so it forgets what the bot was allowed there.
-    pub async fn clear(&self, key: &str) {
-        if private_folder(&self.root).is_ok() {
-            let _ = std::fs::write(self.root.join(format!("{key}.cleared")), b"");
+    /// goes (every site it was signed in to, its history and cookies). No browser of that bot
+    /// starts until the server has asked whether it was cleared (`take_cleared`), so it forgets
+    /// what the bot was allowed there first. Answers false when the browser would not end: its
+    /// profile, and its name in the menu, stay.
+    pub async fn clear(&self, key: &str) -> bool {
+        if !valid_key(key) || private_folder(&self.root).is_err() {
+            return false;
         }
-        self.close(key, true).await;
-        let _ = std::fs::remove_file(self.root.join(format!("{key}.name")));
-        self.tell_list();
+        // No start meanwhile: a call on its way waits, then finds the browser cleared.
+        let _starting = self.starting.lock().await;
+        if std::fs::write(self.root.join(format!("{key}.cleared")), b"").is_err() {
+            return false;
+        }
+        self.close(key, true).await
     }
 
-    /// Whether the person cleared the bot's browser since it last started.
+    /// Whether the person cleared the bot's browser and the server has not asked since.
     pub fn cleared(&self, key: &str) -> bool {
         self.root.join(format!("{key}.cleared")).exists()
+    }
+
+    /// The server was told the browser was cleared: it may start again.
+    pub fn take_cleared(&self, key: &str) {
+        let _ = std::fs::remove_file(self.root.join(format!("{key}.cleared")));
     }
 
     pub fn available(&self) -> bool {
@@ -981,13 +1077,18 @@ impl Browsers {
         // Back link the bot clicks, finds nothing behind it. The tab must then hold that one page
         // alone; a home page that did not come leaves a blank page instead, and a tab that still
         // holds anything else is ended.
-        let mut left = false;
-        for page in [after.as_str(), "about:blank"] {
-            if leave_only(&running, &session, page).await {
-                left = true;
-                break;
+        // A home page may redirect within its site (x.com to /home, google.com to www): where it
+        // led counts, as long as it is a page of that site.
+        let blank = |url: &str| url == "about:blank";
+        let home = |url: &str| {
+            if answer {
+                on_site(url, scheme, &site)
+            } else {
+                blank(url)
             }
-        }
+        };
+        let left = leave_only(&running, &session, &after, home).await
+            || leave_only(&running, &session, "about:blank", blank).await;
         running.pipe.take_events();
         if !left {
             self.forget(key, &running);
@@ -1091,6 +1192,11 @@ impl Browsers {
         if let Some(running) = self.current(key) {
             return Ok(running);
         }
+        // A cleared browser starts again only once the server has seen it was cleared (and so
+        // forgot what the bot was allowed): a call that was on its way meanwhile gets nothing.
+        if self.cleared(key) {
+            return Err(CLEARED.to_owned());
+        }
         let program = self.program.as_deref().ok_or(NO_BROWSER)?;
         let generation = self.generation.load(Ordering::SeqCst);
         let running = Arc::new(self.start(program, key).await?);
@@ -1116,12 +1222,13 @@ impl Browsers {
 
     /// Ends the bot's browser. `forget_profile` also removes its profile (the bot is gone), once
     /// the browser has ended, so it cannot write it back.
-    pub async fn close(&self, key: &str, forget_profile: bool) {
+    /// Answers whether the browser ended (and with `forget_profile`, its profile went).
+    pub async fn close(&self, key: &str, forget_profile: bool) -> bool {
         // Only the person ends a sign-in: stopping the bot leaves its browser open meanwhile.
         // Deleting it ends the sign-in (the person is told) and then the browser and profile go.
         if self.signing_site(key).is_some() {
             if !forget_profile {
-                return;
+                return false;
             }
             self.stop_signing(key);
         }
@@ -1139,12 +1246,23 @@ impl Browsers {
         // could leave half of it written back.
         if forget_profile && ended {
             let (root, key) = (self.root.clone(), key.to_owned());
-            let _ = tokio::task::spawn_blocking(move || {
-                let _ = std::fs::remove_dir_all(root.join(&key));
+            let removed = tokio::task::spawn_blocking(move || {
+                let profile = root.join(&key);
+                let gone = match std::fs::remove_dir_all(&profile) {
+                    Ok(()) => true,
+                    Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+                };
                 let _ = std::fs::remove_file(root.join(format!("{key}.pid")));
+                // Its row in the menu goes with it.
+                let _ = std::fs::remove_file(root.join(format!("{key}.name")));
+                gone
             })
-            .await;
+            .await
+            .unwrap_or(false);
+            self.tell_list();
+            return removed;
         }
+        ended
     }
 
     /// Ends every bot's browser (access turned off, or the app quits).
@@ -1164,12 +1282,11 @@ impl Browsers {
         let profile = self.root.join(key);
         private_folder(&self.root).map_err(|_| "The bot's browser profile could not be made")?;
         private_folder(&profile).map_err(|_| "The bot's browser profile could not be made")?;
-        no_saved_logins(&profile).map_err(|_| "The bot's browser profile could not be made")?;
         let pid_file = self.root.join(format!("{key}.pid"));
-        // The server has asked by now (it asks before anything that starts the browser).
-        let _ = std::fs::remove_file(self.root.join(format!("{key}.cleared")));
         let (pid, marked) = (pid_file.clone(), profile.clone());
         let _ = tokio::task::spawn_blocking(move || end_leftover(&pid, &marked)).await;
+        // Written once what an earlier app left has ended, so it cannot write over them.
+        no_saved_logins(&profile).map_err(|_| "The bot's browser profile could not be made")?;
         let proxy = {
             let mut proxy = self.proxy.lock().await;
             if proxy.is_none() {
@@ -1938,6 +2055,18 @@ mod tests {
     }
 
     #[test]
+    fn a_home_page_that_leads_within_its_site_counts() {
+        assert!(on_site("https://x.com/home", "https", "x.com"));
+        assert!(on_site("https://www.google.com/", "https", "google.com"));
+        assert!(on_site("https://x.com", "https", "x.com"));
+        assert!(!on_site("https://evilx.com/", "https", "x.com"));
+        assert!(!on_site("https://x.com.evil.test/", "https", "x.com"));
+        assert!(!on_site("http://x.com/", "https", "x.com"));
+        assert!(!on_site("https://user@evil.test/", "https", "x.com"));
+        assert!(!on_site("about:blank", "https", "x.com"));
+    }
+
+    #[test]
     fn a_bot_signs_in_once_at_a_time() {
         let dir = std::env::temp_dir().join(format!("dozo-browser-once-{}", std::process::id()));
         let browsers = Browsers::with(dir, None, true);
@@ -2000,9 +2129,10 @@ mod tests {
         browsers.set_on_list(Box::new(move || {
             seen.fetch_add(1, Ordering::SeqCst);
         }));
-        browsers.remember_name("k2", "bo\u{7}");
-        browsers.remember_name("k1", "Ada");
-        browsers.remember_name("k1", "Ada");
+        let (k1, k2) = ("1".repeat(64), "2".repeat(64));
+        browsers.remember_name(&k2, "bo\u{7}");
+        browsers.remember_name(&k1, "Ada");
+        browsers.remember_name(&k1, "Ada");
         assert_eq!(
             told.load(Ordering::SeqCst),
             2,
@@ -2011,20 +2141,75 @@ mod tests {
         assert_eq!(
             browsers.named(),
             vec![
-                ("k1".to_owned(), "Ada".to_owned()),
-                ("k2".to_owned(), "bo".to_owned())
+                (k1.clone(), "Ada".to_owned()),
+                (k2.clone(), "bo".to_owned())
             ]
         );
-        std::fs::create_dir_all(dir.join("k1/Default")).unwrap();
-        browsers.mark_signing("k1", Some("x.com"));
-        assert!(!browsers.cleared("k1"));
-        browsers.clear("k1").await;
-        assert!(browsers.signing_site("k1").is_none());
-        assert!(!dir.join("k1").exists(), "the profile stayed");
-        assert_eq!(browsers.named(), vec![("k2".to_owned(), "bo".to_owned())]);
-        assert!(browsers.cleared("k1"));
-        assert!(!browsers.cleared("k2"));
+        std::fs::create_dir_all(dir.join(&k1).join("Default")).unwrap();
+        browsers.mark_signing(&k1, Some("x.com"));
+        assert!(!browsers.cleared(&k1));
+        assert!(browsers.clear(&k1).await);
+        assert!(browsers.signing_site(&k1).is_none());
+        assert!(!dir.join(&k1).exists(), "the profile stayed");
+        assert_eq!(browsers.named(), vec![(k2.clone(), "bo".to_owned())]);
+        assert!(browsers.cleared(&k1));
+        assert!(!browsers.cleared(&k2));
         assert_eq!(told.load(Ordering::SeqCst), 3);
+        // Until the server has asked, a call on its way gets nothing and starts no browser, which
+        // would write the profile again and take the mark.
+        let page =
+            json!({ "method": "Page.navigate", "params": { "url": "https://example.com/" } });
+        assert_eq!(browsers.handle(&k1, &page).await.unwrap_err(), CLEARED);
+        assert!(!dir.join(&k1).exists() && browsers.cleared(&k1));
+        browsers.take_cleared(&k1);
+        assert_eq!(browsers.handle(&k1, &page).await.unwrap_err(), NO_BROWSER);
+        // Deleting a bot takes its row too.
+        browsers.close(&k2, true).await;
+        assert!(browsers.named().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A clear waits for a browser that is starting, and the start then finds it cleared.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_clear_holds_starts_until_it_is_done() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-hold-{}", std::process::id()));
+        let browsers = Arc::new(Browsers::with(dir.clone(), None, true));
+        let key = "3".repeat(64);
+        let starting = browsers.starting.lock().await;
+        let clearing = {
+            let (browsers, key) = (browsers.clone(), key.clone());
+            tokio::spawn(async move { browsers.clear(&key).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !clearing.is_finished(),
+            "a clear waits for a start under way"
+        );
+        drop(starting);
+        assert!(clearing.await.unwrap());
+        assert!(browsers.cleared(&key));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Only what reads as itself is kept of a name, and only a bot's key names a browser.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn names_show_as_they_are_and_only_bots_keys_count() {
+        let dir = std::env::temp_dir().join(format!("dozo-browser-names-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), None, true);
+        let key = "a".repeat(64);
+        browsers.remember_name(&key, "A\u{202E}d\u{2066}a\u{200B}\u{2028}\u{FEFF}");
+        browsers.remember_name("..", "Parent");
+        browsers.remember_name("k", "Short");
+        std::fs::write(dir.join("...name"), "Dots").unwrap();
+        assert_eq!(browsers.named(), vec![(key.clone(), "Ada".to_owned())]);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        assert!(!browsers.clear("..").await);
+        assert!(
+            dir.join("sub").exists(),
+            "nothing outside a bot's profile goes"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,0 +1,5 @@
+{
+  "importer": "apps/web",
+  "add": ["@noble/hashes@2.3.0"],
+  "integrity": {}
+}
