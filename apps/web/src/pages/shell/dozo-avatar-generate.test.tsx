@@ -32,7 +32,8 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 import type * as Query from "../../lib/query";
-import { DozoAvatarGeneratePanel, DozoAvatarGenerateTab } from "./dozo-avatar-generate";
+import { DozoAvatarGenerateTab } from "./dozo-avatar-generate";
+import { DozoAvatarGeneratePanel } from "./dozo-avatar-generate-panel";
 
 const IMAGE = "data:image/webp;base64,AAAA";
 const used = vi.fn<(image: string) => void>();

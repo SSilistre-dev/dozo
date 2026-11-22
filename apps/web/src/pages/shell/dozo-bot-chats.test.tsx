@@ -418,6 +418,8 @@ describe("the roster's extra chat rows", () => {
     await render(<DozoBotChatRows botId="bot-1" compact={false} mini={false} open={vi.fn()} />);
     await vi.waitFor(() => expect(item("Rename")).toBeDefined());
     await click(item("Rename"));
+    // The dialog's code loads the first time it is asked for.
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"] input')).not.toBeNull());
     const input = container.querySelector<HTMLInputElement>('[role="dialog"] input');
     expect(input?.value).toBe("Garden");
     const save = () =>
@@ -451,12 +453,14 @@ describe("the roster's extra chat rows", () => {
     await render(<DozoBotChatRows botId="bot-1" compact={false} mini={false} open={vi.fn()} />);
     await vi.waitFor(() => expect(item("Rename")).toBeDefined());
     await click(item("Rename"));
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).not.toBeNull());
     const cancel = [...container.querySelectorAll('[role="dialog"] button')].find(
       (node) => node.textContent === "Cancel",
     );
     await click(cancel);
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     await click(item("Rename"));
+    await vi.waitFor(() => expect(container.querySelector("[data-dismiss]")).not.toBeNull());
     await click(container.querySelector("[data-dismiss]"));
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     // A submit with nothing changed saves nothing.

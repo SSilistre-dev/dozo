@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,16 +16,23 @@ const loading = vi.hoisted(() => ({
     };
   },
 }));
-vi.mock("../components/teach/dozo-skill-draft-card", loading.module("SkillDraftCard"));
+vi.mock("../pages/shell/dozo-avatar-generate-panel", loading.module("DozoAvatarGeneratePanel"));
+vi.mock("../pages/model-settings/dozo-cli-accounts", loading.module("DozoCliAccounts"));
 vi.mock("../pages/shell/dozo-site-sessions", loading.module("SiteSessionsControl"));
 vi.mock("../pages/shell/dozo-bot-skills-section", loading.module("DozoBotSkillsSection"));
 vi.mock("../pages/shell/dozo-own-computer-row", loading.module("OwnComputerRow"));
 
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: ReactNode }) => children,
+}));
+
 import {
+  DozoAvatarGeneratePanel,
   DozoBotSkillsSection,
+  DozoCliAccounts,
   OwnComputerRow,
+  preloadDozoSurfaces,
   SiteSessionsControl,
-  SkillDraftCard,
 } from "./dozo-lazy-surfaces";
 
 let host: HTMLDivElement;
@@ -41,11 +48,13 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+  loading.gate = undefined;
 });
 
 describe("the fork's screens that load when first shown", () => {
   const screens: Array<[string, ComponentType<never>]> = [
-    ["SkillDraftCard", SkillDraftCard],
+    ["DozoAvatarGeneratePanel", DozoAvatarGeneratePanel],
+    ["DozoCliAccounts", DozoCliAccounts],
     ["SiteSessionsControl", SiteSessionsControl],
     ["DozoBotSkillsSection", DozoBotSkillsSection],
     ["OwnComputerRow", OwnComputerRow],
@@ -59,7 +68,13 @@ describe("the fork's screens that load when first shown", () => {
       expect(host.innerHTML).toBe("");
       release.resolve();
       await vi.waitFor(() => expect(host.querySelector(`[data-stub="${name}"]`)).not.toBeNull());
-      expect(host.querySelector(`[data-stub="${name}"]`)?.textContent).toBe('{"id":"a"}');
+      expect(host.querySelector(`[data-stub="${name}"]`)?.textContent).toBe(
+        name === "DozoCliAccounts" ? "{}" : '{"id":"a"}',
+      );
     });
   }
+});
+
+it("is fetched ahead, all of them, for the idle moment after the page has drawn", async () => {
+  await expect(preloadDozoSurfaces()).resolves.toHaveLength(5);
 });

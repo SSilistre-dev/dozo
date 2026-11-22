@@ -27,16 +27,18 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Archive, Bell, BellDot, Check, ChevronDown, Clock, Pencil, Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { useId, useState } from "react";
+import { Suspense, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { PageLoading } from "../../components/PageLoading";
-import { errorText, toastError } from "../../lib/dozo-error-text";
+import { toastError } from "../../lib/dozo-error-text";
 import {
   dozoChatOf,
   dozoExtraChatOpen,
   dozoOpenChat,
   setDozoOpenChat,
 } from "../../lib/dozo-open-chat";
+import { lazyComponent } from "../../lib/preload-recovery";
 import { queryClient, useSave, useSpaceQueries } from "../../lib/query";
 import { rpc as selectedSpaceRpc } from "../../lib/rpc";
 import { useEventListener } from "../../lib/use-event-listener";
@@ -200,7 +202,7 @@ export function dozoBotChatsChanged(client = queryClient): Promise<void> {
   });
 }
 
-function useListKey() {
+export function useListKey() {
   const queries = useSpaceQueries();
   return queries.dozoChats.list.key();
 }
@@ -347,6 +349,11 @@ export function DozoBotChatRows({
   );
 }
 
+// The rename dialog loads the first time someone renames a chat, not with the sidebar.
+const RenameChatDialog = lazyComponent(() =>
+  import("./dozo-rename-chat-dialog").then((module) => module.RenameChatDialog),
+);
+
 function DozoBotChatRow({
   chat,
   selected,
@@ -383,7 +390,13 @@ function DozoBotChatRow({
         ) : null}
       </ContextMenuTrigger>
       <DozoBotChatMenu chat={chat} selected={selected} onRename={() => setRenaming(true)} />
-      {renaming ? <RenameChatDialog chat={chat} onClose={() => setRenaming(false)} /> : null}
+      {renaming ? (
+        <ErrorBoundary fallback={null}>
+          <Suspense fallback={null}>
+            <RenameChatDialog chat={chat} onClose={() => setRenaming(false)} />
+          </Suspense>
+        </ErrorBoundary>
+      ) : null}
     </ContextMenu>
   );
 }
@@ -472,59 +485,5 @@ function DozoBotChatMenu({
         {t`Archive`}
       </ContextMenuItem>
     </ContextMenuContent>
-  );
-}
-
-function RenameChatDialog({ chat, onClose }: { chat: DozoBotChat; onClose: () => void }) {
-  const { t } = useLingui();
-  const nameId = useId();
-  const listKey = useListKey();
-  const [name, setName] = useState(chat.name);
-  const trimmed = name.trim();
-  const rename = useSave({
-    save: (value: string, client) => client.dozoChats.rename({ chatId: chat.id, name: value }),
-    stale: [listKey],
-    onSaved: onClose,
-  });
-  return (
-    <Dialog open onOpenChange={(next) => (next || rename.pending ? undefined : onClose())}>
-      <DialogContent showCloseButton={false} aria-describedby={undefined}>
-        <form
-          className="contents"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (trimmed && trimmed !== chat.name) rename.run(trimmed);
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{t`Rename`}</DialogTitle>
-          </DialogHeader>
-          <label htmlFor={nameId} className="block text-body text-foreground/75">
-            {t`Name`}
-            <Input
-              id={nameId}
-              maxLength={80}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="mt-2"
-              autoFocus
-            />
-          </label>
-          {rename.error ? (
-            <p className="text-body text-destructive">
-              {errorText(rename.error, t`Something went wrong. Try again.`)}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={rename.pending} onClick={onClose}>
-              {t`Cancel`}
-            </Button>
-            <Button type="submit" disabled={rename.pending || !trimmed || trimmed === chat.name}>
-              {rename.pending ? t`Saving…` : t`Save`}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

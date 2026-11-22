@@ -1,42 +1,15 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DozoCliTool } from "@rakazo/contracts";
 import { Button, Checkbox, Input } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { SettingsRow } from "../../components/SettingsRows";
 import { toastError } from "../../lib/dozo-error-text";
-import { queryClient, useQueryUserId, useSave, useSpaceQueries } from "../../lib/query";
+import { useSave, useSpaceQueries } from "../../lib/query";
 import type { RpcClient } from "../../lib/rpc";
 import { rpc } from "../../lib/rpc";
+import { TOOLS_KEY, useCliTools } from "./dozo-cli-providers";
 
-/**
- * Provider tools installed on the server's own computer, which the person can use as models with
- * their own sign-in, and more accounts of each through the tool's own sign-in. The server lists
- * none unless it runs on that computer for that person alone. Read again on the roster signal each
- * change and each sign-in step sends.
- */
-const NONE: readonly DozoCliTool[] = [];
-const TOOLS_KEY = ["dozoCliAccounts"];
-
-function useCliTools(): readonly DozoCliTool[] {
-  const tools = useQuery({
-    queryKey: [...TOOLS_KEY, useQueryUserId()],
-    queryFn: () => rpc.dozoCliAccounts.list(),
-    refetchOnWindowFocus: "always",
-  });
-  return tools.data?.tools ?? NONE;
-}
-
-/** Reads the tools again; the roster signal carries a change. */
-export function dozoCliAccountsChanged(client = queryClient): Promise<void> {
-  return client.invalidateQueries({ queryKey: TOOLS_KEY });
-}
-
-/** The providers connected only from here, left out of the list that asks for a key. */
-export function useDozoCliProviders(): ReadonlySet<string> {
-  const tools = useCliTools();
-  return useMemo(() => new Set(tools.map((tool) => tool.provider)), [tools]);
-}
+export { dozoCliAccountsChanged, useDozoCliProviders } from "./dozo-cli-providers";
 
 /** One action on a tool, saved through the server; a failure says what it could not do. */
 function useToolAction(

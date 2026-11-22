@@ -22,7 +22,10 @@ const { session, fetchAuthCapabilities, overlays } = vi.hoisted(() => {
   return {
     session,
     fetchAuthCapabilities: vi.fn(() => Promise.resolve({})),
-    overlays: { loaded: vi.fn((load: () => Promise<unknown>) => load()) },
+    overlays: {
+      loaded: vi.fn((load: () => Promise<unknown>) => load()),
+      reported: vi.fn(),
+    },
   };
 });
 vi.mock("./auth", () => ({ authClient: { $store: { atoms: { session } } } }));
@@ -31,6 +34,8 @@ vi.mock("../pages/SettingsOverlay", () => ({ screen: "settings" }));
 vi.mock("../components/bot-templates/bot-templates-dialog", () => ({ screen: "new bot" }));
 vi.mock("../pages/BotContextMenu", () => ({ screen: "bot menu" }));
 vi.mock("./preload-recovery", () => ({ importChunk: overlays.loaded }));
+vi.mock("./dozo-lazy-surfaces", () => ({ preloadDozoSurfaces: async () => ({ screen: "panel" }) }));
+vi.mock("./monitoring", () => ({ reportClientError: overlays.reported }));
 
 import {
   appHasPainted,
@@ -190,11 +195,25 @@ describe("boot", () => {
     await vi.waitFor(() => expect(overlays.loaded).toHaveBeenCalledTimes(1));
   });
 
+  it("reports a stylesheet that could not load, once, instead of dropping it", async () => {
+    page("");
+    const failure = new Error("offline");
+    overlays.loaded.mockImplementationOnce(() => Promise.reject(failure));
+    overlays.reported.mockClear();
+    vi.resetModules();
+    await import("./dozo-boot");
+    await vi.waitFor(() => expect(overlays.reported).toHaveBeenCalledTimes(1));
+    expect(overlays.reported).toHaveBeenCalledWith(failure, "react.render", {
+      stage: "dozo-overlay-styles",
+    });
+  });
+
   it("loads the common screens after a chat route paints", async () => {
     await expect(loadCommonScreens()).resolves.toEqual([
       expect.objectContaining({ screen: "settings" }),
       expect.objectContaining({ screen: "new bot" }),
       expect.objectContaining({ screen: "bot menu" }),
+      expect.objectContaining({ screen: "panel" }),
     ]);
     const idle: Array<() => void> = [];
     const chat = {
