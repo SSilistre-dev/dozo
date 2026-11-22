@@ -107,5 +107,5 @@ describe("the fork's screens that load when first shown", () => {
 });
 
 it("is fetched ahead, all of them, for the idle moment after the page has drawn", async () => {
-  await expect(preloadDozoSurfaces()).resolves.toHaveLength(6);
+  await expect(preloadDozoSurfaces()).resolves.toHaveLength(7);
 });
