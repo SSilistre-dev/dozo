@@ -1,6 +1,10 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
-import { deviceOffers, readDeviceCapabilities } from "./dozo-device-capabilities.js";
+import {
+  deviceOffers,
+  parseDeviceCapabilities,
+  readDeviceCapabilities,
+} from "./dozo-device-capabilities.js";
 import { phoneRoute } from "./dozo-phone.js";
 import { UserDevices, userDeviceForwardSecret } from "./dozo-user-device-gateway.js";
 import { withHostComputerScreen } from "./host-computer-device.js";
@@ -25,6 +29,8 @@ function fakePrisma() {
   const devices: Device[] = [];
   const connections = new Map<string, { connectedAt: Date; heartbeatAt: Date }>();
   const capabilities = new Map<string, string[]>();
+  /** When each kind was last turned on, by device and kind. */
+  const since = new Map<string, Date>();
   const matches = (device: Device, where: Where = {}) =>
     (where.userId === undefined || device.userId === where.userId) &&
     (where.revokedAt !== null || device.revokedAt === null) &&
@@ -59,7 +65,11 @@ function fakePrisma() {
       findFirst: async ({ where }: { where: Parameters<typeof live>[0] }) => live(where)[0] ?? null,
       findMany: async ({ where }: { where: Parameters<typeof live>[0] }) => live(where),
     },
-    $queryRaw: async (_strings: TemplateStringsArray, deviceId: string) => {
+    $queryRaw: async (strings: TemplateStringsArray, deviceId: string, capability?: string) => {
+      if (strings.join("?").includes("dozo_device_capability_since")) {
+        const on = since.get(`${deviceId}:${capability}`);
+        return on ? [{ since: on }] : [];
+      }
       const declared = capabilities.get(deviceId);
       return declared ? [{ capabilities: declared }] : [];
     },
@@ -78,7 +88,7 @@ function fakePrisma() {
     prisma: prisma as unknown as PrismaClient,
     forwardSecret: userDeviceForwardSecret("k"),
   });
-  return { prisma: prisma as unknown as PrismaClient, devices, pair, connect, gateway };
+  return { since, prisma: prisma as unknown as PrismaClient, devices, pair, connect, gateway };
 }
 
 describe("a phone among the user's devices", () => {
@@ -122,7 +132,7 @@ describe("a phone among the user's devices", () => {
   });
 
   it("is the phone a run reads, only while connected and declaring what it is asked for", async () => {
-    const { pair, connect, devices, gateway } = fakePrisma();
+    const { pair, connect, devices, gateway, since } = fakePrisma();
     pair("mac", "darwin");
     connect("mac", ["shell", "calendar"]);
     // A computer that declares a calendar is still no phone.
@@ -132,9 +142,25 @@ describe("a phone among the user's devices", () => {
     connect("phone", []);
     expect(await gateway.connectedPhone("user-1", "calendar")).toBeNull();
     connect("phone", ["calendar"]);
+    const pairedAt = devices[1]!.createdAt;
+    // Turned on before this server recorded when: since the pairing.
     expect(await gateway.connectedPhone("user-1", "calendar")).toEqual({
       deviceId: "phone",
-      pairedAt: devices[1]!.createdAt,
+      pairedAt,
+      onSince: pairedAt,
+    });
+    // Turned on again after the pairing: since then, for that kind only.
+    const later = new Date(pairedAt.getTime() + 60_000);
+    since.set("phone:calendar", later);
+    connect("phone", ["calendar", "contacts"]);
+    expect(await gateway.connectedPhone("user-1", "calendar")).toMatchObject({ onSince: later });
+    expect(await gateway.connectedPhone("user-1", "contacts")).toMatchObject({
+      onSince: pairedAt,
+    });
+    // A record older than the pairing (another pairing's) never moves it back.
+    since.set("phone:contacts", new Date(pairedAt.getTime() - 60_000));
+    expect(await gateway.connectedPhone("user-1", "contacts")).toMatchObject({
+      onSince: pairedAt,
     });
     expect(await gateway.connectedPhone("user-2", "calendar")).toBeNull();
     devices[1]!.revokedAt = new Date();
@@ -159,7 +185,7 @@ describe("on the desktop app's own server", () => {
       deps: { userDevices: wrapped, prisma: { spaceMember: { findFirst: async () => null } } },
       thread: { id: "t", spaceId: "space-1", groupId: null },
     } as unknown as RunContext;
-    expect(await phoneRoute(ctx)).toMatchObject({ deviceId: "phone", owner: "user-1" });
+    expect(await phoneRoute(ctx, "calendar")).toMatchObject({ deviceId: "phone", owner: "user-1" });
   });
 });
 
@@ -177,6 +203,18 @@ describe("what a phone declares", () => {
       "screen",
       "browser",
     ]);
+    connect("phone", ["location", "contacts", "calendar"]);
+    expect(await readDeviceCapabilities(prisma, "phone", "ios")).toEqual([
+      "calendar",
+      "contacts",
+      "location",
+    ]);
+    expect(parseDeviceCapabilities("calendar, Contacts,location,nfc")).toEqual([
+      "calendar",
+      "contacts",
+      "location",
+    ]);
+    expect(parseDeviceCapabilities("")).toEqual([]);
   });
 
   it("offers none of the computer's tools, whatever it declares", () => {

@@ -20,17 +20,17 @@ export type PhoneCalendarEvent = {
   calendar?: string;
 };
 export type PhoneCalendarValue = { events: PhoneCalendarEvent[]; truncated: boolean };
-export type CalendarPermission = "granted" | "denied" | "unavailable";
+/** Whether the system lets the app read one kind of the phone's data (shared by every kind). */
+export type PhonePermission = "granted" | "denied" | "unavailable";
 
-/** The text of each error frame a calendar read can end with. */
-export type PhoneCalendarErrorCode =
-  | "calendar-off"
-  | "calendar-permission"
-  | "calendar-unavailable";
+/** The text of each error frame a read of the phone can end with (every kind's, wire contract). */
+export type PhoneReadErrorCode =
+  | `${"calendar" | "contacts" | "location"}-${"off" | "permission" | "unavailable"}`
+  | "contacts-query";
 
-export class PhoneCalendarError extends Error {
-  override name = "PhoneCalendarError";
-  constructor(readonly code: PhoneCalendarErrorCode) {
+export class PhoneReadError extends Error {
+  override name = "PhoneReadError";
+  constructor(readonly code: PhoneReadErrorCode) {
     super(code);
   }
 }
@@ -79,7 +79,7 @@ function loadCalendar(): Promise<CalendarModule | null> {
 }
 
 /** Whether the system lets the app read the calendar now. Never asks. */
-export async function calendarPermission(): Promise<CalendarPermission> {
+export async function calendarPermission(): Promise<PhonePermission> {
   const calendar = await loadCalendar();
   if (!calendar) return "unavailable";
   try {
@@ -93,7 +93,7 @@ export async function calendarPermission(): Promise<CalendarPermission> {
 }
 
 /** Asks the system for full read access (iOS 17 and later ask for full access, not write-only). */
-export async function requestCalendarPermission(): Promise<CalendarPermission> {
+export async function requestCalendarPermission(): Promise<PhonePermission> {
   const calendar = await loadCalendar();
   if (!calendar) return "unavailable";
   try {
@@ -167,15 +167,15 @@ export function calendarValue(
   };
 }
 
-/** Every calendar's events in [from, to); throws `PhoneCalendarError` when it cannot. */
+/** Every calendar's events in [from, to); throws `PhoneReadError` when it cannot. */
 export async function readCalendar(request: PhoneCalendarRequest): Promise<PhoneCalendarValue> {
   const calendar = await loadCalendar();
-  if (!calendar) throw new PhoneCalendarError("calendar-unavailable");
+  if (!calendar) throw new PhoneReadError("calendar-unavailable");
   if ((await calendarPermission()) !== "granted") {
-    throw new PhoneCalendarError("calendar-permission");
+    throw new PhoneReadError("calendar-permission");
   }
   const window = range(request);
-  if (!window) throw new PhoneCalendarError("calendar-unavailable");
+  if (!window) throw new PhoneReadError("calendar-unavailable");
   try {
     const calendars = await calendar.getCalendars(calendar.EntityTypes.EVENT);
     if (!calendars.length) return { events: [], truncated: false };
@@ -185,6 +185,6 @@ export async function readCalendar(request: PhoneCalendarRequest): Promise<Phone
     // Events that overlap the window, so one already under way is in it too.
     return calendarValue(events, names, request);
   } catch {
-    throw new PhoneCalendarError("calendar-unavailable");
+    throw new PhoneReadError("calendar-unavailable");
   }
 }

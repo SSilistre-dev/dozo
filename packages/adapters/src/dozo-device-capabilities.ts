@@ -11,10 +11,17 @@ import type { UserDevice } from "./user-device-protocol.js";
 export const DEVICE_CAPABILITIES_HEADER = "x-dozo-device-capabilities";
 
 /** What a paired computer or phone can declare. Anything else it sends is ignored. */
-export const DEVICE_CAPABILITIES = ["shell", "screen", "browser", "calendar"] as const;
+export const DEVICE_CAPABILITIES = [
+  "shell",
+  "screen",
+  "browser",
+  "calendar",
+  "contacts",
+  "location",
+] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
 /** What a phone may offer: nothing a computer does, whatever it declares. */
-const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar"];
+const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar", "contacts", "location"];
 const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = ["shell", "screen", "browser"];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
@@ -31,20 +38,58 @@ export function parseDeviceCapabilities(
   return DEVICE_CAPABILITIES.filter((capability) => words.includes(capability));
 }
 
-/** Saves what a computer declared on this connection; null (it declared nothing) forgets it. */
+/**
+ * Saves what a device declared on this connection; null (it declared nothing) forgets it. Each
+ * capability's moment of being turned on is kept beside it: set when it appears in a declaration
+ * it was missing from, kept while it stays, and dropped when it goes, so turning a phone's switch
+ * off and on again starts its consent over (`readCapabilitySince`). One statement, so a
+ * declaration and its moments never part.
+ */
 export async function recordDeviceCapabilities(
   prisma: PrismaClient,
   deviceId: string,
   capabilities: readonly DeviceCapability[] | null,
 ): Promise<void> {
+  const declared = [...(capabilities ?? [])];
   await runAsSystem("record a user device's capabilities", () =>
     capabilities
       ? prisma.$executeRaw`
+          WITH gone AS (
+            DELETE FROM dozo_device_capability_since
+            WHERE "deviceId" = ${deviceId} AND NOT (capability = ANY(${declared}::text[]))
+          ), came AS (
+            INSERT INTO dozo_device_capability_since ("deviceId", capability)
+            SELECT ${deviceId}, unnest(${declared}::text[])
+            ON CONFLICT ("deviceId", capability) DO NOTHING
+          )
           INSERT INTO dozo_device_capabilities ("deviceId", capabilities)
-          VALUES (${deviceId}, ${[...capabilities]}::text[])
+          VALUES (${deviceId}, ${declared}::text[])
           ON CONFLICT ("deviceId") DO UPDATE SET capabilities = EXCLUDED.capabilities`
-      : prisma.$executeRaw`DELETE FROM dozo_device_capabilities WHERE "deviceId" = ${deviceId}`,
+      : prisma.$executeRaw`
+          WITH gone AS (
+            DELETE FROM dozo_device_capability_since WHERE "deviceId" = ${deviceId}
+          )
+          DELETE FROM dozo_device_capabilities WHERE "deviceId" = ${deviceId}`,
   );
+}
+
+/**
+ * When a device's capability was last turned on, as this server recorded it; null when it was on
+ * before the server kept that (the pairing is then the moment).
+ */
+export async function readCapabilitySince(
+  prisma: PrismaClient,
+  deviceId: string,
+  capability: DeviceCapability,
+): Promise<Date | null> {
+  const rows = await runAsSystem(
+    "read when a user device's capability was turned on",
+    () =>
+      prisma.$queryRaw<{ since: Date }[]>`
+      SELECT since AT TIME ZONE 'UTC' AS since FROM dozo_device_capability_since
+      WHERE "deviceId" = ${deviceId} AND capability = ${capability}`,
+  );
+  return rows[0]?.since ?? null;
 }
 
 /**
