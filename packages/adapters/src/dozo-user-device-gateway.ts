@@ -1,21 +1,36 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
+import type { UserDeviceSummary } from "@rakazo/contracts";
 import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import type { DeclaredUserDevice } from "./dozo-device-capabilities.js";
+import type { DeclaredUserDevice, DeviceCapability } from "./dozo-device-capabilities.js";
 import {
   DEVICE_CAPABILITIES_HEADER,
   parseDeviceCapabilities,
   readDeviceCapabilities,
   recordDeviceCapabilities,
 } from "./dozo-device-capabilities.js";
+import { isPhonePlatform, PHONE_PLATFORMS } from "./dozo-phone-protocol.js";
 import {
   UserDeviceHub as UpstreamUserDeviceHub,
   UserDevices as UpstreamUserDevices,
 } from "./user-device-gateway.js";
 
+export { isPhonePlatform, PHONE_PLATFORMS } from "./dozo-phone-protocol.js";
 export * from "./user-device-gateway.js";
+
+/** Upstream's window: a connection row whose heartbeat is older lost its holding process. */
+const STALE_AFTER_MS = 75_000;
+const live = () => ({ gt: new Date(Date.now() - STALE_AFTER_MS) });
+const phones = [...PHONE_PLATFORMS];
+
+/** The user's connected phone that declared a capability, and when it was paired. */
+export interface ConnectedPhone {
+  deviceId: string;
+  pairedAt: Date;
+}
 
 /**
  * Upstream's hub, which also saves what a connecting computer declares
@@ -54,7 +69,12 @@ export class UserDeviceHub extends UpstreamUserDeviceHub {
   }
 }
 
-/** Upstream's gateway, whose connected computer carries what it declared. */
+/**
+ * Upstream's gateway, whose connected computer carries what it declared. A phone pairs and
+ * connects as a device too, but is not a computer: the computer's tools, its approval ("removing
+ * every computer ends it") and the Computers list never see it. A run reaches it only through
+ * `connectedPhone` (dozo-phone.ts), always by its device id.
+ */
 export class UserDevices extends UpstreamUserDevices {
   private readonly prisma: PrismaClient;
 
@@ -63,9 +83,82 @@ export class UserDevices extends UpstreamUserDevices {
     this.prisma = deps.prisma;
   }
 
+  /** The newest connected computer, as upstream picks it among every device, phones left out. */
   override async connected(userId: string): Promise<DeclaredUserDevice | null> {
-    const device = await super.connected(userId);
-    if (!device) return null;
-    return { ...device, capabilities: await readDeviceCapabilities(this.prisma, device.deviceId) };
+    const connection = await runAsSystem("find a user's connected computer", () =>
+      this.prisma.userDeviceConnection.findFirst({
+        where: {
+          heartbeatAt: live(),
+          device: { userId, revokedAt: null, platform: { notIn: phones } },
+        },
+        orderBy: { connectedAt: "desc" },
+        include: { device: { select: { name: true, platform: true } } },
+      }),
+    );
+    if (!connection) return null;
+    const { deviceId, device } = connection;
+    return {
+      deviceId,
+      name: device.name,
+      platform: device.platform,
+      capabilities: await readDeviceCapabilities(this.prisma, deviceId, device.platform),
+    };
+  }
+
+  /** The user's paired computers; a phone is removed from the phone itself. */
+  override async list(userId: string): Promise<UserDeviceSummary[]> {
+    const devices = await runAsSystem("list a user's devices", () =>
+      this.prisma.userDevice.findMany({
+        where: { userId, revokedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          platform: true,
+          connections: { where: { heartbeatAt: live() }, select: { deviceId: true } },
+        },
+      }),
+    );
+    return devices
+      .filter((device) => !isPhonePlatform(device.platform))
+      .map((device) => ({
+        deviceId: device.id,
+        name: device.name,
+        connected: device.connections.length > 0,
+      }));
+  }
+
+  /** When the oldest computer still paired was paired: a phone keeps no computer's approval. */
+  override async pairedSince(userId: string): Promise<Date | null> {
+    const devices = await runAsSystem("find a user's paired device", () =>
+      this.prisma.userDevice.findMany({
+        where: { userId, revokedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true, platform: true },
+      }),
+    );
+    return devices.find((device) => !isPhonePlatform(device.platform))?.createdAt ?? null;
+  }
+
+  /** The user's newest connected phone that declared this capability, or null. */
+  async connectedPhone(
+    userId: string,
+    capability: DeviceCapability,
+  ): Promise<ConnectedPhone | null> {
+    const connections = await runAsSystem("find a user's connected phone", () =>
+      this.prisma.userDeviceConnection.findMany({
+        where: {
+          heartbeatAt: live(),
+          device: { userId, revokedAt: null, platform: { in: phones } },
+        },
+        orderBy: { connectedAt: "desc" },
+        include: { device: { select: { platform: true, createdAt: true } } },
+      }),
+    );
+    for (const { deviceId, device } of connections) {
+      const declared = await readDeviceCapabilities(this.prisma, deviceId, device.platform);
+      if (declared.includes(capability)) return { deviceId, pairedAt: device.createdAt };
+    }
+    return null;
   }
 }
