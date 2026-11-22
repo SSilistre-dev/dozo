@@ -560,6 +560,14 @@ export async function seedTarget(
       goal: mark("taught"),
     });
     ids.taughtSkillId = taught.id;
+    // The recording lives as long as the control lease it took, which the app's page renews
+    // (`computer/heartbeat`). Unrenewed it lapses after COMPUTER_CONTROL_LEASE_MS (90s) and the
+    // expiry job drafts the recording, changing the target's rows inside whichever snapshot
+    // window is open on a slow run. Hold the lease for the whole run, as a page left open would.
+    await db.computer.updateMany({
+      where: { bots: { some: { id: bot.id } }, controlLeaseId: { not: null } },
+      data: { controlLeaseExpiresAt: new Date(Date.now() + 60 * 60_000) },
+    });
   } catch (error) {
     notes.push(`taught skill: skills/start refused (${String(error).slice(0, 120)})`);
   }

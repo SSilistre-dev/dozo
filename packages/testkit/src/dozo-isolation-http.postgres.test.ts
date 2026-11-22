@@ -319,24 +319,6 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
           if (foreignLeaks(list, scan, ids).length) problems.push(name("bot list leaked"));
         }
 
-      // A token bound to one bot of S reaches that bot only, not S's other bot.
-      const bound = tokens.aInS;
-      const control = await api(bound, `/bots/${S.ids.botId}/messages`);
-      expect(control.status).toBe(200);
-      expect(
-        findCanaries(control.text, S.canaries).length,
-        "the bound bot's own chat",
-      ).toBeGreaterThan(0);
-      const other = S.ids.secondBotId!;
-      for (const [what, answer] of [
-        ["messages", api(bound, `/bots/${other}/messages`)],
-        ["chats", api(bound, `/bots/${other}/chats`)],
-        ["export", api(bound, `/bots/${other}/export`)],
-        ["run events", api(bound, `/bots/${other}/runs/${S.ids.runId}/events`)],
-        ["send", post(bound, `/bots/${other}/messages`)],
-      ] as const)
-        await expectMissing(`A's token bound to S's bot, on S's other bot: ${what}`, answer, []);
-
       // A run of B's own extra chat is not a run of B's main chat.
       const chatRun = await world.db.run.findFirstOrThrow({ where: { threadId: Bown.ids.chatId } });
       await expectMissing(
@@ -380,6 +362,34 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       const after = await snapshot(world.db, scopeOf(P, S));
       expect(problems).toEqual([]);
       expect(snapshotDiff(before, after), `rows of P or S changed (A is ${A.userId})`).toEqual([]);
+
+      // A token bound to one bot of S reaches that bot only, not S's other bot.
+      // This is A's own token, so it runs outside B's window above: its first use stamps the
+      // token's "lastUsedAt" (A's own row in S, at most once a minute), which is A's bookkeeping
+      // and not a change B made. The control below is that first use; the snapshot after it
+      // holds the probes on S's other bot to changing nothing.
+      const bound = tokens.aInS;
+      const control = await api(bound, `/bots/${S.ids.botId}/messages`);
+      expect(control.status).toBe(200);
+      expect(
+        findCanaries(control.text, S.canaries).length,
+        "the bound bot's own chat",
+      ).toBeGreaterThan(0);
+      const beforeBound = await snapshot(world.db, scopeOf(P, S));
+      const other = S.ids.secondBotId!;
+      for (const [what, answer] of [
+        ["messages", api(bound, `/bots/${other}/messages`)],
+        ["chats", api(bound, `/bots/${other}/chats`)],
+        ["export", api(bound, `/bots/${other}/export`)],
+        ["run events", api(bound, `/bots/${other}/runs/${S.ids.runId}/events`)],
+        ["send", post(bound, `/bots/${other}/messages`)],
+      ] as const)
+        await expectMissing(`A's token bound to S's bot, on S's other bot: ${what}`, answer, []);
+      expect(problems).toEqual([]);
+      expect(
+        snapshotDiff(beforeBound, await snapshot(world.db, scopeOf(P, S))),
+        "rows of P or S changed by A's bound token on S's other bot",
+      ).toEqual([]);
 
       // Owner controls: the owner's token with the very request B was refused reaches the code
       // behind it, so B's 404 is a refusal and not a request that would reach nothing.
