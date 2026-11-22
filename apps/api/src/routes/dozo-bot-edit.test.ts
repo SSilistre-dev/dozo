@@ -63,6 +63,14 @@ describe("requireBotRunEditor", () => {
     expect(requireSpaceOwner).not.toHaveBeenCalled();
   });
 
+  it("answers the bot it was given, allowed or after the owner agreed", async () => {
+    const own = { ...bot, userId: actor.userId };
+    expect(await requireBotRunEditor(db(), actor, own)).toBe(own);
+    expect(await requireBotRunEditor(db(), actor, bot, { botId: "bot", dailyCheckIns: true })).toBe(
+      bot,
+    );
+  });
+
   it("passes the space owner's refusal on", async () => {
     requireSpaceOwner.mockRejectedValueOnce(new Error("forbidden"));
     await expect(
@@ -73,8 +81,8 @@ describe("requireBotRunEditor", () => {
 
 describe("requireGroupRemover", () => {
   it("asks for the space owner only for someone else's group in this space", async () => {
-    await requireGroupRemover(db({ userId: actor.userId }), actor, "group");
-    await requireGroupRemover(db(null), actor, "group");
+    expect(await requireGroupRemover(db({ userId: actor.userId }), actor, "group")).toBe("group");
+    expect(await requireGroupRemover(db(null), actor, "group")).toBe("group");
     expect(requireSpaceOwner).not.toHaveBeenCalled();
 
     const other = db({ userId: "creator" });

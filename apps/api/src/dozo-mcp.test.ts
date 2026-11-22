@@ -266,6 +266,21 @@ function fakeClient(events: AsyncGenerator<ProductEvent> | (() => never) = strea
         ],
       })),
     },
+    dozoChats: {
+      list: vi.fn(async (_input: { botId?: string }) => ({
+        chats: [
+          {
+            id: "chat-1",
+            botId: "bot-1",
+            name: "Garden",
+            createdAt: "2026-11-20T09:00:00.000Z",
+            archivedAt: null,
+            unread: false,
+            snoozedUntil: null,
+          },
+        ],
+      })),
+    },
   };
 }
 
@@ -443,5 +458,67 @@ describe("what a token's owner may do", () => {
       markdown: "# Ada\n",
     });
     expect(spies.exportChat).toHaveBeenCalledWith(prisma, actor, { botId: "bot-1" }, 64_000);
+  });
+});
+
+describe("a bot's other chats over MCP", () => {
+  const inChat = { chatBotId: "bot-1", chatId: "chat-1" };
+  beforeEach(() => {
+    findBot.mockResolvedValue({ id: "bot-1" });
+    spies.exportChat.mockResolvedValue({ markdown: "# Garden\n", truncated: false });
+  });
+
+  it("lists an own bot's open chats through the bot API's one rule", async () => {
+    const client = fakeClient();
+    await expect(operations(client).listChats("bot-1")).resolves.toEqual([
+      { id: "chat-1", name: "Garden", createdAt: "2026-11-20T09:00:00.000Z" },
+    ]);
+    expect(client.dozoChats.list).toHaveBeenCalledWith({ botId: "bot-1" });
+    findBot.mockResolvedValue(null);
+    await expect(operations(client).listChats("bot-2")).rejects.toThrow("No such bot.");
+  });
+
+  it("sends, waits and reads the reply in the chat named, and reads that chat", async () => {
+    const client = fakeClient(stream(event("run.completed")));
+    const signal = new AbortController().signal;
+    const result = await operations(client).sendMessage("bot-1", "hi", signal, "chat-1");
+    expect(result).toEqual({ status: "replied", reply: "Hello\n\nthere", truncated: false });
+    expect(client.threads.send).toHaveBeenCalledWith(
+      { ...inChat, text: "hi", clientNonce: expect.any(String) },
+      { signal },
+    );
+    expect(client.threads.subscribe).toHaveBeenCalledWith(
+      { ...inChat, cursor: 4 },
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(client.threads.messages).toHaveBeenCalledWith(inChat);
+    await operations(client).readChat("bot-1", "chat-1");
+    expect(spies.exportChat).toHaveBeenCalledWith(prisma, actor, inChat, 64_000);
+  });
+
+  it("keeps a call without a chat on the main chat, without reading chats", async () => {
+    const client = fakeClient(stream(event("run.completed")));
+    await operations(client).sendMessage("bot-1", "hi", new AbortController().signal);
+    await operations(client).readChat("bot-1");
+    expect(client.threads.messages).toHaveBeenCalledWith({ botId: "bot-1" });
+    expect(spies.exportChat).toHaveBeenCalledWith(prisma, actor, { botId: "bot-1" }, 64_000);
+    expect(client.dozoChats.list).not.toHaveBeenCalled();
+  });
+
+  it("refuses a chat it cannot reach as one answer, before spending or sending anything", async () => {
+    const client = fakeClient();
+    const countSend = vi.fn();
+    for (const chat of ["chat-9", "chat-archived", ""]) {
+      const ops = operations(client, countSend);
+      const sent = ops.sendMessage("bot-1", "hi", new AbortController().signal, chat);
+      await expect(sent).rejects.toMatchObject({ kind: "NOT_FOUND", message: "Chat not found" });
+      await expect(ops.readChat("bot-1", chat)).rejects.toMatchObject({
+        kind: "NOT_FOUND",
+        message: "Chat not found",
+      });
+    }
+    expect(client.threads.send).not.toHaveBeenCalled();
+    expect(countSend).not.toHaveBeenCalled();
+    expect(spies.exportChat).not.toHaveBeenCalled();
   });
 });

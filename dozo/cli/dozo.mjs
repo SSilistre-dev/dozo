@@ -19,12 +19,14 @@ const HELP = `Usage: dozo <command> [options]
   login              Save a token (read from standard input) for the server
   logout             Forget the saved token for the server
   bots               List the bots the token can reach
+  chats <bot>        List the bot's other chats (its main chat is the one used without --chat)
   send <bot> [text]  Send a message and print the reply as it comes (text or standard input)
   follow <bot> <run> Follow a run again, after an approval in the app
   export <bot>       Print the chat as Markdown
 
 Options:
   --server <url>     The Dozo server (default: the last one you logged in to, or ${DEFAULT_SERVER})
+  --chat <chat>      send, follow, export: one of the bot's chats, by id or name (\`dozo chats\`)
   --after <id>       follow: resume after this event id
   --since <date>     export: only messages from this time on (ISO 8601)
   --no-stream        send: print the run id instead of the reply
@@ -258,20 +260,46 @@ export async function main(argv, io) {
     );
   };
 
+  /**
+   * The chat named with --chat, by its id or, ignoring case, its exact name: a `?chat=` query, or
+   * nothing for the bot's main chat. A chat the server does not list is an error, never the main one.
+   */
+  const chatQuery = async (bot) => {
+    const name = options.chat;
+    if (name === undefined) return "";
+    const { chats } = await json(`/bots/${encodeURIComponent(bot)}/chats`);
+    const byId = chats.find((chat) => chat.id === name);
+    const named = chats.filter((chat) => chat.name.toLowerCase() === name.toLowerCase());
+    const id = byId?.id ?? (named.length === 1 ? named[0].id : null);
+    if (!id)
+      throw new CliError(
+        named.length ? `More than one chat is called ${name}: use its id` : `No chat ${name}`,
+      );
+    return `chat=${encodeURIComponent(id)}`;
+  };
+  /** A path with the chat's query, and `extra` query parts after it. */
+  const withQuery = (path, ...parts) => {
+    const query = parts.filter(Boolean).join("&");
+    return query ? `${path}?${query}` : path;
+  };
+
   const eventStream = { accept: "text/event-stream" };
-  const resume = (bot, runId, after) =>
-    call(`/bots/${encodeURIComponent(bot)}/runs/${encodeURIComponent(runId)}/events`, {
-      headers: {
-        ...eventStream,
-        ...(after === undefined ? {} : { "last-event-id": String(after) }),
+  const resume = (bot, runId, after, chat) =>
+    call(
+      withQuery(`/bots/${encodeURIComponent(bot)}/runs/${encodeURIComponent(runId)}/events`, chat),
+      {
+        headers: {
+          ...eventStream,
+          ...(after === undefined ? {} : { "last-event-id": String(after) }),
+        },
       },
-    });
+    );
 
   /**
    * Prints a run's events until it ends or waits for the person. `first` opens the first stream
    * (a send); after that, or when a stream drops, the run is followed again after the last id.
    */
-  const stream = async (bot, first, start) => {
+  const stream = async (bot, chat, first, start) => {
     let runId = start.runId;
     let last = start.after;
     let streamed = false;
@@ -303,7 +331,7 @@ export async function main(argv, io) {
             if (data.status === "completed") return 0;
             if (data.status === "waiting_input" || data.status === "waiting_takeover") {
               stderr.write(
-                `The bot is waiting for you in the app. Then: dozo follow ${bot} ${runId} --after ${last}\n`,
+                `The bot is waiting for you in the app. Then: dozo follow ${bot} ${runId} --after ${last}${chat ? ` --chat ${options.chat}` : ""}\n`,
               );
               return 3;
             }
@@ -318,7 +346,7 @@ export async function main(argv, io) {
       }
       if (!runId) throw new CliError("Lost the connection before the run started");
       if (quiet >= MAX_RECONNECTS) throw new CliError("Lost the connection to the server");
-      next = () => resume(bot, runId, last);
+      next = () => resume(bot, runId, last, chat);
     }
   };
 
@@ -328,13 +356,20 @@ export async function main(argv, io) {
       for (const bot of bots) stdout.write(`${bot.id}\t${bot.name}\n`);
       return 0;
     }
+    case "chats": {
+      const bot = await botId(words[0]);
+      const { chats } = await json(`/bots/${encodeURIComponent(bot)}/chats`);
+      for (const chat of chats) stdout.write(`${chat.id}\t${chat.name}\n`);
+      return 0;
+    }
     case "send": {
       const bot = await botId(words[0]);
       const text = words.length > 1 ? words.slice(1).join(" ") : (await readAll(io.stdin)).trim();
       if (!text)
         throw new CliError("Write a message: as words after the bot, or on standard input");
+      const chat = await chatQuery(bot);
       const send = (headers) =>
-        call(`/bots/${encodeURIComponent(bot)}/messages`, {
+        call(withQuery(`/bots/${encodeURIComponent(bot)}/messages`, chat), {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ text }),
@@ -343,13 +378,17 @@ export async function main(argv, io) {
         stdout.write(`${JSON.stringify(await (await send({})).json())}\n`);
         return 0;
       }
-      return stream(bot, () => send(eventStream), {});
+      return stream(bot, chat, () => send(eventStream), {});
     }
     case "follow": {
       const bot = await botId(words[0]);
       const runId = words[1];
       if (!runId) throw new CliError("Name the run: `dozo follow <bot> <run>`");
-      return stream(bot, () => resume(bot, runId, options.after), { runId, after: options.after });
+      const chat = await chatQuery(bot);
+      return stream(bot, chat, () => resume(bot, runId, options.after, chat), {
+        runId,
+        after: options.after,
+      });
     }
     case "export": {
       const bot = await botId(words[0]);
@@ -362,7 +401,10 @@ export async function main(argv, io) {
           throw new CliError("--since needs a date like 2026-11-01");
         query.set("since", since.toISOString());
       }
-      const exported = await json(`/bots/${encodeURIComponent(bot)}/export?${query}`);
+      const chat = await chatQuery(bot);
+      const exported = await json(
+        withQuery(`/bots/${encodeURIComponent(bot)}/export`, chat, query),
+      );
       stdout.write(exported.markdown);
       if (exported.truncated) stderr.write("The chat is long: only its newest part is here\n");
       return 0;
