@@ -52,6 +52,8 @@ test("bot backups: a bot keeps its own ordered backup models", async ({ browser,
         APPEARANCE_KEY,
         theme,
       ]);
+      // A navigation while the app fetches its lazy screens ahead would cancel those fetches.
+      await page.waitForLoadState("networkidle");
       await openBot(page, botId, "Chief");
       await openBotSettings(page);
       const settings = page.getByTestId("bot-settings");
@@ -68,6 +70,7 @@ test("bot backups: a bot keeps its own ordered backup models", async ({ browser,
 
       const list = settings.getByTestId("dozo-bot-backups");
       await expect(list.getByRole("listitem").filter({ hasText: "Second key" })).toBeVisible();
+      await page.waitForLoadState("networkidle");
       await page.reload();
       await openBotSettings(page);
       const row = settings.getByTestId("dozo-bot-backups").getByRole("listitem").first();
