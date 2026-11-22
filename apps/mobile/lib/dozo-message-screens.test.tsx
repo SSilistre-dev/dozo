@@ -302,6 +302,18 @@ describe("the pinned list", () => {
     });
   });
 
+  it("goes back to the extra chat a pin is in, never to its bot's main chat", async () => {
+    ui.params = { threadId: "chat-1", botId: "bot-1", chatId: "chat-1", name: "Launch" };
+    ui.rpc.mockResolvedValue({ pins });
+    await render(<DozoPins />);
+    await act(() => vi.waitFor(() => expect(container.querySelectorAll("button").length).toBe(2)));
+    act(() => container.querySelectorAll("button")[0]!.click());
+    expect(ui.dismissTo).toHaveBeenCalledWith({
+      pathname: "/thread",
+      params: { botId: "bot-1", chatId: "chat-1", name: "Launch", messageId: "m-2" },
+    });
+  });
+
   it("goes back to a group's chat", async () => {
     ui.params = { threadId: "thread-g", groupId: "group-1" };
     ui.rpc.mockResolvedValue({ pins });
