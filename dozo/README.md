@@ -314,9 +314,17 @@ A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`
 `dozo_bot_chats`; web and desktop only for now). They are the Space's, like the bot's main chat:
 every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
 100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
-archived bot does. The bot's memory and computer are one across its chats. Mobile, the bot API,
-CLI and MCP, chat apps and routines use the main chat only; a routine started from an extra chat
-posts in the main chat. The phone's badge counts main chats only, as the phone shows nothing else.
+archived bot does. The bot's memory and computer are one across its chats. Mobile, chat apps and
+routines use the main chat only; a routine started from an extra chat posts in the main chat. The
+phone's badge counts main chats only, as the phone shows nothing else.
+
+The bot API, CLI and MCP reach an open extra chat by its id (`?chat=`, `--chat`, `chat_id`), through
+one rule in `apps/api/src/dozo-api-chats.ts`; without one, every call is the main chat as before. A
+chat the token cannot reach (another bot's or Space's, archived, missing, the main chat's own id) is
+one 404, never the main chat. A token cannot make, rename or archive chats: its scope is "talk to
+my bots", which says nothing about changing them. A chat app's conversation lands in the bot's main
+chat (`dozo-bot-api-chats.postgres.test.ts` pins it); mapping a conversation to an extra chat is a
+product decision not made yet.
 
 Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
 (or with) the web app: an API from before extra chats answers such a request with 400 (its own
