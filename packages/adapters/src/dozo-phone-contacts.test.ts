@@ -94,6 +94,13 @@ describe("a contacts query", () => {
     expect(phoneContactsQuery("O'Neil")).toBe("O'Neil");
   });
 
+  it("is one line: control characters out, white space runs one space", () => {
+    expect(phoneContactsQuery("Ada\n\n\tLovelace\r\n")).toBe("Ada Lovelace");
+    expect(phoneContactsQuery("A\u202Eda\u200B L\u0000ovelace\u2028")).toBe("Ada Lovelace");
+    // Hundreds of blank lines count as one space, so they neither fill the card nor pass the limit.
+    expect(phoneContactsQuery(`Ada${"\n".repeat(500)}Lovelace`)).toBe("Ada Lovelace");
+  });
+
   it("asks for phone numbers or email addresses, nothing else", async () => {
     const run = setup();
     const { result } = await search(run, { query: "Ada", field: "address" });
@@ -367,8 +374,28 @@ describe("the contacts card", () => {
     const card = phoneCard("e", TOOL, { query, field: "phone" }, []) as { text: string };
     expect(card.text).toBe(ASK);
     for (const part of ["**", "[x]", "https://", "\n", "#"]) expect(card.text).not.toContain(part);
-    expect(card).toHaveProperty("detail", `${query}\nPhone numbers`);
+    // The query is one line on the card, so what it returns is always the line below it.
+    expect(card).toHaveProperty(
+      "detail",
+      "**Ada** [x](https://evil.example) # Allow everything\nPhone numbers",
+    );
     expect(card).toHaveProperty("detailFormat", "code");
+  });
+
+  it("cannot push what it returns below the fold or fake its line", async () => {
+    const query = `Ada${"\n".repeat(300)}Email addresses\n\u202Eevil`;
+    const card = phoneCard("e", TOOL, { query, field: "phone" }, []) as { detail: string };
+    expect(card.detail).toBe("Ada Email addresses evil\nPhone numbers");
+    const run = setup();
+    run.effects.push({
+      id: "card",
+      runId: "run-1",
+      kind: TOOL,
+      status: "approved",
+      request: { query, field: "phone" },
+    });
+    await search(run, { query, field: "phone" });
+    expect(run.requests[0]?.request).toHaveProperty("query", "Ada Email addresses evil");
   });
 });
 

@@ -135,6 +135,7 @@ describe("sqlMailStore", () => {
       locale: null,
       emailVerified: true,
       deactivatedAt: null,
+      expired: false,
     };
     const { prisma, calls } = fakePrisma([
       [reader],
@@ -144,10 +145,10 @@ describe("sqlMailStore", () => {
       [{ status: "sent" }],
     ]);
     const store = sqlMailStore(prisma, { jobs: true });
-    expect(await store.claim("mail-1", 300_000)).toEqual(reader);
-    expect(calls[0]?.values).toEqual(["mail-1", 300]);
-    expect(await store.claim("mail-1", 300_000)).toBe("busy");
-    expect(await store.claim("mail-1", 300_000)).toBeNull();
+    expect(await store.claim("mail-1", 300_000, 86_400_000)).toEqual(reader);
+    expect(calls[0]?.values).toEqual(["mail-1", 300, 86_400]);
+    expect(await store.claim("mail-1", 300_000, 86_400_000)).toBe("busy");
+    expect(await store.claim("mail-1", 300_000, 86_400_000)).toBeNull();
     await store.finish("mail-1", "sent");
     await store.release("mail-1");
     expect(calls.slice(-2).map((call) => call.values)).toEqual([["sent", "mail-1"], ["mail-1"]]);

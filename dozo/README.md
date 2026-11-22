@@ -654,23 +654,30 @@ screen or browser, stay out of Computers and its limit, and an account has one p
   Every location read asks, and its card says approximate or precise. Phone reads run one at a
   time, and once one is allowed the run counts as having read outside content, so every later
   phone read in that run asks too (a calendar range over 31 days takes two approvals, by choice).
-  A card approves only its own call, and a run may search contacts at most three times.
+  A card approves only its own call, and a run may search contacts at most three times. The record
+  of when a switch was turned on started empty, so a phone paired before it asks once more for each
+  kind, at that kind's first read after the deploy that added it.
 - Calendar: at most 31 days and 50 events, with title, times, location and calendar name.
-- Contacts: a name to look up (two letters or digits at least; no wildcards, no paging), at most 10
-  people, each with their name and up to three values of the one kind asked for (phone numbers or
-  email addresses), nothing else of the card.
-- Location: one reading while the app is open, never in the background and never watched, refused
-  when older than two minutes. Approximate is rounded to about a kilometre at any latitude unless
-  the bot asks for precise; a phone allowed only approximate location answers approximate.
+- Contacts: a name to look up (two letters or digits at least; no wildcards, no paging; one line,
+  without control characters, on the card and the phone alike), at most 10 people, each with their
+  name and up to three values of the one kind asked for (phone numbers or email addresses), nothing
+  else of the card.
+- Location: one new fix while the app is open (never a cached or last known position), never in the
+  background and never watched. The server measures freshness by its own clock: a reading that
+  arrives within the 20 seconds the phone has counts, whatever the phone's clock says. Approximate
+  is rounded to about a kilometre at any latitude unless the bot asks for precise; a phone allowed
+  only approximate location answers approximate.
 - Links are removed from names, titles, locations and calendar names on the phone and again on the
   server by one shared rule; the rest of the text goes to the bot's model as written.
 - What is kept: the approval record holds a count (or that the location was read), not the content,
   and a turn that read the phone is not learned into memory. The card and the effect's request keep
   what was asked (the name looked up, the date range). A phone tool's output is not kept in the
-  chat's steps: later runs see only that the phone was read (messages saved before this change
-  still hold it). The bot's reply stays in the chat like any message, with whatever it repeated:
-  export and backups carry it, and a member added to the Space later can read it with the rest of
-  its history.
+  chat's steps: later runs see only that the phone was read (messages saved before this change still
+  hold it). The bot's reply stays in the chat like any message, with whatever it repeated: export
+  and backups carry it, and a member added to the Space later can read it with the rest of its
+  history. While a run waits on an approval card, its saved turn (encrypted when content encryption
+  is on, the default outside development) holds the earlier phone output; it is deleted when the run
+  ends, and a card left unanswered ends the run after 24 hours (`STUCK_WORK_EXPIRE_AFTER_MS`).
 - What the model may do with it: a number, an address or coordinates it learned can go into tools
   that do not ask, such as a web search or a page fetch (for a location, that is the point). A send
   to an address learned this way goes through the usual send approvals; in Never ask that means only

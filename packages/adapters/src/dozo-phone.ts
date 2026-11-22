@@ -19,7 +19,6 @@ import type {
   PhoneLocationRequest,
 } from "./dozo-phone-protocol.js";
 import {
-  freshLocation,
   PHONE_CALENDAR_MAX_DAYS,
   PHONE_CALENDAR_MAX_EVENTS,
   PHONE_CALENDAR_QUERY_MAX,
@@ -91,6 +90,7 @@ interface PhoneReadPlan {
    */
   read(
     answer: unknown,
+    answeredInMs: number,
   ): { value: unknown; kept: Record<string, unknown> } | { error: string } | null;
 }
 
@@ -186,10 +186,12 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
         card: { text: `Let this bot see your phone's ${precision} location?` },
         // Where the person is, approximate or precise: the owner allows each reading.
         everyCallAsks: true,
-        read(answer) {
+        read(answer, answeredInMs) {
           const value = phoneLocationValue(answer, precision);
           if (!value) return null;
-          if (!freshLocation(value.at)) return { error: STALE };
+          // Fresh by the server's clock: the phone takes a new fix for each request, so a reading
+          // is as old as the wait for it. The phone's own `at` may be off by hours.
+          if (answeredInMs > PHONE_ANSWER_MS) return { error: STALE };
           return { value, kept: { read: true, note: PHONE_LOCATION_NOTE } };
         },
       };
@@ -483,6 +485,7 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
     return refuse(ctx, call, CHANGED, "changed");
   const { signal } = ctx.context;
   const deadline = deadlineSignal(PHONE_ANSWER_MS, signal);
+  const sentAt = Date.now();
   let answer: unknown;
   try {
     for await (const value of route.devices.request<unknown>(
@@ -498,7 +501,7 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
     getLogger().warn(tool.failed, { kind: failed.kind });
     return call.finish({ error: failed.error });
   }
-  const read = plan.read(answer);
+  const read = plan.read(answer, Date.now() - sentAt);
   if (!read) {
     getLogger().warn(tool.failed, { kind: "invalid" });
     return call.finish({ error: `The user's phone could not read its ${tool.reads}.` });
