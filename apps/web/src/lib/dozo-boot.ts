@@ -1,6 +1,7 @@
 import { authClient } from "./auth";
 import { fetchAuthCapabilities } from "./auth-capabilities";
 import { initialBootstrapTarget } from "./bootstrap-target";
+import { importChunk } from "./preload-recovery";
 
 /** The shell `index.html` draws before any script runs; see `dozo-boot.js` in `public/`. */
 const BOOT_SHELL_ID = "dozo-boot";
@@ -105,6 +106,9 @@ function signedIn(): boolean {
  */
 export function boot(view: BootWindow, doc: Document): void {
   view.dozoBootStarted?.();
+  // Menus, dialogs and the settings windows are not on screen at the first paint, so their
+  // stylesheet loads beside the app instead of in front of it.
+  void importChunk(() => import("@rakazo/ui-web/dozo-overlays.css")).catch(() => undefined);
   const chatRoute = startBootReads(view.location.pathname, Boolean(view.rakazoDesktop));
   releaseBootShell(doc, 10_000, () => {
     if (!chatRoute || view.navigator?.connection?.saveData || !signedIn()) return;

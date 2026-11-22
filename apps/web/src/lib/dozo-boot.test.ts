@@ -4,7 +4,7 @@ import { flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type SessionState = { isPending: boolean; data: unknown };
-const { session, fetchAuthCapabilities } = vi.hoisted(() => {
+const { session, fetchAuthCapabilities, overlays } = vi.hoisted(() => {
   const listeners = new Set<(state: SessionState) => void>();
   const session = {
     state: { isPending: true, data: null } as SessionState,
@@ -19,13 +19,18 @@ const { session, fetchAuthCapabilities } = vi.hoisted(() => {
       for (const listener of [...listeners]) listener(state);
     },
   };
-  return { session, fetchAuthCapabilities: vi.fn(() => Promise.resolve({})) };
+  return {
+    session,
+    fetchAuthCapabilities: vi.fn(() => Promise.resolve({})),
+    overlays: { loaded: vi.fn((load: () => Promise<unknown>) => load()) },
+  };
 });
 vi.mock("./auth", () => ({ authClient: { $store: { atoms: { session } } } }));
 vi.mock("./auth-capabilities", () => ({ fetchAuthCapabilities }));
 vi.mock("../pages/SettingsOverlay", () => ({ screen: "settings" }));
 vi.mock("../components/bot-templates/bot-templates-dialog", () => ({ screen: "new bot" }));
 vi.mock("../pages/BotContextMenu", () => ({ screen: "bot menu" }));
+vi.mock("./preload-recovery", () => ({ importChunk: overlays.loaded }));
 
 import {
   appHasPainted,
@@ -177,6 +182,14 @@ describe("whenIdle", () => {
 });
 
 describe("boot", () => {
+  it("loads the menus' and windows' stylesheet beside the app, not in the page's own", async () => {
+    page("");
+    vi.resetModules();
+    overlays.loaded.mockClear();
+    await import("./dozo-boot");
+    await vi.waitFor(() => expect(overlays.loaded).toHaveBeenCalledTimes(1));
+  });
+
   it("loads the common screens after a chat route paints", async () => {
     await expect(loadCommonScreens()).resolves.toEqual([
       expect.objectContaining({ screen: "settings" }),

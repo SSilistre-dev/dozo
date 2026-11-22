@@ -5206,6 +5206,7 @@
       "find": "  if (!released) return false;\n  await deps.jobs\n    .cancel(computerControlExpireJobKey(computer.id, leaseId))",
       "replace": "  if (!released) return false;\n  auditSiteSessionsAfterControl(deps, computer, botId, leaseId, context);\n  await deps.jobs\n    .cancel(computerControlExpireJobKey(computer.id, leaseId))",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "packages/adapters/src/dozo-site-session-audit.ts"
       ],
       "reason": "site sessions: however a person's control of a bot's screen ends (handed back or expired), the sites they opened then and that got their first cookie are recorded, off this path"
@@ -5213,7 +5214,7 @@
     {
       "file": "apps/web/src/pages/shell/computer-overlay.tsx",
       "find": "import { ComputerReleaseActions } from \"./computer-release-actions\";\nimport { computerLabel",
-      "replace": "import { ComputerReleaseActions } from \"./computer-release-actions\";\nimport { SiteSessionsControl } from \"./dozo-site-sessions\";\nimport { computerLabel",
+      "replace": "import { ComputerReleaseActions } from \"./computer-release-actions\";\nimport { SiteSessionsControl } from \"../../lib/dozo-lazy-surfaces\";\nimport { computerLabel",
       "requires": [
         "apps/web/src/pages/shell/dozo-site-sessions.tsx"
       ],
@@ -5242,6 +5243,7 @@
       "find": "            ) : null}\n            <Button\n              variant=\"ghost\"\n              size=\"icon-sm\"\n              className=\"text-muted-foreground\"\n              aria-label={t`Close computer`}\n",
       "replace": "            ) : null}\n            <ComputerSleepButton\n              botId={bot.id}\n              computer={computer}\n              busy={Boolean(recordingSkill) || composerRunning}\n              onRefresh={onRefreshTeaching}\n              onClose={onClose}\n            />\n            <Button\n              variant=\"ghost\"\n              size=\"icon-sm\"\n              className=\"text-muted-foreground\"\n              aria-label={t`Close computer`}\n",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/pages/shell/dozo-computer-sleep.tsx"
       ],
       "reason": "computer sleep: closing the computer window leaves the computer up until its idle wait ends; the header offers putting it to sleep now, so it stops using computer hours"
@@ -5249,7 +5251,7 @@
     {
       "file": "apps/web/src/pages/shell/message-view.tsx",
       "find": "import { SkillDraftCard } from \"../../components/teach/SkillDraftCard\";",
-      "replace": "import { SkillDraftCard } from \"../../components/teach/dozo-skill-draft-card\";",
+      "replace": "import { SkillDraftCard } from \"../../lib/dozo-lazy-surfaces\";",
       "requires": [
         "apps/web/src/components/teach/dozo-skill-draft-card.tsx"
       ],
@@ -5269,6 +5271,7 @@
       "find": "import { TeachCaptureOverlay } from \"../../components/teach/TeachCaptureOverlay\";",
       "replace": "import { TeachCaptureOverlay } from \"../../components/teach/dozo-teach-capture-overlay\";",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "apps/web/src/components/teach/dozo-teach-capture-overlay.tsx"
       ],
       "reason": "teaching: clicking the bot's screen moves focus off the page control the computer window opened on, so the text typed next is recorded"
@@ -5276,7 +5279,7 @@
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
       "find": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { botProfilePatch }",
-      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"./dozo-bot-skills-section\";\nimport { botProfilePatch }",
+      "replace": "import { PagesList } from \"../../components/pages/PagesList\";\nimport { DozoBotSkillsSection } from \"../../lib/dozo-lazy-surfaces\";\nimport { botProfilePatch }",
       "requires": [
         "apps/web/src/pages/shell/dozo-bot-skills-section.tsx"
       ],
@@ -5347,6 +5350,7 @@
       "find": "    const current = parseRecording(skill.recording);\n    const next = mutate(current);",
       "replace": "    const current = withTeachClickTarget(\n      skillId,\n      skill.recording,\n      parseRecording(skill.recording),\n    );\n    const next = mutate(current);",
       "requires": [
+        "apps/web/src/lib/dozo-lazy-surfaces.tsx",
         "packages/adapters/src/dozo-teach-targets.ts"
       ],
       "reason": "teaching, what each click hit: a snapshot or appended event during a recording keeps the targets recorded so far"
@@ -5354,7 +5358,7 @@
     {
       "file": "apps/web/src/pages/shell/bot-panel.tsx",
       "find": "import { AvatarStudioPopover } from \"./avatar-studio-popover\";\nimport {\n",
-      "replace": "import { AvatarStudioPopover } from \"./avatar-studio-popover\";\nimport { OwnComputerRow } from \"./dozo-own-computer-row\";\nimport {\n",
+      "replace": "import { AvatarStudioPopover } from \"./avatar-studio-popover\";\nimport { OwnComputerRow } from \"../../lib/dozo-lazy-surfaces\";\nimport {\n",
       "requires": [
         "apps/web/src/pages/shell/dozo-own-computer-row.tsx"
       ],
@@ -7091,6 +7095,28 @@
       "requires": [
         "packages/adapters/src/dozo-computer-image.test.ts"
       ]
+    },
+    {
+      "file": "packages/ui-web/package.json",
+      "find": "    \"./styles.css\": \"./src/styles.css\",\n    \"./lib/utils\"",
+      "replace": "    \"./styles.css\": \"./src/styles.css\",\n    \"./dozo-auth.css\": \"./src/dozo-auth.css\",\n    \"./dozo-overlays.css\": \"./src/dozo-overlays.css\",\n    \"./lib/utils\"",
+      "requires": [
+        "packages/ui-web/src/dozo-auth.css",
+        "packages/ui-web/src/dozo-overlays.css"
+      ],
+      "reason": "startup size: the sign-in pages' stylesheet and the menus' and windows' one are not in the shell's, so they load with the sign-in code and right after the app starts instead of before the first paint; the web app imports them by these names"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "export const appContract = {",
+      "replace": "export const appContract = /* @__PURE__ */ (() => ({",
+      "reason": "startup size: the browser never reads this object, but building it at load kept every contract schema in the web app's first download. Marked pure, the web build drops it, and the server, which does read it, keeps it as before (with the rule below)"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  },\n};\n\nexport type AppContract = typeof appContract;",
+      "replace": "  },\n}))();\n\nexport type AppContract = typeof appContract;",
+      "reason": "startup size: closes the call the rule above opens"
     },
     {
       "file": "scripts/build-server.mjs",
