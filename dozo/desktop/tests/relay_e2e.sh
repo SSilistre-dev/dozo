@@ -4,7 +4,8 @@
 # (packages/adapters/src/dozo-user-browser.relay.test.ts), and this app's own runner connecting to
 # it over its socket in a Rust container (device_socket.rs, e2e_relay_forgotten_reaches_this_computer).
 # It shows the server's `forgotten` reaching the computer and taking the cleared mark, also when two
-# runs of the same bot ask at once.
+# runs of the same bot ask at once, and a sign-in the card allowed reaching the computer (its dialog
+# answered Done by the test). The desktop image needs Xvfb as well as a browser.
 # Run on a branded stage: dozo/docker/build.sh stage && dozo/docker/build.sh brand && $0
 # DOZO_RELAY_DESKTOP_IMAGE: a Linux desktop build image with a Chromium-family browser installed
 # (default dozo-desktop-linux:22.04). DOZO_STAGE_DIR, DOZO_NODE_IMAGE, DOZO_POSTGRES_IMAGE as for
@@ -47,10 +48,14 @@ docker run -d --rm --name "$DB" --network "$NET" --cpus 1 --memory 1g \
 
 # The computer: this app's runner, built and run as build-linux.sh builds it.
 docker run --rm --name "$APP" --network "$NET" --cpus 3 --memory 6g -u "$(id -u):$(id -g)" \
+  --security-opt seccomp=unconfined --shm-size=1g \
   -v "$ROOT/dozo:/dozo" -v "$SHARED:/relay" -w /dozo/desktop -e HOME=/tmp -e CARGO_BUILD_JOBS=3 \
   -e RUSTUP_HOME=/dozo/desktop/.toolchain/linux/rustup -e CARGO_HOME=/dozo/desktop/.toolchain/linux/cargo \
   -e DOZO_RELAY_DIR=/relay -e DOZO_RELAY_SERVER="http://$NODE:8790" \
-  "$DESKTOP_IMAGE" bash -c 'export PATH="$CARGO_HOME/bin:$PATH"; cargo test --locked -- --ignored --exact \
+  "$DESKTOP_IMAGE" bash -c 'export PATH="$CARGO_HOME/bin:$PATH"
+    # The sign-in opens the bot'"'"'s browser in a window: a screen for it.
+    Xvfb :87 -screen 0 1280x800x24 > /dev/null 2>&1 & export DISPLAY=:87; sleep 1
+    cargo test --locked -- --ignored --exact \
     device_socket::tests::e2e_relay_forgotten_reaches_this_computer --nocapture' > "$OUT/computer.log" 2>&1 &
 app=$!
 

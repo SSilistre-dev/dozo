@@ -291,6 +291,19 @@ mod tests {
         std::fs::create_dir_all(dir.join("home")).unwrap();
         let runner = Runner::new(dir.join("data"), dir.join("home"));
         assert!(runner.browser_available(), "a browser is installed here");
+        // The person's dialog, answered Done at once; what it was asked about is kept.
+        struct Done(std::sync::Mutex<Vec<String>>);
+        impl crate::browser::SignInPrompt for Done {
+            fn ask(&self, site: &str) -> tokio::sync::oneshot::Receiver<bool> {
+                self.0.lock().unwrap().push(site.to_owned());
+                let (answer, answered) = tokio::sync::oneshot::channel();
+                let _ = answer.send(true);
+                answered
+            }
+            fn ended(&self, _site: &str) {}
+        }
+        let prompt = Arc::new(Done(std::sync::Mutex::default()));
+        runner.set_sign_in_prompt(prompt.clone());
         assert!(runner.clear_browser(&key).await);
         let (stop, stopped) = watch::channel(false);
         let options = Options {
@@ -317,6 +330,12 @@ mod tests {
         gone().await;
         println!("E2E: relay: with two runs of the bot asking, the mark went again");
         wait_for("done").await;
+        assert_eq!(
+            *prompt.0.lock().unwrap(),
+            ["example.com"],
+            "the person was asked to sign in"
+        );
+        println!("E2E: relay: the person was asked to sign in to example.com and said Done");
         std::fs::write(shared.join("computer-done"), b"").unwrap();
         let _ = stop.send(true);
         let _ = connection.await;

@@ -5562,7 +5562,7 @@
     {
       "file": "packages/adapters/src/run-assembly-capabilities.ts",
       "find": "      userComputerShell = !device.screenOnly;\n      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.\n      userComputerScreen = device.platform === \"darwin\" || device.platform === \"win32\";\n",
-      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      userComputerScreen = offers.screen;\n      // Only a run without a graphical computer of its own: one that has it keeps its browser.\n      if (offers.browser && !graphical)\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n",
+      "replace": "      const offers = deviceOffers(device);\n      userComputerShell = offers.shell;\n      userComputerScreen = offers.screen;\n      // Only a run without a graphical computer of its own: one that has it keeps its browser.\n      // Nor a run a message sent with a token started: its browser tools would only be refused.\n      if (offers.browser && !graphical && !(await dozoBotTokenTainted(deps.prisma, run)))\n        pageBrowserAllowed = offerUserBrowser(disabledBuiltinTools, bot.disabledBuiltinTools);\n",
       "requires": [
         "packages/adapters/src/dozo-device-capabilities.ts"
       ],
@@ -5655,6 +5655,18 @@
       "find": "  \"browser_act\",\n  \"list_files\",\n",
       "replace": "  \"browser_act\",\n  \"browser_sign_in\",\n  \"list_files\",\n",
       "reason": "user's browser: the person signs in to a site themselves in the bot's browser on their computer (browser_sign_in), a built-in a bot may turn off like the other page tools"
+    },
+    {
+      "file": "packages/adapters/src/builtin-tool-bridge.ts",
+      "find": "  \"browser_act\",\n  \"ask_user\",\n",
+      "replace": "  \"browser_act\",\n  \"browser_sign_in\",\n  \"ask_user\",\n",
+      "reason": "user's browser: the sign-in is listed to the model with the page tools it goes with; deferred behind find_tool it was never called, so a run offered the bot's browser could not have the person sign in"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-selection.ts",
+      "find": "  if (pageBrowserAllowed) return tools;\n  return tools.filter((tool) => !PAGE_BROWSER_TOOL_NAMES.has(tool.name));\n}\n",
+      "replace": "  if (pageBrowserAllowed) return tools;\n  // The sign-in in the bot's browser goes with the page tools.\n  return tools.filter(\n    (tool) => !PAGE_BROWSER_TOOL_NAMES.has(tool.name) && tool.name !== \"browser_sign_in\",\n  );\n}\n",
+      "reason": "user's browser: a run without a page browser is not offered the sign-in either, so the sign-in, now listed to the model, never stands without the page tools"
     },
     {
       "file": "packages/adapters/src/builtin.tool-definition.ts",

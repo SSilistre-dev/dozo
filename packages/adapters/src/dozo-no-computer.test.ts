@@ -12,6 +12,7 @@ import {
   noComputerFilesInstruction,
 } from "./dozo-no-computer.prompt.js";
 import { createRunExecutor } from "./executor.js";
+import { toAgentTools } from "./pi-runtime-tools.js";
 import { EncryptedSecretStore } from "./secrets.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./user-computer-tools.js";
 
@@ -45,7 +46,7 @@ type Plan =
   | { kind: "premium"; usedHours: number; status?: "active" | "trialing" | "past_due" };
 
 /** A database that answers the reads a run makes; anything else reads as empty. */
-function fakePrisma(plan: Plan, reads: string[]) {
+function fakePrisma(plan: Plan, reads: string[], tokenRun = false) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -176,6 +177,8 @@ function fakePrisma(plan: Plan, reads: string[]) {
         if (model === "$executeRaw") return async () => 0;
         if (model === "$queryRaw")
           return async (...query: unknown[]) => {
+            // A message sent with an access token marked this bot.
+            if (JSON.stringify(query).includes("dozo_token_taints")) return [{ sourced: tokenRun }];
             // The allowance's hours, by computer kind; nothing else this run reads raw matters.
             if (!JSON.stringify(query).includes("computer_runs")) return [];
             reads.push("computer_runs");
@@ -206,9 +209,13 @@ async function ownerRun(options: {
   platform?: string;
   /** A tool the model calls before it answers. */
   call?: { name: string; args: Record<string, unknown> };
+  /** What the connected computer declared when it connected. */
+  capabilities?: string[];
+  /** The run came from a message sent with an access token. */
+  tokenRun?: boolean;
 }) {
   const reads: string[] = [];
-  const { prisma, run } = fakePrisma(options.plan, reads);
+  const { prisma, run } = fakePrisma(options.plan, reads, options.tokenRun);
   let request: AgentRunRequest | undefined;
   let toolResult: unknown;
   const runtimeRun = vi.fn(async function* (sent: AgentRunRequest) {
@@ -217,7 +224,12 @@ async function ownerRun(options: {
       toolResult = await sent.executeTool?.(options.call.name, options.call.args, "exec-1");
     yield { type: "done" as const, text: "" };
   });
-  const device = { deviceId: "device-1", name: "Laptop", platform: options.platform ?? "darwin" };
+  const device = {
+    deviceId: "device-1",
+    name: "Laptop",
+    platform: options.platform ?? "darwin",
+    ...(options.capabilities ? { capabilities: options.capabilities } : {}),
+  };
   const userDevices = options.userComputer
     ? {
         connected: vi.fn(async () => (options.userComputer === "connected" ? device : null)),
@@ -259,6 +271,9 @@ async function ownerRun(options: {
   const sent = request;
   return {
     tools: sent.tools.map((tool) => tool.name),
+    // What the model itself is given: the runtime lists some tools and defers the rest behind
+    // find_tool and use_tool.
+    listed: toAgentTools(sent.tools, {} as never).map((tool) => tool.name),
     instructions: sent.instructions ?? "",
     reads,
     toolResult,
@@ -365,6 +380,42 @@ describe("a run on a plan without computer hours, assembled as it ships", () => 
     expect(selfHosted.instructions).not.toContain(NO_COMPUTER);
     expect(selfHosted.reads).not.toContain("computer_runs");
     expect(selfHosted.reads).not.toContain("organization.findUnique");
+  });
+});
+
+describe("the bot's own browser on the user's computer, as the model is offered it", () => {
+  const BROWSER = ["browser_navigate", "browser_snapshot", "browser_act", "browser_sign_in"];
+
+  it("offers all four tools, the sign-in among them, in the owner's own run", async () => {
+    const free = await ownerRun({
+      plan: { kind: "free" },
+      billingEnabled: true,
+      userComputer: "connected",
+      capabilities: ["shell", "browser"],
+    });
+    for (const name of BROWSER) expect(free.listed).toContain(name);
+  });
+
+  it("offers none of them when the computer declared no browser", async () => {
+    const free = await ownerRun({
+      plan: { kind: "free" },
+      billingEnabled: true,
+      userComputer: "connected",
+      capabilities: ["shell"],
+    });
+    for (const name of BROWSER) expect(free.tools).not.toContain(name);
+    expect(free.listed).toContain("user_computer_shell");
+  });
+
+  it("offers none of them to a run a message sent with a token started", async () => {
+    const free = await ownerRun({
+      plan: { kind: "free" },
+      billingEnabled: true,
+      userComputer: "connected",
+      capabilities: ["shell", "browser"],
+      tokenRun: true,
+    });
+    for (const name of BROWSER) expect(free.tools).not.toContain(name);
   });
 });
 
