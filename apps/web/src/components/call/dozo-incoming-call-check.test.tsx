@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { startCall } from "../../lib/call-session";
+import { isLeavingSession, startCall } from "../../lib/call-session";
 import { dozoCheckCall } from "../../lib/dozo-call-start";
 import { rpc } from "../../lib/rpc";
 import { IncomingCall } from "./IncomingCall";
@@ -71,6 +71,7 @@ beforeEach(() => {
     removeEventListener: () => undefined,
   }));
   vi.clearAllMocks();
+  vi.mocked(isLeavingSession).mockReturnValue(false);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -108,4 +109,13 @@ it("answers and starts the call, told the speech server hears the caller, once i
     expect.objectContaining({ botId: "bot-1", serverDictation: true }),
   );
   expect(onAnswered).toHaveBeenCalledWith("bot-1");
+});
+
+it("answers nothing when the page starts leaving its session while the call is checked", async () => {
+  vi.mocked(dozoCheckCall).mockResolvedValue({ refusal: null, serverDictation: true });
+  vi.mocked(isLeavingSession).mockReturnValueOnce(false).mockReturnValue(true);
+  const onAnswered = await answer();
+  expect(rpc.threads.answerCall).not.toHaveBeenCalled();
+  expect(startCall).not.toHaveBeenCalled();
+  expect(onAnswered).not.toHaveBeenCalled();
 });

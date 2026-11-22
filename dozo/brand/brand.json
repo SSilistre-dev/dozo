@@ -6922,7 +6922,7 @@
     {
       "file": "apps/web/src/components/call/IncomingCall.tsx",
       "find": "    try {\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
-      "replace": "    try {\n      // Before the server marks the call answered: a call that cannot be heard stays ringing.\n      const checked = await import(\"../../lib/dozo-call-start\").then((module) =>\n        module.dozoCheckCall(bot.id),\n      );\n      if (checked.refusal) {\n        setError(checked.refusal);\n        return;\n      }\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
+      "replace": "    try {\n      // Before the server marks the call answered: a call that cannot be heard stays ringing.\n      const checked = await import(\"../../lib/dozo-call-start\").then((module) =>\n        module.dozoCheckCall(bot.id),\n      );\n      if (checked.refusal) {\n        setError(checked.refusal);\n        return;\n      }\n      // The page reloads for another session: nothing is answered for the old one.\n      if (isLeavingSession()) return;\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
       "requires": [
         "apps/web/src/lib/dozo-call-start.ts"
       ],
@@ -6939,6 +6939,18 @@
       "find": "  useCallSession: () => null,\n}));\nvi.mock(\"../../lib/rpc\", () => ({",
       "replace": "  useCallSession: () => null,\n}));\nvi.mock(\"../../lib/dozo-call-start\", () => ({\n  dozoCheckCall: async () => ({ refusal: null, serverDictation: undefined }),\n}));\nvi.mock(\"../../lib/rpc\", () => ({",
       "reason": "upstream test fixture: answering now asks the fork's call check first, which needs the server this test's client does not provide, so it answers that nothing is wrong"
+    },
+    {
+      "file": "apps/web/src/lib/session-change.test.tsx",
+      "find": "vi.mock(\"./call-pickup.js\", () => ({ pickUp: vi.fn(async () => undefined) }));\nvi.mock(\"./dictation.js\", () => ({",
+      "replace": "vi.mock(\"./call-pickup.js\", () => ({ pickUp: vi.fn(async () => undefined) }));\nvi.mock(\"./dozo-call-start\", () => ({\n  dozoCheckCall: async () => ({ refusal: null, serverDictation: undefined }),\n}));\nvi.mock(\"./dictation.js\", () => ({",
+      "reason": "upstream test fixture: answering now asks the fork's call check first, which needs the server this test's client does not provide, so it answers that nothing is wrong"
+    },
+    {
+      "file": "apps/web/src/lib/session-change.test.tsx",
+      "find": "          .click(),\n      );\n      expect(mocks.answerCall).toHaveBeenCalledOnce();",
+      "replace": "          .click(),\n      );\n      // The call check answers first; the answer is sent right after it.\n      await act(async () => undefined);\n      expect(mocks.answerCall).toHaveBeenCalledOnce();",
+      "reason": "upstream test: the answer now follows the fork's call check, one asynchronous step after the tap; the test still holds that the late answer starts nothing"
     },
     {
       "file": "packages/adapters/src/index.ts",
