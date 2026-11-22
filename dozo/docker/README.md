@@ -109,9 +109,9 @@ project; `down` does not remove them.
 
 ## Gates (gate.sh)
 
-`dozo/docker/gate.sh olc|qa|unit`, and `gate.sh upstream-edits <base> [tree]`, which prints the
+`dozo/docker/gate.sh olc|qa|unit|checks`, and `gate.sh upstream-edits <base> [tree]`, which prints the
 upstream files that differ from commit `<base>` in `[tree]` (default the working tree) and is not a
-gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT: PASS in
+gate. `sync.sh` shares it for fork health (`dozo/SYNC.md`). Verdict lines: `OLC|QA|UNIT|CHECKS: PASS in
 <s>s`, `... FAIL (<failed steps, comma separated>) in <s>s`, and for a run that is not the full gate
 `QA: PASS (partial: <what was left out>) in <s>s` (a `DOZO_QA_STEPS` subset, `DOZO_SKIP_BRAND=1`, or
 any of `DOZO_STAGE_REF`, `DOZO_UNIT_SRC`, `DOZO_COVERAGE_MIN`, `DOZO_BRAND_COVERAGE_MIN` set).
@@ -195,15 +195,22 @@ unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Noth
 host. The database client (`packages/db/src/generated`) is generated in the volume before every
 run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api` on the branded tree (about 30 seconds; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. A failing run prints each file under the floor with its number.
 
+### checks
+
+Upstream's `pnpm checks` (`scripts/checks/*.test.mjs`) on the branded staged tree, copied without
+`node_modules` into a throwaway git repository (all files added, no commit) in `node:24.22-slim`, with
+git installed in the container. That install needs the network, so it runs in `qa` and in the CI job
+`dozo-gate` after `brand`, not in `olc`, which stays offline.
+
 ### qa
 
-`make qa` runs `olc`, `stage`, `brand`, `unit`, `build`, `up`, `smoke`, then `down`. The terminal
+`make qa` runs `olc`, `stage`, `brand`, `checks`, `unit`, `build`, `up`, `smoke`, then `down`. The terminal
 gets `[qa] >> <step> (timeout <s>s, log <path>)` and `[qa] << <step> ok|FAIL|TIMEOUT <s>s` per step,
 the last 40 log lines of a failed step, and the verdict. The first failing step stops the run. Each
 step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is not part of it.
 
 - Timeout per step: `DOZO_TIMEOUT_<STEP>` seconds (`<STEP>` upper case: `OLC`, `STAGE`, `BRAND`,
-  `UNIT`, `BUILD`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
+  `CHECKS`, `UNIT`, `BUILD`, `UP`, `SMOKE`, `DOWN`). Defaults: build 2400, unit 900, the rest 600. A step over
   its limit is killed and fails (exit 124, or 137 once past the limit when the step ignored TERM and was
   killed; both shown as TIMEOUT). `up` itself waits
   `DOZO_UP_TIMEOUT` (default 240).
@@ -212,7 +219,7 @@ step's full output is in `dozo/.stage/logs/<step>.log` (git-ignored). `e2e` is n
 - `DOZO_STOP_TIMEOUT` is the container stop timeout for `up` and `down`; qa sets 60 unless set,
   because upstream gives the worker a 50 minute grace period. Called directly, `build.sh` keeps the
   Compose value unless the variable is set.
-- `DOZO_QA_STEPS="olc stage brand unit"` runs a subset in the order given.
+- `DOZO_QA_STEPS="olc stage brand checks unit"` runs a subset in the order given.
 
 ## Upstream tests
 
@@ -275,7 +282,7 @@ and one JSON report per zone are in `<stage>/postgres-tests/`.
 | `DOZO_COVERAGE_MIN` | `90` | Web unit floor, per file, for the fork's `dozo-*` files |
 | `DOZO_BRAND_COVERAGE_MIN` | `97` | Brand floor in `olc`, per file and overall (separate so the web floor is unaffected) |
 | `DOZO_UPSTREAM_REF` | `upstream-main` | Ref of the upstream-edit check; tests only |
-| `CI` | unset | When set, `olc` and `unit` pull a missing Node image instead of failing |
+| `CI` | unset | When set, `olc`, `checks` and `unit` pull a missing Node image instead of failing |
 
 `sync.sh` runs the gates with `DOZO_QA_STEPS`, `DOZO_SKIP_BRAND` and `DOZO_UPSTREAM_REF` unset. The
 e2e variables are in `dozo/e2e/README.md`; the sync ones in `dozo/SYNC.md`.

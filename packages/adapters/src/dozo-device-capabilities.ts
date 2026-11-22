@@ -74,8 +74,10 @@ export async function recordDeviceCapabilities(
 }
 
 /**
- * When a device's capability was last turned on, as this server recorded it; null when it was on
- * before the server kept that (the pairing is then the moment).
+ * When a device's capability was last turned on, as this server recorded it; null only until the
+ * device next declares it (the pairing is then the moment). The table was added without a
+ * backfill, so a phone paired before it records each kind as turned on at its first connection
+ * after that deploy: a bot's earlier reads no longer count, and its next read of each kind asks.
  */
 export async function readCapabilitySince(
   prisma: PrismaClient,

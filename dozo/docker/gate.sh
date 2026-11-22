@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Gates: olc (fast, offline once the Node image is local, <30s) and qa (full).
-# Usage: gate.sh olc|qa|unit. Exit 0 pass, 2 any failed gate, 64 usage, 130/143 interrupted.
+# Usage: gate.sh olc|qa|unit|checks. Exit 0 pass, 2 any failed gate, 64 usage, 130/143 interrupted.
 # `upstream-edits <base> [tree]` prints the upstream files that differ from <base> (shared with
 # sync.sh); it is not a gate. What each gate runs and every variable: dozo/docker/README.md.
 # `unit` runs the fork's own dozo-*.test.ts(x) on the branded staged tree, with a coverage floor.
-# `qa` runs olc, stage, brand, unit, build, up, smoke, down as logged, timed steps (see qa()).
+# `checks` runs upstream's repository checks (scripts/checks) on the branded staged tree.
+# `qa` runs olc, stage, brand, checks, unit, build, up, smoke, down as logged, timed steps (see qa()).
 set -uo pipefail
 # shellcheck source=SCRIPTDIR/lock.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lock.sh"
@@ -219,8 +220,8 @@ olc() {
     # The iOS app's config: upstream's app.json after the brand rules must carry the Dozo ids and
     # nothing of upstream's Expo account, EAS project, update channel or domain. No build, no stage.
     if [ -f dozo/mobile/check-config.test.mjs ]; then
-      if out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs 2>&1); then
-        echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel)"
+      if out=$(drun mobile-config-test --user "$(id -u):$(id -g)" -v "$ROOT:/r:ro" -w /r "$NODE_IMAGE" node --test dozo/mobile/check-config.test.mjs dozo/mobile/android/check-manifest.test.mjs 2>&1); then
+        echo "[olc] mobile config ok (app.json after the brand rules: Dozo ids, no upstream account, project or update channel; the Android manifest check)"
       else printf '%s\n' "$out"; fail "mobile config (dozo/mobile/check-config.test.mjs)"; fi
     else fail "dozo/mobile/check-config.test.mjs missing: the iOS app's config is not checked"; fi
     # The fork's dependency step (dozo/deps): which lockfiles it accepts, offline with a fake pnpm.
@@ -484,6 +485,30 @@ unit_tests() {
   else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types of apps/api, fork tests or coverage"; return 1; fi
 }
 
+# Upstream's repository checks (`pnpm checks`: scripts/checks/*.test.mjs) on the branded staged
+# tree, where the fork's dozo-* files and the brand rules' output both are. The checks list files
+# with `git ls-files`, so the tree is copied (without node_modules) into a throwaway repository with
+# every file added and nothing committed. The Node image has no git: it is installed in the
+# container, which needs the network, so this step is in qa and CI, not in olc.
+repo_checks() {
+  local src="$STAGE/src"
+  [ -d "$src/scripts/checks" ] || { fail "checks: no staged tree with scripts/checks, run dozo/docker/build.sh stage and brand first"; return 1; }
+  [ -f "$STAGE/stage.complete" ] || { fail "checks: the staged tree is incomplete (no $STAGE/stage.complete); run dozo/docker/build.sh stage again"; return 1; }
+  node_image || return 1
+  # shellcheck disable=SC2016
+  if drun checks -v "$src:/src:ro" "$NODE_IMAGE" sh -c 'set -e
+      apt-get update -qq > /tmp/apt.log 2>&1 && apt-get install -y -qq --no-install-recommends git >> /tmp/apt.log 2>&1 \
+        || { cat /tmp/apt.log; echo "[checks] cannot install git"; exit 1; }
+      mkdir /w; tar -C /src --exclude=./node_modules --exclude="*/node_modules" -cf - . | tar -C /w -xf -
+      git config --global --add safe.directory /w  # the copy is owned by the host user, git runs as root
+      cd /w; git init -q; git add -A
+      node --test scripts/checks/*.test.mjs > /tmp/checks.log 2>&1 && rc=0 || rc=$?
+      [ "$rc" -eq 0 ] || cat /tmp/checks.log
+      echo "[checks] $(grep -E "^ℹ (tests|pass|fail) " /tmp/checks.log | paste -sd " ")"
+      exit "$rc"'; then echo "[checks] repository checks ok on the branded tree"
+  else fail "checks: repository checks (scripts/checks) on the branded tree"; return 1; fi
+}
+
 # --- qa: logged, timed steps ---
 # The last full run lasted more than 45 minutes with no log: every step now writes its whole output
 # to $LOGS/<step>.log, the terminal gets one start line and one end line per step (plus the last 40
@@ -578,14 +603,14 @@ qa() {
   export DOZO_STOP_TIMEOUT="${DOZO_STOP_TIMEOUT:-60}"
   [ "$was_up" -eq 0 ] || echo "[qa] project dozo is already running: qa will not take it down"
   # A subset of the steps, or an unbranded build, is not the full gate: the verdict line says so.
-  local all="olc stage brand unit build up smoke" steps="${DOZO_QA_STEPS:-olc stage brand unit build up smoke}"
+  local all="olc stage brand checks unit build up smoke" steps="${DOZO_QA_STEPS:-olc stage brand checks unit build up smoke}"
   local listed; read -ra listed <<< "$steps"
   [ "${listed[*]}" = "$all" ] || partial "steps: ${listed[*]}"
   [ "${DOZO_SKIP_BRAND:-}" != 1 ] || partial "brand skipped (DOZO_SKIP_BRAND=1)"
   for st in $steps; do
     if [ "$st" = up ]; then reached_up=1; [ "$was_up" -eq 1 ] || QA_OWNS_STACK=1; fi
     case "$st" in
-      olc|unit) run_step "$st" "$SELF" "$st" ;;
+      olc|checks|unit) run_step "$st" "$SELF" "$st" ;;
       *) run_step "$st" "$b" "$st" ;;
     esac || { fail "$st"; break; }
   done
@@ -602,7 +627,8 @@ case "${1:-}" in
   olc) T0=$(now); olc; V=OLC ;;
   qa) qa; V=QA ;;
   unit) T0=$(now); unit_tests; V=UNIT ;;
-  *) echo "usage: $0 olc|qa|unit|upstream-edits <base-commit> [tree-ish]" >&2; exit 64 ;;
+  checks) T0=$(now); repo_checks; V=CHECKS ;;
+  *) echo "usage: $0 olc|qa|unit|checks|upstream-edits <base-commit> [tree-ish]" >&2; exit 64 ;;
 esac
 SECS="${QA_SECS:-$(( $(now) - T0 ))}"
 if [ ${#FAILS[@]} -eq 0 ]; then echo "$V: PASS${PARTIAL:+ (partial: $PARTIAL)} in ${SECS}s"

@@ -38,7 +38,7 @@ type Reading = {
 type LocationModule = {
   getForegroundPermissionsAsync(): Promise<Grant>;
   requestForegroundPermissionsAsync(): Promise<Grant>;
-  getCurrentPositionAsync(options: { accuracy: number }): Promise<Reading>;
+  getCurrentPositionAsync(options: { accuracy: number; timeInterval: number }): Promise<Reading>;
   Accuracy: { Low: number; High: number };
 };
 
@@ -94,7 +94,11 @@ export async function requestLocationPermission(): Promise<PhonePermission> {
 const grantedPrecise = (answer: Grant) =>
   answer.ios?.accuracy === "full" || answer.android?.accuracy === "fine";
 
-/** One current reading, or null when none came within the timeout. */
+/**
+ * One new reading, or null when none came within the timeout. Never a cached one: Android takes
+ * the interval as the oldest cached fix it may return, so zero asks for a fix now (iOS asks the
+ * system for one each call), and the last known position is never read.
+ */
 function currentReading(
   location: LocationModule,
   accuracy: number,
@@ -102,7 +106,7 @@ function currentReading(
 ): Promise<Reading | null> {
   return new Promise((resolve, reject) => {
     const cancel = later(() => resolve(null), FIX_TIMEOUT_MS);
-    location.getCurrentPositionAsync({ accuracy }).then(
+    location.getCurrentPositionAsync({ accuracy, timeInterval: 0 }).then(
       (reading) => {
         cancel();
         resolve(reading);
