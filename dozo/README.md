@@ -763,12 +763,18 @@ may hold one (`packages/adapters/src/dozo-read-outside.ts`).
   background helper cannot write at all; the run that takes its result back counts as started from
   outside. The card shows the whole text that will be saved (a skill change as a diff of the
   current skill); a text too long to show whole is refused instead.
-- Who last wrote a routine (`dozo_routine_writers`, `packages/adapters/src/dozo-lasting-write-run.ts`):
-  the owner saving it in the app or the API, or the owner's run that would write it freely, makes
-  its prompt the owner's words; another member's save, or any run whose write needed a person (also
-  one a person approved), does not. A routine with no record, every one saved before this, counts as
-  not the owner's: its runs ask before rescheduling themselves until the owner saves it once in the
-  app. Pausing or moving a routine from the owner's run keeps the record as it was.
+- Who last wrote a routine (`dozo_routine_writers`, `packages/adapters/src/dozo-lasting-write-run.ts`,
+  `apps/api/src/dozo-routine-writers.ts`): the owner saving its prompt in the app or the API (also
+  unchanged), or the owner's run that would write it freely, makes its prompt the owner's words;
+  another member's save of its prompt, name or watch, or any run whose write needed a person (also
+  one a person approved), does not. The app's and the API's record is saved with the routine, or
+  neither is. A routine with no record, every one saved before this, counts as not the owner's: its
+  runs ask before rescheduling themselves until the owner saves it once in the editor. Turning a
+  routine on or off, moving it, or the owner renaming it keeps the record as it was, and so does a
+  member leaving: their routines pass to the Space's owner paused and stay not the owner's words.
+  The phone app sends the prompt only when it changed, so there the owner claims a member's routine
+  by editing its prompt. With Never ask, a write held only because the run read its history is
+  refused saying so.
 - Memory: a turn that read outside content is not saved to a connected memory service, whoever
   started it; other turns are saved as upstream describes (`docs/memory.md`), including the owner's
   connected chat app and messages between bots. This narrows upstream's learning from

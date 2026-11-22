@@ -92,11 +92,23 @@ export async function lastingWriteNeedsApproval(
   checks: LastingWriteChecks,
 ): Promise<boolean> {
   if (!LASTING_WRITE_TOOLS.has(toolName)) return false;
-  return (
-    run.readHistory ||
-    (await runStartedFromOutside(run, checks.routineFromOwner)) ||
-    (await checks.readOutside())
-  );
+  return run.readHistory || (await lastingWriteHoldReason(toolName, run, checks)) !== undefined;
+}
+
+/**
+ * Why lastingWriteNeedsApproval holds a lasting write: "outside" when the run was started from
+ * outside or read outside content, otherwise "history" when only its history read holds it; undefined
+ * when it is not held.
+ */
+export async function lastingWriteHoldReason(
+  toolName: string,
+  run: LastingWriteRun,
+  checks: LastingWriteChecks,
+): Promise<"outside" | "history" | undefined> {
+  if (!LASTING_WRITE_TOOLS.has(toolName)) return undefined;
+  if ((await runStartedFromOutside(run, checks.routineFromOwner)) || (await checks.readOutside()))
+    return "outside";
+  return run.readHistory ? "history" : undefined;
 }
 
 /** Whether a lasting write's card shows its whole text, as the child instruction card does. */
