@@ -1,3 +1,4 @@
+import { ClientError } from "@rakazo/core";
 import { availableInSpace } from "./availability.js";
 import { isOwnerRole } from "./billing.js";
 import type { PrismaClient } from "./client.js";
@@ -5,6 +6,18 @@ import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
 
 type Scope = { spaceId: string; userId: string };
+
+/** The skill is in the library of another organization its owner owns; it stays there. */
+export class SkillInAnotherLibraryError extends ClientError {
+  constructor() {
+    super(
+      "CONFLICT",
+      "This skill is already shared with another organization",
+      "skill_in_other_library",
+    );
+    this.name = "SkillInAnotherLibraryError";
+  }
+}
 
 /**
  * A skill in the library of the organization the Space belongs to, for a member of that Space.
@@ -117,15 +130,22 @@ export async function shareSkillWithOrganization(
       select: { id: true },
     });
     if (!skill) throw new IsolationError();
+    // A skill is in one library: one in another organization's stays there, unchanged.
+    const [held] = await tx.$queryRaw<Array<{ organizationId: string }>>(Prisma.sql`
+      SELECT "organizationId" FROM "dozo_organization_skills"
+      WHERE "skillId" = ${skill.id}
+      FOR UPDATE`);
     if (input.shared) {
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO "dozo_organization_skills" ("skillId", "organizationId", "sharedById")
-        VALUES (${skill.id}, ${organizationId}, ${scope.userId})
-        ON CONFLICT ("skillId") DO UPDATE
-          SET "organizationId" = EXCLUDED."organizationId", "sharedById" = EXCLUDED."sharedById"`);
+      if (held && held.organizationId !== organizationId) throw new SkillInAnotherLibraryError();
+      if (!held)
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO "dozo_organization_skills" ("skillId", "organizationId", "sharedById")
+          VALUES (${skill.id}, ${organizationId}, ${scope.userId})
+          ON CONFLICT ("skillId") DO NOTHING`);
     } else {
       await tx.$executeRaw(Prisma.sql`
-        DELETE FROM "dozo_organization_skills" WHERE "skillId" = ${skill.id}`);
+        DELETE FROM "dozo_organization_skills"
+        WHERE "skillId" = ${skill.id} AND "organizationId" = ${organizationId}`);
     }
     const spaces = await tx.space.findMany({
       where: { organizationId, deletingAt: null },

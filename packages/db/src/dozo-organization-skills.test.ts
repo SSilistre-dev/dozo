@@ -3,6 +3,7 @@ import {
   inOrganizationLibrary,
   preferOwnSkills,
   readOrganizationLibrary,
+  SkillInAnotherLibraryError,
   shareSkillWithOrganization,
   skillsReadableInSpace,
 } from "./dozo-organization-skills.js";
@@ -14,7 +15,14 @@ type Sql = { strings: string[]; values: unknown[] };
 const text = (sql: Sql) => sql.strings.join("?").replace(/\s+/g, " ");
 
 /** A transaction that answers the member read with `role`, the library with `skillIds`. */
-function fakeDb(options: { role?: string; skillIds?: string[]; others?: number; skill?: boolean }) {
+function fakeDb(options: {
+  role?: string;
+  skillIds?: string[];
+  others?: number;
+  skill?: boolean;
+  /** The organization whose library already holds the skill. */
+  sharedIn?: string;
+}) {
   const statements: Sql[] = [];
   const tx = {
     $queryRaw: vi.fn(async (sql: Sql) => {
@@ -23,6 +31,8 @@ function fakeDb(options: { role?: string; skillIds?: string[]; others?: number; 
       if (query.includes('FROM "member" m'))
         return options.role === undefined ? [] : [{ organizationId: "org-1", role: options.role }];
       if (query.includes("count(*)")) return [{ others: options.others ?? 0 }];
+      if (query.includes("FOR UPDATE"))
+        return options.sharedIn ? [{ organizationId: options.sharedIn }] : [];
       return (options.skillIds ?? []).map((skillId) => ({ skillId }));
     }),
     $executeRaw: vi.fn(async (sql: Sql) => {
@@ -97,14 +107,16 @@ describe("putting a skill in the library", () => {
       where: expect.objectContaining({ id: "skill-1", source: "user", userId: "user-1" }),
       select: { id: true },
     });
-    expect(text(statements[1]!)).toContain('INSERT INTO "dozo_organization_skills"');
-    expect(statements[1]!.values).toEqual(["skill-1", "org-1", "user-1"]);
+    const insert = statements.find((sql) => text(sql).includes("INSERT INTO"))!;
+    expect(insert.values).toEqual(["skill-1", "org-1", "user-1"]);
   });
 
   it("takes it out again", async () => {
     const { db, statements } = fakeDb({ role: "owner" });
     await shareSkillWithOrganization(db as never, scope, { skillId: "skill-1", shared: false });
-    expect(text(statements[1]!)).toContain('DELETE FROM "dozo_organization_skills"');
+    const removal = statements.find((sql) => text(sql).includes("DELETE FROM"))!;
+    expect(text(removal)).toContain('"organizationId" = ?');
+    expect(removal.values).toEqual(["skill-1", "org-1"]);
   });
 
   it("refuses anyone who is not the owner, and a skill that is not theirs to share", async () => {
@@ -120,5 +132,29 @@ describe("putting a skill in the library", () => {
       shareSkillWithOrganization(db as never, scope, { skillId: "skill-1", shared: true }),
     ).rejects.toBeInstanceOf(IsolationError);
     expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("never moves a skill out of another organization's library, nor takes it out from there", async () => {
+    const elsewhere = fakeDb({ role: "owner", sharedIn: "org-2" });
+    await expect(
+      shareSkillWithOrganization(elsewhere.db as never, scope, {
+        skillId: "skill-1",
+        shared: true,
+      }),
+    ).rejects.toBeInstanceOf(SkillInAnotherLibraryError);
+    expect(elsewhere.tx.$executeRaw).not.toHaveBeenCalled();
+    const already = fakeDb({ role: "owner", sharedIn: "org-1" });
+    await shareSkillWithOrganization(already.db as never, scope, {
+      skillId: "skill-1",
+      shared: true,
+    });
+    expect(already.tx.$executeRaw).not.toHaveBeenCalled();
+    const unshareHere = fakeDb({ role: "owner", sharedIn: "org-2" });
+    await shareSkillWithOrganization(unshareHere.db as never, scope, {
+      skillId: "skill-1",
+      shared: false,
+    });
+    const removal = unshareHere.statements.find((sql) => text(sql).includes("DELETE FROM"))!;
+    expect(removal.values).toEqual(["skill-1", "org-1"]);
   });
 });

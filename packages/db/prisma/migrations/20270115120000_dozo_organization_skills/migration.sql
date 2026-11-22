@@ -21,9 +21,11 @@ ALTER TABLE "dozo_organization_skills" ADD CONSTRAINT "dozo_organization_skills_
 ALTER TABLE "dozo_organization_skills" ADD CONSTRAINT "dozo_organization_skills_sharedById_fkey" FOREIGN KEY ("sharedById") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- A row is seen by a member of a Space of its organization, from that Space: membership is read on
--- every statement, so someone who leaves the Space stops reaching the library at once.
+-- every statement, so someone who leaves the Space stops reaching the library at once. Reading
+-- only: rows are written by the owner's checked route, as the system.
 ALTER TABLE "dozo_organization_skills" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dozo_organization_skills_tenant ON "dozo_organization_skills"
+  FOR SELECT
   USING (EXISTS (
     SELECT 1 FROM "spaces" s
     JOIN "space_members" m ON m."spaceId" = s."id"

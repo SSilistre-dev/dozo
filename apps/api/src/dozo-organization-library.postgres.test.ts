@@ -307,4 +307,42 @@ describe.skipIf(!enabled)("organization skill library (PostgreSQL)", () => {
     expect(await catalog(actorIn(acmeShared, guest))).toEqual(["expenses"]);
     expect(await listed(actorIn(acmeShared, guest))).toEqual(["expenses"]);
   });
+
+  it("never moves a skill from one organization's library to another's", async () => {
+    const both = await runAsTenant(actorIn(acmeHome, owner), () =>
+      skills().create(actorIn(acmeHome, owner), { name: "two-libraries", description: "Both" }),
+    );
+    await library(actorIn(acmeHome, owner)).share({ skillId: both.id, shared: true });
+    // The same person also owns Other, and opens its Space.
+    await runAsSystem("second organization", async () => {
+      await prisma.member.create({
+        data: {
+          id: id("m-owner-other"),
+          organizationId: other,
+          userId: owner,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
+      await prisma.spaceMember.upsert({
+        where: { spaceId_userId: { spaceId: otherHome, userId: owner } },
+        create: {
+          id: id("sm-owner-other"),
+          spaceId: otherHome,
+          organizationId: other,
+          userId: owner,
+          createdAt: new Date(),
+        },
+        update: {},
+      });
+    });
+    const fromOther = library(actorIn(otherHome, owner));
+    await expect(fromOther.share({ skillId: both.id, shared: true })).rejects.toMatchObject({
+      kind: "CONFLICT",
+    });
+    await fromOther.share({ skillId: both.id, shared: false });
+    expect((await library(actorIn(acmeShared, guest)).get()).skillIds).toContain(both.id);
+    expect(await catalog(actorIn(acmeShared, guest))).toContain("two-libraries");
+    expect(await catalog(actorIn(otherHome, stranger))).not.toContain("two-libraries");
+  });
 });
