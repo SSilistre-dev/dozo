@@ -353,8 +353,10 @@ into it.
   meanwhile; deleting it ends the sign-in. When they answer, the page goes to the site's home page
   (Done) or a blank page (Cancel) and the tab's history is cleared, before the bot has it again (a
   home page that leads elsewhere on its site, as x.com to /home or google.com to www, counts
-  where it led; one that does not come within ten seconds leaves a blank page instead, and a
-  tab that still holds anything else is ended; a page the sign-in itself left never counts):
+  where it led, as long as it is a new document that came after the navigation; one that does
+  not come within ten seconds leaves a blank page instead, and a tab that still holds anything
+  else is ended; a page the sign-in itself left never counts, even under a new address it gave
+  itself with `history.pushState`):
   neither a return address with a code, nor a half-done step, nor a way back to them reaches the
   server, and the sign-in's events are dropped. The bot learns whether they signed in, and then
   sees the site's home page (or where it led) as anyone signed in would. Only the person ends it; after 15 minutes
@@ -428,15 +430,18 @@ into it.
   with Clear and Cancel (in Turkish too, as the menu). Clearing ends the bot's browser and any
   sign-in in it and deletes its profile (every sign-in, cookie and page it kept); no browser of
   that bot starts meanwhile, and a call already on its way gets nothing. A browser that would not
-  close keeps its profile and its row, and a dialog says so: "Ada's browser did not close, so it
-  was not cleared. Try again." The bot's browser then stays unstarted until the server has asked
-  this computer whether it was cleared (`pageBrowserCleared`, before the bot's next use) and has
-  forgotten everything that bot was allowed with it here, in every thread, so its first use and
-  each site ask again; the mark goes only once that answer reached the server. Deleting a thread
+  close, or whose profile could not be removed, keeps its profile and its row, and a dialog says
+  so: "Ada's browser could not be cleared. Try again." A browser an earlier app left running on
+  that profile (a crash) is ended first. The bot's browser then stays unstarted until the server
+  has asked this computer whether it was cleared (`pageBrowserCleared`, before the bot's next
+  use), has forgotten everything that bot was allowed with it here, in every thread, so its first
+  use and each site ask again, and has then told the computer so (`forgotten`): only that takes
+  the mark, so an answer lost on the way, or a server that failed before forgetting, asks and
+  forgets again next time. Deleting a thread
   forgets the answers given in it; deleting the bot or removing this computer forgets them all,
   and deleting the bot takes its row. The app keeps the bot's name beside its profile only to
-  show it there, without invisible or direction-changing characters; two bots of one name are
-  told apart by the start of their key.
+  show it there, without invisible, filler or direction-changing characters; two bots of one name
+  are told apart by the first eight characters of their key.
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
   also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
   next start on that profile ends what is left first. A dropped connection keeps it open.

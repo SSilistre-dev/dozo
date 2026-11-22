@@ -664,6 +664,19 @@ async fn leave_only(
             _ => None,
         }
     };
+    // The document the tab shows: a page that came is a new one (a page that only changes its
+    // address, `history.pushState`, keeps its document and is still the sign-in's).
+    let document = || async move {
+        let asked = running
+            .pipe
+            .call("Page.getFrameTree", json!({}), Some(session));
+        match tokio::time::timeout(Duration::from_millis(500), asked).await {
+            Ok(Ok(tree)) => tree["frameTree"]["frame"]["loaderId"]
+                .as_str()
+                .map(str::to_owned),
+            _ => None,
+        }
+    };
     let newest = |history: &Value| {
         history["entries"]
             .as_array()
@@ -673,12 +686,14 @@ async fn leave_only(
             .max()
             .unwrap_or(0)
     };
-    // Only a page that came after this navigation counts, never one the sign-in left (of the
-    // same site, a return address with a code).
-    let Some(before) = history().await else {
+    // Only a page that came after this navigation, in a document of its own, counts: never one
+    // the sign-in left (of the same site, a return address with a code), even under a new
+    // address it gave itself.
+    let (Some(before), Some(old_document)) = (history().await, document().await) else {
         return false;
     };
     let since = newest(&before);
+    let old_document = &old_document;
     // The tab holds such a page as its current entry, and with `only`, nothing else.
     let holds = |only: bool| async move {
         let Some(history) = history().await else {
@@ -692,6 +707,7 @@ async fn leave_only(
                 entry["id"].as_u64().is_some_and(|id| id > since)
                     && entry["url"].as_str().is_some_and(arrived)
             })
+            && document().await.is_some_and(|now| now != *old_document)
     };
     // The browser answers a navigation once the page answers: one that does not is waited for
     // ten seconds at most.
@@ -746,14 +762,16 @@ fn valid_key(key: &str) -> bool {
 }
 
 /// Whether a character of a bot's name is shown as it is: no control, line or paragraph
-/// separator, and no invisible format character (direction overrides and isolates, zero-width
-/// characters), which could make one name look like another in a menu or dialog.
+/// separator, and no invisible character (direction overrides and isolates, zero-width and
+/// filler characters, variation selectors), which could make one name look like another, or like
+/// none, in a menu or dialog.
 fn shown(c: char) -> bool {
     !c.is_control()
         && !matches!(c,
-            '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}'
-            | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}'
-            | '\u{E0000}'..='\u{E007F}')
+            '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{115F}' | '\u{1160}' | '\u{17B4}' | '\u{17B5}'
+            | '\u{180B}'..='\u{180F}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}' | '\u{2800}' | '\u{3164}' | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}' | '\u{FFA0}' | '\u{FFF9}'..='\u{FFFB}' | '\u{E0000}'..='\u{E01EF}')
 }
 
 fn signing_message(site: &str) -> String {
@@ -925,7 +943,12 @@ impl Browsers {
     pub fn remember_name(&self, key: &str, name: &str) {
         let name: String = name.chars().filter(|c| shown(*c)).take(64).collect();
         let name = name.trim();
-        if !valid_key(key) || name.is_empty() || private_folder(&self.root).is_err() {
+        // A browser cleared and not yet asked about gets no row back from a call on its way.
+        if !valid_key(key)
+            || name.is_empty()
+            || self.cleared(key)
+            || private_folder(&self.root).is_err()
+        {
             return;
         }
         let file = self.root.join(format!("{key}.name"));
@@ -972,10 +995,14 @@ impl Browsers {
         if !valid_key(key) || private_folder(&self.root).is_err() {
             return false;
         }
-        // No start meanwhile: a call on its way waits, then finds the browser cleared.
-        let _starting = self.starting.lock().await;
-        if std::fs::write(self.root.join(format!("{key}.cleared")), b"").is_err() {
-            return false;
+        // The mark goes down under the start lock: a start under way finishes first (and is
+        // ended below), and every later one finds the browser cleared. Other bots' starts wait
+        // only that long, not for the browser to end.
+        {
+            let _starting = self.starting.lock().await;
+            if std::fs::write(self.root.join(format!("{key}.cleared")), b"").is_err() {
+                return false;
+            }
         }
         self.close(key, true).await
     }
@@ -1248,13 +1275,21 @@ impl Browsers {
             let (root, key) = (self.root.clone(), key.to_owned());
             let removed = tokio::task::spawn_blocking(move || {
                 let profile = root.join(&key);
+                let pid_file = root.join(format!("{key}.pid"));
+                // A browser an earlier app left on it (a crash) ends first, so it cannot write
+                // the profile back.
+                #[cfg(unix)]
+                end_leftover(&pid_file, &profile);
                 let gone = match std::fs::remove_dir_all(&profile) {
                     Ok(()) => true,
                     Err(error) => error.kind() == std::io::ErrorKind::NotFound,
                 };
-                let _ = std::fs::remove_file(root.join(format!("{key}.pid")));
-                // Its row in the menu goes with it.
-                let _ = std::fs::remove_file(root.join(format!("{key}.name")));
+                if gone {
+                    let _ = std::fs::remove_file(&pid_file);
+                    // Its row in the menu goes with it; a profile that stayed keeps it, to try
+                    // again.
+                    let _ = std::fs::remove_file(root.join(format!("{key}.name")));
+                }
                 gone
             })
             .await
@@ -2161,11 +2196,33 @@ mod tests {
             json!({ "method": "Page.navigate", "params": { "url": "https://example.com/" } });
         assert_eq!(browsers.handle(&k1, &page).await.unwrap_err(), CLEARED);
         assert!(!dir.join(&k1).exists() && browsers.cleared(&k1));
+        // Nor does it bring the row back.
+        browsers.remember_name(&k1, "Ada");
+        assert_eq!(browsers.named(), vec![(k2.clone(), "bo".to_owned())]);
         browsers.take_cleared(&k1);
         assert_eq!(browsers.handle(&k1, &page).await.unwrap_err(), NO_BROWSER);
         // Deleting a bot takes its row too.
         browsers.close(&k2, true).await;
         assert!(browsers.named().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A profile that could not be removed keeps its row, to try again, and the clear says so.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_profile_that_stays_keeps_its_row() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dozo-browser-stays-{}", std::process::id()));
+        let browsers = Browsers::with(dir.clone(), None, true);
+        let key = "d".repeat(64);
+        browsers.remember_name(&key, "Ada");
+        let locked = dir.join(&key).join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::write(locked.join("file"), b"x").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o500)).unwrap();
+        assert!(!browsers.clear(&key).await, "the clear did not finish");
+        assert_eq!(browsers.named(), vec![(key.clone(), "Ada".to_owned())]);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2204,6 +2261,12 @@ mod tests {
         browsers.remember_name("k", "Short");
         std::fs::write(dir.join("...name"), "Dots").unwrap();
         assert_eq!(browsers.named(), vec![(key.clone(), "Ada".to_owned())]);
+        // A name of fillers and selectors alone looks like none: it gets no row.
+        browsers.remember_name(
+            &"b".repeat(64),
+            "\u{3164}\u{FFA0}\u{115F}\u{1160}\u{2800}\u{FE0F}",
+        );
+        assert_eq!(browsers.named().len(), 1);
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         assert!(!browsers.clear("..").await);
         assert!(
