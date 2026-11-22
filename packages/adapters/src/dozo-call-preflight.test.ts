@@ -1,3 +1,5 @@
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { flush } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -185,6 +187,51 @@ describe("the address of a hosted provider's model", () => {
   });
 });
 
+describe("which providers are asked at all", () => {
+  /** Why the registry gives a provider no address, by the shape of what it does give. */
+  function classOf(entry: (typeof providers)[number]) {
+    const urls = new Set(
+      entry.getModels().flatMap((model) => (model.baseUrl ? [model.baseUrl] : [])),
+    );
+    if (dozoProviderAddress(entry.id)) return "asked";
+    if (urls.size === 0) return "no address in the registry";
+    if (urls.size > 1) return "several addresses";
+    return [...urls][0]?.includes("{") ? "placeholder in the address" : "not https";
+  }
+
+  it("is pinned to the model registry: a changed count means a class of providers moved", () => {
+    const counts: Record<string, number> = {};
+    for (const entry of providers) counts[classOf(entry)] = (counts[classOf(entry)] ?? 0) + 1;
+    expect(counts).toEqual({
+      asked: 32,
+      "several addresses": 6,
+      "no address in the registry": 2,
+      "placeholder in the address": 2,
+    });
+  });
+
+  it("leaves every provider without an address to pass: nothing is asked and nothing refuses", async () => {
+    const fetch = vi.fn();
+    for (const entry of providers.filter((candidate) => classOf(candidate) !== "asked")) {
+      const address = await botModel({
+        main: {
+          provider: entry.id,
+          modelId: "m",
+          credential: { ...credential, provider: entry.id },
+        },
+        plaintext: JSON.stringify({ kind: "api_key", key: "sk-test-1" }),
+      });
+      expect(address).toBeUndefined();
+      expect(await dozoUnansweredEndpoints({ model: address }, fetch)).toEqual([]);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("leaves a bot with no connected model, or a deployment-managed one, to pass", async () => {
+    expect(await botModel({})).toBeUndefined();
+  });
+});
+
 /** A fake network: each address answers with its status, or refuses the connection. */
 function network(answers: Record<string, number | "refused" | "silent">) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -282,5 +329,46 @@ describe("asking the addresses a call needs", () => {
     await vi.advanceTimersByTimeAsync(CALL_CHECK_MS);
     expect(await asking).toEqual(["model"]);
     expect(String(fetch.mock.calls[0]?.[0])).toBe("https://models.example.test/v1/models");
+  });
+
+  it("does not ask a public address where public hosts are off, and counts it as answering", async () => {
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
+    const fetch = network({ "8003": 200 });
+    const unanswered = await dozoUnansweredEndpoints(
+      { model: "https://models.example.test/v1", speech: "http://127.0.0.1:8001/v1" },
+      fetch,
+    );
+    // The private address is still asked (and refused here); the public one never is.
+    expect(unanswered).toEqual(["speech"]);
+    expect(fetch.mock.calls.map(([input]) => new URL(String(input)).host)).toEqual([
+      "127.0.0.1:8001",
+    ]);
+    vi.unstubAllEnvs();
+  });
+
+  it("counts a redirect as answering, without following it", async () => {
+    const fetch = vi.fn(async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    });
+    expect(await dozoUnansweredEndpoints({ model: addresses.model }, fetch)).toEqual([]);
+  });
+
+  it("tells a real server's redirect from a refused connection", async () => {
+    const server = http.createServer((_request, response) => {
+      response.statusCode = 302;
+      response.setHeader("location", "http://127.0.0.1:1/elsewhere");
+      response.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      expect(await dozoUnansweredEndpoints({ model: `http://127.0.0.1:${port}/v1` })).toEqual([]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    // Nothing listens there any more: the same address now refuses the connection.
+    expect(await dozoUnansweredEndpoints({ model: `http://127.0.0.1:${port}/v1` })).toEqual([
+      "model",
+    ]);
   });
 });

@@ -6,7 +6,10 @@ import type { PrismaClient } from "@rakazo/db";
 import { resolveMemberMainModel, selectConfiguredModel } from "./model-roles.js";
 import { parseModelSecret } from "./model-secret.js";
 import { findConnectedModelCredential, loadStoredModelSecret } from "./model-selection.js";
-import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-url.js";
+import {
+  assertAllowedOpenAiCompatibleRequestUrl,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "./openai-compatible-url.js";
 import { parseOpenAiCompatibleVoiceSecret } from "./openai-compatible-voice.js";
 import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
 
@@ -130,10 +133,36 @@ export async function dozoBotModelEndpoint(
 /** Longest the whole check waits: a server that is running answers at once. */
 export const CALL_CHECK_MS = 2_000;
 
+/** Private addresses are asked here (the caller allows them); public ones as the server allows. */
+const ASK_POLICY = { allowPrivate: true };
+
+/**
+ * A redirect is an answer: the server is up, and the check does not follow it. The fetch refuses
+ * redirects (`redirect: "error"`) with a network-looking TypeError whose cause says so; that is
+ * told apart from a refused connection by the cause's message, which a test holds against a real
+ * server.
+ */
+function redirected(error: unknown): boolean {
+  return error instanceof Error && error.cause instanceof Error
+    ? error.cause.message === "unexpected redirect"
+    : false;
+}
+
+/** Whether the server's own settings let this address be asked at all. */
+function mayAsk(address: string): boolean {
+  try {
+    assertAllowedOpenAiCompatibleRequestUrl(address, ASK_POLICY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The kinds whose address did not answer within `CALL_CHECK_MS` in all, asked together. A kind
- * with no address is not asked. Private addresses are reachable here, so the caller decides that
- * before asking.
+ * with no address is not asked, and neither is one the server's settings do not allow (a public
+ * address where public hosts are off): it counts as answering. Private addresses are reachable
+ * here, so the caller decides that before asking.
  */
 export async function dozoUnansweredEndpoints(
   endpoints: CallEndpoints,
@@ -141,21 +170,21 @@ export async function dozoUnansweredEndpoints(
   signal?: AbortSignal,
 ): Promise<CallEndpointKind[]> {
   const until = deadlineSignal(CALL_CHECK_MS, signal);
-  const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
-    allowPrivate: true,
-    allowPublic: true,
-  });
+  const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, ASK_POLICY);
   const asked = (Object.entries(endpoints) as [CallEndpointKind, string][]).filter(
-    ([, address]) => address,
+    ([, address]) => address && mayAsk(address),
   );
   const answers = await Promise.allSettled(
     asked.map(async ([, address]) => {
-      const response = await safeFetch(`${address}/models`, {
-        headers: { accept: "application/json" },
-        redirect: "manual",
-        signal: until,
-      });
-      await response.body?.cancel();
+      try {
+        const response = await safeFetch(`${address}/models`, {
+          headers: { accept: "application/json" },
+          signal: until,
+        });
+        await response.body?.cancel();
+      } catch (error) {
+        if (!redirected(error)) throw error;
+      }
     }),
   );
   signal?.throwIfAborted();

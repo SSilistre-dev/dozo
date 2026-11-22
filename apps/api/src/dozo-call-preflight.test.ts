@@ -1,7 +1,8 @@
 import { createRouterClient } from "@orpc/server";
 import { serializeOpenAiCompatibleVoiceSecret } from "@rakazo/adapters";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dozoCallPreflightRoutes } from "./dozo-call-preflight.js";
+import { CALL_CHECK_TOTAL_MS, dozoCallPreflightRoutes } from "./dozo-call-preflight.js";
 import type { RouterDeps } from "./router.js";
 import { createRouterContext } from "./routes/context.js";
 
@@ -203,5 +204,35 @@ describe("the check before a call", () => {
     const fetch = network({ "": 200 });
     await check(fetch, false);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("says nothing was checked when finding the voice takes longer than the whole check may", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    // The database answers for the voice never: the call must not wait for it.
+    mocks.voice.mockReturnValue(deferred().promise);
+    mocks.model.mockResolvedValue(undefined);
+    const fetch = network({});
+    const asking = check(fetch);
+    await vi.advanceTimersByTimeAsync(CALL_CHECK_TOTAL_MS - 1);
+    let settled = false;
+    void asking.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await asking).toEqual({ checked: false, refusal: null, serverDictation: false });
+    expect(CALL_CHECK_TOTAL_MS).toBe(3_000);
+  });
+
+  it("lets a failure that is not the check's own delay through", async () => {
+    mocks.voice.mockRejectedValue(new Error("the secret store is down"));
+    mocks.model.mockResolvedValue(undefined);
+    await expect(check(network({}))).rejects.toThrow("the secret store is down");
   });
 });

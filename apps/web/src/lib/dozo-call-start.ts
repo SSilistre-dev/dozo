@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { DozoCallCheck } from "@rakazo/contracts";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import type { startCall } from "./call-session";
 import { toastError } from "./dozo-error-text";
 import { reportClientError } from "./monitoring";
@@ -28,16 +29,23 @@ export function dozoCallRefusal(check: DozoCallCheck | null): string | null {
 }
 
 /**
+ * Longest the page waits for the check, a little over the server's own limit
+ * (`CALL_CHECK_TOTAL_MS`): a check that does not come back never holds a call.
+ */
+export const CALL_CHECK_WAIT_MS = 4_000;
+
+/**
  * Asks whether a call to this bot can start: the reason it cannot, in the words the person sees,
- * and whether the speech server hears the caller. A check that cannot be made refuses nothing,
- * so the call itself then reports what is wrong.
+ * and whether the speech server hears the caller. A check that cannot be made, or does not come
+ * back in time, refuses nothing, so the call itself then reports what is wrong. Never rejects.
  */
 export async function dozoCheckCall(
   botId: string,
 ): Promise<{ refusal: string | null; serverDictation: boolean | undefined }> {
   let check: DozoCallCheck | null = null;
   try {
-    check = await rpc.dozoCallPreflight.check({ botId });
+    const until = deadlineSignal(CALL_CHECK_WAIT_MS);
+    check = await withAbort(rpc.dozoCallPreflight.check({ botId }, { signal: until }), until);
   } catch (error) {
     reportClientError(error, "voice.turn");
   }
@@ -45,19 +53,28 @@ export async function dozoCheckCall(
 }
 
 /**
- * Starts a call once the places it needs have answered. The caller hands over `start` so this
- * file, loaded when a call is placed, never pulls the call session into a chunk of its own.
+ * Starts a call at once, ringing, and checks while it rings: the call picks up when the check is
+ * back, and is dropped with the reason when something it needs does not answer. The caller hands
+ * over `start` and `end` so this file, loaded when a call is placed, never pulls the call session
+ * into a chunk of its own.
  */
-export async function dozoStartCall(call: Call, start: typeof startCall): Promise<void> {
+export async function dozoStartCall(
+  call: Call,
+  calls: { start: typeof startCall; end: () => void },
+): Promise<void> {
   if (checking) return;
   checking = true;
   try {
-    const { refusal, serverDictation } = await dozoCheckCall(call.botId);
+    const checked = dozoCheckCall(call.botId);
+    calls.start({
+      ...call,
+      check: checked.then(({ serverDictation }) => ({ serverDictation })),
+    });
+    const { refusal } = await checked;
     if (refusal) {
+      calls.end();
       toastError(refusal);
-      return;
     }
-    start({ ...call, serverDictation });
   } finally {
     checking = false;
   }

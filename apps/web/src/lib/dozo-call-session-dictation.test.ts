@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { endCall, startCall } from "./call-session";
 import { dictation } from "./dictation.js";
@@ -89,5 +90,36 @@ describe("a call told the speech server hears the caller", () => {
     // The recognizer in the browser can listen over the reply, so the mic opens again.
     speakingEvent();
     await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("a call that is still being checked", () => {
+  beforeEach(() => {
+    endCall();
+    vi.clearAllMocks();
+  });
+  afterEach(() => endCall());
+
+  it("rings until the check is back, then listens by what it found", async () => {
+    const check = deferred<{ serverDictation?: boolean } | null>();
+    startCall({
+      botId: "bot-1",
+      botName: "Ada",
+      transcribe: true,
+      check: check.promise,
+    });
+    // The ringing has finished, but the check has not: the microphone stays shut.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(listen).not.toHaveBeenCalled();
+    check.resolve({ serverDictation: true });
+    await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+    expect(listen).toHaveBeenCalledWith(expect.objectContaining({ serverDictation: true }));
+  });
+
+  it("listens as before when the check found nothing to say", async () => {
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: true, check: Promise.resolve(null) });
+    await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+    expect(listen).toHaveBeenCalledWith(expect.objectContaining({ serverDictation: undefined }));
   });
 });

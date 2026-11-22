@@ -6844,20 +6844,20 @@
     {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "import { setCallMinimized, startCall, useCallSession } from \"../lib/call-session\";",
-      "replace": "import { prepareCallAudio, setCallMinimized, startCall, useCallSession } from \"../lib/call-session\";",
+      "replace": "import {\n  endCall,\n  prepareCallAudio,\n  setCallMinimized,\n  startCall,\n  useCallSession,\n} from \"../lib/call-session\";",
       "requires": [
-        "apps/web/src/lib/dozo-call-start.ts"
+        "apps/web/src/lib/dozo-call-gate.ts"
       ],
-      "reason": "call check: the shell unlocks the speaker itself and starts the call through the fork's check, which loads on demand"
+      "reason": "call check: the shell unlocks the speaker itself and places the call through the fork's check"
     },
     {
       "file": "apps/web/src/pages/Shell.tsx",
       "find": "    startCall({\n      botId: bot.id,\n      botName: bot.name,\n      botColor: bot.color,\n      botAvatarSet: bot.avatarSet,\n      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,\n    });\n",
-      "replace": "    // The tap unlocks the speaker now: the check that follows outlives the tap.\n    prepareCallAudio();\n    void import(\"../lib/dozo-call-start\").then(({ dozoStartCall }) =>\n      dozoStartCall(\n        {\n          botId: bot.id,\n          botName: bot.name,\n          botColor: bot.color,\n          botAvatarSet: bot.avatarSet,\n          transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,\n        },\n        startCall,\n      ),\n    );\n",
+      "replace": "    // The tap unlocks the speaker now: the check that follows outlives the tap.\n    prepareCallAudio();\n    void placeCall(\n      {\n        botId: bot.id,\n        botName: bot.name,\n        botColor: bot.color,\n        botAvatarSet: bot.avatarSet,\n        transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,\n      },\n      { start: startCall, end: endCall },\n    );\n",
       "requires": [
-        "apps/web/src/lib/dozo-call-start.ts"
+        "apps/web/src/lib/dozo-call-gate.ts"
       ],
-      "reason": "call check: a call rings only once the speech server and the bot's model answer (loaded when first needed, outside the code the page starts with)"
+      "reason": "call check: a call rings at once and is dropped with the reason when the speech server or the bot's model does not answer; the check loads when first needed, and a load that fails starts the call as before"
     },
     {
       "file": "apps/web/src/lib/call-session.ts",
@@ -6880,7 +6880,7 @@
     {
       "file": "apps/web/src/lib/call-session.ts",
       "find": "  transcribe?: boolean;\n  /** The bot called and the user picked up",
-      "replace": "  transcribe?: boolean;\n  /** The speech server hears the caller: the browser's own recognizer stays unused. */\n  serverDictation?: boolean;\n  /** The bot called and the user picked up",
+      "replace": "  transcribe?: boolean;\n  /** The speech server hears the caller: the browser's own recognizer stays unused. */\n  serverDictation?: boolean;\n  /** The call check still running: the call rings until it is back, then listens by what it found. */\n  check?: Promise<{ serverDictation?: boolean } | null>;\n  /** The bot called and the user picked up",
       "reason": "call check: the call carries whether the speech server hears the caller"
     },
     {
@@ -6907,7 +6907,31 @@
       "replace": "      transcribe,\n      serverDictation,\n      onFinal: (text) => void handleTranscript(text),",
       "reason": "call check: dictation is told"
     },
-        {
+    {
+      "file": "apps/web/src/lib/call-session.ts",
+      "find": "  void pickUp(ringing.signal, { ring: !call.answered }).then(() => {\n",
+      "replace": "  void (\n    call.check\n      ? Promise.all([pickUp(ringing.signal, { ring: !call.answered }), call.check]).then(\n          ([, checked]) => {\n            serverDictation = checked?.serverDictation ?? serverDictation;\n          },\n        )\n      : pickUp(ringing.signal, { ring: !call.answered })\n  ).then(() => {\n",
+      "reason": "call check: the call keeps ringing until the check is back, then listens by what it found (a call with no check picks up exactly as before)"
+    },
+    {
+      "file": "apps/web/src/pages/Shell.tsx",
+      "find": "import { PagesProvider, usePagesForChat } from \"../lib/pages\";\nimport { markAfterPaint, markOnce } from \"../lib/performance\";",
+      "replace": "import { PagesProvider, usePagesForChat } from \"../lib/pages\";\nimport { placeCall } from \"../lib/dozo-call-gate\";\nimport { markAfterPaint, markOnce } from \"../lib/performance\";",
+      "requires": [
+        "apps/web/src/lib/dozo-call-gate.ts"
+      ],
+      "reason": "call check: the import of the rule above that places the call"
+    },
+    {
+      "file": "apps/web/src/components/call/IncomingCall.tsx",
+      "find": "} from \"../../lib/call-session\";\nimport { rpc, selectedSpaceId } from \"../../lib/rpc\";",
+      "replace": "} from \"../../lib/call-session\";\nimport { checkBeforeAnswer } from \"../../lib/dozo-call-gate\";\nimport { rpc, selectedSpaceId } from \"../../lib/rpc\";",
+      "requires": [
+        "apps/web/src/lib/dozo-call-gate.ts"
+      ],
+      "reason": "call check: the import of the rule below that checks before answering"
+    },
+    {
       "file": "apps/web/src/lib/dictation.ts",
       "find": "    transcribe?: boolean;\n    endpointMs?: number;\n",
       "replace": "    transcribe?: boolean;\n    serverDictation?: boolean;\n    endpointMs?: number;\n",
@@ -6922,9 +6946,9 @@
     {
       "file": "apps/web/src/components/call/IncomingCall.tsx",
       "find": "    try {\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
-      "replace": "    try {\n      // Before the server marks the call answered: a call that cannot be heard stays ringing.\n      const checked = await import(\"../../lib/dozo-call-start\").then((module) =>\n        module.dozoCheckCall(bot.id),\n      );\n      if (checked.refusal) {\n        setError(checked.refusal);\n        return;\n      }\n      // The page reloads for another session: nothing is answered for the old one.\n      if (isLeavingSession()) return;\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
+      "replace": "    try {\n      // Before the server marks the call answered: a call that cannot be heard stays ringing.\n      const checked = await checkBeforeAnswer(bot.id);\n      if (checked.refusal) {\n        setError(checked.refusal);\n        return;\n      }\n      // The page reloads for another session: nothing is answered for the old one.\n      if (isLeavingSession()) return;\n      const answered = await respondToIncomingCall(call, () =>\n        rpc.threads.answerCall(target, { context }),\n      );",
       "requires": [
-        "apps/web/src/lib/dozo-call-start.ts"
+        "apps/web/src/lib/dozo-call-gate.ts"
       ],
       "reason": "call check: a bot's call is answered only once the speech server and the bot's model answer; otherwise the reason shows on the ringing call and nothing is answered or declined for the person"
     },
