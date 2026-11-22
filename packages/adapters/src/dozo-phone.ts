@@ -59,6 +59,7 @@ const TIMEOUT = "The user's phone did not answer in time. Ask them to keep the a
 const CHANGED = "The user's phone changed since this was approved. Try again.";
 const TOKEN_RUN = "The user's phone is not used for a message sent with a token.";
 const CALENDAR_ASK = "Let this bot read your phone's calendar?";
+const CONTACTS_ASK = "Let this bot look up someone in your phone's contacts?";
 const CONTACTS_QUERY =
   "query must be part of one person's name, with at least two letters or digits.";
 /** What each effect keeps of a read instead of its content. */
@@ -74,7 +75,9 @@ type WithoutRun<T> = T extends unknown ? Omit<T, "botId" | "runId"> : never;
 interface PhoneReadPlan {
   /** What the phone is sent, besides the bot and the run. */
   request: WithoutRun<PhoneCalendarReadRequest | PhoneContactsSearchRequest | PhoneLocationRequest>;
-  card: { text: string; detail?: string };
+  /** Its question is ours alone (the card renders it as Markdown); what the model wrote goes in
+   * the detail. */
+  card: { text: string; detail?: string; detailFormat?: "code" };
   /** No earlier read stands for the owner's consent: only this call's own card. */
   everyCallAsks?: boolean;
   /** The answer as the model gets it and what the effect keeps instead; null when it is none. */
@@ -128,7 +131,7 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
     reads: "contacts",
     setting: "Contacts",
     failed: "phone contacts search failed",
-    ask: "Let this bot look up someone in your phone's contacts?",
+    ask: CONTACTS_ASK,
     errors: { "contacts-query": CONTACTS_QUERY },
     plan(args) {
       const query = phoneContactsQuery(args.query);
@@ -139,8 +142,9 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
       return {
         request: { method: "phoneContactsSearch", query, field, limit: PHONE_CONTACTS_MAX },
         card: {
-          text: `Let this bot look up "${query}" in your phone's contacts?`,
-          detail: field === "phone" ? "Phone numbers" : "Email addresses",
+          text: CONTACTS_ASK,
+          detail: `${query}\n${field === "phone" ? "Phone numbers" : "Email addresses"}`,
+          detailFormat: "code",
         },
         read(answer) {
           const value = phoneContactsValue(answer, field);
@@ -359,8 +363,10 @@ export function phoneCard(
   return {
     kind: "ask",
     approvalEffectId: effectId,
-    text: redactSecrets(card.text, [...secrets]),
-    ...(detail ? { detail } : {}),
+    text: card.text,
+    ...(detail
+      ? { detail, ...(card.detailFormat ? { detailFormat: card.detailFormat } : {}) }
+      : {}),
     status: "pending",
     actions: [
       { id: "allow", label: "Allow" },

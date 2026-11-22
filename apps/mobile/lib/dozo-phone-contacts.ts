@@ -119,7 +119,9 @@ export function contactsValue(
     // A link never leaves the phone, nor answers a search: the name is matched as it is sent.
     const name = displayName(contact.fullName);
     if (!name || !folded(name).includes(wanted)) continue;
-    matching.push({ name, values: values(contact, request.field) });
+    // A contact without a value of the asked kind answers nothing: its name is not sent.
+    const found = values(contact, request.field);
+    if (found.length) matching.push({ name, values: found });
   }
   matching.sort((a, b) => a.name.localeCompare(b.name));
   return { contacts: matching.slice(0, limit), truncated: matching.length > limit };

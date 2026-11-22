@@ -13,7 +13,11 @@ type Introspected = {
     modResults: {
       android: {
         manifest: {
-          manifest: { "uses-permission"?: Array<{ $: Record<string, string | undefined> }> };
+          manifest: {
+            $?: Record<string, string | undefined>;
+            "uses-permission"?: Array<{ $: Record<string, string | undefined> }>;
+            application?: Array<{ service?: Array<{ $: Record<string, string | undefined> }> }>;
+          };
         };
       };
     };
@@ -74,4 +78,49 @@ it("asks for contacts and the location while in use only, with the app's own wor
     expect(removed).toContain(name);
   }
   expect(used).not.toContain("android.permission.FOREGROUND_SERVICE");
+
+  // The location module's library manifest declares two location services the app never starts;
+  // the app's manifest removes them from the merged one, so no build carries a location service.
+  const manifest = config._internal.modResults.android.manifest.manifest;
+  expect(manifest.$?.["xmlns:tools"]).toBe("http://schemas.android.com/tools");
+  const services = (manifest.application?.[0]?.service ?? []).map((entry) => [
+    entry.$["android:name"],
+    entry.$["tools:node"],
+  ]);
+  expect(services).toEqual(
+    expect.arrayContaining([
+      ["expo.modules.location.services.LocationTaskService", "remove"],
+      ["expo.modules.location.next.locationForegroundService.LocationForegroundService", "remove"],
+    ]),
+  );
 }, 60_000);
+
+it("the plugin replaces the location services with removals and keeps every other service", () => {
+  const { withoutLocationServices } = require("../plugins/dozo-without-location-services.js") as {
+    withoutLocationServices(manifest: unknown): {
+      manifest: { $: Record<string, string>; application: Array<{ service: unknown[] }> };
+    };
+  };
+  const task = "expo.modules.location.services.LocationTaskService";
+  const out = withoutLocationServices({
+    manifest: {
+      $: { "xmlns:android": "http://schemas.android.com/apk/res/android" },
+      application: [
+        { service: [{ $: { "android:name": task } }, { $: { "android:name": "app.Other" } }] },
+      ],
+    },
+  });
+  expect(out.manifest.$["xmlns:tools"]).toBe("http://schemas.android.com/tools");
+  expect(out.manifest.application[0]!.service).toEqual([
+    { $: { "android:name": "app.Other" } },
+    { $: { "android:name": task, "tools:node": "remove" } },
+    {
+      $: {
+        "android:name":
+          "expo.modules.location.next.locationForegroundService.LocationForegroundService",
+        "tools:node": "remove",
+      },
+    },
+  ]);
+  expect(() => withoutLocationServices({ manifest: { $: {} } })).toThrow("no <application>");
+});

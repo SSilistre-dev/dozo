@@ -282,8 +282,9 @@ describe("contacts and location through the gate", () => {
     expect(
       buildApprovalAskBlock("e", PHONE_CONTACTS_SEARCH_TOOL, { query: "Ada", field: "phone" }, []),
     ).toMatchObject({
-      text: 'Let this bot look up "Ada" in your phone\'s contacts?',
-      detail: "Phone numbers",
+      text: "Let this bot look up someone in your phone's contacts?",
+      detail: "Ada\nPhone numbers",
+      detailFormat: "code",
     });
     expect(buildApprovalAskBlock("e", PHONE_LOCATION_TOOL, {}, [])).toMatchObject({
       text: "Let this bot see your phone's approximate location?",

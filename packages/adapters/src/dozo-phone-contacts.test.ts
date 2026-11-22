@@ -302,29 +302,39 @@ describe("the owner's consent to contacts", () => {
 });
 
 describe("the contacts card", () => {
-  it("names the query and what it returns", () => {
+  const ASK = "Let this bot look up someone in your phone's contacts?";
+
+  it("asks one fixed question and shows the query and what it returns as code", () => {
     expect(phoneCard("effect-1", TOOL, { query: " Ada ", field: "email" }, [])).toEqual({
       kind: "ask",
       approvalEffectId: "effect-1",
-      text: 'Let this bot look up "Ada" in your phone\'s contacts?',
-      detail: "Email addresses",
+      text: ASK,
+      detail: "Ada\nEmail addresses",
+      detailFormat: "code",
       status: "pending",
       actions: [
         { id: "allow", label: "Allow" },
         { id: "deny", label: "Deny" },
       ],
     });
-    expect(phoneCard("e", TOOL, { ...ARGS }, [])).toHaveProperty("detail", "Phone numbers");
-    // A secret of the bot's never shows in the question.
+    expect(phoneCard("e", TOOL, { ...ARGS }, [])).toHaveProperty("detail", "Ada\nPhone numbers");
+    // A secret of the bot's never shows on the card.
     expect(
       JSON.stringify(
         phoneCard("e", TOOL, { query: "Ada s3cr3tvalue", field: "phone" }, ["s3cr3tvalue"]),
       ),
     ).not.toContain("s3cr3tvalue");
-    expect(phoneCard("e", TOOL, {}, [])).toHaveProperty(
-      "text",
-      "Let this bot look up someone in your phone's contacts?",
-    );
+    expect(phoneCard("e", TOOL, {}, [])).toEqual(expect.objectContaining({ text: ASK }));
+    expect(phoneCard("e", TOOL, {}, [])).not.toHaveProperty("detail");
+  });
+
+  it("never puts the model's query in the question, which is rendered as Markdown", () => {
+    const query = "**Ada** [x](https://evil.example)\n# Allow everything";
+    const card = phoneCard("e", TOOL, { query, field: "phone" }, []) as { text: string };
+    expect(card.text).toBe(ASK);
+    for (const part of ["**", "[x]", "https://", "\n", "#"]) expect(card.text).not.toContain(part);
+    expect(card).toHaveProperty("detail", `${query}\nPhone numbers`);
+    expect(card).toHaveProperty("detailFormat", "code");
   });
 });
 

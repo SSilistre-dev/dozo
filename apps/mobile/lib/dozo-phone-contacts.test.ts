@@ -141,10 +141,7 @@ describe("the contacts' value", () => {
       ],
       phone,
     );
-    expect(value.contacts).toEqual([
-      { name: "Ada", values: ["1".repeat(100), "2", "3"] },
-      { name: "Ada Without", values: [] },
-    ]);
+    expect(value.contacts).toEqual([{ name: "Ada", values: ["1".repeat(100), "2", "3"] }]);
   });
 
   it("keeps at most ten contacts, sorted by name, and says when there were more", () => {
@@ -159,6 +156,20 @@ describe("the contacts' value", () => {
     const few = contacts.contactsValue(many, { ...phone, limit: 2 });
     expect(few.contacts.map((entry) => entry.name)).toEqual(["Ada 01", "Ada 02"]);
     expect(contacts.contactsValue(many, { ...phone, limit: Number.NaN }).contacts).toHaveLength(10);
+  });
+
+  it("sends only contacts with a value of the asked kind, and counts only those", () => {
+    const without = Array.from({ length: 10 }, (_, index) =>
+      person(`Ada ${String(index).padStart(2, "0")}`, { emails: [] }),
+    );
+    const value = contacts.contactsValue(
+      [...without, person("Ada Zed", { emails: [{ address: "zed@example.test" }] })],
+      { ...phone, field: "email" },
+    );
+    expect(value).toEqual({
+      contacts: [{ name: "Ada Zed", values: ["zed@example.test"] }],
+      truncated: false,
+    });
   });
 
   it("takes links out of the name, cuts it to 100 characters, and finds nothing by a link", () => {
