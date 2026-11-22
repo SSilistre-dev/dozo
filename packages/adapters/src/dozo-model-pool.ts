@@ -237,7 +237,10 @@ export function withPoolMembers(
 
 const runPools = new WeakMap<AgentRunRequest, RunModelPool>();
 /** The run's owner, whose connections rest when one runs out outside a pool (dozo-model-rests.ts). */
-const runOwners = new WeakMap<AgentRunRequest, { prisma: PoolDeps["prisma"]; userId: string }>();
+const runOwners = new WeakMap<
+  AgentRunRequest,
+  { prisma: PoolDeps["prisma"]; userId: string; events?: ExecutorDeps["events"] }
+>();
 /** Fallback streams whose current move to a backup follows a connection that ran out. */
 const movingOut = new WeakSet<object>();
 /** Per fallback stream, the first place in its backup chain where a pool connection was passed over. */
@@ -250,10 +253,18 @@ type FallbackState = { request: AgentRunRequest; nextIndex: number };
 export function withRunModelPool(
   request: AgentRunRequest,
   pool: RunModelPool | undefined,
-  owner?: { deps: { prisma: PoolDeps["prisma"] }; run: { userId: string } },
+  owner?: {
+    deps: { prisma: PoolDeps["prisma"]; events?: ExecutorDeps["events"] };
+    run: { userId: string };
+  },
 ): AgentRunRequest {
   if (pool) runPools.set(request, pool);
-  if (owner) runOwners.set(request, { prisma: owner.deps.prisma, userId: owner.run.userId });
+  if (owner)
+    runOwners.set(request, {
+      prisma: owner.deps.prisma,
+      userId: owner.run.userId,
+      events: owner.deps.events,
+    });
   return request;
 }
 
@@ -310,7 +321,7 @@ export async function switchAfterFailure(
     failed.connectionId &&
     (failed.connectionId === pool.credential.id || pool.members.includes(failed.connectionId));
   // A connection outside the run's pool rests on its own, so later runs start past it. The
-  // switch does not wait for the record (it never fails).
+  // switch does not wait for the record (it never fails); the person's apps hear of it after.
   if (reason && owner && failed.connectionId && !pooled)
     void recordRest(
       owner.prisma,
@@ -318,7 +329,7 @@ export async function switchAfterFailure(
       { connectionId: failed.connectionId, modelId: failed.id },
       reason,
       poolResetAt(error.errorMessage ?? ""),
-    );
+    ).then(() => owner.events?.publishRosterChange?.({ userIds: [owner.userId] }));
   if (!pool || !reason) return switchToNext();
   if (failed.connectionId)
     await bestEffort(

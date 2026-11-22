@@ -12,6 +12,7 @@ import {
   REVISION_TURNS,
   revisableOf,
   reviseInTransaction,
+  withBackupReplies,
 } from "./dozo-message-revision.js";
 import type { RouterContext } from "./routes/context.js";
 
@@ -26,7 +27,10 @@ const mocks = vi.hoisted(() => ({
   loadMessageAuthor: vi.fn(),
 }));
 
-vi.mock("@rakazo/adapters", () => ({ wakeRun: mocks.wakeRun }));
+vi.mock("@rakazo/adapters", () => ({
+  wakeRun: mocks.wakeRun,
+  listPiCatalog: () => [{ provider: "provider-a", id: "model-a", label: "Model A" }],
+}));
 vi.mock("./routes/shared.js", () => ({
   modelSetup: mocks.modelSetup,
   botsRunOwnModels: mocks.botsRunOwnModels,
@@ -869,8 +873,12 @@ describe("dozoMessagesRoutes", () => {
           ...db.thread,
           findFirst: vi.fn(async () => threadRow && { ...thread, ...threadRow }),
         },
-        // A bot's extra chat's row, when the thread is one.
-        $queryRaw: vi.fn(async () => (extraChatOf ? [{ botId: extraChatOf }] : [])),
+        // A bot's extra chat's row, when the thread is one; no reply a backup wrote.
+        $queryRaw: vi.fn(async (sql: TemplateStringsArray) =>
+          extraChatOf && !sql.join("?").includes("dozo_backup_replies")
+            ? [{ botId: extraChatOf }]
+            : [],
+        ),
         $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(db)),
       },
       events: { notify: vi.fn(async () => undefined), publishSpaceChange: vi.fn() },
@@ -1027,5 +1035,25 @@ describe("dozoMessagesRoutes", () => {
     await expect(
       call("regenerate", { threadId: "thread-1", messageId: "m-reply" }),
     ).resolves.toEqual({ runId: "r-new" });
+  });
+});
+
+describe("withBackupReplies", () => {
+  const revisable = { editMessageId: null, regenerateMessageId: null };
+
+  it("names each reply a backup wrote by the model's name, else its id", () => {
+    expect(
+      withBackupReplies(revisable, [
+        { messageId: "m1", provider: "provider-a", modelId: "model-a" },
+        { messageId: "m2", provider: "provider-b", modelId: "model-b" },
+      ]),
+    ).toEqual({
+      ...revisable,
+      backupReplies: { m1: "Model A", m2: "model-b" },
+    });
+  });
+
+  it("leaves the answer as it was when no backup wrote a reply", () => {
+    expect(withBackupReplies(revisable, [])).toBe(revisable);
   });
 });

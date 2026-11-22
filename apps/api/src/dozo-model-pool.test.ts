@@ -9,6 +9,7 @@ const fake = vi.hoisted(() => ({
   read: vi.fn(),
   set: vi.fn(),
   audit: vi.fn(),
+  rests: vi.fn(),
 }));
 
 vi.mock("@rakazo/adapters", async (importOriginal) => ({
@@ -19,6 +20,7 @@ vi.mock("@rakazo/adapters", async (importOriginal) => ({
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
   recordAuditEvent: fake.audit,
+  readActiveModelRests: fake.rests,
 }));
 
 const POOL = {
@@ -61,7 +63,8 @@ describe("model pool routes", () => {
   });
 
   it("reads the caller's own pool", async () => {
-    expect(await client("ada").get()).toEqual({ connections: [] });
+    fake.rests.mockResolvedValue([]);
+    expect(await client("ada").get()).toEqual({ connections: [], rests: [] });
     expect(fake.read).toHaveBeenCalledWith({ prisma, secretStore: secrets }, "ada");
   });
 
@@ -89,6 +92,26 @@ describe("model pool routes", () => {
     });
     expect(fake.audit).not.toHaveBeenCalled();
     expect(publishRosterChange).not.toHaveBeenCalled();
+  });
+
+  it("reads which of the caller's models rest now and when each opens", async () => {
+    fake.rests.mockResolvedValue([
+      {
+        credentialId: "a",
+        modelId: "m",
+        resetsAt: new Date("2026-11-22T12:00:00.000Z"),
+      },
+      { credentialId: "b", modelId: "", resetsAt: new Date("2026-11-22T10:05:00.000Z") },
+    ]);
+    fake.read.mockResolvedValue(POOL);
+    expect(await client("ada").get()).toEqual({
+      ...POOL,
+      rests: [
+        { credentialId: "a", modelId: "m", opensAt: "2026-11-22T12:00:00.000Z" },
+        { credentialId: "b", modelId: "", opensAt: "2026-11-22T10:05:00.000Z" },
+      ],
+    });
+    expect(fake.rests).toHaveBeenCalledWith(prisma, "ada", expect.any(Date));
   });
 
   it("refuses a caller who is not signed in", async () => {

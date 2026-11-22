@@ -25,6 +25,11 @@ export const DozoRevisableSchema = /* @__PURE__ */ z.object({
   removedCounts: z.record(Id, z.number().int().nonnegative()).optional(),
   /** The chat's newest message, the last any change removes; sent back with the count. */
   lastMessageId: Id.nullable().optional(),
+  /**
+   * The chat's latest replies a backup model wrote instead of the chosen one, by message: that
+   * model's name, for the message's menu. Absent when there are none.
+   */
+  backupReplies: z.record(Id, z.string()).optional(),
 });
 export type DozoRevisable = z.infer<typeof DozoRevisableSchema>;
 

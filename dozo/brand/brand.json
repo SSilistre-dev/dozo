@@ -5132,7 +5132,7 @@
     {
       "file": "apps/mobile/components/thread/message-row.tsx",
       "find": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...(codeBlocks.length === 1\n",
-      "replace": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...dozoActions,\n      ...(codeBlocks.length === 1\n",
+      "replace": "      { name: \"copy\", text: t`Copy`, onPress: copy },\n      ...dozoActions.filter((action) => !action.disabled),\n      ...(codeBlocks.length === 1\n",
       "reason": "message actions on mobile: the same actions for VoiceOver and TalkBack"
     },
     {
@@ -11611,21 +11611,6 @@
       "reason": "bot backups: the bot's own ordered backup models sit under its model, one Add fallback line until there is one"
     },
     {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoCliAccountsChanged }",
-      "replace": "import { dozoOrganizationMarkChanged } from \"./dozo-organization-mark\";\nimport { dozoBotBackupsChanged } from \"./dozo-bot-backups-signal\";\nimport { dozoCliAccountsChanged }",
-      "requires": [
-        "apps/web/src/pages/shell/dozo-bot-backups-signal.ts"
-      ],
-      "reason": "bot backups: the import of the rule below"
-    },
-    {
-      "file": "apps/web/src/pages/shell/use-browser-notifications.ts",
-      "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
-      "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
-      "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
-    },
-    {
       "file": "packages/adapters/src/run-model-start.ts",
       "find": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { isRetiredModelCredentialError }",
       "replace": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { backupsPastRests, startPastRest } from \"./dozo-model-rests.js\";\nimport { isRetiredModelCredentialError }",
@@ -11681,6 +11666,126 @@
       "find": "        for (const setting of changedBotSettings(existing, input)) {",
       "replace": "        for (const setting of changedBotSettings(await botModelPicked(deps.prisma, context.actor, input, existing), input)) {",
       "reason": "model rests: a model picked for the bot in place of another ends its rests for the person who picked it, once the save went through (on the line after it, so the file does not grow)"
+    },
+    {
+      "file": "packages/db/src/index.ts",
+      "find": "export * from \"./bootstrap-user.js\";\nexport * from \"./bot-email-address.js\";",
+      "replace": "export * from \"./bootstrap-user.js\";\nexport * from \"./dozo-backup-replies.js\";\nexport * from \"./bot-email-address.js\";",
+      "requires": [
+        "packages/db/src/dozo-backup-replies.ts"
+      ],
+      "reason": "backup replies: the package exports the store of the runs a backup model answered"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "  runSecrets.push(...resolved.redact);\n  // A pin stays as it was created.",
+      "replace": "  runSecrets.push(...resolved.redact);\n  await runStartedOn(\n    deps.prisma,\n    { id: runId },\n    { provider: selectedProvider, id: selectedModelId },\n    { provider: runModelProvider, id: runModelId },\n  );\n  // A pin stays as it was created.",
+      "requires": [
+        "packages/adapters/src/dozo-backup-replies.ts"
+      ],
+      "reason": "backup replies: a run that starts on a backup instead of its chosen model is recorded, so its reply can say which model wrote it"
+    },
+    {
+      "file": "packages/adapters/src/run-assembly-capabilities.ts",
+      "find": "import { runModelBackups, startRunModel } from \"./run-model-start.js\";\nimport { runReplyMode }",
+      "replace": "import { runModelBackups, startRunModel } from \"./run-model-start.js\";\nimport { runStartedOn } from \"./dozo-backup-replies.js\";\nimport { runReplyMode }",
+      "requires": [
+        "packages/adapters/src/dozo-backup-replies.ts"
+      ],
+      "reason": "backup replies: the import of the rule above"
+    },
+    {
+      "file": "packages/adapters/src/run-model-turn.ts",
+      "find": "      activeModel[\"model.id\"] = modelId;\n    },\n    resumeFromCheckpoint:",
+      "replace": "      activeModel[\"model.id\"] = modelId;\n      if (!computerMode)\n        await runSwitchedTo(deps.prisma, { id: runId }, mainRunModel, { provider, id: modelId });\n    },\n    resumeFromCheckpoint:",
+      "requires": [
+        "packages/adapters/src/dozo-backup-replies.ts"
+      ],
+      "reason": "backup replies: a run that moves to a backup during its turn is recorded as answered by that backup; a detour to the computer model is not"
+    },
+    {
+      "file": "packages/adapters/src/run-model-turn.ts",
+      "find": "import { withRunModelPool } from \"./dozo-model-pool.js\";\nimport { personSpeaker }",
+      "replace": "import { withRunModelPool } from \"./dozo-model-pool.js\";\nimport { runSwitchedTo } from \"./dozo-backup-replies.js\";\nimport { personSpeaker }",
+      "requires": [
+        "packages/adapters/src/dozo-backup-replies.ts"
+      ],
+      "reason": "backup replies: the import of the rule above"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "import type { ConnectableProvider, RoleModelOption } from \"./model-settings/role-model-picker\";\nimport { RoleModelPicker } from \"./model-settings/role-model-picker\";",
+      "replace": "import type { ConnectableProvider, RoleModelOption } from \"./model-settings/role-model-picker\";\nimport { useDozoRestNote } from \"./model-settings/dozo-model-rests\";\nimport { RoleModelPicker } from \"./model-settings/role-model-picker\";",
+      "requires": [
+        "apps/web/src/pages/model-settings/dozo-model-rests.ts"
+      ],
+      "reason": "model rests: the import of the rules below"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "  const queryClient = useQueryClient();\n  const { t } = useLingui();\n  const controller = useMemo(() => {",
+      "replace": "  const queryClient = useQueryClient();\n  const { t } = useLingui();\n  const dozoRestNote = useDozoRestNote();\n  const controller = useMemo(() => {",
+      "reason": "model rests: the list reads which of the person's models rest now"
+    },
+    {
+      "file": "apps/web/src/pages/ModelRoleSettings.tsx",
+      "find": "                trigger={pickerTrigger(name, providerName(choice))}",
+      "replace": "                trigger={pickerTrigger(\n                  name,\n                  dozoRestNote(connection?.id, choice.modelId) ?? providerName(choice),\n                )}",
+      "reason": "model rests: a model that rests after its quota ran out or its key was refused says when it opens again in place of its connection's name, with the pool's own words"
+    },
+    {
+      "file": "apps/web/src/pages/shell/bot-panel.tsx",
+      "find": "              <DozoBotBackups botId={bot.id} spaceId={bot.spaceId} />\n",
+      "replace": "              <DozoBotBackups\n                botId={bot.id}\n                spaceId={bot.spaceId}\n                model={\n                  effectiveProvider && effectiveModelId\n                    ? { provider: effectiveProvider, modelId: effectiveModelId }\n                    : null\n                }\n              />\n",
+      "reason": "model rests: the bot's model, its own or the main one, says when it opens again while it rests, under its row"
+    },
+    {
+      "file": "apps/mobile/components/model-role-settings.tsx",
+      "find": "import { thinkingLevelLabel } from \"../lib/thinking-level\";\nimport { NativeSymbol } from \"./native-symbol\";",
+      "replace": "import { thinkingLevelLabel } from \"../lib/thinking-level\";\nimport { useDozoRestNote } from \"../lib/dozo-model-rests\";\nimport { NativeSymbol } from \"./native-symbol\";",
+      "requires": [
+        "apps/mobile/lib/dozo-model-rests.ts"
+      ],
+      "reason": "model rests on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/components/model-role-settings.tsx",
+      "find": "  const { t } = useLingui();\n  const styles = useThemedStyles(createStyles);\n  const apiBase = currentApiBase();",
+      "replace": "  const { t } = useLingui();\n  const dozoRestNote = useDozoRestNote();\n  const styles = useThemedStyles(createStyles);\n  const apiBase = currentApiBase();",
+      "reason": "model rests on mobile: the list reads which of the person's models rest now"
+    },
+    {
+      "file": "apps/mobile/components/model-role-settings.tsx",
+      "find": "        const detail = [\n          connectionName(choice),",
+      "replace": "        const detail = [\n          dozoRestNote(connectionFor(choice)?.id, choice.modelId) ?? connectionName(choice),",
+      "reason": "model rests on mobile: a model that rests after its quota ran out or its key was refused says when it opens again in place of its connection's name, with the pool's own words"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"Yedek ekle\"\n\n#: apps/mobile/components/login-fields-editor.tsx\n",
+      "replace": "msgstr \"Yedek ekle\"\n\n#: apps/web/src/pages/shell/dozo-message-revision.tsx\n#: apps/mobile/lib/dozo-message-actions.ts\nmsgid \"Answered by {model}\"\nmsgstr \"{model} yanıtladı\"\n\n#: apps/mobile/components/login-fields-editor.tsx\n",
+      "reason": "backup replies: the Turkish copy of the one new line, in a message's menu when a backup model wrote the reply"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "import { thinkingLevelLabel } from \"../lib/thinking-level\";\nimport { errorText } from \"../lib/user-error\";",
+      "replace": "import { thinkingLevelLabel } from \"../lib/thinking-level\";\nimport { useDozoRestNote } from \"../lib/dozo-model-rests\";\nimport { errorText } from \"../lib/user-error\";",
+      "requires": [
+        "apps/mobile/lib/dozo-model-rests.ts"
+      ],
+      "reason": "model rests on mobile: the import of the rules below"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);\n  const thinkingOptions",
+      "replace": "  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);\n  const dozoRestNote = useDozoRestNote();\n  const thinkingOptions",
+      "reason": "model rests on mobile: the bot's settings read which of the person's models rest now"
+    },
+    {
+      "file": "apps/mobile/app/bot-settings.tsx",
+      "find": "            <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>",
+      "replace": "            <SettingsGroup\n              label={t`Model`}\n              footer={\n                modelMetaError ??\n                dozoRestNote(effectiveCredential?.id, effectiveModelId ?? \"\") ??\n                undefined\n              }\n            >",
+      "reason": "model rests on mobile: the bot's model, its own or the main one, says under its group when it opens again while it rests"
     }
   ],
   "assets": {
