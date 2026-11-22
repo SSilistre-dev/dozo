@@ -969,6 +969,124 @@ async fn e2e_browser_sign_in_leaves_one_page_when_home_does_not_come() {
     );
 }
 
+/// Clearing a bot's browser while its commands keep coming: none starts it again on the profile
+/// being removed, the profile is gone, and the mark the server reads stays until it has asked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_clear_holds_while_commands_keep_coming() {
+    let address = serve();
+    let root = root().join("clear");
+    let browsers = Arc::new(browsers(&root));
+    let key = "c".repeat(64);
+    let go = json!({ "method": "Page.navigate", "params": { "url": address } });
+    browsers.handle(&key, &go).await.unwrap();
+    let profile = root.join("browser-profiles").join(&key);
+    assert!(profile.exists());
+    let coming = {
+        let (browsers, key) = (browsers.clone(), key.clone());
+        tokio::spawn(async move {
+            let look = json!({ "method": "Page.getNavigationHistory" });
+            let mut last = Ok(Value::Null);
+            for _ in 0..200 {
+                last = browsers.handle(&key, &look).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            last
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(browsers.clear(&key).await, "the clear finished");
+    let last = coming.await.unwrap();
+    assert_eq!(last.unwrap_err(), CLEARED);
+    assert!(!profile.exists(), "the profile is gone");
+    assert!(browsers.cleared(&key), "the server has not asked yet");
+    assert!(browsers.current(&key).is_none(), "no browser started again");
+    println!(
+        "E2E: a clear while commands keep coming leaves no profile, and the mark stays until asked"
+    );
+    browsers.take_cleared(&key);
+    browsers.handle(&key, &go).await.unwrap();
+    println!("E2E: once asked, the bot's browser starts again on a new profile");
+    browsers.close_all();
+}
+
+/// After Done, a home page that leads elsewhere on its site (x.com to /home) is where the bot's
+/// tab stays, at once, not a blank page after a wait.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Chrome, Edge, Brave or Chromium; run by tests/stack_e2e_native.sh"]
+async fn e2e_browser_sign_in_ends_on_a_home_page_that_redirects() {
+    let port = serve_pages(vec![
+        ("/", "REDIRECT /home".to_owned()),
+        (
+            "/home",
+            "<!doctype html><title>Home</title><button>Account</button>".to_owned(),
+        ),
+        (
+            "/callback?code=SECRET",
+            "<!doctype html><title>Back</title>signed in".to_owned(),
+        ),
+    ]);
+    let site = format!("127.0.0.1:{port}");
+    let root = root().join("redirect");
+    let browsers = Arc::new(browsers(&root));
+    let prompt = Arc::new(HeldPrompt::default());
+    browsers.set_sign_in_prompt(prompt.clone());
+    call(
+        &browsers,
+        "Page.navigate",
+        json!({ "url": format!("http://{site}/") }),
+    )
+    .await;
+    let signing = {
+        let (browsers, site) = (browsers.clone(), site.clone());
+        tokio::spawn(async move { browsers.sign_in("bot", &site).await })
+    };
+    for _ in 0..100 {
+        if prompt.answer.lock().unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (running, session) = person(&browsers);
+    let back = json!({ "url": format!("http://{site}/callback?code=SECRET") });
+    running
+        .pipe
+        .call("Page.navigate", back, Some(&session))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let done = std::time::Instant::now();
+    prompt
+        .answer
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap()
+        .send(true)
+        .unwrap();
+    assert!(signing.await.unwrap().unwrap());
+    assert!(
+        done.elapsed() < Duration::from_secs(8),
+        "it did not wait for a page that never came"
+    );
+    let history = call(&browsers, "Page.getNavigationHistory", json!({})).await;
+    let entries = history["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{history}");
+    assert_eq!(
+        entries[0]["url"],
+        format!("http://{site}/home"),
+        "{history}"
+    );
+    let tree = call(&browsers, "Accessibility.getFullAXTree", json!({})).await;
+    assert!(
+        tree.to_string().contains("Account"),
+        "the page is the site's home"
+    );
+    assert!(!tree.to_string().contains("SECRET"));
+    println!("E2E: after Done a home page that redirects within its site is where the tab stays");
+    browsers.close_all();
+}
+
 /// A plain HTTP server that keeps each connection open for more requests and records the host
 /// every request named; returns its port and the record.
 fn keep_alive_server(body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {

@@ -352,11 +352,12 @@ into it.
   after, since a command could read the screen. Stopping the bot leaves its browser open
   meanwhile; deleting it ends the sign-in. When they answer, the page goes to the site's home page
   (Done) or a blank page (Cancel) and the tab's history is cleared, before the bot has it again (a
-  home page that does not come within ten seconds leaves a blank page instead, and a tab that
-  still holds anything else is ended):
+  home page that leads elsewhere on its site, as x.com to /home or google.com to www, counts
+  where it led; one that does not come within ten seconds leaves a blank page instead, and a
+  tab that still holds anything else is ended; a page the sign-in itself left never counts):
   neither a return address with a code, nor a half-done step, nor a way back to them reaches the
   server, and the sign-in's events are dropped. The bot learns whether they signed in, and then
-  sees the site's home page as anyone signed in would. Only the person ends it; after 15 minutes
+  sees the site's home page (or where it led) as anyone signed in would. Only the person ends it; after 15 minutes
   without an answer, if the browser closes, or if the bot is deleted, it counts as cancelled and a
   second dialog says so: "The sign-in to x.com ended without your answer: the bot has its browser
   again, and Done or Cancel there no longer does anything." (the first cannot be closed by the
@@ -424,12 +425,18 @@ into it.
 - Taking answers back and signing a bot out: the Dozo menu, and so Settings, has "Clear Ada's
   Browser…" for each bot whose browser this computer keeps (none until one has been used). It asks
   "Clear Ada's browser? It is signed out of every site, and asks again before using the browser."
-  with Clear and Cancel. Clearing ends the bot's browser and any sign-in in it and deletes its
-  profile (every sign-in, cookie and page it kept). On the bot's next use the server asks this
-  computer whether it was cleared (`pageBrowserCleared`) and forgets everything that bot was
-  allowed with it here, in every thread, so its first use and each site ask again. Deleting a
-  thread forgets the answers given in it; deleting the bot or removing this computer forgets them
-  all. The app keeps the bot's name beside its profile only to show it there.
+  with Clear and Cancel (in Turkish too, as the menu). Clearing ends the bot's browser and any
+  sign-in in it and deletes its profile (every sign-in, cookie and page it kept); no browser of
+  that bot starts meanwhile, and a call already on its way gets nothing. A browser that would not
+  close keeps its profile and its row, and a dialog says so: "Ada's browser did not close, so it
+  was not cleared. Try again." The bot's browser then stays unstarted until the server has asked
+  this computer whether it was cleared (`pageBrowserCleared`, before the bot's next use) and has
+  forgotten everything that bot was allowed with it here, in every thread, so its first use and
+  each site ask again; the mark goes only once that answer reached the server. Deleting a thread
+  forgets the answers given in it; deleting the bot or removing this computer forgets them all,
+  and deleting the bot takes its row. The app keeps the bot's name beside its profile only to
+  show it there, without invisible or direction-changing characters; two bots of one name are
+  told apart by the start of their key.
 - The browser ends when access is turned off, the bot is stopped, or the app quits. On Linux it
   also ends with a crashed app (`PR_SET_PDEATHSIG`); elsewhere the closed pipe ends it, and the
   next start on that profile ends what is left first. A dropped connection keeps it open.
