@@ -317,6 +317,11 @@ smoke() {
   dc exec -T api node -e "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" \
     || die "api does not answer /health" 2
   say "smoke: api /health ok"
+  # The fork's job queue (billing's mails) logs, and does not fail /health, when it cannot start or
+  # stops. It runs only where billing and email are configured, which this stack has neither of;
+  # a stack that has them is held to it here.
+  ! dc logs --no-color api 2>/dev/null | grep -qE 'fork job queue (did not start|stopped)' \
+    || die "the api's fork job queue did not start or stopped (dc logs api)" 2
   dc exec -T worker node dist/health-check.js || die "worker health check fails" 2
   say "smoke: worker health check ok"
   say "smoke: ok"
