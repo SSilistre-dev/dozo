@@ -141,7 +141,7 @@ async function readRunModelPool(
         modelId: reason === "rejected" ? null : failedModelId,
         reason,
         ...(holder ? { holder } : {}),
-        resetsAt: new Date(poolCooldownUntil(observedAt, providerResetAt)),
+        resetsAt: new Date(poolCooldownUntil(observedAt, providerResetAt, reason)),
         observedAt: new Date(observedAt),
       });
     },
@@ -309,9 +309,10 @@ export async function switchAfterFailure(
     pool &&
     failed.connectionId &&
     (failed.connectionId === pool.credential.id || pool.members.includes(failed.connectionId));
-  // A connection outside the run's pool rests on its own, so later runs start past it.
+  // A connection outside the run's pool rests on its own, so later runs start past it. The
+  // switch does not wait for the record (it never fails).
   if (reason && owner && failed.connectionId && !pooled)
-    await recordRest(
+    void recordRest(
       owner.prisma,
       owner.userId,
       { connectionId: failed.connectionId, modelId: failed.id },

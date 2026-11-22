@@ -3,7 +3,6 @@ import { modelRoleChoiceKey } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { readBotModelBackups } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { backupsPastRests } from "./dozo-model-rests.js";
 import type { DeploymentModelDefaults } from "./model-roles.js";
 import { effectiveModelRole } from "./model-roles.js";
 
@@ -15,15 +14,13 @@ type Db = Pick<
   | "userModelRoleChoice"
   | "spaceSettingOverride"
   | "userModelCredential"
-  | "userModelPreference"
 >;
 
 /**
  * The backups a run of a bot moves to, in order: the bot's own when it has any, else the runner's
  * as before. A bot's row pinned to a connection that is not the runner's runs on the runner's own
  * connection of that provider, as the bot's own model does, so nobody's run uses another member's
- * connection. A bot list that cannot be read leaves the runner's backups in place. Either list
- * keeps its order, except that a resting model goes last.
+ * connection. A bot list that cannot be read leaves the runner's backups in place.
  */
 export async function runBackupModels(
   prisma: Db,
@@ -31,11 +28,8 @@ export async function runBackupModels(
   defaults: DeploymentModelDefaults,
 ): Promise<{ backups: ModelRoleChoice[] }> {
   const own = run.botId ? await readOwn(prisma, run.botId) : [];
-  const role = own.length
-    ? { backups: await onRunnersConnections(prisma, run.userId, own) }
-    : await effectiveModelRole(prisma, run, "main", defaults);
-  // One resting after its quota ran out is reached only after every other (dozo-model-rests.ts).
-  return { ...role, backups: await backupsPastRests(prisma, run.userId, role.backups) };
+  if (!own.length) return effectiveModelRole(prisma, run, "main", defaults);
+  return { backups: await onRunnersConnections(prisma, run.userId, own) };
 }
 
 let missingTableReported = false;

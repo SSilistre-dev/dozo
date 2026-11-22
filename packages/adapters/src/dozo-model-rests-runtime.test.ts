@@ -227,10 +227,14 @@ describe("a model that fails outside a pool", () => {
     });
     const until = (rest as { resetsAt: Date }).resetsAt.getTime();
     if (item.until) expect(until).toBe(item.until);
+    else if (item.rests === "rejected")
+      // One refusal may be the provider's mistake: a few minutes, longer only if it repeats.
+      expect(until - before).toBeGreaterThanOrEqual(5 * 60_000);
     else
       expect(until - before).toBeGreaterThanOrEqual(
         item.name.includes("window") ? 90 * 60_000 : HOUR,
       );
+    if (item.rests === "rejected") expect(until - Date.now()).toBeLessThanOrEqual(5 * 60_000);
   });
 
   it("rests nothing for a run that does not say whose connections it uses", async () => {

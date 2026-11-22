@@ -138,6 +138,8 @@ describe("recordModelConnectionCooldown", () => {
       rest.observedAt.toISOString(),
       "connection-a",
       "user-1",
+      // How long a key refused again rests (dozo-model-rests.test.ts).
+      expect.objectContaining({ strings: [expect.stringContaining("'rejected'")] }),
     ]);
   });
 

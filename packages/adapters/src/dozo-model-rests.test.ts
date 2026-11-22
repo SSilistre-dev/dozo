@@ -1,19 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-  has: vi.fn(),
-  read: vi.fn(),
+  active: vi.fn(),
   record: vi.fn(),
   end: vi.fn(),
-  find: vi.fn(),
+  resolve: vi.fn(),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@rakazo/db")>()),
-  hasModelRests: db.has,
-  readModelRests: db.read,
+  readActiveModelRests: db.active,
   recordModelRest: db.record,
   endModelRests: db.end,
-  findModelCredential: db.find,
+}));
+vi.mock("./model-selection.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./model-selection.js")>()),
+  findConnectedModelCredential: db.resolve,
 }));
 const model = vi.hoisted(() => ({ resolve: vi.fn(), billing: vi.fn() }));
 vi.mock("./run-model.js", async (importOriginal) => ({
@@ -22,35 +23,31 @@ vi.mock("./run-model.js", async (importOriginal) => ({
   modelCreditBillingEnabled: model.billing,
 }));
 
-import { POOL_COOLDOWN_DEFAULT_MS } from "@rakazo/core";
+import { POOL_COOLDOWN_DEFAULT_MS, POOL_REFUSED_COOLDOWN_MS } from "@rakazo/core";
 import { backupsPastRests, modelPicked, recordRest, startPastRest } from "./dozo-model-rests.js";
 import { startRunModel } from "./run-model-start.js";
 
 const prisma = { marker: "prisma" } as never;
+const deps = { prisma, secretStore: { load: vi.fn() } } as never;
 const NOW = Date.UTC(2026, 10, 22, 10);
 const HOUR = 60 * 60_000;
-/** Rests on connection and model, ending at the given epoch milliseconds. */
+/** The person's rests that have not ended, as the store answers them. */
 let stored: Array<{ credentialId: string; modelId: string; resetsAt: Date }> = [];
+const newRun = (extra: object = {}) => ({ userId: "user-1", spaceId: "space-1", ...extra });
 
 beforeEach(() => {
   stored = [];
-  db.has.mockReset().mockImplementation(async () => stored.length > 0);
-  db.read
-    .mockReset()
-    .mockImplementation(
-      async (_db, scope: { models: { credentialId: string; modelId: string }[] }) =>
-        stored.filter((rest) =>
-          scope.models.some(
-            (item) => item.credentialId === rest.credentialId && item.modelId === rest.modelId,
-          ),
-        ),
-    );
+  db.active.mockReset().mockImplementation(async () => stored);
   db.record.mockReset().mockResolvedValue(true);
   db.end.mockReset().mockResolvedValue(1);
-  // A backup that names no connection runs on the provider's own choice: "<provider>-connection".
-  db.find.mockReset().mockImplementation(async (_db, _scope, provider: string) => ({
-    id: `${provider}-connection`,
-  }));
+  // As the run resolves it: a named connection, else the provider's: "<provider>-connection".
+  db.resolve
+    .mockReset()
+    .mockImplementation(
+      async (_db, _store, _actor, provider: string, _model, opts: { credentialId?: string }) => ({
+        id: opts.credentialId ?? `${provider}-connection`,
+      }),
+    );
   model.resolve.mockReset().mockResolvedValue({ apiKey: "key", redact: [] });
   model.billing.mockReset().mockResolvedValue(false);
 });
@@ -64,39 +61,51 @@ describe("backupsPastRests", () => {
     { provider: "q", modelId: "two" },
     { provider: "p", modelId: "three", credentialId: "c1" },
   ];
+  const role = { primary: null, backups };
 
-  it("keeps the order and reads nothing more when nothing of the person's rests", async () => {
-    expect(await backupsPastRests(prisma, "user-1", backups, NOW)).toBe(backups);
-    expect(db.read).not.toHaveBeenCalled();
-    expect(db.find).not.toHaveBeenCalled();
-    expect(await backupsPastRests(prisma, "user-1", [], NOW)).toEqual([]);
+  it("keeps the list as it was and resolves nothing when nothing of the person's rests", async () => {
+    expect(await backupsPastRests(deps, newRun(), role, NOW)).toBe(role);
+    expect(db.resolve).not.toHaveBeenCalled();
+    const empty = { backups: [] };
+    expect(await backupsPastRests(deps, newRun(), empty, NOW)).toBe(empty);
   });
 
-  it("moves resting ones to the end in their order, on the connection each runs on", async () => {
+  it("moves resting ones to the end in their order, on the connection the run resolves", async () => {
     rest("c1", "one", NOW + HOUR);
     rest("q-connection", "two", NOW + HOUR);
-    rest("c1", "three", NOW - 1);
-    expect(await backupsPastRests(prisma, "user-1", backups, NOW)).toEqual([
+    const run = newRun();
+    expect((await backupsPastRests(deps, run, role, NOW)).backups).toEqual([
       backups[2],
       backups[0],
       backups[1],
     ]);
-    expect(db.find).toHaveBeenCalledWith(prisma, { userId: "user-1" }, "q", "two");
+    expect(db.resolve).toHaveBeenCalledWith(prisma, expect.anything(), run, "q", "two", {
+      credentialId: undefined,
+    });
   });
 
-  it("leaves the order as it was when the rests cannot be read", async () => {
-    db.has.mockRejectedValue(new Error("database down"));
-    expect(await backupsPastRests(prisma, "user-1", backups, NOW)).toBe(backups);
+  it("rests every model of a connection whose key was refused", async () => {
+    rest("c1", "", NOW + HOUR);
+    expect((await backupsPastRests(deps, newRun(), role, NOW)).backups).toEqual([
+      backups[1],
+      backups[0],
+      backups[2],
+    ]);
   });
 
-  it("ignores a backup with no connection of the person's", async () => {
+  it("leaves the order as it was when the rests or a connection cannot be read", async () => {
+    db.active.mockRejectedValue(new Error("database down"));
+    expect(await backupsPastRests(deps, newRun(), role, NOW)).toBe(role);
+    db.active.mockReset().mockImplementation(async () => stored);
     rest("c1", "one", NOW + HOUR);
-    db.find.mockResolvedValue(null);
-    expect(await backupsPastRests(prisma, "user-1", backups, NOW)).toEqual([
-      backups[1],
-      backups[2],
-      backups[0],
-    ]);
+    db.resolve.mockRejectedValue(new Error("database down"));
+    expect(await backupsPastRests(deps, newRun(), role, NOW)).toBe(role);
+  });
+
+  it("ignores a backup the person has no connection for", async () => {
+    rest("q-connection", "two", NOW + HOUR);
+    db.resolve.mockResolvedValue(null);
+    expect(await backupsPastRests(deps, newRun(), role, NOW)).toBe(role);
   });
 });
 
@@ -106,48 +115,39 @@ describe("startPastRest", () => {
 
   it("starts on the next backup while the chosen model rests", async () => {
     rest("c1", "main", NOW + HOUR);
-    const onBackup = vi.fn(async () => backup);
-    expect(
-      await startPastRest(prisma, { userId: "user-1" }, selected, undefined, onBackup, NOW),
-    ).toBe(backup);
+    expect(await startPastRest(deps, newRun(), selected, undefined, async () => backup, NOW)).toBe(
+      backup,
+    );
   });
 
-  it("starts on the chosen model again once its rest has passed", async () => {
+  it("reads the person's rests once for a run's start and its backups", async () => {
+    rest("c1", "main", NOW + HOUR);
+    const run = newRun();
+    await startPastRest(deps, run, selected, undefined, async () => backup, NOW);
+    await backupsPastRests(deps, run, { backups: [{ provider: "p", modelId: "x" }] }, NOW);
+    expect(db.active).toHaveBeenCalledTimes(1);
+    expect(db.active).toHaveBeenCalledWith(prisma, "user-1", new Date(NOW));
+    await startPastRest(deps, newRun(), selected, undefined, async () => backup, NOW);
+    expect(db.active).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts on the chosen model again once its rest has passed, or when no backup starts", async () => {
     rest("c1", "main", NOW - 1);
     const onBackup = vi.fn(async () => backup);
-    expect(
-      await startPastRest(prisma, { userId: "user-1" }, selected, undefined, onBackup, NOW),
-    ).toBeUndefined();
+    expect(await startPastRest(deps, newRun(), selected, undefined, onBackup, NOW)).toBeUndefined();
     expect(onBackup).not.toHaveBeenCalled();
-  });
-
-  it("starts on the chosen model when no backup starts", async () => {
+    stored = [];
     rest("c1", "main", NOW + HOUR);
     expect(
-      await startPastRest(
-        prisma,
-        { userId: "user-1" },
-        selected,
-        undefined,
-        async () => undefined,
-        NOW,
-      ),
+      await startPastRest(deps, newRun(), selected, undefined, async () => undefined, NOW),
     ).toBeUndefined();
   });
 
-  it("ends the rest instead for a run asked for that model, and starts on it", async () => {
+  it("ends the rest for the person's own pick for a message, and starts on that model", async () => {
     rest("c1", "main", NOW + HOUR);
     const onBackup = vi.fn(async () => backup);
-    expect(
-      await startPastRest(
-        prisma,
-        { userId: "user-1", modelPinned: true },
-        selected,
-        undefined,
-        onBackup,
-        NOW,
-      ),
-    ).toBeUndefined();
+    const run = newRun({ modelPinned: true, trigger: "user" });
+    expect(await startPastRest(deps, run, selected, undefined, onBackup, NOW)).toBeUndefined();
     expect(onBackup).not.toHaveBeenCalled();
     expect(db.end).toHaveBeenCalledWith(prisma, {
       userId: "user-1",
@@ -156,43 +156,33 @@ describe("startPastRest", () => {
     });
   });
 
+  it("keeps the rest for other runs that keep their model: a routine's, a helper's", async () => {
+    rest("c1", "main", NOW + HOUR);
+    const onBackup = vi.fn(async () => backup);
+    for (const trigger of ["routine", "spawn", "webhook", "resume"]) {
+      const run = newRun({ modelPinned: true, trigger });
+      expect(await startPastRest(deps, run, selected, undefined, onBackup, NOW)).toBeUndefined();
+    }
+    expect(onBackup).not.toHaveBeenCalled();
+    expect(db.end).not.toHaveBeenCalled();
+  });
+
   it("never skips the deployment's model or a computer's saved models", async () => {
     rest("c1", "main", NOW + HOUR);
     const onBackup = vi.fn(async () => backup);
-    const user = { userId: "user-1" };
-    expect(
-      await startPastRest(
-        prisma,
-        user,
-        { ...selected, credential: null },
-        undefined,
-        onBackup,
-        NOW,
-      ),
-    ).toBeUndefined();
-    expect(
-      await startPastRest(prisma, user, selected, { saved: true }, onBackup, NOW),
-    ).toBeUndefined();
+    const noConnection = { ...selected, credential: null };
+    expect(await startPastRest(deps, newRun(), noConnection, undefined, onBackup, NOW)).toBe(
+      undefined,
+    );
+    expect(await startPastRest(deps, newRun(), selected, { saved: true }, onBackup, NOW)).toBe(
+      undefined,
+    );
     expect(onBackup).not.toHaveBeenCalled();
-  });
-
-  it("starts on the chosen model when its rest cannot be read", async () => {
-    db.has.mockRejectedValue(new Error("database down"));
-    expect(
-      await startPastRest(
-        prisma,
-        { userId: "user-1" },
-        selected,
-        undefined,
-        async () => backup,
-        NOW,
-      ),
-    ).toBeUndefined();
   });
 });
 
 describe("recordRest and modelPicked", () => {
-  it("rests a model until the provider's reset, else the pool's default rest", async () => {
+  it("rests a model until the provider's reset, else the default; a refused key a few minutes", async () => {
     const before = Date.now();
     await recordRest(prisma, "user-1", { connectionId: "c1", modelId: "m" }, "exhausted");
     const [, first] = db.record.mock.calls[0]!;
@@ -203,10 +193,15 @@ describe("recordRest and modelPicked", () => {
       reason: "exhausted",
     });
     expect(first.resetsAt.getTime() - before).toBeGreaterThanOrEqual(POOL_COOLDOWN_DEFAULT_MS);
+    await recordRest(prisma, "user-1", { connectionId: "c1", modelId: "m" }, "rejected");
+    const [, refused] = db.record.mock.calls[1]!;
+    expect(refused).toMatchObject({ modelId: null, reason: "rejected" });
+    expect(refused.resetsAt.getTime() - refused.observedAt.getTime()).toBe(
+      POOL_REFUSED_COOLDOWN_MS,
+    );
     const reset = Date.now() + 3 * HOUR;
-    await recordRest(prisma, "user-1", { connectionId: "c1", modelId: "m" }, "rejected", reset);
-    expect(db.record.mock.calls[1]?.[1]).toMatchObject({ modelId: null, reason: "rejected" });
-    expect(db.record.mock.calls[1]?.[1].resetsAt.getTime()).toBe(reset);
+    await recordRest(prisma, "user-1", { connectionId: "c1", modelId: "m" }, "exhausted", reset);
+    expect(db.record.mock.calls[2]?.[1].resetsAt.getTime()).toBe(reset);
   });
 
   it("never fails the run when a rest cannot be written or ended", async () => {
@@ -227,8 +222,7 @@ describe("recordRest and modelPicked", () => {
   });
 });
 
-describe("a run's start (run-model-start.ts through its rule)", () => {
-  const deps = { prisma } as never;
+describe("a run's start (run-model-start.ts through its rules)", () => {
   const selected = {
     provider: "p",
     id: "main",
@@ -247,7 +241,7 @@ describe("a run's start (run-model-start.ts through its rule)", () => {
     const onBackup = { provider: "q", id: "backup" };
     const started = await startRunModel(
       deps,
-      { userId: "user-1", spaceId: "space-1" },
+      newRun(),
       selected,
       undefined,
       backups(onBackup),
@@ -260,7 +254,7 @@ describe("a run's start (run-model-start.ts through its rule)", () => {
   it("starts on the chosen model as before when it does not rest", async () => {
     const started = await startRunModel(
       deps,
-      { userId: "user-1", spaceId: "space-1" },
+      newRun(),
       selected,
       undefined,
       backups({ provider: "q", id: "backup" }),
