@@ -2,8 +2,9 @@ name: dozo-gate
 
 # Dozo fork gate. A pull request into main (including the upstream sync PR) must pass the fast
 # local checks, the brand leak path (stage the tree, apply the codemod, fail on any user-visible
-# "Rakazo" string) and the fork's unit tests with their coverage floor. Needs only Docker, which
-# stock GitHub runners have. It runs olc, stage, brand and unit only, never build, up, smoke or the
+# "Rakazo" string), upstream's repository checks on the branded tree and the fork's unit tests with
+# their coverage floor. Needs only Docker, which stock GitHub runners have. It runs olc, stage,
+# brand, checks and unit only, never build, up, smoke or the
 # e2e suite (see dozo/README.md, Status and known limits). A required status check matches the job
 # name below: when it changes, update the branch protection rule too.
 # Third-party actions are pinned to a full commit SHA with the version in a comment (the same
@@ -65,6 +66,11 @@ jobs:
 
       - name: Apply brand and run leak gate
         run: dozo/docker/build.sh brand
+
+      # Upstream's `pnpm checks` on the branded tree, in a throwaway git repository inside the
+      # container (git is installed there), so the fork's dozo-* files meet upstream's conventions.
+      - name: Repository checks on the branded tree
+        run: dozo/docker/gate.sh checks
 
       # The fork's own tests and the per-file coverage floor. A runner starts with no dependency
       # volume, so this is the cold run (about 80 s: pnpm install and the coverage provider, inside
