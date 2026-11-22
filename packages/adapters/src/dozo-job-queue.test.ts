@@ -32,9 +32,9 @@ describe("DozoJobQueue", () => {
     let options: RunnerOptions | undefined;
     const queue = new DozoJobQueue(
       {} as Pool,
-      { "dozo.test": task },
+      { "dozo.test": task, "dozo:hourly": task },
       {
-        crontab: "0 * * * * dozo.test",
+        crontab: "0 * * * * dozo:hourly",
         start: async (given) => {
           options = given;
           return started;
@@ -42,17 +42,36 @@ describe("DozoJobQueue", () => {
       },
     );
     await queue.stop();
-    expect(Object.keys(options?.taskList ?? {})).toEqual(["dozo.test"]);
+    expect(Object.keys(options?.taskList ?? {})).toEqual(["dozo.test", "dozo:hourly"]);
     expect(options).toMatchObject({
       concurrency: 1,
       noHandleSignals: true,
       pollInterval: 60_000,
-      crontab: "0 * * * * dozo.test",
+      crontab: "0 * * * * dozo:hourly",
     });
     const run = options?.taskList?.["dozo.test"] as (payload: unknown) => Promise<void>;
     await run({ id: 1 });
     expect(task).toHaveBeenCalledWith({ id: 1 });
     expect(started.stop).toHaveBeenCalledOnce();
+  });
+
+  it("refuses, before starting, a crontab Graphile's own parser rejects or that names a task it does not run", () => {
+    const start = vi.fn();
+    const task = vi.fn(async () => undefined);
+    // Graphile's crontab task names allow letters, digits, _ : / and - only: no dot.
+    expect(
+      () =>
+        new DozoJobQueue(
+          {} as Pool,
+          { "dozo.sweep": task },
+          { crontab: "17 * * * * dozo.sweep", start },
+        ),
+    ).toThrow("Invalid command specification in line 1 of crontab.");
+    expect(
+      () =>
+        new DozoJobQueue({} as Pool, { "dozo:a": task }, { crontab: "17 * * * * dozo:b", start }),
+    ).toThrow("The crontab names a task this queue does not run: dozo:b");
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("reports a runner that did not start, and stops without one", async () => {

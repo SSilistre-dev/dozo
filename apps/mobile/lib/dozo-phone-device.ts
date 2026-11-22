@@ -15,17 +15,31 @@ import {
 } from "./api";
 import { isForegroundState } from "./app-foreground";
 import type {
-  CalendarPermission,
   PhoneCalendarRequest,
   PhoneCalendarValue,
+  PhonePermission,
 } from "./dozo-phone-calendar";
 import {
   calendarAvailable,
   calendarPermission,
-  PhoneCalendarError,
+  PhoneReadError,
   readCalendar,
   requestCalendarPermission,
 } from "./dozo-phone-calendar";
+import type { PhoneContactsRequest, PhoneContactsValue } from "./dozo-phone-contacts";
+import {
+  contactsAvailable,
+  contactsPermission,
+  requestContactsPermission,
+  searchContacts,
+} from "./dozo-phone-contacts";
+import type { Later, PhoneLocationRequest, PhoneLocationValue } from "./dozo-phone-location";
+import {
+  locationAvailable,
+  locationPermission,
+  readLocation,
+  requestLocationPermission,
+} from "./dozo-phone-location";
 import { isRelayOrigin } from "./dozo-relay-connection";
 import { reportMobileError } from "./monitoring";
 import { serverHeaders } from "./server-headers";
@@ -48,9 +62,15 @@ const RETRY_MAX_MS = 60_000;
 /** A connection that lasted this long starts the backoff over when it drops. */
 const STABLE_MS = 30_000;
 
+/** The kinds of the phone's data a bot may read, in the order the phone declares them. */
+const PHONE_KINDS = ["calendar", "contacts", "location"] as const;
+export type PhoneKind = (typeof PHONE_KINDS)[number];
+type Switches = Record<PhoneKind, boolean>;
+const ALL_OFF: Switches = { calendar: false, contacts: false, location: false };
+
 type Paired = { deviceId: string; token: string };
 /** What the phone keeps per server and account; each kind is off until switched on here. */
-type Saved = { calendar: boolean; device?: Paired };
+type Saved = Switches & { device?: Paired };
 export type PhoneAccount = { origin: string; userId: string };
 export type PhonePlatform = "ios" | "android";
 type Frame = { value: unknown } | { done: true } | { error: string };
@@ -76,12 +96,9 @@ export type PhoneDeviceDeps = {
   ): Promise<{ deviceId: string; userId: string; token: string }>;
   unpair(origin: string, token: string): Promise<void>;
   connect(url: string, headers: Record<string, string>): PhoneSocket;
-  calendar: {
-    available(): boolean;
-    permission(): Promise<CalendarPermission>;
-    request(): Promise<CalendarPermission>;
-    read(request: PhoneCalendarRequest): Promise<PhoneCalendarValue>;
-  };
+  calendar: PhoneReader<PhoneCalendarRequest, PhoneCalendarValue>;
+  contacts: PhoneReader<PhoneContactsRequest, PhoneContactsValue>;
+  location: PhoneReader<PhoneLocationRequest, PhoneLocationValue>;
   foreground(): boolean;
   /** Calls back when the app's state, server or session changes. */
   watch(listener: () => void): () => void;
@@ -92,8 +109,16 @@ export type PhoneDeviceDeps = {
   report(error: unknown): void;
 };
 
-export type PhoneSettings = { ready: boolean; calendar: boolean };
-export type CalendarSwitchResult = "done" | "denied" | "unavailable";
+/** One kind of the phone's data: its native module, the system's permission and its read. */
+export type PhoneReader<Request, Value> = {
+  available(): boolean;
+  permission(): Promise<PhonePermission>;
+  request(): Promise<PhonePermission>;
+  read(request: Request): Promise<Value>;
+};
+
+export type PhoneSettings = { ready: boolean } & Switches;
+export type PhoneSwitchResult = "done" | "denied" | "unavailable";
 
 /** A SecureStore key: letters, digits, `.`, `-` and `_` only, so the rest is written as `_hex_`. */
 export function phoneStorageKey(account: PhoneAccount): string {
@@ -118,22 +143,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const validId = (id: unknown): id is string =>
   typeof id === "string" && id.length > 0 && id.length <= 64;
 
+const anyOn = (switches: Switches) => PHONE_KINDS.some((kind) => switches[kind]);
+
 function readSaved(text: string | null): Saved {
-  if (!text) return { calendar: false };
+  if (!text) return { ...ALL_OFF };
   try {
     const value: unknown = JSON.parse(text);
-    if (!isRecord(value)) return { calendar: false };
+    if (!isRecord(value)) return { ...ALL_OFF };
     const device = value.device;
     const paired =
       isRecord(device) && typeof device.deviceId === "string" && typeof device.token === "string"
         ? { deviceId: device.deviceId, token: device.token }
         : undefined;
-    return {
-      calendar: value.calendar === true && Boolean(paired),
-      ...(paired ? { device: paired } : {}),
-    };
+    const saved: Saved = { ...ALL_OFF, ...(paired ? { device: paired } : {}) };
+    for (const kind of PHONE_KINDS) saved[kind] = value[kind] === true && Boolean(paired);
+    return saved;
   } catch {
-    return { calendar: false };
+    return { ...ALL_OFF };
   }
 }
 
@@ -142,6 +168,8 @@ function socketUrl(origin: string): string {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.href;
 }
+
+type Method = { kind: PhoneKind; read(request: Record<string, unknown>): Promise<unknown> };
 
 type Connection = {
   socket: PhoneSocket;
@@ -161,12 +189,13 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
   let attempt = 0;
   const calls = new Map<string, { cancelled: boolean }>();
   const listeners = new Set<() => void>();
-  let settings: PhoneSettings = { ready: false, calendar: false };
+  let settings: PhoneSettings = { ready: false, ...ALL_OFF };
   let queue: Promise<unknown> = Promise.resolve();
 
   function publish() {
-    const next = { ready: Boolean(account && saved), calendar: Boolean(saved?.value.calendar) };
-    if (next.ready === settings.ready && next.calendar === settings.calendar) return;
+    const next: PhoneSettings = { ready: Boolean(account && saved), ...ALL_OFF };
+    for (const kind of PHONE_KINDS) next[kind] = Boolean(saved?.value[kind]);
+    if ((["ready", ...PHONE_KINDS] as const).every((name) => next[name] === settings[name])) return;
     settings = next;
     for (const listener of [...listeners]) listener();
   }
@@ -212,7 +241,7 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
   async function forget(key: string, token: string) {
     if (saved?.key === key && saved.value.device && saved.value.device.token !== token) return;
     if (connection?.token === token) close();
-    if (saved?.key === key) saved = { key, value: { calendar: false } };
+    if (saved?.key === key) saved = { key, value: { ...ALL_OFF } };
     publish();
     await deps.remove(key);
   }
@@ -239,22 +268,58 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
     if (calls.get(id) === call) calls.delete(id);
   }
 
-  async function answerCalendar(
+  /** Each request method: its kind, and its read; a request it cannot read throws its code. */
+  const METHODS = new Map<string, Method>([
+    [
+      "phoneCalendarRead",
+      {
+        kind: "calendar",
+        read: (request) =>
+          deps.calendar.read({
+            from: String(request.from),
+            to: String(request.to),
+            ...(typeof request.query === "string" ? { query: request.query } : {}),
+            limit: typeof request.limit === "number" ? request.limit : 50,
+          }),
+      },
+    ],
+    [
+      "phoneContactsSearch",
+      {
+        kind: "contacts",
+        read: ({ query, field, limit }) => {
+          if (typeof query !== "string" || (field !== "phone" && field !== "email")) {
+            throw new PhoneReadError("contacts-query");
+          }
+          return deps.contacts.read({
+            query,
+            field,
+            limit: typeof limit === "number" ? limit : 10,
+          });
+        },
+      },
+    ],
+    [
+      "phoneLocation",
+      {
+        kind: "location",
+        read: ({ precision }) =>
+          deps.location.read({ precision: precision === "precise" ? "precise" : "approximate" }),
+      },
+    ],
+  ]);
+
+  async function answer(
     entry: Connection,
+    { kind, read }: Method,
     request: Record<string, unknown>,
   ): Promise<Frame[]> {
-    if (saved?.key !== entry.key || !saved.value.calendar) return [{ error: "calendar-off" }];
-    if (!deps.calendar.available()) return [{ error: "calendar-unavailable" }];
+    if (saved?.key !== entry.key || !saved.value[kind]) return [{ error: `${kind}-off` }];
+    if (!deps[kind].available()) return [{ error: `${kind}-unavailable` }];
     try {
-      const value = await deps.calendar.read({
-        from: String(request.from),
-        to: String(request.to),
-        ...(typeof request.query === "string" ? { query: request.query } : {}),
-        limit: typeof request.limit === "number" ? request.limit : 50,
-      });
-      return [{ value }, { done: true }];
+      return [{ value: await read(request) }, { done: true }];
     } catch (error) {
-      return [{ error: error instanceof PhoneCalendarError ? error.code : "calendar-unavailable" }];
+      return [{ error: error instanceof PhoneReadError ? error.code : `${kind}-unavailable` }];
     }
   }
 
@@ -284,12 +349,13 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
     const call: Call = { cancelled: false };
     calls.set(id, call);
     const request = message.request;
-    if (!isRecord(request) || request.method !== "phoneCalendarRead") {
+    const method = isRecord(request) ? METHODS.get(String(request.method)) : undefined;
+    if (!isRecord(request) || !method) {
       reply(entry, id, call, { error: UNSUPPORTED });
       finish(id, call);
       return;
     }
-    void answerCalendar(entry, request).then((frames) => {
+    void answer(entry, method, request).then((frames) => {
       for (const frame of frames) reply(entry, id, call, frame);
       finish(id, call);
     });
@@ -313,9 +379,14 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
     socket.onerror = () => lost(entry);
   }
 
+  /** The kinds switched on, in this build, and allowed by the system, as the header lists them. */
   async function declared(value: Saved): Promise<string> {
-    if (!value.calendar || !deps.calendar.available()) return "";
-    return (await deps.calendar.permission()) === "granted" ? "calendar" : "";
+    const kinds: PhoneKind[] = [];
+    for (const kind of PHONE_KINDS) {
+      if (!value[kind] || !deps[kind].available()) continue;
+      if ((await deps[kind].permission()) === "granted") kinds.push(kind);
+    }
+    return kinds.join(",");
   }
 
   async function syncNow() {
@@ -344,7 +415,7 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
     account = who;
     publish();
     const { value } = saved;
-    if (!value.device || !value.calendar || !deps.foreground()) {
+    if (!value.device || !anyOn(value) || !deps.foreground()) {
       close();
       return;
     }
@@ -366,14 +437,14 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
     return serial(syncNow);
   }
 
-  async function switchCalendar(on: boolean): Promise<CalendarSwitchResult> {
+  async function switchKind(kind: PhoneKind, on: boolean): Promise<PhoneSwitchResult> {
     await syncNow();
     const who = account;
     const current = saved;
     if (!who || !current) return "unavailable";
     if (on) {
-      if (!deps.calendar.available()) return "unavailable";
-      const permission = await deps.calendar.request();
+      if (!deps[kind].available()) return "unavailable";
+      const permission = await deps[kind].request();
       if (permission !== "granted") return permission;
       let device = current.value.device;
       if (!device) {
@@ -386,15 +457,21 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
         }
         device = { deviceId: paired.deviceId, token: paired.token };
       }
-      const value: Saved = { calendar: true, device };
+      const value: Saved = { ...current.value, [kind]: true, device };
       await deps.save(current.key, JSON.stringify(value));
       saved = { key: current.key, value };
       attempt = 0;
+    } else if (current.value.device && anyOn({ ...current.value, [kind]: false })) {
+      // Another kind is still on: the pairing stays, and this kind is no longer declared.
+      const value: Saved = { ...current.value, [kind]: false };
+      saved = { key: current.key, value };
+      publish();
+      await deps.save(current.key, JSON.stringify(value));
     } else {
-      // Calendar is the only kind so far, so switching it off unpairs: every bot asks again the
-      // next time it is on. Requests that arrive meanwhile are answered as switched off.
+      // Switching the last kind off unpairs: every bot asks again the next time one is on.
+      // Requests that arrive meanwhile are answered as switched off.
       const { device } = current.value;
-      saved = { key: current.key, value: { calendar: false, ...(device ? { device } : {}) } };
+      saved = { key: current.key, value: { ...ALL_OFF, ...(device ? { device } : {}) } };
       publish();
       if (device) await deps.unpair(who.origin, device.token).catch(deps.report);
       await forget(current.key, device?.token ?? "");
@@ -428,8 +505,8 @@ export function createPhoneDevice(deps: PhoneDeviceDeps) {
         listeners.delete(listener);
       };
     },
-    /** Switches Calendar; "denied" when the system refused, with the switch left off. */
-    setCalendar: (on: boolean) => serial(() => switchCalendar(on)),
+    /** Switches one kind; "denied" when the system refused, with the switch left off. */
+    setSwitch: (kind: PhoneKind, on: boolean) => serial(() => switchKind(kind, on)),
   };
 }
 
@@ -510,6 +587,11 @@ type RnWebSocket = new (
   options: { headers: Record<string, string> },
 ) => PhoneSocket;
 
+const later: Later = (run, ms) => {
+  const timer = setTimeout(run, ms);
+  return () => clearTimeout(timer);
+};
+
 export function appPhoneDeviceDeps(): PhoneDeviceDeps {
   return {
     account: signedInAccount,
@@ -533,6 +615,18 @@ export function appPhoneDeviceDeps(): PhoneDeviceDeps {
       request: requestCalendarPermission,
       read: readCalendar,
     },
+    contacts: {
+      available: contactsAvailable,
+      permission: contactsPermission,
+      request: requestContactsPermission,
+      read: searchContacts,
+    },
+    location: {
+      available: locationAvailable,
+      permission: locationPermission,
+      request: requestLocationPermission,
+      read: (request) => readLocation(request, later),
+    },
     foreground: () => isForegroundState(AppState.currentState),
     watch(listener) {
       const appState = AppState.addEventListener("change", listener);
@@ -546,10 +640,7 @@ export function appPhoneDeviceDeps(): PhoneDeviceDeps {
     },
     device: phoneName,
     now: () => Date.now(),
-    later(run, ms) {
-      const timer = setTimeout(run, ms);
-      return () => clearTimeout(timer);
-    },
+    later,
     random: Math.random,
     report: (error) => reportMobileError(error, "rpc.transport", { source: "phone-device" }),
   };

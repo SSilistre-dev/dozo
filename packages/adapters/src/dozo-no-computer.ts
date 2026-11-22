@@ -1,7 +1,7 @@
 import { bestEffort } from "@rakazo/logging";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
 import { noComputerFilesInstruction } from "./dozo-no-computer.prompt.js";
-import { PHONE_CALENDAR_READ_TOOL } from "./dozo-phone.tool-definition.js";
+import { PHONE_TOOL_NAMES } from "./dozo-phone.tool-definition.js";
 import type { ExecutorDeps } from "./executor-deps.js";
 import { modelCreditBillingEnabled } from "./run-model.js";
 import { sandboxAllowance, sandboxHourlyCostMicros } from "./sandbox-allowance.js";
@@ -92,8 +92,8 @@ function checkpointUsedComputer(
 /**
  * The run's turned-off built-ins, with the computer's when it has none. The sign-in in the bot's
  * browser on the user's computer is off too: only a run offered that browser turns it on
- * (`offerUserBrowser`). So is the user's phone: only a run that reaches it turns it on
- * (`offerPhoneTools`).
+ * (`offerUserBrowser`). So are the user's phone tools: only a run that reaches the phone turns
+ * each on (`offerPhoneTools`).
  */
 export function withoutCloudComputerTools(
   disabled: Set<string>,
@@ -101,7 +101,7 @@ export function withoutCloudComputerTools(
 ): Set<string> {
   const off = withheld ? new Set([...disabled, ...CLOUD_COMPUTER_TOOL_NAMES]) : disabled;
   off.add(BROWSER_SIGN_IN_TOOL);
-  off.add(PHONE_CALENDAR_READ_TOOL);
+  for (const name of PHONE_TOOL_NAMES) off.add(name);
   return off;
 }
 

@@ -38,7 +38,7 @@ export async function userComputerGate(
   args: Record<string, unknown>,
 ): Promise<"deny" | "allow" | "ask"> {
   // The user's phone has its own approval (dozo-phone.ts).
-  if (isPhoneTool(name)) return phoneGate(ctx, blocked, args);
+  if (isPhoneTool(name)) return phoneGate(ctx, blocked, name, args);
   // The page tools reach this gate only when they go to the user's own browser.
   if (isUserBrowserTool(name)) return userBrowserGate(ctx, blocked, name, args);
   const plan = await upstreamUserComputerGate(ctx, blocked, name, args);
@@ -63,7 +63,7 @@ export function buildApprovalAskBlock(
   ...input: Parameters<typeof buildUpstreamAskBlock>
 ): MessageBlock {
   const [effectId, toolName, args, secrets, options] = input;
-  if (isPhoneTool(toolName)) return phoneCard(effectId, args, secrets);
+  if (isPhoneTool(toolName)) return phoneCard(effectId, toolName, args, secrets);
   const browserAsk = userBrowserAsk(args);
   if (browserAsk) return userBrowserCard(effectId, toolName, args, secrets, browserAsk);
   const hosted = toolName === HOSTED_SHELL_TOOL;
