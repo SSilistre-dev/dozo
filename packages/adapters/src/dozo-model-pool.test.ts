@@ -1,6 +1,6 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { POOL_COOLDOWN_DEFAULT_MS } from "@rakazo/core";
+import { POOL_REFUSED_COOLDOWN_MS } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -222,7 +222,8 @@ describe("loadRunModelPool", () => {
           credentialId: "b",
           modelId: null,
           reason: "rejected",
-          resetsAt: new Date(now + POOL_COOLDOWN_DEFAULT_MS),
+          // A refused key rests a few minutes first, longer only if refused again (the store).
+          resetsAt: new Date(now + POOL_REFUSED_COOLDOWN_MS),
           observedAt: new Date(now),
         },
       ]);

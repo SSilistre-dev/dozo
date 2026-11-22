@@ -4579,7 +4579,7 @@
     {
       "file": "apps/api/src/routes/bots.ts",
       "find": "import type { RouterContext } from \"./context.js\";\nimport { computerContext",
-      "replace": "import type { RouterContext } from \"./context.js\"; import { dozoAvatarForSave, dozoBotOrGroupOnly, requireBotRunEditor, requireGroupRemover, switchBotComputerWithFiles } from \"./dozo-bot-routes.js\";\nimport { computerContext",
+      "replace": "import type { RouterContext } from \"./context.js\"; import { botModelPicked, dozoAvatarForSave, dozoBotOrGroupOnly, requireBotRunEditor, requireGroupRemover, switchBotComputerWithFiles } from \"./dozo-bot-routes.js\";\nimport { computerContext",
       "requires": [
         "apps/api/src/routes/dozo-bot-routes.ts"
       ],
@@ -6047,9 +6047,9 @@
     {
       "file": "packages/adapters/src/run-model-turn.ts",
       "find": "    const runtimeEvents = deps.runtime.run(modelTurnRequest(services, hold, turn), {\n",
-      "replace": "    const runtimeEvents = deps.runtime.run(\n      withRunModelPool(modelTurnRequest(services, hold, turn), turn.model.pool),\n      {\n",
+      "replace": "    const runtimeEvents = deps.runtime.run(\n      withRunModelPool(modelTurnRequest(services, hold, turn), turn.model.pool, hold),\n      {\n",
       "requires": ["packages/adapters/src/dozo-model-pool.ts"],
-      "reason": "model pool: the runtime gets the run's pool with its request, to rest a connection that ran out"
+      "reason": "model pool and model rests: the runtime gets the run's pool and its owner with its request, to rest a connection or model that ran out"
     },
     {
       "file": "packages/adapters/src/pi-runtime-fallback.ts",
@@ -11624,6 +11624,63 @@
       "find": "          void dozoOrganizationMarkChanged();\n          void dozoCliAccountsChanged();\n",
       "replace": "          void dozoOrganizationMarkChanged();\n          void dozoBotBackupsChanged();\n          void dozoCliAccountsChanged();\n",
       "reason": "bot backups: a change to a bot's own backup models comes on its Space's roster signal, so an open bot panel reads them again"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { isRetiredModelCredentialError }",
+      "replace": "import { runBackupModels } from \"./dozo-bot-model-backups.js\";\nimport { backupsPastRests, startPastRest } from \"./dozo-model-rests.js\";\nimport { isRetiredModelCredentialError }",
+      "requires": [
+        "packages/adapters/src/dozo-model-rests.ts"
+      ],
+      "reason": "model rests: the import of the rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "    try {\n      start = {\n        provider: selected.provider,",
+      "replace": "    start = await startPastRest(\n      deps,\n      run,\n      { provider: selected.provider, id: selected.id, credential: selected.credential },\n      pinned,\n      backups.startOnBackup,\n    );\n    if (!start) try {\n      start = {\n        provider: selected.provider,",
+      "reason": "model rests: a run whose chosen model rests after its quota ran out or its key was refused starts on its next backup that starts, and on its chosen model as before when none does; a run asked for that model for its message ends the rest instead"
+    },
+    {
+      "file": "apps/api/src/routes/models.ts",
+      "find": "import { assertCompatibleDefaultChange } from \"../model-pins.js\";\nimport type { RouterContext } from \"./context.js\";",
+      "replace": "import { assertCompatibleDefaultChange } from \"../model-pins.js\";\nimport { mainModelPicked } from \"../dozo-model-picked.js\";\nimport type { RouterContext } from \"./context.js\";",
+      "requires": [
+        "apps/api/src/dozo-model-picked.ts"
+      ],
+      "reason": "model rests: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/models.ts",
+      "find": "          ...(backups ?? []),\n        ]);\n        return withImageInput(",
+      "replace": "          ...(backups ?? []),\n        ]);\n        const dozoPicked = await mainModelPicked(deps.prisma, context.actor, role, primary, scope);\n        return withImageInput(",
+      "reason": "model rests: whether the save picks a main model in place of another, read before it saves; the rule below ends its rests once the save went through"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./model-roles.js\";\nexport * from \"./model-secret.js\";",
+      "replace": "export * from \"./model-roles.js\";\nexport { modelPicked } from \"./dozo-model-rests.js\";\nexport * from \"./model-secret.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-model-rests.ts"
+      ],
+      "reason": "model rests: the package exports how a picked model's rests end, for the routes that save a model"
+    },
+    {
+      "file": "packages/adapters/src/run-model-start.ts",
+      "find": "      : runBackupModels(deps.prisma, run, defaults).then(",
+      "replace": "      : runBackupModels(deps.prisma, run, defaults)\n          .then((role) => backupsPastRests(deps, run, role))\n          .then(",
+      "reason": "model rests: a backup whose model rests after its quota ran out or its key was refused goes to the end of the run's backups, read once per run with the start's own check"
+    },
+    {
+      "file": "apps/api/src/routes/models.ts",
+      "find": "            await updateModelRole(\n              deps.prisma,\n              { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },\n              role,\n              { primary, backups },\n            ),",
+      "replace": "            await dozoPicked(\n              await updateModelRole(\n                deps.prisma,\n                { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },\n                role,\n                { primary, backups },\n              ),\n            ),",
+      "reason": "model rests: a main model saved in place of another ends its rests once the save went through, so the next run tries it at once"
+    },
+    {
+      "file": "apps/api/src/routes/bots.ts",
+      "find": "        for (const setting of changedBotSettings(existing, input)) {",
+      "replace": "        for (const setting of changedBotSettings(await botModelPicked(deps.prisma, context.actor, input, existing), input)) {",
+      "reason": "model rests: a model picked for the bot in place of another ends its rests for the person who picked it, once the save went through (on the line after it, so the file does not grow)"
     }
   ],
   "assets": {
