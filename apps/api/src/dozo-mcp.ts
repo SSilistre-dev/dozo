@@ -12,6 +12,8 @@ import type { PrismaClient } from "@rakazo/db";
 import { runAsTenant } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
+import type { DozoApiChatTarget } from "./dozo-api-chats.js";
+import { dozoApiChats, dozoApiChatTarget } from "./dozo-api-chats.js";
 import type { DozoBotApiClient, DozoBotApiDeps } from "./dozo-bot-api.js";
 import {
   DOZO_BOT_API_REQUESTS_PER_MINUTE,
@@ -137,7 +139,7 @@ export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
 /**
  * What the token's owner may do, through the app's own procedures: the same access checks, plan
  * limits and validation as a message typed in the app. Only bots the owner made are reachable, and
- * only the one bot when the token is for one.
+ * only the one bot when the token is for one. A chat is named as in the bot API (dozo-api-chats.ts).
  */
 export function dozoMcpOperations(
   prisma: PrismaClient,
@@ -155,6 +157,10 @@ export function dozoMcpOperations(
       (await prisma.bot.findFirst({ where: { id: botId, ...reachable }, select: { id: true } }));
     if (!bot) throw new ClientError("NOT_FOUND", "No such bot.");
   };
+  const chatOf = async (botId: string, chatId: string | undefined) => {
+    await ownBot(botId);
+    return dozoApiChatTarget(client, botId, chatId);
+  };
   return {
     listBots: () =>
       asOwner(async () => {
@@ -170,26 +176,31 @@ export function dozoMcpOperations(
           .filter((bot) => ids.has(bot.id))
           .map((bot) => ({ id: bot.id, name: bot.name, description: bot.description }));
       }),
-    sendMessage: (botId, text, signal) =>
+    listChats: (botId) =>
+      asOwner(async () => {
+        await ownBot(botId);
+        return dozoApiChats(client, botId);
+      }),
+    sendMessage: (botId, text, signal, chatId) =>
       asOwner(async () => {
         // In the app a stop word stops every run in the chat, the owner's too; a token may not.
         if (isStopMessage({ text })) throw new ClientError("BAD_REQUEST", "Stop a run in the app.");
-        await ownBot(botId);
+        const target = await chatOf(botId, chatId);
         await countSend();
         // The token mark: the run this message starts or reaches asks before any outside effect,
         // and nothing it names is taken as the owner's own word (dozo-token-run.ts).
         const sent = await client.threads.send(
-          { botId, text, clientNonce: dozoTokenNonce(randomUUID()) },
+          { ...target, text, clientNonce: dozoTokenNonce(randomUUID()) },
           { signal },
         );
-        const outcome = await runOutcome(client, botId, sent, signal);
+        const outcome = await runOutcome(client, target, sent, signal);
         if (outcome !== "completed") return { status: outcome };
-        return reply(client, botId, sent.runId);
+        return reply(client, target, sent.runId);
       }),
-    readChat: (botId) =>
+    readChat: (botId, chatId) =>
       asOwner(async () => {
-        await ownBot(botId);
-        const chat = await exportChat(prisma, actor, { botId }, DOZO_MCP_CHAT_MAX_CHARS);
+        const target = await chatOf(botId, chatId);
+        const chat = await exportChat(prisma, actor, target, DOZO_MCP_CHAT_MAX_CHARS);
         return { markdown: chat.markdown };
       }),
   };
@@ -203,14 +214,14 @@ type WaitOutcome = "completed" | "working" | "waiting_for_you" | "failed";
  */
 async function runOutcome(
   client: DozoBotApiClient,
-  botId: string,
+  target: DozoApiChatTarget,
   sent: { runId: string; seq: number },
   signal: AbortSignal,
 ): Promise<WaitOutcome> {
   const deadline = deadlineSignal(DOZO_MCP_REPLY_WAIT_MS, signal);
   try {
     const events = await client.threads.subscribe(
-      { botId, cursor: sent.seq },
+      { ...target, cursor: sent.seq },
       { signal: deadline },
     );
     for await (const event of events) {
@@ -245,10 +256,10 @@ function eventOutcome(event: ProductEvent, runId: string): WaitOutcome | undefin
  */
 async function reply(
   client: DozoBotApiClient,
-  botId: string,
+  target: DozoApiChatTarget,
   runId: string,
 ): Promise<DozoMcpSendResult> {
-  const page = await client.threads.messages({ botId });
+  const page = await client.threads.messages(target);
   const text = page.messages
     .filter((message) => message.role === "bot" && message.runId === runId)
     .flatMap((message) => messageBody(message) ?? [])

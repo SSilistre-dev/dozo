@@ -6,6 +6,9 @@
 
 export type DozoMcpBot = { id: string; name: string; description: string };
 
+/** One of a bot's open extra chats. The bot's main chat is the one reached without a chat. */
+export type DozoMcpChat = { id: string; name: string; createdAt: string };
+
 /**
  * How a sent message ended for the caller: the bot answered, is still answering (its chat has the
  * reply later), waits on its person (a question or an approval in the app), or its turn failed.
@@ -17,8 +20,15 @@ export type DozoMcpSendResult =
 /** What the token's owner may do. Each one checks access itself; a refusal is a ClientError. */
 export type DozoMcpOperations = {
   listBots(): Promise<DozoMcpBot[]>;
-  sendMessage(botId: string, text: string, signal: AbortSignal): Promise<DozoMcpSendResult>;
-  readChat(botId: string): Promise<{ markdown: string }>;
+  listChats(botId: string): Promise<DozoMcpChat[]>;
+  /** Without `chatId` the bot's main chat, as before extra chats. */
+  sendMessage(
+    botId: string,
+    text: string,
+    signal: AbortSignal,
+    chatId?: string,
+  ): Promise<DozoMcpSendResult>;
+  readChat(botId: string, chatId?: string): Promise<{ markdown: string }>;
 };
 
 export type DozoMcpOptions = {

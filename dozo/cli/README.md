@@ -9,6 +9,8 @@ node dozo/cli/dozo.mjs bots
 node dozo/cli/dozo.mjs send Chef "Plan dinner for four"
 echo "Summarise today" | node dozo/cli/dozo.mjs send Chef
 node dozo/cli/dozo.mjs export Chef --since 2026-11-01 > chef.md
+node dozo/cli/dozo.mjs chats Chef
+node dozo/cli/dozo.mjs send Chef --chat Garden "When do I sow tomatoes?"
 ```
 
 - The server is `--server`, else `DOZO_SERVER`, else the last one logged in to, else the hosted one.
@@ -20,6 +22,9 @@ node dozo/cli/dozo.mjs export Chef --since 2026-11-01 > chef.md
 - `send` prints the reply as it streams. When the bot stops to ask you (an approval, a question),
   it exits with 3 and prints the `dozo follow` command that picks the run up after you answer in
   the app. A dropped connection is followed again from the last event, never sent twice.
+- Without `--chat`, `send`, `follow` and `export` use the bot's main chat, as before. `--chat`
+  takes an id or exact name from `chats`; one the server does not list is an error, never the main
+  chat. Chats are made, renamed and archived in the app.
 - Exit codes: 0 done, 1 error or the run failed or was stopped, 3 waiting for you, 130 stopped.
 
 Tests: `node --test dozo/cli/dozo.test.mjs` (part of `make olc`).

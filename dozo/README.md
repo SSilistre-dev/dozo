@@ -314,10 +314,10 @@ A bot can hold extra chats beside its main one (`apps/api/src/dozo-bot-chats.ts`
 `dozo_bot_chats`; web, desktop and mobile). They are the Space's, like the bot's main chat:
 every member who can open the bot sees and uses them. A bot holds at most 20 open extra chats and
 100 in all; an archived one is read only (nothing new is sent to it) and leaves search, as an
-archived bot does. The bot's memory and computer are one across its chats. The bot API, CLI and
-MCP, chat apps and routines use the main chat only; a routine started from an extra chat posts in
-the main chat. The phone's badge and the inbox rows count main chats only, as web's Dock badge and
-bot rows do; an extra chat has its own unread dot.
+archived bot does. The bot's memory and computer are one across its chats. Chat apps and routines
+use the main chat only; a routine started from an extra chat posts in the main chat. The phone's
+badge and the inbox rows count main chats only, as web's Dock badge and bot rows do; an extra chat
+has its own unread dot.
 
 On the phone a bot's extra chats are on its profile (reached from the chat's title), under Chats,
 only when it has some: a tap opens one on its own route, a long press opens its sheet (rename, mark
@@ -332,6 +332,14 @@ and every request about the chat on screen is built by `dozoChatTarget` in
 `apps/mobile/lib/dozo-chat-target.ts`. In an extra chat there are no calls, no attachments and no
 waiting line (the contract names a bot or a group only); `dozo-chat-callsites.test.ts` counts every
 place the app asks about a chat.
+
+The bot API, CLI and MCP reach an open extra chat by its id (`?chat=`, `--chat`, `chat_id`), through
+one rule in `apps/api/src/dozo-api-chats.ts`; without one, every call is the main chat as before. A
+chat the token cannot reach (another bot's or Space's, archived, missing, the main chat's own id) is
+one 404, never the main chat. A token cannot make, rename or archive chats: its scope is "talk to
+my bots", which says nothing about changing them. A chat app's conversation lands in the bot's main
+chat (`dozo-bot-api-chats.postgres.test.ts` pins it); mapping a conversation to an extra chat is a
+product decision not made yet.
 
 Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Deploy the API before
 (or with) the web app: an API from before extra chats answers such a request with 400 (its own

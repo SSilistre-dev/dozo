@@ -6,6 +6,7 @@ import { getLogger } from "@rakazo/logging";
 import type { DozoMcpOperations, DozoMcpOptions } from "./dozo-mcp.js";
 import {
   DOZO_MCP_CHAT_URI_TEMPLATE,
+  DOZO_MCP_EXTRA_CHAT_URI_TEMPLATE,
   DOZO_MCP_INSTRUCTIONS,
   dozoMcpChatUri,
   dozoMcpTools,
@@ -45,16 +46,31 @@ export async function serveDozoMcp(
       }),
   );
   server.registerTool(
+    dozoMcpTools.listChats.name,
+    {
+      description: dozoMcpTools.listChats.description,
+      inputSchema: dozoMcpTools.listChats.inputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    ({ bot_id }) =>
+      answer(async () => {
+        const chats = await operations.listChats(bot_id);
+        return { chats: chats.map((chat) => ({ ...chat, chat: dozoMcpChatUri(bot_id, chat.id) })) };
+      }),
+  );
+  server.registerTool(
     dozoMcpTools.sendMessage.name,
     {
       description: dozoMcpTools.sendMessage.description,
       inputSchema: dozoMcpTools.sendMessage.inputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    ({ bot_id, text }, extra) =>
+    ({ bot_id, text, chat_id }, extra) =>
       answer(async () => ({
-        ...(await operations.sendMessage(bot_id, text, extra.signal)),
-        chat: dozoMcpChatUri(bot_id),
+        ...(await (chat_id === undefined
+          ? operations.sendMessage(bot_id, text, extra.signal)
+          : operations.sendMessage(bot_id, text, extra.signal, chat_id))),
+        chat: dozoMcpChatUri(bot_id, chat_id),
       })),
   );
   server.registerResource(
@@ -72,7 +88,18 @@ export async function serveDozoMcp(
     { description: dozoMcpTools.chat.description, mimeType: "text/markdown" },
     (uri, { bot_id }) =>
       protocolAnswer(async () => {
-        const chat = await operations.readChat(chatBotId(String(bot_id)));
+        const chat = await operations.readChat(uriPart(String(bot_id)));
+        return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: chat.markdown }] };
+      }),
+  );
+  // Listed by list_chats, not here: listing them would read every bot's chats on each request.
+  server.registerResource(
+    dozoMcpTools.extraChat.name,
+    new ResourceTemplate(DOZO_MCP_EXTRA_CHAT_URI_TEMPLATE, { list: undefined }),
+    { description: dozoMcpTools.extraChat.description, mimeType: "text/markdown" },
+    (uri, { bot_id, chat_id }) =>
+      protocolAnswer(async () => {
+        const chat = await operations.readChat(uriPart(String(bot_id)), uriPart(String(chat_id)));
         return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: chat.markdown }] };
       }),
   );
@@ -103,7 +130,7 @@ async function answer(work: () => Promise<object>) {
   }
 }
 
-function chatBotId(encoded: string): string {
+function uriPart(encoded: string): string {
   try {
     return decodeURIComponent(encoded);
   } catch {
