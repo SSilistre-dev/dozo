@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { BROWSER_SIGN_IN_TOOL } from "./dozo-browser-sign-in.tool-definition.js";
+import { isPhonePlatform } from "./dozo-phone-protocol.js";
 import type { UserDevice } from "./user-device-protocol.js";
 
 /**
@@ -9,9 +10,12 @@ import type { UserDevice } from "./user-device-protocol.js";
  */
 export const DEVICE_CAPABILITIES_HEADER = "x-dozo-device-capabilities";
 
-/** What a paired computer can declare. Anything else it sends is ignored. */
-export const DEVICE_CAPABILITIES = ["shell", "screen", "browser"] as const;
+/** What a paired computer or phone can declare. Anything else it sends is ignored. */
+export const DEVICE_CAPABILITIES = ["shell", "screen", "browser", "calendar"] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
+/** What a phone may offer: nothing a computer does, whatever it declares. */
+const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar"];
+const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = ["shell", "screen", "browser"];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */
 export type DeclaredUserDevice = UserDevice & { capabilities?: readonly DeviceCapability[] };
@@ -43,10 +47,14 @@ export async function recordDeviceCapabilities(
   );
 }
 
-/** What a computer declared when it last connected; commands only when it declared nothing. */
+/**
+ * What a device declared when it last connected, of what its kind may offer. A computer that
+ * declared nothing runs commands only; a phone that declared nothing offers nothing.
+ */
 export async function readDeviceCapabilities(
   prisma: PrismaClient,
   deviceId: string,
+  platform = "",
 ): Promise<DeviceCapability[]> {
   const rows = await runAsSystem(
     "read a user device's capabilities",
@@ -55,7 +63,10 @@ export async function readDeviceCapabilities(
       SELECT capabilities FROM dozo_device_capabilities WHERE "deviceId" = ${deviceId}`,
   );
   const declared = rows[0]?.capabilities;
-  return declared ? DEVICE_CAPABILITIES.filter((value) => declared.includes(value)) : ["shell"];
+  const phone = isPhonePlatform(platform);
+  if (!declared) return phone ? [] : ["shell"];
+  const allowed = phone ? PHONE_CAPABILITIES : COMPUTER_CAPABILITIES;
+  return allowed.filter((value) => declared.includes(value));
 }
 
 /**
@@ -69,6 +80,8 @@ export function deviceOffers(device: DeclaredUserDevice): {
   screen: boolean;
   browser: boolean;
 } {
+  // A phone is not a computer: none of the computer's tools go to it.
+  if (isPhonePlatform(device.platform)) return { shell: false, screen: false, browser: false };
   if (!device.capabilities) return { shell: !device.screenOnly, screen: false, browser: false };
   return {
     shell: device.capabilities.includes("shell"),
