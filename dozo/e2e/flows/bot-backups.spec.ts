@@ -34,6 +34,10 @@ async function shot(page: Page, target: Locator, name: string) {
 test("bot backups: a bot keeps its own ordered backup models", async ({ browser, guard }) => {
   const { context, page } = await newAccount(browser, "backups");
   guard.follow(page);
+  guard.allow(
+    /^failed: net::ERR_FAILED GET [^ ]+\/assets\/[^ ]+\.js$/,
+    "a reload or a new page cancels the app's idle fetch of its lazy screens; each screen this flow opens is checked on screen",
+  );
   try {
     await connectModelThroughOnboarding(page);
     const botId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1) as string;
@@ -52,8 +56,6 @@ test("bot backups: a bot keeps its own ordered backup models", async ({ browser,
         APPEARANCE_KEY,
         theme,
       ]);
-      // A navigation while the app fetches its lazy screens ahead would cancel those fetches.
-      await page.waitForLoadState("networkidle");
       await openBot(page, botId, "Chief");
       await openBotSettings(page);
       const settings = page.getByTestId("bot-settings");
@@ -70,7 +72,6 @@ test("bot backups: a bot keeps its own ordered backup models", async ({ browser,
 
       const list = settings.getByTestId("dozo-bot-backups");
       await expect(list.getByRole("listitem").filter({ hasText: "Second key" })).toBeVisible();
-      await page.waitForLoadState("networkidle");
       await page.reload();
       await openBotSettings(page);
       const row = settings.getByTestId("dozo-bot-backups").getByRole("listitem").first();
