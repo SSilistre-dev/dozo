@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   // The bot's main thread as the server names it (threads/head).
   head: vi.fn(),
   scope: vi.fn(),
+  report: vi.fn(),
   replace: vi.fn(),
   mounts: [] as (string | undefined)[],
 }));
@@ -50,6 +51,7 @@ vi.mock("./saved-chats", () => ({
   savedChatsScope: () => state.scope(),
   readSavedThread: (_scope: unknown, target: string) => state.saved[target] ?? null,
 }));
+vi.mock("./monitoring", () => ({ reportMobileError: state.report }));
 vi.mock("./organizations", () => ({ selectSpaceAcrossOrganizations: vi.fn() }));
 vi.mock("./integrations-cache", () => ({ integrationsCacheScope: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
@@ -118,6 +120,7 @@ beforeEach(() => {
   state.head.mockReset();
   state.head.mockResolvedValue({ threadId: "thread-main", cursor: 0 });
   state.scope.mockReset();
+  state.report.mockReset();
   state.scope.mockResolvedValue({ namespace: "ns" });
   state.rpc.mockResolvedValue(chats());
   queryClient.clear();
@@ -310,9 +313,13 @@ it("keeps the chat open when the list is read again after it opened", async () =
 
 it("does not wait forever when the saved copy cannot be read", async () => {
   state.params = { botId: "bot-1", threadId: "thread-main" };
-  state.scope.mockRejectedValue(new Error("storage"));
+  const failure = new Error("storage");
+  state.scope.mockRejectedValue(failure);
   await render();
   // No saved copy: the list and the server's main thread settle it.
   await vi.waitFor(() => expect(container.textContent).toBe("thread:user-1:main"));
   expect(container.querySelector("progress")).toBeNull();
+  expect(state.report).toHaveBeenCalledWith(failure, "mobile.startup", {
+    source: "saved-chat-scope",
+  });
 });

@@ -124,3 +124,20 @@ it("keeps every key and announcement of the chat on screen to the chat's own", (
   const page = readFileSync(join(mobile, "app/page.tsx"), "utf8");
   expect(page).toContain("dozoPageReplyKey(chat.threadKey, back, params)");
 });
+
+// Metro bundles the phone app, which has no Node: a server-only import (`node:*`, the database or
+// adapter packages, the logging root that pulls in async_hooks) breaks the Android build, not the
+// tests. The phone reports through `./monitoring` or `@rakazo/logging/monitoring`.
+it("imports nothing the phone cannot bundle", () => {
+  const SERVER_ONLY =
+    /^(?!import type\b).*\bfrom\s+["'](node:[^"']*|@rakazo\/(?:db|adapters)(?:\/[^"']*)?|@rakazo\/logging)["']/gm;
+  const found = ["app", "components", "lib"]
+    .flatMap((dir) => sources(join(mobile, dir)))
+    .filter((path) => !/\.test-support\.tsx?$/.test(path))
+    .flatMap((path) =>
+      [...readFileSync(path, "utf8").matchAll(SERVER_ONLY)].map(
+        (hit) => `${relative(mobile, path)}: ${hit[1]}`,
+      ),
+    );
+  expect(found).toEqual([]);
+});

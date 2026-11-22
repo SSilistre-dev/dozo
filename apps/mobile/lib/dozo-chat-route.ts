@@ -1,7 +1,7 @@
-import { bestEffort } from "@rakazo/logging";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { dozoChatParam, dozoSavedChatTarget } from "./dozo-chat-target";
+import { reportMobileError } from "./monitoring";
 import { queryClient, rpcQuery } from "./query";
 import { readSavedThread, savedChatsScope } from "./saved-chats";
 import { useInboxBot } from "./search-inbox";
@@ -21,8 +21,13 @@ function useSavedMainThread(botId: string | undefined, enabled: boolean) {
   useEffect(() => {
     if (!enabled || !botId) return;
     let live = true;
-    // A saved copy that cannot be read is no saved copy: the route goes on without it.
-    void bestEffort("read the saved chat scope", savedChatsScope()).then((scope) => {
+    // A saved copy that cannot be read is no saved copy: the route goes on without it, and the
+    // failure is reported. (The server-side `bestEffort` is not in the phone's bundle.)
+    const read = savedChatsScope().catch((error: unknown) => {
+      reportMobileError(error, "mobile.startup", { source: "saved-chat-scope" });
+      return null;
+    });
+    void read.then((scope) => {
       if (!live) return;
       const copy = scope ? readSavedThread(scope, dozoSavedChatTarget({ botId })) : null;
       setSaved({ botId, threadId: copy?.threadId ?? null });
