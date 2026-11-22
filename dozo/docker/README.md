@@ -191,7 +191,7 @@ container only. Dependencies live in the Docker volume `dozo-qa-deps` (pnpm stor
 `node_modules`, reinstalled in place when the lockfile changes); a cold run installs everything, an
 unchanged lockfile skips that. `docker volume rm dozo-qa-deps` starts cold. Nothing is written to the
 host. The database client (`packages/db/src/generated`) is generated in the volume before every
-run, because api tests load `@rakazo/db`. A failing run prints each file under the floor with its number.
+run, because api tests load `@rakazo/db`. Before the tests, `tsc --noEmit` checks `apps/api` on the branded tree (about 30 seconds; the images are bundled, not type-checked, and upstream's own check runs on the unbranded tree only), so a type error there fails the step. A failing run prints each file under the floor with its number.
 
 ### qa
 
