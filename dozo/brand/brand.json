@@ -9934,6 +9934,51 @@
         "packages/db/src/dozo-organization-skills.ts"
       ],
       "reason": "organization skill library: upstream's mobile skills screen test shows a library skill marked with where it came from"
+    },
+    {
+      "file": "packages/adapters/src/routine-scheduling.test.ts",
+      "find": "    bot: { findUnique: vi.fn(async () => ({ id: \"bot-1\", thread: { id: \"thread-1\" } })) },\n    agentSkill: { findMany: vi.fn(async () => []) },\n",
+      "replace": "    bot: { findUnique: vi.fn(async () => ({ id: \"bot-1\", thread: { id: \"thread-1\" } })) },\n    // The fork's organization library read finds no library here; no other raw read.\n    $queryRaw: vi.fn(async (sql: { strings?: string[] }) => {\n      if (sql.strings?.join(\"\").includes(\"dozo_organization_skills\")) return [];\n      throw new TypeError(\"prisma.$queryRaw is not a function\");\n    }),\n    agentSkill: { findMany: vi.fn(async () => []) },\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's routine scheduling test, whose stand-in database has no raw read, which a routine's skill catalog now makes for the organization library; answered as no library"
+    },
+    {
+      "file": "packages/adapters/src/run-tools-tasks.test.ts",
+      "find": "        taughtSkill: { findMany: vi.fn(async () => []) },\n        agentSkill: { findMany: vi.fn(async () => []) },\n",
+      "replace": "        taughtSkill: { findMany: vi.fn(async () => []) },\n        // The fork's organization library read finds no library here; no other raw read.\n        $queryRaw: vi.fn(async (sql: { strings?: string[] }) => {\n          if (sql.strings?.join(\"\").includes(\"dozo_organization_skills\")) return [];\n          throw new TypeError(\"prisma.$queryRaw is not a function\");\n        }),\n        agentSkill: { findMany: vi.fn(async () => []) },\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's routine tools test, answered the same way"
+    },
+    {
+      "file": "packages/adapters/src/task-catalog.test.ts",
+      "find": "          { id: \"taught-1\", name: \"Export report\", goal: \"Export the report\", status: \"saved\" },\n        ]),\n      },\n      agentSkill: {\n",
+      "replace": "          { id: \"taught-1\", name: \"Export report\", goal: \"Export the report\", status: \"saved\" },\n        ]),\n      },\n      // The fork's organization library read finds no library here; no other raw read.\n      $queryRaw: vi.fn(async (sql: { strings?: string[] }) => {\n        if (sql.strings?.join(\"\").includes(\"dozo_organization_skills\")) return [];\n        throw new TypeError(\"prisma.$queryRaw is not a function\");\n      }),\n      agentSkill: {\n",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's task catalog test, answered the same way"
+    },
+    {
+      "file": "packages/adapters/src/task-catalog.test.ts",
+      "find": "      taughtSkill: { findMany: vi.fn(async () => []) },\n      agentSkill: { findMany: vi.fn(async () => []) },\n    };",
+      "replace": "      taughtSkill: { findMany: vi.fn(async () => []) },\n      // The fork's organization library read finds no library here; no other raw read.\n      $queryRaw: vi.fn(async (sql: { strings?: string[] }) => {\n        if (sql.strings?.join(\"\").includes(\"dozo_organization_skills\")) return [];\n        throw new TypeError(\"prisma.$queryRaw is not a function\");\n      }),\n      agentSkill: { findMany: vi.fn(async () => []) },\n    };",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's task catalog test for a group run, answered the same way"
+    },
+    {
+      "file": "packages/adapters/src/task-catalog.test.ts",
+      "find": "            content: \"steps\",\n            source: \"user\",\n          },\n        ]),",
+      "replace": "            content: \"steps\",\n            source: \"user\",\n            // The person the catalog is read for wrote it, as every row names its owner.\n            userId: \"user-1\",\n          },\n        ]),",
+      "requires": [
+        "packages/db/src/dozo-organization-skills.ts"
+      ],
+      "reason": "organization skill library: upstream's task catalog test's skill row names its owner, the person the catalog is read for, as a real row does; someone else's skill is read only for this person's bots"
     }
   ],
   "assets": {
