@@ -324,6 +324,22 @@ Requests name an extra chat as `chatBotId` with `chatId`, never as `botId`. Depl
 writing to the main chat. Clearing works in the main chat only; it clears the helper threads the
 main chat started, not those of an extra chat.
 
+## Organization logo
+
+An organization's owner uploads its logo under Settings, Organization
+(`apps/api/src/dozo-organization-logo.ts`, the auth library's own `organization.logo` column, so no
+migration). The role is checked on the server before the picture is decoded. The bytes must be the
+PNG, JPEG, WebP or GIF the upload names; an SVG is never taken, since it can carry a script. What is
+stored is a 128 px square WebP the server drew itself: cropped to the middle, the first frame of a
+GIF, transparency laid on white so dark ink shows in the dark theme. Only such a value is ever
+handed to an app.
+
+The logo shows in one place: the start of the sidebar header (web and desktop), and the home header
+on mobile, for the organization the open Space belongs to. A guest of a shared Space sees the host's
+logo there and their own in their own Spaces; someone who leaves the Space stops getting it at once.
+A change sends the roster signal of every Space of the organization. No colour is taken from the
+logo: the app stays monochrome. Mobile shows the logo only; it is uploaded on the web or desktop app.
+
 ## Feedback
 
 The account menu's Send feedback opens a short note with an optional Include diagnostics switch
