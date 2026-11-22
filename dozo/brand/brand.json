@@ -11068,6 +11068,118 @@
         "packages/core/src/dozo-skill-name.ts"
       ],
       "reason": "organization skill library: the resolver compares names by the same key as the library's built-in rule, so no padding of a name gets around it; the comparison itself is unchanged"
+    },
+    {
+      "file": "packages/adapters/src/run-turn.ts",
+      "find": "import { runCameByToken } from \"./dozo-token-run.js\";\n\ntype RuntimeEvent",
+      "replace": "import { runCameByToken } from \"./dozo-token-run.js\";\nimport { dozoRecordLearningTurn } from \"./dozo-learning-turn.js\";\n\ntype RuntimeEvent",
+      "requires": [
+        "packages/adapters/src/dozo-learning-turn.ts"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "packages/adapters/src/run-turn.ts",
+      "find": "  await enqueueConversationRetention(ctx, answeredMessageIds);\n  // Last, and never fatal",
+      "replace": "  await enqueueConversationRetention(ctx, answeredMessageIds);\n  await dozoRecordLearningTurn(ctx);\n  // Last, and never fatal",
+      "requires": [
+        "packages/adapters/src/dozo-learning-turn.ts"
+      ],
+      "reason": "bot learning: a completed run of the owner's own direct chat is recorded for the bot's next learning review when its owner turned learning on; with it off this is one primary-key read, and it never fails the run"
+    },
+    {
+      "file": "packages/adapter-kit/src/types.ts",
+      "find": "  \"push.receipt\": { userId: string; ticketId: string; tokenDigest: string };\n}\n",
+      "replace": "  \"push.receipt\": { userId: string; ticketId: string; tokenDigest: string };\n  /** Review a bot's waiting turns of its owner's chat into its notes (dozo-learning-review.ts). */\n  \"memory.learning-review\": { botId: string };\n}\n",
+      "reason": "bot learning: the job kind of a bot's learning review, the durable backup of a review started at once and the review after a pause"
+    },
+    {
+      "file": "packages/adapter-kit/src/background-jobs.ts",
+      "find": "    tokenDigest: z.string().min(1),\n  }),\n} satisfies",
+      "replace": "    tokenDigest: z.string().min(1),\n  }),\n  \"memory.learning-review\": z.object({ botId: z.string().min(1) }),\n} satisfies",
+      "reason": "bot learning: the payload of the learning review job"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "import { expireTaughtSkillTeaching } from \"./dozo-teach-expire.js\";\nimport type { TeamChat }",
+      "replace": "import { expireTaughtSkillTeaching } from \"./dozo-teach-expire.js\";\nimport { dozoLearningReviewJob } from \"./dozo-learning-review.js\";\nimport type { TeamChat }",
+      "requires": [
+        "packages/adapters/src/dozo-learning-review.ts"
+      ],
+      "reason": "bot learning: the import of the two rules below"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "  deploymentModelConfigured?: boolean;\n  messagingDelivery?: MessagingDelivery;",
+      "replace": "  deploymentModelConfigured?: boolean;\n  memory: Parameters<typeof dozoLearningReviewJob>[0][\"memory\"];\n  messagingDelivery?: MessagingDelivery;",
+      "requires": [
+        "packages/adapters/src/dozo-learning-review.ts"
+      ],
+      "reason": "bot learning: the review job writes the bot's notes through the same memory store runs use"
+    },
+    {
+      "file": "packages/adapters/src/background-job-handlers.ts",
+      "find": "      await pollMediaVideo(deps, payload);\n    }),\n    // A receipt belongs",
+      "replace": "      await pollMediaVideo(deps, payload);\n    }),\n    \"memory.learning-review\": dozoLearningReviewJob(deps),\n    // A receipt belongs",
+      "requires": [
+        "packages/adapters/src/dozo-learning-review.ts"
+      ],
+      "reason": "bot learning: the handler of the learning review job"
+    },
+    {
+      "file": "packages/adapters/src/run-runtime.ts",
+      "find": "    secretStore: deps.secretStore,\n    memoryProviders: deps.memoryProviders,\n    deploymentModelKey: env.deploymentModelKey,",
+      "replace": "    secretStore: deps.secretStore,\n    memoryProviders: deps.memoryProviders,\n    memory: deps.memory,\n    deploymentModelKey: env.deploymentModelKey,",
+      "requires": [
+        "packages/adapters/src/dozo-learning-review.ts"
+      ],
+      "reason": "bot learning: the job handlers get the memory store of the rule on background-job-handlers.ts"
+    },
+    {
+      "file": "packages/adapters/src/index.ts",
+      "find": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./web-limits.js\";",
+      "replace": "export * from \"./dozo-no-computer.prompt.js\";\nexport * from \"./dozo-learning-review.js\";\nexport * from \"./dozo-learning-store.js\";\nexport * from \"./web-limits.js\";",
+      "requires": [
+        "packages/adapters/src/dozo-learning-review.ts",
+        "packages/adapters/src/dozo-learning-store.ts"
+      ],
+      "reason": "bot learning: the API reads, sets and undoes through the adapters package"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "import { dozoOrganizationLogoContract } from \"./dozo-organization-logo.js\";\n\nconst botId = z.object",
+      "replace": "import { dozoOrganizationLogoContract } from \"./dozo-organization-logo.js\";\nexport * from \"./dozo-learning.js\";\nimport { dozoLearningContract } from \"./dozo-learning.js\";\n\nconst botId = z.object",
+      "requires": [
+        "packages/contracts/src/dozo-learning.ts"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "packages/contracts/src/rpc.ts",
+      "find": "  dozoQuietHours: dozoQuietHoursContract,\n  routines: {\n",
+      "replace": "  dozoQuietHours: dozoQuietHoursContract,\n  dozoLearning: dozoLearningContract,\n  routines: {\n",
+      "requires": [
+        "packages/contracts/src/dozo-learning.ts"
+      ],
+      "reason": "bot learning: a bot's learning mode, its latest changes and undoing one"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "import { dozoCommandRulesRoutes } from \"./dozo-command-rules.js\";\nimport { memoryRoutes }",
+      "replace": "import { dozoCommandRulesRoutes } from \"./dozo-command-rules.js\";\nimport { dozoLearningRoutes } from \"./dozo-learning.js\";\nimport { memoryRoutes }",
+      "requires": [
+        "apps/api/src/dozo-learning.ts"
+      ],
+      "reason": "bot learning: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/router.ts",
+      "find": "    ...dozoCommandRulesRoutes(ctx),\n    ...routinesRoutes(ctx),\n",
+      "replace": "    ...dozoCommandRulesRoutes(ctx),\n    ...dozoLearningRoutes(ctx),\n    ...routinesRoutes(ctx),\n",
+      "requires": [
+        "apps/api/src/dozo-learning.ts"
+      ],
+      "reason": "bot learning: the routes of the learning contract"
     }
   ],
   "assets": {
