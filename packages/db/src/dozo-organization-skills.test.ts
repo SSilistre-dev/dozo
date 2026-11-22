@@ -103,6 +103,19 @@ describe("the organization library read", () => {
       "c",
       "e",
     ]);
+    // Compared as the resolver compares them: padding of any kind is no way around the rule.
+    const padded = ["Remember ", " remember", "remember\u00a0", "\tRemember", "remember\n"].map(
+      (name, index) => ({ id: `p${index}`, userId: "owner", name }),
+    );
+    expect(preferOwnSkills(padded, "user-1", [" Remember"])).toEqual([]);
+    const ownPadded = [{ id: "o", userId: "owner", name: "\u00a0Expenses " }];
+    expect(
+      preferOwnSkills(
+        [...ownPadded, { id: "m", userId: "user-1", name: "expenses" }],
+        "user-1",
+        [],
+      ),
+    ).toEqual([{ id: "m", userId: "user-1", name: "expenses" }]);
   });
 });
 
@@ -158,10 +171,14 @@ describe("putting a skill in the library", () => {
     expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 
-  it("refuses a skill named like a built-in one", async () => {
-    const { db, tx } = fakeDb({ role: "owner", skill: { id: "skill-1", name: "Remember" } });
-    await expect(share(db, true, ["remember"])).rejects.toBeInstanceOf(SkillNamedLikeBuiltinError);
-    expect(tx.$executeRaw).not.toHaveBeenCalled();
+  it("refuses a skill named like a built-in one, however its name is padded", async () => {
+    for (const name of ["Remember", "Remember ", " remember", "remember\u00a0", "\tRemember"]) {
+      const { db, tx } = fakeDb({ role: "owner", skill: { id: "skill-1", name } });
+      await expect(share(db, true, ["remember"]), JSON.stringify(name)).rejects.toBeInstanceOf(
+        SkillNamedLikeBuiltinError,
+      );
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+    }
   });
 
   it("tells the caller what happened when the skill is already in a library, a concurrent share's included", async () => {

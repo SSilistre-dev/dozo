@@ -10945,6 +10945,33 @@
         "packages/db/src/dozo-organization-skills.ts"
       ],
       "reason": "organization skill library: upstream's task catalog test's skill row names its owner, the person the catalog is read for, as a real row does; someone else's skill is read only for this person's bots"
+    },
+    {
+      "file": "packages/core/src/index.ts",
+      "find": "export * from \"./agent-skill.js\";\nexport * from \"./agent-skill.prompt.js\";",
+      "replace": "export * from \"./agent-skill.js\";\nexport * from \"./dozo-skill-name.js\";\nexport * from \"./agent-skill.prompt.js\";",
+      "requires": [
+        "packages/core/src/dozo-skill-name.ts"
+      ],
+      "reason": "organization skill library: the one key skill names are compared by, for the resolver and the library alike"
+    },
+    {
+      "file": "packages/core/src/agent-skill.ts",
+      "find": "import { formatForcedSkillPrompt } from \"./agent-skill.prompt.js\";\nimport { ClientError }",
+      "replace": "import { formatForcedSkillPrompt } from \"./agent-skill.prompt.js\";\nimport { skillNameKey } from \"./dozo-skill-name.js\";\nimport { ClientError }",
+      "requires": [
+        "packages/core/src/dozo-skill-name.ts"
+      ],
+      "reason": "organization skill library: the import of the rule below"
+    },
+    {
+      "file": "packages/core/src/agent-skill.ts",
+      "find": "  const needle = name.trim().toLowerCase();\n  if (!needle) return undefined;\n  return skills.find((skill) => skill.name.trim().toLowerCase() === needle);",
+      "replace": "  const needle = skillNameKey(name);\n  if (!needle) return undefined;\n  return skills.find((skill) => skillNameKey(skill.name) === needle);",
+      "requires": [
+        "packages/core/src/dozo-skill-name.ts"
+      ],
+      "reason": "organization skill library: the resolver compares names by the same key as the library's built-in rule, so no padding of a name gets around it; the comparison itself is unchanged"
     }
   ],
   "assets": {

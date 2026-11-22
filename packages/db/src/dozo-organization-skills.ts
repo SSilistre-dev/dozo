@@ -1,4 +1,4 @@
-import { ClientError } from "@rakazo/core";
+import { ClientError, skillNameKey } from "@rakazo/core";
 import { availableInSpace } from "./availability.js";
 import { isOwnerRole } from "./billing.js";
 import type { PrismaClient } from "./client.js";
@@ -77,7 +77,8 @@ export async function skillsReadableInSpace(db: Raw, scope: Scope) {
 /**
  * The skills as one person sees them: a library skill named like one of their own gives way to
  * theirs, the one closer to them, and one named like a built-in skill gives way to the built-in,
- * so someone else's skill never stands in for either.
+ * so someone else's skill never stands in for either. Names compare by `skillNameKey`, the key the
+ * resolver finds a skill by.
  */
 export function preferOwnSkills<T extends { userId: string; name: string }>(
   rows: readonly T[],
@@ -85,10 +86,10 @@ export function preferOwnSkills<T extends { userId: string; name: string }>(
   builtinNames: readonly string[],
 ): T[] {
   const taken = new Set([
-    ...builtinNames.map((name) => name.toLowerCase()),
-    ...rows.filter((row) => row.userId === userId).map((row) => row.name.toLowerCase()),
+    ...builtinNames.map(skillNameKey),
+    ...rows.filter((row) => row.userId === userId).map((row) => skillNameKey(row.name)),
   ]);
-  return rows.filter((row) => row.userId === userId || !taken.has(row.name.toLowerCase()));
+  return rows.filter((row) => row.userId === userId || !taken.has(skillNameKey(row.name)));
 }
 
 /** The organization of the Space when this person owns it; one rule for the owner role. */
@@ -163,8 +164,8 @@ export async function shareSkillWithOrganization(
     });
     if (!skill) throw new IsolationError();
     if (input.shared) {
-      const name = skill.name.toLowerCase();
-      if (input.builtinNames.some((builtin) => builtin.toLowerCase() === name))
+      const name = skillNameKey(skill.name);
+      if (input.builtinNames.some((builtin) => skillNameKey(builtin) === name))
         throw new SkillNamedLikeBuiltinError();
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "dozo_organization_skills" ("skillId", "organizationId", "sharedById")

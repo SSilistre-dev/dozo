@@ -371,7 +371,9 @@ they are a member of the open Space; the person who shared the skill still owns 
 (`dozo_is_owner_role`, the SQL twin of `isOwnerRole`, tested against it) and still owns the skill.
 A sharer demoted, removed or deleted takes the skill out of every member's reach at once. A member's
 own skill and a built-in skill of the same name win over a library skill; a skill named like a
-built-in cannot be shared. A member turns a library skill off for their own bots with the same
+built-in cannot be shared. Names compare by `skillNameKey` (`packages/core/src/dozo-skill-name.ts`),
+the key the resolver `findSkillByName` uses too, so padding a name gets around neither. The account
+import keeps names as given (upstream's behaviour), which is why that matters. A member turns a library skill off for their own bots with the same
 switch (listed under their skills while off, to turn back on). A change to the library, or the
 owner changing or deleting a skill in it, signals every Space of the organization.
 

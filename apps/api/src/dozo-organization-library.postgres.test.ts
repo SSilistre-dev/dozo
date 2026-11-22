@@ -612,6 +612,71 @@ describe.skipIf(!enabled)("organization skill library, while things change (Post
     await library(actorIn(team, owner)).share({ skillId: named.id, shared: false });
   });
 
+  it("never stands in for a built-in skill under a padded name, shared, renamed or imported", async () => {
+    const builtin = BUILTIN_SKILL_NAMES[0]!;
+    const member = actorIn(team, guest);
+    const sameName = (entries: string[]) =>
+      entries.filter(
+        (entry) =>
+          entry.split(":").slice(1).join(":").trim().toLowerCase() === builtin.toLowerCase(),
+      );
+    const ownerInTeam = actorIn(team, owner);
+    for (const padded of [
+      `${builtin} `,
+      ` ${builtin.toLowerCase()}`,
+      `${builtin}\u00a0`,
+      `\t${builtin}`,
+    ]) {
+      const skill = await runAsTenant(ownerInTeam, () =>
+        skills().create(ownerInTeam, {
+          name: `padded-${randomUUID().slice(0, 6)}`,
+          description: "Padded",
+        }),
+      );
+      // The name as a write that does not trim it leaves it (the account import keeps names as given).
+      await runAsSystem("pad the name", () =>
+        prisma.agentSkill.update({ where: { id: skill.id }, data: { name: padded } }),
+      );
+      await expect(
+        library(ownerInTeam).share({ skillId: skill.id, shared: true }),
+        JSON.stringify(padded),
+      ).rejects.toMatchObject({ kind: "CONFLICT" });
+    }
+    // Shared under another name, then renamed to the built-in's padded with a tab.
+    const later = await runAsTenant(ownerInTeam, () =>
+      skills().create(ownerInTeam, { name: "renamed-later", description: "Renamed" }),
+    );
+    await library(ownerInTeam).share({ skillId: later.id, shared: true });
+    await runAsSystem("rename", () =>
+      prisma.agentSkill.update({ where: { id: later.id }, data: { name: `\t${builtin} ` } }),
+    );
+    expect(sameName(await catalog(member))).toEqual([`builtin:${builtin}`]);
+    expect(sameName(await listed(member))).toEqual([`builtin:${builtin}`]);
+    await library(ownerInTeam).share({ skillId: later.id, shared: false });
+    // A skill written as the account import writes one: in the imported Space, its name as given.
+    const imported = randomUUID();
+    await runAsSystem("import", () =>
+      prisma.agentSkill.create({
+        data: {
+          id: imported,
+          spaceId: team,
+          userId: owner,
+          name: `\u3000${builtin}\n`,
+          description: "Imported",
+          content: "Imported text",
+          source: "user",
+          allSpaces: false,
+        },
+      }),
+    );
+    await expect(
+      library(ownerInTeam).share({ skillId: imported, shared: true }),
+    ).rejects.toMatchObject({
+      kind: "CONFLICT",
+    });
+    await runAsSystem("clean up", () => prisma.agentSkill.delete({ where: { id: imported } }));
+  });
+
   it("signals its organization's Spaces when the owner changes the skill, and nothing for one in no library", async () => {
     publishRosterChange.mockClear();
     const ownerActor = actorIn(team, owner);
