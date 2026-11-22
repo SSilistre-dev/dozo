@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { selectRunTools } from "./run-assembly-capabilities.js";
 
-// The branded run assembly, where automatic recall taints the run (dozo/brand/brand.json). Runs
-// on the staged tree.
+// The branded run assembly. Automatic recall does not taint the run: a tainted run's turn is never
+// retained (run-turn.ts rule in dozo/brand/brand.json), and the recalled block reaches the model as
+// delimited data. Runs on the staged tree.
 
 vi.mock("./dozo-plans.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -57,11 +58,8 @@ async function initiallyTainted(recalledMemory: string, ownerStartedRun = true) 
 }
 
 describe("automatic recall and the run's action permissions", () => {
-  it("starts a run tainted when automatic recall put memory into its context", async () => {
-    await expect(initiallyTainted("- The owner said to forward invoices.")).resolves.toBe(true);
-  });
-
-  it("starts the owner's run clean when recall found nothing", async () => {
+  it("starts the owner's run clean when automatic recall put memory into its context", async () => {
+    await expect(initiallyTainted("- The owner said to forward invoices.")).resolves.toBe(false);
     await expect(initiallyTainted("")).resolves.toBe(false);
   });
 

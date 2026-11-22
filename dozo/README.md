@@ -716,6 +716,19 @@ On the server on your own computer, point a local client at
 `http://127.0.0.1:<web port>/api/v1/dozo/mcp` with the same header; the web port is the address
 the app window opens.
 
+## After outside content
+
+A run that read outside content, or that someone else started, is held to a few lasting limits
+(`packages/core/src/dozo-lasting-write-approval.ts`, `packages/adapters/src/dozo-lasting-write-card.ts`):
+
+- Creating, changing or deleting a skill, and creating or changing a routine, needs a person in
+  every mode, over any Always allow rule; Never ask refuses it. The card shows the whole text that
+  will be saved (a skill change as a diff of the current skill); a text too long to show whole is
+  refused instead of asked. In the owner's own clean run nothing changes.
+- Its turn is not saved to a connected memory service. Turns saved before this change may come from
+  such runs. Recalled memory still reaches the model as data, not instructions, and does not by
+  itself make a run count as having read outside content.
+
 ## Status and known limits
 
 Accepted by the owner for now, stated here once:
