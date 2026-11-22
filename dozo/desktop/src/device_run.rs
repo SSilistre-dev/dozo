@@ -210,9 +210,22 @@ impl Runner {
         self.browsers.named()
     }
 
-    /// The person clears that bot's browser (`Browsers::clear`).
-    pub async fn clear_browser(&self, key: &str) {
-        self.browsers.clear(key).await;
+    /// Whether the person cleared the bot's browser. The mark goes only once the server has the
+    /// answer: one that did not arrive is asked again next time, and the browser stays unstarted
+    /// meanwhile.
+    async fn answer_cleared(&self, key: &str, reply: &Reply) {
+        let cleared = self.browsers.cleared(key);
+        if reply.send(json!({ "value": { "cleared": cleared } })).await
+            && reply.send(json!({ "done": true })).await
+            && cleared
+        {
+            self.browsers.take_cleared(key);
+        }
+    }
+
+    /// The person clears that bot's browser (`Browsers::clear`); false when it did not finish.
+    pub async fn clear_browser(&self, key: &str) -> bool {
+        self.browsers.clear(key).await
     }
 
     /// Whom to tell when `browser_names` changes.
@@ -378,7 +391,7 @@ impl Runner {
             {
                 return reply.error(NOT_HERE).await;
             }
-            "pageBrowserCleared" => Ok(json!({ "cleared": self.browsers.cleared(&key) })),
+            "pageBrowserCleared" => return self.answer_cleared(&key, reply).await,
             "pageBrowserSignIn" => {
                 self.remember_name(&key, request);
                 if !running(&home) {
@@ -1208,6 +1221,32 @@ mod tests {
         );
         runner.stop_all(true);
         let _ = sleeper;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The cleared mark goes once the server has the answer, not before, and not when the answer
+    /// did not get there.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_cleared_mark_goes_only_once_the_server_has_the_answer() {
+        let (runner, dir) = runner();
+        let key = bot_key("b");
+        let root = dir.join("data/browser-profiles");
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(runner.clear_browser(&key).await);
+        let (lost, call) = reply("r1");
+        drop(call);
+        runner.answer_cleared(&key, &lost).await;
+        assert!(
+            runner.browsers.cleared(&key),
+            "an answer that did not arrive keeps it"
+        );
+        let (reply, mut call) = reply("r2");
+        runner.answer_cleared(&key, &reply).await;
+        drop(reply);
+        let frame: Value = serde_json::from_str(&call.frames.recv().await.unwrap()).unwrap();
+        assert_eq!(frame["frame"], json!({ "value": { "cleared": true } }));
+        assert!(!runner.browsers.cleared(&key));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
