@@ -286,9 +286,25 @@ describe("reviewLearning", () => {
           id: "b2",
           runId: "r2",
           role: "bot",
-          blocks: [{ kind: "ask", text: "Paste the key", input: "secret" }],
+          blocks: [
+            { kind: "text", text: "Paste it below" },
+            { kind: "ask", text: "Paste the key", input: "secret" },
+          ],
         },
-        { id: "b3", runId: "r2", role: "bot", clientNonce: "partial:x", blocks: text("Half") },
+        {
+          id: "b3",
+          runId: "r2",
+          role: "bot",
+          clientNonce: "partial-reply:r2",
+          blocks: text("Half"),
+        },
+        {
+          id: "b4",
+          runId: "r2",
+          role: "bot",
+          clientNonce: "user-progress:r2:1",
+          blocks: text("Still on it"),
+        },
       ],
     });
     await reviewLearning(run.deps, BOT.id);
@@ -339,7 +355,10 @@ describe("reviewLearning", () => {
       answer(Array.from({ length: 6 }, (_, n) => ({ op: "add", text: `Note ${n}` }))),
       answer([{ op: "add", text: "Two\nlines" }]),
       answer([{ op: "add", text: "x".repeat(201) }]),
-      answer([{ op: "update", id: "n9", text: "Unknown" }]),
+      answer([
+        { op: "update", id: "n9", text: "Unknown" },
+        { op: "add", text: "Fine on its own" },
+      ]),
       answer([{ op: "add", text: "Extra", why: "field" }]),
       JSON.stringify({ changes: [], note: "extra" }),
     ];

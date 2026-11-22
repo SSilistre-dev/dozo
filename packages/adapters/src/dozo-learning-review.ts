@@ -242,7 +242,8 @@ export async function learningTranscript(
     const owned = said.get(turn.messageId);
     if (!owned) continue;
     const lines: LearningTranscriptLine[] = [{ speaker: "owner", text: owned }];
-    const reply = turn.tainted ? undefined : finalReply.get(turn.runId);
+    // A tainted turn's replies were never read.
+    const reply = finalReply.get(turn.runId);
     if (reply) lines.push({ speaker: "bot", text: reply });
     const size = lines.reduce((sum, line) => sum + line.text.length, 0);
     if (used + size > TRANSCRIPT_MAX_CHARS) {
