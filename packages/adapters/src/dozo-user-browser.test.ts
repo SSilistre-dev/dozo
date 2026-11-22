@@ -24,7 +24,7 @@ const FORM = "https://example.test/form";
 function setup(options: { capabilities?: string[]; owner?: string; token?: boolean } = {}) {
   const consents = new Set<string>();
   /** The person cleared the bot's browser on that computer. */
-  const cleared = { value: false };
+  const cleared = { value: false, failAfter: false };
   const signIn = { answer: true as unknown };
   const effects = new Map<string, { id: string; request: unknown }>();
   const device = fakeDeviceBrowser({
@@ -40,14 +40,20 @@ function setup(options: { capabilities?: string[]; owner?: string; token?: boole
       capabilities: options.capabilities ?? ["shell", "browser"],
     })),
     pairedSince: async () => new Date(0),
-    async *request(_owner: string, request: { method: string; command?: never }) {
+    async *request(
+      _owner: string,
+      request: { method: string; command?: never; forgotten?: boolean },
+    ) {
       requests.push(request);
       if (request.method === "pageBrowserSignIn") {
         yield { signedIn: signIn.answer };
         return;
       }
       if (request.method === "pageBrowserCleared") {
+        // The app keeps the mark until it is told the consents are forgotten.
+        if (request.forgotten) cleared.value = false;
         yield { cleared: cleared.value };
+        if (cleared.failAfter) throw new Error("the connection dropped");
         return;
       }
       if (request.method === "pageBrowser") {
@@ -610,5 +616,34 @@ describe("the sign-in", () => {
     expect(run.requests.find((r) => r.method === "pageBrowser")).toMatchObject({
       botName: "Ada",
     });
+    // Told only once they are gone, and then the browser is no longer cleared.
+    const told = run.requests.filter((r) => r.method === "pageBrowserCleared");
+    expect(told.at(-1)).toMatchObject({ forgotten: true });
+    expect(run.cleared.value).toBe(false);
+  });
+
+  it("keeps a cleared answer that came before the stream failed, and tells only after forgetting", async () => {
+    const run = setup();
+    allow(run, "read:example.test");
+    run.cleared.value = true;
+    run.cleared.failAfter = true;
+    const order: string[] = [];
+    const execute = run.ctx.deps.prisma.$executeRaw as unknown as ReturnType<typeof vi.fn>;
+    const forget = execute.getMockImplementation()!;
+    execute.mockImplementation(async (...args: unknown[]) => {
+      order.push("forget");
+      return forget(...(args as [TemplateStringsArray]));
+    });
+    const request = run.devices.request;
+    run.devices.request = async function* (
+      owner: string,
+      req: { method: string; forgotten?: boolean },
+    ) {
+      if (req.method === "pageBrowserCleared") order.push(req.forgotten ? "told" : "asked");
+      yield* request(owner, req as never);
+    } as never;
+    expect(await userBrowserGate(run.ctx, false, "browser_snapshot", {})).toBe("ask");
+    expect(run.consents.size).toBe(0);
+    expect(order.slice(0, 3)).toEqual(["asked", "forget", "told"]);
   });
 });
