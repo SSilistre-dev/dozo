@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { Actor } from "@rakazo/contracts";
+import { InMemoryRealtimeFanout } from "@rakazo/adapters";
+import type { Actor, ChatAlert } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   asSystem,
+  createChatAlerts,
   createDb,
+  createDozoAccessToken,
   createThreadEvents,
   createThreadMessageInTransaction,
 } from "@rakazo/db";
@@ -20,19 +23,34 @@ import { handleRpcError } from "./rpc-errors.js";
 const describePostgres =
   process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 
-/** How soon after the next message a removed member's stream must have ended. */
+/** How soon after the next message an ended caller's stream must have ended. */
 const ENDS_WITHIN_MS = 3_000;
 
-type Stream = { text: string; ended: boolean; unauthorized: boolean; close: () => void };
+/** An open stream as its client sees it, and how its caller signs out of it. */
+type Stream = {
+  text: string;
+  ended: boolean;
+  unauthorized: boolean;
+  close: () => void;
+  signOut: () => Promise<void>;
+};
 type Follow = (actor: Actor, input: { botId: string; cursor: number }) => Promise<Stream>;
+type Ending = (
+  space: { spaceId: string; owner: Actor; member: Actor },
+  stream: Stream,
+) => Promise<void>;
 
-/** A removed member's open chat stream, through the app's own routes. */
-describePostgres("a chat stream after its member is removed (PostgreSQL)", () => {
+/**
+ * An open chat or notification stream whose caller stops being allowed: removed from the Space,
+ * signed out, or deactivated. Through the app's own routes.
+ */
+describePostgres("a stream after its caller stops being allowed (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
   let connect: ReturnType<typeof dozoRouterConnector>;
+  let alerts: ReturnType<typeof createChatAlerts>;
   const organizations: string[] = [];
   const users: string[] = [];
   const streams: Stream[] = [];
@@ -46,6 +64,8 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
       create: { id: "default", defaultModelProvider: "openrouter", defaultModelId: "fake" },
       update: {},
     });
+    // Chats as the database alone follows them; alerts need a fanout, which nothing else here uses.
+    alerts = createChatAlerts(new InMemoryRealtimeFanout());
     const deps = {
       prisma,
       env: {
@@ -56,7 +76,11 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
       },
-      events: createThreadEvents(prisma),
+      events: {
+        ...createThreadEvents(prisma),
+        publishChatAlert: alerts.publish,
+        followChatAlerts: alerts.follow,
+      },
       jobs: { enqueue: vi.fn(), cancel: vi.fn().mockResolvedValue(undefined) },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       memoryProviders: { resolve: async () => null },
@@ -148,7 +172,9 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
 
   /**
    * As the app's session re-check, and the Bot API's token re-check (a member's tokens go with
-   * their membership): the person must still be in the stream's Space.
+   * their membership): the person must still be in the stream's Space. It asks nothing about the
+   * session or the account, and only every few seconds, so whatever ends a stream sooner is the
+   * stream's own check.
    */
   async function stillAuthorized(actor: Actor) {
     return Boolean(
@@ -159,11 +185,26 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
     );
   }
 
-  /** Follows a chat as the app does, collecting the raw frames as they arrive. */
-  const followInApp: Follow = async (actor, input) => {
+  /** A signed-in session of the person's, as the auth library keeps one. */
+  async function signIn(actor: Actor) {
+    const id = randomUUID();
+    await system.session.create({
+      data: {
+        id,
+        token: randomUUID(),
+        userId: actor.userId,
+        expiresAt: new Date(Date.now() + 60 * 60_000),
+      },
+    });
+    return id;
+  }
+
+  /** Opens an app stream at `path` with a fresh session, collecting the raw frames as they arrive. */
+  async function openInApp(actor: Actor, path: string, input: unknown): Promise<Stream> {
     const controller = new AbortController();
+    const sessionId = await signIn(actor);
     const { response } = await handler.handle(
-      new Request("http://127.0.0.1/rpc/threads/subscribe", {
+      new Request(`http://127.0.0.1/rpc/${path}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ json: input }),
@@ -173,6 +214,7 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
         prefix: "/rpc",
         context: {
           actor,
+          sessionId,
           signal: controller.signal,
           stillAuthorized: () => stillAuthorized(actor),
         },
@@ -184,6 +226,10 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
       ended: false,
       unauthorized: false,
       close: () => controller.abort(),
+      // As signing out, "sign out other sessions", a password change or an operator does.
+      signOut: async () => {
+        await system.session.delete({ where: { id: sessionId } });
+      },
     };
     streams.push(stream);
     const reader = response!.body!.getReader();
@@ -201,13 +247,22 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
       }
     })();
     return stream;
-  };
+  }
+
+  /** Follows a chat as the app does. */
+  const followInApp: Follow = (actor, input) => openInApp(actor, "threads/subscribe", input);
 
   /** Follows a chat as the Bot API and MCP do: the app's own procedure, called in process. */
   const followInProcess: Follow = async (actor, input) => {
     const controller = new AbortController();
+    const token = await createDozoAccessToken(system, actor, {
+      name: "Script",
+      botId: null,
+      expiresAt: null,
+    });
     const context = {
       actor,
+      dozoAccessTokenId: token!.row.id,
       signal: controller.signal,
       stillAuthorized: () => stillAuthorized(actor),
     };
@@ -217,6 +272,16 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
       ended: false,
       unauthorized: false,
       close: () => controller.abort(),
+      // "Sign out everywhere", which revokes every token the account made before it.
+      signOut: async () => {
+        await system.securityEvent.create({
+          data: {
+            type: "auth.session.revoked",
+            userId: actor.userId,
+            metadata: { via: "/revoke-sessions" },
+          },
+        });
+      },
     };
     streams.push(stream);
     void (async () => {
@@ -251,43 +316,118 @@ describePostgres("a chat stream after its member is removed (PostgreSQL)", () =>
     });
   }
 
-  it.each([
+  const endings: Array<[string, Ending]> = [
+    [
+      "removed from the Space",
+      async ({ spaceId, owner, member }) => {
+        expect(await call(owner, "spaces/members/remove", { spaceId, userId: member.userId })).toBe(
+          200,
+        );
+      },
+    ],
+    ["signed out", async (_, stream) => stream.signOut()],
+    [
+      "deactivated",
+      async ({ member }) => {
+        await system.user.update({
+          where: { id: member.userId },
+          data: { deactivatedAt: new Date() },
+        });
+      },
+    ],
+  ];
+
+  const followers: Array<[string, () => Follow]> = [
     ["the app's stream", () => followInApp],
     ["the Bot API's and MCP's in-process stream", () => followInProcess],
-  ])(
-    "ends a removed member's stream before anything written after the removal reaches it: %s",
-    async (_, which) => {
+  ];
+
+  it.each(
+    followers.flatMap(([name, which]) =>
+      endings.map(([why, ending]) => [name, why, which, ending] as const),
+    ),
+  )(
+    "ends a chat stream before anything written after its caller is %s %s reaches it",
+    async (_, __, which, ending) => {
       const follow = which();
-      const { spaceId, owner, member, botId, thread } = await sharedSpace();
-      const before = `before-removal-${randomUUID()}`;
-      const after = `after-removal-${randomUUID()}`;
+      const space = await sharedSpace();
+      const { spaceId, owner, member, botId, thread } = space;
+      const before = `before-${randomUUID()}`;
+      const after = `after-${randomUUID()}`;
       const openedAt = Date.now();
-      const removed = await follow(member, { botId, cursor: -1 });
+      const ended = await follow(member, { botId, cursor: -1 });
       const stays = await follow(owner, { botId, cursor: -1 });
 
-      // While a member, they see the chat.
+      // While allowed, they see the chat.
       await botSays(spaceId, thread.id, botId, before);
-      await vi.waitFor(() => expect(removed.text).toContain(before), { timeout: 5_000 });
+      await vi.waitFor(() => expect(ended.text).toContain(before), { timeout: 5_000 });
 
-      expect(await call(owner, "spaces/members/remove", { spaceId, userId: member.userId })).toBe(
-        200,
-      );
+      await ending(space, ended);
       expect(
         await call(owner, "threads/send", { botId, text: after, clientNonce: randomUUID() }),
       ).toBe(200);
       const writtenAt = Date.now();
-      // Inside the session re-check window, so only the membership check can end the stream now.
+      // Inside the session re-check window, so only the stream's own check can end it now.
       expect(writtenAt - openedAt).toBeLessThan(SESSION_RECHECK_MS);
 
       // The owner's stream gets the message, so it was there to be delivered.
       await vi.waitFor(() => expect(stays.text).toContain(after), { timeout: 5_000 });
-      await vi.waitFor(() => expect(removed.ended || removed.text.includes(after)).toBe(true), {
+      await vi.waitFor(() => expect(ended.ended || ended.text.includes(after)).toBe(true), {
         timeout: ENDS_WITHIN_MS,
       });
-      expect(removed.text, "the removed member's stream got the message").not.toContain(after);
-      expect(removed.ended).toBe(true);
+      expect(ended.text, "the ended caller's stream got the message").not.toContain(after);
+      expect(ended.ended).toBe(true);
       expect(Date.now() - writtenAt).toBeLessThan(ENDS_WITHIN_MS);
-      expect(removed.unauthorized).toBe(true);
+      expect(ended.unauthorized).toBe(true);
+      expect(stays.ended).toBe(false);
+    },
+  );
+
+  it.each(endings)(
+    "ends a notification stream before a chat alert reaches a caller %s",
+    async (_, ending) => {
+      const space = await sharedSpace();
+      const { spaceId, owner, member, botId, thread } = space;
+      const alert = (title: string): ChatAlert => ({
+        kind: "completion",
+        title,
+        body: "Done",
+        spaceId,
+        botId,
+        threadId: thread.id,
+      });
+      const before = `before-${randomUUID()}`;
+      const after = `after-${randomUUID()}`;
+      const openedAt = Date.now();
+      const ended = await openInApp(member, "notifications/subscribe", undefined);
+      const stays = await openInApp(owner, "notifications/subscribe", undefined);
+
+      // While allowed, alerts reach them.
+      await vi.waitFor(
+        async () => {
+          for (const userId of [member.userId, owner.userId])
+            await alerts.publish(userId, alert(before));
+          expect(ended.text).toContain(before);
+          expect(stays.text).toContain(before);
+        },
+        { timeout: 5_000 },
+      );
+
+      // Both were recipients when the alert was read; the caller stops being allowed before the
+      // preview goes out.
+      await ending(space, ended);
+      for (const userId of [member.userId, owner.userId])
+        await alerts.publish(userId, alert(after));
+      const publishedAt = Date.now();
+      expect(publishedAt - openedAt).toBeLessThan(SESSION_RECHECK_MS);
+
+      await vi.waitFor(() => expect(stays.text).toContain(after), { timeout: 5_000 });
+      await vi.waitFor(() => expect(ended.ended || ended.text.includes(after)).toBe(true), {
+        timeout: ENDS_WITHIN_MS,
+      });
+      expect(ended.text, "the ended caller's stream got the preview").not.toContain(after);
+      expect(ended.ended).toBe(true);
+      expect(ended.unauthorized).toBe(true);
       expect(stays.ended).toBe(false);
     },
   );

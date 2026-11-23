@@ -119,6 +119,7 @@ export function mountDozoMcp(app: Hono, deps: DozoMcpDeps) {
     void bestEffort("mcp token last used", deps.touch(tokenId));
     const client = deps.connect({
       actor,
+      dozoAccessTokenId: tokenId,
       signal: c.req.raw.signal,
       // A token revoked, or its owner deactivated, while a send waits ends the wait.
       stillAuthorized: async () => (await deps.authenticate(authorization))?.tokenId === tokenId,

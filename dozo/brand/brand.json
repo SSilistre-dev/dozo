@@ -12297,11 +12297,29 @@
     {
       "file": "apps/api/src/routes/threads.ts",
       "find": "        const events = withHeartbeats(context, (signal) =>\n          deps.events.follow(target.threadId, input.cursor, signal),\n        );\n",
-      "replace": "        const events = withHeartbeats(context, (signal) =>\n          dozoWhileMember(\n            deps.prisma,\n            context.actor,\n            target.threadId,\n            deps.events.follow(target.threadId, input.cursor, signal),\n          ),\n        );\n",
+      "replace": "        const events = withHeartbeats(context, (signal) =>\n          dozoWhileMember(\n            deps.prisma,\n            context,\n            target.threadId,\n            deps.events.follow(target.threadId, input.cursor, signal),\n          ),\n        );\n",
       "requires": [
         "apps/api/src/dozo-stream-membership.ts"
       ],
-      "reason": "chat stream membership: an open chat stream checks the person is still in the Space before it delivers anything newer than its last check, so someone removed from the Space gets nothing written after the removal and the stream ends at once instead of at the next session re-check"
+      "reason": "chat stream membership: an open chat stream checks the person is still in the Space, their account is not deactivated and the session or access token it was opened with still holds before it delivers anything newer than its last check, so someone removed, signed out or deactivated gets nothing written after that and the stream ends at once instead of at the next session re-check"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "} from \"../voice.js\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "replace": "} from \"../voice.js\";\nimport { dozoEnsureStreamCaller } from \"../dozo-stream-membership.js\";\nimport type { RouterContext } from \"./context.js\";\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "chat alert recipients: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/account.ts",
+      "find": "          else if (next.spaceId === spaceId) yield { type: \"alert\" as const, alert: next };\n",
+      "replace": "          else if (next.spaceId === spaceId) {\n            await dozoEnsureStreamCaller(deps.prisma, context);\n            yield { type: \"alert\" as const, alert: next };\n          }\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "chat alert recipients: recipients are read before an alert is published, so someone removed from the Space, signed out or deactivated in between could still get its preview; the open notification stream checks the person may still read the Space before it passes each alert on, and ends as a signed-out session does when not"
     },
     {
       "file": "apps/api/src/router.test.ts",
