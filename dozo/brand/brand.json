@@ -12284,6 +12284,30 @@
         "packages/adapters/src/dozo-lasting-write-card.ts"
       ],
       "reason": "lasting writes: a write Never ask refuses only because the run read its history says so, not that someone else could have asked for it"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "import { reactToThreadMessage } from \"../thread-reactions.js\";\nimport {\n  markThreadRead,",
+      "replace": "import { reactToThreadMessage } from \"../thread-reactions.js\";\nimport { dozoWhileMember } from \"../dozo-stream-membership.js\";\nimport {\n  markThreadRead,",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "chat stream membership: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/threads.ts",
+      "find": "        const events = withHeartbeats(context, (signal) =>\n          deps.events.follow(target.threadId, input.cursor, signal),\n        );\n",
+      "replace": "        const events = withHeartbeats(context, (signal) =>\n          dozoWhileMember(\n            deps.prisma,\n            context.actor,\n            target.threadId,\n            deps.events.follow(target.threadId, input.cursor, signal),\n          ),\n        );\n",
+      "requires": [
+        "apps/api/src/dozo-stream-membership.ts"
+      ],
+      "reason": "chat stream membership: an open chat stream checks the person is still in the Space before it delivers anything newer than its last check, so someone removed from the Space gets nothing written after the removal and the stream ends at once instead of at the next session re-check"
+    },
+    {
+      "file": "apps/api/src/router.test.ts",
+      "find": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
+      "replace": "      run: {\n        findUnique: vi.fn().mockResolvedValue({ trigger: \"bot_message\" }),\n      },\n      // Dozo: the stream's membership check, answering that the person is still in the Space.\n      $queryRaw: vi.fn().mockResolvedValue([{ member: true, seq: null }]),\n    } as unknown as PrismaClient;\n    const deps = {\n      prisma,\n      events: { follow: vi.fn(() => follow) },",
+      "reason": "upstream test fixture: a chat stream checks membership before delivering anything newer than its last check (chat stream membership), and this fake database had no answer for it; it answers that the person is still a member, so the session re-checks the tests are about decide as before"
     }
   ],
   "assets": {
