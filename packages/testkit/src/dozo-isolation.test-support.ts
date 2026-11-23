@@ -114,11 +114,14 @@ export interface Target {
   identityCanaries?: string[];
 }
 
-/** What the app sent out while the world ran: jobs, push notifications and mail, in order. */
+/**
+ * What the app sent out while the world ran: jobs, push notifications and mail, in order. `by` is
+ * the cookie of the request whose work sent it (`anonymous` without one).
+ */
 export interface IsolationRecords {
-  jobs: string[];
-  notifications: { userId: string; text: string }[];
-  mail: { to: string; text: string }[];
+  jobs: { by: string; text: string }[];
+  notifications: { by: string; userId: string; text: string }[];
+  mail: { by: string; to: string; text: string }[];
 }
 
 export interface IsolationWorld {
@@ -1035,14 +1038,18 @@ export async function joinWithInvite(
   await rpc(world, guest.cookie, "spaces/invites/accept", { token });
 }
 
-/** Set while the app answers a request of the world's, and in all work that request starts. */
-const inRequest = new AsyncLocalStorage<true>();
+/**
+ * The cookie of the world's request the app is answering (`anonymous` without one), kept in all
+ * work that request starts, timers included.
+ */
+const inRequest = new AsyncLocalStorage<string>();
 
 /**
  * Every job, push notification and mail the app sends from now on while answering a request (or
- * in work a request started), recorded as text so a scan can tell whom and what each one names.
- * The app's own timers (its reconciler re-enqueues expiry jobs for ringing calls) are not a
- * request's doing and are left out.
+ * in work a request started), recorded as text so a scan can tell whom and what each one names,
+ * with the cookie of the request that started it. The app's own timers (its reconciler re-enqueues
+ * expiry jobs for ringing calls) are not a request's doing and are left out; a timer a request set
+ * (an expiry job the in-memory queue runs later) is that request's.
  */
 function recordOutgoing(handles: IsolationHandles): IsolationRecords {
   const records: IsolationRecords = { jobs: [], notifications: [], mail: [] };
@@ -1059,7 +1066,8 @@ function recordOutgoing(handles: IsolationHandles): IsolationRecords {
     if (!/^(enqueue|publish|add|wake|schedule)/i.test(name)) continue;
     const original = (jobs[name] as (...args: unknown[]) => unknown).bind(jobs);
     jobs[name] = (...args: unknown[]) => {
-      if (inRequest.getStore()) records.jobs.push(`${name} ${text(args)}`);
+      const by = inRequest.getStore();
+      if (by) records.jobs.push({ by, text: `${name} ${text(args)}` });
       return original(...args);
     };
   }
@@ -1073,7 +1081,8 @@ function recordOutgoing(handles: IsolationHandles): IsolationRecords {
     notifications[name] = (...args: unknown[]) => {
       const first = args[0] as { userId?: string } | string | undefined;
       const userId = typeof first === "string" ? first : (first?.userId ?? "");
-      if (inRequest.getStore()) records.notifications.push({ userId, text: text(args) });
+      const by = inRequest.getStore();
+      if (by) records.notifications.push({ by, userId, text: text(args) });
       return original(...args);
     };
   }
@@ -1083,8 +1092,8 @@ function recordOutgoing(handles: IsolationHandles): IsolationRecords {
   if (mail) {
     const original = mail.send.bind(mail);
     mail.send = (message) => {
-      if (inRequest.getStore())
-        records.mail.push({ to: String(message.to ?? ""), text: text([message]) });
+      const by = inRequest.getStore();
+      if (by) records.mail.push({ by, to: String(message.to ?? ""), text: text([message]) });
       return original(message);
     };
   }
@@ -1112,7 +1121,12 @@ export async function buildIsolationWorld(
       : {},
   );
   const app: IsolationApp = extended
-    ? { request: (input, init) => inRequest.run(true, () => handles.app.request(input, init)) }
+    ? {
+        request: (input, init) =>
+          inRequest.run(new Headers(init?.headers).get("cookie") ?? "anonymous", () =>
+            handles.app.request(input, init),
+          ),
+      }
     : handles.app;
   const db = asSystem(handles.prisma);
   const world = { app, handles, db };

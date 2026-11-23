@@ -1016,28 +1016,33 @@ function reachReport(outcomes: Outcome[]) {
 }
 
 /**
- * Jobs, push notifications and mail sent since `from` that name the owner or one of `needles`:
- * a foreign caller's calls must not make the app act for A, P or S.
+ * Jobs, push notifications and mail sent since `from` by the work of `callers`' requests that name
+ * the owner or one of `needles`: a foreign caller's calls must not make the app act for A, P or S.
+ * Work the owner's own earlier requests left running (an expiry timer that fires mid-sweep on a
+ * slow run) is the owner's, not a caller's.
  */
 function outgoingReport(
   records: NonNullable<IsolationWorld["records"]>,
   from: { jobs: number; notifications: number; mail: number },
+  callers: readonly Caller[],
   owner: { userId: string; email: string },
   needles: string[],
 ) {
+  const cookies = new Set(callers.map((caller) => caller.cookie ?? "anonymous"));
+  const theirs = (item: { by: string }) => cookies.has(item.by);
   const names = (text: string) => needles.some((value) => text.includes(value));
   return [
     ...records.jobs
       .slice(from.jobs)
-      .filter(names)
-      .map((text) => `job: ${text.slice(0, 300)}`),
+      .filter((item) => theirs(item) && names(item.text))
+      .map((item) => `job: ${item.text.slice(0, 300)}`),
     ...records.notifications
       .slice(from.notifications)
-      .filter((item) => item.userId === owner.userId || names(item.text))
+      .filter((item) => theirs(item) && (item.userId === owner.userId || names(item.text)))
       .map((item) => `notification to ${item.userId}: ${item.text.slice(0, 300)}`),
     ...records.mail
       .slice(from.mail)
-      .filter((item) => item.to.includes(owner.email) || names(item.text))
+      .filter((item) => theirs(item) && (item.to.includes(owner.email) || names(item.text)))
       .map((item) => `mail to ${item.to}: ${item.text.slice(0, 300)}`),
   ];
 }
@@ -1416,7 +1421,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       expect(refusals.stale, "known distinguishable refusals that no longer differ").toEqual([]);
       expect(snapshotDiff(before, after), `rows of P or S changed (A is ${A.userId})`).toEqual([]);
       expect(
-        outgoingReport(records, from, A, needles),
+        outgoingReport(records, from, callers, A, needles),
         "jobs, notifications or mail for A, P or S",
       ).toEqual([]);
     }, 900_000);
@@ -1467,7 +1472,7 @@ describeWithDatabase.each(ISOLATION_LOGINS)(
       const shared = new Set(Object.values(S.ids));
       const onlyP = foreignIds(callers[0]!).filter((value) => !shared.has(value));
       expect(
-        outgoingReport(records, from, { userId: "-", email: "-" }, onlyP),
+        outgoingReport(records, from, callers, { userId: "-", email: "-" }, onlyP),
         "jobs, notifications or mail naming P",
       ).toEqual([]);
     }, 900_000);

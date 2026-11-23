@@ -433,6 +433,13 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
       "A model's name in a provider's catalog (what to run), not a stored record of anyone's.",
   },
   {
+    path: "dozoBotModelBackups/set",
+    kind: "no-target",
+    fields: ["modelId"],
+    reason:
+      "A model's name in a provider's catalog (what to run), not a stored record of anyone's; `botId` names the target's bot and `credentialId` the target's connection.",
+  },
+  {
     path: "models/beginOAuth",
     kind: "no-target",
     fields: ["modelId"],
@@ -748,6 +755,15 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
       'apps/api/src/routes/models.ts:246 "await validateRoleChoices(context.actor, role, [" \u2014 the choices are checked against the caller\'s own connections',
     reason:
       "The world's model connection has no provider set up, so the owner's choice is refused (400).",
+  },
+  {
+    path: "dozoBotModelBackups/set",
+    kind: "unreached",
+
+    verifiedByCode:
+      'apps/api/src/dozo-bot-model-backups.ts:21 "const bot = await repos.getBot(context.actor, input.botId);" \u2014 the bot is looked up in the caller\'s own Space before anything is read or written',
+    reason:
+      "The world's model connection has no provider set up, so the owner's backup row is refused (400), as for `models/setRole`.",
   },
   {
     path: "models/probeOpenAiCompatible",
