@@ -247,11 +247,16 @@ describe("the wrapper in place of upstream's module", () => {
 
 describe("dozo-shell.css", () => {
   const styles = readFileSync(join(import.meta.dirname, "styles.css"), "utf8");
+  const app = readFileSync(join(import.meta.dirname, "../../../apps/web/src/styles.css"), "utf8");
 
-  it("is imported by the package stylesheet, after the tokens", () => {
-    expect(styles.indexOf('@import "./dozo-shell.css";')).toBeGreaterThan(
-      styles.indexOf("ui-tokens/css"),
+  // A component loads the package stylesheet from script too, so an import there shipped this
+  // file twice before the first paint.
+  it("is imported once, by the web app's stylesheet right after the package's", () => {
+    expect(styles).not.toContain("dozo-shell.css");
+    expect(app).toContain(
+      '@import "@rakazo/ui-web/styles.css";\n@import "@rakazo/ui-web/dozo-shell.css";\n',
     );
+    expect(app.split("dozo-shell.css")).toHaveLength(2);
   });
 
   it("writes the brand's two reds, the seal and the logo band, and takes every other colour from a token", () => {

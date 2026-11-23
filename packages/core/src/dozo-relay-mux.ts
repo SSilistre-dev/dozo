@@ -24,9 +24,9 @@ export class RelayMuxError extends Error {
 
 /** The origin the client's `Request`s are built on; only the path and query cross the channel. */
 const CLIENT_BASE = "http://relay.invalid";
-const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+const NULL_BODY_STATUSES = /* @__PURE__ */ new Set([204, 205, 304]);
 /** Headers about one hop's connection, never carried across the channel. */
-const HOP_HEADERS = new Set([
+const HOP_HEADERS = /* @__PURE__ */ new Set([
   "connection",
   "keep-alive",
   "proxy-connection",
@@ -37,7 +37,7 @@ const HOP_HEADERS = new Set([
   "host",
 ]);
 /** The loopback client already decoded and re-chunked the body, so these no longer describe it. */
-const BODY_HEADERS = new Set(["content-encoding", "content-length"]);
+const BODY_HEADERS = /* @__PURE__ */ new Set(["content-encoding", "content-length"]);
 
 type Frame = { type: number; stream: number; payload: Uint8Array };
 

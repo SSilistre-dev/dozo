@@ -1,11 +1,12 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 
-export const DozoLocalModelServerSchema = z.object({
-  name: z.string(),
-  baseUrl: z.string(),
-  models: z.array(z.string()),
-});
+export const DozoLocalModelServerSchema = /* @__PURE__ */ (() =>
+  z.object({
+    name: z.string(),
+    baseUrl: z.string(),
+    models: z.array(z.string()),
+  }))();
 export type DozoLocalModelServer = z.infer<typeof DozoLocalModelServerSchema>;
 
 export const dozoLocalModelsContract = /* @__PURE__ */ (() => ({

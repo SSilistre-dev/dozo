@@ -1,5 +1,5 @@
 /* Dozo shell: what the theme file (dozo/theme/theme.json) cannot express. An anchored rule imports
-   it from styles.css after the design tokens. It is unlayered on purpose, so it outranks Tailwind's
+   it from the web app's styles.css, once, after the package stylesheet. It is unlayered on purpose, so it outranks Tailwind's
    utility layer on its own. It holds only what the approved mockups (dozo/design, the chat window
    from chat-v2.html) show: surfaces told apart by tone instead of lines, pill controls, two-line
    sidebar rows, the seigaiha sidebar pattern, the wordmark with its seal dot, tonal bubbles and

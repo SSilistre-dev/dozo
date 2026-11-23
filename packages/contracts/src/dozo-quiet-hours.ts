@@ -1,7 +1,7 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 
-const Minute = z.number().int().min(0).max(1439);
+const Minute = /* @__PURE__ */ (() => z.number().int().min(0).max(1439))();
 
 /**
  * One daily range of minutes past local midnight, in the account's timezone. It ends at
@@ -42,7 +42,7 @@ export const DozoQuietRangeSchema = z
   .refine((range) => range.startMinute !== range.endMinute, "Quiet hours need a start and an end");
 export type DozoQuietRange = z.infer<typeof DozoQuietRangeSchema>;
 
-const Ranges = z.array(DozoQuietRangeSchema).max(DOZO_MAX_QUIET_RANGES);
+const Ranges = /* @__PURE__ */ (() => z.array(DozoQuietRangeSchema).max(DOZO_MAX_QUIET_RANGES))();
 
 /**
  * The single range a client that knows only `hours` sees: the first range's times. Exact when that
@@ -53,7 +53,11 @@ export function dozoQuietHoursOf(ranges: readonly DozoQuietRange[]): DozoQuietHo
   return first ? { startMinute: first.startMinute, endMinute: first.endMinute } : null;
 }
 
-const QuietHoursState = z.object({ hours: DozoQuietHoursSchema.nullable(), ranges: Ranges });
+const QuietHoursState = /* @__PURE__ */ (() =>
+  z.object({
+    hours: DozoQuietHoursSchema.nullable(),
+    ranges: Ranges,
+  }))();
 
 export const dozoQuietHoursContract = /* @__PURE__ */ (() => ({
   get: oc.output(QuietHoursState),

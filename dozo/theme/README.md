@@ -31,7 +31,7 @@ show none of these surfaces, so there is no source value to map.
 ## What the overlay cannot express
 
 Only colours, one radius and font stacks. The chat window of `dozo/design/chat-v2.html` comes from
-`packages/ui-web/src/dozo-shell.css`, which an anchored rule imports into the package stylesheet:
+`packages/ui-web/src/dozo-shell.css`, which an anchored rule imports into the web app's stylesheet:
 surfaces told apart by tone instead of lines, pill controls, two-line sidebar rows, the seigaiha
 pattern and the wordmark with its seal dot, tonal bubbles and cards, the one-pill composer and the
 bot panel on the sidebar's tone. The six bot identity colours are in the avatar palette

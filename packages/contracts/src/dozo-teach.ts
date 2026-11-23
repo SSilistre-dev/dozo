@@ -4,29 +4,31 @@ import { SkillPlaybookSchema, TaughtSkillSchema } from "./domain.js";
 import { Id } from "./ids.js";
 
 /** A value typed while teaching, as its placeholder in the steps names it (`{{value N}}`). */
-const Placeholder = z.string().regex(/^\{\{value \d+\}\}$/);
+const Placeholder = /* @__PURE__ */ (() => z.string().regex(/^\{\{value \d+\}\}$/))();
 
 /**
  * What becomes of one typed value: an input asked for on each run, an input typed from a saved
  * login (hidden), kept as typed in the steps, or dropped.
  */
-export const DozoTeachValueDecisionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("variable"), name: z.string().min(1).max(80) }),
-  z.object({ action: z.literal("hidden"), name: z.string().min(1).max(80) }),
-  z.object({ action: z.literal("fixed") }),
-  z.object({ action: z.literal("remove") }),
-]);
+export const DozoTeachValueDecisionSchema = /* @__PURE__ */ (() =>
+  z.discriminatedUnion("action", [
+    z.object({ action: z.literal("variable"), name: z.string().min(1).max(80) }),
+    z.object({ action: z.literal("hidden"), name: z.string().min(1).max(80) }),
+    z.object({ action: z.literal("fixed") }),
+    z.object({ action: z.literal("remove") }),
+  ]))();
 export type DozoTeachValueDecision = z.infer<typeof DozoTeachValueDecisionSchema>;
 
-export const DozoTeachValueSchema = z.object({
-  placeholder: Placeholder,
-  /** Null for protected input, whose text is never stored, and for text that cannot be rebuilt. */
-  text: z.string().nullable(),
-  /** Typed as protected input: hidden by default, never kept as text. */
-  secret: z.boolean(),
-  /** A name the model suggested for it, when one was made. */
-  suggestion: z.object({ name: z.string() }).optional(),
-});
+export const DozoTeachValueSchema = /* @__PURE__ */ (() =>
+  z.object({
+    placeholder: Placeholder,
+    /** Null for protected input, whose text is never stored, and for text that cannot be rebuilt. */
+    text: z.string().nullable(),
+    /** Typed as protected input: hidden by default, never kept as text. */
+    secret: z.boolean(),
+    /** A name the model suggested for it, when one was made. */
+    suggestion: z.object({ name: z.string() }).optional(),
+  }))();
 export type DozoTeachValue = z.infer<typeof DozoTeachValueSchema>;
 
 /**
@@ -34,26 +36,28 @@ export type DozoTeachValue = z.infer<typeof DozoTeachValueSchema>;
  * and, until the recording is drafted, a small WebP of the screen around it (base64).
  * `eventIndex` is the click's event.
  */
-export const DozoTeachStoredTargetSchema = z.object({
-  eventIndex: z.number().int().nonnegative(),
-  window: z.string().optional(),
-  image: z.string().optional(),
-});
+export const DozoTeachStoredTargetSchema = /* @__PURE__ */ (() =>
+  z.object({
+    eventIndex: z.number().int().nonnegative(),
+    window: z.string().optional(),
+    image: z.string().optional(),
+  }))();
 export type DozoTeachStoredTarget = z.infer<typeof DozoTeachStoredTargetSchema>;
 
 /** A recorded click as the teacher reviews it: the step it became, and what it hit. */
-export const DozoTeachTargetSchema = z.object({
-  id: z.string(),
-  /** Index of its click step in the draft's steps. */
-  step: z.number().int().nonnegative(),
-  window: z.string().optional(),
-  /** A data URL. */
-  image: z.string().optional(),
-});
+export const DozoTeachTargetSchema = /* @__PURE__ */ (() =>
+  z.object({
+    id: z.string(),
+    /** Index of its click step in the draft's steps. */
+    step: z.number().int().nonnegative(),
+    window: z.string().optional(),
+    /** A data URL. */
+    image: z.string().optional(),
+  }))();
 export type DozoTeachTarget = z.infer<typeof DozoTeachTargetSchema>;
 
 /** A recorded click's id, as the review gives it. */
-const TargetId = z.string().max(20);
+const TargetId = /* @__PURE__ */ (() => z.string().max(20))();
 
 /**
  * What a click hit, as the teacher kept it from the model's suggestion: plain text on one line,
@@ -66,19 +70,20 @@ export const DozoTeachLabelSchema = z
   .max(60)
   .regex(/^[^{}"\p{Cc}]+$/u);
 
-const DraftInput = z.object({
-  skillId: Id,
-  name: z.string().max(200).optional(),
-  playbook: SkillPlaybookSchema,
-  decisions: z.record(Placeholder, DozoTeachValueDecisionSchema).default({}),
-  /** Clicks whose picture the teacher removed: their steps keep only the coordinate. */
-  removedTargets: z.array(TargetId).max(1_000).default([]),
-  /**
-   * The labels the teacher saw and kept, by click id; absent, no step says what was clicked
-   * beyond its window. Only a click whose picture is still kept may have one.
-   */
-  labels: z.record(TargetId, DozoTeachLabelSchema).default({}),
-});
+const DraftInput = /* @__PURE__ */ (() =>
+  z.object({
+    skillId: Id,
+    name: z.string().max(200).optional(),
+    playbook: SkillPlaybookSchema,
+    decisions: z.record(Placeholder, DozoTeachValueDecisionSchema).default({}),
+    /** Clicks whose picture the teacher removed: their steps keep only the coordinate. */
+    removedTargets: z.array(TargetId).max(1_000).default([]),
+    /**
+     * The labels the teacher saw and kept, by click id; absent, no step says what was clicked
+     * beyond its window. Only a click whose picture is still kept may have one.
+     */
+    labels: z.record(TargetId, DozoTeachLabelSchema).default({}),
+  }))();
 
 export const dozoTeachContract = /* @__PURE__ */ (() => ({
   /** The values typed and the clicks made while teaching; only the teacher gets them. */

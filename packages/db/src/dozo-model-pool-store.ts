@@ -1,5 +1,6 @@
 import type { PoolCooldownReason } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 
 /**
  * The fork's model pool tables (migration `20261231130000_dozo_model_pool`): which of a person's
@@ -8,6 +9,41 @@ import type { PrismaClient } from "./client.js";
  */
 
 type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw">;
+
+/**
+ * The end of a rest being recorded over the one before it. A key refused again on the same
+ * secret after its last rest ended, within a day of that, rests twice as long as last time, up to
+ * seven days: one refusal that was a provider's mistake costs minutes, a key that stays refused soon
+ * costs nothing. Any other rest ends when its caller says.
+ */
+/**
+ * A refusal while the same key's rest still lasts changes nothing: not its end, not when it was
+ * seen. A run that keeps its model (a routine's) or has no backup to start on, or two runs that end
+ * together, are refused while it rests, and only a refusal after it ended makes the next one longer.
+ */
+const NOT_WHILE_REFUSED = Prisma.sql`NOT (
+    EXCLUDED."reason" = 'rejected'
+    AND "dozo_model_connection_cooldowns"."reason" = 'rejected'
+    AND "dozo_model_connection_cooldowns"."secretId" = EXCLUDED."secretId"
+    AND "dozo_model_connection_cooldowns"."resetsAt" > EXCLUDED."observedAt"
+  )`;
+
+const REFUSED_AGAIN = Prisma.sql`CASE
+  WHEN EXCLUDED."reason" = 'rejected'
+    AND "dozo_model_connection_cooldowns"."reason" = 'rejected'
+    AND "dozo_model_connection_cooldowns"."secretId" = EXCLUDED."secretId"
+    AND "dozo_model_connection_cooldowns"."resetsAt" <= EXCLUDED."observedAt"
+    AND "dozo_model_connection_cooldowns"."resetsAt" > EXCLUDED."observedAt" - interval '24 hours'
+  THEN GREATEST(
+    EXCLUDED."resetsAt",
+    LEAST(
+      EXCLUDED."observedAt" + 2 * ("dozo_model_connection_cooldowns"."resetsAt"
+        - "dozo_model_connection_cooldowns"."observedAt"),
+      EXCLUDED."observedAt" + interval '168 hours'
+    )
+  )
+  ELSE EXCLUDED."resetsAt"
+END`;
 
 export interface StoredPoolMember {
   credentialId: string;
@@ -113,9 +149,10 @@ export async function recordModelConnectionCooldown(
       "secretId" = EXCLUDED."secretId",
       "holder" = EXCLUDED."holder",
       "reason" = EXCLUDED."reason",
-      "resetsAt" = EXCLUDED."resetsAt",
+      "resetsAt" = ${REFUSED_AGAIN},
       "observedAt" = EXCLUDED."observedAt"
-    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"`;
+    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"
+      AND ${NOT_WHILE_REFUSED}`;
   return written > 0;
 }
 
@@ -139,4 +176,82 @@ export async function readModelPoolMembers(
       AND (cd."holder" IS NULL AND cd."secretId" = c."secretId" OR cd."holder" = a."account")
     WHERE m."userId" = ${scope.userId}
     GROUP BY m."credentialId"`;
+}
+
+/**
+ * Rests outside a pool: a model, or a whole connection, that ran out on any of the person's own
+ * connections, so later runs start on their next backup until it opens again. The same table as
+ * the pool's: one rest per connection and model, the newest observation winning. Unlike
+ * `recordModelConnectionCooldown`, the connection need not be pooled.
+ */
+export async function recordModelRest(
+  db: Db,
+  rest: {
+    userId: string;
+    credentialId: string;
+    /** Null when the whole connection rests (a refused key). */
+    modelId: string | null;
+    reason: PoolCooldownReason;
+    resetsAt: Date;
+    observedAt: Date;
+  },
+): Promise<boolean> {
+  // Rests that ended over a day ago say nothing any more, not even to a refused key's next
+  // rest: the person's go when they get a new one, so rows do not pile up.
+  await db.$executeRaw`
+    DELETE FROM "dozo_model_connection_cooldowns"
+    WHERE "userId" = ${rest.userId}
+      AND "resetsAt" < ${rest.observedAt.toISOString()}::timestamptz - interval '24 hours'`;
+  const written = await db.$executeRaw`
+    INSERT INTO "dozo_model_connection_cooldowns"
+      ("credentialId", "userId", "modelId", "secretId", "holder", "reason", "resetsAt", "observedAt")
+    SELECT c."id", c."userId", ${rest.modelId ?? ""}, c."secretId", NULL, ${rest.reason},
+      ${rest.resetsAt.toISOString()}::timestamptz, ${rest.observedAt.toISOString()}::timestamptz
+    FROM "user_model_credentials" c
+    WHERE c."id" = ${rest.credentialId} AND c."userId" = ${rest.userId}
+    ON CONFLICT ("credentialId", "modelId") DO UPDATE SET
+      "secretId" = EXCLUDED."secretId",
+      "holder" = EXCLUDED."holder",
+      "reason" = EXCLUDED."reason",
+      "resetsAt" = ${REFUSED_AGAIN},
+      "observedAt" = EXCLUDED."observedAt"
+    WHERE "dozo_model_connection_cooldowns"."observedAt" <= EXCLUDED."observedAt"
+      AND ${NOT_WHILE_REFUSED}`;
+  return written > 0;
+}
+
+/**
+ * The person's rests that have not ended at `now`: each model, or with modelId '' each whole
+ * connection, recorded while the connection had the secret it has now, with its latest end. One
+ * read per run start, on the table's index of a person's rests by their end.
+ */
+export async function readActiveModelRests(
+  db: Db,
+  userId: string,
+  now: Date,
+): Promise<Array<{ credentialId: string; modelId: string; resetsAt: Date }>> {
+  return db.$queryRaw`
+    SELECT cd."credentialId", cd."modelId", max(cd."resetsAt") AT TIME ZONE 'UTC' AS "resetsAt"
+    FROM "dozo_model_connection_cooldowns" cd
+    JOIN "user_model_credentials" c ON c."id" = cd."credentialId" AND c."userId" = cd."userId"
+    WHERE cd."userId" = ${userId} AND cd."resetsAt" > ${now.toISOString()}::timestamptz
+      AND cd."secretId" = c."secretId"
+    GROUP BY cd."credentialId", cd."modelId"`;
+}
+
+/**
+ * Ends every rest of a model on the person's connections of its provider, and of those whole
+ * connections: they picked it again, so it is tried at once. `providers` names the stored ids
+ * the provider's connections may carry.
+ */
+export async function endModelRests(
+  db: Db,
+  scope: { userId: string; providers: readonly string[]; modelId: string },
+): Promise<number> {
+  return db.$executeRaw`
+    DELETE FROM "dozo_model_connection_cooldowns" cd
+    USING "user_model_credentials" c
+    WHERE cd."credentialId" = c."id" AND cd."userId" = c."userId"
+      AND c."userId" = ${scope.userId} AND c."provider" = ANY(${[...scope.providers]}::text[])
+      AND cd."modelId" IN ('', ${scope.modelId})`;
 }

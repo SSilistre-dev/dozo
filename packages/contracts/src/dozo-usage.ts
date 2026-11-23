@@ -7,21 +7,23 @@ import { IsoDate } from "./ids.js";
  * Input counts every input token: uncached, read from the cache and written to it. Records
  * without a measured input or cache read count are left out.
  */
-export const DozoCacheSavingsSchema = z.object({
-  /** The start of the period: the current month of the live billing period, else the UTC month. */
-  since: IsoDate,
-  inputTokens: z.number().int().positive(),
-  cacheReadTokens: z.number().int().nonnegative(),
-  /** cacheReadTokens as a whole percent of inputTokens. */
-  cacheReadPercent: z.number().int().min(0).max(100),
-});
+export const DozoCacheSavingsSchema = /* @__PURE__ */ (() =>
+  z.object({
+    /** The start of the period: the current month of the live billing period, else the UTC month. */
+    since: IsoDate,
+    inputTokens: z.number().int().positive(),
+    cacheReadTokens: z.number().int().nonnegative(),
+    /** cacheReadTokens as a whole percent of inputTokens. */
+    cacheReadPercent: z.number().int().min(0).max(100),
+  }))();
 export type DozoCacheSavings = z.infer<typeof DozoCacheSavingsSchema>;
 
 /**
  * What the Usage table groups spend by. `day` is the caller's last 30 days, one row per day in
  * the account's time zone; `person` is every member of the Space and only the owner may ask.
  */
-export const DozoUsageGroupingSchema = z.enum(["model", "bot", "routine", "day", "person"]);
+export const DozoUsageGroupingSchema = /* @__PURE__ */ (() =>
+  z.enum(["model", "bot", "routine", "day", "person"]))();
 export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
 
 /**
@@ -30,21 +32,22 @@ export type DozoUsageGrouping = z.infer<typeof DozoUsageGroupingSchema>;
  * more (a routine since deleted, a run that is gone). Totals are null when a record in the group
  * lacks the count, so they never understate spend.
  */
-export const DozoUsageGroupSchema = z.object({
-  key: z.string(),
-  name: z.string().nullable(),
-  /** The provider of a model, the bot of a routine, the email of a person; null otherwise. */
-  detail: z.string().nullable(),
-  state: z.enum(["live", "deleted", "none", "unknown"]),
-  modelCalls: z.number().int().nonnegative(),
-  inputTokens: z.number().nullable(),
-  outputTokens: z.number().nullable(),
-  totalTokens: z.number().nullable(),
-  costUsd: z.number().nullable(),
-});
+export const DozoUsageGroupSchema = /* @__PURE__ */ (() =>
+  z.object({
+    key: z.string(),
+    name: z.string().nullable(),
+    /** The provider of a model, the bot of a routine, the email of a person; null otherwise. */
+    detail: z.string().nullable(),
+    state: z.enum(["live", "deleted", "none", "unknown"]),
+    modelCalls: z.number().int().nonnegative(),
+    inputTokens: z.number().nullable(),
+    outputTokens: z.number().nullable(),
+    totalTokens: z.number().nullable(),
+    costUsd: z.number().nullable(),
+  }))();
 export type DozoUsageGroup = z.infer<typeof DozoUsageGroupSchema>;
 
-const GroupingInput = z.object({ by: DozoUsageGroupingSchema });
+const GroupingInput = /* @__PURE__ */ (() => z.object({ by: DozoUsageGroupingSchema }))();
 
 export const dozoUsageContract = /* @__PURE__ */ (() => ({
   /** The caller's own usage in the current Space; null when it has no input this period. */

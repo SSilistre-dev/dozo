@@ -2,8 +2,10 @@ name: dozo-gate
 
 # Dozo fork gate. A pull request into main (including the upstream sync PR) must pass the fast
 # local checks, the brand leak path (stage the tree, apply the codemod, fail on any user-visible
-# "Rakazo" string) and the fork's unit tests with their coverage floor. Needs only Docker, which
-# stock GitHub runners have. It runs olc, stage, brand and unit only, never build, up, smoke or the
+# "Rakazo" string), upstream's repository checks on the branded tree, the fork's unit tests with
+# their coverage floor and the web startup budget on the branded web build. Needs only Docker, which
+# stock GitHub runners have. It runs olc, stage, brand, checks, unit and budget (on the Dockerfile's
+# build stage alone), never the full image build, up, smoke or the
 # e2e suite (see dozo/README.md, Status and known limits). A required status check matches the job
 # name below: when it changes, update the branch protection rule too.
 # Third-party actions are pinned to a full commit SHA with the version in a comment (the same
@@ -23,7 +25,7 @@ jobs:
   gate:
     name: olc, brand leak gate and fork unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -66,9 +68,23 @@ jobs:
       - name: Apply brand and run leak gate
         run: dozo/docker/build.sh brand
 
+      # Upstream's `pnpm checks` on the branded tree, in a throwaway git repository inside the
+      # container (git is installed there), so the fork's dozo-* files meet upstream's conventions.
+      - name: Repository checks on the branded tree
+        run: dozo/docker/gate.sh checks
+
       # The fork's own tests and the per-file coverage floor. A runner starts with no dependency
       # volume, so this is the cold run (about 80 s: pnpm install and the coverage provider, inside
       # the container only, nothing on the runner). Network and Docker are all it needs; the Node
       # image is already there from make olc.
       - name: Fork unit tests and coverage floor
         run: dozo/docker/gate.sh unit
+
+      # The web startup budget (scripts/checks/bundle-size.mjs) on the branded web build: the
+      # Dockerfile's build stage only (the same web build `make qa` measures in the dozo-web image,
+      # without the runtime image or the other services), then the step `make qa` runs after build.
+      # Red (exit 2) over the limit; the log always has the `web-startup:` line.
+      - name: Branded web build and startup budget
+        run: |
+          docker build --target build -t dozo-budget-web -f infra/compose/Dockerfile dozo/.stage/src
+          DOZO_BUDGET_IMAGE=dozo-budget-web dozo/docker/gate.sh budget
