@@ -469,10 +469,10 @@ unit_tests() {
       rm -rf packages/db/src/generated
       pnpm --filter @rakazo/db generate > /tmp/generate.log 2>&1 || { cat /tmp/generate.log; exit 1; }
       # The branded tree is never type-checked otherwise: the images are bundled, not checked, and
-      # upstream'"'"'s own check runs on the unbranded tree only. It covers the api and the adapters,
-      # where the run, tool and device code of the fork and their tests live; a type error there fails the
-      # step before the tests run. Each is timed in the log.
-      for d in apps/api packages/adapters; do
+      # upstream'"'"'s own check runs on the unbranded tree only. It covers the apps and the
+      # packages the fork changes; a type error there fails the step before the tests run. Each is
+      # timed in the log.
+      for d in apps/api packages/adapters apps/web apps/mobile packages/core packages/contracts packages/db packages/chat-ui packages/ui-web; do
         t0=$(date +%s)
         (cd "$d" && pnpm exec tsc --noEmit -p tsconfig.json) || { echo "[unit] type errors in $d"; exit 1; }
         echo "[unit] types of $d ok ($(( $(date +%s) - t0 ))s)"
@@ -487,7 +487,7 @@ unit_tests() {
     _ $tests 2>&1 | tee "$out"; exit "${PIPESTATUS[0]}" ) &
   wait_gone $!
   if [ "$WAIT_RC" -eq 0 ]; then echo "[unit] fork tests ok, per-file coverage >= $COV_MIN%"; rm -f "$out"
-  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types of apps/api or packages/adapters, fork tests or coverage"; return 1; fi
+  else coverage_misses "$COV_MIN" < "$out" | sed 's/^/[unit] below floor: /'; rm -f "$out"; fail "unit: types, fork tests or coverage"; return 1; fi
 }
 
 # Upstream's repository checks (`pnpm checks`: scripts/checks/*.test.mjs) on the branded staged

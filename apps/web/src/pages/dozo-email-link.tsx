@@ -200,6 +200,7 @@ function ExpiredLink({
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder={t`Your email address`}
+                // off-scale: 16px below md stops iOS Safari zooming into a focused field.
                 className="mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg"
               />
             </div>

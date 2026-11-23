@@ -1,4 +1,4 @@
-import type { MessageBlock } from "@rakazo/contracts";
+import type { HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { splitToolHistory, withToolHistory } from "./events.js";
 
@@ -8,24 +8,20 @@ import { splitToolHistory, withToolHistory } from "./events.js";
 const PERSON = "Ada Example +90 555 010 2030";
 
 function reply(tool: string, result: string, failed = false): MessageBlock[] {
+  const step: HistoryToolStep = {
+    label: tool,
+    count: 1,
+    tool,
+    calls: [
+      {
+        arguments: JSON.stringify({ query: "Ada" }),
+        result,
+        ...(failed ? { failed: true as const } : {}),
+      },
+    ],
+  };
   return [
-    {
-      kind: "steps",
-      steps: [
-        {
-          label: tool,
-          count: 1,
-          tool,
-          calls: [
-            {
-              arguments: JSON.stringify({ query: "Ada" }),
-              result,
-              ...(failed ? { failed: true as const } : {}),
-            },
-          ],
-        },
-      ],
-    } as MessageBlock,
+    { kind: "steps", steps: [step] },
     { kind: "text", text: "Ada's number is in your contacts." },
   ];
 }
@@ -57,12 +53,13 @@ describe("a reply's kept tool calls", () => {
     const failed = splitToolHistory(reply("phone_location", "Location is off.", true)).toolHistory;
     expect(failed?.steps[0]?.calls[0]).toMatchObject({ result: "Location is off.", failed: true });
     // A call without arguments keeps none.
-    const bare = splitToolHistory([
-      {
-        kind: "steps",
-        steps: [{ label: "x", count: 1, tool: "phone_location", calls: [{ result: PERSON }] }],
-      } as MessageBlock,
-    ]).toolHistory;
+    const bareStep: HistoryToolStep = {
+      label: "x",
+      count: 1,
+      tool: "phone_location",
+      calls: [{ result: PERSON }],
+    };
+    const bare = splitToolHistory([{ kind: "steps", steps: [bareStep] }]).toolHistory;
     expect(bare?.steps[0]?.calls).toEqual([
       { result: "Read from the user's phone; not kept. Call the tool again to see it." },
     ]);
