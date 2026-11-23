@@ -90,6 +90,7 @@ export type PoolKey =
   | "messagingConnectionId"
   | "approvalRuleId"
   | "commandRuleId"
+  | "learningChangeId"
   | "externalConversationId"
   | "soloOrganizationId"
   | "removableDocumentId"
@@ -961,6 +962,16 @@ export async function seedExtras(
       INSERT INTO dozo_command_policies (id, "userId", "spaceId", "botId", computer, words, cwd)
       VALUES (${id}, ${owner.userId}, ${spaceId}, ${botId}, 'hosted', ${[mark("commandrule")]}, '/')`;
     ids.commandRuleId = id;
+  });
+  // A line a review added to the bot's notes, already undone: the owner's undo answers it as it
+  // is and writes nothing, so the owner's control call does not change the notes mid-sweep. Its
+  // review needs a model: system insert.
+  await step("learning change", async () => {
+    const id = randomUUID();
+    await system.$executeRaw`
+      INSERT INTO dozo_learning_changes (id, "botId", "spaceId", kind, "after", "undoneAt")
+      VALUES (${id}, ${botId}, ${spaceId}, 'add', ${mark("learnednote")}, CURRENT_TIMESTAMP)`;
+    ids.learningChangeId = id;
   });
 }
 

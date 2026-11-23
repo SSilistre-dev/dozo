@@ -120,6 +120,7 @@ const PATH_FIELD_KEYS: Record<string, Record<string, PoolKey>> = {
   "organizations/rename": { organizationId: "soloOrganizationId" },
   "organizations/remove": { organizationId: "soloOrganizationId" },
   "dozoQueue/cancelWaiting": { runId: "waitingRunId", messageId: "waitingMessageId" },
+  "dozoLearning/undo": { changeId: "learningChangeId" },
   "computer/readFile": { path: "filePath" },
   "computer/downloadFile": { path: "filePath" },
   "connections/complete": { connectionId: "connectionId" },
