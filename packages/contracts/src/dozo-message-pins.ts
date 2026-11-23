@@ -10,13 +10,14 @@ export const DOZO_MESSAGE_PINS_MAX = 50;
  * Messages a person pinned in a chat they can read. Pins are that person's own: other members of
  * the Space never see them. Newest first.
  */
-export const DozoMessagePinSchema = /* @__PURE__ */ z.object({
-  messageId: Id,
-  preview: ReplyPreviewSchema,
-});
+export const DozoMessagePinSchema = /* @__PURE__ */ (() =>
+  z.object({
+    messageId: Id,
+    preview: ReplyPreviewSchema,
+  }))();
 export type DozoMessagePin = z.infer<typeof DozoMessagePinSchema>;
 
-const ThreadInput = /* @__PURE__ */ z.object({ threadId: Id });
+const ThreadInput = /* @__PURE__ */ (() => z.object({ threadId: Id }))();
 
 export const dozoMessagePinsContract = /* @__PURE__ */ (() => ({
   pins: oc
