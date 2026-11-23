@@ -275,7 +275,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "models/connect",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/models.ts:283 "connectModelCredential(context.actor, input, context.signal)" — the connection to replace is looked up for the caller\'s actor',
+      'apps/api/src/routes/models.ts:287 "connectModelCredential(context.actor, input, context.signal)" — the connection to replace is looked up for the caller\'s actor',
     reason:
       "The world's model connection is a stored row the generated provider does not match, so its owner is told it is not found (404).",
   },
@@ -743,7 +743,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/dozo-model-pool.ts:19 "setDozoModelPool(poolDeps, context.actor.userId, input)" \u2014 the connection is looked up by the caller\'s own account',
+      'apps/api/src/dozo-model-pool.ts:27 "setDozoModelPool(poolDeps, context.actor.userId, input)" \u2014 the connection is looked up by the caller\'s own account',
     reason:
       "The world's model connection is a stored row without a working provider, which cannot hand over to another (400).",
   },
@@ -752,7 +752,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:246 "await validateRoleChoices(context.actor, role, [" \u2014 the choices are checked against the caller\'s own connections',
+      'apps/api/src/routes/models.ts:247 "await validateRoleChoices(context.actor, role, [" \u2014 the choices are checked against the caller\'s own connections',
     reason:
       "The world's model connection has no provider set up, so the owner's choice is refused (400).",
   },
@@ -770,7 +770,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:303 "where: { userId: context.actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID }," \u2014 connections are read for the caller\'s own account',
+      'apps/api/src/routes/models.ts:307 "where: { userId: context.actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID }," \u2014 connections are read for the caller\'s own account',
     reason: "Probing needs a reachable base URL, which a test with no network has not (400).",
   },
   {
@@ -778,7 +778,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:372 "const target = await modelConnectionTarget(" \u2014 the connection is looked up for the caller\'s actor (next lines)',
+      'apps/api/src/routes/models.ts:376 "const target = await modelConnectionTarget(" \u2014 the connection is looked up for the caller\'s actor (next lines)',
     reason:
       "The world's model connection is not one an outside sign-in can renew (404 for its owner too).",
   },
@@ -787,7 +787,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:412 ".submit(input.loginId, context.actor" \u2014 the sign-in session is looked up for the caller\'s actor',
+      'apps/api/src/routes/models.ts:416 ".submit(input.loginId, context.actor" \u2014 the sign-in session is looked up for the caller\'s actor',
     reason:
       "The world's sign-in session never reached the outside provider, so its owner is told to start again (400).",
   },
@@ -796,7 +796,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:627 "saveConnectionModelSettings(deps, context.actor, input)" \u2014 the connection is looked up for the caller\'s actor',
+      'apps/api/src/routes/models.ts:631 "saveConnectionModelSettings(deps, context.actor, input)" \u2014 the connection is looked up for the caller\'s actor',
     reason:
       "The world's model connection holds a placeholder secret the secret store cannot read (500 for its owner too).",
   },
