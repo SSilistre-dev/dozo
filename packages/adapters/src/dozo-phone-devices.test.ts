@@ -217,6 +217,22 @@ describe("what a phone declares", () => {
     expect(parseDeviceCapabilities("")).toEqual([]);
   });
 
+  it("may declare reading reminders and writing events and reminders, each on its own", async () => {
+    const { prisma, pair, connect } = fakePrisma();
+    pair("phone", "ios");
+    connect("phone", ["reminders-write", "calendar-write", "reminders", "shell"]);
+    expect(await readDeviceCapabilities(prisma, "phone", "ios")).toEqual([
+      "reminders",
+      "calendar-write",
+      "reminders-write",
+    ]);
+    expect(await readDeviceCapabilities(prisma, "phone", "darwin")).toEqual(["shell"]);
+    expect(parseDeviceCapabilities("Calendar-Write, reminders ,reminders-delete")).toEqual([
+      "reminders",
+      "calendar-write",
+    ]);
+  });
+
   it("offers none of the computer's tools, whatever it declares", () => {
     const phone = { deviceId: "p", name: "Phone", platform: "android" };
     expect(deviceOffers({ ...phone, capabilities: ["shell", "screen", "browser"] })).toEqual({

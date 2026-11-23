@@ -18,14 +18,32 @@ const ui = vi.hoisted(() => ({
   available: true,
   contacts: true,
   location: true,
+  reminders: true,
+  platform: { OS: "ios" },
 }));
 
-const OFF = { ready: true, calendar: false, contacts: false, location: false };
+const OFF: PhoneSettings = {
+  ready: true,
+  calendar: false,
+  contacts: false,
+  location: false,
+  reminders: false,
+  "calendar-write": false,
+  "reminders-write": false,
+};
 
 const phone = vi.hoisted(() => {
   const listeners = new Set<() => void>();
   const state = {
-    settings: { ready: true, calendar: false, contacts: false, location: false } as PhoneSettings,
+    settings: {
+      ready: true,
+      calendar: false,
+      contacts: false,
+      location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
+    } as PhoneSettings,
   };
   return {
     state,
@@ -50,6 +68,7 @@ const phone = vi.hoisted(() => {
 vi.mock("react-native", () => ({
   Alert: { alert: ui.alert },
   Linking: { openSettings: ui.openSettings },
+  Platform: ui.platform,
   StyleSheet: { create: <T,>(styles: T) => styles },
   ScrollView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
@@ -74,6 +93,7 @@ vi.mock("./dozo-phone-device", () => ({ phoneDevice: () => phone.device }));
 vi.mock("./dozo-phone-calendar", () => ({ calendarAvailable: () => ui.available }));
 vi.mock("./dozo-phone-contacts", () => ({ contactsAvailable: () => ui.contacts }));
 vi.mock("./dozo-phone-location", () => ({ locationAvailable: () => ui.location }));
+vi.mock("./dozo-phone-reminders", () => ({ remindersAvailable: () => ui.reminders }));
 vi.mock("./api", () => ({
   currentApiBase: () => ui.apiBase,
   subscribeApiBase: () => () => undefined,
@@ -146,6 +166,8 @@ beforeEach(() => {
   ui.available = true;
   ui.contacts = true;
   ui.location = true;
+  ui.reminders = true;
+  ui.platform.OS = "ios";
   phone.state.settings = OFF;
   phone.device.sync.mockClear();
   phone.device.setSwitch.mockReset().mockResolvedValue("done");
@@ -161,13 +183,20 @@ describe("the Phone screen", () => {
   it("is titled Phone, starts with every switch off, and says where what bots read goes", async () => {
     await render(<DozoPhone />);
     expect(ui.header?.title).toBe("Phone");
-    expect(labels()).toEqual(["Calendar", "Contacts", "Location"]);
-    expect(toggles().map((input) => input.checked)).toEqual([false, false, false]);
+    expect(labels()).toEqual([
+      "Calendar",
+      "Contacts",
+      "Location",
+      "Reminders",
+      "Add to calendar",
+      "Add reminders",
+    ]);
+    expect(toggles().map((input) => input.checked)).toEqual(Array(6).fill(false));
     expect(container.querySelector("[data-footer]")?.textContent).toBe(
       "What a bot reads is sent to its AI model.",
     );
     expect(container.textContent).toBe(
-      "CalendarContactsLocationWhat a bot reads is sent to its AI model.",
+      "CalendarContactsLocationRemindersAdd to calendarAdd remindersWhat a bot reads is sent to its AI model.",
     );
     expect(phone.device.sync).toHaveBeenCalled();
   });
@@ -175,11 +204,53 @@ describe("the Phone screen", () => {
   it("hides a switch in a build without its module", async () => {
     ui.contacts = false;
     await render(<DozoPhone />);
-    expect(labels()).toEqual(["Calendar", "Location"]);
+    expect(labels()).toEqual([
+      "Calendar",
+      "Location",
+      "Reminders",
+      "Add to calendar",
+      "Add reminders",
+    ]);
     ui.contacts = true;
     ui.location = false;
     await render(<DozoPhone />);
-    expect(labels()).toEqual(["Calendar", "Contacts"]);
+    expect(labels()).toEqual([
+      "Calendar",
+      "Contacts",
+      "Reminders",
+      "Add to calendar",
+      "Add reminders",
+    ]);
+  });
+
+  it("shows only Add to calendar of the writes on Android, which keeps no reminders", async () => {
+    ui.platform.OS = "android";
+    ui.reminders = false;
+    await render(<DozoPhone />);
+    expect(labels()).toEqual(["Calendar", "Contacts", "Location", "Add to calendar"]);
+    await tap(3);
+    expect(phone.device.setSwitch).toHaveBeenCalledWith("calendar-write", true);
+  });
+
+  it("switches each of reminders and writes on its own", async () => {
+    await render(<DozoPhone />);
+    await tap(3);
+    expect(phone.device.setSwitch).toHaveBeenLastCalledWith("reminders", true);
+    await tap(4);
+    expect(phone.device.setSwitch).toHaveBeenLastCalledWith("calendar-write", true);
+    await tap(5);
+    expect(phone.device.setSwitch).toHaveBeenLastCalledWith("reminders-write", true);
+    await act(async () => phone.set({ ...OFF, "reminders-write": true }));
+    expect(toggles().map((input) => input.checked)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+    await tap(5);
+    expect(phone.device.setSwitch).toHaveBeenLastCalledWith("reminders-write", false);
   });
 
   it("switches each kind on its own, holding all while one switches", async () => {
@@ -188,7 +259,14 @@ describe("the Phone screen", () => {
     await render(<DozoPhone />);
     await tap(2);
     expect(phone.device.setSwitch).toHaveBeenCalledWith("location", true);
-    expect(toggles().map((input) => input.checked)).toEqual([false, false, true]);
+    expect(toggles().map((input) => input.checked)).toEqual([
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+    ]);
     expect(toggles().every((input) => input.disabled)).toBe(true);
     await act(async () => {
       phone.set({ ...OFF, location: true });
@@ -202,6 +280,9 @@ describe("the Phone screen", () => {
   it.each([
     [1, "Allow contacts access in Settings."],
     [2, "Allow location access in Settings."],
+    [3, "Allow reminders access in Settings."],
+    [4, "Allow calendar access in Settings."],
+    [5, "Allow reminders access in Settings."],
   ])("offers the system settings when switch %i is refused", async (index, line) => {
     phone.device.setSwitch.mockResolvedValueOnce("denied");
     await render(<DozoPhone />);

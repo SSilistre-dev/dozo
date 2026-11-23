@@ -2,15 +2,30 @@
 export const PHONE_CALENDAR_READ_TOOL = "phone_calendar_read";
 export const PHONE_CONTACTS_SEARCH_TOOL = "phone_contacts_search";
 export const PHONE_LOCATION_TOOL = "phone_location";
+export const PHONE_REMINDERS_READ_TOOL = "phone_reminders_read";
+/** The ones that create something there: an event, a reminder. Nothing changes or deletes one. */
+export const PHONE_CALENDAR_CREATE_TOOL = "phone_calendar_create";
+export const PHONE_REMINDER_CREATE_TOOL = "phone_reminder_create";
+
+export const PHONE_WRITE_TOOL_NAMES = [
+  PHONE_CALENDAR_CREATE_TOOL,
+  PHONE_REMINDER_CREATE_TOOL,
+] as const;
 
 export const PHONE_TOOL_NAMES = [
   PHONE_CALENDAR_READ_TOOL,
   PHONE_CONTACTS_SEARCH_TOOL,
   PHONE_LOCATION_TOOL,
+  PHONE_REMINDERS_READ_TOOL,
+  ...PHONE_WRITE_TOOL_NAMES,
 ] as const;
 
 export function isPhoneToolName(name: string): boolean {
   return (PHONE_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+export function isPhoneWriteToolName(name: string): boolean {
+  return (PHONE_WRITE_TOOL_NAMES as readonly string[]).includes(name);
 }
 
 /**

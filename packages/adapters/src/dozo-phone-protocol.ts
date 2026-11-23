@@ -1,4 +1,13 @@
-import { approximateLocation, oneLineText, withoutLinks } from "@rakazo/contracts";
+import type { PhoneEventWrite, PhoneReminderWrite } from "@rakazo/contracts";
+import {
+  approximateLocation,
+  checkPhoneEvent,
+  checkPhoneReminder,
+  isoWithOffset,
+  oneLineText,
+  PHONE_WRITE_LIMITS,
+  withoutLinks,
+} from "@rakazo/contracts";
 import { z } from "zod";
 
 /** The platforms a phone pairs as. Anything else that pairs is a computer. */
@@ -248,4 +257,152 @@ export function phoneLocationValue(
     precise: false,
     at,
   };
+}
+
+/** The time a model gave, trimmed, or undefined when it is not ISO 8601 with an offset. */
+export function isoInstant(value: unknown): string | undefined {
+  return isoWithOffset(typeof value === "string" ? value.trim() : value);
+}
+
+/** How much of the phone's reminders one read may ask for and bring back. */
+export const PHONE_REMINDERS_MAX = 50;
+export const PHONE_LIST_NAME_MAX = PHONE_WRITE_LIMITS.list;
+
+/**
+ * Reads the reminders on the user's phone: of one list when `list` is given, due in [from, to)
+ * when `due` is, done ones too only with `includeDone`; sorted by due, undated last, the first
+ * `limit`. The phone answers one value (PhoneRemindersValue) and done, or one of
+ * PHONE_REMINDERS_ERRORS. iOS only: an Android phone never declares it.
+ */
+export const phoneRemindersReadRequest = z.object({
+  ...base,
+  method: z.literal("phoneRemindersRead"),
+  list: z.string().max(PHONE_LIST_NAME_MAX).optional(),
+  due: z.object({ from: z.string().min(1).max(64), to: z.string().min(1).max(64) }).optional(),
+  includeDone: z.boolean(),
+  limit: z.number().int().min(1).max(PHONE_REMINDERS_MAX),
+});
+export type PhoneRemindersReadRequest = z.infer<typeof phoneRemindersReadRequest>;
+
+export const PHONE_REMINDERS_ERRORS = [
+  "reminders-off",
+  "reminders-permission",
+  "reminders-unavailable",
+] as const;
+
+export interface PhoneReminder {
+  title: string;
+  due?: string;
+  done: boolean;
+  list?: string;
+}
+export interface PhoneRemindersValue {
+  reminders: PhoneReminder[];
+  truncated: boolean;
+}
+
+const reminder = z.object({
+  title: z.string(),
+  due: instant.optional(),
+  done: z.boolean(),
+  list: z.string().optional(),
+});
+const reminders = z.object({ reminders: z.array(z.unknown()), truncated: z.boolean() });
+
+/**
+ * The phone's reminders answer as the server passes it on: each well-formed reminder's title and
+ * list without links and cut to their limits, its due time and whether it is done; notes, links,
+ * ids, places, priorities and alarms never pass. Sorted by due, undated last, at most
+ * PHONE_REMINDERS_MAX. Null when it is not an answer at all.
+ */
+export function phoneRemindersValue(answer: unknown): PhoneRemindersValue | null {
+  const parsed = reminders.safeParse(answer);
+  if (!parsed.success) return null;
+  const kept = parsed.data.reminders.flatMap((entry) => {
+    const read = reminder.safeParse(entry);
+    if (!read.success) return [];
+    const { due, done } = read.data;
+    const list = text(read.data.list, PHONE_LIST_NAME_MAX);
+    return [
+      {
+        title: text(read.data.title, FIELD_MAX) ?? "",
+        ...(due ? { due } : {}),
+        done,
+        ...(list ? { list } : {}),
+      },
+    ];
+  });
+  const at = (item: PhoneReminder) => (item.due ? Date.parse(item.due) : Number.POSITIVE_INFINITY);
+  kept.sort((a, b) => at(a) - at(b));
+  return {
+    reminders: kept.slice(0, PHONE_REMINDERS_MAX),
+    truncated: parsed.data.truncated || kept.length > PHONE_REMINDERS_MAX,
+  };
+}
+
+/** The longest due range one reminders read may ask for. */
+export const PHONE_REMINDERS_MAX_DAYS = PHONE_WRITE_LIMITS.eventDays;
+
+/**
+ * Creates one event in the phone's default calendar; it never changes or deletes one, and there is
+ * no field for an id, invitees, alarms or links. The event is what `checkPhoneEvent`
+ * (@rakazo/contracts) accepts, the one check the phone runs too. The phone answers
+ * PhoneCalendarCreateValue (the calendar it went to) or one of PHONE_CALENDAR_CREATE_ERRORS.
+ */
+export const phoneCalendarCreateRequest = z.strictObject({
+  ...base,
+  method: z.literal("phoneCalendarCreate"),
+  event: z.custom<PhoneEventWrite>((value) => "value" in checkPhoneEvent(value, Date.now())),
+});
+export type PhoneCalendarCreateRequest = z.infer<typeof phoneCalendarCreateRequest>;
+
+export const PHONE_CALENDAR_CREATE_ERRORS = [
+  "calendar-write-off",
+  "calendar-write-permission",
+  "calendar-write-unavailable",
+  "calendar-write-invalid",
+] as const;
+
+/**
+ * Creates one reminder, in the list of that name when there is one, else the default list; it
+ * never changes or deletes one. The reminder is what `checkPhoneReminder` (@rakazo/contracts)
+ * accepts. The phone answers PhoneReminderCreateValue (the list it went to) or one of
+ * PHONE_REMINDER_CREATE_ERRORS. iOS only.
+ */
+export const phoneReminderCreateRequest = z.strictObject({
+  ...base,
+  method: z.literal("phoneReminderCreate"),
+  reminder: z.custom<PhoneReminderWrite>((value) => "value" in checkPhoneReminder(value)),
+});
+export type PhoneReminderCreateRequest = z.infer<typeof phoneReminderCreateRequest>;
+
+export const PHONE_REMINDER_CREATE_ERRORS = [
+  "reminders-write-off",
+  "reminders-write-permission",
+  "reminders-write-unavailable",
+  "reminders-write-invalid",
+] as const;
+
+const createdIn = (key: "calendar" | "list") =>
+  z.object({ created: z.literal(true), [key]: z.string() });
+
+/** The phone's answer to a calendar write: created, and the calendar's name, nothing else. */
+export function phoneCalendarCreateValue(
+  answer: unknown,
+): { created: true; calendar: string } | null {
+  const parsed = createdIn("calendar").safeParse(answer);
+  if (!parsed.success) return null;
+  const name = text(parsed.data.calendar as string, CALENDAR_NAME_MAX) ?? "";
+  return { created: true, calendar: name };
+}
+
+/**
+ * The phone's answer to a reminder write: created, and the list's name, nothing else. A phone that
+ * could not name the list it chose answers none: the model is told the default list.
+ */
+export function phoneReminderCreateValue(answer: unknown): { created: true; list: string } | null {
+  const parsed = createdIn("list").safeParse(answer);
+  if (!parsed.success) return null;
+  const list = text(parsed.data.list as string, PHONE_LIST_NAME_MAX);
+  return { created: true, list: list ?? "default list" };
 }

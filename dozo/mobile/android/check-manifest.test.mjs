@@ -41,10 +41,17 @@ function run(text) {
 }
 
 describe("the APK manifest check", () => {
-  it("passes a manifest with read permissions and no location service", () => {
-    assert.deepEqual(problems(dump()), []);
-    const result = run(dump());
-    assert.equal(result.status, 0, result.stderr);
+  it("passes a manifest with read permissions, writing the calendar and no location service", () => {
+    const calendar = dump(
+      "    E: uses-permission (line=11)",
+      `      A: ${attr("android.permission.WRITE_CALENDAR")}`,
+    );
+    for (const text of [dump(), calendar]) {
+      assert.deepEqual(problems(text), []);
+      const result = run(text);
+      assert.equal(result.status, 0, result.stderr);
+    }
+    assert.ok(!FORBIDDEN_PERMISSIONS.includes("android.permission.WRITE_CALENDAR"));
   });
 
   it("fails on each location service and each forbidden permission, with exit 2", () => {
@@ -57,9 +64,9 @@ describe("the APK manifest check", () => {
       assert.match(result.stderr, new RegExp(name.replaceAll(".", "\\.")));
     }
     // A plain merged AndroidManifest.xml, and a service named relative to its package.
-    const xml = `<manifest xmlns:android="${NS}"><uses-permission android:name="android.permission.WRITE_CALENDAR"/><application><service android:name=".services.LocationTaskService"/></application></manifest>`;
+    const xml = `<manifest xmlns:android="${NS}"><uses-permission android:name="android.permission.WRITE_CALENDAR"/><uses-permission android:name="android.permission.WRITE_CONTACTS"/><application><service android:name=".services.LocationTaskService"/></application></manifest>`;
     assert.deepEqual(problems(xml), [
-      "permission android.permission.WRITE_CALENDAR",
+      "permission android.permission.WRITE_CONTACTS",
       "service .services.LocationTaskService",
     ]);
   });

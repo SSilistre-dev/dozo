@@ -4,6 +4,7 @@ import type { PhoneCalendarValue, PhonePermission } from "./dozo-phone-calendar"
 import type { PhoneContactsValue } from "./dozo-phone-contacts";
 import type { PhoneAccount, PhoneDeviceDeps, PhoneSocket } from "./dozo-phone-device";
 import type { PhoneLocationValue } from "./dozo-phone-location";
+import type { PhoneRemindersValue } from "./dozo-phone-reminders";
 
 vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: vi.fn() },
@@ -71,6 +72,10 @@ const place: PhoneLocationValue = {
   precise: false,
   at: "2026-11-23T09:00:00.000Z",
 };
+const todo: PhoneRemindersValue = {
+  reminders: [{ title: "Pay rent", due: "2026-11-24T09:00:00.000Z", done: false, list: "Home" }],
+  truncated: false,
+};
 const contactsRequest = (id: string, extra: Record<string, unknown> = {}) => ({
   type: "request",
   id,
@@ -115,6 +120,9 @@ function setup(stored?: Record<string, string>) {
     available: true,
     contacts: { permission: "granted" as PhonePermission, available: true },
     location: { permission: "granted" as PhonePermission, available: true },
+    reminders: { permission: "granted" as PhonePermission, available: true },
+    "calendar-write": { permission: "granted" as PhonePermission, available: true },
+    "reminders-write": { permission: "granted" as PhonePermission, available: true },
     now: 0,
   };
   const deps = {
@@ -153,6 +161,24 @@ function setup(stored?: Record<string, string>) {
       permission: vi.fn(async () => state.location.permission),
       request: vi.fn(async () => state.location.permission),
       read: vi.fn(async () => place),
+    },
+    reminders: {
+      available: () => state.reminders.available,
+      permission: vi.fn(async () => state.reminders.permission),
+      request: vi.fn(async () => state.reminders.permission),
+      read: vi.fn(async () => todo),
+    },
+    "calendar-write": {
+      available: () => state["calendar-write"].available,
+      permission: vi.fn(async () => state["calendar-write"].permission),
+      request: vi.fn(async () => state["calendar-write"].permission),
+      read: vi.fn(async () => ({ created: true as const, calendar: "Home" })),
+    },
+    "reminders-write": {
+      available: () => state["reminders-write"].available,
+      permission: vi.fn(async () => state["reminders-write"].permission),
+      request: vi.fn(async () => state["reminders-write"].permission),
+      read: vi.fn(async () => ({ created: true as const, list: "Reminders" })),
     },
     foreground: () => state.foreground,
     watch: (listener: () => void) => {
@@ -218,6 +244,9 @@ describe("pairing and the switch", () => {
       calendar: false,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     expect(phone.deps.connect).not.toHaveBeenCalled();
     expect(phone.deps.pair).not.toHaveBeenCalled();
@@ -233,11 +262,17 @@ describe("pairing and the switch", () => {
       calendar: true,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     expect(JSON.parse(phone.store.get(key)!)).toEqual({
       calendar: true,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
       device: { deviceId: "device-1", token: "token-1" },
     });
     expect(phone.sockets).toHaveLength(1);
@@ -405,6 +440,9 @@ describe("where it connects", () => {
       calendar: false,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
   });
 
@@ -698,6 +736,9 @@ describe("contacts and location", () => {
       calendar: true,
       contacts: true,
       location: true,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     phone.state.contacts.permission = "denied";
     await phone.change();
@@ -722,6 +763,9 @@ describe("contacts and location", () => {
       calendar: false,
       contacts: true,
       location: true,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
       device: { deviceId: "device-1", token: "token-1" },
     });
   });
@@ -738,6 +782,9 @@ describe("contacts and location", () => {
       calendar: false,
       contacts: true,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     expect(JSON.parse(phone.store.get(key)!).device.token).toBe("token-1");
   });
@@ -758,6 +805,9 @@ describe("contacts and location", () => {
       calendar: false,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
   });
 
@@ -773,6 +823,9 @@ describe("contacts and location", () => {
       calendar: true,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     expect(capabilities(phone)).toBe("calendar");
   });
@@ -793,6 +846,9 @@ describe("contacts and location", () => {
       calendar: false,
       contacts: true,
       location: true,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
   });
 
@@ -806,6 +862,9 @@ describe("contacts and location", () => {
       calendar: false,
       contacts: false,
       location: false,
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
     });
     expect(phone.store.size).toBe(0);
   });
@@ -928,5 +987,226 @@ describe("contacts and location requests", () => {
     );
     expect(phone.deps.contacts.read).not.toHaveBeenCalled();
     expect(phone.deps.location.read).not.toHaveBeenCalled();
+  });
+});
+
+describe("reminders and writes", () => {
+  const capabilities = (phone: ReturnType<typeof setup>) =>
+    phone.last().headers["x-dozo-device-capabilities"];
+  const ask = (id: string, method: string, extra: Record<string, unknown> = {}) => ({
+    type: "request",
+    id,
+    request: { method, botId: "bot-1", runId: "run-1", ...extra },
+  });
+  const answered = async (phone: ReturnType<typeof setup>, count: number) => {
+    await vi.waitFor(() => expect(phone.last().sent).toHaveLength(count));
+    return phone.last().frames();
+  };
+  const event = {
+    title: "Dentist",
+    start: "2026-11-24T09:00:00.000Z",
+    end: "2026-11-24T10:00:00.000Z",
+    allDay: false,
+  };
+
+  async function allOn() {
+    const phone = await switchedOn();
+    for (const kind of ["reminders", "calendar-write", "reminders-write"] as const) {
+      expect(await phone.device.setSwitch(kind, true)).toBe("done");
+    }
+    return phone;
+  }
+
+  it("declares each one only while its switch is on and the system allows it", async () => {
+    const phone = setup();
+    phone.device.start();
+    expect(await phone.device.setSwitch("calendar-write", true)).toBe("done");
+    expect(phone.deps["calendar-write"].request).toHaveBeenCalledTimes(1);
+    expect(phone.deps.calendar.request).not.toHaveBeenCalled();
+    expect(capabilities(phone)).toBe("calendar-write");
+    expect(await phone.device.setSwitch("reminders", true)).toBe("done");
+    expect(capabilities(phone)).toBe("reminders,calendar-write");
+    expect(await phone.device.setSwitch("reminders-write", true)).toBe("done");
+    expect(capabilities(phone)).toBe("reminders,calendar-write,reminders-write");
+    expect(await phone.device.setSwitch("calendar", true)).toBe("done");
+    expect(capabilities(phone)).toBe("calendar,reminders,calendar-write,reminders-write");
+    expect(phone.deps.pair).toHaveBeenCalledTimes(1);
+    phone.state["calendar-write"].permission = "denied";
+    phone.state.reminders.available = false;
+    await phone.change();
+    expect(capabilities(phone)).toBe("calendar,reminders-write");
+    expect(JSON.parse(phone.store.get(key)!)).toEqual({
+      calendar: true,
+      contacts: false,
+      location: false,
+      reminders: true,
+      "calendar-write": true,
+      "reminders-write": true,
+      device: { deviceId: "device-1", token: "token-1" },
+    });
+  });
+
+  it("never declares reading the calendar for Add to calendar, though Android grants both", async () => {
+    const phone = setup();
+    phone.device.start();
+    // Android asks for reading and writing together for Add to calendar: the system now lets the
+    // app read the calendar too, yet reading stays under its own switch.
+    phone.state.permission = "granted";
+    expect(await phone.device.setSwitch("calendar-write", true)).toBe("done");
+    await phone.change();
+    expect(capabilities(phone)).toBe("calendar-write");
+    expect(String(capabilities(phone)).split(",")).not.toContain("calendar");
+    expect(phone.deps.calendar.request).not.toHaveBeenCalled();
+  });
+
+  it("leaves a switch off when the system refuses or the phone has no such store", async () => {
+    const phone = await switchedOn();
+    phone.state["reminders-write"].permission = "denied";
+    expect(await phone.device.setSwitch("reminders-write", true)).toBe("denied");
+    phone.state.reminders.available = false;
+    expect(await phone.device.setSwitch("reminders", true)).toBe("unavailable");
+    expect(phone.deps.reminders.request).not.toHaveBeenCalled();
+    expect(phone.device.settings()).toMatchObject({
+      reminders: false,
+      "calendar-write": false,
+      "reminders-write": false,
+    });
+  });
+
+  it("turning off the last one unpairs, whichever kind it is", async () => {
+    const phone = setup();
+    phone.device.start();
+    await phone.device.setSwitch("reminders-write", true);
+    await phone.device.setSwitch("calendar-write", true);
+    await phone.device.setSwitch("reminders-write", false);
+    expect(phone.deps.unpair).not.toHaveBeenCalled();
+    expect(capabilities(phone)).toBe("calendar-write");
+    expect(await phone.device.setSwitch("calendar-write", false)).toBe("done");
+    expect(phone.deps.unpair).toHaveBeenCalledWith(ORIGIN, "token-1");
+    expect(phone.store.size).toBe(0);
+    expect(phone.last().closed).toBe(true);
+  });
+
+  it("answers a reminders read with its value, passing only the contract's fields", async () => {
+    const phone = await allOn();
+    phone.last().receive(
+      ask("r1", "phoneRemindersRead", {
+        list: "Home",
+        due: { from: "2026-11-23T00:00:00.000Z", to: "2026-11-24T00:00:00.000Z" },
+        includeDone: true,
+        limit: 50,
+        notes: true,
+      }),
+    );
+    expect(await answered(phone, 2)).toEqual([
+      { type: "frame", id: "r1", frame: { value: todo } },
+      { type: "frame", id: "r1", frame: { done: true } },
+    ]);
+    expect(phone.deps.reminders.read).toHaveBeenLastCalledWith({
+      list: "Home",
+      due: { from: "2026-11-23T00:00:00.000Z", to: "2026-11-24T00:00:00.000Z" },
+      includeDone: true,
+      limit: 50,
+    });
+    phone.last().receive(ask("r2", "phoneRemindersRead", { due: "tomorrow", list: 3 }));
+    await answered(phone, 4);
+    expect(phone.deps.reminders.read).toHaveBeenLastCalledWith({ includeDone: false, limit: 50 });
+  });
+
+  it("answers each write with its confirmation, passing the item as sent for the writer to check", async () => {
+    const phone = await allOn();
+    phone.last().receive(ask("w1", "phoneCalendarCreate", { event }));
+    phone.last().receive(ask("w2", "phoneReminderCreate", { reminder: { title: "Buy milk" } }));
+    await answered(phone, 4);
+    expect(phone.last().frames()).toEqual(
+      expect.arrayContaining([
+        { type: "frame", id: "w1", frame: { value: { created: true, calendar: "Home" } } },
+        { type: "frame", id: "w2", frame: { value: { created: true, list: "Reminders" } } },
+      ]),
+    );
+    expect(phone.deps["calendar-write"].read).toHaveBeenCalledWith(event);
+    expect(phone.deps["reminders-write"].read).toHaveBeenCalledWith({ title: "Buy milk" });
+  });
+
+  it.each([
+    [
+      "calendar-write-invalid",
+      "phoneCalendarCreate",
+      "calendar-write",
+      new PhoneReadError("calendar-write-invalid"),
+    ],
+    [
+      "calendar-write-permission",
+      "phoneCalendarCreate",
+      "calendar-write",
+      new PhoneReadError("calendar-write-permission"),
+    ],
+    ["calendar-write-unavailable", "phoneCalendarCreate", "calendar-write", new Error("boom")],
+    [
+      "reminders-write-invalid",
+      "phoneReminderCreate",
+      "reminders-write",
+      new PhoneReadError("reminders-write-invalid"),
+    ],
+    ["reminders-write-unavailable", "phoneReminderCreate", "reminders-write", new Error("boom")],
+    [
+      "reminders-permission",
+      "phoneRemindersRead",
+      "reminders",
+      new PhoneReadError("reminders-permission"),
+    ],
+    ["reminders-unavailable", "phoneRemindersRead", "reminders", new Error("boom")],
+  ] as const)("answers %s when it fails that way", async (code, method, kind, failure) => {
+    const phone = await allOn();
+    phone.deps[kind].read.mockRejectedValueOnce(failure);
+    phone.last().receive(ask("x1", method, { event, reminder: { title: "A" } }));
+    expect(await answered(phone, 1)).toEqual([{ type: "frame", id: "x1", frame: { error: code } }]);
+  });
+
+  it("answers off for each one that is switched off, and unavailable without its store, never writing", async () => {
+    const phone = await switchedOn();
+    phone.last().receive(ask("a", "phoneRemindersRead"));
+    phone.last().receive(ask("b", "phoneCalendarCreate", { event }));
+    phone.last().receive(ask("c", "phoneReminderCreate", { reminder: { title: "A" } }));
+    await answered(phone, 3);
+    expect(phone.last().frames()).toEqual(
+      expect.arrayContaining([
+        { type: "frame", id: "a", frame: { error: "reminders-off" } },
+        { type: "frame", id: "b", frame: { error: "calendar-write-off" } },
+        { type: "frame", id: "c", frame: { error: "reminders-write-off" } },
+      ]),
+    );
+    const on = await allOn();
+    on.state.reminders.available = false;
+    on.state["reminders-write"].available = false;
+    on.last().receive(ask("d", "phoneRemindersRead"));
+    on.last().receive(ask("e", "phoneReminderCreate", { reminder: { title: "A" } }));
+    await answered(on, 2);
+    expect(on.last().frames()).toEqual(
+      expect.arrayContaining([
+        { type: "frame", id: "d", frame: { error: "reminders-unavailable" } },
+        { type: "frame", id: "e", frame: { error: "reminders-write-unavailable" } },
+      ]),
+    );
+    for (const kind of ["reminders", "calendar-write", "reminders-write"] as const) {
+      expect(phone.deps[kind].read).not.toHaveBeenCalled();
+      expect(on.deps[kind].read).not.toHaveBeenCalled();
+    }
+  });
+
+  it("has no method that changes or deletes what is on the phone", async () => {
+    const phone = await allOn();
+    for (const [index, method] of [
+      "phoneCalendarUpdate",
+      "phoneCalendarDelete",
+      "phoneReminderUpdate",
+      "phoneReminderDelete",
+    ].entries()) {
+      phone.last().receive(ask(`m${index}`, method, { event, id: "event-1" }));
+    }
+    const frames = await answered(phone, 4);
+    expect(frames.map((frame) => (frame as { frame: unknown }).frame)).toEqual(
+      Array(4).fill({ error: "Not supported on this phone" }),
+    );
   });
 });

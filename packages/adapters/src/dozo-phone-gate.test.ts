@@ -31,12 +31,18 @@ vi.mock("./run-effects.js", async (importOriginal) => ({
 import { withoutCloudComputerTools } from "./dozo-no-computer.js";
 import { offerPhoneTools, phoneGate, phoneRead } from "./dozo-phone.js";
 import {
+  PHONE_CALENDAR_CREATE_TOOL,
   PHONE_CALENDAR_READ_TOOL,
   PHONE_CONTACTS_SEARCH_TOOL,
   PHONE_LOCATION_TOOL,
+  PHONE_REMINDER_CREATE_TOOL,
+  PHONE_REMINDERS_READ_TOOL,
+  phoneCalendarCreateTool,
   phoneCalendarReadTool,
   phoneContactsSearchTool,
   phoneLocationTool,
+  phoneReminderCreateTool,
+  phoneRemindersReadTool,
 } from "./dozo-phone.tool-definition.js";
 import { buildApprovalAskBlock, userComputerGate } from "./dozo-user-computer-gate.js";
 import { toAgentTool } from "./pi-runtime-tools.js";
@@ -48,6 +54,8 @@ import { READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { userComputerOwner } from "./run-tools-user-computer.js";
 
 const RANGE = { from: "2026-11-22T00:00:00+03:00", to: "2026-11-29T00:00:00+03:00" };
+const SOON = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+const SOON_END = new Date(Date.parse(SOON) + 60 * 60 * 1000).toISOString();
 /** Each phone tool, a call it can make and its handler. */
 const TOOLS = {
   [PHONE_CALENDAR_READ_TOOL]: { args: RANGE, handler: phoneRead },
@@ -56,7 +64,20 @@ const TOOLS = {
     handler: phoneRead,
   },
   [PHONE_LOCATION_TOOL]: { args: { precision: "approximate" }, handler: phoneRead },
+  [PHONE_REMINDERS_READ_TOOL]: { args: { include_done: false }, handler: phoneRead },
+  [PHONE_CALENDAR_CREATE_TOOL]: {
+    args: { title: "Lunch", start: SOON, end: SOON_END },
+    handler: phoneRead,
+  },
+  [PHONE_REMINDER_CREATE_TOOL]: { args: { title: "Call Ada" }, handler: phoneRead },
 };
+/** The tools whose every call asks, so a run reaches the phone only on the call's own card. */
+const EVERY_CALL_ASKS: string[] = [
+  PHONE_LOCATION_TOOL,
+  PHONE_CALENDAR_CREATE_TOOL,
+  PHONE_REMINDER_CREATE_TOOL,
+];
+const WRITE_TOOLS = [PHONE_CALENDAR_CREATE_TOOL, PHONE_REMINDER_CREATE_TOOL] as const;
 const TOOL_NAMES = Object.keys(TOOLS) as Array<keyof typeof TOOLS>;
 const MODES = {
   "Never ask": { enabled: false, skipApprovals: true },
@@ -323,9 +344,14 @@ describe("contacts and location through the gate", () => {
 
 describe("a model turn with several phone calls", () => {
   it.each(TOOL_NAMES)("runs %s one call at a time", (name) => {
-    const tool = [phoneCalendarReadTool, phoneContactsSearchTool, phoneLocationTool].find(
-      (definition) => definition.name === name,
-    )!;
+    const tool = [
+      phoneCalendarReadTool,
+      phoneContactsSearchTool,
+      phoneLocationTool,
+      phoneRemindersReadTool,
+      phoneCalendarCreateTool,
+      phoneReminderCreateTool,
+    ].find((definition) => definition.name === name)!;
     expect(toAgentTool(tool, {} as never, name).executionMode).toBe("sequential");
   });
 });
@@ -395,7 +421,7 @@ describe("who a run reaches the phone for", () => {
     const allowed = label.startsWith("the owner") || label.startsWith("a follow-up");
     expect(reached).toBe(allowed ? owner : undefined);
     // Location reads each ask: the owner allowed this one on its card.
-    const run = context({ owner: reached, consent: true, card: name === PHONE_LOCATION_TOOL });
+    const run = context({ owner: reached, consent: true, card: EVERY_CALL_ASKS.includes(name) });
     // Assembly offers it only to a run that reaches its owner (run-assembly-capabilities.ts).
     const off = withoutCloudComputerTools(new Set(), false);
     if (reached)
@@ -413,5 +439,45 @@ describe("who a run reaches the phone for", () => {
     } as never);
     expect(run.requests).toHaveLength(allowed ? 1 : 0);
     if (!allowed) expect(result).toHaveProperty("error");
+  });
+});
+
+describe("writes to the phone through the gate", () => {
+  it.each(
+    WRITE_TOOLS.flatMap((name) =>
+      (Object.keys(MODES) as Array<keyof typeof MODES>).map((mode) => [name, mode] as const),
+    ),
+  )("%s asks every call, after earlier writes too, in %s", async (name, mode) => {
+    const args = TOOLS[name].args;
+    expect(await gate(context({ mode }).ctx, { ...args }, name)).toBe("recorded");
+    expect(await gate(context({ mode, consent: true }).ctx, { ...args }, name)).toBe("recorded");
+    expect(plans).toEqual(["ask", "ask"]);
+  });
+
+  it.each(WRITE_TOOLS)("%s is refused in a group, a token's run and on a block", async (name) => {
+    const args = TOOLS[name].args;
+    expect(await gate(context({ card: true, groupId: "group-1" }).ctx, { ...args }, name)).not.toBe(
+      "recorded",
+    );
+    expect(await gate(context({ card: true, token: true }).ctx, { ...args }, name)).not.toBe(
+      "recorded",
+    );
+    expect(plans).toEqual(["deny", "deny"]);
+    expect(await userComputerGate(context({ card: true }).ctx, true, name, { ...args })).toBe(
+      "deny",
+    );
+  });
+
+  it("reminders asks a bot's first read and allows it once allowed, in every mode", async () => {
+    const args = TOOLS[PHONE_REMINDERS_READ_TOOL].args;
+    for (const mode of Object.keys(MODES) as Array<keyof typeof MODES>) {
+      expect(await gate(context({ mode }).ctx, { ...args }, PHONE_REMINDERS_READ_TOOL)).toBe(
+        "recorded",
+      );
+      expect(
+        await gate(context({ mode, consent: true }).ctx, { ...args }, PHONE_REMINDERS_READ_TOOL),
+      ).toBe("recorded");
+    }
+    expect(plans).toEqual(["ask", "allow", "ask", "allow", "ask", "allow"]);
   });
 });

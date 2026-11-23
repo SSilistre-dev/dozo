@@ -638,10 +638,12 @@ the screen tools only when it declares screen control on connecting
 (`packages/adapters/src/dozo-device-capabilities.ts`; the desktop app declares commands only), tells the bot it can only run commands there, and answers a
 refused screen request with that fact (`packages/adapters/src/dozo-device-screen.ts`).
 
-## Your phone: calendar, contacts and location
+## Your phone: calendar, reminders, contacts and location
 
-A bot may read the member's own phone: its calendar (`phone_calendar_read`), one person in its
-contacts (`phone_contacts_search`) and where it is, once (`phone_location`)
+A bot may read the member's own phone: its calendar (`phone_calendar_read`), its reminders
+(`phone_reminders_read`, iPhone only), one person in its contacts (`phone_contacts_search`) and
+where it is, once (`phone_location`); and add a new calendar event (`phone_calendar_create`) or
+reminder (`phone_reminder_create`, iPhone only)
 (`packages/adapters/src/dozo-phone.ts`; the app's side is `apps/mobile/lib/dozo-phone-device.ts`).
 The phone pairs as one of the member's devices and declares each kind only while its switch is on in
 the Phone settings and the system allows it. Phones are not computers: they never get commands,
@@ -658,6 +660,13 @@ screen or browser, stay out of Computers and its limit, and an account has one p
   of when a switch was turned on started empty, so a phone paired before it asks once more for each
   kind, at that kind's first read after the deploy that added it.
 - Calendar: at most 31 days and 50 events, with title, times, location and calendar name.
+- Reminders: at most 50, with title, due date, done and list name; a due range of at most 31 days.
+- Writes: every write asks, in every mode, and its card shows the whole item as it will be written
+  (title, times, all-day dates, location, notes, how it repeats); an item the card could not show in
+  full is refused before any card. A bot only creates: it never changes or deletes an event or a
+  reminder and never adds invitees, and a repeating event must end. At most three writes a run, and
+  a card asked after the run read outside content says so. Adding to the calendar or adding
+  reminders has its own switch and system permission, apart from reading.
 - Contacts: a name to look up (two letters or digits at least; no wildcards, no paging; one line,
   without control characters, on the card and the phone alike), at most 10 people, each with their
   name and up to three values of the one kind asked for (phone numbers or email addresses), nothing
@@ -669,9 +678,10 @@ screen or browser, stay out of Computers and its limit, and an account has one p
   only approximate location answers approximate.
 - Links are removed from names, titles, locations and calendar names on the phone and again on the
   server by one shared rule; the rest of the text goes to the bot's model as written.
-- What is kept: the approval record holds a count (or that the location was read), not the content,
+- What is kept: the approval record holds a count (or that the location was read, or that an item
+  was created), not the content,
   and a turn that read the phone is not learned into memory. The card and the effect's request keep
-  what was asked (the name looked up, the date range). A phone tool's output is not kept in the
+  what was asked (the name looked up, the date range, the item to write). A phone tool's output is not kept in the
   chat's steps: later runs see only that the phone was read (messages saved before this change still
   hold it). The bot's reply stays in the chat like any message, with whatever it repeated: export
   and backups carry it, and a member added to the Space later can read it with the rest of its

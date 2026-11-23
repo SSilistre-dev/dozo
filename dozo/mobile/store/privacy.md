@@ -24,13 +24,15 @@ on to.
 | Crash reports and diagnostics | Only when the server's `/api/monitoring/config` returns a DSN; otherwise nothing is sent. Reports carry a hashed user id and no IP address, request bodies or extra data | Pseudonymous id, when the server sends one | Diagnostics | The error-reporting service the server names (nothing at build time). TODO owner: whether the hosted server sets it | `lib/monitoring.ts`, `packages/logging/src/monitoring.ts` |
 | Purchase status | The app reads the plan from the server. The App Store build offers no checkout (`lib/dozo-store-build.ts`); other builds open the server's own billing page in a browser session, so card data never reaches the app | Yes | App functionality | The payment processor, on its own page (not from the App Store build) | `lib/billing.ts` (`openBillingPage`), `lib/dozo-plan-limit.ts` |
 | Reports | Only when the person sends one: the message's id and chat id and what they write, mailed to the operator's feedback address | Yes | App functionality (moderation) | The operator's mail provider | `lib/dozo-message-actions.ts`, `app/(settings)/dozo-feedback.tsx` |
+| Calendar events, reminders, one contact's name with their numbers or email addresses, location (approximate, or precise when asked) | Only when the person turned that kind on in Settings > Phone and the system allowed it, and only when a bot asks and the person approves on its card (every location read and every write asks). One reading per request while the app is open; nothing in the background. Writes create a new event or reminder only | Yes | App functionality | The model provider of the bot that read it (the server passes the tool result to the model). The server keeps no copy in its approval record; the bot's reply stays in the chat | `lib/dozo-phone-device.ts`, `lib/dozo-phone-calendar.ts`, `lib/dozo-phone-calendar-write.ts`, `lib/dozo-phone-reminders.ts`, `lib/dozo-phone-reminders-write.ts`, `lib/dozo-phone-contacts.ts`, `lib/dozo-phone-location.ts` |
 | Blocked people | The ids of people blocked from a message's menu, on the device only | No, device only | App functionality | None | `lib/dozo-blocked-people.ts` |
 | Server address, relay pairing keys | Yes, stored on the device only (and the relay carries encrypted traffic when the user's own computer is the server) | No, device only | App functionality | The relay operator sees encrypted traffic only | `lib/api-server.ts`, `lib/dozo-relay-connection.ts` |
 
 ## Not collected (no code path, no library, no permission string)
 
-- Contacts, calendar, health, location (precise or coarse), motion, Bluetooth, files outside what
-  the user picks, clipboard reads (the clipboard is only written to).
+- Health, motion, Bluetooth, files outside what the user picks, clipboard reads (the clipboard is
+  only written to). Contacts, calendar, reminders and location only as in the table above: never in
+  the background, never the whole address book, nothing until the person turns that kind on.
 - Advertising id, tracking, cross-app or cross-site tracking: no `NSUserTrackingUsageDescription`,
   no ad or attribution SDK. The App Tracking Transparency prompt is not needed.
 - Usage analytics inside the app: none. TODO owner: the server can record product events when
@@ -56,8 +58,9 @@ on to.
 ## Reading this for each store
 
 - App Store: "Data Linked to You" holds Contact Info (email, name), User Content (messages, photos,
-  audio), Identifiers (user id, device id for calls), Purchases (status), and Diagnostics when the
-  server enables crash reports. "Data Used to Track You": none.
+  audio), Identifiers (user id, device id for calls), Purchases (status), Contacts, Location
+  (approximate and precise) and calendar or reminder content (User Content: other) when the person
+  turns those kinds on, and Diagnostics when the server enables crash reports. "Data Used to Track You": none.
 - Play Data safety: the same categories as "collected", all "required" for app functionality except
   diagnostics and dictation (optional); "shared": messages and attachments go to the model provider
   (declare it as shared with a service provider if Play's wording requires it).

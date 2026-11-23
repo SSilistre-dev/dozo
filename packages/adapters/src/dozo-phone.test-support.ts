@@ -52,7 +52,14 @@ export function setup(options: {
     });
   const requests: Array<{ owner: string; request: Record<string, unknown>; deviceId?: string }> =
     [];
-  const declared = options.capabilities ?? ["calendar", "contacts", "location"];
+  const declared = options.capabilities ?? [
+    "calendar",
+    "contacts",
+    "location",
+    "reminders",
+    "calendar-write",
+    "reminders-write",
+  ];
   const devices = {
     connected: vi.fn(async () => null),
     pairedSince: vi.fn(async () => null),
@@ -93,8 +100,13 @@ export function setup(options: {
   );
   const updateMany = vi.fn(async () => ({ count: 1 }));
   const count = vi.fn(
-    async ({ where }: { where: Clause & { kind: string } }) =>
-      effects.filter((effect) => effect.kind === where.kind && holds(effect, where)).length,
+    async ({ where }: { where: Clause & { kind: string | { in: string[] } } }) =>
+      effects.filter(
+        (effect) =>
+          (typeof where.kind === "string"
+            ? effect.kind === where.kind
+            : where.kind.in.includes(effect.kind)) && holds(effect, where),
+      ).length,
   );
   const prisma = {
     $queryRaw: async () => [{ sourced: Boolean(options.token) }],

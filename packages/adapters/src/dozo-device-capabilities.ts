@@ -18,10 +18,23 @@ export const DEVICE_CAPABILITIES = [
   "calendar",
   "contacts",
   "location",
+  "reminders",
+  "calendar-write",
+  "reminders-write",
 ] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
-/** What a phone may offer: nothing a computer does, whatever it declares. */
-const PHONE_CAPABILITIES: readonly DeviceCapability[] = ["calendar", "contacts", "location"];
+/**
+ * What a phone may offer: nothing a computer does, whatever it declares. Reading and writing are
+ * switches of their own: a phone that reads the calendar adds nothing to it unless it says so.
+ */
+const PHONE_CAPABILITIES: readonly DeviceCapability[] = [
+  "calendar",
+  "contacts",
+  "location",
+  "reminders",
+  "calendar-write",
+  "reminders-write",
+];
 const COMPUTER_CAPABILITIES: readonly DeviceCapability[] = ["shell", "screen", "browser"];
 
 /** A connected computer, with what it declared; undefined when it did not come through the hub. */

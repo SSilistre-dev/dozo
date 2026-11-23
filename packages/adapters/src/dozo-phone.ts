@@ -1,34 +1,52 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { deadlineSignal, redactSecrets } from "@rakazo/core";
+import { containsSecret, deadlineSignal, redactSecrets } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "./approval-effect.js";
 import type { DeviceCapability } from "./dozo-device-capabilities.js";
 import {
+  PHONE_CALENDAR_CREATE_TOOL,
   PHONE_CALENDAR_READ_TOOL,
   PHONE_CONTACTS_SEARCH_TOOL,
   PHONE_LOCATION_TOOL,
+  PHONE_REMINDER_CREATE_TOOL,
+  PHONE_REMINDERS_READ_TOOL,
   PHONE_TOOL_NAMES,
+  PHONE_WRITE_TOOL_NAMES,
 } from "./dozo-phone.tool-definition.js";
+import {
+  calendarCreateInput,
+  reminderCreateInput,
+  remindersReadDetail,
+  remindersReadInput,
+} from "./dozo-phone-input.js";
 import type {
+  PhoneCalendarCreateRequest,
   PhoneCalendarReadRequest,
   PhoneContactField,
   PhoneContactsSearchRequest,
   PhoneLocationPrecision,
   PhoneLocationRequest,
+  PhoneReminderCreateRequest,
+  PhoneRemindersReadRequest,
 } from "./dozo-phone-protocol.js";
 import {
+  isoInstant,
   PHONE_CALENDAR_MAX_DAYS,
   PHONE_CALENDAR_MAX_EVENTS,
   PHONE_CALENDAR_QUERY_MAX,
   PHONE_CONTACT_FIELDS,
   PHONE_CONTACTS_MAX,
   PHONE_LOCATION_PRECISIONS,
+  PHONE_REMINDERS_MAX,
+  phoneCalendarCreateValue,
   phoneCalendarValue,
   phoneContactsQuery,
   phoneContactsValue,
   phoneLocationValue,
+  phoneReminderCreateValue,
+  phoneRemindersValue,
 } from "./dozo-phone-protocol.js";
 import type { DozoMarkDb } from "./dozo-token-marks.js";
 import { dozoBotTokenTainted, runCameByToken } from "./dozo-token-run.js";
@@ -41,13 +59,15 @@ import type { UserDeviceGateway } from "./user-device-protocol.js";
 
 /**
  * The user's own phone: its calendar (phone_calendar_read), one person in its contacts
- * (phone_contacts_search) and where it is, once (phone_location). The phone pairs and connects as
- * a user device (dozo-user-device-gateway.ts) and declares each capability only while its switch
- * is on and the system allows it. Only the person's own chat runs reach it (`userComputerOwner`),
- * never a run a token's message reached. A bot's first read of each kind since its switch was
- * turned on asks, in every approval mode, and every location read asks; reads run one at a time.
- * The effect keeps no content, the turn is kept out of memory, and later turns replay no output
- * (`keptToolCalls` in @rakazo/core).
+ * (phone_contacts_search), where it is, once (phone_location) and its reminders
+ * (phone_reminders_read); and one new event (phone_calendar_create) or reminder
+ * (phone_reminder_create) added to it, never one changed or deleted. The phone pairs and connects
+ * as a user device (dozo-user-device-gateway.ts) and declares each capability only while its
+ * switch is on and the system allows it. Only the person's own chat runs reach it
+ * (`userComputerOwner`), never a run a token's message reached. A bot's first read of each kind
+ * since its switch was turned on asks, in every approval mode, and every location read and every
+ * write asks; calls run one at a time. The effect keeps no content, the turn is kept out of
+ * memory, and later turns replay no output (`keptToolCalls` in @rakazo/core).
  */
 
 /** How long the phone has to answer: the device default (ten minutes) is far too long here. */
@@ -61,6 +81,13 @@ const CHANGED = "The user's phone changed since this was approved. Try again.";
 const TOKEN_RUN = "The user's phone is not used for a message sent with a token.";
 const CALENDAR_ASK = "Let this bot read your phone's calendar?";
 const CONTACTS_ASK = "Let this bot look up someone in your phone's contacts?";
+const REMINDERS_ASK = "Let this bot read your phone's reminders?";
+const EVENT_ASK = "Add this event to your phone's calendar?";
+const REMINDER_ASK = "Add this reminder to your phone?";
+/** A write's card, first line, when the run read outside content before it asked. */
+export const PHONE_WRITE_TAINTED_LINE = "This run read outside content before asking.";
+const SECRET_ON_CARD =
+  "This holds a secret of the bot's, which the approval card cannot show. Leave it out.";
 const CONTACTS_QUERY =
   "query must be part of one person's name, with at least two letters or digits.";
 /** What each effect keeps of a read instead of its content. */
@@ -69,16 +96,27 @@ export const PHONE_READ_NOTE =
 export const PHONE_CONTACTS_NOTE =
   "Contacts are not kept; call phone_contacts_search again to see them.";
 export const PHONE_LOCATION_NOTE = "The location is not kept; call phone_location again to see it.";
+export const PHONE_REMINDERS_NOTE =
+  "Reminders are not kept; call phone_reminders_read again to see them.";
 /** How many contacts searches one run may make. */
 export const PHONE_CONTACTS_SEARCHES_PER_RUN = 3;
+/** How many writes to the phone, of either kind, one run may make. */
+export const PHONE_WRITES_PER_RUN = 3;
 const STALE = "The user's phone gave an old reading. Try again.";
 
 type WithoutRun<T> = T extends unknown ? Omit<T, "botId" | "runId"> : never;
 
-/** One read a call asks for, prepared from its arguments. */
+/** One read or write a call asks for, prepared from its arguments. */
 interface PhoneReadPlan {
   /** What the phone is sent, besides the bot and the run. */
-  request: WithoutRun<PhoneCalendarReadRequest | PhoneContactsSearchRequest | PhoneLocationRequest>;
+  request: WithoutRun<
+    | PhoneCalendarReadRequest
+    | PhoneContactsSearchRequest
+    | PhoneLocationRequest
+    | PhoneRemindersReadRequest
+    | PhoneCalendarCreateRequest
+    | PhoneReminderCreateRequest
+  >;
   /** Its question is ours alone (the card renders it as Markdown); what the model wrote goes in
    * the detail. */
   card: { text: string; detail?: string; detailFormat?: "code" };
@@ -96,8 +134,13 @@ interface PhoneReadPlan {
 
 interface PhoneTool {
   capability: DeviceCapability;
-  /** What the phone reads, as the model is told when it cannot. */
-  reads: string;
+  /** What the model is told when the phone could not do it. */
+  cannot: string;
+  /**
+   * A write: its card shows the whole item, every call asks (consent never carries), and when it
+   * may have been written without a readable answer, the model is told so (`unsure`).
+   */
+  write?: boolean;
   /** The switch in the app's Phone settings. */
   setting: string;
   /** The log line of a read that failed; it carries the failure's kind only. */
@@ -107,14 +150,24 @@ interface PhoneTool {
   plan(args: Record<string, unknown>): PhoneReadPlan | { error: string };
   /** The phone's error codes besides off, permission and unavailable, as the model is told. */
   errors?: Record<string, string>;
-  /** How many reads one run may make, and what the model is told past it. */
-  perRun?: { reads: number; refusal: string };
+  /** How many calls of these kinds one run may make, and what the model is told past it. */
+  perRun?: { reads: number; refusal: string; kinds?: readonly string[] };
 }
+
+const WRITES_PER_RUN = {
+  reads: PHONE_WRITES_PER_RUN,
+  refusal: `A run may write to the user's phone at most ${PHONE_WRITES_PER_RUN} times. Ask the user to add the rest.`,
+  kinds: PHONE_WRITE_TOOL_NAMES,
+};
+
+/** What a write that got no readable answer may have done, as the model is told. */
+const unsure = (why: string) =>
+  `The user's phone ${why}, so it may have been added. Ask the user before trying again.`;
 
 const PHONE_TOOLS: Record<string, PhoneTool> = {
   [PHONE_CALENDAR_READ_TOOL]: {
     capability: "calendar",
-    reads: "calendar",
+    cannot: "The user's phone could not read its calendar.",
     setting: "Calendar",
     failed: "phone calendar read failed",
     ask: CALENDAR_ASK,
@@ -140,7 +193,7 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
   },
   [PHONE_CONTACTS_SEARCH_TOOL]: {
     capability: "contacts",
-    reads: "contacts",
+    cannot: "The user's phone could not read its contacts.",
     setting: "Contacts",
     failed: "phone contacts search failed",
     ask: CONTACTS_ASK,
@@ -173,7 +226,7 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
   },
   [PHONE_LOCATION_TOOL]: {
     capability: "location",
-    reads: "location",
+    cannot: "The user's phone could not read its location.",
     setting: "Location",
     failed: "phone location read failed",
     ask: "Let this bot see your phone's location?",
@@ -197,7 +250,101 @@ const PHONE_TOOLS: Record<string, PhoneTool> = {
       };
     },
   },
+  [PHONE_REMINDERS_READ_TOOL]: {
+    capability: "reminders",
+    cannot: "The user's phone could not read its reminders.",
+    setting: "Reminders",
+    failed: "phone reminders read failed",
+    ask: REMINDERS_ASK,
+    plan(args) {
+      const input = remindersReadInput(args);
+      if ("error" in input) return input;
+      const detail = remindersReadDetail(input);
+      return {
+        request: { method: "phoneRemindersRead", ...input, limit: PHONE_REMINDERS_MAX },
+        card: { text: REMINDERS_ASK, ...(detail ? { detail, detailFormat: "code" } : {}) },
+        read(answer) {
+          const value = phoneRemindersValue(answer);
+          return (
+            value && {
+              value,
+              kept: { reminders: value.reminders.length, note: PHONE_REMINDERS_NOTE },
+            }
+          );
+        },
+      };
+    },
+  },
+  [PHONE_CALENDAR_CREATE_TOOL]: {
+    capability: "calendar-write",
+    cannot: "The user's phone could not add the event.",
+    write: true,
+    setting: "Add to calendar",
+    failed: "phone calendar write failed",
+    ask: EVENT_ASK,
+    perRun: WRITES_PER_RUN,
+    errors: {
+      "calendar-write-invalid":
+        "The user's phone could not add the event as given; check its fields.",
+    },
+    plan(args) {
+      const input = calendarCreateInput(args);
+      if ("error" in input) return input;
+      return {
+        request: { method: "phoneCalendarCreate", event: input.item },
+        card: { text: EVENT_ASK, detail: input.lines.join("\n"), detailFormat: "code" },
+        everyCallAsks: true,
+        read(answer) {
+          const value = phoneCalendarCreateValue(answer);
+          return value && { value, kept: { created: true } };
+        },
+      };
+    },
+  },
+  [PHONE_REMINDER_CREATE_TOOL]: {
+    capability: "reminders-write",
+    cannot: "The user's phone could not add the reminder.",
+    write: true,
+    setting: "Add reminders",
+    failed: "phone reminder write failed",
+    ask: REMINDER_ASK,
+    perRun: WRITES_PER_RUN,
+    errors: {
+      "reminders-write-invalid":
+        "The user's phone could not add the reminder as given; check its fields.",
+    },
+    plan(args) {
+      const input = reminderCreateInput(args);
+      if ("error" in input) return input;
+      return {
+        request: { method: "phoneReminderCreate", reminder: input.item },
+        card: { text: REMINDER_ASK, detail: input.lines.join("\n"), detailFormat: "code" },
+        everyCallAsks: true,
+        read(answer) {
+          const value = phoneReminderCreateValue(answer);
+          return value && { value, kept: { created: true } };
+        },
+      };
+    },
+  },
 };
+
+/**
+ * A call's plan, as its card will show it: a write whose card would not show it whole (it holds
+ * one of the bot's secrets, which every card hides) is refused instead, as a lasting write's card
+ * is (dozo-lasting-write-card.ts). The limits keep the longest write well within the card's
+ * detail (approvalDetailLength), so a secret is the one thing that could cut it.
+ */
+function planCall(
+  tool: PhoneTool,
+  args: Record<string, unknown>,
+  secrets: readonly string[],
+): PhoneReadPlan | { error: string } {
+  const plan = tool.plan(args);
+  if ("error" in plan || !tool.write) return plan;
+  if (containsSecret(plan.request, [...secrets])) return { error: SECRET_ON_CARD };
+  return plan;
+}
 
 type PhoneDevices = UserDeviceGateway & {
   connectedPhone(userId: string, capability: DeviceCapability): Promise<ConnectedPhone | null>;
@@ -287,17 +434,11 @@ export async function offerPhoneTools(
 }
 
 type PhoneInput = { from: string; to: string; query?: string };
-const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/i;
-
-function instant(value: unknown): string | undefined {
-  const text = typeof value === "string" ? value.trim() : "";
-  return ISO_WITH_OFFSET.test(text) && !Number.isNaN(Date.parse(text)) ? text : undefined;
-}
 
 /** The range and query of a calendar call, or why they cannot be read. */
 export function phoneInput(args: Record<string, unknown>): PhoneInput | { error: string } {
-  const from = instant(args.from);
-  const to = instant(args.to);
+  const from = isoInstant(args.from);
+  const to = isoInstant(args.to);
   if (!from || !to)
     return {
       error:
@@ -321,11 +462,15 @@ const phoneRuns = new WeakSet<object>();
 /** A call's approval as its handler checks it: the phone it saw, consented to. */
 const consents = new WeakMap<Record<string, unknown>, { deviceId: string }>();
 
-/** Whether this run made as many reads of this tool as one run may. */
+/** Writes whose card asks after the run read outside content, by their arguments. */
+const askedTainted = new WeakSet<Record<string, unknown>>();
+
+/** Whether this run made as many calls of this tool (or its kinds) as one run may. */
 async function readsInRun(ctx: RunContext, name: string, tool: PhoneTool): Promise<boolean> {
   if (!tool.perRun) return false;
+  const { kinds } = tool.perRun;
   const reads = await ctx.deps.prisma.externalEffect.count({
-    where: { runId: ctx.runId, kind: name, status: "completed" },
+    where: { runId: ctx.runId, kind: kinds ? { in: [...kinds] } : name, status: "completed" },
   });
   return reads >= tool.perRun.reads;
 }
@@ -364,10 +509,11 @@ function consentTo(
 }
 
 /**
- * The approval of a phone read, in every approval mode (Never ask included). A block or a run a
+ * The approval of a phone call, in every approval mode (Never ask included). A block or a run a
  * token's message reached refuses it, as does a run that is not the person's own. A bot reads the
- * phone once its owner allowed this kind of read (`consentTo`); a location read, and any read once
- * outside content entered the run, needs its own card. Otherwise it asks. An allowed read is
+ * phone once its owner allowed this kind of read (`consentTo`); a location read, a write (whose
+ * card says so when outside content came first) and any read once outside content entered the
+ * run, needs its own card. Otherwise it asks. An allowed read is
  * outside content from that moment, before its answer: calls of one turn decided at the same time
  * get one read on an earlier consent between them, and the others ask. A call that cannot read
  * anything (no phone with that capability, arguments it cannot read, a run past the tool's limit)
@@ -385,25 +531,26 @@ export async function phoneGate(
   if (blocked || !owner || (await runCameByToken(ctx))) return "deny";
   if (!(await onlyOwnerReads(ctx.deps.prisma, ctx.thread, owner))) return "deny";
   const route = await phoneRoute(ctx, tool.capability);
-  const plan = tool.plan(args);
+  const plan = planCall(tool, args, ctx.secrets);
   if (!route || "error" in plan || (await readsInRun(ctx, name, tool))) return "allow";
-  let consent = await consentTo(
-    ctx,
-    name,
-    route,
-    args,
-    Boolean(plan.everyCallAsks) || (await isRunTainted(ctx)),
-  );
+  const tainted = await isRunTainted(ctx);
+  let consent = await consentTo(ctx, name, route, args, Boolean(plan.everyCallAsks) || tainted);
   // Another call of this turn was allowed while this one was looking: only its own card now.
   if (consent?.status === "completed" && ctx.state.tainted)
     consent = await consentTo(ctx, name, route, args, true);
-  if (!consent) return "ask";
+  if (!consent) {
+    if (tool.write && tainted) askedTainted.add(args);
+    return "ask";
+  }
   await markReadOutsideContent(ctx);
   consents.set(args, { deviceId: route.deviceId });
   return "allow";
 }
 
-/** The card of a phone read: what it reads, and the details of this call. */
+/**
+ * The card of a phone call: what it reads or writes, and the details of this call; a write's, the
+ * whole item, after a fixed line when the run read outside content before it asked.
+ */
 export function phoneCard(
   effectId: string,
   name: string,
@@ -413,7 +560,8 @@ export function phoneCard(
   const tool = PHONE_TOOLS[name]!;
   const plan = tool.plan(args);
   const card = "error" in plan ? { text: tool.ask } : plan.card;
-  const detail = card.detail ? redactSecrets(card.detail, [...secrets]) : "";
+  const shown = card.detail ? redactSecrets(card.detail, [...secrets]) : "";
+  const detail = shown && askedTainted.has(args) ? `${PHONE_WRITE_TAINTED_LINE}\n${shown}` : shown;
   return {
     kind: "ask",
     approvalEffectId: effectId,
@@ -449,12 +597,13 @@ function failure(
   error: unknown,
   deadline: AbortSignal,
 ): { kind: string; error: string } {
-  if (deadline.aborted) return { kind: "timeout", error: TIMEOUT };
+  if (deadline.aborted)
+    return { kind: "timeout", error: tool.write ? unsure("did not answer in time") : TIMEOUT };
   const text = error instanceof Error ? error.message : "";
   // Another process holding no socket for it says so in words.
   if (error instanceof UserDeviceOfflineError || text === USER_DEVICE_OFFLINE_MESSAGE)
     return { kind: "offline", error: OFFLINE };
-  const { capability, setting, reads } = tool;
+  const { capability, setting, cannot } = tool;
   if (text === `${capability}-off` || text === `${capability}-permission`)
     return {
       kind: text,
@@ -462,20 +611,18 @@ function failure(
     };
   const extra = tool.errors?.[text];
   if (extra) return { kind: text, error: extra };
-  return {
-    kind: text === `${capability}-unavailable` ? text : "other",
-    error: `The user's phone could not read its ${reads}.`,
-  };
+  return { kind: text === `${capability}-unavailable` ? text : "other", error: cannot };
 }
 
 /**
  * Every phone tool: what the call asks for, from the owner's phone, re-checked and cut here. The
- * model gets it; the effect keeps only a count or that it read, so a replay never shows it.
+ * model gets it; the effect keeps only a count or that it read or wrote, so a replay never shows
+ * it.
  */
 export async function phoneRead(ctx: RunContext, call: ToolCall) {
   const tool = PHONE_TOOLS[call.name]!;
   if (await runCameByToken(ctx)) return refuse(ctx, call, TOKEN_RUN, "token");
-  const plan = tool.plan(call.args);
+  const plan = planCall(tool, call.args, ctx.secrets);
   if ("error" in plan) return refuse(ctx, call, plan.error, "input");
   if (tool.perRun && (await readsInRun(ctx, call.name, tool)))
     return refuse(ctx, call, tool.perRun.refusal, "limit");
@@ -504,7 +651,8 @@ export async function phoneRead(ctx: RunContext, call: ToolCall) {
   const read = plan.read(answer, Date.now() - sentAt);
   if (!read) {
     getLogger().warn(tool.failed, { kind: "invalid" });
-    return call.finish({ error: `The user's phone could not read its ${tool.reads}.` });
+    const error = tool.write ? unsure("gave an answer that cannot be read") : tool.cannot;
+    return call.finish({ error });
   }
   if ("error" in read) {
     getLogger().warn(tool.failed, { kind: "stale" });

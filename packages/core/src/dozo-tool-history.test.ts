@@ -70,3 +70,46 @@ describe("a reply's kept tool calls", () => {
     expect(other?.steps[0]?.calls[0]?.result).toBe(PERSON);
   });
 });
+
+describe("a reply's kept writes to the phone", () => {
+  const TITLE = "Dentist with Dr. Example";
+  const NOTES = "Bring the referral letter";
+  const write = (tool: string, failed = false) => {
+    // A step as the run writes it, with its tool and calls (HistoryToolStep).
+    const step = {
+      label: tool,
+      count: 1,
+      tool,
+      calls: [
+        {
+          arguments: JSON.stringify({ title: TITLE, notes: NOTES }),
+          result: failed ? "Add to calendar is off." : JSON.stringify({ created: true }),
+          ...(failed ? { failed: true as const } : {}),
+        },
+      ],
+    };
+    return [{ kind: "steps", steps: [step] } as MessageBlock];
+  };
+
+  it.each(["phone_calendar_create", "phone_reminder_create"])(
+    "keep neither what %s wrote nor its arguments, only that it was written",
+    (tool) => {
+      const { toolHistory } = splitToolHistory(write(tool));
+      expect(toolHistory?.steps[0]).toEqual({
+        tool,
+        calls: [{ result: "Written to the user's phone." }],
+      });
+      const failed = splitToolHistory(write(tool, true)).toolHistory;
+      expect(failed?.steps[0]?.calls).toEqual([
+        { result: "Add to calendar is off.", failed: true },
+      ]);
+      for (const text of [TITLE, NOTES])
+        expect(JSON.stringify([toolHistory, failed])).not.toContain(text);
+    },
+  );
+
+  it("keeps a reminders read's output out too", () => {
+    const { toolHistory } = splitToolHistory(reply("phone_reminders_read", PERSON));
+    expect(JSON.stringify(toolHistory)).not.toContain("+90");
+  });
+});

@@ -23,10 +23,12 @@ export type PhoneCalendarValue = { events: PhoneCalendarEvent[]; truncated: bool
 /** Whether the system lets the app read one kind of the phone's data (shared by every kind). */
 export type PhonePermission = "granted" | "denied" | "unavailable";
 
-/** The text of each error frame a read of the phone can end with (every kind's, wire contract). */
+/** The text of each error frame a read or write of the phone can end with (wire contract). */
 export type PhoneReadErrorCode =
-  | `${"calendar" | "contacts" | "location"}-${"off" | "permission" | "unavailable"}`
+  | `${"calendar" | "contacts" | "location" | "reminders" | PhoneWriteKind}-${"off" | "permission" | "unavailable"}`
+  | `${PhoneWriteKind}-invalid`
   | "contacts-query";
+type PhoneWriteKind = "calendar-write" | "reminders-write";
 
 export class PhoneReadError extends Error {
   override name = "PhoneReadError";
@@ -111,16 +113,17 @@ export async function requestCalendarPermission(): Promise<PhonePermission> {
  * limit: the one filter the server applies again (@rakazo/contracts). Cut first too, so a long
  * field costs no more to filter.
  */
-const text = (field: string | null | undefined, max: number): string | undefined =>
+export const text = (field: string | null | undefined, max: number): string | undefined =>
   field ? withoutLinks(field.slice(0, 10 * max))?.slice(0, max) : undefined;
 
-function iso(value: string | Date | null | undefined): string | null {
+export function iso(value: string | Date | null | undefined): string | null {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function range(request: PhoneCalendarRequest) {
+/** The asked window, cut to 31 days; null when it is not one. */
+export function range(request: { from: string; to: string }) {
   const from = new Date(request.from);
   const to = new Date(request.to);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) return null;
