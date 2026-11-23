@@ -2,8 +2,6 @@ import type { ComponentProps, ReactNode } from "react";
 import { Suspense } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../components/ErrorBoundary";
 import type {
-  DozoHiddenLibrarySkills as LoadedDozoHiddenLibrarySkills,
-  DozoLibraryBadge as LoadedDozoLibraryBadge,
   DozoOrganizationLibrarySwitch as LoadedDozoOrganizationLibrarySwitch,
 } from "../pages/dozo-organization-library-switch";
 import type { DozoAvatarGeneratePanel as LoadedDozoAvatarGeneratePanel } from "../pages/shell/dozo-avatar-generate-panel";
@@ -149,21 +147,19 @@ export function DozoOrganizationLibrarySwitch(
 }
 
 /** The label on a skill that comes from the organization's library; nothing if its code fails. */
-export function DozoLibraryBadge(props: ComponentProps<typeof LoadedDozoLibraryBadge>) {
+export function DozoLibraryBadge() {
   return (
     <Held failed={null}>
-      <LazyLibraryBadge {...props} />
+      <LazyLibraryBadge />
     </Held>
   );
 }
 
 /** The library skills this member turned off, under their skills; nothing if its code fails. */
-export function DozoHiddenLibrarySkills(
-  props: ComponentProps<typeof LoadedDozoHiddenLibrarySkills>,
-) {
+export function DozoHiddenLibrarySkills() {
   return (
     <Held failed={null}>
-      <LazyHiddenLibrarySkills {...props} />
+      <LazyHiddenLibrarySkills />
     </Held>
   );
 }
