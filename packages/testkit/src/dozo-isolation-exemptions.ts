@@ -5,8 +5,9 @@
  * for the caller itself; allowed only for a procedure that names no target (the matrix fails if
  * its input carries an id). `unreached`: still swept, but the owner's own call with the same input
  * does not get through, so a foreign caller's refusal of it proves nothing; `verifiedByCode` then
- * names the line whose filter keeps foreigners out (`file:line "fragment" — filter`, checked to
- * exist), and the matrix fails once the owner gets through. `no-target`: the listed id `fields`
+ * names the filter that keeps foreigners out (`file:line "fragment" — filter`: the file must
+ * hold the fragment exactly once, whitespace aside; the line is only where it stood when written),
+ * and the matrix fails once the owner gets through. `no-target`: the listed id `fields`
  * name nothing a person keeps (a catalog entry, the caller's own device), so the target's things
  * cannot fill them. `reached-409`: the owner's call answers a conflict, which is listed rather
  * than counted as getting through, with why the handler found the thing first. `distinguishable`:
@@ -19,7 +20,7 @@ export type IsolationExemption = {
   variant?: string;
   /** For `no-target`: the id fields that name nothing of the target's. */
   fields?: string[];
-  /** For `unreached`: `file:line "fragment" — filter`. */
+  /** For `unreached`: `file:line "fragment" — filter`; the fragment occurs once in the file. */
   verifiedByCode?: string;
   /**
    * For `reached-409`: whether the conflict depends on the computer's state at that moment
@@ -570,7 +571,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "security/events",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/account.ts:281 "throw new ORPCError(" \u2014 answers FORBIDDEN to every caller before reading its input',
+      'apps/api/src/routes/account.ts:281 "events: authed.security.events.handler(() => { throw new ORPCError(" \u2014 answers FORBIDDEN to every caller before reading its input',
     reason: "Answers FORBIDDEN to every app account (403); it has no handler that reads its input.",
   },
   {
@@ -644,7 +645,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "chatBotId+chatId",
     verifiedByCode:
-      'apps/api/src/routes/content.ts:79 "dozoBotOrGroupOnly(input);" \u2014 an extra chat is refused before any lookup',
+      'apps/api/src/routes/content.ts:79 "get: authed.artifacts.get.handler(async ({ context, input }) => { dozoBotOrGroupOnly(input);" \u2014 an extra chat is refused before any lookup',
     reason:
       "Refused by design before any lookup (400 dozo_extra_chat_not_a_target): an extra chat is not a target here.",
   },
@@ -653,7 +654,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "chatBotId+chatId",
     verifiedByCode:
-      'apps/api/src/routes/content.ts:60 "dozoBotOrGroupOnly(input);" \u2014 an extra chat is refused before any lookup',
+      'apps/api/src/routes/content.ts:60 "create: authed.artifacts.create.handler(async ({ context, input }) => { dozoBotOrGroupOnly(input);" \u2014 an extra chat is refused before any lookup',
     reason:
       "Refused by design before any lookup (400 dozo_extra_chat_not_a_target): an extra chat is not a target here.",
   },
@@ -671,7 +672,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "chatBotId+chatId",
     verifiedByCode:
-      'apps/api/src/routes/threads.ts:325 "resolveThreadTarget(deps.prisma, context.actor, input)" \u2014 the chat is resolved in the caller\'s Space',
+      'apps/api/src/routes/threads.ts:325 "clear: authed.threads.clear.handler(async ({ context, input }) => { const target = await resolveThreadTarget(deps.prisma, context.actor, input);" \u2014 the chat is resolved in the caller\'s Space',
     reason:
       "Refused by design before any lookup (400 dozo_extra_chat_unsupported): clearing works in a bot's main chat only.",
   },
@@ -680,7 +681,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "groupId",
     verifiedByCode:
-      "apps/api/src/routes/threads.ts:288 \"resolveThreadTarget(deps.prisma, context.actor, input)\" \u2014 the group's chat is resolved in the caller's Space",
+      "apps/api/src/routes/threads.ts:288 \"react: authed.threads.react.handler(async ({ context, input }) => { const target = await resolveThreadTarget(deps.prisma, context.actor, input);\" \u2014 the group's chat is resolved in the caller's Space",
     reason:
       "P's messages live in the bot's chats, none in the group's, so the message is not found for its owner either (404); the botId and chat inputs reach it.",
   },
@@ -689,7 +690,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "groupId+messageId",
     verifiedByCode:
-      "apps/api/src/routes/threads.ts:639 \"resolveThreadTarget(deps.prisma, context.actor, input)\" \u2014 the group's chat is resolved in the caller's Space",
+      "apps/api/src/routes/threads.ts:639 \"markUnread: authed.threads.markUnread.handler(async ({ context, input }) => { const target = await resolveThreadTarget(deps.prisma, context.actor, input);\" \u2014 the group's chat is resolved in the caller's Space",
     reason:
       "P's messages live in the bot's chats, none in the group's, so the message is not found for its owner either (404); the botId input reaches it.",
   },
@@ -697,28 +698,28 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "spaces/remove",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/spaces.ts:121 "asMemberOf(deps.prisma, context.actor, input.spaceId" \u2014 only a member of the named Space gets past',
+      'apps/api/src/routes/spaces.ts:121 "remove: authed.spaces.remove.handler(({ context, input }) => asMemberOf(deps.prisma, context.actor, input.spaceId" \u2014 only a member of the named Space gets past',
     reason: "P is A's default Space, which cannot be deleted (400).",
   },
   {
     path: "spaces/members/remove",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/spaces.ts:155 "asMemberOf(deps.prisma, context.actor, input.spaceId" \u2014 only a member of the named Space gets past',
+      'apps/api/src/routes/spaces.ts:155 "remove: authed.spaces.members.remove.handler(({ context, input }) => asMemberOf(deps.prisma, context.actor, input.spaceId" \u2014 only a member of the named Space gets past',
     reason: "P's only member is A, its owner, who cannot be removed (400).",
   },
   {
     path: "spaces/members/leave",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/spaces.ts:176 "asMemberOf(deps.prisma, context.actor, input.spaceId" \u2014 only a member of the named Space gets past',
+      'apps/api/src/routes/spaces.ts:176 "leave: authed.spaces.members.leave.handler(({ context, input }) => asMemberOf(deps.prisma, context.actor, input.spaceId" \u2014 only a member of the named Space gets past',
     reason: "A owns P, and an owner cannot leave (400).",
   },
   {
     path: "bots/create",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/bots.ts:412 "repos.createBot(context.actor" \u2014 the bot is made in the caller\'s own Space',
+      'apps/api/src/routes/bots.ts:412 "const bot = await repos.createBot(context.actor, {" \u2014 the bot is made in the caller\'s own Space',
     reason:
       "Its id is the new bot's own; P's bot id is taken, so the owner's create fails on the unique id too (answers 500, not 409).",
   },
@@ -726,7 +727,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     path: "bots/claimEmailAddress",
     kind: "unreached",
     verifiedByCode:
-      'apps/api/src/routes/bots.ts:722 "repos.getBot(context.actor, input.botId)" \u2014 the bot is looked up in the caller\'s Space',
+      'apps/api/src/routes/bots.ts:722 "claimEmailAddress: authed.bots.claimEmailAddress.handler(async ({ context, input }) => { const bot = await repos.getBot(context.actor, input.botId);" \u2014 the bot is looked up in the caller\'s Space',
     reason:
       "The test server receives no email, so every caller is refused before the bot is looked up (400).",
   },
@@ -761,7 +762,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/dozo-bot-model-backups.ts:21 "const bot = await repos.getBot(context.actor, input.botId);" \u2014 the bot is looked up in the caller\'s own Space before anything is read or written',
+      'apps/api/src/dozo-bot-model-backups.ts:21 "set: authed.dozoBotModelBackups.set.handler(async ({ context, input }) => { const bot = await repos.getBot(context.actor, input.botId);" \u2014 the bot is looked up in the caller\'s own Space before anything is read or written',
     reason:
       "The world's model connection has no provider set up, so the owner's backup row is refused (400), as for `models/setRole`.",
   },
@@ -778,7 +779,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/models.ts:376 "const target = await modelConnectionTarget(" \u2014 the connection is looked up for the caller\'s actor (next lines)',
+      'apps/api/src/routes/models.ts:376 "const target = await modelConnectionTarget( deps, context.actor," \u2014 the connection is looked up for the caller\'s actor (next lines)',
     reason:
       "The world's model connection is not one an outside sign-in can renew (404 for its owner too).",
   },
@@ -823,7 +824,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
     variant: "option 0",
     verifiedByCode:
-      'apps/api/src/routes/mcp.ts:112 "...availableInSpace(context.actor)," \u2014 the server is looked up among those of the caller\'s Space',
+      'apps/api/src/routes/mcp.ts:112 "const existing = await tx.mcpServer.findFirst({ where: { id: input.id, ...availableInSpace(context.actor), }," \u2014 the server is looked up among those of the caller\'s Space',
     reason: "The generated remote endpoint has no address in a test with no network (400).",
   },
   {
@@ -831,7 +832,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      "apps/api/src/routes/mcp.ts:598 \"spaceId: context.actor.spaceId,\" \u2014 the server and session are the caller's Space's",
+      "apps/api/src/routes/mcp.ts:598 \"return await mcpOAuth.begin({ ...input, redirectUri: expectedRedirect, spaceId: context.actor.spaceId,\" \u2014 the server and session are the caller's Space's",
     reason:
       "Beginning a sign-in reaches the tool server's address, which a test with no network has not (400).",
   },
@@ -840,7 +841,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/routes/mcp.ts:621 "spaceId: context.actor.spaceId," \u2014 the session is looked up in the caller\'s Space',
+      'apps/api/src/routes/mcp.ts:621 "await mcpOAuth.complete({ ...input, spaceId: context.actor.spaceId," \u2014 the session is looked up in the caller\'s Space',
     reason: "The world's sign-in session holds a placeholder the server cannot open (400).",
   },
   {
@@ -873,7 +874,7 @@ export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
     kind: "unreached",
 
     verifiedByCode:
-      'apps/api/src/connection-flows.ts:576 "userId: context.actor.userId," \u2014 the connection is looked up for the caller in the caller\'s Space',
+      'apps/api/src/connection-flows.ts:576 "const snapshot = await deps.prisma.connection.findFirst({ where: { id: input.connectionId, spaceId: context.actor.spaceId, userId: context.actor.userId, }," \u2014 the connection is looked up for the caller in the caller\'s Space',
     reason: "Revoking reaches the connection's provider, which tests do not configure (400).",
   },
   {

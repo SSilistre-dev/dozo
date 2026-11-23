@@ -1093,15 +1093,23 @@ async function waitingRunKept(
 /** The repository root, where `verifiedByCode` paths start. */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-/** `file:line "fragment" — filter`: the file exists and that line holds the fragment. */
+/**
+ * `file:line "fragment" — filter`: the file exists and holds the fragment exactly once, compared
+ * with every run of whitespace as one space, so a fragment may run over several lines. The line
+ * only tells a reader where to look: it moves with every merge that touches the file above it.
+ * Once and not at least once: a filter whose words repeat in the file (the same lookup in several
+ * handlers) would still be found after the one meant was removed, so such a fragment starts at
+ * its handler's name.
+ */
 function codeReferenceProblem(reference: string | undefined): string | undefined {
-  const parsed = reference ? /^(\S+):(\d+) "(.+?)" — .+/.exec(reference) : null;
+  const parsed = reference ? /^(\S+):\d+ "(.+?)" — .+/.exec(reference) : null;
   if (!parsed) return `not of the form file:line "fragment" — filter`;
-  const [, file, at, fragment] = parsed;
+  const [, file, fragment] = parsed;
   const full = path.join(ROOT, file!);
   if (!existsSync(full)) return `${file} does not exist`;
-  const text = readFileSync(full, "utf8").split("\n")[Number(at) - 1] ?? "";
-  if (!text.includes(fragment!)) return `${file}:${at} does not hold "${fragment}"`;
+  const spaced = (text: string) => text.replace(/\s+/g, " ");
+  const times = spaced(readFileSync(full, "utf8")).split(spaced(fragment!)).length - 1;
+  if (times !== 1) return `${file} holds "${fragment}" ${times} times, not once`;
   return undefined;
 }
 
