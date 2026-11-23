@@ -128,6 +128,21 @@ describePostgres("a bot's call is settled by the person it rings (PostgreSQL)", 
     return callId;
   }
 
+  /** A call a person started: no card, only what they said on it. */
+  async function ownCall(at: { threadId: string }, speaker: Actor) {
+    const callId = randomUUID();
+    const turn = await system.$transaction((tx) =>
+      createThreadMessageInTransaction(tx, {
+        threadId: at.threadId,
+        role: "user",
+        authorUserId: speaker.userId,
+        blocks: [{ kind: "text", text: "What's for dinner?" }],
+        clientNonce: callClientNonce(callId),
+      }),
+    );
+    return { callId, turnId: turn.id };
+  }
+
   async function callStatus(threadId: string, callId: string) {
     const message = await system.message.findUniqueOrThrow({
       where: { threadId_clientNonce: { threadId, clientNonce: callRequestClientNonce(callId) } },
@@ -165,7 +180,7 @@ describePostgres("a bot's call is settled by the person it rings (PostgreSQL)", 
         phoneCallsEnabled: true,
       },
       events: createThreadEvents(prisma),
-      jobs: { enqueue: vi.fn() },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn().mockResolvedValue(undefined) },
       memoryProviders: { resolve: async () => null },
       secrets: { remove: vi.fn().mockResolvedValue(undefined) },
       dataDir: "/tmp/rakazo-call-recipient-test",
@@ -247,6 +262,96 @@ describePostgres("a bot's call is settled by the person it rings (PostgreSQL)", 
     expect((await callStatus(at.threadId, answered))?.durationSeconds).toBe(30);
     expect(await markers()).toBe(1);
     expect(await hangUps()).toBe(1);
+  });
+
+  it("answers, declines and ends a call a person started only for that person", async () => {
+    const at = await sharedSpace();
+    const { callId } = await ownCall(at, at.owner);
+    const unknown = randomUUID();
+    const answer = (actor: Actor, id: string) =>
+      call(actor, "answerCall", { botId: at.botId, callId: id });
+    const decline = (actor: Actor, id: string) =>
+      call(actor, "declineCall", { botId: at.botId, callId: id, outcome: "declined" });
+    const end = (actor: Actor, id: string) =>
+      call(actor, "endCall", { botId: at.botId, callId: id, durationSeconds: 30 });
+    const markers = (id: string) =>
+      system.message.count({ where: { threadId: at.threadId, clientNonce: `call:${id}:marker` } });
+    const hangUps = () =>
+      system.run.count({ where: { threadId: at.threadId, trigger: "call_end" } });
+
+    expect(await answer(at.member, callId)).toEqual(await answer(at.member, unknown));
+    expect(await decline(at.member, callId)).toEqual(await decline(at.member, unknown));
+    expect(await end(at.member, callId)).toEqual(await end(at.member, unknown));
+    expect(await markers(callId)).toBe(0);
+    expect(await hangUps()).toBe(0);
+
+    expect(await end(at.owner, callId)).toEqual({ status: 200, json: { ok: true } });
+    expect(await markers(callId)).toBe(1);
+    expect(await hangUps()).toBe(1);
+
+    // A member's own call in the same chat is theirs to end.
+    const theirs = await ownCall(at, at.member);
+    expect(await end(at.member, theirs.callId)).toEqual({ status: 200, json: { ok: true } });
+    expect(await markers(theirs.callId)).toBe(1);
+  });
+
+  it("keeps another member's words out of a call's conversation", async () => {
+    const at = await sharedSpace();
+    const started = await ownCall(at, at.owner);
+    const rung = await botCall(at, "answered");
+    const said = (nonce: string) =>
+      system.message.count({ where: { threadId: at.threadId, clientNonce: nonce } });
+    for (const callId of [started.callId, rung]) {
+      const nonce = `call:${callId}:x`;
+      const sends = [
+        () => call(at.member, "send", { botId: at.botId, text: "Hello", clientNonce: nonce }),
+        () => call(at.member, "followUp", { botId: at.botId, text: "Hello", clientNonce: nonce }),
+        () =>
+          call(at.member, "react", {
+            botId: at.botId,
+            messageId: started.turnId,
+            reaction: "👍",
+            clientNonce: nonce,
+          }),
+        () =>
+          call(at.member, "answer", {
+            botId: at.botId,
+            runId: randomUUID(),
+            messageId: started.turnId,
+            answer: "yes",
+            clientNonce: nonce,
+          }),
+      ];
+      const answers = [];
+      for (const send of sends) answers.push(await send());
+      expect(answers.map((answer) => [answer.status, answer.json])).toEqual(
+        sends.map(() => [404, expect.anything()]),
+      );
+      expect(await said(nonce)).toBe(0);
+    }
+
+    // The owner still speaks on their own call; a member may start a call of their own.
+    const ownTurn = `call:${started.callId}:y`;
+    const own = await call(at.owner, "send", { botId: at.botId, text: "Hi", clientNonce: ownTurn });
+    expect(own.status).toBe(200);
+    expect(await said(ownTurn)).toBe(1);
+    const fresh = callClientNonce(randomUUID());
+    const theirs = await call(at.member, "send", {
+      botId: at.botId,
+      text: "Hi",
+      clientNonce: fresh,
+    });
+    expect(theirs.status).toBe(200);
+    expect(await said(fresh)).toBe(1);
+    // An answer to an unknown ask on one's own call is refused as before, not as someone else's.
+    const ownAnswer = await call(at.owner, "answer", {
+      botId: at.botId,
+      runId: randomUUID(),
+      messageId: started.turnId,
+      answer: "yes",
+      clientNonce: `call:${started.callId}:z`,
+    });
+    expect(ownAnswer.status).not.toBe(404);
   });
 
   it("rings the owner's roster only, never another member's", async () => {
