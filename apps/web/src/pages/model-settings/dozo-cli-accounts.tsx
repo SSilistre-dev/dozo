@@ -151,12 +151,15 @@ function DownloadLink({ href }: { href: string }) {
 function CliToolRow({ tool }: { tool: DozoCliTool }) {
   const { t } = useLingui();
   const agent = tool.mode === "agent";
+  // An agent on one of the person's computers was turned on in that computer's app: nothing to agree to here.
+  const asksConsent = agent && !tool.deviceId;
   const [asking, setAsking] = useState(false);
   const connect = useToolAction(
     (provider, rpc) =>
       rpc.dozoCliAccounts.connect({
         provider,
-        ...(agent ? { consent: true } : {}),
+        ...(tool.deviceId ? { deviceId: tool.deviceId } : {}),
+        ...(asksConsent ? { consent: true } : {}),
         ...(tool.termsRisk ? { termsConsent: true } : {}),
       }),
     t`Could not connect`,
@@ -191,7 +194,7 @@ function CliToolRow({ tool }: { tool: DozoCliTool }) {
               size="sm"
               variant="outline"
               disabled={connect.pending}
-              onClick={() => (agent ? setAsking(true) : connect.run(tool.provider))}
+              onClick={() => (asksConsent ? setAsking(true) : connect.run(tool.provider))}
             >
               <Trans>Connect</Trans>
             </Button>
@@ -237,7 +240,7 @@ export function DozoCliAccounts() {
       data-testid="dozo-cli-accounts"
     >
       {tools.map((tool) => (
-        <CliToolRow key={tool.provider} tool={tool} />
+        <CliToolRow key={`${tool.provider}:${tool.deviceId ?? ""}`} tool={tool} />
       ))}
     </div>
   );

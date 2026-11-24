@@ -24,22 +24,26 @@ const PROVIDERS = AGENT_DRIVERS.map((driver) => driver.provider);
  * SQL and queries the module sends. Removing a connection removes its row, as the foreign key does.
  */
 function table(initial: string[] = [], credentials: Record<string, string> = {}) {
-  const rows = new Map(initial.map((provider) => [provider, credentials[provider] ?? `c-${provider}`]));
+  const rows = new Map(
+    initial.map((provider) => [provider, credentials[provider] ?? `c-${provider}`]),
+  );
   const connections = new Map<string, string>(Object.entries(credentials));
   const sql = (strings: TemplateStringsArray) => strings.join("?");
   const prisma = {
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, provider?: string) => {
       const text = sql(strings);
-      if (text.includes("WHERE provider"))
-        return rows.has(provider!) ? [{ provider }] : [];
+      if (text.includes("WHERE provider")) return rows.has(provider!) ? [{ provider }] : [];
       return [...rows.values()].map((credentialId) => ({ credentialId }));
     }),
-    $executeRaw: vi.fn(async (strings: TemplateStringsArray, provider: string, credentialId?: string) => {
-      if (sql(strings).includes("INSERT")) rows.set(provider, credentialId!);
-      else if (sql(strings).includes("DELETE")) rows.delete(provider);
-      return 1;
-    }),
+    $executeRaw: vi.fn(
+      async (strings: TemplateStringsArray, provider: string, credentialId?: string) => {
+        if (sql(strings).includes("INSERT")) rows.set(provider, credentialId!);
+        else if (sql(strings).includes("DELETE")) rows.delete(provider);
+        return 1;
+      },
+    ),
     user: { count: async () => 1 },
+    userDevice: { findMany: async () => [] },
     deploymentSettings: { findUnique: async () => null },
     userModelCredential: {
       findMany: async ({ where }: { where: { provider: string | { in: string[] } } }) =>
@@ -68,7 +72,8 @@ function computer(installed: string[], options: { file?: string[]; local?: boole
   const commands = new Map(AGENT_DRIVERS.map((driver) => [driver.provider, driver.command]));
   for (const provider of installed)
     writeFileSync(join(bin, commands.get(provider)!), "#!/bin/sh\necho 0.171.0\n", { mode: 0o755 });
-  if (options.file?.length) writeFileSync(join(data, "dozo-agent-tools"), `${options.file.join("\n")}\n`);
+  if (options.file?.length)
+    writeFileSync(join(data, "dozo-agent-tools"), `${options.file.join("\n")}\n`);
   if (options.local === false) vi.stubEnv("HOST_USER_HOME", undefined);
   else vi.stubEnv("HOST_USER_HOME", mkdtempSync(join(tmpdir(), "dozo-modes-home-")));
   vi.stubEnv("HOST_USER_PATH", bin);
@@ -76,9 +81,12 @@ function computer(installed: string[], options: { file?: string[]; local?: boole
 }
 
 const agents = async (db: PrismaClient) =>
-  (await readCliTools({ prisma: db, secretStore: { load: async () => "" }, billingEnabled: false }, "ada")).filter(
-    (tool) => tool.mode === "agent",
-  );
+  (
+    await readCliTools(
+      { prisma: db, secretStore: { load: async () => "" }, billingEnabled: false },
+      "ada",
+    )
+  ).filter((tool) => tool.mode === "agent");
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -141,11 +149,16 @@ describe("a hosted server", () => {
   ])("answers the same with setting $setting and file $file", async ({ setting, file }) => {
     computer(PROVIDERS, { file: file ? PROVIDERS : [], local: false });
     const { prisma } = table(setting ? PROVIDERS : []);
+    // It runs no agent itself, whatever the setting or the file: no row without a computer of the
+    // person's that runs one.
     expect(await agents(prisma)).toEqual([]);
+    // Its catalog adds only the agents', which a paired computer runs, and no tool of its own.
     const before = builtinModels() as MutableModels;
     const names = new Set(before.getProviders().map((provider) => provider.id));
     const after = registerLocalCliProviders(builtinModels() as MutableModels);
-    expect(new Set(after.getProviders().map((provider) => provider.id))).toEqual(names);
+    expect(new Set(after.getProviders().map((provider) => provider.id))).toEqual(
+      new Set([...names, ...PROVIDERS]),
+    );
   });
 });
 
@@ -171,12 +184,16 @@ describe("the setting", () => {
     expect(rows.size).toBe(0);
     const calls = raw.$executeRaw.mock.calls.length;
     for (const bad of ["yes", 1, null, undefined, { path: "/bin/sh" }, ["/bin/sh"]])
-      await expect(setAgentMode(prisma, PROVIDERS[0]!, bad as never, "c")).rejects.toThrow(TypeError);
+      await expect(setAgentMode(prisma, PROVIDERS[0]!, bad as never, "c")).rejects.toThrow(
+        TypeError,
+      );
     for (const provider of ["/bin/sh", "agy acp", "claude-code", ""])
       await expect(setAgentMode(prisma, provider, true, "c")).rejects.toThrow(TypeError);
     // Turning it on names the connection that owns it.
     for (const id of [undefined, "", 7])
-      await expect(setAgentMode(prisma, PROVIDERS[0]!, true, id as never)).rejects.toThrow(TypeError);
+      await expect(setAgentMode(prisma, PROVIDERS[0]!, true, id as never)).rejects.toThrow(
+        TypeError,
+      );
     expect(raw.$executeRaw.mock.calls).toHaveLength(calls);
     expect(isAgentProvider(PROVIDERS[0]!)).toBe(true);
     expect(isAgentProvider("claude-code")).toBe(false);
@@ -191,7 +208,9 @@ describe("the setting", () => {
     });
     await saveAgentConnection(prisma, "ada", PROVIDERS[1]!, save);
     expect([...rows]).toEqual([[PROVIDERS[1], "cred-9"]]);
-    const [row] = await agents(prisma).then((all) => all.filter((tool) => tool.provider === PROVIDERS[1]));
+    const [row] = await agents(prisma).then((all) =>
+      all.filter((tool) => tool.provider === PROVIDERS[1]),
+    );
     expect(row).toMatchObject({ connected: true });
     // The connection is removed in settings: the row goes with it (the foreign key), and the row
     // offers Connect again.
@@ -208,7 +227,9 @@ describe("the setting", () => {
       return { id: "cred-1" };
     });
     raw.$executeRaw.mockRejectedValueOnce(new Error("database went away"));
-    await expect(saveAgentConnection(prisma, "ada", PROVIDERS[0]!, save)).rejects.toThrow("went away");
+    await expect(saveAgentConnection(prisma, "ada", PROVIDERS[0]!, save)).rejects.toThrow(
+      "went away",
+    );
     // Saved but with no mode: it shows as not connected, so the person can connect again.
     const half = (await agents(prisma)).find((tool) => tool.provider === PROVIDERS[0]);
     expect(half).toMatchObject({ connected: false });

@@ -9,7 +9,8 @@ import { AGENT_DRIVERS } from "./dozo-cli-providers.js";
 type Db = Pick<PrismaClient, "$queryRaw" | "$executeRaw">;
 
 /** The ids the setting may name: the agents Dozo knows, never anything the caller sends. */
-const knownAgent = (provider: string) => AGENT_DRIVERS.some((driver) => driver.provider === provider);
+const knownAgent = (provider: string) =>
+  AGENT_DRIVERS.some((driver) => driver.provider === provider);
 
 /**
  * Whether the agent's mode is on for this server: the setting, or the line the file

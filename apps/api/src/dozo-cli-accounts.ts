@@ -29,6 +29,7 @@ export function dozoCliAccountsRoutes(ctx: RouterContext) {
         const connection = await cliHomeConnection(cliDeps, context.actor.userId, input.provider, {
           consent: input.consent === true,
           termsConsent: input.termsConsent === true,
+          deviceId: input.deviceId,
         });
         const save = () =>
           persistModelCredential(
@@ -42,8 +43,9 @@ export function dozoCliAccountsRoutes(ctx: RouterContext) {
             },
             codexCatalog,
           );
-        // An agent's mode is turned on by connecting it, after the person agreed (adapters).
-        if (isAgentProvider(connection.provider))
+        // An agent's mode is turned on by connecting it, after the person agreed (adapters). One on
+        // their own computer has no mode here: that computer's app declaring it is the mode.
+        if (isAgentProvider(connection.provider) && !input.deviceId)
           await saveAgentConnection(deps.prisma, context.actor.userId, connection.provider, save);
         else await save();
         changed(context.actor.userId);

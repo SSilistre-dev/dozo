@@ -21,3 +21,13 @@ describe("a tool's download page", () => {
       expect(DozoCliToolSchema.safeParse({ ...tool, downloadUrl: bad }).success).toBe(false);
   });
 });
+
+describe("an agent on one of the person's computers", () => {
+  it("names the computer its row connects, and nothing but a short id", () => {
+    expect(DozoCliToolSchema.safeParse({ ...tool, found: true, deviceId: "dev-1" }).success).toBe(
+      true,
+    );
+    for (const bad of ["", "x".repeat(65)])
+      expect(DozoCliToolSchema.safeParse({ ...tool, deviceId: bad }).success).toBe(false);
+  });
+});

@@ -120,19 +120,22 @@ describe.skipIf(process.platform === "win32")("agent mode with Codex", () => {
     vi.unstubAllEnvs();
   });
 
-  it("leaves every other run to the model runtime, and lists nothing on a hosted server", async () => {
+  it("leaves every other run to the model runtime, and runs no agent on a hosted server", async () => {
     vi.stubEnv("HOST_USER_HOME", undefined);
     const events = await collect(
       runtime().run(request({ model: { provider: "openrouter", id: "m" } }), {}),
     );
     expect(textOf(events)).toBe("from the model");
     await expect(collect(runtime().run(request(), {}))).rejects.toThrow(/not turned on/);
-    // On a hosted server (no person's computer) the catalog has no agent in it at all.
-    expect(
-      registerLocalCliProviders(builtinModels() as MutableModels).getProvider(
-        CODEX_AGENT_PROVIDER_ID,
-      ),
-    ).toBeUndefined();
+    // On a hosted server (no person's computer) the catalog lists the agent so a connection to one
+    // on a paired computer can name it (dozo-device-agent.ts), but no turn streams from the copy.
+    const hosted = registerLocalCliProviders(builtinModels() as MutableModels);
+    const listed = hosted.getModels(CODEX_AGENT_PROVIDER_ID);
+    expect(listed.length).toBeGreaterThan(0);
+    const message = await hosted
+      .streamSimple(listed[0]!, { messages: [] }, { apiKey: "x" })
+      .result();
+    expect(message.errorMessage).toBe(AGENT_CATALOG_ERROR);
   });
 
   it("runs the agent only once its mode is turned on for this server, and lists it either way", async () => {

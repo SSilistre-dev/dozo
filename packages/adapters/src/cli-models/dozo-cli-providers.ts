@@ -89,6 +89,8 @@ function agentCatalogProvider(driver: AgentDriver, models: MutableModels): Provi
       ? models.getModels(driver.modelSource).map((model) => ({
           ...model,
           provider: driver.provider,
+          // The agent is given the conversation as text: it never reads an image.
+          input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         }))
       : [ownModel(driver)],
@@ -103,6 +105,8 @@ export const CLI_CATALOG_ONLY_ERROR = "This tool runs only inside the server's A
 /** The account's home folder for the tool's home variable: none for the person's own. */
 async function homeFolder(driver: CliModelDriver, account: CliAccount) {
   if (account.kind === "home") return { folder: undefined };
+  // An agent on a paired computer is not a tool of this server's: no home here.
+  if (account.kind === "device") return undefined;
   const folder = await accountHome(driver.provider, account.id);
   return folder ? { folder } : undefined;
 }
@@ -112,7 +116,11 @@ async function homeFolder(driver: CliModelDriver, account: CliAccount) {
  * this account, not the server's, and a usage limit the tool reported says it is one and when it
  * opens again, so the pool rests this account until then and the next one takes the call.
  */
-function accountError(driver: CliModelDriver, turn: CliTurn, message: string): string {
+export function accountError(
+  driver: Pick<CliModelDriver, "name">,
+  turn: Pick<CliTurn, "limit">,
+  message: string,
+): string {
   if (/\(401\)/.test(message))
     return `${driver.name} API error (401): this account is signed out. Sign it in again in Settings.`;
   if (!turn.limit) return message;
@@ -179,12 +187,20 @@ export function cliModelProvider(
   });
 }
 
-/** Adds each tool's provider, only on a server running on the person's own computer. */
+/**
+ * Adds each tool's provider on a server running on the person's own computer; on a hosted one only
+ * the agents, which a paired computer runs.
+ */
 export function registerLocalCliProviders(
   models: MutableModels,
   accessCheck?: PersonalCliAccessCheck,
 ): MutableModels {
-  if (!localCliHost()) return models;
+  if (!localCliHost()) {
+    // A hosted server runs none of them, but a bot can still choose an agent that runs on one of
+    // the person's paired computers (dozo-device-agent.ts): the catalog must know its models.
+    for (const driver of AGENT_DRIVERS) models.setProvider(agentCatalogProvider(driver, models));
+    return models;
+  }
   for (const driver of CLI_MODEL_DRIVERS)
     models.setProvider(cliModelProvider(driver, models, accessCheck));
   for (const driver of availableAgentDrivers())

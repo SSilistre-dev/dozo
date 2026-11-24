@@ -161,6 +161,21 @@ export async function readDeviceCapabilities(
 }
 
 /**
+ * The agents a computer declared on its last connection (`agent:<id>`), only ones this server
+ * knows. A computer that declared none, or that never declared, runs no agent.
+ */
+export async function readDeviceAgents(prisma: PrismaClient, deviceId: string): Promise<string[]> {
+  const rows = await runAsSystem(
+    "read the agents a user device declared",
+    () =>
+      prisma.$queryRaw<{ capabilities: string[] }[]>`
+      SELECT capabilities FROM dozo_device_capabilities WHERE "deviceId" = ${deviceId}`,
+  );
+  const declared = rows[0]?.capabilities ?? [];
+  return deviceAgentIds().filter((id) => declared.includes(`agent:${id}`));
+}
+
+/**
  * Which of the user's own computer tools a run is offered on this computer. A computer from the
  * hub is held to what it declared. One that did not come through it (the desktop server's own
  * computer, a test emulator) declares nothing: commands as upstream has them, and no screen, which

@@ -8557,6 +8557,24 @@
       "reason": "CLI accounts on the person's own computer: the API lists and connects the tools through the adapters package"
     },
     {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "} from \"@rakazo/adapters\";\nimport type {\n  Actor,\n",
+      "replace": "} from \"@rakazo/adapters\";\nimport { withoutUnconnectedAgents } from \"../dozo-agent-catalog.js\";\nimport type {\n  Actor,\n",
+      "requires": [
+        "apps/api/src/dozo-agent-catalog.ts"
+      ],
+      "reason": "agent mode on a paired computer: the import of the rule below"
+    },
+    {
+      "file": "apps/api/src/routes/context.ts",
+      "find": "    return offeredCatalog(merged, selected)\n      .filter(\n",
+      "replace": "    return withoutUnconnectedAgents(offeredCatalog(merged, selected), auth, selected)\n      .filter(\n",
+      "requires": [
+        "apps/api/src/dozo-agent-catalog.ts"
+      ],
+      "reason": "agent mode on a paired computer: the catalog every app reads (web and mobile alike) lists an agent only once the person has a connection to it (a saved choice stays), on a hosted server, so no app offers one as a provider that asks for a key"
+    },
+    {
       "file": "apps/web/src/pages/ModelSettingsOverlay.tsx",
       "find": "  const model = useModelSettings(onClose, scope);\n  const {\n",
       "replace": "  const model = useModelSettings(onClose, scope);\n  const cliProviders = useDozoCliProviders();\n  const {\n",

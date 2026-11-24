@@ -103,6 +103,7 @@ describe("CLI account routes", () => {
       {
         consent: false,
         termsConsent: false,
+        deviceId: undefined,
       },
     );
     const [, actor, input] = fake.persist.mock.calls[0]!;
@@ -117,7 +118,22 @@ describe("CLI account routes", () => {
     expect(fake.connection).toHaveBeenCalledWith(expect.anything(), "ada", "tool-a", {
       consent: true,
       termsConsent: true,
+      deviceId: undefined,
     });
+  });
+
+  it("connects an agent on one of the caller's computers with no mode of the server's own", async () => {
+    fake.connection.mockResolvedValue({ ...CONNECTION, provider: "codex-agent" });
+    await client("ada").connect({ provider: "codex-agent", deviceId: "dev-1" });
+    expect(fake.connection).toHaveBeenCalledWith(expect.anything(), "ada", "codex-agent", {
+      consent: false,
+      termsConsent: false,
+      deviceId: "dev-1",
+    });
+    // The computer's app declaring the agent is the mode: nothing is written for one.
+    expect(executed).toEqual([]);
+    expect(fake.persist).toHaveBeenCalledTimes(1);
+    expect(publishRosterChange).toHaveBeenCalledWith({ userIds: ["ada"] });
   });
 
   it("turns an agent's mode on by connecting it, and no other tool's", async () => {

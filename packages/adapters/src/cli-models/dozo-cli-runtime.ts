@@ -5,14 +5,16 @@ import { dozoBotTokenTainted } from "../dozo-token-marks.js";
 import { createRuntimeModels } from "../pi-runtime-models.js";
 import { withRuntimeModels } from "../pi-runtime-scope.js";
 import type { RunRuntimeEnv } from "../run-runtime.js";
-import { agentModeEnabled } from "./dozo-agent-modes.js";
 import { AGENT_OWN_RUNS_ONLY, AGENT_TOKEN_TEXT, withAgentRuntime } from "./dozo-agent.js";
+import { agentModeEnabled } from "./dozo-agent-modes.js";
 import { localCliHost } from "./dozo-cli-driver.js";
 import {
   AGENT_DRIVERS,
   CLI_MODEL_DRIVERS,
   registerLocalCliProviders,
 } from "./dozo-cli-providers.js";
+import type { DeviceAgentGateway } from "./dozo-device-agent.js";
+import { withDeviceAgentRuntime } from "./dozo-device-agent.js";
 import { personalCliAccessCheck } from "./personal-access.js";
 import { cliModelRuntime as deploymentCliRuntime } from "./runtime.js";
 
@@ -25,12 +27,20 @@ import { cliModelRuntime as deploymentCliRuntime } from "./runtime.js";
 export function cliModelRuntime(
   env: Pick<RunRuntimeEnv, "defaultProvider" | "defaultModel" | "deploymentModelConfigured">,
   runtime: AgentRuntime,
-  deps: { prisma: PrismaClient; billingEnabled?: boolean },
+  deps: { prisma: PrismaClient; billingEnabled?: boolean; userDevices?: DeviceAgentGateway },
 ): AgentRuntime {
   const deploymentTool =
     env.deploymentModelConfigured &&
     CLI_MODEL_DRIVERS.some((driver) => driver.provider === env.defaultProvider);
-  if (!localCliHost() || deploymentTool) return deploymentCliRuntime(env, runtime, deps);
+  if (deploymentTool) return deploymentCliRuntime(env, runtime, deps);
+  // A hosted server runs no agent itself: a bot's agent connection names one of the person's
+  // paired computers, which runs the turn there (dozo-device-agent.ts).
+  if (!localCliHost())
+    return withDeviceAgentRuntime(deploymentCliRuntime(env, runtime, deps), {
+      prisma: deps.prisma,
+      userDevices: deps.userDevices,
+      runAllowed: (runId) => ownRun(deps.prisma, runId),
+    });
   const accessCheck = personalCliAccessCheck(deps);
   const models = registerLocalCliProviders(createRuntimeModels(), accessCheck);
   // A bot whose model is an agent's runs its turn in agent mode, every other through the models.

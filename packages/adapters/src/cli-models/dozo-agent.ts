@@ -244,8 +244,7 @@ async function* runAgent(
   const host = localCliHost();
   const on =
     enabledAgentProviders().has(driver.provider) || (await options.enabled?.(driver.provider));
-  if (!host || !on)
-    throw new Error(`${driver.name} agent mode is not turned on on this server.`);
+  if (!host || !on) throw new Error(`${driver.name} agent mode is not turned on on this server.`);
   const refusal = (await options.accessCheck()) ?? (await options.runAllowed(request.runId));
   if (refusal) throw new Error(refusal);
   // Only a connection made in settings, after the person's agreement and the check, names this.
@@ -355,7 +354,7 @@ function keepWaiting(runId: string, run: LiveRun, waitLimitMs = AGENT_WAIT_LIMIT
   run.idle.unref?.();
 }
 
-function isPause(result: unknown): boolean {
+export function isPause(result: unknown): boolean {
   if (!result || typeof result !== "object") return false;
   const details = (result as { kind?: unknown; details?: { approval?: unknown; secret?: unknown } })
     .details;
@@ -366,7 +365,7 @@ function isPause(result: unknown): boolean {
 }
 
 /** A tool result as the text the agent reads. */
-function toolResultText(result: unknown): string {
+export function toolResultText(result: unknown): string {
   const content = (result as { content?: unknown } | null)?.content;
   if (Array.isArray(content)) {
     const text = content

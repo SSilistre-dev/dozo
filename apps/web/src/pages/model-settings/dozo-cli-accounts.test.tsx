@@ -313,6 +313,44 @@ describe("an agent", () => {
   });
 });
 
+describe("an agent on one of the person's computers", () => {
+  const onComputer = (name: string, deviceId: string, over: Partial<DozoCliTool> = {}) =>
+    tool({ mode: "agent", signedIn: null, name, deviceId, ...over });
+
+  it("shows one row for each computer, named for both, and connects that computer with no agreement asked here", async () => {
+    api.list.mockResolvedValue({
+      tools: [
+        onComputer("Tool A \u00b7 Laptop", "dev-1"),
+        onComputer("Tool A \u00b7 Desktop", "dev-2"),
+        // An agent no computer runs: never shown.
+        tool({ mode: "agent", signedIn: null, found: false }),
+      ],
+    });
+    api.connect.mockResolvedValue({ tools: [] });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(container.textContent).toContain("Tool A \u00b7 Laptop"));
+    expect(container.textContent).toContain("Tool A \u00b7 Desktop");
+    expect(container.querySelectorAll("button")).toHaveLength(2);
+    const second = container.querySelectorAll("button")[1];
+    await act(async () => second?.click());
+    expect(container.querySelector('[data-testid="dozo-agent-consent"]')).toBeNull();
+    // Even where the maker's terms put the account at risk, that was agreed in the computer's app.
+    expect(api.connect).toHaveBeenCalledWith({ provider: "tool-a", deviceId: "dev-2" });
+  });
+
+  it("hides a computer once it is connected, and keeps the others", async () => {
+    api.list.mockResolvedValue({
+      tools: [
+        onComputer("Tool A \u00b7 Laptop", "dev-1", { connected: true }),
+        onComputer("Tool A \u00b7 Desktop", "dev-2"),
+      ],
+    });
+    await render(<DozoCliAccounts />);
+    await vi.waitFor(() => expect(container.textContent).toContain("Desktop"));
+    expect(container.textContent).not.toContain("Laptop");
+  });
+});
+
 it("names the providers connected only from here", async () => {
   api.list.mockResolvedValue({ tools: [tool(), tool({ provider: "tool-b", found: false })] });
   const seen: string[][] = [];

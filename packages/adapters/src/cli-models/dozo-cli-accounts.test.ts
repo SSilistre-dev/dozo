@@ -81,6 +81,8 @@ function deps(
         count: async ({ where }: { where: { id?: string } }) =>
           where.id ? Number(where.id !== "stranger") : (options.people ?? 1),
       },
+      // No computer of the person's is paired: a hosted server then lists no agent.
+      userDevice: { findMany: async () => [] },
       userModelCredential: {
         // Each reader asks for the providers it means: the models', or the agents'.
         findMany: vi.fn(async ({ where }: { where?: { provider?: { in?: string[] } } } = {}) =>
@@ -169,7 +171,9 @@ describe.skipIf(process.platform === "win32")("the person's CLI accounts", () =>
       ],
       secrets: { "s-key": "sk-not-an-account", unreadable: "" },
     });
-    expect(await readModelTools(other, "ada")).toMatchObject([{ signedIn: false, connected: false }]);
+    expect(await readModelTools(other, "ada")).toMatchObject([
+      { signedIn: false, connected: false },
+    ]);
   });
 
   it("connects the person's own sign-in with the tool's name and a catalog model", async () => {
