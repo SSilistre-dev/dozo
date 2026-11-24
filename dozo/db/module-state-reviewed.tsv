@@ -70,6 +70,7 @@ packages/adapters/src/dozo-device-browser.ts	module	const INTERACTIVE = new Set(
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const byId = new Map(nodes.map((node) => [node.nodeId, node]));	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	const parents = new Map<string, string>();	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	fn readAccessibilityTree	let line: string | undefined;	local	per-call local, dies with the call
+packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private readonly fills = new Map<string, { handle: string; field: DeviceFillField }>();	run	planned password-manager fills (handle and field, never a value) of the browser provider kept per run context in a WeakMap
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider	private notes: string[] = [];	run	notes of the browser provider kept per run context in a WeakMap
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn loaded	let looks = 0;	local	per-call local, dies with the call
 packages/adapters/src/dozo-device-browser.ts	class DeviceBrowserProvider > fn act	let completed = 0;	local	per-call local, dies with the call
