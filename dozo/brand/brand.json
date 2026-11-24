@@ -12431,8 +12431,8 @@
     },
     {
       "file": "apps/api/src/chat-alerts.test.ts",
-      "find": "  createAppRouter({\n    ...deps,\n",
-      "replace": "  createAppRouter({\n    // Dozo: a database that answers yes to the stream's check that the reader may still see the Space.\n    prisma: { $queryRaw: async () => [{ allowed: true }] },\n    ...deps,\n",
+      "find": "  createAppRouter({\n    ...deps,\n    env:",
+      "replace": "  createAppRouter({\n    ...deps,\n    // Dozo: a database that answers yes to the stream's check that the reader may still see the Space.\n    prisma: deps.prisma ?? ({ $queryRaw: async () => [{ allowed: true }] } as unknown as RouterDeps[\"prisma\"]),\n    env:",
       "reason": "upstream test fixture: the notification stream checks before each alert that the reader may still see the Space (chat stream membership), and these tests build the router with no database; the fixture above gains one that answers yes, and a test's own deps still win"
     },
     {
