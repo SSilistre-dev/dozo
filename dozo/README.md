@@ -718,8 +718,21 @@ match):
 - The screen is outside content, so in practice a run takes in outside content with its first look:
   in Auto review each `computer_act` call that types or presses a key is then one review call, with
   its cost and wait (a call batches up to 24 actions, so one review covers them), and in Ask one card.
+- Allow for this run (`packages/adapters/src/dozo-screen-run.ts`): in Ask, the card for such input in
+  a run of the member's own message offers it after Allow once, when an approval model is set. It
+  allows that call, and the rest of the run's input on the screen then goes to the approval model as
+  in Auto review: a card again when the model asks, fails or there is none. It is no rule: it is read
+  from the run's own answered cards, so it ends with the run (the next message is a new run), and the
+  run's member alone can give it (anyone else's answer is refused, as Always allow is). A subagent
+  inside the run gets it too: its screen input is the same run's, for the same member. It is offered
+  only when the gate itself counts a model that would judge the rest. It never
+  covers commands, and is not offered in a run outside text started, a token's run, a routine,
+  another bot's run or Auto review; Never ask and block rules are unchanged. The user's own computer
+  (`user_computer_*`) is not affected: there each screen action keeps its own approval.
 - Not covered: a paste through a right-click menu with the mouse alone (text copied with the mouse
-  from a page into a terminal) is a click, and stays free.
+  from a page into a terminal) is a click, and stays free; so are a double click on a script or a
+  `.desktop` file in a file manager, typing with an on-screen keyboard, and `open_path`, which can open
+  a file with its default program.
 - The bot's computer is Linux, so the shell is known there; the reading below stays the one built
   for an unknown shell, which only makes more commands ask.
 

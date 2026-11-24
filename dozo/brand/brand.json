@@ -13584,6 +13584,138 @@
         "apps/mobile/components/dozo-bot-backups.tsx"
       ],
       "reason": "bot backups on mobile: the bot's own ordered backup models sit under its model, as on the web: one Add fallback line until there is one; the list reads and saves on its own, so the screen around it is unchanged"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "\"./dozo-token-run.js\";\nimport { watchFromTool }",
+      "replace": "\"./dozo-token-run.js\";\nimport { dozoScreenRunAsk, dozoScreenRunChecker, dozoScreenRunMode } from \"./dozo-screen-run.js\";\nimport { watchFromTool }",
+      "requires": [
+        "packages/adapters/src/dozo-screen-run.ts"
+      ],
+      "reason": "screen input for this run: the import of the rules below"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "  const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());\n",
+      "replace": "  const mode = await dozoScreenRunMode(ctx, { name, args, hold: dozoHostedHold, approved: nextApprovedTool === name || Boolean(approvedEffectKey) }, approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference()));\n",
+      "requires": [
+        "packages/adapters/src/dozo-screen-run.ts"
+      ],
+      "reason": "screen input for this run: in Ask, once the run's member allowed screen input for this run on a card, the rest of the run's input on the bot's screen goes to the approval model as in Auto review (a card again when it asks, fails or there is none); only in a run of their own message that took in outside content, never for commands"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "      await dozoTokenRunAsk(ctx, name, buildApprovalAskBlock(",
+      "replace": "      dozoScreenRunAsk(args, await dozoTokenRunAsk(ctx, name, buildApprovalAskBlock(",
+      "requires": [
+        "packages/adapters/src/dozo-screen-run.ts"
+      ],
+      "reason": "screen input for this run: the card of such a call offers Allow for this run after Allow once, when an approval model is set"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "        card,\n      )),\n    ],",
+      "replace": "        card,\n      ))),\n    ],",
+      "requires": [
+        "packages/adapters/src/dozo-screen-run.ts"
+      ],
+      "reason": "screen input for this run: closes the call the rule above opens"
+    },
+    {
+      "file": "packages/core/src/action-approval.ts",
+      "find": "    [...actionIds].every((id) => id === \"allow\" || id === \"always\" || id === \"deny\")",
+      "replace": "    [...actionIds].every((id) => id === \"allow\" || id === \"always\" || id === \"deny\" || id === \"allow_run\")",
+      "reason": "screen input for this run: a card with Allow for this run (allow_run, packages/adapters/src/dozo-screen-run.ts) is still an approval card on every surface"
+    },
+    {
+      "file": "packages/db/src/thread-ask.ts",
+      "find": "        return null;\n    }\n    if (input.answer === \"always\") {",
+      "replace": "        return null;\n    }\n    // Allow for this run (dozo-screen-run.ts) is the run's member's alone, like Always allow.\n    if (input.answer === \"allow_run\" && run.userId !== input.answeredByUserId) return null;\n    if (input.answer === \"always\") {",
+      "reason": "screen input for this run: only the run's own member can allow screen input for the rest of their run; anyone else's answer is refused, as Always allow is"
+    },
+    {
+      "file": "packages/db/src/thread-ask.ts",
+      "find": "    const allowed = approvalAnswer === \"allow\" || approvalAnswer === \"always\";",
+      "replace": "    const allowed = approvalAnswer === \"allow\" || approvalAnswer === \"always\" || approvalAnswer === \"allow_run\";",
+      "reason": "screen input for this run: Allow for this run also allows the call on the card, once"
+    },
+    {
+      "file": "apps/web/src/components/AskCard.tsx",
+      "find": "import { dozoAlwaysAllowLabel } from \"./dozo-ask-label\";",
+      "replace": "import { dozoAlwaysAllowLabel, dozoRunAllowLabel } from \"./dozo-ask-label\";",
+      "requires": [
+        "apps/web/src/components/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: the label of the new answer comes from the fork's label file"
+    },
+    {
+      "file": "apps/web/src/components/AskCard.tsx",
+      "find": "  if (id === \"deny\") return t`Deny`;\n  return fallback;\n}",
+      "replace": "  if (id === \"deny\") return t`Deny`;\n  return dozoRunAllowLabel(id) ?? fallback;\n}",
+      "requires": [
+        "apps/web/src/components/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: the button Allow for this run, translated"
+    },
+    {
+      "file": "apps/web/src/components/AskCard.tsx",
+      "find": "  if (answer === \"deny\") return t`Denied`;\n  return t`Answered: ${answer}`;",
+      "replace": "  if (answer === \"deny\") return t`Denied`;\n  return dozoRunAllowLabel(answer) ?? t`Answered: ${answer}`;",
+      "requires": [
+        "apps/web/src/components/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: an answered card shows the answer as its button said it"
+    },
+    {
+      "file": "apps/mobile/lib/ask-action-label.ts",
+      "find": "import { dozoAlwaysAllowLabel } from \"./dozo-ask-label\";",
+      "replace": "import { dozoAlwaysAllowLabel, dozoRunAllowLabel } from \"./dozo-ask-label\";",
+      "requires": [
+        "apps/mobile/lib/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: the label of the new answer on the phone"
+    },
+    {
+      "file": "apps/mobile/lib/ask-action-label.ts",
+      "find": "  if (action.id === \"deny\") return t`Deny`;\n  return action.label;",
+      "replace": "  if (action.id === \"deny\") return t`Deny`;\n  return dozoRunAllowLabel(action.id) ?? action.label;",
+      "requires": [
+        "apps/mobile/lib/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: the phone shows the same button, translated"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "import { allowsSpace } from \"../../lib/ask-action-label\";\nimport { plainAskTitle }",
+      "replace": "import { allowsSpace } from \"../../lib/ask-action-label\";\nimport { dozoRunAllowLabel } from \"../../lib/dozo-ask-label\";\nimport { plainAskTitle }",
+      "requires": [
+        "apps/mobile/lib/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: the import of the rule below"
+    },
+    {
+      "file": "apps/mobile/components/thread/message-bubble.tsx",
+      "find": "  if (approval && answer === \"deny\") return t`Denied`;\n  return t`Answered:",
+      "replace": "  if (approval && answer === \"deny\") return t`Denied`;\n  if (approval && dozoRunAllowLabel(answer)) return dozoRunAllowLabel(answer)!;\n  return t`Answered:",
+      "requires": [
+        "apps/mobile/lib/dozo-ask-label.ts"
+      ],
+      "reason": "screen input for this run: an answered card on the phone shows the answer as its button said it"
+    },
+    {
+      "file": "packages/i18n/locales/tr/messages.po",
+      "find": "msgstr \"{site} için her zaman izin ver\"\n\n#: apps/mobile/lib/ask-action-label.ts\n#: apps/web/src/components/AskCard.tsx\nmsgid \"Always allow this tool\"",
+      "replace": "msgstr \"{site} için her zaman izin ver\"\n\n#: apps/web/src/components/dozo-ask-label.ts\n#: apps/mobile/lib/dozo-ask-label.ts\nmsgid \"Allow for this run\"\nmsgstr \"Bu çalışma boyunca izin ver\"\n\n#: apps/mobile/lib/ask-action-label.ts\n#: apps/web/src/components/AskCard.tsx\nmsgid \"Always allow this tool\"",
+      "reason": "screen input for this run: the Turkish label of the new card button"
+    },
+    {
+      "file": "packages/adapters/src/run-tool-gate.ts",
+      "find": "          checkerConfigured,\n          newDestination",
+      "replace": "          checkerConfigured: dozoScreenRunChecker(args, checkerConfigured),\n          newDestination",
+      "requires": [
+        "packages/adapters/src/dozo-screen-run.ts"
+      ],
+      "reason": "screen input for this run: such a call not yet allowed for the run asks as in Ask, and its card offers Allow for this run only when the gate's own answer says a model would judge the rest"
     }
   ],
   "assets": {

@@ -98,7 +98,7 @@ export async function dozoHostedCommandHold(
  * The server cannot tell which window has the focus, so it never asks whether one is a terminal.
  * An action of a kind it does not know counts as input. Clicks, drags, scrolls and waits do not.
  */
-function screenInputCall(name: string, args: Record<string, unknown>): boolean {
+export function screenInputCall(name: string, args: Record<string, unknown>): boolean {
   if (!SCREEN_TOOLS.has(name)) return false;
   if (name !== "computer_act") return true;
   const actions: unknown[] = Array.isArray(args.actions) ? args.actions : [args.actions];
