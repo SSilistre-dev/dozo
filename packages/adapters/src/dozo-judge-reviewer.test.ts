@@ -1,5 +1,6 @@
 import type { AutoReviewProvider, AutoReviewResult } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
+import { isStuckWorkStatus, STUCK_WORK_EXPIRE_AFTER_MS, stuckWorkAction } from "@rakazo/core";
 import type * as Db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { markReadOutsideContent } from "./run-context.js";
@@ -17,6 +18,8 @@ const seen = vi.hoisted(() => ({
   /** The model each review went to. */
   reviews: [] as string[],
   verdict: "pass" as AutoReviewResult["decision"] | "throws",
+  /** A verdict for one model by name, over `verdict`. */
+  verdicts: {} as Record<string, AutoReviewResult["decision"] | "throws">,
 }));
 vi.mock("@rakazo/core", async (importOriginal) => {
   const core = await importOriginal<typeof Core>();
@@ -53,8 +56,9 @@ vi.mock("./run-auto-review.js", () => ({
     }),
     review: async () => {
       seen.reviews.push(checker.model);
-      if (seen.verdict === "throws") throw new Error("checker down");
-      return { decision: seen.verdict, reason: "Scripted.", model: checker.model };
+      const verdict = seen.verdicts[checker.model] ?? seen.verdict;
+      if (verdict === "throws") throw new Error("checker down");
+      return { decision: verdict, reason: "Scripted.", model: checker.model };
     },
   }),
 }));
@@ -82,7 +86,7 @@ vi.mock("./run-context.js", async (importOriginal) => ({
 
 type Mode = "ask" | "auto" | "never";
 /** Which approval models the member set: only backups, none at all, or (impossible) a primary with no model. */
-type Models = "backups" | "none" | "unrunnable";
+type Models = "backups" | "none" | "unrunnable" | "primary";
 const APP_ACTION = "tracker-create-issue";
 
 /** One consequential call of each kind the gate judges. `read` marks outside content first. */
@@ -165,10 +169,13 @@ function context(options: { mode?: Mode; models?: Models; trigger?: string } = {
         skipApprovals: mode === "never",
       }),
       loadApprovalModel: async () => ({
-        primary: null,
-        primarySource: models === "unrunnable" ? "member" : null,
+        primary:
+          models === "primary"
+            ? { provider: "main", modelId: "primary-1", thinkingLevel: undefined }
+            : null,
+        primarySource: models === "unrunnable" || models === "primary" ? "member" : null,
         backups:
-          models === "backups"
+          models === "backups" || models === "primary"
             ? [
                 { provider: "backup", modelId: "backup-1", thinkingLevel: undefined },
                 { provider: "backup", modelId: "backup-2", thinkingLevel: undefined },
@@ -225,6 +232,7 @@ beforeEach(() => {
   seen.blocks.length = 0;
   seen.reviews.length = 0;
   seen.verdict = "pass";
+  seen.verdicts = {};
 });
 
 describe.each(Object.entries(CALLS))("%s in Auto review", (_label, call) => {
@@ -271,4 +279,59 @@ describe.each(Object.entries(CALLS))("%s in Auto review", (_label, call) => {
     }
     expect(seen.reviews).toEqual([]);
   });
+});
+
+describe.each(Object.entries(CALLS))("%s with a primary approval model", (_label, call) => {
+  it("is judged by the primary alone, as before, and runs when it passes", async () => {
+    expect(await outcome(call, { models: "primary" })).toBe("reviewed");
+    expect(seen.reviews).toEqual(["primary-1"]);
+  });
+
+  it("asks with a card when the primary asks, and no backup is tried", async () => {
+    seen.verdict = "ask";
+    expect(await outcome(call, { models: "primary" })).toBe("card");
+    expect(seen.reviews).toEqual(["primary-1"]);
+  });
+
+  it("has the backups take over, in order, when the primary fails", async () => {
+    seen.verdicts = { "primary-1": "throws", "backup-1": "error" };
+    expect(await outcome(call, { models: "primary" })).toBe("reviewed");
+    expect(seen.reviews).toEqual(["primary-1", "backup-1", "backup-2"]);
+  });
+});
+
+describe.each(Object.entries(CALLS))("%s with backups only", (_label, call) => {
+  it("runs when the first backup fails and the second passes it", async () => {
+    seen.verdicts = { "backup-1": "error" };
+    expect(await outcome(call)).toBe("reviewed");
+    expect(seen.reviews).toEqual(["backup-1", "backup-2"]);
+  });
+
+  it("asks when the first backup fails and the second asks", async () => {
+    seen.verdicts = { "backup-1": "throws", "backup-2": "ask" };
+    expect(await outcome(call)).toBe("card");
+  });
+});
+
+describe("a routine nobody watches, with no approval model", () => {
+  it.each(Object.entries(CALLS))(
+    "pauses on a card for %s, and that wait ends with the run's other human waits",
+    async (_label, call) => {
+      const ctx = context({ models: "none", trigger: "routine" });
+      if (call.read) await markReadOutsideContent(ctx as never);
+      const paused = vi.spyOn(ctx.deps.events, "pauseRunForInput");
+      await gateToolCall(ctx as never, request(call.name, { ...call.args }), undefined);
+      expect(paused).toHaveBeenCalledTimes(1);
+      expect(seen.reviews).toEqual([]);
+      // A paused run waits for input, which the stuck-work sweep cancels after a day by default.
+      expect(isStuckWorkStatus("waiting_input")).toBe(true);
+      expect(
+        stuckWorkAction({
+          status: "waiting_input",
+          ageMs: STUCK_WORK_EXPIRE_AFTER_MS,
+          alreadyNotified: true,
+        }),
+      ).toBe("expire");
+    },
+  );
 });

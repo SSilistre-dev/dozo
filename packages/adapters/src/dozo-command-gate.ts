@@ -19,6 +19,10 @@ import { refusal } from "./tool-refusal.js";
 export const HOSTED_SHELL_TOOL = "shell";
 /** The tool whose command watch runs a command on the bot's computer later, unattended. */
 const SCHEDULE_TOOL = "schedule_create";
+/** The tools that work the bot's own screen: computer_act's actions, and launch_app's program. */
+const SCREEN_TOOLS = new Set(["computer_act", "launch_app"]);
+/** computer_act's actions that only point, scroll or wait; any other one types or starts a program. */
+const POINTER_ONLY_ACTIONS = new Set(["click", "move", "down", "up", "scroll", "wait"]);
 
 /** Calls a block rule refused, so the refusal says why. */
 const commandBlocks = new WeakSet<Record<string, unknown>>();
@@ -66,13 +70,15 @@ export async function commandRuleMatch(
  * for commands on the bot's computer to ask. In a run that took in outside content (isRunTainted:
  * a page, a file, a command's output, a resumed turn, or a run the owner did not start, their
  * routine included) only an exact allow rule covers a command, not a prefix rule. An always-allow
- * rule for the tool and Never ask pass it, as upstream passes any consequential tool.
+ * rule for the tool and Never ask pass it, as upstream passes any consequential tool. Input on the
+ * bot's screen is held the same way, by screenInputHold.
  */
 export async function dozoHostedCommandHold(
   ctx: RunContext,
   name: string,
   args: Record<string, unknown>,
 ): Promise<"review" | "person" | undefined> {
+  if (screenInputCall(name, args)) return screenInputHold(ctx);
   if (name !== HOSTED_SHELL_TOOL) return undefined;
   if (readOnlyCwd(args.cwd) && readOnlyPipeline(String(args.command ?? ""))) return undefined;
   const match = await hostedMatch(ctx, args);
@@ -84,6 +90,33 @@ export async function dozoHostedCommandHold(
   )
     return "person";
   return "review";
+}
+
+/**
+ * Whether a call types text, presses a key or starts a program on the bot's screen (computer_act's
+ * type, key and focus actions, or launch_app): in a terminal there, any of them can run a command.
+ * The server cannot tell which window has the focus, so it never asks whether one is a terminal.
+ * An action of a kind it does not know counts as input. Clicks, drags, scrolls and waits do not.
+ */
+export function screenInputCall(name: string, args: Record<string, unknown>): boolean {
+  if (!SCREEN_TOOLS.has(name)) return false;
+  if (name !== "computer_act") return true;
+  const actions: unknown[] = Array.isArray(args.actions) ? args.actions : [args.actions];
+  return actions.some(
+    (action) => !POINTER_ONLY_ACTIONS.has(String((action as { kind?: unknown } | null)?.kind)),
+  );
+}
+
+/**
+ * Input on the bot's screen runs as freely as before in the member's own run until outside content
+ * comes in. A person is asked in a run outside text started (dozoRunStartedFromOutside), and once
+ * the member asked for commands on the bot's computer to ask; any other run that took in outside
+ * content (also one the owner did not start) has the approval model judge it, as a command is.
+ */
+async function screenInputHold(ctx: RunContext): Promise<"review" | "person" | undefined> {
+  if (await dozoRunStartedFromOutside(ctx)) return "person";
+  if (!(await isRunTainted(ctx))) return undefined;
+  return (await readDozoHostedAsks(ctx.deps.prisma, ctx.run.userId)) ? "person" : "review";
 }
 
 /**
@@ -119,15 +152,16 @@ export async function dozoRunStartedFromOutside(ctx: RunContext): Promise<boolea
 }
 
 /**
- * What the approval model is told about a command on the bot's computer: whether outside content
- * came in, and whether the run's task is someone else's text rather than the owner's words (a run
- * the owner did not start, other than their own routine or chat app).
+ * What the approval model is told about a command on the bot's computer, or input on its screen
+ * (screenInputCall): whether outside content came in, and whether the run's task is someone else's
+ * text rather than the owner's words (a run the owner did not start, other than their own routine
+ * or chat app).
  */
 export async function dozoHostedReviewFacts(
   ctx: RunContext,
   name: string,
 ): Promise<{ outsideContent?: true; taskFromOutside?: true }> {
-  if (name !== HOSTED_SHELL_TOOL) return {};
+  if (name !== HOSTED_SHELL_TOOL && !SCREEN_TOOLS.has(name)) return {};
   const { trigger } = ctx.run;
   const ownersTask = ctx.source.ownerStartedRun || trigger === "routine" || trigger === "messaging";
   return {

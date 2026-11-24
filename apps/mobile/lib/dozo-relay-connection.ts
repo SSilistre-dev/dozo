@@ -46,6 +46,8 @@ export type RelayDeps = {
 };
 
 const SESSION_WAIT_MS = 8_000;
+/** The relay closes a socket with this code once the channel is deleted (`PROTOCOL.md`, Sockets). */
+const CLOSE_DELETED = 4001;
 /** After pairing, the computer sets the phone's token on the relay; until then a 404 is expected. */
 const PAIRING_GRACE_MS = 2 * 60_000;
 
@@ -153,6 +155,10 @@ export class RelayConnection {
   private readonly waiters = new Set<Waiter>();
   /** Set when the relay no longer knows the channel: the computer removed this phone. */
   onGone?: () => void;
+  /** Whether the relay says the computer is connected; null while no socket is open. */
+  computerPresent: boolean | null = null;
+  /** Called whenever `computerPresent` changes. */
+  onPresence?: () => void;
 
   constructor(
     private readonly deps: RelayDeps,
@@ -314,10 +320,19 @@ export class RelayConnection {
         },
         onPeer: (present) => {
           if (!present) this.client = null;
+          this.present(present);
         },
         onClose: (error) => {
           this.socket = null;
+          this.present(null);
           this.drop(new RelayUnreachableError(error.message));
+          // The channel was deleted under an open socket: removed at once, no reconnect needed.
+          // No grace as for a 404 (`refused`): that one is expected right after pairing, until the
+          // computer sets the phone's token. The relay sends 4001 only for a deleted or replaced
+          // channel, which no pairing in progress produces.
+          if (error.code === CLOSE_DELETED && this.mode.kind === "paired" && !this.closed) {
+            this.onGone?.();
+          }
         },
       });
     } catch (error) {
@@ -325,6 +340,12 @@ export class RelayConnection {
     } finally {
       this.opening = null;
     }
+  }
+
+  private present(value: boolean | null) {
+    if (this.computerPresent === value) return;
+    this.computerPresent = value;
+    this.onPresence?.();
   }
 
   private keys() {

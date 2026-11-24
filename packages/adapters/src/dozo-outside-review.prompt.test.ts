@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { autoReviewDecisionQuestion, buildAutoReviewPrompt } from "./auto-review.prompt.js";
 import {
   DOZO_OUTSIDE_CONTENT_REVIEW,
+  DOZO_SCREEN_INPUT_REVIEW,
   DOZO_SHELL_REVIEW,
   DOZO_TASK_FROM_OUTSIDE_REVIEW,
 } from "./dozo-outside-review.prompt.js";
@@ -47,5 +48,17 @@ describe("the reviewer's lines for a command on the bot's computer", () => {
     expect(question.instructions).toContain(DOZO_SHELL_REVIEW);
     expect(question.instructions).toContain(DOZO_TASK_FROM_OUTSIDE_REVIEW);
     expect(question.instructions).not.toContain(DOZO_OUTSIDE_CONTENT_REVIEW);
+  });
+});
+
+describe("the reviewer's lines for input on the bot's screen", () => {
+  it.each(["computer_act", "launch_app"])("say what typing can do there for %s", (toolName) => {
+    const outside = buildAutoReviewPrompt(request(toolName, { outsideContent: true }));
+    expect(outside).toContain(DOZO_SCREEN_INPUT_REVIEW);
+    expect(outside).toContain(DOZO_OUTSIDE_CONTENT_REVIEW);
+    expect(outside).not.toContain(DOZO_SHELL_REVIEW);
+    expect(autoReviewDecisionQuestion(request(toolName, {})).instructions).toContain(
+      DOZO_SCREEN_INPUT_REVIEW,
+    );
   });
 });

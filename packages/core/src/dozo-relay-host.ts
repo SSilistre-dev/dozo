@@ -611,7 +611,7 @@ class ChannelLoop {
     await new Promise<void>((resolve, reject) => {
       const relay = wsDuplex(socket, {
         role: "host",
-        onSession: (session) => this.accept(session),
+        onSession: (session) => this.accept(session, () => relay.close("session failed")),
         onPeer: (present) => this.options.onEvent({ event: "peer", channel: this.id, present }),
         onClose: (error: RelaySocketClosedError) => {
           signal.removeEventListener("abort", stop);
@@ -625,7 +625,31 @@ class ChannelLoop {
     });
   }
 
-  private accept(session: RelayDuplex) {
+  /**
+   * Answers one session. When an established session fails on this end (a record out of order,
+   * replayed or failing its tag), the phone's own end of it is still open and would wait on it:
+   * `cut` closes the socket, so the relay tells the phone this end left and it starts a new one.
+   */
+  private accept(raw: RelayDuplex, cut: () => void) {
+    let established = false;
+    let ended = false;
+    const session: RelayDuplex = {
+      send: (data) => raw.send(data),
+      close: (reason) => {
+        // Read before closing: closing the session ends it, which would look like the relay's end.
+        const failedHere = established && !ended;
+        raw.close(reason);
+        if (failedHere) cut();
+      },
+      attach: (receiver) =>
+        raw.attach({
+          receive: (data) => receiver.receive(data),
+          closed: (error) => {
+            ended = true;
+            receiver.closed(error);
+          },
+        }),
+    };
     const { app, pairing } = this.entry;
     if (!app && pairing && pairing.expiresAt <= this.now()) {
       session.close("pairing offer expired");
@@ -643,6 +667,7 @@ class ChannelLoop {
       appKey: app ? decodeRelayBytes(app.key) : null,
     }).then(
       (channel) => {
+        established = true;
         const transport = app ? channel : this.firstRecord(channel);
         serveRelay(transport, {
           origin: this.options.origin,

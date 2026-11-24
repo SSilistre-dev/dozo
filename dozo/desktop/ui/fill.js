@@ -3,9 +3,11 @@
 // this page can call these commands (capabilities/fill.json).
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const el = (id) => document.getElementById(id);
-const answer = (allow) => invoke("fill_answer", { allow }).catch(() => undefined);
-
 const shown = await invoke("fill_question").catch(() => null);
+// The answer names the question this window shows, so it never lands on a later one.
+// (Ids start at 1: with nothing shown, id 0 answers nothing.)
+const answer = (allow) =>
+  invoke("fill_answer", { id: shown?.id ?? 0, allow }).catch(() => undefined);
 if (shown) {
   document.documentElement.lang = shown.lang;
   el("question").textContent = shown.question;

@@ -116,6 +116,8 @@ impl Access {
         let passwords = crate::password_links::Passwords::new(Some(file), vault);
         passwords.set_prompt(Arc::new(crate::passwords_ui::DialogFill(app.clone())));
         let runner = Runner::with_passwords(root, home, passwords);
+        #[cfg(unix)]
+        crate::device_agent::attach(&runner, app);
         runner.set_sign_in_prompt(std::sync::Arc::new(crate::browser_signin::DialogPrompt(
             app.clone(),
         )));
@@ -462,6 +464,17 @@ async fn turn_on(app: &AppHandle, pairing: Pairing) {
     }
     sync_check(app);
     connect(app, true).await;
+}
+
+/// Connects again, so the server hears what this computer offers now (an agent allowed or not).
+#[cfg(unix)]
+pub fn reconnect(app: &AppHandle) {
+    let access = app.state::<Access>();
+    if let Some(client) = access.state.lock().unwrap().client.take() {
+        let _ = client.send(true);
+    }
+    let app = app.clone();
+    spawn(async move { connect(&app, false).await });
 }
 
 /// A page of the server loaded or the window came forward: pair if allowed and not paired yet,

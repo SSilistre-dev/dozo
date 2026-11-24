@@ -1,0 +1,72 @@
+name: dozo-desktop-macos
+
+# Compiles and tests the fork's own desktop app (dozo/desktop, Tauri 2) on macOS for every change
+# to it, and builds the app bundle (ad hoc signed) to check what it carries. Publishes nothing:
+# no tag, no release, no secrets, and the release workflow (dozo-desktop-release) is not touched. Beside
+# dozo-desktop-linux and dozo-desktop-windows, which do the same on their systems.
+# The versions come from the same files the other builds read: Rust from rust-toolchain.toml, the
+# Tauri CLI from build.sh, the crates from Cargo.lock.
+# Third-party actions are pinned to a full commit SHA with the version in a comment (the same
+# SHAs the upstream workflows use).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - dozo/desktop/**
+      - .github/workflows/dozo-desktop-macos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dozo-desktop-macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: macOS build and tests
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: dozo/desktop
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # The version and components in rust-toolchain.toml.
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add x86_64-apple-darwin
+
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "$(sed -n 's/^TAURI_CLI=//p' build.sh)" --locked
+
+      # Generated from the approved brand files, never committed here (as the release does).
+      - name: Icon and logo
+        run: |
+          cargo tauri icon ../brand/assets/desktop/icon-macos.png --output icons
+          cp ../brand/assets/logo-dark.svg ui/logo.svg
+
+      - name: Lint and test
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+
+      # The other architecture of the universal release build must compile too.
+      - name: Check Intel
+        run: cargo check --locked --target x86_64-apple-darwin
+
+      # A debug bundle (signed ad hoc, as tauri.conf.json says): the microphone's purpose string
+      # reaches the app (Info.plist; a missing string makes macOS end the app when a page asks for
+      # the microphone), and the entitlement file names the microphone. Opening the app and the shortcut itself are not tried here.
+      - name: Bundle and check the microphone declaration
+        run: |
+          cargo tauri build --debug --bundles app -- --locked
+          app=target/debug/bundle/macos/Dozo.app
+          plutil -extract NSMicrophoneUsageDescription raw "$app/Contents/Info.plist"
+          grep -q 'com.apple.security.device.audio-input' Entitlements.plist

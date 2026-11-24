@@ -1,0 +1,6 @@
+/* The agent's question: the look of the login question (fill.css), with the text kept as written. */
+#question {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+}

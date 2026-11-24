@@ -4,8 +4,9 @@ Runs the server side of Dozo (postgres, api, worker, supervisor, web) on a Linux
 [Dokploy](https://dokploy.com) panel manages, as a compose service in its own project. Nothing
 but the panel's proxy reaches the stack, and `SIGNUPS_ENABLED` opens or closes sign-up.
 
-No registry and no Git remote are involved. The branded tree is copied to the host over SSH and
-the images are built there, so they match the host's CPU and never leave it.
+No registry and no Git remote are involved. The images are built on the machine that deploys and
+sent to the host over SSH, so a build never takes the running app's memory and CPU (see Where the
+images are built); `DOZO_DEPLOY_BUILD=host` builds them on the host as before.
 
 | File | What it is |
 | --- | --- |
@@ -27,10 +28,12 @@ also those to the layer and the theme):
 2. Merges upstream's compose file with `compose.deploy.yml` into one file
    (`docker compose config --no-interpolate`, so no secret is needed or written). The run stops if
    that file still builds an image or publishes a port.
-3. Copies the staged tree to `<dir>/src` on the host with `rsync` and builds three images there,
-   tagged with the commit: `dozo/app` (api, worker, web, migrate; the theme file is added as a last
-   layer), `dozo/supervisor` and `rakazo/computer` (the supervisor accepts no other name for the
-   stock computer image). `host-jobs.sh` is copied to `<dir>` too.
+3. Builds three images on this machine, tagged with the commit: `dozo/app` (api, worker, web,
+   migrate; the theme file is added as a last layer), `dozo/supervisor` and `rakazo/computer` (the
+   supervisor accepts no other name for the stock computer image). Then takes the deploy lock,
+   sends the layers the host lacks and checks the host's image ids against the ones built here
+   (Where the images are built). With `DOZO_DEPLOY_BUILD=host` it copies the staged tree to
+   `<dir>/src` with `rsync` and builds there instead. `host-jobs.sh` is copied to `<dir>` too.
 4. Gives the panel the merged file and sets `DOZO_IMAGE_TAG` in the panel's environment. Starts
    `outage-probe.sh` against the public address, copies the running api and web on the host with
    `bridge.sh up`, starts the panel's deployment and waits for it, then waits until the host has
@@ -67,11 +70,13 @@ DOZO_DEPLOY_OUTAGE_WARN=5        # optional, seconds of outage seen from outside
 # optional, the image build's limits (Build limit): DOZO_DEPLOY_BUILD_LIMIT=on|off,
 # DOZO_DEPLOY_BUILD_MEMORY_HIGH=4G, DOZO_DEPLOY_BUILD_MEMORY_MAX=6G,
 # DOZO_DEPLOY_BUILD_CPU_WEIGHT=20, DOZO_DEPLOY_BUILD_IO_WEIGHT=20
+DOZO_DEPLOY_BUILD=local          # optional: local (default) builds here; host builds on the host
 ```
 
-Your machine needs `git`, `rsync`, `ssh`, `curl`, `jq` and Docker (for the brand step and the
-merge). The host needs Docker Engine 26 or newer with Compose 2.24.4 or newer, and `curl` and
-`jq` (for `bridge.sh`).
+Your machine needs `git`, `rsync`, `ssh`, `curl`, `jq`, Docker (for the brand step, the merge and
+the build) and `zstd`; with the default build it must have the host's CPU (Where the images are
+built). The host needs Docker Engine 26 or newer with Compose 2.24.4 or newer, `curl` and `jq` (for
+`bridge.sh`), and `zstd` for the default build.
 
 ## First-time setup
 
@@ -418,7 +423,19 @@ Known limits:
 link holding a random run id, the action and commit, and the start time), so two machines cannot
 deploy to the same host at once. A second run prints one line and waits for the first, polling
 every few seconds; the lock is freed on any exit, including Ctrl-C and `kill` (not `kill -9`).
-`owner` takes none. A failing ssh call is tried again up to 3 times.
+`owner` takes none. A deploy takes it after staging and branding, and with the default build after
+building the images on this machine, all of which change nothing on the host; with
+`DOZO_DEPLOY_BUILD=host` that is before the tree is copied. Two deploys can stage and build at once;
+their copies, sends and switches take turns. The lock is labelled `deploy-<commit>`, the first nine
+characters of the staged commit (before, the short form of whatever `HEAD` was then). A failing ssh
+call is tried again up to 3 times.
+
+Under the lock, before anything on the host changes, a deploy reads the commit the panel runs now
+(`DOZO_IMAGE_TAG`) and stops unless the commit being deployed contains it: a deploy that finished
+building later must not put an older or another line of work over a newer release. Nothing running
+(a first deploy) and the same commit pass. A running commit this checkout does not know (not
+fetched) stops the run too, and a panel that does not answer stops it before anything changes.
+`rollback <tag>` is the way back on purpose and is not checked.
 
 - `DOZO_DEPLOY_LOCK_WAIT`: seconds to wait for a running deploy (default 1800); 0 fails at once.
 - `DOZO_DEPLOY_LOCK_STALE`: seconds after which a lock is taken as left behind and broken
@@ -431,10 +448,77 @@ is running. Stale locks are broken under a second link (`.deploy.lock.break`, on
 older than a minute is removed); the one remaining window is a breaker stalled for over a minute
 or an owner releasing in the instant a stale lock is removed.
 
+## Where the images are built
+
+By default (`DOZO_DEPLOY_BUILD=local`) the images are built on the machine that runs `deploy.sh`:
+
+1. One read-only call asks the host for its platform, its image store, the room in Docker's folder
+   and the layers of every `dozo/app`, `dozo/supervisor` and `rakazo/computer` it holds. If all
+   three images of the commit are there, nothing is built or sent.
+2. The three images are built here with `--platform` set to the host's, without the deploy lock,
+   so a long build does not hold the host. They carry the labels `dozo.deploy.build=local` and
+   `dozo.deploy.input=<digest>`, the digest of every file of the staged, branded tree and the theme.
+   Images of the commit left here by an earlier run (a failed send) are used again only when that
+   digest is the same; a tree branded differently for the same commit is built again.
+3. The lock is taken. `docker save` writes the three images to the stage, and every layer file is
+   left out whose layers, up to and including it, the host already has under some image: a host
+   with the classic image store reads a layer file only when that chain is missing. What remains
+   is packed with `zstd` and piped over ssh into `zstd -d | docker load`; nothing is stored on the
+   host but what `docker load` keeps.
+4. The host's image ids must equal the config digests in the archive (in the classic store an
+   image's id is its config's digest) and its layers the archive's, for exactly the three images.
+   Any difference removes the three tags of the commit from the host again and stops the run
+   before anything is replaced.
+
+A tag of the commit on the host therefore comes only from a build there or from a load whose ids
+were checked: `docker load` tags an image after all its layers are in, each checked against its
+digest, so a half or damaged load leaves no tag, and a failed check takes the tags away. That is
+why step 1 trusts a tag it finds, and asks again under the lock in step 3: if another deploy's
+cleanup removed the images since, the run stops (deploy again).
+
+A failure on this side never touches the running app: a failed build, a connection that drops, a
+damaged archive, a failed load or a failed check leaves no tag of the commit on the host (the next
+run sends again; a partial load leaves only layers, which the next load reuses). A host whose
+Docker folder has less room than the archive plus its layers unpacked (an estimate: four times the
+packed size, plus 1 GiB) is refused before anything is sent. If a later Docker on the host refuses
+an archive without the layers it has, every send fails the same way; the message says so, and
+`DOZO_DEPLOY_BUILD=host` is the way out (there is no automatic retry with every layer: a cut
+connection would send twice as much for nothing). The run also
+stops before building when the host has another CPU than this machine, keeps its images in
+containerd's store (where leaving layers out is untested), or either side lacks `zstd`; each says
+to set `DOZO_DEPLOY_BUILD=host`. A bad value of `DOZO_DEPLOY_BUILD` exits 64 before any ssh.
+
+Here, the tags of this script's images older than the three newest commits are removed after each
+build (only twelve-digit tags with its label; no other image, no volume, no prune). The build cache
+on this machine grows like the host's and is not pruned either. The host's build cache is no longer
+refreshed meanwhile, so going back to `DOZO_DEPLOY_BUILD=host` after a while is a cold build there
+(up to about 19 minutes, with the host's load that brings).
+
+### First deploy on this path: what to watch
+
+In order: `build the images here (linux/amd64)`, `built in <n>s`, `host: sending <n> MiB (<n> MiB
+before packing; <n> layers are there already)` (the first time almost nothing is there: the host's
+own builds share no layers with this machine's), `host: packed, sent and loaded in <n>s`, `host: the
+ids of the three images match the ones built here`, then the usual bridge, panel and health lines.
+The probe's `slowest` and `longest outage` lines are the measure: with no build on the host they
+should stay near a deploy without one (under a second). On any `FAIL` before `panel: deploying`,
+check on the host that the api and web containers were not replaced (`docker ps` shows the old
+tag and start time) and deploy with `DOZO_DEPLOY_BUILD=host` if the cause is on this path.
+
+Deploying from a Mac with Apple silicon: the host runs `linux/amd64`, so the default build stops
+before building. Either deploy from a Linux `amd64` machine or set `DOZO_DEPLOY_BUILD=host`.
+Building for `amd64` under emulation is not offered: it is far slower and has not been tried for
+this stack. Neither path has been run from a Mac.
+
+`dozo/deploy/deploy-ship.test.sh` (in `make olc`) checks all of this with a stub Docker on both
+sides. `dozo/deploy/deploy-ship.dind.sh` runs the same code against a real Docker of the host's
+version (`DOZO_SHIP_DIND_IMAGE`, default `docker:28.4.0-dind`) as the host; run it when the host's
+Docker changes.
+
 ## Build limit
 
-The image build shares the host with the running app and can starve it of memory first and CPU
-second. Before it builds, the host script starts a systemd slice, `dozobuild.slice` (no dash: systemd
+Only for `DOZO_DEPLOY_BUILD=host`. The image build shares the host with the running app and can
+starve it of memory first and CPU second. Before it builds, the host script starts a systemd slice, `dozobuild.slice` (no dash: systemd
 reads a dash as nesting, Docker does not), sets limits on it with `systemctl set-property --runtime`,
 reads them back from the slice's cgroup files (`memory.high`, `memory.max`, `memory.swap.max`,
 `cpu.weight`, `io.weight`) and, only if they match, passes `--cgroup-parent=dozobuild.slice` to each
@@ -635,8 +719,8 @@ team computer outside the compose project. What bounds them:
 - A worker that is running jobs is given upstream's grace period (50 minutes) to finish them
   before it is replaced, so a deploy can outlast `DOZO_DEPLOY_TIMEOUT`; the panel still finishes it,
   and the copies of the api and web keep serving until the next deploy retires them.
-- The build cache on the host grows with each deploy and is shared with the host's other builds, so
-  the script does not prune it.
+- The build cache (on the deploying machine, or on the host with `DOZO_DEPLOY_BUILD=host`) grows
+  with each deploy and is shared with other builds there, so the script does not prune it.
 - The api's `/health` is not routed from outside; the deploy and the health check ask it inside
   the container.
 - A host restart has not been rehearsed. The services restart with Docker (`unless-stopped`), and
@@ -650,4 +734,5 @@ team computer outside the compose project. What bounds them:
 
 Stop and delete the compose service in the panel (choose whether to delete its volumes), run
 `host-egress.sh --remove` and `<dir>/host-jobs.sh remove` on the host, then delete `<dir>` (the
-backups are in it) and the `dozo/app`, `dozo/supervisor` and `rakazo/computer` images there.
+backups are in it) and the `dozo/app`, `dozo/supervisor` and `rakazo/computer` images there (and on
+the deploying machine, those labelled `dozo.deploy.build=local`).

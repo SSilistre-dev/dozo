@@ -3,6 +3,9 @@
 // A release build on Windows opens no console window beside the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(unix)]
+mod agent_bridge;
+mod agent_ui;
 mod alerts;
 mod background;
 mod backup;
@@ -11,6 +14,8 @@ mod browser_clear;
 mod browser_proxy;
 mod browser_signin;
 mod device;
+#[cfg(unix)]
+mod device_agent;
 mod device_pairing;
 mod device_run;
 mod device_socket;
@@ -26,6 +31,7 @@ mod password_manager;
 mod passwords_ui;
 mod phone;
 mod prefs;
+mod question_slot;
 mod server;
 mod settings;
 mod stack;
@@ -378,6 +384,8 @@ fn run(app: &AppHandle, id: &str) {
         "reload" => reload(window),
         OPEN_AT_LOGIN_ID | KEEP_RUNNING_ID | talk::MENU_ID | passwords_ui::MENU_ID => flip(app, id),
         device::MENU_ID => device::clicked(app),
+        #[cfg(unix)]
+        id if id.starts_with(device_agent::MENU_PREFIX) => device_agent::clicked(app, id),
         phone::MENU_ID => phone::open(app),
         backup::BACK_UP_ID => backup::open(app, "backup"),
         backup::RESTORE_ID => backup::open(app, "restore"),
@@ -820,6 +828,12 @@ fn offer_update(app: &AppHandle) -> bool {
 }
 
 fn main() {
+    // The agent's MCP server for a bot's tools is this program started with a flag: before
+    // anything of the app (the single-instance hand-over included) runs.
+    #[cfg(unix)]
+    if std::env::args().nth(1).as_deref() == Some(agent_bridge::FLAG) {
+        agent_bridge::main();
+    }
     tauri::Builder::default()
         // First: a second launch hands over to the running app before anything else starts, and
         // the running app shows its window, hidden or not. A login start never does.
@@ -851,6 +865,7 @@ fn main() {
         .manage(update::Pending::default())
         .manage(prefs::Changes::default())
         .manage(passwords_ui::FillQuestion::default())
+        .manage(agent_ui::AgentQuestion::default())
         .invoke_handler(tauri::generate_handler![
             current_server,
             set_server,
@@ -872,7 +887,9 @@ fn main() {
             passwords_ui::logins_link,
             passwords_ui::logins_remove,
             passwords_ui::fill_question,
-            passwords_ui::fill_answer
+            passwords_ui::fill_answer,
+            agent_ui::agent_question,
+            agent_ui::agent_answer
         ])
         .menu(menu)
         .on_menu_event(|app, event| run(app, event.id().as_ref()))
@@ -913,6 +930,8 @@ fn main() {
             passwords_ui::start(&app, settings.password_manager);
             browser_clear::sync(&app);
             device::select(&app, chosen(&app));
+            #[cfg(unix)]
+            device_agent::sync_menu(&app);
             #[cfg(not(target_os = "macos"))]
             add_tray(&app);
             update::watch(app.clone(), offer_update);
