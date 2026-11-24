@@ -329,10 +329,6 @@ export const DESIGNED_SHARING_SOMETIMES: Readonly<Record<string, readonly Someti
   ],
 };
 
-/** Whether the table allows a member or guest to see the canary of `kind` through `path` some of the time. */
-export const sharedSometimes = (path: string, kind: string) =>
-  DESIGNED_SHARING_SOMETIMES[path]?.some((entry) => entry.kinds.includes(kind)) ?? false;
-
 export const ISOLATION_EXEMPTIONS: readonly IsolationExemption[] = [
   {
     path: "skills/start",

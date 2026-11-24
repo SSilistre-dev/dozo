@@ -11,13 +11,17 @@ import { confirmIdentity, findCanaries, readAnswer } from "./dozo-isolation.test
 import type { IsolationExemption } from "./dozo-isolation-exemptions.js";
 import {
   DESIGNED_SHARING,
+  DESIGNED_SHARING_SOMETIMES,
   ISOLATION_EXEMPTIONS,
   NEVER_SHARED_KINDS,
-  sharedSometimes,
 } from "./dozo-isolation-exemptions.js";
 import type { Procedure, Resolve } from "./dozo-isolation-inputs.test-support.js";
 import { generateInputs, mixedVariants, withOwn } from "./dozo-isolation-inputs.test-support.js";
 import { releaseWaitingRun, seedWaitingRun } from "./dozo-isolation-seed.test-support.js";
+
+/** Whether the table allows a member or guest to see the canary of `kind` through `path` some of the time. */
+const sharedSometimes = (path: string, kind: string) =>
+  DESIGNED_SHARING_SOMETIMES[path]?.some((entry) => entry.kinds.includes(kind)) ?? false;
 
 const CONCURRENCY = 8;
 /** Only this answers without a session. */
